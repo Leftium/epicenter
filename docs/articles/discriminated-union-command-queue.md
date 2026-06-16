@@ -1,4 +1,4 @@
-> **Note:** The tab-manager command queue implementation described here was removed in `specs/20260311T230000-remove-commands-table-and-awareness.md`. The discriminated union pattern itself remains a valid approach for typed command queues over Y.Doc.
+> **Note:** The tab-manager command queue implementation described here has since been removed. The discriminated union pattern itself remains a valid approach for typed command queues over Y.Doc.
 
 # One Table, Eight Commands, Zero JSON.parse
 

@@ -3,14 +3,17 @@
  *
  * Maps the [agentskills.io](https://agentskills.io/specification) skill
  * package format to Yjs CRDT-backed tables. Each frontmatter field becomes
- * a column; the markdown instruction body lives in a per-row Y.Doc opened
- * through the app-owned `instructionsDocs` factory.
+ * a column; the markdown instruction body is a child doc the table declares
+ * with `.docs({ instructions: attachPlainText })`, so the workspace owns
+ * its guid (`tables.skills.docs.instructions.guid(id)`). Apps open the live
+ * handle through their own cache layered over that guid.
  *
  * @module
  */
 
 import { field } from '@epicenter/field';
 import {
+	attachPlainText,
 	defineTable,
 	type InferTableRow,
 	nullable,
@@ -19,9 +22,10 @@ import {
 /**
  * Skills table, one row per skill, 1:1 mapping to SKILL.md.
  *
- * Frontmatter fields map to columns. The markdown instructions live in a
- * per-row Y.Doc opened through the `instructionsDocs` factory, enabling
- * collaborative Y.Text editing in browser-based editors.
+ * Frontmatter fields map to columns. The markdown instructions live in the
+ * `instructions` child doc declared via `.docs` below; the workspace
+ * derives its guid and apps open the live handle for collaborative Y.Text
+ * editing in browser-based editors.
  *
  * The `id` is a stable nanoid for FK relationships. The `name` column
  * holds the agentskills.io-compliant slug (lowercase, hyphens, 1-64 chars)
@@ -58,15 +62,16 @@ export const skillsTable = defineTable({
 	compatibility: nullable(field.string()),
 	metadata: nullable(field.string()),
 	allowedTools: nullable(field.string()),
-	updatedAt: field.number(),
-});
+	updatedAt: field.instant(),
+}).docs({ instructions: attachPlainText });
 
 /**
  * References table, one row per markdown file in a skill's `references/` directory.
  *
  * References are additional documentation loaded on demand (tier 3 in the
- * progressive disclosure model). Each reference file gets its own Y.Doc
- * opened through the `referenceDocs` factory for collaborative editing.
+ * progressive disclosure model). Each reference file's body is the `content`
+ * child doc declared via `.docs` below; the workspace derives its guid
+ * and apps open the live handle for collaborative editing.
  *
  * The `path` column stores the filename relative to the `references/` directory
  * (e.g., `"component-patterns.md"`), not the full filesystem path.
@@ -88,8 +93,8 @@ export const referencesTable = defineTable({
 	id: field.string(),
 	skillId: field.string(),
 	path: field.string(),
-	updatedAt: field.number(),
-});
+	updatedAt: field.instant(),
+}).docs({ content: attachPlainText });
 
 export type Skill = InferTableRow<typeof skillsTable>;
 export type Reference = InferTableRow<typeof referencesTable>;

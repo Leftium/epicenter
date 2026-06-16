@@ -22,7 +22,7 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
 	const tabs = $derived(
-		[...tabsMap.values()].sort((a, b) => b.savedAt - a.savedAt),
+		[...tabsMap.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt)),
 	);
 
 	return {

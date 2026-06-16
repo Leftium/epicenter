@@ -1,113 +1,30 @@
 /**
  * Honeycrisp browser composition.
  *
- * Single source of truth for "how Honeycrisp mounts in a browser." Calls
- * Tier 1 primitives inline so every line is visible top-to-bottom:
+ * Single source of truth for "how Honeycrisp mounts in a browser." The shared
+ * workspace definition owns root wiring and child-doc opening:
  *
- *  1. workspace root doc (tables + KV via createHoneycrisp)
- *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
- *  3. runtime storage + sync around the shared per-note child docs
- *
- * `openCollaboration` owns reconnect-on-auth-change internally, so this file
- * has no per-app onStateChange listener.
+ *  1. workspace root doc (tables + KV)
+ *  2. local storage + cloud sync for root
+ *  3. runtime storage + sync around per-note body child docs
  *
  * The bundle's `wipe()` drops every owner-scoped IDB database;
- * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
+ * `Symbol.dispose` tears down the root and cached child Y.Docs without touching
  * local storage.
  */
 
 import type { SignedIn } from '@epicenter/svelte/auth';
-import {
-	attachLocalStorage,
-	createDisposableCache,
-	type DeviceId,
-	defineWorkspace,
-	openCollaboration,
-	roomWsUrl,
-	wipeLocalStorage,
-} from '@epicenter/workspace';
-import { createHoneycrisp, type NoteId } from './honeycrisp';
+import type { NodeId } from '@epicenter/workspace';
+import { honeycrispWorkspace } from './honeycrisp.js';
 
 export function openHoneycrispBrowser({
 	signedIn,
-	deviceId,
+	nodeId,
 }: {
 	signedIn: SignedIn;
-	deviceId: DeviceId;
+	nodeId: NodeId;
 }) {
-	const workspace = createHoneycrisp();
-
-	const idb = attachLocalStorage(workspace.ydoc, {
-		server: signedIn.server,
-		ownerId: signedIn.ownerId,
-	});
-	const collaboration = openCollaboration(workspace.ydoc, {
-		url: roomWsUrl({
-			baseURL: signedIn.baseURL,
-			ownerId: signedIn.ownerId,
-			guid: workspace.ydoc.guid,
-			deviceId,
-		}),
-		openWebSocket: signedIn.openWebSocket,
-		onReconnectSignal: signedIn.onReconnectSignal,
-		waitFor: idb.whenLoaded,
-		actions: workspace.actions,
-	});
-
-	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
-		const bodyDoc = workspace.noteBodyDocs.open(noteId);
-		const childIdb = attachLocalStorage(bodyDoc.ydoc, {
-			server: signedIn.server,
-			ownerId: signedIn.ownerId,
-		});
-		const childSync = openCollaboration(bodyDoc.ydoc, {
-			url: roomWsUrl({
-				baseURL: signedIn.baseURL,
-				ownerId: signedIn.ownerId,
-				guid: bodyDoc.ydoc.guid,
-				deviceId,
-			}),
-			openWebSocket: signedIn.openWebSocket,
-			onReconnectSignal: signedIn.onReconnectSignal,
-			waitFor: childIdb.whenLoaded,
-			actions: {},
-		});
-
-		return {
-			...bodyDoc,
-			idb: childIdb,
-			sync: childSync,
-			/**
-			 * Child disposer rejections do not propagate; bundle.wipe() relies on
-			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
-			 * storage deletion.
-			 */
-			[Symbol.dispose]() {
-				bodyDoc[Symbol.dispose]();
-			},
-		};
-	});
-
-	return defineWorkspace({
-		...workspace,
-		actions: workspace.actions,
-		idb,
-		noteBodyDocs,
-		collaboration,
-		async wipe() {
-			noteBodyDocs[Symbol.dispose]();
-			workspace[Symbol.dispose]();
-			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage({
-				server: signedIn.server,
-				ownerId: signedIn.ownerId,
-			});
-		},
-		[Symbol.dispose]() {
-			noteBodyDocs[Symbol.dispose]();
-			workspace[Symbol.dispose]();
-		},
-	});
+	return honeycrispWorkspace.connect({ ...signedIn, nodeId });
 }
 
 export type HoneycrispBrowser = ReturnType<typeof openHoneycrispBrowser>;

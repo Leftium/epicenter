@@ -6,34 +6,41 @@ Canonical positioning for Epicenter. This doc owns the public claims and the rul
 
 The product picture all messaging derives from. This section describes the end state, not public copy. Public copy quotes the Spine. The Destination is the compass, never quoted directly.
 
-One folder on your disk is the whole product. Drop an `epicenter.config.ts` into
-any folder and that folder becomes your Epicenter folder; its name is your
-choice. Each app's read-only Markdown projection is a direct child sitting right
-next to the config and `.epicenter/`:
+One folder on your disk is one app. Drop an `epicenter.config.ts` into a folder
+and that folder becomes an Epicenter app; its name is your choice. The config
+default-exports one app, and that app's read-only Markdown projection, its
+machine state, and its sync all run from that one folder. A workspace is the
+folder where you keep those app folders side by side with the folders you own:
 
 ```txt
 ~/workspace/
-|-- epicenter.config.ts   marks this folder as your Epicenter folder
-|-- whispering/           read-only Markdown projection of live app state
-|-- tabs/                 read-only Markdown projection of live app state
-|-- .epicenter/           machine state; ignore it
-|-- journal/              yours forever
-|-- ideas/                yours forever
-`-- publish/              yours forever
+|-- apps/
+|   |-- whispering/
+|   |   |-- epicenter.config.ts   default-exports the whispering app
+|   |   |-- recordings/           read-only Markdown projection of live app state
+|   |   `-- .epicenter/           machine state; ignore it
+|   `-- tabs/
+|       |-- epicenter.config.ts   default-exports the tabs app
+|       |-- saved/                read-only Markdown projection of live app state
+|       `-- .epicenter/           machine state; ignore it
+|-- journal/                      yours forever
+|-- ideas/                        yours forever
+`-- publish/                      yours forever
 ```
 
-The mount projections do not have to sit at the top level. If you prefer to
-group them, put `epicenter.config.ts` inside an arbitrarily named container
-folder (for example `apps/`) and the projections become children of that folder
-instead. Nothing reserves the name `apps`.
+Each app is its own folder, so each runs its own daemon and is its own sync
+peer; nothing multiplexes. Group the app folders however you like: the `apps/`
+container is convention, not a rule, and nothing reserves the name. Your own
+folders (`journal/`, `ideas/`, `publish/`) sit beside them as plain files you
+keep forever.
 
-You speak a thought into Whispering and it lands in `whispering/` as Markdown. You save tabs, draft entries, capture whatever, each through a purpose-built app, and every capture becomes a file you can grep. An agent reads the same files, queries the SQLite mirrors with plain SQL, and when it needs to change app state it goes through the same gate you do: `epicenter run <mount>.<action>`, validated against the app's schema. Nothing mutates by editing generated files; the projection is one-way on purpose.
+You speak a thought into Whispering and it lands in your Whispering app folder as Markdown. You save tabs, draft entries, capture whatever, each through a purpose-built app, and every capture becomes a file you can grep. An agent reads the same files, queries the SQLite mirrors with plain SQL, and when it needs to change app state it goes through the same gate you do: `epicenter run <action>`, validated against the app's schema. Nothing mutates by editing generated files; the projection is one-way on purpose.
 
 The loop is capture, curate, keep. App output is a disposable inbox, regenerable from the CRDT at any time. What matters graduates into folders you own: ordinary Markdown, tracked in git, still yours after every app in this repo is gone.
 
 The quiet bet: the properties that make a workspace durable for you are the same ones that make it legible to agents. Plain files are the context window. SQLite is the query surface. The action registry is the tool list. Epicenter is the workspace where you and your agents are co-writers under one set of rules.
 
-What we refuse to build is the strategy. No partial sync: a workspace is one full local replica, which is what lets Yjs carry it instead of a private protocol. No row-level permissions: the folder is the unit of sharing. No editing generated projections back into apps: one validated write path, for humans and agents alike. Each refusal pays for the simplicity of everything else.
+What we refuse to build is the strategy. No partial sync: a workspace is one full local replica, which is what lets Yjs carry it instead of a private protocol. No row-level permissions: the app corpus is the unit of sharing; the folder is a local projection and runtime site for that corpus. No editing generated projections back into apps: one validated write path, for humans and agents alike. Each refusal pays for the simplicity of everything else.
 
 ## The Spine
 

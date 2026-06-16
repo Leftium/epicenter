@@ -1,11 +1,13 @@
 /**
- * `epicenter list [mount.action_key]`: render actions exposed by this root.
+ * `epicenter list [action_key]`: render actions exposed by this root.
  *
- * The daemon returns mount-prefixed action paths for every opened
- * mount. The CLI only filters and renders that manifest.
+ * The daemon serves one mount and returns its label plus bare action keys.
+ * Under one-mount-per-root the key alone addresses the action, so the CLI
+ * renders and filters by the bare key; the mount label is a display header
+ * only.
  *
  * Per-peer schema introspection is a script concern. The CLI lists the local
- * daemon's mount-prefixed action surface only.
+ * daemon's mounted action surface only.
  *
  * `epicenter list` requires a running daemon for the discovered Epicenter root.
  * Without `daemon up`, the handler errors with a hint pointing at
@@ -13,7 +15,11 @@
  */
 
 import type { ActionManifest } from '@epicenter/workspace';
-import { type DaemonError, getDaemon } from '@epicenter/workspace/node';
+import {
+	type DaemonError,
+	type DaemonListSnapshot,
+	getDaemon,
+} from '@epicenter/workspace/node';
 import Type, { type TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 
@@ -27,18 +33,18 @@ import {
 } from '../util/format-output.js';
 
 export const listCommand = cmd({
-	command: 'list [path]',
-	describe: 'List exposed queries and mutations on this device, by mount',
+	command: 'list [action]',
+	describe: 'List exposed queries and mutations on this node',
 	builder: (yargs) =>
 		yargs
-			.positional('path', {
+			.positional('action', {
 				type: 'string',
-				describe: 'Optional mount-prefixed path to narrow the view',
+				describe: 'Optional action key to show its detail',
 			})
 			.option('C', epicenterRootOption)
 			.options(formatOptions),
 	handler: async (argv) => {
-		const path = argv.path ?? '';
+		const action = argv.action ?? '';
 
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
@@ -46,13 +52,13 @@ export const listCommand = cmd({
 			return;
 		}
 		const result = await daemon.list();
-		renderResult(result, path, argv.format);
+		renderResult(result, action, argv.format);
 	},
 });
 
 function renderResult(
-	result: Result<ActionManifest, DaemonError>,
-	path: string,
+	result: Result<DaemonListSnapshot, DaemonError>,
+	action: string,
 	format: OutputFormat | undefined,
 ): void {
 	if (result.error !== null) {
@@ -68,65 +74,55 @@ function renderResult(
 				return;
 		}
 	}
+	const { mount, actions } = result.data;
 	if (format) {
-		renderJson(result.data, path, format);
+		renderJson(actions, action, format);
 		return;
 	}
-	renderText(result.data, path);
+	renderText(mount, actions, action);
 }
 
 function renderJson(
-	entries: ActionManifest,
-	path: string,
+	actions: ActionManifest,
+	action: string,
 	format: OutputFormat,
 ): void {
-	const action = path ? entries[path] : undefined;
 	if (action) {
-		output(toActionDescriptor(action, path), { format });
+		const meta = actions[action];
+		if (!meta) {
+			fail(`"${action}" is not defined.`);
+			return;
+		}
+		output(toActionDescriptor(meta, action), { format });
 		return;
 	}
 
-	const subset = filterByPath(entries, path);
-	const rows = Object.entries(subset).map(([p, meta]) =>
-		toActionDescriptor(meta, p),
+	const rows = Object.entries(actions).map(([key, meta]) =>
+		toActionDescriptor(meta, key),
 	);
-	if (path && rows.length === 0) {
-		fail(`"${path}" is not defined.`);
-		return;
-	}
 	output(rows, { format });
 }
 
-function renderText(entries: ActionManifest, path: string): void {
-	const subset = filterByPath(entries, path);
-	const matches = Object.keys(subset).length;
-
-	if (path && matches === 0) {
-		fail(`"${path}" is not defined.`);
+function renderText(
+	mount: string,
+	actions: ActionManifest,
+	action: string,
+): void {
+	if (action) {
+		const meta = actions[action];
+		if (!meta) {
+			fail(`"${action}" is not defined.`);
+			return;
+		}
+		printActionDetail(action, meta);
 		return;
 	}
 
-	if (matches === 0) {
+	if (Object.keys(actions).length === 0) {
 		console.error('(no actions exposed)');
 		return;
 	}
-
-	const leaf = path ? entries[path] : undefined;
-	if (leaf && matches === 1) {
-		printActionDetail(path, leaf);
-		return;
-	}
-	printGroupedByMount(subset);
-}
-
-function filterByPath(entries: ActionManifest, path: string): ActionManifest {
-	if (!path) return entries;
-	const pfx = `${path}.`;
-	const out: ActionManifest = {};
-	for (const [p, meta] of Object.entries(entries)) {
-		if (p === path || p.startsWith(pfx)) out[p] = meta;
-	}
-	return out;
+	printActions(mount, actions);
 }
 
 type ActionDescriptor = {
@@ -147,30 +143,14 @@ function toActionDescriptor(
 }
 
 /**
- * Action paths are exactly `mount.action_key` (mount names reject dots, action
- * keys are snake_case), so the manifest is two levels deep by construction.
- * Render one mount header per group with its actions indented underneath.
+ * The daemon serves one mount, so render its label as a single header with the
+ * bare action keys (snake_case) listed underneath.
  */
-function printGroupedByMount(entries: ActionManifest): void {
-	const byMount = new Map<string, [string, ActionManifest[string]][]>();
-	for (const [path, action] of Object.entries(entries)) {
-		const dot = path.indexOf('.');
-		const mount = dot === -1 ? path : path.slice(0, dot);
-		const key = dot === -1 ? '' : path.slice(dot + 1);
-		const group = byMount.get(mount);
-		if (group) group.push([key, action]);
-		else byMount.set(mount, [[key, action]]);
-	}
-
-	let first = true;
-	for (const [mount, group] of byMount) {
-		if (!first) console.log('');
-		first = false;
-		console.log(mount);
-		for (const [key, action] of group) {
-			const desc = action.description ? `  ${action.description}` : '';
-			console.log(`  ${key}  (${action.type})${desc}`);
-		}
+function printActions(mount: string, actions: ActionManifest): void {
+	console.log(mount);
+	for (const [key, action] of Object.entries(actions)) {
+		const desc = action.description ? `  ${action.description}` : '';
+		console.log(`  ${key}  (${action.type})${desc}`);
 	}
 }
 

@@ -8,6 +8,10 @@
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
+		"#platform/commands": {
+			"tauri": "./src/lib/commands.tauri.ts",
+			"default": "./src/lib/commands.browser.ts"
+		},
 		"#platform/analytics": {
 			"tauri": "./src/lib/services/analytics/index.tauri.ts",
 			"default": "./src/lib/services/analytics/index.browser.ts"
@@ -96,6 +100,7 @@
 		"typescript": "catalog:",
 		"vite": "catalog:",
 		"vite-plugin-devtools-json": "^1.0.0",
+		"vite-plugin-static-copy": "^4.1.1",
 		"wrangler": "catalog:"
 	},
 	"type": "module",

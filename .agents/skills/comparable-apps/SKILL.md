@@ -98,7 +98,7 @@ Question: where do we show the signed-in user's email, and should it persist on 
 
 Implication: Epicenter is local-first; the closest references (Obsidian, Logseq) keep email out of chrome entirely. The tool-with-identity row (Linear/Notion/Cursor) puts an avatar in chrome and reveals email on click. Either is defensible. Gmail's "email everywhere, cached everywhere" pattern is wrong for the category.
 
-Asymmetric win surfaced: refusing the feature of "email in chrome" lets the runtime state stop carrying email at all. Email becomes a fetched query at the one surface that wants to display it. See `specs/20260514T210000-profile-as-application-data.md` for the resulting design.
+Asymmetric win surfaced: refusing the feature of "email in chrome" lets the runtime state stop carrying email at all. Email becomes a fetched query at the one surface that wants to display it.
 
 ## Worked example: local model pickers (Whispering)
 

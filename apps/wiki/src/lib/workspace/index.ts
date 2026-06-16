@@ -18,8 +18,8 @@ import {
 	defineActions,
 	defineMutation,
 	defineQuery,
-	defineWorkspace,
 	generateId,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -177,7 +177,7 @@ export function createWiki() {
 		}),
 	});
 
-	return defineWorkspace({
+	return satisfiesWorkspace({
 		...workspace,
 		actions,
 		[Symbol.dispose]() {

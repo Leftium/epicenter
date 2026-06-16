@@ -106,13 +106,6 @@ export async function loadEpicenterConfig(
 				'no mount is declared yet; default-export the mount your app factory returns, for example `export default fuji()`',
 		});
 	}
-	if (Array.isArray(value)) {
-		return EpicenterConfigError.EpicenterConfigInvalid({
-			epicenterConfigPath,
-			detail:
-				'the default export is a Mount[]; one folder declares one mount, so export it directly, for example `export default fuji()`',
-		});
-	}
 	if (!isMount(value)) {
 		return EpicenterConfigError.EpicenterConfigInvalid({
 			epicenterConfigPath,

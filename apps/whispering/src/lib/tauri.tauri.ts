@@ -190,11 +190,6 @@ const permissions = {
 	},
 };
 
-// window ------------------------------------------------------------
-const window = {
-	setAlwaysOnTop: (value: boolean) => getCurrentWindow().setAlwaysOnTop(value),
-};
-
 // tray --------------------------------------------------------------
 const TrayError = defineErrors({
 	SetIcon: ({ cause }: { cause: unknown }) => ({
@@ -395,10 +390,10 @@ const globalShortcuts = {
 	/**
 	 * Subscribe to the listener's stop event: the rdev thread exited (a tap
 	 * break, or a missing/stale Accessibility grant). Returns the unlisten fn.
-	 * The caller (AppLayout) re-probes permissions and respawns when shortcuts
-	 * should still be running, which is the self-heal that neither the focus
-	 * re-check nor the `accessibilityGranted` effect provides for a death that
-	 * leaves the grant value unchanged (a thread that just died under it).
+	 * The `globalListener` owner re-probes permissions and respawns when shortcuts
+	 * should still be running, which is the self-heal that the focus re-probe
+	 * alone cannot provide for a death that leaves the grant value unchanged (a
+	 * thread that just died under it).
 	 */
 	onListenerStopped: (onStopped: (reason: string | null) => void) =>
 		events.keyboardListenerStoppedEvent.listen(({ payload }) =>
@@ -418,7 +413,6 @@ const media = {
 export const tauriOnly = {
 	fs,
 	permissions,
-	window,
 	tray,
 	globalShortcuts,
 	autostart,

@@ -36,4 +36,13 @@ export const InstantString = {
 	now(): InstantString {
 		return new Date().toISOString() as InstantString;
 	},
+
+	/**
+	 * Convert a `Date` to canonical UTC form. The boundary helper for callers
+	 * holding a `Date` (e.g. a POSIX `mtime`): `Date.prototype.toISOString`
+	 * always emits the fixed millisecond-precision UTC form this brand requires.
+	 */
+	fromDate(date: Date): InstantString {
+		return date.toISOString() as InstantString;
+	},
 };

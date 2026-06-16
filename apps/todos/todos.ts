@@ -4,10 +4,10 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
-	defineWorkspace,
 	generateId,
 	type InferTableRow,
 	nullable,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -78,7 +78,7 @@ export function createTodos() {
 	});
 	const { tables } = workspace;
 
-	return defineWorkspace({
+	return satisfiesWorkspace({
 		...workspace,
 		actions: defineActions({
 			todos_create: defineMutation({

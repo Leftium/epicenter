@@ -1,6 +1,6 @@
 # Network Topology
 
-> **Status note:** This document describes the sync topology. The current architecture uses a **remote server** (`apps/api`) that handles auth (Better Auth), AI streaming, AI proxy, and a Yjs relay. A local sidecar tier was previously planned but has been removed (see `specs/20260311T080000-remove-server-local.md`). The local-mesh topology described below is aspirational and not yet implemented.
+> **Status note:** This document describes the sync topology. The current architecture uses a **remote server** (`apps/api`) that handles auth (Better Auth), AI streaming, AI proxy, and a Yjs relay. A local sidecar tier was previously planned but has been removed. The local-mesh topology described below is aspirational and not yet implemented.
 
 Epicenter uses a **leaderless, bidirectional graph** topology for syncing data across devices. This document describes the node types, connection rules, and example configurations.
 
@@ -173,7 +173,7 @@ const provider2 = createSyncProvider({
 
 ## Offline Support
 
-Each device should use local persistence alongside network sync:
+Each node should use local persistence alongside network sync:
 
 ```typescript
 providers: {
@@ -193,6 +193,6 @@ When offline:
 
 ## Related Documentation
 
-- [Device Identity](./device-identity.md): How nodes identify themselves
+- [Node Identity](./node-identity.md): How nodes identify themselves
 - [Security](./security.md): Network security model
 - [Blob Sync](../blobs/README.md): How binary files sync across the network

@@ -22,7 +22,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDisposableCache(opensidian.fileContentDocs, () => fileId);
+	const doc = fromDisposableCache(opensidian.tables.files.docs.content, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => opensidian.state.files.selectFile(asFileId(ref.id)),
@@ -54,11 +54,11 @@
 	and can corrupt the timeline (phantom text entry alongside the real
 	stored entries).
 -->
-{#await doc.current.idb.whenLoaded}
+{#await doc.current.whenLoaded}
 	<Loading class="h-full" />
 {:then}
 	<CodeMirrorEditor
-		ytext={doc.current.content.asText()}
+		ytext={doc.current.asText()}
 		{extensions}
 		{filename}
 	/>

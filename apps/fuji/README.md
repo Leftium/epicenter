@@ -14,10 +14,10 @@ SvelteKit app (static adapter, SSR disabled) with three panels: a sidebar for fi
 
 ### Data model
 
-Workspace ID: `FUJI_ID` (`epicenter-fuji`). Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: metadata rows live in the root Y.Doc, and each entry's body lives in its own child Y.Doc addressed by `entryContentDocGuid(id)`. The browser opens bodies through a `createDisposableCache` keyed on the entry id; the daemon-side Fuji mount opens a throwaway body doc per row when deriving markdown. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
+Workspace ID: `FUJI_ID` (`epicenter-fuji`). Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: metadata rows live in the root Y.Doc, and each entry's body lives in the `entries.content` child doc declared by `fujiWorkspace`. The daemon-side Fuji mount still derives body snapshots with `entryContentDocGuid(id)` when rendering markdown. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
 
 - `entries` table: `id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `pinned`, `deletedAt`, `date`, `dateZone`, `createdAt`, `updatedAt`, and `rating`.
-- `entryBodies`: browser child-doc cache. `entryContentDocGuid(id)` defines the Y.Doc identity; `openFujiBrowser()` attaches rich text, storage, sync, and the `updatedAt` bump.
+- `entries.content`: per-entry rich-text child doc. `openFujiBrowser()` attaches storage and sync; `EntryBodyEditor.svelte` opens the active entry's content doc and bumps `updatedAt` on local editor changes.
 
 ### Client wiring
 
@@ -27,23 +27,23 @@ Fuji follows the repo-wide composition naming:
 createWorkspace()
   low-level package primitive
 
-createFuji()
-  Fuji's shared isomorphic model: id, tables, actions
+fujiWorkspace
+  Fuji's shared isomorphic definition: id, tables, actions, child docs
 
 openFujiBrowser()
 fuji()
-  runtime-specific wiring (browser opener, daemon mount factory)
+  runtime-specific openers (browser connection, daemon mount factory)
 
 defineWorkspace()
-  preserves the inferred bundle shape after composition
+  builds the definition and owns .connect(...)
 ```
 
-Fuji's browser workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` calls `createFuji()`, attaches browser storage and sync, then builds `entryBodies`, the app-owned cache for entry content docs. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries the stable owner, server URL, and auth transport functions.
+Fuji's browser workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` opens `fujiWorkspace` with the signed-in browser connection, which attaches browser storage, root sync, and the `entries.content` child-doc runtime. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries the stable owner, server URL, and auth transport functions.
 
 ```ts
 import { openFujiBrowser } from "$lib/browser";
 import { createSession } from "@epicenter/svelte/auth";
-import { createDeviceId } from "@epicenter/workspace";
+import { createNodeId } from "@epicenter/workspace";
 import { auth } from "$lib/auth";
 
 export const session = createSession({
@@ -51,65 +51,28 @@ export const session = createSession({
   build: (signedIn) =>
     openFujiBrowser({
       signedIn,
-      deviceId: createDeviceId({ storage: localStorage }),
+      nodeId: createNodeId({ storage: localStorage }),
     }),
 });
 ```
 
-Inside `openFujiBrowser`, the composition is fully visible top-to-bottom:
+Inside `openFujiBrowser`, the composition is now just the runtime connection:
 
 ```ts
 export function openFujiBrowser({
   signedIn,
-  deviceId,
+  nodeId,
 }: {
   signedIn: SignedIn;
-  deviceId: DeviceId;
+  nodeId: NodeId;
 }) {
-  const workspace = createFuji();
-
-  const idb = attachLocalStorage(workspace.ydoc, {
-    server: signedIn.server,
-    ownerId: signedIn.ownerId,
-  });
-  const collaboration = openCollaboration(workspace.ydoc, {
-    url: roomWsUrl({
-      baseURL: signedIn.baseURL,
-      ownerId: signedIn.ownerId,
-      guid: workspace.ydoc.guid,
-      deviceId,
-    }),
-    openWebSocket: signedIn.openWebSocket,
-    onReconnectSignal: signedIn.onReconnectSignal,
-    waitFor: idb.whenLoaded,
-    actions: workspace.actions,
-  });
-  const entryBodies = createDisposableCache((id: EntryId) => {
-    const ydoc = new Y.Doc({ guid: entryContentDocGuid(id), gc: true });
-    const { idb: bodyIdb } = wire(ydoc, {});
-    const body = attachRichText(ydoc);
-    const offLocalUpdate = onLocalUpdate(ydoc, () =>
-      workspace.tables.entries.update(id, { updatedAt: DateTimeString.now() }),
-    );
-    return {
-      ydoc,
-      binding: body.binding,
-      read: body.read,
-      write: body.write,
-      whenLoaded: bodyIdb.whenLoaded,
-      [Symbol.dispose]() {
-        offLocalUpdate();
-        ydoc.destroy();
-      },
-    };
-  });
-  return { ...workspace, idb, collaboration, /* ... */ };
+  return fujiWorkspace.connect({ ...signedIn, nodeId });
 }
 ```
 
-`createFuji()` is the per-app helper that wraps `createWorkspace({ id: FUJI_ID, tables: { entries: entriesTable }, kv })`, adds `workspace.actions`, and returns the standard `{ ydoc, tables, kv, actions, [Symbol.dispose] }` bundle through `defineWorkspace()`.
+`fujiWorkspace` is the per-app definition built with `defineWorkspace({ id: FUJI_ID, tables: { entries: entriesTable }, kv, actions })`. The `actions` factory runs after tables are live, so handlers close over `tables.entries` without a second wrapping helper.
 
-The browser bundle exposes concrete resources like `idb`, `collaboration`, and `entryBodies`. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, ownerId: signedIn.ownerId })` to drop every IDB database for that owner. It is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `collaboration`, and `tables.entries.docs.content.open(entryId)`. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then drops every IDB database for that owner. It is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern with Tauri runtime wiring, see `apps/whispering/src/lib/whispering/whispering.tauri.ts`.
 
@@ -141,12 +104,12 @@ This starts the app dev server on port 5174. Auth and sync expect the local API 
 Fuji's mount is registered from the Epicenter root (the folder that holds `epicenter.config.ts`). It is not discovered from `.epicenter/` or any source folder. A folder that wants the Fuji mount needs an `epicenter.config.ts` like this:
 
 ```ts
-import { fuji } from "@epicenter/fuji/project";
+import { fuji } from "@epicenter/fuji/mount";
 
 export default fuji();
 ```
 
-`fuji()` returns a `Mount` whose `name` is `fuji`; `Mount.name` is the CLI prefix. `epicenter.config.ts` default-exports one mount. Disk paths follow the app-folder layout: the read-only markdown projection lands in table-named generated folders such as `<epicenterRoot>/entries/`, while the guid-keyed SQLite mirror stays under `.epicenter/sqlite/<id>.db` (hidden). The materialized `.md` is read-only; mutate entries through actions (`epicenter run fuji.<action>`), never by editing the files.
+`fuji()` returns a `Mount` whose `name` is `fuji`; `Mount.name` is the header `epicenter list` prints. `epicenter.config.ts` default-exports one mount. Disk paths follow the app-folder layout: the read-only markdown projection lands in table-named generated folders such as `<epicenterRoot>/entries/`, while the guid-keyed SQLite mirror stays under `.epicenter/sqlite/<id>.db` (hidden). The materialized `.md` is read-only; mutate entries through actions (`epicenter run <action>`), never by editing the files.
 
 `epicenter daemon up -C <epicenter-root>` starts the mount declared in `epicenter.config.ts`. It creates `.epicenter/` for generated machine state when it is missing, but sockets and daemon logs live in platform user paths instead of inside the root.
 

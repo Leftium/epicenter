@@ -60,17 +60,6 @@ describe('loadEpicenterConfig', () => {
 		});
 	});
 
-	test('rejects a Mount[] with a pointer to export the mount directly', async () => {
-		writeConfig("export default [{ name: 'demo', open() {} }];\n");
-
-		const { error } = await loadEpicenterConfig(epicenterRoot);
-		expect(error).toMatchObject({
-			name: 'EpicenterConfigInvalid',
-			detail:
-				'the default export is a Mount[]; one folder declares one mount, so export it directly, for example `export default fuji()`',
-		});
-	});
-
 	test('reports a friendly "no mount declared" error for the init scaffold', async () => {
 		// The `epicenter init` scaffold is comment-only, so its default export is
 		// absent (undefined). A freshly scaffolded folder should say so, not give a
@@ -111,14 +100,6 @@ describe('loadEpicenterConfig', () => {
 			});
 		});
 	}
-
-	test('accepts a mount with just name and open (no kind needed)', async () => {
-		writeConfig("export default { name: 'demo', open() {} };\n");
-
-		const { data, error } = await loadEpicenterConfig(epicenterRoot);
-		if (error !== null) throw new Error(error.message);
-		expect(data.name).toBe('demo');
-	});
 
 	test('rejects a config with no default export', async () => {
 		writeConfig('export const config = {};\n');

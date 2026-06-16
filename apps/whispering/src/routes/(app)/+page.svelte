@@ -230,7 +230,7 @@
 <div
 	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
 >
-	<SectionHeader.Root class="xs:flex hidden flex-col items-center gap-4">
+	<SectionHeader.Root class="flex flex-col items-center gap-4">
 		<SectionHeader.Title
 			level={1}
 			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
@@ -331,7 +331,7 @@
 	{/if}
 
 	{#if latestRecording}
-		<div class="xxs:flex hidden w-full flex-col gap-2">
+		<div class="flex w-full flex-col gap-2">
 			<TranscriptDialog
 				recordingId={latestRecording.id}
 				transcript={latestRecording.transcript}

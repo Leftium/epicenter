@@ -1,4 +1,8 @@
-# Stored entries reconcile to four visible states (the unreadable bucket)
+# 0002. Stored entries reconcile to four visible states (the unreadable bucket)
+
+- **Status:** Superseded
+- **Superseded by:** [ADR-0003](0003-three-read-states-after-encryption-removal.md)
+- **Date:** 2026-06-15
 
 > **Superseded by [ADR-0003](0003-three-read-states-after-encryption-removal.md).**
 > The `unreadable` bucket existed only for encrypted rows; the trusted-relay

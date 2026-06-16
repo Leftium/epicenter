@@ -1,4 +1,7 @@
 <script module lang="ts">
+	import { toast } from '@epicenter/ui/sonner';
+	import { permissions } from '$lib/state/permissions.svelte';
+
 	/**
 	 * Global opener for the macOS Accessibility guide. Mirrors the
 	 * `confirmationDialog` idiom: mount `<MacosAccessibilityGuideDialog />` once at
@@ -30,26 +33,19 @@
 	}
 
 	export const accessibilityGuide = createAccessibilityGuide();
-</script>
 
-<script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
-	import { Button } from '@epicenter/ui/button';
-	import * as Dialog from '@epicenter/ui/dialog';
-	import { toast } from '@epicenter/ui/sonner';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
-	import { permissions } from '$lib/state/permissions.svelte';
-
-	// The owner re-checks on window focus, so the dialog flips to its granted
-	// state the moment the user returns from System Settings, with no reload.
-	const isGranted = $derived(permissions.accessibilityGranted);
-
-	async function openSystemSettings() {
+	/**
+	 * Shared "send me to the Accessibility pane" action for both macOS
+	 * accessibility surfaces: the home notice and this guide. It lives here beside
+	 * `accessibilityGuide` because those are its only two callers and the toast
+	 * copy must stay identical between them. The OS work belongs to the
+	 * permissions owner (which cannot grant in place); this wrapper only adds the
+	 * user-facing feedback: a follow-up hint on success, the manual menu path when
+	 * the deep-link fails.
+	 */
+	export async function openSystemSettings() {
 		const { error } = await permissions.openAccessibilitySettings();
 		if (error) {
-			// Deep-link failed: fall back to the manual path.
 			toast.info('Open System Settings manually', {
 				description:
 					'Apple menu → System Settings → Privacy & Security → Accessibility',
@@ -58,11 +54,23 @@
 			return;
 		}
 		toast.info('System Settings opened', {
-			description:
-				'Go to Privacy & Security > Accessibility to grant Whispering.',
+			description: 'Turn on Whispering in Privacy & Security > Accessibility.',
 			duration: 8000,
 		});
 	}
+</script>
+
+<script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
+	import * as Dialog from '@epicenter/ui/dialog';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
+
+	// The owner re-checks on window focus, so the dialog flips to its granted
+	// state the moment the user returns from System Settings, with no reload.
+	const isGranted = $derived(permissions.accessibilityGranted);
 </script>
 
 <Dialog.Root bind:open={accessibilityGuide.isOpen}>
@@ -70,9 +78,9 @@
 		<Dialog.Header>
 			<Dialog.Title>Enable Accessibility</Dialog.Title>
 			<Dialog.Description>
-				macOS needs Accessibility to fire your global shortcut and paste where
-				you're typing. After an app update it usually has to be removed and
-				re-added.
+				macOS needs you to turn on Accessibility for Whispering before it can
+				fire your global shortcut and paste where you're typing. After an app
+				update it usually has to be removed and re-added.
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -88,12 +96,9 @@
 					Done
 				</Button>
 			{:else}
-				<Button variant="outline" onclick={openSystemSettings}>
+				<Button onclick={openSystemSettings}>
 					<SettingsIcon class="size-4" aria-hidden="true" />
 					Open System Settings
-				</Button>
-				<Button onclick={() => permissions.requestAccessibility()}>
-					Request permission
 				</Button>
 			{/if}
 		</Dialog.Footer>

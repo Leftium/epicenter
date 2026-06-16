@@ -101,30 +101,24 @@ function createPermissions() {
 			accessibilityOverride = status;
 		},
 
-		/** Prompt for Accessibility (opens the system prompt / Settings). */
-		async requestAccessibility(): Promise<void> {
-			if (!tauri) return;
-			const { data, error } = await tauri.permissions.accessibility.request();
-			if (error) {
-				report.error({
-					title: 'Accessibility permission failed',
-					cause: error,
-				});
-				return;
-			}
-			accessibility = data ? 'granted' : 'denied';
-			// The native prompt cannot grant in place: the user flips the toggle in
-			// System Settings next. The global-listener supervisor samples for that
-			// landing (a bounded poll while we are blurred), so nothing to do here.
-		},
-
 		/**
-		 * Open System Settings to the Accessibility pane. A pass-through to the
-		 * platform (no state change); returns the Result so callers can fall back
-		 * to manual instructions when the deep-link fails.
+		 * Send the user to the macOS Accessibility pane so they can turn Whispering
+		 * on. This is the whole "enable" path: macOS never lets an app grant itself
+		 * Accessibility, so there is no in-place grant to attempt.
+		 *
+		 * The leading `request()` is fired only for its first-run side effect: it
+		 * adds Whispering to the Accessibility list (toggle off) so the user flips a
+		 * switch instead of hunting with "+", and shows the native prompt once. TCC
+		 * suppresses that prompt on every later call, so this stays a plain,
+		 * repeatable "open settings" action. We deliberately discard the request
+		 * Result: it cannot grant in place and a failed prompt must not block the
+		 * deep-link. The returned `openSettings()` Result is what callers branch on
+		 * for the manual-instructions fallback. The grant then flips to `granted` on
+		 * its own via the focus re-check when the user returns from System Settings.
 		 */
-		openAccessibilitySettings() {
+		async openAccessibilitySettings() {
 			if (!tauri) return Ok(undefined);
+			await tauri.permissions.accessibility.request();
 			return tauri.permissions.accessibility.openSettings();
 		},
 

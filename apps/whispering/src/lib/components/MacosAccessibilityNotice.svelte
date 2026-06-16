@@ -2,7 +2,10 @@
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
-	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
+	import {
+		accessibilityGuide,
+		openSystemSettings,
+	} from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { permissions } from '$lib/state/permissions.svelte';
 
 	// A capability pitch, not an error: the headline "dictate anywhere" feature
@@ -20,9 +23,9 @@
 		<WandSparklesIcon class="size-4" aria-hidden="true" />
 		<Alert.Title>Dictate into any app, hands-free</Alert.Title>
 		<Alert.Description>
-			Grant Accessibility to start recording with your global shortcut and paste
-			transcripts where you're typing. Until then, transcripts go to your
-			clipboard.
+			Open macOS Accessibility settings, then turn on Whispering to start
+			recording with your global shortcut and paste transcripts where you're
+			typing. Until then, transcripts go to your clipboard.
 			<Button
 				variant="link"
 				class="h-auto p-0 text-sm font-normal"
@@ -32,9 +35,7 @@
 			</Button>
 		</Alert.Description>
 		<Alert.Action>
-			<Button size="sm" onclick={() => permissions.requestAccessibility()}>
-				Enable
-			</Button>
+			<Button size="sm" onclick={openSystemSettings}>Open Settings</Button>
 		</Alert.Action>
 	</Alert.Root>
 {/if}

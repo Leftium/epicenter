@@ -226,7 +226,10 @@ describe('startDaemonServer', () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mount: { mount: 'mirror', runtime: makeRuntime({ collaboration: false }) },
+			mount: {
+				mount: 'mirror',
+				runtime: makeRuntime({ collaboration: false }),
+			},
 		});
 
 		try {

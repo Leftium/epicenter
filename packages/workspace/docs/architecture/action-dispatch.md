@@ -1,6 +1,6 @@
 # Action Dispatch
 
-> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names.
 
 How to invoke actions across runtimes using YJS as the transport layer.
 

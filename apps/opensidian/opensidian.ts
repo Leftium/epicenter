@@ -15,7 +15,7 @@
  */
 
 import { field, jsonValue } from '@epicenter/field';
-import { type FileId, filesTable } from '@epicenter/filesystem';
+import { filesTable } from '@epicenter/filesystem';
 import {
 	defineActions,
 	defineTable,

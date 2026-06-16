@@ -16,11 +16,6 @@ import {
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
 import { SvelteMap } from 'svelte/reactivity';
-import {
-	compareInstantAsc,
-	compareInstantDesc,
-	dateToInstant,
-} from '$lib/chat/instants';
 import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	buildGlobalSkillsPrompt,
@@ -49,7 +44,7 @@ export function createAiChatState({
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort((a, b) =>
-			compareInstantDesc(a.updatedAt, b.updatedAt),
+			b.updatedAt.localeCompare(a.updatedAt),
 		),
 	);
 
@@ -87,7 +82,7 @@ export function createAiChatState({
 		return workspace.tables.chatMessages
 			.scan()
 			.rows.filter((message) => message.conversationId === conversationId)
-			.sort((a, b) => compareInstantAsc(a.createdAt, b.createdAt))
+			.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 			.map(toUiMessage);
 	}
 
@@ -136,7 +131,7 @@ export function createAiChatState({
 					role: 'assistant',
 					parts: toPersistedParts(message.parts),
 					createdAt: message.createdAt
-						? dateToInstant(message.createdAt)
+						? (message.createdAt.toISOString() as InstantString)
 						: InstantString.now(),
 				});
 
@@ -174,14 +169,6 @@ export function createAiChatState({
 			},
 			set model(value: string) {
 				updateConversation(conversationId, { model: value });
-			},
-
-			get createdAt() {
-				return metadata?.createdAt;
-			},
-
-			get updatedAt() {
-				return metadata?.updatedAt;
 			},
 
 			get messages() {

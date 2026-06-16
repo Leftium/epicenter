@@ -144,7 +144,7 @@ async function loadForCloudUpload(
  * point for transcription:
  *
  * - The cpal stop path saves the WAV via Rust and returns the id.
- * - The navigator / VAD / file-upload paths save the blob via the
+ * - The navigator / VAD / file import paths save the blob via the
  *   recordings blob store and pass the id here.
  *
  * Local transcription always goes through `transcribe_recording(id)`.

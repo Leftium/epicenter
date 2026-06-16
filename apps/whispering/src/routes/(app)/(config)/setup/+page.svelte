@@ -57,8 +57,7 @@
 			id: 'activation',
 			label: 'Activation',
 			title: 'Activation',
-			helper:
-				'Choose how you start a recording — a shortcut, push to talk, or file upload.',
+			helper: 'Choose how live recording starts: shortcut or push to talk.',
 			status: readiness.activationReady ? 'ready' : 'blocked',
 		},
 		{

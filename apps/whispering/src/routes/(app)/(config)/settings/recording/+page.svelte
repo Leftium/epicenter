@@ -63,13 +63,13 @@
 				<Alert.Root class="border-red-500/20 bg-red-500/5">
 					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
 					<Alert.Title class="text-red-600 dark:text-red-400">
-						VAD Mode Not Supported on Linux
+						Voice Activated not supported on Linux
 					</Alert.Title>
 					<Alert.Description>
 						Voice Activated Detection (VAD) mode requires the browser's
 						Navigator API, which is not fully supported in Tauri on Linux.
 						Device enumeration and recording will fail. Please use Manual
-						recording mode instead.
+						recording instead.
 						<Link
 							href="https://github.com/EpicenterHQ/epicenter/issues/839"
 							target="_blank"
@@ -95,7 +95,7 @@
 				<Alert.Root class="border-blue-500/20 bg-blue-500/5">
 					<InfoIcon class="size-4 text-blue-600 dark:text-blue-400" />
 					<Alert.Title class="text-blue-600 dark:text-blue-400">
-						Voice Activated Detection Mode
+						Voice Activated Detection
 					</Alert.Title>
 					<Alert.Description>
 						VAD mode uses the browser's Web Audio API for real-time voice

@@ -1,7 +1,7 @@
 # Row child-docs: greenfield clean-break redesign pass
 
 **Date:** 2026-06-15
-**Status:** Implemented
+**Status:** Implemented; one follow-up pass planned (see "Next pass" at the end)
 **Scope:** `feat/trusted-relay-row-childdocs` (423a05426..HEAD)
 **Stance:** Greenfield. Child docs were added on this unshipped branch, so the
 runtime child-doc accessor has no external consumer and no durable contract yet.
@@ -147,6 +147,8 @@ See "Lagger sweep" below.)
 - Zhongwen `ConversationView`'s `onDestroy(unobserve + clearInterval + dispose)`
   — kept: it is a streaming-transcript view with a liveness ticker, not an
   editor binding, so the `fromDisposableCache` editor idiom does not model it.
+  *(Revisited in "Next pass": only the read is bespoke; the lifetime should
+  still unify through `fromDisposableCache`.)*
 
 ## Guid-ownership completion pass (closes the follow-up below)
 
@@ -231,3 +233,132 @@ through `createChildDocs`/`.docs.open` is a lifecycle migration with its own
 correctness surface (disposal ordering, idb naming, recency semantics). It is
 out of scope for an identity-ownership sweep. Pick this up as its own pass.
 10. `refactor(workspace): make docGuid an internal derivation detail`
+
+> **Recalibrated below (2026-06-15, "Next pass").** Two of the three things this
+> sweep lumped together moved since: `filesystem` migrated to declared
+> `touch` and deleted its hand-rolled opener, and `Zhongwen` was recorded
+> as a permanent keep in the Final report. The greenfield plan that actually
+> closes the remaining laggers is the next section; it supersedes the "kept"
+> entries for skills and Zhongwen.
+
+---
+
+## Next pass — child-doc lifecycle unification (greenfield)
+
+**Status:** Planned. Stacked on top of this branch, no history rewrite.
+
+**Recalibrated reality.** The Lagger-3 sweep named three holders of the
+hand-rolled child-doc lifecycle. Two resolved on their own:
+
+- **`filesystem` is done.** `filesTable.docs({ content: { layout:
+  attachTimeline, touch: 'updatedAt' } })` declares identity *and* recency, and the
+  separate `file-content-docs.ts` opener was deleted. Identity and recency are
+  both declaration-owned.
+- **`skills` is the sole remaining package** that hand-rolls the connected path.
+- **`Zhongwen ConversationView` is the sole remaining component** off
+  `fromDisposableCache`.
+
+This section closes both.
+
+### Skills — NOT a lagger: a different topology the connected runtime can't serve
+
+**Correction (2026-06-15, verified).** An earlier draft of this section proposed
+routing skills through `definition.connect()` / `.docs.open`. That plan is
+**blocked by topology** and is recorded here as rejected so nobody retries it.
+
+**What the connected runtime actually is.** `connect()` takes a
+`ConnectionConfig` (`server`, `baseURL`, `ownerId`, `openWebSocket`,
+`onReconnectSignal`, `deviceId`), and its primitive `connectDoc` wires every doc
+to **owner-partitioned `attachLocalStorage` + a relay WebSocket**
+(`openCollaboration`). `connect()` *is* the cloud-sync runtime. There is no
+local-only `connect()`. (`createChildDocs` was retired in `36d48861`; the runtime
+is inline in `connect()` now.)
+
+**What skills actually is.** `openSkillsBrowser()` takes no connection: it wires
+plain `attachIndexedDb(ydoc)` + `attachBroadcastChannel` — local persistence and
+cross-tab sync, **no auth, no ownerId, no relay**. Skills is the shared
+agent-skills catalog, local and broadcast-synced, exported to disk by the node
+entry. It is a fundamentally different topology from a per-user cloud workspace.
+
+**Why the migration is not viable.** Forcing skills through `connect()` would:
+1. require sign-in (skills works signed-out today) — a behavior regression;
+2. open a cloud relay for a workspace that is local by design — wrong topology;
+3. switch child idb naming from plain `attachIndexedDb` to owner-partitioned
+   `attachLocalStorage`, **orphaning every existing local skill body** — the idb
+   parity risk, now confirmed fatal rather than merely "verify before shipping."
+
+And `touch` only fires inside the connected runtime (`workspace.ts:588`),
+which skills cannot use — so declaring it on the skills tables would be **dead
+config forever**, not "inert until connect." Do not add it.
+
+**Reclassification.** Skills is not a lagger that should adopt an existing
+pattern; it is a genuinely different case (like node-batch and Zhongwen's read).
+Its hand-rolled child-doc caches exist because **no shared *local* child-doc
+runtime exists** — only the cloud one does. The only real, separable items:
+
+- **Tiny, optional:** `instructionsDocs` and `referenceDocs` in `browser.ts` are
+  near-identical; they could collapse into one small *local* helper
+  (`new Y.Doc({ guid }) + attachIndexedDb + onLocalUpdate`). No topology change,
+  no cloud dependency, contained to the package. Worth a few lines if touched;
+  not worth a dedicated pass.
+- **Real and bigger:** *should the workspace runtime grow a local-only
+  `connect()` variant* (idb + broadcast instead of owner-idb + relay) so
+  local workspaces like skills get `.docs.open` uniformly? That is a real
+  runtime design pass with its own surface (does `ConnectionConfig` become a
+  local|cloud union? how is idb naming kept parity-safe across the two?), **not**
+  a straggler fix. Park it as a separate spec if the duplication ever spreads
+  beyond this one package.
+
+**Decision:** **leave skills as-is.** It is correct, contained, and the connected
+runtime genuinely does not fit. Node likewise stays batch (per-op `using` open,
+no cache) — the honest shape for one-shot `import_from_disk`/`export_to_disk`.
+
+### Zhongwen — unify the *lifetime*, keep the *read*
+
+**Reconciliation.** Wave 5 said "route every component through
+`fromDisposableCache`"; the Final report then carved Zhongwen out as a permanent
+keep ("a streaming-transcript view with a liveness ticker, not an editor
+binding"). Those contradict. The keep conflated two axes:
+- **Lifetime** (open a handle keyed by `conversationId`, dispose on unmount) is
+  *identical* to the other three apps. Nothing about it is transcript-specific.
+- **Read** (`handle.read()` + `handle.observe()` into `$state.raw`, the 1s
+  liveness ticker, `findActiveChatDocGeneration`) *is* genuinely bespoke.
+
+**Greenfield direction:** route the handle through
+`fromDisposableCache(zhongwen.tables.conversations.docs.messages, () =>
+conversationId)` for compiler-enforced disposal, then layer the streaming read
+in a `$effect` that subscribes `handle.observe` and returns its unobserve as
+teardown; the ticker stays in its own effect. This deletes the hand-rolled
+`onDestroy(unobserve + clearInterval + dispose)` and the
+`state_referenced_locally` opt-out, and makes all four apps own child-doc
+*lifetime* the same way, which is what Wave 5 actually wanted. The bespoke read
+stays bespoke, which is what the Final report was right about.
+
+**Honest caveat:** the component is keyed on `conversationId`, so
+`fromDisposableCache`'s reactive re-open never fires within an instance; the
+concrete win is the compiler-owned dispose and one uniform idiom, not new
+behavior. Small but real, low risk. Supersedes the "kept" entry in the Final
+report.
+
+**Parked on a branch collision, not preference.** `spec/vocab-two-boats` holds
+the most recent edit to `ConversationView.svelte` (`af9c128b5`, newer than this
+branch's lineage), actively reshaping the chat surface for practice lanes. Do
+**not** convert the handle lifetime here: it would collide with that branch. The
+conversion is small and order-independent, so do it last, on whichever of the two
+branches lands later, against the settled file. Do not merge `vocab-two-boats`
+into this branch to "get ahead of it" — it is an unrelated feature stream.
+
+### Net result of this pass
+
+After the topology correction, **there is no skills work and no in-branch
+Zhongwen work to do.** Both remaining laggers resolved to "leave it," for
+different reasons:
+
+- **Skills** — leave as-is (different topology; the connected runtime is
+  cloud-only and genuinely does not fit). Reopen only if a local-only `connect()`
+  variant is ever specced.
+- **Zhongwen** — the conversion is sound but parked behind `spec/vocab-two-boats`
+  to avoid a file collision; pick it up on the later-landing branch.
+
+The child-doc redesign on this branch is complete; this section closes the
+follow-up by showing both open items are correctly *not* acted on now.

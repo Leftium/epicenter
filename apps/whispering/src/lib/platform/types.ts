@@ -30,6 +30,13 @@ export type Shortcuts = {
 	 * Returns whether a reset happened.
 	 */
 	resetIfDuplicates(): boolean;
+	/**
+	 * A command's live binding, formatted for display (`''` when unbound). The
+	 * single owner of "what shortcut is actually bound here": consumers that do
+	 * not own the binding (status cards, tooltips) read this instead of reaching
+	 * into the platform's storage and formatter themselves.
+	 */
+	label(commandId: Command['id']): string;
 	/** A command's default binding, formatted for display (`''` when unbound). */
 	defaultLabel(commandId: Command['id']): string;
 };

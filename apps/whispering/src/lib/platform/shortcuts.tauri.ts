@@ -91,6 +91,11 @@ function resetIfDuplicates(): boolean {
 	return false;
 }
 
+function label(commandId: Command['id']): string {
+	const binding = deviceConfig.get(globalKey(commandId));
+	return binding ? keyBindingToLabel(binding, os.isApple) : '';
+}
+
 function defaultLabel(commandId: Command['id']): string {
 	const binding = DEFAULT_GLOBAL_BINDINGS[commandId];
 	return binding ? keyBindingToLabel(binding, os.isApple) : '';
@@ -100,5 +105,6 @@ export const shortcuts: Shortcuts = {
 	sync,
 	reset,
 	resetIfDuplicates,
+	label,
 	defaultLabel,
 };

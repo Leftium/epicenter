@@ -130,9 +130,11 @@ child-docs-before-root is the correct dependency order.
 
 **Decision:** **keep, honestly named.** `createWorkspace` (root constructor,
 called directly by todos/wiki/whispering and under `open()`), `createChildDocs`
-(bound child-doc runtime, used by `open(connection)` and the skills/filesystem
-packages), `connectDoc`, and `satisfiesWorkspace` (daemon `project.ts` spread
-idiom) are intentional primitives with real callers, not old-path survivors.
+(bound child-doc runtime, used by `open(connection)`), `connectDoc`, and
+`satisfiesWorkspace` (daemon `project.ts` spread idiom) are intentional
+primitives with real callers, not old-path survivors. (The skills and filesystem
+packages do *not* yet use `createChildDocs`; they hand-roll the connected path.
+See "Lagger sweep" below.)
 
 ## Final report — kept compatibility paths
 
@@ -188,4 +190,44 @@ Guid-ownership completion pass:
 7. `refactor(workspace): wrap the unconnected guid deriver in connected child docs`
 8. `refactor(skills): own instruction/reference child-doc guids through the table`
 9. `refactor(filesystem): own the file-content child-doc guid through the table`
+
+## Lagger sweep (post-completion stragglers)
+
+A straggler pass after the guid-ownership work closed two stale survivors and
+surfaced one deeper gap, recorded here so it does not get lost.
+
+- **Lagger 1 (landed, `637cbc351`):** stale JSDoc in `skills/tables.ts` still
+  described the instruction/reference bodies as opened "through the app-owned
+  factory" with no mention of the `.childDocs` declarations. Refreshed to name
+  the declaration as the child-doc identity owner.
+- **Lagger 2 (landed, `ba495ff58`):** `apps/skills`'s `openSkillsBrowser` and
+  `apps/opensidian`'s `openGlobalSkills` were near-identical copies. Lifted one
+  `openSkillsBrowser` into `@epicenter/skills/browser` (a third entry beside `.`
+  and `./node`); both apps import it. OpenSidian's copy was a strict subset, so
+  the package opener is a drop-in superset. Deleted the duplicate plus an
+  orphaned local `createSkills` re-export (~−55 lines, one source of truth).
+  Skills package, `apps/skills`, and OpenSidian all typecheck clean.
+
+### Lagger 3 (OPEN — triggered follow-up): child-doc *lifecycle* is hand-rolled
+
+This sweep and the guid pass unified child-doc **identity** (the guid is derived
+through one owner, the table path). Child-doc **lifecycle** is not unified. The
+skills and filesystem packages open child docs the *unconnected* way:
+`createWorkspace` + manual `attachIndexedDb(ydoc)` + per-child `connectDoc` +
+hand-rolled `onLocalUpdate` recency, instead of the workspace's connected
+`open(connection)` / `createChildDocs` / `.docs.open` runtime. Verified:
+`grep createChildDocs packages/skills` returns zero hits; `skills/browser.ts`
+and `skills/node.ts` build their own `*.open(id)` openers.
+
+The seven `onLocalUpdate` recency call-sites (skills `node.ts` ×2 and
+`browser.ts` ×2, Fuji `EntryBodyEditor` ×1, OpenSidian `opensidian.browser.ts`
+×1 and `ContentEditor` ×1) are a *symptom* of this missing connected path, not a
+separate item. They are honest per-app recency policy only because no shared
+connected runtime offers the behavior yet.
+
+**Why deferred, not folded in:** this is a real redesign, not a straggler.
+Skills does not use the connected `open(connection)` path at all, so routing it
+through `createChildDocs`/`.docs.open` is a lifecycle migration with its own
+correctness surface (disposal ordering, idb naming, recency semantics). It is
+out of scope for an identity-ownership sweep. Pick this up as its own pass.
 10. `refactor(workspace): make docGuid an internal derivation detail`

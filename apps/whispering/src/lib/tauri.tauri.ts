@@ -54,6 +54,7 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { os } from '#platform/os';
 import { goto } from '$app/navigation';
+import type { ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
@@ -360,13 +361,12 @@ const globalShortcuts = {
 	 * `dispatchCommandTrigger`, the single convergence point both trigger
 	 * backends share, so this stays pure transport.
 	 */
-	startListening: async () => {
-		const { dispatchCommandTrigger } = await import('$lib/commands');
-		return events.shortcutTriggerEvent.listen(
-			({ payload: { commandId, state } }) =>
-				dispatchCommandTrigger(commandId, state),
-		);
-	},
+	startListening: (
+		onTrigger: (commandId: string, state: ShortcutEventState) => void,
+	) =>
+		events.shortcutTriggerEvent.listen(({ payload: { commandId, state } }) =>
+			onTrigger(commandId, state),
+		),
 
 	/**
 	 * Enter or leave binding-capture mode. While capturing, the listener streams
@@ -390,10 +390,9 @@ const globalShortcuts = {
 	/**
 	 * Subscribe to the listener's stop event: the rdev thread exited (a tap
 	 * break, or a missing/stale Accessibility grant). Returns the unlisten fn.
-	 * The `globalListener` owner re-probes permissions and respawns when shortcuts
+	 * The shortcut backend re-probes permissions and respawns when shortcuts
 	 * should still be running, which is the self-heal that the focus re-probe
-	 * alone cannot provide for a death that leaves the grant value unchanged (a
-	 * thread that just died under it).
+	 * alone cannot provide for a death that leaves the grant value unchanged.
 	 */
 	onListenerStopped: (onStopped: (reason: string | null) => void) =>
 		events.keyboardListenerStoppedEvent.listen(({ payload }) =>

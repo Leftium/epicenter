@@ -1,14 +1,18 @@
+<!--
+	Owns local shortcut capture and persistence for one command in the browser
+	keydown backend.
+-->
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { report } from '$lib/report';
-	import { localShortcuts } from '$lib/operations/shortcuts';
 	import {
 		arrayToShortcutString,
 		type CommandId,
 	} from '$lib/services/local-shortcut-manager';
+	import { services } from '$lib/services';
 	import { settings } from '$lib/state/settings.svelte';
 	import { os } from '#platform/os';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
@@ -35,19 +39,21 @@
 	const keyRecorder = createKeyRecorder({
 		pressedKeys,
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
-			const { error: unregisterError } = await localShortcuts.unregisterCommand({
-				commandId: command.id as CommandId,
-			});
+			const { error: unregisterError } =
+				await services.localShortcutManager.unregisterCommand(
+					command.id as CommandId,
+				);
 			if (unregisterError) {
 				report.error({
 					title: 'Error unregistering local shortcut',
 					cause: unregisterError,
 				});
 			}
-			const { error: registerError } = await localShortcuts.registerCommand({
-				command,
-				keyCombination,
-			});
+			const { error: registerError } =
+				await services.localShortcutManager.registerCommand({
+					command,
+					keyCombination,
+				});
 
 			if (registerError) {
 				report.error({
@@ -68,9 +74,10 @@
 			});
 		},
 		onClear: async () => {
-			const { error: unregisterError } = await localShortcuts.unregisterCommand({
-				commandId: command.id as CommandId,
-			});
+			const { error: unregisterError } =
+				await services.localShortcutManager.unregisterCommand(
+					command.id as CommandId,
+				);
 			if (unregisterError) {
 				report.error({
 					title: 'Error clearing local shortcut',

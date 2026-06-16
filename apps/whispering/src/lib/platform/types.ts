@@ -12,6 +12,15 @@
 
 import type { Command } from '$lib/commands';
 
+export type ShortcutBackendStatus =
+	| 'idle'
+	| 'attached'
+	| 'unsupported'
+	| 'awaitingGrant'
+	| 'running'
+	| 'recovering'
+	| 'degraded';
+
 /**
  * Contract for `#platform/shortcuts`: the per-platform shortcut backend. The
  * desktop build drives system-global rdev bindings (device-config storage); the
@@ -21,6 +30,10 @@ import type { Command } from '$lib/commands';
  * the binding configuration around it.
  */
 export type Shortcuts = {
+	/** Reactive liveness of this platform's shortcut backend. */
+	readonly status: ShortcutBackendStatus;
+	/** Attach this platform's trigger backend. */
+	attach(): () => void;
 	/** Push every command's configured binding to this platform's backend. */
 	sync(): Promise<void>;
 	/** Restore every shortcut to its default binding, then re-sync. */

@@ -117,7 +117,9 @@ export {
 	DispatchError,
 	type DispatchRequest,
 } from './document/dispatch.js';
-export { docGuid } from './document/doc-guid.js';
+// `docGuid` is intentionally NOT exported: child-doc guid derivation is an
+// internal workspace detail. Callers reach it through the table path,
+// `tables.<table>.docs.<field>.guid(rowId)`, which is the public contract.
 // One-shot HTTP read of a hosted room: GET the snapshot into a throwaway doc.
 // The atomic snapshot lets a relay-only doc be read without a live
 // `openCollaboration` session.

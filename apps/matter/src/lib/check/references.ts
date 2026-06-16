@@ -28,12 +28,8 @@
  *                   in it: a dangling pointer, reported per offending cell.
  */
 
-import { type FieldOf, REFERENCE_KEYWORD } from '@epicenter/field';
+import { type Field, REFERENCE_KEYWORD } from '@epicenter/field';
 import type { FolderRead } from '../core/folder';
-import type { MatterField } from '../core/model';
-
-/** A loaded reference field: the `reference` variant of {@link MatterField}, carrying its policy. */
-type MatterReferenceField = MatterField & FieldOf<'reference'>;
 
 /** A folder loaded for cross-folder reference checking, keyed by its table name. */
 export type LoadedFolder = {
@@ -81,9 +77,13 @@ function stemOf(fileName: string): string {
 	return fileName.endsWith('.md') ? fileName.slice(0, -3) : fileName;
 }
 
-/** The target table a reference field points at, read from its `x-ref` marker. */
-function targetOf(field: MatterReferenceField): string {
-	return field.schema[REFERENCE_KEYWORD];
+/**
+ * The table a field points at, read from its `x-ref` marker, or `null` when the field is not
+ * a reference. The one place the marker is read off a loaded field, shared by the validator
+ * and any consumer that renders references (so neither re-narrows the union by hand).
+ */
+export function referenceTargetOf(field: Field): string | null {
+	return field.kind === 'reference' ? field.schema[REFERENCE_KEYWORD] : null;
 }
 
 /**
@@ -111,12 +111,9 @@ export function checkReferences(
 		// Only a modeled folder has typed fields; a raw folder has no reference columns.
 		if (read.view.mode !== 'modeled') continue;
 
-		const referenceFields = read.view.model.fields.filter(
-			(field): field is MatterReferenceField => field.kind === 'reference',
-		);
-
-		for (const field of referenceFields) {
-			const target = targetOf(field);
+		for (const field of read.view.model.fields) {
+			const target = referenceTargetOf(field);
+			if (target === null) continue; // not a reference column
 			const targetStems = stemsByTable.get(target);
 			if (targetStems === undefined) {
 				// The whole column is unresolvable: report once and skip its rows. There is no

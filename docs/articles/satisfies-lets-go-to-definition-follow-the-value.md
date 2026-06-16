@@ -184,53 +184,49 @@ TWorkspace extends Workspace<TTables, TKv, TActions>
 
 Writing that at every call site would make the implementation harder to read. The helper exists to keep the object literal readable while preserving the exact inferred return type.
 
-A concrete Epicenter example is a project mount. A mount is the small object a project config gives to the daemon:
+A concrete Epicenter example is a project mount: the small object a project config gives the daemon. Every mount receives one `MountContext` with a nullable `session`:
 
 ```typescript
-type LocalMount<TRuntime extends LocalDaemonRuntime = LocalDaemonRuntime> = {
+type Mount = {
   name: string;
-  kind: 'local';
-  open(ctx: LocalMountContext): MaybePromise<TRuntime>;
+  open(ctx: MountContext): MaybePromise<DaemonRuntime | MountInactive>;
 };
 
-type CollaborativeMount<
-  TRuntime extends CollaborativeDaemonRuntime = CollaborativeDaemonRuntime,
-> = {
-  name: string;
-  kind: 'collaborative';
-  open(ctx: CollaborativeMountContext): MaybePromise<TRuntime>;
+type MountContext = {
+  epicenterRoot: EpicenterRoot;
+  mount: string;
+  session: MountSession | null;
 };
-
-type Mount = LocalMount | CollaborativeMount;
 ```
 
-Notice what the helper now earns. `kind` decides the `open(ctx)` type. A local mount should not see auth, keyring, sockets, or owner ids; a collaborative mount must see them.
+Notice what the helper earns. Most mounts need a signed-in session, so they declare with `defineSessionMount`: it does the `session === null` check once, hands the body a `SessionMountContext` whose `session` is non-null, and returns `inactive(...)` automatically when signed out. The caller never spells the narrowing.
 
 Helper earns it:
 
 ```typescript
-return defineMount({
+return defineSessionMount({
   name: 'fuji',
-  kind: 'collaborative',
   open(ctx) {
+    // ctx.session is non-null here, no guard needed
     return openFujiRuntime(ctx);
   },
 });
 ```
 
-The overload keeps `ctx` precise without making the caller spell the union branch. For a one-off object where the branch is already explicit, `satisfies` can still be enough:
+For a mount that can run signed out, the branch is explicit and a raw object `satisfies Mount` is enough:
 
 ```typescript
 return {
-  name: 'notes',
-  kind: 'local',
+  name: 'mirror',
   open(ctx) {
-    return openNotesRuntime(ctx);
+    return ctx.session
+      ? openSyncedRuntime(ctx)
+      : inactive('sign in to enable mirror');
   },
-} satisfies LocalMount;
+} satisfies Mount;
 ```
 
-`satisfies LocalMount` gives the `open(ctx)` parameter its contextual type, checks the daemon contract, and keeps the returned object as the source of truth. The helper is valuable when it removes union noise or pins overload-specific inference; it is not valuable just because a type exists.
+`satisfies Mount` gives the `open(ctx)` parameter its contextual type, checks the daemon contract, and keeps the returned object as the source of truth. The helper is valuable when it removes the null-narrowing noise; it is not valuable just because a type exists.
 
 The rule is not "avoid helpers when a type has generics." The rule is sharper: avoid helpers when the generics are already hidden by useful defaults, or when the contract is simple enough to read inline. Reach for the helper when the caller would otherwise have to write the type machinery by hand.
 

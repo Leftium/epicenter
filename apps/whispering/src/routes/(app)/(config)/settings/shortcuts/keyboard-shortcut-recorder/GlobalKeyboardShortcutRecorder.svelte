@@ -8,6 +8,7 @@
 	import { shortcuts } from '#platform/shortcuts';
 	import type { Tauri } from '#platform/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { globalListener } from '$lib/state/global-listener.svelte';
 	import { permissions } from '$lib/state/permissions.svelte';
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 	import { os } from '#platform/os';
@@ -52,9 +53,11 @@
 	let unlisten: (() => void) | undefined;
 
 	async function startCapture() {
-		// Accessibility is already guaranteed: the capture UI only renders when
-		// `canRecord` (see template), so this is never reached ungranted.
-		await tauri.globalShortcuts.start();
+		// Capture streams off the rdev thread, so make sure it is alive first.
+		// Routed through the supervisor (not a raw `start()`) so it owns liveness
+		// alone. Accessibility is already guaranteed: the capture UI only renders
+		// when `canRecord` (see template), so this is never reached ungranted.
+		await globalListener.ensureRunning();
 		isListening = true;
 		capturedModifiers = new Set();
 		capturedKeys = new Set();

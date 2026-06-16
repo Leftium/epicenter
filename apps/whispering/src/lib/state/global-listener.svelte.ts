@@ -195,6 +195,23 @@ function createGlobalListener() {
 
 	return {
 		/**
+		 * Spawn the rdev thread right now for a caller that needs it immediately:
+		 * the settings recorder entering capture mode, which streams nothing if the
+		 * thread is down (e.g. the supervisor is `degraded` after a death storm).
+		 * Routes through the supervisor so `status` and the standing notice stay
+		 * coherent, instead of the caller calling `start()` behind the owner's back.
+		 * The caller must have already confirmed the grant (the capture UI only
+		 * renders when granted).
+		 */
+		async ensureRunning(): Promise<void> {
+			if (!tauri || detached) return;
+			if (status === 'running' || status === 'unsupported') return;
+			clearTimer();
+			restartAttempt = 0;
+			await spawn();
+		},
+
+		/**
 		 * Wire the supervisor and reconcile to the current grant. Returns a cleanup
 		 * to call on unmount. No-op on the browser build, where in-app keydown owns
 		 * shortcuts and there is no rdev thread to supervise.

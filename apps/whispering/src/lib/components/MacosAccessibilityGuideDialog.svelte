@@ -5,9 +5,9 @@
 	/**
 	 * Global opener for the macOS Accessibility guide. Mirrors the
 	 * `confirmationDialog` idiom: mount `<MacosAccessibilityGuideDialog />` once at
-	 * the app root, then call `accessibilityGuide.open()` from anywhere (the
-	 * home/setup notice, the shortcut recorder) to surface the remove/re-add
-	 * walkthrough. The guide content is fixed, so the store carries no payload: it
+	 * the app root, then call `accessibilityGuide.open()` from anywhere (the home
+	 * notice, the shortcut recorder) to surface the remove/re-add walkthrough. The
+	 * guide content is fixed, so the store carries no payload: it
 	 * is open or closed and nothing else.
 	 *
 	 * The guide is user-opened, never auto-popped: the ambient "you still need

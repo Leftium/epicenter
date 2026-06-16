@@ -205,11 +205,16 @@
 		});
 		if (error) {
 			// A name collision is the common dedup case: an external copy shares the
-			// model's canonical name with one already installed. Name it and point at
-			// the fix, since the colliding entry is right here in this list.
+			// model's canonical name with one already installed. Name it and open the
+			// folder, since the folder is the truth this list mirrors: delete the
+			// existing one there and the onfocus rescan picks up the relink.
 			if (error.name === 'EntryExists') {
-				toast.error(`You already have "${error.entry}"`, {
-					description: `Delete the existing "${error.entry}" from the list below first, then link this one in its place.`,
+				toast.error(`"${error.entry}" is already installed`, {
+					description: `Whispering won't overwrite it. To use this copy instead, delete "${error.entry}" from Whispering's models folder, then link it again.`,
+					action: {
+						label: 'Open Models Folder',
+						onClick: () => void openModelsFolder(),
+					},
 				});
 				return;
 			}

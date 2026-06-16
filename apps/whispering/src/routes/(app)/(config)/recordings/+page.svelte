@@ -406,7 +406,7 @@
 						disabled={transcribeRecordings.isPending}
 						onclick={() => {
 							const loading = report.loading({
-								title: 'Transcribing queries.recordings...',
+								title: 'Transcribing recordings...',
 								description: 'This may take a while.',
 							});
 							transcribeRecordings.mutate(
@@ -422,21 +422,34 @@
 											});
 											return;
 										}
+
+										// Each failed result still carries its tagged error.
+										// Dedupe the real provider messages so a batch that
+										// failed the same way (e.g. every row missing the API
+										// key) reads as one line, not N copies.
+										const failureMessages = [
+											...new Set(errs.map(({ error }) => error.message)),
+										].join('\n');
+
 										const isAllFailed = oks.length === 0;
 										if (isAllFailed) {
-											const count = errs.length;
+											// A single failure forwards its real tagged error, so
+											// the toast and More details dialog show the provider's
+											// own message and name.
+											const [onlyFailure] = errs;
+											if (onlyFailure && errs.length === 1) {
+												loading.reject({
+													cause: onlyFailure.error,
+													title: 'Failed to transcribe recording',
+												});
+												return;
+											}
 											loading.reject({
-												title: `Failed to transcribe ${count} recording${count === 1 ? '' : 's'}`,
-												description:
-													count === 1
-														? 'Your recording could not be transcribed.'
-														: 'None of your recordings could be transcribed.',
+												title: `Failed to transcribe ${errs.length} recordings`,
+												description: failureMessages,
 												cause: {
 													name: 'BulkTranscriptionFailed',
-													message:
-														count === 1
-															? 'Your recording could not be transcribed.'
-															: 'None of your recordings could be transcribed.',
+													message: failureMessages,
 												},
 											});
 											return;
@@ -444,10 +457,10 @@
 										// Mixed results
 										loading.reject({
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
-											description: `${oks.length} succeeded, ${errs.length} failed.`,
+											description: `${oks.length} succeeded, ${errs.length} failed:\n${failureMessages}`,
 											cause: {
 												name: 'BulkTranscriptionPartiallyFailed',
-												message: `${oks.length} succeeded, ${errs.length} failed.`,
+												message: failureMessages,
 											},
 										});
 									},

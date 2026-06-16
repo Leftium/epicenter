@@ -11,7 +11,6 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation } from '@tanstack/svelte-query';
-	import type { AnyTaggedError } from 'wellcrafted/error';
 	import { deliverTranscriptionResult } from '$lib/operations/delivery';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
 	import { sound } from '$lib/operations/sound';
@@ -81,10 +80,14 @@
 				});
 				transcribeRecording.mutate(recording, {
 					onError: (error) => {
+						// `error` is the mutation's `TError` (the operation's
+						// TranscriptionError, which is AnyTaggedError), so it flows
+						// straight into `cause` with no assertion. Omit `description`
+						// so the toast falls back to the provider's own message (e.g.
+						// "OpenAI API key is required") instead of a generic line.
 						loading.reject({
-							cause: error as AnyTaggedError,
+							cause: error,
 							title: 'Failed to transcribe recording',
-							description: 'Your recording could not be transcribed.',
 						});
 					},
 					onSuccess: async (transcribedText) => {
@@ -143,7 +146,7 @@
 				downloadRecording.mutate(recording, {
 					onError: (error) => {
 						report.error({
-							cause: error as AnyTaggedError,
+							cause: error,
 							title: 'Failed to download recording!',
 							description: 'Your recording could not be downloaded.',
 						});

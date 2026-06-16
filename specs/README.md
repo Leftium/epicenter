@@ -1,8 +1,10 @@
 # Technical Specifications
 
-This directory is the working record for feature plans, architecture decisions, execution notes, and historical design context.
+This directory holds in-flight design scaffolding: feature plans and execution notes for work that is underway. It is **not** the durable record and **not** authoritative. Settled decisions are harvested into `docs/adr/` (the authoritative decision layer), shared vocabulary into `docs/CONTEXT.md`, and current state into `docs/reference/` and the code. The dated index of every past spec, including deleted ones, lives in `docs/spec-history.md`.
 
-Specs should respect maintainer time. A reader should be able to find the current truth quickly, then decide whether they need the deeper evidence, implementation plan, or historical appendix.
+When a spec's work lands, harvest any durable decision into an ADR and delete the spent spec; git keeps the body recoverable. Do not keep finished specs here as a knowledge base.
+
+Specs should respect maintainer time. A reader should be able to find the current truth quickly, then decide whether they need the deeper evidence or implementation plan.
 
 ## File Names
 

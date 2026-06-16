@@ -9,7 +9,7 @@
 	import { SettingSelect } from '$lib/components/settings';
 	import {
 		BITRATE_OPTIONS,
-		RECORDING_MODE_OPTIONS,
+		RECORDING_TRIGGER_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
 	import { os } from '#platform/os';
@@ -42,15 +42,15 @@
 	<Field.Group>
 		<SettingSelect
 			store={settings}
-			key="recording.mode"
-			label="Recording Mode"
-			items={RECORDING_MODE_OPTIONS}
-			description="Choose how you want to activate recording: {RECORDING_MODE_OPTIONS.map(
+			key="recording.trigger"
+			label="Recording Trigger"
+			items={RECORDING_TRIGGER_OPTIONS}
+			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
 				(option) => option.label.toLowerCase(),
 			).join(', ')}"
 		/>
 
-		{#if settings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
 					const selected = manualRecorderConfig.deviceId;
@@ -58,7 +58,7 @@
 					},
 					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
-		{:else if settings.get('recording.mode') === 'vad'}
+		{:else if settings.get('recording.trigger') === 'vad'}
 			{#if os.isLinux}
 				<Alert.Root class="border-red-500/20 bg-red-500/5">
 					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
@@ -114,44 +114,42 @@
 			/>
 		{/if}
 
-		{#if settings.get('recording.mode') === 'manual' || settings.get('recording.mode') === 'vad'}
-			{#if tauri}
-				<Field.Field>
-					<Field.Label>Recording markdown export</Field.Label>
-					<Button
-						variant="outline"
-						onclick={() => {
-							exportMarkdown.mutate(undefined, {
-								onSuccess: (data) => {
-									if (data.status === 'cancelled') return;
+		{#if tauri}
+			<Field.Field>
+				<Field.Label>Recording markdown export</Field.Label>
+				<Button
+					variant="outline"
+					onclick={() => {
+						exportMarkdown.mutate(undefined, {
+							onSuccess: (data) => {
+								if (data.status === 'cancelled') return;
 
-									report.success({
-										title: 'Recording markdown exported',
-										description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
-									});
-								},
-								onError: (error) => {
-									report.error({
-										title: 'Recording markdown export failed',
-										cause: error,
-									});
-								},
-							});
-						}}
-						disabled={exportMarkdown.isPending}
-					>
-						{exportMarkdown.isPending ? 'Exporting...' : 'Export markdown...'}
-					</Button>
-					<Field.Description>
-						Write every current recording's transcript to a folder you choose.
-						The files are snapshots: later edits in Whispering do not update
-						them. Run the export again to refresh.
-					</Field.Description>
-				</Field.Field>
-			{/if}
+								report.success({
+									title: 'Recording markdown exported',
+									description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
+								});
+							},
+							onError: (error) => {
+								report.error({
+									title: 'Recording markdown export failed',
+									cause: error,
+								});
+							},
+						});
+					}}
+					disabled={exportMarkdown.isPending}
+				>
+					{exportMarkdown.isPending ? 'Exporting...' : 'Export markdown...'}
+				</Button>
+				<Field.Description>
+					Write every current recording's transcript to a folder you choose. The
+					files are snapshots: later edits in Whispering do not update them. Run
+					the export again to refresh.
+				</Field.Description>
+			</Field.Field>
 		{/if}
 
-		{#if settings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.trigger') === 'manual'}
 			{#if !tauri}
 				<SettingSelect
 					store={deviceConfig}

@@ -13,7 +13,7 @@ import { type Static, type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
-import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
+import { RECORDING_TRIGGERS } from '$lib/constants/audio/recording-triggers';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import {
 	PROVIDERS,
@@ -231,10 +231,14 @@ const dataRetention = {
 	'retention.maxCount': defineKv(field.integer({ minimum: 1 }), () => 100),
 } as const;
 
-/** User's preferred recording mode: manual trigger vs voice activity detection. */
+/**
+ * How the microphone starts capturing: manual trigger vs voice activity
+ * detection. File import is a separate surface, not a trigger, so it is not a
+ * value here.
+ */
 const recording = {
-	'recording.mode': defineKv(
-		field.select(RECORDING_MODES),
+	'recording.trigger': defineKv(
+		field.select(RECORDING_TRIGGERS),
 		() => 'manual' as const,
 	),
 } as const;

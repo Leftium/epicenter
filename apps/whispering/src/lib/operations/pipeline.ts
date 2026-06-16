@@ -16,7 +16,7 @@ import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 
-type DeliverySource = 'recording' | 'upload';
+type DeliverySource = 'recording' | 'import';
 
 /**
  * Argument shape for the pipeline. The recorder produces a
@@ -38,6 +38,8 @@ type PipelineInput = {
  * `<appDataDir>/recordings/{id}.wav` by the time we get here. For blob
  * sources (navigator MediaRecorder, VAD, file upload) we persist the
  * bytes through the recordings blob store, then operate on the id.
+ *
+ * `deliverySource` only shapes the success copy (recording vs file import).
  */
 export async function processRecordingPipeline({
 	source,

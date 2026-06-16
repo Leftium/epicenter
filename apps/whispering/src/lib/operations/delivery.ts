@@ -4,11 +4,11 @@ import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { settings } from '$lib/state/settings.svelte';
 
-type TranscriptionSource = 'recording' | 'upload';
+type TranscriptionSource = 'recording' | 'import';
 
 const TRANSCRIPTION_SUCCESS_COPY = {
 	recording: '📝 Recording transcribed',
-	upload: '📁 File transcribed',
+	import: '📁 File transcribed',
 } as const satisfies Record<TranscriptionSource, string>;
 
 /**

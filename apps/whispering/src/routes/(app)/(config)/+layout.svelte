@@ -3,7 +3,7 @@
 	import { cn } from '@epicenter/ui/utils';
 	import { commandCallbacks } from '$lib/commands';
 	import {
-		RecordingModeSelector,
+		RecordingTriggerSelector,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -34,7 +34,7 @@
 
 	<div class="flex items-center gap-1.5">
 		<div class="flex items-center gap-1.5">
-			{#if settings.get('recording.mode') === 'manual'}
+			{#if settings.get('recording.trigger') === 'manual'}
 				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording"
@@ -72,10 +72,10 @@
 						>
 							{RECORDER_STATE_TO_ICON[manualRecorder.state]}
 						</Button>
-						<RecordingModeSelector class="rounded-l-none" />
+						<RecordingTriggerSelector class="rounded-l-none" />
 					</div>
 				{/if}
-			{:else if settings.get('recording.mode') === 'vad'}
+			{:else if settings.get('recording.trigger') === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
 					<VadDeviceSelector />
 					<TranscriptionSelector triggerVariant="standalone" />
@@ -93,7 +93,7 @@
 						>
 							{VAD_STATE_TO_ICON[vadRecorder.state]}
 						</Button>
-						<RecordingModeSelector class="rounded-l-none" />
+						<RecordingTriggerSelector class="rounded-l-none" />
 					</div>
 				{:else}
 					<Button
@@ -106,10 +106,6 @@
 						{VAD_STATE_TO_ICON[vadRecorder.state]}
 					</Button>
 				{/if}
-			{:else if settings.get('recording.mode') === 'upload'}
-				<TranscriptionSelector triggerVariant="standalone" />
-				<TransformationSelector />
-				<RecordingModeSelector />
 			{/if}
 		</div>
 	</div>

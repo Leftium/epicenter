@@ -7,10 +7,9 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import {
-		RECORDING_MODE_OPTIONS,
-		type RecordingMode,
+		RECORDING_TRIGGER_OPTIONS,
+		type RecordingTrigger,
 	} from '$lib/constants/audio';
-	import { rpc } from '$lib/rpc';
 	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
@@ -18,17 +17,17 @@
 
 	const combobox = useCombobox();
 
-	const availableModes = $derived(
-		RECORDING_MODE_OPTIONS.filter((mode) => {
-			if (!mode.desktopOnly) return true;
+	const availableTriggers = $derived(
+		RECORDING_TRIGGER_OPTIONS.filter((trigger) => {
+			if (!trigger.desktopOnly) return true;
 			// Desktop only, only show if Tauri is available
 			return !!tauri;
 		}),
 	);
 
-	const currentMode = $derived(
-		availableModes.find(
-			(mode) => mode.value === settings.get('recording.mode'),
+	const currentTrigger = $derived(
+		availableTriggers.find(
+			(trigger) => trigger.value === settings.get('recording.trigger'),
 		),
 	);
 </script>
@@ -39,9 +38,9 @@
 			<Button
 				{...props}
 				class={cn('relative', className)}
-				tooltip={currentMode
-					? `Recording mode: ${currentMode.label}`
-					: 'Select recording mode'}
+				tooltip={currentTrigger
+					? `Recording trigger: ${currentTrigger.label}`
+					: 'Select recording trigger'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
@@ -55,15 +54,15 @@
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>
-					{#each availableModes as mode (mode.value)}
+					{#each availableTriggers as trigger (trigger.value)}
 						{@const isSelected =
-							settings.get('recording.mode') === mode.value}
+							settings.get('recording.trigger') === trigger.value}
 						<Command.Item
-							value={mode.value}
+							value={trigger.value}
 							onSelect={async () => {
 								settings.set(
-									'recording.mode',
-									mode.value as RecordingMode,
+									'recording.trigger',
+									trigger.value as RecordingTrigger,
 								);
 								combobox.closeAndFocusTrigger();
 							}}
@@ -74,8 +73,8 @@
 									'text-transparent': !isSelected,
 								})}
 							/>
-							<span class="text-base">{mode.icon}</span>
-							<span class="text-sm">{mode.label}</span>
+							<span class="text-base">{trigger.icon}</span>
+							<span class="text-sm">{trigger.label}</span>
 						</Command.Item>
 					{/each}
 				</Command.Group>

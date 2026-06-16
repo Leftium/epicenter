@@ -26,9 +26,9 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDING_MODE_ICONS,
-		RECORDING_MODE_OPTIONS,
-		type RecordingMode,
+		RECORDING_TRIGGER_ICONS,
+		RECORDING_TRIGGER_OPTIONS,
+		type RecordingTrigger,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
 	import { keyBindingToLabel } from '$lib/utils/key-binding';
@@ -37,7 +37,7 @@
 		stopManualRecording,
 		stopVadRecording,
 	} from '$lib/operations/recording';
-	import { uploadRecordings } from '$lib/operations/upload';
+	import { importFiles } from '$lib/operations/import';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
@@ -85,9 +85,9 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	const availableModes = $derived(
-		RECORDING_MODE_OPTIONS.filter((mode) => {
-			if (!mode.desktopOnly) return true;
+	const availableTriggers = $derived(
+		RECORDING_TRIGGER_OPTIONS.filter((trigger) => {
+			if (!trigger.desktopOnly) return true;
 			// Desktop only, only show if Tauri is available
 			return !!tauri;
 		}),
@@ -137,7 +137,6 @@
 
 				unlistenDragDrop = await getCurrentWebview().onDragDropEvent(
 					async (event) => {
-						if (settings.get('recording.mode') !== 'upload') return;
 						if (
 							event.payload.type !== 'drop' ||
 							event.payload.paths.length === 0
@@ -163,8 +162,6 @@
 							return;
 						}
 
-						await switchRecordingMode('upload');
-
 						// Convert file paths to File objects. The file-drop event only
 						// fires on Tauri, so `tauri` is non-null in this branch.
 						if (!tauri) return;
@@ -177,7 +174,7 @@
 						}
 
 						if (files.length > 0) {
-							await uploadRecordings({ files });
+							await importFiles({ files });
 						}
 					},
 				);
@@ -198,40 +195,42 @@
 		}
 	});
 
-	async function stopAllRecordingModesExcept(modeToKeep: RecordingMode) {
-		const recordingModes = [
+	async function stopActiveRecordingExcept(triggerToKeep: RecordingTrigger) {
+		const triggers = [
 			{
-				mode: 'manual' as const,
+				trigger: 'manual' as const,
 				isActive: () => manualRecorder.state === 'RECORDING',
 				stop: () => stopManualRecording(),
 			},
 			{
-				mode: 'vad' as const,
+				trigger: 'vad' as const,
 				isActive: () => vadRecorder.state !== 'IDLE',
 				stop: () => stopVadRecording(),
 			},
 		] satisfies {
-			mode: RecordingMode;
+			trigger: RecordingTrigger;
 			isActive: () => boolean;
 			stop: () => Promise<unknown>;
 		}[];
 
-		const modesToStop = recordingModes.filter(
-			(recordingMode) =>
-				recordingMode.mode !== modeToKeep && recordingMode.isActive(),
+		const toStop = triggers.filter(
+			(t) => t.trigger !== triggerToKeep && t.isActive(),
 		);
 
-		await Promise.all(modesToStop.map((recordingMode) => recordingMode.stop()));
+		await Promise.all(toStop.map((t) => t.stop()));
 	}
 
-	async function switchRecordingMode(newMode: RecordingMode) {
-		await stopAllRecordingModesExcept(newMode);
+	async function switchRecordingTrigger(newTrigger: RecordingTrigger) {
+		await stopActiveRecordingExcept(newTrigger);
 
-		if (settings.get('recording.mode') !== newMode) {
-			settings.set('recording.mode', newMode);
+		if (settings.get('recording.trigger') !== newTrigger) {
+			settings.set('recording.trigger', newTrigger);
+			const label = RECORDING_TRIGGER_OPTIONS.find(
+				(option) => option.value === newTrigger,
+			)?.label;
 			report.success({
-				title: 'Recording mode switched',
-				description: `Switched to ${newMode} recording mode`,
+				title: 'Recording trigger switched',
+				description: `Now using ${label ?? newTrigger}.`,
 			});
 		}
 	}
@@ -256,20 +255,20 @@
 
 	<ToggleGroup.Root
 		type="single"
-		bind:value={() => settings.get('recording.mode'),
-			(mode) => {
-				if (!mode) return;
-				void switchRecordingMode(mode as RecordingMode);
+		bind:value={() => settings.get('recording.trigger'),
+			(trigger) => {
+				if (!trigger) return;
+				void switchRecordingTrigger(trigger as RecordingTrigger);
 			}}
 		class="w-full"
 	>
-		{#each availableModes as option}
-			{@const ModeIcon = RECORDING_MODE_ICONS[option.value]}
+		{#each availableTriggers as option}
+			{@const TriggerIcon = RECORDING_TRIGGER_ICONS[option.value]}
 			<ToggleGroup.Item
 				value={option.value}
-				aria-label="Switch to {option.label.toLowerCase()} mode"
+				aria-label="Switch to {option.label.toLowerCase()} recording"
 			>
-				<ModeIcon class="size-4" />
+				<TriggerIcon class="size-4" />
 				<span class="hidden truncate sm:inline">{option.label}</span>
 			</ToggleGroup.Item>
 		{/each}
@@ -291,7 +290,7 @@
 		</CapturePipeline>
 	{/snippet}
 
-	{#if settings.get('recording.mode') === 'manual'}
+	{#if settings.get('recording.trigger') === 'manual'}
 		<div class="flex w-full flex-col items-center gap-3">
 			<ManualRecordingAction
 				pipeline={manualPipeline}
@@ -309,40 +308,43 @@
 				</Button>
 			{/if}
 		</div>
-	{:else if settings.get('recording.mode') === 'vad'}
+	{:else if settings.get('recording.trigger') === 'vad'}
 		<div class="flex w-full flex-col items-center gap-3">
 			<VadRecordingAction
 				pipeline={vadPipeline}
 			/>
 		</div>
-	{:else if settings.get('recording.mode') === 'upload'}
-		<div class="flex flex-col items-center gap-4 w-full">
-			<FileDropZone
-				accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
-				maxFiles={10}
-				maxFileSize={25 * MEGABYTE}
-				onUpload={async (files) => {
-					if (files.length > 0) {
-						await uploadRecordings({ files });
-					}
-				}}
-				onFileRejected={({ file, reason }) => {
-					report.error({
-						cause: PageError.FileRejected({
-							fileName: file.name,
-							reason,
-						}).error,
-						title: 'File rejected',
-					});
-				}}
-				class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
-			/>
-			<CapturePipeline>
-				<TranscriptionSelector triggerVariant="pipeline" />
-				<TransformationSelector />
-			</CapturePipeline>
-		</div>
 	{/if}
+
+	<!--
+		File import is its own surface, not a recording trigger: it stays visible
+		under the recorder regardless of trigger, and works on web (the picker)
+		and desktop (picker plus drag-and-drop). Transcription and transformation
+		are shared with the active recorder's pipeline above.
+	-->
+	<div class="flex w-full flex-col items-center gap-2">
+		<span class="text-muted-foreground text-xs">or import a file</span>
+		<FileDropZone
+			accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
+			maxFiles={10}
+			maxFileSize={25 * MEGABYTE}
+			onUpload={async (files) => {
+				if (files.length > 0) {
+					await importFiles({ files });
+				}
+			}}
+			onFileRejected={({ file, reason }) => {
+				report.error({
+					cause: PageError.FileRejected({
+						fileName: file.name,
+						reason,
+					}).error,
+					title: 'File rejected',
+				});
+			}}
+			class="h-28 sm:h-32 w-full"
+		/>
+	</div>
 
 	{#if latestRecording}
 		<div class="flex w-full flex-col gap-2">
@@ -382,7 +384,7 @@
 	{/if}
 
 	<div class="flex flex-col items-center gap-3">
-		{#if settings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.trigger') === 'manual'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
 				<Link
@@ -409,7 +411,7 @@
 					to start recording anywhere.
 				</p>
 			{/if}
-		{:else if settings.get('recording.mode') === 'vad'}
+		{:else if settings.get('recording.trigger') === 'vad'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
 				<Link
@@ -424,19 +426,6 @@
 				</Link>
 				to start a voice activated session.
 			</p>
-		{:else if settings.get('recording.mode') === 'upload'}
-			{#if tauri}
-				<p class="text-foreground/75 text-sm">
-					Press
-					<Link
-						tooltip="Go to global shortcut in settings"
-						href="/settings/shortcuts"
-					>
-						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
-					</Link>
-					to start recording instead.
-				</p>
-			{/if}
 		{/if}
 		<p class="text-muted-foreground text-center text-sm font-light">
 			{#if !tauri}

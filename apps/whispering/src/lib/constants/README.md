@@ -62,10 +62,10 @@ Barrels use **explicit** exports (not `export *`) so bundlers can analyze them:
 
 ```typescript
 // Good
-export { RECORDING_MODES, type RecordingMode } from './recording-modes';
+export { RECORDING_TRIGGERS, type RecordingTrigger } from './recording-triggers';
 
 // Avoid
-export * from './recording-modes';
+export * from './recording-triggers';
 ```
 
 ## Adding a Constant

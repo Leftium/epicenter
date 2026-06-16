@@ -2,7 +2,7 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import MicIcon from '@lucide/svelte/icons/mic';
-	import type { RecordingMode } from '$lib/constants/audio';
+	import type { RecordingTrigger } from '$lib/constants/audio';
 	import type { SetupReadiness } from '$lib/setup/setup-readiness';
 	import { settings } from '$lib/state/settings.svelte';
 	import PracticeDictation from './PracticeDictation.svelte';
@@ -17,20 +17,20 @@
 		onSuccess: () => void;
 	} = $props();
 
-	const selectedRecordingMode = $derived(settings.get('recording.mode'));
+	const selectedRecordingTrigger = $derived(settings.get('recording.trigger'));
 	const canFinish = $derived(readiness.canFinish);
-	const canPractice = $derived(canFinish && selectedRecordingMode === 'manual');
+	const canPractice = $derived(
+		canFinish && selectedRecordingTrigger === 'manual',
+	);
 
 	const disabledReason = $derived(
 		readiness.primaryIssue ??
 			(
 				{
 					manual: 'Finish setup before practicing.',
-					upload:
-						'Practice uses live recording. Switch recording mode to practice.',
-					vad: 'Practice uses one-tap recording. Switch recording mode to Manual to practice here.',
-				} satisfies Record<RecordingMode, string>
-			)[selectedRecordingMode],
+					vad: 'Practice uses one-tap recording. Switch the recording trigger to Manual to practice here.',
+				} satisfies Record<RecordingTrigger, string>
+			)[selectedRecordingTrigger],
 	);
 </script>
 
@@ -44,16 +44,7 @@
 				transcript stays here.
 			</Alert.Description>
 		</Alert.Root>
-	{:else if canFinish && selectedRecordingMode === 'upload'}
-		<Alert.Root>
-			<MicIcon class="size-4" />
-			<Alert.Title>Upload mode selected</Alert.Title>
-			<Alert.Description>
-				Practice uses the live microphone. You can finish setup now, or switch to
-				Manual or Voice Activated to test live dictation.
-			</Alert.Description>
-		</Alert.Root>
-	{:else if canFinish && selectedRecordingMode === 'vad'}
+	{:else if canFinish && selectedRecordingTrigger === 'vad'}
 		<Alert.Root>
 			<MicIcon class="size-4" />
 			<Alert.Title>Voice Activated mode selected</Alert.Title>

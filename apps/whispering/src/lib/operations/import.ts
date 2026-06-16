@@ -4,7 +4,6 @@ import { Ok, type Result } from 'wellcrafted/result';
 import { analytics } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { report } from '$lib/report';
-import { settings } from '$lib/state/settings.svelte';
 
 const { NoImportableFiles } = defineErrors({
 	NoImportableFiles: () => ({
@@ -12,20 +11,24 @@ const { NoImportableFiles } = defineErrors({
 	}),
 });
 
-type UploadSummary = {
+type ImportSummary = {
 	processedCount: number;
 	skippedCount: number;
 };
 
-export async function uploadRecordings({
+/**
+ * Imports audio/video files and runs each through the transcription pipeline.
+ * This is its own surface, separate from the microphone recording triggers:
+ * importing a file never touches `recording.trigger`. Works on web (the file
+ * picker) and desktop (the picker plus drag-and-drop).
+ */
+export async function importFiles({
 	files,
 }: {
 	files: File[];
 }): Promise<
-	Result<UploadSummary, ReturnType<typeof NoImportableFiles>['error']>
+	Result<ImportSummary, ReturnType<typeof NoImportableFiles>['error']>
 > {
-	settings.set('recording.mode', 'upload');
-
 	const { valid: validFiles, invalid: invalidFiles } = files.reduce<{
 		valid: File[];
 		invalid: File[];
@@ -68,7 +71,7 @@ export async function uploadRecordings({
 					durationMs: null,
 				},
 				durationMs: null,
-				deliverySource: 'upload',
+				deliverySource: 'import',
 			});
 		}),
 	);

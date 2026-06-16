@@ -22,10 +22,10 @@ Synced workspace settings backed by Yjs KV. Settings here roam across devices vi
 import { settings } from '$lib/state/settings.svelte';
 
 // Read settings reactively (re-renders on change)
-const mode = settings.get('recording.mode');
+const trigger = settings.get('recording.trigger');
 
 // Update settings (writes to Yjs KV → syncs to other devices)
-settings.set('recording.mode', 'vad');
+settings.set('recording.trigger', 'vad');
 ```
 
 ### `recordings.svelte.ts`

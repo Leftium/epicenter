@@ -1,10 +1,8 @@
 <!-- Recording-access step: macOS permissions + device picker. -->
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
-	import MicIcon from '@lucide/svelte/icons/mic';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -19,7 +17,7 @@
 
 	let { permissions }: { permissions: SetupPermissions } = $props();
 
-	const selectedRecordingMode = $derived(settings.get('recording.mode'));
+	const selectedRecordingTrigger = $derived(settings.get('recording.trigger'));
 </script>
 
 <div class="space-y-4">
@@ -43,7 +41,7 @@
 		</div>
 	{/if}
 
-	{#if selectedRecordingMode === 'manual'}
+	{#if selectedRecordingTrigger === 'manual'}
 		<ManualSelectRecordingDevice
 			bind:selected={() => {
 				const selected = manualRecorderConfig.deviceId;
@@ -51,7 +49,7 @@
 				},
 				(selected) => (manualRecorderConfig.deviceId = selected)}
 		/>
-	{:else if selectedRecordingMode === 'vad'}
+	{:else}
 		<VadSelectRecordingDevice
 			bind:selected={() => {
 				const selected = deviceConfig.get('recording.navigator.deviceId');
@@ -60,15 +58,6 @@
 				(selected) =>
 					deviceConfig.set('recording.navigator.deviceId', selected)}
 		/>
-	{:else}
-		<Alert.Root>
-			<MicIcon class="size-4" />
-			<Alert.Title>Upload mode selected</Alert.Title>
-			<Alert.Description>
-				Upload mode does not need a microphone. Switch to Manual or Voice
-				Activated when you want live dictation.
-			</Alert.Description>
-		</Alert.Root>
 	{/if}
 </div>
 

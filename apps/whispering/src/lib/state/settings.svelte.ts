@@ -11,7 +11,7 @@ type SettingsValues = ReturnType<Kv['getAll']>;
  *
  * The `<SettingSwitch>` component constrains its `key` prop to these, so the
  * generic flows through `settings.get`/`settings.set` and a non-boolean key
- * (a number like `retention.maxCount`, an enum like `recording.mode`) is a
+ * (a number like `retention.maxCount`, an enum like `recording.trigger`) is a
  * compile error instead of a silently-broken toggle.
  */
 export type BooleanSettingKey = {

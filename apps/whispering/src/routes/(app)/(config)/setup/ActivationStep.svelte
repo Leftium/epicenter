@@ -1,20 +1,18 @@
 <!--
-	Activation step: recording mode + the shortcut(s) that start a recording.
+	Activation step: recording trigger + the shortcut(s) that start a recording.
 	One shortcut system per platform (mirrors the rdev trigger backend): the
 	desktop app binds system-wide global shortcuts, the browser binds in-app
 	shortcuts. They never both show — the recorder swaps with the platform.
 -->
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
 	import KeyboardIcon from '@lucide/svelte/icons/keyboard';
-	import UploadIcon from '@lucide/svelte/icons/upload';
 	import { commands, type Command } from '$lib/commands';
 	import {
-		RECORDING_MODE_OPTIONS,
-		type RecordingMode,
-		toggleCommandIdForMode,
+		RECORDING_TRIGGER_OPTIONS,
+		type RecordingTrigger,
+		toggleCommandIdForTrigger,
 	} from '$lib/constants/audio';
 	import { report } from '$lib/report';
 	import { settings } from '$lib/state/settings.svelte';
@@ -42,35 +40,35 @@
 
 	const pushToTalkCommand = commandById('pushToTalk');
 
-	const selectedRecordingMode = $derived(settings.get('recording.mode'));
-	const recordingModeLabel = $derived(
-		RECORDING_MODE_OPTIONS.find(
-			(option) => option.value === selectedRecordingMode,
+	const selectedRecordingTrigger = $derived(settings.get('recording.trigger'));
+	const recordingTriggerLabel = $derived(
+		RECORDING_TRIGGER_OPTIONS.find(
+			(option) => option.value === selectedRecordingTrigger,
 		)?.label,
 	);
-	// The toggle that starts a recording depends on the selected mode.
+	// The toggle that starts a recording depends on the selected trigger.
 	const activeToggleCommand = $derived(
-		commandById(toggleCommandIdForMode(selectedRecordingMode)),
+		commandById(toggleCommandIdForTrigger(selectedRecordingTrigger)),
 	);
 </script>
 
 <div class="space-y-5">
 	<Field.Field>
-		<Field.Label for="setup-recording-mode">Recording mode</Field.Label>
+		<Field.Label for="setup-recording-trigger">Recording trigger</Field.Label>
 		<Select.Root
 			type="single"
-			bind:value={() => settings.get('recording.mode'),
+			bind:value={() => settings.get('recording.trigger'),
 				(selected) => {
 					if (selected) {
-						settings.set('recording.mode', selected as RecordingMode);
+						settings.set('recording.trigger', selected as RecordingTrigger);
 					}
 				}}
 		>
-			<Select.Trigger id="setup-recording-mode" class="w-full">
-				{recordingModeLabel ?? 'Select a recording mode'}
+			<Select.Trigger id="setup-recording-trigger" class="w-full">
+				{recordingTriggerLabel ?? 'Select a recording trigger'}
 			</Select.Trigger>
 			<Select.Content>
-				{#each RECORDING_MODE_OPTIONS as option}
+				{#each RECORDING_TRIGGER_OPTIONS as option}
 					<Select.Item value={option.value} label={option.label}>
 						<div class="flex items-center gap-2">
 							<span>{option.icon}</span>
@@ -82,44 +80,33 @@
 		</Select.Root>
 		<Field.Description>
 			Manual is best for deliberate dictation. Voice Activated listens until you
-			stop it. Upload mode skips live recording.
+			stop it.
 		</Field.Description>
 	</Field.Field>
 
-	{#if selectedRecordingMode === 'upload'}
-		<Alert.Root>
-			<UploadIcon class="size-4" />
-			<Alert.Title>Upload mode needs no shortcut</Alert.Title>
-			<Alert.Description>
-				You drop in an audio file instead of recording live. Switch to Manual or
-				Voice Activated if you want a keyboard shortcut to start recording.
-			</Alert.Description>
-		</Alert.Root>
-	{:else}
-		<div class="space-y-3">
-			<p class="text-sm text-muted-foreground">
-				{#if tauri}
-					These work system-wide, even when Whispering is not focused. The Fn
-					key, modifier-only holds, and single keys all work.
-				{:else}
-					These work while the Whispering tab is focused.
-				{/if}
-			</p>
-			{@render shortcutRow({
-				title:
-					selectedRecordingMode === 'vad'
-						? 'Toggle voice activation'
-						: 'Toggle recording',
-				description: 'Press once to start, again to stop.',
-				command: activeToggleCommand,
-			})}
-			{@render shortcutRow({
-				title: 'Push to talk',
-				description: 'Hold to record, release to transcribe.',
-				command: pushToTalkCommand,
-			})}
-		</div>
-	{/if}
+	<div class="space-y-3">
+		<p class="text-sm text-muted-foreground">
+			{#if tauri}
+				These work system-wide, even when Whispering is not focused. The Fn key,
+				modifier-only holds, and single keys all work.
+			{:else}
+				These work while the Whispering tab is focused.
+			{/if}
+		</p>
+		{@render shortcutRow({
+			title:
+				selectedRecordingTrigger === 'vad'
+					? 'Toggle voice activation'
+					: 'Toggle recording',
+			description: 'Press once to start, again to stop.',
+			command: activeToggleCommand,
+		})}
+		{@render shortcutRow({
+			title: 'Push to talk',
+			description: 'Hold to record, release to transcribe.',
+			command: pushToTalkCommand,
+		})}
+	</div>
 </div>
 
 {#snippet shortcutRow({

@@ -46,3 +46,13 @@ bun scripts/check-references.ts /tmp/partial   # -> MISSING_TARGET adaptations.p
 The same vault is inlined at `apps/matter/src/routes/demo/references` (a Notion-like
 relation view). `bun run dev`, then open `/demo/references`. The "Load pages folder" toggle
 flips every `adaptations.page` relation between resolved and missing-target live.
+
+## Opening it in the live app
+
+Matter inspects one folder as one table, so do not open this `content-vault` parent in the
+app: it contains only sub-folders and a README, so it shows the raw, unmodeled view ("no
+model for this folder"). That is by design, not a bug. To inspect a single table live, open a
+child folder (`content-vault/pages`, `content-vault/adaptations`, or
+`content-vault/publications`); each carries its own `matter.json`. The cross-folder reference
+view over all three lives at `/demo/references` and in `scripts/check-references.ts` above.
+Browsing a directory of table-folders as one workspace is a separate, larger feature.

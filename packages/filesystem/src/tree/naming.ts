@@ -54,8 +54,9 @@ export function disambiguateNames(rows: FileRow[]): Map<string, string> {
 			result.set(group[0]!.id, name);
 			continue;
 		}
-		// Sort by createdAt: earliest keeps clean name
-		group.sort((a, b) => a.createdAt - b.createdAt);
+		// Sort by createdAt: earliest keeps clean name. Fixed-width UTC instants
+		// sort chronologically under a plain string comparison.
+		group.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 		result.set(group[0]!.id, name);
 		for (let i = 1; i < group.length; i++) {
 			const row = group[i];

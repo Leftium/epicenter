@@ -273,7 +273,7 @@ After the journey of adding, removing, and re-adding YKeyValue, we implemented p
 
 The static API (`create-kv`, `create-tables`, `table-helper`) now uses `YKeyValueLww` by default. Both implementations share the same API surface, making them drop-in replacements for each other.
 
-See [specs/20260127T120000-ykeyvalue-dual-implementation.md](/specs/20260127T120000-ykeyvalue-dual-implementation.md) for guidance on when to use each.
+The two implementations coexisted, with guidance on when to use each.
 
 ---
 

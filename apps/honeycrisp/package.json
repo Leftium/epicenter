@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./honeycrisp.ts",
-		"./project": "./project.ts"
+		"./mount": "./mount.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

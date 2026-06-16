@@ -10,20 +10,13 @@
  * schema.
  *
  * Composition lives elsewhere:
- *  - `apps/opensidian/opensidian.browser.ts` -> `openOpensidianBrowser({ signedIn, deviceId })`
- *  - `apps/opensidian/project.ts`                    -> `opensidian()` mount factory
+ *  - `apps/opensidian/opensidian.browser.ts` -> `openOpensidianBrowser({ signedIn, nodeId })`
+ *  - `apps/opensidian/mount.ts`                      -> `opensidian()` mount factory
  */
 
 import { field, jsonValue } from '@epicenter/field';
+import { filesTable } from '@epicenter/filesystem';
 import {
-	type FileId,
-	fileContentDocGuid,
-	filesTable,
-} from '@epicenter/filesystem';
-import {
-	attachTimeline,
-	createDisposableCache,
-	createWorkspace,
 	defineActions,
 	defineTable,
 	defineWorkspace,
@@ -31,13 +24,10 @@ import {
 	type Id,
 	type InferTableRow,
 	nullable,
-	onLocalUpdate,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import * as Y from 'yjs';
-
-export const OPENSIDIAN_ID = 'epicenter-opensidian';
 
 /**
  * Branded conversation ID for a single chat thread.
@@ -104,8 +94,8 @@ const conversationsTable = defineTable({
 	sourceMessageId: nullable(field.string<ChatMessageId>()),
 	systemPrompt: nullable(field.string()),
 	model: field.string(),
-	createdAt: field.number(),
-	updatedAt: field.number(),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
 });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
@@ -120,7 +110,7 @@ const chatMessagesTable = defineTable({
 	conversationId: field.string<ConversationId>(),
 	role: field.select(['user', 'assistant', 'system']),
 	parts: field.json(Type.Array(jsonValue)),
-	createdAt: field.number(),
+	createdAt: field.instant(),
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
@@ -142,8 +132,7 @@ const toolTrustTable = defineTable({
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 /**
- * Build an Opensidian workspace bundle:
- * `{ ydoc, tables, kv, actions, fileContentDocs }`.
+ * Opensidian's shared workspace definition.
  *
  * Combines the filesystem-backed notes table with the chat tables so the app
  * can store notes, conversations, messages, and tool approvals in one schema.
@@ -151,58 +140,18 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  * Runtime openers attach persistence, sync, browser services, materializers,
  * and UI state around this shared model.
  */
-export function createOpensidian() {
-	const workspace = createWorkspace({
-		id: OPENSIDIAN_ID,
-		tables: {
-			files: filesTable,
-			conversations: conversationsTable,
-			chatMessages: chatMessagesTable,
-			toolTrust: toolTrustTable,
-		},
-		kv: {},
-	});
-	const fileContentDocs = createDisposableCache((fileId: FileId) => {
-		const childYdoc = new Y.Doc({
-			guid: opensidianFileContentDocGuid(fileId),
-			gc: true,
-		});
-
-		onLocalUpdate(childYdoc, () =>
-			workspace.tables.files.update(fileId, { updatedAt: Date.now() }),
-		);
-
-		return {
-			ydoc: childYdoc,
-			content: attachTimeline(childYdoc),
-			[Symbol.dispose]() {
-				childYdoc.destroy();
-			},
-		};
-	});
-
-	return defineWorkspace({
-		...workspace,
-		actions: defineActions({}),
-		fileContentDocs,
-		[Symbol.dispose]() {
-			fileContentDocs[Symbol.dispose]();
-			workspace[Symbol.dispose]();
-		},
-	});
-}
-export type OpensidianWorkspace = ReturnType<typeof createOpensidian>;
-
-/**
- * Deterministic guid of a file's content sub-doc.
- *
- * Browser editors, daemon materializers, and wipe paths reach this same
- * function so every layer points at the same Y.Doc identity. Thin wrapper
- * around {@link fileContentDocGuid} that pins the workspace id.
- */
-export function opensidianFileContentDocGuid(fileId: FileId): string {
-	return fileContentDocGuid({
-		workspaceId: OPENSIDIAN_ID,
-		fileId,
-	});
-}
+export const opensidianWorkspace = defineWorkspace({
+	id: 'epicenter-opensidian',
+	name: 'opensidian',
+	tables: {
+		files: filesTable,
+		conversations: conversationsTable,
+		chatMessages: chatMessagesTable,
+		toolTrust: toolTrustTable,
+	},
+	kv: {},
+	actions: () => defineActions({}),
+});
+export type OpensidianWorkspace = WorkspaceFromDefinition<
+	typeof opensidianWorkspace
+>;

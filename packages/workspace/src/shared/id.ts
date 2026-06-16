@@ -1,27 +1,52 @@
 /**
- * @fileoverview Id and Guid type and generation utilities
+ * @fileoverview Id/Guid brands and the collision-only id generator.
  *
- * Provides branded Id/Guid types and nanoid-based generation functions.
+ * Every id we mint ourselves is the same kind of thing: a public,
+ * collision-resistant identifier. It is never an access-control secret.
+ * Room/document access is gated server-side by authentication + ownership
+ * partition (see `@epicenter/server`'s require-ownership middleware), so
+ * knowing an id grants nothing. Per OWASP's IDOR guidance, an
+ * unguessable id is at most defense-in-depth, never the access boundary.
  *
- * - **Id**: Table-scoped row identifiers (10 chars, safe for millions of rows)
- * - **Guid**: Globally unique workspace identifiers (15 chars, safe for millions of workspaces)
+ * Because the property is the same everywhere, there is one generator,
+ * {@link generateId}. Callers brand its output to taste (`Id`, `Guid`,
+ * `NodeId`, `FileId`, ...); the brand is the semantics, the generator
+ * is the mechanism, and they are deliberately decoupled.
+ *
+ * The one genuine *secret* in the system, the public-asset URL token, is
+ * generated separately in `@epicenter/server` (see `assets.ts`): it needs
+ * unguessability rather than mere collision resistance, and lives in the
+ * Worker bundle.
  */
 
 import { customAlphabet } from 'nanoid';
 import type { Brand } from 'wellcrafted/brand';
 
+/**
+ * Lowercase alphanumeric, 36 symbols (~5.17 bits/char). Chosen for
+ * ergonomics, not security: case-insensitive-safe in URLs, filenames, and
+ * logs, clean across the `:` cell-key separator, and double-click
+ * selectable. Entropy comes from {@link ID_LENGTH}, not the alphabet.
+ */
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-const nanoid10 = customAlphabet(ALPHABET, 10);
-const nanoid15 = customAlphabet(ALPHABET, 15);
+/**
+ * 16 chars over {@link ALPHABET} = ~82.7 bits. Sized for the largest
+ * population we mint: rows in a *shared-mode* workspace, where every
+ * admitted user's rows pool into one table. At 100M such rows the chance
+ * of any collision is ~1-in-1.6-billion; even at 1B rows it is ~1-in-16M.
+ * This is the minimum length that stays safe at that scale, which matters
+ * because each id is a CRDT map key (longer = more bytes per row synced).
+ */
+const ID_LENGTH = 16;
+
+const nanoid = customAlphabet(ALPHABET, ID_LENGTH);
 
 /**
- * ID type - branded string for table row identifiers.
+ * Branded string for a table row identifier.
  *
- * 10-character alphanumeric string, safe for tables with millions of rows.
- * Only needs to be unique within a single table.
- *
- * @see {@link generateId}
+ * Only needs to be unique within a single table. The default brand for
+ * {@link generateId}.
  */
 export type Id = string & Brand<'Id'>;
 
@@ -49,43 +74,32 @@ export function Id(value: string): Id {
 }
 
 /**
- * Generates a table row ID - 10 character alphanumeric string.
+ * Branded string for a broader-scope identifier: workspace ids, derived
+ * child-doc guids, node ids, file ids.
  *
- * Safe for tables with up to ~85 million rows (1-in-a-million collision chance).
- * Only needs to be unique within a single table, not globally.
- *
- * @returns Unique identifier as branded string
- * @example
- * ```typescript
- * const id = generateId(); // "k7x9m2p4q8"
- * ```
- */
-export function generateId<T extends string = Id>(): T {
-	return nanoid10() as T;
-}
-
-/**
- * GUID type - branded string for globally unique workspace identifiers.
- *
- * 15-character alphanumeric string, safe for millions of workspaces globally.
- * Used for YJS document coordination and sync.
- *
- * @see {@link generateGuid}
+ * Same mechanism as {@link Id} (a collision-only public nanoid); the
+ * distinct brand only documents that the value identifies something
+ * beyond a single table row. Most `Guid` values are not produced by
+ * {@link generateId} at all: workspace ids are app-chosen strings and
+ * child-doc guids are derived (workspace id + table + row id + field).
  */
 export type Guid = string & Brand<'Guid'>;
 
 /**
- * Generates a globally unique workspace identifier - 15 character alphanumeric string.
+ * Generate a collision-only public identifier (16-char lowercase nanoid,
+ * ~82.7 bits, CSPRNG-backed via `nanoid`).
  *
- * Safe for up to ~700 million workspaces globally (1-in-a-billion collision chance).
- * Used for YJS document coordination, websocket rooms, and sync identity.
+ * This is the single id generator. Brand the result for the call site:
+ * `generateId<Guid>()`, `generateId<NodeId>()`, etc. It is not a secret;
+ * see the file overview for why access control is a separate layer.
  *
- * @returns Globally unique identifier as branded string
+ * @returns A unique identifier, branded as {@link Id} by default.
  * @example
  * ```typescript
- * const guid = generateGuid(); // "abc123xyz789012"
+ * const rowId = generateId();              // Id
+ * const nodeId = generateId<NodeId>(); // NodeId
  * ```
  */
-export function generateGuid(): Guid {
-	return nanoid15() as Guid;
+export function generateId<T extends string = Id>(): T {
+	return nanoid() as T;
 }

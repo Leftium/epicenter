@@ -2,6 +2,7 @@
  * Shared formatting utilities for tab display.
  */
 
+import type { InstantString } from '@epicenter/field';
 import { Ok, trySync } from 'wellcrafted/result';
 
 /**
@@ -28,13 +29,13 @@ export function getDomain(url: string): string {
  *
  * @example
  * ```typescript
- * getRelativeTime(Date.now() - 60_000)    // '1m ago'
- * getRelativeTime(Date.now() - 3_600_000) // '1h ago'
+ * getRelativeTime(new Date(Date.now() - 60_000).toISOString())    // '1m ago'
+ * getRelativeTime(new Date(Date.now() - 3_600_000).toISOString()) // '1h ago'
  * ```
  */
-export function getRelativeTime(timestamp: number): string {
+export function getRelativeTime(timestamp: InstantString): string {
 	const now = Date.now();
-	const diff = now - timestamp;
+	const diff = now - Date.parse(timestamp);
 	const seconds = Math.floor(diff / 1000);
 	const minutes = Math.floor(seconds / 60);
 	const hours = Math.floor(minutes / 60);

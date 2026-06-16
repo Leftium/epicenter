@@ -45,7 +45,7 @@ function fakeEntry({
 	if (collaboration) {
 		runtime.collaboration = {
 			status: syncStatus,
-			devices: {
+			peers: {
 				list: () => [],
 			},
 			dispatch,
@@ -59,8 +59,8 @@ function fakeEntry({
 
 describe('executeRun peer target', () => {
 	test('rejects invalid wait budgets before creating an AbortSignal', async () => {
-		const result = await executeRun([fakeEntry({})], {
-			actionPath: 'demo.tabs_list',
+		const result = await executeRun(fakeEntry({}), {
+			actionPath: 'tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: -1 },
 		});
@@ -90,8 +90,8 @@ describe('executeRun peer target', () => {
 				DispatchError.RecipientOffline({ to: 'ghost' })) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs_list',
+		const result = await executeRun(entry, {
+			actionPath: 'tabs_list',
 			input: undefined,
 			peer: { to: 'ghost', waitMs: 25 },
 		});
@@ -105,7 +105,7 @@ describe('executeRun peer target', () => {
 		expect(error.syncStatus).toEqual(runSyncStatus);
 	});
 
-	test('remote dispatch sends the resolved deviceId and action key', async () => {
+	test('remote dispatch sends the resolved nodeId and action key', async () => {
 		let invokedAction = '';
 		let invokedTo = '';
 		const entry = fakeEntry({
@@ -116,8 +116,8 @@ describe('executeRun peer target', () => {
 			}) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs_list',
+		const result = await executeRun(entry, {
+			actionPath: 'tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
 		});
@@ -136,8 +136,8 @@ describe('executeRun peer target', () => {
 				})) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs_list',
+		const result = await executeRun(entry, {
+			actionPath: 'tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
 		});
@@ -160,8 +160,8 @@ describe('executeRun peer target', () => {
 			}) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'demo.peer_only_action',
+		const result = await executeRun(entry, {
+			actionPath: 'peer_only_action',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
 		});
@@ -171,8 +171,8 @@ describe('executeRun peer target', () => {
 	});
 
 	test('rejects peer dispatch for a local-only mount', async () => {
-		const result = await executeRun([fakeEntry({ collaboration: false })], {
-			actionPath: 'demo.tabs_list',
+		const result = await executeRun(fakeEntry({ collaboration: false }), {
+			actionPath: 'tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
 		});
@@ -186,8 +186,8 @@ describe('executeRun peer target', () => {
 	});
 });
 
-describe('executeRun mount-prefixed routing', () => {
-	test('invokes action under the selected mount', async () => {
+describe('executeRun local target', () => {
+	test('invokes a bare action key', async () => {
 		const entry = fakeEntry({
 			mount: 'notes',
 			actions: {
@@ -197,8 +197,8 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'notes.notes_add',
+		const result = await executeRun(entry, {
+			actionPath: 'notes_add',
 			input: { body: 'hello' },
 		});
 
@@ -206,7 +206,7 @@ describe('executeRun mount-prefixed routing', () => {
 		expect(data).toEqual({ body: 'hello' });
 	});
 
-	test('missing prefix suggests action-root-relative sibling', async () => {
+	test('prefix suggestions stay local to the daemon action root', async () => {
 		const entry = fakeEntry({
 			mount: 'notes',
 			actions: {
@@ -216,8 +216,8 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'notes.notes',
+		const result = await executeRun(entry, {
+			actionPath: 'notes',
 			input: { body: 'hello' },
 		});
 
@@ -226,25 +226,7 @@ describe('executeRun mount-prefixed routing', () => {
 		if (error.name !== 'UsageError') {
 			throw new Error('expected UsageError');
 		}
-		expect(error.suggestions).toEqual(['  notes.notes_add  (mutation)']);
-	});
-
-	test('unknown mount returns available mount suggestions', async () => {
-		const result = await executeRun(
-			[fakeEntry({}), fakeEntry({ mount: 'tasks', actions: {} })],
-			{
-				actionPath: 'missing.actions_add',
-				input: undefined,
-			},
-		);
-
-		const error = expectErr(result);
-		expect(error.name).toBe('UsageError');
-		if (error.name !== 'UsageError') {
-			throw new Error('expected UsageError');
-		}
-		expect(error.message).toBe('No mount "missing". Available: demo, tasks');
-		expect(error.suggestions).toEqual(['  demo', '  tasks']);
+		expect(error.suggestions).toEqual(['  notes_add  (mutation)']);
 	});
 
 	test('input failing the action schema surfaces as UsageError, not RuntimeError', async () => {
@@ -258,8 +240,8 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'fuji.bulk_delete',
+		const result = await executeRun(entry, {
+			actionPath: 'bulk_delete',
 			input: { maxDeletes: 'lots' },
 		});
 
@@ -280,8 +262,8 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
-			actionPath: 'mirror.sync',
+		const result = await executeRun(entry, {
+			actionPath: 'sync',
 			input: {},
 		});
 

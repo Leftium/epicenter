@@ -23,6 +23,10 @@ import { assertSafeSegment } from '../shared/safe-segment.js';
  *
  * Using this helper (instead of inline template literals) keeps the grammar
  * in one place and the validation impossible to forget.
+ *
+ * @internal Not exported from the package barrel. Child-doc guid derivation is
+ * a workspace-owned detail; callers reach it through the table path,
+ * `tables.<table>.docs.<field>.guid(rowId)`, the single public contract.
  */
 export const docGuid = ({
 	workspaceId,

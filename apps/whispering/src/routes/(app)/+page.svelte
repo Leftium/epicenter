@@ -7,6 +7,7 @@
 		FileDropZone,
 		MEGABYTE,
 	} from '@epicenter/ui/file-drop-zone';
+	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
@@ -31,6 +32,9 @@
 		type RecordingMode,
 	} from '$lib/constants/audio';
 	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
+	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
+	import { keyBindingToLabel } from '$lib/utils/key-binding';
+	import { os } from '#platform/os';
 	import {
 		stopManualRecording,
 		stopVadRecording,
@@ -40,6 +44,7 @@
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { tauri } from '#platform/tauri';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -52,6 +57,12 @@
 
 	const latestRecording = $derived(recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionSetupReadiness());
+	const globalToggleBinding = $derived(
+		deviceConfig.get('shortcuts.global.toggleManualRecording'),
+	);
+	const globalToggleLabel = $derived(
+		globalToggleBinding ? keyBindingToLabel(globalToggleBinding, os.isApple) : '',
+	);
 
 	const PageError = defineErrors({
 		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
@@ -233,7 +244,7 @@
 <div
 	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
 >
-	<SectionHeader.Root class="xs:flex hidden flex-col items-center gap-4">
+	<SectionHeader.Root class="flex flex-col items-center gap-4">
 		<SectionHeader.Title
 			level={1}
 			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
@@ -258,143 +269,199 @@
 			/>
 		</div>
 	{:else}
-	<ToggleGroup.Root
-		type="single"
-		bind:value={() => settings.get('recording.mode'),
-			(mode) => {
-				if (!mode) return;
-				void switchRecordingMode(mode as RecordingMode);
-			}}
-		class="w-full"
-	>
-		{#each availableModes as option}
-			{@const ModeIcon = RECORDING_MODE_ICONS[option.value]}
-			<ToggleGroup.Item
-				value={option.value}
-				aria-label="Switch to {option.label.toLowerCase()} mode"
-			>
-				<ModeIcon class="size-4" />
-				<span class="hidden truncate sm:inline">{option.label}</span>
-			</ToggleGroup.Item>
-		{/each}
-	</ToggleGroup.Root>
-
-	{#snippet manualPipeline()}
-		<CapturePipeline>
-			<ManualDeviceSelector />
-			<TranscriptionSelector triggerVariant="pipeline" />
-			<TransformationSelector />
-		</CapturePipeline>
-	{/snippet}
-
-	{#snippet vadPipeline()}
-		<CapturePipeline>
-			<VadDeviceSelector />
-			<TranscriptionSelector triggerVariant="pipeline" />
-			<TransformationSelector />
-		</CapturePipeline>
-	{/snippet}
-
-	{#if settings.get('recording.mode') === 'manual'}
-		<div class="flex w-full flex-col items-center gap-3">
-			<ManualRecordingAction
-				pipeline={manualPipeline}
-			/>
-			{#if manualRecorder.state === 'RECORDING'}
-				<Button
-					tooltip="Cancel recording and discard audio"
-					onclick={() => commandCallbacks.cancelRecording()}
-					variant="ghost-destructive"
-					size="sm"
-					style="view-transition-name: {viewTransition.global.cancel};"
+		<ToggleGroup.Root
+			type="single"
+			bind:value={() => settings.get('recording.mode'),
+				(mode) => {
+					if (!mode) return;
+					void switchRecordingMode(mode as RecordingMode);
+				}}
+			class="w-full"
+		>
+			{#each availableModes as option}
+				{@const ModeIcon = RECORDING_MODE_ICONS[option.value]}
+				<ToggleGroup.Item
+					value={option.value}
+					aria-label="Switch to {option.label.toLowerCase()} mode"
 				>
-					<XIcon class="size-4" />
-					Cancel
-				</Button>
-			{/if}
-		</div>
-	{:else if settings.get('recording.mode') === 'vad'}
-		<VadRecordingAction pipeline={vadPipeline} />
-	{:else if settings.get('recording.mode') === 'upload'}
-		<div class="flex flex-col items-center gap-4 w-full">
-			<FileDropZone
-				accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
-				maxFiles={10}
-				maxFileSize={25 * MEGABYTE}
-				onUpload={async (files) => {
-					if (files.length > 0) {
-						await uploadRecordings({ files });
-					}
-				}}
-				onFileRejected={({ file, reason }) => {
-					report.error({
-						cause: PageError.FileRejected({
-							fileName: file.name,
-							reason,
-						}).error,
-						title: 'File rejected',
-					});
-				}}
-				class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
-			/>
+					<ModeIcon class="size-4" />
+					<span class="hidden truncate sm:inline">{option.label}</span>
+				</ToggleGroup.Item>
+			{/each}
+		</ToggleGroup.Root>
+
+		{#snippet manualPipeline()}
 			<CapturePipeline>
+				<ManualDeviceSelector />
 				<TranscriptionSelector triggerVariant="pipeline" />
 				<TransformationSelector />
 			</CapturePipeline>
-		</div>
-	{/if}
+		{/snippet}
 
-	{#if latestRecording}
-		<div class="xxs:flex hidden w-full flex-col gap-2">
-			<TranscriptDialog
-				recordingId={latestRecording.id}
-				transcript={latestRecording.transcript}
-				rows={1}
-				disabled={!latestRecording.transcript.trim()}
-				onDelete={() => {
-					confirmationDialog.open({
-						title: 'Delete recording',
-						description: 'Are you sure you want to delete this recording?',
-						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: () => {
-							services.blobs.audio.revokeUrl(latestRecording.id);
-							recordings.delete(latestRecording.id);
-							report.success({
-								title: 'Deleted recording!',
-								description: 'Your recording has been deleted.',
-							});
-						},
-					});
-				}}
-			/>
+		{#snippet vadPipeline()}
+			<CapturePipeline>
+				<VadDeviceSelector />
+				<TranscriptionSelector triggerVariant="pipeline" />
+				<TransformationSelector />
+			</CapturePipeline>
+		{/snippet}
 
-			{#if audioPlaybackUrlQuery.data}
-				<audio
-					style="view-transition-name: {viewTransition.recording(
-						latestRecording.id,
-					).audio}"
-					src={audioPlaybackUrlQuery.data}
-					controls
-					class="h-8 w-full"
-				></audio>
+		{#if settings.get('recording.mode') === 'manual'}
+			<div class="flex w-full flex-col items-center gap-3">
+				<ManualRecordingAction pipeline={manualPipeline} />
+				{#if manualRecorder.state === 'RECORDING'}
+					<Button
+						tooltip="Cancel recording and discard audio"
+						onclick={() => commandCallbacks.cancelRecording()}
+						variant="ghost-destructive"
+						size="sm"
+						style="view-transition-name: {viewTransition.global.cancel};"
+					>
+						<XIcon class="size-4" />
+						Cancel
+					</Button>
+				{/if}
+			</div>
+		{:else if settings.get('recording.mode') === 'vad'}
+			<div class="flex w-full flex-col items-center gap-3">
+				<VadRecordingAction pipeline={vadPipeline} />
+			</div>
+		{:else if settings.get('recording.mode') === 'upload'}
+			<div class="flex flex-col items-center gap-4 w-full">
+				<FileDropZone
+					accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
+					maxFiles={10}
+					maxFileSize={25 * MEGABYTE}
+					onUpload={async (files) => {
+						if (files.length > 0) {
+							await uploadRecordings({ files });
+						}
+					}}
+					onFileRejected={({ file, reason }) => {
+						report.error({
+							cause: PageError.FileRejected({
+								fileName: file.name,
+								reason,
+							}).error,
+							title: 'File rejected',
+						});
+					}}
+					class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
+				/>
+				<CapturePipeline>
+					<TranscriptionSelector triggerVariant="pipeline" />
+					<TransformationSelector />
+				</CapturePipeline>
+			</div>
+		{/if}
+
+		{#if latestRecording}
+			<div class="flex w-full flex-col gap-2">
+				<TranscriptDialog
+					recordingId={latestRecording.id}
+					transcript={latestRecording.transcript}
+					rows={1}
+					disabled={!latestRecording.transcript.trim()}
+					onDelete={() => {
+						confirmationDialog.open({
+							title: 'Delete recording',
+							description: 'Are you sure you want to delete this recording?',
+							confirm: { text: 'Delete', variant: 'destructive' },
+							onConfirm: () => {
+								services.blobs.audio.revokeUrl(latestRecording.id);
+								recordings.delete(latestRecording.id);
+								report.success({
+									title: 'Deleted recording!',
+									description: 'Your recording has been deleted.',
+								});
+							},
+						});
+					}}
+				/>
+
+				{#if audioPlaybackUrlQuery.data}
+					<audio
+						style="view-transition-name: {viewTransition.recording(
+							latestRecording.id,
+						).audio}"
+						src={audioPlaybackUrlQuery.data}
+						controls
+						class="h-8 w-full"
+					></audio>
+				{/if}
+			</div>
+		{/if}
+
+		<div class="flex flex-col items-center gap-3">
+			{#if settings.get('recording.mode') === 'manual'}
+				<p class="text-foreground/75 text-center text-sm">
+					Click the microphone or press
+					<Link
+						tooltip="Go to local shortcut in settings"
+						href="/settings/shortcuts"
+					>
+						<Kbd.Root
+							>{getShortcutDisplayLabel(
+								settings.get('shortcut.toggleManualRecording'),
+							)}</Kbd.Root
+						>
+					</Link>
+					to start recording here.
+				</p>
+				{#if tauri}
+					<p class="text-foreground/75 text-sm">
+						Press
+						<Link
+							tooltip="Go to global shortcut in settings"
+							href="/settings/shortcuts"
+						>
+							<Kbd.Root>{globalToggleLabel}</Kbd.Root>
+						</Link>
+						to start recording anywhere.
+					</p>
+				{/if}
+			{:else if settings.get('recording.mode') === 'vad'}
+				<p class="text-foreground/75 text-center text-sm">
+					Click the microphone or press
+					<Link
+						tooltip="Go to local shortcut in settings"
+						href="/settings/shortcuts"
+					>
+						<Kbd.Root
+							>{getShortcutDisplayLabel(
+								settings.get('shortcut.toggleVadRecording'),
+							)}</Kbd.Root
+						>
+					</Link>
+					to start a voice activated session.
+				</p>
+			{:else if settings.get('recording.mode') === 'upload'}
+				{#if tauri}
+					<p class="text-foreground/75 text-sm">
+						Press
+						<Link
+							tooltip="Go to global shortcut in settings"
+							href="/settings/shortcuts"
+						>
+							<Kbd.Root>{globalToggleLabel}</Kbd.Root>
+						</Link>
+						to start recording instead.
+					</p>
+				{/if}
 			{/if}
+			<p class="text-muted-foreground text-center text-sm font-light">
+				{#if !tauri}
+					Tired of switching tabs?
+					<Link
+						tooltip="Get Whispering for desktop"
+						href="https://epicenter.so/whispering"
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						Get the native desktop app
+					</Link>
+				{/if}
+			</p>
 		</div>
-	{/if}
-
-	{#if !tauri}
-		<p
-			class="text-muted-foreground xs:block hidden text-center text-sm font-light"
-		>
-			Tired of switching tabs?
-			<Link
-				tooltip="Get Whispering for desktop"
-				href="https://epicenter.so/whispering"
-				target="_blank"
-				rel="noopener noreferrer"
-			>
-				Get the native desktop app
-			</Link>
-		</p>
-	{/if}
 	{/if}
 </div>

@@ -4,16 +4,17 @@
  * `attachMountInfrastructure(ydoc, ctx, opts)` is the recipe every
  * session-backed mount needs: pin the deterministic Y.Doc `clientID`, persist
  * the update log to disk under `yjsPath(epicenterRoot, guid)`, join the cloud
- * room at the partitioned `roomWsUrl({ baseURL, ownerId, guid, deviceId })`, and
+ * room at the partitioned `roomWsUrl({ baseURL, ownerId, guid, nodeId })`, and
  * own the ordered async dispose (destroy first so writes flush before sockets
  * close, then await every `whenDisposed` barrier: collaboration, log, and any
  * registered materializers).
  *
- * Everything that varies per machine, the owner, the device id, and the
- * transport refs, comes from the mount's `ctx.session`; the deterministic
- * `clientID` and the conventional `<mount>-daemon` device id are derived from
- * `ctx`. The caller only supplies what is genuinely its own: the sync `baseURL`,
- * its `actions` choice, and any materializers.
+ * Identity comes from `ctx`: the durable per-install `ctx.nodeId` (resolved
+ * once at root open and persisted under `.epicenter/`) is the relay's routing id
+ * and the seed for the Y.Doc `clientID`. The owner and transport refs come from
+ * `ctx.session`. The mount name is a label only, never an identity seed. The
+ * caller supplies what is genuinely its own: the sync `baseURL`, its `actions`
+ * choice, and any materializers.
  *
  * The `actions` choice stays explicit so a mount cannot accidentally serve the
  * wrong set: app workspaces with browser-only actions pass `{}` to refuse them
@@ -32,12 +33,12 @@
 import type * as Y from 'yjs';
 
 import { attachYjsLog } from '../document/attach-yjs-log.js';
-import { asDeviceId } from '../document/device-id.js';
 import { openCollaboration } from '../document/open-collaboration.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { hashYDocClientId } from '../shared/client-id.js';
+import type { Drainable } from '../shared/types.js';
 import type { SessionMountContext } from './define-mount.js';
 
 export type AttachMountInfrastructureOptions<TActions extends ActionRegistry> =
@@ -51,7 +52,7 @@ export type AttachMountInfrastructureOptions<TActions extends ActionRegistry> =
 		 * shutdown cannot drop projection writes mid-flight. Each drain is bounded
 		 * by the materializer's own `disposeTimeoutMs`.
 		 */
-		materializers?: ReadonlyArray<{ whenDisposed: Promise<void> }>;
+		materializers?: ReadonlyArray<Drainable>;
 	};
 
 export function attachMountInfrastructure<TActions extends ActionRegistry>(
@@ -63,7 +64,7 @@ export function attachMountInfrastructure<TActions extends ActionRegistry>(
 		materializers = [],
 	}: AttachMountInfrastructureOptions<TActions>,
 ) {
-	ydoc.clientID = hashYDocClientId(ctx.epicenterRoot);
+	ydoc.clientID = hashYDocClientId(ctx.nodeId);
 
 	const yjsLog = attachYjsLog(ydoc, {
 		filePath: yjsPath(ctx.epicenterRoot, ydoc.guid),
@@ -74,7 +75,7 @@ export function attachMountInfrastructure<TActions extends ActionRegistry>(
 			baseURL,
 			ownerId: ctx.session.ownerId,
 			guid: ydoc.guid,
-			deviceId: asDeviceId(`${ctx.mount}-daemon`),
+			nodeId: ctx.nodeId,
 		}),
 		openWebSocket: ctx.session.openWebSocket,
 		onReconnectSignal: ctx.session.onReconnectSignal,

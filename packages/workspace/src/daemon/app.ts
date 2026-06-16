@@ -5,10 +5,10 @@
  *
  * Each route is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  collaboration.devices.list()              collaborative mounts
- *   /list   ->  flat manifest of `${mount}.${action_key}` -> meta  all mounts
+ *   /peers  ->  collaboration.peers.list()
+ *   /list   ->  mount label + bare action manifest
  *   /run    ->  invokeAction(...) locally, or collab.dispatch(...)
- *               on a peer when `peer` is present                   mount-routed
+ *               on a peer when `peer` is present
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -22,7 +22,6 @@ import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './action-handler.js';
-import { joinDaemonActionPath } from './action-path.js';
 import type { DaemonServedMount } from './types.js';
 
 /**
@@ -56,56 +55,53 @@ export const RunRequest = type({
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(mount, deviceId)` pair,
- * tagged with its mount name so a multi-mount daemon can fan out.
+ * Row shape returned by `/peers`. One row per live peer node.
  *
- * `deviceId` is the install-stable, client-claimed identity and the address
+ * `nodeId` is the install-stable, client-claimed identity and the address
  * used by `collab.dispatch({ to })`. There is no per-socket `connectionId`
- * or server-stamped identity on the wire. The relay routes by `deviceId`
+ * or server-stamped identity on the wire. The relay routes by `nodeId`
  * inside the already authorized sync room.
  */
 export const PeerSnapshot = type({
-	mount: 'string',
-	deviceId: 'string',
+	nodeId: 'string',
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
+
+/** Snapshot returned by `/list`: one mount label, bare action keys. */
+export type DaemonListSnapshot = {
+	mount: string;
+	actions: ActionManifest;
+};
 
 /**
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
- * `/list` exposes mount-prefixed action paths. `/run` uses that same prefix
- * to pick the hosted runtime before executing locally or routing to a peer.
+ * The daemon serves one mounted runtime. Its socket is the route; the mount
+ * name is a label for CLI display, never an internal dispatch key. Actions are
+ * addressed by their bare key on the wire and in the CLI alike.
  */
-export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
+export function buildDaemonApp(mount: DaemonServedMount) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
-			for (const entry of mounts) {
-				const collaboration = entry.runtime.collaboration;
-				if (!collaboration) continue;
-				for (const device of collaboration.devices.list()) {
-					rows.push({
-						mount: entry.mount,
-						deviceId: device.deviceId,
-					});
-				}
+			const collaboration = mount.runtime.collaboration;
+			if (!collaboration) return c.json(Ok(rows));
+			for (const peer of collaboration.peers.list()) {
+				rows.push({ nodeId: peer.nodeId });
 			}
 			return c.json(Ok(rows));
 		})
 		.post('/list', (c) => {
-			const manifest: ActionManifest = {};
-			for (const entry of mounts) {
-				for (const [path, action] of Object.entries(entry.runtime.actions)) {
-					manifest[joinDaemonActionPath(entry.mount, path)] =
-						toActionMeta(action);
-				}
+			const actions: ActionManifest = {};
+			for (const [path, action] of Object.entries(mount.runtime.actions)) {
+				actions[path] = toActionMeta(action);
 			}
-			return c.json(Ok(manifest));
+			return c.json(Ok({ mount: mount.mount, actions }));
 		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
-			return c.json(await executeRun(mounts, request));
+			return c.json(await executeRun(mount, request));
 		});
 }

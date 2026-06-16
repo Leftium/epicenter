@@ -203,7 +203,7 @@ Y.applyUpdate(freshDoc, snapshot);
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-See [Native Y.Map Storage Architecture](/specs/20260108T084500-ymap-native-storage-architecture.md) for the full analysis.
+The native Y.Map storage architecture carries the full analysis behind this.
 
 ---
 

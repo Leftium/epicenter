@@ -4,7 +4,7 @@
  * Single source of truth for "how Tab Manager mounts in a browser extension."
  * Calls Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (tables + KV via createTabManager)
+ *  1. workspace root doc (tables + KV via tabManagerWorkspace.create())
  *  2. local storage for the root (attachLocalStorage)
  *  3. actions wired against tables + Y.Doc transaction batching
  *
@@ -18,12 +18,14 @@
  * `Symbol.dispose` tears down the root Y.Doc without touching local storage.
  */
 
+import { InstantString } from '@epicenter/field';
 import type { SignedIn } from '@epicenter/svelte/auth';
 import {
 	attachLocalStorage,
 	defineActions,
 	defineMutation,
 	defineQuery,
+	type NodeId,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import Type from 'typebox';
@@ -34,10 +36,9 @@ import {
 } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import {
-	createTabManager,
-	type DeviceId,
 	generateBookmarkId,
 	generateSavedTabId,
+	tabManagerWorkspace,
 } from '$lib/workspace/definition';
 
 const TabError = defineErrors({
@@ -80,19 +81,19 @@ export type SaveCloseFailed = Extract<TabError, { name: 'SaveCloseFailed' }>;
 
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the
- * device id before invoking (the extension's device id comes from
+ * node id before invoking (the extension's node id comes from
  * `chrome.storage.local` via `createDeviceProfile()` in `device.ts`).
  *
  * Consumers gate UI render on `tabManager.idb.whenLoaded`.
  */
 export function openTabManagerBrowser({
 	signedIn,
-	deviceId,
+	nodeId,
 }: {
 	signedIn: SignedIn;
-	deviceId: DeviceId;
+	nodeId: NodeId;
 }) {
-	const workspace = createTabManager();
+	const workspace = tabManagerWorkspace.create();
 	const { tables } = workspace;
 	const batch = (fn: () => void) => workspace.ydoc.transact(fn);
 	const idb = attachLocalStorage(workspace.ydoc, {
@@ -101,14 +102,14 @@ export function openTabManagerBrowser({
 	});
 
 	return {
-		deviceId,
+		nodeId,
 		...workspace,
 		idb,
 		actions: defineActions({
 			devices_list: defineQuery({
 				title: 'List Devices',
 				description:
-					'List all synced devices with their names, browsers, and online status.',
+					'List all synced devices with their names, browsers, and last-seen times.',
 				handler: () => {
 					const devices = tables.devices.scan().rows;
 					return {
@@ -196,7 +197,7 @@ export function openTabManagerBrowser({
 					close: Type.Optional(Type.Boolean()),
 				}),
 				handler: async ({ tabIds, close }) => {
-					const sourceDeviceId = deviceId;
+					const sourceNodeId = nodeId;
 					const results = await Promise.allSettled(
 						tabIds.map((id) => browser.tabs.get(id)),
 					);
@@ -211,8 +212,8 @@ export function openTabManagerBrowser({
 							title: tab.title || 'Untitled',
 							favIconUrl: tab.favIconUrl ?? null,
 							pinned: tab.pinned ?? false,
-							sourceDeviceId,
-							savedAt: Date.now(),
+							sourceNodeId,
+							savedAt: InstantString.now(),
 						});
 					}
 					if (close) {
@@ -320,15 +321,15 @@ export function openTabManagerBrowser({
 					pinned: Type.Boolean(),
 				}),
 				handler: async ({ browserTabId, url, title, favIconUrl, pinned }) => {
-					const sourceDeviceId = deviceId;
+					const sourceNodeId = nodeId;
 					tables.savedTabs.set({
 						id: generateSavedTabId(),
 						url,
 						title,
 						favIconUrl: favIconUrl ?? null,
 						pinned,
-						sourceDeviceId,
-						savedAt: Date.now(),
+						sourceNodeId,
+						savedAt: InstantString.now(),
 					});
 					// The save (Y.Doc write) always succeeded by here. The close
 					// is partial-success: surface its own Result so callers can
@@ -424,15 +425,15 @@ export function openTabManagerBrowser({
 							removedCount: allMatching.length,
 						};
 					}
-					const sourceDeviceId = deviceId;
+					const sourceNodeId = nodeId;
 					tables.bookmarks.set({
 						id: generateBookmarkId(),
 						url,
 						title,
 						favIconUrl: favIconUrl ?? null,
 						description: null,
-						sourceDeviceId,
-						createdAt: Date.now(),
+						sourceNodeId,
+						createdAt: InstantString.now(),
 					});
 					return { action: 'added' as const, removedCount: 0 };
 				},

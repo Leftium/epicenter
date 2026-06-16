@@ -1,8 +1,8 @@
 /**
- * `epicenter peers`: live-device view of who's connected right now.
+ * `epicenter peers`: live-node view of who's connected right now.
  *
- * Shows the device id needed to target a peer with `run --peer`.
- * The relay carries only `deviceId` on the wire; product-level
+ * Shows the node id needed to target a peer with `run --peer`.
+ * The relay carries only `nodeId` on the wire; product-level
  * display names live in app-owned state and are out of scope here.
  *
  * `epicenter peers` requires a running daemon for the discovered Epicenter root.
@@ -56,22 +56,9 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 		return;
 	}
 
-	const byMount = new Map<string, PeerSnapshot[]>();
-	for (const row of rows) {
-		const list = byMount.get(row.mount);
-		if (list) list.push(row);
-		else byMount.set(row.mount, [row]);
-	}
-
-	let i = 0;
-	for (const [mount, group] of byMount) {
-		if (i > 0) console.log('');
-		console.log(mount);
-		console.table(
-			group
-				.map((snap) => ({ deviceId: snap.deviceId }))
-				.sort((a, b) => a.deviceId.localeCompare(b.deviceId)),
-		);
-		i++;
-	}
+	console.table(
+		rows
+			.map((snap) => ({ nodeId: snap.nodeId }))
+			.sort((a, b) => a.nodeId.localeCompare(b.nodeId)),
+	);
 }

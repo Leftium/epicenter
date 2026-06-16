@@ -3,17 +3,16 @@ import {
 	createWorkspace,
 	defineKv,
 	defineTable,
-	defineWorkspace,
 	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
 	nullable,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { type Static, type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
-import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import {
@@ -216,14 +215,6 @@ const output = {
 	'output.transformation.enter': defineKv(field.boolean(), () => false),
 } as const;
 
-/** Window behavior and navigation layout preferences. */
-const ui = {
-	'ui.alwaysOnTop': defineKv(
-		field.select(ALWAYS_ON_TOP_MODES),
-		() => 'Never' as const,
-	),
-} as const;
-
 /**
  * Recording retention policy. `retention.strategy` is the source of truth for
  * how many recordings to keep: `keep-forever` (all), `limit-count` (the newest
@@ -365,7 +356,6 @@ export function createWhispering({
 	const kvDefinitions = {
 		...sound,
 		...output,
-		...ui,
 		...dataRetention,
 		...recording,
 		...defineTranscriptionSettings(defaultTranscriptionService),
@@ -389,7 +379,7 @@ export function createWhispering({
 
 	const settingKeys = Object.keys(kvDefinitions) as SettingKey[];
 
-	return defineWorkspace({
+	return satisfiesWorkspace({
 		...workspace,
 		/**
 		 * Synced setting metadata for the Whispering workspace.

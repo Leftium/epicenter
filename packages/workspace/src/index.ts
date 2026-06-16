@@ -5,95 +5,35 @@
  * text, timeline, and an action registry to a `Y.Doc`, then wires the
  * result to IndexedDB persistence and WebSocket sync via
  * `openCollaboration`. `openCollaboration` also consumes the
- * server-owned presence channel and exposes the live-device surface
- * (`devices.list()`) plus socket-backed `dispatch()` for cross-device calls.
+ * server-owned presence channel and exposes the live-peer surface
+ * (`peers.list()`) plus socket-backed `dispatch()` for cross-node calls.
  *
  * @example
  * ```typescript
  * import {
- *   attachIndexedDb,
  *   attachRichText,
- *   createDeviceId,
- *   createDisposableCache,
- *   createWorkspace,
+ *   type ConnectionConfig,
  *   defineTable,
- *   docGuid,
- *   openCollaboration,
- *   roomWsUrl,
+ *   defineWorkspace,
  * } from '@epicenter/workspace';
  * import { field } from '@epicenter/field';
- * import type { AuthClient } from '@epicenter/auth';
- * import type { OwnerId } from '@epicenter/identity';
- * import * as Y from 'yjs';
  *
  * const posts = defineTable({
  *   id: field.string(),
  *   title: field.string(),
- * });
- * declare const auth: AuthClient;
- * declare const ownerId: OwnerId;
+ * }).docs({ body: attachRichText });
  *
- * const deviceId = createDeviceId({ storage: localStorage });
- *
- * // The workspace bundle owns the root Y.Doc, the tables, and the KV slot.
- * // `using` triggers cascade disposal of every store on scope exit.
- * using workspace = createWorkspace({
+ * const notesWorkspace = defineWorkspace({
  *   id: 'notes',
+ *   name: 'notes',
  *   tables: { posts },
  *   kv: {},
  * });
- * const idb = attachIndexedDb(workspace.ydoc);
- * const collaboration = openCollaboration(workspace.ydoc, {
- *   url: roomWsUrl({
- *     baseURL: auth.baseURL,
- *     ownerId,
- *     guid: workspace.ydoc.guid,
- *     deviceId,
- *   }),
- *   openWebSocket: auth.openWebSocket,
- *   onReconnectSignal: auth.onStateChange,
- *   waitFor: idb.whenLoaded,
- *   actions: {},
- * });
  *
- * // Content docs are per-row child Y.Docs constructed inline. Sub-doc
- * // primitives (attachRichText, etc.) take a raw Y.Doc, not a workspace.
- * const noteBodyDocs = createDisposableCache(
- *   (noteId: string) => {
- *     const bodyYdoc = new Y.Doc({
- *       guid: docGuid({
- *         workspaceId: workspace.ydoc.guid,
- *         collection: 'posts',
- *         rowId: noteId,
- *         field: 'body',
- *       }),
- *       gc: true,
- *     });
- *     const bodyIdb = attachIndexedDb(bodyYdoc);
- *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: roomWsUrl({
- *         baseURL: auth.baseURL,
- *         ownerId,
- *         guid: bodyYdoc.guid,
- *         deviceId,
- *       }),
- *       openWebSocket: auth.openWebSocket,
- *       onReconnectSignal: auth.onStateChange,
- *       waitFor: bodyIdb.whenLoaded,
- *       actions: {},
- *     });
- *     return {
- *       ydoc: bodyYdoc,
- *       body: attachRichText(bodyYdoc),
- *       idb: bodyIdb,
- *       sync: bodySync,
- *       [Symbol.dispose]() {
- *         bodyYdoc.destroy();
- *       },
- *     };
- *   },
- *   { gcTime: 5_000 },
- * );
+ * declare const connection: ConnectionConfig;
+ * using workspace = notesWorkspace.connect(connection);
+ * using body = workspace.tables.posts.docs.body.open('post-1');
+ * await body.whenLoaded;
  * ```
  *
  * @packageDocumentation
@@ -111,38 +51,33 @@ export {
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DEVICE IDENTITY
+// NODE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { DeviceId } from './document/device-id.js';
+export type { NodeId } from './document/node-id.js';
 export {
-	asDeviceId,
-	createDeviceId,
-	createDeviceIdAsync,
-} from './document/device-id.js';
+	asNodeId,
+	createNodeId,
+	createNodeIdAsync,
+} from './document/node-id.js';
 
-// ════════════════════════════════════════════════════════════════════════════
-// EPICENTER CONFIG (browser-safe surface)
-// ════════════════════════════════════════════════════════════════════════════
-
-// Node-only helpers that resolve real paths (`findEpicenterRoot`,
-// `openEpicenterRoot`, etc.) import `node:fs`, `node:path`, or `node:os`
-// at module top level. They are exported from `@epicenter/workspace/node`;
-// keeping them out of this root barrel stops browser bundles (fuji,
-// whispering, etc.) from traversing `node:*` modules. Daemon runtime and
-// log paths live in `@epicenter/workspace/daemon/paths.ts`.
-export { DEFAULT_EPICENTER_CONFIG_SOURCE } from './config/epicenter-config-source.js';
-export { defineMount } from './daemon/define-mount.js';
-export type { EpicenterRoot } from './shared/types';
+// Daemon, config, and Epicenter-root surfaces are node-only (they resolve real
+// paths or sit on the mount contract) and ship from `@epicenter/workspace/node`
+// and `@epicenter/workspace/daemon`. Keeping them out of this root barrel stops
+// browser bundles (fuji, whispering, etc.) from traversing `node:*` modules.
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID + DATE PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export { CalendarDateString, DateTimeString } from '@epicenter/field';
+export {
+	CalendarDateString,
+	DateTimeString,
+	InstantString,
+} from '@epicenter/field';
 export { IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
-export { generateGuid, generateId } from './shared/id';
+export { generateId } from './shared/id';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EMPTINESS AXIS (nullable: substrate value policy)
@@ -155,6 +90,8 @@ export { nullable } from './document/nullable';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { debounce } from './shared/debounce.js';
+export { once } from './shared/once.js';
+export type { Drainable } from './shared/types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
@@ -170,13 +107,16 @@ export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
+export { type ConnectionConfig, connectDoc } from './document/connect-doc.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export {
 	DispatchError,
 	type DispatchRequest,
 } from './document/dispatch.js';
-export { docGuid } from './document/doc-guid.js';
+// `docGuid` is intentionally NOT exported: child-doc guid derivation is an
+// internal workspace detail. Callers reach it through the table path,
+// `tables.<table>.docs.<field>.guid(rowId)`, which is the public contract.
 // One-shot HTTP read of a hosted room: GET the snapshot into a throwaway doc.
 // The atomic snapshot lets a relay-only doc be read without a live
 // `openCollaboration` session.
@@ -195,7 +135,7 @@ export {
 	type OpenWebSocketFn,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export type { PresenceDevice } from './document/presence-protocol.js';
+export type { Peer } from './document/presence-protocol.js';
 export {
 	type BaseRow,
 	type InferTableRow,
@@ -210,15 +150,28 @@ export {
 } from './document/table.js';
 // Transport URL builder.
 //
-// `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the WebSocket
+// `roomWsUrl({ baseURL, ownerId, guid, nodeId })` builds the WebSocket
 // URL for the partitioned `/api/owners/:ownerId/rooms/:roomId` endpoint. The
 // same single URL form is used in both personal and shared modes. Both browser
 // apps and the daemon use this one builder.
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
+	type ConnectComposition,
+	type ConnectedTables,
+	type ConnectedWorkspace,
+	type ConnectedWorkspaceContext,
 	type CreateWorkspaceOptions,
 	createWorkspace,
+	type DefineWorkspaceOptions,
 	defineWorkspace,
+	type MountComposeContext,
+	type MountComposition,
+	type MountOptions,
+	satisfiesWorkspace,
 	type Workspace,
+	type WorkspaceActionContext,
+	type WorkspaceDefinition,
+	type WorkspaceFromDefinition,
+	type WorkspaceTables,
 } from './document/workspace.js';

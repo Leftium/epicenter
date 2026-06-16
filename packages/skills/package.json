@@ -18,6 +18,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./browser": "./src/browser.ts",
 		"./node": "./src/node.ts"
 	},
 	"license": "AGPL-3.0-or-later",
@@ -29,6 +30,7 @@
 		"@epicenter/workspace": "workspace:*",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
+		"y-indexeddb": "catalog:",
 		"yaml": "^2.8.0"
 	},
 	"devDependencies": {

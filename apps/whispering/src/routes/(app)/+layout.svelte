@@ -1,29 +1,32 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { onDestroy } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
-	import AppLayout from './_components/AppLayout.svelte';
+	import AppRuntime from './_components/AppRuntime.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
+	import ContentShell from './_components/ContentShell.svelte';
+	import GlobalDialogs from './_components/GlobalDialogs.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
-	import { runtimeOwners } from './_layout-utils/runtime-owners';
 
 	let { children } = $props();
 
 	let sidebarOpen = $state(false);
-	const detachRuntimeOwners = runtimeOwners.map((owner) => owner.attach());
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
-
-	onDestroy(() => {
-		for (const detach of detachRuntimeOwners.toReversed()) detach();
-	});
 </script>
+
+<!--
+	The (app) route layout is the session root. It mounts once and persists
+	across navigation and across the responsive branch below, so AppRuntime and
+	GlobalDialogs (rendered outside the {#if}) start exactly once per launch. Only
+	the nav chrome and ContentShell swap on a breakpoint change.
+-->
+<AppRuntime />
 
 {#if isNarrow.current}
 	<div class="flex h-full min-h-svh flex-col">
 		<div class="flex-1 pb-14">
-			<AppLayout> {@render children()} </AppLayout>
+			<ContentShell>{@render children()}</ContentShell>
 		</div>
 		<BottomNav />
 	</div>
@@ -31,7 +34,9 @@
 	<Sidebar.Provider bind:open={sidebarOpen}>
 		<VerticalNav />
 		<Sidebar.Inset>
-			<AppLayout> {@render children()} </AppLayout>
+			<ContentShell>{@render children()}</ContentShell>
 		</Sidebar.Inset>
 	</Sidebar.Provider>
 {/if}
+
+<GlobalDialogs />

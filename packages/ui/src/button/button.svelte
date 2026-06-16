@@ -56,6 +56,7 @@
 </script>
 
 <script lang="ts">
+	import { mergeProps } from 'bits-ui';
 	import * as Tooltip from '../tooltip/index.js';
 
 	let {
@@ -73,6 +74,17 @@
 </script>
 
 {#snippet buttonContent(tooltipProps?: Record<string, unknown>)}
+	<!--
+		When this button is also the child of another trigger, e.g. Popover.Trigger,
+		the outer trigger props and tooltip trigger props land on the same element.
+		Plain sequential spreads replace colliding handlers and ref attachments.
+		mergeProps composes handlers and function props, merges class/style, and
+		preserves distinct Svelte attachment keys. Plain attributes like id/data-state
+		remain last-wins.
+	-->
+	{@const mergedProps = tooltipProps
+		? mergeProps(restProps, tooltipProps)
+		: restProps}
 	{#if href}
 		<!-- biome-ignore lint/a11y/useValidAriaRole: conditional role is valid -->
 		<a
@@ -83,8 +95,7 @@
 			aria-disabled={disabled}
 			role={disabled ? 'link' : undefined}
 			tabindex={disabled ? -1 : undefined}
-			{...tooltipProps}
-			{...restProps}
+			{...mergedProps}
 		>
 			{@render children?.()}
 		</a>
@@ -95,8 +106,7 @@
 			class={cn(buttonVariants({ variant, size }), className)}
 			{type}
 			{disabled}
-			{...tooltipProps}
-			{...restProps}
+			{...mergedProps}
 		>
 			{@render children?.()}
 		</button>

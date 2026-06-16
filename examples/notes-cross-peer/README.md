@@ -28,7 +28,7 @@ bun x epicenter daemon up -C examples/notes-cross-peer/peer-a
 ```bash
 bun x epicenter daemon up -C examples/notes-cross-peer/peer-b &
 bun x epicenter peers -C examples/notes-cross-peer/peer-b
-bun x epicenter run notes.notes.add --peer notes-repro-peer-a '{"body":"from peer-b"}' -C examples/notes-cross-peer/peer-b
+bun x epicenter run add --peer notes-repro-peer-a '{"body":"from peer-b"}' -C examples/notes-cross-peer/peer-b
 ```
 
 To inspect peer-a's full action manifest from peer-b, write a script

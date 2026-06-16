@@ -22,15 +22,15 @@
 	import { APP_URLS } from '@epicenter/constants/vite';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
-	import { generateId } from '@epicenter/workspace';
+	import { generateId, InstantString } from '@epicenter/workspace';
 	import {
-		appendUserMessage,
 		findActiveChatDocGeneration,
 		type ChatDocMessage,
-		observeChatDocMessages,
-		readChatDocMessages,
 	} from '@epicenter/workspace/ai';
-	import { type ConversationId, ZHONGWEN_MODEL } from '@epicenter/zhongwen';
+	import {
+		type ConversationId,
+		ZHONGWEN_MODEL,
+	} from '@epicenter/zhongwen';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { requireZhongwen } from '$lib/session';
@@ -62,9 +62,10 @@
 	// back-and-forth switching. conversationId is the keyed identity and never
 	// changes within one instance, so a one-time read is intentional.
 	// svelte-ignore state_referenced_locally
-	const docHandle = zhongwen.conversationDocs.open(conversationId);
+	const docHandle =
+		zhongwen.tables.conversations.docs.messages.open(conversationId);
 
-	const initialMessages = readChatDocMessages(docHandle.ydoc);
+	const initialMessages = docHandle.read();
 	const mountedAt = Date.now();
 	const initialActiveGeneration = findActiveChatDocGeneration(
 		initialMessages,
@@ -72,8 +73,8 @@
 	);
 	let messages = $state.raw<ChatDocMessage[]>(initialMessages);
 	let lastDocChangeAt = $state(initialActiveGeneration ? mountedAt : 0);
-	const unobserve = observeChatDocMessages(docHandle.ydoc, () => {
-		messages = readChatDocMessages(docHandle.ydoc);
+	const unobserve = docHandle.observe(() => {
+		messages = docHandle.read();
 		lastDocChangeAt = Date.now();
 	});
 
@@ -156,7 +157,7 @@
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
-					guid: docHandle.ydoc.guid,
+					guid: docHandle.guid,
 					generationId: generateId(),
 					data: {
 						model: ZHONGWEN_MODEL,
@@ -166,11 +167,11 @@
 				signal: controller.signal,
 			});
 			// The kickoff resolving (200) IS the finish signal for the requester.
-			// The relay only syncs the conversations table; it never writes it,
-			// and a completed reply only lands while this requester is alive, so
-			// the requester owns the list-recency bump on completion.
+			// The server generation actor only writes the transcript child doc, not
+			// the conversations list table, and a completed reply only lands while
+			// this requester is alive, so the requester owns the list-recency bump.
 			zhongwen.tables.conversations.update(conversationId, {
-				updatedAt: Date.now(),
+				updatedAt: InstantString.now(),
 			});
 		} catch (err) {
 			if (!controller.signal.aborted) {
@@ -188,7 +189,7 @@
 	function sendMessage(content: string) {
 		const text = content.trim();
 		if (!text || isGenerating) return;
-		appendUserMessage(docHandle.ydoc, {
+		docHandle.appendUser({
 			id: generateId(),
 			content: text,
 			createdAt: Date.now(),
@@ -196,7 +197,7 @@
 		const title = readRow()?.title;
 		zhongwen.tables.conversations.update(conversationId, {
 			title: title === 'New Chat' ? text.slice(0, 50) : title,
-			updatedAt: Date.now(),
+			updatedAt: InstantString.now(),
 		});
 		void kickoffGeneration();
 	}

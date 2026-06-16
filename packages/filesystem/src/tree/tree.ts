@@ -1,3 +1,4 @@
+import { InstantString } from '@epicenter/field';
 import type { Table } from '@epicenter/workspace';
 import type * as Y from 'yjs';
 import { FS_ERRORS } from '../errors.js';
@@ -164,8 +165,8 @@ export function attachFileTree(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 				parentId,
 				type,
 				size,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
+				createdAt: InstantString.now(),
+				updatedAt: InstantString.now(),
 				trashedAt: null,
 			});
 			return id;
@@ -173,7 +174,7 @@ export function attachFileTree(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 
 		/** Soft-delete a file or folder by setting `trashedAt`. */
 		softDelete(id: FileId): void {
-			filesTable.update(id, { trashedAt: Date.now() });
+			filesTable.update(id, { trashedAt: InstantString.now() });
 		},
 
 		/** Move/rename a file or folder. Validates name and uniqueness. */
@@ -183,18 +184,18 @@ export function attachFileTree(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 			filesTable.update(id, {
 				name: newName,
 				parentId: newParentId,
-				updatedAt: Date.now(),
+				updatedAt: InstantString.now(),
 			});
 		},
 
 		/** Update size and `updatedAt` after a content write. */
 		touch(id: FileId, size: number): void {
-			filesTable.update(id, { size, updatedAt: Date.now() });
+			filesTable.update(id, { size, updatedAt: InstantString.now() });
 		},
 
 		/** Update `updatedAt` only (for utimes). */
 		setMtime(id: FileId, mtime: Date): void {
-			filesTable.update(id, { updatedAt: mtime.getTime() });
+			filesTable.update(id, { updatedAt: InstantString.fromDate(mtime) });
 		},
 	};
 }

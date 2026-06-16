@@ -8,8 +8,8 @@
  *   `peer` present -> peer run: the recipient peer decides action existence,
  *                     and the relay owns reachability.
  *
- * Peer runs address devices by `deviceId` directly; the relay routes to the
- * most-recently-connected socket for that device. If the relay has no live
+ * Peer runs address nodes by `nodeId` directly; the relay routes to the
+ * most-recently-connected socket for that node. If the relay has no live
  * socket for the target, dispatch resolves with `RecipientOffline`, surfaced
  * here as `PeerNotFound`; any other dispatch error is forwarded under
  * `RemoteCallFailed`.
@@ -30,7 +30,6 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import { invokeAction, isActionInputError } from '../shared/actions.js';
 import { type PeerSyncStatus, RunError } from './action-errors.js';
-import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
 import type { RunRequest } from './app.js';
 import type { DaemonServedMount } from './types.js';
 
@@ -38,41 +37,30 @@ import type { DaemonServedMount } from './types.js';
 export const DEFAULT_PEER_WAIT_MS = 5000;
 
 export async function executeRun(
-	mounts: readonly DaemonServedMount[],
+	mountRuntime: DaemonServedMount,
 	{ actionPath, input: actionInput, peer }: RunRequest,
 ): Promise<Result<unknown, RunError>> {
-	const { mount, localPath } = parseDaemonActionPath(actionPath);
-	const mountRuntime = mounts.find((candidate) => candidate.mount === mount);
-	if (!mountRuntime) {
-		const available = mounts.map((candidate) => candidate.mount);
-		return RunError.UsageError({
-			message: `No mount "${mount}". Available: ${available.join(', ')}`,
-			suggestions: available.map((name) => `  ${name}`),
-		});
-	}
-
 	if (peer === undefined) {
-		return runLocal(mountRuntime, actionPath, localPath, actionInput);
+		return runLocal(mountRuntime, actionPath, actionInput);
 	}
 	const collaboration = mountRuntime.runtime.collaboration;
 	if (!collaboration) {
 		return RunError.UsageError({
-			message: `Mount "${mount}" does not expose collaboration, so "${actionPath}" cannot run on peer "${peer.to}".`,
+			message: `This daemon does not expose collaboration, so "${actionPath}" cannot run on peer "${peer.to}".`,
 		});
 	}
-	return runOnPeer(collaboration, localPath, actionInput, peer);
+	return runOnPeer(collaboration, actionPath, actionInput, peer);
 }
 
 /** Local run: this daemon's registry is the authority for action existence. */
 async function runLocal(
 	mountRuntime: DaemonServedMount,
 	actionPath: string,
-	localPath: string,
 	actionInput: unknown,
 ): Promise<Result<unknown, RunError>> {
-	const action = mountRuntime.runtime.actions[localPath];
+	const action = mountRuntime.runtime.actions[actionPath];
 	if (!action) {
-		const descendants = daemonActionSuggestionLines(mountRuntime, localPath);
+		const descendants = daemonActionSuggestionLines(mountRuntime, actionPath);
 		if (descendants.length > 0) {
 			return RunError.UsageError({
 				message: `"${actionPath}" is not a runnable action.`,
@@ -81,7 +69,7 @@ async function runLocal(
 		}
 		return RunError.UsageError({
 			message: `"${actionPath}" is not defined.`,
-			suggestions: daemonActionNearestSiblingLines(mountRuntime, localPath),
+			suggestions: daemonActionNearestSiblingLines(mountRuntime, actionPath),
 		});
 	}
 
@@ -172,10 +160,7 @@ function daemonActionSuggestionLines(
 ): string[] {
 	return Object.entries(mountRuntime.runtime.actions)
 		.filter(([path]) => !prefix || path.startsWith(prefix))
-		.map(
-			([path, action]) =>
-				`  ${joinDaemonActionPath(mountRuntime.mount, path)}  (${action.type})`,
-		);
+		.map(([path, action]) => `  ${path}  (${action.type})`);
 }
 
 function daemonActionNearestSiblingLines(

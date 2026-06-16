@@ -1,6 +1,6 @@
 import type { Skill } from '@epicenter/skills';
 import { fromTable } from '@epicenter/svelte';
-import { generateId } from '@epicenter/workspace';
+import { generateId, InstantString } from '@epicenter/workspace';
 import { skills as skillsDoc } from '$lib/skills/client';
 
 export type SkillMetadataUpdate = Partial<
@@ -98,7 +98,7 @@ function createSkillsState() {
 				compatibility: null,
 				metadata: null,
 				allowedTools: null,
-				updatedAt: Date.now(),
+				updatedAt: InstantString.now(),
 			});
 			selectedSkillId = id;
 			return id;
@@ -113,7 +113,7 @@ function createSkillsState() {
 		updateSkill(id: string, updates: SkillMetadataUpdate) {
 			skillsDoc.tables.skills.update(id, {
 				...updates,
-				updatedAt: Date.now(),
+				updatedAt: InstantString.now(),
 			});
 		},
 
@@ -151,7 +151,7 @@ function createSkillsState() {
 				id,
 				skillId,
 				path,
-				updatedAt: Date.now(),
+				updatedAt: InstantString.now(),
 			});
 			return id;
 		},

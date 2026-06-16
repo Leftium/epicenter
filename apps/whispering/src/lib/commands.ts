@@ -1,3 +1,4 @@
+import { platformCommands } from '#platform/commands';
 import {
 	cancelRecording,
 	startManualRecording,
@@ -6,7 +7,6 @@ import {
 	toggleVadRecording,
 } from '$lib/operations/recording';
 import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
-import { openTransformationPicker } from '$lib/operations/transformation-picker';
 
 /**
  * Registry of available commands in the application.
@@ -16,6 +16,11 @@ import { openTransformationPicker } from '$lib/operations/transformation-picker'
  * The actual command implementations live in $lib/operations/* as plain async
  * functions that can be invoked from anywhere in the UI, not just through this
  * command registry.
+ *
+ * Platform split: `sharedCommands` exist in every build. Desktop-only commands
+ * (the transformation picker, which captures a selection from another app and
+ * opens a Tauri window) come from the `#platform/commands` seam, so a browser
+ * build never imports their Tauri-only code and never offers them as shortcuts.
  */
 
 /**
@@ -27,7 +32,7 @@ import { openTransformationPicker } from '$lib/operations/transformation-picker'
  */
 export type ShortcutEventState = 'Pressed' | 'Released';
 
-type SatisfiedCommand = {
+export type SatisfiedCommand = {
 	id: string;
 	title: string;
 	/**
@@ -40,7 +45,8 @@ type SatisfiedCommand = {
 	callback: (state?: ShortcutEventState) => void;
 };
 
-export const commands = [
+/** Commands available in every build (browser and desktop). */
+const sharedCommands = [
 	{
 		id: 'pushToTalk',
 		title: 'Push to talk',
@@ -72,21 +78,6 @@ export const commands = [
 		callback: () => toggleVadRecording(),
 	},
 	{
-		id: 'openTransformationPicker',
-		title: 'Open transformation picker',
-		// Fire on release, not press: the global accelerator carries a Cmd/Ctrl+Shift
-		// chord, and capturing on press synthesizes Cmd/Ctrl+C while that chord is
-		// still held, so the foreground app sees Cmd+Shift+C instead of a clean copy.
-		// Register both states (not Released-only) because the local shortcut manager
-		// only arms a command on keydown when `on` includes 'Pressed'; without it the
-		// in-app shortcut would never fire. The callback guard runs once, on release.
-		on: ['Pressed', 'Released'],
-		callback: (state?: ShortcutEventState) => {
-			if (state === 'Released' || state === undefined)
-				openTransformationPicker();
-		},
-	},
-	{
 		id: 'runTransformationOnClipboard',
 		title: 'Run transformation on clipboard',
 		on: ['Pressed'],
@@ -94,9 +85,14 @@ export const commands = [
 	},
 ] as const satisfies SatisfiedCommand[];
 
+export const commands = [
+	...sharedCommands,
+	...platformCommands,
+] as const satisfies SatisfiedCommand[];
+
 export type Command = (typeof commands)[number];
 
-type CommandCallbacks = Record<Command['id'], Command['callback']>;
+export type CommandCallbacks = Record<Command['id'], Command['callback']>;
 
 export const commandCallbacks = commands.reduce<CommandCallbacks>(
 	(acc, command) => {

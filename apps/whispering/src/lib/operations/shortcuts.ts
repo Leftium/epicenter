@@ -40,7 +40,13 @@ export const localShortcuts = {
 		services.localShortcutManager.unregister(commandId),
 };
 
-/** Default values for in-app (local) shortcuts. Keyed by command id string. */
+/**
+ * Default values for in-app (local) shortcuts, keyed by command id string. A
+ * superset of the current build's commands: `openTransformationPicker` is
+ * desktop-only, so on web it sits here unused (the reset loops iterate the
+ * platform `commands`). Mirrors `DEFAULT_GLOBAL_BINDINGS`, which is keyed the
+ * same way.
+ */
 const DEFAULT_LOCAL_SHORTCUTS = {
 	pushToTalk: 'p',
 	toggleManualRecording: ' ',
@@ -48,7 +54,7 @@ const DEFAULT_LOCAL_SHORTCUTS = {
 	toggleVadRecording: 'v',
 	openTransformationPicker: 't',
 	runTransformationOnClipboard: 'r',
-} as const satisfies Record<Command['id'], string | null>;
+} as const satisfies Record<string, string | null>;
 
 /** Canonical string for a binding, so structurally-equal bindings dedupe. */
 function bindingKey(binding: {

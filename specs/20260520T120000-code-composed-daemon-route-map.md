@@ -4,10 +4,10 @@
 **Status**: Superseded
 **Author**: Braden + AI-assisted
 **Supersedes**: daemon registration portions of `20260519T150000-epicenter-project-as-first-class.md`
-**Superseded by**: Mount-list project config (`export default [fuji()]`)
+**Superseded by**: Single-mount project config (`export default fuji()`)
 
 > Historical note: this route-map shape is no longer current. Project config
-> now default-exports a `Mount[]` from app package factories such as `fuji()`;
+> now default-exports one `Mount` from an app package factory such as `fuji()`;
 > the mount `name` owns the CLI prefix.
 
 ## One Sentence

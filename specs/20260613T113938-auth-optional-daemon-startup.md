@@ -6,6 +6,16 @@
 **Branch**: codex/auth-optional-daemon-startup-spec
 **Builds on**: specs/20260613T100235-action-first-daemon-runtime.md
 
+> Historical note: this spec's `kind: 'local' | 'collaborative'` discriminant is
+> no longer the shape. The mount contract since collapsed to one `MountContext`
+> with a nullable `session`: a mount reads `ctx.session` itself, and most declare
+> with `defineSessionMount` to get a non-null `session` plus an automatic
+> `inactive("Sign in ...")` when signed out. There is no `kind` field. The
+> startup result this spec calls `MountAuthRequired` is now reported as an
+> `inactive` mount, not a hard refusal. Read the `kind`-shaped code below as the
+> intermediate step it was; the live contract is
+> `packages/workspace/src/daemon/define-mount.ts`.
+
 ## One Sentence
 
 A project daemon can start signed-out only when every configured mount declares

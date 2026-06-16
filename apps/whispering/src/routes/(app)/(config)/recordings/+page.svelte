@@ -358,19 +358,8 @@
 
 	async function openRecordingsFolder() {
 		if (!tauri) return;
-
-		try {
-			const { openPath } = await import('@tauri-apps/plugin-opener');
-			await openPath(await PATHS.DB.RECORDINGS());
-		} catch (error) {
-			report.error({
-				title: 'Failed to open folder',
-				cause: {
-					name: 'OpenFolderFailed',
-					message: error instanceof Error ? error.message : 'Unknown error',
-				},
-			});
-		}
+		const { error } = await tauri.opener.openPath(await PATHS.DB.RECORDINGS());
+		if (error) report.error({ title: 'Failed to open folder', cause: error });
 	}
 </script>
 

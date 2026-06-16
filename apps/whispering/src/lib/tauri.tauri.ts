@@ -48,6 +48,7 @@ import {
 	isEnabled as isAutostartEnabled,
 } from '@tauri-apps/plugin-autostart';
 import { readFile } from '@tauri-apps/plugin-fs';
+import { openPath as revealPath } from '@tauri-apps/plugin-opener';
 import { exit } from '@tauri-apps/plugin-process';
 import mime from 'mime';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
@@ -404,6 +405,24 @@ const media = {
 	resume: (players: MediaPlayer[]) => commands.resumeMedia(players),
 };
 
+// opener ------------------------------------------------------------
+const OpenerError = defineErrors({
+	OpenPathFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+		message: `Failed to open ${path}: ${extractErrorMessage(cause)}`,
+		path,
+		cause,
+	}),
+});
+
+const opener = {
+	/** Reveal a file or folder in the OS file manager (Finder, Explorer). */
+	openPath: (path: string) =>
+		tryAsync({
+			try: () => revealPath(path),
+			catch: (cause) => OpenerError.OpenPathFailed({ path, cause }),
+		}),
+};
+
 // barrel ------------------------------------------------------------
 // `tauriOnly` is the non-null namespace for `.tauri.ts` files. The
 // `tauri` export widens it to `Tauri | null` so shared consumers narrow.
@@ -414,6 +433,7 @@ export const tauriOnly = {
 	globalShortcuts,
 	autostart,
 	media,
+	opener,
 };
 
 /** Shape of the Tauri capability namespace (non-null). */

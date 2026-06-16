@@ -1,10 +1,16 @@
 /**
  * Workspace definitions and root Y.Doc construction.
  *
- * `defineWorkspace({ id, tables, kv })` is the app-facing entry point.
- * `.create()` builds the bare root for daemon composition; `.connect(connection)`
- * connects it for the browser with local storage, sync, wipe, and row child-doc
- * openers.
+ * `defineWorkspace({ id, tables, kv })` is the app-facing entry point and the
+ * one handle every runtime shares:
+ *
+ *   .create()            bare isomorphic doc for tests and advanced runtimes
+ *   .connect(connection) browser runtime: local storage, sync, wipe, row
+ *                        child-doc openers
+ *   .mount(options)      daemon runtime: the same root plus Yjs-log persistence,
+ *                        cloud sync, and materializers, with every node
+ *                        dependency injected through `options.runtime`
+ *                        (`nodeMountRuntime()` from `@epicenter/workspace/node`)
  *
  * `createWorkspace({ id, tables, kv })` remains the low-level root constructor
  * for package internals and tests:
@@ -36,6 +42,15 @@
 import { InstantString } from '@epicenter/field';
 import * as Y from 'yjs';
 import { createDisposableCache } from '../cache/disposable-cache.js';
+// Type-only daemon imports: `verbatimModuleSyntax` erases them, so the browser
+// barrel never traverses the node-only mount runtime. `.mount()` is a pure
+// coordinator that receives every node capability through its `runtime`
+// argument (built by `nodeMountRuntime()` from `@epicenter/workspace/node`).
+import type { Mount, SessionMountContext } from '../daemon/define-mount.js';
+import type {
+	BoundMountRuntime,
+	NodeMountRuntime,
+} from '../daemon/mount-runtime.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import type { Guid } from '../shared/id.js';
 import { once } from '../shared/once.js';
@@ -270,6 +285,78 @@ type ConnectedWorkspaceWithRuntime<
 > = ConnectedWorkspace<TTables, TKv, TRuntime['actions']> &
 	Omit<TRuntime, 'actions' | typeof Symbol.dispose>;
 
+/**
+ * What a mount's `compose` callback sees: the bare daemon root, the open's
+ * `ctx` (signed-in session, durable node id, resolved Epicenter root), the
+ * resolved sync `baseURL`, and the ctx-bound materializer helpers
+ * (`runtime.sqlite(...)`, `runtime.markdown(...)`).
+ *
+ * `workspace` is the unconnected root, so `workspace.tables.<t>.docs.<f>.guid`
+ * is the same guid deriver the browser opener uses, letting a daemon read a
+ * child-doc body over HTTP at the address the browser writes it.
+ */
+export type MountComposeContext<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry,
+> = {
+	readonly workspace: Workspace<TTables, TKv, TActions>;
+	readonly ctx: SessionMountContext;
+	readonly baseURL: string;
+	readonly runtime: BoundMountRuntime;
+};
+
+/**
+ * What a mount's `compose` callback returns: the action registry the daemon
+ * serves, the materializers whose teardown is awaited on shutdown, and any
+ * extra handles to surface on the daemon runtime.
+ *
+ * `actions` is the explicit served set, exactly as the browser `connect`
+ * composer is: this is where the daemon refuses browser-only actions and admits
+ * its materializer actions. `materializers` lists the attachments
+ * `attachInfrastructure` drains in order so a shutdown cannot drop a projection
+ * write mid-flight. `expose` is spread onto the returned runtime for daemon-side
+ * consumers (e.g. raw SQL via `sqlite.client`).
+ */
+export type MountComposition<
+	TActions extends ActionRegistry,
+	TExpose extends object,
+> = {
+	readonly actions: TActions;
+	readonly materializers?: ReadonlyArray<{ whenDisposed: Promise<void> }>;
+	readonly expose?: TExpose;
+};
+
+/**
+ * Options for `definition.mount(...)`, the daemon runtime.
+ *
+ * `runtime` is the injected node bag from `nodeMountRuntime()`; `.mount()`
+ * itself imports no node module. `compose` is optional: omit it to serve the
+ * workspace's base actions with no materializers (a pure sync-and-persist
+ * mirror); provide it to attach materializers and choose the served action set.
+ */
+export type MountOptions<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry,
+	TRuntimeActions extends ActionRegistry,
+	TExpose extends object,
+> = {
+	/** Canonical mount name (`Mount.name`); owns the daemon action namespace. */
+	readonly name: string;
+	/**
+	 * Explicit sync base URL. Omit to fall back through `EPICENTER_API_URL` to
+	 * the hosted API (resolved by `runtime.resolveBaseURL`).
+	 */
+	readonly baseURL?: string;
+	/** Injected node runtime, built by `nodeMountRuntime()`. */
+	readonly runtime: NodeMountRuntime;
+	/** Attach materializers and select the served actions. See {@link MountComposition}. */
+	readonly compose?: (
+		context: MountComposeContext<TTables, TKv, TActions>,
+	) => MountComposition<TRuntimeActions, TExpose>;
+};
+
 export type WorkspaceDefinition<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
@@ -288,6 +375,12 @@ export type WorkspaceDefinition<
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => TRuntime,
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
+	mount<
+		TRuntimeActions extends ActionRegistry = TActions,
+		TExpose extends object = {},
+	>(
+		options: MountOptions<TTables, TKv, TActions, TRuntimeActions, TExpose>,
+	): Mount;
 };
 
 /** The unconnected root workspace returned by `definition.create()`. */
@@ -392,10 +485,17 @@ export function createWorkspace<
  *                                it returns is the one served for cross-node
  *                                dispatch. That ordering is why `compose` is a
  *                                callback here, not a step you run after `connect()`.
+ *   mount(options)               The daemon preset: `create()` plus Yjs-log
+ *                                persistence, cloud sync, and materializers, with
+ *                                node dependencies injected through
+ *                                `options.runtime`. Its `compose` mirrors the
+ *                                browser one (select daemon actions, attach
+ *                                materializers); see `mount` below.
  *
  * `connect(connection)` is `create()` plus the browser storage/transport bundle
- * (`connectTableChildDocs` + `connectDoc`). Non-browser runtimes call `create()`
- * and compose their own infrastructure instead of taking the preset.
+ * (`connectTableChildDocs` + `connectDoc`). `mount(options)` is `create()` plus
+ * the daemon storage/transport bundle, coordinated over injected node functions
+ * so the browser barrel that ships this definition never imports a node module.
  */
 export function defineWorkspace<
 	TTables extends TableDefinitions,
@@ -493,12 +593,76 @@ export function defineWorkspace<
 		});
 	}
 
+	/**
+	 * Daemon runtime: the bare root plus disk persistence, cloud sync, and
+	 * materializers. A pure coordinator over the injected `options.runtime`, so
+	 * this method (and the browser barrel that ships it) never imports a node
+	 * module. It collapses the ritual every mount used to repeat by hand: wrap in
+	 * `defineSessionMount`, resolve the base URL, `create()` the root, run the
+	 * caller's `compose`, attach mount infrastructure, and assemble the runtime.
+	 *
+	 * `compose` is the one place daemon actions and materializers are chosen, so
+	 * a mount cannot accidentally serve browser-only actions: omit it to serve
+	 * the base `workspace.actions` with no materializers, or return an explicit
+	 * `{ actions, materializers, expose }`.
+	 */
+	function mount<
+		TRuntimeActions extends ActionRegistry = TActions,
+		TExpose extends object = {},
+	>(
+		options: MountOptions<TTables, TKv, TActions, TRuntimeActions, TExpose>,
+	): Mount {
+		const { runtime } = options;
+		return runtime.defineSessionMount({
+			name: options.name,
+			open(ctx) {
+				const baseURL = runtime.resolveBaseURL(options.baseURL);
+				const workspace = create();
+				const composition: MountComposition<TRuntimeActions, TExpose> =
+					options.compose
+						? options.compose({
+								workspace,
+								ctx,
+								baseURL,
+								runtime: runtime.bind(ctx),
+							})
+						: // No compose: serve the base actions, no materializers. Reached
+							// only when `TRuntimeActions` defaults to `TActions`, so the
+							// base registry is the served one; the cast bridges the generic
+							// the body can't otherwise prove.
+							({ actions: workspace.actions } as unknown as MountComposition<
+								TRuntimeActions,
+								TExpose
+							>);
+				// `attachInfrastructure` serves `composition.actions` to peers and
+				// drains every listed materializer in order on shutdown, so it runs
+				// after compose has both.
+				const infrastructure = runtime.attachInfrastructure(
+					workspace.ydoc,
+					ctx,
+					{
+						baseURL,
+						actions: composition.actions,
+						materializers: composition.materializers ?? [],
+					},
+				);
+				return {
+					...workspace,
+					...infrastructure,
+					...(composition.expose ?? ({} as TExpose)),
+					actions: composition.actions,
+				};
+			},
+		});
+	}
+
 	return {
 		id: options.id,
 		tables: options.tables,
 		kv: options.kv,
 		create,
 		connect,
+		mount,
 	};
 }
 

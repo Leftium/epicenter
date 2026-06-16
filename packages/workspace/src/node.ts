@@ -58,6 +58,13 @@ export {
 	writeMetadata,
 } from './daemon/metadata.js';
 export {
+	type BoundMountRuntime,
+	type MarkdownMountOptions,
+	type NodeMountRuntime,
+	nodeMountRuntime,
+	type SqliteMountOptions,
+} from './daemon/mount-runtime.js';
+export {
 	dirHash,
 	leasePathFor,
 	logPathFor,

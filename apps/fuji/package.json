@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/lib/workspace/index.ts",
-		"./mount": "./mount.ts"
+		"./mount": "./src/lib/workspace/mount.ts"
 	},
 	"imports": {
 		"#platform/auth": {

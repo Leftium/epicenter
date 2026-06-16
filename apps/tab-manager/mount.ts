@@ -3,24 +3,15 @@
  *
  * `tabManager(opts?)` returns the Mount used by `epicenter.config.ts`.
  * It projects saved tabs, bookmarks, and devices into markdown while keeping
- * the Y.Doc update log and SQLite mirror under `.epicenter/`.
+ * the Y.Doc update log and SQLite mirror under `.epicenter/`. The daemon serves
+ * only the materializer actions: Tab Manager's tab/bookmark actions are
+ * browser-only and live in `tab-manager/extension.ts`.
  */
 
-import { join } from 'node:path';
-import { defineActions, satisfiesWorkspace } from '@epicenter/workspace';
-import { defineSessionMount } from '@epicenter/workspace/daemon';
-import {
-	attachGitAutosave,
-	attachMarkdownExport,
-	type GitAutosaveConfig,
-} from '@epicenter/workspace/document/materializer/markdown';
-import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
-import {
-	attachMountInfrastructure,
-	sqlitePath,
-} from '@epicenter/workspace/node';
-import { createLogger } from 'wellcrafted/logger';
-import { createTabManager } from './src/lib/workspace/definition.js';
+import { defineActions } from '@epicenter/workspace';
+import type { GitAutosaveConfig } from '@epicenter/workspace/document/materializer/markdown';
+import { nodeMountRuntime } from '@epicenter/workspace/node';
+import { tabManagerWorkspace } from './src/lib/workspace/definition.js';
 
 export type TabManagerMountOptions = {
 	/** Enable per-materializer Git autosave for markdown output. */
@@ -33,60 +24,34 @@ export type TabManagerMountOptions = {
 };
 
 export function tabManager(opts: TabManagerMountOptions = {}) {
-	return defineSessionMount({
+	return tabManagerWorkspace.mount({
 		name: 'tab-manager',
-		open(ctx) {
-			const { epicenterRoot, mount } = ctx;
-			const baseURL =
-				opts.baseURL ||
-				process.env.EPICENTER_API_URL ||
-				'https://api.epicenter.so';
-
-			const workspace = createTabManager();
-
-			const sqlite = attachBunSqliteMaterializer(workspace, {
-				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
+		baseURL: opts.baseURL,
+		runtime: nodeMountRuntime(),
+		compose({ workspace, runtime }) {
+			const sqlite = runtime.sqlite(workspace, {
 				fts: {
 					bookmarks: ['title', 'url'],
 					savedTabs: ['title', 'url'],
 				},
-				log: createLogger(`${mount}-sqlite`),
 			});
-			const markdown = attachMarkdownExport(workspace, {
-				dir: epicenterRoot,
+			const markdown = runtime.markdown(workspace, {
 				tables: {
 					bookmarks: {},
 					devices: {},
 					savedTabs: {},
 				},
+				git: opts.git ?? false,
 			});
-			if (opts.git) {
-				for (const tableDir of ['bookmarks', 'devices', 'savedTabs']) {
-					attachGitAutosave({
-						ydoc: workspace.ydoc,
-						dir: join(epicenterRoot, tableDir),
-						config: opts.git,
-					});
-				}
-			}
-
-			const actions = defineActions({
-				...sqlite.actions,
-				...markdown.actions,
-			});
-
-			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
-				baseURL,
-				actions,
+			return {
+				expose: { markdown },
 				materializers: [sqlite, markdown],
-			});
-
-			return satisfiesWorkspace({
-				...workspace,
-				...infrastructure,
-				markdown,
-				actions,
-			});
+				actions: defineActions({
+					...workspace.actions,
+					...sqlite.actions,
+					...markdown.actions,
+				}),
+			};
 		},
 	});
 }

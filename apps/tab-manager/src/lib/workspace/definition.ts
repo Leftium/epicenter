@@ -11,13 +11,14 @@
 
 import { field } from '@epicenter/field';
 import {
-	createWorkspace,
 	defineTable,
+	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
 	type NodeId,
 	nullable,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -148,17 +149,24 @@ const toolTrustTable = defineTable({
 	id: field.string(),
 });
 
-/** Build the Tab Manager workspace bundle for the extension and daemon. */
-export function createTabManager() {
-	return createWorkspace({
-		id: TAB_MANAGER_ID,
-		tables: {
-			devices: devicesTable,
-			savedTabs: savedTabsTable,
-			bookmarks: bookmarksTable,
-			toolTrust: toolTrustTable,
-		},
-		kv: {},
-	});
-}
-export type TabManagerWorkspace = ReturnType<typeof createTabManager>;
+/**
+ * The Tab Manager workspace definition, shared by the extension and the daemon.
+ *
+ * No daemon actions live here: the extension layers browser-only tab/bookmark
+ * actions in `tab-manager/extension.ts`, and the daemon serves only its
+ * materializer actions. The browser composes the root via `.create()`; the
+ * daemon mounts it via `.mount()`.
+ */
+export const tabManagerWorkspace = defineWorkspace({
+	id: TAB_MANAGER_ID,
+	tables: {
+		devices: devicesTable,
+		savedTabs: savedTabsTable,
+		bookmarks: bookmarksTable,
+		toolTrust: toolTrustTable,
+	},
+	kv: {},
+});
+export type TabManagerWorkspace = WorkspaceFromDefinition<
+	typeof tabManagerWorkspace
+>;

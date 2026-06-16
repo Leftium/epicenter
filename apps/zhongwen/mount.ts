@@ -2,14 +2,14 @@
  * Zhongwen mount.
  *
  * `zhongwen()` returns the `Mount` that an `epicenter.config.ts`
- * default-exports. Zhongwen has no daemon actions and no materializers today;
- * the daemon's only job is to host the Y.Doc on disk and bridge
- * sync.
+ * default-exports. Zhongwen has no daemon actions to add and no materializers;
+ * the daemon's only job is to host the root Y.Doc on disk and bridge cloud
+ * sync, so `.mount()` runs with no `compose` and serves the workspace's base
+ * actions. Transcript child docs are opened on demand by browser UI or server
+ * generation actors.
  */
 
-import { satisfiesWorkspace } from '@epicenter/workspace';
-import { defineSessionMount } from '@epicenter/workspace/daemon';
-import { attachMountInfrastructure } from '@epicenter/workspace/node';
+import { nodeMountRuntime } from '@epicenter/workspace/node';
 import { zhongwenWorkspace } from './zhongwen.js';
 
 export type ZhongwenMountOptions = {
@@ -20,32 +20,10 @@ export type ZhongwenMountOptions = {
 	baseURL?: string;
 };
 
-/**
- * Mount Zhongwen in an Epicenter daemon.
- *
- * The daemon hosts the root Y.Doc and sync bridge. Transcript child docs are
- * opened on demand by browser UI or server generation actors.
- */
 export function zhongwen(opts: ZhongwenMountOptions = {}) {
-	return defineSessionMount({
+	return zhongwenWorkspace.mount({
 		name: 'zhongwen',
-		open(ctx) {
-			const baseURL =
-				opts.baseURL ||
-				process.env.EPICENTER_API_URL ||
-				'https://api.epicenter.so';
-
-			const workspace = zhongwenWorkspace.create();
-
-			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
-				baseURL,
-				actions: workspace.actions,
-			});
-
-			return satisfiesWorkspace({
-				...workspace,
-				...infrastructure,
-			});
-		},
+		baseURL: opts.baseURL,
+		runtime: nodeMountRuntime(),
 	});
 }

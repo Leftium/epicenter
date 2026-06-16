@@ -43,10 +43,10 @@
 import type { ColumnError, FlatJsonTSchema } from './column/constraint';
 import {
 	createTableDefinition,
+	type DeclarableTableDefinition,
 	type LastVersion,
 	type MigrateInput,
 	type RowOf,
-	type TableDefinition,
 	type VersionedColumns,
 } from './table';
 
@@ -83,13 +83,13 @@ type ConstrainVersions<TVersions extends readonly VersionedColumns[]> = {
 type MigrationRequired<TVersions extends readonly VersionedColumns[]> = {
 	migrate(
 		fn: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>,
-	): TableDefinition<TVersions>;
+	): DeclarableTableDefinition<TVersions>;
 };
 
 // Single-version overload: no migrate step needed.
 export function defineTable<const TCols extends VersionedColumns>(
 	v1: ConstrainColumns<TCols>,
-): TableDefinition<[TCols]>;
+): DeclarableTableDefinition<[TCols]>;
 
 // Multi-version overload: migrate is required before the definition is usable.
 export function defineTable<

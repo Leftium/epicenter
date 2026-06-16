@@ -361,7 +361,7 @@ export type ChildDocDeclaration<TRow extends BaseRow = BaseRow> =
 /**
  * A map of child-doc declarations, keyed by field name. The field name becomes
  * the guid's `field` segment, so each row owns one derived child doc per
- * declared name (1:1). Declared on a table via {@link TableDefinition.childDocs}.
+ * declared name (1:1). Declared on a table via {@link DeclarableTableDefinition.childDocs}.
  */
 export type ChildDocDeclarations<TRow extends BaseRow = BaseRow> = Record<
 	string,
@@ -404,11 +404,30 @@ export type TableDefinition<
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 	/**
 	 * Child-doc declarations on this table, keyed by field name. `{}` unless
-	 * {@link childDocs} was called. Read by `defineWorkspace(...).connect(connection)`
+	 * {@link DeclarableTableDefinition.childDocs} was called. Read by
+	 * `defineWorkspace(...).connect(connection)`
 	 * to wire one guid-keyed cache per declared body; never carries a connection
 	 * itself, since the declaration is isomorphic.
 	 */
 	childDocDecls: TChildDocs;
+};
+
+/**
+ * A fresh {@link TableDefinition} that has not yet declared its child docs and
+ * so still carries the one-shot {@link DeclarableTableDefinition.childDocs}
+ * builder. Returned by `defineTable(...)` (and by `.migrate(...)` on a
+ * multi-version table).
+ *
+ * Composed UPWARD from the base: a plain `TableDefinition` (the post-declaration
+ * shape every downstream consumer holds) intersected with the `childDocs`
+ * method. `childDocs` returns the base `TableDefinition`, which has no such
+ * method, so a second call is a compile error rather than a silent overwrite.
+ * Declaring child docs is therefore call-once by construction; there is no
+ * `Omit` stripping the method back off.
+ */
+export type DeclarableTableDefinition<
+	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+> = TableDefinition<TVersions, {}> & {
 	/**
 	 * Declare collaborative child-doc bodies on this table. Each row owns one
 	 * child doc per name (derived-1:1), addressed by a guid derived from the row
@@ -420,15 +439,15 @@ export type TableDefinition<
 	 * live one level below the table's CRUD methods and can never collide with
 	 * them. Any field name is safe, including `set` or `open`.
 	 *
-	 * Call AFTER {@link migrate} on multi-version tables: the version tuple is
-	 * positional, so child docs are a separate builder step, not another version.
+	 * Call AFTER {@link TableDefinition.migrate} on multi-version tables: the
+	 * version tuple is positional, so child docs are a separate builder step, not
+	 * another version.
 	 *
-	 * Calling this REPLACES any prior declaration wholesale; it does not merge by
-	 * field name. Declare every child doc for a table in one call, co-located with
-	 * the table definition. Re-declaring an exported table downstream (e.g. an app
-	 * re-calling `.childDocs` on a shared-package table) silently discards the
-	 * original layout and any `onLocalEdit`, so push per-field policy into the
-	 * authoritative declaration instead.
+	 * Declaring is call-once: the result is a plain {@link TableDefinition} with
+	 * no `childDocs` method, so you cannot re-declare and accidentally discard the
+	 * original layout or `onLocalEdit`. Declare every child doc for a table in one
+	 * call, co-located with the table definition, and push per-field policy into
+	 * that authoritative declaration.
 	 *
 	 * Pass a bare layout for a body with no per-field policy, or
 	 * `{ layout, onLocalEdit }` to also bump a recency column when the body is
@@ -489,27 +508,32 @@ export function createTableDefinition<
 >(
 	versions: TVersions,
 	migrate: (input: unknown) => RowOf<LastVersion<TVersions>>,
-): TableDefinition<TVersions> {
+): DeclarableTableDefinition<TVersions> {
 	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
 	const schema = Type.Object(latestColumns);
 	const migrateFn = migrate as TableDefinition<TVersions>['migrate'];
 
 	/**
-	 * Build the definition with a given child-doc declaration. `childDocs(...)`
-	 * recurses through the same builder, so the declaration is the only thing
-	 * that changes; versions, schema, and migrate are fixed.
+	 * Build the immutable base definition for a given declaration. The base
+	 * carries no `childDocs` method, so `childDocs(...)` below returns something
+	 * that cannot declare again; versions, schema, and migrate are fixed.
 	 */
-	const build = <TDecls extends ChildDocDeclarations>(
+	const buildBase = <TDecls extends ChildDocDeclarations>(
 		childDocDecls: TDecls,
 	): TableDefinition<TVersions, TDecls> => ({
 		versions,
 		schema,
 		migrate: migrateFn,
 		childDocDecls,
-		childDocs: (decls) => build(decls),
 	});
 
-	return build({});
+	// Layer the one-shot builder onto a fresh, undeclared base. `childDocs`
+	// returns a bare base, so a second call is a compile error and is impossible
+	// at runtime too (the returned object has no such method).
+	return {
+		...buildBase({}),
+		childDocs: (decls) => buildBase(decls),
+	};
 }
 
 // ════════════════════════════════════════════════════════════════════════════

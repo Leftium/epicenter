@@ -2,7 +2,12 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import { DateTimeString, generateId, IanaTimeZone } from '@epicenter/workspace';
+	import {
+		DateTimeString,
+		generateId,
+		IanaTimeZone,
+		InstantString,
+	} from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
 	import { requireFuji } from '$lib/session';
@@ -64,7 +69,7 @@
 
 	function generateEntryRow(
 		index: number,
-		now: DateTimeString,
+		now: InstantString,
 		dateZone: IanaTimeZone,
 	) {
 		const dateNow = Date.now();
@@ -106,7 +111,7 @@
 		results = null;
 
 		try {
-			const now = DateTimeString.now();
+			const now = InstantString.now();
 			const dateZone = IanaTimeZone.current();
 			const rows = Array.from({ length: count }, (_, i) =>
 				generateEntryRow(i, now, dateZone),

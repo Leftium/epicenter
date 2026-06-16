@@ -14,6 +14,7 @@
  * type contains only the user's columns.
  */
 
+import type { InstantString } from '@epicenter/field';
 import { type Static, type TObject, type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
@@ -326,13 +327,93 @@ export type MigrateInput<
  * `defineTable(v1, v2, ...).migrate(fn)` (multi-version).
  *
  * For per-row content (rich text, long-form body), keep the row lean (ids and
- * metadata) and derive the content-doc guid in app code. Browser runtimes can
- * pair the table with a `createDisposableCache(builder)` keyed by row id; daemon
- * projections can open one content doc for one row and destroy it after reading.
- * The table schema does not declare or store body docs.
+ * metadata) and declare child docs with `.docs({ body: attachLayout })`.
+ * The table schema never stores body docs; `defineWorkspace(...).connect(connection)`
+ * derives each content-doc guid from the workspace id, table name, row id, and
+ * child-doc field.
  */
+/**
+ * A child-doc's CRDT shape: a pure function of a `Y.Doc` that owns a
+ * collaborative body's layout and writer policy (e.g. `attachRichText`,
+ * `attachPlainText`). Carries no connection, so the declaration is isomorphic;
+ * `defineWorkspace(...).connect(connection)` marries it to a connection at runtime.
+ */
+export type ChildDocLayout = (ydoc: Y.Doc) => object;
+
+/**
+ * The row's `InstantString` columns, by name: every non-`id` column whose value
+ * (ignoring `null`) is an {@link InstantString}. The valid targets for `touch`.
+ *
+ * Admits `updatedAt: InstantString` and nullable `deletedAt: InstantString | null`;
+ * excludes a `DateTimeString` column (a different brand: user-authored, not a
+ * machine instant) and any non-time column. Collapses to `never` for a table
+ * with no instant column, so `touch` simply isn't offered there.
+ */
+type InstantColumnKey<TRow extends BaseRow> = {
+	[K in keyof Omit<TRow, 'id'>]-?: NonNullable<TRow[K]> extends InstantString
+		? K
+		: never;
+}[keyof Omit<TRow, 'id'>] &
+	string;
+
+/**
+ * One stored child-doc declaration: a bare {@link ChildDocLayout} (no per-field
+ * policy), or a layout paired with optional policy. The object form is the
+ * single extension point for future per-field concerns (e.g. debounce, a
+ * per-field `gcTime`); adding a key never breaks the bare form.
+ *
+ * `touch` names a row column to stamp with `InstantString.now()` on a LOCAL edit
+ * to the body doc (Yjs `tx.local`), never on synced or hydrated updates, so body
+ * edits bump recency without a custom observer in every table. It is stored as a
+ * plain column-name `string`: the `InstantString`-column constraint is enforced
+ * at the `.docs(...)` call site (see {@link ChildDocDeclarationInput}, where the
+ * row type is still in scope) and then widened to `string` for storage, so the
+ * row type never has to thread through {@link TableDefinition}.
+ */
+export type ChildDocDeclaration =
+	| ChildDocLayout
+	| {
+			layout: ChildDocLayout;
+			touch?: string;
+	  };
+
+/**
+ * A map of stored child-doc declarations, keyed by field name. The field name
+ * becomes the guid's `field` segment, so each row owns one derived child doc per
+ * declared name (1:1). Declared on a table via {@link DeclarableTableDefinition.docs}.
+ */
+export type ChildDocDeclarations = Record<string, ChildDocDeclaration>;
+
+/**
+ * The row-typed input form of {@link ChildDocDeclaration}, accepted only by the
+ * {@link DeclarableTableDefinition.docs} builder. `touch` is constrained to the
+ * row's {@link InstantColumnKey} here, where the row type is still in scope; the
+ * stored declaration widens it to `string`. A bare layout still works for bodies
+ * that need no policy.
+ */
+type ChildDocDeclarationInput<TRow extends BaseRow> =
+	| ChildDocLayout
+	| {
+			layout: ChildDocLayout;
+			touch?: InstantColumnKey<TRow>;
+	  };
+
+/** A map of row-typed child-doc declaration inputs, keyed by field name. */
+type ChildDocDeclarationsInput<TRow extends BaseRow> = Record<
+	string,
+	ChildDocDeclarationInput<TRow>
+>;
+
+/** Extract the {@link ChildDocLayout} from either declaration form. */
+export type LayoutOf<TDeclaration> = TDeclaration extends ChildDocLayout
+	? TDeclaration
+	: TDeclaration extends { layout: infer TLayout extends ChildDocLayout }
+		? TLayout
+		: never;
+
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+	TChildDocs extends ChildDocDeclarations = {},
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
@@ -357,6 +438,79 @@ export type TableDefinition<
 	schema: TObject<LastVersion<TVersions>>;
 	/** Upgrade any stored version to the current row in one step. */
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
+	/**
+	 * Child-doc declarations on this table, keyed by field name. `{}` unless
+	 * {@link DeclarableTableDefinition.docs} was called. Read by
+	 * `defineWorkspace(...).connect(connection)`
+	 * to wire one guid-keyed cache per declared body; never carries a connection
+	 * itself, since the declaration is isomorphic.
+	 */
+	docDecls: TChildDocs;
+};
+
+/**
+ * A fresh {@link TableDefinition} that has not yet declared its child docs and
+ * so still carries the one-shot {@link DeclarableTableDefinition.docs}
+ * builder. Returned by `defineTable(...)` (and by `.migrate(...)` on a
+ * multi-version table).
+ *
+ * Composed UPWARD from the base: a plain `TableDefinition` (the post-declaration
+ * shape every downstream consumer holds) intersected with the `docs`
+ * method. `docs` returns the base `TableDefinition`, which has no such
+ * method, so a second call is a compile error rather than a silent overwrite.
+ * Declaring child docs is therefore call-once by construction; there is no
+ * `Omit` stripping the method back off.
+ */
+export type DeclarableTableDefinition<
+	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+> = TableDefinition<TVersions, {}> & {
+	/**
+	 * Declare collaborative child-doc bodies on this table. Each row owns one
+	 * child doc per name (derived-1:1), addressed by a guid derived from the row
+	 * id, so nothing is stored in a cell and the body cascades when the row is
+	 * deleted (the derived guid simply stops being reachable).
+	 *
+	 * The runtime surfaces these under a dedicated `.docs` namespace on the table
+	 * handle (`workspace.tables.notes.docs.content.open(rowId)`), so field names
+	 * live one level below the table's CRUD methods and can never collide with
+	 * them. Any field name is safe, including `set` or `open`.
+	 *
+	 * Call AFTER {@link TableDefinition.migrate} on multi-version tables: the
+	 * version tuple is positional, so child docs are a separate builder step, not
+	 * another version.
+	 *
+	 * Declaring is call-once: the result is a plain {@link TableDefinition} with
+	 * no `docs` method, so you cannot re-declare and accidentally discard the
+	 * original layout or `touch`. Declare every child doc for a table in one
+	 * call, co-located with the table definition, and push per-field policy into
+	 * that authoritative declaration.
+	 *
+	 * Pass a bare layout for a body with no per-field policy, or
+	 * `{ layout, touch }` to also bump a recency column when the body is edited
+	 * locally. `touch` is constrained to the row's `InstantString` columns and is
+	 * stamped with `InstantString.now()` on local edits (see
+	 * {@link ChildDocDeclaration}):
+	 *
+	 * ```ts
+	 * defineTable({
+	 *   id: field.string(),
+	 *   title: field.string(),
+	 *   updatedAt: field.instant(),
+	 * }).docs({
+	 *   content: {
+	 *     layout: attachRichText,
+	 *     touch: 'updatedAt',
+	 *   },
+	 *   // a bare layout still works for bodies that need no policy:
+	 *   // transcript: attachChatTranscript,
+	 * });
+	 * ```
+	 */
+	docs<
+		TDecls extends ChildDocDeclarationsInput<
+			RowOf<LastVersion<TVersions>> & BaseRow
+		>,
+	>(decls: TDecls): TableDefinition<TVersions, TDecls>;
 };
 
 /**
@@ -376,7 +530,7 @@ export type InferTableRow<T> =
 export type TableDefinitions = Record<
 	string,
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
-	TableDefinition<any>
+	TableDefinition<any, any>
 >;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -384,9 +538,10 @@ export type TableDefinitions = Record<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Build a `TableDefinition` from a list of versions and the migrate function.
- * Called by `defineTable`; exposed for future codegen helpers that need to
- * assemble a definition directly.
+ * Assemble a {@link DeclarableTableDefinition} from resolved versions and a
+ * migrate function: the runtime core of {@link defineTable}, kept beside the
+ * definition types it builds. `defineTable` (a sibling module) is the only
+ * caller, which is the sole reason this is exported rather than module-private.
  *
  * @internal
  */
@@ -395,12 +550,31 @@ export function createTableDefinition<
 >(
 	versions: TVersions,
 	migrate: (input: unknown) => RowOf<LastVersion<TVersions>>,
-): TableDefinition<TVersions> {
+): DeclarableTableDefinition<TVersions> {
 	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
-	return {
+	const schema = Type.Object(latestColumns);
+	const migrateFn = migrate as TableDefinition<TVersions>['migrate'];
+
+	/**
+	 * Build the immutable base definition for a given declaration. The base
+	 * carries no `docs` method, so `docs(...)` below returns something
+	 * that cannot declare again; versions, schema, and migrate are fixed.
+	 */
+	const buildBase = <TDecls extends ChildDocDeclarations>(
+		docDecls: TDecls,
+	): TableDefinition<TVersions, TDecls> => ({
 		versions,
-		schema: Type.Object(latestColumns),
-		migrate: migrate as TableDefinition<TVersions>['migrate'],
+		schema,
+		migrate: migrateFn,
+		docDecls,
+	});
+
+	// Layer the one-shot builder onto a fresh, undeclared base. `docs`
+	// returns a bare base, so a second call is a compile error and is impossible
+	// at runtime too (the returned object has no such method).
+	return {
+		...buildBase({}),
+		docs: (decls) => buildBase(decls),
 	};
 }
 

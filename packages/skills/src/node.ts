@@ -28,6 +28,7 @@ import {
 	defineActions,
 	defineMutation,
 	generateId,
+	InstantString,
 	onLocalUpdate,
 } from '@epicenter/workspace';
 import Type from 'typebox';
@@ -39,9 +40,7 @@ import {
 import { Ok, tryAsync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { parseSkillMd } from './parse.js';
-import { referenceContentDocGuid } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
-import { skillInstructionsDocGuid } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
 import type { Skill } from './tables.js';
 import { createSkills } from './workspace.js';
@@ -80,11 +79,11 @@ export function openSkillsNode({ workspaceId }: { workspaceId: string }) {
 
 	function openInstructionsDoc(skillId: string) {
 		const ydoc = new Y.Doc({
-			guid: skillInstructionsDocGuid({ workspaceId, skillId }),
+			guid: tables.skills.docs.instructions.guid(skillId),
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
-			tables.skills.update(skillId, { updatedAt: Date.now() }),
+			tables.skills.update(skillId, { updatedAt: InstantString.now() }),
 		);
 		return {
 			ydoc,
@@ -98,11 +97,13 @@ export function openSkillsNode({ workspaceId }: { workspaceId: string }) {
 
 	function openReferenceDoc(referenceId: string) {
 		const ydoc = new Y.Doc({
-			guid: referenceContentDocGuid({ workspaceId, referenceId }),
+			guid: tables.references.docs.content.guid(referenceId),
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
-			tables.references.update(referenceId, { updatedAt: Date.now() }),
+			tables.references.update(referenceId, {
+				updatedAt: InstantString.now(),
+			}),
 		);
 		return {
 			ydoc,
@@ -184,7 +185,7 @@ export function openSkillsNode({ workspaceId }: { workspaceId: string }) {
 					const skill = {
 						...parsedSkill,
 						id: skillId,
-						updatedAt: Date.now(),
+						updatedAt: InstantString.now(),
 					} satisfies Skill;
 					tables.skills.set(skill);
 
@@ -222,7 +223,7 @@ export function openSkillsNode({ workspaceId }: { workspaceId: string }) {
 									id: refId,
 									skillId,
 									path: fileName,
-									updatedAt: Date.now(),
+									updatedAt: InstantString.now(),
 								});
 
 								await using h = openReferenceDoc(refId);

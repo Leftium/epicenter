@@ -6,17 +6,17 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The pattern: `createWorkspace({ id, tables, kv })` constructs the low-level workspace `Y.Doc` with tables and KV mounted. Apps wrap that in `create<App>()` to define the shared isomorphic model: id, tables, actions, deterministic child docs, and disposal. Runtime openers such as `open<App>Browser()`, `open<App>Daemon()`, and `open<App>Tauri()` compose additional `attach*` / `open*` primitives around that model and return the exact shape the runtime needs. Use `defineWorkspace()` when returning a composed bundle so TypeScript preserves the inferred shape after spreads.
+The pattern: `defineWorkspace({ id, tables, kv, actions })` declares the shared isomorphic model. `definition.create()` builds the unconnected root doc for daemon composition. `definition.connect(connection)` creates the browser runtime with owner-scoped local storage, root sync, wipe, and table child-doc openers. `definition.connect(connection, compose)` lets a runtime add extras and publish its final action registry before collaboration starts. `createWorkspace({ id, tables, kv })` and `satisfiesWorkspace(...)` remain lower-level primitives for internals, tests, and ports that have not moved to definitions yet.
 
 ```
 +----------------------------------------------------------------+
 | Your App                                                       |
 +----------------------------------------------------------------+
-| create<App>(): shared model                                    |
+| defineWorkspace(...): shared definition                        |
 | open<App>Browser/Daemon/Tauri(): runtime attachments              |
 +----------------------------------------------------------------+
-| createWorkspace({ id, tables, kv })                            |
-|   -> { ydoc, tables, kv, actions, [Symbol.dispose] }           |
+| defineWorkspace({ id, tables, kv, actions }).connect(...)         |
+|   -> { ydoc, tables, kv, actions, child-doc openers, ... }     |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachLocalStorage(ydoc, { server, ownerId })  // scoped IDB + scoped BC |
 | wipeLocalStorage({ server, ownerId })           // delete local data for owner |
@@ -31,8 +31,8 @@ The pattern: `createWorkspace({ id, tables, kv })` constructs the low-level work
 
 Three prefixes, each with a consistent meaning:
 
-- **`define*`** is pure: no Y.Doc, no side effects. Schemas, KV definitions, action factories, or type-preserving wrappers such as `defineWorkspace`.
-- **`create*`** constructs a model, registry, or cache. `createWorkspace` creates the low-level Y.Doc bundle; `create<App>` creates an app's shared isomorphic model.
+- **`define*`** is pure: no Y.Doc, no side effects. Schemas, KV definitions, action factories, and app workspace definitions.
+- **`create*`** constructs a model, registry, or cache. `createWorkspace` creates the low-level Y.Doc bundle for internals and tests.
 - **`open*`** constructs or receives a model and attaches runtime lifecycle: browser storage, daemon sync, SQLite readers, or Tauri services.
 - **`attach*`** binds a capability to an existing `Y.Doc` (or, in one documented cross-package case, to a sibling attachment). Side-effectful: registers observers or destroy listeners at call time. Returns a typed handle.
 
@@ -40,7 +40,7 @@ See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, inv
 
 ```typescript
 import { field } from '@epicenter/field';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import { defineTable, defineWorkspace } from '@epicenter/workspace';
 
 // Pure schema. `_v` is library-managed: never declare it as a column.
 const postsTable = defineTable({
@@ -48,105 +48,57 @@ const postsTable = defineTable({
   title: field.string(),
 });
 
-// Vanilla factory: createWorkspace owns Y.Doc creation; the factory composes
-// any extra attachments your app needs and returns the bundle.
-function openBlog() {
-  return createWorkspace({
-    id: 'blog',
-    tables: { posts: postsTable },
-    kv: {},
-  });
-}
+const blogWorkspace = defineWorkspace({
+  id: 'blog',
+  tables: { posts: postsTable },
+  kv: {},
+});
 
-using workspace = openBlog();
+using workspace = blogWorkspace.connect();
 workspace.tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
 ## Composing More
 
-The factory body is where you wire everything. Because you own the return shape, you can expose whatever handles your app needs.
+The definition owns schema and isomorphic actions. Runtime openers decide whether
+to open only the root doc or attach browser storage, sync, and runtime extras.
 
 ### Persistence + collaboration
 
-Auth belongs to the app. The workspace factory receives the signed-in identity
-(`ownerId` + transport functions) and a WebSocket opener, then passes them to
-`attachLocalStorage` and `openCollaboration`. `openCollaboration` wraps the sync
-supervisor, mirrors the relay's server-owned presence channel as `devices`, and
-runs inbound dispatch frames against the local action registry.
+Auth belongs to the app. The browser opener receives the signed-in identity plus
+`deviceId`, then passes that connection into `definition.connect(connection)`.
 
 ```typescript
 import type { SignedIn } from '@epicenter/svelte/auth';
-import {
-  attachLocalStorage,
-  createWorkspace,
-  openCollaboration,
-  roomWsUrl,
-  wipeLocalStorage,
-} from '@epicenter/workspace';
+import type { DeviceId } from '@epicenter/workspace';
 
 function openBlog({
   signedIn,
   deviceId,
 }: {
   signedIn: SignedIn;
-  deviceId: string;
+  deviceId: DeviceId;
 }) {
-  const workspace = createWorkspace({
-    id: 'blog',
-    tables: myTables,
-    kv: {},
-  });
-
-  // Server + owner scoped IDB + cross-tab BroadcastChannel in one call.
-  const idb = attachLocalStorage(workspace.ydoc, {
-    server: signedIn.server,
-    ownerId: signedIn.ownerId,
-  });
-
-  const collaboration = openCollaboration(workspace.ydoc, {
-    url: roomWsUrl({
-      baseURL: signedIn.baseURL,
-      ownerId: signedIn.ownerId,
-      guid: workspace.ydoc.guid,
-      deviceId,
-    }),
-    openWebSocket: signedIn.openWebSocket,
-    onReconnectSignal: signedIn.onReconnectSignal,
-    waitFor: idb.whenLoaded,
-    actions: {},
-  });
-
-  return {
-    ...workspace,
-    idb,
-    collaboration,
-    async wipe() {
-      workspace[Symbol.dispose]();
-      await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-      await wipeLocalStorage({
-        server: signedIn.server,
-        ownerId: signedIn.ownerId,
-      });
-    },
-  };
+  return blogWorkspace.connect({ ...signedIn, deviceId });
 }
 ```
 
-`attachLocalStorage(ydoc, { server, ownerId })` derives the IDB database name
-and BroadcastChannel key from `server` + `ownerId` + `ydoc.guid` under a single
-durable prefix, so two signed-in owners on the same browser profile never share
-local storage or exchange cross-tab updates. `wipeLocalStorage` deletes every
-database under that prefix in one call: no explicit guid list to maintain.
+`open(connection)` derives owner-scoped local storage and BroadcastChannel keys
+from `server`, `ownerId`, and each doc guid. `wipe()` deletes every database
+under that owner prefix in one call: no explicit guid list to maintain.
 
-For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, use `openCollaboration` with an empty `actions: {}` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
+For content documents (rich-text bodies, attachments) that only need bytes on
+the wire, the opener uses the same collaboration primitive with an empty
+`actions: {}` registry.
 
 ### Per-row content documents
 
-Tables stay lean (ids, titles, metadata). Rich content lives in app-owned
-per-row content docs. The app derives each doc guid from the workspace id, row
-id, collection, and field; rows do not store those guids. Browser runtimes use
-`createDisposableCache(...)` when multiple surfaces may open the same content doc
-at once. Daemon projections can open one doc for one row, read it, and destroy it.
+Tables stay lean (ids, titles, metadata). Rich content lives in table-declared
+child docs: `.docs({ body: attachRichText })`. The opener derives each doc
+guid from the workspace id, table name, row id, and field; rows do not store
+those guids. Browser runtimes use `tables.notes.docs.body.open(noteId)` when a
+surface needs the content doc. Daemon projections can derive the same guid,
+read one doc for one row, and destroy it.
 See `apps/fuji/src/lib/workspace/browser.ts` and
 `apps/fuji/src/lib/workspace/project.ts` for the Fuji pattern.
 

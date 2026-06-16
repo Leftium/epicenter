@@ -28,20 +28,20 @@
  * commands beside it.
  */
 
-import { field } from '@epicenter/field';
+import { field, InstantString } from '@epicenter/field';
 import {
-	createWorkspace,
+	attachRichText,
 	DateTimeString,
 	defineActions,
 	defineMutation,
 	defineQuery,
 	defineTable,
 	defineWorkspace,
-	docGuid,
 	generateId,
 	type IanaTimeZone,
 	type InferTableRow,
 	nullable,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -64,37 +64,35 @@ const entriesTable = defineTable({
 	type: field.json(Type.Array(Type.String())),
 	tags: field.json(Type.Array(Type.String())),
 	pinned: field.boolean(),
-	deletedAt: nullable(field.datetime()),
+	deletedAt: nullable(field.instant()),
 	// `date` is the canonical UTC instant; `dateZone` carries the originating
 	// IANA zone so display code can render the user's local wall-clock time.
 	// Per the workspace `<field>` + `<field>Zone` convention.
 	date: field.datetime(),
 	dateZone: field.string<IanaTimeZone>(),
-	createdAt: field.datetime(),
-	updatedAt: field.datetime(),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
 	rating: field.number(),
+}).docs({
+	content: {
+		layout: attachRichText,
+		touch: 'updatedAt',
+	},
 });
 
 export type Entry = InferTableRow<typeof entriesTable>;
 
 /**
- * Build a Fuji workspace bundle: `{ ydoc, tables, kv, actions }`.
+ * Fuji's shared workspace definition.
  *
- * The same factory is used in both browser and daemon entrypoints. Entry bodies
- * are separate Y.Docs addressed by `entryContentDocGuid(id)` and opened by
- * runtime-specific code.
+ * Entry bodies are separate child Y.Docs declared on `entries.content`.
  */
-export function createFuji() {
-	const workspace = createWorkspace({
-		id: FUJI_ID,
-		tables: { entries: entriesTable },
-		kv: {},
-	});
-	const { tables } = workspace;
-
-	return defineWorkspace({
-		...workspace,
-		actions: defineActions({
+export const fujiWorkspace = defineWorkspace({
+	id: FUJI_ID,
+	tables: { entries: entriesTable },
+	kv: {},
+	actions: ({ tables }) =>
+		defineActions({
 			entries_get: defineQuery({
 				title: 'Get Entry',
 				description: 'Read one entry by ID from the Fuji workspace.',
@@ -166,6 +164,7 @@ export function createFuji() {
 				}) => {
 					const id = generateId<EntryId>();
 					const now = DateTimeString.now();
+					const touchedAt = InstantString.now();
 					tables.entries.set({
 						id,
 						title: title ?? '',
@@ -177,8 +176,8 @@ export function createFuji() {
 						deletedAt: null,
 						date: now,
 						dateZone: (dateZone ?? 'UTC') as IanaTimeZone,
-						createdAt: now,
-						updatedAt: now,
+						createdAt: touchedAt,
+						updatedAt: touchedAt,
 					});
 					return { id };
 				},
@@ -197,7 +196,7 @@ export function createFuji() {
 					pinned: Type.Boolean({ description: 'Whether the entry is pinned' }),
 					rating: Type.Number({ description: 'Rating from 0 to 5' }),
 					deletedAt: nullable(
-						field.datetime({ description: 'Soft deletion timestamp' }),
+						field.instant({ description: 'Soft deletion timestamp' }),
 					),
 					date: Type.Unsafe<DateTimeString>({
 						type: 'string',
@@ -206,11 +205,11 @@ export function createFuji() {
 					dateZone: Type.String({
 						description: 'IANA timezone for displaying the entry date',
 					}),
-					createdAt: Type.Unsafe<DateTimeString>({
+					createdAt: Type.Unsafe<InstantString>({
 						type: 'string',
 						description: 'Creation timestamp',
 					}),
-					updatedAt: Type.Unsafe<DateTimeString>({
+					updatedAt: Type.Unsafe<InstantString>({
 						type: 'string',
 						description: 'Last update timestamp',
 					}),
@@ -263,7 +262,7 @@ export function createFuji() {
 						...(dateZone !== undefined && {
 							dateZone: dateZone as IanaTimeZone,
 						}),
-						updatedAt: DateTimeString.now(),
+						updatedAt: InstantString.now(),
 					});
 				},
 			}),
@@ -275,8 +274,8 @@ export function createFuji() {
 				}),
 				handler: ({ id }) => {
 					return tables.entries.update(id, {
-						deletedAt: DateTimeString.now(),
-						updatedAt: DateTimeString.now(),
+						deletedAt: InstantString.now(),
+						updatedAt: InstantString.now(),
 					});
 				},
 			}),
@@ -289,7 +288,7 @@ export function createFuji() {
 				handler: ({ id }) => {
 					return tables.entries.update(id, {
 						deletedAt: null,
-						updatedAt: DateTimeString.now(),
+						updatedAt: InstantString.now(),
 					});
 				},
 			}),
@@ -312,7 +311,7 @@ export function createFuji() {
 					),
 				}),
 				handler: async ({ dateZone, entries: items }) => {
-					const now = DateTimeString.now();
+					const touchedAt = InstantString.now();
 					const rows = items.map(({ title, date }) => ({
 						id: generateId<EntryId>(),
 						title,
@@ -324,8 +323,8 @@ export function createFuji() {
 						deletedAt: null,
 						date: date as DateTimeString,
 						dateZone: dateZone as IanaTimeZone,
-						createdAt: now,
-						updatedAt: now,
+						createdAt: touchedAt,
+						updatedAt: touchedAt,
 					}));
 					// Fresh generateId() ids cannot collide with a stored row, so
 					// bulkSet never refuses on this path; report a clean count.
@@ -334,26 +333,7 @@ export function createFuji() {
 				},
 			}),
 		}),
-		[Symbol.dispose]() {
-			workspace[Symbol.dispose]();
-		},
-	});
-}
-export type FujiWorkspace = ReturnType<typeof createFuji>;
-
-/**
- * Deterministic guid of an entry's rich-text content sub-doc.
- *
- * Browser editors, daemon materializers, and wipe paths reach this same
- * function so every layer points at the same Y.Doc identity.
- */
-export function entryContentDocGuid(entryId: EntryId): string {
-	return docGuid({
-		workspaceId: FUJI_ID,
-		collection: 'entries',
-		rowId: entryId,
-		field: 'content',
-	});
-}
+});
+export type FujiWorkspace = WorkspaceFromDefinition<typeof fujiWorkspace>;
 
 export type FujiActions = FujiWorkspace['actions'];

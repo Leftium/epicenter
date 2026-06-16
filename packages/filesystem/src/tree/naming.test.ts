@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 import { createWorkspace } from '@epicenter/workspace';
 import { asFileId } from '../ids.js';
 import { filesTable } from '../table.js';
@@ -30,8 +31,9 @@ function makeRow(
 	id: string,
 	name: string,
 	parentId: string | null = null,
-	createdAt = Date.now(),
+	createdAtMs = Date.now(),
 ) {
+	const createdAt = InstantString.fromDate(new Date(createdAtMs));
 	return {
 		id: fid(id),
 		name,
@@ -99,7 +101,7 @@ describe('assertUniqueName', () => {
 
 	test('ignores trashed files', () => {
 		const { files } = setup();
-		files.set({ ...makeRow('a', 'hello.txt'), trashedAt: Date.now() });
+		files.set({ ...makeRow('a', 'hello.txt'), trashedAt: InstantString.now() });
 
 		expect(() =>
 			assertUniqueName(files, [fid('a')], 'hello.txt'),

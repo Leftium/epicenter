@@ -20,6 +20,7 @@
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { requireFuji } from '$lib/session';
 	import type { EntryId } from '$lib/workspace';
 	import { entryBodySchema as schema } from '$lib/workspace/entry-body-schema';
@@ -33,9 +34,7 @@
 	} = $props();
 
 	const fuji = requireFuji();
-	// svelte-ignore state_referenced_locally - EntryEditor remounts this component by entry id
-	const contentDoc = fuji.entryBodies.open(entryId);
-	$effect(() => () => contentDoc[Symbol.dispose]());
+	const doc = fromDisposableCache(fuji.tables.entries.docs.content, () => entryId);
 
 	let element: HTMLDivElement | undefined = $state();
 
@@ -90,7 +89,7 @@
 			state: EditorState.create({
 				schema,
 				plugins: [
-					ySyncPlugin(contentDoc.binding),
+					ySyncPlugin(doc.current.binding),
 					yUndoPlugin(),
 					placeholderPlugin,
 					keymap({
@@ -143,7 +142,7 @@
 	});
 </script>
 
-{#await contentDoc.whenLoaded}
+{#await doc.current.whenLoaded}
 	<Loading class="flex-1" />
 {:then _}
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>

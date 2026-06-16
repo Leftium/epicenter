@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 import {
 	attachTimeline,
 	createDisposableCache,
@@ -18,7 +19,6 @@ import {
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { fileContentDocGuid } from './file-content-docs.js';
 import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import { type FileId, generateFileId } from './ids.js';
 import { filesTable } from './table.js';
@@ -37,11 +37,11 @@ function setup() {
 	const contentDocs = createDisposableCache(
 		(fileId: FileId) => {
 			const contentYdoc = new Y.Doc({
-				guid: fileContentDocGuid({ workspaceId: ws.id, fileId }),
+				guid: ws.tables.files.docs.content.guid(fileId),
 				gc: true,
 			});
 			onLocalUpdate(contentYdoc, () =>
-				ws.tables.files.update(fileId, { updatedAt: Date.now() }),
+				ws.tables.files.update(fileId, { updatedAt: InstantString.now() }),
 			);
 			return {
 				ydoc: contentYdoc,
@@ -423,7 +423,7 @@ describe('ydoc destroy lifecycle', () => {
 
 		// Mutate the underlying table directly, bypassing fs (which uses
 		// contentDocs that are now torn down).
-		const now = Date.now();
+		const now = InstantString.now();
 		ws.tables.files.set({
 			id: generateFileId(),
 			name: 'after.txt',

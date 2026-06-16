@@ -7,10 +7,10 @@
  * sync.
  */
 
-import { defineWorkspace } from '@epicenter/workspace';
+import { satisfiesWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
-import { createZhongwen } from './zhongwen.js';
+import { zhongwenWorkspace } from './zhongwen.js';
 
 export type ZhongwenMountOptions = {
 	/**
@@ -23,8 +23,8 @@ export type ZhongwenMountOptions = {
 /**
  * Mount Zhongwen in an Epicenter project daemon.
  *
- * The daemon hosts the root Y.Doc and sync bridge. Browser-only
- * transcript docs stay in `openZhongwenBrowser()`.
+ * The daemon hosts the root Y.Doc and sync bridge. Transcript child docs are
+ * opened on demand by browser UI or server generation actors.
  */
 export function zhongwen(opts: ZhongwenMountOptions = {}) {
 	return defineSessionMount({
@@ -35,14 +35,14 @@ export function zhongwen(opts: ZhongwenMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createZhongwen();
+			const workspace = zhongwenWorkspace.create();
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL,
 				actions: workspace.actions,
 			});
 
-			return defineWorkspace({
+			return satisfiesWorkspace({
 				...workspace,
 				...infrastructure,
 			});

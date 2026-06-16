@@ -11,89 +11,28 @@
  * @example
  * ```typescript
  * import {
- *   attachIndexedDb,
  *   attachRichText,
- *   createDeviceId,
- *   createDisposableCache,
- *   createWorkspace,
+ *   type ConnectionConfig,
  *   defineTable,
- *   docGuid,
- *   openCollaboration,
- *   roomWsUrl,
+ *   defineWorkspace,
  * } from '@epicenter/workspace';
  * import { field } from '@epicenter/field';
- * import type { AuthClient } from '@epicenter/auth';
- * import type { OwnerId } from '@epicenter/identity';
- * import * as Y from 'yjs';
  *
  * const posts = defineTable({
  *   id: field.string(),
  *   title: field.string(),
- * });
- * declare const auth: AuthClient;
- * declare const ownerId: OwnerId;
+ * }).docs({ body: attachRichText });
  *
- * const deviceId = createDeviceId({ storage: localStorage });
- *
- * // The workspace bundle owns the root Y.Doc, the tables, and the KV slot.
- * // `using` triggers cascade disposal of every store on scope exit.
- * using workspace = createWorkspace({
+ * const notesWorkspace = defineWorkspace({
  *   id: 'notes',
  *   tables: { posts },
  *   kv: {},
  * });
- * const idb = attachIndexedDb(workspace.ydoc);
- * const collaboration = openCollaboration(workspace.ydoc, {
- *   url: roomWsUrl({
- *     baseURL: auth.baseURL,
- *     ownerId,
- *     guid: workspace.ydoc.guid,
- *     deviceId,
- *   }),
- *   openWebSocket: auth.openWebSocket,
- *   onReconnectSignal: auth.onStateChange,
- *   waitFor: idb.whenLoaded,
- *   actions: {},
- * });
  *
- * // Content docs are per-row child Y.Docs constructed inline. Sub-doc
- * // primitives (attachRichText, etc.) take a raw Y.Doc, not a workspace.
- * const noteBodyDocs = createDisposableCache(
- *   (noteId: string) => {
- *     const bodyYdoc = new Y.Doc({
- *       guid: docGuid({
- *         workspaceId: workspace.ydoc.guid,
- *         collection: 'posts',
- *         rowId: noteId,
- *         field: 'body',
- *       }),
- *       gc: true,
- *     });
- *     const bodyIdb = attachIndexedDb(bodyYdoc);
- *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: roomWsUrl({
- *         baseURL: auth.baseURL,
- *         ownerId,
- *         guid: bodyYdoc.guid,
- *         deviceId,
- *       }),
- *       openWebSocket: auth.openWebSocket,
- *       onReconnectSignal: auth.onStateChange,
- *       waitFor: bodyIdb.whenLoaded,
- *       actions: {},
- *     });
- *     return {
- *       ydoc: bodyYdoc,
- *       body: attachRichText(bodyYdoc),
- *       idb: bodyIdb,
- *       sync: bodySync,
- *       [Symbol.dispose]() {
- *         bodyYdoc.destroy();
- *       },
- *     };
- *   },
- *   { gcTime: 5_000 },
- * );
+ * declare const connection: ConnectionConfig;
+ * using workspace = notesWorkspace.connect(connection);
+ * using body = workspace.tables.posts.docs.body.open('post-1');
+ * await body.whenLoaded;
  * ```
  *
  * @packageDocumentation
@@ -139,10 +78,14 @@ export type { EpicenterRoot } from './shared/types';
 // ID + DATE PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export { CalendarDateString, DateTimeString } from '@epicenter/field';
+export {
+	CalendarDateString,
+	DateTimeString,
+	InstantString,
+} from '@epicenter/field';
 export { IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
-export { generateGuid, generateId } from './shared/id';
+export { generateId } from './shared/id';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EMPTINESS AXIS (nullable: substrate value policy)
@@ -155,6 +98,7 @@ export { nullable } from './document/nullable';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { debounce } from './shared/debounce.js';
+export { once } from './shared/once.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
@@ -170,17 +114,16 @@ export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
-export {
-	type ChildDocConnection,
-	createChildDocs,
-} from './document/create-child-docs.js';
+export { type ConnectionConfig, connectDoc } from './document/connect-doc.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export {
 	DispatchError,
 	type DispatchRequest,
 } from './document/dispatch.js';
-export { docGuid } from './document/doc-guid.js';
+// `docGuid` is intentionally NOT exported: child-doc guid derivation is an
+// internal workspace detail. Callers reach it through the table path,
+// `tables.<table>.docs.<field>.guid(rowId)`, which is the public contract.
 // One-shot HTTP read of a hosted room: GET the snapshot into a throwaway doc.
 // The atomic snapshot lets a relay-only doc be read without a live
 // `openCollaboration` session.
@@ -221,8 +164,18 @@ export {
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
+	type ConnectedTables,
+	type ConnectedWorkspace,
+	type ConnectedWorkspaceContext,
 	type CreateWorkspaceOptions,
 	createWorkspace,
+	type DefineWorkspaceOptions,
 	defineWorkspace,
+	satisfiesWorkspace,
 	type Workspace,
+	type WorkspaceActionContext,
+	type WorkspaceDefinition,
+	type WorkspaceFromDefinition,
+	type WorkspaceRuntimeExtension,
+	type WorkspaceTables,
 } from './document/workspace.js';

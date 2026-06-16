@@ -3,11 +3,11 @@ import {
 	createWorkspace,
 	defineKv,
 	defineTable,
-	defineWorkspace,
 	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
 	nullable,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { type Static, type TProperties, Type } from 'typebox';
 
@@ -381,7 +381,7 @@ export function createWhispering({
 
 	const settingKeys = Object.keys(kvDefinitions) as SettingKey[];
 
-	return defineWorkspace({
+	return satisfiesWorkspace({
 		...workspace,
 		/**
 		 * Synced setting metadata for the Whispering workspace.

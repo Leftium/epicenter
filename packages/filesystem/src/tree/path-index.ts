@@ -1,3 +1,4 @@
+import type { InstantString } from '@epicenter/field';
 import type { Table } from '@epicenter/workspace';
 import type * as Y from 'yjs';
 import { asFileId, type FileId } from '../ids.js';
@@ -10,7 +11,7 @@ const MAX_DEPTH = 50;
 type RowSnapshot = {
 	name: string;
 	parentId: FileId | null;
-	trashedAt: number | null;
+	trashedAt: InstantString | null;
 };
 
 function snapFrom(row: FileRow): RowSnapshot {
@@ -405,7 +406,9 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 				// Cycle detected: move the latest-updated node in the cycle to root.
 				const cycleIds = path.slice(path.indexOf(currentId));
 				let latestId: FileId | null = null;
-				let latestTime = -1;
+				// Empty string sorts before any fixed-width UTC instant, so the
+				// first valid row always wins the initial comparison.
+				let latestTime = '';
 				for (const cid of cycleIds) {
 					const { data: row, error } = filesTable.get(cid);
 					if (error) continue;

@@ -42,7 +42,7 @@ describe('createDeviceId', () => {
 	it('generates and persists when storage is empty', () => {
 		const storage = makeMemoryStorage();
 		const fresh = createDeviceId({ storage });
-		expect(fresh).toMatch(/^[a-z0-9]{15}$/);
+		expect(fresh).toMatch(/^[a-z0-9]{16}$/);
 		expect(storage.getItem('epicenter.device.id')).toBe(fresh);
 	});
 
@@ -73,7 +73,7 @@ describe('createDeviceIdAsync', () => {
 	it('generates and persists when storage is empty', async () => {
 		const storage = makeAsyncMemoryStorage();
 		const fresh = await createDeviceIdAsync({ storage });
-		expect(fresh).toMatch(/^[a-z0-9]{15}$/);
+		expect(fresh).toMatch(/^[a-z0-9]{16}$/);
 		expect(await storage.getItem('epicenter.device.id')).toBe(fresh);
 	});
 

@@ -14,8 +14,9 @@ import { settings } from '$lib/state/settings.svelte';
 // ("which sessions did I pause?") and doubles as the "currently paused" flag.
 // Both helpers always resolve, so the chain never wedges.
 //
-// Tokens are opaque platform identities (macOS app name / Windows AUMID / Linux
-// MPRIS bus name); the frontend only ever round-trips them back to the backend.
+// Tokens are opaque platform identities (macOS output-active bundle ids /
+// Windows AUMID / Linux MPRIS bus name); the frontend only ever round-trips them
+// back to the backend.
 
 let chain: Promise<string[]> = Promise.resolve([]);
 

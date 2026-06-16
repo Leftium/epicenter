@@ -4,8 +4,8 @@
 //! and `resume_playback` on capture end, trading opaque `String` session tokens:
 //! `pause_playback` returns a token for each session it paused, and the frontend
 //! hands that same set back to `resume_playback`. Token contents are
-//! platform-private (macOS app name today; Windows AUMID / Linux MPRIS bus name
-//! once those impls land) and the frontend never interprets them.
+//! platform-private (macOS output-active bundle ids, Windows AUMIDs, Linux MPRIS
+//! bus names) and the frontend never interprets them.
 //!
 //! Recording never waits on, and never fails because of, playback control: each
 //! command returns a `Result` the caller fires and forgets. One platform module

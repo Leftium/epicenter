@@ -463,10 +463,11 @@ export function defineWorkspace<
 			actions: runtime.actions,
 		});
 
-		// Idempotent: `wipe()` calls dispose() explicitly, and a `using` binding
-		// calls it again at scope exit. The root `ydoc.destroy()` is the only
-		// non-idempotent callee (its destroy hooks use `.once`, but the app's
-		// `runtime[Symbol.dispose]` may not be), so the wrapper guards both.
+		// `dispose` is reachable twice: `wipe()` calls it explicitly, then a `using`
+		// binding calls it again at scope exit. Neither callee is safe to run twice
+		// on its own (the app's `runtime[Symbol.dispose]` is arbitrary, and
+		// `ydoc.destroy()` re-emits `destroy` on every call), so `once` collapses
+		// the whole teardown to a single run.
 		const dispose = once(() => {
 			runtime[Symbol.dispose]?.();
 			workspace[Symbol.dispose]();

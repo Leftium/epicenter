@@ -14,6 +14,7 @@
  * type contains only the user's columns.
  */
 
+import type { InstantString } from '@epicenter/field';
 import { type Static, type TObject, type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
@@ -340,32 +341,67 @@ export type MigrateInput<
 export type ChildDocLayout = (ydoc: Y.Doc) => object;
 
 /**
- * One child-doc field declaration. Either a bare {@link ChildDocLayout} (no
- * per-field policy) or a layout paired with optional policy. The object form is
- * the single extension point for future per-field concerns (e.g. debounce, a
+ * The row's `InstantString` columns, by name: every non-`id` column whose value
+ * (ignoring `null`) is an {@link InstantString}. The valid targets for `touch`.
+ *
+ * Admits `updatedAt: InstantString` and nullable `deletedAt: InstantString | null`;
+ * excludes a `DateTimeString` column (a different brand: user-authored, not a
+ * machine instant) and any non-time column. Collapses to `never` for a table
+ * with no instant column, so `touch` simply isn't offered there.
+ */
+type InstantColumnKey<TRow extends BaseRow> = {
+	[K in keyof Omit<TRow, 'id'>]-?: NonNullable<TRow[K]> extends InstantString
+		? K
+		: never;
+}[keyof Omit<TRow, 'id'>] &
+	string;
+
+/**
+ * One stored child-doc declaration: a bare {@link ChildDocLayout} (no per-field
+ * policy), or a layout paired with optional policy. The object form is the
+ * single extension point for future per-field concerns (e.g. debounce, a
  * per-field `gcTime`); adding a key never breaks the bare form.
  *
- * `onLocalEdit` fires ONLY on local edits to the body doc (Yjs `tx.local`),
- * never on synced or hydrated updates, and returns a row patch the runtime
- * applies through the row's own `update`. It receives the row id, not the live
- * `Y.Doc`, so the declaration stays isomorphic. Typical use: bump a recency
- * column when the body is edited, e.g. `() => ({ updatedAt: DateTimeString.now() })`.
+ * `touch` names a row column to stamp with `InstantString.now()` on a LOCAL edit
+ * to the body doc (Yjs `tx.local`), never on synced or hydrated updates, so body
+ * edits bump recency without a custom observer in every table. It is stored as a
+ * plain column-name `string`: the `InstantString`-column constraint is enforced
+ * at the `.docs(...)` call site (see {@link ChildDocDeclarationInput}, where the
+ * row type is still in scope) and then widened to `string` for storage, so the
+ * row type never has to thread through {@link TableDefinition}.
  */
-export type ChildDocDeclaration<TRow extends BaseRow = BaseRow> =
+export type ChildDocDeclaration =
 	| ChildDocLayout
 	| {
 			layout: ChildDocLayout;
-			onLocalEdit?: (rowId: string) => Partial<Omit<TRow, 'id'>>;
+			touch?: string;
 	  };
 
 /**
- * A map of child-doc declarations, keyed by field name. The field name becomes
- * the guid's `field` segment, so each row owns one derived child doc per
+ * A map of stored child-doc declarations, keyed by field name. The field name
+ * becomes the guid's `field` segment, so each row owns one derived child doc per
  * declared name (1:1). Declared on a table via {@link DeclarableTableDefinition.docs}.
  */
-export type ChildDocDeclarations<TRow extends BaseRow = BaseRow> = Record<
+export type ChildDocDeclarations = Record<string, ChildDocDeclaration>;
+
+/**
+ * The row-typed input form of {@link ChildDocDeclaration}, accepted only by the
+ * {@link DeclarableTableDefinition.docs} builder. `touch` is constrained to the
+ * row's {@link InstantColumnKey} here, where the row type is still in scope; the
+ * stored declaration widens it to `string`. A bare layout still works for bodies
+ * that need no policy.
+ */
+type ChildDocDeclarationInput<TRow extends BaseRow> =
+	| ChildDocLayout
+	| {
+			layout: ChildDocLayout;
+			touch?: InstantColumnKey<TRow>;
+	  };
+
+/** A map of row-typed child-doc declaration inputs, keyed by field name. */
+type ChildDocDeclarationsInput<TRow extends BaseRow> = Record<
 	string,
-	ChildDocDeclaration<TRow>
+	ChildDocDeclarationInput<TRow>
 >;
 
 /** Extract the {@link ChildDocLayout} from either declaration form. */
@@ -445,28 +481,33 @@ export type DeclarableTableDefinition<
 	 *
 	 * Declaring is call-once: the result is a plain {@link TableDefinition} with
 	 * no `docs` method, so you cannot re-declare and accidentally discard the
-	 * original layout or `onLocalEdit`. Declare every child doc for a table in one
+	 * original layout or `touch`. Declare every child doc for a table in one
 	 * call, co-located with the table definition, and push per-field policy into
 	 * that authoritative declaration.
 	 *
 	 * Pass a bare layout for a body with no per-field policy, or
-	 * `{ layout, onLocalEdit }` to also bump a recency column when the body is
-	 * edited locally (see {@link ChildDocDeclaration}):
+	 * `{ layout, touch }` to also bump a recency column when the body is edited
+	 * locally. `touch` is constrained to the row's `InstantString` columns and is
+	 * stamped with `InstantString.now()` on local edits (see
+	 * {@link ChildDocDeclaration}):
 	 *
 	 * ```ts
-	 * defineTable({ id: field.string(), title: field.string() })
-	 *   .docs({
-	 *     content: {
-	 *       layout: attachRichText,
-	 *       onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),
-	 *     },
-	 *     // a bare layout still works for bodies that need no policy:
-	 *     // transcript: attachChatTranscript,
-	 *   });
+	 * defineTable({
+	 *   id: field.string(),
+	 *   title: field.string(),
+	 *   updatedAt: field.instant(),
+	 * }).docs({
+	 *   content: {
+	 *     layout: attachRichText,
+	 *     touch: 'updatedAt',
+	 *   },
+	 *   // a bare layout still works for bodies that need no policy:
+	 *   // transcript: attachChatTranscript,
+	 * });
 	 * ```
 	 */
 	docs<
-		TDecls extends ChildDocDeclarations<
+		TDecls extends ChildDocDeclarationsInput<
 			RowOf<LastVersion<TVersions>> & BaseRow
 		>,
 	>(decls: TDecls): TableDefinition<TVersions, TDecls>;

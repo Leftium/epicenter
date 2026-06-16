@@ -24,15 +24,15 @@ describe('defineTable().docs', () => {
 		expect(entries.docDecls).toEqual({});
 	});
 
-	test('docs stores the object form (layout + onLocalEdit) verbatim', () => {
-		const onLocalEdit = () => ({ title: 'touched' });
+	test('docs stores the object form (layout + touch) verbatim', () => {
 		const entries = defineTable({
 			id: field.string(),
 			title: field.string(),
-		}).docs({ content: { layout: body, onLocalEdit } });
+			updatedAt: field.instant(),
+		}).docs({ content: { layout: body, touch: 'updatedAt' } });
 		expect(entries.docDecls.content).toEqual({
 			layout: body,
-			onLocalEdit,
+			touch: 'updatedAt',
 		});
 	});
 
@@ -43,6 +43,37 @@ describe('defineTable().docs', () => {
 		}).docs({ content: body });
 		expect(Object.keys(entries.docDecls)).toEqual(['content']);
 		expect(entries.docDecls.content).toBe(body);
+	});
+
+	test("docs constrains touch to the row's InstantString columns", () => {
+		const entries = defineTable({
+			id: field.string(),
+			title: field.string(),
+			updatedAt: field.instant(),
+			// A user-authored datetime, NOT a machine instant: not a valid `touch`
+			// target even though it is a string.
+			date: field.datetime(),
+		}).docs({
+			content: {
+				layout: body,
+				// @ts-expect-error 'title' is a plain string column, not an InstantString.
+				touch: 'title',
+			},
+			snippet: {
+				layout: code,
+				// @ts-expect-error 'date' is a DateTimeString, not an InstantString.
+				touch: 'date',
+			},
+		});
+		// The accepted form still type-checks and stores verbatim.
+		const ok = defineTable({
+			id: field.string(),
+			updatedAt: field.instant(),
+		}).docs({ content: { layout: body, touch: 'updatedAt' } });
+		expect(ok.docDecls.content).toEqual({ layout: body, touch: 'updatedAt' });
+		// The rejected declarations above still construct at runtime (the guard is
+		// purely type-level); assert they round-trip so the test exercises them.
+		expect(Object.keys(entries.docDecls)).toEqual(['content', 'snippet']);
 	});
 
 	test('docs declares multiple bodies on one table', () => {

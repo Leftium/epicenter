@@ -28,7 +28,7 @@
  * commands beside it.
  */
 
-import { field } from '@epicenter/field';
+import { field, InstantString } from '@epicenter/field';
 import {
 	attachRichText,
 	DateTimeString,
@@ -64,19 +64,19 @@ const entriesTable = defineTable({
 	type: field.json(Type.Array(Type.String())),
 	tags: field.json(Type.Array(Type.String())),
 	pinned: field.boolean(),
-	deletedAt: nullable(field.datetime()),
+	deletedAt: nullable(field.instant()),
 	// `date` is the canonical UTC instant; `dateZone` carries the originating
 	// IANA zone so display code can render the user's local wall-clock time.
 	// Per the workspace `<field>` + `<field>Zone` convention.
 	date: field.datetime(),
 	dateZone: field.string<IanaTimeZone>(),
-	createdAt: field.datetime(),
-	updatedAt: field.datetime(),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
 	rating: field.number(),
 }).docs({
 	content: {
 		layout: attachRichText,
-		onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),
+		touch: 'updatedAt',
 	},
 });
 
@@ -164,6 +164,7 @@ export const fujiWorkspace = defineWorkspace({
 				}) => {
 					const id = generateId<EntryId>();
 					const now = DateTimeString.now();
+					const touchedAt = InstantString.now();
 					tables.entries.set({
 						id,
 						title: title ?? '',
@@ -175,8 +176,8 @@ export const fujiWorkspace = defineWorkspace({
 						deletedAt: null,
 						date: now,
 						dateZone: (dateZone ?? 'UTC') as IanaTimeZone,
-						createdAt: now,
-						updatedAt: now,
+						createdAt: touchedAt,
+						updatedAt: touchedAt,
 					});
 					return { id };
 				},
@@ -195,7 +196,7 @@ export const fujiWorkspace = defineWorkspace({
 					pinned: Type.Boolean({ description: 'Whether the entry is pinned' }),
 					rating: Type.Number({ description: 'Rating from 0 to 5' }),
 					deletedAt: nullable(
-						field.datetime({ description: 'Soft deletion timestamp' }),
+						field.instant({ description: 'Soft deletion timestamp' }),
 					),
 					date: Type.Unsafe<DateTimeString>({
 						type: 'string',
@@ -204,11 +205,11 @@ export const fujiWorkspace = defineWorkspace({
 					dateZone: Type.String({
 						description: 'IANA timezone for displaying the entry date',
 					}),
-					createdAt: Type.Unsafe<DateTimeString>({
+					createdAt: Type.Unsafe<InstantString>({
 						type: 'string',
 						description: 'Creation timestamp',
 					}),
-					updatedAt: Type.Unsafe<DateTimeString>({
+					updatedAt: Type.Unsafe<InstantString>({
 						type: 'string',
 						description: 'Last update timestamp',
 					}),
@@ -261,7 +262,7 @@ export const fujiWorkspace = defineWorkspace({
 						...(dateZone !== undefined && {
 							dateZone: dateZone as IanaTimeZone,
 						}),
-						updatedAt: DateTimeString.now(),
+						updatedAt: InstantString.now(),
 					});
 				},
 			}),
@@ -273,8 +274,8 @@ export const fujiWorkspace = defineWorkspace({
 				}),
 				handler: ({ id }) => {
 					return tables.entries.update(id, {
-						deletedAt: DateTimeString.now(),
-						updatedAt: DateTimeString.now(),
+						deletedAt: InstantString.now(),
+						updatedAt: InstantString.now(),
 					});
 				},
 			}),
@@ -287,7 +288,7 @@ export const fujiWorkspace = defineWorkspace({
 				handler: ({ id }) => {
 					return tables.entries.update(id, {
 						deletedAt: null,
-						updatedAt: DateTimeString.now(),
+						updatedAt: InstantString.now(),
 					});
 				},
 			}),
@@ -310,7 +311,7 @@ export const fujiWorkspace = defineWorkspace({
 					),
 				}),
 				handler: async ({ dateZone, entries: items }) => {
-					const now = DateTimeString.now();
+					const touchedAt = InstantString.now();
 					const rows = items.map(({ title, date }) => ({
 						id: generateId<EntryId>(),
 						title,
@@ -322,8 +323,8 @@ export const fujiWorkspace = defineWorkspace({
 						deletedAt: null,
 						date: date as DateTimeString,
 						dateZone: dateZone as IanaTimeZone,
-						createdAt: now,
-						updatedAt: now,
+						createdAt: touchedAt,
+						updatedAt: touchedAt,
 					}));
 					// Fresh generateId() ids cannot collide with a stored row, so
 					// bulkSet never refuses on this path; report a clean count.

@@ -33,6 +33,7 @@
  * @module
  */
 
+import { InstantString } from '@epicenter/field';
 import * as Y from 'yjs';
 import { createDisposableCache } from '../cache/disposable-cache.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
@@ -546,24 +547,26 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 	for (const [collection, table] of Object.entries(tables)) {
 		const definition = definitions[collection as keyof TTableDefinitions]!;
 		const guidDerivers = table.docs as Record<string, RowDocGuid<string>>;
-		// A body's only cross-doc writer: a local edit bumps a recency column on
-		// the row. Typed loosely here because the loop has erased the per-table row
-		// type; `onLocalEdit` is checked against the real row at the `.docs(...)`
-		// call site. The returned `Result` is intentionally dropped: a recency bump
-		// is best-effort and a rejected patch must not break the edit it followed.
+		// A body's only cross-doc writer: a local edit stamps a declared instant
+		// column on the row. Typed loosely here because the loop has erased the
+		// per-table row type; `touch` is checked against the real row at the
+		// `.docs(...)` call site. The returned `Result` is intentionally dropped:
+		// a recency bump is best-effort and a rejected patch must not break the
+		// edit it followed.
 		const updateRow = (
 			table as { update: (id: string, patch: object) => unknown }
 		).update;
 		const docs: Record<string, unknown> = {};
 
-		for (const [field, declaration] of Object.entries(
-			definition.docDecls,
-		) as [string, ChildDocDeclaration][]) {
+		for (const [field, declaration] of Object.entries(definition.docDecls) as [
+			string,
+			ChildDocDeclaration,
+		][]) {
 			// Normalize the two declaration forms once: a bare layout function is
-			// sugar for `{ layout, onLocalEdit: undefined }`.
-			const { layout, onLocalEdit } =
+			// sugar for `{ layout, touch: undefined }`.
+			const { layout, touch } =
 				typeof declaration === 'function'
-					? { layout: declaration, onLocalEdit: undefined }
+					? { layout: declaration, touch: undefined }
 					: declaration;
 			// Reuse the guid deriver the unconnected root already built for this
 			// field, so derivation stays single-owner (`createWorkspace`'s `.docs`
@@ -581,8 +584,10 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 				// eviction. `tx.local` scopes it to local edits, so remote/hydrated
 				// updates never bump the row; writing the root row can't re-trigger
 				// this child-doc observer, so there is no loop.
-				const offLocalEdit = onLocalEdit
-					? onLocalUpdate(bodyDoc, () => updateRow(rowId, onLocalEdit(rowId)))
+				const offLocalEdit = touch
+					? onLocalUpdate(bodyDoc, () =>
+							updateRow(rowId, { [touch]: InstantString.now() }),
+						)
 					: undefined;
 				return {
 					...layout(bodyDoc),

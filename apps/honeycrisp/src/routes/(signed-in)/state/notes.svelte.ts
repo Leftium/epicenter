@@ -20,13 +20,13 @@
  * ```
  */
 
+import { InstantString } from '@epicenter/field';
 import {
 	type FolderId,
 	generateNoteId,
 	type NoteId,
 } from '@epicenter/honeycrisp';
 import { fromTable } from '@epicenter/svelte';
-import { DateTimeString } from '@epicenter/workspace';
 import type { HoneycrispBrowser } from '../../../../honeycrisp.browser';
 import type { createFolders } from './folders.svelte';
 import { searchParams } from './search-params.svelte';
@@ -111,8 +111,8 @@ export function createNotes({
 				pinned: false,
 				deletedAt: null,
 				wordCount: null,
-				createdAt: DateTimeString.now(),
-				updatedAt: DateTimeString.now(),
+				createdAt: InstantString.now(),
+				updatedAt: InstantString.now(),
 			});
 			return { id };
 		},
@@ -132,7 +132,7 @@ export function createNotes({
 		 */
 		softDelete(noteId: NoteId) {
 			honeycrisp.tables.notes.update(noteId, {
-				deletedAt: DateTimeString.now(),
+				deletedAt: InstantString.now(),
 			});
 			if (searchParams.note === noteId) {
 				searchParams.update({ note: null });
@@ -252,7 +252,7 @@ export function createNotes({
 				title,
 				preview,
 				wordCount,
-				updatedAt: DateTimeString.now(),
+				updatedAt: InstantString.now(),
 			});
 		},
 	};

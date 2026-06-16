@@ -42,7 +42,7 @@ export function openOpensidianBrowser({
 	return opensidianWorkspace.connect({ ...signedIn, deviceId }, (workspace) => {
 		const { ydoc, tables } = workspace;
 		// The runtime bumps `files.updatedAt` on local body edits (declared via
-		// `onLocalEdit` on the files table), so these openers read/write the content
+		// `touch` on the files table), so these openers read/write the content
 		// doc directly; no hand-wired recency observer.
 		const fileContent = {
 			async read(fileId: FileId) {

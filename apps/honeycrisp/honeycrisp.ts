@@ -17,7 +17,6 @@
 import { field } from '@epicenter/field';
 import {
 	attachRichText,
-	DateTimeString,
 	defineActions,
 	defineMutation,
 	defineTable,
@@ -91,7 +90,7 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * has a title auto-populated from the first line of content, a preview for the
  * list view, and can be pinned to appear at the top of the note list.
  *
- * `deletedAt` is `null` for active notes and a `DateTimeString` for deleted
+ * `deletedAt` is `null` for active notes and an `InstantString` for deleted
  * notes. `wordCount` is computed on each editor update.
  *
  * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note,
@@ -103,14 +102,14 @@ const notesTable = defineTable({
 	title: field.string(),
 	preview: field.string(),
 	pinned: field.boolean(),
-	createdAt: field.datetime(),
-	updatedAt: field.datetime(),
-	deletedAt: nullable(field.datetime()),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
+	deletedAt: nullable(field.instant()),
 	wordCount: nullable(field.number()),
 }).docs({
 	body: {
 		layout: attachRichText,
-		onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),
+		touch: 'updatedAt',
 	},
 });
 export type Note = InferTableRow<typeof notesTable>;

@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { field } from '@epicenter/field';
+import { field, InstantString } from '@epicenter/field';
 import { asOwnerId } from '@epicenter/identity';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { Type } from 'typebox';
@@ -233,46 +233,51 @@ describe('defineWorkspace', () => {
 		}
 	});
 
-	test('docs onLocalEdit bumps the row on local edits, not on synced ones', () => {
+	test('docs touch stamps the row on local edits, not on synced ones', () => {
 		const recencyNotes = defineTable({
 			id: field.string(),
 			title: field.string(),
-			updatedAt: field.string(),
+			updatedAt: field.instant(),
 		}).docs({
 			body: {
 				layout: attachPlainText,
-				onLocalEdit: () => ({ updatedAt: 'bumped' }),
+				touch: 'updatedAt',
 			},
 		});
 
 		const workspace = defineWorkspace({
-			id: 'ws-onlocaledit',
+			id: 'ws-touch-on-edit',
 			tables: { notes: recencyNotes },
 			kv: {},
 		}).connect(connection);
+
+		// A fixed past instant: `InstantString.now()` is always strictly greater,
+		// so the assertions hold regardless of wall-clock resolution.
+		const PAST = '2000-01-01T00:00:00.000Z' as InstantString;
 
 		try {
 			workspace.tables.notes.set({
 				id: 'note-1',
 				title: 't',
-				updatedAt: 'init',
+				updatedAt: PAST,
 			});
 			using body = workspace.tables.notes.docs.body.open('note-1');
 
-			// A local edit fires onLocalEdit, which bumps the row's recency column.
+			// A local edit touches the recency column to a fresh canonical instant.
 			body.write('hello');
-			expect(workspace.tables.notes.get('note-1').data?.updatedAt).toBe(
-				'bumped',
-			);
+			const bumped = workspace.tables.notes.get('note-1').data?.updatedAt;
+			expect(bumped).not.toBe(PAST);
+			expect(InstantString.is(bumped)).toBe(true);
 
-			// A synced update (`tx.local === false`) must NOT bump: reset the column,
-			// apply a remote update to the body doc, and confirm the row is untouched.
-			workspace.tables.notes.update('note-1', { updatedAt: 'init' });
+			// A synced update (`tx.local === false`) must NOT touch the column: reset
+			// it, apply a remote update to the body doc, and confirm the row is left
+			// untouched.
+			workspace.tables.notes.update('note-1', { updatedAt: PAST });
 			const remote = new Y.Doc();
 			remote.getText('content').insert(0, 'from another device');
 			Y.applyUpdate(body.ydoc, Y.encodeStateAsUpdate(remote));
 			expect(body.read()).toContain('from another device');
-			expect(workspace.tables.notes.get('note-1').data?.updatedAt).toBe('init');
+			expect(workspace.tables.notes.get('note-1').data?.updatedAt).toBe(PAST);
 		} finally {
 			workspace[Symbol.dispose]();
 		}

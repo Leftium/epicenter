@@ -327,7 +327,7 @@ export type MigrateInput<
  *
  * For per-row content (rich text, long-form body), keep the row lean (ids and
  * metadata) and declare child docs with `.childDocs({ body: attachLayout })`.
- * The table schema never stores body docs; `defineWorkspace(...).open(connection)`
+ * The table schema never stores body docs; `defineWorkspace(...).connect(connection)`
  * derives each content-doc guid from the workspace id, table name, row id, and
  * child-doc field.
  */
@@ -335,7 +335,7 @@ export type MigrateInput<
  * A child-doc's CRDT shape: a pure function of a `Y.Doc` that owns a
  * collaborative body's layout and writer policy (e.g. `attachRichText`,
  * `attachPlainText`). Carries no connection, so the declaration is isomorphic;
- * `defineWorkspace(...).open(connection)` marries it to a connection at runtime.
+ * `defineWorkspace(...).connect(connection)` marries it to a connection at runtime.
  */
 export type ChildDocLayout = (ydoc: Y.Doc) => object;
 
@@ -404,7 +404,7 @@ export type TableDefinition<
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 	/**
 	 * Child-doc declarations on this table, keyed by field name. `{}` unless
-	 * {@link childDocs} was called. Read by `defineWorkspace(...).open(connection)`
+	 * {@link childDocs} was called. Read by `defineWorkspace(...).connect(connection)`
 	 * to wire one guid-keyed cache per declared body; never carries a connection
 	 * itself, since the declaration is isomorphic.
 	 */
@@ -422,6 +422,13 @@ export type TableDefinition<
 	 *
 	 * Call AFTER {@link migrate} on multi-version tables: the version tuple is
 	 * positional, so child docs are a separate builder step, not another version.
+	 *
+	 * Calling this REPLACES any prior declaration wholesale; it does not merge by
+	 * field name. Declare every child doc for a table in one call, co-located with
+	 * the table definition. Re-declaring an exported table downstream (e.g. an app
+	 * re-calling `.childDocs` on a shared-package table) silently discards the
+	 * original layout and any `onLocalEdit`, so push per-field policy into the
+	 * authoritative declaration instead.
 	 *
 	 * Pass a bare layout for a body with no per-field policy, or
 	 * `{ layout, onLocalEdit }` to also bump a recency column when the body is

@@ -174,44 +174,9 @@ const DEVICE_DEFINITIONS = {
 type DeviceConfigDefs = typeof DEVICE_DEFINITIONS;
 export type DeviceConfigKey = keyof DeviceConfigDefs & string;
 
-// ── Legacy migration ─────────────────────────────────────────────────────────
+// ── Singleton ────────────────────────────────────────────────────────────────
 
 const DEVICE_CONFIG_PREFIX = 'whispering.device.';
-
-const LEGACY_LOCAL_MODEL_SELECTIONS = [
-	{
-		from: 'transcription.whispercpp.modelPath',
-		to: 'transcription.whispercpp.model',
-	},
-	{
-		from: 'transcription.parakeet.modelPath',
-		to: 'transcription.parakeet.model',
-	},
-	{
-		from: 'transcription.moonshine.modelPath',
-		to: 'transcription.moonshine.model',
-	},
-] as const satisfies readonly {
-	from: string;
-	to: DeviceConfigKey;
-}[];
-
-function modelEntryNameFromLegacyPath(path: string) {
-	return path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').at(-1) ?? '';
-}
-
-function readLegacyString(key: string) {
-	const raw = window.localStorage.getItem(`${DEVICE_CONFIG_PREFIX}${key}`);
-	if (raw === null) return null;
-	try {
-		const value = JSON.parse(raw) as unknown;
-		return typeof value === 'string' ? value : null;
-	} catch {
-		return null;
-	}
-}
-
-// ── Singleton ────────────────────────────────────────────────────────────────
 
 export const deviceConfig = createPersistedMap({
 	prefix: DEVICE_CONFIG_PREFIX,
@@ -230,15 +195,10 @@ export const deviceConfig = createPersistedMap({
 	},
 });
 
-for (const migration of LEGACY_LOCAL_MODEL_SELECTIONS) {
-	if (deviceConfig.get(migration.to)) continue;
-	const legacyPath = readLegacyString(migration.from);
-	if (!legacyPath) continue;
-	const entryName = modelEntryNameFromLegacyPath(legacyPath);
-	if (entryName) deviceConfig.set(migration.to, entryName);
-}
-
-// Global shortcuts are NOT migrated from the old accelerator-string format. A
-// clean break: a legacy value fails the `globalBinding` schema on read and falls
-// back to the default (see `createPersistedMap`), so upgrading users get the new
-// defaults. We refuse to carry a parser for a format nothing writes anymore.
+// Nothing here is migrated from a legacy format; both prior formats take a clean
+// break. Local model selections once lived under `transcription.*.modelPath` as
+// filesystem paths: that key is simply orphaned now and the `transcription.*.model`
+// entry reads its default. Global shortcuts once stored accelerator strings under
+// the same key: a legacy value fails the `globalBinding` schema on read and falls
+// back to the default (see `createPersistedMap`). Either way upgrading users get
+// the new defaults, and we carry no parser for a format nothing writes anymore.

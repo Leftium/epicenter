@@ -5,6 +5,7 @@ import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
 	deliverTransformationResult,
+	type TranscriptionSource,
 } from '$lib/operations/delivery';
 import { sound } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
@@ -16,17 +17,16 @@ import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 
-type DeliverySource = 'recording' | 'import';
-
 /**
  * Argument shape for the pipeline. The recorder produces a
  * `RecorderStopResult`; the VAD path and file import path build the
- * equivalent shape with `kind: 'blob'`.
+ * equivalent shape with `kind: 'blob'`. `deliverySource` is forwarded
+ * straight to delivery, so it shares delivery's `TranscriptionSource` type.
  */
 type PipelineInput = {
 	source: RecorderStopResult;
 	durationMs: number | null;
-	deliverySource?: DeliverySource;
+	deliverySource?: TranscriptionSource;
 };
 
 /**

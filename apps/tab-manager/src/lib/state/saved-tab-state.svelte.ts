@@ -15,6 +15,7 @@
 import { fromTable } from '@epicenter/svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
+import { compareInstantDesc } from '$lib/utils/format';
 import type { SavedTab, SavedTabId } from '$lib/workspace/definition';
 
 export function createSavedTabState(tabManager: TabManagerBrowser) {
@@ -22,7 +23,9 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
 	const tabs = $derived(
-		[...tabsMap.values()].sort((a, b) => b.savedAt - a.savedAt),
+		[...tabsMap.values()].sort((a, b) =>
+			compareInstantDesc(a.savedAt, b.savedAt),
+		),
 	);
 
 	return {

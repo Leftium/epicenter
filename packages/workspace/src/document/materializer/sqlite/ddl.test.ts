@@ -16,11 +16,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { field } from '@epicenter/field';
 import type { TSchema } from 'typebox';
 import { generateDdl } from './ddl.js';
 
 function objectSchema(
-	properties: Record<string, Record<string, unknown>>,
+	properties: Record<string, TSchema | Record<string, unknown>>,
 	required: string[] = [],
 ) {
 	return {
@@ -57,6 +58,17 @@ describe('generateDdl', () => {
 
 		expect(sql).toBe(
 			'CREATE TABLE IF NOT EXISTS "posts" ("title" TEXT NOT NULL)',
+		);
+	});
+
+	test('maps instant fields to TEXT for lexicographic time ordering', () => {
+		const sql = generateDdl(
+			'posts',
+			objectSchema({ createdAt: field.instant() }, ['createdAt']),
+		);
+
+		expect(sql).toBe(
+			'CREATE TABLE IF NOT EXISTS "posts" ("createdAt" TEXT NOT NULL)',
 		);
 	});
 

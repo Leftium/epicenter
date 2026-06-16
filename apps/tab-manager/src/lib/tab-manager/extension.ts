@@ -18,6 +18,7 @@
  * `Symbol.dispose` tears down the root Y.Doc without touching local storage.
  */
 
+import { InstantString } from '@epicenter/field';
 import type { SignedIn } from '@epicenter/svelte/auth';
 import {
 	attachLocalStorage,
@@ -212,7 +213,7 @@ export function openTabManagerBrowser({
 							favIconUrl: tab.favIconUrl ?? null,
 							pinned: tab.pinned ?? false,
 							sourceDeviceId,
-							savedAt: Date.now(),
+							savedAt: InstantString.now(),
 						});
 					}
 					if (close) {
@@ -328,7 +329,7 @@ export function openTabManagerBrowser({
 						favIconUrl: favIconUrl ?? null,
 						pinned,
 						sourceDeviceId,
-						savedAt: Date.now(),
+						savedAt: InstantString.now(),
 					});
 					// The save (Y.Doc write) always succeeded by here. The close
 					// is partial-success: surface its own Result so callers can
@@ -432,7 +433,7 @@ export function openTabManagerBrowser({
 						favIconUrl: favIconUrl ?? null,
 						description: null,
 						sourceDeviceId,
-						createdAt: Date.now(),
+						createdAt: InstantString.now(),
 					});
 					return { action: 'added' as const, removedCount: 0 };
 				},

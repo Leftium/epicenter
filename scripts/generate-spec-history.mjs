@@ -3,7 +3,19 @@
 // The ledger is a materialized view of git, not a filesystem snapshot: git is
 // the lossless source of truth for every spec that ever existed and when it was
 // added, including ones already deleted from the working tree. Regenerating is
-// therefore idempotent and never drops history.
+// deterministic for a fixed set of refs and never drops history.
+//
+// Scope is every `specs/` directory repo-wide (top-level plus per-app and
+// per-package), by design: all of them share one dated-scaffolding convention
+// and one decision home (docs/adr/), so the timeline and the hygiene gate
+// (check-doc-hygiene.mjs) govern the same corpus.
+//
+// Ref-sensitivity caveat: the source is `git log --all`, so "every spec that
+// ever existed" means "on a ref this clone can see." A clone with extra local
+// branches counts more; a fresh shallow clone counts fewer. This is the right
+// trade: `--all` is what lets the timeline recover specs that only ever lived
+// on an unmerged or since-deleted branch. The count tracks the clone's refs,
+// not a universal constant; regeneration on the same refs is byte-identical.
 //
 // There is deliberately NO status column. A spec's self-declared status lies and
 // rots; "is this current?" is answered by docs/adr/, not by this index. The only
@@ -67,8 +79,9 @@ const byYear = rows.reduce((m, r) => {
 
 let out = `# Spec History (design timeline)
 
-> **Historical index, not current truth.** Every spec that has ever existed, by
-> date, generated from git history so the timeline survives any deletion.
+> **Historical index, not current truth.** Every spec that has ever existed on a
+> ref this clone can see, by date, generated from git history so the timeline
+> survives any deletion. Scope is every \`specs/\` directory repo-wide.
 >
 > - For **current decisions and why**, read \`docs/adr/\`.
 > - For **how the system works now**, read \`docs/reference/\` and the code.
@@ -80,7 +93,7 @@ let out = `# Spec History (design timeline)
 > status is unreliable, so currentness is owned by \`docs/adr/\`. "State" is the
 > only fact shown: whether the spec is still in the working tree.
 >
-> **Regenerate (idempotent, lossless):** \`bun scripts/generate-spec-history.mjs\`
+> **Regenerate (deterministic per ref set, lossless):** \`bun scripts/generate-spec-history.mjs\`. The totals track the refs this clone can see; \`--all\` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
 **${rows.length} specs ever** (${present} still in tree, ${rows.length - present} removed).
 

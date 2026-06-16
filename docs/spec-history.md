@@ -1,7 +1,8 @@
 # Spec History (design timeline)
 
-> **Historical index, not current truth.** Every spec that has ever existed, by
-> date, generated from git history so the timeline survives any deletion.
+> **Historical index, not current truth.** Every spec that has ever existed on a
+> ref this clone can see, by date, generated from git history so the timeline
+> survives any deletion. Scope is every `specs/` directory repo-wide.
 >
 > - For **current decisions and why**, read `docs/adr/`.
 > - For **how the system works now**, read `docs/reference/` and the code.
@@ -13,7 +14,7 @@
 > status is unreliable, so currentness is owned by `docs/adr/`. "State" is the
 > only fact shown: whether the spec is still in the working tree.
 >
-> **Regenerate (idempotent, lossless):** `bun scripts/generate-spec-history.mjs`
+> **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.mjs`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
 **1257 specs ever** (567 still in tree, 690 removed).
 

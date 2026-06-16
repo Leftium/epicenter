@@ -1,5 +1,11 @@
 // Doc-hygiene check. Deterministic, fixable-in-loop, CI-optional.
 //
+// Scope is every `specs/` directory repo-wide (top-level plus per-app and
+// per-package), matching generate-spec-history.mjs: all share one
+// dated-scaffolding convention and one decision home (docs/adr/), so the same
+// two-state lifecycle governs them all. The glob below ('*specs/*.md') is that
+// repo-wide intent, not an accident.
+//
 // Two smells, by design only the second needs detecting:
 //
 //   1. A spec in the tree that declares a TERMINAL status (Implemented,

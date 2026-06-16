@@ -195,8 +195,7 @@ describe('runUp: happy path', () => {
 		try {
 			expect(existsSync(metadataPathFor(workDir))).toBe(true);
 			expect(handle.metadata.pid).toBe(process.pid);
-			expect(handle.mounts).toHaveLength(1);
-			expect(handle.mounts[0]?.mount).toBe('demo');
+			expect(handle.mount?.mount).toBe('demo');
 			expect(
 				readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8'),
 			).toContain('export default demo');
@@ -273,10 +272,11 @@ describe('runUp: failure cleanup', () => {
 		);
 
 		try {
-			expect(handle.mounts).toEqual([]);
-			expect(handle.inactive).toEqual([
-				{ mount: 'demo', reason: 'sign in to enable demo' },
-			]);
+			expect(handle.mount).toBeNull();
+			expect(handle.inactive).toEqual({
+				mount: 'demo',
+				reason: 'sign in to enable demo',
+			});
 			// The daemon still binds its socket: a signed-out daemon is running,
 			// it just has nothing to serve yet.
 			expect(await pingDaemon(socketPathFor(workDir), 1000)).toBe(true);

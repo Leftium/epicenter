@@ -5,7 +5,7 @@
  * already-claimed daemon lease and exposes an idempotent close operation.
  *
  * Key behaviors:
- * - valid mounts are served over the daemon client
+ * - the valid mount is served over the daemon client
  * - close stops the listener, removes the socket file, and can run twice
  * - /run executes a real action handler over the Unix socket, and
  *   forwards peer calls when `to` is present
@@ -72,11 +72,11 @@ afterEach(() => {
 });
 
 describe('startDaemonServer', () => {
-	test('starts the configured mounts', async () => {
+	test('starts the configured mount', async () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime: makeRuntime() }],
+			mount: { mount: 'demo', runtime: makeRuntime() },
 		});
 
 		try {
@@ -94,7 +94,7 @@ describe('startDaemonServer', () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime: makeRuntime() }],
+			mount: { mount: 'demo', runtime: makeRuntime() },
 		});
 
 		try {
@@ -119,7 +119,7 @@ describe('startDaemonServer', () => {
 		});
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime }],
+			mount: { mount: 'demo', runtime },
 		});
 
 		try {
@@ -147,7 +147,7 @@ describe('startDaemonServer', () => {
 		});
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'mirror', runtime }],
+			mount: { mount: 'mirror', runtime },
 		});
 
 		try {
@@ -178,7 +178,7 @@ describe('startDaemonServer', () => {
 		});
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime }],
+			mount: { mount: 'demo', runtime },
 		});
 
 		try {
@@ -203,7 +203,7 @@ describe('startDaemonServer', () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime: makeRuntime() }],
+			mount: { mount: 'demo', runtime: makeRuntime() },
 		});
 
 		try {
@@ -226,9 +226,7 @@ describe('startDaemonServer', () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [
-				{ mount: 'mirror', runtime: makeRuntime({ collaboration: false }) },
-			],
+			mount: { mount: 'mirror', runtime: makeRuntime({ collaboration: false }) },
 		});
 
 		try {

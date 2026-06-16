@@ -59,7 +59,7 @@ function fakeEntry({
 
 describe('executeRun peer target', () => {
 	test('rejects invalid wait budgets before creating an AbortSignal', async () => {
-		const result = await executeRun([fakeEntry({})], {
+		const result = await executeRun(fakeEntry({}), {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: -1 },
@@ -90,7 +90,7 @@ describe('executeRun peer target', () => {
 				DispatchError.RecipientOffline({ to: 'ghost' })) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peer: { to: 'ghost', waitMs: 25 },
@@ -116,7 +116,7 @@ describe('executeRun peer target', () => {
 			}) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
@@ -136,7 +136,7 @@ describe('executeRun peer target', () => {
 				})) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
@@ -160,7 +160,7 @@ describe('executeRun peer target', () => {
 			}) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'demo.peer_only_action',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
@@ -171,7 +171,7 @@ describe('executeRun peer target', () => {
 	});
 
 	test('rejects peer dispatch for a local-only mount', async () => {
-		const result = await executeRun([fakeEntry({ collaboration: false })], {
+		const result = await executeRun(fakeEntry({ collaboration: false }), {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peer: { to: 'mac', waitMs: 25 },
@@ -197,7 +197,7 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'notes.notes_add',
 			input: { body: 'hello' },
 		});
@@ -216,7 +216,7 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'notes.notes',
 			input: { body: 'hello' },
 		});
@@ -229,22 +229,33 @@ describe('executeRun mount-prefixed routing', () => {
 		expect(error.suggestions).toEqual(['  notes.notes_add  (mutation)']);
 	});
 
-	test('unknown mount returns available mount suggestions', async () => {
-		const result = await executeRun(
-			[fakeEntry({}), fakeEntry({ mount: 'tasks', actions: {} })],
-			{
-				actionPath: 'missing.actions_add',
-				input: undefined,
-			},
-		);
+	test('rejects an action path that names a different mount', async () => {
+		const result = await executeRun(fakeEntry({ mount: 'demo' }), {
+			actionPath: 'tasks.actions_add',
+			input: undefined,
+		});
 
 		const error = expectErr(result);
 		expect(error.name).toBe('UsageError');
 		if (error.name !== 'UsageError') {
 			throw new Error('expected UsageError');
 		}
-		expect(error.message).toBe('No mount "missing". Available: demo, tasks');
-		expect(error.suggestions).toEqual(['  demo', '  tasks']);
+		expect(error.message).toContain('serves mount "demo", not "tasks"');
+		expect(error.message).toContain('demo.actions_add');
+	});
+
+	test('rejects a run when the daemon has no active mount', async () => {
+		const result = await executeRun(null, {
+			actionPath: 'demo.tabs_list',
+			input: undefined,
+		});
+
+		const error = expectErr(result);
+		expect(error.name).toBe('UsageError');
+		if (error.name !== 'UsageError') {
+			throw new Error('expected UsageError');
+		}
+		expect(error.message).toContain('no active mount');
 	});
 
 	test('input failing the action schema surfaces as UsageError, not RuntimeError', async () => {
@@ -258,7 +269,7 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'fuji.bulk_delete',
 			input: { maxDeletes: 'lots' },
 		});
@@ -280,7 +291,7 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeRun(entry, {
 			actionPath: 'mirror.sync',
 			input: {},
 		});

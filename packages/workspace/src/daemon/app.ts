@@ -3,12 +3,18 @@
  * routes; the daemon server wires its fetch handler into Bun's listener and
  * the hand-rolled `daemonClient` in `./client.ts` POSTs against it.
  *
- * Each route is a one-line shell shortcut for one daemon runtime primitive:
+ * A daemon serves the one mount its `epicenter.config.ts` declares, or nothing
+ * when that mount is inactive (signed out). Each route is a one-line shell
+ * shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  collaboration.devices.list()              collaborative mounts
- *   /list   ->  flat manifest of `${mount}.${action_key}` -> meta  all mounts
+ *   /peers  ->  the mount's `collaboration.devices.list()` (empty when local)
+ *   /list   ->  flat manifest of `${mount}.${action_key}` -> meta
  *   /run    ->  invokeAction(...) locally, or collab.dispatch(...)
- *               on a peer when `peer` is present                   mount-routed
+ *               on a peer when `peer` is present
+ *
+ * Action keys keep the `<mount>.` prefix because the mount name is the
+ * canonical app identity (stable across folder renames), so a path stays
+ * self-describing wherever it is typed, logged, or copied.
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -56,8 +62,9 @@ export const RunRequest = type({
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(mount, deviceId)` pair,
- * tagged with its mount name so a multi-mount daemon can fan out.
+ * Row shape returned by `/peers`. One row per connected device, tagged with the
+ * daemon's mount name. The `mount` tag is the canonical app identity, so a
+ * `/peers` row reads the same whether printed, logged, or copied.
  *
  * `deviceId` is the install-stable, client-claimed identity and the address
  * used by `collab.dispatch({ to })`. There is no per-socket `connectionId`
@@ -71,23 +78,25 @@ export const PeerSnapshot = type({
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
 /**
- * Build the daemon's Hono app. Tests import this directly; production serves
- * the app through the daemon server factory.
+ * Build the daemon's Hono app for the one mount this daemon serves, or `null`
+ * when the mount is inactive (signed out): the daemon still binds and answers
+ * `/ping`, `/list` (empty), and `/peers` (empty). Tests import this directly;
+ * production serves the app through the daemon server factory.
  *
- * `/list` exposes mount-prefixed action paths. `/run` uses that same prefix
- * to pick the hosted runtime before executing locally or routing to a peer.
+ * `/list` exposes the mount's `<mount>.<action>` paths. `/run` verifies the
+ * path's mount segment against this mount before executing locally or routing
+ * to a peer.
  */
-export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
+export function buildDaemonApp(mount: DaemonServedMount | null) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
-			for (const entry of mounts) {
-				const collaboration = entry.runtime.collaboration;
-				if (!collaboration) continue;
+			const collaboration = mount?.runtime.collaboration;
+			if (collaboration) {
 				for (const device of collaboration.devices.list()) {
 					rows.push({
-						mount: entry.mount,
+						mount: mount.mount,
 						deviceId: device.deviceId,
 					});
 				}
@@ -96,9 +105,9 @@ export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
 		})
 		.post('/list', (c) => {
 			const manifest: ActionManifest = {};
-			for (const entry of mounts) {
-				for (const [path, action] of Object.entries(entry.runtime.actions)) {
-					manifest[joinDaemonActionPath(entry.mount, path)] =
+			if (mount) {
+				for (const [path, action] of Object.entries(mount.runtime.actions)) {
+					manifest[joinDaemonActionPath(mount.mount, path)] =
 						toActionMeta(action);
 				}
 			}
@@ -106,6 +115,6 @@ export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
 		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
-			return c.json(await executeRun(mounts, request));
+			return c.json(await executeRun(mount, request));
 		});
 }

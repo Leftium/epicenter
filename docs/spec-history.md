@@ -15,7 +15,7 @@
 >
 > **Regenerate (idempotent, lossless):** `bun scripts/generate-spec-history.mjs`
 
-**1254 specs ever** (584 still in tree, 670 removed).
+**1254 specs ever** (583 still in tree, 671 removed).
 
 
 ## 2026
@@ -158,7 +158,7 @@
 | 2026-05-21 | server-default-workspace-route | removed | specs/20260521T160000-server-default-workspace-route.md |
 | 2026-05-21 | server-owned-presence | in tree | specs/20260521T121500-server-owned-presence.md |
 | 2026-05-21 | auth-identity-and-workspace-access-discussion | in tree | specs/20260521T093824-auth-identity-and-workspace-access-discussion.md |
-| 2026-05-21 | cloud-sync-direction-decision | in tree | specs/20260521T120000-cloud-sync-direction-decision.md |
+| 2026-05-21 | cloud-sync-direction-decision | removed | specs/20260521T120000-cloud-sync-direction-decision.md |
 | 2026-05-20 | cloud-workspaces-and-organizations-clean-break | in tree | specs/20260520T170000-cloud-workspaces-and-organizations-clean-break.md |
 | 2026-05-20 | collapse-oauth-resource-scope | removed | specs/20260520T221026-collapse-oauth-resource-scope.md |
 | 2026-05-20 | cloud-workspace-app-instance-clean-break | in tree | specs/20260520T190000-cloud-workspace-app-instance-clean-break.md |

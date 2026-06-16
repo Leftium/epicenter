@@ -52,12 +52,20 @@ introduced: the overlay only reflects and triggers the existing operations.
 ## Dev environment note
 
 The TanStack Query devtools were removed from the root layout entirely (the
-dependency too): it blocked the view in dev and was not pulling its weight. With
-it gone, the root layout's custom CSS that offset the Svelte inspector toggle to
-bottom-center (only there to dodge the devtools) was removed as well, so the
-inspector returns to its default position. The overlay route still hides
-`#svelte-inspector-host` in its own webview with one co-located CSS rule, since
-the inspector would otherwise sit on the pill. All of this is dev-only.
+dependency too): it blocked the view in dev and was not pulling its weight.
+
+The app does not position the Svelte inspector. `svelte.config.js` owns only
+its behavior (hold mode, always-visible toggle, `alt-x`); the toggle inherits
+the plugin default `top-right`, the corner left free by the current chrome (the
+sidebar on the left, the full-width BottomNav at the bottom). Do not reintroduce
+CSS that offsets `#svelte-inspector-host`: earlier overrides keyed to nav
+z-index broke twice when the nav changed. To move or disable it per-machine, set
+an env var instead, for example
+`SVELTE_INSPECTOR_OPTIONS='{"toggleButtonPos":"top-left"}'`.
+
+The overlay route still hides `#svelte-inspector-host` in its own webview with
+one co-located CSS rule, since the inspector would otherwise sit on the pill.
+That is suppression, not positioning, and it stays. All of this is dev-only.
 
 ## Deliberately deferred
 

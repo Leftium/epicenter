@@ -120,7 +120,7 @@ const savedTabsTable = defineTable({
 	favIconUrl: nullable(field.string()), // Favicon URL (null when missing)
 	pinned: field.boolean(), // Whether tab was pinned
 	sourceDeviceId: field.string<DeviceId>(), // Device that saved this tab
-	savedAt: field.number(), // Timestamp (ms since epoch)
+	savedAt: field.instant(), // canonical UTC instant of save
 });
 export type SavedTab = InferTableRow<typeof savedTabsTable>;
 
@@ -138,7 +138,7 @@ const bookmarksTable = defineTable({
 	favIconUrl: nullable(field.string()), // Favicon URL (null when missing)
 	description: nullable(field.string()), // Optional user note (null when absent)
 	sourceDeviceId: field.string<DeviceId>(), // Device that created the bookmark
-	createdAt: field.number(), // Timestamp (ms since epoch)
+	createdAt: field.instant(), // canonical UTC instant of creation
 });
 export type Bookmark = InferTableRow<typeof bookmarksTable>;
 

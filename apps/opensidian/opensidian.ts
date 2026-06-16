@@ -15,7 +15,7 @@
  */
 
 import { field, jsonValue } from '@epicenter/field';
-import { type FileId, filesTable } from '@epicenter/filesystem';
+import { filesTable } from '@epicenter/filesystem';
 import {
 	defineActions,
 	defineTable,
@@ -96,8 +96,8 @@ const conversationsTable = defineTable({
 	sourceMessageId: nullable(field.string<ChatMessageId>()),
 	systemPrompt: nullable(field.string()),
 	model: field.string(),
-	createdAt: field.number(),
-	updatedAt: field.number(),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
 });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
@@ -112,7 +112,7 @@ const chatMessagesTable = defineTable({
 	conversationId: field.string<ConversationId>(),
 	role: field.select(['user', 'assistant', 'system']),
 	parts: field.json(Type.Array(jsonValue)),
-	createdAt: field.number(),
+	createdAt: field.instant(),
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 

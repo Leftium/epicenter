@@ -98,7 +98,7 @@ export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 const devicesTable = defineTable({
 	id: field.string<DeviceId>(), // NanoID, generated once on install
 	name: field.string(), // User-editable: "Chrome on macOS", "Firefox on Windows"
-	lastSeen: field.string(), // ISO timestamp, updated on each sync
+	lastSeen: field.instant(), // canonical UTC instant, updated on each sync
 	browser: field.string(), // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
 });
 export type Device = InferTableRow<typeof devicesTable>;

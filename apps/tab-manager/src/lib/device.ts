@@ -7,7 +7,7 @@
  * (display name, last seen, browser kind).
  */
 
-import { createDeviceIdAsync } from '@epicenter/workspace';
+import { createDeviceIdAsync, InstantString } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 import type { TabManagerBrowser } from './tab-manager/extension';
 
@@ -52,7 +52,7 @@ export async function registerDevice(
 	tabManager.tables.devices.set({
 		id,
 		name: existingName ?? defaultName,
-		lastSeen: new Date().toISOString(),
+		lastSeen: InstantString.now(),
 		browser: import.meta.env.BROWSER,
 	});
 }

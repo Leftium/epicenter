@@ -20,6 +20,7 @@
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
 		TranscriptionSelector,
+		TranscriptionRuntimeSetup,
 		TransformationSelector,
 	} from '$lib/components/settings';
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
@@ -29,6 +30,7 @@
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
+	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 	import {
 		stopManualRecording,
 		stopVadRecording,
@@ -49,6 +51,7 @@
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
+	const transcriptionReadiness = $derived(getTranscriptionSetupReadiness());
 
 	const PageError = defineErrors({
 		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
@@ -244,6 +247,17 @@
 
 	<MacosAccessibilityNotice />
 
+	{#if !transcriptionReadiness.isReady}
+		<div class="w-full">
+			<TranscriptionRuntimeSetup
+				id="home-transcription-service"
+				label="Runtime"
+				description={transcriptionReadiness.primaryIssue ??
+					'Choose a runtime and fill in the required fields.'}
+				showAdvanced={false}
+			/>
+		</div>
+	{:else}
 	<ToggleGroup.Root
 		type="single"
 		bind:value={() => settings.get('recording.mode'),
@@ -381,5 +395,6 @@
 				Get the native desktop app
 			</Link>
 		</p>
+	{/if}
 	{/if}
 </div>

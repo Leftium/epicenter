@@ -145,17 +145,34 @@ idiom) are intentional primitives with real callers, not old-path survivors.
 - Zhongwen `ConversationView`'s `onDestroy(unobserve + clearInterval + dispose)`
   — kept: it is a streaming-transcript view with a liveness ticker, not an
   editor binding, so the `fromDisposableCache` editor idiom does not model it.
-- `docGuid` stays exported — `packages/filesystem` and `packages/skills` consume
-  it directly.
 
-## Follow-ups (out of this branch's scope)
+## Guid-ownership completion pass (closes the follow-up below)
 
-- `packages/filesystem` (`fileContentDocGuid`) and `packages/skills`
-  (`skillInstructionsDocGuid`, `referenceContentDocGuid`) hand-roll the same
-  child-doc guid the workspace now owns via `.docs.<field>.guid`. They predate
-  this branch. **Trigger to revisit:** when those packages adopt the table
-  `.docs` accessor, route their guid derivation through it and consider making
-  `docGuid` internal.
+A focused second greenfield pass finished what the follow-up flagged, so guid
+derivation now has exactly one owner end to end.
+
+- **Connected child docs wrap the unconnected deriver.** `connectTableChildDocs`
+  used to call `docGuid(...)` a second time with the four args the root already
+  used. It now spreads the unconnected `table.docs[field]` entry and only adds
+  `open`/dispose, and no longer needs `workspaceId`. Sole derivation owner:
+  `createWorkspace`.
+- **Action context exposes the deriver.** `WorkspaceActionContext.tables` was
+  typed `Tables<T>` (a stale under-type) while `options.actions(workspace)`
+  already received the `.docs`-bearing `WorkspaceTables<T>`. Widened to match, so
+  handlers reach the table-path guid deriver instead of re-importing `docGuid`.
+- **filesystem + skills migrated.** `skillsTable`/`referencesTable` declare
+  `.childDocs({ … : attachPlainText })`; `filesTable` declares
+  `.childDocs({ content: attachTimeline })`. `fileContentDocGuid`,
+  `skillInstructionsDocGuid`, and `referenceContentDocGuid` are deleted (the
+  filesystem helper had zero production callers); all callers derive through
+  `tables.<table>.docs.<field>.guid(rowId)`. Guid strings are byte-identical.
+- **`docGuid` is now internal.** Its only caller is `createWorkspace`, so the
+  package-barrel export is dropped and the function is marked `@internal`. The
+  public contract is the table path.
+
+**User loss:** Three helpers and the `docGuid` export are removed from published
+(non-private) `@epicenter/{filesystem,skills,workspace}`. All callers are
+in-monorepo and updated in the same break; no guid or wire change.
 
 ## Landed commits
 
@@ -165,3 +182,10 @@ idiom) are intentional primitives with real callers, not old-path survivors.
 4. `refactor(fuji): own the entry body handle with fromDisposableCache`
 5. `refactor(workspace): drop the ChildDocConnection alias`
 6. `refactor(workspace): make the workspace own child-doc guid derivation`
+
+Guid-ownership completion pass:
+
+7. `refactor(workspace): wrap the unconnected guid deriver in connected child docs`
+8. `refactor(skills): own instruction/reference child-doc guids through the table`
+9. `refactor(filesystem): own the file-content child-doc guid through the table`
+10. `refactor(workspace): make docGuid an internal derivation detail`

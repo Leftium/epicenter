@@ -1,21 +1,12 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import {
-		permissions,
-		type PermissionStatus,
-	} from '$lib/state/permissions.svelte';
+	import { permissions } from '$lib/state/permissions.svelte';
 
 	// Dev-only affordance (rendered behind `import.meta.env.DEV` in AppLayout):
 	// cycle the Accessibility override so the notice and guide can be tested on
 	// any build, including web dev where the grant is otherwise always 'granted'.
 	// `null` resumes the live OS value.
 	const current = $derived(permissions.accessibilityOverride);
-
-	function cycle() {
-		const next: PermissionStatus | null =
-			current === null ? 'granted' : current === 'granted' ? 'denied' : null;
-		permissions.setAccessibilityOverride(next);
-	}
 </script>
 
 <!-- Bottom-right and faint-until-hover so it clears the left sidebar and the
@@ -26,7 +17,11 @@ cycling label is self-documenting, so no tooltip box to collide with content. --
 	variant="outline"
 	size="sm"
 	class="fixed right-3 bottom-3 z-[60] max-md:bottom-[4.75rem] font-mono text-xs opacity-40 hover:opacity-100"
-	onclick={cycle}
+	onclick={() => {
+		const next =
+			current === null ? 'granted' : current === 'granted' ? 'denied' : null;
+		permissions.setAccessibilityOverride(next);
+	}}
 >
 	AX: {current ?? 'live'}
 </Button>

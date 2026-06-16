@@ -51,11 +51,15 @@ function bindingKey(binding: {
 type LocalShortcutKey = `shortcut.${Command['id']}`;
 type GlobalShortcutKey = `shortcuts.global.${Command['id']}`;
 
-function getLocalShortcutKey(commandId: Command['id']): LocalShortcutKey {
+export function getLocalShortcutKey(
+	commandId: Command['id'],
+): LocalShortcutKey {
 	return `shortcut.${commandId}`;
 }
 
-function getGlobalShortcutKey(commandId: Command['id']): GlobalShortcutKey {
+export function getGlobalShortcutKey(
+	commandId: Command['id'],
+): GlobalShortcutKey {
 	return `shortcuts.global.${commandId}`;
 }
 

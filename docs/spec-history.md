@@ -15,7 +15,7 @@
 >
 > **Regenerate (idempotent, lossless):** `bun scripts/generate-spec-history.mjs`
 
-**1257 specs ever** (572 still in tree, 685 removed).
+**1257 specs ever** (567 still in tree, 690 removed).
 
 
 ## 2026
@@ -164,7 +164,7 @@
 | 2026-05-21 | cloud-sync-direction-decision | removed | specs/20260521T120000-cloud-sync-direction-decision.md |
 | 2026-05-20 | cloud-workspaces-and-organizations-clean-break | in tree | specs/20260520T170000-cloud-workspaces-and-organizations-clean-break.md |
 | 2026-05-20 | collapse-oauth-resource-scope | removed | specs/20260520T221026-collapse-oauth-resource-scope.md |
-| 2026-05-20 | cloud-workspace-app-instance-clean-break | in tree | specs/20260520T190000-cloud-workspace-app-instance-clean-break.md |
+| 2026-05-20 | cloud-workspace-app-instance-clean-break | removed | specs/20260520T190000-cloud-workspace-app-instance-clean-break.md |
 | 2026-05-20 | workspace-capsule-clean-break | removed | specs/20260520T001032-workspace-capsule-clean-break.md |
 | 2026-05-20 | workspace-portability-design-brief | in tree | specs/20260520T130000-workspace-portability-design-brief.md |
 | 2026-05-20 | epicenter-sync-engine-host-composition | removed | specs/20260520T114537-epicenter-sync-engine-host-composition.md |
@@ -812,7 +812,7 @@
 | 2026-02-02 | modernize-tab-manager-client | in tree | specs/20260202T203000-modernize-tab-manager-client.md |
 | 2026-02-02 | unify-table-helper-remove-untyped | removed | specs/20260202T203000-unify-table-helper-remove-untyped.md |
 | 2026-02-02 | y-sweet-sync-extension | in tree | specs/y-sweet-sync-extension.md |
-| 2026-02-01 | examples-and-scripts-fixes | in tree | specs/20260201T000000-examples-and-scripts-fixes.md |
+| 2026-02-01 | examples-and-scripts-fixes | removed | specs/20260201T000000-examples-and-scripts-fixes.md |
 | 2026-02-01 | packages-epicenter-typecheck-fixes | in tree | specs/20260201T000000-packages-epicenter-typecheck-fixes.md |
 | 2026-02-01 | consolidate-id-types | removed | specs/20260201T025500-consolidate-id-types.md |
 | 2026-02-01 | simple-definition-first-workspace.handoff | in tree | specs/20260201T120000-simple-definition-first-workspace.handoff.md |
@@ -900,7 +900,7 @@
 | 2026-01-08 | collaborative-workspace-config-ydoc | in tree | specs/20260108T133200-collaborative-workspace-config-ydoc.md |
 | 2026-01-08 | collaborative-workspace-config-ydoc-handoff | removed | specs/20260108T133200-collaborative-workspace-config-ydoc-handoff.md |
 | 2026-01-07 | workspace-guid-and-epochs | in tree | specs/20260107T005800-workspace-guid-and-epochs.md |
-| 2026-01-07 | ykeyvalue-conflict-resolution-analysis | in tree | specs/20260107T010300-ykeyvalue-conflict-resolution-analysis.md |
+| 2026-01-07 | ykeyvalue-conflict-resolution-analysis | removed | specs/20260107T010300-ykeyvalue-conflict-resolution-analysis.md |
 | 2026-01-07 | ykeyvalue-lww-timestamps | removed | specs/20260107T020000-ykeyvalue-lww-timestamps.md |
 | 2026-01-07 | cell-level-crdt-merging.handoff | in tree | specs/20260107T114209-cell-level-crdt-merging.handoff.md |
 | 2026-01-07 | cell-level-crdt-merging | removed | specs/20260107T114209-cell-level-crdt-merging.md |
@@ -910,7 +910,7 @@
 | 2026-01-06 | json-serializable-rows | removed | specs/20260106T000000-json-serializable-rows.md |
 | 2026-01-06 | remove-serialized-terminology | in tree | specs/20260106T120000-remove-serialized-terminology.md |
 | 2026-01-06 | temporal-intermediate-representation | in tree | specs/20260106T212243-temporal-intermediate-representation.md |
-| 2026-01-06 | schema-folder-consolidation-analysis | in tree | specs/20260106T214000-schema-folder-consolidation-analysis.md |
+| 2026-01-06 | schema-folder-consolidation-analysis | removed | specs/20260106T214000-schema-folder-consolidation-analysis.md |
 | 2026-01-04 | inline-service-factories | in tree | specs/20260104T220141-inline-service-factories.md |
 | 2026-01-04 | remove-execute-calls | removed | specs/20260104T220837-remove-execute-calls.md |
 | 2026-01-02 | remove-blob-storage-from-epicenter | in tree | specs/20260102T012600-remove-blob-storage-from-epicenter.md |
@@ -1143,7 +1143,7 @@
 | 2025-10-14 | epicenter-server | removed | docs/specs/20251014T101252 epicenter-server.md |
 | 2025-10-14 | unify-workspace-initialization | removed | packages/epicenter/docs/specs/20251014T105747 unify-workspace-initialization.md |
 | 2025-10-13 | workspace-version-number | in tree | specs/20251013T000001 workspace-version-number.md |
-| 2025-10-13 | database-service-review | in tree | specs/20251013T093533 database-service-review.md |
+| 2025-10-13 | database-service-review | removed | specs/20251013T093533 database-service-review.md |
 | 2025-10-13 | db-service-namespacing | in tree | specs/20251013T100000 db-service-namespacing.md |
 | 2025-10-13 | query-layer-consolidation | in tree | specs/20251013T110000 query-layer-consolidation.md |
 | 2025-10-13 | persistent-model-manager-implementation | in tree | specs/20251013T151500-persistent-model-manager-implementation.md |

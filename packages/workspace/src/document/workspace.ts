@@ -62,11 +62,13 @@ import { createKv, type Kv, type KvDefinitions } from './kv.js';
 import { onLocalUpdate } from './on-local-update.js';
 import type { Collaboration } from './open-collaboration.js';
 import {
+	type BaseRow,
 	type ChildDocDeclaration,
 	type ChildDocDeclarations,
 	createTable,
 	type InferTableRow,
 	type LayoutOf,
+	type Table,
 	type TableDefinition,
 	type TableDefinitions,
 	type Tables,
@@ -745,14 +747,14 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		const definition = definitions[collection as keyof TTableDefinitions]!;
 		const guidDerivers = table.docs as Record<string, RowDocGuid<string>>;
 		// A body's only cross-doc writer: a local edit stamps a declared instant
-		// column on the row. Typed loosely here because the loop has erased the
-		// per-table row type; `touch` is checked against the real row at the
-		// `.docs(...)` call site. The returned `Result` is intentionally dropped:
-		// a recency bump is best-effort and a rejected patch must not break the
-		// edit it followed.
-		const updateRow = (
-			table as { update: (id: string, patch: object) => unknown }
-		).update;
+		// column on the row. Read through `Table<BaseRow>` (not a hand-written
+		// `{ update }` shape): `Object.entries` erased the per-table row type, and
+		// the base-row view's `update` accepts a `Partial<{}>` patch, which is
+		// exactly the dynamic `{ [touch]: instant }` we build here. `touch` is
+		// checked against the real row type at the `.docs(...)` call site. The
+		// returned `Result` is intentionally dropped: a recency bump is best-effort
+		// and a rejected patch must not break the edit it followed.
+		const { update: updateRow } = table as Table<BaseRow>;
 		const docs: Record<string, unknown> = {};
 
 		for (const [field, declaration] of Object.entries(definition.docDecls) as [

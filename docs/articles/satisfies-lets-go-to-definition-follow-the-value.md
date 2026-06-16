@@ -184,7 +184,7 @@ TWorkspace extends Workspace<TTables, TKv, TActions>
 
 Writing that at every call site would make the implementation harder to read. The helper exists to keep the object literal readable while preserving the exact inferred return type.
 
-A concrete Epicenter example is a project mount: the small object a project config gives the daemon. Every mount receives one `MountContext` with a nullable `session`:
+A concrete Epicenter example is a mount: the small object `epicenter.config.ts` gives the daemon. Every mount receives one `MountContext` with a nullable `session`:
 
 ```typescript
 type Mount = {

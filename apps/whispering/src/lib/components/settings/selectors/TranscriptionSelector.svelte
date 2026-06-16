@@ -25,7 +25,7 @@
 
 	let {
 		class: className,
-		triggerVariant,
+		variant,
 	}: {
 		class?: string;
 		/**
@@ -37,7 +37,7 @@
 		 * - `standalone`: a quick provider switcher. Shows the selected service's
 		 *   brand icon and warns only when a selected service is misconfigured.
 		 */
-		triggerVariant: 'standalone' | 'pipeline';
+		variant: 'standalone' | 'pipeline';
 	} = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
@@ -45,7 +45,7 @@
 		!!selectedService && isTranscriptionServiceConfigured(selectedService),
 	);
 	const showConfigurationWarning = $derived(
-		triggerVariant === 'pipeline'
+		variant === 'pipeline'
 			? !isSelectedServiceReady
 			: !!selectedService && !isSelectedServiceReady,
 	);
@@ -139,7 +139,7 @@
 				variant="ghost"
 				size="icon"
 			>
-				{#if triggerVariant === 'pipeline'}
+				{#if variant === 'pipeline'}
 					<CaptionsIcon
 						class={cn(
 							'size-5',

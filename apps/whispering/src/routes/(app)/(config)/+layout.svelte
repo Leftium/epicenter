@@ -47,7 +47,7 @@
 					</Button>
 				{:else}
 					<ManualDeviceSelector />
-					<TranscriptionSelector triggerVariant="standalone" />
+					<TranscriptionSelector variant="standalone" />
 					<TransformationSelector />
 				{/if}
 				{#if manualRecorder.state === 'RECORDING'}
@@ -78,7 +78,7 @@
 			{:else if settings.get('recording.trigger') === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
 					<VadDeviceSelector />
-					<TranscriptionSelector triggerVariant="standalone" />
+					<TranscriptionSelector variant="standalone" />
 					<TransformationSelector />
 				{/if}
 				{#if vadRecorder.state === 'IDLE'}

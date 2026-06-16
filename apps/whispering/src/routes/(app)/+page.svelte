@@ -251,7 +251,7 @@
 	{#snippet manualPipeline()}
 		<CapturePipeline>
 			<ManualDeviceSelector />
-			<TranscriptionSelector triggerVariant="pipeline" />
+			<TranscriptionSelector variant="pipeline" />
 			<TransformationSelector />
 		</CapturePipeline>
 	{/snippet}
@@ -259,7 +259,7 @@
 	{#snippet vadPipeline()}
 		<CapturePipeline>
 			<VadDeviceSelector />
-			<TranscriptionSelector triggerVariant="pipeline" />
+			<TranscriptionSelector variant="pipeline" />
 			<TransformationSelector />
 		</CapturePipeline>
 	{/snippet}

@@ -9,9 +9,8 @@ mount projects its markdown to `entries/` (a direct child of the Epicenter root,
 one folder per table) and the daemon keeps machine state under `.epicenter/`.
 The projection is tracked in git; only `.epicenter/` is gitignored.
 
-This example is the reference implementation of the layout spec at
-`specs/20260612T000201-epicenter-namespace-root-layout.md`. If the spec changes,
-this example changes with it.
+This example is the reference implementation of the Epicenter folder layout
+described below.
 
 ## Layout
 
@@ -97,6 +96,5 @@ the root row and body text into the entry body Y.Doc.
 
 ## See also
 
-- `specs/20260612T000201-epicenter-namespace-root-layout.md` for the full spec.
 - `examples/notes-cross-peer/` for a two-peer sync demo (predates this layout).
 - `apps/fuji/` for the full Tauri/Svelte app that consumes the same workspace.

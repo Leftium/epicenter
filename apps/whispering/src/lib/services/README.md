@@ -96,7 +96,7 @@ import { tauriOnly } from '$lib/tauri.tauri';
 await tauriOnly.globalShortcuts.unregisterAll();
 ```
 
-See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-check.md` for the full pattern walkthrough, and `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md` for the original rationale.
+See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-check.md` for the full pattern walkthrough and rationale.
 
 > **💡 Three kinds of dependency injection**
 >

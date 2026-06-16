@@ -20,7 +20,7 @@ Use this pattern when you need to:
 - Decide which spec tasks run in parallel vs sequentially.
 - Update spec checkboxes and implementation notes after each wave.
 - Commit code changes together with spec progress at sensible review boundaries.
-- Finish execution by running `post-implementation-review`, setting spec status, and adding a review section.
+- Finish execution by running `post-implementation-review`, harvesting durable decisions into `docs/adr/`, and deleting the spent spec.
 
 ## The Execution Loop
 
@@ -44,7 +44,7 @@ WAVE N
 REPEAT until spec is complete
     |
     v
-FINAL REVIEW (run post-implementation-review, update spec status, add review section)
+FINAL REVIEW (post-implementation-review, harvest decisions to docs/adr/, delete spent spec)
 ```
 
 Default to continuing. After a wave passes verification, move to the next
@@ -58,7 +58,7 @@ Before planning waves, make sure the spec has a current execution path.
 
 Check:
 
-- Status: Draft, In Progress, Implemented, Superseded, or Retrospective.
+- Status: Draft or In Progress. A spec is in-flight; "done" is deletion, not a terminal status (see `specs/README.md`).
 - Supersession: whether the top of the spec points to a newer spec.
 - One Sentence: what the spec is actually about.
 - Current State and Target Shape: enough concrete code, routes, types, or file paths to start.
@@ -201,31 +201,31 @@ After all waves complete:
 1. **Run `post-implementation-review`** against the files touched by the spec.
    Use the findings to clean up stale abstractions, dead paths, invariant drift,
    naming issues, and missing verification before handoff.
-2. **Update spec status** from "In Progress" to "Implemented"
-3. **Add a Review section** at the bottom of the spec:
+2. **Harvest durable decisions into `docs/adr/`.** A spec is scaffolding, not the
+   durable record (see `specs/README.md` and the AGENTS.md routing). For each
+   load-bearing decision the work settled (an architecture or ownership choice, an
+   API shape, a rejected alternative worth not re-litigating), record it in
+   `docs/adr/`:
+   - If the spec already pointed at a `Proposed` ADR, flip it to `Accepted`.
+   - Otherwise write a new ADR using `docs/adr/README.md`. Keep it to the one
+     decision and its consequences; the spec held the exploration, the ADR holds
+     the outcome.
+   - A spec with no durable decision (a pure refactor or mechanical plan) needs no
+     ADR. Not every spec earns one.
+3. **Delete the spent spec.** Once its decisions are in ADRs and the work has
+   landed, `git rm` the spec. Git keeps the body and `docs/spec-history.md` indexes
+   it by date, so nothing is lost. Do not leave a finished spec in the tree as a
+   knowledge base; that is the pollution this workflow exists to prevent.
+4. **Verify hygiene.** Run `bun scripts/check-doc-hygiene.mjs`. It must pass: no
+   spec left in the tree declaring a terminal status, no `Proposed` ADR orphaned by
+   a deleted spec. A failure means the harvest is incomplete; fix it (flip the ADR,
+   delete the spec) rather than committing the smell.
+5. **Final commit or final amend/squash** that includes the new or updated ADR and
+   the spec deletion, matching the commit strategy chosen earlier.
 
-```markdown
-## Review
-
-**Completed**: [Date]
-**Branch**: [branch-name]
-
-### What Landed
-
-[2-3 sentences on what was built and how it differs from the original plan]
-
-### Deviations and Discoveries
-
-- [What changed and why]
-
-### Follow-up Work
-
-- [Anything discovered during implementation that should be a future spec]
-```
-
-4. **Final commit or final amend/squash** with the review section included, matching the commit strategy chosen earlier
-
-This review section is spec bookkeeping, not the pull request body. When writing the PR, load `git` and follow the PR narrative guidance there.
+The durable "why" now lives in the ADR; the "what landed" narrative belongs in the
+pull request body. When writing the PR, load `git` and follow the PR narrative
+guidance there. Nothing durable stays behind in the spec.
 
 ## Sub-Agent Prompts
 
@@ -313,6 +313,7 @@ For each wave:
 After all waves:
 
 - [ ] Run `post-implementation-review` on touched files
-- [ ] Update spec status to Implemented
-- [ ] Add Review section
-- [ ] Finalize commits using the chosen strategy
+- [ ] Harvest durable decisions into `docs/adr/` (new ADR, or flip a `Proposed` one to `Accepted`)
+- [ ] Delete the spent spec (`git rm`; git and `docs/spec-history.md` keep the history)
+- [ ] Run `bun scripts/check-doc-hygiene.mjs` (must pass)
+- [ ] Finalize commits (ADR + spec deletion) using the chosen strategy

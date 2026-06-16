@@ -11,7 +11,9 @@ metadata:
 Follow [writing-voice](../writing-voice/SKILL.md) for prose sections.
 Follow [notebook-explanation](../notebook-explanation/SKILL.md) for mental models, ownership diagrams, flow diagrams, and compressed rules.
 
-A specification gives an agent or maintainer the context they need to implement a feature autonomously. The goal is not to describe everything exhaustively. The goal is to make the current truth easy to find, show enough evidence that the direction is credible, and give the implementer a concrete launch point.
+A specification gives an agent or maintainer the context they need to implement a feature autonomously. The goal is not to describe everything exhaustively. The goal is to show enough evidence that the direction is credible and give the implementer a concrete launch point.
+
+**A spec is in-flight scaffolding, not the durable record.** It plans work and holds research while the work is underway. It is not authoritative and does not outlive the work. Durable decisions live in `docs/adr/`, shared vocabulary in `docs/CONTEXT.md`, current state in `docs/reference/` and the code. When a load-bearing decision crystallizes while you are writing the spec, record it as a `Proposed` ADR in `docs/adr/` right then and reference it from the spec; do not leave it buried in the spec to be "harvested" later. When the work lands, the ADR flips to `Accepted` and the spec is deleted (see [spec-execution](../spec-execution/SKILL.md)). Git and `docs/spec-history.md` keep the history.
 
 > **Note**: This guide uses `[PLACEHOLDER]` markers for content you must fill in. Code blocks show templates; replace all bracketed content with your feature's details.
 
@@ -149,7 +151,7 @@ A spec is an execution spine, not a file whitelist.
 # [Feature Name]
 
 **Date**: [YYYY-MM-DD]
-**Status**: Draft | In Progress | Implemented | Superseded | Retrospective
+**Status**: Draft | In Progress
 **Owner**: [Name/team responsible for decisions]
 **Branch**: [optional: branch name if work has started]
 **Supersedes**: [optional: previous spec paths]
@@ -227,6 +229,8 @@ Include:
 ### Design Decisions
 
 Use a table for traceability. Every material decision should have a class and rationale.
+
+A load-bearing decision (a Class 2 coherence or Class 3 taste choice about architecture, ownership, an API shape, or a rejected alternative worth not re-litigating) belongs in an ADR, not only in this table. Write it as a `Proposed` ADR in `docs/adr/` as soon as it crystallizes and reference the ADR number in the table's rationale. The table then traces the spec's decisions to their durable home; the ADR survives after the spec is deleted.
 
 ```markdown
 ## Design Decisions

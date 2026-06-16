@@ -1,6 +1,6 @@
 # Action Dispatch
 
-> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names.
 
 How to invoke actions across runtimes using YJS as the transport layer.
 
@@ -299,7 +299,6 @@ For browser -> server, HTTP is simpler. Use the requests table when you need to 
 
 ## Related Documentation
 
-- [Request Dispatch Spec](../../../../specs/20260213T103000-request-dispatch.md): Implementation spec with tab-manager examples
 - [Device Identity](./device-identity.md): How devices identify themselves
 - [Network Topology](./network-topology.md): Connection patterns
 - [SYNC_ARCHITECTURE.md](../../SYNC_ARCHITECTURE.md): Multi-device sync details

@@ -1,8 +1,10 @@
 # Technical Specifications
 
-This directory is the working record for feature plans, architecture decisions, execution notes, and historical design context.
+This directory holds in-flight design scaffolding: feature plans and execution notes for work that is underway. It is **not** the durable record and **not** authoritative. Settled decisions are harvested into `docs/adr/` (the authoritative decision layer), shared vocabulary into `docs/CONTEXT.md`, and current state into `docs/reference/` and the code. The dated index of every past spec, including deleted ones, lives in `docs/spec-history.md`.
 
-Specs should respect maintainer time. A reader should be able to find the current truth quickly, then decide whether they need the deeper evidence, implementation plan, or historical appendix.
+When a spec's work lands, harvest any durable decision into an ADR and delete the spent spec; git keeps the body recoverable. Do not keep finished specs here as a knowledge base.
+
+Specs should respect maintainer time. A reader should be able to find the current truth quickly, then decide whether they need the deeper evidence or implementation plan.
 
 ## File Names
 
@@ -35,7 +37,7 @@ The top of a spec should answer:
 
 ```txt
 What is this?
-Is it active, implemented, superseded, or historical?
+Is it Draft or In Progress? (those are the only two states; a finished spec is deleted, not marked)
 What is the current shape?
 What is the target shape?
 What proves the change is done?
@@ -47,11 +49,10 @@ Use this header shape for new specs:
 # [Feature Name]
 
 **Date**: [YYYY-MM-DD]
-**Status**: Draft | In Progress | Implemented | Superseded | Retrospective
+**Status**: Draft | In Progress
 **Owner**: [Name/team responsible for decisions]
 **Branch**: [optional branch name]
-**Supersedes**: [optional spec paths]
-**Superseded by**: [optional spec path]
+**Supersedes**: [optional: prior spec or ADR this design grows from]
 
 ## One Sentence
 
@@ -117,13 +118,12 @@ The failure mode is not length. The failure mode is making the reader guess whic
 
 ## Lifecycle
 
-Specs are living documents while work is active.
+A spec has exactly two states, both meaning "in flight, still in the tree":
 
 - `Draft`: design direction exists, implementation has not started or is not committed to the exact plan.
 - `In Progress`: work is underway and checkboxes or implementation notes should stay current.
-- `Implemented`: the planned work landed and the spec has a review or completion note.
-- `Superseded`: a newer spec or commit changed the direction. Add a top note pointing to the replacement.
-- `Retrospective`: records what happened and why. Do not execute from it directly.
+
+There is no terminal status. A spec does not become `Implemented`, `Superseded`, or `Retrospective` and linger; when its work lands (or it is abandoned), its durable decision is harvested into `docs/adr/` and the spec is deleted. "Done" has one representation: the file is gone. Git and `docs/spec-history.md` keep the history. This is why an in-tree spec is always safe to treat as live, and why a spec declaring a terminal status is a hygiene smell (see `scripts/check-doc-hygiene.ts`).
 
 When executing a spec, update checkboxes and implementation notes in the same review unit as the code. If implementation diverges from the spec, update the spec instead of leaving stale instructions behind.
 

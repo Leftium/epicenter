@@ -21,6 +21,12 @@ const require = createRequire(import.meta.url);
 const distOf = (pkg: string) => dirname(require.resolve(pkg));
 const vadDist = distOf('@ricky0123/vad-web');
 const ortDist = distOf('onnxruntime-web');
+const vadAssetSources = [
+	join(vadDist, 'vad.worklet.bundle.min.js'),
+	join(vadDist, 'silero_vad_v5.onnx'),
+	join(ortDist, 'ort-wasm-simd-threaded.mjs'),
+	join(ortDist, 'ort-wasm-simd-threaded.wasm'),
+];
 
 export default defineConfig(
 	mergeConfig(workspaceAppViteConfig(APPS.WHISPERING), {
@@ -30,28 +36,11 @@ export default defineConfig(
 				// `stripBase` drops the source's directory segments so each file
 				// lands directly at /vad/<name> (the plugin otherwise mirrors the
 				// full absolute source path under dest).
-				targets: [
-					{
-						src: join(vadDist, 'vad.worklet.bundle.min.js'),
-						dest: 'vad',
-						rename: { stripBase: true },
-					},
-					{
-						src: join(vadDist, 'silero_vad_v5.onnx'),
-						dest: 'vad',
-						rename: { stripBase: true },
-					},
-					{
-						src: join(ortDist, 'ort-wasm-simd-threaded.mjs'),
-						dest: 'vad',
-						rename: { stripBase: true },
-					},
-					{
-						src: join(ortDist, 'ort-wasm-simd-threaded.wasm'),
-						dest: 'vad',
-						rename: { stripBase: true },
-					},
-				],
+				targets: vadAssetSources.map((src) => ({
+					src,
+					dest: 'vad',
+					rename: { stripBase: true },
+				})),
 			}),
 		],
 		// onnxruntime-web (pulled in by @ricky0123/vad-web) ships a WASM glue

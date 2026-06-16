@@ -136,7 +136,7 @@ impl ModelManager {
         if name.is_empty() {
             return Err("No local model selected. Choose a model in settings.".to_string());
         }
-        if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
+        if !is_contained_entry_name(name) {
             return Err(format!(
                 "Model name must be a single models-folder entry, got: {}",
                 name
@@ -640,6 +640,15 @@ pub(crate) fn engine_models_dir(engine: EngineKind) -> &'static str {
         EngineKind::Parakeet => "parakeet",
         EngineKind::Moonshine => "moonshine",
     }
+}
+
+/// Whether `name` stays within a single models-folder entry: no path
+/// separators and no traversal component, so joining it onto the folder can
+/// never escape it. The containment rule shared by the loader's
+/// `model_path_for` and import-time `validate_entry_name`. Emptiness is left to
+/// callers, which treat it differently (no selection vs. a malformed pick).
+pub(crate) fn is_contained_entry_name(name: &str) -> bool {
+    !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
 }
 
 /// `pub(crate)` so the link-import path enforces the same naming rule the

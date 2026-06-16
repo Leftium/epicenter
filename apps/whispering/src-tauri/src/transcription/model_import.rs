@@ -20,7 +20,9 @@ use tauri::{AppHandle, Manager};
 use thiserror::Error;
 
 use super::config::Engine;
-use super::model_manager::{engine_models_dir, parse_moonshine_variant};
+use super::model_manager::{
+    engine_models_dir, is_contained_entry_name, parse_moonshine_variant,
+};
 
 /// Extensions a Whisper model file may carry. Mirrors the frontend's
 /// `WHISPER_MODEL_EXTENSIONS` listing filter; whisper.cpp accepts GGML/GGUF.
@@ -56,7 +58,7 @@ pub enum ModelImportError {
 /// (a single folder entry, no separators or traversal); Moonshine additionally
 /// must match the naming convention the loader derives its variant from.
 fn validate_entry_name(engine: Engine, name: &str) -> Result<(), ModelImportError> {
-    if name.is_empty() || name.contains('/') || name.contains('\\') || name == "." || name == ".." {
+    if name.is_empty() || !is_contained_entry_name(name) {
         return Err(ModelImportError::InvalidEntryName {
             message: format!("Model entry name must be a single models-folder entry, got: {name}"),
         });

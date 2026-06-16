@@ -26,7 +26,7 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDING_TRIGGER_ICONS,
+		RECORDING_TRIGGER_META,
 		RECORDING_TRIGGER_OPTIONS,
 		type RecordingTrigger,
 	} from '$lib/constants/audio';
@@ -255,7 +255,7 @@
 		class="w-full"
 	>
 		{#each RECORDING_TRIGGER_OPTIONS as option}
-			{@const TriggerIcon = RECORDING_TRIGGER_ICONS[option.value]}
+			{@const TriggerIcon = RECORDING_TRIGGER_META[option.value].Icon}
 			<ToggleGroup.Item
 				value={option.value}
 				aria-label="Switch to {option.label.toLowerCase()} recording"

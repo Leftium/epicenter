@@ -1,7 +1,7 @@
 import { os } from '#platform/os';
 import { tauri } from '#platform/tauri';
 import type { Command } from '$lib/commands';
-import { toggleCommandIdForTrigger } from '$lib/constants/audio';
+import { RECORDING_TRIGGER_META } from '$lib/constants/audio';
 import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -53,7 +53,8 @@ export function getSetupReadiness(
 	// KeyBindings, the browser reads in-app shortcut strings. A bound toggle OR
 	// push-to-talk is enough to start a recording.
 	const recordingTrigger = settings.get('recording.trigger');
-	const toggleCommandId = toggleCommandIdForTrigger(recordingTrigger);
+	const toggleCommandId =
+		RECORDING_TRIGGER_META[recordingTrigger].toggleCommandId;
 	const activationReady = tauri
 		? hasGlobalBinding(toggleCommandId) || hasGlobalBinding('pushToTalk')
 		: Boolean(

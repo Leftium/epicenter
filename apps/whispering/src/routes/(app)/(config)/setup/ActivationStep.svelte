@@ -10,9 +10,9 @@
 	import KeyboardIcon from '@lucide/svelte/icons/keyboard';
 	import { commands, type Command } from '$lib/commands';
 	import {
+		RECORDING_TRIGGER_META,
 		RECORDING_TRIGGER_OPTIONS,
 		type RecordingTrigger,
-		toggleCommandIdForTrigger,
 	} from '$lib/constants/audio';
 	import { report } from '$lib/report';
 	import { settings } from '$lib/state/settings.svelte';
@@ -48,7 +48,7 @@
 	);
 	// The toggle that starts a recording depends on the selected trigger.
 	const activeToggleCommand = $derived(
-		commandById(toggleCommandIdForTrigger(selectedRecordingTrigger)),
+		commandById(RECORDING_TRIGGER_META[selectedRecordingTrigger].toggleCommandId),
 	);
 </script>
 

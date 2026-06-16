@@ -139,6 +139,6 @@ than a working package, the ritual above is unchanged; only the scoping differs.
 5. Finish with [post-implementation-review](../post-implementation-review/SKILL.md)
    and targeted `bun test` / `bun run typecheck` on impacted packages.
 
-For a second model's judgment on the findings or the final diff, use
+For outside judgment on the findings or the final diff, use
 [handoff](../handoff/SKILL.md) to draft two small prompts when useful: a pre-edit
 risk pass and a post-edit diff pass, not one broad consult.

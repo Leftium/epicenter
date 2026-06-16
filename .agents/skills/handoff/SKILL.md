@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Draft a self-contained, copy-pasteable prompt for a fresh agent or second-model review. Use when the user says "hand this off", "compact this", "wrap up for the next session", "write a continuation prompt", "draft a prompt", "make a prompt I can copy-paste", "create a delegation brief", "ask Claude", "get another model's take", "taste check", or invokes /handoff.
+description: Draft a self-contained, copy-pasteable prompt for a fresh agent, terminal agent UI, or bounded review. Use when the user says "hand this off", "compact this", "wrap up for the next session", "write a continuation prompt", "draft a prompt", "make a prompt I can copy-paste", "create a delegation brief", "ask Claude", "get another model's take", "taste check", or invokes /handoff.
 argument-hint: "What should the next agent accomplish?"
 metadata:
   author: epicenter
@@ -9,13 +9,13 @@ metadata:
 
 # Handoff
 
-Draft a self-contained prompt that can be pasted into a fresh agent thread, another model, or a separate terminal session.
+Draft a self-contained prompt that can be pasted into a fresh agent thread, a terminal agent UI, or another separate session.
 
 Return the prompt directly in the conversation. The user can copy it from there.
 
 The recipient has no thread context. Include only what they need to continue correctly.
 
-For a second-model review, keep the prompt narrower than a full handoff. Ask one concrete question, give exact files, snippets, or a diff command, name the lens, and say what answer shape is useful. Treat the answer like a strong review comment, not truth: Codex still verifies claims and owns what lands.
+Do not build or run a wrapper for the recipient. Let the user run their chosen terminal UI so the account, session, model choice, and rate-limit pool stay visible to them.
 
 ## Include
 
@@ -27,9 +27,11 @@ For a second-model review, keep the prompt narrower than a full handoff. Ask one
 - Next steps: ordered, concrete actions.
 - Verification: commands already run and commands still needed.
 
-## Second-Model Review
+## Narrow Review Prompts
 
-Use a second-model prompt only when diversity, isolation, parallelism, or clear verification makes it useful. Keep the work in Codex when the edit is faster to make locally, needs delicate repo judgment, or would mostly produce prose or vibes.
+Most handoffs are continuation prompts. When the user wants another agent's judgment rather than a fresh owner for the work, make the prompt narrower: one question, exact context, and an answer shape Codex can verify.
+
+Use a narrow review prompt only when diversity, isolation, parallelism, or clear verification makes it useful. Keep the work in Codex when the edit is faster to make locally, needs delicate repo judgment, or would mostly produce prose or vibes.
 
 Write the prompt like a senior engineer asking another senior engineer for one bounded judgment:
 

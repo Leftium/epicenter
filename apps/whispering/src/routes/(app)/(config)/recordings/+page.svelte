@@ -413,8 +413,7 @@
 								selectedRecordingRows.map(({ original }) => original),
 								{
 									onSuccess: ({ oks, errs }) => {
-										const isAllSuccessful = errs.length === 0;
-										if (isAllSuccessful) {
+										if (errs.length === 0) {
 											const count = oks.length;
 											loading.resolve({
 												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}!`,
@@ -423,45 +422,33 @@
 											return;
 										}
 
-										// Each failed result still carries its tagged error.
-										// Dedupe the real provider messages so a batch that
-										// failed the same way (e.g. every row missing the API
+										// Per-recording errors already live on their rows:
+										// transcribeAndPersist marks each failed row and the row
+										// surfaces its message plus a retry. So the bulk toast only
+										// summarizes, and forwards the first real failure as the
+										// cause so More details stays a genuine provider error
+										// rather than a synthesized one. Dedupe the messages so a
+										// batch that failed the same way (every row missing the API
 										// key) reads as one line, not N copies.
-										const failureMessages = [
+										const [firstFailure] = errs;
+										if (!firstFailure) return; // errs is non-empty here
+										const failureSummary = [
 											...new Set(errs.map(({ error }) => error.message)),
 										].join('\n');
 
-										const isAllFailed = oks.length === 0;
-										if (isAllFailed) {
-											// A single failure forwards its real tagged error, so
-											// the toast and More details dialog show the provider's
-											// own message and name.
-											const [onlyFailure] = errs;
-											if (onlyFailure && errs.length === 1) {
-												loading.reject({
-													cause: onlyFailure.error,
-													title: 'Failed to transcribe recording',
-												});
-												return;
-											}
+										if (oks.length === 0) {
 											loading.reject({
-												title: `Failed to transcribe ${errs.length} recordings`,
-												description: failureMessages,
-												cause: {
-													name: 'BulkTranscriptionFailed',
-													message: failureMessages,
-												},
+												cause: firstFailure.error,
+												title: `Failed to transcribe ${errs.length} recording${errs.length === 1 ? '' : 's'}`,
+												description: failureSummary,
 											});
 											return;
 										}
-										// Mixed results
+
 										loading.reject({
+											cause: firstFailure.error,
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
-											description: `${oks.length} succeeded, ${errs.length} failed:\n${failureMessages}`,
-											cause: {
-												name: 'BulkTranscriptionPartiallyFailed',
-												message: failureMessages,
-											},
+											description: `${oks.length} succeeded, ${errs.length} failed:\n${failureSummary}`,
 										});
 									},
 								},

@@ -7,10 +7,7 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import { os } from '#platform/os';
-import {
-	type Command,
-	type ShortcutEventState,
-} from '$lib/commands';
+import { type Command, type ShortcutEventState } from '$lib/commands';
 import {
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,

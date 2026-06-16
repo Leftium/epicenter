@@ -1,9 +1,9 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { tauri } from '#platform/tauri';
 import { goto } from '$app/navigation';
 import { globalListener } from '$lib/state/global-listener.svelte';
 import { localModel } from '$lib/state/local-model.svelte';
 import { permissions } from '$lib/state/permissions.svelte';
-import { tauri } from '#platform/tauri';
 import { checkForUpdates } from './check-for-updates';
 
 export function attachDesktopEvents() {

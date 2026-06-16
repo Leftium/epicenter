@@ -1,10 +1,10 @@
 import { partitionResults } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
-import { localShortcuts } from '$lib/services/local-shortcut-manager';
 import { report } from '$lib/report';
 import {
 	type CommandId,
+	localShortcuts,
 	shortcutStringToArray,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';

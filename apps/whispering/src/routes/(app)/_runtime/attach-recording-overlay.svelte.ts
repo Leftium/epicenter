@@ -1,5 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { recordingOverlay } from '#platform/recording-overlay';
+import { tauri } from '#platform/tauri';
 import {
 	cancelRecording,
 	stopManualRecording,
@@ -13,8 +15,6 @@ import {
 } from '$lib/recording-overlay/events';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-import { recordingOverlay } from '#platform/recording-overlay';
-import { tauri } from '#platform/tauri';
 
 export function attachRecordingOverlay() {
 	let unlistenAction: UnlistenFn | undefined;

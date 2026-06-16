@@ -3,7 +3,9 @@ import { services } from '$lib/services';
 
 export function attachLocalShortcutListener() {
 	$effect(() => {
-		const unlisten = services.localShortcutManager.listen(dispatchCommandTrigger);
+		const unlisten = services.localShortcutManager.listen(
+			dispatchCommandTrigger,
+		);
 		return () => unlisten();
 	});
 

@@ -632,8 +632,9 @@ fn sanitize_samples(mut samples: Vec<f32>) -> Vec<f32> {
 
 /// Directory under `models/` for each engine. A durable on-disk contract
 /// shared with the frontend's `PATHS.MODELS` (which is why `whispercpp`
-/// maps to `whisper`).
-fn engine_models_dir(engine: EngineKind) -> &'static str {
+/// maps to `whisper`). `pub(crate)` so the link-import path resolves the same
+/// folder this loader reads from.
+pub(crate) fn engine_models_dir(engine: EngineKind) -> &'static str {
     match engine {
         EngineKind::Whispercpp => "whisper",
         EngineKind::Parakeet => "parakeet",
@@ -641,7 +642,12 @@ fn engine_models_dir(engine: EngineKind) -> &'static str {
     }
 }
 
-fn parse_moonshine_variant(model_name: &str) -> Result<MoonshineVariant, TranscriptionError> {
+/// `pub(crate)` so the link-import path enforces the same naming rule the
+/// Moonshine loader relies on (the variant is read from the entry name, not
+/// the files), keeping one source of truth for the convention.
+pub(crate) fn parse_moonshine_variant(
+    model_name: &str,
+) -> Result<MoonshineVariant, TranscriptionError> {
     // Naming convention: moonshine-{variant}-{lang}. Match on the variant
     // segment between the first and last hyphen-bounded fields.
     if model_name.starts_with("moonshine-tiny-") || model_name == "moonshine-tiny" {
@@ -790,15 +796,17 @@ mod tests {
 
     #[test]
     fn disk_identity_stable_when_unchanged() {
-        let dir =
-            std::env::temp_dir().join(format!("whispering-id-stable-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("whispering-id-stable-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("model.bin");
         std::fs::write(&path, b"steady").unwrap();
 
         let a = disk_identity(&path).expect("identity for existing file");
         let b = disk_identity(&path).expect("identity on second read");
-        assert_eq!(a, b, "identity is stable across reads when bytes are unchanged");
+        assert_eq!(
+            a, b,
+            "identity is stable across reads when bytes are unchanged"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -826,7 +834,10 @@ mod tests {
             b"thirdx-and-longer".len(),
             "test fixture must be same-size to exercise the mtime path"
         );
-        assert_ne!(second, third, "a same-size rewrite changes identity via mtime");
+        assert_ne!(
+            second, third,
+            "a same-size rewrite changes identity via mtime"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

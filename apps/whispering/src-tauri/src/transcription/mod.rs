@@ -1,12 +1,14 @@
 mod config;
 mod error;
 mod events;
+mod model_import;
 mod model_manager;
 
 use crate::recorder::read_artifact_samples;
 pub use config::TranscriptionConfig;
 pub use error::TranscriptionError;
 pub use events::{LocalModelState, ModelStateEvent};
+pub use model_import::{link_local_model, ModelImportError};
 pub use model_manager::ModelManager;
 use tauri::{AppHandle, State};
 

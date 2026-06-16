@@ -39,7 +39,11 @@ import {
 } from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
-import { commands, type DownloadProgress } from '$lib/tauri/commands';
+import {
+	commands,
+	type DownloadProgress,
+	type ModelImportError,
+} from '$lib/tauri/commands';
 
 export const LocalModelFolderError = defineErrors({
 	DownloadIncomplete: ({
@@ -167,6 +171,27 @@ export async function deleteModelEntry({
 					: error,
 			}),
 	});
+}
+
+/**
+ * Link a model already on disk into the engine's folder as a symlink entry,
+ * without copying bytes. `sourcePath` is an absolute path from the native
+ * picker (a file for Whisper, a directory for Parakeet/Moonshine), and
+ * `entryName` is the folder entry name to create (and to store as the active
+ * selection). Rust validates the engine shape and creates the link, since the
+ * picked target lives outside the webview's fs scope and `plugin-fs` cannot
+ * create symlinks. Deletion later removes only the link, never its target.
+ */
+export async function linkModelEntry({
+	engine,
+	entryName,
+	sourcePath,
+}: {
+	engine: Engine;
+	entryName: string;
+	sourcePath: string;
+}): Promise<Result<null, ModelImportError>> {
+	return commands.linkLocalModel(engine, entryName, sourcePath);
 }
 
 /** Remove a leftover partial file or staging directory, ignoring any error. */

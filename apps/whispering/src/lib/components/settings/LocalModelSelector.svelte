@@ -13,6 +13,7 @@
 	import Download from '@lucide/svelte/icons/download';
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import HardDriveDownload from '@lucide/svelte/icons/hard-drive-download';
+	import Link from '@lucide/svelte/icons/link';
 	import X from '@lucide/svelte/icons/x';
 	import { mkdir } from '@tauri-apps/plugin-fs';
 	import type { Snippet } from 'svelte';
@@ -26,6 +27,7 @@
 	import { PATHS } from '$lib/services/fs-paths';
 	import {
 		deleteModelEntry,
+		linkModelEntry,
 		listModelEntries,
 		type LocalModelEntry,
 	} from '$lib/services/transcription/local-model-folder';
@@ -172,6 +174,43 @@
 				});
 				return Ok(undefined);
 			},
+		});
+	}
+
+	/**
+	 * Link a model already on disk instead of downloading a copy. Picks a file
+	 * (Whisper) or directory (Parakeet/Moonshine), then has Rust validate the
+	 * engine shape and create a symlink entry named after the source. The native
+	 * side is the trust boundary: an incompatible pick fails with its reason.
+	 */
+	async function linkModel() {
+		const { open } = await import('@tauri-apps/plugin-dialog');
+		const { basename } = await import('@tauri-apps/api/path');
+		const selected = await open({
+			directory: modelKind === 'directory',
+			multiple: false,
+			title: `Link a ${title}`,
+			filters:
+				modelKind === 'directory'
+					? undefined
+					: [{ name: 'Whisper model', extensions: ['bin', 'gguf', 'ggml'] }],
+		});
+		if (typeof selected !== 'string') return;
+
+		const entryName = await basename(selected);
+		const { error } = await linkModelEntry({
+			engine,
+			entryName,
+			sourcePath: selected,
+		});
+		if (error) {
+			toast.error('Could not link that model', { description: error.message });
+			return;
+		}
+		value = entryName;
+		await refreshEntries();
+		toast.success('Model linked', {
+			description: `${entryName} now points to your file. Deleting it later removes only the link.`,
 		});
 	}
 
@@ -337,16 +376,22 @@
 
 				<div class="rounded-lg border bg-muted/50 p-4 space-y-3">
 					<Field.Description>
-						Have your own model? Put a model {modelKind === 'directory'
-							? 'directory'
-							: 'file (.bin, .gguf, or .ggml)'} in the models folder and it appears
-						in this list. A symlink works too if you'd rather not keep a second
-						copy.
+						Have your own model? Link a {modelKind === 'directory'
+							? 'model directory'
+							: 'model file (.bin, .gguf, or .ggml)'} from anywhere on disk and it
+						appears in this list, without copying a second copy. Or drop one into
+						the models folder yourself.
 					</Field.Description>
-					<Button variant="outline" size="sm" onclick={openModelsFolder}>
-						<FolderOpen class="size-4 mr-2" />
-						Open Models Folder
-					</Button>
+					<div class="flex flex-wrap gap-2">
+						<Button variant="outline" size="sm" onclick={linkModel}>
+							<Link class="size-4 mr-2" />
+							Link a model
+						</Button>
+						<Button variant="outline" size="sm" onclick={openModelsFolder}>
+							<FolderOpen class="size-4 mr-2" />
+							Open Models Folder
+						</Button>
+					</div>
 					{#if footer}
 						{@render footer()}
 					{/if}

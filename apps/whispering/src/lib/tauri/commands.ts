@@ -113,6 +113,7 @@ export type {
 	LocalModelState,
 	MediaControlFailure,
 	MediaPlayer,
+	ModelImportError,
 	ModelStateEvent,
 	ModelStatus,
 	Modifier,

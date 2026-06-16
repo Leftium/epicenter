@@ -16,8 +16,8 @@ use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{
-    get_transcription_state, set_transcription_config, transcribe_recording, ModelManager,
-    ModelStateEvent,
+    get_transcription_state, link_local_model, set_transcription_config, transcribe_recording,
+    ModelManager, ModelStateEvent,
 };
 
 pub mod command;
@@ -67,6 +67,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             write_markdown_files,
             set_transcription_config,
             get_transcription_state,
+            link_local_model,
             download_file,
             cancel_download,
             pause_active_media,

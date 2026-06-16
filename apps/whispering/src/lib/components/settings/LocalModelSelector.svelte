@@ -136,8 +136,11 @@
 	async function downloadRecommendedModel() {
 		const entryName = announceModelDownload(await recommendedDownload.download());
 		if (!entryName) return;
-		value = entryName;
+		// Rescan before selecting so the new entry is already in the list when
+		// `value` flips, instead of flashing "Selected model is missing" for the
+		// duration of the rescan.
 		await refreshEntries();
+		value = entryName;
 	}
 
 	async function cancelRecommendedDownload() {
@@ -210,8 +213,10 @@
 			toast.error('Could not link that model', { description: error.message });
 			return;
 		}
-		value = entryName;
+		// Rescan before selecting so the new link is already in the list when
+		// `value` flips (no transient "Selected model is missing" flash).
 		await refreshEntries();
+		value = entryName;
 		toast.success('Model linked', {
 			description: `${entryName} now points to your file. Deleting it later removes only the link.`,
 		});

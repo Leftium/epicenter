@@ -70,7 +70,7 @@ impl DownloadManager {
     /// surfaces here as an `Err`. The caller, which knows it requested the cancel,
     /// treats that error as a clean stop. Always unregisters, so a finished or
     /// aborted id is safe to cancel again (a no-op).
-    pub async fn run<T>(&self, id: &str, fut: impl Future<Output = T> + Send + 'static) -> Result<T, String>
+    pub(crate) async fn run<T>(&self, id: &str, fut: impl Future<Output = T> + Send + 'static) -> Result<T, String>
     where
         T: Send + 'static,
     {
@@ -91,13 +91,13 @@ pub struct DownloadProgress {
     /// Bytes received so far. `f64` because specta forbids exporting 64-bit
     /// ints to TypeScript; model sizes are far below `f64`'s 2^53 exact-integer
     /// ceiling, so no precision is lost.
-    pub bytes_received: f64,
+    bytes_received: f64,
     /// Grand total bytes for the whole model (sum of the catalog file sizes).
-    pub total_bytes: f64,
+    total_bytes: f64,
 }
 
 impl DownloadProgress {
-    pub fn new(bytes_received: f64, total_bytes: f64) -> Self {
+    pub(crate) fn new(bytes_received: f64, total_bytes: f64) -> Self {
         Self {
             bytes_received,
             total_bytes,
@@ -109,7 +109,7 @@ impl DownloadProgress {
 /// through `on_progress` (throttled to ~10/sec). Returns the final byte count.
 /// Pure transfer; the caller owns cumulative aggregation, registration, and
 /// cancellation (`DownloadManager::run`).
-pub async fn stream_to_file(
+pub(crate) async fn stream_to_file(
     url: &str,
     file_path: &str,
     mut on_progress: impl FnMut(u64),

@@ -45,7 +45,7 @@ function createModelDownload(model: LocalModelConfig) {
 	 * gate: `download()` sets it when a run starts and clears it only when that
 	 * same run settles. `cancel()` flips `cancelling` but never clears it, so the
 	 * gate stays closed until the abort actually surfaces — a cancel can never
-	 * reopen the door for a second, overlapping `download_file` call on the same
+	 * reopen the door for a second, overlapping `download_model` call on the same
 	 * partial path.
 	 *
 	 * `id` is unique per attempt, so the Rust registry maps it to exactly one

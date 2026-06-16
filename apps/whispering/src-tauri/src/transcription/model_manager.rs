@@ -622,11 +622,10 @@ fn sanitize_samples(mut samples: Vec<f32>) -> Vec<f32> {
     samples
 }
 
-/// Directory under `models/` for each engine. A durable on-disk contract
-/// shared with the frontend's `PATHS.MODELS` (which is why `whispercpp`
-/// maps to `whisper`). `pub(crate)` so the link-import path resolves the same
-/// folder this loader reads from.
-pub(crate) fn engine_models_dir(engine: EngineKind) -> &'static str {
+/// Directory under `models/` for each engine. A durable on-disk contract: the
+/// folder names are stable (which is why `whispercpp` maps to `whisper`).
+/// Private; the only caller is `engine_models_path` in this module.
+fn engine_models_dir(engine: EngineKind) -> &'static str {
     match engine {
         EngineKind::Whispercpp => "whisper",
         EngineKind::Parakeet => "parakeet",

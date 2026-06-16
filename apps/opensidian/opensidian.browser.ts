@@ -26,7 +26,6 @@ import {
 	defineActions,
 	defineMutation,
 	defineQuery,
-	onLocalUpdate,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import Type from 'typebox';
@@ -42,35 +41,22 @@ export function openOpensidianBrowser({
 }) {
 	return opensidianWorkspace.open({ ...signedIn, deviceId }, (workspace) => {
 		const { ydoc, tables } = workspace;
-		function openFileContent(fileId: FileId) {
-			const handle = tables.files.docs.content.open(fileId);
-			const offLocalUpdate = onLocalUpdate(handle.ydoc, () => {
-				tables.files.update(fileId, { updatedAt: Date.now() });
-			});
-			let disposed = false;
-			return {
-				...handle,
-				[Symbol.dispose]() {
-					if (disposed) return;
-					disposed = true;
-					offLocalUpdate();
-					handle[Symbol.dispose]();
-				},
-			};
-		}
+		// The runtime bumps `files.updatedAt` on local body edits (declared via
+		// `onLocalEdit` on the files table), so these openers read/write the content
+		// doc directly; no hand-wired recency observer.
 		const fileContent = {
 			async read(fileId: FileId) {
-				using handle = openFileContent(fileId);
+				using handle = tables.files.docs.content.open(fileId);
 				await handle.whenLoaded;
 				return handle.read();
 			},
 			async write(fileId: FileId, text: string) {
-				using handle = openFileContent(fileId);
+				using handle = tables.files.docs.content.open(fileId);
 				await handle.whenLoaded;
 				handle.write(text);
 			},
 			async append(fileId: FileId, text: string) {
-				using handle = openFileContent(fileId);
+				using handle = tables.files.docs.content.open(fileId);
 				await handle.whenLoaded;
 				handle.appendText(text);
 				return handle.read();

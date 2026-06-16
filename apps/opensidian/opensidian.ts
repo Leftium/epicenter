@@ -146,7 +146,12 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 export const opensidianWorkspace = defineWorkspace({
 	id: OPENSIDIAN_ID,
 	tables: {
-		files: filesTable.childDocs({ content: attachTimeline }),
+		files: filesTable.childDocs({
+			content: {
+				layout: attachTimeline,
+				onLocalEdit: () => ({ updatedAt: Date.now() }),
+			},
+		}),
 		conversations: conversationsTable,
 		chatMessages: chatMessagesTable,
 		toolTrust: toolTrustTable,

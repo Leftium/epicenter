@@ -3,7 +3,6 @@
 	import { asFileId, type FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
-	import { onLocalUpdate } from '@epicenter/workspace';
 	import { requireOpensidian } from '$lib/session';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
@@ -24,13 +23,6 @@
 	);
 
 	const doc = fromDisposableCache(opensidian.tables.files.docs.content, () => fileId);
-
-	$effect(() => {
-		const current = doc.current;
-		return onLocalUpdate(current.ydoc, () => {
-			opensidian.tables.files.update(fileId, { updatedAt: Date.now() });
-		});
-	});
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => opensidian.state.files.selectFile(asFileId(ref.id)),

@@ -8,6 +8,10 @@
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
+		"#platform/commands": {
+			"tauri": "./src/lib/commands.tauri.ts",
+			"default": "./src/lib/commands.browser.ts"
+		},
 		"#platform/analytics": {
 			"tauri": "./src/lib/services/analytics/index.tauri.ts",
 			"default": "./src/lib/services/analytics/index.browser.ts"

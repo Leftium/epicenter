@@ -34,7 +34,7 @@
 	const isStopping = $derived(stopMutation.isPending);
 	const isPending = $derived(isStarting || isStopping);
 	const isRecording = $derived(manualRecorder.state === 'RECORDING');
-	const shortcutLabel = $derived(shortcuts.label('toggleManualRecording'));
+	const shortcutLabel = $derived(shortcuts.currentLabel('toggleManualRecording'));
 	const icon = $derived(isRecording ? SquareIcon : MicIcon);
 	const label = $derived(isRecording ? 'Stop recording' : 'Start recording');
 	const idleDescription = $derived(

@@ -39,6 +39,13 @@ export type Shortcuts = {
 	label(commandId: Command['id']): string;
 	/** A command's default binding, formatted for display (`''` when unbound). */
 	defaultLabel(commandId: Command['id']): string;
+	/**
+	 * The command's *current* binding on this platform, formatted for display
+	 * (`''` when unbound). The single owner of "what key is live for this
+	 * command": display-only consumers (action cards, home-page hints) read this
+	 * instead of reaching into platform storage and re-deriving the `tauri` branch.
+	 */
+	currentLabel(commandId: Command['id']): string;
 };
 
 /**

@@ -23,7 +23,7 @@
 	// Idle and listening share the radio glyph (tone distinguishes them); only an
 	// active speech burst swaps to the waveform.
 	const icon = $derived(isSpeechDetected ? AudioLinesIcon : RadioIcon);
-	const shortcutLabel = $derived(shortcuts.label('toggleVadRecording'));
+	const shortcutLabel = $derived(shortcuts.currentLabel('toggleVadRecording'));
 	const label = $derived(isListening ? 'Stop listening' : 'Start listening');
 	const description = $derived.by(() => {
 		if (toggleMutation.isPending) return 'Updating voice activation';

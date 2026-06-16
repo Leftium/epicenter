@@ -101,10 +101,16 @@ function defaultLabel(commandId: Command['id']): string {
 	return binding ? keyBindingToLabel(binding, os.isApple) : '';
 }
 
+function currentLabel(commandId: Command['id']): string {
+	const binding = deviceConfig.get(globalKey(commandId));
+	return binding ? keyBindingToLabel(binding, os.isApple) : '';
+}
+
 export const shortcuts: Shortcuts = {
 	sync,
 	reset,
 	resetIfDuplicates,
 	label,
 	defaultLabel,
+	currentLabel,
 };

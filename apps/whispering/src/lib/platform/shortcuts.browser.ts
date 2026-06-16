@@ -86,10 +86,15 @@ function defaultLabel(commandId: Command['id']): string {
 	return getShortcutDisplayLabel(settings.getDefault(localKey(commandId)));
 }
 
+function currentLabel(commandId: Command['id']): string {
+	return getShortcutDisplayLabel(settings.get(localKey(commandId)));
+}
+
 export const shortcuts: Shortcuts = {
 	sync,
 	reset,
 	resetIfDuplicates,
 	label,
 	defaultLabel,
+	currentLabel,
 };

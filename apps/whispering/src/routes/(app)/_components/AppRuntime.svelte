@@ -32,7 +32,6 @@
 	import { os } from '#platform/os';
 	import { recordingOverlay } from '#platform/recording-overlay';
 	import { tauri } from '#platform/tauri';
-	import { syncWindowAlwaysOnTopWithRecorderState } from '../_runtime/alwaysOnTop.svelte';
 	import { checkForUpdates } from '../_runtime/check-for-updates';
 	import { registerAccessibilityPermission } from '../_runtime/register-accessibility-permission';
 	import {
@@ -90,10 +89,9 @@
 		return null;
 	});
 
-	// Recorder-window mirrors (desktop only): always-on-top and the tray icon
-	// track the active recorder state.
+	// Recorder-window mirror (desktop only): the tray icon tracks the active
+	// recorder state.
 	if (tauri) {
-		syncWindowAlwaysOnTopWithRecorderState(tauri);
 		syncIconWithRecorderState(tauri);
 	}
 

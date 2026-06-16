@@ -80,7 +80,7 @@ import { tauri, type Tauri } from '#platform/tauri';
 // 1. Shared code (runs on web and Tauri): narrow once.
 if (tauri) {
   await tauri.fs.pathsToFiles(paths);
-  await tauri.window.setAlwaysOnTop(true);
+  await tauri.tray.setIcon({ icon: 'RECORDING' });
 }
 
 // 2. Shared helpers called only inside an `if (tauri)` block:
@@ -427,7 +427,6 @@ Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.t
 
 - `tauri.fs` - Filesystem operations (pathsToFiles)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
-- `tauri.window` - Window operations (setAlwaysOnTop)
 - `tauri.tray` - System tray icon (setIcon)
 - `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)

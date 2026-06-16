@@ -245,6 +245,13 @@ export type ConnectedTables<TTableDefinitions extends TableDefinitions> = {
  * guid-only ({@link WorkspaceTables}) to connected ({@link ConnectedTables}), so
  * every richer connected type builds additively on top of it instead of
  * re-omitting `tables` again.
+ *
+ * Receive-side twin of {@link MountComposeContext}, but deliberately not shaped
+ * to rhyme with it: this *is* the connected workspace (it also bases
+ * {@link ConnectedWorkspace}), so the composer extends it, whereas a mount
+ * composer receives the workspace wrapped in a `{ workspace, scope }` bag. The
+ * names rhyme only where the shapes do, on the return twins
+ * {@link ConnectComposition} / {@link MountComposition}.
  */
 export type ConnectedWorkspaceContext<
 	TTables extends TableDefinitions,
@@ -329,6 +336,12 @@ export type MountComposeScope = {
  * `workspace` is the unconnected root, so `workspace.tables.<t>.docs.<f>.guid`
  * is the same guid deriver the browser opener uses, letting a daemon read a
  * child-doc body over HTTP at the address the browser writes it.
+ *
+ * Receive-side twin of {@link ConnectedWorkspaceContext}, but deliberately not
+ * shaped to rhyme: that one *is* the connected workspace, while this one wraps
+ * the unconnected root in a `{ workspace, scope }` bag, since a mount composer
+ * attaches its own materializers rather than extending the workspace. The rhyme
+ * lives on the return twins {@link MountComposition} / {@link ConnectComposition}.
  */
 export type MountComposeContext<
 	TTables extends TableDefinitions,

@@ -86,11 +86,12 @@ export {
 	yjsPath,
 } from './document/workspace-paths.js';
 export { hashYDocClientId } from './shared/client-id.js';
-export type { WorkspaceAuthClient } from './workspace-apps/auth-client.js';
-export { WorkspaceAppError } from './workspace-apps/errors.js';
+export type { EpicenterRoot } from './shared/types.js';
 export {
 	type InactiveMount,
 	type OpenEpicenterRootOptions,
 	type OpenedMount,
 	openEpicenterRoot,
-} from './workspace-apps/open-epicenter-root.js';
+	WorkspaceAppError,
+	type WorkspaceAuthClient,
+} from './config/open-epicenter-root.js';

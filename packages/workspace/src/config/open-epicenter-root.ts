@@ -18,21 +18,82 @@
  * peer-plane mount uses its socket or returns `inactive("sign in ...")`. The
  * mount either becomes `started` or is reported `inactive`. Only a config error,
  * a folder-claim failure, or a thrown `open` aborts startup.
+ *
+ * The structural `WorkspaceAuthClient` and the two startup-error variants live
+ * here, beside their only caller, the same way `load-epicenter-config.ts` keeps
+ * `EpicenterConfigError` next to the loader that raises it.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+
+import type { AuthState } from '@epicenter/identity';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
+import { isInactive, type MountSession } from '../daemon/define-mount.js';
+import type { StartedMount } from '../daemon/types.js';
+import type { AuthedFetch, EpicenterRoot } from '../shared/types.js';
 import {
 	type EpicenterConfigError,
 	loadEpicenterConfig,
-} from '../config/load-epicenter-config.js';
-import { isInactive, type MountSession } from '../daemon/define-mount.js';
-import type { StartedMount } from '../daemon/types.js';
-import type { EpicenterRoot } from '../shared/types.js';
-import type { WorkspaceAuthClient } from './auth-client.js';
-import { WorkspaceAppError } from './errors.js';
+} from './load-epicenter-config.js';
+
+/**
+ * Workspace's structural view of an auth client. Any object whose shape
+ * matches (notably `@epicenter/auth`'s `AuthClient`) can be passed to
+ * `openEpicenterRoot`.
+ *
+ * Workspace reads four surfaces: the discriminated `state` (to gate startup on
+ * signed-in), `openWebSocket` (for collaboration sockets with the bearer
+ * subprotocol attached), `fetch` (the authed `fetch` for one-shot HTTP to the
+ * relay), and `onStateChange` (for the reconnect signal). The narrow contract
+ * is what lets this package compile without depending on `@epicenter/auth`.
+ */
+export type WorkspaceAuthClient = {
+	state: AuthState;
+	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
+	fetch: AuthedFetch;
+	onStateChange(fn: (state: AuthState) => void): () => void;
+};
+
+/**
+ * Structured errors for mount startup.
+ *
+ * The namespace claim surfaces `EpicenterFolderClaimFailed` before the mount
+ * opens. Startup wraps any throw from the mount's `open(ctx)` in
+ * `MountOpenFailed`.
+ *
+ * Mount-name format is validated upstream by `loadEpicenterConfig`, which
+ * surfaces a bad name as an `EpicenterConfigInvalid` pointed at the file.
+ *
+ * A mount that returns `inactive(reason)` is not an error: it is reported as an
+ * inactive mount, not raised here.
+ */
+export const WorkspaceAppError = defineErrors({
+	EpicenterFolderClaimFailed: ({
+		epicenterRoot,
+		cause,
+	}: {
+		epicenterRoot: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to claim Epicenter folder "${epicenterRoot}": ${extractErrorMessage(cause)}`,
+		epicenterRoot,
+		cause,
+	}),
+	MountOpenFailed: ({ mount, cause }: { mount: string; cause: unknown }) => ({
+		message: `Mount "${mount}" failed to open: ${extractErrorMessage(cause)}`,
+		mount,
+		cause,
+	}),
+});
+
+export type WorkspaceAppError = InferErrors<typeof WorkspaceAppError>;
 
 /** The mount declined to start, with the reason it returned. */
 export type InactiveMount = {

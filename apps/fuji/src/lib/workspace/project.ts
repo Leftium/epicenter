@@ -8,7 +8,7 @@
  * (`<epicenterRoot>/entries/` for Fuji).
  *
  * What this does:
- *   1. workspace root doc (tables + KV via fujiWorkspace.open())
+ *   1. workspace root doc (tables + KV via fujiWorkspace.create())
  *   2. SQLite materializer at `sqlitePath(...)`
  *   3. Markdown export (read-only, one-way) under the app root; each entry's
  *      body is rendered from its content doc via `serializeEntryBody`, read
@@ -60,7 +60,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = fujiWorkspace.open();
+			const workspace = fujiWorkspace.create();
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),

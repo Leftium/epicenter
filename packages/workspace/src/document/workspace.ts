@@ -1,9 +1,10 @@
 /**
  * Workspace definitions and root Y.Doc construction.
  *
- * `defineWorkspace({ id, tables, kv }).open()` is the app-facing entry point:
- * no connection opens only the root doc for daemon composition, while a browser
- * connection also attaches local storage, sync, wipe, and row child-doc openers.
+ * `defineWorkspace({ id, tables, kv })` is the app-facing entry point.
+ * `.create()` builds the bare root for daemon composition; `.open(connection)`
+ * connects it for the browser with local storage, sync, wipe, and row child-doc
+ * openers.
  *
  * `createWorkspace({ id, tables, kv })` remains the low-level root constructor
  * for package internals and tests:
@@ -33,12 +34,12 @@
  */
 
 import * as Y from 'yjs';
+import { createDisposableCache } from '../cache/disposable-cache.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import type { Guid } from '../shared/id.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
 import { type ConnectionConfig, connectDoc } from './connect-doc.js';
-import { createChildDocs } from './create-child-docs.js';
-import { docGuid, docGuidRowId } from './doc-guid.js';
+import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
 import { onLocalUpdate } from './on-local-update.js';
@@ -227,7 +228,7 @@ export type ConnectedWorkspaceContext<
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry = ActionRegistry,
 > = Omit<Workspace<TTables, TKv, TActions>, 'tables'> & {
-	readonly tables: ConnectedTables<TTables>;
+  readonly tables: ConnectedTables<TTables>;
 };
 
 /**
@@ -262,7 +263,7 @@ export type WorkspaceDefinition<
 	readonly id: string;
 	readonly tables: TTables;
 	readonly kv: TKv;
-	open(): Workspace<TTables, TKv, TActions>;
+	create(): Workspace<TTables, TKv, TActions>;
 	open(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
@@ -274,7 +275,7 @@ export type WorkspaceDefinition<
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
 };
 
-/** The unconnected root workspace returned by `definition.open()`. */
+/** The unconnected root workspace returned by `definition.create()`. */
 export type WorkspaceFromDefinition<TDefinition> =
 	TDefinition extends WorkspaceDefinition<
 		infer TTables,
@@ -358,14 +359,14 @@ export function createWorkspace<
 }
 
 /**
- * Define an isomorphic workspace model, then open it for a runtime.
+ * Define an isomorphic workspace model, then construct or connect it.
  *
- * Three products, selected by arity:
+ * `create()` constructs; `open()` connects:
  *
- *   open()                    Bare root: Y.Doc + tables + KV + actions. No
+ *   create()                  Bare root: Y.Doc + tables + KV + actions. No
  *                             persistence, no sync, no child-doc openers. Daemon
- *                             and test runtimes take this and attach their own
- *                             storage/transport around it.
+ *                             and test runtimes attach their own storage and
+ *                             transport around it.
  *   open(connection)          The browser preset: the bare root plus IndexedDB
  *                             persistence, the WebSocket relay (see `connectDoc`),
  *                             per-row child-doc openers
@@ -377,9 +378,9 @@ export function createWorkspace<
  *                             dispatch. That ordering is why `compose` is a
  *                             callback here, not a step you run after `open()`.
  *
- * The connected path is a curated bundle of the lower primitives
- * (`createWorkspace` + `connectTableChildDocs` + `connectDoc` + `createChildDocs`).
- * Non-browser runtimes compose those directly instead of taking the preset.
+ * `open(connection)` is `create()` plus the browser storage/transport bundle
+ * (`connectTableChildDocs` + `connectDoc`). Non-browser runtimes call `create()`
+ * and compose their own infrastructure instead of taking the preset.
  */
 export function defineWorkspace<
 	TTables extends TableDefinitions,
@@ -388,7 +389,37 @@ export function defineWorkspace<
 >(
 	options: DefineWorkspaceOptions<TTables, TKv, TActions>,
 ): WorkspaceDefinition<TTables, TKv, TActions> {
-	function open(): Workspace<TTables, TKv, TActions>;
+	// Phase A, shared by create() and open(): build the root doc, tables, KV,
+	// and base actions. No connection.
+	function buildRoot() {
+		const workspace = createWorkspace({
+			id: options.id,
+			tables: options.tables,
+			kv: options.kv,
+		});
+		const actions =
+			options.actions === undefined
+				? ({} as TActions)
+				: options.actions(workspace);
+		return { workspace, actions };
+	}
+
+	/**
+	 * Bare root: Y.Doc + tables + KV + actions. No persistence, no sync, no
+	 * child-doc openers. Daemon and test runtimes attach their own
+	 * storage/transport around it (see each app's `project.ts`).
+	 */
+	function create(): Workspace<TTables, TKv, TActions> {
+		const { workspace, actions } = buildRoot();
+		return satisfiesWorkspace({
+			...workspace,
+			actions,
+			[Symbol.dispose]() {
+				workspace[Symbol.dispose]();
+			},
+		});
+	}
+
 	function open(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
@@ -399,46 +430,29 @@ export function defineWorkspace<
 		) => TRuntime,
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
 	function open(
-		connection?: ConnectionConfig,
-		compose?: (
+		connection: ConnectionConfig,
+		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
-		) => WorkspaceRuntimeExtension,
+		) => WorkspaceRuntimeExtension = (workspace) => ({
+			actions: workspace.actions,
+		}),
 	) {
-		// Phase A: build the parts. Runs for every overload.
-		const workspace = createWorkspace({
-			id: options.id,
-			tables: options.tables,
-			kv: options.kv,
-		});
-		const actions =
-			options.actions === undefined
-				? ({} as TActions)
-				: options.actions(workspace);
-
-		// open(): bare root. Non-browser runtimes wrap this with their own infra.
-		if (connection === undefined) {
-			return satisfiesWorkspace({
-				...workspace,
-				actions,
-				[Symbol.dispose]() {
-					workspace[Symbol.dispose]();
-				},
-			});
-		}
+		const { workspace, actions } = buildRoot();
 
 		// Phase B: connect the per-row child-doc openers, then run the caller's
 		// composer. compose sees live tables/ydoc/base actions; the `actions` it
-		// returns is final. No composer means serve the base actions unchanged.
+		// returns is final. Omitting it runs the default, which serves the base
+		// actions unchanged.
 		const { tables, disposeChildDocs } = connectTableChildDocs({
 			tables: workspace.tables,
 			definitions: options.tables,
 			connection,
 		});
-		const runtime = compose?.({
+		const runtime = compose({
 			...workspace,
 			tables,
 			actions,
-		}) ?? { actions };
+		});
 		const connectedActions = runtime.actions;
 		// Phase C: solder infrastructure on top of what compose returned.
 		// connectDoc serves `connectedActions` to peers, so it must run after compose.
@@ -478,10 +492,35 @@ export function defineWorkspace<
 		id: options.id,
 		tables: options.tables,
 		kv: options.kv,
+		create,
 		open,
 	};
 }
 
+/**
+ * The bound child-doc runtime: give every declared `table.childDocs({ field })`
+ * a connected `open(rowId)` opener layered onto the field's existing guid
+ * deriver.
+ *
+ * A collaborative body (a chat transcript, a prose note, a code snippet) is its
+ * own synced `Y.Doc`. Three concerns recur every time an app opens one, and this
+ * function owns all three so apps declare only the shape:
+ *
+ *  - **lifecycle**: same `rowId` -> one shared `Y.Doc`; N opens require N
+ *    disposes; a grace window survives route/pane swaps. One
+ *    {@link createDisposableCache} per `(table, field)`, keyed by `rowId`.
+ *  - **connection**: local IndexedDB persistence + cloud sync via the same
+ *    {@link connectDoc} wiring the root uses. Sync is opened for its side
+ *    effect; the `collaboration` handle is intentionally orphaned, and teardown
+ *    cascades from `ydoc.destroy()` when the cache evicts the entry.
+ *  - **shape**: the CRDT layout and its writer policy, owned by the declared
+ *    `attach*(ydoc)` function (`attachPlainText`, `attachRichText`,
+ *    `attachChatTranscript`).
+ *
+ * The guid is only the room address: the cache keys by `rowId`, and the address
+ * is derived through the field's existing {@link RowDocGuid} so derivation stays
+ * single-owner (`createWorkspace`'s `.docs` loop), never re-grammared here.
+ */
 function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 	tables,
 	definitions,
@@ -494,7 +533,6 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 	tables: ConnectedTables<TTableDefinitions>;
 	disposeChildDocs(): void;
 } {
-	const childDocs = createChildDocs(connection);
 	const disposables: Disposable[] = [];
 	const connectedTables: Record<string, unknown> = {};
 
@@ -517,33 +555,46 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 				typeof declaration === 'function' ? declaration : declaration.layout;
 			const onLocalEdit =
 				typeof declaration === 'function' ? undefined : declaration.onLocalEdit;
-			// Register the recency observer once per shared body Y.Doc (in `onBuild`,
-			// not per `open`), torn down when the cache evicts the doc. `tx.local`
-			// scopes it to local edits, so remote/hydrated updates never bump the
-			// row; writing the root row can't re-trigger this child-doc observer, so
-			// there is no loop.
-			const cache = childDocs(
-				layout,
-				onLocalEdit
-					? {
-							onBuild: (ydoc, guid) => {
-								const rowId = docGuidRowId(guid);
-								return onLocalUpdate(ydoc, () => {
-									updateRow(rowId, onLocalEdit(rowId));
-								});
-							},
-						}
-					: undefined,
-			);
-			disposables.push(cache);
 			// Reuse the guid deriver the unconnected root already built for this
-			// field; the connected handle only ADDS `open`/dispose lifecycle. One
-			// owner of derivation end to end: `createWorkspace` (see its `.docs` loop).
+			// field, so derivation stays single-owner (`createWorkspace`'s `.docs`
+			// loop). The cache keys by `rowId`; the guid is only the room address.
 			const guidEntry = guidDerivers[field]!;
+			const cache = createDisposableCache((rowId: string) => {
+				const guid = guidEntry.guid(rowId);
+				const ydoc = new Y.Doc({ guid, gc: true });
+				// A body is a doc like any other; `connectDoc` is the same wiring the
+				// root uses. No action registry: the body's only writers are the
+				// `attach*` layout and the server generation actor streaming in.
+				const { idb } = connectDoc(ydoc, connection, { actions: {} });
+				// Recency: a local edit bumps a column on the row. One observer per
+				// shared body Y.Doc (built here, not per `open`), torn down on
+				// eviction. `tx.local` scopes it to local edits, so remote/hydrated
+				// updates never bump the row; writing the root row can't re-trigger
+				// this child-doc observer, so there is no loop.
+				const offLocalEdit = onLocalEdit
+					? onLocalUpdate(ydoc, () => updateRow(rowId, onLocalEdit(rowId)))
+					: undefined;
+				return {
+					...layout(ydoc),
+					/** The underlying Y.Doc, exposed for runtime attachments. */
+					ydoc,
+					/** The doc's guid (its room id). */
+					guid,
+					/** Resolves when local IndexedDB state has replayed into the doc. */
+					whenLoaded: idb.whenLoaded,
+					[Symbol.dispose]() {
+						offLocalEdit?.();
+						ydoc.destroy();
+					},
+				};
+			});
+			disposables.push(cache);
+			// The connected handle only ADDS `open`/dispose lifecycle to the field's
+			// existing guid deriver; `open(rowId)` keys the cache by `rowId` directly.
 			docs[field] = {
 				...guidEntry,
 				open(rowId: string) {
-					return cache.open(guidEntry.guid(rowId));
+					return cache.open(rowId);
 				},
 				[Symbol.dispose]() {
 					cache[Symbol.dispose]();

@@ -110,12 +110,12 @@ describe('createWorkspace', () => {
 });
 
 describe('defineWorkspace', () => {
-	test('open() builds an unconnected root workspace', () => {
+	test('create() builds an unconnected root workspace', () => {
 		using workspace = defineWorkspace({
 			id: 'ws-definition-local',
 			tables: { notes: notesDefinition },
 			kv: { sortOrder: sortOrderDefinition },
-		}).open();
+		}).create();
 
 		workspace.tables.notes.set({ id: '1', title: 'hello' });
 		expect(workspace.tables.notes.get('1').data?.title).toBe('hello');
@@ -166,6 +166,69 @@ describe('defineWorkspace', () => {
 				'ws-definition-docs-namespace.notes.note-1.set',
 			);
 		} finally {
+			workspace[Symbol.dispose]();
+		}
+	});
+
+	test('open(connection) child docs dedup by rowId: same rowId shares one Y.Doc', () => {
+		const workspace = defineWorkspace({
+			id: 'ws-childdoc-dedup',
+			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
+			kv: {},
+		}).open(connection);
+		const a = workspace.tables.notes.docs.body.open('note-1');
+		const b = workspace.tables.notes.docs.body.open('note-1');
+		try {
+			// Distinct handles...
+			expect(a).not.toBe(b);
+			// ...over one shared doc: a write through `a` is visible through `b`.
+			a.write('shared');
+			expect(b.read()).toBe('shared');
+		} finally {
+			a[Symbol.dispose]();
+			b[Symbol.dispose]();
+			workspace[Symbol.dispose]();
+		}
+	});
+
+	test('open(connection) child docs refcount: one holder disposing keeps the doc alive for the other', () => {
+		const workspace = defineWorkspace({
+			id: 'ws-childdoc-refcount',
+			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
+			kv: {},
+		}).open(connection);
+		try {
+			const a = workspace.tables.notes.docs.body.open('note-1');
+			a.write('persisted');
+			const b = workspace.tables.notes.docs.body.open('note-1');
+
+			// First dispose drops the refcount to 1; the shared doc stays alive, so
+			// `b` still reads the write. (gcTime teardown is the cache's own concern,
+			// covered in `disposable-cache.test.ts`.)
+			a[Symbol.dispose]();
+			expect(b.read()).toBe('persisted');
+
+			b[Symbol.dispose]();
+		} finally {
+			workspace[Symbol.dispose]();
+		}
+	});
+
+	test('open(connection) child docs are independent across rowIds', () => {
+		const workspace = defineWorkspace({
+			id: 'ws-childdoc-independent',
+			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
+			kv: {},
+		}).open(connection);
+		const one = workspace.tables.notes.docs.body.open('note-1');
+		const two = workspace.tables.notes.docs.body.open('note-2');
+		try {
+			one.write('first');
+			expect(two.read()).toBe('');
+			expect(String(one.guid)).not.toBe(String(two.guid));
+		} finally {
+			one[Symbol.dispose]();
+			two[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		}
 	});

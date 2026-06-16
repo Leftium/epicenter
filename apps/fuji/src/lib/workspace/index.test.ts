@@ -12,7 +12,7 @@ import { asEntryId, fujiWorkspace } from './index.js';
 
 describe('Fuji durable identifiers', () => {
 	test('entry content child-doc guid is the durable wire identifier', () => {
-		using workspace = fujiWorkspace.open();
+		using workspace = fujiWorkspace.create();
 		const docs = workspace.tables.entries.docs.content;
 
 		expect(String(docs.guid(asEntryId('entry-1')))).toBe(

@@ -31,7 +31,7 @@ export function opensidian(opts: OpensidianMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = opensidianWorkspace.open();
+			const workspace = opensidianWorkspace.create();
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL,

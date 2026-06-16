@@ -112,9 +112,26 @@ Question: how should a settings screen present downloadable local models (Whispe
 | superwhisper | Local dictation | Onboarding recommends one model with its size; others in a secondary list | Yes |
 | MacWhisper | Local dictation | Model tiers with sizes; recommended default | Yes |
 | Handy | Local dictation (OSS) | Flat model list, recommended default preselected | Yes |
+| VoiceInk | Local dictation | Reference target for the next local-dictation pass; model-picker details not yet captured in-repo | Verify before relying on it |
 | Wispr Flow | Dictation (cloud) | No model picker at all; the surface does not exist | n/a |
 
-Implication: local-model apps converge on default-first (one recommended model per engine, size visible on the download action, full catalog secondary). Whispering borrowed default-first plus size-on-action and refused LM Studio's catalog browser, since its largest catalog is four models. Wispr Flow is the refusal boundary: going cloud deletes the surface entirely, which is not Whispering's category. Resulting design: a status hero plus one "All models" disclosure (first built in PR #1922, then rebuilt on the folder-backed selector from PR #1923; see `specs/20260612T164300-local-model-recommended-defaults-rebuild.md`).
+Implication: local-model apps converge on default-first (one recommended model per engine, size visible on the download action, full catalog secondary). Whispering borrowed default-first plus size-on-action and refused LM Studio's catalog browser, since its largest catalog is four models. Wispr Flow is the refusal boundary: going cloud deletes the surface entirely, which is not Whispering's category. VoiceInk is in the reference set now, but not yet evidence for the model-picker claim until someone captures its current picker behavior. Resulting design: a status hero plus one "All models" disclosure (first built in PR #1922, then rebuilt on the folder-backed selector from PR #1923; see `specs/20260612T164300-local-model-recommended-defaults-rebuild.md`).
+
+## Worked example: macOS Accessibility onboarding (Whispering)
+
+Question: how should Whispering help users recover when macOS Accessibility is missing or stale after install/update?
+
+| App | Category | Surface to inspect | Repo-local status |
+| --- | --- | --- | --- |
+| Apple System Settings | Platform convention | Privacy & Security > Accessibility, including remove/re-add behavior after app changes | Current source of truth for the settings path |
+| Whispering | Local dictation | In-app guide with written steps, "Open System Settings", and optional hosted video | Implemented in `MacosAccessibilityGuide.svelte` and `MacosAccessibilityGuideDialog.svelte` |
+| Handy | Local dictation (OSS) | Permission, recorder, shortcut, and local transcription architecture | Already used as a technical reference in Whispering specs and comments |
+| superwhisper | Local dictation | Permission onboarding and recovery flow | Existing comparable-apps reference only |
+| MacWhisper | Local transcription | Permission onboarding and recovery flow | Existing comparable-apps reference only |
+| VoiceInk | Local dictation | Permission onboarding and recovery flow | New reference target; no previous repo references |
+| Wispr Flow | Dictation (cloud) | Permission onboarding and recovery flow | Existing comparable-apps reference only |
+
+Implication: Apple owns the canonical permission path; dictation apps are UX references for how to make that platform requirement survivable. Whispering's current shape is a good baseline: text steps, an explicit System Settings action, granted-state feedback, and an optional video loaded from release assets rather than bundled into the app. Before changing the onboarding or recovery flow, capture what VoiceInk does alongside superwhisper, MacWhisper, Handy, and Wispr Flow in the relevant spec.
 
 ## Other questions this lens answers well
 

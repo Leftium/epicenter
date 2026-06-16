@@ -93,9 +93,12 @@ async function assertPrivateAssetOwner(
  * chars after grounding against Signal/Bitwarden precedent and the
  * historical Slack file-token brute-force incident.
  *
- * Inlined here (rather than re-using `@epicenter/workspace`'s
- * `generateGuid`) to avoid pulling Yjs into the Cloudflare Worker
- * bundle.
+ * This is the one id in the system that needs unguessability rather than
+ * mere collision resistance: a public asset URL has no auth layer behind
+ * it, so the token *is* the credential. That is why it is longer than
+ * `@epicenter/workspace`'s collision-only `generateId`, and why it is
+ * inlined here (re-using `generateId` would also pull Yjs into the
+ * Cloudflare Worker bundle).
  */
 const generateAssetId = customAlphabet(
 	'abcdefghijklmnopqrstuvwxyz0123456789',

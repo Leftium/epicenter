@@ -1,9 +1,4 @@
-import {
-	type Guid,
-	generateGuid,
-	generateId,
-	type Id,
-} from '@epicenter/workspace';
+import { type Guid, generateId, type Id } from '@epicenter/workspace';
 import type { Brand } from 'wellcrafted/brand';
 
 /** Branded file identifier: a Guid that is specifically a file ID. */
@@ -17,21 +12,21 @@ export const asFileId = (value: string): FileId => value as FileId;
 
 /** Generate a new unique file identifier */
 export function generateFileId(): FileId {
-	return generateGuid() as FileId;
+	return generateId<FileId>();
 }
 
-/** Branded row identifier: a 10-char nanoid that is specifically a row ID */
+/** Branded row identifier: a nanoid that is specifically a row ID */
 export type RowId = Id & Brand<'RowId'>;
 
 /** Generate a new unique row identifier */
 export function generateRowId(): RowId {
-	return generateId() as RowId;
+	return generateId<RowId>();
 }
 
-/** Branded column identifier: a 10-char nanoid that is specifically a column ID */
+/** Branded column identifier: a nanoid that is specifically a column ID */
 export type ColumnId = Id & Brand<'ColumnId'>;
 
 /** Generate a new unique column identifier */
 export function generateColumnId(): ColumnId {
-	return generateId() as ColumnId;
+	return generateId<ColumnId>();
 }

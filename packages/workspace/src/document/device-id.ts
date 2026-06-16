@@ -20,7 +20,7 @@
  */
 
 import type { Brand } from 'wellcrafted/brand';
-import { generateGuid } from '../shared/id.js';
+import { generateId } from '../shared/id.js';
 
 /**
  * Branded string identifying one Epicenter app on one persistent storage
@@ -64,7 +64,7 @@ export function createDeviceId({
 }): DeviceId {
 	const existing = storage.getItem(KEY);
 	if (existing) return asDeviceId(existing);
-	const fresh = generateGuid();
+	const fresh = generateId<DeviceId>();
 	storage.setItem(KEY, fresh);
 	return asDeviceId(fresh);
 }
@@ -77,7 +77,7 @@ export async function createDeviceIdAsync({
 }): Promise<DeviceId> {
 	const existing = await storage.getItem(KEY);
 	if (existing) return asDeviceId(existing);
-	const fresh = generateGuid();
+	const fresh = generateId<DeviceId>();
 	await storage.setItem(KEY, fresh);
 	return asDeviceId(fresh);
 }

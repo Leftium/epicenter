@@ -78,10 +78,14 @@ export type { EpicenterRoot } from './shared/types';
 // ID + DATE PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export { CalendarDateString, DateTimeString } from '@epicenter/field';
+export {
+	CalendarDateString,
+	DateTimeString,
+	InstantString,
+} from '@epicenter/field';
 export { IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
-export { generateGuid, generateId } from './shared/id';
+export { generateId } from './shared/id';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EMPTINESS AXIS (nullable: substrate value policy)

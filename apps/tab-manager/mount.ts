@@ -19,7 +19,7 @@ import { tabManagerWorkspace } from './src/lib/workspace/definition.js';
 
 export type TabManagerMountOptions = {
 	/** Enable per-materializer Git autosave for markdown output. */
-	git?: GitAutosaveConfig;
+	git?: GitAutosaveConfig | false;
 	/**
 	 * Base URL of the Epicenter cloud API used for sync.
 	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.

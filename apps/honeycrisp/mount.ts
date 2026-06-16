@@ -18,7 +18,7 @@ import {
 import { honeycrispWorkspace } from './honeycrisp.js';
 
 export type HoneycrispMountOptions = {
-	git?: GitAutosaveConfig;
+	git?: GitAutosaveConfig | false;
 	/**
 	 * Base URL of the Epicenter cloud API used for sync.
 	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.

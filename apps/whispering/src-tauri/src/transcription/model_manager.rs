@@ -136,21 +136,13 @@ impl ModelManager {
         if name.is_empty() {
             return Err("No local model selected. Choose a model in settings.".to_string());
         }
-        if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
+        if !is_contained_entry_name(name) {
             return Err(format!(
                 "Model name must be a single models-folder entry, got: {}",
                 name
             ));
         }
-        let app_data_dir = self
-            .app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("resolve app data directory: {}", e))?;
-        let path = app_data_dir
-            .join("models")
-            .join(engine_models_dir(config.engine))
-            .join(name);
+        let path = engine_models_path(&self.app, config.engine)?.join(name);
         if !path.exists() {
             return Err(format!(
                 "The model \"{}\" is no longer in the models folder. Download it again or add it back, then select it in settings.",
@@ -630,9 +622,9 @@ fn sanitize_samples(mut samples: Vec<f32>) -> Vec<f32> {
     samples
 }
 
-/// Directory under `models/` for each engine. A durable on-disk contract
-/// shared with the frontend's `PATHS.MODELS` (which is why `whispercpp`
-/// maps to `whisper`).
+/// Directory under `models/` for each engine. A durable on-disk contract: the
+/// folder names are stable (which is why `whispercpp` maps to `whisper`).
+/// Private; the only caller is `engine_models_path` in this module.
 fn engine_models_dir(engine: EngineKind) -> &'static str {
     match engine {
         EngineKind::Whispercpp => "whisper",
@@ -641,7 +633,34 @@ fn engine_models_dir(engine: EngineKind) -> &'static str {
     }
 }
 
-fn parse_moonshine_variant(model_name: &str) -> Result<MoonshineVariant, TranscriptionError> {
+/// Absolute path to an engine's models folder, `{app_data}/models/{engine}`.
+/// The one place that joins the appdata root onto the engine folder name, so
+/// the loader (`model_path_for`), the link importer, and the webview-facing
+/// folder surface (`model_folder.rs`) all resolve the same directory.
+pub(crate) fn engine_models_path(app: &AppHandle, engine: EngineKind) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app data directory: {}", e))?
+        .join("models")
+        .join(engine_models_dir(engine)))
+}
+
+/// Whether `name` stays within a single models-folder entry: no path
+/// separators and no traversal component, so joining it onto the folder can
+/// never escape it. The containment rule shared by the loader's
+/// `model_path_for` and import-time `validate_entry_name`. Emptiness is left to
+/// callers, which treat it differently (no selection vs. a malformed pick).
+pub(crate) fn is_contained_entry_name(name: &str) -> bool {
+    !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
+}
+
+/// `pub(crate)` so the link-import path enforces the same naming rule the
+/// Moonshine loader relies on (the variant is read from the entry name, not
+/// the files), keeping one source of truth for the convention.
+pub(crate) fn parse_moonshine_variant(
+    model_name: &str,
+) -> Result<MoonshineVariant, TranscriptionError> {
     // Naming convention: moonshine-{variant}-{lang}. Match on the variant
     // segment between the first and last hyphen-bounded fields.
     if model_name.starts_with("moonshine-tiny-") || model_name == "moonshine-tiny" {
@@ -790,15 +809,17 @@ mod tests {
 
     #[test]
     fn disk_identity_stable_when_unchanged() {
-        let dir =
-            std::env::temp_dir().join(format!("whispering-id-stable-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("whispering-id-stable-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("model.bin");
         std::fs::write(&path, b"steady").unwrap();
 
         let a = disk_identity(&path).expect("identity for existing file");
         let b = disk_identity(&path).expect("identity on second read");
-        assert_eq!(a, b, "identity is stable across reads when bytes are unchanged");
+        assert_eq!(
+            a, b,
+            "identity is stable across reads when bytes are unchanged"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -826,7 +847,10 @@ mod tests {
             b"thirdx-and-longer".len(),
             "test fixture must be same-size to exercise the mtime path"
         );
-        assert_ne!(second, third, "a same-size rewrite changes identity via mtime");
+        assert_ne!(
+            second, third,
+            "a same-size rewrite changes identity via mtime"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

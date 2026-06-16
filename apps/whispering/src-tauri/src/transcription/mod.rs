@@ -1,12 +1,19 @@
 mod config;
 mod error;
 mod events;
+mod model_folder;
+mod model_import;
 mod model_manager;
 
 use crate::recorder::read_artifact_samples;
 pub use config::TranscriptionConfig;
 pub use error::TranscriptionError;
 pub use events::{LocalModelState, ModelStateEvent};
+pub use model_folder::{
+    delete_model_entry, download_model, list_model_entries, resolve_model_file_sizes,
+    reveal_models_folder, ModelFolderError,
+};
+pub use model_import::{link_local_model, ModelImportError};
 pub use model_manager::ModelManager;
 use tauri::{AppHandle, State};
 

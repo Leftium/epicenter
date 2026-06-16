@@ -1,11 +1,10 @@
 import { InstantString } from '@epicenter/field';
-import { stat } from '@tauri-apps/plugin-fs';
 import {
 	type AnyTaggedError,
 	defineErrors,
 	extractErrorMessage,
 } from 'wellcrafted/error';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { tauri } from '#platform/tauri';
 import {
 	SUPPORTED_LANGUAGES,
@@ -20,7 +19,6 @@ import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/
 import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/groq';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
-import { resolveModelPath } from '$lib/services/transcription/local-model-folder';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
 	type CloudProviderId,
@@ -239,15 +237,20 @@ async function checkWhisperTruncation(
 	const modelConfig = WHISPER_MODELS.find((m) => m.file.filename === modelName);
 	if (!modelConfig) return Ok(undefined);
 
-	const { data: fileStats } = await tryAsync({
-		try: async () => stat(await resolveModelPath('whispercpp', modelName)),
-		catch: () => Ok(null),
-	});
-	if (!fileStats) return Ok(undefined);
+	// Rust resolves the entry through any link and stats it; an empty filename
+	// list means "the entry is itself the file" (Whisper). A missing/unstattable
+	// file passes through (Rust reports load errors itself).
+	const { data: sizes } = await commands.resolveModelFileSizes(
+		'whispercpp',
+		modelName,
+		[],
+	);
+	const actualSize = sizes?.[0];
+	if (actualSize == null) return Ok(undefined);
 
-	if (!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)) {
+	if (!isModelFileSizeValid(actualSize, modelConfig.sizeBytes)) {
 		return TranscriptionOperationError.CorruptedModelFile({
-			actualSizeMb: Math.round(fileStats.size / 1000000),
+			actualSizeMb: Math.round(actualSize / 1000000),
 			expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 		});
 	}

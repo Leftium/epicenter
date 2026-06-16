@@ -138,26 +138,80 @@ export const commands = {
 	getTranscriptionState: () =>
 		__TAURI_INVOKE<LocalModelState>('get_transcription_state'),
 	/**
-	 *  Download `url` to `file_path`, cancelable via `cancel_download(download_id)`.
-	 *
-	 *  Runs the transfer in a `tokio` task whose `AbortHandle` is registered under
-	 *  `download_id`. A cancel aborts the task at its next await point, which
-	 *  surfaces here as an `Err`; the frontend, which knows it requested the
-	 *  cancel, treats that error as a clean stop.
+	 *  Link a file or directory already on disk into the engine's models folder as
+	 *  `entry_name`. Validates the name and the source's engine shape strictly,
+	 *  then symlinks. Replaces a stale link of the same name; refuses to clobber a
+	 *  real (app-managed) entry. The frontend stores `entry_name` as the selection
+	 *  just like a downloaded model.
 	 */
-	downloadFile: (
+	linkLocalModel: (engine: Engine, entryName: string, sourcePath: string) =>
+		typedError<null, ModelImportError>(
+			__TAURI_INVOKE('link_local_model', { engine, entryName, sourcePath }),
+		),
+	/**
+	 *  List every selectable entry in the engine's models folder: model files
+	 *  (.bin/.gguf/.ggml) for Whisper, directories for Parakeet and Moonshine, plus
+	 *  symlinks to either. Hidden entries and in-flight `.partial` staging are
+	 *  skipped. Returns an empty list when the folder does not exist yet.
+	 */
+	listModelEntries: (engine: Engine) =>
+		typedError<ModelEntry[], ModelFolderError>(
+			__TAURI_INVOKE('list_model_entries', { engine }),
+		),
+	/**
+	 *  Remove one entry from the engine's models folder. A symlinked entry removes
+	 *  only the link, never its target; a real entry is removed outright. The name
+	 *  must be a single folder entry, so this can never reach outside the folder.
+	 *  Succeeds when the entry is already gone.
+	 */
+	deleteModelEntry: (engine: Engine, name: string) =>
+		typedError<null, ModelFolderError>(
+			__TAURI_INVOKE('delete_model_entry', { engine, name }),
+		),
+	/**
+	 *  Resolve an entry **through any symlink** and return the size of each file, or
+	 *  `None` for a missing/unreadable one. The catalog-size comparison stays in JS
+	 *  (the 90% threshold). An empty `filenames` means the entry is itself the file
+	 *  (Whisper) and returns one element; otherwise one element per filename
+	 *  (directory engines). A dead link stats to `None`, so a linked-but-broken
+	 *  model reads as not installed.
+	 */
+	resolveModelFileSizes: (engine: Engine, name: string, filenames: string[]) =>
+		typedError<(number | null)[], ModelFolderError>(
+			__TAURI_INVOKE('resolve_model_file_sizes', { engine, name, filenames }),
+		),
+	/**
+	 *  Download a model into its engine folder, cancelable via
+	 *  `cancel_download(download_id)`. Stages under `{entry}.partial`, streams each
+	 *  file, integrity-checks it against the passed catalog size, then promotes the
+	 *  staging to the canonical path with one rename. A cancel (or any error)
+	 *  removes the staging via a `Drop` guard, so an interrupted run never leaves a
+	 *  partial install for the selector to list. Reports cumulative progress
+	 *  (bytes so far / grand total) on `on_progress`.
+	 */
+	downloadModel: (
+		engine: Engine,
+		entryName: string,
+		files: ModelFileDownload[],
 		downloadId: string,
-		url: string,
-		filePath: string,
 		onProgress: Channel<DownloadProgress>,
 	) =>
-		typedError<null, string>(
-			__TAURI_INVOKE('download_file', {
+		typedError<null, ModelFolderError>(
+			__TAURI_INVOKE('download_model', {
+				engine,
+				entryName,
+				files,
 				downloadId,
-				url,
-				filePath,
 				onProgress,
 			}),
+		),
+	/**
+	 *  Create the engine's models folder if needed and open it in the OS file
+	 *  manager, so the user can drop in or remove models by hand.
+	 */
+	revealModelsFolder: (engine: Engine) =>
+		typedError<null, ModelFolderError>(
+			__TAURI_INVOKE('reveal_models_folder', { engine }),
 		),
 	/**
 	 *  Abort the in-flight download registered under `download_id`, if any. The
@@ -227,7 +281,11 @@ export type CommandBinding = {
 	binding: KeyBinding;
 };
 
-/**  Whole-file download progress: bytes received so far and the total to expect. */
+/**
+ *  Cumulative download progress for one model: bytes received so far across all
+ *  of its files, and the grand total to expect. The frontend turns it into a
+ *  0-100 percent.
+ */
 export type DownloadProgress = {
 	/**
 	 *  Bytes received so far. `f64` because specta forbids exporting 64-bit
@@ -235,10 +293,7 @@ export type DownloadProgress = {
 	 *  ceiling, so no precision is lost.
 	 */
 	bytesReceived: number | null;
-	/**
-	 *  Total bytes from the response `content-length`, or 0 when the server
-	 *  omits it. The frontend falls back to the catalog size in that case.
-	 */
+	/**  Grand total bytes for the whole model (sum of the catalog file sizes). */
 	totalBytes: number | null;
 };
 
@@ -418,6 +473,71 @@ export type MediaControlFailure = {
 };
 
 export type MediaPlayer = 'music' | 'spotify';
+
+/**  One selectable entry in an engine's models folder. */
+export type ModelEntry = {
+	/**  File or directory name inside the engine's models folder. */
+	name: string;
+	/**
+	 *  Whether the entry is a symlink (a "bring your own model" link). Display
+	 *  only ("Your model (linked)"); it does not change how the entry loads.
+	 */
+	linked: boolean;
+};
+
+/**
+ *  One file to download for a model. Mirrors the catalog shape: a Whisper model
+ *  passes a single file, a directory engine passes one per contained file.
+ */
+export type ModelFileDownload = {
+	url: string;
+	/**
+	 *  Filename inside the entry directory (directory engines). Ignored for the
+	 *  single-file Whisper case, where the entry itself is the file.
+	 */
+	filename: string;
+	/**  Catalog size in bytes; the integrity check and progress total use it. */
+	sizeBytes: number | null;
+};
+
+export type ModelFolderError =
+	/**  The entry name (or a download filename) is not a single folder entry. */
+	| { name: 'InvalidEntryName'; message: string }
+	/**  Could not read the models folder or resolve its path. */
+	| { name: 'ReadFailed'; message: string }
+	/**  Removing the entry failed. */
+	| { name: 'DeleteFailed'; message: string }
+	/**
+	 *  A download finished smaller than its catalog size (a dropped connection
+	 *  leaves a truncated file that still "loads" but transcribes garbage).
+	 */
+	| { name: 'DownloadIncomplete'; message: string }
+	/**  A download failed or was cancelled (an aborted transfer surfaces here). */
+	| { name: 'DownloadFailed'; message: string }
+	/**  Could not create or open the models folder. */
+	| { name: 'RevealFailed'; message: string };
+
+export type ModelImportError =
+	/**
+	 *  The chosen registry entry name is not a single folder entry, or (for
+	 *  Moonshine) does not match the `moonshine-{variant}-{lang}` convention.
+	 */
+	| { name: 'InvalidEntryName'; message: string }
+	/**
+	 *  A real, app-managed model with the chosen name already occupies the
+	 *  folder. Refused rather than clobbered so linking never deletes
+	 *  downloaded bytes. Carries the colliding name (`entry`, not `name`, which
+	 *  is the serde discriminant) so the UI can guide the user to delete that
+	 *  existing entry first.
+	 */
+	| { name: 'EntryExists'; entry: string }
+	/**
+	 *  The picked file/directory does not have the exact shape the engine's
+	 *  loader needs.
+	 */
+	| { name: 'IncompatibleModel'; message: string }
+	/**  Creating (or replacing) the symlink failed. */
+	| { name: 'LinkFailed'; message: string };
 
 /**
  *  Single event type for everything observable about the model lifecycle.

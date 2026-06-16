@@ -10,19 +10,19 @@
 //! in-flight transfer. An aborted transfer surfaces as an `Err` on the matching
 //! `download_file` call.
 //!
-//! This module is deliberately cancel- and layout-agnostic: it streams bytes
-//! into the path it is given and reports raw byte counts. The frontend owns the
-//! `.partial` convention and the size check that promotes it
-//! (`local-model-folder.ts`), and removes the partial on any error (including a
-//! cancel), so there is nothing for Rust to clean up.
+//! This module is deliberately layout-agnostic: it streams bytes into the path
+//! it is given (`stream_to_file`) and runs a transfer as a cancelable task
+//! (`DownloadManager::run`). The `.partial` staging convention, the per-file
+//! size check, and the promote-rename live one layer up in
+//! `transcription::model_folder::download_model`, which owns the folder.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use tauri::ipc::Channel;
 use tauri::State;
 use tokio::io::AsyncWriteExt;
 
@@ -64,9 +64,27 @@ impl DownloadManager {
             handle.abort();
         }
     }
+
+    /// Run `fut` as a cancelable task registered under `id`: `cancel_download(id)`
+    /// aborts it, which drops the future (running any staging-cleanup `Drop`) and
+    /// surfaces here as an `Err`. The caller, which knows it requested the cancel,
+    /// treats that error as a clean stop. Always unregisters, so a finished or
+    /// aborted id is safe to cancel again (a no-op).
+    pub(crate) async fn run<T>(&self, id: &str, fut: impl Future<Output = T> + Send + 'static) -> Result<T, String>
+    where
+        T: Send + 'static,
+    {
+        let task = tokio::spawn(fut);
+        self.register(id, task.abort_handle());
+        let outcome = task.await;
+        self.unregister(id);
+        outcome.map_err(|join_err| format!("download interrupted: {join_err}"))
+    }
 }
 
-/// Whole-file download progress: bytes received so far and the total to expect.
+/// Cumulative download progress for one model: bytes received so far across all
+/// of its files, and the grand total to expect. The frontend turns it into a
+/// 0-100 percent.
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgress {
@@ -74,18 +92,28 @@ pub struct DownloadProgress {
     /// ints to TypeScript; model sizes are far below `f64`'s 2^53 exact-integer
     /// ceiling, so no precision is lost.
     bytes_received: f64,
-    /// Total bytes from the response `content-length`, or 0 when the server
-    /// omits it. The frontend falls back to the catalog size in that case.
+    /// Grand total bytes for the whole model (sum of the catalog file sizes).
     total_bytes: f64,
 }
 
-/// Stream a URL to a file on disk, reporting whole-file progress on `channel`.
-/// Pure transfer; registration and cancellation live in `download_file`.
-async fn stream_to_file(
+impl DownloadProgress {
+    pub(crate) fn new(bytes_received: f64, total_bytes: f64) -> Self {
+        Self {
+            bytes_received,
+            total_bytes,
+        }
+    }
+}
+
+/// Stream a URL to a file on disk, reporting this file's running byte count
+/// through `on_progress` (throttled to ~10/sec). Returns the final byte count.
+/// Pure transfer; the caller owns cumulative aggregation, registration, and
+/// cancellation (`DownloadManager::run`).
+pub(crate) async fn stream_to_file(
     url: &str,
     file_path: &str,
-    channel: Channel<DownloadProgress>,
-) -> Result<(), String> {
+    mut on_progress: impl FnMut(u64),
+) -> Result<u64, String> {
     let response = reqwest::Client::new()
         .get(url)
         .send()
@@ -97,7 +125,6 @@ async fn stream_to_file(
             response.status().as_u16()
         ));
     }
-    let total_bytes = response.content_length().unwrap_or(0) as f64;
 
     let mut file = tokio::io::BufWriter::new(
         tokio::fs::File::create(file_path)
@@ -107,8 +134,8 @@ async fn stream_to_file(
 
     let mut bytes_received: u64 = 0;
     let mut last_emit = Instant::now();
-    // A download fires thousands of small chunks, but each `send` crosses IPC
-    // and repaints the progress bar, and no one reads progress faster than this.
+    // A download fires thousands of small chunks, but each progress send crosses
+    // IPC and repaints the bar, and no one reads progress faster than this.
     // Throttle to ~10/sec; the true final count is force-sent after the loop.
     let throttle = Duration::from_millis(100);
     let mut stream = response.bytes_stream();
@@ -117,55 +144,21 @@ async fn stream_to_file(
         file.write_all(&chunk).await.map_err(|e| e.to_string())?;
         bytes_received += chunk.len() as u64;
         if last_emit.elapsed() >= throttle {
-            // The receiver may already be gone (e.g. window closed); ignore.
-            let _ = channel.send(DownloadProgress {
-                bytes_received: bytes_received as f64,
-                total_bytes,
-            });
+            on_progress(bytes_received);
             last_emit = Instant::now();
         }
     }
     file.flush().await.map_err(|e| e.to_string())?;
-    // Land on the true final byte count (typically 100%); the throttle may have
-    // skipped the last chunk's update.
-    let _ = channel.send(DownloadProgress {
-        bytes_received: bytes_received as f64,
-        total_bytes,
-    });
-    Ok(())
-}
-
-/// Download `url` to `file_path`, cancelable via `cancel_download(download_id)`.
-///
-/// Runs the transfer in a `tokio` task whose `AbortHandle` is registered under
-/// `download_id`. A cancel aborts the task at its next await point, which
-/// surfaces here as an `Err`; the frontend, which knows it requested the
-/// cancel, treats that error as a clean stop.
-#[tauri::command]
-#[specta::specta]
-pub async fn download_file(
-    download_id: String,
-    url: String,
-    file_path: String,
-    on_progress: Channel<DownloadProgress>,
-    manager: State<'_, DownloadManager>,
-) -> Result<(), String> {
-    let task = tokio::spawn(async move { stream_to_file(&url, &file_path, on_progress).await });
-    manager.register(&download_id, task.abort_handle());
-
-    let outcome = task.await;
-    manager.unregister(&download_id);
-
-    match outcome {
-        Ok(inner) => inner,
-        Err(join_err) => Err(format!("download interrupted: {join_err}")),
-    }
+    // Land on the true final byte count; the throttle may have skipped the last
+    // chunk's update.
+    on_progress(bytes_received);
+    Ok(bytes_received)
 }
 
 /// Abort the in-flight download registered under `download_id`, if any. The
-/// matching `download_file` call then resolves with an `Err`. A no-op when
-/// nothing is downloading under that id (already finished, or cancelled between
-/// files), so it is always safe to call.
+/// matching `download_model` call then resolves with an `Err` (and its staging
+/// is cleaned up by the dropped task). A no-op when nothing is downloading under
+/// that id, so it is always safe to call.
 #[tauri::command]
 #[specta::specta]
 pub fn cancel_download(download_id: String, manager: State<'_, DownloadManager>) {

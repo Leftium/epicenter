@@ -6,16 +6,15 @@
 		accessibilityGuide,
 		openSystemSettings,
 	} from '$lib/components/MacosAccessibilityGuideDialog.svelte';
-	import { permissions } from '$lib/state/permissions.svelte';
+	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 
 	// A capability pitch, not an error: the headline "dictate anywhere" feature
-	// is locked, not broken. Off the gated platform (web, non-macOS desktop)
-	// accessibility always reads 'granted', so a 'denied' status is inherently
-	// macOS desktop with the grant actually off; the permission state already
-	// encodes the platform, so there is no separate os.isApple branch. The owner
-	// re-checks on window focus, so granting clears this with nothing to dismiss
-	// and nothing stored: granting the permission is the dismiss.
-	const isLocked = $derived(permissions.accessibility === 'denied');
+	// is locked, not broken. The capability owner reports `needsAccessibility`
+	// only on macOS desktop with the grant off or stale (off the gated platform
+	// it is `active`), so the value already encodes the platform and there is no
+	// separate os.isApple branch. The owner pushes the change when Rust regains
+	// trust, so granting clears this with nothing to dismiss and nothing stored.
+	const isLocked = $derived(dictationCapability.needsAccessibility);
 </script>
 
 {#if isLocked}

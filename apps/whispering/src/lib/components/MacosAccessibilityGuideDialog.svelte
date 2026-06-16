@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import { toast } from '@epicenter/ui/sonner';
-	import { permissions } from '$lib/state/permissions.svelte';
+	import { tauri } from '#platform/tauri';
 
 	/**
 	 * Global opener for the macOS Accessibility guide. Mirrors the
@@ -38,13 +38,20 @@
 	 * Shared "send me to the Accessibility pane" action for both macOS
 	 * accessibility surfaces: the home notice and this guide. It lives here beside
 	 * `accessibilityGuide` because those are its only two callers and the toast
-	 * copy must stay identical between them. The OS work belongs to the
-	 * permissions owner (which cannot grant in place); this wrapper only adds the
-	 * user-facing feedback: a follow-up hint on success, the manual menu path when
-	 * the deep-link fails.
+	 * copy must stay identical between them.
+	 *
+	 * macOS never lets an app grant itself Accessibility, so this is the whole
+	 * "enable" path. The leading `request()` fires only for its first-run side
+	 * effect: it adds Whispering to the Accessibility list (toggle off) so the
+	 * user flips a switch instead of hunting with "+", and shows the native prompt
+	 * once (TCC suppresses it after). We discard its Result: it cannot grant in
+	 * place and a failed prompt must not block the deep-link. The capability then
+	 * flips to `active` on its own when the Rust supervisor next sees the grant.
 	 */
 	export async function openSystemSettings() {
-		const { error } = await permissions.openAccessibilitySettings();
+		if (!tauri) return;
+		await tauri.permissions.accessibility.request();
+		const { error } = await tauri.permissions.accessibility.openSettings();
 		if (error) {
 			toast.info('Open System Settings manually', {
 				description:
@@ -67,10 +74,11 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
+	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 
-	// The owner re-checks on window focus, so the dialog flips to its granted
-	// state the moment the user returns from System Settings, with no reload.
-	const isGranted = $derived(permissions.accessibilityGranted);
+	// The Rust supervisor pushes the capability change, so the dialog flips to its
+	// granted state the moment the supervisor sees the grant, with no reload.
+	const isGranted = $derived(dictationCapability.isActive);
 </script>
 
 <Dialog.Root bind:open={accessibilityGuide.isOpen}>

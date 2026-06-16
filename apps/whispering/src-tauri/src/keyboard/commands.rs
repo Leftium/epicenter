@@ -2,16 +2,17 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::keys::KeyBinding;
-use super::{KeyboardListener, ListenerStart};
+use super::{DictationCapability, KeyboardListener};
 
-/// Start the rdev listener if it is not already running, returning whether it
-/// started (or why not). The FE calls this once it knows global shortcuts are
-/// allowed: on macOS after Accessibility is granted, on other desktops at
-/// launch. Idempotent, so re-checks on focus are safe.
+/// The current dictation capability: whether Whispering can tap the keyboard for
+/// global shortcuts and paste back. The FE seeds from this on attach, then
+/// tracks `DictationCapabilityEvent` for changes; it never probes the OS itself.
+/// The Rust supervisor owns the value and the tap's lifecycle, so there is no
+/// `start` command for the FE to call.
 #[tauri::command]
 #[specta::specta]
-pub fn start_keyboard_listener(listener: State<'_, KeyboardListener>) -> ListenerStart {
-    listener.start()
+pub fn get_dictation_capability(listener: State<'_, KeyboardListener>) -> DictationCapability {
+    listener.capability()
 }
 
 /// One command's binding, as sent from the FE registrar. `command_id` is the

@@ -75,7 +75,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             resume_media,
             keyboard::commands::set_keyboard_shortcuts,
             keyboard::commands::set_keyboard_capturing,
-            keyboard::commands::start_keyboard_listener,
+            keyboard::commands::get_dictation_capability,
         ])
         // The FE listens through the generated `events` object. `collect_events!`
         // owns each topic name and pulls in the payload types
@@ -87,7 +87,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ModelStateEvent,
             keyboard::ShortcutTriggerEvent,
             keyboard::ShortcutCaptureEvent,
-            keyboard::KeyboardListenerStoppedEvent,
+            keyboard::DictationCapabilityEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
@@ -250,12 +250,12 @@ pub async fn run() {
             manager.start_idle_watcher();
             app.manage(manager);
 
-            // Desktop global keyboard trigger backend. We construct and manage
-            // the listener here but do NOT start it: `rdev::listen` cannot tap
-            // the keyboard until macOS Accessibility is granted, so the FE calls
-            // `start_keyboard_listener` once it knows shortcuts are allowed (on
-            // macOS after the grant, on other desktops at launch). The listener
-            // is idempotent, so the FE can re-check freely.
+            // Desktop global keyboard trigger backend. Constructing it spawns a
+            // supervisor that owns the tap's whole lifecycle: it gates spawning
+            // on the live macOS Accessibility trust, restarts a tap that dies
+            // under a held grant, and publishes the `DictationCapability` the FE
+            // views. There is no FE-driven start: trust is a fact about the
+            // process that holds the tap, so the tap holder owns it.
             #[cfg(desktop)]
             app.manage(keyboard::KeyboardListener::new(app.handle().clone()));
 

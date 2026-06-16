@@ -9,11 +9,7 @@ import { processRecordingPipeline } from '$lib/operations/pipeline';
  * picker) and desktop (the picker plus drag-and-drop). Callers own validation
  * (extension or `accept` MIME filtering) before handing files here.
  */
-export async function importFiles({
-	files,
-}: {
-	files: File[];
-}): Promise<void> {
+export async function importFiles({ files }: { files: File[] }): Promise<void> {
 	await Promise.all(
 		files.map(async (file) => {
 			const arrayBuffer = await file.arrayBuffer();

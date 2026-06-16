@@ -9,13 +9,13 @@
 		{ title: 'General', href: '/settings' },
 		{ title: 'Recording', href: '/settings/recording' },
 		{ title: 'Transcription', href: '/settings/transcription' },
-		{ title: 'API Keys', href: '/settings/api-keys' },
-		{ title: 'Sound', href: '/settings/sound' },
 		{
 			title: 'Shortcuts',
 			href: '/settings/shortcuts',
 			activePathPrefix: '/settings/shortcuts',
 		},
+		{ title: 'Sound', href: '/settings/sound' },
+		{ title: 'API Keys', href: '/settings/api-keys' },
 		{ title: 'Privacy & Analytics', href: '/settings/analytics' },
 	] satisfies {
 		title: string;

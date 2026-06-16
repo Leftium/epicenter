@@ -21,39 +21,37 @@ const globalBinding = type({
 	keys: 'string[]',
 }).or('null');
 
-// Default bindings as global gestures, not mnemonic app hotkeys. Every gesture
-// is a distinct, non-overlapping combo: the rdev matcher fires on exact set
-// equality with no prefix resolution, so no gesture's keys may be a subset of
-// another's (the shorter one would fire first and shadow the longer). That is
-// why push-to-talk gets its own dedicated key and nothing else reuses it.
+// Default bindings as global gestures, not mnemonic app hotkeys. The rdev matcher
+// fires on exact set equality with no prefix resolution, so no gesture's keys may
+// be a subset of another's (the shorter would fire first and shadow the longer):
+// every default below is a distinct, non-overlapping combo.
 //
-//   macOS:   Fn = push-to-talk,        Cmd + Shift + Space  = toggle
-//   Windows: Ctrl+Win = push-to-talk,  Ctrl + Shift + Space = toggle
+// Push-to-talk is the default recording key: hold it to record, release to stop.
+// It is a single physical key with no start latency. On Apple keyboards that key
+// is Fn (a single physical key no common shortcut claims); elsewhere it is
+// Ctrl+Win, a held chord that is likewise unclaimed. Tap-to-toggle is a separate
+// command that ships unbound (the in-app record button is its home); bind a key
+// for it in settings if you want a hands-free toggle.
 //
-// Fn is a single physical key on Apple keyboards; elsewhere we reach for
-// Ctrl+Win, a held chord that no common OS shortcut claims. Toggle adds Shift
-// so it shares no prefix with push-to-talk while keeping Space as the "record"
-// affordance. Cancel is the platform cancel chord (Cmd + . on macOS, the system
-// cancel gesture since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a
-// modifier so it is safe to hold globally and registers like any other gesture
-// with no session gating. Transformation gestures ship unbound: opt-in only.
-// This map is the single source for the per-key schema defaults below; the reset
-// path reads them back through `deviceConfig.getDefault`, not this map directly.
-const PUSH_TO_TALK_MODIFIERS: KeyBinding['modifiers'] = os.isApple
+//   macOS:   Fn = push-to-talk,        Cmd + .          = cancel
+//   Windows: Ctrl+Win = push-to-talk,  Ctrl + Shift + . = cancel
+//
+// Cancel is the platform cancel chord (Cmd + . on macOS, the system cancel gesture
+// since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a modifier so it is
+// safe to hold globally and registers like any other gesture with no session
+// gating. Transformation gestures ship unbound: opt-in only. Exported so the reset
+// path in platform/shortcuts.tauri.ts shares this one source of truth.
+const RECORDING_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['fn']
 	: ['ctrl', 'meta'];
-
-const TOGGLE_MODIFIERS: KeyBinding['modifiers'] = os.isApple
-	? ['meta', 'shift']
-	: ['ctrl', 'shift'];
 
 const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['meta']
 	: ['ctrl', 'shift'];
 
-const DEFAULT_GLOBAL_BINDINGS = {
-	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
-	toggleManualRecording: { modifiers: TOGGLE_MODIFIERS, keys: ['space'] },
+export const DEFAULT_GLOBAL_BINDINGS = {
+	pushToTalk: { modifiers: RECORDING_MODIFIERS, keys: [] },
+	toggleManualRecording: null,
 	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
 	toggleVadRecording: null,
 	openTransformationPicker: null,
@@ -145,6 +143,10 @@ const DEVICE_DEFINITIONS = {
 	// Structured KeyBinding (physical-key space) for the rdev backend. Old
 	// accelerator-string values are not migrated: they fail this schema and reset
 	// to the defaults (clean break, see the note below the singleton).
+	'shortcuts.global.pushToTalk': defineEntry(
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
+	),
 	'shortcuts.global.toggleManualRecording': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleManualRecording,
@@ -156,10 +158,6 @@ const DEVICE_DEFINITIONS = {
 	'shortcuts.global.toggleVadRecording': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleVadRecording,
-	),
-	'shortcuts.global.pushToTalk': defineEntry(
-		globalBinding,
-		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
 	),
 	'shortcuts.global.openTransformationPicker': defineEntry(
 		globalBinding,

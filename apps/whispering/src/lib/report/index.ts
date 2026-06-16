@@ -20,7 +20,14 @@ export type Notice = {
 
 export type Problem = Notice & { cause: AnyTaggedError };
 
-type Level = 'error' | 'success' | 'info' | 'loading';
+/**
+ * A standing notice that persists until granted/resolved and is deduped by a
+ * caller-owned `id`, so the same condition (e.g. a missing OS permission) shows
+ * one toast no matter how often the check re-runs. Dismiss with `report.dismiss`.
+ */
+export type StandingNotice = Notice & { id: string };
+
+type Level = 'error' | 'success' | 'info' | 'warning' | 'loading';
 
 const SOURCE = 'whispering/report';
 
@@ -28,6 +35,7 @@ const TOAST_DURATION = {
 	error: Number.POSITIVE_INFINITY,
 	success: 3000,
 	info: 4000,
+	warning: Number.POSITIVE_INFINITY,
 	loading: Number.POSITIVE_INFINITY,
 } as const;
 
@@ -42,6 +50,18 @@ export const report = {
 	},
 	info(notice: Notice): void {
 		emit('info', notice);
+	},
+	/**
+	 * A persistent, dedup-by-id warning that stays up until the condition clears.
+	 * Re-emitting with the same `id` updates the one toast rather than stacking;
+	 * call `dismiss(id)` once the condition resolves.
+	 */
+	warning(notice: StandingNotice): void {
+		emit('warning', notice, notice.id);
+	},
+	/** Dismiss a standing notice (or a loading notice) by its id. */
+	dismiss(id: string): void {
+		sonner.dismiss(id);
 	},
 	loading(notice: Notice) {
 		const id = nanoid();

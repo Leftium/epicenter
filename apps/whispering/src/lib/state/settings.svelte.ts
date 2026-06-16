@@ -11,7 +11,7 @@ type SettingsValues = ReturnType<Kv['getAll']>;
  *
  * The `<SettingSwitch>` component constrains its `key` prop to these, so the
  * generic flows through `settings.get`/`settings.set` and a non-boolean key
- * (a number like `retention.maxCount`, an enum like `recording.mode`) is a
+ * (a number like `retention.maxCount`, an enum like `ui.alwaysOnTop`) is a
  * compile error instead of a silently-broken toggle.
  */
 export type BooleanSettingKey = {
@@ -56,9 +56,9 @@ function createSettings() {
 		set: whispering.kv.set,
 
 		/**
-		 * The schema default for a setting key (the `defineKv` factory value).
-		 * The single source for resets and default-display, so a setting's
-		 * default lives only in the workspace definition, never in a parallel map.
+		 * The default value for a setting key (factory-evaluated, per-key typed).
+		 * Reads straight from the KV schema, so the schema stays the single source
+		 * of defaults; callers never redeclare them.
 		 */
 		getDefault: whispering.settings.getDefault,
 

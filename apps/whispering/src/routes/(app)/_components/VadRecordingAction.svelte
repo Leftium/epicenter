@@ -4,9 +4,8 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
 	import { toggleVadRecording } from '$lib/operations/recording';
-	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
+	import { getEffectiveShortcutLabel } from '$lib/utils/effective-shortcut';
 	import RecordingActionCard from './RecordingActionCard.svelte';
 
 	let {
@@ -25,7 +24,7 @@
 	// active speech burst swaps to the waveform.
 	const icon = $derived(isSpeechDetected ? AudioLinesIcon : RadioIcon);
 	const shortcutLabel = $derived(
-		getShortcutDisplayLabel(settings.get('shortcut.toggleVadRecording')),
+		getEffectiveShortcutLabel('toggleVadRecording'),
 	);
 	const label = $derived(isListening ? 'Stop listening' : 'Start listening');
 	const description = $derived.by(() => {

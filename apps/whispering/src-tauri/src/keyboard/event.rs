@@ -44,6 +44,29 @@ pub struct ShortcutCaptureEvent {
     pub binding: KeyBinding,
 }
 
+/// Emitted when the rdev listener thread exits, whether `rdev::listen` returned
+/// an error (the tap failed: most often macOS Accessibility missing, or a stale
+/// post-update grant that no longer satisfies the code signature) or returned
+/// cleanly. The thread is gone either way, so the FE supervisor re-probes
+/// permissions and respawns the listener when shortcuts should still be running;
+/// a genuinely missing grant instead surfaces as the Accessibility notice.
+/// Without this signal the thread died silently and the global shortcut stayed
+/// dead until the grant value happened to toggle.
+///
+/// A `tauri_specta::Event`, emitted with `emit_to(app, MAIN_WINDOW)` (the main
+/// webview, not the overlay) and listened through the generated
+/// `events.keyboardListenerStoppedEvent`.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type, tauri_specta::Event,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyboardListenerStoppedEvent {
+    /// The rdev error, debug-formatted, when `listen` failed; `None` on a clean
+    /// return. Carried for the log and a last-resort user message, not for
+    /// control flow: the FE decides what to do by re-probing permissions.
+    pub reason: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

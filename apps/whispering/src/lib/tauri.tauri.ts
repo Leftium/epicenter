@@ -54,7 +54,6 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { os } from '#platform/os';
 import { goto } from '$app/navigation';
-import type { ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
@@ -266,7 +265,7 @@ async function initTray() {
 // the user's bindings down with `set_keyboard_shortcuts` and dispatch the
 // events back into the command layer (the single convergence point). No
 // accelerator strings cross this boundary: the registrar parses them to
-// `KeyBinding` before pushing (see `register-commands.ts`). The trigger and
+// `KeyBinding` before pushing (see `platform/shortcuts.tauri.ts`). The trigger and
 // capture topics are the generated `events.shortcutTriggerEvent` /
 // `events.shortcutCaptureEvent`, so no topic string is mirrored here.
 
@@ -357,24 +356,15 @@ const globalShortcuts = {
 
 	/**
 	 * Subscribe to the rdev trigger event and dispatch each into the command
-	 * layer, filtered by the command's `on` array. Returns the unlisten fn. The
-	 * `on` filter is the same gate the old plugin registrar applied; keeping it
-	 * here leaves `commands.ts` as the single convergence point.
+	 * layer. Returns the unlisten fn. The `on` filter lives in
+	 * `dispatchCommandTrigger`, the single convergence point both trigger
+	 * backends share, so this stays pure transport.
 	 */
 	startListening: async () => {
-		const { commandCallbacks, commands: commandList } = await import(
-			'$lib/commands'
-		);
-		const onById = new Map<string, ShortcutEventState[]>(
-			commandList.map((command) => [command.id, command.on]),
-		);
+		const { dispatchCommandTrigger } = await import('$lib/commands');
 		return events.shortcutTriggerEvent.listen(
-			({ payload: { commandId, state } }) => {
-				const on = onById.get(commandId);
-				const callback =
-					commandCallbacks[commandId as keyof typeof commandCallbacks];
-				if (on?.includes(state) && callback) callback(state);
-			},
+			({ payload: { commandId, state } }) =>
+				dispatchCommandTrigger(commandId, state),
 		);
 	},
 
@@ -395,6 +385,19 @@ const globalShortcuts = {
 	listenForCapture: (onCombo: (binding: KeyBinding) => void) =>
 		events.shortcutCaptureEvent.listen(({ payload }) =>
 			onCombo(payload.binding),
+		),
+
+	/**
+	 * Subscribe to the listener's stop event: the rdev thread exited (a tap
+	 * break, or a missing/stale Accessibility grant). Returns the unlisten fn.
+	 * The caller (AppLayout) re-probes permissions and respawns when shortcuts
+	 * should still be running, which is the self-heal that neither the focus
+	 * re-check nor the `accessibilityGranted` effect provides for a death that
+	 * leaves the grant value unchanged (a thread that just died under it).
+	 */
+	onListenerStopped: (onStopped: (reason: string | null) => void) =>
+		events.keyboardListenerStoppedEvent.listen(({ payload }) =>
+			onStopped(payload.reason),
 		),
 };
 

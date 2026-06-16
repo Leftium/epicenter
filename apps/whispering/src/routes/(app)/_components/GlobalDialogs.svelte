@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import DevAccessibilityToggle from '$lib/components/DevAccessibilityToggle.svelte';
+	import MacosAccessibilityGuideDialog from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 </script>
@@ -11,5 +13,10 @@
 	tears a dialog down mid-interaction.
 -->
 <ConfirmationDialog />
+<MacosAccessibilityGuideDialog />
 <MoreDetailsDialog />
 <UpdateDialog />
+
+{#if import.meta.env.DEV}
+	<DevAccessibilityToggle />
+{/if}

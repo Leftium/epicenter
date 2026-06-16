@@ -159,6 +159,7 @@ const toolTrustTable = defineTable({
  */
 export const tabManagerWorkspace = defineWorkspace({
 	id: TAB_MANAGER_ID,
+	name: 'tab-manager',
 	tables: {
 		devices: devicesTable,
 		savedTabs: savedTabsTable,

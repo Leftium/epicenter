@@ -8,8 +8,8 @@
  * (`<epicenterRoot>/entries/` for Fuji).
  *
  * What `compose` builds:
- *   1. SQLite materializer (`runtime.sqlite`) at the guid-keyed mirror path.
- *   2. Markdown export (`runtime.markdown`, read-only, one-way) under the app
+ *   1. SQLite materializer (`attachMountSqlite`) at the guid-keyed mirror path.
+ *   2. Markdown export (`attachMountMarkdown`, read-only, one-way) under the app
  *      root. Each entry's frontmatter is the row; its body is rendered from the
  *      entry's content child doc, read fresh over one-shot HTTP per row and
  *      never persisted on the daemon. There is no import path: the only way to
@@ -22,7 +22,11 @@
 
 import { defineActions, readRoomOverHttp } from '@epicenter/workspace';
 import type { GitAutosaveConfig } from '@epicenter/workspace/document/materializer/markdown';
-import { nodeMountRuntime } from '@epicenter/workspace/node';
+import {
+	attachMountMarkdown,
+	attachMountSqlite,
+	nodeMountRuntime,
+} from '@epicenter/workspace/node';
 import { serializeEntryBody } from './entry-body-markdown.js';
 import { fujiWorkspace } from './index.js';
 
@@ -38,12 +42,11 @@ export type FujiMountOptions = {
 
 export function fuji(opts: FujiMountOptions = {}) {
 	return fujiWorkspace.mount({
-		name: 'fuji',
 		baseURL: opts.baseURL,
 		runtime: nodeMountRuntime(),
-		compose({ workspace, ctx, baseURL, runtime }) {
-			const sqlite = runtime.sqlite(workspace);
-			const markdown = runtime.markdown(workspace, {
+		compose({ workspace, ctx, baseURL }) {
+			const sqlite = attachMountSqlite(ctx, workspace);
+			const markdown = attachMountMarkdown(ctx, workspace, {
 				tables: {
 					entries: {
 						// One-way render: frontmatter is the row, body is the entry's
@@ -73,7 +76,6 @@ export function fuji(opts: FujiMountOptions = {}) {
 				git: opts.git ?? false,
 			});
 			return {
-				expose: { markdown },
 				materializers: [sqlite, markdown],
 				actions: defineActions({
 					...workspace.actions,

@@ -89,6 +89,7 @@ export type Entry = InferTableRow<typeof entriesTable>;
  */
 export const fujiWorkspace = defineWorkspace({
 	id: FUJI_ID,
+	name: 'fuji',
 	tables: { entries: entriesTable },
 	kv: {},
 	actions: ({ tables }) =>

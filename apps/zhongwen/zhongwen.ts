@@ -73,6 +73,7 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  */
 export const zhongwenWorkspace = defineWorkspace({
 	id: ZHONGWEN_ID,
+	name: 'zhongwen',
 	tables: {
 		conversations: conversationsTable,
 	},

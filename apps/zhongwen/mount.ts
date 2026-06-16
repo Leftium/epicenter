@@ -22,7 +22,6 @@ export type ZhongwenMountOptions = {
 
 export function zhongwen(opts: ZhongwenMountOptions = {}) {
 	return zhongwenWorkspace.mount({
-		name: 'zhongwen',
 		baseURL: opts.baseURL,
 		runtime: nodeMountRuntime(),
 	});

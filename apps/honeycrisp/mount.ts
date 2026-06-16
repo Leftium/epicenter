@@ -10,7 +10,11 @@
 
 import { defineActions } from '@epicenter/workspace';
 import type { GitAutosaveConfig } from '@epicenter/workspace/document/materializer/markdown';
-import { nodeMountRuntime } from '@epicenter/workspace/node';
+import {
+	attachMountMarkdown,
+	attachMountSqlite,
+	nodeMountRuntime,
+} from '@epicenter/workspace/node';
 import { honeycrispWorkspace } from './honeycrisp.js';
 
 export type HoneycrispMountOptions = {
@@ -24,17 +28,15 @@ export type HoneycrispMountOptions = {
 
 export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 	return honeycrispWorkspace.mount({
-		name: 'honeycrisp',
 		baseURL: opts.baseURL,
 		runtime: nodeMountRuntime(),
-		compose({ workspace, runtime }) {
-			const sqlite = runtime.sqlite(workspace);
-			const markdown = runtime.markdown(workspace, {
+		compose({ workspace, ctx }) {
+			const sqlite = attachMountSqlite(ctx, workspace);
+			const markdown = attachMountMarkdown(ctx, workspace, {
 				tables: { notes: {} },
 				git: opts.git ?? false,
 			});
 			return {
-				expose: { markdown },
 				materializers: [sqlite, markdown],
 				actions: defineActions({
 					...workspace.actions,

@@ -144,6 +144,7 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  */
 export const opensidianWorkspace = defineWorkspace({
 	id: OPENSIDIAN_ID,
+	name: 'opensidian',
 	tables: {
 		files: filesTable,
 		conversations: conversationsTable,

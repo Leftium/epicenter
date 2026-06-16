@@ -23,7 +23,6 @@ export type OpensidianMountOptions = {
 
 export function opensidian(opts: OpensidianMountOptions = {}) {
 	return opensidianWorkspace.mount({
-		name: 'opensidian',
 		baseURL: opts.baseURL,
 		runtime: nodeMountRuntime(),
 	});

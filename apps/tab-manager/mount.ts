@@ -10,7 +10,11 @@
 
 import { defineActions } from '@epicenter/workspace';
 import type { GitAutosaveConfig } from '@epicenter/workspace/document/materializer/markdown';
-import { nodeMountRuntime } from '@epicenter/workspace/node';
+import {
+	attachMountMarkdown,
+	attachMountSqlite,
+	nodeMountRuntime,
+} from '@epicenter/workspace/node';
 import { tabManagerWorkspace } from './src/lib/workspace/definition.js';
 
 export type TabManagerMountOptions = {
@@ -25,17 +29,16 @@ export type TabManagerMountOptions = {
 
 export function tabManager(opts: TabManagerMountOptions = {}) {
 	return tabManagerWorkspace.mount({
-		name: 'tab-manager',
 		baseURL: opts.baseURL,
 		runtime: nodeMountRuntime(),
-		compose({ workspace, runtime }) {
-			const sqlite = runtime.sqlite(workspace, {
+		compose({ workspace, ctx }) {
+			const sqlite = attachMountSqlite(ctx, workspace, {
 				fts: {
 					bookmarks: ['title', 'url'],
 					savedTabs: ['title', 'url'],
 				},
 			});
-			const markdown = runtime.markdown(workspace, {
+			const markdown = attachMountMarkdown(ctx, workspace, {
 				tables: {
 					bookmarks: {},
 					devices: {},
@@ -44,7 +47,6 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				git: opts.git ?? false,
 			});
 			return {
-				expose: { markdown },
 				materializers: [sqlite, markdown],
 				actions: defineActions({
 					...workspace.actions,

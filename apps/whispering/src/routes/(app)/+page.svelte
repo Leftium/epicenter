@@ -33,8 +33,7 @@
 	} from '$lib/constants/audio';
 	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
-	import { keyBindingToLabel } from '$lib/utils/key-binding';
-	import { os } from '#platform/os';
+	import { shortcuts } from '#platform/shortcuts';
 	import {
 		stopManualRecording,
 		stopVadRecording,
@@ -44,7 +43,6 @@
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { tauri } from '#platform/tauri';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -57,11 +55,10 @@
 
 	const latestRecording = $derived(recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness());
-	const globalToggleBinding = $derived(
-		deviceConfig.get('shortcuts.global.toggleManualRecording'),
-	);
+	// On desktop the live binding for this command is the global (rdev) gesture;
+	// this `{#if tauri}`-gated label reads it through the platform seam.
 	const globalToggleLabel = $derived(
-		globalToggleBinding ? keyBindingToLabel(globalToggleBinding, os.isApple) : '',
+		shortcuts.currentLabel('toggleManualRecording'),
 	);
 
 	const PageError = defineErrors({

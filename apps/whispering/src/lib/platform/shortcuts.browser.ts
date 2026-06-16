@@ -1,7 +1,5 @@
 import { partitionResults } from 'wellcrafted/result';
-import { goto } from '$app/navigation';
-import { type Command, commands } from '$lib/commands';
-import { report } from '$lib/report';
+import type { Command } from '$lib/commands';
 import {
 	type CommandId,
 	localShortcuts,
@@ -9,6 +7,7 @@ import {
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
 import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
+import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
 /**
@@ -18,78 +17,30 @@ import type { Shortcuts } from './types';
 
 const localKey = (id: Command['id']) => `shortcut.${id}` as const;
 
-async function sync(): Promise<void> {
-	const results = await Promise.all(
-		commands
-			.map((command) => {
-				const keyCombination = settings.get(localKey(command.id));
-				if (!keyCombination) {
-					return localShortcuts.unregisterCommand({
-						commandId: command.id as CommandId,
-					});
-				}
-				return localShortcuts.registerCommand({
-					command,
-					keyCombination: shortcutStringToArray(String(keyCombination)),
-				});
-			})
-			.filter((result) => result !== undefined),
-	);
-	const { errs } = partitionResults(results);
-	if (errs.length > 0) {
-		report.error({
-			title: 'Error registering local commands',
-			cause: {
-				name: 'LocalShortcutRegistrationFailed',
-				message: errs.map((err) => err.error.message).join('\n'),
-			},
-		});
-	}
-}
-
-function reset(): void {
-	for (const command of commands) {
-		const key = localKey(command.id);
-		settings.set(key, settings.getDefault(key));
-	}
-	void sync();
-}
-
-function resetIfDuplicates(): boolean {
-	const seen = new Map<string, string>();
-	for (const command of commands) {
-		const shortcut = settings.get(localKey(command.id));
-		if (!shortcut) continue;
-		if (seen.has(String(shortcut))) {
-			reset();
-			report.success({
-				title: 'Shortcuts reset',
-				description:
-					'Duplicate local shortcuts detected. All local shortcuts have been reset to defaults.',
-				action: {
-					label: 'Configure shortcuts',
-					onClick: () => goto('/settings/shortcuts'),
-				},
-			});
-			return true;
-		}
-		seen.set(String(shortcut), command.id);
-	}
-	return false;
-}
-
-function label(commandId: Command['id']): string {
-	return getShortcutDisplayLabel(settings.get(localKey(commandId)));
-}
-
-function defaultLabel(commandId: Command['id']): string {
-	return getShortcutDisplayLabel(settings.getDefault(localKey(commandId)));
-}
-
-export const shortcuts: Shortcuts = {
-	sync,
-	reset,
-	resetIfDuplicates,
-	label,
-	defaultLabel,
-};
+export const shortcuts: Shortcuts = createShortcuts<string>({
+	read: (id) => settings.get(localKey(id)),
+	getDefault: (id) => settings.getDefault(localKey(id)),
+	write: (id, binding) => settings.set(localKey(id), binding),
+	label: (binding) => getShortcutDisplayLabel(binding),
+	syncErrorTitle: 'Error registering local commands',
+	async push(entries) {
+		const results = await Promise.all(
+			entries.map(({ command, binding }) =>
+				binding
+					? localShortcuts.registerCommand({
+							command,
+							keyCombination: shortcutStringToArray(binding),
+						})
+					: localShortcuts.unregisterCommand({
+							commandId: command.id as CommandId,
+						}),
+			),
+		);
+		const { errs } = partitionResults(results);
+		if (errs.length === 0) return null;
+		return {
+			name: 'LocalShortcutRegistrationFailed',
+			message: errs.map((err) => err.error.message).join('\n'),
+		};
+	},
+});

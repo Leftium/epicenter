@@ -25,20 +25,15 @@ export type Shortcuts = {
 	sync(): Promise<void>;
 	/** Restore every shortcut to its default binding, then re-sync. */
 	reset(): void;
-	/**
-	 * If two commands share a binding, reset all to defaults and surface it.
-	 * Returns whether a reset happened.
-	 */
-	resetIfDuplicates(): boolean;
-	/**
-	 * A command's live binding, formatted for display (`''` when unbound). The
-	 * single owner of "what shortcut is actually bound here": consumers that do
-	 * not own the binding (status cards, tooltips) read this instead of reaching
-	 * into the platform's storage and formatter themselves.
-	 */
-	label(commandId: Command['id']): string;
 	/** A command's default binding, formatted for display (`''` when unbound). */
 	defaultLabel(commandId: Command['id']): string;
+	/**
+	 * The command's *current* binding on this platform, formatted for display
+	 * (`''` when unbound). The single owner of "what key is live for this
+	 * command": display-only consumers (action cards, home-page hints) read this
+	 * instead of reaching into platform storage and re-deriving the `tauri` branch.
+	 */
+	currentLabel(commandId: Command['id']): string;
 };
 
 /**

@@ -6,7 +6,6 @@ export function attachGlobalShortcuts() {
 	let shortcutListenerDestroyed = false;
 
 	void shortcuts.sync();
-	shortcuts.resetIfDuplicates();
 
 	if (tauri) {
 		void tauri.globalShortcuts.startListening().then((unlisten) => {

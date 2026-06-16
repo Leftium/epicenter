@@ -1,9 +1,11 @@
 /**
- * Tab Manager project mount.
+ * Honeycrisp mount.
  *
- * `tabManager(opts?)` returns the Mount used by `epicenter.config.ts`.
- * It projects saved tabs, bookmarks, and devices into markdown while keeping
- * the Y.Doc update log and SQLite mirror under `.epicenter/`.
+ * `honeycrisp(opts?)` returns the `Mount` that an
+ * `epicenter.config.ts` default-exports. Disk paths follow the
+ * Epicenter-root layout: the SQLite mirror at `.epicenter/sqlite/<id>.db`
+ * (hidden) and the read-only markdown projection under table-named folders in
+ * the app root.
  */
 
 import { join } from 'node:path';
@@ -20,10 +22,9 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createTabManager } from './src/lib/workspace/definition.js';
+import { honeycrispWorkspace } from './honeycrisp.js';
 
-export type TabManagerMountOptions = {
-	/** Enable per-materializer Git autosave for markdown output. */
+export type HoneycrispMountOptions = {
 	git?: GitAutosaveConfig;
 	/**
 	 * Base URL of the Epicenter cloud API used for sync.
@@ -32,9 +33,9 @@ export type TabManagerMountOptions = {
 	baseURL?: string;
 };
 
-export function tabManager(opts: TabManagerMountOptions = {}) {
+export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 	return defineSessionMount({
-		name: 'tab-manager',
+		name: 'honeycrisp',
 		open(ctx) {
 			const { epicenterRoot, mount } = ctx;
 			const baseURL =
@@ -42,35 +43,27 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createTabManager();
+			const workspace = honeycrispWorkspace.create();
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
-				fts: {
-					bookmarks: ['title', 'url'],
-					savedTabs: ['title', 'url'],
-				},
 				log: createLogger(`${mount}-sqlite`),
 			});
+
 			const markdown = attachMarkdownExport(workspace, {
 				dir: epicenterRoot,
-				tables: {
-					bookmarks: {},
-					devices: {},
-					savedTabs: {},
-				},
+				tables: { notes: {} },
 			});
 			if (opts.git) {
-				for (const tableDir of ['bookmarks', 'devices', 'savedTabs']) {
-					attachGitAutosave({
-						ydoc: workspace.ydoc,
-						dir: join(epicenterRoot, tableDir),
-						config: opts.git,
-					});
-				}
+				attachGitAutosave({
+					ydoc: workspace.ydoc,
+					dir: join(epicenterRoot, 'notes'),
+					config: opts.git,
+				});
 			}
 
 			const actions = defineActions({
+				...workspace.actions,
 				...sqlite.actions,
 				...markdown.actions,
 			});

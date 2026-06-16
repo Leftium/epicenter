@@ -14,6 +14,6 @@
  * table), and the SQLite mirror is guid-keyed under `.epicenter/sqlite/<id>.db`.
  */
 
-import { fuji } from '@epicenter/fuji/project';
+import { fuji } from '@epicenter/fuji/mount';
 
 export default fuji();

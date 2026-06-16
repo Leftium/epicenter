@@ -7,7 +7,7 @@
 	"exports": {
 		".": "./zhongwen.ts",
 		"./browser": "./zhongwen.browser.ts",
-		"./project": "./project.ts"
+		"./mount": "./mount.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

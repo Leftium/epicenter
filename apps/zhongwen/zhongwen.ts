@@ -13,7 +13,7 @@
  * Composition lives elsewhere:
  *  - `apps/zhongwen/zhongwen.browser.ts`
  *      → `openZhongwenBrowser({ signedIn, deviceId })`
- *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
+ *  - `apps/zhongwen/mount.ts` → `zhongwen()` mount factory
  */
 
 import type { ServableModel } from '@epicenter/constants/ai-providers';

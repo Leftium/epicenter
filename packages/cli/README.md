@@ -77,7 +77,7 @@ Error text goes to stderr; machine-readable output (`--format json|jsonl`, table
 `epicenter.config.ts` marks the Epicenter root and declares its mount. One folder is one app is one mount: the default export is a single `Mount`. App packages ship mount factories that return `Mount` values; `Mount.name` owns the CLI prefix. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so the mount's visible markdown projection is a direct child folder.
 
 ```ts
-import { fuji } from "@epicenter/fuji/project";
+import { fuji } from "@epicenter/fuji/mount";
 
 export default fuji();
 ```

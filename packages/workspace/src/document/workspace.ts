@@ -362,13 +362,18 @@ export type MountComposition<TActions extends ActionRegistry> = {
  * `runtime` is the injected node bag from `nodeMountRuntime()`; `.mount()`
  * itself imports no node module. `compose` is optional: omit it to serve the
  * workspace's base actions with no materializers (a pure sync-and-persist
- * mirror); provide it to attach materializers and choose the served action set.
+ * mirror); provide it to attach materializers (each enrolling its own drain
+ * through `scope.registerDrain`) and choose the served action set.
+ *
+ * `compose` returns `MountComposition<ActionRegistry>`: the served set is its
+ * own decision and never surfaces on the returned non-generic {@link Mount}, so
+ * the option carries no `TRuntimeActions` generic and the coordinator reads both
+ * the compose and no-compose branches as one composition type, no cast.
  */
 export type MountOptions<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
-	TRuntimeActions extends ActionRegistry,
 > = {
 	/**
 	 * Explicit sync base URL. Omit to fall back through `EPICENTER_API_URL` to
@@ -377,10 +382,13 @@ export type MountOptions<
 	readonly baseURL?: string;
 	/** Injected node runtime, built by `nodeMountRuntime()`. */
 	readonly runtime: NodeMountRuntime;
-	/** Attach materializers and select the served actions. See {@link MountComposition}. */
+	/**
+	 * Attach materializers and select the served actions. Omit for a pure
+	 * sync-and-persist mirror. See {@link MountComposition}.
+	 */
 	readonly compose?: (
 		context: MountComposeContext<TTables, TKv, TActions>,
-	) => MountComposition<TRuntimeActions>;
+	) => MountComposition<ActionRegistry>;
 };
 
 export type WorkspaceDefinition<
@@ -401,9 +409,7 @@ export type WorkspaceDefinition<
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => TRuntime,
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
-	mount<TRuntimeActions extends ActionRegistry = TActions>(
-		options: MountOptions<TTables, TKv, TActions, TRuntimeActions>,
-	): Mount;
+	mount(options: MountOptions<TTables, TKv, TActions>): Mount;
 };
 
 /** The unconnected root workspace returned by `definition.create()`. */
@@ -634,9 +640,7 @@ export function defineWorkspace<
 	 * The mount's display label is the definition's `name`, declared once on the
 	 * definition rather than restated at every call site.
 	 */
-	function mount<TRuntimeActions extends ActionRegistry = TActions>(
-		mountOptions: MountOptions<TTables, TKv, TActions, TRuntimeActions>,
-	): Mount {
+	function mount(mountOptions: MountOptions<TTables, TKv, TActions>): Mount {
 		const { runtime } = mountOptions;
 		return runtime.defineSessionMount({
 			name: options.name,
@@ -656,16 +660,14 @@ export function defineWorkspace<
 						drains.push(drainable);
 					},
 				};
-				const composition: MountComposition<TRuntimeActions> =
+				// Both branches are one composition type: compose returns
+				// `MountComposition<ActionRegistry>`, and the no-compose fallback's
+				// `workspace.actions` (`TActions`) widens to the same. No generic to
+				// bridge, so no cast.
+				const composition: MountComposition<ActionRegistry> =
 					mountOptions.compose
 						? mountOptions.compose({ workspace, scope })
-						: // No compose: serve the base actions, no materializers. Reached
-							// only when `TRuntimeActions` defaults to `TActions`, so the
-							// base registry is the served one; the cast bridges the generic
-							// the body can't otherwise prove.
-							({
-								actions: workspace.actions,
-							} as unknown as MountComposition<TRuntimeActions>);
+						: { actions: workspace.actions };
 				// `attachInfrastructure` serves `composition.actions` to peers and
 				// drains every registered materializer in order on shutdown, so it
 				// runs after compose has registered them.

@@ -4,7 +4,7 @@
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { report } from '$lib/report';
-	import { localShortcuts } from '$lib/operations/shortcuts';
+	import { localShortcuts } from '$lib/services/local-shortcut-manager';
 	import {
 		arrayToShortcutString,
 		type CommandId,

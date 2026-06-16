@@ -7,7 +7,10 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import { os } from '#platform/os';
-import type { ShortcutEventState } from '$lib/commands';
+import {
+	type Command,
+	type ShortcutEventState,
+} from '$lib/commands';
 import {
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,
@@ -248,6 +251,27 @@ export const LocalShortcutManagerLive = {
 		shortcuts.clear();
 		return Ok(undefined);
 	},
+};
+
+/**
+ * Local shortcuts: cross-platform browser keyboard events, used by the web app
+ * and the in-window recorder UI.
+ */
+export const localShortcuts = {
+	registerCommand: ({
+		command,
+		keyCombination,
+	}: {
+		command: Command;
+		keyCombination: KeyboardEventSupportedKey[];
+	}) =>
+		LocalShortcutManagerLive.register({
+			id: command.id as CommandId,
+			keyCombination,
+		}),
+
+	unregisterCommand: async ({ commandId }: { commandId: CommandId }) =>
+		LocalShortcutManagerLive.unregister(commandId),
 };
 
 /**

@@ -21,16 +21,17 @@ the only thing that crosses a process boundary is an action. An action is the
 published, schema-guarded, serializable projection of in-process table/KV access:
 it does not replace raw access, it is a layer over it (`shared/actions.ts:139`,
 and an action handler gets `.tables`/`.kv` but no connection-bound `.open`,
-`document/workspace.ts:112-126`).
+`document/workspace.ts:129-162`).
 
 This is structural, not policy. A script gets `connectDaemonActions`, a `Proxy`
 whose every property becomes `client.run({ actionPath, input })`
 (`client/daemon-actions.ts:62-72`); it has no `.tables` to reach, runs no
 workspace code, and holds no Y.Doc (`client/connect-daemon-actions.ts:8`). The
 browser, which owns its doc, gets full `tables`/`kv` directly off `connect()`
-(`document/workspace.ts:239-247`); its `compose` callback returns only `actions`
-because `compose` defines the served wire surface (`workspace.ts:255-257`), not
-because it gates the local developer.
+(`document/workspace.ts:271`); its `compose` callback returns only `actions`
+because `compose` defines the served wire surface (`workspace.ts:289`; the daemon
+`mount()` compose is the same rule, `workspace.ts:363,650`), not because it gates
+the local developer.
 
 Access scope is therefore a function of writer-identity: an in-process doc owner
 (daemon, browser, action handler) sees full `tables` + `kv` + `actions`; everything

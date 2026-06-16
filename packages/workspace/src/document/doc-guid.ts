@@ -45,16 +45,3 @@ export const docGuid = ({
 	assertSafeSegment(field, 'field');
 	return `${workspaceId}.${collection}.${rowId}.${field}` as Guid;
 };
-
-/**
- * Recover the `rowId` segment from a {@link docGuid}. Read from the right: the
- * grammar's three trailing segments (`collection`, `rowId`, `field`) are
- * dot-free, so `rowId` is always the second-to-last segment regardless of the
- * workspace id. Used by the runtime to map a body's local edit back to its row.
- *
- * @internal Inverse of {@link docGuid}; the grammar stays owned by this module.
- */
-export const docGuidRowId = (guid: Guid): string => {
-	const segments = guid.split('.');
-	return segments[segments.length - 2] ?? '';
-};

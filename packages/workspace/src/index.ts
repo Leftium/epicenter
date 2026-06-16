@@ -110,7 +110,6 @@ export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
 export { type ConnectionConfig, connectDoc } from './document/connect-doc.js';
-export { createChildDocs } from './document/create-child-docs.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export {

@@ -191,11 +191,6 @@ const permissions = {
 	},
 };
 
-// window ------------------------------------------------------------
-const window = {
-	setAlwaysOnTop: (value: boolean) => getCurrentWindow().setAlwaysOnTop(value),
-};
-
 // tray --------------------------------------------------------------
 const TrayError = defineErrors({
 	SetIcon: ({ cause }: { cause: unknown }) => ({
@@ -415,7 +410,6 @@ const media = {
 export const tauriOnly = {
 	fs,
 	permissions,
-	window,
 	tray,
 	globalShortcuts,
 	autostart,

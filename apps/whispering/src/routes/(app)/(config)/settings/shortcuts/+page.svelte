@@ -17,7 +17,7 @@
 	import {
 		resetGlobalShortcuts,
 		resetLocalShortcuts,
-	} from '$routes/(app)/_layout-utils/register-commands';
+	} from '$routes/(app)/_runtime/register-commands';
 	import GlobalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte';
 	import ShortcutFormatHelp from './keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';

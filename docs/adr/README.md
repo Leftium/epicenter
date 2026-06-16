@@ -22,6 +22,11 @@ accepted ADR, the ADR wins.
 - **Status is one of:** `Proposed`, `Accepted`, `Superseded`.
 - **Decisions are born from specs but do not live there.** When a design pass
   settles something durable, harvest it into an ADR and let the spec be deleted.
+- **`Proposed` is a transient state.** Record a decision as `Proposed` when it
+  crystallizes during design; flip it to `Accepted` when the work lands. A
+  `Proposed` ADR that no in-tree spec references means its spec was deleted (the
+  work landed): flip it, or supersede it if abandoned. `bun
+  scripts/check-doc-hygiene.mjs` flags orphaned and stale `Proposed` ADRs.
 
 ## Numbering
 

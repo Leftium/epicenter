@@ -58,7 +58,7 @@ Before planning waves, make sure the spec has a current execution path.
 
 Check:
 
-- Status: Draft, In Progress, Implemented, Superseded, or Retrospective.
+- Status: Draft or In Progress. A spec is in-flight; "done" is deletion, not a terminal status (see `specs/README.md`).
 - Supersession: whether the top of the spec points to a newer spec.
 - One Sentence: what the spec is actually about.
 - Current State and Target Shape: enough concrete code, routes, types, or file paths to start.
@@ -216,7 +216,11 @@ After all waves complete:
    landed, `git rm` the spec. Git keeps the body and `docs/spec-history.md` indexes
    it by date, so nothing is lost. Do not leave a finished spec in the tree as a
    knowledge base; that is the pollution this workflow exists to prevent.
-4. **Final commit or final amend/squash** that includes the new or updated ADR and
+4. **Verify hygiene.** Run `bun scripts/check-doc-hygiene.mjs`. It must pass: no
+   spec left in the tree declaring a terminal status, no `Proposed` ADR orphaned by
+   a deleted spec. A failure means the harvest is incomplete; fix it (flip the ADR,
+   delete the spec) rather than committing the smell.
+5. **Final commit or final amend/squash** that includes the new or updated ADR and
    the spec deletion, matching the commit strategy chosen earlier.
 
 The durable "why" now lives in the ADR; the "what landed" narrative belongs in the
@@ -311,4 +315,5 @@ After all waves:
 - [ ] Run `post-implementation-review` on touched files
 - [ ] Harvest durable decisions into `docs/adr/` (new ADR, or flip a `Proposed` one to `Accepted`)
 - [ ] Delete the spent spec (`git rm`; git and `docs/spec-history.md` keep the history)
+- [ ] Run `bun scripts/check-doc-hygiene.mjs` (must pass)
 - [ ] Finalize commits (ADR + spec deletion) using the chosen strategy

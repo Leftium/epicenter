@@ -151,7 +151,7 @@ A spec is an execution spine, not a file whitelist.
 # [Feature Name]
 
 **Date**: [YYYY-MM-DD]
-**Status**: Draft | In Progress | Implemented | Superseded | Retrospective
+**Status**: Draft | In Progress
 **Owner**: [Name/team responsible for decisions]
 **Branch**: [optional: branch name if work has started]
 **Supersedes**: [optional: previous spec paths]

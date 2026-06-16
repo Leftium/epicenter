@@ -55,8 +55,8 @@ export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
 const conversationsTable = defineTable({
 	id: field.string<ConversationId>(),
 	title: field.string(),
-	createdAt: field.number(),
-	updatedAt: field.number(),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
 }).docs({ messages: attachChatTranscript });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 

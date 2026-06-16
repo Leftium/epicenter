@@ -22,7 +22,7 @@
 	import { APP_URLS } from '@epicenter/constants/vite';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
-	import { generateId } from '@epicenter/workspace';
+	import { generateId, InstantString } from '@epicenter/workspace';
 	import {
 		findActiveChatDocGeneration,
 		type ChatDocMessage,
@@ -171,7 +171,7 @@
 			// the conversations list table, and a completed reply only lands while
 			// this requester is alive, so the requester owns the list-recency bump.
 			zhongwen.tables.conversations.update(conversationId, {
-				updatedAt: Date.now(),
+				updatedAt: InstantString.now(),
 			});
 		} catch (err) {
 			if (!controller.signal.aborted) {
@@ -197,7 +197,7 @@
 		const title = readRow()?.title;
 		zhongwen.tables.conversations.update(conversationId, {
 			title: title === 'New Chat' ? text.slice(0, 50) : title,
-			updatedAt: Date.now(),
+			updatedAt: InstantString.now(),
 		});
 		void kickoffGeneration();
 	}

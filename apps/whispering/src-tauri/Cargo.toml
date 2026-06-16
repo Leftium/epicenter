@@ -78,6 +78,12 @@ tauri-plugin-log = "2"
 
 [target.'cfg(windows)'.dependencies]
 transcribe-rs = { version = "=0.3.8", features = ["whisper-vulkan", "ort-directml"] }
+# System media pause/resume via GSMTC (`Windows.Media.Control`). `Foundation`
+# pulls in the async types (and `windows-future`, whose `IAsyncOperation::join()`
+# is how we block on WinRT ops); `Foundation_Collections` lets us iterate
+# `GetSessions()`; `Win32_System_Com` provides the `CoInitializeEx` the crate
+# does not call for us. See src/media/windows.rs.
+windows = { version = "0.62", features = ["Media_Control", "Foundation", "Foundation_Collections", "Win32_System_Com"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-metal", "onnx", "ort-coreml"] }

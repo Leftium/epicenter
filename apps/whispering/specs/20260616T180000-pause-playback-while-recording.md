@@ -40,7 +40,12 @@ Grounding (DeepWiki + web, 2026-06-16) confirmed every platform verdict:
   > (`media/macos.rs`). The `PausedSession` opaque token crosses IPC as a plain
   > `String` (named in code, no newtype) to avoid specta newtype edge cases.
   > `media.rs` is now a thin per-OS dispatch boundary; impls live in `media/<os>.rs`.
-- [ ] **Wave 2** — Windows GSMTC
+- [x] **Wave 2** — Windows GSMTC (`media/windows.rs`, `windows` crate 0.62.2).
+  Verified by isolating the module in a throwaway crate and
+  `cargo check --target x86_64-pc-windows-gnu` (the only way to compile-verify
+  Windows code on a macOS host; the full crate can't cross-check because
+  transcribe-rs's Windows build scripts don't run on darwin). COM init runs on a
+  freshly spawned MTA thread; async ops resolved with `join()`.
 - [ ] **Wave 3** — Linux zbus MPRIS
 - [ ] **Wave 4** — macOS MediaRemote Tier 2, delete AppleScript
 

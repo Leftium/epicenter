@@ -145,6 +145,18 @@ describe('checkReferences', () => {
 		expect(report.findings).toEqual([]);
 	});
 
+	test('an empty-string reference value is "no reference present", not UNRESOLVED', () => {
+		// `page: ""` conforms as OK (present, non-null), but it carries no pointer to resolve.
+		// Referential integrity only resolves present pointers; whether empty is ALLOWED is a
+		// conformance / minLength question, so this pass adds nothing.
+		const report = checkReferences([
+			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
+			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\npage: ""\n---' }]),
+		]);
+
+		expect(report.findings).toEqual([]);
+	});
+
 	test('a target row with its own conformance issues still satisfies a reference', () => {
 		// The page row is missing its required `title`, so it needs attention — but the FILE
 		// exists, so the reference to its stem resolves.

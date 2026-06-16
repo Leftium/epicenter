@@ -28,8 +28,9 @@
  *                   in it: a dangling pointer, reported per offending cell.
  */
 
-import { type Field, REFERENCE_KEYWORD } from '@epicenter/field';
+import { referenceTargetOf } from '@epicenter/field';
 import type { FolderRead } from '../core/folder';
+import { stemOf } from '../core/parse';
 
 /** A folder loaded for cross-folder reference checking, keyed by its table name. */
 export type LoadedFolder = {
@@ -71,20 +72,6 @@ export type ReferenceReport = {
 	version: 1;
 	findings: ReferenceFinding[];
 };
-
-/** A row's identity: its file stem (basename without `.md`), the form a reference value takes. */
-function stemOf(fileName: string): string {
-	return fileName.endsWith('.md') ? fileName.slice(0, -3) : fileName;
-}
-
-/**
- * The table a field points at, read from its `x-ref` marker, or `null` when the field is not
- * a reference. The one place the marker is read off a loaded field, shared by the validator
- * and any consumer that renders references (so neither re-narrows the union by hand).
- */
-export function referenceTargetOf(field: Field): string | null {
-	return field.kind === 'reference' ? field.schema[REFERENCE_KEYWORD] : null;
-}
 
 /**
  * Validate every reference VALUE against the rows of its target folder. Pure over a set of
@@ -130,6 +117,11 @@ export function checkReferences(
 				if (cell?.state !== 'OK') continue;
 				const value = cell.value;
 				if (typeof value !== 'string') continue; // reference compiles as string; defensive
+				// An empty value carries no pointer to resolve: referential integrity asks whether
+				// a PRESENT pointer resolves, while whether emptiness is ALLOWED is a conformance /
+				// minLength question. So an empty reference is "no reference present" here, never
+				// UNRESOLVED — which also keeps reference value-validation identical to string.
+				if (value.length === 0) continue;
 				if (targetStems.has(value)) continue;
 				findings.push({
 					kind: 'UNRESOLVED',

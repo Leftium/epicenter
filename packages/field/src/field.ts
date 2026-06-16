@@ -335,6 +335,22 @@ export type FieldOf<K extends Kind> = {
 export type Field = { [K in Kind]: FieldOf<K> }[Kind];
 
 /**
+ * The table a recognized field points at, read from its {@link REFERENCE_KEYWORD} marker,
+ * or `null` when the field is not a reference. The ONE place the marker is read off a
+ * loaded {@link Field}, so every consumer (the row-level validator, a relation widget, a
+ * grid) recovers a reference target the same way instead of re-narrowing the union and
+ * indexing the marker by hand. The `kind === 'reference'` guard narrows `schema` to the
+ * reference meta, whose `[REFERENCE_KEYWORD]` is a required string, so no cast is needed.
+ *
+ * This reads a field AFTER recognition. The schema-level floor in `@epicenter/workspace`
+ * reads the marker off a raw `TSchema` BEFORE recognition (and sees through `nullable`),
+ * a genuinely different input, so the two readers stay separate.
+ */
+export function referenceTargetOf(field: Field): string | null {
+	return field.kind === 'reference' ? field.schema[REFERENCE_KEYWORD] : null;
+}
+
+/**
  * The one classifier: the recognized field (kind + typed schema) whose closed meta
  * matches `schema`, or `null` when `schema` is outside the palette (the rejection lane
  * that degrades a field to raw). One pass over the metas, no gate to forget and no

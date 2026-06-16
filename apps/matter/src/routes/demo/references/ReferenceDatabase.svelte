@@ -1,13 +1,14 @@
 <script lang="ts">
+	import { referenceTargetOf } from '@epicenter/field';
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Table from '@epicenter/ui/table';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import Link2Icon from '@lucide/svelte/icons/link-2';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import UnlinkIcon from '@lucide/svelte/icons/unlink';
-	import { referenceTargetOf } from '$lib/check/references';
 	import type { Cell } from '$lib/core/conformance';
 	import type { FolderRead } from '$lib/core/folder';
+	import { stemOf } from '$lib/core/parse';
 	import type { ReferenceCell } from './references-demo.svelte';
 
 	// One folder rendered as a Notion-like database: reference columns become relation chips,
@@ -30,11 +31,6 @@
 	} = $props();
 
 	const view = $derived(read.view);
-
-	/** The file stem (no `.md`): a row's identity, shown as its id like Notion's title cell. */
-	function stemOf(fileName: string): string {
-		return fileName.endsWith('.md') ? fileName.slice(0, -3) : fileName;
-	}
 </script>
 
 <!-- A non-reference cell: just enough kinds to read the table; not the full grid editor. -->

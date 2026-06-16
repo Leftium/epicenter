@@ -11,14 +11,14 @@
  * is gone." It mirrors checking one folder of a vault in isolation.
  */
 
+import { referenceTargetOf } from '@epicenter/field';
 import {
 	checkReferences,
 	type LoadedFolder,
 	type ReferenceReport,
-	referenceTargetOf,
 } from '$lib/check/references';
-import { type FolderRead, readFolder } from '$lib/core/folder';
-import type { Row } from '$lib/core/parse';
+import { readFolder } from '$lib/core/folder';
+import { type Row, stemOf } from '$lib/core/parse';
 import { REFERENCE_FIXTURES } from './references-fixtures';
 
 /** The resolution verdict for one reference cell, carrying what the UI needs to render it. */
@@ -27,14 +27,6 @@ export type ReferenceCell =
 	| { kind: 'dangling'; target: string; value: string }
 	| { kind: 'missing-target'; target: string; value: string }
 	| { kind: 'empty'; target: string };
-
-/** One loaded table plus its name, ready to render. */
-export type ReferenceTable = { table: string; read: FolderRead };
-
-/** A row's stem: its basename without `.md`, the form a reference value takes. */
-function stemOf(fileName: string): string {
-	return fileName.endsWith('.md') ? fileName.slice(0, -3) : fileName;
-}
 
 export function createReferencesDemo() {
 	// Drop `pages` to demonstrate MISSING_TARGET live; on by default so the happy path shows.
@@ -123,7 +115,7 @@ export function createReferencesDemo() {
 	});
 
 	return {
-		get folders(): ReferenceTable[] {
+		get folders(): LoadedFolder[] {
 			return folders;
 		},
 		get report(): ReferenceReport {

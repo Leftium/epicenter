@@ -19,6 +19,7 @@ export {
 	type Field,
 	type FieldOf,
 	type Kind,
+	REFERENCE_KEYWORD,
 	recognize,
 	storageOf,
 } from './field';

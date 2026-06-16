@@ -86,6 +86,21 @@ const CLOSED = { additionalProperties: false } as const;
 export const JSON_SCHEMA_KEYWORD = 'x-json-schema';
 
 /**
+ * The `reference` kind's discriminator: a marker keyword whose VALUE is the name of the
+ * table this column points at. Like {@link JSON_SCHEMA_KEYWORD} it is a non-standard
+ * keyword, so `Value.Check` and `Schema.Compile` ignore it: a reference cell validates as a
+ * plain string (the row stem / id), while `recognize` reads the marker to classify the
+ * column as `reference` and to recover its target. The closed scalar metas forbid it via
+ * `additionalProperties:false`, so the marker can only ever land on the `reference` kind,
+ * which is what keeps `reference` mutually exclusive with the bare `string` kind: a plain
+ * string carries no marker (so it is never a reference) and a reference always carries one
+ * (so it is never a bare string). The target resolves WITHIN one substrate (a sibling
+ * Matter folder / a workspace table key); cross-mount links are the `epicenter://` scheme,
+ * not this keyword.
+ */
+export const REFERENCE_KEYWORD = 'x-ref';
+
+/**
  * Bucket 3: ANNOTATIONS. Inert standard metadata, whitelisted into EVERY closed meta
  * (identically, so it can never affect discrimination) so carrying one does not open
  * the shape. Held to the keys with a real authoring path into a field: `title` /
@@ -218,6 +233,26 @@ const FIELDS = {
 		storage: 'TEXT',
 		meta: Type.Object(
 			{ type: Type.Literal('string'), ...STRING_REFINE, ...ANNOT },
+			CLOSED,
+		),
+	},
+	reference: {
+		storage: 'TEXT',
+		// A cross-row pointer: a string VALUE (the target row's stem / id) plus the
+		// REFERENCE_KEYWORD marker carrying the target TABLE name. Closed and string-typed,
+		// so it stores, materializes, and value-validates exactly like `string` (the marker
+		// is invisible to `Value.Check`); the REQUIRED marker is the only thing separating it
+		// from `string`, which is what makes the two mutually exclusive (string forbids the
+		// marker via CLOSED, reference requires it). The string refinements ride along so an
+		// upgraded `{type:'string',minLength:1}` field keeps its constraint when it gains the
+		// marker.
+		meta: Type.Object(
+			{
+				type: Type.Literal('string'),
+				[REFERENCE_KEYWORD]: Type.String({ minLength: 1 }),
+				...STRING_REFINE,
+				...ANNOT,
+			},
 			CLOSED,
 		),
 	},

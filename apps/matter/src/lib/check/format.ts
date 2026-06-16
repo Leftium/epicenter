@@ -61,6 +61,8 @@ function formatExpected(expected: ExpectedValue): string {
 			return `array containing one of ${valuesText(expected.values)}`;
 		case 'json':
 			return 'JSON matching the field schema';
+		case 'reference':
+			return 'reference';
 		default:
 			return expected satisfies never;
 	}

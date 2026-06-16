@@ -38,6 +38,7 @@ function describeExpected(field: Field): ExpectedValue {
 		case 'boolean':
 		case 'tags':
 		case 'json':
+		case 'reference':
 			return { kind: field.kind };
 		default:
 			return field satisfies never;

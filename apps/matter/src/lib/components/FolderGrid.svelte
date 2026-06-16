@@ -109,6 +109,7 @@
 	// width here, the same exhaustiveness gate the widget registry carries.
 	const COLUMN_WIDTH = {
 		string: 'w-56',
+		reference: 'w-56',
 		url: 'w-56',
 		date: 'w-32',
 		instant: 'w-44',

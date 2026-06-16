@@ -25,13 +25,6 @@ export function getDomain(url: string): string {
 }
 
 /**
- * Compare canonical UTC instants with newest first.
- */
-export function compareInstantDesc(a: InstantString, b: InstantString): number {
-	return b.localeCompare(a);
-}
-
-/**
  * Format a timestamp as a human-readable relative time string.
  *
  * @example

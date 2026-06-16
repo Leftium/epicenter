@@ -16,7 +16,6 @@ import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
-import { compareInstantDesc } from '$lib/utils/format';
 import type { Bookmark, BookmarkId } from '$lib/workspace/definition';
 
 export function createBookmarkState(tabManager: TabManagerBrowser) {
@@ -25,7 +24,7 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
 		[...bookmarksMap.values()].sort((a, b) =>
-			compareInstantDesc(a.createdAt, b.createdAt),
+			b.createdAt.localeCompare(a.createdAt),
 		),
 	);
 

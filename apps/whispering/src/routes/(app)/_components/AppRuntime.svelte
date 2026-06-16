@@ -40,7 +40,7 @@
 		resetLocalShortcutsToDefaultIfDuplicates,
 		syncGlobalShortcutsWithSettings,
 		syncLocalShortcutsWithSettings,
-	} from '../_runtime/register-commands';
+	} from '$lib/operations/shortcuts';
 	import { registerOnboarding } from '../_runtime/register-onboarding';
 	import { syncIconWithRecorderState } from '../_runtime/syncIconWithRecorderState.svelte';
 

@@ -1,10 +1,7 @@
-# Epicenter: machine state and generated mount projections.
-# Everything here is regenerable from the Yjs persistence under .epicenter/.
+# Epicenter machine state, regenerable from the Yjs persistence under it.
+# The Markdown projection (entries/) is tracked on purpose: it is the file
+# output you keep and version.
 .epicenter/
-
-# Generated mount projections are direct children of the Epicenter root,
-# keyed by mount name. Ignore them while keeping epicenter.config.ts tracked.
-/fuji/
 
 # Bun / Node
 node_modules/

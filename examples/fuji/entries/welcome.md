@@ -26,7 +26,7 @@ SQLite projections update.
 
 This fixture is a committed markdown projection for a Fuji mount:
 
-- `epicenter.config.ts` is the Epicenter root marker and default-exports the mount list.
+- `epicenter.config.ts` is the Epicenter root marker and default-exports the mount.
 - `entries/` (this directory) holds the markdown projection.
 - `.epicenter/` is the runtime cache (gitignored).
 

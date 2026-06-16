@@ -497,9 +497,10 @@ export type TableDefinitions = Record<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Build a `TableDefinition` from a list of versions and the migrate function.
- * Called by `defineTable`; exposed for future codegen helpers that need to
- * assemble a definition directly.
+ * Assemble a {@link DeclarableTableDefinition} from resolved versions and a
+ * migrate function: the runtime core of {@link defineTable}, kept beside the
+ * definition types it builds. `defineTable` (a sibling module) is the only
+ * caller, which is the sole reason this is exported rather than module-private.
  *
  * @internal
  */

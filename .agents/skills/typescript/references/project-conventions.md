@@ -57,12 +57,12 @@ Detailed examples for the baseline TypeScript rules used across Epicenter.
   `docs/articles/copied-types-are-boundary-leaks.md` for the full review
   pattern.
 
-- **Compose types upward, never subtract-and-replace**: Build a richer type by
-  intersecting a base with additive members, not by `Omit`-ing a field and
-  re-adding it under a new type. `Omit<Base, 'k'> & { k: U }` is the
-  structural-typing equivalent of overriding an inherited field; writing it in
-  two sibling types is copy-paste override. Define the smaller shape first, then
-  grow it.
+- **Compose types upward from a named base**: When you author a type, reach for
+  a base you can name and grow with `Base & Extra`, not a wider type you carve
+  with `Omit<Base, 'k'> & { k: U }`. An `Omit<...> &` in your own type is the
+  structural-typing form of overriding an inherited field: it is the tell that a
+  smaller base wants a name. Repeating that carve across sibling types is
+  copy-paste override.
 
   ```typescript
   // Bad: the same retype is subtracted and re-added in both types.
@@ -84,32 +84,28 @@ Detailed examples for the baseline TypeScript rules used across Epicenter.
   };
   ```
 
-  The single surviving `Omit` sits where the field genuinely changes type; every
-  richer shape builds on top of it, so Go to Definition chains to one source and
-  a future change to that retype lands in one place.
+  The one surviving `Omit` sits where the field genuinely changes type; every
+  richer shape intersects on top, so Go to Definition chains to a single source
+  and a later change to the retype lands in one place.
 
-  The same principle inverts for *removing* a capability. A builder that must be
-  called at most once should return a base type that never declared the method,
-  so a second call is a compile error instead of a silent overwrite. Reach for
-  the base type, not `Omit<Self, 'method'>`.
+  The same instinct narrows, not just extends. To expose a smaller surface (a
+  read-only view of a writable record, a builder you may call only once), return
+  the base type that never had the extra member, so dropping it is a type fact
+  rather than a runtime hope. Return the base, never `Omit<Self, 'member'>`.
 
   ```typescript
-  // Bad: childDocs returns the same type, so it chains forever; a second
-  // call silently replaces the first declaration.
-  type Table = {
-    childDocs(decls: ChildDocDecls): Table;
-  };
+  // Bad: the method returns its own type, so it chains forever and a second
+  // call silently overwrites the first.
+  type Builder = { step(x: Input): Builder };
 
-  // Good: build up from a base that has no childDocs, then add it once.
-  // Calling it hands back the base, so the method is gone afterward.
-  type Table = { /* schema, migrate, ... no childDocs */ };
-  type ChildDocCapableTable = Table & {
-    childDocs(decls: ChildDocDecls): Table;
-  };
-  function defineTable(): ChildDocCapableTable { /* ... */ }
+  // Good: the method returns the base, which never had it. The capability is
+  // spent after one call, so a second call is a compile error.
+  type Base = { /* ...everything except step */ };
+  type Builder = Base & { step(x: Input): Base };
 
-  defineTable().childDocs(a);            // ok
-  defineTable().childDocs(a).childDocs(b); // compile error: childDocs is gone
+  declare const builder: Builder;
+  builder.step(a);          // ok
+  builder.step(a).step(b);  // compile error: step is gone after the first call
   ```
 
 - Always use `type` instead of `interface` in TypeScript.

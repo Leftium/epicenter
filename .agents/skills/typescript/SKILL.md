@@ -24,7 +24,7 @@ Use this skill when you need to:
 
 - Try to derive or import a type before declaring a new named type. New named types must earn their place as a real contract, protocol vocabulary, discriminated result union, capability port, or multi-implementation shape.
 - Treat local shape copies as boundary smells. Prefer the owning runtime type, schema inference, factory return type, function signature, or a caller-owned capability function.
-- Compose types upward: intersect a base with additive members (`Base & Extra`), never subtract-and-replace (`Omit<Base, 'k'> & { k: U }`). Re-omitting a field to retype it is structural override; repeating that across two types is copy-paste override. Define the smaller shape first, then grow it. To *remove* a capability (a call-once builder that must not chain twice), return a base type that never declared the method, not `Omit<Self, 'method'>`. See [project conventions](references/project-conventions.md).
+- Compose types upward from a named base: extend with `Base & Extra`, never subtract-and-replace with `Omit<Base, 'k'> & { k: U }`. An `Omit<...> &` in a type you author is structural override; it is the tell that a smaller base wants a name. To narrow a surface, return that base rather than `Omit`-ing a member away. See [project conventions](references/project-conventions.md).
 - Use `type`, not `interface`.
 - Use `readonly` only for arrays and maps, unless matching an upstream type exactly.
 - Treat acronyms as normal words in camelCase: `parseUrl`, `defineKv`, `readJson`, `customerId`.

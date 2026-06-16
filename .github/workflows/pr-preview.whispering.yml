@@ -39,6 +39,7 @@ on:
       - 'apps/whispering/src-tauri/**'
       - 'apps/whispering/**/Cargo.toml'
       - 'apps/whispering/**/Cargo.lock'
+      - 'apps/whispering/vite.config.ts'
       - '.github/workflows/pr-preview.whispering.yml'
       - '.github/actions/setup-whispering-build/**'
       - '.github/actions/process-whispering-appimage/**'

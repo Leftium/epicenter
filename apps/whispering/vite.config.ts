@@ -45,10 +45,11 @@ export default defineConfig(
 		],
 		// onnxruntime-web (pulled in by @ricky0123/vad-web) ships a WASM glue
 		// .mjs that Vite's dep optimizer can't pre-bundle (it 404s on
-		// .vite/deps/ort-wasm-simd-threaded.mjs). Exclude both so they load
-		// natively; their runtime assets are served from /vad/ (see above).
+		// .vite/deps/ort-wasm-simd-threaded.mjs). Keep that package and its wasm
+		// subpath native, but still prebundle vad-web so Vite converts its
+		// CommonJS entry to ESM for browser dev mode.
 		optimizeDeps: {
-			exclude: ['onnxruntime-web', '@ricky0123/vad-web'],
+			exclude: ['onnxruntime-web', 'onnxruntime-web/wasm'],
 		},
 		resolve: {
 			// Build-time platform DI. Each `#platform/*` subpath (package.json

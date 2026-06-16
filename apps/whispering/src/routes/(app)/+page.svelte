@@ -30,6 +30,10 @@
 		RECORDING_TRIGGER_OPTIONS,
 		type RecordingTrigger,
 	} from '$lib/constants/audio';
+	import {
+		IMPORTABLE_AUDIO_EXTENSIONS,
+		IMPORTABLE_VIDEO_EXTENSIONS,
+	} from '$lib/constants/import-formats';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
 	import { keyBindingToLabel } from '$lib/utils/key-binding';
 	import { os } from '#platform/os';
@@ -85,28 +89,6 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	const AUDIO_EXTENSIONS = [
-		'mp3',
-		'wav',
-		'm4a',
-		'aac',
-		'ogg',
-		'flac',
-		'wma',
-		'opus',
-	] as const;
-
-	const VIDEO_EXTENSIONS = [
-		'mp4',
-		'avi',
-		'mov',
-		'wmv',
-		'flv',
-		'mkv',
-		'webm',
-		'm4v',
-	] as const;
-
 	// Store unlisten function for drag drop events
 	let unlistenDragDrop: UnlistenFn | undefined;
 
@@ -119,12 +101,12 @@
 				const { extname } = await import('@tauri-apps/api/path');
 
 				const isAudio = async (path: string) =>
-					AUDIO_EXTENSIONS.includes(
-						(await extname(path)) as (typeof AUDIO_EXTENSIONS)[number],
+					IMPORTABLE_AUDIO_EXTENSIONS.includes(
+						(await extname(path)) as (typeof IMPORTABLE_AUDIO_EXTENSIONS)[number],
 					);
 				const isVideo = async (path: string) =>
-					VIDEO_EXTENSIONS.includes(
-						(await extname(path)) as (typeof VIDEO_EXTENSIONS)[number],
+					IMPORTABLE_VIDEO_EXTENSIONS.includes(
+						(await extname(path)) as (typeof IMPORTABLE_VIDEO_EXTENSIONS)[number],
 					);
 
 				unlistenDragDrop = await getCurrentWebview().onDragDropEvent(

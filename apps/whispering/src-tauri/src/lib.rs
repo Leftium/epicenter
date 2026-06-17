@@ -17,8 +17,8 @@ use recorder::recorder::Recorder;
 pub mod transcription;
 use transcription::{
     delete_model_entry, download_model, get_transcription_state, link_local_model,
-    list_model_entries, resolve_model_file_sizes, reveal_models_folder, set_transcription_config,
-    transcribe_recording, ModelManager, ModelStateEvent,
+    list_model_entries, resolve_model_file_sizes, reveal_models_folder, set_unload_policy,
+    transcribe_recording, ModelCache, ModelStateEvent,
 };
 
 pub mod command;
@@ -62,7 +62,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             clear_recording_artifacts,
             transcribe_recording,
             open_accessibility_settings,
-            set_transcription_config,
+            set_unload_policy,
             get_transcription_state,
             link_local_model,
             list_model_entries,
@@ -242,13 +242,13 @@ pub async fn run() {
             // the generated `events` listeners (FE) resolve the same names.
             specta_builder.mount_events(app);
 
-            // ModelManager owns an `AppHandle` for emitting model lifecycle
+            // ModelCache owns an `AppHandle` for emitting model lifecycle
             // events, so it cannot be constructed at builder-time (no app handle
             // exists yet). Move construction into setup; everything that needs it
-            // reads via `app.state::<ModelManager>()`.
-            let manager = ModelManager::new(app.handle().clone());
-            manager.start_idle_watcher();
-            app.manage(manager);
+            // reads via `app.state::<ModelCache>()`.
+            let cache = ModelCache::new(app.handle().clone());
+            cache.start_idle_watcher();
+            app.manage(cache);
 
             // Desktop global keyboard trigger backend. Constructing it spawns a
             // supervisor that owns the tap's whole lifecycle: it gates spawning

@@ -27,7 +27,7 @@ use crate::download::{stream_to_file, DownloadManager, DownloadProgress};
 
 use super::config::Engine;
 use super::model_import::{unlink_symlink, WHISPER_EXTENSIONS};
-use super::model_manager::{engine_models_path, is_contained_entry_name};
+use super::model_cache::{engine_models_path, is_contained_entry_name};
 
 #[derive(Error, Debug, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "name")]

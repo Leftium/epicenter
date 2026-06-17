@@ -20,7 +20,7 @@ use tauri::AppHandle;
 use thiserror::Error;
 
 use super::config::Engine;
-use super::model_manager::{engine_models_path, is_contained_entry_name, parse_moonshine_variant};
+use super::model_cache::{engine_models_path, is_contained_entry_name, parse_moonshine_variant};
 
 /// Extensions a Whisper model file may carry. The single source of truth for
 /// the listing filter (`model_folder::list_model_entries`) and import-time

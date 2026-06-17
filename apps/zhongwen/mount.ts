@@ -7,30 +7,22 @@
  * one child-doc actor: an always-on observe loop (ADR-0012/0013) over the
  * `conversations.messages` transcripts. Registering the field is all the app
  * declares; the table, the guid, and the layout come from the schema. The
- * factory is the behavior seam, filled here with observe -> answer -> stream ->
- * finish plus the durable cancel.
+ * factory is the behavior seam, and it hands each hosted transcript to
+ * `attachChatActor`, the backend-agnostic append loop in
+ * `@epicenter/workspace/ai`.
  *
- * The actor reconciles the unanswered turn (`findUnansweredTurn`): it appends
- * the assistant message keyed to the turn's client-minted `generationId` (an
- * existence check, not a lock), streams a FAKE placeholder reply into its
- * `Y.Text`, and writes a write-once `finish`. No HTTP, no `room.sync` forwarding
- * (the connected body persists and syncs itself), no duplicate stream.
- *
- * V0.4 adds the durable cancel: the client stamps `cancelRequestedAt` on its own
- * turn, and the actor reads it back (mid-stream, or before it could start) and
- * writes `finish: cancelled`. That read-back is the departure from the
- * snapshot-once HTTP actor in `doc-generation.ts`. Real provider/local inference
- * lands in V0.5 behind `startStream`; the append loop stays the same.
+ * The actor is parameterized by a `ChatStream`
+ * (`startStream(messages) => AsyncIterable<StreamChunk>`), the one contract every
+ * inference backend speaks. V0 injects {@link fakeChatStream}, a deterministic
+ * placeholder reply; real cloud or local inference is a one-argument swap (V0.5),
+ * once the daemon has an inference path. The actor itself observes -> answers ->
+ * streams -> finishes and honors the client's durable cancel, all over hosted
+ * sync with no HTTP and no duplicate stream.
  */
 
-import type { ChildDocActorHandle } from '@epicenter/workspace';
-import {
-	appendAssistantMessage,
-	attachChatTranscript,
-	findUnansweredTurn,
-} from '@epicenter/workspace/ai';
+import { attachChatActor, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
-import type * as Y from 'yjs';
+import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { zhongwenWorkspace } from './zhongwen.js';
 
 export type ZhongwenMountOptions = {
@@ -47,133 +39,33 @@ export function zhongwen({ baseURL }: ZhongwenMountOptions = {}) {
 		runtime: nodeMountRuntime(),
 		actors: {
 			conversations: {
-				messages: ({ handle, ydoc }) => createChatActor(handle, ydoc),
+				messages: ({ handle, ydoc }) =>
+					attachChatActor({ handle, ydoc, startStream: fakeChatStream }),
 			},
 		},
 	});
 }
 
-/** The transcript handle the `conversations.messages` layout hands the actor. */
-type ChatTranscript = ReturnType<typeof attachChatTranscript>;
-
-/** The assistant-message writer the actor streams a single turn through. */
-type AssistantWriter = ReturnType<typeof appendAssistantMessage>;
-
-/** The state one in-flight generation carries: enough to cancel it durably. */
-type InFlightGeneration = {
-	generationId: string;
-	controller: AbortController;
-	writer: AssistantWriter;
-};
-
 /**
- * The per-conversation child-doc actor: observe -> answer -> stream -> finish,
- * honoring the durable cancel.
- *
- * `onChange` fires once per transcript transaction (a new user turn, our own
- * token appends, a finish write, the client's cancel stamp). The doc itself is
- * the lock, so the only in-memory state is the in-flight generation:
- *
- *  - the answerable turn (`findUnansweredTurn`) carries the client-minted
- *    `generationId` that names the assistant answer it awaits, doubling as that
- *    answer's message id; appending the assistant map keyed to that id IS the
- *    existence-based claim, so a re-entrant fire short-circuits;
- *  - a recent unfinished assistant turn serialises generations, so a second user
- *    turn that arrives mid-stream waits until the finish write wakes us again;
- *  - the client owns `cancelRequestedAt` on its own turn. We read it back: a
- *    mid-stream cancel aborts the live stream and writes `finish: cancelled`; a
- *    turn already cancelled before we could start is claimed and finished
- *    cancelled without streaming.
- *
- * The abort also covers teardown (the row removed, or a daemon shutdown),
- * stopping the loop before the body is destroyed; that path skips the finish,
- * leaving an interrupted artifact the client can retry.
+ * A deterministic placeholder {@link ChatStream}: stream a fixed reply one
+ * text-delta per word so the claim -> stream -> finish path is exercised end to
+ * end without a provider. Real inference (a TanStack cloud adapter or a local
+ * backend) is the same contract, so V0.5 swaps this argument and the append loop
+ * is untouched.
  */
-function createChatActor(
-	handle: ChatTranscript,
-	ydoc: Y.Doc,
-): ChildDocActorHandle {
-	let inFlight: InFlightGeneration | undefined;
-
-	function stop(): void {
-		inFlight?.controller.abort();
-		inFlight = undefined;
-	}
-
-	return {
-		onChange() {
-			const messages = handle.read();
-			const now = Date.now();
-
-			// Durable cancel, mid-stream: if the live generation's turn now carries
-			// a client cancel stamp, abort the stream and write the cancelled finish.
-			// This runs before the answer path so it is reached even while the
-			// existence-based claim would otherwise short-circuit us.
-			if (inFlight) {
-				const turn = messages.find(
-					(message) =>
-						message.role === 'user' &&
-						message.generationId === inFlight?.generationId,
-				);
-				if (turn?.cancelRequestedAt !== undefined) {
-					inFlight.writer.finish({ kind: 'cancelled' });
-					stop();
-					return;
-				}
-			}
-
-			const turn = findUnansweredTurn(messages, now);
-			if (!turn) return;
-
-			// Claim synchronously: this append commits before `onChange` returns, so
-			// a re-entrant fire sees the id and `findUnansweredTurn` stops it.
-			const writer = appendAssistantMessage(ydoc, {
-				id: turn.generationId,
-				createdAt: now,
-			});
-
-			// Durable cancel, pre-stream: the turn was cancelled before we could
-			// claim it. Record the cancelled finish and do not stream.
-			if (turn.cancelRequestedAt !== undefined) {
-				writer.finish({ kind: 'cancelled' });
-				return;
-			}
-
-			const controller = new AbortController();
-			inFlight = { generationId: turn.generationId, controller, writer };
-			void streamFakeReply(writer, turn.text, controller.signal).finally(() => {
-				if (inFlight?.controller === controller) inFlight = undefined;
-			});
-		},
-		[Symbol.dispose]() {
-			// Stop an in-flight stream before the body is torn down.
-			inFlight?.controller.abort();
-		},
-	};
-}
-
-/**
- * Stream a deterministic placeholder reply into the assistant `Y.Text`, one
- * token append per word, then write a write-once `completed` finish.
- *
- * A teardown abort stops the loop and skips the finish, leaving an interrupted
- * artifact the client can retry once it ages past the active-generation window,
- * exactly as an evicted worker would. Real provider/local inference replaces
- * this in V0.5 behind the `startStream(messages) => AsyncIterable<StreamChunk>`
- * contract; the append loop stays the same.
- */
-async function streamFakeReply(
-	writer: ReturnType<typeof appendAssistantMessage>,
-	userText: string,
-	signal: AbortSignal,
-): Promise<void> {
+const fakeChatStream: ChatStream = async function* (
+	messages: ModelMessage[],
+): AsyncGenerator<StreamChunk> {
+	const userText = String(messages.at(-1)?.content ?? '');
 	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on actor; real inference lands in V0.5.`;
 	for (const token of reply.match(/\S+\s*/g) ?? [reply]) {
-		if (signal.aborted) return;
-		writer.appendText(token);
+		yield {
+			type: EventType.TEXT_MESSAGE_CONTENT,
+			messageId: 'fake',
+			delta: token,
+		} as StreamChunk;
 		// Yield between tokens so each append is its own synced transaction and a
-		// teardown abort can land between them.
+		// teardown or cancel abort can land between them.
 		await Promise.resolve();
 	}
-	if (!signal.aborted) writer.finish({ kind: 'completed' });
-}
+};

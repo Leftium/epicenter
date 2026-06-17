@@ -28,6 +28,7 @@
  * raw Y types.
  */
 
+import type { ModelMessage } from '@tanstack/ai';
 import * as Y from 'yjs';
 
 /**
@@ -304,6 +305,20 @@ export function findUnansweredTurn(
 	// A recent unfinished assistant turn is still live; let it finish first.
 	if (findActiveChatDocGeneration(messages, now)) return undefined;
 	return turn as AnswerableTurn;
+}
+
+/**
+ * Snapshot the transcript as a provider prompt. Empty messages (an interrupted
+ * assistant turn that never received a token) carry no signal and are dropped.
+ * The transcript module owns this conversion because it owns the message shape;
+ * both the actor and the HTTP generation path freeze their prompt this way.
+ */
+export function chatDocToPrompt(
+	messages: readonly ChatDocMessage[],
+): ModelMessage[] {
+	return messages
+		.filter((message) => message.text.length > 0)
+		.map((message) => ({ role: message.role, content: message.text }));
 }
 
 /**

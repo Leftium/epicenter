@@ -1,3 +1,4 @@
+export { attachChatActor, type ChatStream } from './chat-actor';
 export {
 	type AnswerableTurn,
 	appendAssistantMessage,
@@ -6,6 +7,7 @@ export {
 	CHAT_DOC_ACTIVE_GENERATION_WINDOW_MS,
 	type ChatDocFinish,
 	type ChatDocMessage,
+	chatDocToPrompt,
 	findActiveChatDocGeneration,
 	findLatestUserTurn,
 	findUnansweredTurn,

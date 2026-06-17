@@ -53,7 +53,7 @@ V1 done when: a phone requests a mutation, the actor proposes the effect, the ph
 
 ### V2: research only (parallel; does not block V0/V1)
 
-- [ ] **V2.R** Write `specs/<new-ts>-v2-coding-actor-sandbox-and-harness.md`. No product code. Use WebSearch + DeepWiki and cite every claim. Answer: (1) sandbox choice (OpenHands swappable-workspace vs E2B/Modal/Daytona vs Docker; must mount ONLY the daemon socket + read-only mirror); (2) harness (verify pi / Codex / Claude Code / Hermes RPC + per-tool approval hook; recommend the embeddable default + adapter shape); (3) local inference behind the `startStream` contract. `commit:`
+- [x] **V2.R** Write `specs/<new-ts>-v2-coding-actor-sandbox-and-harness.md`. No product code. Use WebSearch + DeepWiki and cite every claim. Answer: (1) sandbox choice (OpenHands swappable-workspace vs E2B/Modal/Daytona vs Docker; must mount ONLY the daemon socket + read-only mirror); (2) harness (verify pi / Codex / Claude Code / Hermes RPC + per-tool approval hook; recommend the embeddable default + adapter shape); (3) local inference behind the `startStream` contract. `commit:` written as `specs/20260617T235900-v2-coding-actor-sandbox-and-harness.md` from the completed workflow research (the synthesis agent 529'd, so the spec was authored from the three research blocks directly, every claim cited). Decisions: (1) OpenHands-style swappable sandbox = local process default + rootless Docker, managed microVMs rejected as the foundation; (2) pi embedded in-process as the default harness, adapter contract named in ACP's shape so Codex/Claude Code/Hermes are each one binding; (3) Ollama first via `@tanstack/ai-ollama`, `openaiCompatible({ baseURL })` the universal fallback. 8 open questions recorded, O1 (does the action surface have a socket transport yet) flagged as the linchpin.
 
 ## Collapse Ledger (greenfield collapses; each rides the slice that touches its surface)
 
@@ -303,4 +303,22 @@ D3 (V0.5 GATE; surfaced by the 2026-06-17 adversarial review)
             still pass (untouched). V0.5 stays UNTICKED: the real-provider swap
             (D2-resolved: direct chat() with a daemon key) and D3 sequencing
             remain.
+2026-06-17  Post-C3 review collapse (af2f00930): re-reading C3, the chat actor
+            took both a `handle` view and the `ydoc` it wraps, reading through
+            the handle but writing through the raw doc. It is a doc-level writer
+            like the server, not a layout consumer, so it now takes only `ydoc`
+            and reads with readChatDocMessages(ydoc); dropped the redundant param
+            and the ChatTranscriptReader one-method type. Also merged the
+            byte-identical mid-stream-cancel and superseded-orphan guards into one
+            (turn === undefined || cancelRequestedAt !== undefined). workspace +
+            zhongwen typecheck clean, actor suite green.
+2026-06-17  V2.R DONE: wrote specs/20260617T235900-v2-coding-actor-sandbox-and-
+            harness.md from the completed workflow research (synthesis 529'd, so
+            authored from the three research blocks, every claim cited). Sandbox =
+            OpenHands swappable (local default + rootless Docker; managed microVMs
+            rejected as the foundation). Harness = pi in-process default, adapter
+            contract in ACP's shape. Inference = Ollama via @tanstack/ai-ollama
+            first, openaiCompatible({ baseURL }) the universal fallback. 8 open
+            questions; O1 (action-surface socket transport) is the linchpin. No
+            product code. doc-hygiene clean.
 ```

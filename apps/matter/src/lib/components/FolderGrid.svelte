@@ -24,13 +24,12 @@
 	import ReferenceVerdictIndicator from './ReferenceVerdict.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
 
-	// The grid renders from any {@link TableView}: the live disk table or the
-	// in-memory demo table, injected by the route. The narrow getters are bound once
-	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
-	// table swap (open another folder) flows through these derivations.
-	// `filter` is the tab's WHERE filter (the live table provides one; the demo does not).
-	// The grid renders its input in the header and narrows rows to the names it matched;
-	// `undefined` (no filter, or an empty clause) means show every row.
+	// The grid renders from a {@link TableView} (the slice of a live table the grid is allowed to
+	// touch), injected by the active TablePane. The narrow getters are bound once here so the
+	// template reads `read` / `folder` / `onSave*` directly, and a table swap (switch tables in the
+	// vault) flows through these derivations.
+	// `filter` is the tab's WHERE filter. The grid renders its input in the header and narrows rows
+	// to the names it matched; `undefined` (no filter, or an empty clause) means show every row.
 	// `assessment` is THIS table's place in the vault's integrity: it carries the cross-table
 	// reference verdicts (resolved / dangling / missing-target) the conformance `Cell` cannot
 	// know on its own. Optional, so a table rendered outside a vault simply shows no chips.

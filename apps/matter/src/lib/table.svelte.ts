@@ -309,12 +309,10 @@ export type TableHandle = ReturnType<typeof createTable>;
 
 /**
  * The slice of a {@link TableHandle} the grid renders from: the folder name, the
- * classified read, and the two save commands. This is the dependency boundary
- * `FolderGrid` depends on, NOT the full table handle, so anything that can produce a
- * classified folder and accept edits can drive the grid. The live table satisfies
- * it for free (it is a `Pick` of it); the demo table satisfies it WITHOUT faking
- * the disk lifecycle (`whenReady` / `dispose` / `path`), so the demo is an honest
- * drop-in rather than a table pretending to watch a folder.
+ * classified read, and the two save commands. This is the narrow dependency boundary
+ * `FolderGrid` depends on, NOT the full table handle, so the grid cannot reach the
+ * watcher lifecycle (`whenReady` / `dispose` / `path` / `mirrorVersion`) it has no
+ * business touching, and a `Pick` of the live handle satisfies it for free.
  */
 export type TableView = Pick<
 	TableHandle,

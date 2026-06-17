@@ -92,7 +92,7 @@ export function parseMarkdown(
  * A row's identity in reference form: its basename without the `.md` extension, the
  * exact string an author writes in frontmatter (`page: become-the-source`). The ONE
  * definition of stem-from-name, so the reference validator, the live grid, and the
- * demo all read identity the same way instead of each re-slicing the extension.
+ * report layer all read identity the same way instead of each re-slicing the extension.
  */
 export function stemOf(fileName: string): string {
 	return fileName.endsWith('.md') ? fileName.slice(0, -3) : fileName;

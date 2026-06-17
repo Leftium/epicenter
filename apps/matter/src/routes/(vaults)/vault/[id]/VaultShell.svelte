@@ -3,9 +3,9 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import LayersIcon from '@lucide/svelte/icons/layers';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { matterNavigation } from '$lib/matter-navigation';
-	import { TABLE_PARAM } from '$lib/routes';
+	import { routes, TABLE_PARAM } from '$lib/routes';
 	import { createVault } from '$lib/vault.svelte';
 	import IntegrityPanel from './IntegrityPanel.svelte';
 	import TablePane from './TablePane.svelte';
@@ -68,7 +68,15 @@
 					{@const active = activeTable?.folderName === table.folderName}
 					<button
 						type="button"
-						onclick={() => matterNavigation.showTable(table.folderName)}
+						onclick={() =>
+							goto(routes.table(table.folderName), {
+								// A table switch is a render selection, not navigation: replaceState so
+								// each click doesn't stack a history entry, keepFocus/noScroll so the
+								// switcher stays put and the grid doesn't jump.
+								replaceState: true,
+								keepFocus: true,
+								noScroll: true,
+							})}
 						class={[
 							'shrink-0 rounded-md px-2.5 py-1 text-sm transition',
 							active

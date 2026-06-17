@@ -20,9 +20,10 @@
  */
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
 import { basename } from '$lib/core/path';
-import { matterNavigation } from '$lib/matter-navigation';
+import { routes } from '$lib/routes';
 
 /** One open vault as persisted: an opaque id, the absolute vault-root path, its basename label. */
 export type OpenVault = { id: string; root: string; folderName: string };
@@ -90,7 +91,7 @@ function createOpenVaults() {
 		if (root === null) return;
 		const existing = vaults.find((vault) => vault.root === root);
 		if (existing) {
-			await matterNavigation.openVault(existing.id);
+			await goto(routes.vault(existing.id));
 			return;
 		}
 		// Opaque, URL-safe, collision-free: the URL carries this, not the raw path (paths
@@ -102,7 +103,7 @@ function createOpenVaults() {
 		};
 		vaults = [...vaults, vault];
 		persist();
-		await matterNavigation.openVault(vault.id);
+		await goto(routes.vault(vault.id));
 	}
 
 	/**

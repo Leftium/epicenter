@@ -2,8 +2,8 @@
 	import { Button } from '@epicenter/ui/button';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { matterNavigation } from '$lib/matter-navigation';
 	import { openVaults } from '$lib/open-vaults.svelte';
 	import { routes } from '$lib/routes';
 
@@ -21,9 +21,7 @@
 		if (!wasActive) return;
 		const remaining = openVaults.list;
 		const next = remaining[index] ?? remaining[index - 1];
-		await (next
-			? matterNavigation.openVault(next.id)
-			: matterNavigation.openOnboarding());
+		await (next ? goto(routes.vault(next.id)) : goto(routes.home()));
 	}
 </script>
 

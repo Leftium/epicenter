@@ -19,10 +19,8 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import { assess, type VaultIntegrity } from './core/integrity';
+import { basename } from './core/path';
 import { createTable, type TableHandle } from './table.svelte';
-
-/** The vault root's own folder name (its basename), for the tab label. */
-const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
 /**
  * Open `root` as a live vault. Synchronous and IO-free: the table set starts empty and fills from
@@ -30,7 +28,7 @@ const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
  * listing and no list-then-watch gap (the Rust side arms before its seed scan).
  */
 export function createVault(root: string) {
-	const vaultName = basename(root);
+	const folderName = basename(root);
 
 	// child folder path -> its live Table. The membership snapshot from `watch_vault` reconciles
 	// this map; the `tables` getter sorts by name so the switcher and integrity read a stable
@@ -108,7 +106,7 @@ export function createVault(root: string) {
 	}
 
 	return {
-		vaultName,
+		folderName,
 		root,
 		whenReady,
 		dispose,

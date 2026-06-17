@@ -22,14 +22,12 @@
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
+import { basename } from '$lib/core/path';
 
 /** One open vault as persisted: an opaque id, the absolute vault-root path, its basename label. */
 export type OpenVault = { id: string; root: string; folderName: string };
 
 const STORAGE_KEY = 'matter.open-vaults';
-
-/** A folder's basename (the tab label). Per-file paths stay Rust's; this is folder-level. */
-const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
 /** Prompt for a folder; `null` if the dialog was cancelled. */
 async function openFolderDialog(): Promise<string | null> {

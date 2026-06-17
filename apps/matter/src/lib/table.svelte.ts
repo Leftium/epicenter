@@ -41,10 +41,8 @@ import {
 } from './core/table';
 import { parseEntry, type Row } from './core/parse';
 import { editBody, editField } from './core/serialize';
+import { basename } from './core/path';
 import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
-
-/** The table's own folder name (its basename). Per-file paths are Rust's. */
-const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
 /**
  * Open `path` as a live table. Synchronous and IO-free: the store starts empty

@@ -36,14 +36,14 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
 	{#await vault.whenReady}
-		<Loading class="flex-1" label="Loading {vault.vaultName}" />
+		<Loading class="flex-1" label="Loading {vault.folderName}" />
 	{:then _}
 		{#if vault.tables.length === 0}
 			<Empty.Root class="flex-1 border-0">
 				<Empty.Media variant="icon"><LayersIcon /></Empty.Media>
 				<Empty.Title>No tables yet</Empty.Title>
 				<Empty.Description>
-					{vault.vaultName} has no table folders. Add a folder of markdown to it and it appears here.
+					{vault.folderName} has no table folders. Add a folder of markdown to it and it appears here.
 				</Empty.Description>
 			</Empty.Root>
 		{:else}
@@ -74,7 +74,7 @@
 	{:catch error}
 		<Empty.Root class="flex-1 border-0">
 			<Empty.Media variant="icon"><FolderOpenIcon /></Empty.Media>
-			<Empty.Title>Couldn't open {vault.vaultName}</Empty.Title>
+			<Empty.Title>Couldn't open {vault.folderName}</Empty.Title>
 			<Empty.Description>
 				{error instanceof Error ? error.message : String(error)}
 			</Empty.Description>

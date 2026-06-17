@@ -43,6 +43,11 @@ export function createVault(root: string) {
 	 * an unrelated change (a loose file written at the root) churns nothing.
 	 */
 	function reconcile(paths: string[]): void {
+		// A membership snapshot can still arrive after dispose (the seed, or a debounced batch
+		// already in flight when the tab closed): ignore it, or it would arm a fresh per-folder
+		// watch with nothing left to dispose it. Mirrors the same `disposed` guard the watch-id
+		// path below already honors.
+		if (disposed) return;
 		const incoming = new Set(paths);
 		for (const [path, table] of tables) {
 			if (incoming.has(path)) continue;

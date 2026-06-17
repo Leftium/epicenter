@@ -40,8 +40,8 @@ export function zhongwen({ baseURL }: ZhongwenMountOptions = {}) {
 		runtime: nodeMountRuntime(),
 		actors: {
 			conversations: {
-				messages: ({ handle, ydoc }) =>
-					attachChatActor({ handle, ydoc, startStream: fakeChatStream }),
+				messages: ({ ydoc }) =>
+					attachChatActor({ ydoc, startStream: fakeChatStream }),
 			},
 		},
 	});

@@ -56,7 +56,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 function setup(startStream: ChatStream) {
 	const doc = new Y.Doc({ guid: 'chat-actor-test' });
 	const transcript = attachChatTranscript(doc);
-	const actor = attachChatActor({ handle: transcript, ydoc: doc, startStream });
+	const actor = attachChatActor({ ydoc: doc, startStream });
 	return { doc, transcript, actor };
 }
 

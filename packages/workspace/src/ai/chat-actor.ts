@@ -55,9 +55,9 @@ import type * as Y from 'yjs';
 import type { ChildDocActorHandle } from '../document/child-doc-actor.js';
 import {
 	appendAssistantMessage,
-	type ChatDocMessage,
 	chatDocToPrompt,
 	findUnansweredTurn,
+	readChatDocMessages,
 } from './chat-doc.js';
 
 /** Cap for provider error text persisted into the doc; details go to logs. */
@@ -82,9 +82,6 @@ export type ChatStream = (
 	signal: AbortSignal,
 ) => AsyncIterable<StreamChunk>;
 
-/** The transcript reads the actor needs: a snapshot of the messages. */
-type ChatTranscriptReader = { read(): ChatDocMessage[] };
-
 /** One in-flight generation: enough to cancel it durably. */
 type InFlightGeneration = {
 	generationId: string;
@@ -94,16 +91,17 @@ type InFlightGeneration = {
 
 /**
  * Build the per-body chat actor for one hosted transcript child doc. Pass the
- * field's declared layout handle, the body `Y.Doc`, and the inference backend as
- * a {@link ChatStream}. The returned handle is what a mount's child-doc actor
- * factory yields.
+ * body `Y.Doc` and the inference backend as a {@link ChatStream}. Like the server
+ * generation path, the actor is a doc-level writer: it reads the transcript with
+ * `readChatDocMessages` and appends the assistant message with
+ * `appendAssistantMessage`, both directly over the `ydoc` (the layout handle
+ * exposes only the client's user-message writer, never the assistant one). The
+ * returned handle is what a mount's child-doc actor factory yields.
  */
 export function attachChatActor({
-	handle,
 	ydoc,
 	startStream,
 }: {
-	handle: ChatTranscriptReader;
 	ydoc: Y.Doc;
 	startStream: ChatStream;
 }): ChildDocActorHandle {
@@ -116,7 +114,7 @@ export function attachChatActor({
 
 	return {
 		onChange() {
-			const messages = handle.read();
+			const messages = readChatDocMessages(ydoc);
 			const now = Date.now();
 
 			// Durable cancel, mid-stream: if the live generation's turn now carries a
@@ -129,18 +127,14 @@ export function attachChatActor({
 						message.role === 'user' &&
 						message.generationId === inFlight?.generationId,
 				);
-				// Durable cancel, mid-stream.
-				if (turn?.cancelRequestedAt !== undefined) {
-					inFlight.writer.finish({ kind: 'cancelled' });
-					stop();
-					return;
-				}
-				// Superseded: the turn we are answering was re-pointed (a retry
-				// re-mints its generationId) or removed, so this stream is stale.
-				// Finish it cancelled so it stops counting as a recent unfinished
-				// generation, then stop; the re-pointed turn is claimed on the next
-				// observe.
-				if (turn === undefined) {
+				// Stop the in-flight stream cancelled if its turn was cancelled by the
+				// client (durable cancel, mid-stream) or superseded: the turn we are
+				// answering was re-pointed (a retry re-mints its generationId) or
+				// removed, so this stream is stale. Finishing it cancelled stops it
+				// counting as a recent unfinished generation; the re-pointed turn is
+				// then claimed on the next observe. This runs before the answer path so
+				// it is reached even while the existence-based claim would short-circuit.
+				if (turn === undefined || turn.cancelRequestedAt !== undefined) {
 					inFlight.writer.finish({ kind: 'cancelled' });
 					stop();
 					return;

@@ -1,12 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import {
-		ACCEPT_AUDIO,
-		ACCEPT_VIDEO,
-		FileDropZone,
-		MEGABYTE,
-	} from '@epicenter/ui/file-drop-zone';
+	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
@@ -37,7 +32,12 @@
 		stopManualRecording,
 		stopVadRecording,
 	} from '$lib/operations/recording';
-	import { uploadRecordings } from '$lib/operations/upload';
+	import {
+		MAX_UPLOAD_FILES,
+		MAX_UPLOAD_FILE_SIZE,
+		UPLOAD_ACCEPT,
+		uploadRecordings,
+	} from '$lib/operations/upload';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
@@ -48,18 +48,13 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
-	import HeroMark from './_components/HeroMark.svelte';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
-	// A capture session is live when manual is recording or VAD is armed; the
-	// hero mark breathes while it is.
-	const isCapturing = $derived(
-		manualRecorder.state === 'RECORDING' || vadRecorder.state !== 'IDLE',
-	);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness());
 	// The recording shortcut that actually fires on this platform, via the
 	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
@@ -247,14 +242,16 @@
 <div
 	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
 >
-	<SectionHeader.Root class="flex flex-col items-center gap-4">
-		<HeroMark live={isCapturing} class="size-16" />
-		<SectionHeader.Title
-			level={1}
-			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
-		>
-			Whispering
-		</SectionHeader.Title>
+	<SectionHeader.Root class="flex flex-col items-center gap-3">
+		<div class="flex items-center gap-3">
+			<img src={studioMicrophone} alt="" class="size-12" />
+			<SectionHeader.Title
+				level={1}
+				class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
+			>
+				Whispering
+			</SectionHeader.Title>
+		</div>
 		<SectionHeader.Description class="text-center">
 			Press shortcut → speak → get text. Free and open source ❤️
 		</SectionHeader.Description>
@@ -332,9 +329,9 @@
 		{:else if settings.get('recording.mode') === 'upload'}
 			<div class="flex flex-col items-center gap-4 w-full">
 				<FileDropZone
-					accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
-					maxFiles={10}
-					maxFileSize={25 * MEGABYTE}
+					accept={UPLOAD_ACCEPT}
+					maxFiles={MAX_UPLOAD_FILES}
+					maxFileSize={MAX_UPLOAD_FILE_SIZE}
 					onUpload={async (files) => {
 						if (files.length > 0) {
 							await uploadRecordings({ files });

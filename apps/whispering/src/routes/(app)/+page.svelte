@@ -49,7 +49,7 @@
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
-	import MacosAccessibilityNotice from '$lib/components/MacosAccessibilityNotice.svelte';
+	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
@@ -62,13 +62,12 @@
 	const manualShortcutLabel = $derived(getRecordingShortcutLabel('manual'));
 	const vadShortcutLabel = $derived(getRecordingShortcutLabel('vad'));
 	// On desktop the taught gesture is the global rdev tap, so it only fires when
-	// macOS Accessibility is granted. When it is not, we still show the key (so the
-	// user learns it) but dim it; the `MacosAccessibilityNotice` above carries the
-	// fix. This reads the same capability fact the notice does, so the two always
-	// agree. Always false on the browser, where the in-app shortcut needs no grant.
-	const shortcutNeedsAccessibility = $derived(
-		dictationCapability.needsAccessibility,
-	);
+	// the capability is `active`. When it can't (macOS Accessibility ungranted or
+	// stale, or Linux Wayland), we still show the key so the user learns it, but dim
+	// it; the `DictationCapabilityNotice` above carries the fix. This reads the same
+	// capability fact the notice does, so the two always agree. Always false on the
+	// browser, where the in-app shortcut needs no grant.
+	const shortcutUnavailable = $derived(dictationCapability.isUnavailable);
 
 	const PageError = defineErrors({
 		DragDropListenerFailed: ({ cause }: { cause: unknown }) => ({
@@ -262,7 +261,7 @@
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
-	<MacosAccessibilityNotice />
+	<DictationCapabilityNotice />
 
 	{#if !transcriptionReadiness.isReady}
 		<div class="w-full">
@@ -407,7 +406,7 @@
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root class={shortcutNeedsAccessibility ? 'opacity-50' : undefined}
+							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
 								>{manualShortcutLabel}</Kbd.Root>
 						</Link>{/if}
 					to start recording{tauri ? ' from anywhere' : ''}.
@@ -420,7 +419,7 @@
 							tooltip="Configure the voice activation shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root class={shortcutNeedsAccessibility ? 'opacity-50' : undefined}
+							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
 								>{vadShortcutLabel}</Kbd.Root>
 						</Link>{/if}
 					to start a voice activated session.
@@ -433,7 +432,7 @@
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root class={shortcutNeedsAccessibility ? 'opacity-50' : undefined}
+							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
 								>{manualShortcutLabel}</Kbd.Root>
 						</Link>
 						to start recording instead.

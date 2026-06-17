@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { cn } from '@epicenter/ui/utils';
-	import RecordingMark from '$lib/components/icons/RecordingMark.svelte';
+	import studioMicrophone from '$lib/assets/studio-microphone.png';
 
-	// The brand mark made the recording signature: while a capture session is
-	// live, a breathing ring and soft glow pulse in the recording red. The motion
-	// rides a wrapper around the mark, not the mark itself, so the studio-mic
-	// image never stretches or tints (the rings and glow carry the red via
-	// `currentColor`) and there is no layout shift (everything pulsing is
-	// absolutely positioned). Presentational only; the page owns what "live"
-	// means.
+	// The studio-mic identity mark made the recording signature: while a capture
+	// session is live, a breathing ring and soft glow pulse in the recording red.
+	// The motion rides this wrapper, not the image, so the mark never stretches or
+	// tints (the rings and glow carry the red via `currentColor`) and there is no
+	// layout shift (everything pulsing is absolutely positioned). Presentational
+	// only; the page owns what "live" means.
 	let { live = false, class: className }: { live?: boolean; class?: string } =
 		$props();
 </script>
@@ -25,7 +24,7 @@
 		<span class="ring" aria-hidden="true"></span>
 		<span class="ring ring-late" aria-hidden="true"></span>
 	{/if}
-	<RecordingMark class="relative size-full" />
+	<img src={studioMicrophone} alt="" class="relative size-full" />
 </span>
 
 <style>

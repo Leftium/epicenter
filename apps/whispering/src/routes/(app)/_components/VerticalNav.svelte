@@ -6,7 +6,7 @@
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
-	import RecordingMark from '$lib/components/icons/RecordingMark.svelte';
+	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
 
 	const sidebar = useSidebar();
@@ -25,7 +25,7 @@
 							<div
 								class="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-lg"
 							>
-								<RecordingMark class="size-4" />
+								<img src={studioMicrophone} alt="" class="size-4" />
 							</div>
 							<div
 								class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"

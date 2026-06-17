@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { basename } from '$lib/core/path';
 	import type { PageData } from './$types';
 	import VaultShell from './VaultShell.svelte';
 
 	let { data }: { data: PageData } = $props();
 </script>
 
-<svelte:head><title>Matter / {data.folderName}</title></svelte:head>
+<svelte:head><title>Matter / {basename(data.root)}</title></svelte:head>
 
 <!-- SvelteKit reuses this component across `[id]` changes, so key the live vault on its
      root: a new key tears down the old VaultShell (its root watch and every composed table

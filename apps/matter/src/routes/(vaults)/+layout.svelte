@@ -4,6 +4,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { basename } from '$lib/core/path';
 	import { openVaults } from '$lib/open-vaults.svelte';
 	import { routes } from '$lib/routes';
 
@@ -40,12 +41,12 @@
 					class="max-w-48 truncate py-1 pl-2.5 pr-1"
 					title={vault.root}
 				>
-					{vault.folderName}
+					{basename(vault.root)}
 				</a>
 				<button
 					type="button"
 					onclick={() => closeTab(vault.id)}
-					aria-label="Close {vault.folderName}"
+					aria-label="Close {basename(vault.root)}"
 					class="mr-1 rounded-sm p-0.5 text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
 				>
 					<XIcon class="size-3.5" />

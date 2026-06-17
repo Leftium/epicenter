@@ -4,9 +4,11 @@
  * Multi-vault state is split three ways, and this file owns only the durable slice.
  * WHICH vault is active lives in the URL (`/vault/[id]`); the LIVE watcher lives in
  * the route component (construct on mount, dispose on destroy). All that is left is
- * WHICH vault roots are open: a small persisted list of `{ id, root, folderName }` that
- * survives relaunch so the tabs come back. The `id` is opaque and URL-safe so the
- * route can carry it; `/vault/[id]` resolves it back to a `root` via {@link get}.
+ * WHICH vault roots are open: a small persisted list of `{ id, root }` that survives
+ * relaunch so the tabs come back. The `id` is opaque and URL-safe so the route can carry
+ * it; `/vault/[id]` resolves it back to a `root` via {@link get}. The tab LABEL is not
+ * stored: it is `basename(root)`, derived where it renders, so there is no cached copy to
+ * keep in sync with the path.
  *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
  * drove its lifetime, this holds only the list of tabs and the open/close actions.
@@ -22,11 +24,11 @@
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
-import { basename } from '$lib/core/path';
 import { routes } from '$lib/routes';
 
-/** One open vault as persisted: an opaque id, the absolute vault-root path, its basename label. */
-export type OpenVault = { id: string; root: string; folderName: string };
+/** One open vault as persisted: an opaque id and the absolute vault-root path. The tab label is
+ *  `basename(root)`, derived at render, not stored. */
+export type OpenVault = { id: string; root: string };
 
 const STORAGE_KEY = 'matter.open-vaults';
 
@@ -52,8 +54,7 @@ function isOpenVaultList(value: unknown): value is OpenVault[] {
 				typeof entry === 'object' &&
 				entry !== null &&
 				typeof (entry as OpenVault).id === 'string' &&
-				typeof (entry as OpenVault).root === 'string' &&
-				typeof (entry as OpenVault).folderName === 'string',
+				typeof (entry as OpenVault).root === 'string',
 		)
 	);
 }
@@ -99,7 +100,6 @@ function createOpenVaults() {
 		const vault: OpenVault = {
 			id: crypto.randomUUID(),
 			root,
-			folderName: basename(root),
 		};
 		vaults = [...vaults, vault];
 		persist();

@@ -3,8 +3,8 @@ import {
 	IMPORTABLE_AUDIO_EXTENSIONS,
 	IMPORTABLE_MIME_PREFIXES,
 	IMPORTABLE_VIDEO_EXTENSIONS,
-	MAX_IMPORT_FILES,
 	MAX_IMPORT_FILE_SIZE,
+	MAX_IMPORT_FILES,
 } from '$lib/constants/import-formats';
 import { analytics } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';

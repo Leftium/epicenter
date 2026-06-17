@@ -4,13 +4,19 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import FolderGrid from '$lib/components/FolderGrid.svelte';
+	import type { TableAssessment } from '$lib/core/integrity';
 	import type { TableHandle } from '$lib/table.svelte';
 	import { createWhereFilter } from '$lib/where-filter.svelte';
 
 	// One table of the active vault. The Vault constructs and disposes the table (it owns the
 	// watcher lifetime); this pane just renders it. VaultShell keys this component on the active
 	// table, so switching tables remounts the pane with a fresh filter and its own effect.
-	let { table }: { table: TableHandle } = $props();
+	// `assessment` is this table's slice of the vault's live integrity, carrying the cross-table
+	// reference verdicts the grid colors its chips by.
+	let {
+		table,
+		assessment,
+	}: { table: TableHandle; assessment?: TableAssessment } = $props();
 
 	// One WHERE filter per pane: it takes the table at construction and owns its own effect
 	// (re-querying on a clause or mirror change, cancelling stale runs). The remount-per-table
@@ -30,7 +36,7 @@
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
-		<FolderGrid {table} {filter} />
+		<FolderGrid {table} {filter} {assessment} />
 	{:catch error}
 		<Empty.Root class="flex-1 border-0">
 			<Empty.Media variant="icon"><FolderOpenIcon /></Empty.Media>

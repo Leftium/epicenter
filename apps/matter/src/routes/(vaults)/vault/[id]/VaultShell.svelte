@@ -24,6 +24,14 @@
 		vault.tables.find((table) => table.folderName === activeName) ??
 			vault.tables[0],
 	);
+
+	// The active table's slice of the vault-wide integrity: the same assessed cells the panel
+	// reads, so the grid's reference chips and the panel's findings agree by construction.
+	const activeAssessment = $derived(
+		vault.integrity.tables.find(
+			(table) => table.name === activeTable?.folderName,
+		),
+	);
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
@@ -58,7 +66,7 @@
 			</div>
 			{#if activeTable}
 				{#key activeTable}
-					<TablePane table={activeTable} />
+					<TablePane table={activeTable} assessment={activeAssessment} />
 				{/key}
 			{/if}
 			<IntegrityPanel integrity={vault.integrity} />

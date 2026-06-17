@@ -14,9 +14,14 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
 	import type { Cell } from '$lib/core/conformance';
+	import type {
+		ReferenceVerdict,
+		TableAssessment,
+	} from '$lib/core/integrity';
 	import type { TableView } from '$lib/table.svelte';
 	import type { WhereFilter } from '$lib/where-filter.svelte';
 	import ModeledCell from './ModeledCell.svelte';
+	import ReferenceVerdictIndicator from './ReferenceVerdict.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
 
 	// The grid renders from any {@link TableView}: the live disk table or the
@@ -26,7 +31,47 @@
 	// `filter` is the tab's WHERE filter (the live table provides one; the demo does not).
 	// The grid renders its input in the header and narrows rows to the names it matched;
 	// `undefined` (no filter, or an empty clause) means show every row.
-	let { table, filter }: { table: TableView; filter?: WhereFilter } = $props();
+	// `assessment` is THIS table's place in the vault's integrity: it carries the cross-table
+	// reference verdicts (resolved / dangling / missing-target) the conformance `Cell` cannot
+	// know on its own. Optional, so a table rendered outside a vault simply shows no chips.
+	let {
+		table,
+		filter,
+		assessment,
+	}: {
+		table: TableView;
+		filter?: WhereFilter;
+		assessment?: TableAssessment;
+	} = $props();
+
+	// fileName -> field name -> the reference verdict for that cell, built once per assessment.
+	// Only present, valid pointers land here (the three reference-only states); a missing or
+	// invalid reference value has no verdict and renders through the ordinary editor.
+	const referenceVerdicts = $derived.by(() => {
+		const byFile = new Map<string, Map<string, ReferenceVerdict>>();
+		if (assessment?.status !== 'modeled') return byFile;
+		for (const { row, cells } of assessment.rows) {
+			const byField = new Map<string, ReferenceVerdict>();
+			for (const cell of cells) {
+				if (
+					cell.state === 'resolved' ||
+					cell.state === 'dangling' ||
+					cell.state === 'missing-target'
+				) {
+					byField.set(cell.field.name, cell);
+				}
+			}
+			if (byField.size > 0) byFile.set(row.fileName, byField);
+		}
+		return byFile;
+	});
+
+	function verdictFor(
+		fileName: string,
+		fieldName: string,
+	): ReferenceVerdict | undefined {
+		return referenceVerdicts.get(fileName)?.get(fieldName);
+	}
 
 	// The file names the WHERE clause matched, or undefined when no clause is active.
 	const matchedFileNames = $derived(filter?.matchedFileNames);
@@ -190,6 +235,18 @@
 	{:else}
 		<span class="block truncate">{String(value)}</span>
 	{/if}
+{/snippet}
+
+<!-- The editable cell widget, shared by the plain path and the reference-adorned path so the two
+     never drift. The reference path wraps this with a verdict indicator; everything else renders
+     it bare. -->
+{#snippet cellEditor(cell: Cell, fileName: string)}
+	<ModeledCell
+		{cell}
+		mode="grid"
+		save={(value) => onSaveField(fileName, cell.field.name, value)}
+		clear={() => onSaveField(fileName, cell.field.name, undefined)}
+	/>
 {/snippet}
 
 {#snippet rowFilterItem(
@@ -448,6 +505,7 @@
 									</div>
 								</Table.Cell>
 								{#each conf.cells as cell (cell.field.name)}
+									{@const verdict = verdictFor(conf.row.fileName, cell.field.name)}
 									<Table.Cell
 										aria-invalid={cell.state === 'INVALID' || cell.state === 'MISSING_REQUIRED'}
 										class={[
@@ -455,12 +513,16 @@
 											cellStateClass(cell.state),
 										]}
 									>
-										<ModeledCell
-											{cell}
-											mode="grid"
-											save={(value) => onSaveField(conf.row.fileName, cell.field.name, value)}
-											clear={() => onSaveField(conf.row.fileName, cell.field.name, undefined)}
-										/>
+										{#if verdict}
+											<div class="flex items-center gap-1.5">
+												<ReferenceVerdictIndicator {verdict} />
+												<div class="min-w-0 flex-1">
+													{@render cellEditor(cell, conf.row.fileName)}
+												</div>
+											</div>
+										{:else}
+											{@render cellEditor(cell, conf.row.fileName)}
+										{/if}
 									</Table.Cell>
 								{/each}
 							</Table.Row>

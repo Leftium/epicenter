@@ -53,9 +53,26 @@ export type AssessedCell =
 	| { field: Field; state: 'missing-required' }
 	| { field: Field; state: 'missing-optional' }
 	| { field: Field; state: 'invalid'; raw: unknown }
-	| { field: Field; state: 'resolved'; value: string; target: string; targetRow: Row }
+	| {
+			field: Field;
+			state: 'resolved';
+			value: string;
+			target: string;
+			targetRow: Row;
+	  }
 	| { field: Field; state: 'dangling'; value: string; target: string }
 	| { field: Field; state: 'missing-target'; value: string; target: string };
+
+/**
+ * The cross-table verdict of a present, valid reference cell: the three reference-only states a
+ * widget colors a chip by. `resolved` carries the target {@link Row} so the chip needs no second
+ * lookup. The absent / invalid reference states are NOT here; they are the shared conformance
+ * states a non-reference cell also has, rendered by the ordinary editor.
+ */
+export type ReferenceVerdict = Extract<
+	AssessedCell,
+	{ state: 'resolved' | 'dangling' | 'missing-target' }
+>;
 
 /** A row classified against its table's model: the widened cells plus its untyped extras. */
 export type RowAssessment = {
@@ -85,7 +102,12 @@ export type TableAssessment =
 	| { name: string; status: 'unreadable'; message: string }
 	| { name: string; status: 'invalid-contract'; message: string }
 	| { name: string; status: 'unmodeled'; rows: Row[]; columns: string[] }
-	| { name: string; status: 'modeled'; model: MatterModel; rows: RowAssessment[] };
+	| {
+			name: string;
+			status: 'modeled';
+			model: MatterModel;
+			rows: RowAssessment[];
+	  };
 
 /**
  * The one composed structure: every table's assessment, in input order. Deliberately NOT

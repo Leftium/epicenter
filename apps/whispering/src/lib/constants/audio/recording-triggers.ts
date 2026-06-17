@@ -16,29 +16,22 @@ export type RecordingTrigger = (typeof RECORDING_TRIGGERS)[number];
 
 /**
  * Everything that varies per trigger, defined once. `satisfies Record<...>`
- * forces every field present for every trigger at compile time, and `as const`
- * keeps each `toggleCommandId` a literal so consumers get a real command id,
- * not a widened `string`.
+ * forces every field present for every trigger at compile time.
  *
  * - `label` / `emoji`: the compact label and glyph for the settings dropdown.
  * - `Icon`: the full-size lucide icon for prominent surfaces (the homepage
  *   trigger toggle and recording cards).
- * - `toggleCommandId`: the command whose shortcut starts/stops a recording for
- *   this trigger, shared by the activation UI (which renders the recorder) and
- *   the setup-readiness check (which asks whether it's bound).
  */
 export const RECORDING_TRIGGER_META = {
 	manual: {
 		label: 'Manual',
 		emoji: '🎙️',
 		Icon: MicIcon,
-		toggleCommandId: 'toggleManualRecording',
 	},
 	vad: {
 		label: 'Voice Activated',
 		emoji: '🎤',
 		Icon: RadioIcon,
-		toggleCommandId: 'toggleVadRecording',
 	},
 } as const satisfies Record<
 	RecordingTrigger,
@@ -46,7 +39,6 @@ export const RECORDING_TRIGGER_META = {
 		label: string;
 		emoji: string;
 		Icon: Component<{ class?: string }>;
-		toggleCommandId: string;
 	}
 >;
 

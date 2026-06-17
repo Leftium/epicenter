@@ -9,14 +9,16 @@ export {
 } from './media-constraints';
 export {
 	MANUAL_RECORDING_BUTTON,
-	RECORDING_MODE_ICONS,
-	RECORDING_MODE_OPTIONS,
-	RECORDING_MODES,
-	type RecordingMode,
 	VAD_RECORDING_BUTTON,
-} from './recording-modes';
+} from './recording-buttons';
 export {
 	type VadState,
 	type WhisperingRecordingState,
 } from './recording-states';
+export {
+	RECORDING_TRIGGER_META,
+	RECORDING_TRIGGER_OPTIONS,
+	RECORDING_TRIGGERS,
+	type RecordingTrigger,
+} from './recording-triggers';
 export { RECORDER_OUTPUT_RATE, SAMPLE_RATE_OPTIONS } from './sample-rate';

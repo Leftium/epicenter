@@ -9,16 +9,16 @@
 	import { SettingSelect } from '$lib/components/settings';
 	import {
 		BITRATE_OPTIONS,
-		RECORDING_MODE_OPTIONS,
+		RECORDING_TRIGGER_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
-	import { os } from '#platform/os';
-	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { report } from '$lib/report';
-	import { tauri } from '#platform/tauri';
+	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { settings } from '$lib/state/settings.svelte';
+	import { os } from '#platform/os';
+	import { manualRecorderConfig } from '#platform/manual-recorder-config';
+	import { tauri } from '#platform/tauri';
 	import { whispering } from '#platform/whispering';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
@@ -42,15 +42,15 @@
 	<Field.Group>
 		<SettingSelect
 			store={settings}
-			key="recording.mode"
-			label="Recording Mode"
-			items={RECORDING_MODE_OPTIONS}
-			description="Choose how you want to activate recording: {RECORDING_MODE_OPTIONS.map(
+			key="recording.trigger"
+			label="Recording Trigger"
+			items={RECORDING_TRIGGER_OPTIONS}
+			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
 				(option) => option.label.toLowerCase(),
 			).join(', ')}"
 		/>
 
-		{#if settings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
 					const selected = manualRecorderConfig.deviceId;
@@ -58,18 +58,18 @@
 					},
 					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
-		{:else if settings.get('recording.mode') === 'vad'}
+		{:else if settings.get('recording.trigger') === 'vad'}
 			{#if os.isLinux}
 				<Alert.Root class="border-red-500/20 bg-red-500/5">
 					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
 					<Alert.Title class="text-red-600 dark:text-red-400">
-						VAD Mode Not Supported on Linux
+						Voice Activated not supported on Linux
 					</Alert.Title>
 					<Alert.Description>
-						Voice Activated Detection (VAD) mode requires the browser's
-						Navigator API, which is not fully supported in Tauri on Linux.
-						Device enumeration and recording will fail. Please use Manual
-						recording mode instead.
+						Voice Activated Detection (VAD) requires the browser's Navigator
+						API, which is not fully supported in Tauri on Linux. Device
+						enumeration and recording will fail. Please use Manual recording
+						instead.
 						<Link
 							href="https://github.com/EpicenterHQ/epicenter/issues/839"
 							target="_blank"
@@ -95,11 +95,11 @@
 				<Alert.Root class="border-blue-500/20 bg-blue-500/5">
 					<InfoIcon class="size-4 text-blue-600 dark:text-blue-400" />
 					<Alert.Title class="text-blue-600 dark:text-blue-400">
-						Voice Activated Detection Mode
+						Voice Activated Detection
 					</Alert.Title>
 					<Alert.Description>
-						VAD mode uses the browser's Web Audio API for real-time voice
-						detection. Captured speech is encoded to uncompressed WAV format.
+						VAD uses the browser's Web Audio API for real-time voice detection.
+						Captured speech is encoded to uncompressed WAV format.
 					</Alert.Description>
 				</Alert.Root>
 			{/if}
@@ -114,7 +114,7 @@
 			/>
 		{/if}
 
-		{#if settings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.trigger') === 'manual'}
 			{#if !tauri}
 				<SettingSelect
 					store={deviceConfig}

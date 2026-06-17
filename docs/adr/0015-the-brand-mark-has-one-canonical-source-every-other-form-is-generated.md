@@ -38,9 +38,11 @@ derivative of that source, never a hand-made copy.
 - Assets are named for their role (`whispering-mark`, `recording-indicator`),
   not for the drawing they currently contain.
 
-The canonical source stays the ADR-0013 placeholder image for now. Promoting it
-to an owned vector (SVG) is the only art-gated step and is deferred until owned
-art exists; the pipeline is shaped so that promotion is a one-file replacement.
+The canonical source stays the ADR-0013 placeholder image for now. This ADR
+does not turn that placeholder into owned art or grant brand/legal sign-off; it
+only prevents the current copy-per-surface drift. Promoting the mark to an owned
+vector (SVG) is the art-gated step and is deferred until owned art exists; the
+pipeline is shaped so that promotion is a one-file replacement.
 
 ## Consequences
 

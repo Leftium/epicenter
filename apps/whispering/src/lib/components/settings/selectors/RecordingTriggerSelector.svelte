@@ -6,20 +6,16 @@
 	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import {
-		RECORDING_MODE_ICONS,
-		RECORDING_MODE_OPTIONS,
-		type RecordingMode,
-	} from '$lib/constants/audio';
+	import { RECORDING_TRIGGER_OPTIONS } from '$lib/constants/audio';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const combobox = useCombobox();
 
-	const currentMode = $derived(
-		RECORDING_MODE_OPTIONS.find(
-			(mode) => mode.value === settings.get('recording.mode'),
+	const currentTrigger = $derived(
+		RECORDING_TRIGGER_OPTIONS.find(
+			(trigger) => trigger.value === settings.get('recording.trigger'),
 		),
 	);
 </script>
@@ -30,9 +26,9 @@
 			<Button
 				{...props}
 				class={cn('relative', className)}
-				tooltip={currentMode
-					? `Recording mode: ${currentMode.label}`
-					: 'Select recording mode'}
+				tooltip={currentTrigger
+					? `Recording trigger: ${currentTrigger.label}`
+					: 'Select recording trigger'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
@@ -46,17 +42,14 @@
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>
-					{#each RECORDING_MODE_OPTIONS as mode (mode.value)}
+					{#each RECORDING_TRIGGER_OPTIONS as trigger (trigger.value)}
 						{@const isSelected =
-							settings.get('recording.mode') === mode.value}
-						{@const ModeIcon = RECORDING_MODE_ICONS[mode.value]}
+							settings.get('recording.trigger') === trigger.value}
+						{@const TriggerIcon = trigger.Icon}
 						<Command.Item
-							value={mode.value}
+							value={trigger.value}
 							onSelect={async () => {
-								settings.set(
-									'recording.mode',
-									mode.value as RecordingMode,
-								);
+								settings.set('recording.trigger', trigger.value);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"
@@ -66,8 +59,8 @@
 									'text-transparent': !isSelected,
 								})}
 							/>
-							<ModeIcon class="size-4 shrink-0" />
-							<span class="text-sm">{mode.label}</span>
+							<TriggerIcon class="size-4 shrink-0" />
+							<span class="text-sm">{trigger.label}</span>
 						</Command.Item>
 					{/each}
 				</Command.Group>

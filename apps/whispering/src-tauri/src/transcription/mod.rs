@@ -11,7 +11,7 @@ pub use error::TranscriptionError;
 pub use events::{LocalModelState, ModelStateEvent};
 pub use model_cache::ModelCache;
 pub use model_folder::{
-    delete_model_entry, download_model, list_model_entries, resolve_model_file_sizes,
+    delete_model_entry, download_model, list_model_entries, resolve_model_files,
     reveal_models_folder, ModelFolderError,
 };
 pub use model_import::{link_local_model, ModelImportError};

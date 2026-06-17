@@ -18,7 +18,6 @@ import {
 	Zap as ZapIcon,
 } from '@lucide/astro';
 import GitHubStars from '../components/whispering/GitHubStars.astro';
-import GithubIcon from '../components/whispering/GithubIcon.astro';
 import MicrophoneHero from '../components/whispering/MicrophoneHero.astro';
 import OSDetector from '../components/whispering/OSDetector.svelte';
 import BaseLayout from '../layouts/BaseLayout.astro';
@@ -684,7 +683,6 @@ const downloads = [
 		const icon = floatingButton?.querySelector('.github-icon');
 
 		if (floatingButton && button && text && icon) {
-			let lastScrollY = 0;
 			let ticking = false;
 
 			function updateButtonState() {
@@ -711,7 +709,6 @@ const downloads = [
 					floatingButton.style.opacity = '1';
 				}
 
-				lastScrollY = scrollY;
 				ticking = false;
 			}
 

@@ -21,20 +21,25 @@ brand is the same drawing as the button.
 Whispering's iconography is two tiers, and the tiers never share a drawing.
 
 Tier 1 is identity: a single studio-microphone image that gives the app a face.
-It is a pragmatic choice, not owned artwork. The image is vendor emoji art
+It is a temporary placeholder, not owned artwork. The image is vendor emoji art
 (sourced from emoji.aranja.com, an Apple-style emoji rendering) with no clear
-license to call our own, so this ADR does not claim it as an owned mark. We ship
-it anyway because the two honest alternatives are worse today: a hand-authored
-SVG mic looked amateur next to the flat UI, and a plain Lucide line is anemic on
-the hero. The studio mic reads as a brand object rather than another control. It
-appears on three surfaces that should read as the same object: the home hero,
-the sidebar brand, and the tray idle icon. It is decorative and static; it does
-not state-switch. The brand mark is never the same glyph as the action.
+license to call our own, so this ADR does not claim it as an owned mark. It may
+ship only as a bounded placeholder on current product surfaces: the home hero,
+the sidebar brand, the tray idle icon, and the current landing brand surfaces.
+Product/legal sign-off, or replacement with owned or permissively licensed art,
+is required before broader brand use, app-store marketing expansion, paid
+promotion, merchandise, or treating the drawing as Whispering's permanent mark.
+ADR 0015 can make the asset pipeline honest; it does not solve this licensing
+risk by itself. The studio mic reads as a brand object rather than another
+control, which is why it remains the placeholder until owned art exists. It is
+decorative and static; it does not state-switch. The brand mark is never the
+same glyph as the action.
 
 Tier 2 is control: Lucide everywhere, state-driven, deliberately quiet. Manual
 is `Mic` and `Square` (recording), voice-activated is a listening glyph and
-`AudioLines` (speech detected), upload is `FileUp`. One resolver owns the
-state-to-glyph mapping; render sites own their own sizing and chrome.
+`AudioLines` (speech detected), and file import stays outside the recording
+trigger model. One resolver owns the recording state-to-glyph mapping; render
+sites own their own sizing and chrome.
 
 Emoji appear only as voice in prose (the `❤️` in "Free and open source ❤️"),
 never as functional iconography. Web UI never reaches into `src-tauri` for an
@@ -50,16 +55,16 @@ bundles a hashed asset; the native tray reads a file off disk).
   glyph, so "this app" and "press to record" read as different things.
 - The menubar and the home screen are the same object: the same studio-mic image
   drives the hero, the sidebar brand, and the tray idle icon.
-- The dead emoji state tables are deleted, the emoji `icon` field on the mode
-  options is dropped, and the Lucide mode icons own the mode-to-glyph mapping, so
-  there is one mode-to-glyph owner instead of two that disagree.
+- The dead emoji state tables are deleted, trigger options use Lucide icons, and
+  the recording-button tables own state-to-glyph mapping, so there is one
+  functional glyph owner instead of two that disagree.
 - Personality concentrates in two deliberate places (the Tier-1 image and the
   recording-state motion) rather than diluting across emoji, PNG, and glyph
   reuse. Everything functional is disciplined Lucide.
 - The Tier-1 image is a pragmatic placeholder, not owned art. The tier
-  *structure* is the durable decision; the specific image is replaceable. When
-  owned art exists, swap it in by replacing one frontend file (and the tray
-  copy), with no other change.
+  *structure* is the durable decision; the specific image is replaceable.
+  Shipping this PR does not clear the asset for broader brand use. That requires
+  product/legal sign-off or replacement with owned or permissively licensed art.
 
 ## Considered alternatives
 
@@ -79,6 +84,6 @@ bundles a hashed asset; the native tray reads a file off disk).
   destinies: the tray icon wants menubar legibility and, on macOS, a monochrome
   template image, at which point the tray asset diverges from the full-color web
   mark. Unifying now would have to be undone then. Kept as two copies until that
-  divergence is real. (Separately, the tray's `recorder-state-icons/*` are not
-  yet declared in `bundle > resources`, so `resolveResource` only resolves them
-  in dev; bundling them is a correctness fix tracked outside this ADR.)
+  divergence is real. The tray resources are declared in
+  `bundle > resources`, so `resolveResource` has packaged-build files to read;
+  the remaining open question is source ownership, not bundling.

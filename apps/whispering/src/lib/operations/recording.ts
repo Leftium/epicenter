@@ -58,7 +58,7 @@ function isVadRecordingActive() {
 }
 
 export async function startManualRecording() {
-	settings.set('recording.mode', 'manual');
+	settings.set('recording.trigger', 'manual');
 
 	const loading = report.loading({
 		title: 'Preparing to record...',
@@ -141,8 +141,9 @@ export async function cancelRecording() {
 	// stream teardown). This is the user-facing command: it decides what "cancel"
 	// means across the manual and VAD recorders.
 	//
-	// Cancel aborts whichever capture is live, without touching `recording.mode`:
-	// the chosen input mode (manual vs VAD) is a deliberate preference, not
+	// Cancel aborts whichever capture is live, without touching
+	// `recording.trigger`: the chosen trigger (manual vs VAD) is a deliberate
+	// preference, not
 	// something a cancel keystroke should flip, so cancelling in VAD mode leaves
 	// you in VAD mode, idle and ready to listen again. This is also the global
 	// cancel chord (Cmd + . on macOS), which the rdev hook observes on every
@@ -173,7 +174,7 @@ export async function cancelRecording() {
 }
 
 export async function startVadRecording() {
-	settings.set('recording.mode', 'vad');
+	settings.set('recording.trigger', 'vad');
 
 	log.info('Starting voice activated capture');
 	const loading = report.loading({

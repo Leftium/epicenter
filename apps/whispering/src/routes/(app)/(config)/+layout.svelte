@@ -4,7 +4,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { commandCallbacks } from '$lib/commands';
 	import {
-		RecordingModeSelector,
+		RecordingTriggerSelector,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -12,10 +12,8 @@
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
 		MANUAL_RECORDING_BUTTON,
-		RECORDING_MODE_ICONS,
 		VAD_RECORDING_BUTTON,
 	} from '$lib/constants/audio';
-	import { UPLOAD_ACCEPT, uploadRecordings } from '$lib/operations/upload';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
@@ -26,17 +24,6 @@
 		MANUAL_RECORDING_BUTTON[manualRecorder.state].Icon,
 	);
 	const VadButtonIcon = $derived(VAD_RECORDING_BUTTON[vadRecorder.state].Icon);
-	const UploadButtonIcon = RECORDING_MODE_ICONS.upload;
-
-	let uploadFileInput = $state<HTMLInputElement | null>(null);
-
-	async function handleUploadFilesSelected(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const files = input.files ? Array.from(input.files) : [];
-		// Clear the value so re-picking the same file still fires a change.
-		input.value = '';
-		if (files.length > 0) await uploadRecordings({ files });
-	}
 </script>
 
 <header
@@ -51,7 +38,7 @@
 
 	<div class="flex items-center gap-1.5">
 		<div class="flex items-center gap-1.5">
-			{#if settings.get('recording.mode') === 'manual'}
+			{#if settings.get('recording.trigger') === 'manual'}
 				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording"
@@ -63,7 +50,7 @@
 					</Button>
 				{:else}
 					<ManualDeviceSelector />
-					<TranscriptionSelector triggerVariant="standalone" />
+					<TranscriptionSelector variant="standalone" />
 					<TransformationSelector />
 				{/if}
 				{#if manualRecorder.state === 'RECORDING'}
@@ -86,13 +73,13 @@
 						>
 							<ManualButtonIcon class="size-4" />
 						</Button>
-						<RecordingModeSelector class="rounded-l-none" />
+						<RecordingTriggerSelector class="rounded-l-none" />
 					</div>
 				{/if}
-			{:else if settings.get('recording.mode') === 'vad'}
+			{:else if settings.get('recording.trigger') === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
 					<VadDeviceSelector />
-					<TranscriptionSelector triggerVariant="standalone" />
+					<TranscriptionSelector variant="standalone" />
 					<TransformationSelector />
 				{/if}
 				{#if vadRecorder.state === 'IDLE'}
@@ -106,7 +93,7 @@
 						>
 							<VadButtonIcon class="size-4" />
 						</Button>
-						<RecordingModeSelector class="rounded-l-none" />
+						<RecordingTriggerSelector class="rounded-l-none" />
 					</div>
 				{:else}
 					<Button
@@ -118,29 +105,6 @@
 						<VadButtonIcon class="size-4" />
 					</Button>
 				{/if}
-			{:else if settings.get('recording.mode') === 'upload'}
-				<TranscriptionSelector triggerVariant="standalone" />
-				<TransformationSelector />
-				<div class="flex">
-					<input
-						bind:this={uploadFileInput}
-						type="file"
-						accept={UPLOAD_ACCEPT}
-						multiple
-						class="hidden"
-						onchange={handleUploadFilesSelected}
-					/>
-					<Button
-						tooltip="Upload audio or video files"
-						onclick={() => uploadFileInput?.click()}
-						variant="ghost"
-						size="icon"
-						class="rounded-r-none border-r-0"
-					>
-						<UploadButtonIcon class="size-4" />
-					</Button>
-					<RecordingModeSelector class="rounded-l-none" />
-				</div>
 			{/if}
 		</div>
 	</div>

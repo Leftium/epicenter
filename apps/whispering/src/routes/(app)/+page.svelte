@@ -13,44 +13,46 @@
 	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
+	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
-		TranscriptionSelector,
 		TranscriptionRuntimeConfig,
+		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDING_MODE_ICONS,
-		RECORDING_MODE_OPTIONS,
-		type RecordingMode,
+		RECORDING_TRIGGER_META,
+		RECORDING_TRIGGER_OPTIONS,
+		type RecordingTrigger,
 	} from '$lib/constants/audio';
-	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
-	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+	import {
+		IMPORT_ACCEPT,
+		IMPORTABLE_AUDIO_EXTENSIONS,
+		IMPORTABLE_VIDEO_EXTENSIONS,
+		MAX_IMPORT_FILES,
+		MAX_IMPORT_FILE_SIZE,
+	} from '$lib/constants/import-formats';
+	import { importFiles } from '$lib/operations/import';
 	import {
 		stopManualRecording,
 		stopVadRecording,
 	} from '$lib/operations/recording';
-	import {
-		MAX_UPLOAD_FILES,
-		MAX_UPLOAD_FILE_SIZE,
-		UPLOAD_ACCEPT,
-		uploadRecordings,
-	} from '$lib/operations/upload';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
-	import { tauri } from '#platform/tauri';
+	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
+	import { tauri } from '#platform/tauri';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
-	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
@@ -93,44 +95,62 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	// Store unlisten function for drag drop events
 	let unlistenDragDrop: UnlistenFn | undefined;
 
-	// Set up desktop drag and drop listener
 	onMount(async () => {
 		if (!tauri) return;
 		const { error } = await tryAsync({
 			try: async () => {
 				const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+				const { extname } = await import('@tauri-apps/api/path');
+
+				const isAudio = async (path: string) =>
+					IMPORTABLE_AUDIO_EXTENSIONS.includes(
+						(await extname(path)) as (typeof IMPORTABLE_AUDIO_EXTENSIONS)[number],
+					);
+				const isVideo = async (path: string) =>
+					IMPORTABLE_VIDEO_EXTENSIONS.includes(
+						(await extname(path)) as (typeof IMPORTABLE_VIDEO_EXTENSIONS)[number],
+					);
 
 				unlistenDragDrop = await getCurrentWebview().onDragDropEvent(
 					async (event) => {
-						if (settings.get('recording.mode') !== 'upload') return;
 						if (
 							event.payload.type !== 'drop' ||
 							event.payload.paths.length === 0
 						)
 							return;
 
-						await switchRecordingMode('upload');
-
-						// Hand every dropped path to `uploadRecordings`, the single
-						// authority on what's accepted. `pathsToFiles` derives each
-						// File's MIME type from its extension, so the type/size/count
-						// policy — and its rejection reporting — applies to drag-and-drop
-						// exactly as it does to the drop zone and the navbar picker. The
-						// file-drop event only fires on Tauri, so `tauri` is non-null here.
-						if (!tauri) return;
-						const { data: files, error } = await tauri.fs.pathsToFiles(
-							event.payload.paths,
+						const pathResults = await Promise.all(
+							event.payload.paths.map(async (path) => ({
+								path,
+								isValid: (await isAudio(path)) || (await isVideo(path)),
+							})),
 						);
+						const validPaths = pathResults
+							.filter(({ isValid }) => isValid)
+							.map(({ path }) => path);
+
+						if (validPaths.length === 0) {
+							report.info({
+								title: 'No valid files',
+								description: 'Please drop audio or video files',
+							});
+							return;
+						}
+
+						if (!tauri) return;
+						const { data: files, error } =
+							await tauri.fs.pathsToFiles(validPaths);
 
 						if (error) {
 							report.error({ cause: error, title: 'Failed to read files' });
 							return;
 						}
 
-						await uploadRecordings({ files });
+						if (files.length > 0) {
+							await importFiles({ files });
+						}
 					},
 				);
 			},
@@ -144,46 +164,47 @@
 
 	onDestroy(() => {
 		unlistenDragDrop?.();
-		// Clean up audio URL when component unmounts to prevent memory leaks
 		if (latestRecording?.id) {
 			services.blobs.audio.revokeUrl(latestRecording.id);
 		}
 	});
 
-	async function stopAllRecordingModesExcept(modeToKeep: RecordingMode) {
-		const recordingModes = [
+	async function stopActiveRecordingExcept(triggerToKeep: RecordingTrigger) {
+		const triggers = [
 			{
-				mode: 'manual' as const,
+				trigger: 'manual' as const,
 				isActive: () => manualRecorder.state === 'RECORDING',
 				stop: () => stopManualRecording(),
 			},
 			{
-				mode: 'vad' as const,
+				trigger: 'vad' as const,
 				isActive: () => vadRecorder.state !== 'IDLE',
 				stop: () => stopVadRecording(),
 			},
 		] satisfies {
-			mode: RecordingMode;
+			trigger: RecordingTrigger;
 			isActive: () => boolean;
 			stop: () => Promise<unknown>;
 		}[];
 
-		const modesToStop = recordingModes.filter(
-			(recordingMode) =>
-				recordingMode.mode !== modeToKeep && recordingMode.isActive(),
+		const toStop = triggers.filter(
+			(trigger) => trigger.trigger !== triggerToKeep && trigger.isActive(),
 		);
 
-		await Promise.all(modesToStop.map((recordingMode) => recordingMode.stop()));
+		await Promise.all(toStop.map((trigger) => trigger.stop()));
 	}
 
-	async function switchRecordingMode(newMode: RecordingMode) {
-		await stopAllRecordingModesExcept(newMode);
+	async function switchRecordingTrigger(newTrigger: RecordingTrigger) {
+		await stopActiveRecordingExcept(newTrigger);
 
-		if (settings.get('recording.mode') !== newMode) {
-			settings.set('recording.mode', newMode);
+		if (settings.get('recording.trigger') !== newTrigger) {
+			settings.set('recording.trigger', newTrigger);
+			const label = RECORDING_TRIGGER_OPTIONS.find(
+				(option) => option.value === newTrigger,
+			)?.label;
 			report.success({
-				title: 'Recording mode switched',
-				description: `Switched to ${newMode} recording mode`,
+				title: 'Recording trigger switched',
+				description: `Now using ${label ?? newTrigger}.`,
 			});
 		}
 	}
@@ -224,20 +245,20 @@
 	{:else}
 		<ToggleGroup.Root
 			type="single"
-			bind:value={() => settings.get('recording.mode'),
-				(mode) => {
-					if (!mode) return;
-					void switchRecordingMode(mode as RecordingMode);
+			bind:value={() => settings.get('recording.trigger'),
+				(trigger) => {
+					if (!trigger) return;
+					void switchRecordingTrigger(trigger as RecordingTrigger);
 				}}
 			class="w-full"
 		>
-			{#each RECORDING_MODE_OPTIONS as option}
-				{@const ModeIcon = RECORDING_MODE_ICONS[option.value]}
+			{#each RECORDING_TRIGGER_OPTIONS as option}
+				{@const TriggerIcon = RECORDING_TRIGGER_META[option.value].Icon}
 				<ToggleGroup.Item
 					value={option.value}
-					aria-label="Switch to {option.label.toLowerCase()} mode"
+					aria-label="Switch to {option.label.toLowerCase()} recording"
 				>
-					<ModeIcon class="size-4" />
+					<TriggerIcon class="size-4" />
 					<span class="hidden truncate sm:inline">{option.label}</span>
 				</ToggleGroup.Item>
 			{/each}
@@ -246,7 +267,7 @@
 		{#snippet manualPipeline()}
 			<CapturePipeline>
 				<ManualDeviceSelector />
-				<TranscriptionSelector triggerVariant="pipeline" />
+				<TranscriptionSelector variant="pipeline" />
 				<TransformationSelector />
 			</CapturePipeline>
 		{/snippet}
@@ -254,12 +275,12 @@
 		{#snippet vadPipeline()}
 			<CapturePipeline>
 				<VadDeviceSelector />
-				<TranscriptionSelector triggerVariant="pipeline" />
+				<TranscriptionSelector variant="pipeline" />
 				<TransformationSelector />
 			</CapturePipeline>
 		{/snippet}
 
-		{#if settings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.trigger') === 'manual'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<ManualRecordingAction pipeline={manualPipeline} />
 				{#if manualRecorder.state === 'RECORDING'}
@@ -274,38 +295,35 @@
 					</Button>
 				{/if}
 			</div>
-		{:else if settings.get('recording.mode') === 'vad'}
+		{:else if settings.get('recording.trigger') === 'vad'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<VadRecordingAction pipeline={vadPipeline} />
 			</div>
-		{:else if settings.get('recording.mode') === 'upload'}
-			<div class="flex flex-col items-center gap-4 w-full">
-				<FileDropZone
-					accept={UPLOAD_ACCEPT}
-					maxFiles={MAX_UPLOAD_FILES}
-					maxFileSize={MAX_UPLOAD_FILE_SIZE}
-					onUpload={async (files) => {
-						if (files.length > 0) {
-							await uploadRecordings({ files });
-						}
-					}}
-					onFileRejected={({ file, reason }) => {
-						report.error({
-							cause: PageError.FileRejected({
-								fileName: file.name,
-								reason,
-							}).error,
-							title: 'File rejected',
-						});
-					}}
-					class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
-				/>
-				<CapturePipeline>
-					<TranscriptionSelector triggerVariant="pipeline" />
-					<TransformationSelector />
-				</CapturePipeline>
-			</div>
 		{/if}
+
+		<div class="flex w-full flex-col items-center gap-2">
+			<span class="text-muted-foreground text-xs">or import a file</span>
+			<FileDropZone
+				accept={IMPORT_ACCEPT}
+				maxFiles={MAX_IMPORT_FILES}
+				maxFileSize={MAX_IMPORT_FILE_SIZE}
+				onUpload={async (files) => {
+					if (files.length > 0) {
+						await importFiles({ files });
+					}
+				}}
+				onFileRejected={({ file, reason }) => {
+					report.error({
+						cause: PageError.FileRejected({
+							fileName: file.name,
+							reason,
+						}).error,
+						title: 'File rejected',
+					});
+				}}
+				class="h-28 sm:h-32 w-full"
+			/>
+		</div>
 
 		{#if latestRecording}
 			<div class="flex w-full flex-col gap-2">
@@ -345,7 +363,7 @@
 		{/if}
 
 		<div class="flex flex-col items-center gap-3">
-			{#if settings.get('recording.mode') === 'manual'}
+			{#if settings.get('recording.trigger') === 'manual'}
 				<p class="text-foreground/75 text-center text-sm">
 					Click the microphone{#if manualShortcutLabel}
 						or press
@@ -358,7 +376,7 @@
 						</Link>{/if}
 					to start recording{tauri ? ' from anywhere' : ''}.
 				</p>
-			{:else if settings.get('recording.mode') === 'vad'}
+			{:else if settings.get('recording.trigger') === 'vad'}
 				<p class="text-foreground/75 text-center text-sm">
 					Click the microphone{#if vadShortcutLabel}
 						or press
@@ -371,20 +389,6 @@
 						</Link>{/if}
 					to start a voice activated session.
 				</p>
-			{:else if settings.get('recording.mode') === 'upload'}
-				{#if tauri && manualShortcutLabel}
-					<p class="text-foreground/75 text-sm">
-						Press
-						<Link
-							tooltip="Configure the recording shortcut"
-							href="/settings/shortcuts"
-						>
-							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
-								>{manualShortcutLabel}</Kbd.Root>
-						</Link>
-						to start recording instead.
-					</p>
-				{/if}
 			{/if}
 			<p class="text-muted-foreground text-center text-sm font-light">
 				{#if !tauri}

@@ -17,7 +17,7 @@ use recorder::recorder::Recorder;
 pub mod transcription;
 use transcription::{
     delete_model_entry, download_model, get_transcription_state, link_local_model,
-    list_model_entries, resolve_model_file_sizes, reveal_models_folder, set_unload_policy,
+    list_model_entries, resolve_model_files, reveal_models_folder, set_unload_policy,
     transcribe_recording, ModelCache, ModelStateEvent,
 };
 
@@ -67,7 +67,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             link_local_model,
             list_model_entries,
             delete_model_entry,
-            resolve_model_file_sizes,
+            resolve_model_files,
             download_model,
             reveal_models_folder,
             cancel_download,

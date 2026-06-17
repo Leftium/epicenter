@@ -1,4 +1,5 @@
 export {
+	type AnswerableTurn,
 	appendAssistantMessage,
 	appendUserMessage,
 	attachChatTranscript,
@@ -7,8 +8,10 @@ export {
 	type ChatDocMessage,
 	findActiveChatDocGeneration,
 	findLatestUserTurn,
+	findUnansweredTurn,
 	observeChatDocMessages,
 	readChatDocMessages,
+	requestLatestUserTurnCancel,
 	setLatestUserTurnGenerationId,
 } from './chat-doc';
 export {

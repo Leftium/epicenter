@@ -204,6 +204,17 @@
 		void kickoffGeneration();
 	}
 
+	/**
+	 * Stop the in-flight answer. Aborting the local kickoff fetch only stops the
+	 * transitional HTTP path on this device; the durable cancel is the write the
+	 * always-on actor reads back, so it works after a disconnect and from any
+	 * device. Single writer: the cancel lands on this client's own user turn.
+	 */
+	function stopGeneration() {
+		kickoffController?.abort();
+		docHandle.requestCancel(Date.now());
+	}
+
 	function retry() {
 		sendError = null;
 		dismissedError = false;
@@ -262,5 +273,5 @@
 	bind:value={inputValue}
 	{isGenerating}
 	onSend={sendMessage}
-	onStop={() => kickoffController?.abort()}
+	onStop={stopGeneration}
 />

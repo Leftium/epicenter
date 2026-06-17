@@ -13,6 +13,19 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
+	let {
+		iconViewTransitionName,
+	}: {
+		/** When set, names the mic glyph for a cross-page view transition. */
+		iconViewTransitionName?: string;
+	} = $props();
+
+	const iconTransitionStyle = $derived(
+		iconViewTransitionName
+			? `view-transition-name: ${iconViewTransitionName}`
+			: undefined,
+	);
+
 	const combobox = useCombobox();
 
 	// VAD always uses navigator device ID
@@ -46,11 +59,13 @@
 				size="icon"
 				class="relative"
 			>
-				{#if selectedDeviceId}
-					<MicIcon class="size-4 text-green-500" />
-				{:else}
-					<MicIcon class="size-4 text-warning" />
-				{/if}
+				<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+					{#if selectedDeviceId}
+						<MicIcon class="size-4 text-green-500" />
+					{:else}
+						<MicIcon class="size-4 text-warning" />
+					{/if}
+				</span>
 			</Button>
 		{/snippet}
 	</Popover.Trigger>

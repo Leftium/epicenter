@@ -259,7 +259,14 @@
 					value={option.value}
 					aria-label="Switch to {option.label.toLowerCase()} recording"
 				>
-					<TriggerIcon class="size-4" />
+					<span
+						class="inline-flex shrink-0"
+						style="view-transition-name: {viewTransition.recordingMode(
+							option.value,
+						)}"
+					>
+						<TriggerIcon class="size-4" />
+					</span>
 					<span class="hidden truncate sm:inline">{option.label}</span>
 				</ToggleGroup.Item>
 			{/each}
@@ -267,16 +274,26 @@
 
 		{#snippet manualPipeline()}
 			<CapturePipeline>
-				<ManualDeviceSelector />
-				<TranscriptionSelector variant="pipeline" />
+				<ManualDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="pipeline"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
 				<TransformationSelector />
 			</CapturePipeline>
 		{/snippet}
 
 		{#snippet vadPipeline()}
 			<CapturePipeline>
-				<VadDeviceSelector />
-				<TranscriptionSelector variant="pipeline" />
+				<VadDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="pipeline"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
 				<TransformationSelector />
 			</CapturePipeline>
 		{/snippet}

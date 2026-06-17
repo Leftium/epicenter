@@ -17,6 +17,7 @@
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	let { children } = $props();
 
@@ -49,8 +50,13 @@
 						<XIcon class="size-4" />
 					</Button>
 				{:else}
-					<ManualDeviceSelector />
-					<TranscriptionSelector variant="standalone" />
+					<ManualDeviceSelector
+						iconViewTransitionName={viewTransition.pipeline.device}
+					/>
+					<TranscriptionSelector
+						variant="standalone"
+						iconViewTransitionName={viewTransition.pipeline.transcription}
+					/>
 					<TransformationSelector />
 				{/if}
 				{#if manualRecorder.state === 'RECORDING'}
@@ -71,15 +77,27 @@
 							size="icon"
 							class="rounded-r-none border-r-0"
 						>
-							<ManualButtonIcon class="size-4" />
+							<span
+								class="inline-flex shrink-0"
+								style="view-transition-name: {viewTransition.recordingMode(
+									'manual',
+								)}"
+							>
+								<ManualButtonIcon class="size-4" />
+							</span>
 						</Button>
 						<RecordingTriggerSelector class="rounded-l-none" />
 					</div>
 				{/if}
 			{:else if settings.get('recording.trigger') === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
-					<VadDeviceSelector />
-					<TranscriptionSelector variant="standalone" />
+					<VadDeviceSelector
+						iconViewTransitionName={viewTransition.pipeline.device}
+					/>
+					<TranscriptionSelector
+						variant="standalone"
+						iconViewTransitionName={viewTransition.pipeline.transcription}
+					/>
 					<TransformationSelector />
 				{/if}
 				{#if vadRecorder.state === 'IDLE'}
@@ -91,7 +109,14 @@
 							size="icon"
 							class="rounded-r-none border-r-0"
 						>
-							<VadButtonIcon class="size-4" />
+							<span
+								class="inline-flex shrink-0"
+								style="view-transition-name: {viewTransition.recordingMode(
+									'vad',
+								)}"
+							>
+								<VadButtonIcon class="size-4" />
+							</span>
 						</Button>
 						<RecordingTriggerSelector class="rounded-l-none" />
 					</div>

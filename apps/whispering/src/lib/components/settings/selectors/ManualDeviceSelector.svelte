@@ -14,6 +14,19 @@
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
+	let {
+		iconViewTransitionName,
+	}: {
+		/** When set, names the mic glyph for a cross-page view transition. */
+		iconViewTransitionName?: string;
+	} = $props();
+
+	const iconTransitionStyle = $derived(
+		iconViewTransitionName
+			? `view-transition-name: ${iconViewTransitionName}`
+			: undefined,
+	);
+
 	const combobox = useCombobox();
 
 	const getDevicesQuery = createQuery(() => ({
@@ -51,11 +64,13 @@
 				variant="ghost"
 				size="icon"
 			>
-				{#if manualRecorderConfig.deviceId}
-					<MicIcon class="size-4 text-green-500" />
-				{:else}
-					<MicIcon class="size-4 text-warning" />
-				{/if}
+				<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+					{#if manualRecorderConfig.deviceId}
+						<MicIcon class="size-4 text-green-500" />
+					{:else}
+						<MicIcon class="size-4 text-warning" />
+					{/if}
+				</span>
 			</Button>
 		{/snippet}
 	</Popover.Trigger>

@@ -27,6 +27,7 @@
 	let {
 		class: className,
 		variant,
+		iconViewTransitionName,
 	}: {
 		class?: string;
 		/**
@@ -39,7 +40,15 @@
 		 *   brand icon and warns only when a selected service is misconfigured.
 		 */
 		variant: 'standalone' | 'pipeline';
+		/** When set, names the trigger's brand glyph for a cross-page view transition. */
+		iconViewTransitionName?: string;
 	} = $props();
+
+	const iconTransitionStyle = $derived(
+		iconViewTransitionName
+			? `view-transition-name: ${iconViewTransitionName}`
+			: undefined,
+	);
 
 	const selectedService = $derived(getSelectedTranscriptionService());
 	const isSelectedServiceReady = $derived(
@@ -162,11 +171,13 @@
 				size={variant === 'pipeline' ? 'default' : 'icon'}
 			>
 				{#if variant === 'pipeline'}
-					{#if selectedService}
-						{@render renderServiceIcon(selectedService)}
-					{:else}
-						<CaptionsIcon class="size-4 shrink-0 text-warning" />
-					{/if}
+					<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+						{#if selectedService}
+							{@render renderServiceIcon(selectedService)}
+						{:else}
+							<CaptionsIcon class="size-4 text-warning" />
+						{/if}
+					</span>
 					<span
 						class={cn(
 							'truncate text-sm font-medium',
@@ -186,11 +197,14 @@
 								'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
 							!isSelectedServiceReady && 'opacity-60',
 						)}
+						style={iconTransitionStyle}
 					>
 						{@html selectedService.icon}
 					</div>
 				{:else}
-					<MicIcon class="size-4 text-muted-foreground" />
+					<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+						<MicIcon class="size-4 text-muted-foreground" />
+					</span>
 				{/if}
 				{#if showConfigurationWarning && variant === 'standalone'}
 					<span

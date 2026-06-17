@@ -20,16 +20,32 @@ An agent turn is a durable record in the conversation transcript (a child doc ke
 by a `conversations` row), not an HTTP request. The unanswered user message is the
 work queue; there is no separate request table.
 
-Designation is data, not a race or a global config. The conversation row carries a
-target `actorNodeId`, written by the client that creates or re-points the
-conversation (single writer), the durable analogue of a dispatch request's `to`.
-Each actor reconciles the conversations targeted at its own node: it observes their
-transcripts, answers any unanswered turn, and is idempotent through the durable
-client-minted `generationId` used as the assistant message id. There is no claim and
-no race, because exactly one node is named per conversation (and CRDT merges could
-not enforce a claimant anyway). The transcript child doc holds no node identity, so
-it stays portable content while the binding lives on the row; that row/child-doc
-split is the portability seam.
+A conversation is one human and one agent, for life. The conversation row carries a
+single immutable `agent: AgentId`, set once by the client that creates it. An
+`AgentId` is the durable, configuration-authored address of an answering agent (a
+hosted cloud agent, an always-on home daemon, a laptop daemon), not a per-install
+node id and not a Yjs `clientID`; presence resolves a live `AgentId` to whatever
+node currently hosts it. The cloud agent is `epicenter-cloud`, whose runtime is the
+metered HTTP route; a daemon answers when a conversation is bound to its agent id.
+
+This single field is the whole binding, and the collapse it buys is the reason it is
+immutable. Because the agent never changes, the conversation's content only ever
+reaches that one agent: a conversation bound to a home daemon is a hard guarantee
+that nothing in it left the house. Attribution falls out for free and stays truthful:
+the bound agent is who was addressed and who answered, for every turn, so no
+per-message author or addressee field is needed, and the transcript child doc holds
+no agent identity at all. That keeps it portable content while the binding lives on
+the row (the portability seam), and it is why switching agents is a fork (snapshot
+the transcript into a new conversation bound to a different agent, a visible act,
+confirmable when it crosses a trust boundary) rather than a write here. A mutable
+binding would break the privacy guarantee and force a per-message author field back
+in to keep history honest; the immutable binding refuses both.
+
+Each daemon reconciles the conversations bound to the agent it answers as: it
+observes their transcripts, answers any unanswered turn, and is idempotent through
+the durable client-minted `generationId` used as the assistant message id. There is
+no claim and no race, because exactly one agent is named per conversation (and CRDT
+merges could not enforce a claimant anyway).
 
 The actor observes the transcript mid-answer so it can honor a durable, client-owned
 cancel field, and it writes the write-once `finish`. Tool calls are the workspace's
@@ -58,24 +74,30 @@ doorbell), never the durable queue (the doc is the mailbox).
   in-flight stream (its abort), not a claim.
 - The single-answerer guarantee is enforced on both sides of the transition, not by
   a lock. The observe loop hosts a live replica only of the conversations whose
-  `actorNodeId` equals the daemon's node id, so the actor is built and runs only for
-  those: filtering the open set, not abstaining after the fact, is what keeps the
+  `agent` equals the agent the daemon answers as, so the actor is built and runs only
+  for those: filtering the open set, not abstaining after the fact, is what keeps the
   app-aware actor out of the app-blind anchor's availability job
   ([ADR-0012](0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md)).
   The actor itself carries no designation concept. The browser supplies the
-  complementary half: it skips its transitional HTTP kickoff whenever `actorNodeId`
-  is set. So a designated conversation is answered only by its daemon and a
-  cloud-default one (`actorNodeId` null) only by the HTTP path; neither ever answers
-  a turn the other does. This is what unblocks deleting the HTTP route (C4) and
-  co-deploying a daemon.
+  complementary half: it nudges the cloud agent's HTTP route only when the
+  conversation is bound to the cloud agent (`epicenter-cloud`), and does nothing for
+  a conversation bound to a daemon agent (that daemon answers over sync). So a
+  daemon-bound conversation is answered only by its daemon and a cloud-bound one only
+  by the HTTP path; neither ever answers a turn the other does. The bound agent is
+  immutable, so this split never flips mid-conversation. The cloud agent is therefore
+  never deleted (it is an always-available answerer whose runtime is the metered,
+  serverless route); what C4 removes is the `null`-as-cloud special case, not the
+  route.
 - The conversation is a row plus a transcript child doc, and that split is the
-  portability seam. Directing a chat at a device is a write of `actorNodeId` on the
-  row; reassigning it between turns is another write and rewrites no history
-  (assistant turns carry no node identity); forking a chat to run the same history
-  against a different node snapshots the transcript into a new row bound to that
-  node. Naming a node needs a roster, so targeting depends on presence/awareness; a
-  later refinement can target a capability (the node holding the SQLite mirror)
-  instead of a concrete node id, resolved through that same roster.
+  portability seam. The agent is named once on the row at creation and never
+  reassigned; the transcript carries no agent identity, so it stays portable content.
+  To run a history against a different agent you fork it: snapshot the transcript into
+  a new row bound to that agent (confirmable when the fork crosses a trust boundary,
+  the only place content moves between agents). Naming an agent needs a roster, so
+  binding at creation time depends on presence advertising which agents are live; the
+  durable address is the stable `AgentId`, and presence resolves it to a concrete
+  node. This is what the earlier "target a capability through the roster" refinement
+  named, pulled forward: the address was a concrete node id and is now the agent.
 - This is the conversation and transport layer. The bulk-mutation trust model
   (emit bounded data, dry-run on a forked Y.Doc, approve the computed effect) is
   Model 1 of the AI-workflows consolidated design and is unchanged here.
@@ -92,13 +114,20 @@ doorbell), never the durable queue (the doc is the mailbox).
 - **A durable `generation_requests` table.** Rejected: the unanswered turn already
   encodes the work; a parallel table is a second source of truth to reconcile.
 - **A Yjs claim field per turn.** Rejected: CRDT merges cannot enforce a single
-  claimant, so two actors both "win"; a per-conversation target node plus an
+  claimant, so two actors both "win"; a per-conversation bound agent plus an
   idempotent id is sufficient and simpler.
-- **A separate table mapping conversations to actor nodes.** Rejected: the doc is
+- **A separate table mapping conversations to agents.** Rejected: the doc is
   the only wire and control plane (no side channel), and a parallel table is a
   second source of truth to reconcile, the same reason the `generation_requests`
   table was rejected. The row already syncs to every device and to the actor's
   filter, so the binding belongs on it.
-- **Per-message targeting.** Rejected: an answer needs the thread's accumulated
-  capability and context, so the binding is whole-conversation; a turn never picks
-  its own actor.
+- **Per-message targeting (a different agent per turn).** Rejected, and the
+  rejection is load-bearing, not incidental. Per-turn addressing would put agent
+  identity in the transcript and let one thread's content reach several agents,
+  which dissolves the privacy guarantee (a "private" thread could ship earlier
+  turns to a more public agent) and forces a per-message author field to keep
+  attribution honest. The whole-conversation binding is the direct-message model:
+  a thread is with one agent; to use another you start a new thread (a fork).
+  Mixing agents in one thread is a future group shape (a participant set on a
+  different surface), never a weakening of the one-agent default. A turn never
+  picks its own agent.

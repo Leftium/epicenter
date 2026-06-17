@@ -28,6 +28,7 @@
 		type ChatDocMessage,
 	} from '@epicenter/workspace/ai';
 	import {
+		CLOUD_AGENT_ID,
 		type ConversationId,
 		ZHONGWEN_MODEL,
 		ZHONGWEN_SYSTEM_PROMPT,
@@ -143,13 +144,14 @@
 	}
 
 	/**
-	 * Kick off the cloud HTTP generation unless this conversation is daemon-owned.
-	 * When `actorNodeId` is set the always-on actor on that node answers over sync,
-	 * so a browser POST here would answer the same turn twice (the D3 hazard). A
-	 * cloud-default conversation (`actorNodeId` null) still takes the HTTP path.
+	 * Nudge the conversation's bound agent. The cloud agent's runtime is the HTTP
+	 * route, so a cloud-bound conversation kicks it off here. Any other agent is an
+	 * always-on actor that answers over sync, so the browser does nothing: nudging
+	 * it too would answer the same turn twice (the D3 hazard). The bound agent is
+	 * immutable, so this decision never flips mid-conversation.
 	 */
-	function kickoffUnlessDaemonOwned() {
-		if (readRow()?.actorNodeId) return;
+	function nudgeBoundAgent() {
+		if (readRow()?.agent !== CLOUD_AGENT_ID) return;
 		void kickoffGeneration();
 	}
 
@@ -212,7 +214,7 @@
 			title: title === 'New Chat' ? text.slice(0, 50) : title,
 			updatedAt: InstantString.now(),
 		});
-		kickoffUnlessDaemonOwned();
+		nudgeBoundAgent();
 	}
 
 	/**
@@ -233,7 +235,7 @@
 		// generationId. Re-mint the turn's generationId so the actor starts a
 		// fresh generation instead of replaying the no-op 409.
 		docHandle.remintGeneration(generateId());
-		kickoffUnlessDaemonOwned();
+		nudgeBoundAgent();
 	}
 </script>
 

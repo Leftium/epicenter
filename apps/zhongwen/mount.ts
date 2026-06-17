@@ -23,11 +23,13 @@
  * durable cancel, all over hosted sync with no HTTP and no duplicate stream.
  *
  * Designation (R, ADR-0013) is the observe loop's concern, not this factory's:
- * the loop builds an actor only for conversations designated to this daemon node
- * (`row.actorNodeId === selfNodeId`), so the factory supplies behavior alone. A
- * cloud-default conversation (`actorNodeId` null) is never hosted here and is left
- * to the cloud HTTP path; the browser also skips its kickoff for daemon-owned
- * conversations, so a single turn is never answered twice.
+ * the loop builds an actor only for conversations bound to this daemon's agent
+ * (`row.agent === selfAgentId`), so the factory supplies behavior alone. This
+ * mount sets no `agentId` yet (no configured Zhongwen agent), so the daemon hosts
+ * nothing and every conversation is left to the cloud agent's HTTP path; the
+ * browser nudges that path only for cloud-bound conversations, so a single turn is
+ * never answered twice. A later slice configures an agent id and a picker that
+ * binds a conversation to it.
  */
 
 import { attachChatActor, type ChatStream } from '@epicenter/workspace/ai';

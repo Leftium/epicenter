@@ -15,10 +15,9 @@ import { attachChatTranscript } from '../ai/index.js';
 import type { SessionMountContext } from '../daemon/define-mount.js';
 import type { NodeMountRuntime } from '../daemon/mount-runtime.js';
 import { defineActions, defineQuery } from '../shared/actions.js';
+import type { AgentId } from './agent-id.js';
 import type { ConnectedChildDoc } from './child-doc-actor.js';
 import { defineTable } from './define-table.js';
-import type { NodeId } from './node-id.js';
-import { nullable } from './nullable.js';
 import { defineWorkspace } from './workspace.js';
 
 const demoWorkspace = defineWorkspace({
@@ -29,9 +28,9 @@ const demoWorkspace = defineWorkspace({
 		conversations: defineTable({
 			id: field.string(),
 			title: field.string(),
-			// Designation: the actor loop hosts only rows whose actorNodeId is the
-			// daemon's own node id.
-			actorNodeId: nullable(field.string<NodeId>()),
+			// Designation: the actor loop hosts only rows bound to the agent the
+			// daemon answers as (the mount's `agentId`).
+			agent: field.string<AgentId>(),
 		}).docs({ messages: attachChatTranscript }),
 	},
 	kv: {},
@@ -201,6 +200,8 @@ describe('definition.mount', () => {
 		const spy: AttachSpy = { childDocGuids: [] };
 		const mount = demoWorkspace.mount({
 			runtime: stubRuntime(spy),
+			// This daemon answers as the `daemon-agent` agent.
+			agentId: 'daemon-agent' as AgentId,
 			actors: {
 				// The app registers behavior only: no table, guid, or layout passed.
 				conversations: { messages: () => ({}) },
@@ -212,23 +213,23 @@ describe('definition.mount', () => {
 		// The actor is registered for ordered teardown even before any row exists.
 		expect(spy.materializers).toHaveLength(1);
 
-		// A row designated to this node (ctx.nodeId === 'node-fixture') drives the
-		// loop to host its transcript at the guid the schema derives, the same
-		// address the browser opener would use.
+		// A row bound to this daemon's agent drives the loop to host its transcript
+		// at the guid the schema derives, the same address the browser opener uses.
 		runtime.tables.conversations.set({
 			id: 'c1',
 			title: 'first',
-			actorNodeId: 'node-fixture' as NodeId,
+			agent: 'daemon-agent' as AgentId,
 		});
 		const expectedGuid = runtime.tables.conversations.docs.messages.guid('c1');
 		expect(spy.childDocGuids).toEqual([expectedGuid]);
 
-		// A cloud-default row (actorNodeId null) is NOT this node's to answer, so
-		// the loop never hosts it: that filter is the daemon half of the D3 fix.
+		// A row bound to a different agent (the cloud agent) is NOT this daemon's to
+		// answer, so the loop never hosts it: that filter is the daemon half of the
+		// D3 fix.
 		runtime.tables.conversations.set({
 			id: 'c2',
 			title: 'second',
-			actorNodeId: null,
+			agent: 'epicenter-cloud' as AgentId,
 		});
 		expect(spy.childDocGuids).toEqual([expectedGuid]);
 	});

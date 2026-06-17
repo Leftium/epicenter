@@ -414,4 +414,31 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             green, doc-hygiene clean. DEFERRED to a "co-deploy a live daemon" slice
             (and re-gating C4): epicenter.config.ts so the daemon runs, and a node
             picker so a conversation can be designated to it.
+2026-06-17  Scoped-redesign slice 1 (agent binding): after an adversarial greenfield
+            grill, collapsed designation from a per-conversation target node into one
+            immutable `agent: AgentId` on the conversation row. AgentId = the stable,
+            config-authored address of an answering agent (cloud = `epicenter-cloud`,
+            a daemon = its configured id), resolved to a live node through presence;
+            NOT the per-install nodeId or the Yjs clientID. Reversed the review's
+            per-turn `addressedTo`/`answeredBy` proposal: the collapse makes the
+            binding whole-conversation and immutable (switch = fork), which buys a
+            privacy invariant (content only ever reaches the one bound agent) and
+            free truthful attribution (the bound agent is who was addressed and who
+            answered, so no per-message author field and the transcript stays portable
+            with no agent identity). This AFFIRMS ADR-0013's whole-conversation binding
+            and its "transcript holds no node identity" seam; what changed is the
+            address type (node id -> AgentId) and killing `actorNodeId: null`. Changes:
+            new AgentId brand + asAgentId (workspace, exported); MountOptions.agentId
+            injects the daemon's agent identity (app/config policy, not threaded through
+            MountContext); connectMountActors filters `row.agent === selfAgentId`
+            (undefined selfAgentId designates nothing); zhongwen schema actorNodeId ->
+            agent (non-null, CLOUD_AGENT_ID default at creation); +page binds new convos
+            to CLOUD_AGENT_ID; ConversationView kickoffUnlessDaemonOwned -> nudgeBoundAgent
+            (nudge route iff agent === CLOUD_AGENT_ID). chat-doc/chat-actor/doc-generation
+            schemas UNCHANGED (attribution is the row's agent), the tell the collapse was
+            real. ADR-0013 Decision + alternatives updated (per-message rejection now
+            grounded in the privacy/DM-model rationale). workspace 552 + server ai 13 green;
+            workspace + zhongwen + server typecheck clean. Zhongwen mount sets no agentId
+            yet (no configured agent), so the daemon hosts nothing and cloud answers every
+            conversation; the agent-id config + picker is the next slice.
 ```

@@ -2,6 +2,7 @@
 	import { fromKv, fromTable } from '@epicenter/svelte';
 	import { InstantString } from '@epicenter/workspace';
 	import {
+		CLOUD_AGENT_ID,
 		type Conversation,
 		type ConversationId,
 		generateConversationId,
@@ -48,9 +49,10 @@
 			title: 'New Chat',
 			createdAt: timestamp,
 			updatedAt: timestamp,
-			// Cloud-default: the HTTP generation path answers. Designating a daemon
-			// node here would route the conversation to its always-on actor instead.
-			actorNodeId: null,
+			// Bound to the cloud agent at creation (immutable): the HTTP generation
+			// path answers. A picker would bind a new conversation to a daemon agent
+			// instead, routing it to that always-on actor over sync.
+			agent: CLOUD_AGENT_ID,
 		});
 		return id;
 	}

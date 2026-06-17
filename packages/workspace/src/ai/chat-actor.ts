@@ -99,12 +99,12 @@ type InFlightGeneration = {
  * returned handle is what a mount's child-doc actor factory yields.
  *
  * Designation (R, ADR-0013) is NOT the actor's concern. The child-doc observe
- * loop only ever builds this actor for a conversation designated to its node
- * (`actorNodeId === selfNodeId`); an undesignated conversation is never hosted
- * here, so the actor unconditionally answers whatever body it is given. The
- * complementary half lives in the browser, which skips its HTTP kickoff when the
- * conversation is daemon-owned. The two together are what stop the daemon and the
- * cloud HTTP path from both answering one turn.
+ * loop only ever builds this actor for a conversation bound to this daemon's
+ * agent (`row.agent === selfAgentId`); a conversation bound to another agent is
+ * never hosted here, so the actor unconditionally answers whatever body it is
+ * given. The complementary half lives in the browser, which skips its HTTP
+ * kickoff unless the conversation is bound to the cloud agent. The two together
+ * are what stop the daemon and the cloud HTTP path from both answering one turn.
  */
 export function attachChatActor({
 	ydoc,

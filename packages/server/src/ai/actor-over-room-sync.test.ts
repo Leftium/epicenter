@@ -16,8 +16,8 @@
  *     ("cancel works after a disconnect").
  *
  * The actor here always answers because the daemon's observe loop only ever
- * builds it for a conversation designated to this node (the loop filters by the
- * row's `actorNodeId`; see child-doc-actor.test.ts). The D3 single-answerer
+ * builds it for a conversation bound to this daemon's agent (the loop filters by
+ * the row's `agent`; see child-doc-actor.test.ts). The D3 single-answerer
  * guarantee is therefore that loop filter plus the browser skipping its HTTP
  * kickoff for daemon-owned conversations, not anything this actor decides, so it
  * is proven where each half lives, not here.

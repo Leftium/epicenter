@@ -64,7 +64,7 @@ function actorArgs(
 		actorFor: () => ({}),
 		// Designation is the loop's filter; most tests host every row, and the
 		// designation-specific tests below override it. The schema-derived
-		// `actorNodeId === selfNodeId` composition lives in the mount coordinator
+		// `row.agent === selfAgentId` composition lives in the mount coordinator
 		// (workspace-mount.test.ts), not here.
 		isDesignated: () => true,
 	};

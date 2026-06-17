@@ -66,7 +66,7 @@ import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
-import type { NodeId } from './node-id.js';
+import type { AgentId } from './agent-id.js';
 import { onLocalUpdate } from './on-local-update.js';
 import type { Collaboration } from './open-collaboration.js';
 import {
@@ -454,6 +454,15 @@ export type MountOptions<
 	 * See {@link MountActors}.
 	 */
 	readonly actors?: MountActors<TTables>;
+	/**
+	 * The agent identity this daemon answers as (ADR-0013). A conversation row
+	 * names the one agent it is bound to in its `agent` column; the observe loop
+	 * hosts and answers exactly the rows whose `agent` equals this id. Authored in
+	 * configuration (the durable, stable address), not derived from the per-install
+	 * `nodeId`. Omit it for a daemon with no configured agent: it then hosts
+	 * nothing, leaving every conversation to its own bound agent.
+	 */
+	readonly agentId?: AgentId;
 };
 
 export type WorkspaceDefinition<
@@ -745,7 +754,7 @@ export function defineWorkspace<
 						workspace,
 						definitions: options.tables,
 						connectBody: runtime.connectChildDoc(ctx, baseURL),
-						selfNodeId: ctx.nodeId,
+						selfAgentId: mountOptions.agentId,
 						registerDrain: scope.registerDrain,
 					});
 				}
@@ -925,15 +934,19 @@ function connectMountActors<TTableDefinitions extends TableDefinitions>({
 	workspace,
 	definitions,
 	connectBody,
-	selfNodeId,
+	selfAgentId,
 	registerDrain,
 }: {
 	actors: MountActors<TTableDefinitions>;
 	workspace: Workspace<TTableDefinitions, KvDefinitions, ActionRegistry>;
 	definitions: TTableDefinitions;
 	connectBody: (guid: string) => ConnectedChildDoc;
-	/** This daemon's node id, forwarded to each per-body actor context. */
-	selfNodeId: NodeId;
+	/**
+	 * The agent identity this daemon answers as, or `undefined` when no agent is
+	 * configured (it then designates nothing). The loop hosts exactly the rows
+	 * whose `agent` equals it.
+	 */
+	selfAgentId: AgentId | undefined;
 	registerDrain: (drainable: ChildDocActor) => void;
 }): void {
 	// `Object.entries` erases the per-table types the public `MountActors` already
@@ -947,20 +960,23 @@ function connectMountActors<TTableDefinitions extends TableDefinitions>({
 		const definition = definitions[collection as keyof TTableDefinitions]!;
 		// One structural view of the connected table: the loop reads its
 		// schema-derived guid derivers, scans/observes its rows, and reads a row's
-		// `actorNodeId` to decide designation. `get` returns the row or `null`.
+		// bound `agent` to decide designation. `get` returns the row or `null`.
 		const table = workspace.tables[
 			collection as keyof TTableDefinitions
 		] as unknown as {
 			docs: Record<string, RowDocGuid<string>>;
 			scan(): { rows: ReadonlyArray<{ id: string }> };
 			observe(callback: () => void): () => void;
-			get(id: string): { data: { actorNodeId?: NodeId | null } | null };
+			get(id: string): { data: { agent?: AgentId } | null };
 		};
-		// The designation contract (ADR-0013): a node hosts and answers exactly the
-		// rows whose `actorNodeId` is its own. Composed once here, the single owner
-		// of the rule, so an app's actor factory supplies behavior alone.
+		// The designation contract (ADR-0013): a daemon hosts and answers exactly
+		// the rows bound to the agent it answers as. Composed once here, the single
+		// owner of the rule, so an app's actor factory supplies behavior alone. A
+		// daemon with no configured agent (`selfAgentId` undefined) designates
+		// nothing, so every conversation is left to its own bound agent.
 		const isDesignated = (rowId: string): boolean =>
-			table.get(rowId).data?.actorNodeId === selfNodeId;
+			selfAgentId !== undefined &&
+			table.get(rowId).data?.agent === selfAgentId;
 
 		for (const [field, actorFor] of Object.entries(fieldActors)) {
 			if (actorFor === undefined) continue;

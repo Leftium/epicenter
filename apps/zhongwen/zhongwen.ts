@@ -19,14 +19,14 @@
 import type { ServableModel } from '@epicenter/constants/ai-providers';
 import { field } from '@epicenter/field';
 import {
+	type AgentId,
+	asAgentId,
 	defineKv,
 	defineTable,
 	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
-	type NodeId,
-	nullable,
 } from '@epicenter/workspace';
 import { attachChatTranscript } from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
@@ -48,6 +48,15 @@ export const generateConversationId = (): ConversationId =>
  * its Gemini adapter from it directly.
  */
 export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
+
+/**
+ * The hosted cloud agent's stable address (ADR-0013). A new conversation is bound
+ * to this agent, so the cloud generation path (the metered HTTP route) answers it.
+ * The binding is immutable: to talk to a different agent you fork the conversation,
+ * so a conversation's history only ever reaches its one bound agent. An always-on
+ * daemon answers instead when a conversation is bound to that daemon's agent id.
+ */
+export const CLOUD_AGENT_ID: AgentId = asAgentId('epicenter-cloud');
 
 /**
  * The bilingual system prompt every Zhongwen answer is generated under. An app
@@ -82,13 +91,15 @@ const conversationsTable = defineTable({
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
 	/**
-	 * The node designated to answer this conversation, or `null` for the
-	 * cloud-default path (ADR-0013). When set to a daemon's node id, that
-	 * always-on actor claims and streams the reply and the browser skips its HTTP
-	 * kickoff; `null` leaves the turn to the cloud HTTP generation path. Single
-	 * field, two lifecycles, no double-answer.
+	 * The agent this conversation is bound to (ADR-0013), set once at creation and
+	 * never reassigned. {@link CLOUD_AGENT_ID} routes to the cloud generation path
+	 * (the browser nudges the HTTP route); a daemon's agent id routes to that
+	 * always-on actor over sync, and the browser skips its kickoff. One immutable
+	 * field is who was addressed and who answered, for every turn: the history
+	 * cannot disagree with itself, and the conversation's content only ever reaches
+	 * this one agent. Switching agents is a fork, not a write here.
 	 */
-	actorNodeId: nullable(field.string<NodeId>()),
+	agent: field.string<AgentId>(),
 }).docs({ messages: attachChatTranscript });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 

@@ -312,6 +312,26 @@ D3 (V0.5 GATE; surfaced by the 2026-06-17 adversarial review)
             byte-identical mid-stream-cancel and superseded-orphan guards into one
             (turn === undefined || cancelRequestedAt !== undefined). workspace +
             zhongwen typecheck clean, actor suite green.
+2026-06-17  Model validated over a REAL room (6ae96a124):
+            packages/server/src/ai/actor-over-room-sync.test.ts. Every prior
+            actor test drove onChange by hand over a lone in-memory Y.Doc; this
+            is the first proof the always-on actor works as a SYNC PEER. A daemon
+            peer runs attachChatActor over a body synced through a live
+            createRoomCore; a separate client peer reads the answer back. 3 green:
+            (1) the daemon answers a turn written by another peer and the streamed
+            reply syncs back (the V0 exit, actor path); (2) a durable cancel from
+            another peer stops the answer mid-stream over sync; (3) THE D3 HAZARD
+            IS REAL AND DETERMINISTIC: daemon actor + HTTP runDocGeneration both
+            answer one turn -> the merge keeps TWO assistant maps. Test 3 asserts
+            the bug EXISTS today; R must flip it to assert ONE map (red-by-design
+            gate, exactly what the verify workflow asked for). FINDING that pins
+            the next step: zhongwen has NO epicenter.config.ts and no daemon entry
+            (epicenter up loads a mount from epicenter.config.ts; zhongwen() returns
+            one; nothing wires them), so the daemon has never actually run for
+            zhongwen, and running it today would reproduce test 3's double-answer.
+            So the real two-browser e2e is gated on (a) daemon config wiring +
+            (b) R. Evidence-backed next step is therefore R (actorNodeId), now
+            justified by a concrete failing-intent test, not a theoretical race.
 2026-06-17  V2.R DONE: wrote specs/20260617T235900-v2-coding-actor-sandbox-and-
             harness.md from the completed workflow research (synthesis 529'd, so
             authored from the three research blocks, every claim cited). Sandbox =

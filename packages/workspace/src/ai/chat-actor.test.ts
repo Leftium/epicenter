@@ -95,6 +95,34 @@ describe('attachChatActor', () => {
 		doc.destroy();
 	});
 
+	test('batches rapid deltas into a few transactions, not one per token', async () => {
+		// Eight deltas that arrive faster than FLUSH_INTERVAL_MS (75ms): the first
+		// flushes at once, the rest buffer and ride the finish transaction.
+		const deltas = Array.from({ length: 8 }, (_, index) => `d${index}`);
+		const { doc, transcript, actor } = setup(streamOf(...deltas));
+
+		let updates = 0;
+		doc.on('updateV2', () => updates++);
+
+		transcript.appendUser({
+			id: 'u1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'gen-1',
+		});
+		const baseline = updates; // the user-append transaction
+		actor.onChange?.();
+		await tick();
+
+		// claim + first flush + finish-with-tail; far fewer than one per delta.
+		expect(updates - baseline).toBeLessThan(deltas.length);
+		expect(transcript.read().at(-1)).toMatchObject({
+			text: deltas.join(''),
+			finish: { kind: 'completed' },
+		});
+		doc.destroy();
+	});
+
 	test('a re-fire after completion is a no-op (the answer already exists)', async () => {
 		const { doc, transcript, actor } = setup(streamOf('done'));
 

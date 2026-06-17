@@ -12,9 +12,10 @@
  * `@epicenter/workspace/ai`.
  *
  * The actor is parameterized by a `ChatStream`
- * (`startStream(messages) => AsyncIterable<StreamChunk>`), the one contract every
- * inference backend speaks. V0 injects {@link fakeChatStream}, a deterministic
- * placeholder reply; real cloud or local inference is a one-argument swap (V0.5),
+ * (`startStream(messages, signal) => AsyncIterable<StreamChunk>`), the one
+ * contract every inference backend speaks. V0 injects {@link fakeChatStream}, a
+ * deterministic placeholder reply; real cloud or local inference is a one-line
+ * swap (V0.5),
  * once the daemon has an inference path. The actor itself observes -> answers ->
  * streams -> finishes and honors the client's durable cancel, all over hosted
  * sync with no HTTP and no duplicate stream.

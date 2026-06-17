@@ -7,7 +7,7 @@
  * the one contract every inference backend speaks:
  *
  * ```txt
- * startStream(messages) => AsyncIterable<StreamChunk>
+ * startStream(messages, signal) => AsyncIterable<StreamChunk>
  * ```
  *
  * A TanStack cloud adapter (`chat({ adapter, messages })`) and a local backend
@@ -39,10 +39,13 @@
  * destroyed and deliberately writes no finish, leaving an interrupted artifact
  * the client can retry, exactly as an evicted worker would.
  *
- * The flush policy (batching deltas into fewer transactions) is not here yet: the
- * loop appends one delta per chunk. The HTTP generation path
- * (`packages/server/src/ai/doc-generation.ts`) still owns that policy; sharing
- * one stream/flush/finish core between the two is the next collapse.
+ * The flush policy (batching deltas into fewer synced transactions) lives in
+ * `streamReply`: buffer text and flush at most once per `FLUSH_INTERVAL_MS`, or
+ * sooner if the buffer passes `FLUSH_MAX_CHARS`, so a chatty real provider does
+ * not emit one transaction per token. The HTTP generation path
+ * (`packages/server/src/ai/doc-generation.ts`) keeps its own copy of this policy
+ * until C4 deletes that path wholesale; deliberately NOT shared, since coupling
+ * to a route slated for deletion is the opposite of a clean break.
  *
  * @module
  */
@@ -59,6 +62,11 @@ import {
 
 /** Cap for provider error text persisted into the doc; details go to logs. */
 const FAILED_MESSAGE_MAX_CHARS = 240;
+
+/** Flush cadence: at most one content transaction per interval... */
+const FLUSH_INTERVAL_MS = 75;
+/** ...unless the buffered text passes this size first. */
+const FLUSH_MAX_CHARS = 512;
 
 /**
  * The one contract every inference backend speaks: take the snapshotted prompt
@@ -189,9 +197,11 @@ export function attachChatActor({
 }
 
 /**
- * Drive one provider stream into the assistant message: append each text delta,
- * write a write-once `completed` (or `failed`) finish. A signal abort stops the
- * loop and writes NO finish: the caller's `onChange` already wrote
+ * Drive one provider stream into the assistant message: buffer text deltas and
+ * flush them on the {@link FLUSH_INTERVAL_MS}/{@link FLUSH_MAX_CHARS} cadence,
+ * then write a write-once `completed` (or `failed`) finish that flushes the tail.
+ * A signal abort stops the loop and writes NO finish: the caller's `onChange`
+ * already wrote
  * `cancelled` for a durable cancel, and a teardown deliberately leaves the
  * message interrupted (and its `Y.Doc` may already be torn down).
  */
@@ -202,11 +212,27 @@ async function streamReply(
 	signal: AbortSignal,
 ): Promise<void> {
 	let runError: { code: string; message: string } | undefined;
+	// Buffer deltas so a chatty provider becomes a few synced transactions, not
+	// one per token. lastFlushAt starts at 0 so the first delta flushes at once
+	// (the "thinking" marker becomes live text immediately). A still-buffered tail
+	// is discarded on abort (the caller writes the terminal finish, not us) and
+	// flushed into the finish transaction on normal completion.
+	let buffer = '';
+	let lastFlushAt = 0;
 	try {
 		for await (const chunk of startStream(prompt, signal)) {
 			if (signal.aborted) return;
 			if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) {
-				writer.appendText(chunk.delta);
+				buffer += chunk.delta;
+				const now = Date.now();
+				if (
+					now - lastFlushAt >= FLUSH_INTERVAL_MS ||
+					buffer.length >= FLUSH_MAX_CHARS
+				) {
+					writer.appendText(buffer);
+					buffer = '';
+					lastFlushAt = now;
+				}
 			} else if (chunk.type === EventType.RUN_ERROR) {
 				runError = {
 					code: chunk.code ?? 'provider-error',
@@ -224,6 +250,7 @@ async function streamReply(
 		};
 	}
 	if (signal.aborted) return;
+	// Final transaction: flush any buffered tail alongside the terminal finish.
 	writer.finish(
 		runError
 			? {
@@ -232,5 +259,6 @@ async function streamReply(
 					message: runError.message.slice(0, FAILED_MESSAGE_MAX_CHARS),
 				}
 			: { kind: 'completed' },
+		{ text: buffer },
 	);
 }

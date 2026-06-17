@@ -197,10 +197,14 @@ type VaultIntegrity = { version: 1; tables: TableAssessment[] };
 ```
 
 `unreadable` and `invalid-contract` are genuine failures, split by cause the way reference
-findings split `missing-target` from `dangling` (different cause, different fix). A failed OR
-`unmodeled` table contributes no `modeled` cells and turns every inbound reference into
-`missing-target` (the honest causal chain), but every table in ALL four states still contributes
-its file stems to the reference existence index.
+findings split `missing-target` from `dangling` (different cause, different fix). A failed or
+`unmodeled` table contributes no `modeled` cells, so it surfaces no reference verdicts of its own.
+Existence is separate from contract: a `modeled`, `unmodeled`, or `invalid-contract` table still
+parsed its files, so it contributes its file stems to the reference existence index and inbound
+references resolve against it (this is exactly what `resolveReferences` does, and what its
+"unmodeled target folder still contributes its rows" test pins). Only `unreadable` contributes no
+stems, because there were no files to read, so it is the one state that turns every inbound
+reference into `missing-target` (the honest causal chain).
 
 ### The projections (pure selectors, no re-derivation)
 

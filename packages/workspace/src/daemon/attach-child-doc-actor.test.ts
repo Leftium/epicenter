@@ -1,0 +1,166 @@
+/**
+ * Child-doc observe loop tests. The actor is driven with an in-memory
+ * `connectBody` (no disk, no sockets), so these exercise the loop itself:
+ * enumerate rows, open + observe each body, dispose a body whose row is gone,
+ * and flush every body on root destroy.
+ */
+
+import { describe, expect, test } from 'bun:test';
+import { field } from '@epicenter/field';
+import * as Y from 'yjs';
+import { appendUserMessage, attachChatTranscript } from '../ai/index.js';
+import { defineTable } from '../document/define-table.js';
+import { createWorkspace } from '../document/workspace.js';
+import {
+	attachChildDocActor,
+	type ConnectedChildDoc,
+} from './attach-child-doc-actor.js';
+
+const conversationsDefinition = defineTable({
+	id: field.string(),
+	title: field.string(),
+}).docs({ messages: attachChatTranscript });
+
+/**
+ * Build a workspace plus an in-memory body connector. The connector records
+ * every opened body by guid (so a test can write into the same replica the actor
+ * holds) and resolves `whenDisposed` on `ydoc.destroy()`.
+ */
+function setup() {
+	const workspace = createWorkspace({
+		id: 'ws-actor-test',
+		tables: { conversations: conversationsDefinition },
+		kv: {},
+	});
+	const bodies = new Map<string, Y.Doc>();
+	const connectBody = (guid: string): ConnectedChildDoc => {
+		const ydoc = new Y.Doc({ guid, gc: true });
+		bodies.set(guid, ydoc);
+		const { promise: whenDisposed, resolve } = Promise.withResolvers<void>();
+		ydoc.once('destroy', () => resolve());
+		return {
+			ydoc,
+			whenDisposed,
+			dispose() {
+				ydoc.destroy();
+			},
+		};
+	};
+	return { workspace, bodies, connectBody };
+}
+
+describe('attachChildDocActor', () => {
+	test('opens a body for each conversation row', () => {
+		const { workspace, bodies, connectBody } = setup();
+		const { conversations } = workspace.tables;
+		conversations.set({ id: 'c1', title: 'first' });
+		conversations.set({ id: 'c2', title: 'second' });
+
+		const actor = attachChildDocActor({
+			rootDoc: workspace.ydoc,
+			table: conversations,
+			guidFor: conversations.docs.messages.guid,
+			connectBody,
+			layout: attachChatTranscript,
+		});
+
+		expect(bodies.has(conversations.docs.messages.guid('c1'))).toBe(true);
+		expect(bodies.has(conversations.docs.messages.guid('c2'))).toBe(true);
+
+		actor[Symbol.dispose]();
+		workspace[Symbol.dispose]();
+	});
+
+	test('opens a body for a row added after start', () => {
+		const { workspace, bodies, connectBody } = setup();
+		const { conversations } = workspace.tables;
+
+		const actor = attachChildDocActor({
+			rootDoc: workspace.ydoc,
+			table: conversations,
+			guidFor: conversations.docs.messages.guid,
+			connectBody,
+			layout: attachChatTranscript,
+		});
+		expect(bodies.size).toBe(0);
+
+		conversations.set({ id: 'c1', title: 'later' });
+		expect(bodies.has(conversations.docs.messages.guid('c1'))).toBe(true);
+
+		actor[Symbol.dispose]();
+		workspace[Symbol.dispose]();
+	});
+
+	test('fires onChange when a hosted transcript changes', () => {
+		const { workspace, bodies, connectBody } = setup();
+		const { conversations } = workspace.tables;
+		conversations.set({ id: 'c1', title: 'first' });
+
+		const changed: string[] = [];
+		const actor = attachChildDocActor({
+			rootDoc: workspace.ydoc,
+			table: conversations,
+			guidFor: conversations.docs.messages.guid,
+			connectBody,
+			layout: attachChatTranscript,
+			onChange: ({ rowId }) => changed.push(rowId),
+		});
+
+		const body = bodies.get(conversations.docs.messages.guid('c1'))!;
+		appendUserMessage(body, {
+			id: 'm1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'g1',
+		});
+
+		expect(changed).toEqual(['c1']);
+
+		actor[Symbol.dispose]();
+		workspace[Symbol.dispose]();
+	});
+
+	test('disposes a body whose row was removed', async () => {
+		const { workspace, bodies, connectBody } = setup();
+		const { conversations } = workspace.tables;
+		conversations.set({ id: 'c1', title: 'first' });
+
+		const actor = attachChildDocActor({
+			rootDoc: workspace.ydoc,
+			table: conversations,
+			guidFor: conversations.docs.messages.guid,
+			connectBody,
+			layout: attachChatTranscript,
+		});
+		const body = bodies.get(conversations.docs.messages.guid('c1'))!;
+		expect(body.isDestroyed).toBe(false);
+
+		conversations.delete('c1');
+		expect(body.isDestroyed).toBe(true);
+
+		actor[Symbol.dispose]();
+		workspace[Symbol.dispose]();
+	});
+
+	test('flushes every hosted body on root destroy', async () => {
+		const { workspace, bodies, connectBody } = setup();
+		const { conversations } = workspace.tables;
+		conversations.set({ id: 'c1', title: 'first' });
+		conversations.set({ id: 'c2', title: 'second' });
+
+		const actor = attachChildDocActor({
+			rootDoc: workspace.ydoc,
+			table: conversations,
+			guidFor: conversations.docs.messages.guid,
+			connectBody,
+			layout: attachChatTranscript,
+		});
+
+		workspace[Symbol.dispose]();
+		await actor.whenDisposed;
+
+		for (const body of bodies.values()) {
+			expect(body.isDestroyed).toBe(true);
+		}
+	});
+});

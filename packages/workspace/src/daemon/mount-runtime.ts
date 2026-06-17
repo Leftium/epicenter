@@ -37,6 +37,8 @@
 
 import { join } from 'node:path';
 import { createLogger } from 'wellcrafted/logger';
+import * as Y from 'yjs';
+import { attachYjsLog } from '../document/attach-yjs-log.js';
 import {
 	attachGitAutosave,
 	attachMarkdownExport,
@@ -50,8 +52,17 @@ import type {
 } from '../document/materializer/shared.js';
 import type { FtsConfig } from '../document/materializer/sqlite/core.js';
 import { attachBunSqliteMaterializer } from '../document/materializer/sqlite/index.js';
+import { openCollaboration } from '../document/open-collaboration.js';
+import { roomWsUrl } from '../document/transport.js';
 import type { MountComposeScope } from '../document/workspace.js';
-import { sqlitePath } from '../document/workspace-paths.js';
+import { sqlitePath, yjsPath } from '../document/workspace-paths.js';
+import { hashYDocClientId } from '../shared/client-id.js';
+import {
+	attachChildDocActor,
+	type ChildDocActor,
+	type ConnectedChildDoc,
+	type ObservableChildDocLayout,
+} from './attach-child-doc-actor.js';
 import { attachMountInfrastructure } from './attach-mount-infrastructure.js';
 import { defineSessionMount } from './define-mount.js';
 
@@ -151,6 +162,104 @@ export function attachMountMarkdown<TTables extends TablesRecord>(
 	}
 	registerDrain(markdown);
 	return markdown;
+}
+
+/**
+ * Options for {@link attachMountChildDocActor}: the root doc to cascade teardown
+ * off, the table to watch, the field's single-owner guid deriver, the declared
+ * child-doc layout, and the optional `onChange` seam. Everything node-specific
+ * (disk path, transport, logger) is filled from `scope`.
+ */
+export type ChildDocActorMountOptions<TRowId extends string, THandle> = {
+	/** Root doc whose `destroy` flushes every hosted body (`workspace.ydoc`). */
+	readonly rootDoc: Y.Doc;
+	/** The table whose rows name the child docs to host (`workspace.tables.<t>`). */
+	readonly table: {
+		scan(): { readonly rows: ReadonlyArray<{ readonly id: TRowId }> };
+		observe(callback: () => void): () => void;
+	};
+	/** The field's guid deriver (`workspace.tables.<t>.docs.<field>.guid`). */
+	readonly guidFor: (rowId: TRowId) => string;
+	/** The declared child-doc layout (e.g. `attachChatTranscript`). */
+	readonly layout: ObservableChildDocLayout<THandle>;
+	/** React to a hosted body's changes. The V0.3 claim -> stream -> finish seam. */
+	readonly onChange?: (args: {
+		rowId: TRowId;
+		handle: THandle;
+		ydoc: Y.Doc;
+	}) => void;
+};
+
+/**
+ * Attach the daemon-side child-doc observe loop for a mount's workspace: the
+ * always-on actor that hosts a live replica of every row's child doc and watches
+ * it (ADR-0012/0013). Call it from a mount's `compose` body with the `scope` and
+ * the per-row pieces; it enrolls its own teardown through `scope.registerDrain`,
+ * so a daemon shutdown awaits every hosted body's drain.
+ *
+ * The node-only per-body connector (deterministic `clientID`, disk update log,
+ * cloud room join) is built here from `scope.ctx` and `scope.baseURL`, exactly
+ * as {@link attachMountInfrastructure} connects the root doc. The pure observe
+ * loop lives in {@link attachChildDocActor}, which stays transport-agnostic.
+ */
+export function attachMountChildDocActor<TRowId extends string, THandle>(
+	scope: MountComposeScope,
+	{
+		rootDoc,
+		table,
+		guidFor,
+		layout,
+		onChange,
+	}: ChildDocActorMountOptions<TRowId, THandle>,
+): ChildDocActor {
+	const { ctx, baseURL, registerDrain } = scope;
+
+	const connectBody = (guid: string): ConnectedChildDoc => {
+		const ydoc = new Y.Doc({ guid, gc: true });
+		ydoc.clientID = hashYDocClientId(ctx.nodeId);
+		const yjsLog = attachYjsLog(ydoc, {
+			filePath: yjsPath(ctx.epicenterRoot, guid),
+			log: createLogger(`${ctx.mount}-actor-log`),
+		});
+		const collaboration = openCollaboration(ydoc, {
+			url: roomWsUrl({
+				baseURL,
+				ownerId: ctx.session.ownerId,
+				guid,
+				nodeId: ctx.nodeId,
+			}),
+			openWebSocket: ctx.session.openWebSocket,
+			onReconnectSignal: ctx.session.onReconnectSignal,
+			// A body's writers are the layout and the generation actor, never peer
+			// dispatch, so it publishes no action manifest.
+			actions: {},
+			log: createLogger(`${ctx.mount}-actor-sync`),
+		});
+		return {
+			ydoc,
+			// `ydoc.destroy()` cascades both the log and the collaboration teardown,
+			// the same order `attachMountInfrastructure` relies on for the root doc.
+			whenDisposed: Promise.all([
+				yjsLog.whenDisposed,
+				collaboration.whenDisposed,
+			]).then(() => {}),
+			dispose() {
+				ydoc.destroy();
+			},
+		};
+	};
+
+	const actor = attachChildDocActor<TRowId, THandle>({
+		rootDoc,
+		table,
+		guidFor,
+		connectBody,
+		layout,
+		onChange,
+		log: createLogger(`${ctx.mount}-actor`),
+	});
+	registerDrain(actor);
+	return actor;
 }
 
 /**

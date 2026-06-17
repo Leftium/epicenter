@@ -19,8 +19,8 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import { type TableEntry, MatterReadError, readTable } from '../core/table';
 import type { TableInput } from '../core/integrity';
+import { MatterReadError, readTable, type TableEntry } from '../core/table';
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);

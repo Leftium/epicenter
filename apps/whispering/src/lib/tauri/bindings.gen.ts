@@ -161,16 +161,30 @@ export const commands = {
 			__TAURI_INVOKE('delete_model_entry', { engine, name }),
 		),
 	/**
-	 *  Resolve an entry **through any symlink** and return the size of each file, or
-	 *  `None` for a missing/unreadable one. The catalog-size comparison stays in JS
-	 *  (the 90% threshold). An empty `filenames` means the entry is itself the file
-	 *  (Whisper) and returns one element; otherwise one element per filename
-	 *  (directory engines). A dead link stats to `None`, so a linked-but-broken
-	 *  model reads as not installed.
+	 *  Resolve an entry **through any symlink** and report each expected file's size
+	 *  and completeness verdict. The webview passes the expected catalog sizes (it
+	 *  owns the catalog); the 90% completeness rule lives here next to the stat, so
+	 *  "what counts as a complete file on disk" has one owner shared with the
+	 *  download integrity check (`is_size_complete`). An empty `filenames` means the
+	 *  entry is itself the file (Whisper) and returns one element checked against
+	 *  `expected_sizes[0]`; otherwise one element per filename (directory engines),
+	 *  each checked against the aligned `expected_sizes`. A dead link reports
+	 *  `size: None, complete: false`, so a linked-but-broken model reads as not
+	 *  installed.
 	 */
-	resolveModelFileSizes: (engine: Engine, name: string, filenames: string[]) =>
-		typedError<(number | null)[], ModelFolderError>(
-			__TAURI_INVOKE('resolve_model_file_sizes', { engine, name, filenames }),
+	resolveModelFiles: (
+		engine: Engine,
+		name: string,
+		filenames: string[],
+		expectedSizes: (number | null)[],
+	) =>
+		typedError<ModelFileStatus[], ModelFolderError>(
+			__TAURI_INVOKE('resolve_model_files', {
+				engine,
+				name,
+				filenames,
+				expectedSizes,
+			}),
 		),
 	/**
 	 *  Download a model into its engine folder, cancelable via
@@ -506,6 +520,26 @@ export type ModelFileDownload = {
 	filename: string;
 	/**  Catalog size in bytes; the integrity check and progress total use it. */
 	sizeBytes: number | null;
+};
+
+/**
+ *  One file's presence and completeness in a model entry, resolved through any
+ *  symlink. The webview supplies expected catalog sizes and reads back both the
+ *  stat'd `size` (for messaging) and the `complete` verdict (for installed /
+ *  truncated decisions). The completeness rule itself lives in Rust; see
+ *  `is_size_complete`.
+ */
+export type ModelFileStatus = {
+	/**
+	 *  File size in bytes, following symlinks. `None` when missing or unreadable
+	 *  (a dead link whose target is gone, or a file never created).
+	 */
+	size: number | null;
+	/**
+	 *  Whether the file is present and at least the completeness floor (90%) of
+	 *  its expected catalog size. A missing file is never complete.
+	 */
+	complete: boolean;
 };
 
 export type ModelFolderError =

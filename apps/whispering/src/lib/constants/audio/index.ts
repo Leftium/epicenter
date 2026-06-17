@@ -14,8 +14,6 @@ export {
 	type RecordingMode,
 } from './recording-modes';
 export {
-	RECORDER_STATE_TO_ICON,
-	VAD_STATE_TO_ICON,
 	type VadState,
 	type WhisperingRecordingState,
 } from './recording-states';

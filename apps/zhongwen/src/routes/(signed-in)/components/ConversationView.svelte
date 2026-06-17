@@ -158,7 +158,6 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					guid: docHandle.guid,
-					generationId: generateId(),
 					data: {
 						model: ZHONGWEN_MODEL,
 						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
@@ -189,10 +188,13 @@
 	function sendMessage(content: string) {
 		const text = content.trim();
 		if (!text || isGenerating) return;
+		// The turn carries the assistant id it awaits: the actor reads this
+		// generationId off the doc, so the kickoff POST need not carry it.
 		docHandle.appendUser({
 			id: generateId(),
 			content: text,
 			createdAt: Date.now(),
+			generationId: generateId(),
 		});
 		const title = readRow()?.title;
 		zhongwen.tables.conversations.update(conversationId, {
@@ -205,6 +207,10 @@
 	function retry() {
 		sendError = null;
 		dismissedError = false;
+		// A terminal answer (failed or interrupted) is already keyed to the old
+		// generationId. Re-mint the turn's generationId so the actor starts a
+		// fresh generation instead of replaying the no-op 409.
+		docHandle.remintGeneration(generateId());
 		void kickoffGeneration();
 	}
 </script>

@@ -6,8 +6,10 @@ export {
 	type ChatDocFinish,
 	type ChatDocMessage,
 	findActiveChatDocGeneration,
+	findLatestUserTurn,
 	observeChatDocMessages,
 	readChatDocMessages,
+	setLatestUserTurnGenerationId,
 } from './chat-doc';
 export {
 	type ActionNames,

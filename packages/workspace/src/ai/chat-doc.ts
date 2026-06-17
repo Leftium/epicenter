@@ -7,13 +7,20 @@
  *
  * ```txt
  * {
- *   id: string;            // assistant: the client-minted generationId
+ *   id: string;            // assistant: equals the client-minted generationId
  *   role: 'user' | 'assistant';
  *   createdAt: number;
  *   content: Y.Text;       // token appends land here
+ *   generationId?: string  // user: the assistant id this turn awaits (the work queue)
  *   finish?: ChatDocFinish // server, written at most once; absence = not terminal
  * }
  * ```
+ *
+ * The user turn carries its own `generationId`: the durable, client-minted id
+ * that names the assistant answer it awaits and doubles as that answer's
+ * message id. An unanswered user turn IS the work queue, so an actor that only
+ * observes the doc (no HTTP kickoff body) reads the identity from the turn
+ * itself.
  *
  * Single writer per map: the creating client for user messages, the server
  * generation actor for assistant messages. Both sides import this module so
@@ -40,6 +47,11 @@ export type ChatDocMessage = {
 	role: 'user' | 'assistant';
 	createdAt: number;
 	text: string;
+	/**
+	 * User turns only: the assistant id this turn awaits, used by the actor as
+	 * the idempotent assistant message id. Absent on assistant messages.
+	 */
+	generationId?: string;
 	finish?: ChatDocFinish;
 };
 
@@ -58,7 +70,10 @@ function messagesArray(doc: Y.Doc): Y.Array<Y.Map<unknown>> {
 
 /**
  * Append one user message. One transaction, one map; the caller mints the
- * id (any unique string) and never writes to the map again.
+ * id (any unique string) and the `generationId` (the assistant answer this
+ * turn awaits). The caller never rewrites the id or content; only the
+ * `generationId` may be re-pointed on retry via
+ * {@link setLatestUserTurnGenerationId}, and only by this same client.
  */
 export function appendUserMessage(
 	doc: Y.Doc,
@@ -66,7 +81,8 @@ export function appendUserMessage(
 		id,
 		content,
 		createdAt,
-	}: { id: string; content: string; createdAt: number },
+		generationId,
+	}: { id: string; content: string; createdAt: number; generationId: string },
 ): void {
 	doc.transact(() => {
 		const map = new Y.Map<unknown>();
@@ -75,9 +91,33 @@ export function appendUserMessage(
 		map.set('role', 'user');
 		map.set('createdAt', createdAt);
 		map.set('content', text);
+		map.set('generationId', generationId);
 		text.insert(0, content);
 		messagesArray(doc).push([map]);
 	});
+}
+
+/**
+ * Re-point the latest user turn's `generationId`, returning the id written or
+ * `undefined` when no user turn has synced yet. Retry after a terminal answer
+ * (failed or interrupted) mints a fresh id so the actor starts a new
+ * generation instead of colliding with the answer already keyed to the old
+ * id. The user turn belongs to the creating client, so re-pointing its
+ * `generationId` stays single-writer.
+ */
+export function setLatestUserTurnGenerationId(
+	doc: Y.Doc,
+	generationId: string,
+): string | undefined {
+	const messages = messagesArray(doc);
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const entry = messages.get(index);
+		if (entry instanceof Y.Map && entry.get('role') === 'user') {
+			doc.transact(() => entry.set('generationId', generationId));
+			return generationId;
+		}
+	}
+	return undefined;
 }
 
 /**
@@ -144,16 +184,33 @@ export function readChatDocMessages(doc: Y.Doc): ChatDocMessage[] {
 		if (role !== 'user' && role !== 'assistant') continue;
 		if (typeof createdAt !== 'number') continue;
 		if (!(content instanceof Y.Text)) continue;
+		const generationId = entry.get('generationId');
 		const finish = entry.get('finish') as ChatDocFinish | undefined;
 		messages.push({
 			id,
 			role,
 			createdAt,
 			text: content.toString(),
+			...(typeof generationId === 'string' && { generationId }),
 			...(finish !== undefined && { finish }),
 		});
 	}
 	return messages;
+}
+
+/**
+ * The latest user message in transcript order, or `undefined` when none has
+ * synced yet. The actor answers this turn, taking its `generationId` as the
+ * idempotent assistant message id. Pure over a snapshot; never touches the doc.
+ */
+export function findLatestUserTurn(
+	messages: readonly ChatDocMessage[],
+): ChatDocMessage | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message?.role === 'user') return message;
+	}
+	return undefined;
 }
 
 /**
@@ -224,14 +281,24 @@ export function attachChatTranscript(doc: Y.Doc) {
 		},
 		/**
 		 * Append one user message. Single writer: the creating client mints the id
-		 * and never writes to the message again.
+		 * and the `generationId` (the assistant answer this turn awaits) and never
+		 * rewrites the id or content.
 		 */
 		appendUser(message: {
 			id: string;
 			content: string;
 			createdAt: number;
+			generationId: string;
 		}): void {
 			appendUserMessage(doc, message);
+		},
+		/**
+		 * Re-point the latest user turn's `generationId` for a retry. Returns the
+		 * id written, or `undefined` when no user turn has synced yet. See
+		 * {@link setLatestUserTurnGenerationId}.
+		 */
+		remintGeneration(generationId: string): string | undefined {
+			return setLatestUserTurnGenerationId(doc, generationId);
 		},
 	};
 }

@@ -4,9 +4,10 @@
  * This is the layer above {@link createTable}. A Table watches ONE folder's files; a Vault watches
  * the ROOT (`watch_vault`, depth-1) for its table set changing, and composes a `createTable` per
  * table the watcher resolves. `watch_vault` applies the same table-or-vault rule as the CLI loader
- * (`load/fs.ts` `loadPath`): a root of folders is a vault of those Tables, while a root that is
- * itself a Table (it has a `matter.json`, or no child folders at all) resolves to a single Table on
- * the root, so opening a leaf folder and opening a parent both work. It owns its Tables' lifetimes:
+ * (`load/fs.ts` `loadPath`), where altitude is pure shape: a folder of folders is a vault of those
+ * Tables, while a folder of files (or an empty folder) is itself a single Table on the root, so
+ * opening a leaf folder and opening a parent both work. A `matter.json` only types a Table; it never
+ * decides altitude. It owns its Tables' lifetimes:
  * dispose the Vault and every Table watch and the root watch stop. The Vault declares nothing
  * itself: it is the live union of its Tables' self-declared contracts, discovered, not configured.
  *

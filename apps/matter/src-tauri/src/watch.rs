@@ -160,30 +160,33 @@ pub fn unwatch_folder(id: u32, store: State<WatcherStore>) {
 }
 
 /// The vault's tables as absolute paths, applying the SAME table-or-vault rule the CLI loader uses
-/// (`src/lib/load/fs.ts` `loadPath`), so the GUI and the CLI agree on what a path is:
+/// (`src/lib/load/fs.ts` `loadPath`), so the GUI and the CLI agree on what a path is. Altitude is
+/// pure shape:
 ///
-///   - a `matter.json` at the root makes the root ITSELF the one table (a contract is a table's, so
-///     it wins even when the folder also has child folders);
-///   - otherwise every immediate child DIRECTORY is a table, sorted for a deterministic order;
-///   - otherwise (no contract, no child folders: a raw leaf or an empty folder) the root is one
-///     table.
+///   - a folder with a visible child DIRECTORY is a VAULT; each child directory is a table, sorted
+///     for a deterministic order;
+///   - otherwise (a folder of files, or an empty folder) the root is one table.
+///
+/// A `matter.json` only TYPES the table it sits in; it never decides altitude, so a contract can
+/// never hide child tables. A matter table is flat: a subfolder always means "a level down," never
+/// an attachment. Hidden directories (`.git`, `.obsidian`) are not tables.
 ///
 /// So opening a leaf table folder and opening a vault of table folders both flow through one rule,
 /// with no wrong-altitude special case to detect. Errors only if the root itself cannot be listed;
 /// a child that races away mid-scan just does not appear, surfacing on the next re-scan.
 fn scan_vault(root: &Path) -> Result<Vec<String>, String> {
     let mut dirs = Vec::new();
-    let mut has_contract = false;
     for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
         if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
             dirs.push(entry.path().to_string_lossy().to_string());
-        } else if entry.file_name().to_string_lossy() == "matter.json" {
-            has_contract = true;
         }
     }
-    // A contract, or the absence of any child folders, makes the root itself the one table.
-    if has_contract || dirs.is_empty() {
+    // No visible child folder makes the root itself the one table (a folder of files, or empty).
+    if dirs.is_empty() {
         return Ok(vec![root.to_string_lossy().to_string()]);
     }
     dirs.sort();
@@ -192,9 +195,10 @@ fn scan_vault(root: &Path) -> Result<Vec<String>, String> {
 
 /// Watch a VAULT root: stream its table list as a full, sorted snapshot. This is the layer above
 /// `watch_folder`: where that watches ONE folder's files, this watches the root NON-recursively for
-/// the table set changing (a child folder appearing or disappearing, or a `matter.json` written or
-/// removed at the root, which flips the root between a vault of folders and a single table per
-/// `scan_vault`), and the JS Vault reacts by composing or disposing a per-folder `watch_folder`.
+/// the table set changing (a visible child folder appearing or disappearing, which flips the root
+/// between a vault of folders and a single table per `scan_vault`; loose files at the root, a
+/// `README.md` or a `matter.json`, never change the table set), and the JS Vault reacts by composing
+/// or disposing a per-folder `watch_folder`.
 ///
 /// Each push is the WHOLE table list, not a precise add/remove delta, and the JS reconciles it
 /// against its current set (the same "a full rebuild is a pure function of truth" stance the
@@ -272,10 +276,21 @@ mod tests {
     // are pinned to the same table-or-vault rule in both languages.
 
     #[test]
-    fn a_contract_makes_the_root_the_one_table_even_with_subfolders() {
+    fn a_contract_never_hides_child_tables() {
+        // A matter.json only types the folder it sits in; it never decides altitude, so a contract
+        // beside child folders is a vault of those folders, not a single table that hides them.
         let dir = scratch("contract");
         std::fs::write(dir.join("matter.json"), "{}").unwrap();
-        std::fs::create_dir_all(dir.join("ignored")).unwrap();
+        std::fs::create_dir_all(dir.join("pages")).unwrap();
+        assert_eq!(scan_vault(&dir).unwrap(), vec![s(&dir.join("pages"))]);
+    }
+
+    #[test]
+    fn hidden_directories_are_not_tables() {
+        // A flat table with a `.git` stays one table; the hidden dir is not a child table.
+        let dir = scratch("hidden");
+        std::fs::write(dir.join("note.md"), "# hi").unwrap();
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
         assert_eq!(scan_vault(&dir).unwrap(), vec![s(&dir)]);
     }
 

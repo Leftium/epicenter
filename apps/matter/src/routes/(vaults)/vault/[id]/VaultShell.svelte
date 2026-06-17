@@ -53,8 +53,7 @@
 				<Empty.Media variant="icon"><LayersIcon /></Empty.Media>
 				<Empty.Title>No tables yet</Empty.Title>
 				<Empty.Description>
-					{vault.folderName} is empty. Add a folder of markdown (or a matter.json) and it appears
-					here.
+					{vault.folderName} is empty. Add a folder of markdown and it appears here.
 				</Empty.Description>
 			</Empty.Root>
 		{:else}

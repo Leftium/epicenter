@@ -99,20 +99,61 @@ describe('loadVault', () => {
 			expect(await loadVault(root)).toEqual([]);
 		});
 	});
-});
 
-describe('loadPath: scope inference', () => {
-	test('a folder with a matter.json is one table, even if it has subfolders', async () => {
+	test('hidden directories (.git, .obsidian) are not tables', async () => {
 		await withTempDir(async (root) => {
 			const dir = join(root, 'pages');
 			await mkdir(dir);
-			await writeFile(join(dir, 'matter.json'), pagesModel);
-			await writeFile(join(dir, 'p1.md'), '---\ntitle: Hello\n---');
-			await mkdir(join(dir, 'attachments')); // a stray subfolder must not make it a vault
+			await writeFile(join(dir, 'x.md'), '---\ntitle: X\n---');
+			await mkdir(join(root, '.obsidian'));
+
+			const tables = await loadVault(root);
+			expect(tables.map((t) => t.name)).toEqual(['pages']);
+		});
+	});
+});
+
+describe('loadPath: scope inference', () => {
+	test('a contract never hides child tables: a matter.json beside subfolders is still a vault', async () => {
+		await withTempDir(async (root) => {
+			// matter.json only TYPES the folder it sits in; it never decides altitude, so a contract
+			// at a vault root is an inert file, not a signal that collapses the vault to one table.
+			await writeFile(join(root, 'matter.json'), pagesModel);
+			for (const name of ['pages', 'adaptations']) {
+				const dir = join(root, name);
+				await mkdir(dir);
+				await writeFile(join(dir, 'x.md'), '---\ntitle: X\n---');
+			}
+
+			const { scope, tables } = await loadPath(root);
+			expect(scope).toBe('vault');
+			expect(tables.map((t) => t.name)).toEqual(['adaptations', 'pages']);
+		});
+	});
+
+	test('a matter table is flat: a folder of .md with a subfolder is a vault, not a table-with-attachments', async () => {
+		await withTempDir(async (root) => {
+			const dir = join(root, 'notes');
+			await mkdir(dir);
+			await writeFile(join(dir, 'n1.md'), '---\ntag: idea\n---');
+			await mkdir(join(dir, 'images')); // a subfolder is a level down, never an attachment
+
+			const { scope, tables } = await loadPath(dir);
+			expect(scope).toBe('vault');
+			expect(tables.map((t) => t.name)).toEqual(['images']);
+		});
+	});
+
+	test('hidden directories do not flip a flat table into a vault', async () => {
+		await withTempDir(async (root) => {
+			const dir = join(root, 'notes');
+			await mkdir(dir);
+			await writeFile(join(dir, 'n1.md'), '---\ntag: idea\n---');
+			await mkdir(join(dir, '.git'));
 
 			const { scope, tables } = await loadPath(dir);
 			expect(scope).toBe('table');
-			expect(tables.map((t) => t.name)).toEqual(['pages']);
+			expect(tables.map((t) => t.name)).toEqual(['notes']);
 		});
 	});
 

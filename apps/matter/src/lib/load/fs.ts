@@ -84,8 +84,9 @@ export async function loadTable(dir: string): Promise<TableInput> {
 
 /**
  * Load a vault root: every immediate subfolder is a table, loaded in sorted order. Loose files at
- * the root (a stray `README.md`) are ignored; only directories are tables. An empty root (no
- * subfolders yet) loads as an empty vault, not an error.
+ * the root (a stray `README.md`) are ignored, because a row exists only inside a table; only
+ * directories are tables. Hidden directories (`.git`, `.obsidian`) are skipped, so they never
+ * become bogus tables. An empty root (no subfolders yet) loads as an empty vault, not an error.
  *
  * @param root the vault root's path.
  */
@@ -94,7 +95,9 @@ export async function loadVault(root: string): Promise<TableInput[]> {
 	const names = await readdir(rootPath);
 	const subdirs = await Promise.all(
 		names.map(async (name) =>
-			(await stat(join(rootPath, name))).isDirectory() ? name : null,
+			!name.startsWith('.') && (await stat(join(rootPath, name))).isDirectory()
+				? name
+				: null,
 		),
 	);
 	return Promise.all(
@@ -110,12 +113,14 @@ export type LoadedPath = { scope: 'table' | 'vault'; tables: TableInput[] };
 
 /**
  * Load a path with its scope inferred from what is on disk, so `matter check <path>` works whether
- * the user points at one table folder or at a vault of them. The rule:
+ * the user points at one table folder or at a vault of them. Altitude is pure shape:
  *
- *   - a `matter.json` in the folder marks the folder ITSELF as a table (a contract is a table's,
- *     not a vault's, so it wins even if the folder also has subfolders);
- *   - otherwise, any immediate subfolder makes it a vault (each child a table);
- *   - otherwise (no contract, no subfolders: a raw leaf or an empty folder) it is one table.
+ *   - a folder with a visible child folder is a VAULT (each child folder a table);
+ *   - otherwise (a folder of files, or an empty folder) it is one TABLE.
+ *
+ * A `matter.json` only TYPES the table it sits in; it never decides altitude, so a contract can
+ * never hide child tables. A matter table is flat: a subfolder always means "a level down," never
+ * an attachment. Hidden directories (`.git`, `.obsidian`) are not tables.
  *
  * A path that cannot be listed at all is a single unreadable table, so the failure flows through
  * the same pipeline as any other. Table scope is a one-table vault: its references have no target
@@ -130,11 +135,11 @@ export async function loadPath(path: string): Promise<LoadedPath> {
 		return { scope: 'table', tables: [await loadTable(dirPath)] };
 	}
 
-	const isTable =
-		listing.some((entry) => entry.name === 'matter.json') ||
-		!listing.some((entry) => entry.isDirectory());
+	const hasChildTable = listing.some(
+		(entry) => entry.isDirectory() && !entry.name.startsWith('.'),
+	);
 
-	return isTable
-		? { scope: 'table', tables: [await loadTable(dirPath)] }
-		: { scope: 'vault', tables: await loadVault(dirPath) };
+	return hasChildTable
+		? { scope: 'vault', tables: await loadVault(dirPath) }
+		: { scope: 'table', tables: [await loadTable(dirPath)] };
 }

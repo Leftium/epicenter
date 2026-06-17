@@ -11,7 +11,7 @@
 	 * is open or closed and nothing else.
 	 *
 	 * The guide is user-opened, never auto-popped: the ambient "you still need
-	 * this" signal is the declarative `MacosAccessibilityNotice`, which a modal
+	 * this" signal is the declarative `DictationCapabilityNotice`, which a modal
 	 * must not duplicate by nagging.
 	 */
 	function createAccessibilityGuide() {

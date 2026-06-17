@@ -29,6 +29,7 @@ function createDictationCapability() {
 		'untrusted',
 		'active',
 		'broken',
+		'unsupported',
 		null,
 	];
 
@@ -55,6 +56,24 @@ function createDictationCapability() {
 		/** A stale grant: the fix is remove-and-re-add, not "just toggle on". */
 		get isStale(): boolean {
 			return effective() === 'broken';
+		},
+		/**
+		 * This platform can never tap the keyboard (Linux Wayland). Terminal: there
+		 * is nothing to grant, so the notice explains the limit instead of offering
+		 * a fix.
+		 */
+		get isUnsupported(): boolean {
+			return effective() === 'unsupported';
+		},
+		/**
+		 * The global tap cannot fire right now, for any settled reason
+		 * (`untrusted`, `broken`, or `unsupported`). Excludes `active` (it works)
+		 * and `unknown` (the pre-seed sub-tick, so the keycap does not flash dim
+		 * before the first value lands). Views use this to dim the shortcut keycap.
+		 */
+		get isUnavailable(): boolean {
+			const s = effective();
+			return s !== 'active' && s !== 'unknown';
 		},
 
 		/**

@@ -101,13 +101,17 @@ C3  Give the actor the flush policy.  DONE (4ae29e402, rode V0.5)
     cross-boundary abstraction. The teardown invariant stays where it is owned
     (the actor's Symbol.dispose), so nothing was centralised that had to be.
 
-C4  Delete the HTTP generation route.                            V1+ (gated on R)
+C4  Delete the HTTP generation route.                       V1+ (R landed; unblocked)
     The vision says it: once every room has an actor (home daemon or a cloud
     managed actor running this same loop as a sync peer), runDocGeneration + the
     room.sync forwarding + the drain retry are dead code. Biggest deletion on the
-    board. Gated on the topology/targeting decision (R / open question #1).
+    board. WAS gated on R; R landed (the designation gate now keeps the daemon and
+    the HTTP path on disjoint conversations), so C4 is unblocked. Still deferred
+    until a daemon actually ships real inference (V0.5), since deleting the HTTP
+    path before that leaves cloud-default conversations unanswered.
 
-R   Reframe: "claim" -> "reconcile a targeted turn." (DECIDED; in ADR-0013, resolves OQ#1)
+R   Reframe: "claim" -> "reconcile a targeted turn."  DONE (actorNodeId designation)
+    (DECIDED in ADR-0013, resolves OQ#1; BUILT 2026-06-17)
     "Claim" imported a contention model the single-actor design does not have. The
     actor is a RECONCILER (observe -> compute the missing answer -> produce it),
     like the materializers. Designation is DATA, not a race or a global config: the
@@ -177,7 +181,13 @@ D2 (V0.5) RESOLVED 2026-06-17: (b) the daemon holds a provider key and calls
    (direct `chat()` with a daemon key), then (c) as the privacy end state; treat
    (a) as a non-goal since it fights C4. Does that hold?
 
-D3 (V0.5 GATE; surfaced by the 2026-06-17 adversarial review)
+D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers only
+   conversations designated to its node (`actorNodeId === selfNodeId`) and the
+   browser skips the HTTP kickoff whenever `actorNodeId` is set, so exactly one of
+   {HTTP server actor, daemon actor} reconciles any conversation. The
+   actor-over-room test that asserted the two-map bug now asserts ONE map. Original
+   options kept below for the record.
+
    The dual-transport double-answer must be closed BEFORE a daemon ships real
    inference, or one turn gets two real replies. Today `ConversationView` fires
    the HTTP kickoff (-> server `runDocGeneration`) AND the daemon actor answers
@@ -341,4 +351,21 @@ D3 (V0.5 GATE; surfaced by the 2026-06-17 adversarial review)
             first, openaiCompatible({ baseURL }) the universal fallback. 8 open
             questions; O1 (action-surface socket transport) is the linchpin. No
             product code. doc-hygiene clean.
+2026-06-17  R DONE (actorNodeId designation): closed D3, the dual-transport
+            double-answer. Added `actorNodeId: nullable(field.string<NodeId>())` to
+            the conversations row (null = cloud-default, the HTTP path answers). The
+            generic child-doc actor context now carries the daemon's `selfNodeId`
+            and a reactive `readRow()` onto the parent row (designation lives on the
+            row, never in the transcript child doc); the chat actor gained an
+            `isDesignated` gate (default always-on for unit callers) and the Zhongwen
+            mount builds it as `() => readRow()?.actorNodeId === selfNodeId`.
+            ConversationView skips its HTTP kickoff when `actorNodeId` is set, so a
+            designated conversation is answered only by its daemon and a cloud-
+            default one only by the HTTP path. Flipped the actor-over-room D3 test:
+            an undesignated daemon abstains and the HTTP path is the sole answerer
+            (one assistant map, asserted to be the HTTP reply); added unit coverage
+            (undesignated actor never claims; a designation that flips on is honored
+            next observe) and a child-doc-actor context test (selfNodeId + reactive
+            readRow). workspace + zhongwen + server typecheck clean; workspace 553 +
+            server ai 14 green. C4 now unblocked (still deferred to V0.5 inference).
 ```

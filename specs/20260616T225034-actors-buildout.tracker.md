@@ -39,7 +39,7 @@ Invariants (never violate, every slice):
 - [x] **V0.2** Child-doc observe loop in the mount runtime: actor reads the conversations table, opens + observes each transcript child doc via the bound `.docs` accessor, disposes idle ones. (Core new capability; `mount-runtime.ts` hosts only the root doc today.) `commit: 73789f93a` then refactored schema-driven (`commit: c13060107`): `mount({ actors })` derives table+guid+layout from the schema like the browser `connect()`; the app registers behavior only via a per-body factory; layout/guid can no longer disagree with the schema; only observable layouts qualify.
 - [x] **V0.3** Actor claims an unanswered user turn as the SOLE designated actor and streams a FAKE deterministic response into the assistant `Y.Text`, then writes `finish`. No HTTP, no duplicate stream. Fill the per-body factory's `onChange` seam in `apps/zhongwen/mount.ts` (`actors.conversations.messages`): build per-conversation generation state in the factory body, claim on the idempotent `generationId` (existence check, not a lock), stream via `appendAssistantMessage`. Port the claim/finish logic from `packages/server/src/ai/doc-generation.ts` minus HTTP. `commit: 7acc1043e` Departures from `doc-generation.ts`: no `room.sync` update-forwarding/`drain` (the connected body persists and syncs itself, so the actor writes the live `ydoc` directly) and no `signal`/`waitUntil` (no HTTP request to outlive). The doc is the lock: existence of the assistant map keyed to `generationId` is the claim and short-circuits the actor's own streaming writes; `findActiveChatDocGeneration` serialises a turn that arrives mid-stream until the finish write wakes `onChange`. The only in-memory state is an `AbortController` so teardown stops the loop before the body is destroyed (and is the seam V0.4's durable cancel reuses).
 - [x] **V0.4** Durable cancel: client writes `cancelRequestedAt`; actor observes mid-generation and writes `finish: cancelled`. (The read-back departure from `doc-generation.ts`.) `commit: 9400820bf` The field is client-owned on the user turn (single writer per field, the actor still owns the assistant finish). The actor honors two timings: mid-stream (abort + finish cancelled, checked BEFORE the answer path so it is reached even while the existence-claim would short-circuit) and pre-stream (claimed-then-finished-cancelled without streaming). `remintGeneration` clears the stale cancel so a retry is not born cancelled. `ConversationView` Stop now writes the durable cancel beside the transitional HTTP abort. Rode C1 (below). Actor behavior test deferred to C2 per the documented V0.3 precedent (the fake stream is still inline/un-injectable); the data-layer primitives (`findUnansweredTurn`, `requestCancel`, remint-clear) are fully tested in `chat-doc.test.ts`.
-- [ ] **V0.5** Real inference behind `startStream(messages) => AsyncIterable<StreamChunk>`. Audit that supported model adapters (TanStack AI cloud + a local backend slot) all expose text deltas through this contract, so the append loop is backend-agnostic. `commit:`
+- [ ] **V0.5** Real inference behind `startStream(messages) => AsyncIterable<StreamChunk>`. Audit that supported model adapters (TanStack AI cloud + a local backend slot) all expose text deltas through this contract, so the append loop is backend-agnostic. `commit:` IN PROGRESS: C2 landed the backend-agnostic seam (`2ca8ddddc`): the actor moved to `@epicenter/workspace/ai` as `attachChatActor`, parameterized by a `ChatStream`, with the fake now an injected fixture and the claim->stream->finish + durable-cancel path finally tested. REMAINS to tick V0.5: C3 (share one stream/flush/finish core with the server) and the real-provider swap, which is blocked on D2 (how the always-on daemon obtains inference).
 
 V0 done when: a phone and a desktop see the same streamed reply over hosted sync, cancel works after a disconnect, 0 duplicate streams, `bun run typecheck` + workspace tests green.
 
@@ -73,7 +73,7 @@ C1  Collapse the duplicated answer predicate.  DONE (9400820bf, rode V0.4)
     the actor, which only needs turn-or-nothing. The server keeps that taxonomy
     in its own HTTP wrapper while that wrapper still lives (C4 deletes it).
 
-C2  Inject startStream; the fake becomes a fixture.              rides V0.5
+C2  Inject startStream; the fake becomes a fixture.  DONE (2ca8ddddc, rides V0.5)
     createChatActor's streamFakeReply is a test fixture compiled into production.
     The vision already names the seam: startStream(messages) =>
     AsyncIterable<StreamChunk>. Parameterise the actor by it; V0.3's fake is the
@@ -139,6 +139,28 @@ D1 (V0.2, non-blocking, confirm when convenient)
    too loose before the wake-nudge lands, say so and I will add an LRU cap
    (evict the least-recently-changed body past a max-open count; a capped set
    cannot miss turns the way a per-room timer can).
+
+D2 (V0.5, BLOCKING the real-provider swap; C2 + C3 do NOT need it)
+   How does the always-on actor obtain real inference behind the now-existing
+   `ChatStream` seam? The app's mount factory closes over its own `startStream`,
+   so this is purely "what instance does Zhongwen's daemon inject in production".
+   Three candidates, none pinned by the specs/ADRs:
+     (a) the daemon calls the hosted /api/ai/chat SSE route via an authenticated
+         daemon fetch, parsing SSE back into StreamChunks. Reuses the route,
+         billing, and BYOK/house keys, BUT it is circular for hosted Zhongwen
+         (the daemon would call the cloud to write a doc it then syncs to the
+         cloud) and it keeps alive the very route C4 wants to delete.
+     (b) the daemon holds a provider key and calls TanStack `chat()` directly
+         (same call the server route makes). Simplest text path; needs a key in
+         the daemon's environment and a billing answer for hosted.
+     (c) a local backend (Ollama / llama.cpp / MLX) behind the same `ChatStream`.
+         The end state the vision wants ("financial facts never leave the
+         machine"), but needs a local runtime present.
+   The seam makes all three a one-argument swap; the question is which Zhongwen
+   ships first for the V0 exit ("a phone and a desktop see the same streamed
+   reply over hosted sync"). Recommendation to confirm: (b) for the V0 proof
+   (direct `chat()` with a daemon key), then (c) as the privacy end state; treat
+   (a) as a non-goal since it fights C4. Does that hold?
 ```
 
 ## Log (agent appends one line per run)
@@ -190,4 +212,22 @@ D1 (V0.2, non-blocking, confirm when convenient)
             test deferred to C2 (fake stream still inline); data-layer
             primitives fully tested. workspace + zhongwen + server typecheck
             clean, 539 workspace tests green.
+2026-06-17  V0.5 IN PROGRESS / C2 (2ca8ddddc): backend-agnostic chat actor.
+            Moved the per-conversation actor out of Zhongwen's mount into
+            @epicenter/workspace/ai as attachChatActor, parameterized by a
+            ChatStream (startStream(messages) => AsyncIterable<StreamChunk>).
+            V0.3 shipped the stream inline + un-injectable so the claim ->
+            stream -> finish path and the V0.4 cancel had no test BY
+            CONSTRUCTION; with startStream parameterized the fake is a fixture
+            (mount injects fakeChatStream) and chat-actor.test.ts now covers
+            completed, re-fire no-op, RUN_ERROR -> failed, mid-stream cancel,
+            pre-stream cancel, and teardown-no-finish (6 tests). Extracted
+            chatDocToPrompt into chat-doc.ts. Did NOT touch the server (C3 does
+            that). Appended D2: how the daemon obtains real inference (blocks
+            the real-provider swap; recommendation = direct chat() with a daemon
+            key for the V0 proof, local backend as the end state, NOT the cloud
+            route since it fights C4). workspace + zhongwen + server typecheck
+            clean, 545 workspace tests green. V0.5 stays UNTICKED: C3 + the real
+            swap remain. Per the Dependency Rules the build track is now blocked
+            on D2, so V2.R (research-only) is the track to advance next.
 ```

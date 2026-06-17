@@ -312,7 +312,6 @@
 						onclick={() => commandCallbacks.cancelRecording()}
 						variant="ghost-destructive"
 						size="sm"
-						style="view-transition-name: {viewTransition.global.cancel};"
 					>
 						<XIcon class="size-4" />
 						Cancel

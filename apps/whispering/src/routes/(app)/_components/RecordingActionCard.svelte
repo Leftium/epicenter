@@ -5,7 +5,6 @@
 	import { cn } from '@epicenter/ui/utils';
 	import type { Component, Snippet } from 'svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
-	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	// The caller owns its own state machine, so it picks which icon to show
 	// and hands us one `icon`. We only decide presentation: a spinner while
@@ -59,7 +58,6 @@
 	>
 		<span
 			aria-hidden="true"
-			style="view-transition-name: {viewTransition.global.microphone};"
 			class={cn(
 				'flex size-14 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-foreground shadow-inner transition-colors duration-200 sm:size-16',
 				active && 'border-destructive/45 bg-destructive/10 text-destructive',

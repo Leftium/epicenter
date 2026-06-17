@@ -48,19 +48,4 @@ export const viewTransition = {
 	transformation(id: string | null) {
 		return `transformation-${id ?? 'none'}` as const;
 	},
-
-	/**
-	 * Global UI elements that persist across pages.
-	 * These have fixed names since they're singletons.
-	 */
-	global: {
-		/** The microphone/recording button */
-		microphone: 'microphone-icon',
-		/** The cancel recording button */
-		cancel: 'cancel-icon',
-		/** The page header */
-		header: 'header',
-		/** The navigation container */
-		nav: 'nav',
-	},
 } as const;

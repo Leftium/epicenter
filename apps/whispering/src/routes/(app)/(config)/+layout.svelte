@@ -17,7 +17,6 @@
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	let { children } = $props();
 
@@ -32,7 +31,6 @@
 		'border-border/40 bg-background/95 supports-backdrop-filter:bg-background/60 z-30 border-b shadow-xs backdrop-blur-sm',
 		'flex h-14 w-full items-center justify-between px-4 sm:px-8',
 	)}
-	style="view-transition-name: {viewTransition.global.header}"
 >
 	<Button tooltip="Go home" href="/" variant="ghost" class="-ml-4">
 		<span class="text-lg font-bold">whispering</span>
@@ -47,7 +45,6 @@
 						onclick={() => commandCallbacks.cancelRecording()}
 						variant="ghost"
 						size="icon"
-						style="view-transition-name: {viewTransition.global.cancel};"
 					>
 						<XIcon class="size-4" />
 					</Button>
@@ -62,7 +59,6 @@
 						onclick={() => commandCallbacks.toggleManualRecording()}
 						variant="ghost"
 						size="icon"
-						style="view-transition-name: {viewTransition.global.microphone}"
 					>
 						<ManualActionIcon class="size-4" />
 					</Button>
@@ -73,7 +69,6 @@
 							onclick={() => commandCallbacks.toggleManualRecording()}
 							variant="ghost"
 							size="icon"
-							style="view-transition-name: {viewTransition.global.microphone}"
 							class="rounded-r-none border-r-0"
 						>
 							<ManualActionIcon class="size-4" />
@@ -94,7 +89,6 @@
 							onclick={() => commandCallbacks.toggleVadRecording()}
 							variant="ghost"
 							size="icon"
-							style="view-transition-name: {viewTransition.global.microphone}"
 							class="rounded-r-none border-r-0"
 						>
 							<VadActionIcon class="size-4" />
@@ -107,7 +101,6 @@
 						onclick={() => commandCallbacks.toggleVadRecording()}
 						variant="ghost"
 						size="icon"
-						style="view-transition-name: {viewTransition.global.microphone}"
 					>
 						<VadActionIcon class="size-4" />
 					</Button>

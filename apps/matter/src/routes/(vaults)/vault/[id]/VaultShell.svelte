@@ -4,6 +4,7 @@
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { createVault } from '$lib/vault.svelte';
+	import IntegrityPanel from './IntegrityPanel.svelte';
 	import TablePane from './TablePane.svelte';
 
 	let { root }: { root: string } = $props();
@@ -60,6 +61,7 @@
 					<TablePane table={activeTable} />
 				{/key}
 			{/if}
+			<IntegrityPanel integrity={vault.integrity} />
 		{/if}
 	{:catch error}
 		<Empty.Root class="flex-1 border-0">

@@ -3,8 +3,15 @@
 </script>
 
 <div class="relative inline-block mb-16 lg:mb-20">
-	<!-- Microphone Icon -->
-	<div class="relative z-20 text-8xl lg:text-9xl select-none">🎙️</div>
+	<!-- Microphone Icon: the studio-mic identity mark, matching the desktop app
+	(ADR 0013). Uses the shared image rather than the 🎙️ emoji so the brand reads
+	the same on every platform, not just where the OS happens to render that emoji
+	as a studio mic. -->
+	<img
+		src="/studio-microphone.png"
+		alt="Whispering"
+		class="relative z-20 mx-auto size-24 lg:size-32 select-none"
+	/>
 
 	<!-- Sound Waves -->
 	<div

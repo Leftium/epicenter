@@ -39,7 +39,7 @@ Invariants (never violate, every slice):
 - [x] **V0.2** Child-doc observe loop in the mount runtime: actor reads the conversations table, opens + observes each transcript child doc via the bound `.docs` accessor, disposes idle ones. (Core new capability; `mount-runtime.ts` hosts only the root doc today.) `commit: 73789f93a` then refactored schema-driven (`commit: c13060107`): `mount({ actors })` derives table+guid+layout from the schema like the browser `connect()`; the app registers behavior only via a per-body factory; layout/guid can no longer disagree with the schema; only observable layouts qualify.
 - [x] **V0.3** Actor claims an unanswered user turn as the SOLE designated actor and streams a FAKE deterministic response into the assistant `Y.Text`, then writes `finish`. No HTTP, no duplicate stream. Fill the per-body factory's `onChange` seam in `apps/zhongwen/mount.ts` (`actors.conversations.messages`): build per-conversation generation state in the factory body, claim on the idempotent `generationId` (existence check, not a lock), stream via `appendAssistantMessage`. Port the claim/finish logic from `packages/server/src/ai/doc-generation.ts` minus HTTP. `commit: 7acc1043e` Departures from `doc-generation.ts`: no `room.sync` update-forwarding/`drain` (the connected body persists and syncs itself, so the actor writes the live `ydoc` directly) and no `signal`/`waitUntil` (no HTTP request to outlive). The doc is the lock: existence of the assistant map keyed to `generationId` is the claim and short-circuits the actor's own streaming writes; `findActiveChatDocGeneration` serialises a turn that arrives mid-stream until the finish write wakes `onChange`. The only in-memory state is an `AbortController` so teardown stops the loop before the body is destroyed (and is the seam V0.4's durable cancel reuses). CORRECTION (2026-06-17, adversarial review): "no duplicate stream" holds only per-replica within the actor. While `ConversationView` still fires the HTTP kickoff AND a daemon actor observes the same room, BOTH transports claim on their own replica and the CRDT merge keeps two assistant maps: a real cross-transport double-answer. The single-actor guarantee depends on the `actorNodeId` designation (R), which is decided but unbuilt; closing it is tracked as D3 and is the gate before a daemon ships real inference (V0.5).
 - [x] **V0.4** Durable cancel: client writes `cancelRequestedAt`; actor observes mid-generation and writes `finish: cancelled`. (The read-back departure from `doc-generation.ts`.) `commit: 9400820bf` The field is client-owned on the user turn (single writer per field, the actor still owns the assistant finish). The actor honors two timings: mid-stream (abort + finish cancelled, checked BEFORE the answer path so it is reached even while the existence-claim would short-circuit) and pre-stream (claimed-then-finished-cancelled without streaming). `remintGeneration` clears the stale cancel so a retry is not born cancelled. `ConversationView` Stop now writes the durable cancel beside the transitional HTTP abort. Rode C1 (below). Actor behavior test deferred to C2 per the documented V0.3 precedent (the fake stream is still inline/un-injectable); the data-layer primitives (`findUnansweredTurn`, `requestCancel`, remint-clear) are fully tested in `chat-doc.test.ts`.
-- [ ] **V0.5** Real inference behind `startStream(messages) => AsyncIterable<StreamChunk>`. Audit that supported model adapters (TanStack AI cloud + a local backend slot) all expose text deltas through this contract, so the append loop is backend-agnostic. `commit:` IN PROGRESS: C2 landed the backend-agnostic seam (`2ca8ddddc`): the actor moved to `@epicenter/workspace/ai` as `attachChatActor`, parameterized by a `ChatStream`, with the fake now an injected fixture and the claim->stream->finish + durable-cancel path finally tested. REMAINS to tick V0.5: C3 (share one stream/flush/finish core with the server) and the real-provider swap, which is blocked on D2 (how the always-on daemon obtains inference).
+- [x] **V0.5** Real inference behind `startStream(messages) => AsyncIterable<StreamChunk>`. Audit that supported model adapters (TanStack AI cloud + a local backend slot) all expose text deltas through this contract, so the append loop is backend-agnostic. `commit: 5a2631569` C2 (`2ca8ddddc`) landed the backend-agnostic seam (actor -> `@epicenter/workspace/ai` as `attachChatActor`, parameterized by a `ChatStream`); C3 (`4ae29e402`) gave the actor the flush policy. The real-provider swap now lands: Zhongwen's mount resolves a Gemini adapter from `GEMINI_API_KEY` and drives it with the same `chat()` call the hosted route makes (D2 option (b)), under the shared `ZHONGWEN_SYSTEM_PROMPT`, falling back to the placeholder + a warn when no key (the explicit "real inference not wired on this host" boundary). DeepWiki-verified the two facts the swap rests on: `chat()` streams `AsyncIterable<StreamChunk>` and a `createGeminiChat` adapter is stateless/safe to share across concurrent generations (built once, each generation its own `AbortController`). NO new test: this is provider glue on the same untested boundary as `routes/ai.ts` (whose real `chat()` call is likewise untested); the designation/single-answerer/cancel behavior is already proven at the `ChatStream` seam by `actor-over-room-sync.test.ts`. The LIVE two-device real-inference exit additionally needs the daemon to actually run (no `epicenter.config.ts` for Zhongwen yet) and a node picker to designate a conversation to it; both are deferred (see C4).
 
 V0 done when: a phone and a desktop see the same streamed reply over hosted sync, cancel works after a disconnect, 0 duplicate streams, `bun run typecheck` + workspace tests green.
 
@@ -106,9 +106,19 @@ C4  Delete the HTTP generation route.                       V1+ (R landed; unblo
     managed actor running this same loop as a sync peer), runDocGeneration + the
     room.sync forwarding + the drain retry are dead code. Biggest deletion on the
     board. WAS gated on R; R landed (the designation gate now keeps the daemon and
-    the HTTP path on disjoint conversations), so C4 is unblocked. Still deferred
-    until a daemon actually ships real inference (V0.5), since deleting the HTTP
-    path before that leaves cloud-default conversations unanswered.
+    the HTTP path on disjoint conversations), and V0.5 landed real daemon inference.
+    Still deferred, now on two unbuilt pieces, NOT on inference code:
+      (1) the daemon does not actually run for Zhongwen (no epicenter.config.ts
+          wiring zhongwen() into `epicenter up`), so no room has a live actor;
+      (2) no node picker exists, so every conversation is still born cloud-default
+          (`+page.svelte` writes actorNodeId: null) and nothing routes one to a
+          daemon node.
+    Until both land, every live conversation is cloud-default and deleting
+    runDocGeneration leaves them unanswered. These two are the next slice after
+    V0.5 (a "co-deploy a live daemon" slice); they were deliberately NOT bundled
+    into V0.5 to avoid a big-bang. Trigger to delete C4: a daemon runs real
+    inference for a designated conversation end to end AND cloud-default
+    conversations have a daemon (managed or home) to fall to.
 
 R   Reframe: "claim" -> "reconcile a targeted turn."  DONE (actorNodeId designation)
     (DECIDED in ADR-0013, resolves OQ#1; BUILT 2026-06-17)
@@ -386,4 +396,22 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             plus the mount coordinator (cloud-default row not hosted). Browser kickoff-
             skip unchanged. workspace 552 + server ai 13 + zhongwen typecheck green
             (5 server requireBearerUser failures are pre-existing, not mine).
+2026-06-17  V0.5 DONE (5a2631569): real Gemini inference behind the ChatStream.
+            Zhongwen's mount resolves a Gemini adapter from GEMINI_API_KEY and
+            drives it with the same chat() call routes/ai.ts makes (D2 option b),
+            under ZHONGWEN_SYSTEM_PROMPT; no key -> placeholder + warn (the explicit
+            boundary). Per-generation signal forwarded onto chat()'s AbortController;
+            adapter built once and shared (DeepWiki-verified stateless + concurrent-
+            safe). Moved ZHONGWEN_SYSTEM_PROMPT out of the route folder into
+            zhongwen.ts so the node daemon can read it without browser code; added
+            @tanstack/ai + @tanstack/ai-gemini deps. NO new test by design: provider
+            glue on the same untested boundary as routes/ai.ts (its real chat() call
+            is untested too); the seam behavior is already proven by
+            actor-over-room-sync.test.ts. Considered and rejected: a chat-injection
+            seam (indirection the system doesn't need) and an e2e through real
+            chat() (no public mock adapter ships, so it would mean hand-rolling a
+            TextAdapter or a flaky network call). zhongwen typecheck + server ai 13
+            green, doc-hygiene clean. DEFERRED to a "co-deploy a live daemon" slice
+            (and re-gating C4): epicenter.config.ts so the daemon runs, and a node
+            picker so a conversation can be designated to it.
 ```

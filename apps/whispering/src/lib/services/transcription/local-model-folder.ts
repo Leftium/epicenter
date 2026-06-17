@@ -5,7 +5,7 @@
  * view over those commands plus the catalog-size comparison the catalog owns.
  * Settings store a folder entry name, never a path; Rust resolves and validates
  * the name against the folder at load time (`model_path_for` in
- * `src-tauri/src/transcription/model_manager.rs`).
+ * `src-tauri/src/transcription/model_cache.rs`).
  *
  * UI-free and settings-free. Selection is parent-owned component state:
  * settings bind to a folder entry name, and catalog/custom entries activate

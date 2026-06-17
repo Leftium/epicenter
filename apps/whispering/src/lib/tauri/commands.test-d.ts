@@ -13,8 +13,8 @@ import type {
 	ModelStateEvent,
 	ModelStatus,
 	RecordingArtifact,
-	TranscriptionConfig,
 	TranscriptionError,
+	TranscriptionSpec,
 } from './commands';
 
 // Helper: a no-op assertion that two types are equal.
@@ -32,8 +32,7 @@ type _StopRecording = Expect<
 	>
 >;
 
-// transcribe_recording: fallible, takes only recordingId now (config is
-// ambient via setTranscriptionConfig).
+// transcribe_recording: fallible, takes recordingId plus the per-call spec.
 type _TranscribeRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.transcribeRecording>,
@@ -42,19 +41,22 @@ type _TranscribeRecording = Expect<
 >;
 
 type _TranscribeRecordingArgs = Expect<
-	Equal<Parameters<typeof commands.transcribeRecording>, [string]>
->;
-
-// set_transcription_config: infallible (Rust `()`). Stays plain Promise; no
-// Result wrap.
-type _SetTranscriptionConfig = Expect<
-	Equal<ReturnType<typeof commands.setTranscriptionConfig>, Promise<void>>
->;
-
-type _SetTranscriptionConfigArg = Expect<
 	Equal<
-		Parameters<typeof commands.setTranscriptionConfig>,
-		[TranscriptionConfig]
+		Parameters<typeof commands.transcribeRecording>,
+		[string, TranscriptionSpec]
+	>
+>;
+
+// set_unload_policy: infallible (Rust `()`). Stays plain Promise; no Result
+// wrap.
+type _SetUnloadPolicy = Expect<
+	Equal<ReturnType<typeof commands.setUnloadPolicy>, Promise<void>>
+>;
+
+type _SetUnloadPolicyArg = Expect<
+	Equal<
+		Parameters<typeof commands.setUnloadPolicy>,
+		['never' | 'immediately' | 'after_5_minutes' | 'after_30_minutes']
 	>
 >;
 
@@ -86,12 +88,8 @@ type _ModelStateEventShape = Expect<
 		| {
 				kind: 'unloaded';
 				state: LocalModelState;
-				reason:
-					| { kind: 'immediate' }
-					| { kind: 'idle'; idleSecs: number }
-					| { kind: 'config_changed' };
+				reason: { kind: 'immediate' } | { kind: 'idle'; idleSecs: number };
 		  }
-		| { kind: 'selection_changed'; state: LocalModelState }
 	>
 >;
 
@@ -122,20 +120,15 @@ type _EncodeRecordingForUpload = Expect<
 	>
 >;
 
-// TranscriptionConfig is the ambient config the FE pushes once per change.
-type _TranscriptionConfigShape = Expect<
+// TranscriptionSpec is the per-call local transcription config.
+type _TranscriptionSpecShape = Expect<
 	Equal<
-		TranscriptionConfig,
+		TranscriptionSpec,
 		{
 			engine: 'whispercpp' | 'parakeet' | 'moonshine';
 			modelName: string;
 			language?: string | null;
 			initialPrompt?: string | null;
-			unloadPolicy:
-				| 'never'
-				| 'immediately'
-				| 'after_5_minutes'
-				| 'after_30_minutes';
 		}
 	>
 >;

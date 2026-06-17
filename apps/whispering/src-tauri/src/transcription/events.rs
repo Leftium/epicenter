@@ -11,13 +11,13 @@ use serde::{Deserialize, Serialize};
 pub struct LocalModelState {
     pub engine: Option<Engine>,
     /// Entry name inside the engine's models directory, mirroring
-    /// `TranscriptionConfig::model_name`.
+    /// `TranscriptionSpec::model_name`.
     pub model_name: Option<String>,
     pub status: ModelStatus,
 }
 
 /// Lifecycle state of the resident model. Owned by an `Arc<RwLock<...>>`
-/// inside `ModelManager` so `snapshot()` can read it without touching the
+/// inside `ModelCache` so `snapshot()` can read it without touching the
 /// cache mutex (which is held across long-running inference).
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -56,9 +56,6 @@ pub enum UnloadReason {
         #[specta(type = u32)]
         idle_secs: u64,
     },
-    /// User selected a different model in settings; the old one was dropped
-    /// before the new one preloads.
-    ConfigChanged,
 }
 
 /// Single event type for everything observable about the model lifecycle.
@@ -102,9 +99,6 @@ pub enum ModelStateEvent {
     Unloaded {
         state: LocalModelState,
         reason: UnloadReason,
-    },
-    SelectionChanged {
-        state: LocalModelState,
     },
 }
 

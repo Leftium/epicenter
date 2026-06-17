@@ -25,13 +25,6 @@ export {
 export type { DaemonListSnapshot } from './daemon/app.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
-	attachChildDocActor,
-	type ChildDocActor,
-	type ChildDocActorConfig,
-	type ConnectedChildDoc,
-	type ObservableChildDocLayout,
-} from './daemon/attach-child-doc-actor.js';
-export {
 	type AttachMountInfrastructureOptions,
 	attachMountInfrastructure,
 } from './daemon/attach-mount-infrastructure.js';
@@ -65,10 +58,8 @@ export {
 	writeMetadata,
 } from './daemon/metadata.js';
 export {
-	attachMountChildDocActor,
 	attachMountMarkdown,
 	attachMountSqlite,
-	type ChildDocActorMountOptions,
 	type MarkdownMountOptions,
 	type NodeMountRuntime,
 	nodeMountRuntime,

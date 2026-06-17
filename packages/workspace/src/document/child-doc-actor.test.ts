@@ -1,20 +1,20 @@
 /**
- * Child-doc observe loop tests. The actor is driven with an in-memory
+ * Child-doc observe loop tests. The loop is driven with an in-memory
  * `connectBody` (no disk, no sockets), so these exercise the loop itself:
- * enumerate rows, open + observe each body, dispose a body whose row is gone,
- * and flush every body on root destroy.
+ * enumerate rows, open + observe each body, run the per-body actor, dispose a
+ * body whose row is gone, and flush every body on root destroy.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import * as Y from 'yjs';
 import { appendUserMessage, attachChatTranscript } from '../ai/index.js';
-import { defineTable } from '../document/define-table.js';
-import { createWorkspace } from '../document/workspace.js';
 import {
 	attachChildDocActor,
 	type ConnectedChildDoc,
-} from './attach-child-doc-actor.js';
+} from './child-doc-actor.js';
+import { defineTable } from './define-table.js';
+import { createWorkspace } from './workspace.js';
 
 const conversationsDefinition = defineTable({
 	id: field.string(),
@@ -23,7 +23,7 @@ const conversationsDefinition = defineTable({
 
 /**
  * Build a workspace plus an in-memory body connector. The connector records
- * every opened body by guid (so a test can write into the same replica the actor
+ * every opened body by guid (so a test can write into the same replica the loop
  * holds) and resolves `whenDisposed` on `ydoc.destroy()`.
  */
 function setup() {
@@ -49,6 +49,22 @@ function setup() {
 	return { workspace, bodies, connectBody };
 }
 
+/** The common args, with a no-op actor unless a test overrides `actorFor`. */
+function actorArgs(
+	workspace: ReturnType<typeof setup>['workspace'],
+	connectBody: ReturnType<typeof setup>['connectBody'],
+) {
+	const { conversations } = workspace.tables;
+	return {
+		rootDoc: workspace.ydoc,
+		table: conversations,
+		guidFor: conversations.docs.messages.guid,
+		connectBody,
+		layout: attachChatTranscript,
+		actorFor: () => ({}),
+	};
+}
+
 describe('attachChildDocActor', () => {
 	test('opens a body for each conversation row', () => {
 		const { workspace, bodies, connectBody } = setup();
@@ -56,13 +72,7 @@ describe('attachChildDocActor', () => {
 		conversations.set({ id: 'c1', title: 'first' });
 		conversations.set({ id: 'c2', title: 'second' });
 
-		const actor = attachChildDocActor({
-			rootDoc: workspace.ydoc,
-			table: conversations,
-			guidFor: conversations.docs.messages.guid,
-			connectBody,
-			layout: attachChatTranscript,
-		});
+		const actor = attachChildDocActor(actorArgs(workspace, connectBody));
 
 		expect(bodies.has(conversations.docs.messages.guid('c1'))).toBe(true);
 		expect(bodies.has(conversations.docs.messages.guid('c2'))).toBe(true);
@@ -75,13 +85,7 @@ describe('attachChildDocActor', () => {
 		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
 
-		const actor = attachChildDocActor({
-			rootDoc: workspace.ydoc,
-			table: conversations,
-			guidFor: conversations.docs.messages.guid,
-			connectBody,
-			layout: attachChatTranscript,
-		});
+		const actor = attachChildDocActor(actorArgs(workspace, connectBody));
 		expect(bodies.size).toBe(0);
 
 		conversations.set({ id: 'c1', title: 'later' });
@@ -91,20 +95,23 @@ describe('attachChildDocActor', () => {
 		workspace[Symbol.dispose]();
 	});
 
-	test('fires onChange when a hosted transcript changes', () => {
+	test('runs the per-body actor and fires onChange on a transcript change', () => {
 		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
 		conversations.set({ id: 'c1', title: 'first' });
 
+		const built: string[] = [];
 		const changed: string[] = [];
 		const actor = attachChildDocActor({
-			rootDoc: workspace.ydoc,
-			table: conversations,
-			guidFor: conversations.docs.messages.guid,
-			connectBody,
-			layout: attachChatTranscript,
-			onChange: ({ rowId }) => changed.push(rowId),
+			...actorArgs(workspace, connectBody),
+			actorFor: ({ rowId }) => {
+				built.push(rowId);
+				return { onChange: () => changed.push(rowId) };
+			},
 		});
+
+		// The actor is built once per opened body, before any change.
+		expect(built).toEqual(['c1']);
 
 		const body = bodies.get(conversations.docs.messages.guid('c1'))!;
 		appendUserMessage(body, {
@@ -120,22 +127,23 @@ describe('attachChildDocActor', () => {
 		workspace[Symbol.dispose]();
 	});
 
-	test('disposes a body whose row was removed', async () => {
+	test('disposes a body and its actor when the row is removed', () => {
 		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
 		conversations.set({ id: 'c1', title: 'first' });
 
+		const disposed: string[] = [];
 		const actor = attachChildDocActor({
-			rootDoc: workspace.ydoc,
-			table: conversations,
-			guidFor: conversations.docs.messages.guid,
-			connectBody,
-			layout: attachChatTranscript,
+			...actorArgs(workspace, connectBody),
+			actorFor: ({ rowId }) => ({
+				[Symbol.dispose]: () => disposed.push(rowId),
+			}),
 		});
 		const body = bodies.get(conversations.docs.messages.guid('c1'))!;
 		expect(body.isDestroyed).toBe(false);
 
 		conversations.delete('c1');
+		expect(disposed).toEqual(['c1']);
 		expect(body.isDestroyed).toBe(true);
 
 		actor[Symbol.dispose]();
@@ -148,13 +156,7 @@ describe('attachChildDocActor', () => {
 		conversations.set({ id: 'c1', title: 'first' });
 		conversations.set({ id: 'c2', title: 'second' });
 
-		const actor = attachChildDocActor({
-			rootDoc: workspace.ydoc,
-			table: conversations,
-			guidFor: conversations.docs.messages.guid,
-			connectBody,
-			layout: attachChatTranscript,
-		});
+		const actor = attachChildDocActor(actorArgs(workspace, connectBody));
 
 		workspace[Symbol.dispose]();
 		await actor.whenDisposed;

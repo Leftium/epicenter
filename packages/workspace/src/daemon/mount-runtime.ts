@@ -39,6 +39,7 @@ import { join } from 'node:path';
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 import { attachYjsLog } from '../document/attach-yjs-log.js';
+import type { ConnectedChildDoc } from '../document/child-doc-actor.js';
 import {
 	attachGitAutosave,
 	attachMarkdownExport,
@@ -57,13 +58,8 @@ import { roomWsUrl } from '../document/transport.js';
 import type { MountComposeScope } from '../document/workspace.js';
 import { sqlitePath, yjsPath } from '../document/workspace-paths.js';
 import { hashYDocClientId } from '../shared/client-id.js';
-import {
-	attachChildDocActor,
-	type ChildDocActor,
-	type ConnectedChildDoc,
-	type ObservableChildDocLayout,
-} from './attach-child-doc-actor.js';
 import { attachMountInfrastructure } from './attach-mount-infrastructure.js';
+import type { SessionMountContext } from './define-mount.js';
 import { defineSessionMount } from './define-mount.js';
 
 const HOSTED_API_URL = 'https://api.epicenter.so';
@@ -165,56 +161,18 @@ export function attachMountMarkdown<TTables extends TablesRecord>(
 }
 
 /**
- * Options for {@link attachMountChildDocActor}: the root doc to cascade teardown
- * off, the table to watch, the field's single-owner guid deriver, the declared
- * child-doc layout, and the optional `onChange` seam. Everything node-specific
- * (disk path, transport, logger) is filled from `scope`.
+ * Build the node-only per-body connector the child-doc observe loop needs: open
+ * a body Y.Doc with the deterministic `clientID`, persist its update log to disk,
+ * and join its cloud room. Same recipe {@link attachMountInfrastructure} uses for
+ * the root doc, scoped to one child-doc guid. Injected into the mount coordinator
+ * through {@link NodeMountRuntime.connectChildDoc} so the browser-safe coordinator
+ * never imports this node-only wiring.
  */
-export type ChildDocActorMountOptions<TRowId extends string, THandle> = {
-	/** Root doc whose `destroy` flushes every hosted body (`workspace.ydoc`). */
-	readonly rootDoc: Y.Doc;
-	/** The table whose rows name the child docs to host (`workspace.tables.<t>`). */
-	readonly table: {
-		scan(): { readonly rows: ReadonlyArray<{ readonly id: TRowId }> };
-		observe(callback: () => void): () => void;
-	};
-	/** The field's guid deriver (`workspace.tables.<t>.docs.<field>.guid`). */
-	readonly guidFor: (rowId: TRowId) => string;
-	/** The declared child-doc layout (e.g. `attachChatTranscript`). */
-	readonly layout: ObservableChildDocLayout<THandle>;
-	/** React to a hosted body's changes. The V0.3 claim -> stream -> finish seam. */
-	readonly onChange?: (args: {
-		rowId: TRowId;
-		handle: THandle;
-		ydoc: Y.Doc;
-	}) => void;
-};
-
-/**
- * Attach the daemon-side child-doc observe loop for a mount's workspace: the
- * always-on actor that hosts a live replica of every row's child doc and watches
- * it (ADR-0012/0013). Call it from a mount's `compose` body with the `scope` and
- * the per-row pieces; it enrolls its own teardown through `scope.registerDrain`,
- * so a daemon shutdown awaits every hosted body's drain.
- *
- * The node-only per-body connector (deterministic `clientID`, disk update log,
- * cloud room join) is built here from `scope.ctx` and `scope.baseURL`, exactly
- * as {@link attachMountInfrastructure} connects the root doc. The pure observe
- * loop lives in {@link attachChildDocActor}, which stays transport-agnostic.
- */
-export function attachMountChildDocActor<TRowId extends string, THandle>(
-	scope: MountComposeScope,
-	{
-		rootDoc,
-		table,
-		guidFor,
-		layout,
-		onChange,
-	}: ChildDocActorMountOptions<TRowId, THandle>,
-): ChildDocActor {
-	const { ctx, baseURL, registerDrain } = scope;
-
-	const connectBody = (guid: string): ConnectedChildDoc => {
+function connectMountChildDoc(
+	ctx: SessionMountContext,
+	baseURL: string,
+): (guid: string) => ConnectedChildDoc {
+	return (guid: string): ConnectedChildDoc => {
 		const ydoc = new Y.Doc({ guid, gc: true });
 		ydoc.clientID = hashYDocClientId(ctx.nodeId);
 		const yjsLog = attachYjsLog(ydoc, {
@@ -248,18 +206,6 @@ export function attachMountChildDocActor<TRowId extends string, THandle>(
 			},
 		};
 	};
-
-	const actor = attachChildDocActor<TRowId, THandle>({
-		rootDoc,
-		table,
-		guidFor,
-		connectBody,
-		layout,
-		onChange,
-		log: createLogger(`${ctx.mount}-actor`),
-	});
-	registerDrain(actor);
-	return actor;
 }
 
 /**
@@ -277,6 +223,17 @@ export type NodeMountRuntime = {
 	 * `EPICENTER_API_URL`, then the hosted API.
 	 */
 	resolveBaseURL(explicit?: string): string;
+	/**
+	 * Build the node-only per-body connector the schema-driven child-doc observe
+	 * loop uses. The coordinator derives each body's guid and layout from the
+	 * schema, then hands the connector to `attachChildDocActor`; this is the one
+	 * node dependency that step needs, injected so the coordinator stays
+	 * browser-safe.
+	 */
+	connectChildDoc(
+		ctx: SessionMountContext,
+		baseURL: string,
+	): (guid: string) => ConnectedChildDoc;
 };
 
 /**
@@ -302,5 +259,6 @@ export function nodeMountRuntime(): NodeMountRuntime {
 		attachInfrastructure: attachMountInfrastructure,
 		resolveBaseURL: (explicit) =>
 			explicit || process.env.EPICENTER_API_URL || HOSTED_API_URL,
+		connectChildDoc: connectMountChildDoc,
 	};
 }

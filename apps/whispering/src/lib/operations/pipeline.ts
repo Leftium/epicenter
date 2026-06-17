@@ -5,6 +5,7 @@ import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
 	deliverTransformationResult,
+	type TranscriptionSource,
 } from '$lib/operations/delivery';
 import { sound } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
@@ -16,17 +17,16 @@ import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 
-type DeliverySource = 'recording' | 'upload';
-
 /**
  * Argument shape for the pipeline. The recorder produces a
- * `RecorderStopResult`; the VAD path and file-upload path build the
- * equivalent shape with `kind: 'blob'`.
+ * `RecorderStopResult`; the VAD path and file import path build the
+ * equivalent shape with `kind: 'blob'`. `deliverySource` is forwarded
+ * straight to delivery, so it shares delivery's `TranscriptionSource` type.
  */
 type PipelineInput = {
 	source: RecorderStopResult;
 	durationMs: number | null;
-	deliverySource?: DeliverySource;
+	deliverySource?: TranscriptionSource;
 };
 
 /**
@@ -36,8 +36,10 @@ type PipelineInput = {
  * Audio bytes never live in pipeline state. For cpal sources Rust has
  * already written the durable artifact at
  * `<appDataDir>/recordings/{id}.wav` by the time we get here. For blob
- * sources (navigator MediaRecorder, VAD, file upload) we persist the
+ * sources (navigator MediaRecorder, VAD, file import) we persist the
  * bytes through the recordings blob store, then operate on the id.
+ *
+ * `deliverySource` only shapes the success copy (recording vs file import).
  */
 export async function processRecordingPipeline({
 	source,

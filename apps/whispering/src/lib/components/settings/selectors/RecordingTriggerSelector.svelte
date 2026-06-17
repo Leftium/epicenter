@@ -6,29 +6,16 @@
 	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import {
-		RECORDING_MODE_OPTIONS,
-		type RecordingMode,
-	} from '$lib/constants/audio';
-	import { rpc } from '$lib/rpc';
-	import { tauri } from '#platform/tauri';
+	import { RECORDING_TRIGGER_OPTIONS } from '$lib/constants/audio';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const combobox = useCombobox();
 
-	const availableModes = $derived(
-		RECORDING_MODE_OPTIONS.filter((mode) => {
-			if (!mode.desktopOnly) return true;
-			// Desktop only, only show if Tauri is available
-			return !!tauri;
-		}),
-	);
-
-	const currentMode = $derived(
-		availableModes.find(
-			(mode) => mode.value === settings.get('recording.mode'),
+	const currentTrigger = $derived(
+		RECORDING_TRIGGER_OPTIONS.find(
+			(trigger) => trigger.value === settings.get('recording.trigger'),
 		),
 	);
 </script>
@@ -39,9 +26,9 @@
 			<Button
 				{...props}
 				class={cn('relative', className)}
-				tooltip={currentMode
-					? `Recording mode: ${currentMode.label}`
-					: 'Select recording mode'}
+				tooltip={currentTrigger
+					? `Recording trigger: ${currentTrigger.label}`
+					: 'Select recording trigger'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
@@ -55,16 +42,13 @@
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>
-					{#each availableModes as mode (mode.value)}
+					{#each RECORDING_TRIGGER_OPTIONS as trigger (trigger.value)}
 						{@const isSelected =
-							settings.get('recording.mode') === mode.value}
+							settings.get('recording.trigger') === trigger.value}
 						<Command.Item
-							value={mode.value}
+							value={trigger.value}
 							onSelect={async () => {
-								settings.set(
-									'recording.mode',
-									mode.value as RecordingMode,
-								);
+								settings.set('recording.trigger', trigger.value);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"
@@ -74,8 +58,8 @@
 									'text-transparent': !isSelected,
 								})}
 							/>
-							<span class="text-base">{mode.icon}</span>
-							<span class="text-sm">{mode.label}</span>
+							<span class="text-base">{trigger.icon}</span>
+							<span class="text-sm">{trigger.label}</span>
 						</Command.Item>
 					{/each}
 				</Command.Group>

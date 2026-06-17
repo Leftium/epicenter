@@ -7,19 +7,16 @@
 
 <Empty.Root class="flex-1 border-0">
 	<Empty.Media variant="icon"><FolderOpenIcon /></Empty.Media>
-	<Empty.Title>Open a folder</Empty.Title>
+	<Empty.Title>Open a vault</Empty.Title>
 	<Empty.Description>
-		Choose one markdown folder to inspect its frontmatter. Matter reads a single folder as one
-		table, so open a leaf folder (the one holding the .md files), not a parent that just contains
-		other folders.
+		Choose a directory of markdown table folders. Matter reads the whole vault at once, so
+		references resolve across its tables. Each child folder is one table; open the vault root, not
+		a single leaf folder.
 	</Empty.Description>
 	<Empty.Content>
 		<Button onclick={openVaults.open}>
 			<FolderOpenIcon />
-			Open folder
-		</Button>
-		<Button variant="link" size="sm" href="/demo/references" class="text-muted-foreground">
-			Or see the row-level reference demo
+			Open vault
 		</Button>
 	</Empty.Content>
 </Empty.Root>

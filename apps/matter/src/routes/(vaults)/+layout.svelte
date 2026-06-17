@@ -34,7 +34,7 @@
 					active ? 'border-border bg-muted' : 'border-transparent hover:bg-muted/50',
 				]}
 			>
-				<a href="/vault/{vault.id}" class="max-w-48 truncate py-1 pl-2.5 pr-1" title={vault.path}>
+				<a href="/vault/{vault.id}" class="max-w-48 truncate py-1 pl-2.5 pr-1" title={vault.root}>
 					{vault.folderName}
 				</a>
 				<button

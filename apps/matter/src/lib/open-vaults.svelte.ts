@@ -4,9 +4,9 @@
  * Multi-vault state is split three ways, and this file owns only the durable slice.
  * WHICH vault is active lives in the URL (`/vault/[id]`); the LIVE watcher lives in
  * the route component (construct on mount, dispose on destroy). All that is left is
- * WHICH folders are open: a small persisted list of `{ id, path, folderName }` that
+ * WHICH vault roots are open: a small persisted list of `{ id, root, folderName }` that
  * survives relaunch so the tabs come back. The `id` is opaque and URL-safe so the
- * route can carry it; `/vault/[id]` resolves it back to a `path` via {@link get}.
+ * route can carry it; `/vault/[id]` resolves it back to a `root` via {@link get}.
  *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
  * drove its lifetime, this holds only the list of tabs and the open/close actions.
@@ -23,8 +23,8 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 
-/** One open vault as persisted: an opaque id, the absolute folder path, its basename label. */
-export type OpenVault = { id: string; path: string; folderName: string };
+/** One open vault as persisted: an opaque id, the absolute vault-root path, its basename label. */
+export type OpenVault = { id: string; root: string; folderName: string };
 
 const STORAGE_KEY = 'matter.open-vaults';
 
@@ -53,7 +53,7 @@ function isOpenVaultList(value: unknown): value is OpenVault[] {
 				typeof entry === 'object' &&
 				entry !== null &&
 				typeof (entry as OpenVault).id === 'string' &&
-				typeof (entry as OpenVault).path === 'string' &&
+				typeof (entry as OpenVault).root === 'string' &&
 				typeof (entry as OpenVault).folderName === 'string',
 		)
 	);
@@ -81,16 +81,16 @@ function createOpenVaults() {
 	}
 
 	/**
-	 * Open a folder as a tab and navigate to it. Opening is always a user action: the
+	 * Open a vault root as a tab and navigate to it. Opening is always a user action: the
 	 * native picker cannot be triggered from a URL, so this mints the id the URL will
-	 * carry. Reopening a folder already in the list focuses its existing tab instead of
+	 * carry. Reopening a root already in the list focuses its existing tab instead of
 	 * duplicating it (tabs show one at a time and only the active one is live, so a
-	 * second tab on the same folder would be a dead duplicate).
+	 * second tab on the same root would be a dead duplicate).
 	 */
 	async function open(): Promise<void> {
-		const path = await openFolderDialog();
-		if (path === null) return;
-		const existing = vaults.find((vault) => vault.path === path);
+		const root = await openFolderDialog();
+		if (root === null) return;
+		const existing = vaults.find((vault) => vault.root === root);
 		if (existing) {
 			await goto(`/vault/${existing.id}`);
 			return;
@@ -99,8 +99,8 @@ function createOpenVaults() {
 		// contain `/` and special chars that are fragile in a URL).
 		const vault: OpenVault = {
 			id: crypto.randomUUID(),
-			path,
-			folderName: basename(path),
+			root,
+			folderName: basename(root),
 		};
 		vaults = [...vaults, vault];
 		persist();

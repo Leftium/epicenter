@@ -8,7 +8,8 @@ const OVERRIDABLE_DICTATION_CAPABILITIES = [
 	'unsupported',
 ] as const satisfies readonly DictationCapability[];
 type DictationCapabilityOverride =
-	(typeof OVERRIDABLE_DICTATION_CAPABILITIES)[number] | null;
+	| (typeof OVERRIDABLE_DICTATION_CAPABILITIES)[number]
+	| null;
 
 /**
  * The frontend's view over the one OS-trust fact Rust owns: whether Whispering

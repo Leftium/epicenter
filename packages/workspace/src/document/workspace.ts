@@ -403,8 +403,7 @@ export type MountActors<TTables extends TableDefinitions> = {
 				}
 					? ChildDocActorFactory<
 							InferTableRow<TTables[T]>['id'],
-							ReturnType<LayoutOf<TDecls[F]>>,
-							InferTableRow<TTables[T]>
+							ReturnType<LayoutOf<TDecls[F]>>
 						>
 					: never;
 			}
@@ -939,25 +938,29 @@ function connectMountActors<TTableDefinitions extends TableDefinitions>({
 }): void {
 	// `Object.entries` erases the per-table types the public `MountActors` already
 	// enforced, so the loop body works in the widened `string`/`unknown` forms and
-	// casts at the schema reads (layout, guid) and the table row reader.
+	// casts at the schema reads (layout, guid) and the designation read.
 	for (const [collection, fieldActors] of Object.entries(actors) as [
 		string,
-		Record<string, ChildDocActorFactory<string, unknown, unknown>> | undefined,
+		Record<string, ChildDocActorFactory<string, unknown>> | undefined,
 	][]) {
 		if (fieldActors === undefined) continue;
 		const definition = definitions[collection as keyof TTableDefinitions]!;
 		// One structural view of the connected table: the loop reads its
-		// schema-derived guid derivers, scans/observes its rows for the loop, and
-		// reads a row back for `readRow` (so an actor can reach its parent-row
-		// designation). `get` returns the latest-version row or `null`.
+		// schema-derived guid derivers, scans/observes its rows, and reads a row's
+		// `actorNodeId` to decide designation. `get` returns the row or `null`.
 		const table = workspace.tables[
 			collection as keyof TTableDefinitions
 		] as unknown as {
 			docs: Record<string, RowDocGuid<string>>;
 			scan(): { rows: ReadonlyArray<{ id: string }> };
 			observe(callback: () => void): () => void;
-			get(id: string): { data: unknown };
+			get(id: string): { data: { actorNodeId?: NodeId | null } | null };
 		};
+		// The designation contract (ADR-0013): a node hosts and answers exactly the
+		// rows whose `actorNodeId` is its own. Composed once here, the single owner
+		// of the rule, so an app's actor factory supplies behavior alone.
+		const isDesignated = (rowId: string): boolean =>
+			table.get(rowId).data?.actorNodeId === selfNodeId;
 
 		for (const [field, actorFor] of Object.entries(fieldActors)) {
 			if (actorFor === undefined) continue;
@@ -966,15 +969,14 @@ function connectMountActors<TTableDefinitions extends TableDefinitions>({
 			const layout =
 				typeof declaration === 'function' ? declaration : declaration.layout;
 			const guidEntry = table.docs[field]!;
-			const actor = attachChildDocActor<string, unknown, unknown>({
+			const actor = attachChildDocActor<string, unknown>({
 				rootDoc: workspace.ydoc,
 				table,
 				guidFor: (rowId) => guidEntry.guid(rowId),
 				connectBody,
 				layout: layout as unknown as ObservableChildDocLayout<unknown>,
 				actorFor,
-				selfNodeId,
-				readRow: (rowId) => table.get(rowId).data ?? undefined,
+				isDesignated,
 			});
 			registerDrain(actor);
 		}

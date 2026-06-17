@@ -8,24 +8,23 @@
  * client peer (the asking device) reads the answer back over that sync. The
  * room core is the relay; the two docs never touch each other directly.
  *
- * Three things it proves that no unit test can:
- *  1. a designated daemon answers a turn written by another peer, and the
- *     streamed reply propagates back over sync (the V0 exit: "a phone and a
- *     desktop see the same streamed reply over hosted sync");
+ * Two things it proves that no unit test can:
+ *  1. the daemon answers a turn written by another peer, and the streamed reply
+ *     propagates back over sync (the V0 exit: "a phone and a desktop see the
+ *     same streamed reply over hosted sync");
  *  2. a durable cancel written by another peer stops the answer mid-stream
- *     ("cancel works after a disconnect");
- *  3. designation (R) closes the D3 hazard: a daemon NOT designated to this
- *     conversation abstains, so the cloud HTTP `runDocGeneration` path is the
- *     sole answerer and the merge keeps exactly ONE assistant map. Before R
- *     both paths answered and the cross-replica existence claim could not
- *     serialise, so two assistant maps survived; the daemon's `isDesignated`
- *     gate is what makes the cloud-default conversation single-answered again.
+ *     ("cancel works after a disconnect").
+ *
+ * The actor here always answers because the daemon's observe loop only ever
+ * builds it for a conversation designated to this node (the loop filters by the
+ * row's `actorNodeId`; see child-doc-actor.test.ts). The D3 single-answerer
+ * guarantee is therefore that loop filter plus the browser skipping its HTTP
+ * kickoff for daemon-owned conversations, not anything this actor decides, so it
+ * is proven where each half lives, not here.
  *
  * Peer sync is the same RPC model `doc-generation.test.ts` trusts: a peer pushes
  * its full state with `core.sync(encodeSyncRequest(...))` and applies the diff
- * the room hands back. `syncStep` PUSHES before it APPLIES, so the claim a peer
- * makes while applying an inbound turn is not yet in the room: that ordering is
- * what makes the dual-answer race deterministic instead of timing-dependent.
+ * the room hands back.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -35,7 +34,6 @@ import { EventType, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
 import type { RoomUpdateLog } from '../room/contracts.js';
 import { createRoomCore } from '../room/core.js';
-import { runDocGeneration } from './doc-generation.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Harness
@@ -118,33 +116,23 @@ async function pumpUntil(
 		await tick();
 	}
 	for (const peer of peers) syncStep(peer, core);
-	if (!done()) throw new Error(`pumpUntil: condition not met in ${maxRounds} rounds`);
-}
-
-/** Sync every peer for a fixed number of rounds (used to drain to quiescence). */
-async function pump(peers: Y.Doc[], core: RoomCore, rounds = 40): Promise<void> {
-	for (let round = 0; round < rounds; round++) {
-		for (const peer of peers) syncStep(peer, core);
-		await tick();
-	}
+	if (!done())
+		throw new Error(`pumpUntil: condition not met in ${maxRounds} rounds`);
 }
 
 /**
  * Wire `attachChatActor` to a body and fire `onChange` on every transaction.
  *
- * `isDesignated` is the daemon's designation gate (R): the always-on actor only
- * claims a turn when the conversation is designated to this node. The mount
- * builds it from `row.actorNodeId === selfNodeId`; here a test passes the
- * decision directly, since the integration suite drives the child doc with no
- * parent row. Omitting it answers everything (the actor's default).
+ * This stands in for the daemon's observe loop, which builds the actor only for a
+ * designated conversation; the actor itself has no designation concept, so the
+ * harness just attaches it to the body.
  */
 function attachDaemon(
 	ydoc: Y.Doc,
 	startStream: Parameters<typeof attachChatActor>[0]['startStream'],
-	{ isDesignated }: { isDesignated?: () => boolean } = {},
 ) {
 	const transcript = attachChatTranscript(ydoc);
-	const actor = attachChatActor({ ydoc, startStream, isDesignated });
+	const actor = attachChatActor({ ydoc, startStream });
 	const unobserve = transcript.observe(() => actor.onChange?.());
 	return {
 		transcript,
@@ -168,15 +156,12 @@ const assistantsFor = (
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('chat actor over real room sync', () => {
-	test('a designated daemon answers a turn written by another peer, and the reply syncs back', async () => {
+	test('the daemon answers a turn written by another peer, and the reply syncs back', async () => {
 		const core = createRoomCore({ updateLog: createMemoryUpdateLog() });
 
-		// The always-on daemon peer, designated to this conversation: a body
-		// synced through the room.
+		// The always-on daemon peer: a body synced through the room.
 		const daemonDoc = new Y.Doc({ gc: true });
-		const daemon = attachDaemon(daemonDoc, streamOf('你', '好', '!'), {
-			isDesignated: () => true,
-		});
+		const daemon = attachDaemon(daemonDoc, streamOf('你', '好', '!'));
 
 		// The asking device: a separate body, same room.
 		const clientDoc = new Y.Doc({ gc: true });
@@ -219,9 +204,7 @@ describe('chat actor over real room sync', () => {
 		const { startStream, release } = gatedStream();
 
 		const daemonDoc = new Y.Doc({ gc: true });
-		const daemon = attachDaemon(daemonDoc, startStream, {
-			isDesignated: () => true,
-		});
+		const daemon = attachDaemon(daemonDoc, startStream);
 
 		const clientDoc = new Y.Doc({ gc: true });
 		const client = attachChatTranscript(clientDoc);
@@ -260,68 +243,6 @@ describe('chat actor over real room sync', () => {
 		const answer = client.read().find((m) => m.id === 'gen-1');
 		expect(answer?.finish).toEqual({ kind: 'cancelled' });
 		expect(answer?.text).toBe('first ');
-
-		daemon.dispose();
-		daemonDoc.destroy();
-		clientDoc.destroy();
-	});
-
-	test('designation closes D3: a daemon NOT designated abstains, so the cloud HTTP path is the sole answerer', async () => {
-		const core = createRoomCore({ updateLog: createMemoryUpdateLog() });
-		const room = {
-			getDoc: async () => core.getDoc(),
-			sync: async (body: Uint8Array) => core.sync(body),
-		};
-
-		// A daemon is running over the same room, but this conversation is
-		// cloud-default (`actorNodeId` absent), so it is NOT designated to this
-		// node. The daemon hosts and observes the body but must never claim.
-		const daemonDoc = new Y.Doc({ gc: true });
-		const daemon = attachDaemon(daemonDoc, streamOf('daemon-a', 'daemon-b'), {
-			isDesignated: () => false,
-		});
-
-		const clientDoc = new Y.Doc({ gc: true });
-		const client = attachChatTranscript(clientDoc);
-
-		client.appendUser({
-			id: 'u1',
-			content: 'hi',
-			createdAt: 1,
-			generationId: 'gen-1',
-		});
-		syncStep(clientDoc, core);
-
-		// The daemon observes the turn but abstains: nothing claimed on its replica.
-		syncStep(daemonDoc, core);
-		expect(assistantsFor(attachChatTranscript(daemonDoc), 'gen-1')).toHaveLength(
-			0,
-		);
-
-		// The browser, seeing a cloud-default conversation, takes the HTTP path:
-		// `runDocGeneration` reads the room and claims gen-1. It is now the only
-		// peer that answers.
-		const waited: Promise<unknown>[] = [];
-		const httpRun = runDocGeneration({
-			room,
-			signal: new AbortController().signal,
-			waitUntil: (promise) => waited.push(promise),
-			startStream: streamOf('http-a', 'http-b'),
-		});
-
-		await pump([daemonDoc, clientDoc], core, 40);
-		await httpRun;
-		await Promise.all(waited);
-		await pump([daemonDoc, clientDoc], core, 10);
-
-		// Exactly one assistant map, and it is the HTTP answer: the undesignated
-		// daemon stepped aside, so the cloud-default turn is answered once. This is
-		// the D3 double-answer, closed by R's designation gate.
-		const answers = assistantsFor(client, 'gen-1');
-		expect(answers).toHaveLength(1);
-		expect(client.read().find((m) => m.id === 'gen-1')?.text).toBe(
-			'http-ahttp-b',
-		);
 
 		daemon.dispose();
 		daemonDoc.destroy();

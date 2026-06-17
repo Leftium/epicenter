@@ -20,11 +20,12 @@
  * streams -> finishes and honors the client's durable cancel, all over hosted
  * sync with no HTTP and no duplicate stream.
  *
- * The factory gates answering on designation (R, ADR-0013): each per-body context
- * carries this daemon's `selfNodeId` and a `readRow` onto the parent conversation
- * row, so the actor claims a turn only when `row.actorNodeId === selfNodeId`. A
- * cloud-default conversation (`actorNodeId` null) is hosted but left to the cloud
- * HTTP path, which is what keeps a single turn from being answered twice.
+ * Designation (R, ADR-0013) is the observe loop's concern, not this factory's:
+ * the loop builds an actor only for conversations designated to this daemon node
+ * (`row.actorNodeId === selfNodeId`), so the factory supplies behavior alone. A
+ * cloud-default conversation (`actorNodeId` null) is never hosted here and is left
+ * to the cloud HTTP path; the browser also skips its kickoff for daemon-owned
+ * conversations, so a single turn is never answered twice.
  */
 
 import { attachChatActor, type ChatStream } from '@epicenter/workspace/ai';
@@ -46,15 +47,8 @@ export function zhongwen({ baseURL }: ZhongwenMountOptions = {}) {
 		runtime: nodeMountRuntime(),
 		actors: {
 			conversations: {
-				messages: ({ ydoc, selfNodeId, readRow }) =>
-					attachChatActor({
-						ydoc,
-						startStream: fakeChatStream,
-						// Answer only conversations designated to this daemon node. A
-						// cloud-default row (`actorNodeId` null) is left to the HTTP path,
-						// so the daemon and the browser never both answer one turn.
-						isDesignated: () => readRow()?.actorNodeId === selfNodeId,
-					}),
+				messages: ({ ydoc }) =>
+					attachChatActor({ ydoc, startStream: fakeChatStream }),
 			},
 		},
 	});

@@ -14,7 +14,6 @@ import {
 	type ConnectedChildDoc,
 } from './child-doc-actor.js';
 import { defineTable } from './define-table.js';
-import type { NodeId } from './node-id.js';
 import { createWorkspace } from './workspace.js';
 
 const conversationsDefinition = defineTable({
@@ -63,8 +62,11 @@ function actorArgs(
 		connectBody,
 		layout: attachChatTranscript,
 		actorFor: () => ({}),
-		selfNodeId: 'node-test' as NodeId,
-		readRow: (id: string) => conversations.get(id).data ?? undefined,
+		// Designation is the loop's filter; most tests host every row, and the
+		// designation-specific tests below override it. The schema-derived
+		// `actorNodeId === selfNodeId` composition lives in the mount coordinator
+		// (workspace-mount.test.ts), not here.
+		isDesignated: () => true,
 	};
 }
 
@@ -130,28 +132,50 @@ describe('attachChildDocActor', () => {
 		workspace[Symbol.dispose]();
 	});
 
-	test('hands the per-body actor the daemon node id and a live parent-row reader', () => {
-		const { workspace, connectBody } = setup();
+	test('hosts only the rows the designation predicate selects', () => {
+		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
-		conversations.set({ id: 'c1', title: 'first' });
+		conversations.set({ id: 'mine', title: 'a' });
+		conversations.set({ id: 'theirs', title: 'b' });
 
-		let seenNodeId: string | undefined;
-		let readRow: (() => { id: string; title: string } | undefined) | undefined;
+		// The actor reconciles only its node's conversations; an undesignated row
+		// stays available through the anchor, never hosted here.
 		const actor = attachChildDocActor({
 			...actorArgs(workspace, connectBody),
-			actorFor: (context) => {
-				seenNodeId = context.selfNodeId;
-				readRow = context.readRow;
-				return {};
-			},
+			isDesignated: (rowId) => rowId === 'mine',
 		});
 
-		expect(seenNodeId).toBe('node-test');
-		// `readRow` is reactive: a designation written after the body opened is
-		// visible the next time the actor reads it.
-		expect(readRow?.()).toMatchObject({ id: 'c1', title: 'first' });
-		conversations.set({ id: 'c1', title: 'renamed' });
-		expect(readRow?.()).toMatchObject({ id: 'c1', title: 'renamed' });
+		expect(bodies.has(conversations.docs.messages.guid('mine'))).toBe(true);
+		expect(bodies.has(conversations.docs.messages.guid('theirs'))).toBe(false);
+
+		actor[Symbol.dispose]();
+		workspace[Symbol.dispose]();
+	});
+
+	test('opens and closes a body as its designation flips', () => {
+		const { workspace, bodies, connectBody } = setup();
+		const { conversations } = workspace.tables;
+		conversations.set({ id: 'c1', title: 'a' });
+
+		let designated = false;
+		const actor = attachChildDocActor({
+			...actorArgs(workspace, connectBody),
+			isDesignated: () => designated,
+		});
+		const guid = conversations.docs.messages.guid('c1');
+		expect(bodies.has(guid)).toBe(false); // undesignated: not hosted
+
+		// A row write fires the table observer, so reconcile re-evaluates
+		// designation and opens the now-designated body.
+		designated = true;
+		conversations.set({ id: 'c1', title: 'a2' });
+		const body = bodies.get(guid);
+		expect(body?.isDestroyed).toBe(false);
+
+		// Re-designated away: the body is torn down.
+		designated = false;
+		conversations.set({ id: 'c1', title: 'a3' });
+		expect(body?.isDestroyed).toBe(true);
 
 		actor[Symbol.dispose]();
 		workspace[Symbol.dispose]();

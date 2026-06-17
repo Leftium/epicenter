@@ -17,6 +17,8 @@ import type { NodeMountRuntime } from '../daemon/mount-runtime.js';
 import { defineActions, defineQuery } from '../shared/actions.js';
 import type { ConnectedChildDoc } from './child-doc-actor.js';
 import { defineTable } from './define-table.js';
+import type { NodeId } from './node-id.js';
+import { nullable } from './nullable.js';
 import { defineWorkspace } from './workspace.js';
 
 const demoWorkspace = defineWorkspace({
@@ -27,6 +29,9 @@ const demoWorkspace = defineWorkspace({
 		conversations: defineTable({
 			id: field.string(),
 			title: field.string(),
+			// Designation: the actor loop hosts only rows whose actorNodeId is the
+			// daemon's own node id.
+			actorNodeId: nullable(field.string<NodeId>()),
 		}).docs({ messages: attachChatTranscript }),
 	},
 	kv: {},
@@ -207,10 +212,24 @@ describe('definition.mount', () => {
 		// The actor is registered for ordered teardown even before any row exists.
 		expect(spy.materializers).toHaveLength(1);
 
-		// A new conversation row drives the loop to host its transcript at the
-		// guid the schema derives, the same address the browser opener would use.
-		runtime.tables.conversations.set({ id: 'c1', title: 'first' });
+		// A row designated to this node (ctx.nodeId === 'node-fixture') drives the
+		// loop to host its transcript at the guid the schema derives, the same
+		// address the browser opener would use.
+		runtime.tables.conversations.set({
+			id: 'c1',
+			title: 'first',
+			actorNodeId: 'node-fixture' as NodeId,
+		});
 		const expectedGuid = runtime.tables.conversations.docs.messages.guid('c1');
+		expect(spy.childDocGuids).toEqual([expectedGuid]);
+
+		// A cloud-default row (actorNodeId null) is NOT this node's to answer, so
+		// the loop never hosts it: that filter is the daemon half of the D3 fix.
+		runtime.tables.conversations.set({
+			id: 'c2',
+			title: 'second',
+			actorNodeId: null,
+		});
 		expect(spy.childDocGuids).toEqual([expectedGuid]);
 	});
 });

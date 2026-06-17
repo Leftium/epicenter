@@ -1,16 +1,26 @@
 /**
- * The child-doc observe loop: a daemon-side actor that hosts a live replica of
- * every row's child doc and watches it.
+ * The child-doc observe loop: the daemon-side ACTOR (ADR-0012) that hosts a live
+ * replica of every conversation designated to THIS node and watches it.
+ *
+ * ADR-0012 splits two roles one device may host but never in one code path: the
+ * app-blind ANCHOR/relay stores and routes opaque room bytes for availability
+ * (it keeps every conversation reachable while knowing no schema), and the
+ * app-aware ACTOR holds a live typed replica of the docs it answers. This loop is
+ * the actor, so it reconciles only the conversations targeted at its own node
+ * (ADR-0013: designation is the row's `actorNodeId`). A conversation answered
+ * elsewhere stays available through the anchor, never hosted here: filtering to
+ * the designated set is exactly what keeps the actor out of the anchor's job.
  *
  * The daemon mount hosts the root Y.Doc on disk and over cloud sync, but a
  * conversation transcript is not a row, it is a separate child doc keyed by the
  * row id (see {@link connectTableChildDocs}, the browser twin that hands the UI
- * `tables.<t>.docs.<field>.open(rowId)`). An always-on actor (ADR-0012/0013)
- * needs those same bodies live so it can watch an unanswered turn and stream a
- * reply into it. This is that loop:
+ * `tables.<t>.docs.<field>.open(rowId)`). The actor needs its designated bodies
+ * live so it can watch an unanswered turn and stream a reply into it. This is
+ * that loop:
  *
- *  - **enumerate**: read the watched table and, for every row, open its child
- *    doc through the field's single-owner guid deriver (`guidFor`).
+ *  - **enumerate**: read the watched table, keep the rows designated to this node
+ *    (`isDesignated`), and open each one's child doc through the field's
+ *    single-owner guid deriver (`guidFor`).
  *  - **connect**: each opened body is persisted and synced by `connectBody`, the
  *    node-only wiring injected by the mount coordinator. The loop itself stays
  *    transport-agnostic, so the browser-safe coordinator can call it and a test
@@ -18,12 +28,14 @@
  *  - **observe**: shape each body with the field's declared `layout` and build a
  *    per-body `actor` for it; every transcript transaction calls the actor's
  *    `onChange`. That is the seam V0.3 fills with claim -> stream -> finish.
- *  - **dispose**: a body whose row has been removed is torn down. On root
- *    `ydoc.destroy()` (a daemon shutdown), every hosted body is destroyed and its
- *    teardown awaited, the same cascade {@link connectTableChildDocs} uses.
+ *  - **dispose**: a body whose row was removed OR re-designated away from this
+ *    node is torn down. On root `ydoc.destroy()` (a daemon shutdown), every
+ *    hosted body is destroyed and its teardown awaited, the same cascade
+ *    {@link connectTableChildDocs} uses.
  *
  * The loop never writes the root table, so its own opens cannot re-trigger the
- * table observer; there is no feedback loop.
+ * table observer; there is no feedback loop. Because it re-runs on every table
+ * change, a designation written to a row opens or closes its body reactively.
  *
  * The app declares nothing about identity or shape here: the table, the field's
  * guid deriver, and the layout all come from the schema, exactly as the browser
@@ -35,7 +47,6 @@
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import type { Drainable } from '../shared/types.js';
-import type { NodeId } from './node-id.js';
 
 /**
  * A connected child-doc body the actor hosts: a live Y.Doc persisted and synced
@@ -70,37 +81,27 @@ export type ChildDocActorHandle = {
 };
 
 /** Per-body context handed to a {@link ChildDocActorFactory}. */
-export type ChildDocActorContext<TRowId extends string, THandle, TRow> = {
+export type ChildDocActorContext<TRowId extends string, THandle> = {
 	/** The row whose child doc this body is. */
 	readonly rowId: TRowId;
 	/** The body shaped by the field's declared layout. */
 	readonly handle: THandle;
 	/** The underlying body Y.Doc, for runtime attachments. */
 	readonly ydoc: Y.Doc;
-	/**
-	 * This daemon's own node id. Lets an actor compare against its parent row's
-	 * designation (e.g. the chat actor's `actorNodeId === selfNodeId` gate).
-	 */
-	readonly selfNodeId: NodeId;
-	/**
-	 * Read the current parent-row snapshot, or `undefined` if the row is gone.
-	 * Reactive: re-reads each call, so a designation written to the row after this
-	 * body opened is visible the next time the actor checks. Parent state stays on
-	 * the row, never smuggled into the child doc, so an actor reaches it here.
-	 */
-	readonly readRow: () => TRow | undefined;
 };
 
 /**
  * Build the per-body behavior for one hosted child doc. Invoked once per opened
  * body, so it may close over per-body state (an in-flight generation, the
- * claimed id). The app's only input to the observe loop.
+ * claimed id). The app's only input to the observe loop. Designation is the
+ * loop's concern, not the factory's: it is only ever invoked for a body this
+ * node is designated to host, so the behavior it builds always answers.
  */
-export type ChildDocActorFactory<TRowId extends string, THandle, TRow> = (
-	context: ChildDocActorContext<TRowId, THandle, TRow>,
+export type ChildDocActorFactory<TRowId extends string, THandle> = (
+	context: ChildDocActorContext<TRowId, THandle>,
 ) => ChildDocActorHandle;
 
-export type ChildDocActorConfig<TRowId extends string, THandle, TRow> = {
+export type ChildDocActorConfig<TRowId extends string, THandle> = {
 	/**
 	 * The table whose rows name the child docs to host. Read with `scan()` and
 	 * watched with `observe()`; every change reconciles the open set.
@@ -120,15 +121,16 @@ export type ChildDocActorConfig<TRowId extends string, THandle, TRow> = {
 	/** Shape an opened body into its typed handle (the field's declared layout). */
 	readonly layout: ObservableChildDocLayout<THandle>;
 	/** Build the per-body behavior. The app's only input. */
-	readonly actorFor: ChildDocActorFactory<TRowId, THandle, TRow>;
-	/** This daemon's node id, forwarded to each per-body context. */
-	readonly selfNodeId: NodeId;
+	readonly actorFor: ChildDocActorFactory<TRowId, THandle>;
 	/**
-	 * Read a row's current snapshot from the watched table, or `undefined` when
-	 * the row is gone. Forwarded (bound to the body's row id) as the context's
-	 * `readRow`, so an actor can read its parent-row designation.
+	 * Whether this node hosts (and so answers) a row's child doc. The actor
+	 * reconciles only its designated conversations (ADR-0013: the row's
+	 * `actorNodeId` names the node); the mount composes this as
+	 * `actorNodeId === selfNodeId`. Re-evaluated on every table change, so a
+	 * re-designation opens or closes the body reactively. A conversation answered
+	 * elsewhere is left to the app-blind anchor, never hosted here.
 	 */
-	readonly readRow: (rowId: TRowId) => TRow | undefined;
+	readonly isDesignated: (rowId: TRowId) => boolean;
 	/**
 	 * The root doc whose `destroy` flushes every hosted body, the same cascade
 	 * {@link connectTableChildDocs} uses for the browser child-doc caches.
@@ -150,11 +152,18 @@ export type ChildDocActor = Drainable & {
  * imports no node module. The node-only connector and the schema-driven wiring
  * live in the mount coordinator.
  */
-export function attachChildDocActor<TRowId extends string, THandle, TRow>(
-	config: ChildDocActorConfig<TRowId, THandle, TRow>,
+export function attachChildDocActor<TRowId extends string, THandle>(
+	config: ChildDocActorConfig<TRowId, THandle>,
 ): ChildDocActor {
-	const { table, guidFor, connectBody, layout, actorFor, rootDoc } = config;
-	const { selfNodeId, readRow } = config;
+	const {
+		table,
+		guidFor,
+		connectBody,
+		layout,
+		actorFor,
+		isDesignated,
+		rootDoc,
+	} = config;
 	const log = config.log ?? createLogger('workspace/child-doc-actor');
 
 	type Hosted = {
@@ -171,13 +180,7 @@ export function attachChildDocActor<TRowId extends string, THandle, TRow>(
 		if (hosted.has(rowId)) return;
 		const body = connectBody(guidFor(rowId));
 		const handle = layout(body.ydoc);
-		const actor = actorFor({
-			rowId,
-			handle,
-			ydoc: body.ydoc,
-			selfNodeId,
-			readRow: () => readRow(rowId),
-		});
+		const actor = actorFor({ rowId, handle, ydoc: body.ydoc });
 		const unobserve = handle.observe(() => actor.onChange?.());
 		hosted.set(rowId, { body, actor, unobserve });
 	}
@@ -195,9 +198,17 @@ export function attachChildDocActor<TRowId extends string, THandle, TRow>(
 
 	function reconcile(): void {
 		if (disposed) return;
-		const wanted = new Set(table.scan().rows.map((row) => row.id));
+		// Host only the conversations designated to this node (ADR-0013); the rest
+		// stay available through the app-blind anchor, not in this actor's replica
+		// set (ADR-0012: actor and anchor are never one code path).
+		const wanted = new Set(
+			table
+				.scan()
+				.rows.map((row) => row.id)
+				.filter(isDesignated),
+		);
 		for (const rowId of wanted) open(rowId);
-		// Dispose a hosted body whose conversation row is gone.
+		// Dispose a hosted body whose row is gone OR no longer designated here.
 		for (const rowId of [...hosted.keys()]) {
 			if (!wanted.has(rowId)) close(rowId);
 		}

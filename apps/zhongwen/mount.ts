@@ -24,14 +24,15 @@
  *
  * Designation (R, ADR-0013) is the observe loop's concern, not this factory's:
  * the loop builds an actor only for conversations bound to this daemon's agent
- * (`row.agent === selfAgentId`), so the factory supplies behavior alone. This
- * mount sets no `agentId` yet (no configured Zhongwen agent), so the daemon hosts
- * nothing and every conversation is left to the cloud agent's HTTP path; the
- * browser nudges that path only for cloud-bound conversations, so a single turn is
- * never answered twice. A later slice configures an agent id and a picker that
- * binds a conversation to it.
+ * (`row.agent === selfAgentId`), so the factory supplies behavior alone. The
+ * `agentId` option names which catalog agent this daemon answers as (a
+ * `ZHONGWEN_AGENTS` id like `zhongwen-home`); omit it and the daemon hosts
+ * nothing, leaving every conversation to its bound agent. The browser nudges the
+ * HTTP route only for cloud-runtime conversations, so a single turn is never
+ * answered twice.
  */
 
+import type { AgentId } from '@epicenter/workspace';
 import { attachChatActor, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
 import {
@@ -56,14 +57,21 @@ export type ZhongwenMountOptions = {
 	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.
 	 */
 	baseURL?: string;
+	/**
+	 * The catalog agent this daemon answers as (ADR-0013): a `ZHONGWEN_AGENTS` id
+	 * such as `zhongwen-home`. The observe loop then hosts exactly the
+	 * conversations bound to it. Omit it and the daemon hosts nothing.
+	 */
+	agentId?: AgentId;
 };
 
-export function zhongwen({ baseURL }: ZhongwenMountOptions = {}) {
+export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
 	// Resolve the inference backend once: the adapter is built a single time and
 	// the closure is shared across every hosted transcript.
 	const startStream = resolveChatStream();
 	return zhongwenWorkspace.mount({
 		baseURL,
+		agentId,
 		runtime: nodeMountRuntime(),
 		actors: {
 			conversations: {

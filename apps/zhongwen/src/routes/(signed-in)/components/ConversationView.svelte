@@ -28,7 +28,7 @@
 		type ChatDocMessage,
 	} from '@epicenter/workspace/ai';
 	import {
-		CLOUD_AGENT_ID,
+		agentConfig,
 		type ConversationId,
 		ZHONGWEN_MODEL,
 		ZHONGWEN_SYSTEM_PROMPT,
@@ -144,14 +144,16 @@
 	}
 
 	/**
-	 * Nudge the conversation's bound agent. The cloud agent's runtime is the HTTP
-	 * route, so a cloud-bound conversation kicks it off here. Any other agent is an
-	 * always-on actor that answers over sync, so the browser does nothing: nudging
-	 * it too would answer the same turn twice (the D3 hazard). The bound agent is
+	 * Nudge the conversation's bound agent. A `'cloud'`-runtime agent answers over
+	 * the HTTP route, so a cloud-bound conversation kicks it off here. Any other
+	 * runtime is an always-on actor that answers over sync, so the browser does
+	 * nothing: nudging it too would answer the same turn twice (the D3 hazard). The
+	 * catalog owns that routing fork (`agentConfig().runtime`); the bound agent is
 	 * immutable, so this decision never flips mid-conversation.
 	 */
 	function nudgeBoundAgent() {
-		if (readRow()?.agent !== CLOUD_AGENT_ID) return;
+		const agent = readRow()?.agent;
+		if (agent === undefined || agentConfig(agent)?.runtime !== 'cloud') return;
 		void kickoffGeneration();
 	}
 

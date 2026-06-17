@@ -58,6 +58,74 @@ export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
  */
 export const CLOUD_AGENT_ID: AgentId = asAgentId('epicenter-cloud');
 
+// Re-export the agent address type so app UI binds against one import surface
+// (`@epicenter/zhongwen`) for the agent catalog and the ids it hands the picker.
+export type { AgentId };
+
+/**
+ * One agent Zhongwen can bind a conversation to: its durable {@link AgentId},
+ * a display `label` for the picker, the `model` it answers with, the action keys
+ * it may call as tools (ADR-0010; none yet), and where its runtime lives.
+ *
+ * `runtime` is the routing fork the browser reads: a `'cloud'` agent answers over
+ * the metered HTTP route, so the browser nudges it; a `'daemon'` agent is an
+ * always-on actor that answers over sync, so the browser stays out of the way
+ * (nudging both would answer one turn twice, the D3 hazard). The catalog is the
+ * one place that fork is declared.
+ */
+export type AgentConfig = {
+	readonly id: AgentId;
+	readonly label: string;
+	readonly model: ServableModel;
+	readonly tools: readonly string[];
+	readonly runtime: 'cloud' | 'daemon';
+};
+
+/**
+ * The agents a Zhongwen conversation can be bound to (ADR-0013). Config, not
+ * presence: the picker lists every entry here whether or not its runtime is live,
+ * because the conversation doc is a durable mailbox: a turn bound to an offline
+ * daemon waits in the doc until that daemon wakes and answers. Presence only ever
+ * decorates this list with a live/offline hint; it never gates what can be bound.
+ *
+ * The hosted cloud agent is always available (its runtime is the serverless
+ * route). The home daemon is the always-on actor a user co-deploys; binding a
+ * conversation to it is what a later "co-deploy a live daemon" slice brings online.
+ */
+export const ZHONGWEN_AGENTS = [
+	{
+		id: CLOUD_AGENT_ID,
+		label: 'Epicenter Cloud',
+		model: ZHONGWEN_MODEL,
+		tools: [],
+		runtime: 'cloud',
+	},
+	{
+		id: asAgentId('zhongwen-home'),
+		label: 'Home daemon',
+		model: ZHONGWEN_MODEL,
+		tools: [],
+		runtime: 'daemon',
+	},
+] as const satisfies readonly AgentConfig[];
+
+/**
+ * The agent a new conversation binds to when the user does not pick one: the
+ * always-available cloud agent, so the fast "New Conversation" path answers with
+ * no daemon required.
+ */
+export const DEFAULT_AGENT_ID: AgentId = CLOUD_AGENT_ID;
+
+/**
+ * The catalog entry for a bound `agent`, or `undefined` for an id no longer in
+ * the catalog (a conversation bound before the agent was removed). Callers read
+ * `runtime` to route: `agentConfig(id)?.runtime === 'cloud'` is "the browser
+ * answers this one"; anything else is left to a daemon over sync.
+ */
+export function agentConfig(id: AgentId): AgentConfig | undefined {
+	return ZHONGWEN_AGENTS.find((agent) => agent.id === id);
+}
+
 /**
  * The bilingual system prompt every Zhongwen answer is generated under. An app
  * constant like {@link ZHONGWEN_MODEL}, shared by both answer paths so they

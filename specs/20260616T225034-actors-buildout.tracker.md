@@ -107,18 +107,21 @@ C4  Delete the HTTP generation route.                       V1+ (R landed; unblo
     room.sync forwarding + the drain retry are dead code. Biggest deletion on the
     board. WAS gated on R; R landed (the designation gate now keeps the daemon and
     the HTTP path on disjoint conversations), and V0.5 landed real daemon inference.
-    Still deferred, now on two unbuilt pieces, NOT on inference code:
+    Still deferred, now on ONE unbuilt piece, NOT on inference code:
       (1) the daemon does not actually run for Zhongwen (no epicenter.config.ts
-          wiring zhongwen() into `epicenter up`), so no room has a live actor;
-      (2) no node picker exists, so every conversation is still born cloud-default
-          (`+page.svelte` writes actorNodeId: null) and nothing routes one to a
-          daemon node.
-    Until both land, every live conversation is cloud-default and deleting
-    runDocGeneration leaves them unanswered. These two are the next slice after
-    V0.5 (a "co-deploy a live daemon" slice); they were deliberately NOT bundled
-    into V0.5 to avoid a big-bang. Trigger to delete C4: a daemon runs real
-    inference for a designated conversation end to end AND cloud-default
-    conversations have a daemon (managed or home) to fall to.
+          wiring zhongwen({ agentId }) into `epicenter up`), so no room has a live
+          actor, so a conversation bound to the home-daemon agent waits unanswered.
+    Gate (2) is RESOLVED: the agent picker landed (scoped-redesign slice 2), so a
+    conversation can be bound at creation to the `zhongwen-home` daemon agent
+    instead of the cloud agent (`mount.ts` already forwards `agentId` into the
+    observe-loop filter). What remains is purely runtime: a daemon process that
+    answers as `zhongwen-home`. Until (1) lands, every answered conversation is
+    still cloud-bound and deleting runDocGeneration would strand any
+    daemon-bound one. The "co-deploy a live daemon" slice is what closes (1).
+    Trigger to delete C4: a daemon runs real inference for a daemon-bound
+    conversation end to end AND cloud-bound conversations keep the always-available
+    cloud agent (whose runtime IS this route, so C4 deletes the null-as-cloud
+    handling and the transitional kickoff, not the cloud answerer).
 
 R   Reframe: "claim" -> "reconcile a targeted turn."  DONE (actorNodeId designation)
     (DECIDED in ADR-0013, resolves OQ#1; BUILT 2026-06-17)
@@ -441,4 +444,30 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             workspace + zhongwen + server typecheck clean. Zhongwen mount sets no agentId
             yet (no configured agent), so the daemon hosts nothing and cloud answers every
             conversation; the agent-id config + picker is the next slice.
+2026-06-17  Scoped-redesign slice 2 (agent config + picker): made a non-cloud agent
+            bindable. Added a config-owned agent catalog `ZHONGWEN_AGENTS` (AgentConfig
+            = id/label/model/tools/runtime) with two entries: the always-available
+            `epicenter-cloud` (runtime 'cloud') and a `zhongwen-home` daemon agent
+            (runtime 'daemon'). DECISION (asked): the picker lists CONFIGURED agents,
+            not presence-live ones; binding to a configured-but-offline daemon is
+            allowed because the conversation doc is a durable mailbox (the turn waits
+            until the daemon wakes), so presence is only ever a live/offline hint, never
+            a gate. `runtime` is the routing fork: ConversationView.nudgeBoundAgent now
+            nudges the HTTP route iff `agentConfig(agent)?.runtime === 'cloud'` (replaces
+            the hardcoded `=== CLOUD_AGENT_ID`), so the cloud/daemon split is catalog-
+            driven, not name-checked. Picker UI = a DropdownMenu caret beside "New
+            Conversation" (primary click stays one-click cloud via DEFAULT_AGENT_ID, the
+            caret lists every catalog agent); onCreate now takes the chosen AgentId and
+            `createConversationRow` binds it (still the ONE place `agent` is written).
+            mount.ts forwards `agentId` into `workspace.mount({ agentId })`, so the
+            daemon co-deploy slice is a config call, not new wiring. NO write guard
+            (DECISION: document-only): `agent` is written once via `set` at creation and
+            `update` (partial merge) never touches it, so immutability holds structurally
+            with no machinery for a reassign path that does not exist. NEW test
+            apps/zhongwen/src/agents.test.ts pins the catalog routing invariants (cloud
+            entry stays cloud-runtime, default resolves to cloud, home is daemon, unknown
+            id -> undefined-never-nudged, ids unique): 5 green. workspace + zhongwen +
+            server typecheck clean; 17 focused tests green; doc-hygiene clean. C4 gate (2)
+            (no picker) RESOLVED; C4 now waits only on gate (1), the daemon actually
+            running (epicenter.config.ts), which is the co-deploy slice.
 ```

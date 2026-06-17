@@ -154,3 +154,75 @@ pub fn watch_folder(
 pub fn unwatch_folder(id: u32, store: State<WatcherStore>) {
     store.watchers.lock().unwrap().remove(&id);
 }
+
+/// The vault root's immediate child DIRECTORIES, each one a table, as absolute paths sorted for
+/// a deterministic order. Loose files at the root (a stray `README.md`) are ignored: only folders
+/// are tables. Errors only if the root itself cannot be listed; a child that races away mid-scan
+/// just does not appear, surfacing on the next re-scan.
+fn scan_tables(root: &Path) -> Result<Vec<String>, String> {
+    let mut dirs = Vec::new();
+    for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            dirs.push(entry.path().to_string_lossy().to_string());
+        }
+    }
+    dirs.sort();
+    Ok(dirs)
+}
+
+/// Watch a VAULT root: stream the set of table folders beneath it as a full, sorted membership
+/// snapshot. This is the layer above `watch_folder`: where that watches ONE folder's files, this
+/// watches the root NON-recursively for child folders appearing and disappearing, and the JS Vault
+/// reacts by composing or disposing a per-folder `watch_folder`.
+///
+/// Each push is the WHOLE child-folder list, not a precise add/remove delta, and the JS reconciles
+/// it against its current set (the same "a full rebuild is a pure function of truth" stance the
+/// per-table SQLite mirror takes). A remove event cannot be stat-ed to tell folder from file, so
+/// re-listing is both simpler and correct: any debounced change at the root re-scans the children.
+/// A `matter.json` gained or lost INSIDE a child does not fire here (non-recursive); that child's
+/// own `watch_folder` already carries it, so this layer only owns membership.
+#[tauri::command]
+pub fn watch_vault(
+    path: String,
+    channel: Channel<Vec<String>>,
+    store: State<WatcherStore>,
+) -> Result<u32, String> {
+    let dir = std::path::PathBuf::from(&path);
+    let root = dir.clone();
+    let tx = channel.clone();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(100),
+        None,
+        move |result: DebounceEventResult| {
+            // The events are not parsed: a child folder added, removed, or renamed all reduce to
+            // "the membership may have changed, re-scan." A failed scan (root vanished) sends
+            // nothing and self-heals on the next event.
+            let Ok(_events) = result else { return };
+            if let Ok(tables) = scan_tables(&root) {
+                let _ = tx.send(tables);
+            }
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Arm BEFORE the seed scan so a child appearing during the scan can't slip through the
+    // list-then-watch gap; then send the current membership (always, even empty: an empty vault
+    // is a valid state, not an error).
+    debouncer
+        .watch(&dir, RecursiveMode::NonRecursive)
+        .map_err(|e| e.to_string())?;
+    let seed = scan_tables(&dir)?;
+    let _ = channel.send(seed);
+
+    let id = store.next.fetch_add(1, Ordering::Relaxed);
+    store.watchers.lock().unwrap().insert(id, debouncer);
+    Ok(id)
+}
+
+/// Stop a vault root watch. Symmetric with `unwatch_folder`; both drop the debouncer the id keys,
+/// which stops the OS watch. Named apart so each JS layer reads at its own altitude.
+#[tauri::command]
+pub fn unwatch_vault(id: u32, store: State<WatcherStore>) {
+    store.watchers.lock().unwrap().remove(&id);
+}

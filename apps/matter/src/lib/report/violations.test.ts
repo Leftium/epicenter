@@ -1,6 +1,6 @@
 /**
  * Projection tests: `toViolations`, `summarize`, and `tierOf` as pure selectors over a real
- * `assess` result. Every vault is built from in-memory `readFolder` reads, so conformance and
+ * `assess` result. Every vault is built from in-memory `readTable` reads, so conformance and
  * reference resolution are on the live path and the selectors read genuine assessed cells.
  *
  * The load-bearing claims under test:
@@ -13,19 +13,19 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from '../core/folder';
+import { readTable } from '../core/table';
 import { assess, type TableInput } from '../core/integrity';
 import { describeExpected } from './expected';
 import { summarize, tierOf, toViolations, type Violation } from './violations';
 
-type Entries = Parameters<typeof readFolder>[0];
+type Entries = Parameters<typeof readTable>[0];
 
 function loaded(
 	name: string,
 	modelText: string | undefined,
 	entries: Entries,
 ): TableInput {
-	return { name, status: 'readable', read: readFolder(entries, modelText) };
+	return { name, status: 'readable', read: readTable(entries, modelText) };
 }
 
 // `title` required, `subtitle` optional: enough for ok / missing-required / missing-optional / invalid.

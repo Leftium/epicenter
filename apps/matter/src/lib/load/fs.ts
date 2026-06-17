@@ -1,6 +1,6 @@
 /**
  * The Node filesystem boundary: turn a directory on disk into the in-memory {@link TableInput}s
- * that `assess` classifies. The pure transforms (`readFolder`, `assess`) never touch disk; this is
+ * that `assess` classifies. The pure transforms (`readTable`, `assess`) never touch disk; this is
  * the one place that does, so the whole pipeline is testable without a filesystem and the listing
  * is not duplicated per surface.
  *
@@ -19,7 +19,7 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import { type FolderEntry, MatterReadError, readFolder } from '../core/folder';
+import { type TableEntry, MatterReadError, readTable } from '../core/table';
 import type { TableInput } from '../core/integrity';
 
 function messageOf(error: unknown): string {
@@ -27,16 +27,16 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * The folder's `.md` files as {@link FolderEntry}s, sorted by name for deterministic output. A
+ * The folder's `.md` files as {@link TableEntry}s, sorted by name for deterministic output. A
  * per-file read failure becomes an entry carrying its {@link MatterReadError}, so an unreadable
  * file surfaces as such instead of vanishing from the listing.
  */
-async function readEntries(dir: string): Promise<FolderEntry[]> {
+async function readEntries(dir: string): Promise<TableEntry[]> {
 	const fileNames = (await readdir(dir))
 		.filter((f) => f.endsWith('.md'))
 		.sort();
 	return Promise.all(
-		fileNames.map(async (fileName): Promise<FolderEntry> => {
+		fileNames.map(async (fileName): Promise<TableEntry> => {
 			try {
 				return {
 					fileName,
@@ -52,7 +52,7 @@ async function readEntries(dir: string): Promise<FolderEntry[]> {
 /**
  * The folder's `matter.json` text, or `undefined` when it has none. A missing OR unreadable
  * `matter.json` both collapse to `undefined` (a valid untyped table); only a PRESENT-but-corrupt
- * model is a failure, and that is `readFolder`'s job to detect from the text it parses, not this
+ * model is a failure, and that is `readTable`'s job to detect from the text it parses, not this
  * boundary's. Matches the reference script's loader.
  */
 async function readModelText(dir: string): Promise<string | undefined> {
@@ -71,14 +71,14 @@ export async function loadTable(dir: string): Promise<TableInput> {
 	const dirPath = resolve(dir);
 	const name = basename(dirPath);
 
-	let entries: FolderEntry[];
+	let entries: TableEntry[];
 	try {
 		entries = await readEntries(dirPath);
 	} catch (error) {
 		return { name, status: 'unreadable', message: messageOf(error) };
 	}
 
-	const read = readFolder(entries, await readModelText(dirPath));
+	const read = readTable(entries, await readModelText(dirPath));
 	return { name, status: 'readable', read };
 }
 

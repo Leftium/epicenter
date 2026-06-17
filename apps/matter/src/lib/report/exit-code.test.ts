@@ -5,19 +5,19 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from '../core/folder';
+import { readTable } from '../core/table';
 import { assess, type TableInput } from '../core/integrity';
 import { exitCodeFor } from './exit-code';
 import { summarize, toViolations } from './violations';
 
-type Entries = Parameters<typeof readFolder>[0];
+type Entries = Parameters<typeof readTable>[0];
 
 function loaded(
 	name: string,
 	modelText: string | undefined,
 	entries: Entries,
 ): TableInput {
-	return { name, status: 'readable', read: readFolder(entries, modelText) };
+	return { name, status: 'readable', read: readTable(entries, modelText) };
 }
 
 const pagesModel = JSON.stringify({ fields: { title: { type: 'string' } } });

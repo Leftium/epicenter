@@ -3,7 +3,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import FolderGrid from '$lib/components/FolderGrid.svelte';
+	import TableGrid from '$lib/components/TableGrid.svelte';
 	import type { TableAssessment } from '$lib/core/integrity';
 	import type { TableHandle } from '$lib/table.svelte';
 	import { createWhereFilter } from '$lib/where-filter.svelte';
@@ -36,7 +36,7 @@
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
-		<FolderGrid {table} {filter} {assessment} />
+		<TableGrid {table} {filter} {assessment} />
 	{:catch error}
 		<Empty.Root class="flex-1 border-0">
 			<Empty.Media variant="icon"><FolderOpenIcon /></Empty.Media>

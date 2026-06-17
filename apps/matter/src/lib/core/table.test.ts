@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from './folder';
+import { readTable } from './table';
 
-describe('readFolder', () => {
+describe('readTable', () => {
 	test('splits readable rows from unreadable files and lists raw columns', () => {
-		const result = readFolder([
+		const result = readTable([
 			{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
 			{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' },
 			{ fileName: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
@@ -37,7 +37,7 @@ describe('readFolder', () => {
 				rating: { type: 'integer' },
 			},
 		});
-		const result = readFolder(
+		const result = readTable(
 			[
 				{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
 				{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> MISSING_REQUIRED
@@ -63,7 +63,7 @@ describe('readFolder', () => {
 			},
 			optional: ['reviewBy'],
 		});
-		const result = readFolder(
+		const result = readTable(
 			[
 				{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' },
 				{ fileName: 'b.md', content: '---\ntitle: B\nreviewBy:\n---\nbody' },
@@ -86,7 +86,7 @@ describe('readFolder', () => {
 	});
 
 	test('a junk matter.json degrades to the raw view with a diagnostic', () => {
-		const result = readFolder(
+		const result = readTable(
 			[{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' }],
 			'{ not json',
 		);

@@ -3,12 +3,12 @@
  *
  * Bundles the three things a filter is, the input (`text`), the result
  * (`matchedFileNames`), and a bad-clause `error`, plus the debounced query and its own
- * reactive lifecycle, into ONE unit. FolderGrid binds `filter.text` and reads
+ * reactive lifecycle, into ONE unit. TableGrid binds `filter.text` and reads
  * `filter.matchedFileNames` instead of carrying three loose `$state`s and a standing effect
  * a reader has to mentally group.
  *
  * The table is taken at construction (not per call): a tab's table is non-swappable (a
- * folder switch remounts VaultView with a fresh table AND a fresh filter), so there is
+ * table switch remounts TablePane with a fresh table AND a fresh filter), so there is
  * nothing to re-point at call time. The filter owns its own `$effect`, which Svelte ties to
  * the component that constructs it (the same pattern as `createPressedKeys`), so the caller
  * just writes `const filter = createWhereFilter(table)`, with no effect to wire and no

@@ -1,7 +1,7 @@
 /**
  * Composed integrity tests.
  *
- * Exercises `assess` over in-memory tables built from real `readFolder` reads, so model
+ * Exercises `assess` over in-memory tables built from real `readTable` reads, so model
  * recognition, conformance classification, and reference resolution are all on the live path.
  * The two axes under test:
  *
@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from './folder';
+import { readTable } from './table';
 import {
 	type AssessedCell,
 	assess,
@@ -23,14 +23,14 @@ import {
 	type VaultIntegrity,
 } from './integrity';
 
-type Entries = Parameters<typeof readFolder>[0];
+type Entries = Parameters<typeof readTable>[0];
 
 function loaded(
 	name: string,
 	modelText: string | undefined,
 	entries: Entries,
 ): TableInput {
-	return { name, status: 'readable', read: readFolder(entries, modelText) };
+	return { name, status: 'readable', read: readTable(entries, modelText) };
 }
 
 // `title` required, `subtitle` optional: enough to produce every conformance state.

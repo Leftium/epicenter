@@ -113,7 +113,7 @@ export type Row = ParsedFile & {
 /**
  * Parse one file's content into a row, or the parse error that stopped it. The SINGLE
  * definition of "parse one file into the row-or-unreadable split", shared by
- * {@link readFolder} (batch) and the live vault (one delta at a time), so the two
+ * {@link readTable} (batch) and the live vault (one delta at a time), so the two
  * cannot drift. The read-level error (only Rust knows a file is undecodable) is the
  * caller's to add; this covers the parse half.
  */

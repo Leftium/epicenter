@@ -34,11 +34,11 @@ import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import type { FileDelta } from './bindings/FileDelta';
 import {
 	buildView,
-	type FolderRead,
+	type TableRead,
 	loadModel,
 	MatterReadError,
 	type UnreadableFile,
-} from './core/folder';
+} from './core/table';
 import { parseEntry, type Row } from './core/parse';
 import { editBody, editField } from './core/serialize';
 import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
@@ -103,15 +103,15 @@ export function createTable(path: string) {
 
 	/**
 	 * The current classified folder, derived from the files map + the loaded model.
-	 * The ONE place "files map -> FolderRead" lives, MEMOIZED so the `read` getter (the
+	 * The ONE place "files map -> TableRead" lives, MEMOIZED so the `read` getter (the
 	 * UI surface) and `reconcileMirror` (the SQLite mirror) share a single classification
 	 * instead of each recomputing it. Recomputes only when `files` or the loaded model
 	 * changes; `reconcileMirror` reads it when its deferred rebuild runs, so it sees the
 	 * latest classification rather than a stale snapshot.
 	 */
-	const read = $derived.by((): FolderRead => {
-		const rows: FolderRead['rows'] = [];
-		const unreadable: FolderRead['unreadable'] = [];
+	const read = $derived.by((): TableRead => {
+		const rows: TableRead['rows'] = [];
+		const unreadable: TableRead['unreadable'] = [];
 		for (const [fileName, { data, error }] of files) {
 			if (error) unreadable.push({ fileName, error });
 			else rows.push(data);
@@ -290,7 +290,7 @@ export function createTable(path: string) {
 		 *  seed contents already applied; rejects if it could not be armed. */
 		whenReady,
 		/** The current classified folder. A pure read with no side effects. */
-		get read(): FolderRead {
+		get read(): TableRead {
 			return read;
 		},
 		/** Set if the most recent save could not reach disk. */
@@ -310,7 +310,7 @@ export type TableHandle = ReturnType<typeof createTable>;
 /**
  * The slice of a {@link TableHandle} the grid renders from: the folder name, the
  * classified read, and the two save commands. This is the narrow dependency boundary
- * `FolderGrid` depends on, NOT the full table handle, so the grid cannot reach the
+ * `TableGrid` depends on, NOT the full table handle, so the grid cannot reach the
  * watcher lifecycle (`whenReady` / `dispose` / `path` / `mirrorVersion`) it has no
  * business touching, and a `Pick` of the live handle satisfies it for free.
  */

@@ -29,7 +29,7 @@
 
 import { type Field, referenceTargetOf } from '@epicenter/field';
 import type { Cell, Extra } from './conformance';
-import type { FolderRead } from './folder';
+import type { TableRead } from './table';
 import type { MatterModel } from './model';
 import { type Row, stemOf } from './parse';
 
@@ -116,13 +116,13 @@ export type TableAssessment =
  */
 export type VaultIntegrity = { tables: TableAssessment[] };
 
-/** A table that was read into a {@link FolderRead}: the input that contributes rows and stems. */
-type ReadableTable = { name: string; status: 'readable'; read: FolderRead };
+/** A table that was read into a {@link TableRead}: the input that contributes rows and stems. */
+type ReadableTable = { name: string; status: 'readable'; read: TableRead };
 
 /**
  * A table as it arrives at {@link assess}, tagged by whether the folder could be read. The
- * `readable` case carries its {@link FolderRead}; the `unreadable` case is the ONE input that
- * contributes no rows, so inbound references to it resolve to `missing-target`. A `FolderRead`
+ * `readable` case carries its {@link TableRead}; the `unreadable` case is the ONE input that
+ * contributes no rows, so inbound references to it resolve to `missing-target`. A `TableRead`
  * already implies the directory listed (its own `unreadable` is per-file), so "could not read
  * the folder" has to arrive as its own variant, tagged on `status` to match {@link TableAssessment}.
  */

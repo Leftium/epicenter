@@ -1,5 +1,5 @@
 /**
- * Read a folder of markdown into the model, then classify it.
+ * Read a table's folder of markdown into the model, then classify it.
  *
  * This is the pure transform: given each file's path and raw content (and an
  * optional `matter.json` text), it produces the readable rows, the unreadable
@@ -25,7 +25,7 @@ import { classifyRows, type RowConformance } from './conformance';
 import { type MatterModel, type MatterModelError, parseModel } from './model';
 import { type MatterParseError, parseEntry, type Row } from './parse';
 
-export type FolderEntry =
+export type TableEntry =
 	| { fileName: string; content: string }
 	| { fileName: string; error: MatterReadError };
 
@@ -75,7 +75,7 @@ export type UnmodeledView = {
 	modelError?: MatterModelError;
 };
 
-export type FolderRead = {
+export type TableRead = {
 	rows: Row[];
 	unreadable: UnreadableFile[];
 	view: ModeledView | UnmodeledView;
@@ -108,10 +108,10 @@ function frontmatterColumns(rows: readonly Row[]): string[] {
  * @param entries the folder's `.md` files (basename + raw content).
  * @param modelText the raw text of the folder's `matter.json`, if present.
  */
-export function readFolder(
-	entries: readonly FolderEntry[],
+export function readTable(
+	entries: readonly TableEntry[],
 	modelText?: string,
-): FolderRead {
+): TableRead {
 	const rows: Row[] = [];
 	const unreadable: UnreadableFile[] = [];
 
@@ -162,7 +162,7 @@ export function loadModel(modelText: string | undefined): LoadedModel {
 
 /**
  * Classify a set of in-memory rows against an already-loaded model. Split out
- * from {@link readFolder} so the live vault can reclassify after a single-file
+ * from {@link readTable} so the live vault can reclassify after a single-file
  * change without re-parsing the folder or recompiling the model.
  */
 export function buildView(

@@ -48,6 +48,7 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import RecordingMark from '$lib/components/icons/RecordingMark.svelte';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
@@ -242,6 +243,7 @@
 	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
 >
 	<SectionHeader.Root class="flex flex-col items-center gap-4">
+		<RecordingMark class="size-16 text-foreground" />
 		<SectionHeader.Title
 			level={1}
 			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"

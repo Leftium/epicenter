@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" role="img" aria-label="Whispering">
+	<path d="M6.5 7.5 A5.5 5.5 0 0 1 17.5 7.5 L17.5 10.5 A5.5 5.5 0 0 1 6.5 10.5 Z M9.55 5.9 H14.45 A0.55 0.55 0 0 1 14.45 7 H9.55 A0.55 0.55 0 0 1 9.55 5.9 Z M9.55 8.45 H14.45 A0.55 0.55 0 0 1 14.45 9.55 H9.55 A0.55 0.55 0 0 1 9.55 8.45 Z M9.55 11 H14.45 A0.55 0.55 0 0 1 14.45 12.1 H9.55 A0.55 0.55 0 0 1 9.55 11 Z" />
+	<rect x="11" y="15.5" width="2" height="3.5" rx="0.6" />
+	<rect x="7.5" y="20" width="9" height="1.9" rx="0.95" />
+</svg>

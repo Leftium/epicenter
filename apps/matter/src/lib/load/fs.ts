@@ -10,9 +10,9 @@
  * read its optional `matter.json`. {@link loadTable} is the single-folder case; {@link loadVault}
  * is the vault case, where every immediate subfolder is a table.
  *
- * It emits {@link TableInput}, not the bare `LoadedTable` of `core/references`, because a
- * filesystem is exactly where "could not read this folder" originates, and `TableInput`'s
- * `unreadable` variant is the one input that carries that fact into `assess`. A folder whose
+ * It emits {@link TableInput} (the shape `assess` classifies) because a filesystem is exactly
+ * where "could not read this folder" originates, and `TableInput`'s `unreadable` variant is the
+ * one input that carries that fact into `assess`. A folder whose
  * listing fails (missing, permission) becomes that variant; a folder with no `matter.json` is NOT
  * a failure, it loads as a valid untyped table (the raw grid).
  */

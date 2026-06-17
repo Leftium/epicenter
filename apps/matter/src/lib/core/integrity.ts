@@ -17,9 +17,8 @@
  * `assess` owns the reference classification directly off ONE index. It builds `rowsByTable`
  * (per table, stem to Row over the readable tables) and reads each reference cell's verdict
  * straight from it: the target table absent is `missing-target`, a matched stem is `resolved`
- * (the row is right there in the map), an unmatched stem is `dangling`. That is the whole of
- * `resolveReferences`, computed without a second stem graph or a flat findings list to re-index.
- * `resolveReferences` stays the standalone primitive its own callers still use; reporting the
+ * (the row is right there in the map), an unmatched stem is `dangling`. Resolution is a single
+ * lookup per cell, with no second stem graph or flat findings list to re-index. Reporting the
  * one `missing-target` per column (rather than per row) is a projection concern that lives in
  * `toViolations`, not here.
  *

@@ -64,8 +64,8 @@
 		distinction between a gone table and a gone row.
 	</p>
 
-	{#each demo.folders as folder (folder.table)}
-		<ReferenceDatabase table={folder.table} read={folder.read} cellFor={demo.cellFor} />
+	{#each demo.folders as folder (folder.name)}
+		<ReferenceDatabase table={folder.name} read={folder.read} cellFor={demo.cellFor} />
 	{/each}
 
 	<!-- Findings panel: the authoritative checkReferences output, distinct kinds kept distinct. -->

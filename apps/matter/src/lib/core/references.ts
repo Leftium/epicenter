@@ -29,13 +29,13 @@
  */
 
 import { referenceTargetOf } from '@epicenter/field';
-import type { FolderRead } from '../core/folder';
-import { stemOf } from '../core/parse';
+import type { FolderRead } from './folder';
+import { stemOf } from './parse';
 
 /** A folder loaded for cross-folder reference checking, keyed by its table name. */
-export type LoadedFolder = {
+export type LoadedTable = {
 	/** The folder's table name: the namespace a reference `x-ref` target resolves against. */
-	table: string;
+	name: string;
 	/** The folder's read (rows + classified view), as produced by `readFolder`. */
 	read: FolderRead;
 };
@@ -78,8 +78,8 @@ export type ReferenceReport = {
  * loaded folders (each paired with its table name), so it is testable with in-memory reads
  * and unaware of the filesystem, mirroring `readFolder` / `check`.
  */
-export function checkReferences(
-	folders: readonly LoadedFolder[],
+export function resolveReferences(
+	folders: readonly LoadedTable[],
 ): ReferenceReport {
 	// The existence set per table: the stems of every readable row. Built from EVERY loaded
 	// folder so any can be a target, and from `read.rows` (not the conformance view) so an
@@ -87,14 +87,14 @@ export function checkReferences(
 	// even when it has its own conformance issues.
 	const stemsByTable = new Map<string, Set<string>>(
 		folders.map((folder) => [
-			folder.table,
+			folder.name,
 			new Set(folder.read.rows.map((row) => stemOf(row.fileName))),
 		]),
 	);
 
 	const findings: ReferenceFinding[] = [];
 
-	for (const { table, read } of folders) {
+	for (const { name: table, read } of folders) {
 		// Only a modeled folder has typed fields; a raw folder has no reference columns.
 		if (read.view.mode !== 'modeled') continue;
 

@@ -1,7 +1,7 @@
 /**
  * Row-level reference validation tests.
  *
- * Exercises `checkReferences` over in-memory folder reads. Each folder is a real
+ * Exercises `resolveReferences` over in-memory folder reads. Each folder is a real
  * `readFolder` of markdown entries plus a `matter.json`, so recognition of the `x-ref`
  * marker, conformance classification, and stem resolution are all on the live path.
  *
@@ -16,8 +16,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from '../core/folder';
-import { checkReferences, type LoadedFolder } from './references';
+import { readFolder } from './folder';
+import { resolveReferences, type LoadedTable } from './references';
 
 type Entries = Parameters<typeof readFolder>[0];
 
@@ -25,8 +25,8 @@ function loaded(
 	table: string,
 	modelText: string | undefined,
 	entries: Entries,
-): LoadedFolder {
-	return { table, read: readFolder(entries, modelText) };
+): LoadedTable {
+	return { name: table, read: readFolder(entries, modelText) };
 }
 
 const pagesModel = JSON.stringify({
@@ -49,20 +49,20 @@ const adaptationsModelOptionalPage = JSON.stringify({
 	optional: ['page'],
 });
 
-function pages(entries: Entries): LoadedFolder {
+function pages(entries: Entries): LoadedTable {
 	return loaded('pages', pagesModel, entries);
 }
 
 function adaptations(
 	entries: Entries,
 	model = adaptationsModel,
-): LoadedFolder {
+): LoadedTable {
 	return loaded('adaptations', model, entries);
 }
 
-describe('checkReferences', () => {
+describe('resolveReferences', () => {
 	test('a value naming an existing stem resolves with no finding', () => {
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([
 				{
@@ -76,7 +76,7 @@ describe('checkReferences', () => {
 	});
 
 	test('a value naming no stem is UNRESOLVED', () => {
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([
 				{ fileName: 'a1.md', content: '---\ntitle: A\npage: does-not-exist\n---' },
@@ -96,7 +96,7 @@ describe('checkReferences', () => {
 	});
 
 	test('a target table absent from the loaded set is MISSING_TARGET, once, with no per-row findings', () => {
-		const report = checkReferences([
+		const report = resolveReferences([
 			adaptations([
 				{ fileName: 'a1.md', content: '---\ntitle: A\npage: anything\n---' },
 				{ fileName: 'a2.md', content: '---\ntitle: B\npage: other\n---' },
@@ -114,7 +114,7 @@ describe('checkReferences', () => {
 	});
 
 	test('a missing optional reference cell produces no finding', () => {
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations(
 				[{ fileName: 'a1.md', content: '---\ntitle: A\n---' }],
@@ -128,7 +128,7 @@ describe('checkReferences', () => {
 	test('a missing required reference cell is left to conformance, not a reference finding', () => {
 		// `page` is required and absent: conformance reports MISSING_REQUIRED; the reference
 		// pass adds nothing (there is no value to resolve).
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\n---' }]),
 		]);
@@ -137,7 +137,7 @@ describe('checkReferences', () => {
 	});
 
 	test('a non-string reference value is left to conformance (INVALID), not UNRESOLVED', () => {
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\npage: 123\n---' }]),
 		]);
@@ -149,7 +149,7 @@ describe('checkReferences', () => {
 		// `page: ""` conforms as OK (present, non-null), but it carries no pointer to resolve.
 		// Referential integrity only resolves present pointers; whether empty is ALLOWED is a
 		// conformance / minLength question, so this pass adds nothing.
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\npage: ""\n---' }]),
 		]);
@@ -160,7 +160,7 @@ describe('checkReferences', () => {
 	test('a target row with its own conformance issues still satisfies a reference', () => {
 		// The page row is missing its required `title`, so it needs attention — but the FILE
 		// exists, so the reference to its stem resolves.
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\n---' }]),
 			adaptations([
 				{
@@ -175,7 +175,7 @@ describe('checkReferences', () => {
 
 	test('an unmodeled target folder still contributes its rows as an existence set', () => {
 		// `pages` has no matter.json (unmodeled raw view), but its files still exist as rows.
-		const report = checkReferences([
+		const report = resolveReferences([
 			loaded('pages', undefined, [
 				{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' },
 			]),
@@ -199,7 +199,7 @@ describe('checkReferences', () => {
 			},
 		});
 
-		const report = checkReferences([
+		const report = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([
 				{

@@ -1,7 +1,7 @@
 # Vault as the Relational Unit (`apps/matter`)
 
 **Date**: 2026-06-16
-**Status**: Proposed (greenfield direction; compatibility pressure explicitly released by the owner). Revised once to fold conformance and references into one composed integrity model.
+**Status**: Proposed (greenfield direction; compatibility pressure explicitly released by the owner). Revised once to fold conformance and references into one composed integrity model; revised again (grilling pass) to make that composition return ONE rich structure every surface selects from, to give tables four honest states, and to scope Wave 2 to full pipeline unification.
 **Owner**: Braden
 **Branch**: feat/field-reference-kind
 **Depends on**: the reference field kind (`packages/field`), `checkReferences` (`src/lib/check/references.ts`), per-table conformance (`src/lib/core/conformance.ts`), the per-folder watcher (`src-tauri/src/watch.rs`), and the SQLite mirror (`src/lib/core/sqlite.ts` + `src-tauri/src/mirror.rs`), all already shipped or in flight on this branch.
@@ -124,57 +124,124 @@ The single-Table case is a degenerate Vault (one Table). The "no model" state st
 
 ## Integrity Model
 
-The most important refinement over the first draft: **do not merge `conformance` and `checkReferences` into one function. Keep them as two pure primitives and let `integrity` compose them into one report.**
+> **Revised 2026-06-16 (grilling pass; compatibility released by the owner).** The first draft
+> made the composition return a flat `Violation[]` and kept `CheckReport` alive beside it. That
+> reproduces the very "two report vocabularies" problem this spec opens by diagnosing: after it,
+> conformance would be walked THREE times (`CheckReport`, the violation list, and the grid's own
+> reference-chip pass in `references-demo`), each free to drift. A flat list also cannot drive
+> the grid (it has to re-index findings against rows to color a chip). This revision makes the
+> composition return ONE rich structure that every surface SELECTS from.
 
-Why composition, not merger:
+Keep `conformance` and references as two pure primitives; let `assess` compose them. The reason
+to keep them separate is **timing, not taste**: conformance is computable the instant ONE folder
+is read (a single open table must render from it before any vault exists), while reference
+resolution is a strictly LATER refinement that needs sibling tables to have loaded. `assess` is
+the point where the later data, once present, refines the earlier classification.
 
-- `conformance(table)` is a pure function of **one table** and produces the full per-cell state model (`OK / MISSING_REQUIRED / MISSING_OPTIONAL / INVALID`) that the **grid renders per-cell widgets from**. `OK` and `MISSING_OPTIONAL` are not violations, so a violations-only function would lose the states the grid needs, or force the grid to depend on the whole vault to render one row.
-- `resolveReferences(vault)` is a pure function of **the vault** (needs the target table's rows).
-- `integrity(vault)` composes both and **projects** to one `Violation[]`. The violation list is a *derivation* of the cell-states plus the reference resolution, never a replacement for either primitive.
+### The one structure: `VaultIntegrity`
 
-### The Violation vocabulary (a discriminated union, not optional fields)
+`assess(tables)` returns an indexed structure rich enough to render a cell and, after one
+projection, flat enough to summarize. The grid, the integrity panel, the CLI, the `--json`
+output, and the exit code are all PURE SELECTORS over it. One walk over the classification, so
+two surfaces cannot disagree.
 
-The first-draft idea of `{ row?, constraint: 'type'|'required'|'reference' }` is refused: optional `row` encoding the tier and `constraint: 'reference'` covering two different tiers are both the "optional fields encode meaning" smell. Use a union keyed on `kind`; the tier is *derivable*, never stored and trusted.
+### The cell IS the view-model
+
+Reference resolution is not a separate report; it is a richer cell state. Conformance (no vault
+knowledge) can only call a present, valid reference string `ok`. `assess` REFINES that single
+`ok` into `resolved | dangling | missing-target`, and a `resolved` cell carries the target row
+so a chip renders its title with no second lookup. So `cell.state` is the complete widget
+selector: one exhaustive switch, no component touching the vault or a findings list.
+
+```ts
+type AssessedCell =
+  // non-reference cells, plus the "absent / wrong" states shared with references
+  | { field: Field; state: 'ok';               value: unknown }   // present, valid, non-reference
+  | { field: Field; state: 'missing-required' }
+  | { field: Field; state: 'missing-optional' }
+  | { field: Field; state: 'invalid';          raw: unknown }
+  // reference cells, present & valid: the refinement of a transient `ok`
+  | { field: Field; state: 'resolved';       value: string; target: string; targetRow: Row }
+  | { field: Field; state: 'dangling';       value: string; target: string }
+  | { field: Field; state: 'missing-target'; value: string; target: string };
+```
+
+`ok` is exclusive to non-references; `resolved`/`dangling`/`missing-target` are exclusive to
+references; `missing-required`/`missing-optional`/`invalid` are SHARED (a required reference can
+be absent, an optional one too, a reference value can be a non-string). `MISSING_OPTIONAL` and
+`ok` never appear in the violation projection, which proves that list is a projection of the
+cells, not all of them.
+
+`conformance.ts` does NOT move and its tests stay green: it keeps producing the four-state
+`Cell`. `assess` owns the `Cell -> AssessedCell` widening, replacing a reference cell's transient
+`ok` with the verdict and passing everything else through unchanged.
+
+### Tables have four honest states; strictness is a report policy
+
+A table's status is a discriminated union with four states, NOT a `loaded | fatal` binary.
+**`unmodeled` (no `matter.json`) is a VALID state, never a failure**: the live grid already shows
+it as a raw, type-less grid, and it is still a valid reference target (existence is the file
+existing, contract or not). The first draft's `MODEL_MISSING`-as-fatal made the same folder
+"fatal" to the CLI and "fine" to the app; this kills that contradiction.
+
+```ts
+type TableAssessment =
+  | { name: string; status: 'unreadable';       message: string }                 // folder could not be read
+  | { name: string; status: 'invalid-contract'; message: string }                 // matter.json present but corrupt/unrecognized
+  | { name: string; status: 'unmodeled';        rows: Row[]; columns: string[] }  // raw grid, valid
+  | { name: string; status: 'modeled';          contract: Contract; rows: RowAssessment[] };
+
+type RowAssessment = { row: Row; cells: AssessedCell[]; extras: Extra[] };
+
+type VaultIntegrity = { version: 1; tables: TableAssessment[] };
+```
+
+`unreadable` and `invalid-contract` are genuine failures, split by cause the way reference
+findings split `missing-target` from `dangling` (different cause, different fix). A failed OR
+`unmodeled` table contributes no `modeled` cells and turns every inbound reference into
+`missing-target` (the honest causal chain), but every table in ALL four states still contributes
+its file stems to the reference existence index.
+
+### The projections (pure selectors, no re-derivation)
+
+```ts
+toViolations(v: VaultIntegrity): Violation[]   // cells where state ∈ {missing-required, invalid, dangling, missing-target},
+                                               // located by table/row/field; missing-target deduped to once per column.
+summarize(v: VaultIntegrity): Summary          // per-table + total: ready / needs-attention / unreadable / untyped counts, byField.
+```
+
+`Violation` is the flat, located shape for the panel, the CLI, and `--json`; `tierOf(v)` derives
+`table | row | cross-table` from `kind`, never stored.
 
 ```ts
 type Violation =
-  // table tier — a reference field's target table is absent from the vault
   | { kind: 'missing-target';     table: string;             field: string; target: string }
-  // row tier — a required cell is empty                 (was conformance NEEDS_VALUE)
   | { kind: 'missing-required';   table: string; row: string; field: string }
-  // row tier — a present cell fails its field type      (was conformance INVALID; same actual/expected)
-  | { kind: 'invalid-type';       table: string; row: string; field: string; actual: unknown; expected: ExpectedValue }
-  // cross-table tier — a present reference resolves to no row in its loaded target
+  | { kind: 'invalid-type';       table: string; row: string; field: string; raw: unknown }
   | { kind: 'dangling-reference'; table: string; row: string; field: string; value: string; target: string };
-
-const tierOf = (v: Violation): 'table' | 'row' | 'cross-table' =>
-  v.kind === 'missing-target' ? 'table'
-  : v.kind === 'dangling-reference' ? 'cross-table'
-  : 'row';
 ```
 
-This maps cleanly from what exists: `missing-required` is today's `NEEDS_VALUE`, `invalid-type` is today's `INVALID` (carrying its existing `actual`/`expected`), and `missing-target`/`dangling-reference` are today's `ReferenceFinding`. `MISSING_OPTIONAL` and `OK` correctly never appear, which proves the list is a projection of conformance, not all of it.
+`Extra` keys (frontmatter not in the contract) ride on `RowAssessment`, are never violations, and
+project as notes. The grid never calls `toViolations`; it binds `tables[i].rows[j].cells[k]`
+directly, so the panel and the grid are consistent by construction (same cells).
 
-### The report keeps two axes, not one
+### `expected` is a render projection, not data
 
-A table that **cannot load** (`FOLDER_UNREADABLE`, `MODEL_INVALID`) is a **precondition failure**, not a violation. Do not cram it into the `Violation` union. The integrity report carries two axes:
-
-```ts
-type IntegrityReport = {
-  version: 1;
-  tables: Array<
-    | { name: string; status: 'loaded' }
-    | { name: string; status: 'fatal'; code: FatalCode; message: string }
-  >;
-  violations: Violation[]; // only computed over loaded tables
-};
-```
-
-A fatal table produces no violations of its own and turns every inbound reference into `missing-target`. That is the honest causal chain. `CheckReport`'s `summary` and `byField` stats become **derived views** over `violations` + `tables`, not stored fields.
+The first draft put `expected: ExpectedValue` inside the `invalid-type` violation, which forced
+`core/integrity` to import display plumbing from the old `check/` module: a new-depends-on-old
+inversion. Refused. "What did this field expect" is a RENDERING concern. The `invalid`/
+`invalid-type` shape carries enough to identify the field; `describeExpected(field): ExpectedValue`
+(serializable) and `formatExpected(ExpectedValue): string` (human text) live in the `report/`
+layer. `core` never imports them. They appear only in the SERIALIZED violation (`--json`) and the
+formatted text, computed at the edge.
 
 ### CLI scope follows the path
 
-`matter check <path>` infers scope from the path: a table folder yields a table-scope report (conformance only; reference fields are noted as un-evaluable without a vault), a vault root yields the full vault report (conformance for each table plus cross-table references). One vocabulary, scope inferred.
+`matter check <path>` infers scope from the path: a table folder yields a one-table vault
+(reference fields noted as un-evaluable in isolation), a parent of table folders yields the full
+vault. One pipeline, scope inferred by the loader. `unmodeled` exits 0 with a note;
+`invalid-contract` and `unreadable` exit non-zero. No `--strict` / `--require-contract` flag until
+a concrete CI gate earns it (see Refusals).
 
 ## Naming Map (old to new)
 
@@ -189,13 +256,19 @@ OpenVault {id,path,name} -> OpenVault {id,root,name}     a tab is a vault root, 
 open-vaults.svelte.ts    -> (kept, semantics lifted)     list of open VAULT ROOTS (Wave 3)
 /vault/[id]              -> /vault/[id]                   now resolves to a Vault root, renders the shell (Wave 3)
 "model" (matter.json)    -> "contract"                   one word, the UI copy already says "contract"
-core/folder.ts           -> core/table.ts                LoadedTable, buildView, readTable (Wave 3)
-LoadedFolder {table,read}-> LoadedTable {name,read}      check/references.ts -> core/references.ts (Wave 2)
-checkReferences()        -> resolveReferences(vault)     pure primitive, moved to core/references.ts (Wave 2)
+core/folder.ts           -> core/table.ts                LoadedTable, buildView, readTable (Wave 3, NOT Wave 2)
+"model" type/file        -> "contract" (Contract)        model.ts -> contract.ts (Wave 3, with the folder rename)
+LoadedFolder {table,read}-> LoadedTable {name,read}      defined in core/references.ts over FolderRead (Wave 2; re-homes to core/table.ts in Wave 3)
+checkReferences()        -> resolveReferences(tables)    pure primitive over CLASSIFIED tables, moved to core/references.ts (Wave 2)
 matter.sqlite (per dir)  -> matter.sqlite (per vault root) one db, one table per folder (Wave 5)
-(new)                    -> core/integrity.ts            integrity(vault) composing conformance + references (Wave 2)
+check/ (dir)             -> report/ (dir)                projections for the outside world: violations.ts, expected.ts, format.ts, exit-code.ts (Wave 2)
+CheckReport/FatalCheckReport -> (deleted)                replaced by VaultIntegrity + toViolations + summarize (Wave 2)
+check/check.ts reportFromRead -> (deleted)               the single-folder re-derivation; CLI runs assess + project instead (Wave 2)
+ExpectedValue/describeExpected -> report/expected.ts     render projection, NOT in the core data (Wave 2)
+(new)                    -> core/integrity.ts            assess(tables) -> VaultIntegrity, composing conformance + references (Wave 2)
 (new)                    -> core/vault.ts                LoadedVault: ordered tables + reference scope (Wave 3)
-(new)                    -> load/fs.ts, load/tauri.ts    the two loaders behind one core (Wave 2/3)
+(new)                    -> load/fs.ts                   Node loader: dir/vault root -> LoadedTable[] (Wave 2; absorbs cli/check readInput + the script's loaders)
+(new)                    -> load/tauri.ts                the reactive watcher home (Wave 3)
 (new)                    -> createVault(rootPath)        composes tables + root discovery watch (Wave 3)
 ```
 
@@ -275,6 +348,40 @@ Trigger:    If a pure-memory harness is ever needed for tests, the pure readFold
             functions already serve that without a route.
 ```
 
+```
+Candidate:  Make assess() return a flat Violation[] (IntegrityReport) as its primary output.
+Refusal:    A flat list cannot drive the grid (it must re-index findings against rows to color one
+            chip), so the grid keeps a SECOND walk and the two can drift. assess() returns the rich
+            VaultIntegrity; the violation list is one pure selector (toViolations) over it. Same one
+            report the user sees; one walk; surfaces consistent by construction.
+User loss:  None. The flat list still exists, as a projection.
+Decision:   Refuse the flat-primary. Rich source + selectors.
+Trigger:    None foreseen.
+```
+
+```
+Candidate:  Carry expected: ExpectedValue inside the violation data (so core/integrity owns it).
+Refusal:    "What did this field expect" is a render concern; baking it into the data forces the new
+            core to import display plumbing from the old check/ module (new-depends-on-old). The
+            invalid cell carries its field; describeExpected/formatExpected live in report/ and run
+            at the edge (serialized JSON + human text).
+User loss:  None. --json still carries expected, computed in the projection.
+Decision:   Refuse data-resident expected. Project at the edge.
+Trigger:    None foreseen.
+```
+
+```
+Candidate:  Treat an unmodeled folder (no matter.json) as a fatal/failure state in core, and/or add
+            --strict / --require-contract to matter check now.
+Refusal:    Unmodeled is a VALID state (the live grid shows it as a raw grid; it is still a reference
+            target). Making it fatal recreates the app-vs-CLI contradiction this spec set out to fix.
+            matter check reports it as a note and exits 0. The strict flag has no consumer yet (earned-
+            trigger test), so it is not built.
+User loss:  None today. No CI gate currently needs strict certification.
+Decision:   Refuse fatal-unmodeled and the premature flag.
+Trigger:    Build --require-contract when a real CI pipeline needs to fail on untyped folders.
+```
+
 ## Architecture
 
 ### File moves (TypeScript)
@@ -290,16 +397,24 @@ src/lib/vault.svelte.ts                  (new, Wave 3)
   owns the per-vault SQLite mirror rebuild and the live integrity() derived.
 
 src/lib/core/parse.ts                    Markdown -> Row { stem, fileName, frontmatter, body }.   [unchanged]
-src/lib/core/model.ts                    matter.json -> table contract.                            [unchanged]
-src/lib/core/table.ts                    was core/folder.ts. LoadedTable { name, read, view }; buildView; readTable.
-src/lib/core/vault.ts                    new. LoadedVault = ordered LoadedTable[] + the reference scope.
-src/lib/core/conformance.ts              pure per-table cell classification.                       [unchanged primitive]
-src/lib/core/references.ts               was check/references.ts. resolveReferences(vault) — pure, vault-scoped.
-src/lib/core/integrity.ts                new. integrity(vault) composes conformance + references -> IntegrityReport.
-src/lib/core/sqlite.ts                   projectToSqlite stays per-table; add a vault-level rebuild (one db).
+src/lib/core/folder.ts                   readFolder, FolderRead, buildView, loadModel.    [unchanged in W2; -> core/table.ts + model->contract in W3]
+src/lib/core/conformance.ts              pure per-table cell classification (4-state Cell).        [unchanged primitive; W2 must NOT touch it]
+src/lib/core/references.ts               was check/references.ts. resolveReferences(tables) — pure, over classified tables.  (W2)
+src/lib/core/integrity.ts                new (W2). AssessedCell / TableAssessment / RowAssessment / VaultIntegrity; assess(tables)
+                                         composes conformance (Cell -> AssessedCell widening) + resolveReferences.
+src/lib/core/vault.ts                    new (W3). LoadedVault = ordered LoadedTable[] + the reference scope.
+src/lib/core/sqlite.ts                   projectToSqlite stays per-table; add a vault-level rebuild (one db).  (W5)
 
-src/lib/load/fs.ts                       Node loader: root dir -> LoadedVault (CLI + scripts).
-src/lib/load/tauri.ts                    the reactive watcher home (table.svelte.ts + vault.svelte.ts live here logically).
+src/lib/report/                          new (W2), was check/. Pure selectors over VaultIntegrity:
+  violations.ts                            toViolations, summarize, tierOf, Violation.
+  expected.ts                              ExpectedValue, describeExpected (serialization of "what was expected").
+  format.ts                                formatExpected + human text (was check/format.ts).
+  exit-code.ts                             (was check/exit-code.ts).
+src/lib/check/                           DELETED (W2): check.ts, report.ts (CheckReport/FatalCheckReport), references.ts.
+
+src/lib/load/fs.ts                       new (W2). Node loader: dir -> LoadedTable, vault root -> LoadedTable[] (CLI;
+                                         absorbs cli/check.ts readInput + scripts/check-references.ts loaders).
+src/lib/load/tauri.ts                    the reactive watcher home (W3); table.svelte.ts + vault.svelte.ts live here logically.
 
 src/routes/(vaults)/vault/[id]/
   VaultView.svelte -> the Vault shell (table switcher + active grid + integrity panel).
@@ -345,12 +460,28 @@ W1  Rename the watcher primitive in place. No behavior change.
     naming (a vault currently holds one table; forward-compatible). No bare Table type, so no
     UI-Table collision. All 95 tests stay green.
 
-W2  Unify the report vocabulary. No primitive change.
-    check/references.ts -> core/references.ts as resolveReferences (pure, same logic). Add
-    core/integrity.ts: the Violation discriminated union, IntegrityReport (tables + violations
-    axes), composing conformance + references over EXISTING inputs (a table, or manually-assembled
-    folders). CLI + demo render the one vocabulary. Introduce load/fs.ts for the Node loader.
-    De-risks the report shape before live wiring.
+W2  Unify the report vocabulary AND the pipeline. No primitive change (conformance untouched).
+    FULL unification, staged as ~6 reviewable commits. Touches CLI + core + report + load only,
+    never the live grid (check/ is imported solely by cli/check.ts and its own tests), and defers
+    the model->contract / folder->table renames to Wave 3. Commits:
+      1. Move check/references.ts -> core/references.ts; checkReferences -> resolveReferences;
+         LoadedFolder {table,read} -> LoadedTable {name,read}. Same logic; update test + the 3
+         consumers. Pure move/rename, green.
+      2. Add core/integrity.ts: AssessedCell (7-way), TableAssessment (4 states), RowAssessment,
+         VaultIntegrity, and assess(tables) composing conformance (Cell -> AssessedCell widening)
+         + resolveReferences. + tests.
+      3. Add report/ (was check/): violations.ts (toViolations, summarize, tierOf, Violation),
+         expected.ts (ExpectedValue, describeExpected), format.ts (formatExpected + human text),
+         exit-code.ts. Pure selectors over VaultIntegrity.
+      4. Add load/fs.ts: dir -> LoadedTable, vault root -> LoadedTable[] (one home for the disk
+         listing currently duplicated in cli/check.ts and scripts/check-references.ts).
+      5. Rewire cli/check.ts onto load/fs -> assess -> report; scope inferred from the path;
+         fold scripts/check-references.ts in (delete it). DELETE check/check.ts, check/report.ts
+         (CheckReport/FatalCheckReport). unmodeled exits 0 + note.
+      6. Demo: mechanical import fix only (resolveReferences/LoadedTable from core/references).
+         No vocabulary rewrite; Wave 4 deletes the demo.
+    De-risks the report shape and the loader before live wiring, with one report vocabulary at the
+    wave boundary.
 
 W3  Lift the primitive. createVault(rootPath) composes createTable per child + a depth-1 Rust
     root-discovery watch (folder added/removed, matter.json gained/lost). core/folder.ts -> core/table.ts;

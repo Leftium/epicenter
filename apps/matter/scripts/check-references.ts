@@ -4,7 +4,7 @@
  * The bundled `matter check` command certifies ONE folder against its own model. Row-level
  * referential integrity is cross-folder (a value in `adaptations` must resolve to a row in
  * `pages`), so this script is the headless surface for it: point it at a directory whose
- * immediate subfolders are tables, and it reads each one, runs `checkReferences`, and prints
+ * immediate subfolders are tables, and it reads each one, runs `resolveReferences`, and prints
  * the findings.
  *
  *   bun scripts/check-references.ts ../../examples/matter/content-vault
@@ -16,10 +16,10 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { type FolderEntry, MatterReadError, readFolder } from '../src/lib/core/folder';
-import { checkReferences, type LoadedFolder } from '../src/lib/check/references';
+import { resolveReferences, type LoadedTable } from '../src/lib/core/references';
 
-/** Read one folder into a `LoadedFolder`: its `.md` rows plus its `matter.json`, keyed by name. */
-async function loadFolder(root: string, name: string): Promise<LoadedFolder> {
+/** Read one folder into a `LoadedTable`: its `.md` rows plus its `matter.json`, keyed by name. */
+async function loadFolder(root: string, name: string): Promise<LoadedTable> {
 	const dir = join(root, name);
 	const fileNames = (await readdir(dir)).filter((f) => f.endsWith('.md')).sort();
 
@@ -34,7 +34,7 @@ async function loadFolder(root: string, name: string): Promise<LoadedFolder> {
 	);
 
 	const modelText = await readFile(join(dir, 'matter.json'), 'utf8').catch(() => undefined);
-	return { table: name, read: readFolder(entries, modelText) };
+	return { name, read: readFolder(entries, modelText) };
 }
 
 /** Every immediate subdirectory of `root`, sorted, each treated as a table. */
@@ -52,10 +52,10 @@ async function main(): Promise<number> {
 		(await tableFolders(root)).map((name) => loadFolder(root, name)),
 	);
 
-	const report = checkReferences(folders);
+	const report = resolveReferences(folders);
 
 	const loaded = folders
-		.map((f) => `${f.table} (${f.read.rows.length})`)
+		.map((f) => `${f.name} (${f.read.rows.length})`)
 		.join(', ');
 	process.stdout.write(`Checked ${folders.length} folders: ${loaded}\n`);
 

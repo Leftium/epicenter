@@ -2,7 +2,7 @@
  * Reactive state for the `/demo/references` route.
  *
  * Loads the inlined three-table vault through the REAL `readFolder` pipeline and runs the
- * REAL `checkReferences` validator, so the Notion-like view renders the same resolution the
+ * REAL `resolveReferences` validator, so the Notion-like view renders the same resolution the
  * headless `scripts/check-references.ts` prints — no mock, just the pipeline minus IO.
  *
  * The one interactive knob is `includePages`: drop the `pages` folder and every
@@ -13,10 +13,10 @@
 
 import { referenceTargetOf } from '@epicenter/field';
 import {
-	checkReferences,
-	type LoadedFolder,
+	type LoadedTable,
 	type ReferenceReport,
-} from '$lib/check/references';
+	resolveReferences,
+} from '$lib/core/references';
 import { readFolder } from '$lib/core/folder';
 import { type Row, stemOf } from '$lib/core/parse';
 import { REFERENCE_FIXTURES } from './references-fixtures';
@@ -32,17 +32,17 @@ export function createReferencesDemo() {
 	// Drop `pages` to demonstrate MISSING_TARGET live; on by default so the happy path shows.
 	let includePages = $state(true);
 
-	const folders = $derived.by((): LoadedFolder[] =>
+	const folders = $derived.by((): LoadedTable[] =>
 		REFERENCE_FIXTURES.filter(
 			(fixture) => includePages || fixture.table !== 'pages',
 		).map((fixture) => ({
-			table: fixture.table,
+			name: fixture.table,
 			read: readFolder(fixture.rows, fixture.modelText),
 		})),
 	);
 
 	// The authoritative validator output: the same report the CLI script prints.
-	const report = $derived(checkReferences(folders));
+	const report = $derived(resolveReferences(folders));
 
 	// stem -> Row per table, so a resolved chip can preview the target row's title.
 	const rowsByTable = $derived.by(() => {
@@ -50,7 +50,7 @@ export function createReferencesDemo() {
 		for (const folder of folders) {
 			const byStem = new Map<string, Row>();
 			for (const row of folder.read.rows) byStem.set(stemOf(row.fileName), row);
-			map.set(folder.table, byStem);
+			map.set(folder.name, byStem);
 		}
 		return map;
 	});
@@ -92,7 +92,7 @@ export function createReferencesDemo() {
 	// Flat list of every present reference cell with its verdict, for the summary counts.
 	const cells = $derived.by((): ReferenceCell[] => {
 		const out: ReferenceCell[] = [];
-		for (const { table, read } of folders) {
+		for (const { name: table, read } of folders) {
 			if (read.view.mode !== 'modeled') continue;
 			for (const field of read.view.model.fields) {
 				const target = referenceTargetOf(field);
@@ -115,7 +115,7 @@ export function createReferencesDemo() {
 	});
 
 	return {
-		get folders(): LoadedFolder[] {
+		get folders(): LoadedTable[] {
 			return folders;
 		},
 		get report(): ReferenceReport {

@@ -80,7 +80,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0011](0011-rust-owns-the-macos-dictation-capability.md) | Rust owns the macOS dictation capability; the frontend is a view over it | Accepted |
 | [0012](0012-transcription-settings-are-read-at-use-not-mirrored-into-rust.md) | Transcription settings are read at use; Rust's model cache owns mechanism, not config | Accepted |
-| [0013](0013-whispering-separates-an-owned-identity-mark-from-lucide-controls.md) | Whispering separates an owned identity mark from Lucide controls | Accepted |
+| [0013](0013-whispering-separates-its-identity-mark-from-lucide-controls.md) | Whispering separates its identity mark from Lucide controls | Accepted |
 | [0014](0014-view-transitions-connect-relocating-artifacts-not-controls.md) | View Transitions connect relocating artifacts, not controls | Accepted |
 
 When you add an ADR, add its row here.

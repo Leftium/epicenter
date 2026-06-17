@@ -4,9 +4,11 @@
 
 	// The brand mark made the recording signature: while a capture session is
 	// live, a breathing ring and soft glow pulse in the recording red. The motion
-	// rides a wrapper around the mark, not the mark itself, so it is independent
-	// of the SVG art and adds no layout shift (everything pulsing is absolutely
-	// positioned). Presentational only; the page owns what "live" means.
+	// rides a wrapper around the mark, not the mark itself, so the studio-mic
+	// image never stretches or tints (the rings and glow carry the red via
+	// `currentColor`) and there is no layout shift (everything pulsing is
+	// absolutely positioned). Presentational only; the page owns what "live"
+	// means.
 	let { live = false, class: className }: { live?: boolean; class?: string } =
 		$props();
 </script>

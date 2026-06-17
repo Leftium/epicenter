@@ -4,6 +4,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
 	import type { Component, Snippet } from 'svelte';
+	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	// The caller owns its own state machine, so it resolves which glyph to show
@@ -30,6 +31,13 @@
 		shortcutLabel?: string;
 		tooltip: string;
 	} = $props();
+
+	// On desktop the shortcut is the global rdev tap, which only fires once macOS
+	// Accessibility is granted. We keep showing the key but dim it when a grant is
+	// needed, reading the same fact the home-page notice does so the two agree.
+	const shortcutNeedsAccessibility = $derived(
+		dictationCapability.needsAccessibility,
+	);
 
 	const accessibleLabel = $derived(
 		shortcutLabel ? `${label} (${shortcutLabel})` : label,
@@ -82,7 +90,10 @@
 		</span>
 		{#if shortcutLabel}
 			<Kbd.Root
-				class="h-7 max-w-28 shrink-0 rounded-md bg-muted/75 px-2 text-xs text-muted-foreground shadow-none"
+				class={cn(
+					'h-7 max-w-28 shrink-0 rounded-md bg-muted/75 px-2 text-xs text-muted-foreground shadow-none',
+					shortcutNeedsAccessibility && 'opacity-50',
+				)}
 			>
 				{shortcutLabel}
 			</Kbd.Root>

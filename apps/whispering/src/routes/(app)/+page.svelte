@@ -8,6 +8,7 @@
 		MEGABYTE,
 	} from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
+	import { cn } from '@epicenter/ui/utils';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
@@ -42,6 +43,7 @@
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { tauri } from '#platform/tauri';
+	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -60,6 +62,14 @@
 	// toggle. `''` means nothing is bound (hide the hint, fall back to "click").
 	const manualShortcutLabel = $derived(getRecordingShortcutLabel('manual'));
 	const vadShortcutLabel = $derived(getRecordingShortcutLabel('vad'));
+	// On desktop the taught gesture is the global rdev tap, so it only fires when
+	// macOS Accessibility is granted. When it is not, we still show the key (so the
+	// user learns it) but dim it; the `MacosAccessibilityNotice` above carries the
+	// fix. This reads the same capability fact the notice does, so the two always
+	// agree. Always false on the browser, where the in-app shortcut needs no grant.
+	const shortcutNeedsAccessibility = $derived(
+		dictationCapability.needsAccessibility,
+	);
 
 	const PageError = defineErrors({
 		DragDropListenerFailed: ({ cause }: { cause: unknown }) => ({
@@ -398,7 +408,8 @@
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root>{manualShortcutLabel}</Kbd.Root>
+							<Kbd.Root class={cn(shortcutNeedsAccessibility && 'opacity-50')}
+								>{manualShortcutLabel}</Kbd.Root>
 						</Link>{/if}
 					to start recording{tauri ? ' from anywhere' : ''}.
 				</p>
@@ -410,7 +421,8 @@
 							tooltip="Configure the voice activation shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root>{vadShortcutLabel}</Kbd.Root>
+							<Kbd.Root class={cn(shortcutNeedsAccessibility && 'opacity-50')}
+								>{vadShortcutLabel}</Kbd.Root>
 						</Link>{/if}
 					to start a voice activated session.
 				</p>
@@ -422,7 +434,8 @@
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root>{manualShortcutLabel}</Kbd.Root>
+							<Kbd.Root class={cn(shortcutNeedsAccessibility && 'opacity-50')}
+								>{manualShortcutLabel}</Kbd.Root>
 						</Link>
 						to start recording instead.
 					</p>

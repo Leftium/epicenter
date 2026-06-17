@@ -28,7 +28,7 @@
 
 <header
 	class={cn(
-		'border-border/40 bg-background/95 supports-backdrop-filter:bg-background/60 z-30 border-b shadow-xs backdrop-blur-sm',
+		'border-border/40 bg-background/95 supports-backdrop-filter:bg-background/60 z-10 border-b shadow-xs backdrop-blur-sm',
 		'flex h-14 w-full items-center justify-between px-4 sm:px-8',
 	)}
 >

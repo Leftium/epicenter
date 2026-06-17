@@ -92,6 +92,10 @@ The sidecar should carry existing `@epicenter/sync` frames, wrapped only with ro
 
 The sidecar must not learn Fuji tables, actions, materializers, child-doc layouts, or app schemas. It routes room bytes and reports connection status.
 
+## Scope: App-Blind Custody Only
+
+The home anchor here routes opaque room bytes and never learns app schemas, layouts, actions, or product semantics. The always-on device *also* runs per-app **actors** (observe synced docs, run inference, execute the app's actions as agent tools), but those are a separate, app-aware role: daemons that sit beside the anchor, never inside the Iroh sidecar. "Anchor" in this spec always means the app-blind role. The actor/agent layer is specified in `docs/adr/0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0013-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`, and `specs/20260616T225034-always-on-actors-over-synced-docs.md`.
+
 ## Multiplexing Rule
 
 Do not multiplex apps in `epicenter.config.ts`.
@@ -152,7 +156,7 @@ What it did not prove:
 2. Make the sidecar carry real `@epicenter/sync` binary frames for one room.
 3. Add sidecar room multiplexing.
 4. Define pairing: how a daemon learns and trusts the home anchor's Iroh endpoint id.
-5. Decide whether the home anchor is a separate product binary, an Epicenter daemon mode, or a managed sidecar service.
+5. Treat the app-blind anchor/sidecar and the app-aware actor (daemon) as separate roles with separate packaging. The sidecar multiplexes opaque rooms; the actor mounts an app workspace, observes its docs, and runs the app's actions as agent tools. Do not fold the actor into the sidecar. See ADR-0012.
 6. Only then add product packaging and browser/native wrapper decisions.
 
 ## Grill Prompt

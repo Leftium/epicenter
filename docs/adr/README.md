@@ -79,5 +79,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0009](0009-the-cli-dispatches-through-a-mandatory-daemon.md) | The CLI dispatches through a mandatory daemon; automation lives in library scripts | Accepted |
 | [0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0011](0011-rust-owns-the-macos-dictation-capability.md) | Rust owns the macOS dictation capability; the frontend is a view over it | Accepted |
+| [0012](0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on actor runs app semantics beside the app-blind anchor | Proposed |
+| [0013](0013-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md) | Agent conversations are durable child docs driven by an observing actor | Proposed |
 
 When you add an ADR, add its row here.

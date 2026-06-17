@@ -42,11 +42,35 @@ export const generateConversationId = (): ConversationId =>
 
 /**
  * Zhongwen runs a single Chinese-tuned model. It is an app constant, not a
- * per-conversation choice, so it is never stored on the conversation row; the
- * send path passes it to the server, which derives the provider from the
- * catalog.
+ * per-conversation choice, so it is never stored on the conversation row. Both
+ * answer paths read it: the browser sends it with the HTTP kickoff (the server
+ * derives the provider from the catalog), and the always-on daemon actor builds
+ * its Gemini adapter from it directly.
  */
 export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
+
+/**
+ * The bilingual system prompt every Zhongwen answer is generated under. An app
+ * constant like {@link ZHONGWEN_MODEL}, shared by both answer paths so they
+ * produce the same voice: the browser sends it with the HTTP kickoff, and the
+ * always-on daemon actor passes it to its provider. It lives here, in the
+ * isomorphic contract, rather than in a route folder so the node daemon can read
+ * it without importing browser code.
+ */
+export const ZHONGWEN_SYSTEM_PROMPT = `You are a bilingual Chinese-English language assistant. Your responses mix English and Mandarin Chinese naturally.
+
+Guidelines:
+- Use English for explanations, transitions, and meta-commentary
+- Use Mandarin Chinese (simplified characters only, 简体字) for vocabulary, example sentences, and conversational phrases
+- Never include pinyin in your responses: the client adds it automatically above each character
+- Never use traditional characters (繁體字)
+- When teaching vocabulary, present the Chinese naturally inline: "The word 学习 means to study"
+- For example sentences, write them in Chinese then explain in English
+- Adjust difficulty based on context clues from the user's questions
+- Be conversational and encouraging
+
+Example response style:
+"The phrase 你好 is the most common greeting. For something more casual with friends, you can say 嘿 or 哈喽. In a formal setting, try 您好. The 您 shows extra respect."`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions

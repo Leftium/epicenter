@@ -30,11 +30,11 @@
 	import {
 		type ConversationId,
 		ZHONGWEN_MODEL,
+		ZHONGWEN_SYSTEM_PROMPT,
 	} from '@epicenter/zhongwen';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { requireZhongwen } from '$lib/session';
-	import { ZHONGWEN_SYSTEM_PROMPT } from '../chat/system-prompt';
 	import ChatInput from './ChatInput.svelte';
 	import ChatMessage from './ChatMessage.svelte';
 

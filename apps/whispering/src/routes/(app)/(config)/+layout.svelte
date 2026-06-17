@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { ACCEPT_AUDIO, ACCEPT_VIDEO } from '@epicenter/ui/file-drop-zone';
 	import { cn } from '@epicenter/ui/utils';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { commandCallbacks } from '$lib/commands';
@@ -16,7 +15,7 @@
 		RECORDING_MODE_ICONS,
 		VAD_RECORDING_BUTTON,
 	} from '$lib/constants/audio';
-	import { uploadRecordings } from '$lib/operations/upload';
+	import { UPLOAD_ACCEPT, uploadRecordings } from '$lib/operations/upload';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
@@ -126,7 +125,7 @@
 					<input
 						bind:this={uploadFileInput}
 						type="file"
-						accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
+						accept={UPLOAD_ACCEPT}
 						multiple
 						class="hidden"
 						onchange={handleUploadFilesSelected}

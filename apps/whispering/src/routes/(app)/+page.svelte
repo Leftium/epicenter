@@ -93,28 +93,6 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	const AUDIO_EXTENSIONS = [
-		'mp3',
-		'wav',
-		'm4a',
-		'aac',
-		'ogg',
-		'flac',
-		'wma',
-		'opus',
-	] as const;
-
-	const VIDEO_EXTENSIONS = [
-		'mp4',
-		'avi',
-		'mov',
-		'wmv',
-		'flv',
-		'mkv',
-		'webm',
-		'm4v',
-	] as const;
-
 	// Store unlisten function for drag drop events
 	let unlistenDragDrop: UnlistenFn | undefined;
 
@@ -124,16 +102,6 @@
 		const { error } = await tryAsync({
 			try: async () => {
 				const { getCurrentWebview } = await import('@tauri-apps/api/webview');
-				const { extname } = await import('@tauri-apps/api/path');
-
-				const isAudio = async (path: string) =>
-					AUDIO_EXTENSIONS.includes(
-						(await extname(path)) as (typeof AUDIO_EXTENSIONS)[number],
-					);
-				const isVideo = async (path: string) =>
-					VIDEO_EXTENSIONS.includes(
-						(await extname(path)) as (typeof VIDEO_EXTENSIONS)[number],
-					);
 
 				unlistenDragDrop = await getCurrentWebview().onDragDropEvent(
 					async (event) => {
@@ -144,41 +112,25 @@
 						)
 							return;
 
-						// Filter for audio/video files based on extension
-						const pathResults = await Promise.all(
-							event.payload.paths.map(async (path) => ({
-								path,
-								isValid: (await isAudio(path)) || (await isVideo(path)),
-							})),
-						);
-						const validPaths = pathResults
-							.filter(({ isValid }) => isValid)
-							.map(({ path }) => path);
-
-						if (validPaths.length === 0) {
-							report.info({
-								title: 'No valid files',
-								description: 'Please drop audio or video files',
-							});
-							return;
-						}
-
 						await switchRecordingMode('upload');
 
-						// Convert file paths to File objects. The file-drop event only
-						// fires on Tauri, so `tauri` is non-null in this branch.
+						// Hand every dropped path to `uploadRecordings`, the single
+						// authority on what's accepted. `pathsToFiles` derives each
+						// File's MIME type from its extension, so the type/size/count
+						// policy — and its rejection reporting — applies to drag-and-drop
+						// exactly as it does to the drop zone and the navbar picker. The
+						// file-drop event only fires on Tauri, so `tauri` is non-null here.
 						if (!tauri) return;
-						const { data: files, error } =
-							await tauri.fs.pathsToFiles(validPaths);
+						const { data: files, error } = await tauri.fs.pathsToFiles(
+							event.payload.paths,
+						);
 
 						if (error) {
 							report.error({ cause: error, title: 'Failed to read files' });
 							return;
 						}
 
-						if (files.length > 0) {
-							await uploadRecordings({ files });
-						}
+						await uploadRecordings({ files });
 					},
 				);
 			},

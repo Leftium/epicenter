@@ -25,6 +25,8 @@ import {
 	generateId,
 	type Id,
 	type InferTableRow,
+	type NodeId,
+	nullable,
 } from '@epicenter/workspace';
 import { attachChatTranscript } from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
@@ -55,6 +57,14 @@ const conversationsTable = defineTable({
 	title: field.string(),
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
+	/**
+	 * The node designated to answer this conversation, or `null` for the
+	 * cloud-default path (ADR-0013). When set to a daemon's node id, that
+	 * always-on actor claims and streams the reply and the browser skips its HTTP
+	 * kickoff; `null` leaves the turn to the cloud HTTP generation path. Single
+	 * field, two lifecycles, no double-answer.
+	 */
+	actorNodeId: nullable(field.string<NodeId>()),
 }).docs({ messages: attachChatTranscript });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 

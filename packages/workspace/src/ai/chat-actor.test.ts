@@ -363,6 +363,69 @@ describe('attachChatActor', () => {
 		doc.destroy();
 	});
 
+	test('an undesignated actor hosts the turn but never claims or streams it', async () => {
+		const doc = new Y.Doc({ guid: 'chat-actor-undesignated' });
+		const transcript = attachChatTranscript(doc);
+		let started = false;
+		const startStream: ChatStream = (messages, signal) => {
+			started = true;
+			return streamOf('你', '好')(messages, signal);
+		};
+		const actor = attachChatActor({
+			ydoc: doc,
+			startStream,
+			isDesignated: () => false,
+		});
+
+		transcript.appendUser({
+			id: 'u1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'gen-1',
+		});
+		actor.onChange?.();
+		await tick();
+
+		// No claim appended, no provider stream started: the turn is left for the
+		// cloud HTTP path. Only the user turn is in the transcript.
+		expect(started).toBe(false);
+		expect(transcript.read()).toHaveLength(1);
+		doc.destroy();
+	});
+
+	test('a designation that flips on is honored on the next observe', async () => {
+		const doc = new Y.Doc({ guid: 'chat-actor-flip' });
+		const transcript = attachChatTranscript(doc);
+		let designated = false;
+		// The gate is read freshly each observe, exactly as the mount reads
+		// `row.actorNodeId === selfNodeId`, so a designation written after the body
+		// opened takes effect on the next change.
+		const actor = attachChatActor({
+			ydoc: doc,
+			startStream: streamOf('ok'),
+			isDesignated: () => designated,
+		});
+
+		transcript.appendUser({
+			id: 'u1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'gen-1',
+		});
+		actor.onChange?.();
+		await tick();
+		expect(transcript.read()).toHaveLength(1); // abstained while undesignated
+
+		designated = true;
+		actor.onChange?.();
+		await tick();
+		expect(transcript.read().at(-1)).toMatchObject({
+			id: 'gen-1',
+			finish: { kind: 'completed' },
+		});
+		doc.destroy();
+	});
+
 	test('a cancel stamped after a terminal finish is an inert no-op', async () => {
 		const { doc, transcript, actor } = setup(streamOf('done'));
 

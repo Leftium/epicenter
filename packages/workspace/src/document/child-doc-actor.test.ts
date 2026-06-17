@@ -14,6 +14,7 @@ import {
 	type ConnectedChildDoc,
 } from './child-doc-actor.js';
 import { defineTable } from './define-table.js';
+import type { NodeId } from './node-id.js';
 import { createWorkspace } from './workspace.js';
 
 const conversationsDefinition = defineTable({
@@ -62,6 +63,8 @@ function actorArgs(
 		connectBody,
 		layout: attachChatTranscript,
 		actorFor: () => ({}),
+		selfNodeId: 'node-test' as NodeId,
+		readRow: (id: string) => conversations.get(id).data ?? undefined,
 	};
 }
 
@@ -122,6 +125,33 @@ describe('attachChildDocActor', () => {
 		});
 
 		expect(changed).toEqual(['c1']);
+
+		actor[Symbol.dispose]();
+		workspace[Symbol.dispose]();
+	});
+
+	test('hands the per-body actor the daemon node id and a live parent-row reader', () => {
+		const { workspace, connectBody } = setup();
+		const { conversations } = workspace.tables;
+		conversations.set({ id: 'c1', title: 'first' });
+
+		let seenNodeId: string | undefined;
+		let readRow: (() => { id: string; title: string } | undefined) | undefined;
+		const actor = attachChildDocActor({
+			...actorArgs(workspace, connectBody),
+			actorFor: (context) => {
+				seenNodeId = context.selfNodeId;
+				readRow = context.readRow;
+				return {};
+			},
+		});
+
+		expect(seenNodeId).toBe('node-test');
+		// `readRow` is reactive: a designation written after the body opened is
+		// visible the next time the actor reads it.
+		expect(readRow?.()).toMatchObject({ id: 'c1', title: 'first' });
+		conversations.set({ id: 'c1', title: 'renamed' });
+		expect(readRow?.()).toMatchObject({ id: 'c1', title: 'renamed' });
 
 		actor[Symbol.dispose]();
 		workspace[Symbol.dispose]();

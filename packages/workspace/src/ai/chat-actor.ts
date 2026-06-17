@@ -97,13 +97,27 @@ type InFlightGeneration = {
  * `appendAssistantMessage`, both directly over the `ydoc` (the layout handle
  * exposes only the client's user-message writer, never the assistant one). The
  * returned handle is what a mount's child-doc actor factory yields.
+ *
+ * `isDesignated` is the answer-ownership gate (R, ADR-0013): the always-on actor
+ * claims a turn only when this conversation is designated to this daemon node.
+ * The conversation's `actorNodeId` row field names the answerer; the mount builds
+ * `isDesignated` as `() => row.actorNodeId === selfNodeId`, read freshly on each
+ * observe so a designation written after the body opened still takes effect. It
+ * is what stops the daemon and the cloud HTTP path from both answering one turn:
+ * an undesignated daemon abstains (cloud answers), a designated one claims (the
+ * browser skips its HTTP kickoff). Designation lives on the parent row, never in
+ * the transcript child doc, so the actor takes the decision as a thunk rather
+ * than reading it from `ydoc`. Omit it (default: always designated) for the unit
+ * tests and any single-answerer caller.
  */
 export function attachChatActor({
 	ydoc,
 	startStream,
+	isDesignated = () => true,
 }: {
 	ydoc: Y.Doc;
 	startStream: ChatStream;
+	isDesignated?: () => boolean;
 }): ChildDocActorHandle {
 	let inFlight: InFlightGeneration | undefined;
 
@@ -146,6 +160,11 @@ export function attachChatActor({
 				// live actor into a second concurrent claim.
 				return;
 			}
+
+			// Answer only when this conversation is designated to this node. An
+			// undesignated daemon hosts the body but never claims, leaving the turn
+			// to the cloud HTTP path; this is what closes the D3 double-answer.
+			if (!isDesignated()) return;
 
 			const turn = findUnansweredTurn(messages, now);
 			if (!turn) return;

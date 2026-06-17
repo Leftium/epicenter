@@ -143,6 +143,17 @@
 	}
 
 	/**
+	 * Kick off the cloud HTTP generation unless this conversation is daemon-owned.
+	 * When `actorNodeId` is set the always-on actor on that node answers over sync,
+	 * so a browser POST here would answer the same turn twice (the D3 hazard). A
+	 * cloud-default conversation (`actorNodeId` null) still takes the HTTP path.
+	 */
+	function kickoffUnlessDaemonOwned() {
+		if (readRow()?.actorNodeId) return;
+		void kickoffGeneration();
+	}
+
+	/**
 	 * Start one server actor for this transcript doc. The AbortController is local
 	 * UI state; durable progress and terminal outcome stay in the Yjs doc.
 	 */
@@ -201,7 +212,7 @@
 			title: title === 'New Chat' ? text.slice(0, 50) : title,
 			updatedAt: InstantString.now(),
 		});
-		void kickoffGeneration();
+		kickoffUnlessDaemonOwned();
 	}
 
 	/**
@@ -222,7 +233,7 @@
 		// generationId. Re-mint the turn's generationId so the actor starts a
 		// fresh generation instead of replaying the no-op 409.
 		docHandle.remintGeneration(generateId());
-		void kickoffGeneration();
+		kickoffUnlessDaemonOwned();
 	}
 </script>
 

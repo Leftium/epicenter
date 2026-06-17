@@ -66,6 +66,7 @@ import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
+import type { NodeId } from './node-id.js';
 import { onLocalUpdate } from './on-local-update.js';
 import type { Collaboration } from './open-collaboration.js';
 import {
@@ -402,7 +403,8 @@ export type MountActors<TTables extends TableDefinitions> = {
 				}
 					? ChildDocActorFactory<
 							InferTableRow<TTables[T]>['id'],
-							ReturnType<LayoutOf<TDecls[F]>>
+							ReturnType<LayoutOf<TDecls[F]>>,
+							InferTableRow<TTables[T]>
 						>
 					: never;
 			}
@@ -744,6 +746,7 @@ export function defineWorkspace<
 						workspace,
 						definitions: options.tables,
 						connectBody: runtime.connectChildDoc(ctx, baseURL),
+						selfNodeId: ctx.nodeId,
 						registerDrain: scope.registerDrain,
 					});
 				}
@@ -923,27 +926,38 @@ function connectMountActors<TTableDefinitions extends TableDefinitions>({
 	workspace,
 	definitions,
 	connectBody,
+	selfNodeId,
 	registerDrain,
 }: {
 	actors: MountActors<TTableDefinitions>;
 	workspace: Workspace<TTableDefinitions, KvDefinitions, ActionRegistry>;
 	definitions: TTableDefinitions;
 	connectBody: (guid: string) => ConnectedChildDoc;
+	/** This daemon's node id, forwarded to each per-body actor context. */
+	selfNodeId: NodeId;
 	registerDrain: (drainable: ChildDocActor) => void;
 }): void {
 	// `Object.entries` erases the per-table types the public `MountActors` already
 	// enforced, so the loop body works in the widened `string`/`unknown` forms and
-	// casts at the two schema reads (layout, guid).
+	// casts at the schema reads (layout, guid) and the table row reader.
 	for (const [collection, fieldActors] of Object.entries(actors) as [
 		string,
-		Record<string, ChildDocActorFactory<string, unknown>> | undefined,
+		Record<string, ChildDocActorFactory<string, unknown, unknown>> | undefined,
 	][]) {
 		if (fieldActors === undefined) continue;
 		const definition = definitions[collection as keyof TTableDefinitions]!;
-		const table = workspace.tables[collection as keyof TTableDefinitions];
-		const guidDerivers = (
-			table as unknown as { docs: Record<string, RowDocGuid<string>> }
-		).docs;
+		// One structural view of the connected table: the loop reads its
+		// schema-derived guid derivers, scans/observes its rows for the loop, and
+		// reads a row back for `readRow` (so an actor can reach its parent-row
+		// designation). `get` returns the latest-version row or `null`.
+		const table = workspace.tables[
+			collection as keyof TTableDefinitions
+		] as unknown as {
+			docs: Record<string, RowDocGuid<string>>;
+			scan(): { rows: ReadonlyArray<{ id: string }> };
+			observe(callback: () => void): () => void;
+			get(id: string): { data: unknown };
+		};
 
 		for (const [field, actorFor] of Object.entries(fieldActors)) {
 			if (actorFor === undefined) continue;
@@ -951,17 +965,16 @@ function connectMountActors<TTableDefinitions extends TableDefinitions>({
 			const declaration = definition.docDecls[field] as ChildDocDeclaration;
 			const layout =
 				typeof declaration === 'function' ? declaration : declaration.layout;
-			const guidEntry = guidDerivers[field]!;
-			const actor = attachChildDocActor<string, unknown>({
+			const guidEntry = table.docs[field]!;
+			const actor = attachChildDocActor<string, unknown, unknown>({
 				rootDoc: workspace.ydoc,
-				table: table as unknown as {
-					scan(): { rows: ReadonlyArray<{ id: string }> };
-					observe(callback: () => void): () => void;
-				},
+				table,
 				guidFor: (rowId) => guidEntry.guid(rowId),
 				connectBody,
 				layout: layout as unknown as ObservableChildDocLayout<unknown>,
 				actorFor,
+				selfNodeId,
+				readRow: (rowId) => table.get(rowId).data ?? undefined,
 			});
 			registerDrain(actor);
 		}

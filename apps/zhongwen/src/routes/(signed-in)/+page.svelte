@@ -48,6 +48,9 @@
 			title: 'New Chat',
 			createdAt: timestamp,
 			updatedAt: timestamp,
+			// Cloud-default: the HTTP generation path answers. Designating a daemon
+			// node here would route the conversation to its always-on actor instead.
+			actorNodeId: null,
 		});
 		return id;
 	}

@@ -35,6 +35,7 @@
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import type { Drainable } from '../shared/types.js';
+import type { NodeId } from './node-id.js';
 
 /**
  * A connected child-doc body the actor hosts: a live Y.Doc persisted and synced
@@ -69,13 +70,25 @@ export type ChildDocActorHandle = {
 };
 
 /** Per-body context handed to a {@link ChildDocActorFactory}. */
-export type ChildDocActorContext<TRowId extends string, THandle> = {
+export type ChildDocActorContext<TRowId extends string, THandle, TRow> = {
 	/** The row whose child doc this body is. */
 	readonly rowId: TRowId;
 	/** The body shaped by the field's declared layout. */
 	readonly handle: THandle;
 	/** The underlying body Y.Doc, for runtime attachments. */
 	readonly ydoc: Y.Doc;
+	/**
+	 * This daemon's own node id. Lets an actor compare against its parent row's
+	 * designation (e.g. the chat actor's `actorNodeId === selfNodeId` gate).
+	 */
+	readonly selfNodeId: NodeId;
+	/**
+	 * Read the current parent-row snapshot, or `undefined` if the row is gone.
+	 * Reactive: re-reads each call, so a designation written to the row after this
+	 * body opened is visible the next time the actor checks. Parent state stays on
+	 * the row, never smuggled into the child doc, so an actor reaches it here.
+	 */
+	readonly readRow: () => TRow | undefined;
 };
 
 /**
@@ -83,11 +96,11 @@ export type ChildDocActorContext<TRowId extends string, THandle> = {
  * body, so it may close over per-body state (an in-flight generation, the
  * claimed id). The app's only input to the observe loop.
  */
-export type ChildDocActorFactory<TRowId extends string, THandle> = (
-	context: ChildDocActorContext<TRowId, THandle>,
+export type ChildDocActorFactory<TRowId extends string, THandle, TRow> = (
+	context: ChildDocActorContext<TRowId, THandle, TRow>,
 ) => ChildDocActorHandle;
 
-export type ChildDocActorConfig<TRowId extends string, THandle> = {
+export type ChildDocActorConfig<TRowId extends string, THandle, TRow> = {
 	/**
 	 * The table whose rows name the child docs to host. Read with `scan()` and
 	 * watched with `observe()`; every change reconciles the open set.
@@ -107,7 +120,15 @@ export type ChildDocActorConfig<TRowId extends string, THandle> = {
 	/** Shape an opened body into its typed handle (the field's declared layout). */
 	readonly layout: ObservableChildDocLayout<THandle>;
 	/** Build the per-body behavior. The app's only input. */
-	readonly actorFor: ChildDocActorFactory<TRowId, THandle>;
+	readonly actorFor: ChildDocActorFactory<TRowId, THandle, TRow>;
+	/** This daemon's node id, forwarded to each per-body context. */
+	readonly selfNodeId: NodeId;
+	/**
+	 * Read a row's current snapshot from the watched table, or `undefined` when
+	 * the row is gone. Forwarded (bound to the body's row id) as the context's
+	 * `readRow`, so an actor can read its parent-row designation.
+	 */
+	readonly readRow: (rowId: TRowId) => TRow | undefined;
 	/**
 	 * The root doc whose `destroy` flushes every hosted body, the same cascade
 	 * {@link connectTableChildDocs} uses for the browser child-doc caches.
@@ -129,10 +150,11 @@ export type ChildDocActor = Drainable & {
  * imports no node module. The node-only connector and the schema-driven wiring
  * live in the mount coordinator.
  */
-export function attachChildDocActor<TRowId extends string, THandle>(
-	config: ChildDocActorConfig<TRowId, THandle>,
+export function attachChildDocActor<TRowId extends string, THandle, TRow>(
+	config: ChildDocActorConfig<TRowId, THandle, TRow>,
 ): ChildDocActor {
 	const { table, guidFor, connectBody, layout, actorFor, rootDoc } = config;
+	const { selfNodeId, readRow } = config;
 	const log = config.log ?? createLogger('workspace/child-doc-actor');
 
 	type Hosted = {
@@ -149,7 +171,13 @@ export function attachChildDocActor<TRowId extends string, THandle>(
 		if (hosted.has(rowId)) return;
 		const body = connectBody(guidFor(rowId));
 		const handle = layout(body.ydoc);
-		const actor = actorFor({ rowId, handle, ydoc: body.ydoc });
+		const actor = actorFor({
+			rowId,
+			handle,
+			ydoc: body.ydoc,
+			selfNodeId,
+			readRow: () => readRow(rowId),
+		});
 		const unobserve = handle.observe(() => actor.onChange?.());
 		hosted.set(rowId, { body, actor, unobserve });
 	}

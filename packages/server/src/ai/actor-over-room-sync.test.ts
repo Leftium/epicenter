@@ -9,16 +9,17 @@
  * room core is the relay; the two docs never touch each other directly.
  *
  * Three things it proves that no unit test can:
- *  1. the daemon answers a turn written by another peer, and the streamed reply
- *     propagates back over sync (the V0 exit: "a phone and a desktop see the
- *     same streamed reply over hosted sync");
+ *  1. a designated daemon answers a turn written by another peer, and the
+ *     streamed reply propagates back over sync (the V0 exit: "a phone and a
+ *     desktop see the same streamed reply over hosted sync");
  *  2. a durable cancel written by another peer stops the answer mid-stream
  *     ("cancel works after a disconnect");
- *  3. the D3 hazard is real and concrete: with the daemon actor AND the HTTP
- *     `runDocGeneration` path both answering one room, the cross-replica
- *     existence claim cannot serialise, so the merge keeps TWO assistant maps.
- *     This is the failing-by-design test that the `actorNodeId` designation
- *     (R) must turn green.
+ *  3. designation (R) closes the D3 hazard: a daemon NOT designated to this
+ *     conversation abstains, so the cloud HTTP `runDocGeneration` path is the
+ *     sole answerer and the merge keeps exactly ONE assistant map. Before R
+ *     both paths answered and the cross-replica existence claim could not
+ *     serialise, so two assistant maps survived; the daemon's `isDesignated`
+ *     gate is what makes the cloud-default conversation single-answered again.
  *
  * Peer sync is the same RPC model `doc-generation.test.ts` trusts: a peer pushes
  * its full state with `core.sync(encodeSyncRequest(...))` and applies the diff
@@ -128,13 +129,22 @@ async function pump(peers: Y.Doc[], core: RoomCore, rounds = 40): Promise<void> 
 	}
 }
 
-/** Wire `attachChatActor` to a body and fire `onChange` on every transaction. */
+/**
+ * Wire `attachChatActor` to a body and fire `onChange` on every transaction.
+ *
+ * `isDesignated` is the daemon's designation gate (R): the always-on actor only
+ * claims a turn when the conversation is designated to this node. The mount
+ * builds it from `row.actorNodeId === selfNodeId`; here a test passes the
+ * decision directly, since the integration suite drives the child doc with no
+ * parent row. Omitting it answers everything (the actor's default).
+ */
 function attachDaemon(
 	ydoc: Y.Doc,
 	startStream: Parameters<typeof attachChatActor>[0]['startStream'],
+	{ isDesignated }: { isDesignated?: () => boolean } = {},
 ) {
 	const transcript = attachChatTranscript(ydoc);
-	const actor = attachChatActor({ ydoc, startStream });
+	const actor = attachChatActor({ ydoc, startStream, isDesignated });
 	const unobserve = transcript.observe(() => actor.onChange?.());
 	return {
 		transcript,
@@ -158,12 +168,15 @@ const assistantsFor = (
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('chat actor over real room sync', () => {
-	test('the daemon answers a turn written by another peer, and the reply syncs back', async () => {
+	test('a designated daemon answers a turn written by another peer, and the reply syncs back', async () => {
 		const core = createRoomCore({ updateLog: createMemoryUpdateLog() });
 
-		// The always-on daemon peer: a body synced through the room.
+		// The always-on daemon peer, designated to this conversation: a body
+		// synced through the room.
 		const daemonDoc = new Y.Doc({ gc: true });
-		const daemon = attachDaemon(daemonDoc, streamOf('你', '好', '!'));
+		const daemon = attachDaemon(daemonDoc, streamOf('你', '好', '!'), {
+			isDesignated: () => true,
+		});
 
 		// The asking device: a separate body, same room.
 		const clientDoc = new Y.Doc({ gc: true });
@@ -206,7 +219,9 @@ describe('chat actor over real room sync', () => {
 		const { startStream, release } = gatedStream();
 
 		const daemonDoc = new Y.Doc({ gc: true });
-		const daemon = attachDaemon(daemonDoc, startStream);
+		const daemon = attachDaemon(daemonDoc, startStream, {
+			isDesignated: () => true,
+		});
 
 		const clientDoc = new Y.Doc({ gc: true });
 		const client = attachChatTranscript(clientDoc);
@@ -251,15 +266,20 @@ describe('chat actor over real room sync', () => {
 		clientDoc.destroy();
 	});
 
-	test('D3 hazard, made concrete: daemon actor + HTTP runDocGeneration both answer one turn => two assistant maps', async () => {
+	test('designation closes D3: a daemon NOT designated abstains, so the cloud HTTP path is the sole answerer', async () => {
 		const core = createRoomCore({ updateLog: createMemoryUpdateLog() });
 		const room = {
 			getDoc: async () => core.getDoc(),
 			sync: async (body: Uint8Array) => core.sync(body),
 		};
 
+		// A daemon is running over the same room, but this conversation is
+		// cloud-default (`actorNodeId` absent), so it is NOT designated to this
+		// node. The daemon hosts and observes the body but must never claim.
 		const daemonDoc = new Y.Doc({ gc: true });
-		const daemon = attachDaemon(daemonDoc, streamOf('daemon-a', 'daemon-b'));
+		const daemon = attachDaemon(daemonDoc, streamOf('daemon-a', 'daemon-b'), {
+			isDesignated: () => false,
+		});
 
 		const clientDoc = new Y.Doc({ gc: true });
 		const client = attachChatTranscript(clientDoc);
@@ -272,13 +292,15 @@ describe('chat actor over real room sync', () => {
 		});
 		syncStep(clientDoc, core);
 
-		// The daemon observes the turn and CLAIMS on its own replica. Because
-		// syncStep pushes before it applies, this claim is NOT in the room yet.
+		// The daemon observes the turn but abstains: nothing claimed on its replica.
 		syncStep(daemonDoc, core);
-		expect(assistantsFor(attachChatTranscript(daemonDoc), 'gen-1')).toHaveLength(1);
+		expect(assistantsFor(attachChatTranscript(daemonDoc), 'gen-1')).toHaveLength(
+			0,
+		);
 
-		// The HTTP path reads the room (still just the user turn, no assistant)
-		// and ALSO claims gen-1 on a fresh server replica. Neither saw the other.
+		// The browser, seeing a cloud-default conversation, takes the HTTP path:
+		// `runDocGeneration` reads the room and claims gen-1. It is now the only
+		// peer that answers.
 		const waited: Promise<unknown>[] = [];
 		const httpRun = runDocGeneration({
 			room,
@@ -292,9 +314,14 @@ describe('chat actor over real room sync', () => {
 		await Promise.all(waited);
 		await pump([daemonDoc, clientDoc], core, 10);
 
-		// The merge keeps BOTH assistant maps keyed to the one generationId: the
-		// asking device sees the turn answered twice. This is the live bug R fixes.
-		expect(assistantsFor(client, 'gen-1')).toHaveLength(2);
+		// Exactly one assistant map, and it is the HTTP answer: the undesignated
+		// daemon stepped aside, so the cloud-default turn is answered once. This is
+		// the D3 double-answer, closed by R's designation gate.
+		const answers = assistantsFor(client, 'gen-1');
+		expect(answers).toHaveLength(1);
+		expect(client.read().find((m) => m.id === 'gen-1')?.text).toBe(
+			'http-ahttp-b',
+		);
 
 		daemon.dispose();
 		daemonDoc.destroy();

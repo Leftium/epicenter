@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { commandCallbacks } from '$lib/commands';
 	import {
 		RecordingModeSelector,
@@ -10,8 +11,8 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDER_STATE_TO_ICON,
-		VAD_STATE_TO_ICON,
+		MANUAL_RECORDING_ACTIONS,
+		VAD_RECORDING_ACTIONS,
 	} from '$lib/constants/audio';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -19,6 +20,11 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	let { children } = $props();
+
+	const ManualActionIcon = $derived(
+		MANUAL_RECORDING_ACTIONS[manualRecorder.state].Icon,
+	);
+	const VadActionIcon = $derived(VAD_RECORDING_ACTIONS[vadRecorder.state].Icon);
 </script>
 
 <header
@@ -43,7 +49,7 @@
 						size="icon"
 						style="view-transition-name: {viewTransition.global.cancel};"
 					>
-						🚫
+						<XIcon class="size-4" />
 					</Button>
 				{:else}
 					<ManualDeviceSelector />
@@ -58,7 +64,7 @@
 						size="icon"
 						style="view-transition-name: {viewTransition.global.microphone}"
 					>
-						{RECORDER_STATE_TO_ICON[manualRecorder.state]}
+						<ManualActionIcon class="size-4" />
 					</Button>
 				{:else}
 					<div class="flex">
@@ -70,7 +76,7 @@
 							style="view-transition-name: {viewTransition.global.microphone}"
 							class="rounded-r-none border-r-0"
 						>
-							{RECORDER_STATE_TO_ICON[manualRecorder.state]}
+							<ManualActionIcon class="size-4" />
 						</Button>
 						<RecordingModeSelector class="rounded-l-none" />
 					</div>
@@ -91,7 +97,7 @@
 							style="view-transition-name: {viewTransition.global.microphone}"
 							class="rounded-r-none border-r-0"
 						>
-							{VAD_STATE_TO_ICON[vadRecorder.state]}
+							<VadActionIcon class="size-4" />
 						</Button>
 						<RecordingModeSelector class="rounded-l-none" />
 					</div>
@@ -103,7 +109,7 @@
 						size="icon"
 						style="view-transition-name: {viewTransition.global.microphone}"
 					>
-						{VAD_STATE_TO_ICON[vadRecorder.state]}
+						<VadActionIcon class="size-4" />
 					</Button>
 				{/if}
 			{:else if settings.get('recording.mode') === 'upload'}

@@ -7,7 +7,7 @@
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
-	// The caller owns its own state machine, so it resolves which glyph to show
+	// The caller owns its own state machine, so it picks which icon to show
 	// and hands us one `icon`. We only decide presentation: a spinner while
 	// pending, and the destructive "filled" treatment while `active`.
 	let {

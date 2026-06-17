@@ -1,8 +1,7 @@
 <script lang="ts">
-	import MicIcon from '@lucide/svelte/icons/mic';
-	import SquareIcon from '@lucide/svelte/icons/square';
 	import { createMutation } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
+	import { MANUAL_RECORDING_ACTIONS } from '$lib/constants/audio';
 	import {
 		startManualRecording,
 		stopManualRecording,
@@ -35,8 +34,8 @@
 	const isPending = $derived(isStarting || isStopping);
 	const isRecording = $derived(manualRecorder.state === 'RECORDING');
 	const shortcutLabel = $derived(getRecordingShortcutLabel('manual'));
-	const icon = $derived(isRecording ? SquareIcon : MicIcon);
-	const label = $derived(isRecording ? 'Stop recording' : 'Start recording');
+	const action = $derived(MANUAL_RECORDING_ACTIONS[manualRecorder.state]);
+	const label = $derived(action.label);
 	const idleDescription = $derived(
 		shortcutLabel ? 'Click or press shortcut' : 'Click to record',
 	);
@@ -65,7 +64,7 @@
 	active={isRecording}
 	{description}
 	footer={isRecording ? undefined : pipeline}
-	{icon}
+	icon={action.Icon}
 	{label}
 	pending={isPending}
 	{shortcutLabel}

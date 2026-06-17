@@ -1,14 +1,12 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { useSidebar } from '@epicenter/ui/sidebar';
-	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
 	import { NAV_ITEMS } from './nav-items';
-	import { tauri } from '#platform/tauri';
 
 	const sidebar = useSidebar();
 </script>
@@ -102,26 +100,6 @@
 					{/snippet}
 				</Sidebar.MenuButton>
 			</Sidebar.MenuItem>
-
-			<!-- Minimize (desktop only) -->
-			{#if tauri}
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton>
-						{#snippet child({ props })}
-							<button
-								onclick={async () => {
-								const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
-								getCurrentWindow().setSize(new LogicalSize(72, 84));
-							}}
-								{...props}
-							>
-								<Minimize2Icon />
-								<span>Minimize</span>
-							</button>
-						{/snippet}
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-			{/if}
 		</Sidebar.Menu>
 	</Sidebar.Footer>
 

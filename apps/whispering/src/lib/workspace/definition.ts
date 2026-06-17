@@ -3,18 +3,17 @@ import {
 	createWorkspace,
 	defineKv,
 	defineTable,
-	defineWorkspace,
 	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
 	nullable,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { type Static, type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
-import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
-import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
+import { RECORDING_TRIGGERS } from '$lib/constants/audio/recording-triggers';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import {
 	PROVIDERS,
@@ -216,14 +215,6 @@ const output = {
 	'output.transformation.enter': defineKv(field.boolean(), () => false),
 } as const;
 
-/** Window behavior and navigation layout preferences. */
-const ui = {
-	'ui.alwaysOnTop': defineKv(
-		field.select(ALWAYS_ON_TOP_MODES),
-		() => 'Never' as const,
-	),
-} as const;
-
 /**
  * Recording retention policy. `retention.strategy` is the source of truth for
  * how many recordings to keep: `keep-forever` (all), `limit-count` (the newest
@@ -240,10 +231,14 @@ const dataRetention = {
 	'retention.maxCount': defineKv(field.integer({ minimum: 1 }), () => 100),
 } as const;
 
-/** User's preferred recording mode: manual trigger vs voice activity detection. */
+/**
+ * How the microphone starts capturing: manual trigger vs voice activity
+ * detection. File import is a separate surface, not a trigger, so it is not a
+ * value here.
+ */
 const recording = {
-	'recording.mode': defineKv(
-		field.select(RECORDING_MODES),
+	'recording.trigger': defineKv(
+		field.select(RECORDING_TRIGGERS),
 		() => 'manual' as const,
 	),
 } as const;
@@ -312,6 +307,18 @@ const analytics = {
  * `null` = unbound.
  */
 const shortcuts = {
+	// These getDefault thunks are the single source for the in-app shortcut
+	// defaults. The web backend (platform/shortcuts.browser.ts) reads them back
+	// through `settings.getDefault('shortcut.*')` instead of redeclaring them, so
+	// the schema and the backend can never drift.
+	//
+	// Push-to-talk ships unbound in-app: a stray Space-style tap would fire
+	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
+	// in-app default is the toggle below.
+	'shortcut.pushToTalk': defineKv(
+		nullable(field.string()),
+		(): string | null => null,
+	),
 	'shortcut.toggleManualRecording': defineKv(
 		nullable(field.string()),
 		(): string | null => ' ',
@@ -326,10 +333,6 @@ const shortcuts = {
 	'shortcut.toggleVadRecording': defineKv(
 		nullable(field.string()),
 		(): string | null => 'v',
-	),
-	'shortcut.pushToTalk': defineKv(
-		nullable(field.string()),
-		(): string | null => 'p',
 	),
 	'shortcut.openTransformationPicker': defineKv(
 		nullable(field.string()),
@@ -357,7 +360,6 @@ export function createWhispering({
 	const kvDefinitions = {
 		...sound,
 		...output,
-		...ui,
 		...dataRetention,
 		...recording,
 		...defineTranscriptionSettings(defaultTranscriptionService),
@@ -381,7 +383,7 @@ export function createWhispering({
 
 	const settingKeys = Object.keys(kvDefinitions) as SettingKey[];
 
-	return defineWorkspace({
+	return satisfiesWorkspace({
 		...workspace,
 		/**
 		 * Synced setting metadata for the Whispering workspace.

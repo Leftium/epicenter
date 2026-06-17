@@ -1,22 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import type { Keyring } from '@epicenter/encryption';
 import { asOwnerId } from '@epicenter/identity';
 import type { AuthFetch } from './auth-contract.js';
 import { createSameOriginCookieAuth } from './same-origin-cookie-auth.js';
 
 const baseURL = 'https://api.epicenter.so';
-const keyring = [
-	{
-		version: 1,
-		keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-	},
-] satisfies Keyring;
 
 function sessionBody(ownerId = 'owner-1') {
 	return {
 		user: { id: ownerId, email: `${ownerId}@example.com` },
 		ownerId,
-		keyring,
 	};
 }
 
@@ -45,7 +37,6 @@ describe('createSameOriginCookieAuth', () => {
 		expect(auth.state).toEqual({
 			status: 'signed-in',
 			ownerId: asOwnerId('owner-1'),
-			keyring,
 		});
 		expect(calls[0]?.url).toBe(`${baseURL}/api/session`);
 		expect(calls[0]?.init?.credentials).toBe('include');

@@ -17,21 +17,21 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 All shared state lives in an Epicenter workspace (`id: "epicenter-honeycrisp"`). The split follows the repo-wide naming pattern:
 
 ```txt
-createHoneycrisp()
-  shared isomorphic model: id, tables, actions, note body docs
+honeycrispWorkspace
+  shared isomorphic definition: id, tables, actions, notes.body child docs
 
 openHoneycrispBrowser()
-  browser runtime: encrypted local storage, sync, child-doc storage and sync
+  browser runtime: local storage, sync, child-doc storage and sync
 
-honeycrisp() (project mount)
+honeycrisp() (mount)
   daemon runtime: Yjs log, sync, SQLite mirror, markdown materializer
 ```
 
-The Svelte app mounts the browser runtime through `createSession`, so the workspace is only created after signed-in identity and encryption keys are available.
+The Svelte app mounts the browser runtime through `createSession`, so the workspace is only created after a signed-in identity provides `ownerId` and sync transport.
 
 ### Rich-text editing
 
-Each note's body is a `Y.XmlFragment` in a child Y.Doc named by `noteBodyDocGuid(noteId)`. `createHoneycrisp()` owns that child-doc model through a `createDisposableCache`; browser and daemon openers attach their runtime storage, sync, and materializers around it. ProseMirror binds to the fragment via `y-prosemirror`, giving collaborative editing for free. The editor schema covers paragraphs, headings, lists, task lists, underline, and strikethrough. Every ProseMirror transaction extracts a title, preview snippet, and word count, which are written back to the note's table row.
+Each note's body is a `Y.XmlFragment` in the `notes.body` child doc declared by `honeycrispWorkspace`. The browser opener attaches storage and sync around child docs, and `NoteBodyPane.svelte` opens the active note body through `honeycrisp.tables.notes.docs.body.open(noteId)`. ProseMirror binds to the fragment via `y-prosemirror`, giving collaborative editing for free. The editor schema covers paragraphs, headings, lists, task lists, underline, and strikethrough. Every ProseMirror transaction extracts a title, preview snippet, word count, and update timestamp, which are written back to the note's table row.
 
 ### Soft deletion
 
@@ -39,7 +39,7 @@ Notes are never removed from the CRDT. They're soft-deleted with a `deletedAt` t
 
 ### Auth
 
-Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted across reloads. Encryption keys are applied on login before the workspace connects.
+Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted across reloads. The workspace connects once a signed-in identity is available.
 
 ---
 
@@ -57,7 +57,7 @@ Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted acros
 | `icon` | `string` (optional) |
 | `sortOrder` | `number` |
 
-**`notes`** (v2, migrated from v1)
+**`notes`**
 | Field | Type |
 |---|---|
 | `id` | `NoteId` |
@@ -65,14 +65,12 @@ Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted acros
 | `title` | `string` |
 | `preview` | `string` |
 | `pinned` | `boolean` |
-| `createdAt` | `number` |
-| `updatedAt` | `number` |
-| `deletedAt` | `number` (optional, soft delete) |
+| `createdAt` | `DateTimeString` |
+| `updatedAt` | `DateTimeString` |
+| `deletedAt` | `DateTimeString` (optional, soft delete) |
 | `wordCount` | `number` (optional) |
 
-Each note's body lives in a separate Y.Doc opened by `createHoneycrisp().noteBodyDocs`. The factory yields a `Y.XmlFragment` that ProseMirror binds to; updates flow back through `onLocalUpdate` to refresh the row's timestamp and through editor logic to refresh title, preview, and word count.
-
-The v1→v2 migration adds `deletedAt` and `wordCount`.
+Each note's body lives in a separate Y.Doc opened by `honeycrisp.tables.notes.docs.body.open(noteId)`. The handle yields a `Y.XmlFragment` that ProseMirror binds to; editor logic refreshes title, preview, word count, and `updatedAt` on content changes.
 
 Honeycrisp currently has no workspace KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 
@@ -112,7 +110,7 @@ This starts the app dev server on port 5175. Auth and sync expect the local API 
 - [Yjs](https://yjs.dev): CRDT engine (Y.Doc, Y.XmlFragment)
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Better Auth](https://better-auth.com): authentication
-- `@epicenter/workspace`: CRDT-backed tables, versioning, E2E encryption
+- `@epicenter/workspace`: CRDT-backed tables, versioning, sync
 - `@epicenter/svelte`: auth, workspace gate, reactive table/KV bindings
 - `@epicenter/ui`: shadcn-svelte component library
 

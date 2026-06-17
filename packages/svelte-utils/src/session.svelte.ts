@@ -1,9 +1,6 @@
 import type { AuthState, SyncAuthClient } from '@epicenter/auth';
 import type { OwnerId } from '@epicenter/identity';
 
-type SignedInState = Extract<AuthState, { status: 'signed-in' }>;
-type Keyring = SignedInState['keyring'];
-
 /**
  * Auth-gated identity payload that `createSession` hands to the build
  * callback whenever an identity-bearing auth state is present.
@@ -11,10 +8,8 @@ type Keyring = SignedInState['keyring'];
  * Flat shape: the auth client is not exposed. Every field is something an
  * app opener actually consumes:
  *
- * - `createWorkspace({ id, keyring: signedIn.keyring, tables, kv })`
- * - `attachLocalStorage(workspace.ydoc, { server, ownerId, keyring })`
  * - `openCollaboration(workspace.ydoc, { openWebSocket, onReconnectSignal })`
- * - `roomWsUrl({ baseURL, ownerId, guid, deviceId })`
+ * - `roomWsUrl({ baseURL, ownerId, guid, nodeId })`
  *
  * `server` and `baseURL` are both projected because `roomWsUrl` wants the
  * full origin (for the ws:// vs wss:// scheme) while local-storage partition
@@ -22,8 +17,7 @@ type Keyring = SignedInState['keyring'];
  *
  * `ownerId` is stable for the lifetime of a single `SignedIn`: a
  * different-owner sign-in produces a new payload via the session's dispose /
- * rebuild cycle. `keyring` is a callback because the same-owner keyring can
- * rotate (reauth-required to identity-bearing) without a rebuild.
+ * rebuild cycle.
  *
  * Deployment shape (personal vs shared) is not on this payload; it is a property
  * of the server (see `OwnerId` in `@epicenter/identity`).
@@ -41,7 +35,6 @@ export type SignedIn = {
 	 */
 	baseURL: string;
 	ownerId: OwnerId;
-	keyring: () => Keyring;
 	/**
 	 * Bearer-attached WebSocket opener. Pass to
 	 * `openCollaboration({ openWebSocket })`.
@@ -64,13 +57,8 @@ export type SignedIn = {
  *
  * The build callback receives a `SignedIn` value with everything an app
  * opener needs: server + baseURL for transport, ownerId for partitioning,
- * keyring (callback) for encryption, and the two auth functions
- * (`openWebSocket`, `onReconnectSignal`) for cloud sync. The keyring reader
- * pulls from the live `state.keyring` so refreshed keyrings from
- * `/api/session` are picked up by the next `createWorkspace` or
- * `attachLocalStorage` construction without rebuilding the payload. Each
- * construction snapshots the keyring exactly once; nothing re-reads it
- * mid-attach.
+ * and the two auth functions (`openWebSocket`, `onReconnectSignal`) for cloud
+ * sync.
  *
  * Requires a `SyncAuthClient` (it threads `auth.openWebSocket` into the payload
  * for cloud sync) whose `state` is Svelte-reactive (use `@epicenter/svelte/auth`,
@@ -106,12 +94,6 @@ export function createSession<T extends Disposable>({
 			server,
 			baseURL,
 			ownerId: state.ownerId,
-			keyring: () => {
-				if (auth.state.status === 'signed-out') {
-					throw new Error('[session] keyring() called while signed-out.');
-				}
-				return auth.state.keyring;
-			},
 			openWebSocket: auth.openWebSocket,
 			onReconnectSignal: auth.onStateChange,
 		});

@@ -11,25 +11,16 @@
 
 import { field } from '@epicenter/field';
 import {
-	asDeviceId,
-	createWorkspace,
-	type DeviceId,
 	defineTable,
+	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
-	type Keyring,
+	type NodeId,
 	nullable,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import type { Brand } from 'wellcrafted/brand';
-
-export type { DeviceId };
-// `DeviceId` and `asDeviceId` are the canonical brand from `@epicenter/workspace`.
-// Tab-manager reuses them so the wire-level device identity, the local table
-// row keys, and the dispatch addresses all share one type.
-export { asDeviceId };
-
-export const TAB_MANAGER_ID = 'epicenter-tab-manager';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types
@@ -97,9 +88,10 @@ export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
  * collisions.
  */
 const devicesTable = defineTable({
-	id: field.string<DeviceId>(), // NanoID, generated once on install
+	// id is the framework node id (one per persistent storage scope); shown to the user as a device.
+	id: field.string<NodeId>(), // NanoID, generated once on install
 	name: field.string(), // User-editable: "Chrome on macOS", "Firefox on Windows"
-	lastSeen: field.string(), // ISO timestamp, updated on each sync
+	lastSeen: field.instant(), // canonical UTC instant, updated on each sync
 	browser: field.string(), // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
 });
 export type Device = InferTableRow<typeof devicesTable>;
@@ -120,8 +112,8 @@ const savedTabsTable = defineTable({
 	title: field.string(), // Tab title at time of save
 	favIconUrl: nullable(field.string()), // Favicon URL (null when missing)
 	pinned: field.boolean(), // Whether tab was pinned
-	sourceDeviceId: field.string<DeviceId>(), // Device that saved this tab
-	savedAt: field.number(), // Timestamp (ms since epoch)
+	sourceNodeId: field.string<NodeId>(), // Node that saved this tab
+	savedAt: field.instant(), // canonical UTC instant of save
 });
 export type SavedTab = InferTableRow<typeof savedTabsTable>;
 
@@ -138,8 +130,8 @@ const bookmarksTable = defineTable({
 	title: field.string(), // Title at time of bookmark
 	favIconUrl: nullable(field.string()), // Favicon URL (null when missing)
 	description: nullable(field.string()), // Optional user note (null when absent)
-	sourceDeviceId: field.string<DeviceId>(), // Device that created the bookmark
-	createdAt: field.number(), // Timestamp (ms since epoch)
+	sourceNodeId: field.string<NodeId>(), // Node that created the bookmark
+	createdAt: field.instant(), // canonical UTC instant of creation
 });
 export type Bookmark = InferTableRow<typeof bookmarksTable>;
 
@@ -156,20 +148,24 @@ const toolTrustTable = defineTable({
 });
 
 /**
- * Build the Tab Manager workspace bundle. Encrypted under the supplied
- * keyring; used by extension entrypoint and the e2e playground daemon.
+ * The Tab Manager workspace definition, shared by the extension and the daemon.
+ *
+ * No daemon actions live here: the extension layers browser-only tab/bookmark
+ * actions in `tab-manager/extension.ts`, and the daemon serves only its
+ * materializer actions. The browser composes the root via `.create()`; the
+ * daemon mounts it via `.mount()`.
  */
-export function createTabManager(opts: { keyring: () => Keyring }) {
-	return createWorkspace({
-		id: TAB_MANAGER_ID,
-		keyring: opts.keyring,
-		tables: {
-			devices: devicesTable,
-			savedTabs: savedTabsTable,
-			bookmarks: bookmarksTable,
-			toolTrust: toolTrustTable,
-		},
-		kv: {},
-	});
-}
-export type TabManagerWorkspace = ReturnType<typeof createTabManager>;
+export const tabManagerWorkspace = defineWorkspace({
+	id: 'epicenter-tab-manager',
+	name: 'tab-manager',
+	tables: {
+		devices: devicesTable,
+		savedTabs: savedTabsTable,
+		bookmarks: bookmarksTable,
+		toolTrust: toolTrustTable,
+	},
+	kv: {},
+});
+export type TabManagerWorkspace = WorkspaceFromDefinition<
+	typeof tabManagerWorkspace
+>;

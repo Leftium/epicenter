@@ -2,9 +2,9 @@
  * Classified Scan Surface Tests
  *
  * Verifies `scan()`: the single O(n) read that resolves every stored entry
- * into one of four buckets (`rows`, `nonconforming`, `newerWriter`,
- * `unreadable`). Rows never silently vanish into a valid-only skip branch; the
- * issue buckets ride along in the same return value.
+ * into one of three buckets (`rows`, `nonconforming`, `newerWriter`). Rows
+ * never silently vanish into a valid-only skip branch; the issue buckets ride
+ * along in the same return value.
  *
  * Key behaviors:
  * - conforming rows land in `rows`; the issue buckets stay empty
@@ -17,21 +17,20 @@
  * - storedCount() includes nonconforming rows; scan().rows excludes them
  *
  * See also:
- * - `create-table.unreadable.test.ts` for the unreadable bucket and the
- *   four-bucket sum identity
  * - `create-table.write-guard.test.ts` for the write-side refusals
  */
 
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import * as Y from 'yjs';
-import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineTable } from './define-table.js';
 import { createReadonlyTable, createTable } from './table.js';
+import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue/index.js';
 
 function setup() {
 	const ydoc = new Y.Doc();
-	const ykv = createEncryptedYkvLww<unknown>(ydoc, 'test-table');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
+	const ykv = new YKeyValueLww<unknown>(yarray);
 	const definition = defineTable({
 		id: field.string(),
 		title: field.string(),
@@ -46,7 +45,7 @@ describe('scan', () => {
 		table.set({ id: '1', title: 'a' });
 		table.set({ id: '2', title: 'b' });
 
-		const { rows, nonconforming, newerWriter, unreadable } = table.scan();
+		const { rows, nonconforming, newerWriter } = table.scan();
 
 		expect(rows).toEqual([
 			{ id: '1', title: 'a' },
@@ -54,7 +53,6 @@ describe('scan', () => {
 		]);
 		expect(nonconforming).toEqual([]);
 		expect(newerWriter).toEqual([]);
-		expect(unreadable).toEqual([]);
 	});
 
 	test('validation failures land in nonconforming with the raw row attached', () => {
@@ -75,7 +73,8 @@ describe('scan', () => {
 
 	test('migration failures land in nonconforming', () => {
 		const ydoc = new Y.Doc();
-		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'test-table');
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
+		const ykv = new YKeyValueLww<unknown>(yarray);
 		const definition = defineTable(
 			{ id: field.string(), title: field.string() },
 			{ id: field.string(), title: field.string(), views: field.number() },

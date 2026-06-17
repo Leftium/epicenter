@@ -12,18 +12,18 @@
 > points at the canonical sources:
 >
 > - **Quick Start**: [`packages/workspace/README.md`](../../packages/workspace/README.md)
-> - **Multi-device sync**: [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
+> - **Multi-node sync**: [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
 > - **Production wiring**: `apps/fuji/src/lib/workspace/browser.ts` (inline composition with per-row child docs), `apps/fuji/src/lib/session.ts` (session glue), `apps/tab-manager/src/lib/session.svelte.ts` (browser extension auth binding)
 
 ## Overview
 
-The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects. Cloud sync enters through `/api/owners/:ownerId/rooms/:roomId` (the same path in both personal and shared mode): a cloud doc is owned by the authenticated `ownerId` and addressed by its `ydoc.guid`, and the server resolves the room from the auth token. Browser apps and the workspace daemon both use this route.
+The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, and AI inference. It runs on Cloudflare Workers with Durable Objects. Cloud sync enters through `/api/owners/:ownerId/rooms/:roomId` (the same path in both personal and shared mode): a cloud doc is owned by the authenticated `ownerId` and addressed by its `ydoc.guid`, and the server resolves the room from the auth token. Browser apps and the workspace daemon both use this route.
 
-On the client, `@epicenter/workspace` exposes the primitives directly: define your schema with `defineTable` / `defineKv`, call `createWorkspace({ id, keyring, tables, kv })` inside a per-app `create<App>()` helper, then attach `attachLocalStorage` and `openCollaboration` inside `open<App>Browser()`. Authenticate with `@epicenter/auth` and gate the workspace lifecycle on signed-in identity with `createSession` from `@epicenter/svelte`.
+On the client, `@epicenter/workspace` exposes the primitives directly: define your schema with `defineTable` / `defineKv`, call `createWorkspace({ id, tables, kv })` inside a per-app `create<App>()` helper, then attach `attachLocalStorage` and `openCollaboration` inside `open<App>Browser()`. Authenticate with `@epicenter/auth` and gate the workspace lifecycle on signed-in identity with `createSession` from `@epicenter/svelte`.
 
 ## Minimal cloud workspace shape
 
-This snippet shows a signed-in cloud workspace. The client builds the sync URL with `roomWsUrl({ baseURL, ownerId, guid, deviceId })`; the server resolves the room from the auth token, so the client never names a workspaceId.
+This snippet shows a signed-in cloud workspace. The client builds the sync URL with `roomWsUrl({ baseURL, ownerId, guid, nodeId })`; the server resolves the room from the auth token, so the client never names a workspaceId.
 
 The per-app browser opener is the single source of truth for "how this app mounts in a browser." `createWorkspace` builds the typed bundle in one call; every other `attach*` step is visible top-to-bottom against `workspace.ydoc`.
 
@@ -31,7 +31,7 @@ The per-app browser opener is the single source of truth for "how this app mount
 import { field } from '@epicenter/field';
 import {
 	attachLocalStorage,
-	createDeviceId,
+	createNodeId,
 	createWorkspace,
 	defineActions,
 	defineMutation,
@@ -54,10 +54,9 @@ const myAppTables = {
 	}),
 };
 
-function createMyApp(opts: { keyring: SignedIn['keyring'] }) {
+function createMyApp() {
 	const workspace = createWorkspace({
 		id: MY_APP_ID,
-		keyring: opts.keyring,
 		tables: myAppTables,
 		kv: {},
 	});
@@ -81,24 +80,23 @@ function createMyApp(opts: { keyring: SignedIn['keyring'] }) {
 
 export function openMyAppBrowser({
 	signedIn,
-	deviceId,
+	nodeId,
 }: {
 	signedIn: SignedIn;
-	deviceId: string;
+	nodeId: string;
 }) {
-	const workspace = createMyApp({ keyring: signedIn.keyring });
+	const workspace = createMyApp();
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
 	});
 	const collab = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
 			guid: workspace.ydoc.guid,
-			deviceId,
+			nodeId,
 		}),
 		openWebSocket: signedIn.openWebSocket,
 		onReconnectSignal: signedIn.onReconnectSignal,
@@ -126,7 +124,7 @@ export const session = createSession({
 	build: (signedIn) => {
 		const workspace = openMyAppBrowser({
 			signedIn,
-			deviceId: createDeviceId({ storage: localStorage }),
+			nodeId: createNodeId({ storage: localStorage }),
 		});
 		return {
 			...workspace,
@@ -142,6 +140,6 @@ export type MyAppSignedIn = InferSignedIn<typeof session>;
 
 The `ydoc.guid` is both the local IndexedDB key and the cloud room id. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin. The cloud sync route is `/api/owners/:ownerId/rooms/:roomId` in both modes, taking the room id straight from `ydoc.guid`; the server resolves the DO name `owners/${ownerId}/rooms/${room}` from the auth token, with no workspace lookup. In personal mode `ownerId === user.id`; in shared mode `ownerId === 'shared'`.
 
-`createSession({ auth, build })` reconciles `auth.state` against the live workspace and hands `build` a `SignedIn` value shaped `{ server, baseURL, ownerId, keyring, openWebSocket, onReconnectSignal }`. `createWorkspace` reads `keyring` to derive per-table keys; `attachLocalStorage` reads `server` and `ownerId` to namespace the IndexedDB database under the owner prefix; `openCollaboration` uses `openWebSocket` to attach the bearer token at connection time and `onReconnectSignal` to react to auth changes. Sign-out disposes the workspace, and a same-owner identity refresh keeps the workspace mounted. A different owner from `/api/session` is rejected by auth before the workspace is reused.
+`createSession({ auth, build })` reconciles `auth.state` against the live workspace and hands `build` a `SignedIn` value shaped `{ server, baseURL, ownerId, openWebSocket, onReconnectSignal }`. `attachLocalStorage` reads `server` and `ownerId` to namespace the IndexedDB database under the owner prefix; `openCollaboration` uses `openWebSocket` to attach the bearer token at connection time and `onReconnectSignal` to react to auth changes. Sign-out disposes the workspace, and a same-owner identity refresh keeps the workspace mounted. A different owner from `/api/session` is rejected by auth before the workspace is reused.
 
-`wipeLocalStorage({ server, ownerId })` is a free function that enumerates `indexedDB.databases()` and deletes every database under the owner's prefix. There is no per-app wipe helper to register; the prefix scan catches every encrypted IDB database the owner created on this profile, including per-row child docs.
+`wipeLocalStorage({ server, ownerId })` is a free function that enumerates `indexedDB.databases()` and deletes every database under the owner's prefix. There is no per-app wipe helper to register; the prefix scan catches every IDB database the owner created on this profile, including per-row child docs.

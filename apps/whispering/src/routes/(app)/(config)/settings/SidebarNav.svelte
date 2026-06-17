@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { APP_URLS } from '@epicenter/constants/vite';
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import { cubicInOut } from 'svelte/easing';
 	import { crossfade } from 'svelte/transition';
 	import { page } from '$app/state';
@@ -11,13 +9,13 @@
 		{ title: 'General', href: '/settings' },
 		{ title: 'Recording', href: '/settings/recording' },
 		{ title: 'Transcription', href: '/settings/transcription' },
-		{ title: 'API Keys', href: '/settings/api-keys' },
-		{ title: 'Sound', href: '/settings/sound' },
 		{
 			title: 'Shortcuts',
 			href: '/settings/shortcuts',
 			activePathPrefix: '/settings/shortcuts',
 		},
+		{ title: 'Sound', href: '/settings/sound' },
+		{ title: 'API Keys', href: '/settings/api-keys' },
 		{ title: 'Privacy & Analytics', href: '/settings/analytics' },
 	] satisfies {
 		title: string;
@@ -66,16 +64,4 @@
 			<span class="relative z-10"> {item.title} </span>
 		</Button>
 	{/each}
-
-	<Button
-		href="{APP_URLS.API}/dashboard"
-		target="_blank"
-		variant="ghost"
-		class="relative justify-start text-left font-normal text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-	>
-		<span class="relative z-10 flex items-center gap-2">
-			Manage billing
-			<ExternalLinkIcon class="size-3 text-muted-foreground" />
-		</span>
-	</Button>
 </nav>

@@ -21,38 +21,37 @@ const globalBinding = type({
 	keys: 'string[]',
 }).or('null');
 
-// Default bindings as global gestures, not mnemonic app hotkeys. Every gesture
-// is a distinct, non-overlapping combo: the rdev matcher fires on exact set
-// equality with no prefix resolution, so no gesture's keys may be a subset of
-// another's (the shorter one would fire first and shadow the longer). That is
-// why push-to-talk gets its own dedicated key and nothing else reuses it.
+// Default bindings as global gestures, not mnemonic app hotkeys. The rdev matcher
+// fires on exact set equality with no prefix resolution, so no gesture's keys may
+// be a subset of another's (the shorter would fire first and shadow the longer):
+// every default below is a distinct, non-overlapping combo.
 //
-//   macOS:   Fn = push-to-talk,        Cmd + Shift + Space  = toggle
-//   Windows: Ctrl+Win = push-to-talk,  Ctrl + Shift + Space = toggle
+// Push-to-talk is the default recording key: hold it to record, release to stop.
+// It is a single physical key with no start latency. On Apple keyboards that key
+// is Fn (a single physical key no common shortcut claims); elsewhere it is
+// Ctrl+Win, a held chord that is likewise unclaimed. Tap-to-toggle is a separate
+// command that ships unbound (the in-app record button is its home); bind a key
+// for it in settings if you want a hands-free toggle.
 //
-// Fn is a single physical key on Apple keyboards; elsewhere we reach for
-// Ctrl+Win, a held chord that no common OS shortcut claims. Toggle adds Shift
-// so it shares no prefix with push-to-talk while keeping Space as the "record"
-// affordance. Cancel is the platform cancel chord (Cmd + . on macOS, the system
-// cancel gesture since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a
-// modifier so it is safe to hold globally and registers like any other gesture
-// with no session gating. Transformation gestures ship unbound: opt-in only.
-// Exported so the reset path in register-commands shares this one source of truth.
-const PUSH_TO_TALK_MODIFIERS: KeyBinding['modifiers'] = os.isApple
+//   macOS:   Fn = push-to-talk,        Cmd + .          = cancel
+//   Windows: Ctrl+Win = push-to-talk,  Ctrl + Shift + . = cancel
+//
+// Cancel is the platform cancel chord (Cmd + . on macOS, the system cancel gesture
+// since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a modifier so it is
+// safe to hold globally and registers like any other gesture with no session
+// gating. Transformation gestures ship unbound: opt-in only. Exported so the reset
+// path in platform/shortcuts.tauri.ts shares this one source of truth.
+const RECORDING_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['fn']
 	: ['ctrl', 'meta'];
-
-const TOGGLE_MODIFIERS: KeyBinding['modifiers'] = os.isApple
-	? ['meta', 'shift']
-	: ['ctrl', 'shift'];
 
 const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['meta']
 	: ['ctrl', 'shift'];
 
 export const DEFAULT_GLOBAL_BINDINGS = {
-	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
-	toggleManualRecording: { modifiers: TOGGLE_MODIFIERS, keys: ['space'] },
+	pushToTalk: { modifiers: RECORDING_MODIFIERS, keys: [] },
+	toggleManualRecording: null,
 	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
 	toggleVadRecording: null,
 	openTransformationPicker: null,
@@ -144,6 +143,10 @@ const DEVICE_DEFINITIONS = {
 	// Structured KeyBinding (physical-key space) for the rdev backend. Old
 	// accelerator-string values are not migrated: they fail this schema and reset
 	// to the defaults (clean break, see the note below the singleton).
+	'shortcuts.global.pushToTalk': defineEntry(
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
+	),
 	'shortcuts.global.toggleManualRecording': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleManualRecording,
@@ -155,10 +158,6 @@ const DEVICE_DEFINITIONS = {
 	'shortcuts.global.toggleVadRecording': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleVadRecording,
-	),
-	'shortcuts.global.pushToTalk': defineEntry(
-		globalBinding,
-		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
 	),
 	'shortcuts.global.openTransformationPicker': defineEntry(
 		globalBinding,
@@ -175,44 +174,9 @@ const DEVICE_DEFINITIONS = {
 type DeviceConfigDefs = typeof DEVICE_DEFINITIONS;
 export type DeviceConfigKey = keyof DeviceConfigDefs & string;
 
-// ── Legacy migration ─────────────────────────────────────────────────────────
+// ── Singleton ────────────────────────────────────────────────────────────────
 
 const DEVICE_CONFIG_PREFIX = 'whispering.device.';
-
-const LEGACY_LOCAL_MODEL_SELECTIONS = [
-	{
-		from: 'transcription.whispercpp.modelPath',
-		to: 'transcription.whispercpp.model',
-	},
-	{
-		from: 'transcription.parakeet.modelPath',
-		to: 'transcription.parakeet.model',
-	},
-	{
-		from: 'transcription.moonshine.modelPath',
-		to: 'transcription.moonshine.model',
-	},
-] as const satisfies readonly {
-	from: string;
-	to: DeviceConfigKey;
-}[];
-
-function modelEntryNameFromLegacyPath(path: string) {
-	return path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').at(-1) ?? '';
-}
-
-function readLegacyString(key: string) {
-	const raw = window.localStorage.getItem(`${DEVICE_CONFIG_PREFIX}${key}`);
-	if (raw === null) return null;
-	try {
-		const value = JSON.parse(raw) as unknown;
-		return typeof value === 'string' ? value : null;
-	} catch {
-		return null;
-	}
-}
-
-// ── Singleton ────────────────────────────────────────────────────────────────
 
 export const deviceConfig = createPersistedMap({
 	prefix: DEVICE_CONFIG_PREFIX,
@@ -231,15 +195,10 @@ export const deviceConfig = createPersistedMap({
 	},
 });
 
-for (const migration of LEGACY_LOCAL_MODEL_SELECTIONS) {
-	if (deviceConfig.get(migration.to)) continue;
-	const legacyPath = readLegacyString(migration.from);
-	if (!legacyPath) continue;
-	const entryName = modelEntryNameFromLegacyPath(legacyPath);
-	if (entryName) deviceConfig.set(migration.to, entryName);
-}
-
-// Global shortcuts are NOT migrated from the old accelerator-string format. A
-// clean break: a legacy value fails the `globalBinding` schema on read and falls
-// back to the default (see `createPersistedMap`), so upgrading users get the new
-// defaults. We refuse to carry a parser for a format nothing writes anymore.
+// Nothing here is migrated from a legacy format; both prior formats take a clean
+// break. Local model selections once lived under `transcription.*.modelPath` as
+// filesystem paths: that key is simply orphaned now and the `transcription.*.model`
+// entry reads its default. Global shortcuts once stored accelerator strings under
+// the same key: a legacy value fails the `globalBinding` schema on read and falls
+// back to the default (see `createPersistedMap`). Either way upgrading users get
+// the new defaults, and we carry no parser for a format nothing writes anymore.

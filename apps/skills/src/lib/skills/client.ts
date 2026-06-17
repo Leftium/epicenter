@@ -1,4 +1,4 @@
-import { openSkillsBrowser } from './browser.js';
+import { openSkillsBrowser } from '@epicenter/skills/browser';
 
 export const skills = openSkillsBrowser();
 

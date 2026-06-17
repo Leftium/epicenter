@@ -18,13 +18,10 @@
 	const isSearching = $derived(viewState.searchQuery.trim().length > 0);
 
 	/**
-	 * Rows hidden from every list: schema mismatches, newer-writer rows, and
-	 * rows encrypted with a key this device does not have.
+	 * Rows hidden from every list: schema mismatches and newer-writer rows.
 	 */
 	const queuedCount = $derived(
-		fuji.entries.nonconforming.length +
-			fuji.entries.newerWriter.length +
-			fuji.entries.unreadable.length,
+		fuji.entries.nonconforming.length + fuji.entries.newerWriter.length,
 	);
 
 	/** Entries matching the search query across title, subtitle, tags, and type. */

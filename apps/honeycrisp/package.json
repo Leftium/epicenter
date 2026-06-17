@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./honeycrisp.ts",
-		"./project": "./project.ts"
+		"./mount": "./mount.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
@@ -41,7 +41,6 @@
 		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"@epicenter/encryption": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-query-devtools": "catalog:",

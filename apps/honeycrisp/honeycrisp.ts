@@ -10,32 +10,24 @@
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/honeycrisp/honeycrisp.browser.ts`  -> `openHoneycrispBrowser({ signedIn, deviceId })`
- *  - `apps/honeycrisp/project.ts`  -> `honeycrisp(opts?)` mount factory
+ *  - `apps/honeycrisp/honeycrisp.browser.ts`  -> `openHoneycrispBrowser({ signedIn, nodeId })`
+ *  - `apps/honeycrisp/mount.ts`  -> `honeycrisp(opts?)` mount factory
  */
 
 import { field } from '@epicenter/field';
 import {
 	attachRichText,
-	createDisposableCache,
-	createWorkspace,
-	DateTimeString,
 	defineActions,
 	defineMutation,
 	defineTable,
 	defineWorkspace,
-	docGuid,
 	generateId,
 	type InferTableRow,
-	type Keyring,
 	nullable,
-	onLocalUpdate,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import * as Y from 'yjs';
-
-export const HONEYCRISP_ID = 'epicenter-honeycrisp';
 
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
 
@@ -96,12 +88,11 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * has a title auto-populated from the first line of content, a preview for the
  * list view, and can be pinned to appear at the top of the note list.
  *
- * `deletedAt` is `null` for active notes and a `DateTimeString` for deleted
+ * `deletedAt` is `null` for active notes and an `InstantString` for deleted
  * notes. `wordCount` is computed on each editor update.
  *
- * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note.
- * The workspace factory constructs the plain child-doc model and each runtime
- * opener attaches its own persistence and sync.
+ * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note,
+ * declared as a child doc on this table.
  */
 const notesTable = defineTable({
 	id: field.string<NoteId>(),
@@ -109,55 +100,33 @@ const notesTable = defineTable({
 	title: field.string(),
 	preview: field.string(),
 	pinned: field.boolean(),
-	createdAt: field.datetime(),
-	updatedAt: field.datetime(),
-	deletedAt: nullable(field.datetime()),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
+	deletedAt: nullable(field.instant()),
 	wordCount: nullable(field.number()),
+}).docs({
+	body: {
+		layout: attachRichText,
+		touch: 'updatedAt',
+	},
 });
 export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Workspace factory ────────────────────────────────────────────────────────
 
 /**
- * Build a Honeycrisp workspace bundle:
- * `{ ydoc, tables, kv, actions, noteBodyDocs }`.
+ * Honeycrisp's shared workspace definition.
  *
- * Encrypted under the supplied keyring. Runtime openers attach persistence,
- * sync, materializers, and UI state around this shared model.
+ * Runtime openers attach persistence, sync, materializers, and UI state around
+ * this shared model.
  */
-export function createHoneycrisp(opts: { keyring: () => Keyring }) {
-	const workspace = createWorkspace({
-		id: HONEYCRISP_ID,
-		keyring: opts.keyring,
-		tables: { folders: foldersTable, notes: notesTable },
-		kv: {},
-	});
-	const { tables } = workspace;
-	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
-		const childYdoc = new Y.Doc({
-			guid: noteBodyDocGuid(noteId),
-			gc: true,
-		});
-		const body = attachRichText(childYdoc);
-
-		onLocalUpdate(childYdoc, () => {
-			workspace.tables.notes.update(noteId, {
-				updatedAt: DateTimeString.now(),
-			});
-		});
-
-		return {
-			ydoc: childYdoc,
-			body,
-			[Symbol.dispose]() {
-				childYdoc.destroy();
-			},
-		};
-	});
-
-	return defineWorkspace({
-		...workspace,
-		actions: defineActions({
+export const honeycrispWorkspace = defineWorkspace({
+	id: 'epicenter-honeycrisp',
+	name: 'honeycrisp',
+	tables: { folders: foldersTable, notes: notesTable },
+	kv: {},
+	actions: ({ tables }) =>
+		defineActions({
 			/**
 			 * Delete a folder and move all its notes to unfiled.
 			 *
@@ -180,26 +149,7 @@ export function createHoneycrisp(opts: { keyring: () => Keyring }) {
 				},
 			}),
 		}),
-		noteBodyDocs,
-		[Symbol.dispose]() {
-			noteBodyDocs[Symbol.dispose]();
-			workspace[Symbol.dispose]();
-		},
-	});
-}
-export type HoneycrispWorkspace = ReturnType<typeof createHoneycrisp>;
-
-/**
- * Deterministic guid of a note's rich-text body sub-doc.
- *
- * Browser editors, daemon materializers, and wipe paths reach this same
- * function so every layer points at the same Y.Doc identity.
- */
-export function noteBodyDocGuid(noteId: NoteId): string {
-	return docGuid({
-		workspaceId: HONEYCRISP_ID,
-		collection: 'notes',
-		rowId: noteId,
-		field: 'body',
-	});
-}
+});
+export type HoneycrispWorkspace = WorkspaceFromDefinition<
+	typeof honeycrispWorkspace
+>;

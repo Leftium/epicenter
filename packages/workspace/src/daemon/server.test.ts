@@ -5,7 +5,7 @@
  * already-claimed daemon lease and exposes an idempotent close operation.
  *
  * Key behaviors:
- * - valid mounts are served over the daemon client
+ * - the configured mount is served over the daemon client
  * - close stops the listener, removes the socket file, and can run twice
  * - /run executes a real action handler over the Unix socket, and
  *   forwards peer calls when `to` is present
@@ -38,7 +38,7 @@ function makeRuntime({
 	const runtime: DaemonServedMount['runtime'] = { actions };
 	if (collaboration) {
 		runtime.collaboration = {
-			devices: {
+			peers: {
 				list: () => [],
 			},
 			status: { phase: 'connected' },
@@ -72,11 +72,11 @@ afterEach(() => {
 });
 
 describe('startDaemonServer', () => {
-	test('starts the configured mounts', async () => {
+	test('starts the configured mount', async () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime: makeRuntime() }],
+			mount: { mount: 'demo', runtime: makeRuntime() },
 		});
 
 		try {
@@ -94,7 +94,7 @@ describe('startDaemonServer', () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime: makeRuntime() }],
+			mount: { mount: 'demo', runtime: makeRuntime() },
 		});
 
 		try {
@@ -119,14 +119,14 @@ describe('startDaemonServer', () => {
 		});
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime }],
+			mount: { mount: 'demo', runtime },
 		});
 
 		try {
 			const server = expectOk(serverResult);
 			const data = expectOk(
 				await daemonClient(server.socketPath).run({
-					actionPath: 'demo.echo',
+					actionPath: 'echo',
 					input: null,
 				}),
 			);
@@ -147,14 +147,14 @@ describe('startDaemonServer', () => {
 		});
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'mirror', runtime }],
+			mount: { mount: 'mirror', runtime },
 		});
 
 		try {
 			const server = expectOk(serverResult);
 			const data = expectOk(
 				await daemonClient(server.socketPath).run({
-					actionPath: 'mirror.sync',
+					actionPath: 'sync',
 					input: null,
 				}),
 			);
@@ -178,14 +178,14 @@ describe('startDaemonServer', () => {
 		});
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime }],
+			mount: { mount: 'demo', runtime },
 		});
 
 		try {
 			const server = expectOk(serverResult);
 			const data = expectOk(
 				await daemonClient(server.socketPath).run({
-					actionPath: 'demo.peer_only_action',
+					actionPath: 'peer_only_action',
 					input: null,
 					peer: { to: 'mac', waitMs: 25 },
 				}),
@@ -203,14 +203,14 @@ describe('startDaemonServer', () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [{ mount: 'demo', runtime: makeRuntime() }],
+			mount: { mount: 'demo', runtime: makeRuntime() },
 		});
 
 		try {
 			const server = expectOk(serverResult);
 			const error = expectErr(
 				await daemonClient(server.socketPath).run({
-					actionPath: 'demo.peer_only_action',
+					actionPath: 'peer_only_action',
 					input: null,
 					peer: { to: 'mac', waitMs: -1 },
 				}),
@@ -222,20 +222,21 @@ describe('startDaemonServer', () => {
 		}
 	});
 
-	test('run with to rejects local-only mounts as a usage error', async () => {
+	test('run with to rejects a local-only mount as a usage error', async () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({
 			lease,
-			mounts: [
-				{ mount: 'mirror', runtime: makeRuntime({ collaboration: false }) },
-			],
+			mount: {
+				mount: 'mirror',
+				runtime: makeRuntime({ collaboration: false }),
+			},
 		});
 
 		try {
 			const server = expectOk(serverResult);
 			const error = expectErr(
 				await daemonClient(server.socketPath).run({
-					actionPath: 'mirror.sync',
+					actionPath: 'sync',
 					input: null,
 					peer: { to: 'mac', waitMs: 25 },
 				}),

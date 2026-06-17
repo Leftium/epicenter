@@ -1,7 +1,7 @@
 import { PersistedAuth } from './auth-types.js';
 
 /**
- * Storage adapter for the single `PersistedAuth` record (grant + identity + keyring).
+ * Storage adapter for the single `PersistedAuth` record (grant + identity).
  *
  * `initial` is the record read once at boot; the auth runtime reads it exactly
  * once, at construction, to seed its state machine, and never re-reads, so it

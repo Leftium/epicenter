@@ -57,6 +57,57 @@ Detailed examples for the baseline TypeScript rules used across Epicenter.
   `docs/articles/copied-types-are-boundary-leaks.md` for the full review
   pattern.
 
+- **Compose types upward from a named base**: When you author a type, reach for
+  a base you can name and grow with `Base & Extra`, not a wider type you carve
+  with `Omit<Base, 'k'> & { k: U }`. An `Omit<...> &` in your own type is the
+  structural-typing form of overriding an inherited field: it is the tell that a
+  smaller base wants a name. Repeating that carve across sibling types is
+  copy-paste override.
+
+  ```typescript
+  // Bad: the same retype is subtracted and re-added in both types.
+  type Connected =
+    Omit<Workspace, 'tables'> & { tables: ConnectedTables };
+  type ConnectedWithInfra =
+    Omit<Workspace, 'tables'> & {
+      tables: ConnectedTables;
+      idb: Idb;
+      wipe(): Promise<void>;
+    };
+
+  // Good: the retype happens once; the richer type is additive.
+  type Connected =
+    Omit<Workspace, 'tables'> & { tables: ConnectedTables };
+  type ConnectedWithInfra = Connected & {
+    idb: Idb;
+    wipe(): Promise<void>;
+  };
+  ```
+
+  The one surviving `Omit` sits where the field genuinely changes type; every
+  richer shape intersects on top, so Go to Definition chains to a single source
+  and a later change to the retype lands in one place.
+
+  The same instinct narrows, not just extends. To expose a smaller surface (a
+  read-only view of a writable record, a builder you may call only once), return
+  the base type that never had the extra member, so dropping it is a type fact
+  rather than a runtime hope. Return the base, never `Omit<Self, 'member'>`.
+
+  ```typescript
+  // Bad: the method returns its own type, so it chains forever and a second
+  // call silently overwrites the first.
+  type Builder = { step(x: Input): Builder };
+
+  // Good: the method returns the base, which never had it. The capability is
+  // spent after one call, so a second call is a compile error.
+  type Base = { /* ...everything except step */ };
+  type Builder = Base & { step(x: Input): Base };
+
+  declare const builder: Builder;
+  builder.step(a);          // ok
+  builder.step(a).step(b);  // compile error: step is gone after the first call
+  ```
+
 - Always use `type` instead of `interface` in TypeScript.
 - **`readonly` only for arrays and maps**: Never use `readonly` on primitive properties or object properties. The modifier is shallow and provides little protection for non-collection types. Use it only where mutation is a realistic footgun:
 

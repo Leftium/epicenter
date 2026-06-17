@@ -1,6 +1,6 @@
 # @epicenter/cli
 
-> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured mounts, locally or on a currently online peer.
+> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by the configured mount, locally or on a currently online peer.
 
 Each verb is a one-line shell shortcut for one workspace primitive:
 
@@ -11,7 +11,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
    Enumerate     | list       | Object.entries(runtime.actions)             |
    Invoke        | run        | local daemon invoke                         |
    Dispatch      | run --peer | relay dispatch to a live peer               |
-   Presence      | peers      | collaboration.devices.list()                |
+   Presence      | peers      | collaboration.peers.list()                  |
                  +------------+---------------------------------------------+
 
  Supporting systems: auth (machine session), daemon (process lifecycle)
@@ -36,7 +36,7 @@ The same env var and scripts apply to every command that talks to the API, inclu
 
 ## Commands
 
-`epicenter daemon up` opens every mount listed in the Epicenter root's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
+`epicenter daemon up` opens the mount the Epicenter root's `epicenter.config.ts` declares. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
 
 ```bash
 epicenter auth login
@@ -47,15 +47,15 @@ epicenter daemon logs -C ~/workspace
 epicenter daemon down -C ~/workspace
 
 epicenter list -C ~/workspace
-epicenter list fuji.entries_update -C ~/workspace
+epicenter list entries_update -C ~/workspace
 
-epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' -C ~/workspace
-epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer user-1 -C ~/workspace
+epicenter run entries_update '{"id":"entry_1","tags":["triaged"]}' -C ~/workspace
+epicenter run entries_update '{"id":"entry_1","tags":["triaged"]}' --peer user-1 -C ~/workspace
 
 epicenter peers -C ~/workspace
 ```
 
-`-C` is a start directory for Epicenter-root discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every mount in that config. Discovery is upward-only and never scans down, so run from inside your Epicenter folder (or any directory under it) or pass `-C <epicenter-root>`. From a repo whose Epicenter folder lives at `repo/apps`, that is `epicenter daemon up -C apps`.
+`-C` is a start directory for Epicenter-root discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon opens the mount that config declares. Discovery is upward-only and never scans down, so run from inside your Epicenter folder (or any directory under it) or pass `-C <epicenter-root>`. From a repo whose Epicenter folder lives at `repo/apps`, that is `epicenter daemon up -C apps`.
 
 ## Exit codes
 
@@ -64,7 +64,7 @@ epicenter peers -C ~/workspace
 | Code | `run` | `list`, `peers` |
 | --- | --- | --- |
 | `0` | success | success |
-| `1` | usage error (unknown mount or action, action input that fails the action's schema, bad `--peer` input) or no daemon running | any failure (no daemon, bad arguments) |
+| `1` | usage error (unknown action, action input that fails the action's schema, bad `--peer` input) or no daemon running | any failure (no daemon, bad arguments) |
 | `2` | runtime error: the local action returned `Err`, or the remote RPC failed | (not used) |
 | `3` | peer not found: `--peer <target>` did not resolve within `--wait` | (not used) |
 
@@ -74,15 +74,15 @@ Error text goes to stderr; machine-readable output (`--format json|jsonl`, table
 
 ## Epicenter Roots And Mounts
 
-`epicenter.config.ts` marks the Epicenter root and declares its mount. One folder is one app is one mount: the default export is a single `Mount`. App packages ship mount factories that return `Mount` values; `Mount.name` owns the CLI prefix. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so the mount's visible markdown projection is a direct child folder.
+`epicenter.config.ts` marks the Epicenter root and declares its mount. One folder is one app is one mount: the default export is a single `Mount`. App packages ship mount factories that return `Mount` values; `Mount.name` is the display label `epicenter list` prints as its header. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so the mount's visible markdown projection is a direct child folder.
 
 ```ts
-import { fuji } from "@epicenter/fuji/project";
+import { fuji } from "@epicenter/fuji/mount";
 
 export default fuji();
 ```
 
-The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the Epicenter folder name.
+The returned `Mount.name` is `fuji`, so `epicenter list` prints `fuji` as its header regardless of the Epicenter folder name. Actions are addressed by their bare key (`epicenter run entries_update`): the daemon serves one mount, so the key alone is unambiguous.
 
 The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and the generated projection are direct children:
 
@@ -91,7 +91,7 @@ repo/                      unreserved repo root
 └── fuji/                  Epicenter root (folder name is your choice)
     ├── epicenter.config.ts   tracked, marks the Epicenter root
     ├── .epicenter/           ignored, machine state for this root
-    └── fuji/                 ignored, generated projection
+    └── entries/              generated Markdown projection (one folder per table)
 ```
 
 Put `epicenter.config.ts` in a folder dedicated to one app. The marker is the config file, not the folder name. Run several apps by giving each its own folder, each its own root.
@@ -111,7 +111,7 @@ export default defineMount({
 });
 ```
 
-`Mount.name` is the CLI prefix.
+`Mount.name` is the header `epicenter list` prints; actions are addressed by their bare key.
 
 `.epicenter/` holds the Epicenter root's generated machine state such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the Epicenter root: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
 
@@ -123,9 +123,7 @@ Use scripts for anything beyond one-shot CLI calls:
 import { connectDaemonActions } from "@epicenter/workspace/node";
 import type { FujiActions } from "@epicenter/fuji";
 
-const fuji = await connectDaemonActions<FujiActions>({
-  mount: "fuji",
-});
+const fuji = await connectDaemonActions<FujiActions>();
 
 await fuji.entries_update({ id, tags: ["triaged"] });
 ```

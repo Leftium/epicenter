@@ -71,18 +71,9 @@ Multi-device overhead happens because tombstones from different clients interlea
 
 ## Running the Proof
 
-The proof suite is a single executable that runs all 16 tests and exits nonzero if any fail:
-
-```bash
-bun run docs/articles/yjs-storage-efficiency/storage-complexity-proof.ts
-```
-
-The companion benchmarks test encryption overhead and 10-year longevity:
-
-```bash
-bun run docs/articles/yjs-storage-efficiency/encrypted-kv-benchmark.ts
-bun run docs/articles/yjs-storage-efficiency/encrypted-kv-longevity.ts
-```
+The proof suite and companion encrypted benchmarks were removed when Epicenter
+moved to a trusted relay and deleted the client-side encryption layer. The
+results remain here as historical context for the old design.
 
 ## Where This Matters
 
@@ -92,7 +83,6 @@ The constraint for app developers: keep `gc:true` (the default) unless you speci
 
 ---
 
-_Proof suite: [storage-complexity-proof.ts](./storage-complexity-proof.ts)_
 _Tested with: Bun, YJS 13.6.x, XChaCha20-Poly1305 via @noble/ciphers_
 
 **Related:**

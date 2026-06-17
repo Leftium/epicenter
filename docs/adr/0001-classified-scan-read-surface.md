@@ -1,4 +1,13 @@
-# One classified scan, no valid-only default read
+# 0001. One classified scan, no valid-only default read
+
+- **Status:** Accepted
+- **Date:** 2026-06-15
+
+> **Bucket list amended by [ADR-0003](0003-three-read-states-after-encryption-removal.md).**
+> `scan()` now returns three buckets, not four: the `unreadable` bucket existed
+> only for encrypted rows and was removed with the encryption layer. The
+> single-classified-scan decision below still stands; read `unreadable` here as
+> history.
 
 The workspace table read surface is a single bulk read, `scan()`, that resolves
 every stored entry into four buckets (`rows`, `nonconforming`, `newerWriter`,

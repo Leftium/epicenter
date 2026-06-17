@@ -66,8 +66,8 @@
 				"title": "Whispering",
 				"width": 1080,
 				"height": 800,
-				"minHeight": 84,
-				"minWidth": 72
+				"minHeight": 500,
+				"minWidth": 360
 			}
 		],
 		"security": {

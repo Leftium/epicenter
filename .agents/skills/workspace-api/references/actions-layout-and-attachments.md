@@ -119,7 +119,7 @@ src/lib/
 
 ```
 workspace.ts
-  createWorkspace({ id, tables, kv, keyring? })
+  createWorkspace({ id, tables, kv })
     -> defineWorkspace({ ...workspace, actions: defineActions({ ... }) })
 
 browser.ts / daemon.ts / script.ts
@@ -222,7 +222,7 @@ Attachments compose through plain lexical scope, so ordering is explicit: if `op
 
 | Attachment | Typical `waitFor` | Behavior |
 |---|---|---|
-| `createWorkspace({ keyring? })` | (none, sync) | Allocates the workspace `Y.Doc`, wires tables + KV, reads `keyring()` synchronously when encryption is requested |
+| `createWorkspace({ id, tables, kv })` | (none, sync) | Allocates the workspace `Y.Doc` and wires tables + KV |
 | `attachYjsLog` | none | Starts loading the Yjs update log immediately |
 | `attachIndexedDb` | none | Starts loading IndexedDB immediately |
 | `openCollaboration` | `idb.whenLoaded` (or another local-load promise) | Opens WebSocket after local replay |

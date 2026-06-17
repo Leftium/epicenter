@@ -8,16 +8,15 @@ export {
 	WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
 } from './media-constraints';
 export {
-	RECORDING_MODE_ICONS,
-	RECORDING_MODE_OPTIONS,
-	RECORDING_MODES,
-	type RecordingMode,
-	toggleCommandIdForMode,
-} from './recording-modes';
-export {
 	RECORDER_STATE_TO_ICON,
 	VAD_STATE_TO_ICON,
 	type VadState,
 	type WhisperingRecordingState,
 } from './recording-states';
+export {
+	RECORDING_TRIGGER_META,
+	RECORDING_TRIGGER_OPTIONS,
+	RECORDING_TRIGGERS,
+	type RecordingTrigger,
+} from './recording-triggers';
 export { RECORDER_OUTPUT_RATE, SAMPLE_RATE_OPTIONS } from './sample-rate';

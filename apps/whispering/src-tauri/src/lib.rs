@@ -16,18 +16,16 @@ use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{
-    get_transcription_state, set_transcription_config, transcribe_recording, ModelManager,
-    ModelStateEvent,
+    delete_model_entry, download_model, get_transcription_state, link_local_model,
+    list_model_entries, resolve_model_files, reveal_models_folder, set_unload_policy,
+    transcribe_recording, ModelCache, ModelStateEvent,
 };
 
 pub mod command;
 use command::open_accessibility_settings;
 
 pub mod download;
-use download::{cancel_download, download_file, DownloadManager};
-
-pub mod markdown;
-use markdown::write_markdown_files;
+use download::{cancel_download, DownloadManager};
 
 pub mod media;
 use media::{pause_active_media, resume_media};
@@ -64,16 +62,20 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             clear_recording_artifacts,
             transcribe_recording,
             open_accessibility_settings,
-            write_markdown_files,
-            set_transcription_config,
+            set_unload_policy,
             get_transcription_state,
-            download_file,
+            link_local_model,
+            list_model_entries,
+            delete_model_entry,
+            resolve_model_files,
+            download_model,
+            reveal_models_folder,
             cancel_download,
             pause_active_media,
             resume_media,
             keyboard::commands::set_keyboard_shortcuts,
             keyboard::commands::set_keyboard_capturing,
-            keyboard::commands::start_keyboard_listener,
+            keyboard::commands::get_dictation_capability,
         ])
         // The FE listens through the generated `events` object. `collect_events!`
         // owns each topic name and pulls in the payload types
@@ -85,6 +87,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ModelStateEvent,
             keyboard::ShortcutTriggerEvent,
             keyboard::ShortcutCaptureEvent,
+            keyboard::DictationCapabilityEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
@@ -239,20 +242,20 @@ pub async fn run() {
             // the generated `events` listeners (FE) resolve the same names.
             specta_builder.mount_events(app);
 
-            // ModelManager owns an `AppHandle` for emitting model lifecycle
+            // ModelCache owns an `AppHandle` for emitting model lifecycle
             // events, so it cannot be constructed at builder-time (no app handle
             // exists yet). Move construction into setup; everything that needs it
-            // reads via `app.state::<ModelManager>()`.
-            let manager = ModelManager::new(app.handle().clone());
-            manager.start_idle_watcher();
-            app.manage(manager);
+            // reads via `app.state::<ModelCache>()`.
+            let cache = ModelCache::new(app.handle().clone());
+            cache.start_idle_watcher();
+            app.manage(cache);
 
-            // Desktop global keyboard trigger backend. We construct and manage
-            // the listener here but do NOT start it: `rdev::listen` cannot tap
-            // the keyboard until macOS Accessibility is granted, so the FE calls
-            // `start_keyboard_listener` once it knows shortcuts are allowed (on
-            // macOS after the grant, on other desktops at launch). The listener
-            // is idempotent, so the FE can re-check freely.
+            // Desktop global keyboard trigger backend. Constructing it spawns a
+            // supervisor that owns the tap's whole lifecycle: it gates spawning
+            // on the live macOS Accessibility trust, restarts a tap that dies
+            // under a held grant, and publishes the `DictationCapability` the FE
+            // views. There is no FE-driven start: trust is a fact about the
+            // process that holds the tap, so the tap holder owns it.
             #[cfg(desktop)]
             app.manage(keyboard::KeyboardListener::new(app.handle().clone()));
 

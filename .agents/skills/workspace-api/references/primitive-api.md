@@ -8,7 +8,7 @@ Read when composing any Y.Doc in the app: the top-level workspace doc, per-row c
 
 ## Two layers: the workspace bundle vs. per-row docs
 
-For an app's **top-level workspace**, you call `createWorkspace({ id, tables, kv, keyring? })` and it returns a fully assembled `Workspace` bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`. Tables and KV are built in; encryption is opt-in via the `keyring` parameter. Persistence, broadcast, collaboration, and materializers attach **onto** that bundle (or onto `workspace.ydoc`).
+For an app's **top-level workspace**, you call `createWorkspace({ id, tables, kv })` and it returns a fully assembled `Workspace` bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`. Tables and KV are built in. Persistence, broadcast, collaboration, and materializers attach **onto** that bundle (or onto `workspace.ydoc`).
 
 For **per-row content docs** (rich text, plain text, timeline) you still construct a `Y.Doc` directly and call `attach*` functions on it. `ydoc.destroy()` is the teardown. A builder closure returns the bundle:
 
@@ -47,7 +47,7 @@ function buildMyDoc(id: string) {
 }
 ```
 
-Consumers await readiness through the attached subsystem (`handle.idb.whenLoaded`) rather than a flat `whenReady` alias. Add a top-level `whenReady` only when it composes two or more subsystem signals into one `Promise.all` (see `specs/20260506T020000-expose-attachments-not-aliases.md`).
+Consumers await readiness through the attached subsystem (`handle.idb.whenLoaded`) rather than a flat `whenReady` alias. Add a top-level `whenReady` only when it composes two or more subsystem signals into one `Promise.all`.
 
 Everything you need is in Yjs itself:
 
@@ -71,11 +71,9 @@ import {
 } from '@epicenter/workspace';
 import { foldersTable, notesTable } from './definition';
 
-// Encrypted app: pass a `keyring` accessor.
-export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
+export function createHoneycrispWorkspace() {
   const workspace = createWorkspace({
     id: HONEYCRISP_ID,
-    keyring: opts.keyring,
     tables: { folders: foldersTable, notes: notesTable },
     kv: {},
   });
@@ -89,13 +87,12 @@ export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
   });
 }
 
-// Plaintext app: omit `keyring` entirely.
 export function createWhisperingWorkspace() {
   const workspace = createWorkspace({
     id: 'whispering',
     tables: { recordings },
     kv: {
-      'ui.alwaysOnTop': defineKv(field.boolean(), () => false),
+      'output.transcription.clipboard': defineKv(field.boolean(), () => true),
     },
   });
 
@@ -109,10 +106,10 @@ export function createWhisperingWorkspace() {
 }
 ```
 
-`createWorkspace` returns `{ ydoc, tables, kv, [Symbol.dispose] }`. App factories usually wrap it with `defineWorkspace({ ...workspace, actions: defineActions({ ... }) })`. Tables and KV are already wired (encrypted when `keyring` is provided, plaintext otherwise). Other primitives attach onto the bundle's `ydoc`:
+`createWorkspace` returns `{ ydoc, tables, kv, [Symbol.dispose] }`. App factories usually wrap it with `defineWorkspace({ ...workspace, actions: defineActions({ ... }) })`. Tables and KV are already wired as plaintext stores. Other primitives attach onto the bundle's `ydoc`:
 
 ```ts
-const workspace   = createHoneycrispWorkspace({ keyring: signedIn.keyring });
+const workspace   = createHoneycrispWorkspace();
 const actions     = workspace.actions;                      // app workspace owns pure actions
 const idb         = attachLocalStorage(workspace.ydoc, {...});
 const collab      = openCollaboration(workspace.ydoc, {...});
@@ -137,25 +134,6 @@ Tables and KV are no longer attached individually. They come from `createWorkspa
 `openCollaboration`'s `waitFor` gates the first connection attempt on another promise, typically `idb.whenLoaded`, so the first handshake exchanges only a delta, not the full document.
 
 > **`attach*` is NOT idempotent.** Hold the reference from the first call. Calling any `attach*` helper twice against the same `Y.Doc` + slot is a caller bug; the framework does not catch it. Double-attach silently installs duplicate observers, causing undefined behavior. One attach site per slot, one reference, held for the life of the `Y.Doc`. (This is also why workspace tables/KV come from a single `createWorkspace` call rather than per-slot attach calls.)
-
-## Encryption: the `keyring` parameter
-
-Encryption is no longer a separate `attachEncryption` step. It's an optional `keyring` parameter on `createWorkspace`:
-
-```ts
-const workspace = createWorkspace({
-  id: HONEYCRISP_ID,
-  keyring: () => requireSignedIn(auth).keyring,  // accessor: read at attach time
-  tables: { folders: foldersTable, notes: notesTable },
-  kv: {},
-});
-```
-
-When `keyring` is present, both `workspace.tables` and `workspace.kv` are wired through the encryption coordinator. When `keyring` is absent, they're plaintext. Pick one per workspace; there is no per-slot mixing.
-
-The `keyring` callback is read synchronously at attach time. It should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that. Same-user key rotation needs reconstructing the workspace to take effect on already-attached stores.
-
-IDB / broadcast / collaboration / sqlite transitively see already-encrypted bytes once `keyring` is wired. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 
 ## Readiness Signals: Split, Don't Precompose
 
@@ -218,10 +196,9 @@ export const entryContentDocs = createDisposableCache((entryId: EntryId) => {
     // Consumers await `handle.idb.whenLoaded` directly. Add a
     // `whenReady: Promise.all([...])` field only when the bundle has
     // two or more subsystem signals to compose into one barrier
-    // (e.g. `Promise.all([persistence.whenLoaded, unlock.whenChecked,
+    // (e.g. `Promise.all([persistence.whenLoaded,
     // collaboration.whenConnected])`). A flat `whenReady: idb.whenLoaded`
     // alias lies about composition; expose the subsystem instead.
-    // See specs/20260506T020000-expose-attachments-not-aliases.md.
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 });
@@ -268,7 +245,7 @@ async function readInstructions(id: SkillId): Promise<string> {
 }
 ```
 
-`whenReady` is an optional `Promise<unknown>` field on the returned bundle. It earns its place only when it composes two or more attachment signals into one barrier (`Promise.all([...])`). When a bundle has a single async subsystem, expose the subsystem (`idb`, `persistence`, ...) and let consumers reach through (`handle.idb.whenLoaded`); a flat `whenReady: idb.whenLoaded` alias lies about composition and is the anti-pattern called out in `specs/20260506T020000-expose-attachments-not-aliases.md`. Composed `whenReady` fields are consumed by the CLI's `run` command, Whispering's migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and editor `{#await}` gates. Builders with nothing async to wait on can omit the field entirely. Consumers can pick a more specific gate at the call site:
+`whenReady` is an optional `Promise<unknown>` field on the returned bundle. It earns its place only when it composes two or more attachment signals into one barrier (`Promise.all([...])`). When a bundle has a single async subsystem, expose the subsystem (`idb`, `persistence`, ...) and let consumers reach through (`handle.idb.whenLoaded`); a flat `whenReady: idb.whenLoaded` alias lies about composition and is the anti-pattern to avoid. Composed `whenReady` fields are consumed by the CLI's `run` command, Whispering's migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and editor `{#await}` gates. Builders with nothing async to wait on can omit the field entirely. Consumers can pick a more specific gate at the call site:
 
 ```typescript
 using h = docs.open(id);
@@ -368,7 +345,7 @@ new Y.Doc({ guid, gc: false });
 
 ## Two doc shapes
 
-The app's top-level workspace doc comes from `createWorkspace({ id, tables, kv, keyring? })` and exposes `{ ydoc, tables, kv, [Symbol.dispose] }`. Persistence, broadcast, collaboration, and materializers attach onto that bundle (materializers take the whole bundle; everything else takes `workspace.ydoc`).
+The app's top-level workspace doc comes from `createWorkspace({ id, tables, kv })` and exposes `{ ydoc, tables, kv, [Symbol.dispose] }`. Persistence, broadcast, collaboration, and materializers attach onto that bundle (materializers take the whole bundle; everything else takes `workspace.ydoc`).
 
 Per-row content docs are unchanged: `createDisposableCache` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + `openCollaboration`. Those are keyed by id and refcounted by the cache.
 

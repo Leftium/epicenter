@@ -582,9 +582,11 @@ workspace.tables.posts.<span class="text-amber-300">set</span>({ id: <span class
 							Is my data encrypted?
 						</h3>
 						<p class="text-muted-foreground leading-relaxed">
-							Encryption is opt-in per workspace. When enabled, Epicenter uses
-							XChaCha20-Poly1305 for data and HKDF-SHA256 for key derivation.
-							The sync server is a relay; it never sees your content.
+							Epicenter Cloud doesn't encrypt your workspace data. The sync
+							server is a trusted relay that reads plaintext, which is what
+							makes server-side search and AI work. If you want a server that
+							can't read your data, self-host it: then the only machine holding
+							it is yours. You can also run entirely offline.
 						</p>
 					</div>
 

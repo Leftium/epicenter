@@ -1,26 +1,16 @@
 /**
  * KV definition types and the `createKv` builder. `createWorkspace` (in
- * `./workspace.ts`) consumes these to mount the KV slot onto a workspace
- * root, applying encryption when a keyring is provided.
+ * `./workspace.ts`) consumes these to mount the KV slot onto a workspace root.
  *
  * Read is a hopeful projection: `get()` returns the stored value when it is
- * present and valid, otherwise the definition's `defaultValue()`. Absent,
- * invalid, and unreadable (encrypted under a key this binary lacks) all read
- * as the default. The read never persists that default; the stored bytes are
- * left untouched, so a later read returns the real value once a newer schema
- * can parse it or the missing key syncs in. No write happens during that
- * recovery; the same ciphertext simply becomes decryptable.
- *
- * Write preserves what it cannot read: `set()` refuses to overwrite a value
- * that reads as unreadable, because clobbering intact ciphertext would destroy
- * a value that is only waiting for its key. This is the KV form of the table
- * write guard. Invalid (parseable but wrong-shaped) values stay overwritable,
- * since replacing genuinely corrupt config is the recovery.
+ * present and valid, otherwise the definition's `defaultValue()`. Absent and
+ * invalid values read as the default. The read never persists that default;
+ * invalid stored bytes are left untouched until an explicit write repairs them.
  */
 
-import { type Static, type TSchema } from 'typebox';
+import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
-import { type KvStoreChange, type ObservableKvStore } from './y-keyvalue/index';
+import type { KvStoreChange, ObservableKvStore } from './y-keyvalue/index';
 
 // ════════════════════════════════════════════════════════════════════════════
 // KV RESULT TYPES
@@ -66,7 +56,7 @@ export type Kv<TKvDefinitions extends KvDefinitions> = ReturnType<
 
 /**
  * Build a Kv helper over any `ObservableKvStore`. Consumed by
- * `createWorkspace` over both the plain and encrypted YKV stores.
+ * `createWorkspace` over the underlying YKV store.
  */
 export function createKv<TKvDefinitions extends KvDefinitions>(
 	ykv: ObservableKvStore<unknown>,
@@ -81,8 +71,8 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 			if (raw !== undefined && Value.Check(definition.schema, raw)) {
 				return raw as InferKvValue<TKvDefinitions[K]>;
 			}
-			// Absent, invalid, and unreadable all read as the default. The stored
-			// bytes are left intact so a later read recovers the real value.
+			// Absent and invalid values read as the default. The stored bytes are
+			// left intact until an explicit write repairs them.
 			return definition.defaultValue() as InferKvValue<TKvDefinitions[K]>;
 		},
 
@@ -90,11 +80,6 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 			key: K,
 			value: InferKvValue<TKvDefinitions[K]>,
 		): void {
-			// Preserve a value this binary cannot read: overwriting intact
-			// ciphertext would destroy a value that becomes readable once its key
-			// syncs in. Plaintext stores never report unreadable, so this is a
-			// no-op there.
-			if (ykv.read(key).state === 'unreadable') return;
 			ykv.set(key, value);
 		},
 

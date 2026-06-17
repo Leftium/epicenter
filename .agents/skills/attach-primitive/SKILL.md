@@ -44,7 +44,7 @@ attachAwareness(ydoc, defs)
 attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
 
-Table and KV stores are no longer attached one-by-one. They are constructed as a bundle by `createWorkspace({ id, tables, kv, keyring? })`, which owns the Y.Doc's lifecycle and exposes `workspace.ydoc`, `workspace.tables`, and `workspace.kv`. Pass `workspace.ydoc` into the remaining `attach*` primitives; pass the whole `workspace` bundle (the `{ ydoc, tables }` pair) into the materializers.
+Table and KV stores are no longer attached one-by-one. They are constructed as a bundle by `createWorkspace({ id, tables, kv })`, which owns the Y.Doc's lifecycle and exposes `workspace.ydoc`, `workspace.tables`, and `workspace.kv`. Pass `workspace.ydoc` into the remaining `attach*` primitives; pass the whole `workspace` bundle (the `{ ydoc, tables }` pair) into the materializers.
 
 **Materializers** take the `workspace` bundle as the subject (not a bare ydoc): `attachX(workspace, opts)`. They read `workspace.tables` themselves; you do not pass a separate `tables` slot. The two materializer families select what to mirror differently, on purpose:
 
@@ -90,20 +90,14 @@ When a primitive operates on a sibling attachment rather than the Y.Doc itself (
 
 ## Constructor bundles (the workspace case)
 
-When several sibling handles must be constructed atomically (one Y.Doc, N stores activated together, optionally one keyring derivation feeding them all), that work lives in `createWorkspace`, not in an `attach*` primitive. The factory takes definition records as named slots and returns the constructed handles as a bundle:
+When several sibling handles must be constructed atomically (one Y.Doc and N
+stores activated together), that work lives in `createWorkspace`, not in an
+`attach*` primitive. The factory takes definition records as named slots and
+returns the constructed handles as a bundle:
 
 ```ts
-// Plaintext
 const workspace = createWorkspace({
   id: 'my-app',
-  tables: { posts },
-  kv: {},
-});
-
-// Encrypted: same call shape, `keyring` switches it on
-const workspace = createWorkspace({
-  id: 'my-app',
-  keyring: signedIn.keyring,
   tables: { posts },
   kv: {},
 });
@@ -114,7 +108,9 @@ workspace.kv;                      // constructed KV bag
 workspace[Symbol.dispose]();       // cascades to ydoc.destroy()
 ```
 
-The workspace bundle owns the stores' lifecycle: `using workspace = createWorkspace(...)` triggers cascade disposal. Passing `keyring` switches encryption on at construction; without it the stores are plaintext. One call, atomic registration, no temporal window for mid-session attachment.
+The workspace bundle owns the stores' lifecycle: `using workspace =
+createWorkspace(...)` triggers cascade disposal. One call gives atomic
+registration, with no temporal window for mid-session attachment.
 
 The materializer primitives are the remaining "subject in, constructed handle out" `attach*` shape: see the materializer block above. They take the `workspace` bundle as the subject, read `workspace.tables` themselves, and accept a `perTable` (markdown) or `fts` (SQLite) sibling slot for per-table customization.
 
@@ -142,7 +138,6 @@ Primitives compose inside a build closure:
 const cache = createDisposableCache((id: string) => {
   const workspace = createWorkspace({
     id,
-    keyring,
     tables: schema,
     kv: kvDefs,
   });
@@ -193,13 +188,12 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript`: runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
 - **Don't use `createX` for a side-effectful primitive that takes a subject argument.** If it registers listeners on a subject passed in, it's `attach*`. Module-singleton factories that bootstrap themselves are still `create*`; see scope section.
-- **Don't introduce a separate top-level encrypted-X helper.** Encryption is a construction-time switch on `createWorkspace({ id, keyring, tables, kv })`, not an `attach*` primitive. If you find yourself reaching for an `attachEncryption` shape, the work belongs in the workspace bundle factory instead.
 - **Don't attach tables or KV stores one-by-one on a raw Y.Doc.** Construct them as a bundle via `createWorkspace`; pass `workspace.ydoc` into the remaining `attach*` primitives.
 
 ## Reference implementations
 
 - `packages/workspace/src/document/attach-indexed-db.ts` ; the canonical 40-line example.
 - `packages/workspace/src/document/open-collaboration.ts` ; document collaboration surface with sync, presence, peers, and action dispatch.
-- `packages/workspace/src/create-workspace.ts` ; the bundle factory; takes `{ id, tables, kv, keyring? }` and returns `{ ydoc, tables, kv, [Symbol.dispose] }` after one atomic construction (and one keyring derivation when encrypted).
+- `packages/workspace/src/create-workspace.ts` ; the bundle factory; takes `{ id, tables, kv }` and returns `{ ydoc, tables, kv, [Symbol.dispose] }` after one atomic construction.
 - `packages/workspace/src/document/materializer/markdown/materializer.ts` ; `workspace` subject, `perTable` presence both selects and configures, keyed by table name.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

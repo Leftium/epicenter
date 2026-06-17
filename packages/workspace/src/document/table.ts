@@ -1,8 +1,7 @@
 /**
  * Table definition types and the `createTable` / `createReadonlyTable`
  * builders. `createWorkspace` (in `./workspace.ts`) consumes these to mount
- * tables onto a workspace root, applying encryption when a keyring is
- * provided.
+ * tables onto a workspace root.
  *
  * This file also keeps `attachTable` as an internal helper used by
  * package-local benchmarks and the create-table test. It is intentionally
@@ -15,6 +14,7 @@
  * type contains only the user's columns.
  */
 
+import type { InstantString } from '@epicenter/field';
 import { type Static, type TObject, type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
@@ -151,51 +151,19 @@ export const TableNewerWriterError = defineErrors({
 export type TableNewerWriterError = InferErrors<typeof TableNewerWriterError>;
 
 // ════════════════════════════════════════════════════════════════════════════
-// TABLE UNREADABLE ERROR
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * An encrypted entry present in storage that this binary holds no usable key
- * for: a key rotation that left this device behind, a missing key version, or
- * a corrupt ciphertext.
- *
- * Unlike the other read errors there is no row to parse and no raw value to
- * carry: the bytes never decrypted. It carries `id` and a human-readable
- * `reason` (for example `keyVersion=3 not in keyring [1, 2]`). Not repairable
- * here (the user needs the key), and `set()` refuses to clobber it for the
- * same reason it refuses a {@link TableNewerWriterError}.
- *
- * Surfaced in `scan().unreadable`, built from the `unreadable` reads in the
- * store's `reads()` enumeration.
- */
-export const TableUnreadableError = defineErrors({
-	/** A stored encrypted entry that did not decrypt under the active keyring. */
-	UnreadableRow: ({ id, reason }: { id: string; reason: string }) => ({
-		message: `Row '${id}' is encrypted with a key this device does not have: ${reason}`,
-		id,
-		reason,
-	}),
-});
-export type TableUnreadableError = InferErrors<typeof TableUnreadableError>;
-
-// ════════════════════════════════════════════════════════════════════════════
 // TABLE READ ERROR
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Every reason a read cannot resolve a stored entry to a conforming row: a
- * parse failure this binary should understand ({@link TableParseError}), a row
- * a newer binary owns ({@link TableNewerWriterError}), or an encrypted entry
- * this binary holds no usable key for ({@link TableUnreadableError}).
+ * parse failure this binary should understand ({@link TableParseError}) or a
+ * row a newer binary owns ({@link TableNewerWriterError}).
  *
- * Surfaced by `get()` and `update()`. These are exactly the three non-row
+ * Surfaced by `get()` and `update()`. These are exactly the two non-row
  * states `scan()` buckets; a point read fails with whichever one applies to
  * the requested id, while "absent" stays a non-error `Ok(null)`.
  */
-export type TableReadError =
-	| TableParseError
-	| TableNewerWriterError
-	| TableUnreadableError;
+export type TableReadError = TableParseError | TableNewerWriterError;
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE WRITE ERROR
@@ -206,16 +174,13 @@ export type TableReadError =
  *
  * Surfaced by `set()`. Whole-row writes stamp this binary's latest `_v` and
  * always win local LWW (the monotonic clock guarantees a fresh timestamp), so
- * a stale or keyless binary writing over a row it cannot read would silently
- * destroy data on every synced device. The guard refuses instead, for the two
- * states where the stored row exists but this binary cannot understand it:
- * a newer schema version ({@link TableNewerWriterError}) or an encrypted blob
- * with no usable key ({@link TableUnreadableError}).
+ * a stale binary writing over a newer-owned row would silently destroy data on
+ * every synced node. The guard refuses rows stamped by a newer schema
+ * version ({@link TableNewerWriterError}).
  *
  * `bulkSet()` and `clear()` report the same refusals as
  * `{ refused: TableWriteError[] }` rather than an error: partial success is
- * their expected outcome, not a failure of the operation. Carrying the full
- * error (version or reason) lets an import banner say what it skipped and why.
+ * their expected outcome, not a failure of the operation.
  */
 export const TableWriteError = defineErrors({
 	/** The stored row's `_v` exceeds this binary's latest known version. */
@@ -233,12 +198,6 @@ export const TableWriteError = defineErrors({
 		storedVersion,
 		latestVersion,
 	}),
-	/** The stored row is an encrypted blob this binary holds no usable key for. */
-	UnreadableRefusal: ({ id, reason }: { id: string; reason: string }) => ({
-		message: `Row '${id}' is encrypted with a key this device does not have, so it cannot be overwritten: ${reason}`,
-		id,
-		reason,
-	}),
 });
 export type TableWriteError = InferErrors<typeof TableWriteError>;
 
@@ -248,11 +207,11 @@ export type TableWriteError = InferErrors<typeof TableWriteError>;
 
 /**
  * The result of a single classified table read: every stored entry resolved
- * into exactly one of four mutually exclusive, collectively exhaustive states.
+ * into exactly one of three mutually exclusive, collectively exhaustive states.
  * The bucket lengths sum to `storedCount()`, so no read can silently drop data.
  *
  * - `rows`: entries that parse and validate to the latest schema. The payload
- *   almost every caller wants, with the three issue buckets riding along in the
+ *   almost every caller wants, with the issue buckets riding along in the
  *   same return value instead of being silently skipped.
  * - `nonconforming`: entries this binary should understand but cannot parse
  *   (failed validation, failed migration, or a corrupt `_v` stamp at or below
@@ -261,8 +220,6 @@ export type TableWriteError = InferErrors<typeof TableWriteError>;
  * - `newerWriter`: entries stamped by a schema version above this binary's
  *   latest, classified as {@link TableNewerWriterError}. Not repairable here;
  *   the user needs an app update, and `set()` refuses them.
- * - `unreadable`: encrypted entries this binary holds no usable key for,
- *   classified as {@link TableUnreadableError}. No row exists to parse.
  */
 export type TableScan<TRow> = {
 	/** Entries that parse and validate to the latest schema. */
@@ -271,8 +228,6 @@ export type TableScan<TRow> = {
 	nonconforming: TableParseError[];
 	/** Entries stamped by a newer schema version than this binary knows. */
 	newerWriter: TableNewerWriterError[];
-	/** Encrypted entries this binary holds no usable key for. */
-	unreadable: TableUnreadableError[];
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -372,13 +327,93 @@ export type MigrateInput<
  * `defineTable(v1, v2, ...).migrate(fn)` (multi-version).
  *
  * For per-row content (rich text, long-form body), keep the row lean (ids and
- * metadata) and derive the content-doc guid in app code. Browser runtimes can
- * pair the table with a `createDisposableCache(builder)` keyed by row id; daemon
- * projections can open one content doc for one row and destroy it after reading.
- * The table schema does not declare or store body docs.
+ * metadata) and declare child docs with `.docs({ body: attachLayout })`.
+ * The table schema never stores body docs; `defineWorkspace(...).connect(connection)`
+ * derives each content-doc guid from the workspace id, table name, row id, and
+ * child-doc field.
  */
+/**
+ * A child-doc's CRDT shape: a pure function of a `Y.Doc` that owns a
+ * collaborative body's layout and writer policy (e.g. `attachRichText`,
+ * `attachPlainText`). Carries no connection, so the declaration is isomorphic;
+ * `defineWorkspace(...).connect(connection)` marries it to a connection at runtime.
+ */
+export type ChildDocLayout = (ydoc: Y.Doc) => object;
+
+/**
+ * The row's `InstantString` columns, by name: every non-`id` column whose value
+ * (ignoring `null`) is an {@link InstantString}. The valid targets for `touch`.
+ *
+ * Admits `updatedAt: InstantString` and nullable `deletedAt: InstantString | null`;
+ * excludes a `DateTimeString` column (a different brand: user-authored, not a
+ * machine instant) and any non-time column. Collapses to `never` for a table
+ * with no instant column, so `touch` simply isn't offered there.
+ */
+type InstantColumnKey<TRow extends BaseRow> = {
+	[K in keyof Omit<TRow, 'id'>]-?: NonNullable<TRow[K]> extends InstantString
+		? K
+		: never;
+}[keyof Omit<TRow, 'id'>] &
+	string;
+
+/**
+ * One stored child-doc declaration: a bare {@link ChildDocLayout} (no per-field
+ * policy), or a layout paired with optional policy. The object form is the
+ * single extension point for future per-field concerns (e.g. debounce, a
+ * per-field `gcTime`); adding a key never breaks the bare form.
+ *
+ * `touch` names a row column to stamp with `InstantString.now()` on a LOCAL edit
+ * to the body doc (Yjs `tx.local`), never on synced or hydrated updates, so body
+ * edits bump recency without a custom observer in every table. It is stored as a
+ * plain column-name `string`: the `InstantString`-column constraint is enforced
+ * at the `.docs(...)` call site (see {@link ChildDocDeclarationInput}, where the
+ * row type is still in scope) and then widened to `string` for storage, so the
+ * row type never has to thread through {@link TableDefinition}.
+ */
+export type ChildDocDeclaration =
+	| ChildDocLayout
+	| {
+			layout: ChildDocLayout;
+			touch?: string;
+	  };
+
+/**
+ * A map of stored child-doc declarations, keyed by field name. The field name
+ * becomes the guid's `field` segment, so each row owns one derived child doc per
+ * declared name (1:1). Declared on a table via {@link DeclarableTableDefinition.docs}.
+ */
+export type ChildDocDeclarations = Record<string, ChildDocDeclaration>;
+
+/**
+ * The row-typed input form of {@link ChildDocDeclaration}, accepted only by the
+ * {@link DeclarableTableDefinition.docs} builder. `touch` is constrained to the
+ * row's {@link InstantColumnKey} here, where the row type is still in scope; the
+ * stored declaration widens it to `string`. A bare layout still works for bodies
+ * that need no policy.
+ */
+type ChildDocDeclarationInput<TRow extends BaseRow> =
+	| ChildDocLayout
+	| {
+			layout: ChildDocLayout;
+			touch?: InstantColumnKey<TRow>;
+	  };
+
+/** A map of row-typed child-doc declaration inputs, keyed by field name. */
+type ChildDocDeclarationsInput<TRow extends BaseRow> = Record<
+	string,
+	ChildDocDeclarationInput<TRow>
+>;
+
+/** Extract the {@link ChildDocLayout} from either declaration form. */
+export type LayoutOf<TDeclaration> = TDeclaration extends ChildDocLayout
+	? TDeclaration
+	: TDeclaration extends { layout: infer TLayout extends ChildDocLayout }
+		? TLayout
+		: never;
+
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+	TChildDocs extends ChildDocDeclarations = {},
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
@@ -403,6 +438,79 @@ export type TableDefinition<
 	schema: TObject<LastVersion<TVersions>>;
 	/** Upgrade any stored version to the current row in one step. */
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
+	/**
+	 * Child-doc declarations on this table, keyed by field name. `{}` unless
+	 * {@link DeclarableTableDefinition.docs} was called. Read by
+	 * `defineWorkspace(...).connect(connection)`
+	 * to wire one guid-keyed cache per declared body; never carries a connection
+	 * itself, since the declaration is isomorphic.
+	 */
+	docDecls: TChildDocs;
+};
+
+/**
+ * A fresh {@link TableDefinition} that has not yet declared its child docs and
+ * so still carries the one-shot {@link DeclarableTableDefinition.docs}
+ * builder. Returned by `defineTable(...)` (and by `.migrate(...)` on a
+ * multi-version table).
+ *
+ * Composed UPWARD from the base: a plain `TableDefinition` (the post-declaration
+ * shape every downstream consumer holds) intersected with the `docs`
+ * method. `docs` returns the base `TableDefinition`, which has no such
+ * method, so a second call is a compile error rather than a silent overwrite.
+ * Declaring child docs is therefore call-once by construction; there is no
+ * `Omit` stripping the method back off.
+ */
+export type DeclarableTableDefinition<
+	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+> = TableDefinition<TVersions, {}> & {
+	/**
+	 * Declare collaborative child-doc bodies on this table. Each row owns one
+	 * child doc per name (derived-1:1), addressed by a guid derived from the row
+	 * id, so nothing is stored in a cell and the body cascades when the row is
+	 * deleted (the derived guid simply stops being reachable).
+	 *
+	 * The runtime surfaces these under a dedicated `.docs` namespace on the table
+	 * handle (`workspace.tables.notes.docs.content.open(rowId)`), so field names
+	 * live one level below the table's CRUD methods and can never collide with
+	 * them. Any field name is safe, including `set` or `open`.
+	 *
+	 * Call AFTER {@link TableDefinition.migrate} on multi-version tables: the
+	 * version tuple is positional, so child docs are a separate builder step, not
+	 * another version.
+	 *
+	 * Declaring is call-once: the result is a plain {@link TableDefinition} with
+	 * no `docs` method, so you cannot re-declare and accidentally discard the
+	 * original layout or `touch`. Declare every child doc for a table in one
+	 * call, co-located with the table definition, and push per-field policy into
+	 * that authoritative declaration.
+	 *
+	 * Pass a bare layout for a body with no per-field policy, or
+	 * `{ layout, touch }` to also bump a recency column when the body is edited
+	 * locally. `touch` is constrained to the row's `InstantString` columns and is
+	 * stamped with `InstantString.now()` on local edits (see
+	 * {@link ChildDocDeclaration}):
+	 *
+	 * ```ts
+	 * defineTable({
+	 *   id: field.string(),
+	 *   title: field.string(),
+	 *   updatedAt: field.instant(),
+	 * }).docs({
+	 *   content: {
+	 *     layout: attachRichText,
+	 *     touch: 'updatedAt',
+	 *   },
+	 *   // a bare layout still works for bodies that need no policy:
+	 *   // transcript: attachChatTranscript,
+	 * });
+	 * ```
+	 */
+	docs<
+		TDecls extends ChildDocDeclarationsInput<
+			RowOf<LastVersion<TVersions>> & BaseRow
+		>,
+	>(decls: TDecls): TableDefinition<TVersions, TDecls>;
 };
 
 /**
@@ -422,7 +530,7 @@ export type InferTableRow<T> =
 export type TableDefinitions = Record<
 	string,
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
-	TableDefinition<any>
+	TableDefinition<any, any>
 >;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -430,9 +538,10 @@ export type TableDefinitions = Record<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Build a `TableDefinition` from a list of versions and the migrate function.
- * Called by `defineTable`; exposed for future codegen / encryption helpers
- * that need to assemble a definition directly.
+ * Assemble a {@link DeclarableTableDefinition} from resolved versions and a
+ * migrate function: the runtime core of {@link defineTable}, kept beside the
+ * definition types it builds. `defineTable` (a sibling module) is the only
+ * caller, which is the sole reason this is exported rather than module-private.
  *
  * @internal
  */
@@ -441,12 +550,31 @@ export function createTableDefinition<
 >(
 	versions: TVersions,
 	migrate: (input: unknown) => RowOf<LastVersion<TVersions>>,
-): TableDefinition<TVersions> {
+): DeclarableTableDefinition<TVersions> {
 	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
-	return {
+	const schema = Type.Object(latestColumns);
+	const migrateFn = migrate as TableDefinition<TVersions>['migrate'];
+
+	/**
+	 * Build the immutable base definition for a given declaration. The base
+	 * carries no `docs` method, so `docs(...)` below returns something
+	 * that cannot declare again; versions, schema, and migrate are fixed.
+	 */
+	const buildBase = <TDecls extends ChildDocDeclarations>(
+		docDecls: TDecls,
+	): TableDefinition<TVersions, TDecls> => ({
 		versions,
-		schema: Type.Object(latestColumns),
-		migrate: migrate as TableDefinition<TVersions>['migrate'],
+		schema,
+		migrate: migrateFn,
+		docDecls,
+	});
+
+	// Layer the one-shot builder onto a fresh, undeclared base. `docs`
+	// returns a bare base, so a second call is a compile error and is impossible
+	// at runtime too (the returned object has no such method).
+	return {
+		...buildBase({}),
+		docs: (decls) => buildBase(decls),
 	};
 }
 
@@ -487,8 +615,8 @@ export type ReadonlyTable<
 	get(id: string): Result<TRow | null, TableReadError>;
 	/**
 	 * The one O(n) classified read: walk every stored entry, resolve each into
-	 * one of four buckets, and return them grouped. `scan().rows` is the conforming
-	 * payload; the three issue buckets ride along so no read silently drops data.
+	 * one of three buckets, and return them grouped. `scan().rows` is the conforming
+	 * payload; the issue buckets ride along so no read silently drops data.
 	 * Pull-based; recompute on the `observe()` signal. See {@link TableScan}.
 	 */
 	scan(): TableScan<TRow>;
@@ -504,13 +632,13 @@ export type ReadonlyTable<
 	): () => void;
 	/**
 	 * Number of observer-confirmed stored entries. O(1). Counts every stored
-	 * entry across all four read states: conforming rows, nonconforming rows
-	 * that `scan().rows` excludes, newer-writer rows, and (on encrypted stores)
-	 * undecryptable entries. May lag writes made inside an open transaction.
-	 * Because it counts all four states, it reconciles exactly:
+	 * entry across all three read states: conforming rows, nonconforming rows
+	 * that `scan().rows` excludes, and newer-writer rows. May lag writes made
+	 * inside an open transaction. Because it counts all three states, it
+	 * reconciles exactly:
 	 * `storedCount() === scan.rows.length + scan.nonconforming.length +
-	 * scan.newerWriter.length + scan.unreadable.length`. For an "N items" badge
-	 * next to a list, use `scan().rows.length` instead.
+	 * scan.newerWriter.length`. For an "N items" badge next to a list, use
+	 * `scan().rows.length` instead.
 	 */
 	storedCount(): number;
 	has(id: string): boolean;
@@ -523,18 +651,16 @@ export type Table<
 	/**
 	 * Whole-row write. Stamps this binary's latest `_v` and replaces the
 	 * stored row. Refuses with `NewerWriterRefusal` when the stored row was
-	 * stamped by a newer schema version than this binary knows, and with
-	 * `UnreadableRefusal` when the stored row is an encrypted blob this binary
-	 * holds no key for; in both cases the stored row is left untouched (the
-	 * write would clobber a row this binary cannot read).
+	 * stamped by a newer schema version than this binary knows; the stored row
+	 * is left untouched because the write would clobber a row this binary cannot
+	 * read.
 	 */
 	set(row: TRow): Result<void, TableWriteError>;
 	/**
 	 * Chunked whole-row import. Rows whose stored slot this binary cannot read
-	 * (a newer schema version or an undecryptable blob) are skipped per chunk at
-	 * write time and reported in `refused` as `TableWriteError`; everything else
-	 * is written. `onProgress` percent runs over the input length, including
-	 * refused rows.
+	 * because of a newer schema version are skipped per chunk at write time and
+	 * reported in `refused` as `TableWriteError`; everything else is written.
+	 * `onProgress` percent runs over the input length, including refused rows.
 	 */
 	bulkSet(
 		rows: TRow[],
@@ -561,10 +687,9 @@ export type Table<
 	): Promise<void>;
 	/**
 	 * Delete every row this binary can claim to understand. Rows it cannot read,
-	 * a newer schema version or an undecryptable blob, are skipped and reported
-	 * in `refused`: `clear()` is bulk-blind, and a stale or keyless binary must
-	 * not mass-destroy rows it cannot read. Use `delete(id)` to remove a
-	 * specific such row.
+	 * currently newer schema versions, are skipped and reported in `refused`:
+	 * `clear()` is bulk-blind, and a stale binary must not mass-destroy rows it
+	 * cannot read. Use `delete(id)` to remove a specific such row.
 	 */
 	clear(): { refused: TableWriteError[] };
 };
@@ -659,10 +784,7 @@ export function createReadonlyTable<
 	 * Classifies the failure where the version set is in scope: a whole-number
 	 * `_v` strictly above the latest known version is a
 	 * {@link TableNewerWriterError} (this binary is stale); everything else this
-	 * binary should understand but cannot is a {@link TableParseError}. It never produces a
-	 * {@link TableUnreadableError}: that state comes from the store (a row that
-	 * never decrypted), not from parsing a decrypted value, so the parse walk's
-	 * error is the narrower union that `scan()` switches over exhaustively.
+	 * binary should understand but cannot is a {@link TableParseError}.
 	 */
 	function parseRow(
 		id: string,
@@ -713,43 +835,18 @@ export function createReadonlyTable<
 		schema: definition.schema,
 
 		get(id: string): Result<TRow | null, TableReadError> {
-			// One classified read resolves all three outcomes: a present value to
-			// parse, a truly-absent slot (Ok(null)), or an entry this binary could
-			// not decrypt (UnreadableRow). No probe-then-read: a readable get pays a
-			// single decrypt, and "absent" never masquerades as "unreadable."
-			const read = ykv.read(id);
-			switch (read.state) {
-				case 'present':
-					return parseRow(id, read.val);
-				case 'absent':
-					return Ok(null);
-				case 'unreadable':
-					return TableUnreadableError.UnreadableRow({
-						id,
-						reason: read.reason,
-					});
-			}
+			const val = ykv.get(id);
+			return val === undefined ? Ok(null) : parseRow(id, val);
 		},
 
 		scan(): TableScan<TRow> {
 			const rows: TRow[] = [];
 			const nonconforming: TableParseError[] = [];
 			const newerWriter: TableNewerWriterError[] = [];
-			const unreadable: TableUnreadableError[] = [];
-			// One pass over the store's classified reads. Each stored entry lands in
-			// exactly one of the four buckets, so the four-bucket sum equals
-			// storedCount() by construction: an `unreadable` read never decrypted
-			// and goes straight to that bucket; a `present` read is parsed and its
-			// outcome routes the other three. No second pass, no second decrypt.
-			for (const [key, read] of ykv.reads()) {
-				if (read.state === 'unreadable') {
-					unreadable.push(
-						TableUnreadableError.UnreadableRow({ id: key, reason: read.reason })
-							.error,
-					);
-					continue;
-				}
-				const { data, error } = parseRow(key, read.val);
+			// One pass over the stored entries. Each entry lands in exactly one of
+			// the three buckets, so the bucket sum equals storedCount().
+			for (const { key, val } of ykv.entries()) {
+				const { data, error } = parseRow(key, val);
 				if (!error) {
 					rows.push(data);
 					continue;
@@ -768,13 +865,12 @@ export function createReadonlyTable<
 						error satisfies never;
 				}
 			}
-			return { rows, nonconforming, newerWriter, unreadable };
+			return { rows, nonconforming, newerWriter };
 		},
 
 		findValid(predicate: (row: TRow) => boolean): TRow | undefined {
-			for (const [key, read] of ykv.reads()) {
-				if (read.state !== 'present') continue;
-				const { data, error } = parseRow(key, read.val);
+			for (const { key, val } of ykv.entries()) {
+				const { data, error } = parseRow(key, val);
 				if (!error && predicate(data)) return data;
 			}
 			return undefined;
@@ -826,9 +922,8 @@ export function createTable<
 	 * rule with the read path via {@link isNewerWriterStamp}, so the write guard
 	 * and `scan()` agree on what is repairable.
 	 *
-	 * This covers only the newer-writer half of the guard. The undecryptable
-	 * half is the `unreadable` state of the store's `read()`, handled directly
-	 * in {@link writeRefusal}; this helper only ever sees a present value.
+	 * This is the write guard's single rule, shared by `set()`, `bulkSet()`, and
+	 * `clear()`.
 	 */
 	const newerStoredVersion = (val: unknown): number | undefined => {
 		if (typeof val !== 'object' || val === null) return undefined;
@@ -839,33 +934,19 @@ export function createTable<
 	/**
 	 * The reason a whole-row write over `id` must be refused, or `undefined`
 	 * when the slot is safe to overwrite (absent, conforming, or a repairable
-	 * nonconforming row). Refuses the two states whose stored row exists but
-	 * this binary cannot read: a newer-stamped row (`NewerWriterRefusal`) and an
-	 * undecryptable blob (`UnreadableRefusal`).
-	 *
-	 * One classified read decides it: `absent` is safe, `unreadable` refuses with
-	 * the decrypt reason, and a `present` value is checked for a newer `_v`. No
-	 * probe-then-read reorder; a write over a readable slot pays a single decrypt.
+	 * nonconforming row). Refuses a newer-stamped row (`NewerWriterRefusal`).
 	 */
 	const writeRefusal = (id: string): TableWriteError | undefined => {
-		const read = ykv.read(id);
-		switch (read.state) {
-			case 'absent':
-				return undefined;
-			case 'unreadable':
-				return TableWriteError.UnreadableRefusal({ id, reason: read.reason })
-					.error;
-			case 'present': {
-				const storedVersion = newerStoredVersion(read.val);
-				return storedVersion !== undefined
-					? TableWriteError.NewerWriterRefusal({
-							id,
-							storedVersion,
-							latestVersion,
-						}).error
-					: undefined;
-			}
-		}
+		const val = ykv.get(id);
+		if (val === undefined) return undefined;
+		const storedVersion = newerStoredVersion(val);
+		return storedVersion !== undefined
+			? TableWriteError.NewerWriterRefusal({
+					id,
+					storedVersion,
+					latestVersion,
+				}).error
+			: undefined;
 	};
 
 	return {
@@ -893,8 +974,8 @@ export function createTable<
 			for (let i = 0; i < total; i += chunkSize) {
 				const chunk = rows.slice(i, i + chunkSize);
 				// Guard per chunk at write time, not once up front: the awaited
-				// yield below lets a remote sync land a newer-stamped or newly
-				// unreadable row for a later chunk's id mid-import.
+				// yield below lets a remote sync land a newer-stamped row for a
+				// later chunk's id mid-import.
 				const writable: TRow[] = [];
 				for (const row of chunk) {
 					const refusal = writeRefusal(row.id);
@@ -967,19 +1048,10 @@ export function createTable<
 		clear(): { refused: TableWriteError[] } {
 			const refused: TableWriteError[] = [];
 			const toDelete: string[] = [];
-			// One pass over every stored entry: an undecryptable read is refused
-			// (a keyless binary must not mass-destroy rows it cannot read), a
-			// newer-stamped present read is refused, everything else is deletable.
-			// Walking reads() means no stored entry is silently left behind.
-			for (const [key, read] of ykv.reads()) {
-				if (read.state === 'unreadable') {
-					refused.push(
-						TableWriteError.UnreadableRefusal({ id: key, reason: read.reason })
-							.error,
-					);
-					continue;
-				}
-				const storedVersion = newerStoredVersion(read.val);
+			// One pass over every stored entry: newer-stamped rows are refused,
+			// everything else is deletable.
+			for (const { key, val } of ykv.entries()) {
+				const storedVersion = newerStoredVersion(val);
 				if (storedVersion !== undefined) {
 					refused.push(
 						TableWriteError.NewerWriterRefusal({

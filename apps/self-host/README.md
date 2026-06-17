@@ -18,7 +18,7 @@ Community-supported. Issues filed against this folder are accepted as community 
 
 ## Trust boundary
 
-The deployer owns `ENCRYPTION_SECRETS`. Epicenter never sees it and therefore literally cannot decrypt workspace data hosted on your deployment. Self-hosted = functionally zero-knowledge against Epicenter.
+The deployer operates the infrastructure. Epicenter never holds or sees the data stored here, so self-hosting is functionally zero-knowledge against Epicenter.
 
 ## What to fill in
 
@@ -32,7 +32,6 @@ wrangler.jsonc
 
 wrangler secret put ...
   BETTER_AUTH_SECRET       openssl rand -base64 32
-  ENCRYPTION_SECRETS       "1:$(openssl rand -base64 32)"  (versioned)
   GOOGLE_CLIENT_SECRET     your Google OAuth client secret
   OPENAI_API_KEY           optional house key; omit and members BYOK
   GEMINI_API_KEY           optional house key; omit and members BYOK

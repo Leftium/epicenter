@@ -3,7 +3,6 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { SettingSelect, SettingSwitch } from '$lib/components/settings';
-	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/always-on-top';
 	import { report } from '$lib/report';
 	import { autostartKeys } from '$lib/tauri/autostart-keys';
 	import { tauri } from '#platform/tauri';
@@ -176,12 +175,6 @@
 						disableAutostartMutation.isPending}
 				/>
 			</Field.Field>
-			<SettingSelect
-				store={settings}
-				key="ui.alwaysOnTop"
-				label="Always On Top"
-				items={ALWAYS_ON_TOP_MODE_OPTIONS}
-			/>
 		{/if}
 	</Field.Group>
 </Field.Set>

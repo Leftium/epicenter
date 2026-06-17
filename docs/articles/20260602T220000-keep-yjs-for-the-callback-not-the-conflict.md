@@ -64,7 +64,7 @@ So the entire wiring, both for my own edits and for a sync coming in from my pho
 doc.on('update', () => materialize(workspace));
 ```
 
-The materializer hangs off that and re-renders the files for whatever changed. It does not care if the change came from `epicenter run fuji.update` on this machine or from the relay catching me up after a flight. Same callback, same code path.
+The materializer hangs off that and re-renders the files for whatever changed. It does not care if the change came from `epicenter run entries_update` on this machine or from the relay catching me up after a flight. Same callback, same code path.
 
 SQLite has no `doc.on('update')`. To get the same behavior you build a change feed, and you end up with two code paths: the local write path, and the "a sync update arrived, apply it to the rows, now also fire the materializer" path. You keep them consistent by hand. The DO can emit on its own writes, since it is the choke point, but the moment a second device's write lands you are rebuilding the notify-and-rematerialize half yourself. Yjs collapses both halves into one observable.
 

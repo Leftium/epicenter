@@ -138,8 +138,8 @@
 			{:else if currentPlanDisplayName}
 				Currently on {currentPlanDisplayName}.
 			{/if}
-			All plans include cloud sync, unlimited workspaces, unlimited history, and
-			encryption.
+			All plans include cloud sync, unlimited workspaces, and unlimited
+			history.
 		</p>
 	{/if}
 </section>

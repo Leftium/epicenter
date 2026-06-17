@@ -61,46 +61,56 @@
 	] as const;
 
 	const workspaceCode = `import { createSqliteIndex, attachYjsFileSystem, filesTable } from '@epicenter/filesystem';
-import { attachIndexedDb, createWorkspace } from '@epicenter/workspace';
+import { attachTimeline, defineWorkspace } from '@epicenter/workspace';
 
-export function openOpensidianBrowser() {
-  const workspace = createWorkspace({
-    id: 'opensidian',
-    tables: { files: filesTable },
-    kv: {},
-  });
-  const idb = attachIndexedDb(workspace.ydoc);
-  const fileContent = {
-    read: (fileId) => readFileContent(fileId),
-    write: (fileId, text) => writeFileContent(fileId, text),
-    append: (fileId, text) => appendFileContent(fileId, text),
-  };
-  const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
-  const sqliteIndex = createSqliteIndex({ readContent: fileContent.read, index: fs.index })({
-    tables: workspace.tables,
-  });
+const opensidianWorkspace = defineWorkspace({
+  id: 'opensidian',
+  name: 'opensidian',
+  tables: { files: filesTable.docs({ content: attachTimeline }) },
+  kv: {},
+});
 
-  return { ...workspace, idb, sqliteIndex, fs };
+export function openOpensidianBrowser(connection) {
+  return opensidianWorkspace.connect(connection, (workspace) => {
+    const fileContent = {
+      read: async (fileId) => {
+        using handle = workspace.tables.files.docs.content.open(fileId);
+        await handle.whenLoaded;
+        return handle.read();
+      },
+      write: async (fileId, text) => {
+        using handle = workspace.tables.files.docs.content.open(fileId);
+        await handle.whenLoaded;
+        handle.write(text);
+      },
+      append: async (fileId, text) => {
+        using handle = workspace.tables.files.docs.content.open(fileId);
+        await handle.whenLoaded;
+        handle.appendText(text);
+        return handle.read();
+      },
+    };
+    const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
+    const sqliteIndex = createSqliteIndex({ readContent: fileContent.read, index: fs.index })({
+      tables: workspace.tables,
+    });
+
+    return { sqliteIndex: sqliteIndex.exports, fs };
+  });
 }`;
 
 	const codeAnnotations = [
 		{
 			id: 'open-opensidian',
-			line: 'export function openOpensidianBrowser() { ... }',
+			line: 'export function openOpensidianBrowser(connection) { ... }',
 			explanation:
-				'A browser factory: builds the workspace bundle and composes browser attachments inline. The signed-in session owns the live workspace, so tests, codegen, and tooling can still build a fresh one without UI state.',
+				'A browser factory: opens the workspace definition with the signed-in connection, then composes browser-only filesystem and search services.',
 		},
 		{
-			id: 'create-workspace',
-			line: "createWorkspace({ id: 'opensidian', tables: { files: filesTable }, kv: {} })",
+			id: 'define-workspace',
+			line: "defineWorkspace({ id: 'opensidian', tables: { files: filesTable.docs(...) }, kv: {} })",
 			explanation:
-				'Builds the workspace bundle in one call: a Y.Doc, the typed `files` table, and an empty KV slot. The bundle owns the Y.Doc lifecycle, so disposing the bundle (via Symbol.dispose) tears every store down.',
-		},
-		{
-			id: 'indexeddb',
-			line: 'attachIndexedDb(workspace.ydoc)',
-			explanation:
-				"Attaches IndexedDB to the workspace's Y.Doc. Every update is written to the browser's local storage automatically.",
+				'Declares the durable workspace shape: a root doc, the typed `files` table, and one synced `content` child doc per file row.',
 		},
 		{
 			id: 'filesystem',

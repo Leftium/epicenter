@@ -39,16 +39,16 @@ test('a modifier-only hold is contained by any chord that adds to it', () => {
 });
 
 test('the shipped defaults do not overlap each other', () => {
-	const ptt: BindingLike = { modifiers: ['fn'], keys: [] };
-	const toggle: BindingLike = { modifiers: ['meta', 'shift'], keys: ['space'] };
+	// Only two gestures ship bound by default: push-to-talk and cancel. Toggle
+	// ships unbound (the in-app record button is its home), so it cannot collide.
+	const pushToTalk: BindingLike = { modifiers: ['fn'], keys: [] };
 	const cancel: BindingLike = { modifiers: ['meta'], keys: ['dot'] };
-	expect(bindingsOverlap(ptt, toggle)).toBe(false);
-	expect(bindingsOverlap(ptt, cancel)).toBe(false);
-	expect(bindingsOverlap(toggle, cancel)).toBe(false);
+	expect(bindingsOverlap(pushToTalk, cancel)).toBe(false);
 });
 
 test('sibling chords sharing a modifier but differing in key do not overlap', () => {
-	// Ctrl+Shift+Space and Ctrl+Shift+. (Windows toggle vs cancel).
+	// Two Ctrl+Shift chords differing only in their final key (e.g. a user-bound
+	// Ctrl+Shift+Space vs the Windows Ctrl+Shift+. cancel default).
 	expect(
 		bindingsOverlap(
 			{ modifiers: ['ctrl', 'shift'], keys: ['space'] },

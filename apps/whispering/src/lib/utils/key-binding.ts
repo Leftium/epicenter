@@ -108,8 +108,8 @@ function isContainedBy(subset: BindingLike, superset: BindingLike): boolean {
  * The rdev matcher fires on exact set equality with no prefix resolution, so an
  * overlapping pair is unusable: the shorter gesture fires first and shadows the
  * longer. The recorder refuses to save a gesture that overlaps another, which is
- * why a key bound to one gesture (such as push-to-talk's Fn) cannot appear in
- * any other.
+ * why a key bound to one gesture (such as the recording key's Fn) cannot appear
+ * in any other.
  */
 export function bindingsOverlap(a: BindingLike, b: BindingLike): boolean {
 	return isContainedBy(a, b) || isContainedBy(b, a);

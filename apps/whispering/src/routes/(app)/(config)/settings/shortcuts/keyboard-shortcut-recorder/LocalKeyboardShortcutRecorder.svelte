@@ -1,13 +1,14 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
-	import type { Command } from '$lib/commands';
+	import { type Command, commands } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { report } from '$lib/report';
-	import { localShortcuts } from '$lib/operations/shortcuts';
+	import { localShortcuts } from '$lib/services/local-shortcut-manager';
 	import {
 		arrayToShortcutString,
 		type CommandId,
+		shortcutStringToArray,
 	} from '$lib/services/local-shortcut-manager';
 	import { settings } from '$lib/state/settings.svelte';
 	import { os } from '#platform/os';
@@ -31,10 +32,41 @@
 		shortcutValue ? getShortcutDisplayLabel(shortcutValue) : null,
 	);
 
+	// The other command whose in-app binding is the same key set as `next`, if
+	// any. The keydown matcher fires every command whose set matches, so two
+	// commands sharing a set would both trigger. Refuse the collision at write
+	// time, the way the global recorder refuses an overlapping rdev gesture.
+	function conflictingCommand(
+		next: KeyboardEventSupportedKey[],
+	): Command | null {
+		const nextKey = [...next].sort().join('+');
+		for (const other of commands) {
+			if (other.id === command.id) continue;
+			const otherValue = settings.get(`shortcut.${other.id}`);
+			if (!otherValue) continue;
+			if (shortcutStringToArray(otherValue).sort().join('+') === nextKey) {
+				return other;
+			}
+		}
+		return null;
+	}
+
 	// svelte-ignore state_referenced_locally -- pressedKeys is the stable recorder handle for this mounted shortcut table.
 	const keyRecorder = createKeyRecorder({
 		pressedKeys,
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
+			const conflict = conflictingCommand(keyCombination);
+			if (conflict) {
+				report.error({
+					title: 'That shortcut is already in use',
+					description: `Those keys already trigger "${conflict.title}". Pick a different combination.`,
+					cause: {
+						name: 'DuplicateLocalShortcut',
+						message: `${getShortcutDisplayLabel(arrayToShortcutString(keyCombination))} is bound to "${conflict.title}".`,
+					},
+				});
+				return;
+			}
 			const { error: unregisterError } = await localShortcuts.unregisterCommand({
 				commandId: command.id as CommandId,
 			});

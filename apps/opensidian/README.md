@@ -1,6 +1,6 @@
 # Opensidian
 
-Opensidian is a local-first note-taking app with a built-in bash terminal, end-to-end encryption, and real-time sync. Your notes live in a CRDT-backed virtual filesystem that a shell can write to just as easily as the editor can. Try it at [opensidian.com](https://opensidian.com).
+Opensidian is a local-first note-taking app with a built-in bash terminal and real-time sync. Your notes live in a CRDT-backed virtual filesystem that a shell can write to just as easily as the editor can. Try it at [opensidian.com](https://opensidian.com).
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
 
@@ -14,7 +14,7 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT 
 ├──────────────────────────────────────────────────────────┤
 │  @epicenter/filesystem (POSIX ops, file tree, soft del)  │
 ├──────────────────────────────────────────────────────────┤
-│  @epicenter/workspace (Yjs CRDTs, versioned tables, E2E) │
+│  @epicenter/workspace (Yjs CRDTs, versioned tables)      │
 ├──────────────────────────────────────────────────────────┤
 │  Extensions: IndexedDB, WebSocket sync, SQLite FTS,      │
 │  markdown materializer                                   │
@@ -53,11 +53,11 @@ The editor is CodeMirror 6 with a Yjs binding via `y-codemirror.next`. Undo and 
 
 Internal links use `[[` autocomplete: typing `[[` opens a file picker, and selecting a file inserts `[File Name](id:GUID)`. The link stores the file's ID rather than its path, so renaming or moving the target doesn't break it. Links render as clickable decorations in the editor and navigate to the target file on click.
 
-### Sync and encryption
+### Sync
 
 Sync uses the Yjs protocol (STEP1/STEP2/UPDATE messages) over WebSocket, with exponential backoff and jitter on reconnect. A BroadcastChannel handles tab-to-tab sync within the same browser without going through the server. The server side runs on Cloudflare Durable Objects with a SQLite update log and auto-compaction.
 
-Encryption is XChaCha20-Poly1305. Keys are derived with HKDF-SHA256 in a two-level hierarchy: a user key derives a workspace key, and the workspace key encrypts the data. The sync server receives only ciphertext, so it can relay updates without being able to read them. Keys are loaded on login and cleared from memory by the sign-out reload. IndexedDB is owner-scoped and is only deleted by the explicit "Forget this device" action.
+The relay reads plaintext: it runs Yjs and applies your updates, which is what makes server-side search and AI possible. Epicenter Cloud holds your data inside its trust boundary; self-host the sync server and the only machine holding it is yours. IndexedDB is owner-scoped and is only deleted by the explicit "Forget this device" action.
 
 ### Search
 
@@ -103,7 +103,7 @@ same-origin and the cookie-backed client can replace local bearer storage.
 - [Better Auth](https://better-auth.com): authentication
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Cloudflare Workers + Durable Objects](https://developers.cloudflare.com/durable-objects/): sync server
-- `@epicenter/workspace`: CRDT-backed tables, versioning, E2E encryption
+- `@epicenter/workspace`: CRDT-backed tables, versioning, sync
 - `@epicenter/filesystem`: POSIX filesystem layer over Yjs
 
 ---

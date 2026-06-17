@@ -152,10 +152,10 @@ Pick the trust model you want.
 | Whispering with local Whisper C++ | Audio stays on your device when you use local Whisper C++. Transcripts and settings are stored locally by the desktop app. |
 | Whispering with a cloud transcription provider | Audio goes from your device to the provider you choose. Epicenter servers are not in that transcription path. |
 | Whispering transformations | Transcript text goes to the LLM provider you choose when you enable that step. |
-| Hosted Epicenter API or sync | Encrypted workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
+| Hosted Epicenter API or sync | Workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
 | Self-hosted deployable | You control the server, secrets, deployment, and infrastructure boundary. |
 
-Signed-in workspace sync sends encrypted CRDT values over Yjs. Hosted Epicenter manages keys for you; self-hosting keeps key management in infrastructure you control. See the [encryption design](docs/encryption.md) for the full trust model.
+Signed-in workspace sync sends your Yjs updates to a trusted relay that reads them in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/encryption.md) for the details, including where this is heading with the anchor.
 
 The detailed privacy notes for Whispering live in [apps/whispering](apps/whispering).
 
@@ -205,7 +205,7 @@ apps/self-host
   no hosted billing surface
 ```
 
-[Full architecture walkthrough](docs/architecture.md) | [Encryption design](docs/encryption.md)
+[Full architecture walkthrough](docs/architecture.md) | [Trust model](docs/encryption.md)
 
 ## Development
 

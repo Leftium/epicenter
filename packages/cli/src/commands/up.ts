@@ -73,29 +73,32 @@ type UpOptions = {
  * Handle returned by {@link runUp}. The daemon body is exposed as a
  * standalone async function (no `process.exit`) so unit tests can drive
  * startup, exercise the IPC handler in-process, and call `teardown()` to
- * release resources without spawning a child.
+ * release resources without spawning a child. Inactive handles exist only so
+ * tests and the command handler can report the reason and release the startup
+ * lease; they are not running daemons.
  *
- * - `mounts` is the started mount runtime (zero or one); the daemon serves it
- *   and routes IPC requests by mount name.
- * - `inactive` is the mount if it returned `inactive(reason)` instead of a
- *   runtime (typically a signed-out, keyring-backed mount). It is not served.
- * - `metadata` is what was written to disk.
+ * - `opened` is the single configured mount, either served (`started`) or
+ *   reported (`inactive`) when it declined to run.
+ * - `metadata` is the daemon metadata for this startup; it is written only
+ *   when the mount actually starts and binds a socket.
  * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
  *   lease, and unlinks metadata + socket. Idempotent.
  */
 type UpHandle = {
-	mounts: StartedMount[];
-	inactive: InactiveMount[];
+	opened:
+		| { status: 'started'; entry: StartedMount }
+		| { status: 'inactive'; entry: InactiveMount };
 	metadata: DaemonMetadata;
 	teardown: () => Promise<void>;
 };
 
 /**
  * Daemon body. Opens the configured mount (the root must already have an
- * `epicenter.config.ts`; see `epicenter init`), binds the IPC socket, and
- * returns a handle. The yargs `handler` calls this,
- * prints the operator-facing banner, installs SIGINT/SIGTERM, and parks the
- * process; tests call it directly and assert on the returned handle.
+ * `epicenter.config.ts`; see `epicenter init`), binds the IPC socket for an
+ * active mount, and returns a handle. The yargs `handler` calls this, prints
+ * the operator-facing banner, installs SIGINT/SIGTERM, and parks the process
+ * only when the mount started; tests call it directly and assert on the
+ * returned handle.
  *
  * A SQLite daemon lease serializes startup before the mount opens. After that,
  * `openEpicenterRoot` imports `epicenter.config.ts`, claims the Epicenter
@@ -152,30 +155,31 @@ export async function runUp(
 	const startResult = await openEpicenterRoot({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const opened = startResult.data;
-	const mounts = opened.status === 'started' ? [opened.entry] : [];
-	const inactive = opened.status === 'inactive' ? [opened.entry] : [];
-	stack.defer(async () => {
-		await Promise.allSettled(
-			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
-		);
-	});
 
-	const serverResult = await startDaemonServer({ lease, mounts });
-	if (serverResult.error) return serverResult;
-	const daemonServer = serverResult.data;
-	stack.defer(() => daemonServer.close());
+	if (opened.status === 'started') {
+		const started = opened.entry;
+		stack.defer(async () => {
+			await started.runtime[Symbol.asyncDispose]();
+		});
 
-	const metadataResult = trySync({
-		try: () => writeMetadata(epicenterRoot, metadata),
-		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
-	});
-	if (metadataResult.error) return metadataResult;
-	stack.defer(() => unlinkMetadata(epicenterRoot));
+		const serverResult = await startDaemonServer({ lease, mount: started });
+		if (serverResult.error) return serverResult;
+		const daemonServer = serverResult.data;
+		stack.defer(() => daemonServer.close());
+	}
+
+	if (opened.status === 'started') {
+		const metadataResult = trySync({
+			try: () => writeMetadata(epicenterRoot, metadata),
+			catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
+		});
+		if (metadataResult.error) return metadataResult;
+		stack.defer(() => unlinkMetadata(epicenterRoot));
+	}
 
 	const teardownStack = stack.move();
 	return Ok({
-		mounts,
-		inactive,
+		opened,
 		metadata,
 		teardown: () => teardownStack.disposeAsync(),
 	});
@@ -183,9 +187,9 @@ export async function runUp(
 
 /**
  * Yargs `daemon up` command. Thin glue: parses argv, calls {@link runUp}, prints
- * the operator-facing banner + initial peers snapshot, wires SIGINT/SIGTERM,
- * subscribes to presence/status across every loaded mount, and parks
- * until a signal triggers teardown.
+ * the operator-facing banner + initial peers snapshot, exits after reporting
+ * inactive mounts, or wires SIGINT/SIGTERM and parks until a signal triggers
+ * teardown for active mounts.
  */
 export const upCommand = cmd({
 	command: 'up',
@@ -212,13 +216,14 @@ export const upCommand = cmd({
 			process.exit(1);
 		}
 
-		const mountNames = handle.mounts.map((entry) => entry.mount).join(', ');
-		logSyncStatus(`online (mounts=[${mountNames}])`);
-		for (const declined of handle.inactive) {
+		if (handle.opened.status === 'inactive') {
+			const declined = handle.opened.entry;
 			logSyncStatus(`${declined.mount}: inactive (${declined.reason})`);
-		}
-
-		for (const entry of handle.mounts) {
+			await handle.teardown();
+			return;
+		} else {
+			const entry = handle.opened.entry;
+			logSyncStatus(`online (${entry.mount})`);
 			printPeersSnapshot(entry);
 			subscribePeers(entry, options.quiet);
 			subscribeSyncStatus(entry);
@@ -241,13 +246,13 @@ export const upCommand = cmd({
 function printPeersSnapshot(entry: StartedMount): void {
 	const collaboration = entry.runtime.collaboration;
 	if (!collaboration) return;
-	const devices = collaboration.devices.list();
-	if (devices.length === 0) {
+	const peers = collaboration.peers.list();
+	if (peers.length === 0) {
 		process.stderr.write(`${entry.mount}: no peers connected\n`);
 		return;
 	}
-	for (const device of devices) {
-		process.stderr.write(`${entry.mount}: peer ${device.deviceId}\n`);
+	for (const peer of peers) {
+		process.stderr.write(`${entry.mount}: peer ${peer.nodeId}\n`);
 	}
 }
 
@@ -255,21 +260,21 @@ function subscribePeers(entry: StartedMount, quiet: boolean): void {
 	const collaboration = entry.runtime.collaboration;
 	if (!collaboration) return;
 	const snapshot = () =>
-		new Set(collaboration.devices.list().map((device) => device.deviceId));
+		new Set(collaboration.peers.list().map((peer) => peer.nodeId));
 	let prev = snapshot();
-	collaboration.devices.subscribe(() => {
+	collaboration.peers.subscribe(() => {
 		const next = snapshot();
-		for (const deviceId of next) {
-			if (!prev.has(deviceId)) {
+		for (const nodeId of next) {
+			if (!prev.has(nodeId)) {
 				if (!quiet) {
-					process.stderr.write(`${entry.mount}: ${deviceId} joined\n`);
+					process.stderr.write(`${entry.mount}: ${nodeId} joined\n`);
 				}
 			}
 		}
-		for (const deviceId of prev) {
-			if (!next.has(deviceId)) {
+		for (const nodeId of prev) {
+			if (!next.has(nodeId)) {
 				if (!quiet) {
-					process.stderr.write(`${entry.mount}: ${deviceId} left\n`);
+					process.stderr.write(`${entry.mount}: ${nodeId} left\n`);
 				}
 			}
 		}

@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 import { createWorkspace } from '@epicenter/workspace';
 import { asFileId, generateFileId } from '../ids.js';
 import { filesTable } from '../table.js';
@@ -417,7 +418,8 @@ describe('attachFileTree', () => {
 			tree.touch(id, 100);
 			const row = tree.getRow(id, '/file.txt');
 			expect(row.size).toBe(100);
-			expect(row.updatedAt).toBeGreaterThanOrEqual(before);
+			// Fixed-width UTC instants compare chronologically as strings.
+			expect(row.updatedAt >= before).toBe(true);
 		});
 	});
 
@@ -440,7 +442,7 @@ describe('attachFileTree', () => {
 			ydoc.destroy();
 
 			// Mutate the underlying table directly.
-			const now = Date.now();
+			const now = InstantString.now();
 			files.set({
 				id: generateFileId(),
 				name: 'after.txt',
@@ -469,7 +471,7 @@ describe('attachFileTree', () => {
 			const specificTime = new Date('2025-06-15T12:00:00Z');
 			tree.setMtime(id, specificTime);
 			const row = tree.getRow(id, '/file.txt');
-			expect(row.updatedAt).toBe(specificTime.getTime());
+			expect(row.updatedAt).toBe(InstantString.fromDate(specificTime));
 		});
 	});
 });

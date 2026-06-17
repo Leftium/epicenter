@@ -8,6 +8,10 @@
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
+		"#platform/commands": {
+			"tauri": "./src/lib/commands.tauri.ts",
+			"default": "./src/lib/commands.browser.ts"
+		},
 		"#platform/analytics": {
 			"tauri": "./src/lib/services/analytics/index.tauri.ts",
 			"default": "./src/lib/services/analytics/index.browser.ts"
@@ -27,6 +31,10 @@
 		"#platform/os": {
 			"tauri": "./src/lib/platform/os.tauri.ts",
 			"default": "./src/lib/platform/os.browser.ts"
+		},
+		"#platform/shortcuts": {
+			"tauri": "./src/lib/platform/shortcuts.tauri.ts",
+			"default": "./src/lib/platform/shortcuts.browser.ts"
 		},
 		"#platform/recorder": {
 			"tauri": "./src/lib/services/recorder/index.tauri.ts",
@@ -92,6 +100,7 @@
 		"typescript": "catalog:",
 		"vite": "catalog:",
 		"vite-plugin-devtools-json": "^1.0.0",
+		"vite-plugin-static-copy": "^4.1.1",
 		"wrangler": "catalog:"
 	},
 	"type": "module",
@@ -130,6 +139,7 @@
 		"dexie": "^4.0.11",
 		"dompurify": "^3.4.10",
 		"elevenlabs": "^1.59.0",
+		"fflate": "catalog:",
 		"groq-sdk": "^0.25.0",
 		"idb": "^8.0.3",
 		"js-yaml": "^4.1.1",

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fromKv, fromTable } from '@epicenter/svelte';
+	import { InstantString } from '@epicenter/workspace';
 	import {
 		type Conversation,
 		type ConversationId,
@@ -25,8 +26,8 @@
 	 * before Svelte necessarily re-materializes the derived `conversations` list.
 	 */
 	function readSortedConversations(): Conversation[] {
-		return [...conversationsMap.values()].sort(
-			(a, b) => b.updatedAt - a.updatedAt,
+		return [...conversationsMap.values()].sort((a, b) =>
+			a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
 		);
 	}
 
@@ -41,7 +42,7 @@
 	 */
 	function createConversationRow(): ConversationId {
 		const id = generateConversationId();
-		const timestamp = Date.now();
+		const timestamp = InstantString.now();
 		zhongwen.tables.conversations.set({
 			id,
 			title: 'New Chat',

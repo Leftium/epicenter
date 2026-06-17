@@ -1,19 +1,20 @@
 /**
- * createTable: CRUD, query, observation, and migration over EncryptedYKeyValueLww.
+ * createTable: CRUD, query, observation, and migration over YKeyValueLww.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import * as Y from 'yjs';
-import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineTable } from './define-table.js';
 import { createReadonlyTable, createTable } from './table.js';
+import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue/index.js';
 
 /** Creates Yjs infrastructure for testing */
 function setup() {
 	const ydoc = new Y.Doc();
-	const ykv = createEncryptedYkvLww<unknown>(ydoc, 'test-table');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
+	const ykv = new YKeyValueLww<unknown>(yarray);
 	return { ydoc, yarray: ykv.yarray, ykv };
 }
 
@@ -132,11 +133,10 @@ describe('createTable', () => {
 			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid: name type
 			yarray.push([{ key: '3', val: { id: '3', _v: 1 }, ts: 0 }]); // invalid: missing name
 
-			const { rows, nonconforming, newerWriter, unreadable } = helper.scan();
+			const { rows, nonconforming, newerWriter } = helper.scan();
 			expect(rows).toEqual([{ id: '1', name: 'Valid' }]);
 			expect(nonconforming.map((r) => r.id).sort()).toEqual(['2', '3']);
 			expect(newerWriter).toEqual([]);
-			expect(unreadable).toEqual([]);
 		});
 	});
 

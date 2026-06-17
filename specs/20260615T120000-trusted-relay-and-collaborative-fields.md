@@ -72,6 +72,21 @@ A blind relay cannot follow a child id stored in a parent doc (it can't read the
 
 Audit of `createEncryptedYkvLww` (`packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`): it encrypts cell *values* at the CRDT boundary (`set` encrypts into the Y.Array, `get`/observer decrypts). It does NOT provide transport encryption (that is TLS on the WebSocket, a separate layer) and does NOT provide conflict resolution (that is the inner `YKeyValueLww`, which stays). Deleting the wrapper loses only: at-rest value encryption (server-blindness), the keyring, and the "unreadable cell" failure class. The bare `YKeyValueLww` is already a drop-in (`workspace.ts:193-196`).
 
+### Finding 5: the home anchor path works as topology, not encryption
+
+Throwaway spike: `/Users/braden/Code/epicenter-anchor-experiment` (local only, not monorepo product code).
+
+What passed on 2026-06-15:
+
+- A MacBook on phone hotspot synced a `yrs` document to a Mac Studio home anchor over Iroh 1.0.
+- The Studio anchor persisted the CRDT state across restart and kept a stable peer identity via `anchor.key`.
+- A JS/Yjs client produced update bytes that Rust/yrs accepted and carried to the anchor.
+- A live JS/Yjs runtime used a Rust sidecar over stdio JSON lines; Rust owned Iroh, JS kept app/Yjs semantics, and the anchor persisted both live JS edits after restart.
+
+**Key finding**: self-custody does not require restoring value-level CRDT encryption. It requires changing who operates the always-on trusted peer. The home anchor can be that peer.
+
+**Implication**: "cloudless" should be treated as a deployment topology, not a separate data model. The same Yjs document model and child-doc runtime can sync to Epicenter Cloud, a self-hosted Worker, or a home anchor. The product fork is transport, pairing, and custody UX, not table/schema semantics.
+
 ### Encryption matrix (what each layer protects, after this change)
 
 | Layer | Provider | Status after change |
@@ -104,17 +119,18 @@ This is **not** the deleted `defineDocument` contract: no handle brand, no `Docu
 The common single-body case (Fuji, Honeycrisp, Opensidian, Skills) still wants the body declared on the row so the workspace owns guid derivation, lazy open via `session.childDocs`, disposal, and **structural delete-cascade** (a bare id-keyed factory cannot give the cascade). But the declaration is a child-doc axis, distinct from the `field.*` cell palette:
 
 ```ts
-// ILLUSTRATIVE — surface is Open Question 1, not settled.
-entries: defineTable(
-  { title: field.string() },                 // cells: materialize to SQLite
-  { body: childDoc(attachRichText),          // child docs: separate axis, cascade on row delete
-    code: childDoc(attachPlainText) },
-)
+// Resolved (Open Question 1): a `.childDocs({ name: layout })` builder method,
+// chained after the columns (and after `.migrate()` for a multi-version table).
+entries: defineTable({ title: field.string() })   // cells: materialize to SQLite
+  .childDocs({
+    body: attachRichText,                          // child docs: separate axis, derived guid
+    code: attachPlainText,                         // orphaned on row delete, reclaimed by the sweep
+  })
 
 using body = ws.entries.open(id).body;       // lazily opens via session.childDocs, returns the layout handle
 ```
 
-`childDoc(layout)` derives the guid from `(workspaceId, collection, rowId, name)` (derived mode) and binds the cascade. Zhongwen's conversation is the *same* mechanism with a custom layout (`attachChatTranscript`); whether it stays a hand-wired call or becomes a `childDoc(attachChatTranscript)` declaration is Open Question 3.
+`.childDocs({ name: layout })` derives each child guid from `(workspaceId, collection, rowId, name)` (derived mode); because the guid is a pure function of the row, deleting the row orphans the child with no bookkeeping and the offline sweep reclaims it. Zhongwen's conversation is the *same* mechanism with a custom layout (`attachChatTranscript`); whether it stays a hand-wired call or becomes a `.childDocs({ messages: attachChatTranscript })` declaration is Open Question 3.
 
 ### Refused
 
@@ -177,14 +193,15 @@ The custody fork and the keyring are the two largest subtractions. The keyring d
 | Lifecycle runtime | 2 coherence | `session.childDocs` over `createDisposableCache` | Cache already separates lifecycle from injected shape; binds the session connection |
 | Layout owns writer policy | 1 evidence | Yes | `chat-doc.ts:46` single-writer invariant must survive the abstraction |
 | At-rest encryption location | 3 taste | Infra (platform/KMS), not the wrapper | Server-held key makes the wrapper pure cost; infra at-rest is simpler and has no keyring |
-| Identity: derived vs stored id | Deferred | Support both | Derived fits Zhongwen 1:1; stored id (newly possible under trust) fits 1:N/nested; pick per declaration |
+| Identity: derived vs stored id | Resolved | Derived-only for now | Derived 1:1 makes the trusted sweep safe (row exists iff child referenced); stored-id 1:N deferred until a real case forces it |
 | Child-doc deletion | 3 taste | `delete()` drops the reference; offline server mark-and-sweep reclaims | Real-time CRDT cascade is the hard problem; trust lets the server GC offline (no races). Accept transient orphans (privacy not the moat) |
+| Native self-custody transport | 1 evidence | JS/Yjs app plus Rust/Iroh sidecar | Spike proved live JS update flow through a Rust sidecar to a home anchor with restart persistence; keep app semantics in TypeScript and native reachability in Rust |
 
 ## Branch action
 
 1. Preserve the stray working tree first: the 9 modified `packages/server/**` files are an uncommitted append-log experiment (matches the dangling `a841628ef`), on no branch. Commit them to `feat/zk-append-log-relay-wip` before anything, so the experiment is not lost.
 2. Clean this branch: `git restore packages/server/...` so `chore/skill-library-composition-audit` is skills-only again.
-3. Build forward from `main` (the smart relay already is main; there is nothing to "revert" as a commit). Re-add **`DELETE-room`** as a targeted patch against the smart-relay contract (the orphan-on-delete bug exists under trusted too).
+3. Build forward from `main` (the smart relay already is `main`; there is nothing to "revert" as a commit). `DELETE-room` lands in Phase 5 alongside the mark-and-sweep that consumes it, not as a standalone Phase 1 patch.
 
 ## Implementation Plan
 
@@ -193,10 +210,10 @@ The custody fork and the keyring are the two largest subtractions. The keyring d
 - [ ] **0.2** `git restore packages/server/...` on the skills branch.
 - [ ] **0.3** Branch `feat/trusted-relay-collab-docs` off `main`.
 
-### Phase 1: Confirm smart relay + DELETE-room
-- [ ] **1.1** Confirm client and server speak the same Yjs sync frames on `main` (no half-state).
-- [ ] **1.2** Re-add `DELETE-room` as a targeted patch against the smart-relay contract.
-- [ ] **1.3** Smoke each app against the relay.
+### Phase 1: Confirm smart relay
+- [x] **1.1** Confirm client and server speak the same Yjs sync frames on `main` (no half-state). VERIFIED 2026-06-15: the room contract on `main` is `sync` / `getDoc` / `handleUpgrade` (state-vector smart relay, `packages/server/src/room/contracts.ts`); the withdrawn append-log rewrite is not on `main`. No code needed.
+- [ ] **1.2** Smoke each app against the relay.
+- Note: `DELETE-room` moved to Phase 5. Its only consumer is the mark-and-sweep, so adding it here would ship a verb with no caller through Phases 2 to 4. Its value is as the sweep's deletion primitive, not a storage-cost win (orphan storage is negligible).
 
 ### Phase 2: Delete the encryption layer
 - [ ] **2.0** Migration (one-off, manual): a server-side admin script clears every existing room DO (`DELETE FROM updates` / `storage.deleteAll()`). Existing encrypted data is intentionally discarded (accepted). **Correctness caveat**: must run before the plaintext code reads those rooms, or the plaintext reader ingests old ciphertext as Yjs updates (corruption). Client local stores wipe by bumping the IndexedDB DB name (old encrypted DBs orphaned; optional one-time delete). This is the same sweep that later reclaims orphaned child docs (see Child-doc deletion).
@@ -222,6 +239,13 @@ The custody fork and the keyring are the two largest subtractions. The keyring d
 - [ ] **5.2** Server mark-and-sweep: read parents, compute referenced child guids, delete unreferenced child DOs. Runnable as the same admin script that clears old encrypted data (2.0).
 - [ ] **5.3** (Optional) client load-time prune of local IDB docs with no parent reference.
 
+### Phase 6: Cloudless anchor track (separate from child-doc delivery)
+- [ ] **6.1** Promote the Iroh sidecar spike into a real transport prototype that speaks `@epicenter/sync` frames, not the spike's demo text doc.
+- [ ] **6.2** Multiplex rooms over one sidecar process: `{ roomId, update }` in, `{ roomId, update }` out, with connection-status events.
+- [ ] **6.3** Define pairing: how a device learns and trusts the home anchor's Iroh peer id, how revocation works, and where the stable device identity lives.
+- [ ] **6.4** Define custody UX: Epicenter Cloud anchor, self-hosted Worker, or home anchor are choices of trusted peer, not different document formats.
+- [ ] **6.5** Defer browser-direct networking. Browsers remain relay-bound leaves unless they run inside a native shell or speak to a local sidecar.
+
 ## Edge Cases
 
 ### Child doc whose row is deleted while open by two surfaces
@@ -241,13 +265,15 @@ The custody fork and the keyring are the two largest subtractions. The keyring d
 
 ## Open Questions
 
-1. **`childDoc(layout)` declaration surface.**
-   - Options: (a) second positional arg to `defineTable` parallel to cells, (b) a `childDocs:` block on the table, (c) no declaration — derived convention + manual open everywhere.
-   - **Recommendation**: (a) or (b) so cascade + lazy open are owned by the table; leave the exact shape to the implementer. Keep it OUT of `field.*`.
+1. **`childDoc(layout)` declaration surface. RESOLVED (2026-06-15).**
+   - Resolution: a `.childDocs({ name: layout })` builder method on `TableDefinition`, chained after `.migrate()`. Coupled to the table (the workspace supplies the collection key structurally, so no collection string is hand-typed), derived-only, never versioned. A flat `name -> layout` map of the current shape.
+   - Why not a positional arg (option a): `defineTable`'s positional slots are already the version tuple (`defineTable(v1, v2)` means v1 + v2 columns), so a second positional arg is indistinguishable from declaring a v2 column set. The illustrative `defineTable({cells}, {childDocs})` shown earlier in this spec is therefore unbuildable as written.
+   - Why outside the version tuple: `.migrate(fn)` operates on the row value (cells that materialize to SQLite) and structurally cannot rewrite a separate child Y.Doc. So a version bump never migrates child docs: add a child in a later version and old rows open it empty, remove one and the orphan is swept. Incompatible layout changes are migrate-on-read inside the layout, not a row migration.
+   - Refused: option (a) positional; option (b) as a separate `childDocs:` block was folded into the builder method. The stored-id 1:N mode and any top-level child-doc abstraction are also refused for now (see Question 2).
 
-2. **Identity: derived guid vs stored id.**
-   - Derived (row + name): 1:1, stores nothing, invisible to SQL. Stored id (`field.string()`/`field.json()`): 1:N, relocatable, nestable, queryable in SQL.
-   - **Recommendation**: support both, chosen per declaration. Zhongwen wants derived-1:1; an Opensidian-style nested workspace wants stored id. Do not pick one globally.
+2. **Identity: derived guid vs stored id. RESOLVED (2026-06-15): derived-only for now.**
+   - Ship derived-1:1 only: the guid is `docGuid({ workspaceId, collection, rowId, name })`, storing nothing. Derived is what makes the trusted offline sweep safe: the invariant "row exists if and only if its child is referenced" holds by construction, so `delete(id)` (drop the row) orphans the child with zero reference bookkeeping, and the sweep recomputes the referenced set and deletes the rest.
+   - Stored-id 1:N is deferred: there is no real or near-term consumer (the Opensidian-nesting case is hypothetical). It slots in additively when a real 1:N case forces it, via the top-level abstraction that derived-1:1 does not need.
 
 3. **Does Zhongwen's conversation become a declaration or stay manual?**
    - Options: (a) `childDoc(attachChatTranscript)` declaration like the others, (b) keep the hand-wired `zhongwenConversationDocGuid` + manual open.
@@ -265,11 +291,14 @@ The custody fork and the keyring are the two largest subtractions. The keyring d
 
 - Stored-id reconciliation (prune dangling child ids): folded into the server mark-and-sweep (Phase 5.2); the same pass that reclaims orphans also drops references to docs that never existed.
 - Derived summary cells (last-message preview materialized back to SQL): opportunistic; only if a list view needs it.
+- Cloudless home anchor: validated enough to keep as a product track, but not required for the trusted-relay / child-doc implementation. Keep it separate until the sidecar speaks the real `@epicenter/sync` protocol.
 
 ## Decisions Log
 
-- Keep both derived and stored-id identity modes: Zhongwen genuinely wants derived-1:1, nested workspaces genuinely want stored-id.
-  Revisit when: one mode goes unused across all apps after Phase 4.
+- `.childDocs()` declaration surface (Open Question 1): coupled, derived-only builder method chained after `.migrate()`, table-scoped, never versioned. Positional arg rejected (collides with the version tuple); stored-id and any top-level abstraction deferred until a real 1:N case.
+  Revisit when: a real 1:N, nested, or relocatable child-doc case appears.
+- DELETE-room: deferred from Phase 1 to Phase 5. It is the sweep's deletion primitive, not a standalone storage-cost win, so it ships with its only consumer.
+- Home-anchor sidecar: keep as the native self-custody transport direction. The spike proved reachability, JS/Yjs to Rust/yrs update compatibility, live sidecar update flow, and restart persistence. Revisit the bridge mechanism after room multiplexing; stdio is a test bridge, not a final product commitment.
 
 ## Success Criteria
 
@@ -279,6 +308,7 @@ The custody fork and the keyring are the two largest subtractions. The keyring d
 - [ ] Server-side AI (`doc-generation.ts`) works unchanged against the restored relay.
 - [ ] One `session.childDocs` runtime; per-app cache closures gone.
 - [ ] Bodies are `childDoc(attachRichText)` / `childDoc(attachPlainText)`; delete cascades with no orphaned IDB store or live room.
+- [ ] Home-anchor work stays protocol-compatible: no app schema, table materializer, or child-doc semantics move into Rust.
 - [ ] `field.*` palette unchanged; no `field.richText()` member; no `defineDocument` contract.
 - [ ] Zhongwen transcript runs on the shared runtime (declared or manual) and cascades on conversation delete.
 

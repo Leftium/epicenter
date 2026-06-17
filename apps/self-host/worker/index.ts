@@ -8,13 +8,12 @@
  *
  * This is a reference, not an Epicenter-operated product. Copy this folder,
  * fill in the deployment-owned secrets (Better Auth, OAuth provider keys,
- * AI provider keys, `ENCRYPTION_SECRETS`), provision your Cloudflare bindings
- * (Hyperdrive, R2, KV, Durable Objects), and deploy. Community-supported.
+ * AI provider keys), provision your Cloudflare bindings (Hyperdrive, R2, KV,
+ * Durable Objects), and deploy. Community-supported.
  *
- * Trust boundary: `ENCRYPTION_SECRETS` lives in the deployer's environment.
- * Epicenter never sees it, and therefore literally cannot decrypt workspace
- * data hosted on this deployment. Self-hosted is functionally zero-knowledge
- * against Epicenter.
+ * Trust boundary: the deployer operates the infrastructure. Epicenter never
+ * holds or sees the data stored here, so self-hosting is functionally
+ * zero-knowledge against Epicenter.
  */
 
 import {

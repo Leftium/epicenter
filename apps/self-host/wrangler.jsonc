@@ -19,21 +19,17 @@
 	},
 
 	// --- Deployment-owned secrets ---
-	// Set via `wrangler secret put`. ENCRYPTION_SECRETS controls the trust
-	// boundary: it lives only in this deployment's environment, so Epicenter
-	// cannot decrypt anything stored here. Self-hosted = functionally
-	// zero-knowledge against Epicenter.
+	// Set via `wrangler secret put`. Self-hosting is the trust boundary: this
+	// deployment runs on infrastructure you operate, so Epicenter never holds or
+	// sees the data stored here. Self-hosted = functionally zero-knowledge
+	// against Epicenter.
 	//
 	// AI provider house keys (OPENAI_API_KEY, GEMINI_API_KEY) are optional:
 	// `wrangler secret put` one to serve that provider to all members, or
 	// omit it and members bring their own key per request (BYOK). A house-key
 	// request for a missing key gets 503 ProviderNotConfigured.
 	"secrets": {
-		"required": [
-			"BETTER_AUTH_SECRET",
-			"ENCRYPTION_SECRETS",
-			"GOOGLE_CLIENT_SECRET"
-		]
+		"required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_SECRET"]
 	},
 
 	// --- KV: Session cache (Better Auth SecondaryStorage) ---

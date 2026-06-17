@@ -22,7 +22,6 @@ constants/
 ├── audio/                  # Recording settings: bitrate, sample-rate, modes, state icons (folder + barrel)
 ├── keyboard/               # Key vocabularies and types for browser keyboard events (folder + barrel)
 ├── icons/                  # Provider brand SVG assets
-├── always-on-top.ts        # Window always-on-top setting enum + options
 ├── inference.ts            # Text-completion provider/model registry
 ├── languages.ts            # Supported transcription languages
 ├── local-models.ts         # Local transcription model download catalogs (data only)
@@ -63,10 +62,10 @@ Barrels use **explicit** exports (not `export *`) so bundlers can analyze them:
 
 ```typescript
 // Good
-export { RECORDING_MODES, type RecordingMode } from './recording-modes';
+export { RECORDING_TRIGGERS, type RecordingTrigger } from './recording-triggers';
 
 // Avoid
-export * from './recording-modes';
+export * from './recording-triggers';
 ```
 
 ## Adding a Constant

@@ -1,15 +1,9 @@
 /**
  * `/api/session` sub-app.
  *
- * Returns the authenticated user, the `ownerId` the request resolves
- * through, and the per-owner workspace keyring. Clients cache the response
- * so workspace boot, local-storage keying, and Yjs decryption work offline.
- *
- * The keyring is derived from a per-owner HKDF label via the deployment's
- * root keyring (`ENCRYPTION_SECRETS`). The label IS the `ownerId`: personal
- * owners get a per-user keyring (`ownerId === userId`); every admitted user
- * on a shared-wiki deployment shares one keyring
- * (`ownerId === SHARED_OWNER_ID`).
+ * Returns the authenticated user and the `ownerId` the request resolves
+ * through. Clients cache the response so workspace boot and local-storage
+ * keying work offline.
  *
  * {@link mountSessionApp} wires cookie-or-bearer auth and the ownership
  * boundary so `c.var.user` and `c.var.ownerId` are populated before the
@@ -22,7 +16,6 @@ import type { ApiSessionResponse } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
-import { deriveKeyring } from '../auth/encryption.js';
 import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
 import type { OwnershipRule } from '../ownership.js';
@@ -36,11 +29,9 @@ const sessionApp = new Hono<Env>().get(
 	}),
 	async (c) => {
 		const ownerId = c.var.ownerId;
-		const keyring = await deriveKeyring(ownerId);
 		return c.json({
 			user: { id: c.var.user.id, email: c.var.user.email },
 			ownerId,
-			keyring,
 		} satisfies ApiSessionResponse);
 	},
 );

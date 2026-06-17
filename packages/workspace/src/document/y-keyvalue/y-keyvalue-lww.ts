@@ -11,7 +11,7 @@
  * | Scenario | Use `YKeyValue` | Use `YKeyValueLww` |
  * |----------|-----------------|-------------------|
  * | Real-time collab | Yes | Either |
- * | Offline-first, multi-device | No | Yes |
+ * | Offline-first, multi-node | No | Yes |
  * | Clock sync unreliable | Yes | No |
  * | Need "latest edit wins" | No | Yes |
  *
@@ -39,7 +39,7 @@
  * Uses a monotonic clock that guarantees:
  * - Local writes always have increasing timestamps (no same-millisecond collisions)
  * - Clock regression is handled (ignores backward jumps)
- * - Cross-device convergence by adopting higher timestamps from synced entries
+ * - Cross-node convergence by adopting higher timestamps from synced entries
  *
  * ```typescript
  * // Simplified logic:
@@ -49,7 +49,7 @@
  * ```
  *
  * Tracks the maximum timestamp from both local writes and remote synced entries.
- * Devices with slow clocks "catch up" after syncing, preventing their writes from
+ * Nodes with slow clocks "catch up" after syncing, preventing their writes from
  * losing to stale timestamps.
  *
  * ## Tiebreaker
@@ -60,7 +60,7 @@
  *
  * ## Storage Complexity
  *
- * With `gc:true` (the default), storage is `O(active data) + O(unique devices)`.
+ * With `gc:true` (the default), storage is `O(active data) + O(unique nodes)`.
  * Deleted entries, overwritten values, and edit history are garbage collected into
  * compact GC structs. A store with 20 active keys stays at roughly the same size
  * whether it was created yesterday or has processed 52,000 operations. The only
@@ -125,14 +125,14 @@
  * - `bulkSet`: 1000 (observer conflict resolution is the bottleneck)
  * - `bulkDelete`: 2500 (Yjs linked-list deletion is the bottleneck)
  *
- * The observer's conflict resolution logic is shared with multi-device sync. When
+ * The observer's conflict resolution logic is shared with multi-node sync. When
  * two clients set the same key while offline, the observer resolves that conflict
  * using the same entryIndexMap and DEDUP_ORIGIN path that `bulkSet` uses.
  *
  * ## Limitations
  *
- * - Future clock dominance: If a device's clock is far in the future, its writes dominate
- *   indefinitely. All devices adopt the highest timestamp seen, so writes won't catch up
+ * - Future clock dominance: If a node's clock is far in the future, its writes dominate
+ *   indefinitely. All nodes adopt the highest timestamp seen, so writes won't catch up
  *   until wall-clock reaches that point. Rare with NTP, but be aware in environments with
  *   unreliable time sync.
  * @example
@@ -151,7 +151,7 @@
 import type * as Y from 'yjs';
 import { lazy } from './lazy.js';
 import type {
-	KvRead,
+	KvEntry,
 	KvStoreChange,
 	KvStoreChangeHandler,
 	ObservableKvStore,
@@ -163,8 +163,8 @@ import type {
  * Field names are intentionally short (`val`, `ts`) to minimize serialized storage size -
  * these entries are persisted and synced.
  *
- * Storage-only type: `ts` is internal. The public `ObservableKvStore.reads()`
- * surfaces only `val` (wrapped in a `present` read), never `ts`.
+ * Storage-only type: `ts` is internal. The public `ObservableKvStore.entries()`
+ * surfaces only `key` and `val`.
  */
 export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
 
@@ -187,14 +187,14 @@ export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
  * ## What triggers conflicts
  *
  * 1. `bulkSet()`: pushes entries without deleting old ones, observer resolves
- * 2. Multi-device sync: two clients set the same key offline, observer resolves
+ * 2. Multi-node sync: two clients set the same key offline, observer resolves
  * 3. Constructor initial dedup: runs before observer is registered, doesn't need this
  *
  * Note: `set()` eagerly deletes via `deleteEntryByKey` so the observer sees no
  * conflicts. `delete()` and `bulkDelete()` only remove entries, so there are no conflicts.
  * DEDUP_ORIGIN is only relevant for the conflict-resolution path.
  *
- * Follows the same pattern as REENCRYPT_ORIGIN in the encrypted wrapper.
+ * Keeps the observer from re-processing its own cleanup transaction.
  */
 const DEDUP_ORIGIN = Symbol('dedup');
 
@@ -211,9 +211,9 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Read-only view of the in-memory index for O(1) key lookups.
 	 *
-	 * Written exclusively by the observer and constructor. External consumers
-	 * (e.g. the encrypted wrapper) read via iteration, `.get()`, and `.size`.
-	 * The `set()` method never writes to this map. The observer is the sole writer.
+	 * Written exclusively by the observer and constructor. External consumers read
+	 * via iteration, `.get()`, and `.size`. The `set()` method never writes to
+	 * this map. The observer is the sole writer.
 	 *
 	 * @see pending for how immediate reads work after `set()`
 	 */
@@ -294,12 +294,12 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Last timestamp used for monotonic clock.
 	 *
-	 * **Primary purpose**: Ensures rapid writes on the SAME device get sequential timestamps,
+	 * **Primary purpose**: Ensures rapid writes on the SAME node get sequential timestamps,
 	 * preventing same-millisecond collisions where two writes would get identical timestamps.
 	 *
 	 * Tracks the highest timestamp seen from BOTH local writes and remote synced entries.
 	 * This ensures:
-	 * 1. **Same-millisecond writes on same device**: Always get unique, sequential timestamps
+	 * 1. **Same-millisecond writes on same node**: Always get unique, sequential timestamps
 	 *    - Write at t=1000 → ts=1000
 	 *    - Write at t=1000 (same ms!) → ts=1001 (incremented)
 	 *    - Write at t=1000 (same ms!) → ts=1002 (incremented again)
@@ -307,11 +307,11 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * 2. **Clock regression**: If system clock goes backward (NTP adjustment), continue
 	 *    incrementing from lastTimestamp instead of going backward
 	 *
-	 * 3. **Self-healing from clock skew**: After syncing with devices that have faster clocks,
+	 * 3. **Self-healing from clock skew**: After syncing with nodes that have faster clocks,
 	 *    adopt their higher timestamps so future local writes win conflicts
-	 *    - Example: Device A's clock at 1000ms syncs entry from Device B with ts=5000ms
-	 *    - Device A's lastTimestamp becomes 5000, next write uses 5001 (not 1001)
-	 *    - Prevents Device A from writing "old" timestamps that would lose to Device B
+	 *    - Example: Node A's clock at 1000ms syncs entry from Node B with ts=5000ms
+	 *    - Node A's lastTimestamp becomes 5000, next write uses 5001 (not 1001)
+	 *    - Prevents Node A from writing "old" timestamps that would lose to Node B
 	 */
 	private lastTimestamp = 0;
 
@@ -362,7 +362,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 			// Track max timestamp for monotonic clock (including remote entries)
 			// This ensures our next local write will have a higher timestamp than
 			// any entry we've seen, preventing us from writing "old" timestamps
-			// that would lose conflicts to devices with faster clocks
+			// that would lose conflicts to nodes with faster clocks
 			if (entry.ts > this.lastTimestamp) this.lastTimestamp = entry.ts;
 		}
 
@@ -557,7 +557,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * Generate a monotonic timestamp for local writes.
 	 *
 	 * **Core guarantee**: Returns a timestamp that is ALWAYS strictly greater than the
-	 * previous one, ensuring sequential ordering of writes on this device.
+	 * previous one, ensuring sequential ordering of writes on this node.
 	 *
 	 * Handles three edge cases:
 	 * 1. **Same-millisecond writes** (primary use case):
@@ -571,7 +571,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *    instead of going backward (maintains monotonicity)
 	 *
 	 * 3. **Post-sync convergence**:
-	 *    After syncing entries with higher timestamps from other devices,
+	 *    After syncing entries with higher timestamps from other nodes,
 	 *    local writes continue from the highest timestamp seen (self-healing)
 	 *
 	 * Algorithm:
@@ -678,7 +678,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * which builds an `entryIndexMap` (Map<Entry, index>) from one `toArray()` call
 	 * and resolves each conflict with an O(1) Map lookup. Total: O(n).
 	 *
-	 * The observer's conflict resolution already exists for multi-device sync.
+	 * The observer's conflict resolution already exists for multi-node sync.
 	 * When two clients set the same key offline, `bulkSet` reuses that exact same path.
 	 *
 	 * ## When to use
@@ -721,8 +721,8 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * Removes from `pending` immediately and triggers Y.Array deletion.
 	 * The observer will update `map` when the deletion is processed.
-	 * Adds the key to `pendingDeletes` so that `read()`, `get()`, `has()`, and
-	 * `reads()` return correct results before the observer fires.
+	 * Adds the key to `pendingDeletes` so that `get()`, `has()`, and `entries()`
+	 * return correct results before the observer fires.
 	 */
 	delete(key: string): void {
 		// Remove from pending if present. If it was pending, the entry is in the
@@ -795,73 +795,56 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	}
 
 	/**
-	 * Resolve a key into `absent` or `present`. O(1) via in-memory Map.
+	 * Get value by key. O(1) via in-memory Map.
 	 *
-	 * A plaintext store has no encryption layer, so it never returns
-	 * `unreadable`: every stored entry yields its value. Checks `pendingDeletes`
-	 * first (a key deleted but not yet observed reads `absent`, even if a stale
-	 * write still sits in `pending`), then `pending` (values written by `set()`
-	 * but not yet processed by the observer), then `map` (the authoritative
-	 * cache). `get()` and `has()` derive from this.
+	 * Checks `pendingDeletes` first (a key deleted but not yet observed reads
+	 * absent, even if a stale write still sits in `pending`), then `pending`
+	 * (values written by `set()` but not yet processed by the observer), then
+	 * `map` (the authoritative cache).
 	 */
-	read(key: string): KvRead<T> {
+	get(key: string): T | undefined {
 		// Deleted but observer hasn't fired yet.
-		if (this.pendingDeletes.has(key)) return { state: 'absent' };
+		if (this.pendingDeletes.has(key)) return undefined;
 
 		// Written by set() but observer hasn't fired yet.
 		const pending = this.pending.get(key);
-		if (pending) return { state: 'present', val: pending.val };
+		if (pending) return pending.val;
 
 		const entry = this._map.get(key);
-		if (entry) return { state: 'present', val: entry.val };
-
-		return { state: 'absent' };
+		return entry?.val;
 	}
 
-	/** Get value by key. O(1). The `present` value of {@link read}, else `undefined`. */
-	get(key: string): T | undefined {
-		const read = this.read(key);
-		return read.state === 'present' ? read.val : undefined;
-	}
-
-	/**
-	 * Whether a key is stored. O(1). Raw existence: "not `absent`" per
-	 * {@link read}. Plaintext stores have no `unreadable` state, so this is
-	 * simply "present," and it agrees with `size`.
-	 */
+	/** Whether a key has a stored value. O(1). Equivalent to `get(key) !== undefined`. */
 	has(key: string): boolean {
-		return this.read(key).state !== 'absent';
+		return this.get(key) !== undefined;
 	}
 
 	/**
-	 * Walk every stored entry (both pending and confirmed), each `present`. A
-	 * plaintext store has no encryption layer, so it never yields `unreadable`;
-	 * the return type narrows to `present` only, which the encrypted wrapper
-	 * relies on when it composes over this store (every inner value is a value,
-	 * never a missing key). `pending` takes precedence over `map` for keys in
-	 * both, so reads inside an open transaction see just-written values.
+	 * Walk every stored entry (both pending and confirmed). `pending` takes
+	 * precedence over `map` for keys in both, so reads inside an open transaction
+	 * see just-written values.
 	 *
 	 * @example
 	 * ```typescript
-	 * for (const [key, read] of kv.reads()) {
-	 *   console.log(key, read.val);
+	 * for (const { key, val } of kv.entries()) {
+	 *   console.log(key, val);
 	 * }
 	 * ```
 	 */
-	*reads(): IterableIterator<[string, { state: 'present'; val: T }]> {
+	*entries(): IterableIterator<KvEntry<T>> {
 		// Track keys we've already yielded from pending
 		const yieldedKeys = new Set<string>();
 
 		// Yield pending entries first (they take precedence)
 		for (const [key, entry] of this.pending) {
 			yieldedKeys.add(key);
-			yield [key, { state: 'present', val: entry.val }];
+			yield { key, val: entry.val };
 		}
 
 		// Yield map entries that weren't in pending and aren't pending delete
 		for (const [key, entry] of this._map) {
 			if (!yieldedKeys.has(key) && !this.pendingDeletes.has(key)) {
-				yield [key, { state: 'present', val: entry.val }];
+				yield { key, val: entry.val };
 			}
 		}
 	}

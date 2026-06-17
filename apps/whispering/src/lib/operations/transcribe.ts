@@ -1,11 +1,10 @@
 import { InstantString } from '@epicenter/field';
-import { stat } from '@tauri-apps/plugin-fs';
 import {
 	type AnyTaggedError,
 	defineErrors,
 	extractErrorMessage,
 } from 'wellcrafted/error';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { tauri } from '#platform/tauri';
 import {
 	SUPPORTED_LANGUAGES,
@@ -20,8 +19,6 @@ import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/
 import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/groq';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
-import { resolveModelPath } from '$lib/services/transcription/local-model-folder';
-import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
 	type CloudProviderId,
 	isLocalProviderId,
@@ -34,6 +31,15 @@ import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 
+/**
+ * The error any transcription path can surface. Deliberately `AnyTaggedError`
+ * rather than the concrete provider-error union: every consumer (toast,
+ * failed-row tooltip, practice view, analytics) presents these by `.message`,
+ * and none discriminate on `.name`. The user-facing message is curated where
+ * the context lives, in each service's `defineErrors` constructors, so this
+ * boundary only needs to promise `{ name, message }`. Widening to the full
+ * union would add error variants no consumer reads.
+ */
 export type TranscriptionError = AnyTaggedError;
 
 const TranscriptionOperationError = defineErrors({
@@ -144,7 +150,7 @@ async function loadForCloudUpload(
  * point for transcription:
  *
  * - The cpal stop path saves the WAV via Rust and returns the id.
- * - The navigator / VAD / file-upload paths save the blob via the
+ * - The navigator / VAD / file import paths save the blob via the
  *   recordings blob store and pass the id here.
  *
  * Local transcription always goes through `transcribe_recording(id)`.
@@ -164,8 +170,8 @@ export async function transcribeAudio(
 
 	const transcriptionResult =
 		PROVIDERS[selectedService].location === 'local'
-			? await dispatchLocalTranscription(recordingId, selectedService)
-			: await dispatchUploadTranscription(recordingId, selectedService);
+			? await transcribeLocally(recordingId, selectedService)
+			: await transcribeViaUpload(recordingId, selectedService);
 
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
@@ -230,22 +236,29 @@ async function checkWhisperTruncation(
 	const modelConfig = WHISPER_MODELS.find((m) => m.file.filename === modelName);
 	if (!modelConfig) return Ok(undefined);
 
-	const { data: fileStats } = await tryAsync({
-		try: async () => stat(await resolveModelPath('whispercpp', modelName)),
-		catch: () => Ok(null),
-	});
-	if (!fileStats) return Ok(undefined);
+	// Rust resolves the entry through any link, stats it, and applies the 90%
+	// completeness rule against the catalog size we pass; an empty filename list
+	// means "the entry is itself the file" (Whisper). A missing/unstattable file
+	// passes through (Rust reports load errors itself).
+	const { data: statuses } = await commands.resolveModelFiles(
+		'whispercpp',
+		modelName,
+		[],
+		[modelConfig.sizeBytes],
+	);
+	const status = statuses?.[0];
+	if (!status || status.size == null) return Ok(undefined);
 
-	if (!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)) {
+	if (!status.complete) {
 		return TranscriptionOperationError.CorruptedModelFile({
-			actualSizeMb: Math.round(fileStats.size / 1000000),
+			actualSizeMb: Math.round(status.size / 1000000),
 			expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 		});
 	}
 	return Ok(undefined);
 }
 
-async function dispatchLocalTranscription(
+async function transcribeLocally(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
@@ -258,8 +271,8 @@ async function dispatchLocalTranscription(
 	}
 	const provider = PROVIDERS[selectedService];
 
-	// Rust owns model resolution and validation: it joins the configured name
-	// under its models directory and reports missing or invalid models with
+	// Rust owns model resolution and validation: it joins this model name under
+	// its models directory and reports missing or invalid models with
 	// user-facing messages. The FE keeps two checks Rust cannot make as well:
 	// "nothing selected yet" (instant, no IPC) and the catalog-size truncation
 	// check (the expected sizes live in the JS catalog).
@@ -276,13 +289,20 @@ async function dispatchLocalTranscription(
 		if (truncated.error) return truncated;
 	}
 
-	// Rust reads engine, modelName, language, prompt, and unloadPolicy from
-	// the ambient config pushed via `setTranscriptionConfig` in the layout
-	// effect. Anything that affects inference output is already there.
-	return commands.transcribeRecording(recordingId);
+	// Read-at-use: the per-call spec is built right here, where it is consumed,
+	// so there is no ambient config to go stale. `auto` language and an empty
+	// prompt map to null (the wire's "unset").
+	const language = settings.get('transcription.language');
+	const prompt = settings.get('transcription.prompt');
+	return commands.transcribeRecording(recordingId, {
+		engine: selectedService,
+		modelName,
+		language: language === 'auto' ? null : language,
+		initialPrompt: prompt || null,
+	});
 }
 
-async function dispatchUploadTranscription(
+async function transcribeViaUpload(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {

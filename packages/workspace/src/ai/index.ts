@@ -1,6 +1,7 @@
 export {
 	appendAssistantMessage,
 	appendUserMessage,
+	attachChatTranscript,
 	CHAT_DOC_ACTIVE_GENERATION_WINDOW_MS,
 	type ChatDocFinish,
 	type ChatDocMessage,

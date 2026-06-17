@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/lib/workspace/index.ts",
-		"./project": "./project.ts"
+		"./mount": "./src/lib/workspace/mount.ts"
 	},
 	"imports": {
 		"#platform/auth": {
@@ -52,7 +52,6 @@
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/encryption": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",

@@ -33,6 +33,12 @@ jobs:
       # prompts, and Historical-marked docs. See scripts/check-doc-paths.ts.
       - name: Check doc file references
         run: bun run check:doc-paths
+      # Rejects specs that declare a terminal status (a finished spec should be
+      # harvested into docs/adr/ and deleted, not left in the tree) and Proposed
+      # ADRs orphaned by a deleted spec. A backstop for the gate the agent also
+      # runs in spec-execution Phase 4. See scripts/check-doc-hygiene.ts.
+      - name: Check doc hygiene
+        run: bun run check:doc-hygiene
       # The Biome plugin at scripts/biome/c-json-errors.grit rejects ad-hoc
       # c.json({ ... }, 4xx/5xx) error literals as part of `bun run lint:check`
       # above; no separate step is needed. See

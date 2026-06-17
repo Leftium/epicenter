@@ -358,19 +358,8 @@
 
 	async function openRecordingsFolder() {
 		if (!tauri) return;
-
-		try {
-			const { openPath } = await import('@tauri-apps/plugin-opener');
-			await openPath(await PATHS.DB.RECORDINGS());
-		} catch (error) {
-			report.error({
-				title: 'Failed to open folder',
-				cause: {
-					name: 'OpenFolderFailed',
-					message: error instanceof Error ? error.message : 'Unknown error',
-				},
-			});
-		}
+		const { error } = await tauri.opener.openPath(await PATHS.DB.RECORDINGS());
+		if (error) report.error({ title: 'Failed to open folder', cause: error });
 	}
 </script>
 
@@ -406,15 +395,14 @@
 						disabled={transcribeRecordings.isPending}
 						onclick={() => {
 							const loading = report.loading({
-								title: 'Transcribing queries.recordings...',
+								title: 'Transcribing recordings...',
 								description: 'This may take a while.',
 							});
 							transcribeRecordings.mutate(
 								selectedRecordingRows.map(({ original }) => original),
 								{
 									onSuccess: ({ oks, errs }) => {
-										const isAllSuccessful = errs.length === 0;
-										if (isAllSuccessful) {
+										if (errs.length === 0) {
 											const count = oks.length;
 											loading.resolve({
 												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}!`,
@@ -422,33 +410,34 @@
 											});
 											return;
 										}
-										const isAllFailed = oks.length === 0;
-										if (isAllFailed) {
-											const count = errs.length;
+
+										// Per-recording errors already live on their rows:
+										// transcribeAndPersist marks each failed row and the row
+										// surfaces its message plus a retry. So the bulk toast only
+										// summarizes, and forwards the first real failure as the
+										// cause so More details stays a genuine provider error
+										// rather than a synthesized one. Dedupe the messages so a
+										// batch that failed the same way (every row missing the API
+										// key) reads as one line, not N copies.
+										const [firstFailure] = errs;
+										if (!firstFailure) return; // errs is non-empty here
+										const failureSummary = [
+											...new Set(errs.map(({ error }) => error.message)),
+										].join('\n');
+
+										if (oks.length === 0) {
 											loading.reject({
-												title: `Failed to transcribe ${count} recording${count === 1 ? '' : 's'}`,
-												description:
-													count === 1
-														? 'Your recording could not be transcribed.'
-														: 'None of your recordings could be transcribed.',
-												cause: {
-													name: 'BulkTranscriptionFailed',
-													message:
-														count === 1
-															? 'Your recording could not be transcribed.'
-															: 'None of your recordings could be transcribed.',
-												},
+												cause: firstFailure.error,
+												title: `Failed to transcribe ${errs.length} recording${errs.length === 1 ? '' : 's'}`,
+												description: failureSummary,
 											});
 											return;
 										}
-										// Mixed results
+
 										loading.reject({
+											cause: firstFailure.error,
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
-											description: `${oks.length} succeeded, ${errs.length} failed.`,
-											cause: {
-												name: 'BulkTranscriptionPartiallyFailed',
-												message: `${oks.length} succeeded, ${errs.length} failed.`,
-											},
+											description: `${oks.length} succeeded, ${errs.length} failed:\n${failureSummary}`,
 										});
 									},
 								},

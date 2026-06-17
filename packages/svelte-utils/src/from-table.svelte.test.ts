@@ -4,18 +4,14 @@ import type {
 	ReadonlyTable,
 	TableReadError,
 } from '@epicenter/workspace';
-import {
-	TableNewerWriterError,
-	TableParseError,
-	TableUnreadableError,
-} from '@epicenter/workspace';
+import { TableNewerWriterError, TableParseError } from '@epicenter/workspace';
 import { Err, Ok } from 'wellcrafted/result';
 import { fromTable } from './from-table.svelte.js';
 
 // `bun test` runs `.svelte.ts` modules without the Svelte compiler, so the runes
 // the source uses are plain globals here. `$derived` is stubbed as identity,
-// which means the memoized bucket array getters (`nonconforming`, `newerWriter`,
-// `unreadable`) capture their value once at construction and never recompute.
+// which means the memoized bucket array getters (`nonconforming`, `newerWriter`)
+// capture their value once at construction and never recompute.
 // Consequence: seed-time bucket contents are observable, but the bucket maps the
 // `observe()` callback mutates are NOT visible through the frozen getters.
 //
@@ -57,14 +53,6 @@ const newerWriter = (id: string): StoredEntry => ({
 	}).error,
 });
 
-const unreadable = (id: string): StoredEntry => ({
-	kind: 'error',
-	error: TableUnreadableError.UnreadableRow({
-		id,
-		reason: 'keyVersion=3 not in keyring [1]',
-	}).error,
-});
-
 /**
  * A `ReadonlyTable` standing on a plain Map. `fromTable` only ever calls
  * `scan()`, `observe()`, and `get()`, so the rest throws to fail loud if the
@@ -80,15 +68,12 @@ function createMockTable() {
 				rows: [] as Row[],
 				nonconforming: [] as TableParseError[],
 				newerWriter: [] as TableNewerWriterError[],
-				unreadable: [] as TableUnreadableError[],
 			};
 			for (const entry of store.values()) {
 				if (entry.kind === 'row') {
 					scan.rows.push(entry.row);
 				} else if (entry.error.name === 'NewerWriter') {
 					scan.newerWriter.push(entry.error);
-				} else if (entry.error.name === 'UnreadableRow') {
-					scan.unreadable.push(entry.error);
 				} else {
 					scan.nonconforming.push(entry.error);
 				}
@@ -124,7 +109,6 @@ test('seed: scan routes conforming rows and each issue bucket', () => {
 	store.set('ok', row('ok'));
 	store.set('bad', nonconforming('bad'));
 	store.set('ahead', newerWriter('ahead'));
-	store.set('locked', unreadable('locked'));
 
 	const entries = fromTable(table);
 
@@ -132,11 +116,9 @@ test('seed: scan routes conforming rows and each issue bucket', () => {
 	expect(entries.has('ok')).toBe(true);
 	expect(entries.has('bad')).toBe(false);
 	expect(entries.has('ahead')).toBe(false);
-	expect(entries.has('locked')).toBe(false);
 
 	expect(entries.nonconforming.map((e) => e.id)).toEqual(['bad']);
 	expect(entries.newerWriter.map((e) => e.id)).toEqual(['ahead']);
-	expect(entries.unreadable.map((e) => e.id)).toEqual(['locked']);
 
 	entries[Symbol.dispose]();
 });
@@ -169,22 +151,8 @@ test('observe: a deleted id leaves the row map', () => {
 	entries[Symbol.dispose]();
 });
 
-test('observe: a conforming row that turns unreadable is dropped from the row map', () => {
-	const { table, store, fire } = createMockTable();
-	store.set('a', row('a'));
-	const entries = fromTable(table);
-	expect(entries.has('a')).toBe(true);
-
-	store.set('a', unreadable('a'));
-	fire('a');
-
-	expect(entries.has('a')).toBe(false);
-
-	entries[Symbol.dispose]();
-});
-
 test('observe: every error variant drops a previously conforming id from the row map', () => {
-	for (const toError of [nonconforming, newerWriter, unreadable]) {
+	for (const toError of [nonconforming, newerWriter]) {
 		const { table, store, fire } = createMockTable();
 		store.set('a', row('a'));
 		const entries = fromTable(table);

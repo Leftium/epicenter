@@ -11,7 +11,7 @@ type SettingsValues = ReturnType<Kv['getAll']>;
  *
  * The `<SettingSwitch>` component constrains its `key` prop to these, so the
  * generic flows through `settings.get`/`settings.set` and a non-boolean key
- * (a number like `retention.maxCount`, an enum like `ui.alwaysOnTop`) is a
+ * (a number like `retention.maxCount`, an enum like `recording.trigger`) is a
  * compile error instead of a silently-broken toggle.
  */
 export type BooleanSettingKey = {
@@ -28,7 +28,7 @@ function createSettings() {
 	}
 
 	// Single observer for ALL KV changes (local or remote).
-	// Observer updates SvelteMap → components re-render per-key.
+	// Observer updates SvelteMap -> components re-render per-key.
 	whispering.kv.observeAll((changes) => {
 		for (const [key, change] of changes) {
 			if (change.type === 'set') {
@@ -54,6 +54,13 @@ function createSettings() {
 		 * the SvelteMap directly.
 		 */
 		set: whispering.kv.set,
+
+		/**
+		 * The default value for a setting key (factory-evaluated, per-key typed).
+		 * Reads straight from the KV schema, so the schema stays the single source
+		 * of defaults; callers never redeclare them.
+		 */
+		getDefault: whispering.settings.getDefault,
 
 		/**
 		 * Reset all workspace settings to their default values in a single

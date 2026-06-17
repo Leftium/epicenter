@@ -85,13 +85,21 @@ C2  Inject startStream; the fake becomes a fixture.  DONE (2ca8ddddc, rides V0.5
     (the stream was inline + un-injectable); C2 fixes the fake and the test gap
     together (they are the same defect).
 
-C3  Share the stream/flush/finish core with the server.          rides V0.5
-    Once the actor streams for real it wants doc-generation.ts's flush policy
-    (FLUSH_INTERVAL_MS / FLUSH_MAX_CHARS). Collapse to one runGeneration(doc, {
-    startStream, signal }); the server wraps it with the updateV2 -> room.sync ->
-    drain forwarding (genuinely transport, stays server-only), the actor calls it
-    on the live body. Centralises the fragile teardown invariant (abort MUST
-    precede body destroy or the stream writes a destroyed Y.Doc).
+C3  Give the actor the flush policy.  DONE (4ae29e402, rode V0.5)
+    Taken GREENFIELD instead of the original "extract one shared core both the
+    server and actor call". The only thing the actor lacked was the flush policy
+    (FLUSH_INTERVAL_MS / FLUSH_MAX_CHARS); a chatty real provider would otherwise
+    emit one sync update per token. So the policy went straight into the actor's
+    streamReply (buffer + interval/size flush + tail-on-finish), and
+    doc-generation.ts was left UNTOUCHED. Rationale: the HTTP path is slated for
+    deletion (C4), so building a shared seam across the server<->workspace
+    boundary now only to half-dismantle it at C4 is the opposite of a clean break
+    (server touched twice vs once). The abort disposition also genuinely differs
+    (server-abort writes `cancelled`; actor-abort writes nothing), which is the
+    tell that the "sharing" was thin. The constants live in two files during the
+    coexistence window; that duplication is resolved by DELETION at C4, not by a
+    cross-boundary abstraction. The teardown invariant stays where it is owned
+    (the actor's Symbol.dispose), so nothing was centralised that had to be.
 
 C4  Delete the HTTP generation route.                            V1+ (gated on R)
     The vision says it: once every room has an actor (home daemon or a cloud
@@ -279,4 +287,20 @@ D3 (V0.5 GATE; surfaced by the 2026-06-17 adversarial review)
             typecheck clean, 549 workspace tests green. STILL OPEN: V2.R spec
             (write from the completed research, synthesis 529'd), C3, D3
             sequencing, then the V0.5 real-provider swap.
+2026-06-17  C3 (4ae29e402): gave the actor the flush policy directly. Buffer
+            deltas in streamReply, flush at most once per FLUSH_INTERVAL_MS (or
+            sooner past FLUSH_MAX_CHARS), ride the tail on the finish write;
+            lastFlushAt starts at 0 so the first delta is live at once. Done
+            GREENFIELD per the user's call: doc-generation.ts left UNTOUCHED
+            rather than sharing one core with it (the HTTP path dies at C4;
+            coupling the actor to a route slated for deletion is not a clean
+            break, and the abort disposition differs server vs actor). Constants
+            duplicated for the coexistence window, resolved by deletion at C4.
+            Also fixed the stale one-argument ChatStream comments (it is
+            (messages, signal)) in chat-actor.ts + mount.ts. New flush test (8
+            rapid deltas -> < 8 transactions, text intact). workspace 550 +
+            zhongwen + server typecheck clean; server doc-generation 11 tests
+            still pass (untouched). V0.5 stays UNTICKED: the real-provider swap
+            (D2-resolved: direct chat() with a daemon key) and D3 sequencing
+            remain.
 ```

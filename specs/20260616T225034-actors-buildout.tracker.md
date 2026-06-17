@@ -368,4 +368,22 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             next observe) and a child-doc-actor context test (selfNodeId + reactive
             readRow). workspace + zhongwen + server typecheck clean; workspace 553 +
             server ai 14 green. C4 now unblocked (still deferred to V0.5 inference).
+2026-06-17  R greenfield correction: moved designation from an actor-level gate to
+            the LOOP filter the R decision actually names ("the actor's observe loop
+            filters rows to its own node"). The first cut had the child-doc loop host
+            EVERY row and the chat actor abstain via an isDesignated thunk, which made
+            the app-aware actor do the app-blind anchor's availability job in one code
+            path (ADR-0012 forbids exactly this) and duplicated the actorNodeId ===
+            selfNodeId contract into every app's factory. Now: the loop takes one
+            isDesignated(rowId) predicate and reconciles only its node's rows (re-
+            designation opens/closes a body reactively, since the loop already
+            observes the table); connectMountActors composes the contract once (the
+            single owner); attachChatActor is pure {ydoc, startStream} again with no
+            designation concept; the actor context dropped selfNodeId/readRow/TRow.
+            The D3 proof moved with the mechanism: the over-room suite is back to its
+            two sync proofs (answer, cancel), and the daemon half of D3 is proven at
+            the loop unit (hosts only designated rows; opens/closes on re-designation)
+            plus the mount coordinator (cloud-default row not hosted). Browser kickoff-
+            skip unchanged. workspace 552 + server ai 13 + zhongwen typecheck green
+            (5 server requireBearerUser failures are pre-existing, not mine).
 ```

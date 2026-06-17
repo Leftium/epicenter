@@ -57,14 +57,17 @@ doorbell), never the durable queue (the doc is the mailbox).
   factory runs once per body, so the only per-conversation state it holds is the
   in-flight stream (its abort), not a claim.
 - The single-answerer guarantee is enforced on both sides of the transition, not by
-  a lock. The daemon answers only conversations whose `actorNodeId` equals its own
-  node id (the per-body factory context carries the daemon's `selfNodeId` and a
-  reactive reader onto the parent row, since designation lives on the row and never
-  in the transcript child doc), and the browser skips its transitional HTTP kickoff
-  whenever `actorNodeId` is set. So a designated conversation is answered only by its
-  daemon and a cloud-default one (`actorNodeId` null) only by the HTTP path; neither
-  ever answers a turn the other does. This is what unblocks deleting the HTTP route
-  (C4) and co-deploying a daemon.
+  a lock. The observe loop hosts a live replica only of the conversations whose
+  `actorNodeId` equals the daemon's node id, so the actor is built and runs only for
+  those: filtering the open set, not abstaining after the fact, is what keeps the
+  app-aware actor out of the app-blind anchor's availability job
+  ([ADR-0012](0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md)).
+  The actor itself carries no designation concept. The browser supplies the
+  complementary half: it skips its transitional HTTP kickoff whenever `actorNodeId`
+  is set. So a designated conversation is answered only by its daemon and a
+  cloud-default one (`actorNodeId` null) only by the HTTP path; neither ever answers
+  a turn the other does. This is what unblocks deleting the HTTP route (C4) and
+  co-deploying a daemon.
 - The conversation is a row plus a transcript child doc, and that split is the
   portability seam. Directing a chat at a device is a write of `actorNodeId` on the
   row; reassigning it between turns is another write and rewrites no history

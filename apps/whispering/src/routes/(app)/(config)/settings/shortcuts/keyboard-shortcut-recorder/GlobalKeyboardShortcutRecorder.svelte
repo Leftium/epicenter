@@ -8,8 +8,7 @@
 	import { shortcuts } from '#platform/shortcuts';
 	import type { Tauri } from '#platform/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { globalListener } from '$lib/state/global-listener.svelte';
-	import { permissions } from '$lib/state/permissions.svelte';
+	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 	import { os } from '#platform/os';
 	import {
@@ -38,10 +37,10 @@
 	const label = $derived(binding ? keyBindingToLabel(binding, os.isApple) : null);
 
 	// rdev cannot tap the keyboard until macOS Accessibility is granted, so a
-	// capture popover would open and silently receive nothing. Gate at the door:
-	// when ungranted, render a guide CTA instead of a dead recorder. Always true
-	// off macOS (no Accessibility gate there).
-	const canRecord = $derived(permissions.accessibilityGranted);
+	// capture popover would open and silently receive nothing. Gate at the door
+	// on the capability owner: when it is not `active`, render a guide CTA instead
+	// of a dead recorder. Always active off macOS (no Accessibility gate there).
+	const canRecord = $derived(dictationCapability.isActive);
 
 	let open = $state(false);
 	let isListening = $state(false);
@@ -53,11 +52,9 @@
 	let unlisten: (() => void) | undefined;
 
 	async function startCapture() {
-		// Capture streams off the rdev thread, so make sure it is alive first.
-		// Routed through the supervisor (not a raw `start()`) so it owns liveness
-		// alone. Accessibility is already guaranteed: the capture UI only renders
-		// when `canRecord` (see template), so this is never reached ungranted.
-		await globalListener.ensureRunning();
+		// The capability is `active` (the capture UI only renders when `canRecord`),
+		// so the Rust supervisor already has the tap running; we only flip it into
+		// capture mode. No `start` to call: the FE does not own the tap's lifecycle.
 		isListening = true;
 		capturedModifiers = new Set();
 		capturedKeys = new Set();
@@ -205,9 +202,9 @@
 			listeningHint: 'Release to set, Esc to cancel',
 		}}
 	/>
-{:else}
-	<!-- Accessibility ungranted: a recorder here would capture nothing. Show the
-	current binding read-only and route to the re-grant guide instead. -->
+{:else if dictationCapability.needsAccessibility}
+	<!-- macOS Accessibility ungranted or stale: a recorder here would capture
+	nothing. Show the current binding read-only and route to the re-grant guide. -->
 	<div class="flex items-center justify-end gap-2">
 		{#if label}
 			<Kbd.Root>{label}</Kbd.Root>
@@ -219,5 +216,14 @@
 		>
 			Grant Accessibility to record
 		</Button>
+	</div>
+{:else}
+	<!-- The tap is unavailable for a non-grant reason (Linux Wayland, or the
+	capability not yet seeded): the macOS guide would be wrong here, so show the
+	current binding read-only with no CTA. -->
+	<div class="flex items-center justify-end gap-2">
+		{#if label}
+			<Kbd.Root>{label}</Kbd.Root>
+		{/if}
 	</div>
 {/if}

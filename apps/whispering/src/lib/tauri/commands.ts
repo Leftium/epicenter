@@ -106,6 +106,7 @@ export const commands = {
 
 export type {
 	CommandBinding,
+	DictationCapability,
 	DownloadProgress,
 	Engine,
 	Key,

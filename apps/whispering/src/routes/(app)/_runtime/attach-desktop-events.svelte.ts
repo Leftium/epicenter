@@ -1,16 +1,14 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { tauri } from '#platform/tauri';
 import { goto } from '$app/navigation';
-import { globalListener } from '$lib/state/global-listener.svelte';
+import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 import { localModel } from '$lib/state/local-model.svelte';
-import { permissions } from '$lib/state/permissions.svelte';
 import { checkForUpdates } from './check-for-updates';
 
 export function attachDesktopEvents() {
 	let unlistenNavigate: UnlistenFn | undefined;
 	let unlistenLocalModel: UnlistenFn | undefined;
-	let cleanupPermissions: (() => void) | undefined;
-	let cleanupGlobalListener: (() => void) | undefined;
+	let cleanupCapability: (() => void) | undefined;
 
 	if (tauri) {
 		void checkForUpdates();
@@ -22,15 +20,13 @@ export function attachDesktopEvents() {
 				},
 			);
 			unlistenLocalModel = await localModel.attach();
-			cleanupPermissions = permissions.attach();
-			cleanupGlobalListener = globalListener.attach();
+			cleanupCapability = dictationCapability.attach();
 		})();
 	}
 
 	return () => {
 		unlistenNavigate?.();
 		unlistenLocalModel?.();
-		cleanupPermissions?.();
-		cleanupGlobalListener?.();
+		cleanupCapability?.();
 	};
 }

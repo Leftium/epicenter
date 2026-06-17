@@ -60,6 +60,7 @@ import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
 import type {
 	CommandBinding,
+	DictationCapability,
 	KeyBinding,
 	MediaPlayer,
 } from '$lib/tauri/commands';
@@ -101,10 +102,6 @@ const fs = {
 
 // permissions -------------------------------------------------------
 const PermissionsError = defineErrors({
-	CheckAccessibility: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to check accessibility permissions: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	RequestAccessibility: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to request accessibility permissions: ${extractErrorMessage(cause)}`,
 		cause,
@@ -125,19 +122,6 @@ const PermissionsError = defineErrors({
 
 const permissions = {
 	accessibility: {
-		async check() {
-			if (!os.isApple) return Ok(true);
-			return tryAsync({
-				try: async () => {
-					const { checkAccessibilityPermission } = await import(
-						'tauri-plugin-macos-permissions-api'
-					);
-					return checkAccessibilityPermission();
-				},
-				catch: (error) => PermissionsError.CheckAccessibility({ cause: error }),
-			});
-		},
-
 		async request() {
 			if (!os.isApple) return Ok(true);
 			return tryAsync({
@@ -348,12 +332,12 @@ const globalShortcuts = {
 		commands.setKeyboardShortcuts(bindings),
 
 	/**
-	 * Start the rdev listener (idempotent). The caller gates this on "global
-	 * shortcuts are allowed": on macOS once Accessibility is granted, on other
-	 * desktops at launch. Returns the outcome so the caller can tell the user
-	 * when shortcuts are unavailable (Wayland) instead of failing silently.
+	 * The current dictation capability, for the FE's seed on attach. The Rust
+	 * supervisor owns the rdev tap's lifecycle and trust gating, so there is no
+	 * `start`: the tap is already running whenever the capability is `active`.
 	 */
-	start: () => commands.startKeyboardListener(),
+	getCapability: (): Promise<DictationCapability> =>
+		commands.getDictationCapability(),
 
 	/**
 	 * Subscribe to the rdev trigger event and dispatch each into the command
@@ -389,16 +373,14 @@ const globalShortcuts = {
 		),
 
 	/**
-	 * Subscribe to the listener's stop event: the rdev thread exited (a tap
-	 * break, or a missing/stale Accessibility grant). Returns the unlisten fn.
-	 * The caller (the `globalListener` supervisor) re-probes permissions and
-	 * respawns when shortcuts should still be running, which is the self-heal
-	 * that the focus re-check alone cannot provide for a death that leaves the
-	 * grant value unchanged (a thread that just died under it).
+	 * Subscribe to dictation-capability changes pushed by the Rust supervisor
+	 * (trust gained or lost, tap died, stale grant detected). Returns the
+	 * unlisten fn. The supervisor owns the meaning, so the FE just renders the
+	 * value instead of inferring liveness or re-probing the OS.
 	 */
-	onListenerStopped: (onStopped: (reason: string | null) => void) =>
-		events.keyboardListenerStoppedEvent.listen(({ payload }) =>
-			onStopped(payload.reason),
+	onCapabilityChanged: (onChange: (capability: DictationCapability) => void) =>
+		events.dictationCapabilityEvent.listen(({ payload }) =>
+			onChange(payload.capability),
 		),
 };
 

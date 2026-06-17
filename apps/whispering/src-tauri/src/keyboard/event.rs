@@ -44,27 +44,49 @@ pub struct ShortcutCaptureEvent {
     pub binding: KeyBinding,
 }
 
-/// Emitted when the rdev listener thread exits, whether `rdev::listen` returned
-/// an error (the tap failed: most often macOS Accessibility missing, or a stale
-/// post-update grant that no longer satisfies the code signature) or returned
-/// cleanly. The thread is gone either way, so the FE supervisor re-probes
-/// permissions and respawns the listener when shortcuts should still be running;
-/// a genuinely missing grant instead surfaces as the Accessibility notice.
-/// Without this signal the thread died silently and the global shortcut stayed
-/// dead until the grant value happened to toggle.
+/// The single source of truth for whether Whispering can drive its headline
+/// "dictate anywhere" flow: tap the keyboard for global shortcuts and paste a
+/// transcript back. macOS gates that on Accessibility trust, and the only
+/// process that can authoritatively know it is the one holding the rdev tap
+/// (this one), so Rust owns this value and the frontend is a pure view over it.
 ///
-/// A `tauri_specta::Event`, emitted with `emit_to(app, MAIN_WINDOW)` (the main
-/// webview, not the overlay) and listened through the generated
-/// `events.keyboardListenerStoppedEvent`.
+/// It folds two facts the frontend used to infer separately: the macOS trust
+/// probe (`AXIsProcessTrusted`) and the tap's liveness. Crucially `Broken` is
+/// distinguishable from `Active` only here, because `AXIsProcessTrusted` reports
+/// a stale post-update grant as trusted: the tap dying under a held grant is the
+/// only signal that tells them apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum DictationCapability {
+    /// The supervisor has not determined the value yet. Rust resolves this
+    /// synchronously at startup, so it exists only as the frontend's pre-seed
+    /// initial value before the first probe lands.
+    Unknown,
+    /// This platform can never tap the keyboard (Linux Wayland: `rdev::listen`
+    /// receives no events). Terminal for the session.
+    Unsupported,
+    /// macOS Accessibility is not granted. The tap is not running; turning
+    /// Whispering on in System Settings unlocks it.
+    Untrusted,
+    /// The tap is running and (on macOS) the app is trusted. Dictation works.
+    Active,
+    /// macOS reports the app trusted, but the tap keeps dying under the held
+    /// grant: a stale post-update signature. Removing and re-adding Whispering
+    /// in Accessibility is the fix, which `Untrusted`'s "just toggle on" is not.
+    Broken,
+}
+
+/// Pushed whenever the dictation capability changes. The frontend seeds from
+/// `get_dictation_capability` on attach, then tracks this event for transitions;
+/// it never probes the OS itself. A `tauri_specta::Event`, emitted with
+/// `emit_to(app, MAIN_WINDOW)` (the main webview, not the overlay) and listened
+/// through the generated `events.dictationCapabilityEvent`.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type, tauri_specta::Event,
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type, tauri_specta::Event,
 )]
 #[serde(rename_all = "camelCase")]
-pub struct KeyboardListenerStoppedEvent {
-    /// The rdev error, debug-formatted, when `listen` failed; `None` on a clean
-    /// return. Carried for the log and a last-resort user message, not for
-    /// control flow: the FE decides what to do by re-probing permissions.
-    pub reason: Option<String>,
+pub struct DictationCapabilityEvent {
+    pub capability: DictationCapability,
 }
 
 #[cfg(test)]

@@ -107,8 +107,10 @@ type InFlightGeneration = {
  * an undesignated daemon abstains (cloud answers), a designated one claims (the
  * browser skips its HTTP kickoff). Designation lives on the parent row, never in
  * the transcript child doc, so the actor takes the decision as a thunk rather
- * than reading it from `ydoc`. Omit it (default: always designated) for the unit
- * tests and any single-answerer caller.
+ * than reading it from `ydoc`. The default `() => true` ("no contention, always
+ * answer") is what the unit tests omit it for; the only production caller today,
+ * the Zhongwen mount, always passes a real gate. A genuine single-answerer caller
+ * could rely on the default, but none exists yet.
  */
 export function attachChatActor({
 	ydoc,

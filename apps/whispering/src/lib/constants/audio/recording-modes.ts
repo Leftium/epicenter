@@ -7,25 +7,16 @@ import MicIcon from '@lucide/svelte/icons/mic';
 import RadioIcon from '@lucide/svelte/icons/radio';
 import type { Component } from 'svelte';
 
-export const RECORDING_MODES = [
-	'manual',
-	'vad',
-	'upload',
-	// 'live',
-	// 'cpal'
-] as const;
+export const RECORDING_MODES = ['manual', 'vad', 'upload'] as const;
 export type RecordingMode = (typeof RECORDING_MODES)[number];
 
 export const RECORDING_MODE_OPTIONS = [
-	{ label: 'Manual', value: 'manual', desktopOnly: false },
-	{ label: 'Voice Activated', value: 'vad', desktopOnly: false },
-	{ label: 'Upload File', value: 'upload', desktopOnly: false },
-	// { label: 'Live', value: 'live', desktopOnly: false },
-	// { label: 'CPAL', value: 'cpal', desktopOnly: true },
+	{ label: 'Manual', value: 'manual' },
+	{ label: 'Voice Activated', value: 'vad' },
+	{ label: 'Upload File', value: 'upload' },
 ] as const satisfies {
 	label: string;
 	value: RecordingMode;
-	desktopOnly: boolean;
 }[];
 
 /**

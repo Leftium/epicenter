@@ -92,14 +92,6 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	const availableModes = $derived(
-		RECORDING_MODE_OPTIONS.filter((mode) => {
-			if (!mode.desktopOnly) return true;
-			// Desktop only, only show if Tauri is available
-			return !!tauri;
-		}),
-	);
-
 	const AUDIO_EXTENSIONS = [
 		'mp3',
 		'wav',
@@ -283,7 +275,7 @@
 				}}
 			class="w-full"
 		>
-			{#each availableModes as option}
+			{#each RECORDING_MODE_OPTIONS as option}
 				{@const ModeIcon = RECORDING_MODE_ICONS[option.value]}
 				<ToggleGroup.Item
 					value={option.value}

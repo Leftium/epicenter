@@ -11,23 +11,14 @@
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
-	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const combobox = useCombobox();
 
-	const availableModes = $derived(
-		RECORDING_MODE_OPTIONS.filter((mode) => {
-			if (!mode.desktopOnly) return true;
-			// Desktop only, only show if Tauri is available
-			return !!tauri;
-		}),
-	);
-
 	const currentMode = $derived(
-		availableModes.find(
+		RECORDING_MODE_OPTIONS.find(
 			(mode) => mode.value === settings.get('recording.mode'),
 		),
 	);
@@ -55,7 +46,7 @@
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>
-					{#each availableModes as mode (mode.value)}
+					{#each RECORDING_MODE_OPTIONS as mode (mode.value)}
 						{@const isSelected =
 							settings.get('recording.mode') === mode.value}
 						{@const ModeIcon = RECORDING_MODE_ICONS[mode.value]}

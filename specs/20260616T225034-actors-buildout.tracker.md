@@ -37,7 +37,7 @@ Invariants (never violate, every slice):
 
 - [x] **V0.1** Move `generationId` from the chatDoc POST body into the pending turn in the transcript doc. `commit: 86f5730ad`
 - [x] **V0.2** Child-doc observe loop in the mount runtime: actor reads the conversations table, opens + observes each transcript child doc via the bound `.docs` accessor, disposes idle ones. (Core new capability; `mount-runtime.ts` hosts only the root doc today.) `commit: 73789f93a` then refactored schema-driven (`commit: c13060107`): `mount({ actors })` derives table+guid+layout from the schema like the browser `connect()`; the app registers behavior only via a per-body factory; layout/guid can no longer disagree with the schema; only observable layouts qualify.
-- [x] **V0.3** Actor claims an unanswered user turn as the SOLE designated actor and streams a FAKE deterministic response into the assistant `Y.Text`, then writes `finish`. No HTTP, no duplicate stream. Fill the per-body factory's `onChange` seam in `apps/zhongwen/mount.ts` (`actors.conversations.messages`): build per-conversation generation state in the factory body, claim on the idempotent `generationId` (existence check, not a lock), stream via `appendAssistantMessage`. Port the claim/finish logic from `packages/server/src/ai/doc-generation.ts` minus HTTP. `commit: 7acc1043e` Departures from `doc-generation.ts`: no `room.sync` update-forwarding/`drain` (the connected body persists and syncs itself, so the actor writes the live `ydoc` directly) and no `signal`/`waitUntil` (no HTTP request to outlive). The doc is the lock: existence of the assistant map keyed to `generationId` is the claim and short-circuits the actor's own streaming writes; `findActiveChatDocGeneration` serialises a turn that arrives mid-stream until the finish write wakes `onChange`. The only in-memory state is an `AbortController` so teardown stops the loop before the body is destroyed (and is the seam V0.4's durable cancel reuses).
+- [x] **V0.3** Actor claims an unanswered user turn as the SOLE designated actor and streams a FAKE deterministic response into the assistant `Y.Text`, then writes `finish`. No HTTP, no duplicate stream. Fill the per-body factory's `onChange` seam in `apps/zhongwen/mount.ts` (`actors.conversations.messages`): build per-conversation generation state in the factory body, claim on the idempotent `generationId` (existence check, not a lock), stream via `appendAssistantMessage`. Port the claim/finish logic from `packages/server/src/ai/doc-generation.ts` minus HTTP. `commit: 7acc1043e` Departures from `doc-generation.ts`: no `room.sync` update-forwarding/`drain` (the connected body persists and syncs itself, so the actor writes the live `ydoc` directly) and no `signal`/`waitUntil` (no HTTP request to outlive). The doc is the lock: existence of the assistant map keyed to `generationId` is the claim and short-circuits the actor's own streaming writes; `findActiveChatDocGeneration` serialises a turn that arrives mid-stream until the finish write wakes `onChange`. The only in-memory state is an `AbortController` so teardown stops the loop before the body is destroyed (and is the seam V0.4's durable cancel reuses). CORRECTION (2026-06-17, adversarial review): "no duplicate stream" holds only per-replica within the actor. While `ConversationView` still fires the HTTP kickoff AND a daemon actor observes the same room, BOTH transports claim on their own replica and the CRDT merge keeps two assistant maps: a real cross-transport double-answer. The single-actor guarantee depends on the `actorNodeId` designation (R), which is decided but unbuilt; closing it is tracked as D3 and is the gate before a daemon ships real inference (V0.5).
 - [x] **V0.4** Durable cancel: client writes `cancelRequestedAt`; actor observes mid-generation and writes `finish: cancelled`. (The read-back departure from `doc-generation.ts`.) `commit: 9400820bf` The field is client-owned on the user turn (single writer per field, the actor still owns the assistant finish). The actor honors two timings: mid-stream (abort + finish cancelled, checked BEFORE the answer path so it is reached even while the existence-claim would short-circuit) and pre-stream (claimed-then-finished-cancelled without streaming). `remintGeneration` clears the stale cancel so a retry is not born cancelled. `ConversationView` Stop now writes the durable cancel beside the transitional HTTP abort. Rode C1 (below). Actor behavior test deferred to C2 per the documented V0.3 precedent (the fake stream is still inline/un-injectable); the data-layer primitives (`findUnansweredTurn`, `requestCancel`, remint-clear) are fully tested in `chat-doc.test.ts`.
 - [ ] **V0.5** Real inference behind `startStream(messages) => AsyncIterable<StreamChunk>`. Audit that supported model adapters (TanStack AI cloud + a local backend slot) all expose text deltas through this contract, so the append loop is backend-agnostic. `commit:` IN PROGRESS: C2 landed the backend-agnostic seam (`2ca8ddddc`): the actor moved to `@epicenter/workspace/ai` as `attachChatActor`, parameterized by a `ChatStream`, with the fake now an injected fixture and the claim->stream->finish + durable-cancel path finally tested. REMAINS to tick V0.5: C3 (share one stream/flush/finish core with the server) and the real-provider swap, which is blocked on D2 (how the always-on daemon obtains inference).
 
@@ -168,6 +168,24 @@ D2 (V0.5) RESOLVED 2026-06-17: (b) the daemon holds a provider key and calls
    reply over hosted sync"). Recommendation to confirm: (b) for the V0 proof
    (direct `chat()` with a daemon key), then (c) as the privacy end state; treat
    (a) as a non-goal since it fights C4. Does that hold?
+
+D3 (V0.5 GATE; surfaced by the 2026-06-17 adversarial review)
+   The dual-transport double-answer must be closed BEFORE a daemon ships real
+   inference, or one turn gets two real replies. Today `ConversationView` fires
+   the HTTP kickoff (-> server `runDocGeneration`) AND the daemon actor answers
+   the same room; the existence-based claim cannot serialise across two replicas,
+   so the merge keeps two assistant maps. The actor-local hardening (commit
+   0f188d4f4) fixes only the SINGLE-actor duplicate paths (in-flight guard +
+   orphan supersession); it does NOT touch the cross-transport race. Options to
+   sequence: (i) land R's `actorNodeId` designation so exactly one of {HTTP
+   server actor, daemon actor} reconciles a conversation; (ii) bring C4 forward
+   and stop firing the HTTP kickoff for daemon-targeted conversations; (iii)
+   keep the daemon and the HTTP path on DISJOINT conversation sets during the
+   transition (today they are de facto disjoint: no production daemon runs yet,
+   so only the HTTP path answers). Recommendation: rely on (iii) for the local
+   V0.5 proof (run the daemon only against rooms the browser does NOT kickoff),
+   and treat (i)/(ii) as the real fix that must precede any co-deployed daemon.
+   Which sequencing do you want?
 ```
 
 ## Log (agent appends one line per run)
@@ -237,4 +255,28 @@ D2 (V0.5) RESOLVED 2026-06-17: (b) the daemon holds a provider key and calls
             clean, 545 workspace tests green. V0.5 stays UNTICKED: C3 + the real
             swap remain. Per the Dependency Rules the build track is now blocked
             on D2, so V2.R (research-only) is the track to advance next.
+2026-06-17  D2 RESOLVED (e3596518b): daemon uses direct chat() with a provider
+            key for the V0 proof; local backend is the end state; cloud route
+            rejected (fights C4).
+2026-06-17  Orchestrated a background workflow (verify shipped code + V2.R
+            research + synthesis). Verify + research succeeded; the synthesis
+            agent died on a transient 529 (plan/V2.R-spec draft not produced).
+            Verify found real bugs in the C2/V0.4 actor: (high) the actor
+            ignored its own in-flight state so a generation outliving the 2-min
+            active window could be double-streamed by a retry/second turn;
+            (high) a retry re-minted the generationId and orphaned the prior
+            stream; (high) ChatStream had no abort signal so cancel/teardown
+            never stopped the provider; plus a misleading re-entrancy comment.
+            Also (BLOCKER, transitional) the dual-transport double-answer ->
+            recorded as D3 and corrected the V0.3 "no duplicate stream" claim.
+2026-06-17  Hardening wave (0f188d4f4): actor never runs two streams at once
+            (in-flight guard, so the createdAt window cannot trick a live
+            actor); a re-pointed/removed turn finishes its orphan cancelled then
+            the new turn is claimed; ChatStream is now (messages, signal) and the
+            actor aborts the provider on cancel/teardown; reworded the claim
+            comment. 4 new tests (no concurrent stream, retry supersedes,
+            provider signal aborts, late cancel inert). workspace + zhongwen
+            typecheck clean, 549 workspace tests green. STILL OPEN: V2.R spec
+            (write from the completed research, synthesis 529'd), C3, D3
+            sequencing, then the V0.5 real-provider swap.
 ```

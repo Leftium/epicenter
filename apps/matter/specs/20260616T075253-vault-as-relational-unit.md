@@ -509,9 +509,10 @@ Empty vault root            no child folders: the root IS the one table (an empt
                             the shell renders a one-table vault rather than a dead-end empty state.
 Loose .md at the root       RESOLVED: a root with no child folders is one Table named for the root.
                             The GUI watcher (`scan_vault`) and the CLI loader (`loadPath`) share one
-                            table-or-vault rule: matter.json at root -> root is the table; else child
-                            folders are the tables; else the root is one table. Opening a leaf folder
-                            and opening a parent both work, so no wrong-altitude special case exists.
+                            table-or-vault rule. SUPERSEDED by 20260617T152631-table-vault-classification.md:
+                            the rule is now pure shape (a folder of folders is a vault, a folder of
+                            files is a table) and matter.json only TYPES a table; it no longer makes a
+                            root with child folders collapse to one table.
 Folder with no matter.json  an untyped Table (raw grid), still a valid reference target.
 A table-folder removed      the Vault disposes its watch; inbound references to it become missing-target.
 Nested vaults               a table-folder that itself contains table-folders: depth-1 discovery only;

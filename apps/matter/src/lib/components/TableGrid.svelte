@@ -48,7 +48,7 @@
 	// invalid reference value has no verdict and renders through the ordinary editor.
 	const referenceVerdicts = $derived.by(() => {
 		const byFile = new Map<string, Map<string, ReferenceVerdict>>();
-		if (assessment?.status !== 'modeled') return byFile;
+		if (assessment?.status !== 'typed') return byFile;
 		for (const { row, cells } of assessment.rows) {
 			const byField = new Map<string, ReferenceVerdict>();
 			for (const cell of cells) {
@@ -87,7 +87,7 @@
 	let rowFilter = $state<RowFilter>('all');
 
 	const filteredRows = $derived.by(() => {
-		if (view.mode !== 'modeled') return [];
+		if (view.mode !== 'typed') return [];
 		// The WHERE filter (matched row file names from the mirror, computed by the page)
 		// narrows the visible set; no active filter leaves it undefined, nothing to do. The
 		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
@@ -105,7 +105,7 @@
 	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
 	const isFiltered = $derived(rowFilter !== 'all' || matchedFileNames !== undefined);
 
-	// The modeled empty-state copy as ONE mutually exclusive decision, so the title and the
+	// The typed empty-state copy as ONE mutually exclusive decision, so the title and the
 	// description always describe the same case. Reads top-down like the question a person
 	// asks ("is a filter on? is attention on? otherwise it is just empty") instead of two
 	// nested ternaries in the markup that have to be kept in sync by hand.
@@ -120,7 +120,7 @@
 				title: matchedFileNames ? 'No matching rows need attention' : 'No rows need attention',
 				description: matchedFileNames
 					? 'Rows matched by this WHERE clause are valid.'
-					: 'Every readable row matches this model.',
+					: 'Every readable row matches this contract.',
 			};
 		if (rowFilter === 'ready')
 			return {
@@ -141,7 +141,7 @@
 	let detailOpen = $state(false);
 	let detailFileName = $state<string>();
 	const detailConformance = $derived.by(() => {
-		if (view.mode !== 'modeled' || !detailFileName) return undefined;
+		if (view.mode !== 'typed' || !detailFileName) return undefined;
 		return view.conformance.find((conf) => conf.row.fileName === detailFileName);
 	});
 
@@ -215,7 +215,7 @@
 	});
 </script>
 
-<!-- Raw value render for the unmodeled view: plain text, no type guessing. -->
+<!-- Raw value render for the untyped view: plain text, no type guessing. -->
 {#snippet rawValue(value: unknown)}
 	{#if value === null || value === undefined}
 		<span class="text-muted-foreground/50">.</span>
@@ -268,7 +268,7 @@
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
-	{#if view.mode === 'unmodeled'}
+	{#if view.mode === 'untyped'}
 		<header
 			class="flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3"
 		>
@@ -282,16 +282,16 @@
 					{/if}
 				</div>
 			</div>
-			<Badge variant="outline">no model</Badge>
+			<Badge variant="outline">no contract</Badge>
 		</header>
 
 		<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
 			<FileWarningIcon />
 			<Alert.Description class="text-xs">
-				{#if view.modelError}
-					Could not read matter.json ({view.modelError.message}). Showing the raw frontmatter; add a valid matter.json to classify files against a contract.
+				{#if view.contractError}
+					Could not read matter.json ({view.contractError.message}). Showing the raw frontmatter; add a valid matter.json to classify files against a contract.
 				{:else}
-					No model for this folder. Showing the raw frontmatter; add a matter.json to classify files against a contract.
+					No contract for this folder. Showing the raw frontmatter; add a matter.json to classify files against a contract.
 				{/if}
 			</Alert.Description>
 		</Alert.Root>
@@ -347,7 +347,7 @@
 							? `${visibleRows.length} of ${read.rows.length} rows`
 							: `${read.rows.length} rows`}
 					</Badge>
-					<Badge variant="secondary">{view.model.fields.length} fields</Badge>
+					<Badge variant="secondary">{view.contract.fields.length} fields</Badge>
 					{#if read.unreadable.length}
 						<Badge variant="destructive">{read.unreadable.length} unreadable</Badge>
 					{/if}
@@ -405,22 +405,22 @@
 			</div>
 		</header>
 
-		{#if view.model.unmodeled.length}
+		{#if view.contract.untyped.length}
 			<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
 				<TriangleAlertIcon />
 				<Alert.Description class="text-xs">
-					{view.model.unmodeled.length}
-					{view.model.unmodeled.length === 1 ? 'field has' : 'fields have'} an unrecognized
-					shape ({view.model.unmodeled.join(', ')}). Values show raw in the row detail panel, not as typed columns.
+					{view.contract.untyped.length}
+					{view.contract.untyped.length === 1 ? 'field has' : 'fields have'} an unrecognized
+					shape ({view.contract.untyped.join(', ')}). Values show raw in the row detail panel, not as typed columns.
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
 
-		{#if view.model.unmatchedOptional.length}
+		{#if view.contract.unmatchedOptional.length}
 			<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
 				<TriangleAlertIcon />
 				<Alert.Description class="text-xs">
-					Optional entries do not match typed fields ({view.model.unmatchedOptional.join(', ')}).
+					Optional entries do not match typed fields ({view.contract.unmatchedOptional.join(', ')}).
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
@@ -433,7 +433,7 @@
 				     stretching the column to the widest value. -->
 				<colgroup>
 					<col class="w-60" />
-					{#each view.model.fields as field (field.name)}
+					{#each view.contract.fields as field (field.name)}
 						<col class={COLUMN_WIDTH[field.kind]} />
 					{/each}
 				</colgroup>
@@ -442,7 +442,7 @@
 						<Table.Head class="sticky left-0 top-0 z-30 border-r bg-background align-bottom">
 							<span class="text-xs font-medium text-muted-foreground">file</span>
 						</Table.Head>
-						{#each view.model.fields as field (field.name)}
+						{#each view.contract.fields as field (field.name)}
 							<Table.Head class="sticky top-0 z-20 bg-background align-bottom">
 								<div
 									class={['flex flex-col gap-0.5', columnAlign(field.kind).head]}
@@ -464,7 +464,7 @@
 				<Table.Body>
 					{#if visibleRows.length === 0}
 						<Table.Row>
-							<Table.Cell colspan={view.model.fields.length + 1}>
+							<Table.Cell colspan={view.contract.fields.length + 1}>
 								<Empty.Root class="min-h-64 border-0">
 									<Empty.Header>
 										<Empty.Title>{emptyState.title}</Empty.Title>

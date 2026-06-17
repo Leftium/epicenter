@@ -83,14 +83,14 @@ export function tierOf(violation: Violation): 'table' | 'row' | 'cross-table' {
 /**
  * Select every attention cell as a flat, located {@link Violation}. A pure selector over the
  * assessed cells: it never reads the filesystem, never calls `assess` or `resolveReferences`, and
- * never reclassifies. Only `modeled` tables have typed cells, so only they contribute; a
+ * never reclassifies. Only `typed` tables have typed cells, so only they contribute; a
  * `missing-target` column is deduped to one violation per `{ field, target }` within its table.
  */
 export function toViolations(integrity: VaultIntegrity): Violation[] {
 	const violations: Violation[] = [];
 
 	for (const table of integrity.tables) {
-		if (table.status !== 'modeled') continue;
+		if (table.status !== 'typed') continue;
 
 		// The whole column is unresolvable when its target table is absent, so report it once.
 		// Keyed by field + target (a table could reference the same target from two columns).
@@ -167,10 +167,10 @@ export type FieldSummary = {
 export type TableSummary =
 	| { name: string; status: 'unreadable'; message: string }
 	| { name: string; status: 'invalid-contract'; message: string }
-	| { name: string; status: 'unmodeled'; rows: number }
+	| { name: string; status: 'untyped'; rows: number }
 	| {
 			name: string;
-			status: 'modeled';
+			status: 'typed';
 			rows: number;
 			/** Rows with no cell that needs a per-row fix. */
 			ready: number;
@@ -192,16 +192,16 @@ export type Summary = {
 	totals: {
 		tables: number;
 		rows: number;
-		/** Modeled rows with every cell healthy. */
+		/** Typed rows with every cell healthy. */
 		ready: number;
-		/** Modeled rows with at least one attention cell (the exit-code signal). */
+		/** Typed rows with at least one attention cell (the exit-code signal). */
 		needsAttention: number;
 		/** Tables whose folder could not be read at all (a fatal). */
 		unreadable: number;
 		/** Tables whose matter.json is present but corrupt (a fatal). */
 		invalidContract: number;
 		/** Untyped tables (no matter.json): valid, never a failure. */
-		unmodeled: number;
+		untyped: number;
 	};
 };
 
@@ -217,12 +217,12 @@ function cellNeedsAttention(state: string): boolean {
 	);
 }
 
-/** Roll one modeled table's cells up into its {@link TableSummary} and accumulate its extras. */
-function summarizeModeled(
-	table: Extract<TableAssessment, { status: 'modeled' }>,
+/** Roll one typed table's cells up into its {@link TableSummary} and accumulate its extras. */
+function summarizeTyped(
+	table: Extract<TableAssessment, { status: 'typed' }>,
 	extras: ExtraNote[],
-): Extract<TableSummary, { status: 'modeled' }> {
-	const fields: FieldSummary[] = table.model.fields.map((field) => ({
+): Extract<TableSummary, { status: 'typed' }> {
+	const fields: FieldSummary[] = table.contract.fields.map((field) => ({
 		field: field.name,
 		ok: 0,
 		empty: 0,
@@ -272,7 +272,7 @@ function summarizeModeled(
 
 	return {
 		name: table.name,
-		status: 'modeled',
+		status: 'typed',
 		rows: table.rows.length,
 		ready,
 		needsAttention: table.rows.length - ready,
@@ -298,10 +298,10 @@ function summarizeTable(
 				status: 'invalid-contract',
 				message: table.message,
 			};
-		case 'unmodeled':
-			return { name: table.name, status: 'unmodeled', rows: table.rows.length };
-		case 'modeled':
-			return summarizeModeled(table, extras);
+		case 'untyped':
+			return { name: table.name, status: 'untyped', rows: table.rows.length };
+		case 'typed':
+			return summarizeTyped(table, extras);
 	}
 }
 
@@ -318,7 +318,7 @@ export function summarize(integrity: VaultIntegrity): Summary {
 		needsAttention: 0,
 		unreadable: 0,
 		invalidContract: 0,
-		unmodeled: 0,
+		untyped: 0,
 	};
 	for (const table of tables) {
 		switch (table.status) {
@@ -328,11 +328,11 @@ export function summarize(integrity: VaultIntegrity): Summary {
 			case 'invalid-contract':
 				totals.invalidContract += 1;
 				break;
-			case 'unmodeled':
-				totals.unmodeled += 1;
+			case 'untyped':
+				totals.untyped += 1;
 				totals.rows += table.rows;
 				break;
-			case 'modeled':
+			case 'typed':
 				totals.rows += table.rows;
 				totals.ready += table.ready;
 				totals.needsAttention += table.needsAttention;

@@ -30,7 +30,7 @@
 import { type Field, referenceTargetOf } from '@epicenter/field';
 import type { Cell, Extra } from './conformance';
 import type { TableRead } from './table';
-import type { MatterModel } from './model';
+import type { Contract } from './contract';
 import { type Row, stemOf } from './parse';
 
 /**
@@ -73,7 +73,7 @@ export type ReferenceVerdict = Extract<
 	{ state: 'resolved' | 'dangling' | 'missing-target' }
 >;
 
-/** A row classified against its table's model: the widened cells plus its untyped extras. */
+/** A row classified against its table's contract: the widened cells plus its untyped extras. */
 export type RowAssessment = {
 	row: Row;
 	cells: AssessedCell[];
@@ -86,13 +86,13 @@ export type RowAssessment = {
  *   - `unreadable` and `invalid-contract` are the two genuine failures, split by cause the way
  *     reference findings split `missing-target` from `dangling`: the folder could not be read at
  *     all, versus a `matter.json` that is present but corrupt. Each carries its message.
- *   - `unmodeled` is a VALID state, never a failure: a folder with no `matter.json` is a raw,
+ *   - `untyped` is a VALID state, never a failure: a folder with no `matter.json` is a raw,
  *     type-less grid, and it is still a valid reference target (existence is the file existing,
  *     contract or not). It carries its rows and the deterministic column union.
- *   - `modeled` is a folder with a usable contract: it carries the model and its assessed rows.
+ *   - `typed` is a folder with a usable contract: it carries the contract and its assessed rows.
  *
- * A failed or unmodeled table contributes no `modeled` cells, so it surfaces no reference
- * verdicts of its own. A `modeled`, `unmodeled`, or `invalid-contract` table still parsed its
+ * A failed or untyped table contributes no `typed` cells, so it surfaces no reference
+ * verdicts of its own. A `typed`, `untyped`, or `invalid-contract` table still parsed its
  * files, so its stems land in the reference index and inbound references resolve against it.
  * Only `unreadable` contributes no stems, because there were no files to read, so it is the one
  * state that turns every inbound reference into `missing-target`.
@@ -100,11 +100,11 @@ export type RowAssessment = {
 export type TableAssessment =
 	| { name: string; status: 'unreadable'; message: string }
 	| { name: string; status: 'invalid-contract'; message: string }
-	| { name: string; status: 'unmodeled'; rows: Row[]; columns: string[] }
+	| { name: string; status: 'untyped'; rows: Row[]; columns: string[] }
 	| {
 			name: string;
-			status: 'modeled';
-			model: MatterModel;
+			status: 'typed';
+			contract: Contract;
 			rows: RowAssessment[];
 	  };
 
@@ -165,11 +165,11 @@ function assessTable(
 	const { name, read } = input;
 	const { view } = read;
 
-	if (view.mode === 'unmodeled') {
+	if (view.mode === 'untyped') {
 		// A junk matter.json is the genuine failure; no matter.json at all is the valid raw grid.
-		return view.modelError
-			? { name, status: 'invalid-contract', message: view.modelError.message }
-			: { name, status: 'unmodeled', rows: read.rows, columns: view.columns };
+		return view.contractError
+			? { name, status: 'invalid-contract', message: view.contractError.message }
+			: { name, status: 'untyped', rows: read.rows, columns: view.columns };
 	}
 
 	const rows = view.conformance.map((conformance) => ({
@@ -177,7 +177,7 @@ function assessTable(
 		cells: conformance.cells.map((cell) => assessCell(cell, rowsByTable)),
 		extras: conformance.extras,
 	}));
-	return { name, status: 'modeled', model: view.model, rows };
+	return { name, status: 'typed', contract: view.contract, rows };
 }
 
 /**

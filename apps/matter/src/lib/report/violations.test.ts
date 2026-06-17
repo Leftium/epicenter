@@ -9,7 +9,7 @@
  *   - `missing-target` is deduped to once per column while `dangling` stays per offending row;
  *   - `invalid-type` carries the field so `describeExpected` runs at the edge;
  *   - table-load failures (`unreadable`, `invalid-contract`) are summary/exit concerns, never
- *     violations; `unmodeled` is a valid untyped table, never a failure.
+ *     violations; `untyped` is a valid untyped table, never a failure.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -22,10 +22,10 @@ type Entries = Parameters<typeof readTable>[0];
 
 function loaded(
 	name: string,
-	modelText: string | undefined,
+	contractText: string | undefined,
 	entries: Entries,
 ): TableInput {
-	return { name, status: 'readable', read: readTable(entries, modelText) };
+	return { name, status: 'readable', read: readTable(entries, contractText) };
 }
 
 // `title` required, `subtitle` optional: enough for ok / missing-required / missing-optional / invalid.
@@ -254,7 +254,7 @@ describe('tierOf', () => {
 });
 
 describe('summarize', () => {
-	test('counts ready, attention, and per-field states over modeled tables', () => {
+	test('counts ready, attention, and per-field states over typed tables', () => {
 		const summary = summarize(
 			assess([
 				loaded('pages', pagesModel, [
@@ -265,7 +265,7 @@ describe('summarize', () => {
 		);
 
 		const table = summary.tables[0];
-		if (table?.status !== 'modeled') throw new Error('expected modeled');
+		if (table?.status !== 'typed') throw new Error('expected typed');
 		expect(table.rows).toBe(2);
 		expect(table.ready).toBe(1);
 		expect(table.needsAttention).toBe(1);
@@ -289,7 +289,7 @@ describe('summarize', () => {
 			needsAttention: 1,
 			unreadable: 0,
 			invalidContract: 0,
-			unmodeled: 0,
+			untyped: 0,
 		});
 	});
 
@@ -309,7 +309,7 @@ describe('summarize', () => {
 		);
 
 		const adaptations = summary.tables.find((t) => t.name === 'adaptations');
-		if (adaptations?.status !== 'modeled') throw new Error('expected modeled');
+		if (adaptations?.status !== 'typed') throw new Error('expected typed');
 		expect(adaptations.ready).toBe(1);
 		expect(adaptations.needsAttention).toBe(0);
 		expect(adaptations.fields.find((f) => f.field === 'page')?.ok).toBe(1);
@@ -328,7 +328,7 @@ describe('summarize', () => {
 		);
 
 		const adaptations = summary.tables.find((t) => t.name === 'adaptations');
-		if (adaptations?.status !== 'modeled') throw new Error('expected modeled');
+		if (adaptations?.status !== 'typed') throw new Error('expected typed');
 		expect(adaptations.needsAttention).toBe(1);
 		expect(adaptations.fields.find((f) => f.field === 'page')?.unresolved).toBe(
 			1,
@@ -350,7 +350,7 @@ describe('summarize', () => {
 		);
 
 		const adaptations = summary.tables.find((t) => t.name === 'adaptations');
-		if (adaptations?.status !== 'modeled') throw new Error('expected modeled');
+		if (adaptations?.status !== 'typed') throw new Error('expected typed');
 		expect(adaptations.ready).toBe(1);
 		expect(adaptations.needsAttention).toBe(0);
 		expect(adaptations.fields.find((f) => f.field === 'page')?.unresolved).toBe(
@@ -376,7 +376,7 @@ describe('summarize', () => {
 		expect(summary.totals.invalidContract).toBe(1);
 	});
 
-	test('an unmodeled table counts as untyped, valid, never a failure', () => {
+	test('an untyped table counts as untyped, valid, never a failure', () => {
 		const summary = summarize(
 			assess([
 				loaded('notes', undefined, [
@@ -386,8 +386,8 @@ describe('summarize', () => {
 		);
 
 		const table = summary.tables[0];
-		expect(table?.status).toBe('unmodeled');
-		expect(summary.totals.unmodeled).toBe(1);
+		expect(table?.status).toBe('untyped');
+		expect(summary.totals.untyped).toBe(1);
 		expect(summary.totals.needsAttention).toBe(0);
 		expect(summary.totals.unreadable).toBe(0);
 		expect(summary.totals.invalidContract).toBe(0);

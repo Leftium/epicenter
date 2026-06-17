@@ -122,7 +122,7 @@ function summaryLine(summary: Summary): string {
 		needsAttention,
 		unreadable,
 		invalidContract,
-		unmodeled,
+		untyped,
 	} = summary.totals;
 
 	const parts = [`${ready} ready`];
@@ -134,7 +134,7 @@ function summaryLine(summary: Summary): string {
 	if (unreadable > 0)
 		parts.push(plural(unreadable, 'unreadable', 'unreadable'));
 	if (invalidContract > 0) parts.push(`${invalidContract} invalid contract`);
-	if (unmodeled > 0) parts.push(`${unmodeled} untyped`);
+	if (untyped > 0) parts.push(`${untyped} untyped`);
 
 	return `${parts.join(', ')} (${plural(tables, 'table')}, ${plural(rows, 'row')})`;
 }

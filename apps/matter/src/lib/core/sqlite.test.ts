@@ -1,19 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { classifyRows } from './conformance';
-import { validateModel } from './model';
+import { validateContract } from './contract';
 import type { Row } from './parse';
 import { projectToSqlite } from './sqlite';
 
-function model(
+function contract(
 	fields: Record<string, Record<string, unknown>>,
 	optional?: string[],
 ) {
-	const { data, error } = validateModel({ fields, optional });
+	const { data, error } = validateContract({ fields, optional });
 	if (error) throw new Error(error.message);
 	return data;
 }
 
-const m = model({
+const m = contract({
 	title: { type: 'string' },
 	status: { type: 'string', enum: ['draft', 'published'] },
 	count: { type: 'integer' },
@@ -77,7 +77,7 @@ describe('schema script (DROP + CREATE, one execute_batch)', () => {
 	});
 
 	test('field identifiers with quotes/spaces are escaped, and stay nullable', () => {
-		const weird = model({ 'a "b"': { type: 'string' } });
+		const weird = contract({ 'a "b"': { type: 'string' } });
 		const { schema } = projectToSqlite(weird, []);
 		expect(schema).toContain('"a ""b""" TEXT');
 		expect(schema).not.toContain('"a ""b""" TEXT NOT NULL');
@@ -92,7 +92,7 @@ describe('insert template (one ? per column, bound positionally)', () => {
 				'"file", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
-		// name + 7 modeled fields + _extra = 9 placeholders.
+		// name + 7 typed fields + _extra = 9 placeholders.
 		expect((insert.match(/\?/g) ?? []).length).toBe(9);
 	});
 });
@@ -117,7 +117,7 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 		expect(live).toBe(1); // boolean -> 0/1
 		expect(tags).toBe('["a","b"]'); // array -> JSON TEXT
 		expect(url).toBe('https://x.com');
-		expect(extra).toBe('{"extraKey":"kept"}'); // unmodeled keys -> _extra JSON
+		expect(extra).toBe('{"extraKey":"kept"}'); // untyped keys -> _extra JSON
 	});
 
 	test('a missing required cell binds NULL (the draft is still a row)', () => {
@@ -128,11 +128,11 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 		expect(count).toBeNull();
 		expect(tags).toBeNull();
 		expect(url).toBeNull();
-		expect(extra).toBe('{}'); // no unmodeled keys
+		expect(extra).toBe('{}'); // no untyped keys
 	});
 
 	test('a MISSING_OPTIONAL cell binds NULL while the row stays valid', () => {
-		const optionalModel = model(
+		const optionalContract = contract(
 			{
 				title: { type: 'string' },
 				reviewBy: { type: 'string', format: 'date' },
@@ -144,13 +144,13 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 			frontmatter: { title: 'Alice', reviewBy: null },
 			body: '',
 		};
-		const conformance = classifyRows(optionalModel.fields, [row]);
+		const conformance = classifyRows(optionalContract.fields, [row]);
 		expect(conformance[0]?.rowValid).toBe(true);
 		expect(conformance[0]?.cells.map((cell) => cell.state)).toEqual([
 			'OK',
 			'MISSING_OPTIONAL',
 		]);
-		const p = projectToSqlite(optionalModel, conformance);
+		const p = projectToSqlite(optionalContract, conformance);
 		expect(p.rows[0]).toEqual(['person.md', 'Alice', null, '{}']);
 	});
 

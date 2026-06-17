@@ -14,10 +14,10 @@ type Entries = Parameters<typeof readTable>[0];
 
 function loaded(
 	name: string,
-	modelText: string | undefined,
+	contractText: string | undefined,
 	entries: Entries,
 ): TableInput {
-	return { name, status: 'readable', read: readTable(entries, modelText) };
+	return { name, status: 'readable', read: readTable(entries, contractText) };
 }
 
 describe('formatExpected', () => {

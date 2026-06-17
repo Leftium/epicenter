@@ -35,7 +35,7 @@ import type { FileDelta } from './bindings/FileDelta';
 import {
 	buildView,
 	type TableRead,
-	loadModel,
+	loadContract,
 	MatterReadError,
 	type UnreadableFile,
 } from './core/table';
@@ -59,7 +59,7 @@ export function createTable(path: string) {
 	// readable XOR unreadable" is structural, not an invariant kept by hand across
 	// two maps.
 	const files = new SvelteMap<string, Result<Row, UnreadableFile['error']>>();
-	let modelText = $state<string | undefined>(undefined);
+	let contractText = $state<string | undefined>(undefined);
 	// Set when the LAST save could not reach disk. A save never mutates the store
 	// (that is the watcher's job); this is the only state a write touches.
 	let writeError = $state<string | undefined>(undefined);
@@ -69,14 +69,14 @@ export function createTable(path: string) {
 	let mirrorVersion = $state(0);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
-	const loaded = $derived(loadModel(modelText));
+	const loaded = $derived(loadContract(contractText));
 
 	/** Apply one pushed batch to the store (the seed and every update). */
 	function applyDeltas(deltas: FileDelta[]) {
 		for (const delta of deltas) {
 			if (delta.fileName === 'matter.json') {
-				// A removed or unreadable model is no model: degrade to the raw view.
-				modelText = delta.kind === 'content' ? delta.text : undefined;
+				// A removed or unreadable matter.json is no contract: degrade to the raw view.
+				contractText = delta.kind === 'content' ? delta.text : undefined;
 				continue;
 			}
 			switch (delta.kind) {
@@ -102,10 +102,10 @@ export function createTable(path: string) {
 	}
 
 	/**
-	 * The current classified folder, derived from the files map + the loaded model.
+	 * The current classified folder, derived from the files map + the loaded contract.
 	 * The ONE place "files map -> TableRead" lives, MEMOIZED so the `read` getter (the
 	 * UI surface) and `reconcileMirror` (the SQLite mirror) share a single classification
-	 * instead of each recomputing it. Recomputes only when `files` or the loaded model
+	 * instead of each recomputing it. Recomputes only when `files` or the loaded contract
 	 * changes; `reconcileMirror` reads it when its deferred rebuild runs, so it sees the
 	 * latest classification rather than a stale snapshot.
 	 */
@@ -124,7 +124,7 @@ export function createTable(path: string) {
 	 * in progress): a FULL DROP + CREATE + INSERT, so the file is a pure function of the
 	 * folder (self-healing, no incremental drift to debug, no stale row an agent could
 	 * read). The SvelteMap stays the live in-app surface; this file is the EXTERNAL one.
-	 * An unmodeled folder has no typed table, so it is skipped. Fire-and-forget: a failure never blocks the
+	 * An untyped folder has no typed table, so it is skipped. Fire-and-forget: a failure never blocks the
 	 * grid and self-heals on the next batch (the rebuild is a full DROP + CREATE + INSERT),
 	 * so a transient error needs no surfacing. The JS projector builds all the SQL; the
 	 * Rust `write_mirror` command only executes it and binds the rows.
@@ -136,12 +136,12 @@ export function createTable(path: string) {
 	 */
 	function reconcileMirror(): void {
 		const { view } = read;
-		if (view.mode !== 'modeled') return;
+		if (view.mode !== 'typed') return;
 		const {
 			schema,
 			insert,
 			rows: tuples,
-		} = projectToSqlite(view.model, view.conformance);
+		} = projectToSqlite(view.contract, view.conformance);
 		void invoke('write_mirror', { path, schema, insert, rows: tuples })
 			.then(() => {
 				mirrorVersion++; // the file is now fresh: wake any reader keyed on the mirror

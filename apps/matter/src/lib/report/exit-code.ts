@@ -5,7 +5,7 @@
  *         `invalid-contract` (matter.json present but corrupt). The check could not run over that
  *         table, so this is the fatal tier, read from the {@link Summary}'s table-status totals.
  *   - `1` every table loaded, but there is at least one failing {@link Violation}.
- *   - `0` everything loaded and nothing failed. An `unmodeled` table (no matter.json) is a valid
+ *   - `0` everything loaded and nothing failed. An `untyped` table (no matter.json) is a valid
  *         raw grid, never a failure, so an untyped-only vault exits 0.
  *
  * The failures are passed in, not re-derived, because WHICH violations count is the caller's

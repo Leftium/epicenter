@@ -1,6 +1,6 @@
 /**
  * Exit-code tests: the three tiers derived from a {@link Summary}. Fatal (2) for a table that could
- * not load, problems (1) for data that needs attention, clean (0) otherwise. `unmodeled` is valid,
+ * not load, problems (1) for data that needs attention, clean (0) otherwise. `untyped` is valid,
  * so an untyped-only vault exits 0.
  */
 
@@ -14,10 +14,10 @@ type Entries = Parameters<typeof readTable>[0];
 
 function loaded(
 	name: string,
-	modelText: string | undefined,
+	contractText: string | undefined,
 	entries: Entries,
 ): TableInput {
-	return { name, status: 'readable', read: readTable(entries, modelText) };
+	return { name, status: 'readable', read: readTable(entries, contractText) };
 }
 
 const pagesModel = JSON.stringify({ fields: { title: { type: 'string' } } });
@@ -42,7 +42,7 @@ describe('exitCodeFor', () => {
 		).toBe(0);
 	});
 
-	test('0 for an untyped-only vault: unmodeled is valid', () => {
+	test('0 for an untyped-only vault: untyped is valid', () => {
 		expect(
 			exitCode([
 				loaded('notes', undefined, [

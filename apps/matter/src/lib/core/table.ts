@@ -1,19 +1,19 @@
 /**
- * Read a table's folder of markdown into the model, then classify it.
+ * Read a table's folder of markdown into the contract, then classify it.
  *
  * This is the pure transform: given each file's path and raw content (and an
  * optional `matter.json` text), it produces the readable rows, the unreadable
- * files (kept separate, never dropped), and EITHER a modeled classification (a
- * valid `matter.json` was supplied) OR a raw untyped view (no model, or junk
- * model). The actual disk listing lives at the boundary (`table.svelte.ts` in
+ * files (kept separate, never dropped), and EITHER a typed classification (a
+ * valid `matter.json` was supplied) OR a raw untyped view (no contract, or junk
+ * contract). The actual disk listing lives at the boundary (`table.svelte.ts` in
  * the app, `src/cli/check.ts` in the headless command), so this transform is
  * testable without any filesystem.
  *
- * The model is the foundation, never inference: a usable `matter.json` classifies
+ * The contract is the foundation, never inference: a usable `matter.json` classifies
  * the folder against a contract; without one, the folder is shown as RAW text
- * (no type guessing). A junk model degrades to the raw view with a diagnostic the
+ * (no type guessing). A junk contract degrades to the raw view with a diagnostic the
  * UI can show as a non-blocking banner. The headless check command is stricter
- * about missing or junk models because it has to certify the folder.
+ * about missing or junk contracts because it has to certify the folder.
  */
 
 import {
@@ -22,7 +22,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { classifyRows, type RowConformance } from './conformance';
-import { type MatterModel, type MatterModelError, parseModel } from './model';
+import { type Contract, type ContractError, parseContract } from './contract';
 import { type MatterParseError, parseEntry, type Row } from './parse';
 
 export type TableEntry =
@@ -53,38 +53,38 @@ export type UnreadableFile = {
 };
 
 /**
- * The folder is classified against an explicit model: rows split into valid /
+ * The folder is classified against an explicit contract: rows split into valid /
  * needs-attention by per-cell conformance.
  */
-export type ModeledView = {
-	mode: 'modeled';
-	model: MatterModel;
+export type TypedView = {
+	mode: 'typed';
+	contract: Contract;
 	conformance: RowConformance[];
 };
 
 /**
- * No usable model: the folder is shown as a RAW untyped grid (every value as
+ * No usable contract: the folder is shown as a RAW untyped grid (every value as
  * plain text, no type inference). `columns` is the deterministic union of
- * frontmatter keys. `modelError` is set when a `matter.json` existed but was junk
- * (so the UI can say "couldn't read your model"), and unset when there simply is
- * no model.
+ * frontmatter keys. `contractError` is set when a `matter.json` existed but was junk
+ * (so the UI can say "couldn't read your contract"), and unset when there simply is
+ * no contract.
  */
-export type UnmodeledView = {
-	mode: 'unmodeled';
+export type UntypedView = {
+	mode: 'untyped';
 	columns: string[];
-	modelError?: MatterModelError;
+	contractError?: ContractError;
 };
 
 export type TableRead = {
 	rows: Row[];
 	unreadable: UnreadableFile[];
-	view: ModeledView | UnmodeledView;
+	view: TypedView | UntypedView;
 };
 
 /**
- * The ordered column keys of an unmodeled folder: the union of every row's
+ * The ordered column keys of an untyped folder: the union of every row's
  * frontmatter keys, most-frequent first then first-seen, so the raw grid is
- * deterministic across opens. No type inference: a folder without a model is
+ * deterministic across opens. No type inference: a folder without a contract is
  * shown as raw text, never guessed into kinds.
  */
 function frontmatterColumns(rows: readonly Row[]): string[] {
@@ -106,11 +106,11 @@ function frontmatterColumns(rows: readonly Row[]): string[] {
  * Read and classify a folder.
  *
  * @param entries the folder's `.md` files (basename + raw content).
- * @param modelText the raw text of the folder's `matter.json`, if present.
+ * @param contractText the raw text of the folder's `matter.json`, if present.
  */
 export function readTable(
 	entries: readonly TableEntry[],
-	modelText?: string,
+	contractText?: string,
 ): TableRead {
 	const rows: Row[] = [];
 	const unreadable: UnreadableFile[] = [];
@@ -130,62 +130,62 @@ export function readTable(
 		rows.push(data);
 	}
 
-	return { rows, unreadable, view: buildView(rows, loadModel(modelText)) };
+	return { rows, unreadable, view: buildView(rows, loadContract(contractText)) };
 }
 
 /**
- * A folder's model after the expensive load step: missing, junk (with a
- * diagnostic), or parsed AND compiled. `validateModel` compiles each field's
- * validator once, so the loaded model's `fields` are already the precompiled
+ * A folder's contract after the expensive load step: missing, junk (with a
+ * diagnostic), or parsed AND compiled. `validateContract` compiles each field's
+ * validator once, so the loaded contract's `fields` are already the precompiled
  * validators; there is no separate compile step here.
  */
-export type LoadedModel =
+export type LoadedContract =
 	| { kind: 'none' }
-	| { kind: 'error'; error: MatterModelError }
-	| { kind: 'loaded'; model: MatterModel };
+	| { kind: 'error'; error: ContractError }
+	| { kind: 'loaded'; contract: Contract };
 
 /**
- * Parse AND compile a folder's `matter.json` ONCE. `validateModel` is where
- * compilation (`Schema.Compile`) happens, so memoize this off the model text (a
+ * Parse AND compile a folder's `matter.json` ONCE. `validateContract` is where
+ * compilation (`Schema.Compile`) happens, so memoize this off the contract text (a
  * `$derived` in the live vault) and pass the result to {@link buildView}; a
  * single-file change then reclassifies against the cached fields without
  * recompiling.
  */
-export function loadModel(modelText: string | undefined): LoadedModel {
-	if (modelText === undefined) return { kind: 'none' };
-	const { data: model, error } = parseModel(modelText);
-	// Junk model carries its diagnostic so the UI can surface it; deleting
+export function loadContract(contractText: string | undefined): LoadedContract {
+	if (contractText === undefined) return { kind: 'none' };
+	const { data: contract, error } = parseContract(contractText);
+	// Junk contract carries its diagnostic so the UI can surface it; deleting
 	// matter.json always recovers a working raw view.
 	if (error) return { kind: 'error', error };
-	return { kind: 'loaded', model };
+	return { kind: 'loaded', contract };
 }
 
 /**
- * Classify a set of in-memory rows against an already-loaded model. Split out
+ * Classify a set of in-memory rows against an already-loaded contract. Split out
  * from {@link readTable} so the live vault can reclassify after a single-file
- * change without re-parsing the folder or recompiling the model.
+ * change without re-parsing the folder or recompiling the contract.
  */
 export function buildView(
 	rows: readonly Row[],
-	loaded: LoadedModel,
-): ModeledView | UnmodeledView {
+	loaded: LoadedContract,
+): TypedView | UntypedView {
 	if (loaded.kind === 'loaded') {
 		return {
-			mode: 'modeled',
-			model: loaded.model,
-			conformance: classifyRows(loaded.model.fields, rows),
+			mode: 'typed',
+			contract: loaded.contract,
+			conformance: classifyRows(loaded.contract.fields, rows),
 		};
 	}
-	// No usable model: the raw untyped view, carrying the diagnostic if a
+	// No usable contract: the raw untyped view, carrying the diagnostic if a
 	// matter.json existed but was junk. Exhaustive over the remaining
-	// 'none' | 'error' so a new LoadedModel variant fails to compile here
+	// 'none' | 'error' so a new LoadedContract variant fails to compile here
 	// instead of silently rendering as an empty grid.
 	const columns = frontmatterColumns(rows);
 	switch (loaded.kind) {
 		case 'none':
-			return { mode: 'unmodeled', columns };
+			return { mode: 'untyped', columns };
 		case 'error':
-			return { mode: 'unmodeled', columns, modelError: loaded.error };
+			return { mode: 'untyped', columns, contractError: loaded.error };
 		default:
 			return loaded satisfies never;
 	}

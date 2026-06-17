@@ -1,14 +1,14 @@
 /**
  * Composed integrity tests.
  *
- * Exercises `assess` over in-memory tables built from real `readTable` reads, so model
+ * Exercises `assess` over in-memory tables built from real `readTable` reads, so contract
  * recognition, conformance classification, and reference resolution are all on the live path.
  * The two axes under test:
  *
  *   - Every `AssessedCell` state: the four conformance states widen through unchanged
  *     (`ok` / `missing-required` / `missing-optional` / `invalid`), and a reference OK refines
  *     into the cross-table verdict (`resolved` / `dangling` / `missing-target`).
- *   - Every `TableAssessment` state: `modeled`, `unmodeled`, `invalid-contract`, `unreadable`,
+ *   - Every `TableAssessment` state: `typed`, `untyped`, `invalid-contract`, `unreadable`,
  *     plus the causal chain where an absent or unreadable target table turns inbound references
  *     into `missing-target`.
  */
@@ -27,10 +27,10 @@ type Entries = Parameters<typeof readTable>[0];
 
 function loaded(
 	name: string,
-	modelText: string | undefined,
+	contractText: string | undefined,
 	entries: Entries,
 ): TableInput {
-	return { name, status: 'readable', read: readTable(entries, modelText) };
+	return { name, status: 'readable', read: readTable(entries, contractText) };
 }
 
 // `title` required, `subtitle` optional: enough to produce every conformance state.
@@ -50,10 +50,10 @@ const adaptationsModel = JSON.stringify({
 	},
 });
 
-function modeled(v: VaultIntegrity, name: string) {
+function typed(v: VaultIntegrity, name: string) {
 	const table = v.tables.find((t) => t.name === name);
-	if (table?.status !== 'modeled') {
-		throw new Error(`expected ${name} modeled, got ${table?.status}`);
+	if (table?.status !== 'typed') {
+		throw new Error(`expected ${name} typed, got ${table?.status}`);
 	}
 	return table;
 }
@@ -72,7 +72,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		expect(cellOf(modeled(v, 'pages').rows[0]!, 'title')).toEqual({
+		expect(cellOf(typed(v, 'pages').rows[0]!, 'title')).toEqual({
 			field: expect.objectContaining({ name: 'title' }),
 			state: 'ok',
 			value: 'Hello',
@@ -84,7 +84,7 @@ describe('assess: cell states', () => {
 			loaded('pages', pagesModel, [{ fileName: 'p1.md', content: '---\n---' }]),
 		]);
 
-		expect(cellOf(modeled(v, 'pages').rows[0]!, 'title').state).toBe(
+		expect(cellOf(typed(v, 'pages').rows[0]!, 'title').state).toBe(
 			'missing-required',
 		);
 	});
@@ -96,7 +96,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		expect(cellOf(modeled(v, 'pages').rows[0]!, 'subtitle').state).toBe(
+		expect(cellOf(typed(v, 'pages').rows[0]!, 'subtitle').state).toBe(
 			'missing-optional',
 		);
 	});
@@ -108,7 +108,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		expect(cellOf(modeled(v, 'pages').rows[0]!, 'title')).toEqual({
+		expect(cellOf(typed(v, 'pages').rows[0]!, 'title')).toEqual({
 			field: expect.objectContaining({ name: 'title' }),
 			state: 'invalid',
 			raw: 123,
@@ -128,7 +128,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		const cell = cellOf(modeled(v, 'adaptations').rows[0]!, 'page');
+		const cell = cellOf(typed(v, 'adaptations').rows[0]!, 'page');
 		expect(cell.state).toBe('resolved');
 		if (cell.state !== 'resolved') throw new Error('unreachable');
 		expect(cell.value).toBe('become-the-source');
@@ -136,8 +136,8 @@ describe('assess: cell states', () => {
 		expect(cell.targetRow.fileName).toBe('become-the-source.md');
 	});
 
-	test('a reference value resolving against an unmodeled target is still resolved', () => {
-		// fork 2: an unmodeled folder is a valid reference target; its file stems still exist.
+	test('a reference value resolving against an untyped target is still resolved', () => {
+		// fork 2: an untyped folder is a valid reference target; its file stems still exist.
 		const v = assess([
 			loaded('pages', undefined, [
 				{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' },
@@ -150,7 +150,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		expect(cellOf(modeled(v, 'adaptations').rows[0]!, 'page').state).toBe(
+		expect(cellOf(typed(v, 'adaptations').rows[0]!, 'page').state).toBe(
 			'resolved',
 		);
 	});
@@ -165,7 +165,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		const cell = cellOf(modeled(v, 'adaptations').rows[0]!, 'page');
+		const cell = cellOf(typed(v, 'adaptations').rows[0]!, 'page');
 		expect(cell).toEqual({
 			field: expect.objectContaining({ name: 'page' }),
 			state: 'dangling',
@@ -184,7 +184,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		const cell = cellOf(modeled(v, 'adaptations').rows[0]!, 'page');
+		const cell = cellOf(typed(v, 'adaptations').rows[0]!, 'page');
 		expect(cell).toEqual({
 			field: expect.objectContaining({ name: 'page' }),
 			state: 'missing-target',
@@ -217,11 +217,11 @@ describe('assess: cell states', () => {
 		]);
 
 		// adaptations resolves into pages (it is a source).
-		expect(cellOf(modeled(v, 'adaptations').rows[0]!, 'page').state).toBe(
+		expect(cellOf(typed(v, 'adaptations').rows[0]!, 'page').state).toBe(
 			'resolved',
 		);
 		// publications resolves into adaptations (it is a target), and the bad one dangles.
-		const pubs = modeled(v, 'publications');
+		const pubs = typed(v, 'publications');
 		expect(cellOf(pubs.rows[0]!, 'adaptation').state).toBe('resolved');
 		expect(cellOf(pubs.rows[1]!, 'adaptation').state).toBe('dangling');
 	});
@@ -239,7 +239,7 @@ describe('assess: cell states', () => {
 			]),
 		]);
 
-		expect(cellOf(modeled(v, 'adaptations').rows[0]!, 'page')).toEqual({
+		expect(cellOf(typed(v, 'adaptations').rows[0]!, 'page')).toEqual({
 			field: expect.objectContaining({ name: 'page' }),
 			state: 'invalid',
 			raw: '',
@@ -248,31 +248,31 @@ describe('assess: cell states', () => {
 });
 
 describe('assess: table states', () => {
-	test('a folder with a usable model is modeled, carrying its rows and model', () => {
+	test('a folder with a usable contract is typed, carrying its rows and contract', () => {
 		const v = assess([
 			loaded('pages', pagesModel, [
 				{ fileName: 'p1.md', content: '---\ntitle: Hello\n---' },
 			]),
 		]);
 
-		const pages = modeled(v, 'pages');
+		const pages = typed(v, 'pages');
 		expect(pages.rows).toHaveLength(1);
-		expect(pages.model.fields.map((f) => f.name)).toEqual(['title', 'subtitle']);
+		expect(pages.contract.fields.map((f) => f.name)).toEqual(['title', 'subtitle']);
 	});
 
-	test('a modeled row surfaces frontmatter keys outside the contract as extras', () => {
+	test('a typed row surfaces frontmatter keys outside the contract as extras', () => {
 		const v = assess([
 			loaded('pages', pagesModel, [
 				{ fileName: 'p1.md', content: '---\ntitle: Hello\nstray: kept\n---' },
 			]),
 		]);
 
-		expect(modeled(v, 'pages').rows[0]!.extras).toEqual([
+		expect(typed(v, 'pages').rows[0]!.extras).toEqual([
 			{ key: 'stray', value: 'kept' },
 		]);
 	});
 
-	test('a folder with no matter.json is unmodeled, a valid raw grid', () => {
+	test('a folder with no matter.json is untyped, a valid raw grid', () => {
 		const v = assess([
 			loaded('notes', undefined, [
 				{ fileName: 'n1.md', content: '---\ntag: idea\n---' },
@@ -280,8 +280,8 @@ describe('assess: table states', () => {
 		]);
 
 		const table = v.tables[0]!;
-		expect(table.status).toBe('unmodeled');
-		if (table.status !== 'unmodeled') throw new Error('unreachable');
+		expect(table.status).toBe('untyped');
+		if (table.status !== 'untyped') throw new Error('unreachable');
 		expect(table.rows).toHaveLength(1);
 		expect(table.columns).toEqual(['tag']);
 	});
@@ -330,7 +330,7 @@ describe('assess: the missing-target causal chain', () => {
 		]);
 
 		expect(v.tables.find((t) => t.name === 'pages')?.status).toBe('unreadable');
-		expect(cellOf(modeled(v, 'adaptations').rows[0]!, 'page').state).toBe(
+		expect(cellOf(typed(v, 'adaptations').rows[0]!, 'page').state).toBe(
 			'missing-target',
 		);
 	});

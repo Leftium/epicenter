@@ -1,18 +1,18 @@
 /**
  * `describeExpected` tests: a loaded field projects to its serializable expected value. The two
  * enum-carrying kinds (`select` / `multiSelect`) must lift their members; every other kind reduces
- * to its name. Fields are built through `validateModel`, the same recognition the live model uses.
+ * to its name. Fields are built through `validateContract`, the same recognition the live contract uses.
  */
 
 import { describe, expect, test } from 'bun:test';
 import type { Field } from '@epicenter/field';
-import { validateModel } from '../core/model';
+import { validateContract } from '../core/contract';
 import { describeExpected } from './expected';
 
 /** Recognize one at-rest field schema into a loaded {@link Field}. */
 function fieldFrom(schema: unknown): Field {
-	const { data, error } = validateModel({ fields: { f: schema } });
-	if (error) throw new Error(`model invalid: ${error.message}`);
+	const { data, error } = validateContract({ fields: { f: schema } });
+	if (error) throw new Error(`contract invalid: ${error.message}`);
 	const [field] = data.fields;
 	if (!field) throw new Error('schema was not recognized as a field');
 	return field;

@@ -25,7 +25,7 @@ async function withTempDir<T>(body: (dir: string) => Promise<T>): Promise<T> {
 const pagesModel = JSON.stringify({ fields: { title: { type: 'string' } } });
 
 describe('loadTable', () => {
-	test('reads a modeled folder into a readable table named for its basename', async () => {
+	test('reads a typed folder into a readable table named for its basename', async () => {
 		await withTempDir(async (root) => {
 			const dir = join(root, 'pages');
 			await mkdir(dir);
@@ -35,7 +35,7 @@ describe('loadTable', () => {
 			const table = await loadTable(dir);
 			expect(table.name).toBe('pages');
 			if (table.status !== 'readable') throw new Error('expected readable');
-			expect(table.read.view.mode).toBe('modeled');
+			expect(table.read.view.mode).toBe('typed');
 			expect(table.read.rows.map((r) => r.fileName)).toEqual(['p1.md']);
 		});
 	});
@@ -48,7 +48,7 @@ describe('loadTable', () => {
 
 			const table = await loadTable(dir);
 			if (table.status !== 'readable') throw new Error('expected readable');
-			expect(table.read.view.mode).toBe('unmodeled');
+			expect(table.read.view.mode).toBe('untyped');
 		});
 	});
 
@@ -156,7 +156,7 @@ describe('loadVault feeds the pipeline', () => {
 	const appRoot = resolve(import.meta.dir, '../../..');
 	const exampleVault = resolve(appRoot, '../../examples/matter/content-vault');
 
-	test('the bundled content-vault loads three modeled tables that assess', async () => {
+	test('the bundled content-vault loads three typed tables that assess', async () => {
 		const tables = await loadVault(exampleVault);
 		expect(tables.map((t) => t.name)).toEqual([
 			'adaptations',
@@ -167,9 +167,9 @@ describe('loadVault feeds the pipeline', () => {
 		// The whole point of the loader: its output is exactly what `assess` consumes.
 		const integrity = assess(tables);
 		expect(integrity.tables.map((t) => t.status)).toEqual([
-			'modeled',
-			'modeled',
-			'modeled',
+			'typed',
+			'typed',
+			'typed',
 		]);
 	});
 

@@ -23,15 +23,15 @@ describe('readTable', () => {
 			['broken.md', 'InvalidYaml'],
 			['conflict.md', 'ConflictMarkers'],
 		]);
-		// No model supplied: a raw untyped view, columns ordered by frequency then
+		// No contract supplied: a raw untyped view, columns ordered by frequency then
 		// first-seen, no type inference.
-		expect(result.view.mode).toBe('unmodeled');
-		if (result.view.mode !== 'unmodeled') throw new Error('expected unmodeled');
+		expect(result.view.mode).toBe('untyped');
+		if (result.view.mode !== 'untyped') throw new Error('expected untyped');
 		expect(result.view.columns).toEqual(['title', 'rating']);
 	});
 
-	test('a valid matter.json produces a modeled view with per-cell conformance', () => {
-		const model = JSON.stringify({
+	test('a valid matter.json produces a typed view with per-cell conformance', () => {
+		const contract = JSON.stringify({
 			fields: {
 				title: { type: 'string' },
 				rating: { type: 'integer' },
@@ -46,17 +46,17 @@ describe('readTable', () => {
 					content: '---\ntitle: C\nrating: "high"\n---\nbody',
 				}, // INVALID
 			],
-			model,
+			contract,
 		);
 
-		expect(result.view.mode).toBe('modeled');
-		if (result.view.mode !== 'modeled') throw new Error('expected modeled');
+		expect(result.view.mode).toBe('typed');
+		if (result.view.mode !== 'typed') throw new Error('expected typed');
 		const valid = result.view.conformance.map((c) => c.rowValid);
 		expect(valid).toEqual([true, false, false]);
 	});
 
-	test('optional modeled fields can be absent or null without invalidating a row', () => {
-		const model = JSON.stringify({
+	test('optional typed fields can be absent or null without invalidating a row', () => {
+		const contract = JSON.stringify({
 			fields: {
 				title: { type: 'string' },
 				reviewBy: { type: 'string', format: 'date' },
@@ -68,11 +68,11 @@ describe('readTable', () => {
 				{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' },
 				{ fileName: 'b.md', content: '---\ntitle: B\nreviewBy:\n---\nbody' },
 			],
-			model,
+			contract,
 		);
 
-		expect(result.view.mode).toBe('modeled');
-		if (result.view.mode !== 'modeled') throw new Error('expected modeled');
+		expect(result.view.mode).toBe('typed');
+		if (result.view.mode !== 'typed') throw new Error('expected typed');
 		expect(result.view.conformance.map((c) => c.rowValid)).toEqual([
 			true,
 			true,
@@ -90,8 +90,8 @@ describe('readTable', () => {
 			[{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' }],
 			'{ not json',
 		);
-		expect(result.view.mode).toBe('unmodeled');
-		if (result.view.mode !== 'unmodeled') throw new Error('expected unmodeled');
-		expect(result.view.modelError?.name).toBe('InvalidJson');
+		expect(result.view.mode).toBe('untyped');
+		if (result.view.mode !== 'untyped') throw new Error('expected untyped');
+		expect(result.view.contractError?.name).toBe('InvalidJson');
 	});
 });

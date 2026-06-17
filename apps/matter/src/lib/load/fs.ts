@@ -52,10 +52,10 @@ async function readEntries(dir: string): Promise<TableEntry[]> {
 /**
  * The folder's `matter.json` text, or `undefined` when it has none. A missing OR unreadable
  * `matter.json` both collapse to `undefined` (a valid untyped table); only a PRESENT-but-corrupt
- * model is a failure, and that is `readTable`'s job to detect from the text it parses, not this
+ * contract is a failure, and that is `readTable`'s job to detect from the text it parses, not this
  * boundary's. Matches the reference script's loader.
  */
-async function readModelText(dir: string): Promise<string | undefined> {
+async function readContractText(dir: string): Promise<string | undefined> {
 	return readFile(join(dir, 'matter.json'), 'utf8').catch(() => undefined);
 }
 
@@ -78,7 +78,7 @@ export async function loadTable(dir: string): Promise<TableInput> {
 		return { name, status: 'unreadable', message: messageOf(error) };
 	}
 
-	const read = readTable(entries, await readModelText(dirPath));
+	const read = readTable(entries, await readContractText(dirPath));
 	return { name, status: 'readable', read };
 }
 

@@ -151,7 +151,7 @@
 							}
 							report.success({
 								title: 'Recordings exported',
-								description: `Saved ${data.written} ${data.written === 1 ? 'recording' : 'recordings'} to recordings.zip.`,
+								description: `Saved ${data.written} ${data.written === 1 ? 'recording' : 'recordings'} as a zip file.`,
 							});
 						},
 						onError: (error) => {

@@ -505,9 +505,13 @@ Tabs stay per-folder through W1 and W2 and flip to per-vault at W3, so working b
 ## Edge Cases
 
 ```
-Empty vault root            no table-folders yet: the shell shows an empty state, not an error.
-Loose .md at the root       the root's own markdown is an untyped Table named for the root (optional;
-                            could also be ignored). Decide in Wave 3.
+Empty vault root            no child folders: the root IS the one table (an empty untyped Table), so
+                            the shell renders a one-table vault rather than a dead-end empty state.
+Loose .md at the root       RESOLVED: a root with no child folders is one Table named for the root.
+                            The GUI watcher (`scan_vault`) and the CLI loader (`loadPath`) share one
+                            table-or-vault rule: matter.json at root -> root is the table; else child
+                            folders are the tables; else the root is one table. Opening a leaf folder
+                            and opening a parent both work, so no wrong-altitude special case exists.
 Folder with no matter.json  an untyped Table (raw grid), still a valid reference target.
 A table-folder removed      the Vault disposes its watch; inbound references to it become missing-target.
 Nested vaults               a table-folder that itself contains table-folders: depth-1 discovery only;

@@ -45,22 +45,17 @@
 	{#await vault.whenReady}
 		<Loading class="flex-1" label="Loading {vault.folderName}" />
 	{:then _}
+		<!-- A readable root always resolves to at least one table (the root itself when it has no
+		     child folders), so this empty case is the brief gap before the first table list lands,
+		     not a dead end. -->
 		{#if vault.tables.length === 0}
 			<Empty.Root class="flex-1 border-0">
 				<Empty.Media variant="icon"><LayersIcon /></Empty.Media>
-				{#if vault.rootHasTableFiles}
-					<Empty.Title>This looks like a table folder</Empty.Title>
-					<Empty.Description>
-						Open its parent vault folder instead. Matter reads each immediate child folder as one
-						table.
-					</Empty.Description>
-				{:else}
-					<Empty.Title>No tables yet</Empty.Title>
-					<Empty.Description>
-						{vault.folderName} has no table folders. Add a folder of markdown to it and it
-						appears here.
-					</Empty.Description>
-				{/if}
+				<Empty.Title>No tables yet</Empty.Title>
+				<Empty.Description>
+					{vault.folderName} is empty. Add a folder of markdown (or a matter.json) and it appears
+					here.
+				</Empty.Description>
 			</Empty.Root>
 		{:else}
 			<div class="flex min-h-10 items-center gap-1 overflow-x-auto border-b px-2 py-1">

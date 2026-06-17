@@ -159,60 +159,53 @@ pub fn unwatch_folder(id: u32, store: State<WatcherStore>) {
     store.watchers.lock().unwrap().remove(&id);
 }
 
-/// A vault root's observable shape. `tables` are the immediate child directories, each one a
-/// table. `root_has_table_files` is true when the root itself has files that belong inside a table
-/// folder (`matter.json` or `.md`), so the UI can distinguish an empty vault from a table folder
-/// opened at the wrong altitude.
-#[derive(Clone, Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../src/lib/bindings/")]
-pub struct VaultMembership {
-    tables: Vec<String>,
-    root_has_table_files: bool,
-}
-
-/// The vault root's immediate child DIRECTORIES, each one a table, as absolute paths sorted for
-/// a deterministic order. Loose files at the root (a stray `README.md`) are ignored for
-/// membership, but relevant table files are reported so the frontend can explain the wrong-altitude
-/// case. Errors only if the root itself cannot be listed; a child that races away mid-scan just
-/// does not appear, surfacing on the next re-scan.
-fn scan_vault(root: &Path) -> Result<VaultMembership, String> {
+/// The vault's tables as absolute paths, applying the SAME table-or-vault rule the CLI loader uses
+/// (`src/lib/load/fs.ts` `loadPath`), so the GUI and the CLI agree on what a path is:
+///
+///   - a `matter.json` at the root makes the root ITSELF the one table (a contract is a table's, so
+///     it wins even when the folder also has child folders);
+///   - otherwise every immediate child DIRECTORY is a table, sorted for a deterministic order;
+///   - otherwise (no contract, no child folders: a raw leaf or an empty folder) the root is one
+///     table.
+///
+/// So opening a leaf table folder and opening a vault of table folders both flow through one rule,
+/// with no wrong-altitude special case to detect. Errors only if the root itself cannot be listed;
+/// a child that races away mid-scan just does not appear, surfacing on the next re-scan.
+fn scan_vault(root: &Path) -> Result<Vec<String>, String> {
     let mut dirs = Vec::new();
-    let mut root_has_table_files = false;
+    let mut has_contract = false;
     for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
-        let file_type = entry.file_type().map_err(|e| e.to_string())?;
-        if file_type.is_dir() {
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
             dirs.push(entry.path().to_string_lossy().to_string());
-        } else if file_type.is_file() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if is_relevant(&name) {
-                root_has_table_files = true;
-            }
+        } else if entry.file_name().to_string_lossy() == "matter.json" {
+            has_contract = true;
         }
     }
+    // A contract, or the absence of any child folders, makes the root itself the one table.
+    if has_contract || dirs.is_empty() {
+        return Ok(vec![root.to_string_lossy().to_string()]);
+    }
     dirs.sort();
-    Ok(VaultMembership {
-        tables: dirs,
-        root_has_table_files,
-    })
+    Ok(dirs)
 }
 
-/// Watch a VAULT root: stream the set of table folders beneath it as a full, sorted membership
-/// snapshot. This is the layer above `watch_folder`: where that watches ONE folder's files, this
-/// watches the root NON-recursively for child folders appearing and disappearing, and the JS Vault
-/// reacts by composing or disposing a per-folder `watch_folder`.
+/// Watch a VAULT root: stream its table list as a full, sorted snapshot. This is the layer above
+/// `watch_folder`: where that watches ONE folder's files, this watches the root NON-recursively for
+/// the table set changing (a child folder appearing or disappearing, or a `matter.json` written or
+/// removed at the root, which flips the root between a vault of folders and a single table per
+/// `scan_vault`), and the JS Vault reacts by composing or disposing a per-folder `watch_folder`.
 ///
-/// Each push is the WHOLE child-folder list, not a precise add/remove delta, and the JS reconciles
-/// it against its current set (the same "a full rebuild is a pure function of truth" stance the
+/// Each push is the WHOLE table list, not a precise add/remove delta, and the JS reconciles it
+/// against its current set (the same "a full rebuild is a pure function of truth" stance the
 /// per-table SQLite mirror takes). A remove event cannot be stat-ed to tell folder from file, so
-/// re-listing is both simpler and correct: any debounced change at the root re-scans the children.
-/// A `matter.json` gained or lost INSIDE a child does not fire here (non-recursive); that child's
-/// own `watch_folder` already carries it, so this layer only owns membership.
+/// re-listing is both simpler and correct: any debounced change at the root re-scans. A
+/// `matter.json` gained or lost INSIDE a child does not fire here (non-recursive); that child's own
+/// `watch_folder` already carries it, so this layer only owns the table list.
 #[tauri::command]
 pub fn watch_vault(
     path: String,
-    channel: Channel<VaultMembership>,
+    channel: Channel<Vec<String>>,
     store: State<WatcherStore>,
 ) -> Result<u32, String> {
     let dir = std::path::PathBuf::from(&path);
@@ -222,20 +215,20 @@ pub fn watch_vault(
         Duration::from_millis(100),
         None,
         move |result: DebounceEventResult| {
-            // The events are not parsed: a child folder added, removed, or renamed all reduce to
-            // "the membership may have changed, re-scan." A failed scan (root vanished) sends
-            // nothing and self-heals on the next event.
+            // The events are not parsed: any change at the root reduces to "the table list may have
+            // changed, re-scan." A failed scan (root vanished) sends nothing and self-heals on the
+            // next event.
             let Ok(_events) = result else { return };
-            if let Ok(membership) = scan_vault(&root) {
-                let _ = tx.send(membership);
+            if let Ok(tables) = scan_vault(&root) {
+                let _ = tx.send(tables);
             }
         },
     )
     .map_err(|e| e.to_string())?;
 
-    // Arm BEFORE the seed scan so a child appearing during the scan can't slip through the
-    // list-then-watch gap; then send the current membership (always, even empty: an empty vault
-    // is a valid state, not an error).
+    // Arm BEFORE the seed scan so a change during the scan can't slip through the list-then-watch
+    // gap; then send the current table list (always, even a one-table or empty root: both are valid
+    // states, not errors).
     debouncer
         .watch(&dir, RecursiveMode::NonRecursive)
         .map_err(|e| e.to_string())?;
@@ -252,4 +245,61 @@ pub fn watch_vault(
 #[tauri::command]
 pub fn unwatch_vault(id: u32, store: State<WatcherStore>) {
     store.watchers.lock().unwrap().remove(&id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh scratch dir for one case (mirrors `mirror.rs`), wiped first so a re-run starts clean.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "matter-watch-test-{}-{}-{:?}",
+            std::process::id(),
+            name,
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn s(path: &Path) -> String {
+        path.to_string_lossy().to_string()
+    }
+
+    // These mirror `fs.test.ts` ("loadPath: scope inference") so the GUI watcher and the CLI loader
+    // are pinned to the same table-or-vault rule in both languages.
+
+    #[test]
+    fn a_contract_makes_the_root_the_one_table_even_with_subfolders() {
+        let dir = scratch("contract");
+        std::fs::write(dir.join("matter.json"), "{}").unwrap();
+        std::fs::create_dir_all(dir.join("ignored")).unwrap();
+        assert_eq!(scan_vault(&dir).unwrap(), vec![s(&dir)]);
+    }
+
+    #[test]
+    fn a_root_of_folders_lists_each_child_sorted() {
+        let dir = scratch("vault");
+        std::fs::create_dir_all(dir.join("pages")).unwrap();
+        std::fs::create_dir_all(dir.join("adaptations")).unwrap();
+        assert_eq!(
+            scan_vault(&dir).unwrap(),
+            vec![s(&dir.join("adaptations")), s(&dir.join("pages"))]
+        );
+    }
+
+    #[test]
+    fn a_raw_leaf_with_no_folders_is_one_table() {
+        let dir = scratch("leaf");
+        std::fs::write(dir.join("note.md"), "# hi").unwrap();
+        assert_eq!(scan_vault(&dir).unwrap(), vec![s(&dir)]);
+    }
+
+    #[test]
+    fn an_empty_root_is_one_table() {
+        let dir = scratch("empty");
+        assert_eq!(scan_vault(&dir).unwrap(), vec![s(&dir)]);
+    }
 }

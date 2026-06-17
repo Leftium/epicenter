@@ -2,10 +2,13 @@
  * A live Vault: one directory of typed markdown Tables, read as one relational unit.
  *
  * This is the layer above {@link createTable}. A Table watches ONE folder's files; a Vault watches
- * the ROOT for table folders appearing and disappearing (`watch_vault`, depth-1), and composes a
- * `createTable` per child folder. It owns its Tables' lifetimes: dispose the Vault and every Table
- * watch and the root watch stop. The Vault declares nothing itself: it is the live union of its
- * Tables' self-declared contracts, discovered, not configured.
+ * the ROOT (`watch_vault`, depth-1) for its table set changing, and composes a `createTable` per
+ * table the watcher resolves. `watch_vault` applies the same table-or-vault rule as the CLI loader
+ * (`load/fs.ts` `loadPath`): a root of folders is a vault of those Tables, while a root that is
+ * itself a Table (it has a `matter.json`, or no child folders at all) resolves to a single Table on
+ * the root, so opening a leaf folder and opening a parent both work. It owns its Tables' lifetimes:
+ * dispose the Vault and every Table watch and the root watch stop. The Vault declares nothing
+ * itself: it is the live union of its Tables' self-declared contracts, discovered, not configured.
  *
  * Why this exists: references only have meaning across two Tables of the SAME Vault
  * (`adaptations.page -> pages`), so resolution is a Vault-level operation. The Vault holds every
@@ -18,38 +21,34 @@
 
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
-import type { VaultMembership } from './bindings/VaultMembership';
 import { assess, type VaultIntegrity } from './core/integrity';
 import { basename } from './core/path';
 import { createTable, type TableHandle } from './table.svelte';
 
 /**
  * Open `root` as a live vault. Synchronous and IO-free: the table set starts empty and fills from
- * the first membership snapshot once the root watch is armed, so there is no separate initial
- * listing and no list-then-watch gap (the Rust side arms before its seed scan).
+ * the first table list once the root watch is armed, so there is no separate initial listing and no
+ * list-then-watch gap (the Rust side arms before its seed scan).
  */
 export function createVault(root: string) {
 	const folderName = basename(root);
 
-	// child folder path -> its live Table. The membership snapshot from `watch_vault` reconciles
-	// this map; the `tables` getter sorts by name so the switcher and integrity read a stable
-	// order regardless of when a folder was added.
+	// table folder path -> its live Table. The table list from `watch_vault` reconciles this map;
+	// the `tables` getter sorts by name so the switcher and integrity read a stable order
+	// regardless of when a folder was added.
 	const tables = new SvelteMap<string, TableHandle>();
-	let rootHasTableFiles = $state(false);
 
 	/**
-	 * Reconcile the live tables against a fresh membership snapshot (the whole child-folder list):
-	 * dispose the folders that left, compose the folders that arrived, leave the rest untouched so
-	 * an unrelated change (a loose file written at the root) churns nothing.
+	 * Reconcile the live tables against a fresh table list (the whole set `watch_vault` resolved,
+	 * which is the child folders, or the root itself when the root is a single table): dispose the
+	 * folders that left, compose the folders that arrived, leave the rest untouched so an unrelated
+	 * change (a loose file written at the root) churns nothing.
 	 */
-	function reconcile(membership: VaultMembership): void {
-		// A membership snapshot can still arrive after dispose (the seed, or a debounced batch
-		// already in flight when the tab closed): ignore it, or it would arm a fresh per-folder
-		// watch with nothing left to dispose it. Mirrors the same `disposed` guard the watch-id
-		// path below already honors.
+	function reconcile(paths: string[]): void {
+		// A snapshot can still arrive after dispose (the seed, or a debounced batch already in flight
+		// when the tab closed): ignore it, or it would arm a fresh per-folder watch with nothing left
+		// to dispose it. Mirrors the same `disposed` guard the watch-id path below already honors.
 		if (disposed) return;
-		rootHasTableFiles = membership.rootHasTableFiles;
-		const paths = membership.tables;
 		const incoming = new Set(paths);
 		for (const [path, table] of tables) {
 			if (incoming.has(path)) continue;
@@ -90,7 +89,7 @@ export function createVault(root: string) {
 	// membership, then streams a snapshot per change, all through `reconcile`. `whenReady` resolves
 	// once the watch is armed (the seed scan finished before the invoke resolved) and rejects if it
 	// could not be armed; the shell gates on it with `{#await}`.
-	const channel = new Channel<VaultMembership>();
+	const channel = new Channel<string[]>();
 	channel.onmessage = reconcile;
 	let watchId: number | undefined;
 	let disposed = false;
@@ -117,14 +116,6 @@ export function createVault(root: string) {
 		/** The vault's live tables, sorted by folder name. A pure read with no side effects. */
 		get tables(): TableHandle[] {
 			return orderedTables;
-		},
-		/**
-		 * Whether the opened root itself contains table files (`matter.json` or `.md`). When there
-		 * are no child table folders, this usually means the user opened a table folder instead of
-		 * its parent vault.
-		 */
-		get rootHasTableFiles(): boolean {
-			return rootHasTableFiles;
 		},
 		/** The one composed integrity model across every table. Read it reactively. */
 		get integrity(): VaultIntegrity {

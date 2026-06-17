@@ -25,6 +25,12 @@ function createDictationCapability() {
 	// guard in `effective` makes this dead in production, so it can never ship a
 	// bypass: the real value always wins.
 	let override = $state<DictationCapability | null>(null);
+	const overrideCycle: (DictationCapability | null)[] = [
+		'untrusted',
+		'active',
+		'broken',
+		null,
+	];
 
 	/** The value callers see: the dev override when set, else the live value. */
 	function effective(): DictationCapability {
@@ -33,10 +39,6 @@ function createDictationCapability() {
 	}
 
 	return {
-		/** The current capability (dev override applied in dev builds). */
-		get status(): DictationCapability {
-			return effective();
-		},
 		/** The tap is running and trusted: global shortcuts and paste-back work. */
 		get isActive(): boolean {
 			return effective() === 'active';
@@ -63,8 +65,9 @@ function createDictationCapability() {
 		get override(): DictationCapability | null {
 			return override;
 		},
-		setOverride(next: DictationCapability | null) {
-			override = next;
+		cycleOverride() {
+			const index = overrideCycle.indexOf(override);
+			override = overrideCycle[(index + 1) % overrideCycle.length] ?? null;
 		},
 
 		/**

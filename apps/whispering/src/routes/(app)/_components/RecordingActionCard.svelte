@@ -32,13 +32,6 @@
 		tooltip: string;
 	} = $props();
 
-	// On desktop the shortcut is the global rdev tap, which only fires once macOS
-	// Accessibility is granted. We keep showing the key but dim it when a grant is
-	// needed, reading the same fact the home-page notice does so the two agree.
-	const shortcutNeedsAccessibility = $derived(
-		dictationCapability.needsAccessibility,
-	);
-
 	const accessibleLabel = $derived(
 		shortcutLabel ? `${label} (${shortcutLabel})` : label,
 	);
@@ -89,10 +82,14 @@
 			</span>
 		</span>
 		{#if shortcutLabel}
+			<!-- On desktop the shortcut is the global rdev tap, which only fires once
+			macOS Accessibility is granted. Keep showing the key but dim it when a
+			grant is needed, reading the same fact the home-page notice does so the
+			two agree. -->
 			<Kbd.Root
 				class={cn(
 					'h-7 max-w-28 shrink-0 rounded-md bg-muted/75 px-2 text-xs text-muted-foreground shadow-none',
-					shortcutNeedsAccessibility && 'opacity-50',
+					dictationCapability.needsAccessibility && 'opacity-50',
 				)}
 			>
 				{shortcutLabel}

@@ -8,7 +8,6 @@
 		MEGABYTE,
 	} from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
-	import { cn } from '@epicenter/ui/utils';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
@@ -408,7 +407,7 @@
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root class={cn(shortcutNeedsAccessibility && 'opacity-50')}
+							<Kbd.Root class={shortcutNeedsAccessibility ? 'opacity-50' : undefined}
 								>{manualShortcutLabel}</Kbd.Root>
 						</Link>{/if}
 					to start recording{tauri ? ' from anywhere' : ''}.
@@ -421,7 +420,7 @@
 							tooltip="Configure the voice activation shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root class={cn(shortcutNeedsAccessibility && 'opacity-50')}
+							<Kbd.Root class={shortcutNeedsAccessibility ? 'opacity-50' : undefined}
 								>{vadShortcutLabel}</Kbd.Root>
 						</Link>{/if}
 					to start a voice activated session.
@@ -434,7 +433,7 @@
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
-							<Kbd.Root class={cn(shortcutNeedsAccessibility && 'opacity-50')}
+							<Kbd.Root class={shortcutNeedsAccessibility ? 'opacity-50' : undefined}
 								>{manualShortcutLabel}</Kbd.Root>
 						</Link>
 						to start recording instead.

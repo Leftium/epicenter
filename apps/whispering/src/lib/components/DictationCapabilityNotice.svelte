@@ -8,24 +8,17 @@
 		openSystemSettings,
 	} from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
-
-	// One declarative view over the dictation capability Rust owns. It shows the
-	// matching panel when the global tap cannot fire, and renders nothing while it
-	// works (`active`) or is still seeding (`unknown`). Each state has its own
-	// remediation, and only the capability owner can tell them apart, so the
-	// frontend reads the value rather than inferring it.
-	//
-	//   unsupported  Linux Wayland: the tap can never run, so there is nothing to
-	//                grant. Explain the limit, no settings button.
-	//   broken       a macOS grant that went stale after an update, where toggling
-	//                does nothing: the fix is remove-and-re-add, so the guide leads.
-	//   untrusted    macOS never granted: a capability pitch. Open Settings, toggle on.
-	const isUnsupported = $derived(dictationCapability.isUnsupported);
-	const isStale = $derived(dictationCapability.isStale);
-	const needsAccessibility = $derived(dictationCapability.needsAccessibility);
 </script>
 
-{#if isUnsupported}
+<!-- One declarative view over the dictation capability Rust owns: the matching
+panel when the global tap cannot fire, nothing while it works (`active`) or is
+still seeding (`unknown`). Each state has its own remediation and only the
+capability owner can tell them apart, so we read the value, never infer it. The
+branch order is load-bearing: `broken` is caught before the plain untrusted case
+(`needsAccessibility` covers both), so the last branch is the never-granted pitch. -->
+{#if dictationCapability.isUnsupported}
+	<!-- Linux Wayland: the tap can never run, so there is nothing to grant.
+	Explain the limit, no settings button. -->
 	<Alert.Root class="w-full text-left">
 		<TriangleAlertIcon class="size-4" aria-hidden="true" />
 		<Alert.Title>Global shortcuts need an X11 session</Alert.Title>
@@ -36,7 +29,9 @@
 			clipboard.
 		</Alert.Description>
 	</Alert.Root>
-{:else if isStale}
+{:else if dictationCapability.isStale}
+	<!-- A macOS grant that went stale after an update, where toggling does
+	nothing: the fix is remove-and-re-add, so the guide leads. -->
 	<Alert.Root class="w-full text-left">
 		<TriangleAlertIcon class="size-4" aria-hidden="true" />
 		<Alert.Title>Your global shortcut stopped working</Alert.Title>
@@ -52,7 +47,9 @@
 			</Button>
 		</Alert.Action>
 	</Alert.Root>
-{:else if needsAccessibility}
+{:else if dictationCapability.needsAccessibility}
+	<!-- macOS never granted (broken is handled above): a capability pitch.
+	Open Settings, toggle on. -->
 	<Alert.Root class="w-full text-left">
 		<WandSparklesIcon class="size-4" aria-hidden="true" />
 		<Alert.Title>Dictate into any app, hands-free</Alert.Title>

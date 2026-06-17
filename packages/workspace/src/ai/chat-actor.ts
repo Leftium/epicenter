@@ -25,7 +25,12 @@
  *    `Y.Text` and writes a write-once `finish`;
  *  - honors the client-owned durable cancel (`cancelRequestedAt`): mid-stream it
  *    aborts the live stream and writes `finish: cancelled`; a turn cancelled
- *    before it could start is claimed and finished cancelled without streaming.
+ *    before it could start is claimed and finished cancelled without streaming;
+ *  - never runs two streams for one body at once: while a generation is in
+ *    flight it does not claim again (so the createdAt-based active window lapsing
+ *    on a slow model cannot trigger a second concurrent stream), and if the turn
+ *    it is answering is re-pointed (a retry) or removed it finishes that orphan
+ *    cancelled before the re-pointed turn is claimed.
  *
  * Single writer per field: the client owns the user turn (including the cancel
  * stamp), the actor owns the assistant message (text + finish). The doc itself is
@@ -56,12 +61,17 @@ import {
 const FAILED_MESSAGE_MAX_CHARS = 240;
 
 /**
- * The one contract every inference backend speaks: take the snapshotted prompt,
- * return an async iterable of text-delta (and error) chunks. A TanStack adapter
- * stream and a local model backend are interchangeable behind it.
+ * The one contract every inference backend speaks: take the snapshotted prompt
+ * and an abort signal, return an async iterable of text-delta (and error)
+ * chunks. A TanStack adapter stream and a local model backend are
+ * interchangeable behind it. The backend MUST wire `signal` into the provider
+ * call (e.g. `chat({ abortController })`) so a cancel or teardown frees the
+ * connection instead of letting the provider keep generating; the actor also
+ * stops consuming on abort, but the signal is what actually stops the work.
  */
 export type ChatStream = (
 	messages: ModelMessage[],
+	signal: AbortSignal,
 ) => AsyncIterable<StreamChunk>;
 
 /** The transcript reads the actor needs: a snapshot of the messages. */
@@ -111,18 +121,39 @@ export function attachChatActor({
 						message.role === 'user' &&
 						message.generationId === inFlight?.generationId,
 				);
+				// Durable cancel, mid-stream.
 				if (turn?.cancelRequestedAt !== undefined) {
 					inFlight.writer.finish({ kind: 'cancelled' });
 					stop();
 					return;
 				}
+				// Superseded: the turn we are answering was re-pointed (a retry
+				// re-mints its generationId) or removed, so this stream is stale.
+				// Finish it cancelled so it stops counting as a recent unfinished
+				// generation, then stop; the re-pointed turn is claimed on the next
+				// observe.
+				if (turn === undefined) {
+					inFlight.writer.finish({ kind: 'cancelled' });
+					stop();
+					return;
+				}
+				// Otherwise this turn is still streaming. Never run two streams
+				// concurrently: the active-generation window is createdAt-based (it
+				// exists to detect an evicted cross-process worker) and can lapse
+				// while a slow local model is still producing, so it must not trick a
+				// live actor into a second concurrent claim.
+				return;
 			}
 
 			const turn = findUnansweredTurn(messages, now);
 			if (!turn) return;
 
-			// Claim synchronously: this append commits before `onChange` returns, so
-			// a re-entrant fire sees the id and `findUnansweredTurn` stops it.
+			// Claim by appending the assistant map: this commits the claim atomically
+			// within this synchronous onChange. A later (deferred) re-entrant onChange
+			// re-reads the committed state and `findUnansweredTurn` short-circuits on
+			// the existing id. (Yjs defers observers fired from inside a transaction,
+			// so the guard is the single-threaded read-check-append, not synchronous
+			// re-entry.)
 			const writer = appendAssistantMessage(ydoc, {
 				id: turn.generationId,
 				createdAt: now,
@@ -172,7 +203,7 @@ async function streamReply(
 ): Promise<void> {
 	let runError: { code: string; message: string } | undefined;
 	try {
-		for await (const chunk of startStream(prompt)) {
+		for await (const chunk of startStream(prompt, signal)) {
 			if (signal.aborted) return;
 			if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) {
 				writer.appendText(chunk.delta);

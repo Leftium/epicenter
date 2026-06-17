@@ -67,9 +67,9 @@ function setup(startStream: ChatStream) {
 describe('attachChatActor', () => {
 	test('claims the unanswered turn, streams the reply, writes finish completed', async () => {
 		let prompt: ModelMessage[] | undefined;
-		const startStream: ChatStream = (messages) => {
+		const startStream: ChatStream = (messages, signal) => {
 			prompt = messages;
-			return streamOf('你', '好', '!')(messages);
+			return streamOf('你', '好', '!')(messages, signal);
 		};
 		const { doc, transcript, actor } = setup(startStream);
 
@@ -175,9 +175,9 @@ describe('attachChatActor', () => {
 
 	test('a turn cancelled before it could start is claimed and finished cancelled without streaming', async () => {
 		let started = false;
-		const startStream: ChatStream = (messages) => {
+		const startStream: ChatStream = (messages, signal) => {
 			started = true;
-			return streamOf('should never run')(messages);
+			return streamOf('should never run')(messages, signal);
 		};
 		const { doc, transcript, actor } = setup(startStream);
 
@@ -223,6 +223,138 @@ describe('attachChatActor', () => {
 		const trailing = transcript.read().at(-1);
 		expect(trailing?.text).toBe('first ');
 		expect(trailing?.finish).toBeUndefined();
+		doc.destroy();
+	});
+
+	const assistantCount = (transcript: { read(): { role: string }[] }) =>
+		transcript.read().filter((m) => m.role === 'assistant').length;
+
+	test('does not start a second stream while one is in flight (no duplicate answer)', async () => {
+		const { startStream, release } = gatedStream();
+		const { doc, transcript, actor } = setup(startStream);
+
+		transcript.appendUser({
+			id: 'u1',
+			content: 'first?',
+			createdAt: 1,
+			generationId: 'gen-1',
+		});
+		actor.onChange?.();
+		await tick(); // gen-1 claimed and streaming, parked at the gate
+
+		// A second turn arrives (e.g. another device) while gen-1 is still live.
+		transcript.appendUser({
+			id: 'u2',
+			content: 'second?',
+			createdAt: 2,
+			generationId: 'gen-2',
+		});
+		actor.onChange?.();
+		await tick();
+
+		// The actor must NOT claim gen-2 concurrently: exactly one assistant stream.
+		expect(assistantCount(transcript)).toBe(1);
+
+		// gen-1 finishes, then the actor claims the queued gen-2.
+		release();
+		await tick();
+		actor.onChange?.();
+		await tick();
+
+		expect(assistantCount(transcript)).toBe(2);
+		expect(transcript.read().at(-1)).toMatchObject({
+			id: 'gen-2',
+			finish: { kind: 'completed' },
+		});
+		doc.destroy();
+	});
+
+	test('a retry that re-mints the turn supersedes the in-flight stream (orphan finished cancelled)', async () => {
+		const { startStream, release } = gatedStream();
+		const { doc, transcript, actor } = setup(startStream);
+
+		transcript.appendUser({
+			id: 'u1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'gen-1',
+		});
+		actor.onChange?.();
+		await tick(); // gen-1 streaming, parked
+
+		// The client retries: re-point the turn to a fresh id (clears the old one).
+		transcript.remintGeneration('gen-2');
+		actor.onChange?.();
+
+		// The orphaned gen-1 stream is finished cancelled, not left blocking.
+		expect(transcript.read().find((m) => m.id === 'gen-1')?.finish).toEqual({
+			kind: 'cancelled',
+		});
+
+		// The re-pointed turn is then claimed and answered.
+		release();
+		await tick();
+		actor.onChange?.();
+		await tick();
+		expect(transcript.read().at(-1)).toMatchObject({
+			id: 'gen-2',
+			finish: { kind: 'completed' },
+		});
+		doc.destroy();
+	});
+
+	test('passes an abort signal to the provider and aborts it on cancel', async () => {
+		let captured: AbortSignal | undefined;
+		const gate = Promise.withResolvers<void>();
+		const startStream: ChatStream = (_messages, signal) => {
+			captured = signal;
+			return (async function* () {
+				yield textChunk('first ');
+				await gate.promise; // park; a real provider would abort on the signal
+			})();
+		};
+		const { doc, transcript, actor } = setup(startStream);
+
+		transcript.appendUser({
+			id: 'u1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'gen-1',
+		});
+		actor.onChange?.();
+		await tick();
+
+		expect(captured?.aborted).toBe(false);
+		transcript.requestCancel(2);
+		actor.onChange?.();
+
+		// The provider's signal is aborted, so a real backend would stop generating.
+		expect(captured?.aborted).toBe(true);
+		expect(transcript.read().at(-1)?.finish).toEqual({ kind: 'cancelled' });
+		gate.resolve(); // unpark the abandoned generator
+		doc.destroy();
+	});
+
+	test('a cancel stamped after a terminal finish is an inert no-op', async () => {
+		const { doc, transcript, actor } = setup(streamOf('done'));
+
+		transcript.appendUser({
+			id: 'u1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'gen-1',
+		});
+		actor.onChange?.();
+		await tick(); // completed
+
+		// A late cancel must not write a second finish or start a new stream.
+		transcript.requestCancel(99);
+		actor.onChange?.();
+		await tick();
+
+		const messages = transcript.read();
+		expect(messages).toHaveLength(2);
+		expect(messages[1]?.finish).toEqual({ kind: 'completed' });
 		doc.destroy();
 	});
 });

@@ -50,9 +50,9 @@ describe('validateContract (the matter.json gate)', () => {
 	});
 
 	test('rejects optional when it is not an array of field names', () => {
-		expect(validateContract({ fields: {}, optional: 'title' }).error?.name).toBe(
-			'InvalidOptional',
-		);
+		expect(
+			validateContract({ fields: {}, optional: 'title' }).error?.name,
+		).toBe('InvalidOptional');
 		expect(validateContract({ fields: {}, optional: [42] }).error?.name).toBe(
 			'InvalidOptional',
 		);

@@ -32,17 +32,17 @@ import { Err, type Result, tryAsync } from 'wellcrafted/result';
 // unreadable). Generated from the Rust `FileDelta` enum by ts-rs, so the IPC payload
 // has one source of truth; regenerate with `cargo test` in `src-tauri`.
 import type { FileDelta } from './bindings/FileDelta';
+import { parseEntry, type Row } from './core/parse';
+import { basename } from './core/path';
+import { editBody, editField } from './core/serialize';
+import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
 import {
 	buildView,
-	type TableRead,
 	loadContract,
 	MatterReadError,
+	type TableRead,
 	type UnreadableFile,
 } from './core/table';
-import { parseEntry, type Row } from './core/parse';
-import { editBody, editField } from './core/serialize';
-import { basename } from './core/path';
-import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
 
 /**
  * Open `path` as a live table. Synchronous and IO-free: the store starts empty

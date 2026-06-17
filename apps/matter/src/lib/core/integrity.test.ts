@@ -14,7 +14,6 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readTable } from './table';
 import {
 	type AssessedCell,
 	assess,
@@ -22,6 +21,7 @@ import {
 	type TableInput,
 	type VaultIntegrity,
 } from './integrity';
+import { readTable } from './table';
 
 type Entries = Parameters<typeof readTable>[0];
 
@@ -257,7 +257,10 @@ describe('assess: table states', () => {
 
 		const pages = typed(v, 'pages');
 		expect(pages.rows).toHaveLength(1);
-		expect(pages.contract.fields.map((f) => f.name)).toEqual(['title', 'subtitle']);
+		expect(pages.contract.fields.map((f) => f.name)).toEqual([
+			'title',
+			'subtitle',
+		]);
 	});
 
 	test('a typed row surfaces frontmatter keys outside the contract as extras', () => {

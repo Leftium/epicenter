@@ -131,9 +131,7 @@ export function validateContract(
  * (carrying the parser error as `cause`) rather than throwing, so a junk file degrades
  * to the raw view with a diagnostic.
  */
-export function parseContract(
-	text: string,
-): Result<Contract, ContractError> {
+export function parseContract(text: string): Result<Contract, ContractError> {
 	const { data: raw, error } = trySync({
 		try: () => JSON.parse(text) as unknown,
 		catch: (cause) => ContractError.InvalidJson({ cause }),

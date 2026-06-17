@@ -29,9 +29,9 @@
 
 import { type Field, referenceTargetOf } from '@epicenter/field';
 import type { Cell, Extra } from './conformance';
-import type { TableRead } from './table';
 import type { Contract } from './contract';
 import { type Row, stemOf } from './parse';
+import type { TableRead } from './table';
 
 /**
  * One classified cell, widened from conformance's four-state {@link Cell} with the cross-table
@@ -168,7 +168,11 @@ function assessTable(
 	if (view.mode === 'untyped') {
 		// A junk matter.json is the genuine failure; no matter.json at all is the valid raw grid.
 		return view.contractError
-			? { name, status: 'invalid-contract', message: view.contractError.message }
+			? {
+					name,
+					status: 'invalid-contract',
+					message: view.contractError.message,
+				}
 			: { name, status: 'untyped', rows: read.rows, columns: view.columns };
 	}
 

@@ -22,8 +22,8 @@
  */
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
+import { goto } from '$app/navigation';
 import { routes } from '$lib/routes';
 
 /** One open vault as persisted: an opaque id and the absolute vault-root path. The tab label is

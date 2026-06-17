@@ -130,7 +130,11 @@ export function readTable(
 		rows.push(data);
 	}
 
-	return { rows, unreadable, view: buildView(rows, loadContract(contractText)) };
+	return {
+		rows,
+		unreadable,
+		view: buildView(rows, loadContract(contractText)),
+	};
 }
 
 /**

@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readTable } from '../core/table';
 import { assess, type TableInput } from '../core/integrity';
+import { readTable } from '../core/table';
 import { exitCodeFor } from './exit-code';
 import { summarize, toViolations } from './violations';
 

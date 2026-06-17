@@ -322,7 +322,9 @@ describe('reference: the marker-discriminated cross-row pointer', () => {
 		// A reference points at a row by stem, so "" names no row and is never a valid pointer.
 		// The floor is intrinsic to the kind: a bare {type:'string','x-ref':'pages'} (no minLength)
 		// still rejects "" at the value check, so an empty pointer is INVALID, not silently OK.
-		const check = compile(recognize({ type: 'string', 'x-ref': 'pages' })!.schema);
+		const check = compile(
+			recognize({ type: 'string', 'x-ref': 'pages' })!.schema,
+		);
 		expect(check('become-the-source')).toBe(true);
 		expect(check('')).toBe(false);
 	});

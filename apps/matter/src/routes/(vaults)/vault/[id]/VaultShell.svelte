@@ -3,8 +3,8 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import LayersIcon from '@lucide/svelte/icons/layers';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { matterNavigation } from '$lib/matter-navigation';
 	import { createVault } from '$lib/vault.svelte';
 	import IntegrityPanel from './IntegrityPanel.svelte';
 	import TablePane from './TablePane.svelte';
@@ -47,10 +47,19 @@
 		{#if vault.tables.length === 0}
 			<Empty.Root class="flex-1 border-0">
 				<Empty.Media variant="icon"><LayersIcon /></Empty.Media>
-				<Empty.Title>No tables yet</Empty.Title>
-				<Empty.Description>
-					{vault.folderName} has no table folders. Add a folder of markdown to it and it appears here.
-				</Empty.Description>
+				{#if vault.rootHasTableFiles}
+					<Empty.Title>This looks like a table folder</Empty.Title>
+					<Empty.Description>
+						Open its parent vault folder instead. Matter reads each immediate child folder as one
+						table.
+					</Empty.Description>
+				{:else}
+					<Empty.Title>No tables yet</Empty.Title>
+					<Empty.Description>
+						{vault.folderName} has no table folders. Add a folder of markdown to it and it
+						appears here.
+					</Empty.Description>
+				{/if}
 			</Empty.Root>
 		{:else}
 			<div class="flex min-h-10 items-center gap-1 overflow-x-auto border-b px-2 py-1">
@@ -58,12 +67,7 @@
 					{@const active = activeTable?.folderName === table.folderName}
 					<button
 						type="button"
-						onclick={() =>
-							goto(`?table=${encodeURIComponent(table.folderName)}`, {
-								replaceState: true,
-								keepFocus: true,
-								noScroll: true,
-							})}
+						onclick={() => matterNavigation.showTable(table.folderName)}
 						class={[
 							'shrink-0 rounded-md px-2.5 py-1 text-sm transition',
 							active

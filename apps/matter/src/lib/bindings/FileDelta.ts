@@ -11,7 +11,4 @@
  * same `tag`/`rename_all`, so the wire shape and the generated type stay in lockstep
  * by construction.
  */
-export type FileDelta =
-	| { kind: 'content'; fileName: string; text: string }
-	| { kind: 'removed'; fileName: string }
-	| { kind: 'unreadable'; fileName: string };
+export type FileDelta = { "kind": "content", fileName: string, text: string, } | { "kind": "removed", fileName: string, } | { "kind": "unreadable", fileName: string, };

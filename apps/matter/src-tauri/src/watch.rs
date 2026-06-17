@@ -42,7 +42,11 @@ pub struct WatcherStore {
 /// same `tag`/`rename_all`, so the wire shape and the generated type stay in lockstep
 /// by construction.
 #[derive(Clone, Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 #[ts(export, export_to = "../../src/lib/bindings/")]
 pub enum FileDelta {
     /// Read as UTF-8 text: the frontend parses it into a row (or its own
@@ -155,20 +159,43 @@ pub fn unwatch_folder(id: u32, store: State<WatcherStore>) {
     store.watchers.lock().unwrap().remove(&id);
 }
 
+/// A vault root's observable shape. `tables` are the immediate child directories, each one a
+/// table. `root_has_table_files` is true when the root itself has files that belong inside a table
+/// folder (`matter.json` or `.md`), so the UI can distinguish an empty vault from a table folder
+/// opened at the wrong altitude.
+#[derive(Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/bindings/")]
+pub struct VaultMembership {
+    tables: Vec<String>,
+    root_has_table_files: bool,
+}
+
 /// The vault root's immediate child DIRECTORIES, each one a table, as absolute paths sorted for
-/// a deterministic order. Loose files at the root (a stray `README.md`) are ignored: only folders
-/// are tables. Errors only if the root itself cannot be listed; a child that races away mid-scan
-/// just does not appear, surfacing on the next re-scan.
-fn scan_tables(root: &Path) -> Result<Vec<String>, String> {
+/// a deterministic order. Loose files at the root (a stray `README.md`) are ignored for
+/// membership, but relevant table files are reported so the frontend can explain the wrong-altitude
+/// case. Errors only if the root itself cannot be listed; a child that races away mid-scan just
+/// does not appear, surfacing on the next re-scan.
+fn scan_vault(root: &Path) -> Result<VaultMembership, String> {
     let mut dirs = Vec::new();
+    let mut root_has_table_files = false;
     for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
-        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if file_type.is_dir() {
             dirs.push(entry.path().to_string_lossy().to_string());
+        } else if file_type.is_file() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_relevant(&name) {
+                root_has_table_files = true;
+            }
         }
     }
     dirs.sort();
-    Ok(dirs)
+    Ok(VaultMembership {
+        tables: dirs,
+        root_has_table_files,
+    })
 }
 
 /// Watch a VAULT root: stream the set of table folders beneath it as a full, sorted membership
@@ -185,7 +212,7 @@ fn scan_tables(root: &Path) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn watch_vault(
     path: String,
-    channel: Channel<Vec<String>>,
+    channel: Channel<VaultMembership>,
     store: State<WatcherStore>,
 ) -> Result<u32, String> {
     let dir = std::path::PathBuf::from(&path);
@@ -199,8 +226,8 @@ pub fn watch_vault(
             // "the membership may have changed, re-scan." A failed scan (root vanished) sends
             // nothing and self-heals on the next event.
             let Ok(_events) = result else { return };
-            if let Ok(tables) = scan_tables(&root) {
-                let _ = tx.send(tables);
+            if let Ok(membership) = scan_vault(&root) {
+                let _ = tx.send(membership);
             }
         },
     )
@@ -212,7 +239,7 @@ pub fn watch_vault(
     debouncer
         .watch(&dir, RecursiveMode::NonRecursive)
         .map_err(|e| e.to_string())?;
-    let seed = scan_tables(&dir)?;
+    let seed = scan_vault(&dir)?;
     let _ = channel.send(seed);
 
     let id = store.next.fetch_add(1, Ordering::Relaxed);

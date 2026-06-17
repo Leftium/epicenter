@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { openVaults } from '$lib/open-vaults.svelte';
+import { routes } from '$lib/routes';
 import type { PageLoad } from './$types';
 
 /**
@@ -13,5 +14,5 @@ import type { PageLoad } from './$types';
  */
 export const load: PageLoad = () => {
 	const [first] = openVaults.list;
-	if (first) redirect(307, `/vault/${first.id}`);
+	if (first) redirect(307, routes.vault(first.id));
 };

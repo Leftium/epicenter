@@ -21,8 +21,8 @@
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { browser } from '$app/environment';
-import { goto } from '$app/navigation';
 import { basename } from '$lib/core/path';
+import { matterNavigation } from '$lib/matter-navigation';
 
 /** One open vault as persisted: an opaque id, the absolute vault-root path, its basename label. */
 export type OpenVault = { id: string; root: string; folderName: string };
@@ -90,7 +90,7 @@ function createOpenVaults() {
 		if (root === null) return;
 		const existing = vaults.find((vault) => vault.root === root);
 		if (existing) {
-			await goto(`/vault/${existing.id}`);
+			await matterNavigation.openVault(existing.id);
 			return;
 		}
 		// Opaque, URL-safe, collision-free: the URL carries this, not the raw path (paths
@@ -102,15 +102,15 @@ function createOpenVaults() {
 		};
 		vaults = [...vaults, vault];
 		persist();
-		await goto(`/vault/${vault.id}`);
+		await matterNavigation.openVault(vault.id);
 	}
 
 	/**
 	 * Remove a tab. Navigating away from a closed ACTIVE tab is the caller's job (the
-	 * tab strip's `closeTab` goto()s a neighbor). That is what keeps the invariant "the
-	 * viewed id is always in the list" true: the route's `load` resolves id -> path once
-	 * and is not reactive to this list, so a removal that did NOT navigate would leave a
-	 * now-orphaned vault live until the next navigation.
+	 * tab strip's `closeTab` navigates to a neighbor). That is what keeps the invariant
+	 * "the viewed id is always in the list" true: the route's `load` resolves id -> path
+	 * once and is not reactive to this list, so a removal that did NOT navigate would
+	 * leave a now-orphaned vault live until the next navigation.
 	 */
 	function close(id: string): void {
 		vaults = vaults.filter((vault) => vault.id !== id);

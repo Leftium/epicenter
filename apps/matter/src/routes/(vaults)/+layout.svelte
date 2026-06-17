@@ -2,9 +2,10 @@
 	import { Button } from '@epicenter/ui/button';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { matterNavigation } from '$lib/matter-navigation';
 	import { openVaults } from '$lib/open-vaults.svelte';
+	import { routes } from '$lib/routes';
 
 	let { children } = $props();
 
@@ -20,7 +21,9 @@
 		if (!wasActive) return;
 		const remaining = openVaults.list;
 		const next = remaining[index] ?? remaining[index - 1];
-		await goto(next ? `/vault/${next.id}` : '/');
+		await (next
+			? matterNavigation.openVault(next.id)
+			: matterNavigation.openOnboarding());
 	}
 </script>
 
@@ -34,7 +37,11 @@
 					active ? 'border-border bg-muted' : 'border-transparent hover:bg-muted/50',
 				]}
 			>
-				<a href="/vault/{vault.id}" class="max-w-48 truncate py-1 pl-2.5 pr-1" title={vault.root}>
+				<a
+					href={routes.vault(vault.id)}
+					class="max-w-48 truncate py-1 pl-2.5 pr-1"
+					title={vault.root}
+				>
 					{vault.folderName}
 				</a>
 				<button

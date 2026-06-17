@@ -18,6 +18,7 @@
 
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
+import type { VaultMembership } from './bindings/VaultMembership';
 import { assess, type VaultIntegrity } from './core/integrity';
 import { basename } from './core/path';
 import { createTable, type TableHandle } from './table.svelte';
@@ -34,18 +35,21 @@ export function createVault(root: string) {
 	// this map; the `tables` getter sorts by name so the switcher and integrity read a stable
 	// order regardless of when a folder was added.
 	const tables = new SvelteMap<string, TableHandle>();
+	let rootHasTableFiles = $state(false);
 
 	/**
 	 * Reconcile the live tables against a fresh membership snapshot (the whole child-folder list):
 	 * dispose the folders that left, compose the folders that arrived, leave the rest untouched so
 	 * an unrelated change (a loose file written at the root) churns nothing.
 	 */
-	function reconcile(paths: string[]): void {
+	function reconcile(membership: VaultMembership): void {
 		// A membership snapshot can still arrive after dispose (the seed, or a debounced batch
 		// already in flight when the tab closed): ignore it, or it would arm a fresh per-folder
 		// watch with nothing left to dispose it. Mirrors the same `disposed` guard the watch-id
 		// path below already honors.
 		if (disposed) return;
+		rootHasTableFiles = membership.rootHasTableFiles;
+		const paths = membership.tables;
 		const incoming = new Set(paths);
 		for (const [path, table] of tables) {
 			if (incoming.has(path)) continue;
@@ -86,7 +90,7 @@ export function createVault(root: string) {
 	// membership, then streams a snapshot per change, all through `reconcile`. `whenReady` resolves
 	// once the watch is armed (the seed scan finished before the invoke resolved) and rejects if it
 	// could not be armed; the shell gates on it with `{#await}`.
-	const channel = new Channel<string[]>();
+	const channel = new Channel<VaultMembership>();
 	channel.onmessage = reconcile;
 	let watchId: number | undefined;
 	let disposed = false;
@@ -113,6 +117,14 @@ export function createVault(root: string) {
 		/** The vault's live tables, sorted by folder name. A pure read with no side effects. */
 		get tables(): TableHandle[] {
 			return orderedTables;
+		},
+		/**
+		 * Whether the opened root itself contains table files (`matter.json` or `.md`). When there
+		 * are no child table folders, this usually means the user opened a table folder instead of
+		 * its parent vault.
+		 */
+		get rootHasTableFiles(): boolean {
+			return rootHasTableFiles;
 		},
 		/** The one composed integrity model across every table. Read it reactively. */
 		get integrity(): VaultIntegrity {

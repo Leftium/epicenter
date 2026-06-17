@@ -34,7 +34,7 @@ container is convention, not a rule, and nothing reserves the name. Your own
 folders (`journal/`, `ideas/`, `publish/`) sit beside them as plain files you
 keep forever.
 
-You speak a thought into Whispering and it lands in your Whispering app folder as Markdown. You save tabs, draft entries, capture whatever, each through a purpose-built app, and every capture becomes a file you can grep. An agent reads the same files, queries the SQLite mirrors with plain SQL, and when it needs to change app state it goes through the same gate you do: `epicenter run <mount>.<action>`, validated against the app's schema. Nothing mutates by editing generated files; the projection is one-way on purpose.
+You speak a thought into Whispering and it lands in your Whispering app folder as Markdown. You save tabs, draft entries, capture whatever, each through a purpose-built app, and every capture becomes a file you can grep. An agent reads the same files, queries the SQLite mirrors with plain SQL, and when it needs to change app state it goes through the same gate you do: `epicenter run <action>`, validated against the app's schema. Nothing mutates by editing generated files; the projection is one-way on purpose.
 
 The loop is capture, curate, keep. App output is a disposable inbox, regenerable from the CRDT at any time. What matters graduates into folders you own: ordinary Markdown, tracked in git, still yours after every app in this repo is gone.
 

@@ -72,7 +72,7 @@ is planned follow-up work.
 You can also drive changes through the daemon's RPC actions. Use the CLI:
 
 ```sh
-bun x epicenter run fuji.entries_get '{"id":"01HM0000000000000000000000"}' -C examples/fuji
+bun x epicenter run entries_get '{"id":"01HM0000000000000000000000"}' -C examples/fuji
 ```
 
 The action set is defined by `@epicenter/fuji` and re-exposed through this

@@ -78,8 +78,8 @@ export type DaemonListSnapshot = {
  * the app through the daemon server factory.
  *
  * The daemon serves one mounted runtime. Its socket is the route; the mount
- * name is a label for CLI display and client-side `<mount>.<action>` parsing,
- * never an internal dispatch key.
+ * name is a label for CLI display, never an internal dispatch key. Actions are
+ * addressed by their bare key on the wire and in the CLI alike.
  */
 export function buildDaemonApp(mount: DaemonServedMount) {
 	return new Hono()

@@ -2,8 +2,8 @@
  * `defineMount`: the entry contract for an app mount inside the daemon.
  *
  * `epicenter.config.ts` default-exports one `Mount`. The mount carries its own
- * canonical `name`, which becomes the CLI action prefix (`<name>.<action_key>`)
- * and is propagated into the mount context so handlers can use it for logging.
+ * canonical `name`, which `epicenter list` prints as the header label and which
+ * is propagated into the mount context so handlers can use it for logging.
  *
  * The host calls `open(ctx)` once on `epicenter daemon up`. A mount can do one
  * of two things:

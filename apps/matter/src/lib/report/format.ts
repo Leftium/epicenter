@@ -97,6 +97,22 @@ function groupByLocation(
 	return [...groups.entries()];
 }
 
+/**
+ * One line per table that could not be loaded. These carry no cells, so they never appear as a
+ * violation; named here so a fatal is visible above the roll-up, not just a count in it.
+ */
+function fatalTableLines(summary: Summary): string[] {
+	const lines: string[] = [];
+	for (const table of summary.tables) {
+		if (table.status === 'unreadable') {
+			lines.push(`${table.name}\n  can't read: ${table.message}`);
+		} else if (table.status === 'invalid-contract') {
+			lines.push(`${table.name}\n  invalid contract: ${table.message}`);
+		}
+	}
+	return lines;
+}
+
 /** The closing roll-up line: ready / attention, plus failures and untyped notes. */
 function summaryLine(summary: Summary): string {
 	const {
@@ -131,9 +147,12 @@ export function formatReport(
 	violations: readonly Violation[],
 	summary: Summary,
 ): string {
-	const sections = groupByLocation(violations).map(([location, group]) =>
-		[location, ...group.map(violationLine)].join('\n'),
-	);
+	const sections = [
+		...fatalTableLines(summary),
+		...groupByLocation(violations).map(([location, group]) =>
+			[location, ...group.map(violationLine)].join('\n'),
+		),
+	];
 
 	for (const extra of summary.extras) {
 		sections.push(

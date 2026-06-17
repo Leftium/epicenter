@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { assess } from '../core/integrity';
-import { loadTable, loadVault } from './fs';
+import { loadPath, loadTable, loadVault } from './fs';
 
 /** A scratch directory, cleaned up after `body` runs. */
 async function withTempDir<T>(body: (dir: string) => Promise<T>): Promise<T> {
@@ -97,6 +97,57 @@ describe('loadVault', () => {
 	test('an empty root loads as an empty vault, not an error', async () => {
 		await withTempDir(async (root) => {
 			expect(await loadVault(root)).toEqual([]);
+		});
+	});
+});
+
+describe('loadPath: scope inference', () => {
+	test('a folder with a matter.json is one table, even if it has subfolders', async () => {
+		await withTempDir(async (root) => {
+			const dir = join(root, 'pages');
+			await mkdir(dir);
+			await writeFile(join(dir, 'matter.json'), pagesModel);
+			await writeFile(join(dir, 'p1.md'), '---\ntitle: Hello\n---');
+			await mkdir(join(dir, 'attachments')); // a stray subfolder must not make it a vault
+
+			const { scope, tables } = await loadPath(dir);
+			expect(scope).toBe('table');
+			expect(tables.map((t) => t.name)).toEqual(['pages']);
+		});
+	});
+
+	test('a folder of subfolders and no matter.json is a vault', async () => {
+		await withTempDir(async (root) => {
+			for (const name of ['pages', 'adaptations']) {
+				const dir = join(root, name);
+				await mkdir(dir);
+				await writeFile(join(dir, 'x.md'), '---\ntitle: X\n---');
+			}
+			await writeFile(join(root, 'README.md'), '# loose file, ignored');
+
+			const { scope, tables } = await loadPath(root);
+			expect(scope).toBe('vault');
+			expect(tables.map((t) => t.name)).toEqual(['adaptations', 'pages']);
+		});
+	});
+
+	test('a raw leaf folder (md only, no matter.json, no subfolders) is one table', async () => {
+		await withTempDir(async (root) => {
+			const dir = join(root, 'notes');
+			await mkdir(dir);
+			await writeFile(join(dir, 'n1.md'), '---\ntag: idea\n---');
+
+			const { scope, tables } = await loadPath(dir);
+			expect(scope).toBe('table');
+			expect(tables[0]?.status).toBe('readable');
+		});
+	});
+
+	test('a path that cannot be listed is one unreadable table', async () => {
+		await withTempDir(async (root) => {
+			const { scope, tables } = await loadPath(join(root, 'nope'));
+			expect(scope).toBe('table');
+			expect(tables[0]?.status).toBe('unreadable');
 		});
 	});
 });

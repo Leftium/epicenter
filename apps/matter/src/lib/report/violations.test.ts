@@ -335,6 +335,29 @@ describe('summarize', () => {
 		);
 	});
 
+	test('a missing-target is structural, not a per-row attention item', () => {
+		// pages absent: adaptations.page is missing-target. The row needs no edit to fix it (the
+		// fix is vault-level), so it stays ready even though the column is unresolved.
+		const summary = summarize(
+			assess([
+				loaded('adaptations', adaptationsModel, [
+					{
+						fileName: 'a1.md',
+						content: '---\ntitle: A\npage: become-the-source\n---',
+					},
+				]),
+			]),
+		);
+
+		const adaptations = summary.tables.find((t) => t.name === 'adaptations');
+		if (adaptations?.status !== 'modeled') throw new Error('expected modeled');
+		expect(adaptations.ready).toBe(1);
+		expect(adaptations.needsAttention).toBe(0);
+		expect(adaptations.fields.find((f) => f.field === 'page')?.unresolved).toBe(
+			1,
+		);
+	});
+
 	test('unreadable and invalid-contract tables surface in the summary as fatals', () => {
 		const summary = summarize(
 			assess([

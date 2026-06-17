@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFolder } from '../core/folder';
 import { assess, type TableInput } from '../core/integrity';
 import { exitCodeFor } from './exit-code';
-import { summarize } from './violations';
+import { summarize, toViolations } from './violations';
 
 type Entries = Parameters<typeof readFolder>[0];
 
@@ -25,8 +25,10 @@ const adaptationsModel = JSON.stringify({
 	fields: { page: { type: 'string', 'x-ref': 'pages' } },
 });
 
+// The whole-vault verdict: every violation counts as a failure (no scope filtering).
 function exitCode(tables: TableInput[]): 0 | 1 | 2 {
-	return exitCodeFor(summarize(assess(tables)));
+	const integrity = assess(tables);
+	return exitCodeFor(summarize(integrity), toViolations(integrity));
 }
 
 describe('exitCodeFor', () => {

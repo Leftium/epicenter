@@ -104,3 +104,37 @@ export async function loadVault(root: string): Promise<TableInput[]> {
 			.map((name) => loadTable(join(rootPath, name))),
 	);
 }
+
+/** A path loaded into tables, tagged by whether it was read as one table or a whole vault. */
+export type LoadedPath = { scope: 'table' | 'vault'; tables: TableInput[] };
+
+/**
+ * Load a path with its scope inferred from what is on disk, so `matter check <path>` works whether
+ * the user points at one table folder or at a vault of them. The rule:
+ *
+ *   - a `matter.json` in the folder marks the folder ITSELF as a table (a contract is a table's,
+ *     not a vault's, so it wins even if the folder also has subfolders);
+ *   - otherwise, any immediate subfolder makes it a vault (each child a table);
+ *   - otherwise (no contract, no subfolders: a raw leaf or an empty folder) it is one table.
+ *
+ * A path that cannot be listed at all is a single unreadable table, so the failure flows through
+ * the same pipeline as any other. Table scope is a one-table vault: its references have no target
+ * tables loaded, which the caller surfaces as un-evaluable rather than failing.
+ */
+export async function loadPath(path: string): Promise<LoadedPath> {
+	const dirPath = resolve(path);
+	const listing = await readdir(dirPath, { withFileTypes: true }).catch(
+		() => null,
+	);
+	if (listing === null) {
+		return { scope: 'table', tables: [await loadTable(dirPath)] };
+	}
+
+	const isTable =
+		listing.some((entry) => entry.name === 'matter.json') ||
+		!listing.some((entry) => entry.isDirectory());
+
+	return isTable
+		? { scope: 'table', tables: [await loadTable(dirPath)] }
+		: { scope: 'vault', tables: await loadVault(dirPath) };
+}

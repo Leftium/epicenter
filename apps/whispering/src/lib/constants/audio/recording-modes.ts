@@ -17,24 +17,22 @@ export const RECORDING_MODES = [
 export type RecordingMode = (typeof RECORDING_MODES)[number];
 
 export const RECORDING_MODE_OPTIONS = [
-	{ label: 'Manual', value: 'manual', icon: '🎙️', desktopOnly: false },
-	{ label: 'Voice Activated', value: 'vad', icon: '🎤', desktopOnly: false },
-	{ label: 'Upload File', value: 'upload', icon: '📁', desktopOnly: false },
-	// { label: 'Live', value: 'live', icon: '🎬', desktopOnly: false },
-	// { label: 'CPAL', value: 'cpal', icon: '🔊', desktopOnly: true },
+	{ label: 'Manual', value: 'manual', desktopOnly: false },
+	{ label: 'Voice Activated', value: 'vad', desktopOnly: false },
+	{ label: 'Upload File', value: 'upload', desktopOnly: false },
+	// { label: 'Live', value: 'live', desktopOnly: false },
+	// { label: 'CPAL', value: 'cpal', desktopOnly: true },
 ] as const satisfies {
 	label: string;
 	value: RecordingMode;
-	icon: string;
 	desktopOnly: boolean;
 }[];
 
 /**
- * Lucide icon per recording mode for prominent surfaces (the homepage mode
- * toggle and recording cards). The emoji `RECORDING_MODE_OPTIONS.icon` is the
- * compact glyph used in the settings dropdown; this is the full-size lucide
- * iconography used everywhere else. Keyed by mode so adding a mode forces a
- * matching icon at compile time.
+ * The Lucide icon for each recording mode. This is the single owner of mode
+ * iconography, used everywhere a mode needs a glyph: the homepage toggle, the
+ * recording cards, and the settings dropdown. Keyed by mode so adding a mode
+ * forces a matching icon at compile time.
  */
 export const RECORDING_MODE_ICONS = {
 	manual: MicIcon,

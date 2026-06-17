@@ -7,10 +7,10 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import {
+		RECORDING_MODE_ICONS,
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
-	import { rpc } from '$lib/rpc';
 	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
@@ -58,6 +58,7 @@
 					{#each availableModes as mode (mode.value)}
 						{@const isSelected =
 							settings.get('recording.mode') === mode.value}
+						{@const ModeIcon = RECORDING_MODE_ICONS[mode.value]}
 						<Command.Item
 							value={mode.value}
 							onSelect={async () => {
@@ -74,7 +75,7 @@
 									'text-transparent': !isSelected,
 								})}
 							/>
-							<span class="text-base">{mode.icon}</span>
+							<ModeIcon class="size-4 shrink-0" />
 							<span class="text-sm">{mode.label}</span>
 						</Command.Item>
 					{/each}

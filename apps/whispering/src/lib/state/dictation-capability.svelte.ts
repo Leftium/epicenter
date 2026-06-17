@@ -1,6 +1,15 @@
 import { tauri } from '#platform/tauri';
 import type { DictationCapability } from '$lib/tauri/commands';
 
+const OVERRIDABLE_DICTATION_CAPABILITIES = [
+	'untrusted',
+	'active',
+	'broken',
+	'unsupported',
+] as const satisfies readonly DictationCapability[];
+type DictationCapabilityOverride =
+	(typeof OVERRIDABLE_DICTATION_CAPABILITIES)[number] | null;
+
 /**
  * The frontend's view over the one OS-trust fact Rust owns: whether Whispering
  * can drive its "dictate anywhere" flow (tap the keyboard for global shortcuts
@@ -24,14 +33,7 @@ function createDictationCapability() {
 	// Settings. `null` means "use the live value". The `import.meta.env.DEV`
 	// guard in `effective` makes this dead in production, so it can never ship a
 	// bypass: the real value always wins.
-	let override = $state<DictationCapability | null>(null);
-	const overrideCycle: (DictationCapability | null)[] = [
-		'untrusted',
-		'active',
-		'broken',
-		'unsupported',
-		null,
-	];
+	let override = $state<DictationCapabilityOverride>(null);
 
 	/** The value callers see: the dev override when set, else the live value. */
 	function effective(): DictationCapability {
@@ -81,12 +83,17 @@ function createDictationCapability() {
 		 * denied/granted/stale UI can be toggled in real time. No-op in production
 		 * via the guard in `effective`.
 		 */
-		get override(): DictationCapability | null {
+		get override(): DictationCapabilityOverride {
 			return override;
 		},
 		cycleOverride() {
-			const index = overrideCycle.indexOf(override);
-			override = overrideCycle[(index + 1) % overrideCycle.length] ?? null;
+			// Step to the next pinnable capability; past the last one, `?? null`
+			// wraps back to the live value. `null` seeds at -1 so it starts the walk.
+			const index =
+				override === null
+					? -1
+					: OVERRIDABLE_DICTATION_CAPABILITIES.indexOf(override);
+			override = OVERRIDABLE_DICTATION_CAPABILITIES[index + 1] ?? null;
 		},
 
 		/**

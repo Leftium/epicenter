@@ -52,19 +52,19 @@ async function main(): Promise<number> {
 		(await tableFolders(root)).map((name) => loadFolder(root, name)),
 	);
 
-	const report = resolveReferences(folders);
+	const findings = resolveReferences(folders);
 
 	const loaded = folders
 		.map((f) => `${f.name} (${f.read.rows.length})`)
 		.join(', ');
 	process.stdout.write(`Checked ${folders.length} folders: ${loaded}\n`);
 
-	if (report.findings.length === 0) {
+	if (findings.length === 0) {
 		process.stdout.write('Every reference resolves.\n');
 		return 0;
 	}
 
-	for (const finding of report.findings) {
+	for (const finding of findings) {
 		if (finding.kind === 'MISSING_TARGET') {
 			process.stdout.write(
 				`MISSING_TARGET  ${finding.table}.${finding.field} -> "${finding.target}" (table not loaded)\n`,
@@ -75,7 +75,7 @@ async function main(): Promise<number> {
 			);
 		}
 	}
-	process.stdout.write(`\n${report.findings.length} reference problem(s).\n`);
+	process.stdout.write(`\n${findings.length} reference problem(s).\n`);
 	return 1;
 }
 

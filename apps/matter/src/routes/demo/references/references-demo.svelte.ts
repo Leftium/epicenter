@@ -14,7 +14,7 @@
 import { referenceTargetOf } from '@epicenter/field';
 import {
 	type LoadedTable,
-	type ReferenceReport,
+	type ReferenceFinding,
 	resolveReferences,
 } from '$lib/core/references';
 import { readFolder } from '$lib/core/folder';
@@ -41,8 +41,8 @@ export function createReferencesDemo() {
 		})),
 	);
 
-	// The authoritative validator output: the same report the CLI script prints.
-	const report = $derived(resolveReferences(folders));
+	// The authoritative validator output: the same findings the CLI script prints.
+	const findings = $derived(resolveReferences(folders));
 
 	// stem -> Row per table, so a resolved chip can preview the target row's title.
 	const rowsByTable = $derived.by(() => {
@@ -58,14 +58,14 @@ export function createReferencesDemo() {
 	// The report's findings, indexed for O(1) per-cell lookup while rendering.
 	const danglingKeys = $derived(
 		new Set(
-			report.findings
+			findings
 				.filter((f) => f.kind === 'UNRESOLVED')
 				.map((f) => `${f.table}|${f.file}|${f.field}`),
 		),
 	);
 	const missingTargetKeys = $derived(
 		new Set(
-			report.findings
+			findings
 				.filter((f) => f.kind === 'MISSING_TARGET')
 				.map((f) => `${f.table}|${f.field}`),
 		),
@@ -118,8 +118,8 @@ export function createReferencesDemo() {
 		get folders(): LoadedTable[] {
 			return folders;
 		},
-		get report(): ReferenceReport {
-			return report;
+		get findings(): ReferenceFinding[] {
+			return findings;
 		},
 		get counts() {
 			return counts;

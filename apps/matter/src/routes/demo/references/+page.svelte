@@ -73,18 +73,18 @@
 		<header class="border-b px-3 py-2">
 			<h2 class="text-sm font-semibold">
 				checkReferences findings
-				<Badge variant={demo.report.findings.length ? 'destructive' : 'secondary'} class="ml-1">
-					{demo.report.findings.length}
+				<Badge variant={demo.findings.length ? 'destructive' : 'secondary'} class="ml-1">
+					{demo.findings.length}
 				</Badge>
 			</h2>
 		</header>
-		{#if demo.report.findings.length === 0}
+		{#if demo.findings.length === 0}
 			<p class="px-3 py-3 text-xs text-emerald-600 dark:text-emerald-400">
 				Every reference resolves to an existing row.
 			</p>
 		{:else}
 			<ul class="divide-y text-xs">
-				{#each demo.report.findings as finding, i (i)}
+				{#each demo.findings as finding, i (i)}
 					<li class="flex items-center gap-2 px-3 py-2">
 						{#if finding.kind === 'MISSING_TARGET'}
 							<Badge variant="outline" class="border-amber-500/40 text-amber-600 dark:text-amber-400">

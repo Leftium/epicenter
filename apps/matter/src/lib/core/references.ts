@@ -40,47 +40,42 @@ export type LoadedTable = {
 	read: FolderRead;
 };
 
-/** A reference field whose target table is not among the loaded folders. */
-export type MissingTargetFinding = {
-	kind: 'MISSING_TARGET';
-	/** The folder that declares the reference field. */
-	table: string;
-	/** The reference field's name. */
-	field: string;
-	/** The target table named by the field's `x-ref` marker, absent from the loaded set. */
-	target: string;
-};
-
-/** A reference value that resolves to no row in its (loaded) target folder. */
-export type UnresolvedFinding = {
-	kind: 'UNRESOLVED';
-	/** The folder that holds the dangling reference. */
-	table: string;
-	/** The row file whose reference value did not resolve. */
-	file: string;
-	/** The reference field's name. */
-	field: string;
-	/** The target table the value should have resolved within. */
-	target: string;
-	/** The unresolved value (the stem an author wrote). */
-	value: string;
-};
-
-export type ReferenceFinding = MissingTargetFinding | UnresolvedFinding;
-
-export type ReferenceReport = {
-	version: 1;
-	findings: ReferenceFinding[];
-};
+/**
+ * One referential-integrity problem. The two kinds (described in the module comment above) stay
+ * one union because every caller handles them together — by `.kind`, never by a standalone type.
+ */
+export type ReferenceFinding =
+	| {
+			kind: 'MISSING_TARGET';
+			/** The folder that declares the reference field. */
+			table: string;
+			/** The reference field's name. */
+			field: string;
+			/** The target table named by the field's `x-ref` marker, absent from the loaded set. */
+			target: string;
+	  }
+	| {
+			kind: 'UNRESOLVED';
+			/** The folder that holds the dangling reference. */
+			table: string;
+			/** The row file whose reference value did not resolve. */
+			file: string;
+			/** The reference field's name. */
+			field: string;
+			/** The target table the value should have resolved within. */
+			target: string;
+			/** The unresolved value (the stem an author wrote). */
+			value: string;
+	  };
 
 /**
- * Validate every reference VALUE against the rows of its target folder. Pure over a set of
- * loaded folders (each paired with its table name), so it is testable with in-memory reads
- * and unaware of the filesystem, mirroring `readFolder` / `check`.
+ * Validate every reference VALUE against the rows of its target folder, returning one finding
+ * per problem. Pure over a set of loaded folders (each paired with its table name), so it is
+ * testable with in-memory reads and unaware of the filesystem, mirroring `readFolder` / `check`.
  */
 export function resolveReferences(
 	folders: readonly LoadedTable[],
-): ReferenceReport {
+): ReferenceFinding[] {
 	// The existence set per table: the stems of every readable row. Built from EVERY loaded
 	// folder so any can be a target, and from `read.rows` (not the conformance view) so an
 	// unmodeled target folder still contributes its rows and a target row counts as existing
@@ -135,5 +130,5 @@ export function resolveReferences(
 		}
 	}
 
-	return { version: 1, findings };
+	return findings;
 }

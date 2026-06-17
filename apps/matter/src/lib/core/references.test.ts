@@ -62,7 +62,7 @@ function adaptations(
 
 describe('resolveReferences', () => {
 	test('a value naming an existing stem resolves with no finding', () => {
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([
 				{
@@ -72,18 +72,18 @@ describe('resolveReferences', () => {
 			]),
 		]);
 
-		expect(report.findings).toEqual([]);
+		expect(findings).toEqual([]);
 	});
 
 	test('a value naming no stem is UNRESOLVED', () => {
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([
 				{ fileName: 'a1.md', content: '---\ntitle: A\npage: does-not-exist\n---' },
 			]),
 		]);
 
-		expect(report.findings).toEqual([
+		expect(findings).toEqual([
 			{
 				kind: 'UNRESOLVED',
 				table: 'adaptations',
@@ -96,14 +96,14 @@ describe('resolveReferences', () => {
 	});
 
 	test('a target table absent from the loaded set is MISSING_TARGET, once, with no per-row findings', () => {
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			adaptations([
 				{ fileName: 'a1.md', content: '---\ntitle: A\npage: anything\n---' },
 				{ fileName: 'a2.md', content: '---\ntitle: B\npage: other\n---' },
 			]),
 		]);
 
-		expect(report.findings).toEqual([
+		expect(findings).toEqual([
 			{
 				kind: 'MISSING_TARGET',
 				table: 'adaptations',
@@ -114,7 +114,7 @@ describe('resolveReferences', () => {
 	});
 
 	test('a missing optional reference cell produces no finding', () => {
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations(
 				[{ fileName: 'a1.md', content: '---\ntitle: A\n---' }],
@@ -122,45 +122,45 @@ describe('resolveReferences', () => {
 			),
 		]);
 
-		expect(report.findings).toEqual([]);
+		expect(findings).toEqual([]);
 	});
 
 	test('a missing required reference cell is left to conformance, not a reference finding', () => {
 		// `page` is required and absent: conformance reports MISSING_REQUIRED; the reference
 		// pass adds nothing (there is no value to resolve).
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\n---' }]),
 		]);
 
-		expect(report.findings).toEqual([]);
+		expect(findings).toEqual([]);
 	});
 
 	test('a non-string reference value is left to conformance (INVALID), not UNRESOLVED', () => {
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\npage: 123\n---' }]),
 		]);
 
-		expect(report.findings).toEqual([]);
+		expect(findings).toEqual([]);
 	});
 
 	test('an empty-string reference value is "no reference present", not UNRESOLVED', () => {
 		// `page: ""` conforms as OK (present, non-null), but it carries no pointer to resolve.
 		// Referential integrity only resolves present pointers; whether empty is ALLOWED is a
 		// conformance / minLength question, so this pass adds nothing.
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\npage: ""\n---' }]),
 		]);
 
-		expect(report.findings).toEqual([]);
+		expect(findings).toEqual([]);
 	});
 
 	test('a target row with its own conformance issues still satisfies a reference', () => {
 		// The page row is missing its required `title`, so it needs attention — but the FILE
 		// exists, so the reference to its stem resolves.
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\n---' }]),
 			adaptations([
 				{
@@ -170,12 +170,12 @@ describe('resolveReferences', () => {
 			]),
 		]);
 
-		expect(report.findings).toEqual([]);
+		expect(findings).toEqual([]);
 	});
 
 	test('an unmodeled target folder still contributes its rows as an existence set', () => {
 		// `pages` has no matter.json (unmodeled raw view), but its files still exist as rows.
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			loaded('pages', undefined, [
 				{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' },
 			]),
@@ -187,7 +187,7 @@ describe('resolveReferences', () => {
 			]),
 		]);
 
-		expect(report.findings).toEqual([]);
+		expect(findings).toEqual([]);
 	});
 
 	test('generic over any reference field across a multi-tier chain', () => {
@@ -199,7 +199,7 @@ describe('resolveReferences', () => {
 			},
 		});
 
-		const report = resolveReferences([
+		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([
 				{
@@ -219,7 +219,7 @@ describe('resolveReferences', () => {
 			]),
 		]);
 
-		expect(report.findings).toEqual([
+		expect(findings).toEqual([
 			{
 				kind: 'UNRESOLVED',
 				table: 'publications',

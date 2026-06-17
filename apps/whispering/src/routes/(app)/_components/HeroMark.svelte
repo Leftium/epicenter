@@ -16,7 +16,7 @@
 <span
 	class={cn(
 		'relative inline-flex',
-		live ? 'text-destructive' : 'text-foreground',
+		live && 'text-destructive',
 		className,
 	)}
 >

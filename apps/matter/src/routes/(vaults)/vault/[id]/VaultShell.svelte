@@ -3,6 +3,8 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import LayersIcon from '@lucide/svelte/icons/layers';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { createVault } from '$lib/vault.svelte';
 	import IntegrityPanel from './IntegrityPanel.svelte';
 	import TablePane from './TablePane.svelte';
@@ -17,9 +19,13 @@
 	const vault = createVault(root);
 	$effect(() => () => vault.dispose());
 
-	// Which table is active in the shell, held as the folder NAME (not the handle) so it survives a
-	// reconcile that swaps handles. Defaults to the first table once the membership loads.
-	let activeName = $state<string>();
+	// Which table is active in the shell, addressed by folder NAME in the URL (`?table=`) so the
+	// selection survives a refresh or a shared link and lives in the one place navigation belongs.
+	// It is a selection over the always-live table set, not a resource with its own lifecycle (the
+	// vault watches every table for cross-table integrity), so a query param fits: VaultShell stays
+	// the vault's single owner and does not remount when the table changes. A missing, renamed, or
+	// not-yet-loaded name falls through to the first table below, so no URL cleanup is needed.
+	const activeName = $derived(page.url.searchParams.get('table') ?? undefined);
 	const activeTable = $derived(
 		vault.tables.find((table) => table.folderName === activeName) ??
 			vault.tables[0],
@@ -52,7 +58,12 @@
 					{@const active = activeTable?.folderName === table.folderName}
 					<button
 						type="button"
-						onclick={() => (activeName = table.folderName)}
+						onclick={() =>
+							goto(`?table=${encodeURIComponent(table.folderName)}`, {
+								replaceState: true,
+								keepFocus: true,
+								noScroll: true,
+							})}
 						class={[
 							'shrink-0 rounded-md px-2.5 py-1 text-sm transition',
 							active

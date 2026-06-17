@@ -20,8 +20,6 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type DownloadError, DownloadServiceLive } from '#platform/download';
 import type { Recording } from '$lib/workspace';
 
-type RecordingsTable = Table<Recording>;
-
 /** Render one recording row as Markdown: YAML frontmatter + transcript body. */
 function recordingToMarkdown(recording: Recording): string {
 	const { transcript, ...frontmatter } = recording;
@@ -29,7 +27,7 @@ function recordingToMarkdown(recording: Recording): string {
 	return `---\n${yamlStr}---\n${transcript || ''}\n`;
 }
 
-export function defineRecordingsMarkdownExport(recordings: RecordingsTable) {
+export function defineRecordingsMarkdownExport(recordings: Table<Recording>) {
 	return defineMutation({
 		title: 'Export recordings',
 		description: 'Download every recording as a zip of Markdown files',

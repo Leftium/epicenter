@@ -5,6 +5,7 @@
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { page } from '$app/state';
 	import { matterNavigation } from '$lib/matter-navigation';
+	import { TABLE_PARAM } from '$lib/routes';
 	import { createVault } from '$lib/vault.svelte';
 	import IntegrityPanel from './IntegrityPanel.svelte';
 	import TablePane from './TablePane.svelte';
@@ -25,7 +26,7 @@
 	// vault watches every table for cross-table integrity), so a query param fits: VaultShell stays
 	// the vault's single owner and does not remount when the table changes. A missing, renamed, or
 	// not-yet-loaded name falls through to the first table below, so no URL cleanup is needed.
-	const activeName = $derived(page.url.searchParams.get('table') ?? undefined);
+	const activeName = $derived(page.url.searchParams.get(TABLE_PARAM) ?? undefined);
 	const activeTable = $derived(
 		vault.tables.find((table) => table.folderName === activeName) ??
 			vault.tables[0],

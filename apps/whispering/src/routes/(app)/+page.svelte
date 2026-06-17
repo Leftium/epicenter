@@ -18,8 +18,10 @@
 	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
+	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
+		TranscriptionRuntimeConfig,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -34,40 +36,45 @@
 		IMPORTABLE_AUDIO_EXTENSIONS,
 		IMPORTABLE_VIDEO_EXTENSIONS,
 	} from '$lib/constants/import-formats';
-	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
-	import { keyBindingToLabel } from '$lib/utils/key-binding';
-	import { os } from '#platform/os';
+	import { importFiles } from '$lib/operations/import';
 	import {
 		stopManualRecording,
 		stopVadRecording,
 	} from '$lib/operations/recording';
-	import { importFiles } from '$lib/operations/import';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
-	import { tauri } from '#platform/tauri';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
+	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import { tauri } from '#platform/tauri';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
+	const transcriptionReadiness = $derived(getTranscriptionReadiness());
+	// The recording shortcut that actually fires on this platform, via the
+	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
+	// and ships the toggle unbound, so prefer it; the browser shows the local
+	// toggle. `''` means nothing is bound (hide the hint, fall back to "click").
+	const manualShortcutLabel = $derived(getRecordingShortcutLabel('manual'));
+	const vadShortcutLabel = $derived(getRecordingShortcutLabel('vad'));
+	// On desktop the taught gesture is the global rdev tap, so it only fires when
+	// the capability is `active`. When it can't (macOS Accessibility ungranted or
+	// stale, or Linux Wayland), we still show the key so the user learns it, but dim
+	// it; the `DictationCapabilityNotice` above carries the fix. This reads the same
+	// capability fact the notice does, so the two always agree. Always false on the
+	// browser, where the in-app shortcut needs no grant.
+	const shortcutUnavailable = $derived(dictationCapability.isUnavailable);
 
-	// The global toggle-recording shortcut, formatted for the hint text. Stored
-	// as a structured KeyBinding (desktop rdev backend), so format it directly.
-	const globalToggleBinding = $derived(
-		deviceConfig.get('shortcuts.global.toggleManualRecording'),
-	);
-	const globalToggleLabel = $derived(
-		globalToggleBinding ? keyBindingToLabel(globalToggleBinding, os.isApple) : '',
-	);
 	const PageError = defineErrors({
-		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
+		DragDropListenerFailed: ({ cause }: { cause: unknown }) => ({
 			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
 			cause,
 		}),
@@ -89,10 +96,8 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	// Store unlisten function for drag drop events
 	let unlistenDragDrop: UnlistenFn | undefined;
 
-	// Set up desktop drag and drop listener
 	onMount(async () => {
 		if (!tauri) return;
 		const { error } = await tryAsync({
@@ -117,7 +122,6 @@
 						)
 							return;
 
-						// Filter for audio/video files based on extension
 						const pathResults = await Promise.all(
 							event.payload.paths.map(async (path) => ({
 								path,
@@ -136,8 +140,6 @@
 							return;
 						}
 
-						// Convert file paths to File objects. The file-drop event only
-						// fires on Tauri, so `tauri` is non-null in this branch.
 						if (!tauri) return;
 						const { data: files, error } =
 							await tauri.fs.pathsToFiles(validPaths);
@@ -154,7 +156,7 @@
 				);
 			},
 			catch: (error) =>
-				PageError.SetupDragDropFailed({
+				PageError.DragDropListenerFailed({
 					cause: error,
 				}),
 		});
@@ -163,7 +165,6 @@
 
 	onDestroy(() => {
 		unlistenDragDrop?.();
-		// Clean up audio URL when component unmounts to prevent memory leaks
 		if (latestRecording?.id) {
 			services.blobs.audio.revokeUrl(latestRecording.id);
 		}
@@ -188,10 +189,10 @@
 		}[];
 
 		const toStop = triggers.filter(
-			(t) => t.trigger !== triggerToKeep && t.isActive(),
+			(trigger) => trigger.trigger !== triggerToKeep && trigger.isActive(),
 		);
 
-		await Promise.all(toStop.map((t) => t.stop()));
+		await Promise.all(toStop.map((trigger) => trigger.stop()));
 	}
 
 	async function switchRecordingTrigger(newTrigger: RecordingTrigger) {
@@ -227,192 +228,180 @@
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
-	<ToggleGroup.Root
-		type="single"
-		bind:value={() => settings.get('recording.trigger'),
-			(trigger) => {
-				if (!trigger) return;
-				void switchRecordingTrigger(trigger as RecordingTrigger);
-			}}
-		class="w-full"
-	>
-		{#each RECORDING_TRIGGER_OPTIONS as option}
-			{@const TriggerIcon = RECORDING_TRIGGER_META[option.value].Icon}
-			<ToggleGroup.Item
-				value={option.value}
-				aria-label="Switch to {option.label.toLowerCase()} recording"
-			>
-				<TriggerIcon class="size-4" />
-				<span class="hidden truncate sm:inline">{option.label}</span>
-			</ToggleGroup.Item>
-		{/each}
-	</ToggleGroup.Root>
+	<DictationCapabilityNotice />
 
-	{#snippet manualPipeline()}
-		<CapturePipeline>
-			<ManualDeviceSelector />
-			<TranscriptionSelector variant="pipeline" />
-			<TransformationSelector />
-		</CapturePipeline>
-	{/snippet}
-
-	{#snippet vadPipeline()}
-		<CapturePipeline>
-			<VadDeviceSelector />
-			<TranscriptionSelector variant="pipeline" />
-			<TransformationSelector />
-		</CapturePipeline>
-	{/snippet}
-
-	{#if settings.get('recording.trigger') === 'manual'}
-		<div class="flex w-full flex-col items-center gap-3">
-			<ManualRecordingAction
-				pipeline={manualPipeline}
+	{#if !transcriptionReadiness.isReady}
+		<div class="w-full">
+			<TranscriptionRuntimeConfig
+				id="home-transcription-service"
+				label="Runtime"
+				description={transcriptionReadiness.primaryIssue ??
+					'Choose a runtime and fill in the required fields.'}
+				showAdvanced={false}
 			/>
-			{#if manualRecorder.state === 'RECORDING'}
-				<Button
-					tooltip="Cancel recording and discard audio"
-					onclick={() => commandCallbacks.cancelRecording()}
-					variant="ghost-destructive"
-					size="sm"
-					style="view-transition-name: {viewTransition.global.cancel};"
+		</div>
+	{:else}
+		<ToggleGroup.Root
+			type="single"
+			bind:value={() => settings.get('recording.trigger'),
+				(trigger) => {
+					if (!trigger) return;
+					void switchRecordingTrigger(trigger as RecordingTrigger);
+				}}
+			class="w-full"
+		>
+			{#each RECORDING_TRIGGER_OPTIONS as option}
+				{@const TriggerIcon = RECORDING_TRIGGER_META[option.value].Icon}
+				<ToggleGroup.Item
+					value={option.value}
+					aria-label="Switch to {option.label.toLowerCase()} recording"
 				>
-					<XIcon class="size-4" />
-					Cancel
-				</Button>
-			{/if}
-		</div>
-	{:else if settings.get('recording.trigger') === 'vad'}
-		<div class="flex w-full flex-col items-center gap-3">
-			<VadRecordingAction
-				pipeline={vadPipeline}
-			/>
-		</div>
-	{/if}
+					<TriggerIcon class="size-4" />
+					<span class="hidden truncate sm:inline">{option.label}</span>
+				</ToggleGroup.Item>
+			{/each}
+		</ToggleGroup.Root>
 
-	<!--
-		File import is its own surface, not a recording trigger: it stays visible
-		under the recorder regardless of trigger, and works on web (the picker)
-		and desktop (picker plus drag-and-drop). Transcription and transformation
-		are shared with the active recorder's pipeline above.
-	-->
-	<div class="flex w-full flex-col items-center gap-2">
-		<span class="text-muted-foreground text-xs">or import a file</span>
-		<FileDropZone
-			accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
-			maxFiles={10}
-			maxFileSize={25 * MEGABYTE}
-			onUpload={async (files) => {
-				if (files.length > 0) {
-					await importFiles({ files });
-				}
-			}}
-			onFileRejected={({ file, reason }) => {
-				report.error({
-					cause: PageError.FileRejected({
-						fileName: file.name,
-						reason,
-					}).error,
-					title: 'File rejected',
-				});
-			}}
-			class="h-28 sm:h-32 w-full"
-		/>
-	</div>
+		{#snippet manualPipeline()}
+			<CapturePipeline>
+				<ManualDeviceSelector />
+				<TranscriptionSelector variant="pipeline" />
+				<TransformationSelector />
+			</CapturePipeline>
+		{/snippet}
 
-	{#if latestRecording}
-		<div class="flex w-full flex-col gap-2">
-			<TranscriptDialog
-				recordingId={latestRecording.id}
-				transcript={latestRecording.transcript}
-				rows={1}
-				disabled={!latestRecording.transcript.trim()}
-				onDelete={() => {
-					confirmationDialog.open({
-						title: 'Delete recording',
-						description: 'Are you sure you want to delete this recording?',
-						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: () => {
-							services.blobs.audio.revokeUrl(latestRecording.id);
-							recordings.delete(latestRecording.id);
-							report.success({
-								title: 'Deleted recording!',
-								description: 'Your recording has been deleted.',
-							});
-						},
+		{#snippet vadPipeline()}
+			<CapturePipeline>
+				<VadDeviceSelector />
+				<TranscriptionSelector variant="pipeline" />
+				<TransformationSelector />
+			</CapturePipeline>
+		{/snippet}
+
+		{#if settings.get('recording.trigger') === 'manual'}
+			<div class="flex w-full flex-col items-center gap-3">
+				<ManualRecordingAction pipeline={manualPipeline} />
+				{#if manualRecorder.state === 'RECORDING'}
+					<Button
+						tooltip="Cancel recording and discard audio"
+						onclick={() => commandCallbacks.cancelRecording()}
+						variant="ghost-destructive"
+						size="sm"
+						style="view-transition-name: {viewTransition.global.cancel};"
+					>
+						<XIcon class="size-4" />
+						Cancel
+					</Button>
+				{/if}
+			</div>
+		{:else if settings.get('recording.trigger') === 'vad'}
+			<div class="flex w-full flex-col items-center gap-3">
+				<VadRecordingAction pipeline={vadPipeline} />
+			</div>
+		{/if}
+
+		<div class="flex w-full flex-col items-center gap-2">
+			<span class="text-muted-foreground text-xs">or import a file</span>
+			<FileDropZone
+				accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
+				maxFiles={10}
+				maxFileSize={25 * MEGABYTE}
+				onUpload={async (files) => {
+					if (files.length > 0) {
+						await importFiles({ files });
+					}
+				}}
+				onFileRejected={({ file, reason }) => {
+					report.error({
+						cause: PageError.FileRejected({
+							fileName: file.name,
+							reason,
+						}).error,
+						title: 'File rejected',
 					});
 				}}
+				class="h-28 sm:h-32 w-full"
 			/>
-
-			{#if audioPlaybackUrlQuery.data}
-				<audio
-					style="view-transition-name: {viewTransition.recording(
-						latestRecording.id,
-					).audio}"
-					src={audioPlaybackUrlQuery.data}
-					controls
-					class="h-8 w-full"
-				></audio>
-			{/if}
 		</div>
-	{/if}
 
-	<div class="flex flex-col items-center gap-3">
-		{#if settings.get('recording.trigger') === 'manual'}
-			<p class="text-foreground/75 text-center text-sm">
-				Click the microphone or press
-				<Link
-					tooltip="Go to local shortcut in settings"
-					href="/settings/shortcuts"
-				>
-					<Kbd.Root
-						>{getShortcutDisplayLabel(
-							settings.get('shortcut.toggleManualRecording'),
-						)}</Kbd.Root
-					>
-				</Link>
-				to start recording here.
-			</p>
-			{#if tauri}
-				<p class="text-foreground/75 text-sm">
-					Press
-					<Link
-						tooltip="Go to global shortcut in settings"
-						href="/settings/shortcuts"
-					>
-						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
-					</Link>
-					to start recording anywhere.
+		{#if latestRecording}
+			<div class="flex w-full flex-col gap-2">
+				<TranscriptDialog
+					recordingId={latestRecording.id}
+					transcript={latestRecording.transcript}
+					rows={1}
+					disabled={!latestRecording.transcript.trim()}
+					onDelete={() => {
+						confirmationDialog.open({
+							title: 'Delete recording',
+							description: 'Are you sure you want to delete this recording?',
+							confirm: { text: 'Delete', variant: 'destructive' },
+							onConfirm: () => {
+								services.blobs.audio.revokeUrl(latestRecording.id);
+								recordings.delete(latestRecording.id);
+								report.success({
+									title: 'Deleted recording!',
+									description: 'Your recording has been deleted.',
+								});
+							},
+						});
+					}}
+				/>
+
+				{#if audioPlaybackUrlQuery.data}
+					<audio
+						style="view-transition-name: {viewTransition.recording(
+							latestRecording.id,
+						).audio}"
+						src={audioPlaybackUrlQuery.data}
+						controls
+						class="h-8 w-full"
+					></audio>
+				{/if}
+			</div>
+		{/if}
+
+		<div class="flex flex-col items-center gap-3">
+			{#if settings.get('recording.trigger') === 'manual'}
+				<p class="text-foreground/75 text-center text-sm">
+					Click the microphone{#if manualShortcutLabel}
+						or press
+						<Link
+							tooltip="Configure the recording shortcut"
+							href="/settings/shortcuts"
+						>
+							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
+								>{manualShortcutLabel}</Kbd.Root>
+						</Link>{/if}
+					to start recording{tauri ? ' from anywhere' : ''}.
+				</p>
+			{:else if settings.get('recording.trigger') === 'vad'}
+				<p class="text-foreground/75 text-center text-sm">
+					Click the microphone{#if vadShortcutLabel}
+						or press
+						<Link
+							tooltip="Configure the voice activation shortcut"
+							href="/settings/shortcuts"
+						>
+							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
+								>{vadShortcutLabel}</Kbd.Root>
+						</Link>{/if}
+					to start a voice activated session.
 				</p>
 			{/if}
-		{:else if settings.get('recording.trigger') === 'vad'}
-			<p class="text-foreground/75 text-center text-sm">
-				Click the microphone or press
-				<Link
-					tooltip="Go to local shortcut in settings"
-					href="/settings/shortcuts"
-				>
-					<Kbd.Root
-						>{getShortcutDisplayLabel(
-							settings.get('shortcut.toggleVadRecording'),
-						)}</Kbd.Root
+			<p class="text-muted-foreground text-center text-sm font-light">
+				{#if !tauri}
+					Tired of switching tabs?
+					<Link
+						tooltip="Get Whispering for desktop"
+						href="https://epicenter.so/whispering"
+						target="_blank"
+						rel="noopener noreferrer"
 					>
-				</Link>
-				to start a voice activated session.
+						Get the native desktop app
+					</Link>
+				{/if}
 			</p>
-		{/if}
-		<p class="text-muted-foreground text-center text-sm font-light">
-			{#if !tauri}
-				Tired of switching tabs?
-				<Link
-					tooltip="Get Whispering for desktop"
-					href="https://epicenter.so/whispering"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					Get the native desktop app
-				</Link>
-			{/if}
-		</p>
-	</div>
+		</div>
+	{/if}
 </div>

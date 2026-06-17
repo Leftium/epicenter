@@ -2,7 +2,12 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { APPS } from '@epicenter/constants/apps';
 import { workspaceAppViteConfig } from '@epicenter/vite-config';
-import { defaultClientConditions, defineConfig, mergeConfig } from 'vite';
+import {
+	defaultClientConditions,
+	defineConfig,
+	mergeConfig,
+	normalizePath,
+} from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
@@ -21,12 +26,14 @@ const require = createRequire(import.meta.url);
 const distOf = (pkg: string) => dirname(require.resolve(pkg));
 const vadDist = distOf('@ricky0123/vad-web');
 const ortDist = distOf('onnxruntime-web');
+// vite-plugin-static-copy treats src as a glob, so Windows backslashes must
+// become forward slashes before tinyglobby tries to match these files.
 const vadAssetSources = [
 	join(vadDist, 'vad.worklet.bundle.min.js'),
 	join(vadDist, 'silero_vad_v5.onnx'),
 	join(ortDist, 'ort-wasm-simd-threaded.mjs'),
 	join(ortDist, 'ort-wasm-simd-threaded.wasm'),
-];
+].map(normalizePath);
 
 export default defineConfig(
 	mergeConfig(workspaceAppViteConfig(APPS.WHISPERING), {

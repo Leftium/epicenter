@@ -4,20 +4,9 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { report } from '$lib/report';
-	import { os } from '#platform/os';
+	import { shortcuts } from '#platform/shortcuts';
 	import { tauri } from '#platform/tauri';
-	import { whispering } from '#platform/whispering';
-	import type { Command } from '$lib/commands';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import type { KeyBinding } from '$lib/tauri/commands';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
-	import { keyBindingToLabel } from '$lib/utils/key-binding';
-	import {
-		getGlobalShortcutKey,
-		getLocalShortcutKey,
-		resetGlobalShortcuts,
-		resetLocalShortcuts,
-	} from '$lib/operations/shortcuts';
 	import GlobalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte';
 	import ShortcutFormatHelp from './keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
@@ -42,24 +31,8 @@
 				},
 			});
 
-	/** The definition default for a local shortcut, formatted for display. */
-	function localDefault(commandId: Command['id']): string | null {
-		return whispering.settings.getDefault(getLocalShortcutKey(commandId)) ?? null;
-	}
-
-	/** The definition default for a global shortcut, formatted for display. */
-	function globalDefault(commandId: Command['id']): string | null {
-		// Stored bindings are validated as plain strings; the IPC `KeyBinding` types
-		// `keys` as the Rust `Key` vocabulary, so the cast bridges that boundary.
-		const binding = deviceConfig.getDefault(
-			getGlobalShortcutKey(commandId),
-		) as KeyBinding | null;
-		return binding ? keyBindingToLabel(binding, os.isApple) : null;
-	}
-
 	function reset() {
-		if (tauri) resetGlobalShortcuts();
-		else resetLocalShortcuts();
+		shortcuts.reset();
 		report.success({
 			title: 'Shortcuts reset',
 			description: 'All shortcuts have been reset to defaults.',
@@ -69,29 +42,31 @@
 
 <svelte:head> <title>Keyboard Shortcuts - Whispering</title> </svelte:head>
 
-<section>
+<section class="mx-auto max-w-4xl py-6">
 	<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 		<SectionHeader.Root>
 			<div class="flex items-center gap-2">
-				<SectionHeader.Title level={2} class="text-xl tracking-tight sm:text-2xl">
-					{tauri ? 'Global Shortcuts' : 'In-App Shortcuts'}
+				<SectionHeader.Title level={1} class="text-3xl">
+					Keyboard Shortcuts
 				</SectionHeader.Title>
 				<ShortcutFormatHelp type={tauri ? 'global' : 'local'} />
 			</div>
-			<SectionHeader.Description>
+			<SectionHeader.Description class="mt-2">
 				{#if tauri}
 					System-wide gestures that fire from anywhere, even when Whispering is
-					not focused. Hold the Fn key or a modifier chord. Each gesture needs
-					its own keys, so the key you use for push-to-talk cannot be part of
-					another shortcut.
+					not focused. Hold your recording key to talk, then release to stop.
+					Each gesture needs its own keys, so the recording key cannot be part
+					of another shortcut. These are set per computer, so they stay on this
+					device.
 				{:else}
-					Shortcuts that trigger while the Whispering tab is focused.
+					Shortcuts that trigger while the Whispering tab is focused. They sync
+					across your devices.
 				{/if}
 			</SectionHeader.Description>
 		</SectionHeader.Root>
 		<Button variant="outline" size="sm" onclick={reset} class="shrink-0">
 			<RotateCcw class="size-4" />
-			Reset to defaults
+			Reset shortcuts
 		</Button>
 	</div>
 
@@ -101,7 +76,7 @@
 		{@const t = tauri}
 		<ShortcutTable>
 			{#snippet row(command)}
-				{@const def = globalDefault(command.id)}
+				{@const def = shortcuts.defaultLabel(command.id)}
 				<GlobalKeyboardShortcutRecorder
 					{command}
 					placeholder={def ? `Default: ${def}` : 'Set shortcut'}
@@ -112,7 +87,7 @@
 	{:else if pressedKeys}
 		<ShortcutTable>
 			{#snippet row(command)}
-				{@const def = localDefault(command.id)}
+				{@const def = shortcuts.defaultLabel(command.id)}
 				<LocalKeyboardShortcutRecorder
 					{command}
 					placeholder={def ? `Default: ${def}` : 'Set shortcut'}

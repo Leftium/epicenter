@@ -95,14 +95,12 @@ export const commands = {
 	/**
 	 *  Canonical transcribe-by-id path. Resolves the audio file under
 	 *  `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
-	 *  navigator-saved webm/opus/mp4, etc.), decodes, runs inference using
-	 *  the ambient configuration pushed via `set_transcription_config`.
-	 *
-	 *  Returns `NoConfig` if the FE has not pushed a config yet.
+	 *  navigator-saved webm/opus/mp4, etc.), decodes, then runs inference using
+	 *  the per-call transcription spec supplied by the frontend.
 	 */
-	transcribeRecording: (recordingId: string) =>
+	transcribeRecording: (recordingId: string, spec: TranscriptionSpec) =>
 		typedError<string, TranscriptionError>(
-			__TAURI_INVOKE('transcribe_recording', { recordingId }),
+			__TAURI_INVOKE('transcribe_recording', { recordingId, spec }),
 		),
 	/**
 	 *  Open macOS Accessibility settings.
@@ -114,72 +112,104 @@ export const commands = {
 	openAccessibilitySettings: () =>
 		typedError<null, string>(__TAURI_INVOKE('open_accessibility_settings')),
 	/**
-	 *  Writes markdown files to disk atomically using a temporary file plus persist.
-	 *  Validates all filenames upfront. No files are written if any name is invalid.
-	 *
-	 *  # Arguments
-	 *  * `directory` - Absolute path to the output directory
-	 *  * `files` - Array of `{ filename, content }` pairs to write
-	 *
-	 *  # Returns
-	 *  * `Ok(())` - All files written successfully
-	 *  * `Err(String)` - Error if any write fails (earlier files may already be on disk)
+	 *  Reconcile the current local-model unload policy into the native idle
+	 *  watcher. The frontend owns the value and pushes it on every change; Rust
+	 *  owns the clock. Unlike the old ambient config, it carries no model
+	 *  identity, so it applies whether or not a model is selected.
 	 */
-	writeMarkdownFiles: (directory: string, files: MarkdownFile[]) =>
-		typedError<null, string>(
-			__TAURI_INVOKE('write_markdown_files', { directory, files }),
-		),
-	/**
-	 *  Push the ambient transcription configuration. Replaces the per-call
-	 *  `config` argument that `transcribe_recording` used to take. The FE
-	 *  invokes this once at startup and on every subsequent change to
-	 *  settings, model selection, language, prompt, or unload policy.
-	 *
-	 *  Drift in `(engine, model_name)` triggers a background preload so the
-	 *  next `transcribe_recording` call does not pay cold-start latency.
-	 *  Other field changes take effect on the next transcription with no
-	 *  reload.
-	 */
-	setTranscriptionConfig: (config: TranscriptionConfig) =>
-		__TAURI_INVOKE<void>('set_transcription_config', { config }),
+	setUnloadPolicy: (policy: UnloadPolicy) =>
+		__TAURI_INVOKE<void>('set_unload_policy', { policy }),
 	/**
 	 *  Snapshot the current model state. Used by late-mounted observers (a
 	 *  second window, the settings panel re-opening, etc.) to catch up to
 	 *  the current lifecycle state without waiting for the next event on
 	 *  `transcription://model-state`.
 	 *
-	 *  Reads a lock-free status field plus the ambient config; never touches
-	 *  the cache mutex, so it returns immediately even mid-inference.
+	 *  Reads the status plus resident model identity, if any.
 	 */
 	getTranscriptionState: () =>
 		__TAURI_INVOKE<LocalModelState>('get_transcription_state'),
 	/**
-	 *  Download `url` to `file_path`, cancelable via `cancel_download(download_id)`.
-	 *
-	 *  Runs the transfer in a `tokio` task whose `AbortHandle` is registered under
-	 *  `download_id`. A cancel aborts the task at its next await point, which
-	 *  surfaces here as an `Err`; the frontend, which knows it requested the
-	 *  cancel, treats that error as a clean stop.
+	 *  Link a file or directory already on disk into the engine's models folder as
+	 *  `entry_name`. Validates the name and the source's engine shape strictly,
+	 *  then symlinks. Replaces a stale link of the same name; refuses to clobber a
+	 *  real (app-managed) entry. The frontend stores `entry_name` as the selection
+	 *  just like a downloaded model.
 	 */
-	downloadFile: (
+	linkLocalModel: (engine: Engine, entryName: string, sourcePath: string) =>
+		typedError<null, ModelImportError>(
+			__TAURI_INVOKE('link_local_model', { engine, entryName, sourcePath }),
+		),
+	/**
+	 *  List every selectable entry in the engine's models folder: model files
+	 *  (.bin/.gguf/.ggml) for Whisper, directories for Parakeet and Moonshine, plus
+	 *  symlinks to either. Hidden entries and in-flight `.partial` staging are
+	 *  skipped. Returns an empty list when the folder does not exist yet.
+	 */
+	listModelEntries: (engine: Engine) =>
+		typedError<ModelEntry[], ModelFolderError>(
+			__TAURI_INVOKE('list_model_entries', { engine }),
+		),
+	/**
+	 *  Remove one entry from the engine's models folder. A symlinked entry removes
+	 *  only the link, never its target; a real entry is removed outright. The name
+	 *  must be a single folder entry, so this can never reach outside the folder.
+	 *  Succeeds when the entry is already gone.
+	 */
+	deleteModelEntry: (engine: Engine, name: string) =>
+		typedError<null, ModelFolderError>(
+			__TAURI_INVOKE('delete_model_entry', { engine, name }),
+		),
+	/**
+	 *  Resolve an entry **through any symlink** and return the size of each file, or
+	 *  `None` for a missing/unreadable one. The catalog-size comparison stays in JS
+	 *  (the 90% threshold). An empty `filenames` means the entry is itself the file
+	 *  (Whisper) and returns one element; otherwise one element per filename
+	 *  (directory engines). A dead link stats to `None`, so a linked-but-broken
+	 *  model reads as not installed.
+	 */
+	resolveModelFileSizes: (engine: Engine, name: string, filenames: string[]) =>
+		typedError<(number | null)[], ModelFolderError>(
+			__TAURI_INVOKE('resolve_model_file_sizes', { engine, name, filenames }),
+		),
+	/**
+	 *  Download a model into its engine folder, cancelable via
+	 *  `cancel_download(download_id)`. Stages under `{entry}.partial`, streams each
+	 *  file, integrity-checks it against the passed catalog size, then promotes the
+	 *  staging to the canonical path with one rename. A cancel (or any error)
+	 *  removes the staging via a `Drop` guard, so an interrupted run never leaves a
+	 *  partial install for the selector to list. Reports cumulative progress
+	 *  (bytes so far / grand total) on `on_progress`.
+	 */
+	downloadModel: (
+		engine: Engine,
+		entryName: string,
+		files: ModelFileDownload[],
 		downloadId: string,
-		url: string,
-		filePath: string,
 		onProgress: Channel<DownloadProgress>,
 	) =>
-		typedError<null, string>(
-			__TAURI_INVOKE('download_file', {
+		typedError<null, ModelFolderError>(
+			__TAURI_INVOKE('download_model', {
+				engine,
+				entryName,
+				files,
 				downloadId,
-				url,
-				filePath,
 				onProgress,
 			}),
 		),
 	/**
+	 *  Create the engine's models folder if needed and open it in the OS file
+	 *  manager, so the user can drop in or remove models by hand.
+	 */
+	revealModelsFolder: (engine: Engine) =>
+		typedError<null, ModelFolderError>(
+			__TAURI_INVOKE('reveal_models_folder', { engine }),
+		),
+	/**
 	 *  Abort the in-flight download registered under `download_id`, if any. The
-	 *  matching `download_file` call then resolves with an `Err`. A no-op when
-	 *  nothing is downloading under that id (already finished, or cancelled between
-	 *  files), so it is always safe to call.
+	 *  matching `download_model` call then resolves with an `Err` (and its staging
+	 *  is cleaned up by the dropped task). A no-op when nothing is downloading under
+	 *  that id, so it is always safe to call.
 	 */
 	cancelDownload: (downloadId: string) =>
 		__TAURI_INVOKE<void>('cancel_download', { downloadId }),
@@ -209,17 +239,21 @@ export const commands = {
 	setKeyboardCapturing: (capturing: boolean) =>
 		__TAURI_INVOKE<void>('set_keyboard_capturing', { capturing }),
 	/**
-	 *  Start the rdev listener if it is not already running, returning whether it
-	 *  started (or why not). The FE calls this once it knows global shortcuts are
-	 *  allowed: on macOS after Accessibility is granted, on other desktops at
-	 *  launch. Idempotent, so re-checks on focus are safe.
+	 *  The current dictation capability: whether Whispering can tap the keyboard for
+	 *  global shortcuts and paste back. The FE seeds from this on attach, then
+	 *  tracks `DictationCapabilityEvent` for changes; it never probes the OS itself.
+	 *  The Rust supervisor owns the value and the tap's lifecycle, so there is no
+	 *  `start` command for the FE to call.
 	 */
-	startKeyboardListener: () =>
-		__TAURI_INVOKE<ListenerStart>('start_keyboard_listener'),
+	getDictationCapability: () =>
+		__TAURI_INVOKE<DictationCapability>('get_dictation_capability'),
 };
 
 /** Events */
 export const events = {
+	dictationCapabilityEvent: makeEvent<DictationCapabilityEvent>(
+		'dictation-capability-event',
+	),
 	modelStateEvent: makeEvent<ModelStateEvent>('model-state-event'),
 	shortcutCaptureEvent: makeEvent<ShortcutCaptureEvent>(
 		'shortcut-capture-event',
@@ -240,7 +274,61 @@ export type CommandBinding = {
 	binding: KeyBinding;
 };
 
-/**  Whole-file download progress: bytes received so far and the total to expect. */
+/**
+ *  The single source of truth for whether Whispering can drive its headline
+ *  "dictate anywhere" flow: tap the keyboard for global shortcuts and paste a
+ *  transcript back. macOS gates that on Accessibility trust, and the only
+ *  process that can authoritatively know it is the one holding the rdev tap
+ *  (this one), so Rust owns this value and the frontend is a pure view over it.
+ *
+ *  It folds two facts the frontend used to infer separately: the macOS trust
+ *  probe (`AXIsProcessTrusted`) and the tap's liveness. Crucially `Broken` is
+ *  distinguishable from `Active` only here, because `AXIsProcessTrusted` reports
+ *  a stale post-update grant as trusted: the tap dying under a held grant is the
+ *  only signal that tells them apart.
+ */
+export type DictationCapability =
+	/**
+	 *  The supervisor has not determined the value yet. Rust resolves this
+	 *  synchronously at startup, so it exists only as the frontend's pre-seed
+	 *  initial value before the first probe lands.
+	 */
+	| 'unknown'
+	/**
+	 *  This platform can never tap the keyboard (Linux Wayland: `rdev::listen`
+	 *  receives no events). Terminal for the session.
+	 */
+	| 'unsupported'
+	/**
+	 *  macOS Accessibility is not granted. The tap is not running; turning
+	 *  Whispering on in System Settings unlocks it.
+	 */
+	| 'untrusted'
+	/**  The tap is running and (on macOS) the app is trusted. Dictation works. */
+	| 'active'
+	/**
+	 *  macOS reports the app trusted, but the tap keeps dying under the held
+	 *  grant: a stale post-update signature. Removing and re-adding Whispering
+	 *  in Accessibility is the fix, which `Untrusted`'s "just toggle on" is not.
+	 */
+	| 'broken';
+
+/**
+ *  Pushed whenever the dictation capability changes. The frontend seeds from
+ *  `get_dictation_capability` on attach, then tracks this event for transitions;
+ *  it never probes the OS itself. A `tauri_specta::Event`, emitted with
+ *  `emit_to(app, MAIN_WINDOW)` (the main webview, not the overlay) and listened
+ *  through the generated `events.dictationCapabilityEvent`.
+ */
+export type DictationCapabilityEvent = {
+	capability: DictationCapability;
+};
+
+/**
+ *  Cumulative download progress for one model: bytes received so far across all
+ *  of its files, and the grand total to expect. The frontend turns it into a
+ *  0-100 percent.
+ */
 export type DownloadProgress = {
 	/**
 	 *  Bytes received so far. `f64` because specta forbids exporting 64-bit
@@ -248,10 +336,7 @@ export type DownloadProgress = {
 	 *  ceiling, so no precision is lost.
 	 */
 	bytesReceived: number | null;
-	/**
-	 *  Total bytes from the response `content-length`, or 0 when the server
-	 *  omits it. The frontend falls back to the catalog size in that case.
-	 */
+	/**  Grand total bytes for the whole model (sum of the catalog file sizes). */
 	totalBytes: number | null;
 };
 
@@ -362,25 +447,15 @@ export type Key =
  *  exactly (see `Matcher`), matching the existing `arraysMatch` semantics of
  *  `local-shortcut-manager` and the plugin's exact-modifier behavior. An empty
  *  `keys` with non-empty `modifiers` is a modifier-only hold (for example hold
- *  Meta); empty `modifiers` with one key is a bare single-key push-to-talk.
- *  Both were impossible with the plugin.
+ *  Meta), which was impossible with the plugin. The matcher also accepts a bare
+ *  key with no modifiers, but the frontend refuses to *configure* one (a global
+ *  gesture must carry a modifier or Fn so it cannot fire on an ordinary
+ *  keypress); the matcher stays permissive so the policy lives in one place.
  */
 export type KeyBinding = {
 	modifiers: Modifier[];
 	keys: Key[];
 };
-
-/**
- *  Outcome of a `start` request, so the FE can tell the user when global
- *  shortcuts are unavailable instead of relying on a Rust log nobody sees.
- */
-export type ListenerStart =
-	/**  A listener thread was spawned. */
-	| 'started'
-	/**  A listener thread is already running; this call was a no-op. */
-	| 'alreadyRunning'
-	/**  Linux Wayland: rdev's tap never receives events, so nothing was spawned. */
-	| 'waylandUnsupported';
 
 /**
  *  Snapshot of everything observable about the resident model. Every event
@@ -393,15 +468,10 @@ export type LocalModelState = {
 	engine: Engine | null;
 	/**
 	 *  Entry name inside the engine's models directory, mirroring
-	 *  `TranscriptionConfig::model_name`.
+	 *  `TranscriptionSpec::model_name`.
 	 */
 	modelName: string | null;
 	status: ModelStatus;
-};
-
-export type MarkdownFile = {
-	filename: string;
-	content: string;
 };
 
 export type MediaControlFailure = {
@@ -411,6 +481,71 @@ export type MediaControlFailure = {
 };
 
 export type MediaPlayer = 'music' | 'spotify';
+
+/**  One selectable entry in an engine's models folder. */
+export type ModelEntry = {
+	/**  File or directory name inside the engine's models folder. */
+	name: string;
+	/**
+	 *  Whether the entry is a symlink (a "bring your own model" link). Display
+	 *  only ("Your model (linked)"); it does not change how the entry loads.
+	 */
+	linked: boolean;
+};
+
+/**
+ *  One file to download for a model. Mirrors the catalog shape: a Whisper model
+ *  passes a single file, a directory engine passes one per contained file.
+ */
+export type ModelFileDownload = {
+	url: string;
+	/**
+	 *  Filename inside the entry directory (directory engines). Ignored for the
+	 *  single-file Whisper case, where the entry itself is the file.
+	 */
+	filename: string;
+	/**  Catalog size in bytes; the integrity check and progress total use it. */
+	sizeBytes: number | null;
+};
+
+export type ModelFolderError =
+	/**  The entry name (or a download filename) is not a single folder entry. */
+	| { name: 'InvalidEntryName'; message: string }
+	/**  Could not read the models folder or resolve its path. */
+	| { name: 'ReadFailed'; message: string }
+	/**  Removing the entry failed. */
+	| { name: 'DeleteFailed'; message: string }
+	/**
+	 *  A download finished smaller than its catalog size (a dropped connection
+	 *  leaves a truncated file that still "loads" but transcribes garbage).
+	 */
+	| { name: 'DownloadIncomplete'; message: string }
+	/**  A download failed or was cancelled (an aborted transfer surfaces here). */
+	| { name: 'DownloadFailed'; message: string }
+	/**  Could not create or open the models folder. */
+	| { name: 'RevealFailed'; message: string };
+
+export type ModelImportError =
+	/**
+	 *  The chosen registry entry name is not a single folder entry, or (for
+	 *  Moonshine) does not match the `moonshine-{variant}-{lang}` convention.
+	 */
+	| { name: 'InvalidEntryName'; message: string }
+	/**
+	 *  A real, app-managed model with the chosen name already occupies the
+	 *  folder. Refused rather than clobbered so linking never deletes
+	 *  downloaded bytes. Carries the colliding name (`entry`, not `name`, which
+	 *  is the serde discriminant) so the UI can guide the user to delete that
+	 *  existing entry first.
+	 */
+	| { name: 'EntryExists'; entry: string }
+	/**
+	 *  The picked file/directory does not have the exact shape the engine's
+	 *  loader needs.
+	 */
+	| { name: 'IncompatibleModel'; message: string }
+	/**  Creating (or replacing) the symlink failed. */
+	| { name: 'LinkFailed'; message: string };
 
 /**
  *  Single event type for everything observable about the model lifecycle.
@@ -428,12 +563,11 @@ export type ModelStateEvent =
 	| { kind: 'inference_started'; state: LocalModelState }
 	| { kind: 'inference_completed'; state: LocalModelState; elapsedMs: number }
 	| { kind: 'inference_failed'; state: LocalModelState; error: string }
-	| { kind: 'unloaded'; state: LocalModelState; reason: UnloadReason }
-	| { kind: 'selection_changed'; state: LocalModelState };
+	| { kind: 'unloaded'; state: LocalModelState; reason: UnloadReason };
 
 /**
  *  Lifecycle state of the resident model. Owned by an `Arc<RwLock<...>>`
- *  inside `ModelManager` so `snapshot()` can read it without touching the
+ *  inside `ModelCache` so `snapshot()` can read it without touching the
  *  cache mutex (which is held across long-running inference).
  */
 export type ModelStatus =
@@ -521,43 +655,35 @@ export type ShortcutTriggerEvent = {
 	state: TriggerState;
 };
 
-/**
- *  Ambient configuration the frontend pushes once per change. The Rust side
- *  reads this on every `transcribe_recording` call instead of receiving
- *  a per-call payload. The model loads lazily on the next transcription, so a
- *  changed `(engine, model_name)` is picked up then; drift in other fields
- *  takes effect on the next transcription with no reload.
- */
-export type TranscriptionConfig = {
-	engine: Engine;
-	/**
-	 *  Entry name inside the engine's models directory (a single file or
-	 *  directory name, never a path). `ModelManager` resolves it under
-	 *  `{app_data}/models/{engine}/` at load time, so a path never exists
-	 *  as data anywhere in the system.
-	 */
-	modelName: string;
-	language?: string | null;
-	initialPrompt?: string | null;
-	unloadPolicy: UnloadPolicy;
-};
-
 export type TranscriptionError =
 	| { name: 'AudioReadError'; message: string }
 	| { name: 'GpuError'; message: string }
 	| { name: 'ModelLoadError'; message: string }
 	| { name: 'TranscriptionError'; message: string }
 	/**
-	 *  `transcribe_recording` was called before `set_transcription_config`
-	 *  pushed an ambient config. The FE should disable the transcribe button
-	 *  until `localModel.state.engine !== null` to avoid this.
-	 */
-	| { name: 'NoConfig'; message: string }
-	/**
-	 *  The ambient config holds a value that cannot be dispatched (e.g. a
+	 *  The per-call spec holds a value that cannot be dispatched (e.g. a
 	 *  Moonshine model path that does not match `moonshine-{variant}-{lang}`).
 	 */
 	| { name: 'ConfigError'; message: string };
+
+/**
+ *  Per-call transcription inputs owned by the frontend. The Rust side receives
+ *  this with `transcribe_recording`, resolves the model at point of use, and
+ *  keeps only the resident model cache. Nothing here is retained between calls,
+ *  so there is no ambient config to go stale.
+ */
+export type TranscriptionSpec = {
+	engine: Engine;
+	/**
+	 *  Entry name inside the engine's models directory (a single file or
+	 *  directory name, never a path). `ModelCache` resolves it under
+	 *  `{app_data}/models/{engine}/` at load time, so a path never exists
+	 *  as data anywhere in the system.
+	 */
+	modelName: string;
+	language?: string | null;
+	initialPrompt?: string | null;
+};
 
 /**
  *  Whether a binding just became fully held (`Pressed`) or stopped being fully
@@ -571,8 +697,7 @@ export type TriggerState = 'Pressed' | 'Released';
 /**
  *  How long after the last transcription the resident model should be
  *  dropped. Mirrors the frontend `transcription.localModelUnloadPolicy`
- *  device setting; serde tags below match its wire format exactly so the
- *  FE value pushes straight through.
+ *  device setting; serde tags below match its wire format exactly.
  *
  *  `Immediately` is enforced synchronously at the end of each transcription;
  *  timed variants are enforced by the background idle watcher.
@@ -598,12 +723,7 @@ export type UnloadReason =
 	 *  Background idle watcher dropped the model after the configured timeout
 	 *  elapsed without activity.
 	 */
-	| { kind: 'idle'; idleSecs: number }
-	/**
-	 *  User selected a different model in settings; the old one was dropped
-	 *  before the new one preloads.
-	 */
-	| { kind: 'config_changed' };
+	| { kind: 'idle'; idleSecs: number };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(

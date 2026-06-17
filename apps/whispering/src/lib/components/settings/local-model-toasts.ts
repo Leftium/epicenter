@@ -1,6 +1,6 @@
 import { toast } from '@epicenter/ui/sonner';
 import type { Result } from 'wellcrafted/result';
-import type { LocalModelFolderError } from '$lib/services/transcription/local-model-folder';
+import type { ModelFolderError } from '$lib/services/transcription/local-model-folder';
 import type { ModelDownloadResult } from '$lib/state/local-model-downloads.svelte';
 
 /**
@@ -34,7 +34,7 @@ export function announceModelDownload(
  * custom entries delete through the same primitive, so both announce it here.
  */
 export function announceModelDelete(
-	result: Result<void, LocalModelFolderError>,
+	result: Result<unknown, ModelFolderError>,
 ): boolean {
 	if (result.error) {
 		toast.error('Failed to delete model', {

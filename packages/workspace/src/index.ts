@@ -25,6 +25,7 @@
  *
  * const notesWorkspace = defineWorkspace({
  *   id: 'notes',
+ *   name: 'notes',
  *   tables: { posts },
  *   kv: {},
  * });
@@ -90,6 +91,7 @@ export { nullable } from './document/nullable';
 
 export { debounce } from './shared/debounce.js';
 export { once } from './shared/once.js';
+export type { Drainable } from './shared/types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
@@ -155,6 +157,7 @@ export {
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
+	type ConnectComposition,
 	type ConnectedTables,
 	type ConnectedWorkspace,
 	type ConnectedWorkspaceContext,
@@ -162,11 +165,13 @@ export {
 	createWorkspace,
 	type DefineWorkspaceOptions,
 	defineWorkspace,
+	type MountComposeContext,
+	type MountComposition,
+	type MountOptions,
 	satisfiesWorkspace,
 	type Workspace,
 	type WorkspaceActionContext,
 	type WorkspaceDefinition,
 	type WorkspaceFromDefinition,
-	type WorkspaceRuntimeExtension,
 	type WorkspaceTables,
 } from './document/workspace.js';

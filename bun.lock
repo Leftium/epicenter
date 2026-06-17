@@ -498,6 +498,7 @@
         "dexie": "^4.0.11",
         "dompurify": "^3.4.10",
         "elevenlabs": "^1.59.0",
+        "fflate": "catalog:",
         "groq-sdk": "^0.25.0",
         "idb": "^8.0.3",
         "js-yaml": "^4.1.1",

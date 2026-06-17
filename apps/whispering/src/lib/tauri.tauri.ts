@@ -48,18 +48,19 @@ import {
 	isEnabled as isAutostartEnabled,
 } from '@tauri-apps/plugin-autostart';
 import { readFile } from '@tauri-apps/plugin-fs';
+import { openPath as revealPath } from '@tauri-apps/plugin-opener';
 import { exit } from '@tauri-apps/plugin-process';
 import mime from 'mime';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { os } from '#platform/os';
 import { goto } from '$app/navigation';
-import type { ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
 import type {
 	CommandBinding,
+	DictationCapability,
 	KeyBinding,
 	MediaPlayer,
 } from '$lib/tauri/commands';
@@ -101,10 +102,6 @@ const fs = {
 
 // permissions -------------------------------------------------------
 const PermissionsError = defineErrors({
-	CheckAccessibility: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to check accessibility permissions: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	RequestAccessibility: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to request accessibility permissions: ${extractErrorMessage(cause)}`,
 		cause,
@@ -125,19 +122,6 @@ const PermissionsError = defineErrors({
 
 const permissions = {
 	accessibility: {
-		async check() {
-			if (!os.isApple) return Ok(true);
-			return tryAsync({
-				try: async () => {
-					const { checkAccessibilityPermission } = await import(
-						'tauri-plugin-macos-permissions-api'
-					);
-					return checkAccessibilityPermission();
-				},
-				catch: (error) => PermissionsError.CheckAccessibility({ cause: error }),
-			});
-		},
-
 		async request() {
 			if (!os.isApple) return Ok(true);
 			return tryAsync({
@@ -266,7 +250,7 @@ async function initTray() {
 // the user's bindings down with `set_keyboard_shortcuts` and dispatch the
 // events back into the command layer (the single convergence point). No
 // accelerator strings cross this boundary: the registrar parses them to
-// `KeyBinding` before pushing (see `register-commands.ts`). The trigger and
+// `KeyBinding` before pushing (see `platform/shortcuts.tauri.ts`). The trigger and
 // capture topics are the generated `events.shortcutTriggerEvent` /
 // `events.shortcutCaptureEvent`, so no topic string is mirrored here.
 
@@ -348,33 +332,24 @@ const globalShortcuts = {
 		commands.setKeyboardShortcuts(bindings),
 
 	/**
-	 * Start the rdev listener (idempotent). The caller gates this on "global
-	 * shortcuts are allowed": on macOS once Accessibility is granted, on other
-	 * desktops at launch. Returns the outcome so the caller can tell the user
-	 * when shortcuts are unavailable (Wayland) instead of failing silently.
+	 * The current dictation capability, for the FE's seed on attach. The Rust
+	 * supervisor owns the rdev tap's lifecycle and trust gating, so there is no
+	 * `start`: the tap is already running whenever the capability is `active`.
 	 */
-	start: () => commands.startKeyboardListener(),
+	getCapability: (): Promise<DictationCapability> =>
+		commands.getDictationCapability(),
 
 	/**
 	 * Subscribe to the rdev trigger event and dispatch each into the command
-	 * layer, filtered by the command's `on` array. Returns the unlisten fn. The
-	 * `on` filter is the same gate the old plugin registrar applied; keeping it
-	 * here leaves `commands.ts` as the single convergence point.
+	 * layer. Returns the unlisten fn. The `on` filter lives in
+	 * `dispatchCommandTrigger`, the single convergence point both trigger
+	 * backends share, so this stays pure transport.
 	 */
 	startListening: async () => {
-		const { commandCallbacks, commands: commandList } = await import(
-			'$lib/commands'
-		);
-		const onById = new Map<string, ShortcutEventState[]>(
-			commandList.map((command) => [command.id, command.on]),
-		);
+		const { dispatchCommandTrigger } = await import('$lib/commands');
 		return events.shortcutTriggerEvent.listen(
-			({ payload: { commandId, state } }) => {
-				const on = onById.get(commandId);
-				const callback =
-					commandCallbacks[commandId as keyof typeof commandCallbacks];
-				if (on?.includes(state) && callback) callback(state);
-			},
+			({ payload: { commandId, state } }) =>
+				dispatchCommandTrigger(commandId, state),
 		);
 	},
 
@@ -396,12 +371,41 @@ const globalShortcuts = {
 		events.shortcutCaptureEvent.listen(({ payload }) =>
 			onCombo(payload.binding),
 		),
+
+	/**
+	 * Subscribe to dictation-capability changes pushed by the Rust supervisor
+	 * (trust gained or lost, tap died, stale grant detected). Returns the
+	 * unlisten fn. The supervisor owns the meaning, so the FE just renders the
+	 * value instead of inferring liveness or re-probing the OS.
+	 */
+	onCapabilityChanged: (onChange: (capability: DictationCapability) => void) =>
+		events.dictationCapabilityEvent.listen(({ payload }) =>
+			onChange(payload.capability),
+		),
 };
 
 // media -------------------------------------------------------------
 const media = {
 	pause: () => commands.pauseActiveMedia(),
 	resume: (players: MediaPlayer[]) => commands.resumeMedia(players),
+};
+
+// opener ------------------------------------------------------------
+const OpenerError = defineErrors({
+	OpenPathFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+		message: `Failed to open ${path}: ${extractErrorMessage(cause)}`,
+		path,
+		cause,
+	}),
+});
+
+const opener = {
+	/** Reveal a file or folder in the OS file manager (Finder, Explorer). */
+	openPath: (path: string) =>
+		tryAsync({
+			try: () => revealPath(path),
+			catch: (cause) => OpenerError.OpenPathFailed({ path, cause }),
+		}),
 };
 
 // barrel ------------------------------------------------------------
@@ -414,6 +418,7 @@ export const tauriOnly = {
 	globalShortcuts,
 	autostart,
 	media,
+	opener,
 };
 
 /** Shape of the Tauri capability namespace (non-null). */

@@ -50,18 +50,24 @@ const sharedCommands = [
 	{
 		id: 'pushToTalk',
 		title: 'Push to talk',
+		// Hold to record, release to stop. Recording starts on the press and stops
+		// on the release; both the desktop rdev backend and the browser keydown
+		// backend emit this Pressed/Released pair. Stateless: the edges are the
+		// whole state machine, so the routing is glue that lives with the command,
+		// not an operation. Default global key is Fn (macOS) / Ctrl+Win (else).
 		on: ['Pressed', 'Released'],
 		callback: (state?: ShortcutEventState) => {
-			if (state === 'Pressed') {
-				startManualRecording();
-			} else if (state === 'Released') {
-				stopManualRecording();
-			}
+			if (state === 'Pressed') return startManualRecording();
+			if (state === 'Released') return stopManualRecording();
 		},
 	},
 	{
 		id: 'toggleManualRecording',
 		title: 'Toggle recording',
+		// Tap to start, tap to stop. This is also what the in-app record button
+		// fires (a click arrives with no edge). Unbound globally by default:
+		// push-to-talk owns the default recording key. Bind a key here for a
+		// hands-free toggle, e.g. for long-form dictation.
 		on: ['Pressed'],
 		callback: () => toggleManualRecording(),
 	},
@@ -101,3 +107,28 @@ export const commandCallbacks = commands.reduce<CommandCallbacks>(
 	},
 	{} as CommandCallbacks,
 );
+
+type TriggerTarget = {
+	on: readonly ShortcutEventState[];
+	callback: (state?: ShortcutEventState) => void;
+};
+const triggerTargetById = new Map<string, TriggerTarget>(
+	commands.map((c) => [c.id, { on: c.on, callback: c.callback }]),
+);
+
+/**
+ * The single convergence point for trigger backends. The desktop rdev listener
+ * and the browser keydown manager both emit raw `(commandId, edge)` pairs into
+ * here, so neither reimplements the `on` filter: an edge the command does not
+ * subscribe to is dropped, the rest reach the callback. Direct invocations
+ * (command palette, in-app buttons) bypass this and call `commandCallbacks`
+ * with no edge.
+ */
+export function dispatchCommandTrigger(
+	commandId: string,
+	state: ShortcutEventState,
+) {
+	const target = triggerTargetById.get(commandId);
+	if (!target?.on.includes(state)) return;
+	target.callback(state);
+}

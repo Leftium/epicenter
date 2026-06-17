@@ -1,4 +1,4 @@
-import { type UnlistenFn } from '@tauri-apps/api/event';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { tauri } from '#platform/tauri';
 import { commands, events, type LocalModelState } from '$lib/tauri/commands';
 
@@ -9,7 +9,7 @@ const INITIAL_STATE: LocalModelState = {
 };
 
 /**
- * Reactive mirror of the Rust `ModelManager`'s public state, kept in sync via
+ * Reactive mirror of the Rust `ModelCache`'s public state, kept in sync via
  * the `events.modelStateEvent` topic. Single instance per app;
  * mount once via `attach()` in the root layout.
  *
@@ -32,7 +32,7 @@ function createLocalModel() {
 			return state;
 		},
 
-		/** True while the model manager cannot start another local operation. */
+		/** True while the model cache cannot start another local operation. */
 		get isBusy(): boolean {
 			return (
 				state.status.kind === 'loading' || state.status.kind === 'inferring'

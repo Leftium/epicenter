@@ -33,7 +33,7 @@ So the escape hatch we shipped was "become the server." Run your own deployment,
 
 Iroh gives every device a public-key identity and opens a direct, encrypted QUIC connection between two devices by that identity. The session is end-to-end encrypted with keys derived from the devices' own keypairs, and when two peers can't connect directly, a relay forwards the encrypted frames it cannot decode. It's a packet relay addressed by public key, sitting below the application, so it never sees content.
 
-Read the threat-model list again with that in mind. "Server code can read it." Which server? The bytes go device to device. The relay can't decrypt; the transit is already sealed by Iroh. The entire "trust the server" question simply doesn't arise across transit, because no server is an endpoint of the encrypted session.
+Read those failure modes again with that in mind. "Server code can read it." Which server? The bytes go device to device. The relay can't decrypt; the transit is already sealed by Iroh. The entire "trust the server" question doesn't arise across transit, because no server is an endpoint of the encrypted session.
 
 It survives in exactly one place. When your phone edits and your laptop is asleep, something always-on has to hold that update until the laptop wakes. That something is the anchor, and the anchor is an endpoint: it decrypts and stores. So the question stops being "do we encrypt the data" and becomes "who runs the anchor."
 

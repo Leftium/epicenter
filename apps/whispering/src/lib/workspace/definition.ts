@@ -307,6 +307,18 @@ const analytics = {
  * `null` = unbound.
  */
 const shortcuts = {
+	// These getDefault thunks are the single source for the in-app shortcut
+	// defaults. The web backend (platform/shortcuts.browser.ts) reads them back
+	// through `settings.getDefault('shortcut.*')` instead of redeclaring them, so
+	// the schema and the backend can never drift.
+	//
+	// Push-to-talk ships unbound in-app: a stray Space-style tap would fire
+	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
+	// in-app default is the toggle below.
+	'shortcut.pushToTalk': defineKv(
+		nullable(field.string()),
+		(): string | null => null,
+	),
 	'shortcut.toggleManualRecording': defineKv(
 		nullable(field.string()),
 		(): string | null => ' ',
@@ -321,10 +333,6 @@ const shortcuts = {
 	'shortcut.toggleVadRecording': defineKv(
 		nullable(field.string()),
 		(): string | null => 'v',
-	),
-	'shortcut.pushToTalk': defineKv(
-		nullable(field.string()),
-		(): string | null => 'p',
 	),
 	'shortcut.openTransformationPicker': defineKv(
 		nullable(field.string()),

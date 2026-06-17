@@ -28,7 +28,7 @@ function createSettings() {
 	}
 
 	// Single observer for ALL KV changes (local or remote).
-	// Observer updates SvelteMap → components re-render per-key.
+	// Observer updates SvelteMap -> components re-render per-key.
 	whispering.kv.observeAll((changes) => {
 		for (const [key, change] of changes) {
 			if (change.type === 'set') {
@@ -56,9 +56,9 @@ function createSettings() {
 		set: whispering.kv.set,
 
 		/**
-		 * The schema default for a setting key (the `defineKv` factory value).
-		 * The single source for resets and default-display, so a setting's
-		 * default lives only in the workspace definition, never in a parallel map.
+		 * The default value for a setting key (factory-evaluated, per-key typed).
+		 * Reads straight from the KV schema, so the schema stays the single source
+		 * of defaults; callers never redeclare them.
 		 */
 		getDefault: whispering.settings.getDefault,
 

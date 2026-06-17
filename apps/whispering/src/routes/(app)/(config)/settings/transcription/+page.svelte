@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Field from '@epicenter/ui/field';
-	import TranscriptionRuntimeSetup from '$lib/components/settings/TranscriptionRuntimeSetup.svelte';
+	import TranscriptionRuntimeConfig from '$lib/components/settings/TranscriptionRuntimeConfig.svelte';
 </script>
 
 <svelte:head> <title>Transcription Settings - Whispering</title> </svelte:head>
@@ -12,5 +12,5 @@
 		hints work.
 	</Field.Description>
 	<Field.Separator />
-	<TranscriptionRuntimeSetup />
+	<TranscriptionRuntimeConfig />
 </Field.Set>

@@ -29,8 +29,6 @@ import {
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
-export const OPENSIDIAN_ID = 'epicenter-opensidian';
-
 /**
  * Branded conversation ID for a single chat thread.
  *
@@ -143,7 +141,8 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  * and UI state around this shared model.
  */
 export const opensidianWorkspace = defineWorkspace({
-	id: OPENSIDIAN_ID,
+	id: 'epicenter-opensidian',
+	name: 'opensidian',
 	tables: {
 		files: filesTable,
 		conversations: conversationsTable,

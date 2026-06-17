@@ -6,20 +6,18 @@ test('an empty binding is treated as unset and passes', () => {
 });
 
 test('shipped defaults pass the policy', () => {
-	// macOS defaults.
+	// Two gestures ship bound: push-to-talk and cancel (toggle ships unbound).
+	// macOS defaults: Fn = push-to-talk, Cmd+. = cancel.
 	expect(validateGlobalBinding({ modifiers: ['fn'], keys: [] })).toBeNull();
-	expect(
-		validateGlobalBinding({ modifiers: ['meta', 'shift'], keys: ['space'] }),
-	).toBeNull();
 	expect(
 		validateGlobalBinding({ modifiers: ['meta'], keys: ['dot'] }),
 	).toBeNull();
-	// Windows/Linux defaults.
+	// Windows/Linux defaults: Ctrl+Win = push-to-talk, Ctrl+Shift+. = cancel.
 	expect(
 		validateGlobalBinding({ modifiers: ['ctrl', 'meta'], keys: [] }),
 	).toBeNull();
 	expect(
-		validateGlobalBinding({ modifiers: ['ctrl', 'shift'], keys: ['space'] }),
+		validateGlobalBinding({ modifiers: ['ctrl', 'shift'], keys: ['dot'] }),
 	).toBeNull();
 });
 
@@ -39,7 +37,8 @@ test('literal meta+space (Spotlight) is reserved but meta+shift+space is not', (
 	expect(
 		validateGlobalBinding({ modifiers: ['meta'], keys: ['space'] }),
 	).toContain('System search');
-	// The toggle default adds Shift, a different set, so it stays allowed.
+	// Adding Shift makes it a different set from the reserved Cmd+Space, so it
+	// stays allowed (e.g. a user-bound Cmd+Shift+Space).
 	expect(
 		validateGlobalBinding({ modifiers: ['meta', 'shift'], keys: ['space'] }),
 	).toBeNull();

@@ -1,10 +1,14 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import * as Kbd from '@epicenter/ui/kbd';
 	import { onDestroy } from 'svelte';
+	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { type Command, commands } from '$lib/commands';
 	import { report } from '$lib/report';
+	import { shortcuts } from '#platform/shortcuts';
 	import type { Tauri } from '#platform/tauri';
-	import { syncGlobalShortcutsWithSettings } from '$lib/operations/shortcuts';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 	import { os } from '#platform/os';
 	import {
@@ -32,6 +36,12 @@
 	const binding = $derived(deviceConfig.get(`shortcuts.global.${command.id}`));
 	const label = $derived(binding ? keyBindingToLabel(binding, os.isApple) : null);
 
+	// rdev cannot tap the keyboard until macOS Accessibility is granted, so a
+	// capture popover would open and silently receive nothing. Gate at the door
+	// on the capability owner: when it is not `active`, render a guide CTA instead
+	// of a dead recorder. Always active off macOS (no Accessibility gate there).
+	const canRecord = $derived(dictationCapability.isActive);
+
 	let open = $state(false);
 	let isListening = $state(false);
 
@@ -42,6 +52,9 @@
 	let unlisten: (() => void) | undefined;
 
 	async function startCapture() {
+		// The capability is `active` (the capture UI only renders when `canRecord`),
+		// so the Rust supervisor already has the tap running; we only flip it into
+		// capture mode. No `start` to call: the FE does not own the tap's lifecycle.
 		isListening = true;
 		capturedModifiers = new Set();
 		capturedKeys = new Set();
@@ -120,7 +133,7 @@
 
 	async function persist(next: KeyBinding) {
 		deviceConfig.set(`shortcuts.global.${command.id}`, next);
-		await syncGlobalShortcutsWithSettings();
+		await shortcuts.sync();
 		report.success({
 			title: `Global shortcut set to ${keyBindingToLabel(next, os.isApple)}`,
 			description: `Press the shortcut to trigger "${command.title}"`,
@@ -130,7 +143,7 @@
 	async function clear() {
 		await stopCapture();
 		deviceConfig.set(`shortcuts.global.${command.id}`, null);
-		await syncGlobalShortcutsWithSettings();
+		await shortcuts.sync();
 		report.success({
 			title: 'Global shortcut cleared',
 			description: `Set a new shortcut to trigger "${command.title}"`,
@@ -175,16 +188,42 @@
 	};
 </script>
 
-<RecorderShell
-	bind:open
-	title={command.title}
-	{recorder}
-	copy={{
-		placeholder,
-		recordHelp: 'Press a gesture. Fn and modifier-only holds work here.',
-		manualHelp: 'Type a gesture (e.g. fn+space, ctrl+meta)',
-		manualPlaceholder: 'e.g. fn+space',
-		manualButtonLabel: 'Type manually',
-		listeningHint: 'Release to set, Esc to cancel',
-	}}
-/>
+{#if canRecord}
+	<RecorderShell
+		bind:open
+		title={command.title}
+		{recorder}
+		copy={{
+			placeholder,
+			recordHelp: 'Press a gesture. Fn and modifier-only holds work here.',
+			manualHelp: 'Type a gesture (e.g. fn+space, ctrl+meta)',
+			manualPlaceholder: 'e.g. fn+space',
+			manualButtonLabel: 'Type manually',
+			listeningHint: 'Release to set, Esc to cancel',
+		}}
+	/>
+{:else if dictationCapability.needsAccessibility}
+	<!-- macOS Accessibility ungranted or stale: a recorder here would capture
+	nothing. Show the current binding read-only and route to the re-grant guide. -->
+	<div class="flex items-center justify-end gap-2">
+		{#if label}
+			<Kbd.Root>{label}</Kbd.Root>
+		{/if}
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={() => accessibilityGuide.open()}
+		>
+			Grant Accessibility to record
+		</Button>
+	</div>
+{:else}
+	<!-- The tap is unavailable for a non-grant reason (Linux Wayland, or the
+	capability not yet seeded): the macOS guide would be wrong here, so show the
+	current binding read-only with no CTA. -->
+	<div class="flex items-center justify-end gap-2">
+		{#if label}
+			<Kbd.Root>{label}</Kbd.Root>
+		{/if}
+	</div>
+{/if}

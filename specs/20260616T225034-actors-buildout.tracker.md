@@ -140,7 +140,14 @@ D1 (V0.2, non-blocking, confirm when convenient)
    (evict the least-recently-changed body past a max-open count; a capped set
    cannot miss turns the way a per-room timer can).
 
-D2 (V0.5, BLOCKING the real-provider swap; C2 + C3 do NOT need it)
+D2 (V0.5) RESOLVED 2026-06-17: (b) the daemon holds a provider key and calls
+   TanStack `chat()` directly (the same call the server route makes). (a) cloud
+   route rejected (circular for hosted Zhongwen + fights C4); (c) local backend
+   is the privacy end state, wired AFTER the V0 proof. So the V0.5 swap is:
+   replace Zhongwen's `fakeChatStream` with a `chat({ adapter, messages })`
+   ChatStream built from a daemon-side provider key, then the V0 exit holds.
+   Original options below for the record.
+
    How does the always-on actor obtain real inference behind the now-existing
    `ChatStream` seam? The app's mount factory closes over its own `startStream`,
    so this is purely "what instance does Zhongwen's daemon inject in production".

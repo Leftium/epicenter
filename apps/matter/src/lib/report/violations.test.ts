@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 import { readTable } from '../core/table';
 import { assess, type TableInput } from '../core/integrity';
 import { describeExpected } from './expected';
-import { summarize, tierOf, toViolations, type Violation } from './violations';
+import { summarize, toViolations, type Violation } from './violations';
 
 type Entries = Parameters<typeof readTable>[0];
 
@@ -229,27 +229,6 @@ describe('invalid-type expected is computed at the edge', () => {
 			kind: 'select',
 			values: ['draft', 'live'],
 		});
-	});
-});
-
-describe('tierOf', () => {
-	test('derives table / row / cross-table from the kind', () => {
-		expect(
-			tierOf({ kind: 'missing-target', table: 't', field: 'f', target: 'g' }),
-		).toBe('table');
-		expect(
-			tierOf({ kind: 'missing-required', table: 't', row: 'r', field: 'f' }),
-		).toBe('row');
-		expect(
-			tierOf({
-				kind: 'dangling-reference',
-				table: 't',
-				row: 'r',
-				field: 'f',
-				value: 'v',
-				target: 'g',
-			}),
-		).toBe('cross-table');
 	});
 });
 

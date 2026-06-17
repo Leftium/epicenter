@@ -60,27 +60,6 @@ export type Violation =
 	  };
 
 /**
- * The tier a violation belongs to, DERIVED from its kind, never stored. Three honest scopes:
- *
- *   - `table`        a whole-column / whole-table structural problem: `missing-target` (the
- *                    referenced table is simply not in the vault, deduped to once per column).
- *   - `row`          a problem with one row's own cell: `missing-required` / `invalid-type`.
- *   - `cross-table`  a per-row pointer that crosses into another table and fails to land:
- *                    `dangling-reference` (the target table is present, this row's value is not).
- */
-export function tierOf(violation: Violation): 'table' | 'row' | 'cross-table' {
-	switch (violation.kind) {
-		case 'missing-target':
-			return 'table';
-		case 'missing-required':
-		case 'invalid-type':
-			return 'row';
-		case 'dangling-reference':
-			return 'cross-table';
-	}
-}
-
-/**
  * Select every attention cell as a flat, located {@link Violation}. A pure selector over the
  * assessed cells: it never reads the filesystem, never calls `assess` or `resolveReferences`, and
  * never reclassifies. Only `typed` tables have typed cells, so only they contribute; a

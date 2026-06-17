@@ -20,39 +20,34 @@ Two rows point at stems that do not exist, so the validator has something to cat
 - `adaptations/orphan-adaptation.md` → `page: ghost-page` (no `pages/ghost-page.md`)
 - `publications/stale-pub.md` → `adaptation: deleted-adaptation` (no such adaptation)
 
-Every other field in those rows is valid, so single-folder `matter check` passes them — only
-the cross-folder reference pass flags them.
+Every other field in those rows is valid, so checking a single folder on its own passes them —
+only the whole-vault check flags them.
 
 ## Run the cross-folder check
 
+The check infers its scope from the path: point it at a vault of table folders and it resolves
+references across all of them.
+
 ```bash
 cd apps/matter
-bun scripts/check-references.ts ../../examples/matter/content-vault
+bun src/cli/check.ts ../../examples/matter/content-vault
 ```
 
-Expected: two `UNRESOLVED` findings (the two rows above).
+Expected: both rows above flagged as `dangling`, with a `7 ready, 2 need attention` summary.
 
-Drop a folder to see the other finding kind — a reference whose target TABLE is gone, as
-opposed to a target ROW:
+Point it at a single table folder and its cross-table references have no target table loaded —
+surfaced as a note, not a failure (the rows still read `ready`):
 
 ```bash
-# Checking adaptations without pages: page's target table isn't loaded.
+# Checking adaptations without pages: page's target table isn't in the vault.
 mkdir -p /tmp/partial && cp -r adaptations /tmp/partial/
-bun scripts/check-references.ts /tmp/partial   # -> MISSING_TARGET adaptations.page -> pages
+bun src/cli/check.ts /tmp/partial   # adaptations.page -> "references pages: no such table in the vault"
 ```
-
-## See it in the UI
-
-The same vault is inlined at `apps/matter/src/routes/demo/references` (a Notion-like
-relation view). `bun run dev`, then open `/demo/references`. The "Load pages folder" toggle
-flips every `adaptations.page` relation between resolved and missing-target live.
 
 ## Opening it in the live app
 
-Matter inspects one folder as one table, so do not open this `content-vault` parent in the
-app: it contains only sub-folders and a README, so it shows the raw, unmodeled view ("no
-model for this folder"). That is by design, not a bug. To inspect a single table live, open a
-child folder (`content-vault/pages`, `content-vault/adaptations`, or
-`content-vault/publications`); each carries its own `matter.json`. The cross-folder reference
-view over all three lives at `/demo/references` and in `scripts/check-references.ts` above.
-Browsing a directory of table-folders as one workspace is a separate, larger feature.
+`content-vault` is a vault: a folder of table folders. Each child folder opens directly as a
+table (`content-vault/pages`, `content-vault/adaptations`, or `content-vault/publications`),
+and each carries its own `matter.json`. The cross-folder reference view over all three comes
+from the whole-vault check above. Browsing a vault as one workspace in the UI is a separate,
+larger feature.

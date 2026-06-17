@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
-	import { VAD_RECORDING_ACTIONS } from '$lib/constants/audio';
+	import { VAD_RECORDING_BUTTON } from '$lib/constants/audio';
 	import { toggleVadRecording } from '$lib/operations/recording';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
@@ -19,9 +19,9 @@
 
 	const isListening = $derived(vadRecorder.state !== 'IDLE');
 	const isSpeechDetected = $derived(vadRecorder.state === 'SPEECH_DETECTED');
-	const action = $derived(VAD_RECORDING_ACTIONS[vadRecorder.state]);
+	const button = $derived(VAD_RECORDING_BUTTON[vadRecorder.state]);
 	const shortcutLabel = $derived(getRecordingShortcutLabel('vad'));
-	const label = $derived(action.label);
+	const label = $derived(button.label);
 	const description = $derived.by(() => {
 		if (toggleMutation.isPending) return 'Updating voice activation';
 		if (isSpeechDetected) return 'Speech detected';
@@ -39,7 +39,7 @@
 	active={isListening}
 	{description}
 	footer={isListening ? undefined : pipeline}
-	icon={action.Icon}
+	icon={button.Icon}
 	{label}
 	pending={toggleMutation.isPending}
 	{shortcutLabel}

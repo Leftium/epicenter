@@ -37,7 +37,7 @@ export const RECORDING_MODE_ICONS = {
 } as const satisfies Record<RecordingMode, Component<{ class?: string }>>;
 
 /**
- * The icon and label the recording action button shows in each recorder state.
+ * The icon and label the recording button shows in each recorder state.
  * The home cards and the config header both index these by state; each site
  * keeps its own sizing, chrome, and tooltip (ADR-0013). Manual and VAD are
  * separate state machines with separate verbs ("recording" vs "listening") and
@@ -49,7 +49,7 @@ export const RECORDING_MODE_ICONS = {
  * an active speech burst; the ear reads as "listening for speech" far better
  * than the old radio.
  */
-export const MANUAL_RECORDING_ACTIONS = {
+export const MANUAL_RECORDING_BUTTON = {
 	IDLE: { Icon: MicIcon, label: 'Start recording' },
 	RECORDING: { Icon: SquareIcon, label: 'Stop recording' },
 } as const satisfies Record<
@@ -57,7 +57,7 @@ export const MANUAL_RECORDING_ACTIONS = {
 	{ Icon: Component<{ class?: string }>; label: string }
 >;
 
-export const VAD_RECORDING_ACTIONS = {
+export const VAD_RECORDING_BUTTON = {
 	IDLE: { Icon: EarIcon, label: 'Start listening' },
 	LISTENING: { Icon: EarIcon, label: 'Stop listening' },
 	SPEECH_DETECTED: { Icon: AudioLinesIcon, label: 'Stop listening' },

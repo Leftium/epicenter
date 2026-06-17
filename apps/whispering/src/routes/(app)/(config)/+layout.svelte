@@ -11,8 +11,8 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		MANUAL_RECORDING_ACTIONS,
-		VAD_RECORDING_ACTIONS,
+		MANUAL_RECORDING_BUTTON,
+		VAD_RECORDING_BUTTON,
 	} from '$lib/constants/audio';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -20,10 +20,10 @@
 
 	let { children } = $props();
 
-	const ManualActionIcon = $derived(
-		MANUAL_RECORDING_ACTIONS[manualRecorder.state].Icon,
+	const ManualButtonIcon = $derived(
+		MANUAL_RECORDING_BUTTON[manualRecorder.state].Icon,
 	);
-	const VadActionIcon = $derived(VAD_RECORDING_ACTIONS[vadRecorder.state].Icon);
+	const VadButtonIcon = $derived(VAD_RECORDING_BUTTON[vadRecorder.state].Icon);
 </script>
 
 <header
@@ -60,7 +60,7 @@
 						variant="ghost"
 						size="icon"
 					>
-						<ManualActionIcon class="size-4" />
+						<ManualButtonIcon class="size-4" />
 					</Button>
 				{:else}
 					<div class="flex">
@@ -71,7 +71,7 @@
 							size="icon"
 							class="rounded-r-none border-r-0"
 						>
-							<ManualActionIcon class="size-4" />
+							<ManualButtonIcon class="size-4" />
 						</Button>
 						<RecordingModeSelector class="rounded-l-none" />
 					</div>
@@ -91,7 +91,7 @@
 							size="icon"
 							class="rounded-r-none border-r-0"
 						>
-							<VadActionIcon class="size-4" />
+							<VadButtonIcon class="size-4" />
 						</Button>
 						<RecordingModeSelector class="rounded-l-none" />
 					</div>
@@ -102,7 +102,7 @@
 						variant="ghost"
 						size="icon"
 					>
-						<VadActionIcon class="size-4" />
+						<VadButtonIcon class="size-4" />
 					</Button>
 				{/if}
 			{:else if settings.get('recording.mode') === 'upload'}

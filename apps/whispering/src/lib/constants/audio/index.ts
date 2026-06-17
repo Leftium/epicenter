@@ -8,12 +8,12 @@ export {
 	WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
 } from './media-constraints';
 export {
-	MANUAL_RECORDING_ACTIONS,
+	MANUAL_RECORDING_BUTTON,
 	RECORDING_MODE_ICONS,
 	RECORDING_MODE_OPTIONS,
 	RECORDING_MODES,
 	type RecordingMode,
-	VAD_RECORDING_ACTIONS,
+	VAD_RECORDING_BUTTON,
 } from './recording-modes';
 export {
 	type VadState,

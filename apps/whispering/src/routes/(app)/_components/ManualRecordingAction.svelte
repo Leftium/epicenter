@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
-	import { MANUAL_RECORDING_ACTIONS } from '$lib/constants/audio';
+	import { MANUAL_RECORDING_BUTTON } from '$lib/constants/audio';
 	import {
 		startManualRecording,
 		stopManualRecording,
@@ -34,8 +34,8 @@
 	const isPending = $derived(isStarting || isStopping);
 	const isRecording = $derived(manualRecorder.state === 'RECORDING');
 	const shortcutLabel = $derived(getRecordingShortcutLabel('manual'));
-	const action = $derived(MANUAL_RECORDING_ACTIONS[manualRecorder.state]);
-	const label = $derived(action.label);
+	const button = $derived(MANUAL_RECORDING_BUTTON[manualRecorder.state]);
+	const label = $derived(button.label);
 	const idleDescription = $derived(
 		shortcutLabel ? 'Click or press shortcut' : 'Click to record',
 	);
@@ -64,7 +64,7 @@
 	active={isRecording}
 	{description}
 	footer={isRecording ? undefined : pipeline}
-	icon={action.Icon}
+	icon={button.Icon}
 	{label}
 	pending={isPending}
 	{shortcutLabel}

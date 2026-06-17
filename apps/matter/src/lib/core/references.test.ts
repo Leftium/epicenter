@@ -145,10 +145,10 @@ describe('resolveReferences', () => {
 		expect(findings).toEqual([]);
 	});
 
-	test('an empty-string reference value is "no reference present", not UNRESOLVED', () => {
-		// `page: ""` conforms as OK (present, non-null), but it carries no pointer to resolve.
-		// Referential integrity only resolves present pointers; whether empty is ALLOWED is a
-		// conformance / minLength question, so this pass adds nothing.
+	test('an empty-string reference value is invalid upstream, so it produces no reference finding', () => {
+		// `page: ""` names no row, so the reference contract rejects it: conformance classifies the
+		// cell INVALID, not OK. This pass only resolves present, valid pointers, so it never sees an
+		// empty value and adds nothing.
 		const findings = resolveReferences([
 			pages([{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' }]),
 			adaptations([{ fileName: 'a1.md', content: '---\ntitle: A\npage: ""\n---' }]),

@@ -21,7 +21,7 @@ import { describe, expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { field, jsonValue } from './builders';
-import { KINDS, type Kind, META_BY_KIND, recognize } from './field';
+import { compile, KINDS, type Kind, META_BY_KIND, recognize } from './field';
 import { INSTANT_STRING_PATTERN } from './instant-string';
 
 /**
@@ -316,6 +316,23 @@ describe('reference: the marker-discriminated cross-row pointer', () => {
 		const s = { type: 'string', 'x-ref': 'pages', minLength: 1 };
 		expect(kindOf(s)).toBe('reference');
 		expect(countMatches(s)).toBe(1);
+	});
+
+	test('the compiled value check rejects an empty reference even with no stored minLength', () => {
+		// A reference points at a row by stem, so "" names no row and is never a valid pointer.
+		// The floor is intrinsic to the kind: a bare {type:'string','x-ref':'pages'} (no minLength)
+		// still rejects "" at the value check, so an empty pointer is INVALID, not silently OK.
+		const check = compile(recognize({ type: 'string', 'x-ref': 'pages' })!.schema);
+		expect(check('become-the-source')).toBe(true);
+		expect(check('')).toBe(false);
+	});
+
+	test('a larger author-set minLength is kept, not lowered to 1', () => {
+		const check = compile(
+			recognize({ type: 'string', 'x-ref': 'pages', minLength: 5 })!.schema,
+		);
+		expect(check('abcd')).toBe(false);
+		expect(check('abcde')).toBe(true);
 	});
 });
 

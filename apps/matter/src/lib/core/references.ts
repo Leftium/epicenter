@@ -106,17 +106,14 @@ export function resolveReferences(
 
 			for (const conformance of read.view.conformance) {
 				const cell = conformance.cells.find((c) => c.field.name === field.name);
-				// Only an OK cell carries a present, type-valid string. A missing or invalid
+				// Only an OK cell carries a present, type-valid pointer. A missing or invalid
 				// reference cell is already classified by conformance under the folder's own
-				// policy; this pass resolves present strings, it does not reclassify the rest.
+				// policy; this pass resolves present pointers, it does not reclassify the rest. An
+				// empty value is one of those already-classified cases: the reference contract
+				// rejects "" as invalid, so it never arrives here as OK.
 				if (cell?.state !== 'OK') continue;
 				const value = cell.value;
 				if (typeof value !== 'string') continue; // reference compiles as string; defensive
-				// An empty value carries no pointer to resolve: referential integrity asks whether
-				// a PRESENT pointer resolves, while whether emptiness is ALLOWED is a conformance /
-				// minLength question. So an empty reference is "no reference present" here, never
-				// UNRESOLVED — which also keeps reference value-validation identical to string.
-				if (value.length === 0) continue;
 				if (targetStems.has(value)) continue;
 				findings.push({
 					kind: 'UNRESOLVED',

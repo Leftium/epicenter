@@ -39,11 +39,12 @@ import { type Row, stemOf } from './parse';
  * reference verdict. Seven states, one exhaustive switch, so a widget renders from `cell.state`
  * alone and never reaches into the vault or a findings list:
  *
- *   - `ok` is the "present, valid, nothing left to resolve" state: every non-reference value,
- *     plus the empty-string reference, which points nowhere by the same rule the reference pass
- *     uses to skip it (see the empty-value note in {@link assess}).
+ *   - `ok` is a present, valid NON-reference value: a reference cell that is present and valid is
+ *     always one of the three reference states below, never `ok`. (An empty reference value is not
+ *     a valid pointer; the field contract rejects it, so it arrives here as `invalid`, not `ok`.)
  *   - `missing-required` / `missing-optional` / `invalid` are SHARED with references: a required
- *     reference can be absent, an optional one too, and a reference value can be a non-string.
+ *     reference can be absent, an optional one too, and an empty or non-string reference value is
+ *     `invalid`.
  *   - `resolved` / `dangling` / `missing-target` are the reference-only refinement of a present,
  *     valid pointer. `resolved` carries the target {@link Row} so a chip needs no second lookup.
  */
@@ -184,15 +185,10 @@ function assessCell(
 			}
 
 			const value = cell.value;
-			// An empty value carries no pointer to resolve: present, valid, nothing to do, which is
-			// what `ok` means for a non-reference. (The reference field accepts the empty string
-			// today; tightening its schema would route this to `invalid` instead and delete this
-			// branch.)
-			if (value.length === 0) return { field: cell.field, state: 'ok', value };
-
-			// The verdict reads straight from the one index: target table absent is the whole
-			// column unresolvable; a matched stem hands back the target row; an unmatched stem in a
-			// present table is a dangling pointer.
+			// An OK reference value is a non-empty pointer (the field contract rejects "" as
+			// invalid), so the verdict reads straight from the one index: target table absent is
+			// the whole column unresolvable; a matched stem hands back the target row; an unmatched
+			// stem in a present table is a dangling pointer.
 			const targetRows = rowsByTable.get(target);
 			if (targetRows === undefined) {
 				return { field: cell.field, state: 'missing-target', value, target };

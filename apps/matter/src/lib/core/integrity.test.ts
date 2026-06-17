@@ -226,10 +226,10 @@ describe('assess: cell states', () => {
 		expect(cellOf(pubs.rows[1]!, 'adaptation').state).toBe('dangling');
 	});
 
-	test('an empty-string reference carries no pointer, so it widens to ok', () => {
-		// `resolveReferences` treats an empty value as "no reference present" (no finding) and it
-		// resolves to no row, so none of the reference states fit. It is `ok`: present, valid,
-		// nothing to resolve. Locking this so a later refactor does not fabricate a target row.
+	test('an empty-string reference is invalid: "" names no row, so it is not a valid pointer', () => {
+		// The reference contract floors the value at non-empty, so `page: ""` fails the field check
+		// and conformance classifies it INVALID. It never reaches the reference refinement, which
+		// keeps `ok` exclusive to non-references (no empty-pointer corner).
 		const v = assess([
 			loaded('pages', pagesModel, [
 				{ fileName: 'become-the-source.md', content: '---\ntitle: X\n---' },
@@ -241,8 +241,8 @@ describe('assess: cell states', () => {
 
 		expect(cellOf(modeled(v, 'adaptations').rows[0]!, 'page')).toEqual({
 			field: expect.objectContaining({ name: 'page' }),
-			state: 'ok',
-			value: '',
+			state: 'invalid',
+			raw: '',
 		});
 	});
 });

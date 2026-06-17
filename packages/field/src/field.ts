@@ -401,10 +401,21 @@ export const META_BY_KIND = Object.fromEntries(
  * accept any string. But `uri`, `date`, and `date-time` are TypeBox STANDARD formats,
  * registered as a load side effect of `typebox/format` (which `Schema.Compile` imports),
  * so the bare compile already enforces them.
+ *
+ * A reference VALUE is a pointer to a row by its stem, so the empty string names no row
+ * and is never a valid reference. That non-emptiness is intrinsic to the kind, the way the
+ * marker is already `minLength: 1`, so it holds even when a stored reference omits the
+ * refinement: floor the value's `minLength` at 1 here. Any larger author-set `minLength`
+ * is kept; non-reference schemas compile verbatim. This makes `""` INVALID at the value
+ * check rather than a silently-accepted empty pointer.
  */
 export function compile(
 	schema: Recognized['schema'],
 ): (value: unknown) => boolean {
-	const validator = Schema.Compile(schema);
+	const effective =
+		REFERENCE_KEYWORD in schema
+			? { ...schema, minLength: Math.max(1, schema.minLength ?? 0) }
+			: schema;
+	const validator = Schema.Compile(effective);
 	return (value) => validator.Check(value);
 }

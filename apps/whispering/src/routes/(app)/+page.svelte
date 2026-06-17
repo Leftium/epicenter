@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import * as Field from '@epicenter/ui/field';
 	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
@@ -301,29 +302,28 @@
 			</div>
 		{/if}
 
-		<div class="flex w-full flex-col items-center gap-2">
-			<span class="text-muted-foreground text-xs">or import a file</span>
-			<FileDropZone
-				accept={IMPORT_ACCEPT}
-				maxFiles={MAX_IMPORT_FILES}
-				maxFileSize={MAX_IMPORT_FILE_SIZE}
-				onUpload={async (files) => {
-					if (files.length > 0) {
-						await importFiles({ files });
-					}
-				}}
-				onFileRejected={({ file, reason }) => {
-					report.error({
-						cause: PageError.FileRejected({
-							fileName: file.name,
-							reason,
-						}).error,
-						title: 'File rejected',
-					});
-				}}
-				class="h-28 sm:h-32 w-full"
-			/>
-		</div>
+		<Field.Separator class="w-full">or import a file</Field.Separator>
+
+		<FileDropZone
+			accept={IMPORT_ACCEPT}
+			maxFiles={MAX_IMPORT_FILES}
+			maxFileSize={MAX_IMPORT_FILE_SIZE}
+			onUpload={async (files) => {
+				if (files.length > 0) {
+					await importFiles({ files });
+				}
+			}}
+			onFileRejected={({ file, reason }) => {
+				report.error({
+					cause: PageError.FileRejected({
+						fileName: file.name,
+						reason,
+					}).error,
+					title: 'File rejected',
+				});
+			}}
+			class="h-32 w-full sm:h-36"
+		/>
 
 		{#if latestRecording}
 			<div class="flex w-full flex-col gap-2">

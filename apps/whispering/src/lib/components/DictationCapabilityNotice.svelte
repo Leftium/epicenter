@@ -7,6 +7,7 @@
 		accessibilityGuide,
 		openSystemSettings,
 	} from '$lib/components/MacosAccessibilityGuideDialog.svelte';
+	import { clipboardFallback } from '$lib/components/accessibility-feature-copy';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 </script>
 
@@ -67,7 +68,7 @@ branch order is load-bearing: `broken` is caught before the plain untrusted case
 				<li>Hold a key to talk: press to record, release to stop.</li>
 				<li>Paste hands-free: transcripts land where you're typing.</li>
 			</ul>
-			<p>Without it, transcripts still go to your clipboard.</p>
+			<p>{clipboardFallback}</p>
 			<Button
 				variant="link"
 				class="h-auto p-0 text-sm font-normal"

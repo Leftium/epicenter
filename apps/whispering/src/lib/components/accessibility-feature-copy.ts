@@ -5,10 +5,10 @@
  * upgrade-flavored register; these strings are the short inline form for the
  * surfaces that annotate a single feature in place.
  *
- * Two consumers share this module, which is what earns it: the shortcut
- * recorder row reads `pushToTalk`, the auto-paste annotation reads `pasteBack`,
- * and both end on the same `clipboardFallback` line so the "you don't lose
- * anything" promise stays worded identically across the app.
+ * What earns the module is the shared `clipboardFallback` line: the home notice
+ * (`DictationCapabilityNotice`) and the auto-paste annotation both render it, so
+ * the "you don't lose anything" promise stays worded identically. The shortcut
+ * recorder row reads `pushToTalk`; the auto-paste annotation reads `pasteBack`.
  */
 
 /** Shared closing line, matched to the home notice for consistency. */

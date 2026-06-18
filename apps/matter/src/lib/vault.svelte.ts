@@ -65,13 +65,25 @@ export function createVault(root: string) {
 	const tables = new SvelteMap<string, TableHandle>();
 
 	/**
+	 * Drop one folder's SQL table from the shared `.matter` mirror and mark the mirror changed.
+	 * Called when a folder leaves the set (rule 2) or goes untyped (rule 4) — both mean its table
+	 * must not linger in the shared db. Fire-and-forget and idempotent (the command is DROP TABLE IF
+	 * EXISTS); the `mirrorVersion` bump re-queries any WHERE filter against the now-absent table.
+	 */
+	function dropTable(name: string): void {
+		void invoke('drop_mirror_table', { path: matterDir, table: name })
+			.then(() => mirrorVersion++)
+			.catch(() => {});
+	}
+
+	/**
 	 * Project one table's current rows into its SQL table in the shared `.matter` mirror, off the UI
 	 * task (the grid is already current from the watcher batch). The Table fires `onChange` per batch
 	 * and this adapter does the SQLite work, so the rebuild trigger stays imperative and at its source
 	 * (the batch), not laundered through a reactive effect. A typed folder rebuilds (full DROP + CREATE
 	 * + INSERT, a pure function of the folder, self-healing); an untyped one has no contract, so its
-	 * table is dropped instead (rule 4). Bumps `mirrorVersion` on success so the WHERE filter re-queries
-	 * a fresh file. Fire-and-forget: a failure self-heals on the next batch.
+	 * table is dropped instead. Bumps `mirrorVersion` on success so the WHERE filter re-queries a fresh
+	 * file. Fire-and-forget: a failure self-heals on the next batch.
 	 */
 	function scheduleMirrorWrite(path: string): void {
 		setTimeout(async () => {
@@ -79,20 +91,18 @@ export function createVault(root: string) {
 			const table = tables.get(path);
 			if (!table) return; // left (and was dropped) before this deferred write ran
 			const { folderName: name, read } = table;
-			if (read.view.mode === 'typed') {
-				const { schema, insert, rows } = projectToSqlite(
-					name,
-					read.view.contract,
-					read.view.conformance,
-				);
-				void invoke('write_mirror', { path: matterDir, schema, insert, rows })
-					.then(() => mirrorVersion++)
-					.catch(() => {});
-			} else {
-				void invoke('drop_mirror_table', { path: matterDir, table: name })
-					.then(() => mirrorVersion++)
-					.catch(() => {});
+			if (read.view.mode !== 'typed') {
+				dropTable(name);
+				return;
 			}
+			const { schema, insert, rows } = projectToSqlite(
+				name,
+				read.view.contract,
+				read.view.conformance,
+			);
+			void invoke('write_mirror', { path: matterDir, schema, insert, rows })
+				.then(() => mirrorVersion++)
+				.catch(() => {});
 		}, 0);
 	}
 
@@ -113,11 +123,7 @@ export function createVault(root: string) {
 			const { folderName: name } = table;
 			table.dispose();
 			tables.delete(path);
-			// The folder left the set: drop its SQL table so it does not linger in the shared db
-			// (rule 2). Fire-and-forget and idempotent (DROP TABLE IF EXISTS).
-			void invoke('drop_mirror_table', { path: matterDir, table: name })
-				.then(() => mirrorVersion++)
-				.catch(() => {});
+			dropTable(name); // the folder left: its SQL table must not linger in the shared db
 		}
 		for (const path of paths) {
 			if (!tables.has(path)) {

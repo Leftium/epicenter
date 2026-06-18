@@ -1,24 +1,29 @@
 # Desktop Audio Pipeline: Greenfield Direction
 
 **Date**: 2026-06-17
-**Status**: In Progress (PR 1 = instrumentation, on `feat/whispering-timing-instrumentation`, pending review)
+**Status**: In Progress (measurement pending; timing tool on `feat/whispering-timing-instrumentation`, optimization parked on `feat/whispering-pcm-handoff-optimization`, both gated on the owed measurement)
 **Owner**: Braden
-**Supersedes**: `specs/transcription-latency-optimization.md` (deleted in PR 1; see "Superseded work")
+**Supersedes**: `specs/transcription-latency-optimization.md` (deletion staged on the work branches; lands with whatever merges first, or a docs-only cleanup; see "Superseded work")
 
-> **Deliberate split (decided 2026-06-18): measure before optimizing.** The
-> original PR 1 bundled instrumentation + the in-process handoff + async persist.
-> We split them, because the spec's own logic is "the instrumentation justifies
-> the optimization", so shipping both at once merges an unproven change. Now:
+> **Deliberate split (decided 2026-06-18): measure before optimizing, and don't
+> merge "just timing."** The original PR 1 bundled instrumentation + the
+> in-process handoff + async persist. We split them, because the spec's own logic
+> is "the instrumentation justifies the optimization", so shipping both at once
+> merges an unproven change. We then went further: the timing is a **measurement
+> tool, not a standalone production change**, so it is not merged on its own. Now:
 >
-> - **PR 1 = instrumentation only** (this branch). One read path, one source of
->   truth (disk), zero new runtime surface. Its only job is to measure, on real
->   hardware, whether the disk round-trip and the cold model load are worth
->   removing.
+> - **Timing tool** lives on `feat/whispering-timing-instrumentation` (off by
+>   default, zero behavior change). You **measure off the branch** — no merge
+>   needed. Its only job is to settle, on real hardware, whether the disk
+>   round-trip / fsync tail and the cold model load are worth removing.
 > - **The handoff + async-persist optimization is fully designed and implemented,
->   parked** on `feat/whispering-pcm-handoff-optimization`, **gated on PR 1's
->   measurement.** Reviving it = rebase onto main and reconcile the instrument
->   overlap (the parked branch predates this split, so it carries its own copy of
->   the timing changes). See "PR 1b (parked)".
+>   parked** on `feat/whispering-pcm-handoff-optimization`, **gated on the
+>   measurement.** It carries its own copy of the timing, so if it lands, the
+>   instrumentation rides into production **with the change it justifies** (where
+>   instrumentation belongs), not on its own. If the measurement says "not worth
+>   it," nothing standalone merges.
+> - A permanent latency-diagnostic knob (merge a trimmed timing module on its own
+>   merits) is an optional, separate product call, not part of this work.
 >
 > Promote "Durable decisions" to an ADR once the direction is locked; keep this
 > spec In Progress through PR 2 / PR 3.
@@ -173,11 +178,13 @@ refusal**, not a feature. The collapse wins.
 The original plan bundled the handoff + async-persist into "PR 1". We split it so the
 instrument lands first and the optimization lands only if the numbers earn it.
 
-### PR 1 — Instrumentation only (the measurement vehicle) — IMPLEMENTED, this branch
+### PR 1 — Instrumentation as a measurement tool (NOT merged standalone)
 
-Pure addition, off by default, zero behavior change. One read path, one source of
-truth (disk) preserved. Its only job: settle, on real hardware, which budget
-components actually dominate before anything is removed.
+Implemented on `feat/whispering-timing-instrumentation`. Pure addition, off by
+default, zero behavior change, one read path / one source of truth (disk). **You run
+it off the branch to measure; you do not merge it on its own.** Its only job: settle,
+on real hardware, which budget components actually dominate before anything is removed.
+If an optimization lands, the timing rides in with it (it's on the parked branch too).
 
 - **`timing` module** (`src-tauri/src/timing.rs`): gated by `WHISPERING_TIMING` in the
   environment, logs on target `whispering::timing`. `measure(label, f)` wraps a call;
@@ -191,10 +198,15 @@ components actually dominate before anything is removed.
 - A `file_roundtrip_overhead` Rust test prints write+fsync and read+decode for
   5/15/60 s clips (lossless round-trip assertion + numbers).
 - **No new runtime state, no command-signature change, no bindings change.**
-- **Deletes `specs/transcription-latency-optimization.md`.**
 
-Why this is PR 1: the instrumentation is what justifies (or kills) every later step,
-and it is the lowest-risk thing in the whole direction.
+Note: the timing branch also deletes the superseded `specs/transcription-latency-optimization.md`,
+but since the branch isn't merged standalone, that deletion (and adding this direction
+doc to `main`) rides with whatever lands first, or a tiny docs-only cleanup if `main`
+should reflect the plan sooner.
+
+Why a tool, not a feature: the instrumentation is what justifies (or kills) every later
+step. Merging it on its own would put "just timing" into production for no behavior; far
+cleaner to measure with it and let it ride in with the optimization it proves.
 
 **Measured now — the file round-trip the parked optimization would remove**
 (Apple-Silicon M-series, NVMe SSD; `cargo test file_roundtrip_overhead -- --nocapture`,
@@ -314,4 +326,5 @@ settles all three.
 
 - `specs/transcription-latency-optimization.md` — stale (predates the id-based pipeline)
   and proposes pushing the blob through JS (`transcribeRecordingWithBlob`), which
-  decision (2) refuses. **Deleted in PR 1** (`git rm`); git keeps the body recoverable.
+  decision (2) refuses. Deletion is staged on the work branches (`git rm`) and lands
+  with whatever merges first (or a small docs-only cleanup); git keeps the body recoverable.

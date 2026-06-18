@@ -6,10 +6,7 @@
 	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import {
-		CAPTURE_SURFACE_OPTIONS,
-		type CaptureSurface,
-	} from '$lib/constants/audio';
+	import { CAPTURE_SURFACE_OPTIONS } from '$lib/constants/audio';
 	import { selectCaptureSurface } from '$lib/operations/recording';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
 
@@ -52,7 +49,7 @@
 							value={surface.value}
 							onSelect={async () => {
 								combobox.closeAndFocusTrigger();
-								await selectCaptureSurface(surface.value as CaptureSurface);
+								await selectCaptureSurface(surface.value);
 							}}
 							class="flex items-center gap-2 px-2 py-2"
 						>

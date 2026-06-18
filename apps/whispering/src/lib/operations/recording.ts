@@ -7,7 +7,7 @@ import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
 import { prewarmLocalModel } from '$lib/operations/transcribe';
-import type { CaptureSurface, RecordingTrigger } from '$lib/constants/audio';
+import type { CaptureSurface } from '$lib/constants/audio';
 import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { captureSurface } from '$lib/state/capture-surface.svelte';
@@ -289,41 +289,28 @@ export function toggleVadRecording() {
 	return startVadRecording();
 }
 
-/** Stop whichever recorder is mid-capture, if any. */
-async function stopActiveRecording() {
-	if (manualRecorder.state === 'RECORDING') await stopManualRecording();
-	if (isVadRecordingActive()) await stopVadRecording();
-}
-
-/**
- * Switch the active microphone trigger, stopping the other recorder first if
- * it's mid-capture so two captures never overlap. Writes the durable
- * `recording.trigger`; the choice persists.
- */
-export async function switchRecordingTrigger(trigger: RecordingTrigger) {
-	if (trigger !== 'manual' && manualRecorder.state === 'RECORDING') {
-		await stopManualRecording();
-	}
-	if (trigger !== 'vad' && isVadRecordingActive()) {
-		await stopVadRecording();
-	}
-	if (settings.get('recording.trigger') !== trigger) {
-		settings.set('recording.trigger', trigger);
-	}
-}
-
 /**
  * Select a capture surface from the homepage tabs or the header dropdown.
- * `upload` opens the transient import overlay (stopping any live capture behind
- * it) without touching `recording.trigger`; `manual`/`vad` close the overlay and
- * switch the durable trigger.
+ * `upload` opens the transient import overlay without touching
+ * `recording.trigger`; `manual`/`vad` close the overlay and switch the durable
+ * trigger. Either way, a live capture on a different surface is stopped first so
+ * two captures never overlap (`upload` keeps neither recorder, so both stop).
  */
 export async function selectCaptureSurface(surface: CaptureSurface) {
+	if (surface !== 'manual' && manualRecorder.state === 'RECORDING') {
+		await stopManualRecording();
+	}
+	if (surface !== 'vad' && isVadRecordingActive()) {
+		await stopVadRecording();
+	}
+
 	if (surface === 'upload') {
-		await stopActiveRecording();
 		captureSurface.showImport();
 		return;
 	}
+
 	captureSurface.dismissImport();
-	await switchRecordingTrigger(surface);
+	if (settings.get('recording.trigger') !== surface) {
+		settings.set('recording.trigger', surface);
+	}
 }

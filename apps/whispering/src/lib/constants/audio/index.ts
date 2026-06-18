@@ -6,7 +6,6 @@ export {
 export {
 	CAPTURE_SURFACE_META,
 	CAPTURE_SURFACE_OPTIONS,
-	CAPTURE_SURFACES,
 	type CaptureSurface,
 } from './capture-surfaces';
 export {

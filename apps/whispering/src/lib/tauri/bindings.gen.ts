@@ -103,6 +103,23 @@ export const commands = {
 			__TAURI_INVOKE('transcribe_recording', { recordingId, spec }),
 		),
 	/**
+	 *  Prewarm the local model for `spec` so a following transcribe finds it
+	 *  warm. The frontend fires this fire-and-forget at capture start (manual
+	 *  record or VAD listen) for a local provider, overlapping the ~1 s model
+	 *  load with the user's speech instead of paying it after they stop.
+	 *
+	 *  Idempotent and cheap: a no-op when the exact model is already resident.
+	 *  Shares the one load path with `transcribe_recording` (`ModelCache::prewarm`
+	 *  and `transcribe` both resolve through `ensure_engine_loaded`), so the model
+	 *  warmed here is exactly the one transcribe will use, and a mid-recording
+	 *  model change simply reloads at transcribe time. A failure here is
+	 *  non-fatal: transcribe will load normally and surface any real error then.
+	 */
+	prewarmModel: (spec: TranscriptionSpec) =>
+		typedError<null, TranscriptionError>(
+			__TAURI_INVOKE('prewarm_model', { spec }),
+		),
+	/**
 	 *  Open macOS Accessibility settings.
 	 *
 	 *  This is intentionally a fixed command instead of a general command

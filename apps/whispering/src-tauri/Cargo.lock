@@ -7694,7 +7694,9 @@ version = "7.11.0"
 dependencies = [
  "accessibility-sys",
  "audiopus",
+ "core-foundation 0.9.4",
  "core-foundation-sys",
+ "core-graphics 0.22.3",
  "cpal",
  "dotenvy_macro",
  "enigo",

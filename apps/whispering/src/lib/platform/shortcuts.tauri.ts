@@ -8,7 +8,10 @@ import {
 } from '$lib/state/device-config.svelte';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 import { tauriOnly } from '$lib/tauri.tauri';
-import { keyBindingToLabel } from '$lib/utils/key-binding';
+import {
+	keyBindingToAccelerator,
+	keyBindingToLabel,
+} from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -36,20 +39,30 @@ export const shortcuts: Shortcuts = createShortcuts<GlobalBinding>({
 	syncErrorTitle: 'Error registering global shortcuts',
 	async push(entries) {
 		// The cast bridges the stored `string[]` to the IPC `Key[]`; the keys are
-		// validated structurally on store and the accelerator mapping ignores any
-		// it does not recognize.
+		// validated structurally on store and by Rust at the IPC boundary.
 		const bindings: CommandBinding[] = entries
 			.filter((entry) => entry.binding !== null)
 			.map((entry) => ({
 				commandId: entry.command.id,
 				binding: entry.binding as KeyBinding,
 			}));
-		// Tier-0: register the chords on the plugin. Bindings that need Fn or are
-		// modifier-only map to no accelerator and are skipped (the Tier-1 tap will
-		// own them). A register that the OS rejects (a chord another app already
-		// holds) fails the whole replace-all call; surface it.
+		// Partition by what each binding needs. A chord maps to an accelerator and
+		// goes to the permission-free plugin (Tier 0); an Fn or modifier-only hold
+		// maps to none and goes to the tap (Tier 1), which spins up only for these.
+		// Each binding lands in exactly one backend, so the two never double-fire.
+		const chords = bindings.filter(
+			(b) => keyBindingToAccelerator(b.binding) !== null,
+		);
+		const taps = bindings.filter(
+			(b) => keyBindingToAccelerator(b.binding) === null,
+		);
+		// A plugin register the OS rejects (a chord another app holds) or a bad tap
+		// key fails the whole replace-all; surface it instead of partially binding.
 		const { error } = await tryAsync({
-			try: () => tauriOnly.globalShortcuts.registerChords(bindings),
+			try: async () => {
+				await tauriOnly.globalShortcuts.registerChords(chords);
+				await tauriOnly.globalShortcuts.setBindings(taps);
+			},
 			catch: (cause) =>
 				Err({
 					name: 'GlobalShortcutRegistrationFailed',

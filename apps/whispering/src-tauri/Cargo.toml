@@ -83,6 +83,11 @@ transcribe-rs = { version = "=0.3.8", features = ["whisper-vulkan", "ort-directm
 transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-metal", "onnx", "ort-coreml"] }
 accessibility-sys =  "0.1.3"
 core-foundation-sys =  "0.8.7"
+# Safe wrappers for the owned CGEventTap (`src/keyboard/mac_tap.rs`, the Tier-1
+# backend). Pinned to the 0.22/0.9 line rdev already pulls in, so the tap shares
+# one version of each in the tree rather than adding a duplicate.
+core-foundation = "0.9"
+core-graphics = "0.22"
 # Non-activating NSPanel for the recording overlay so clicking it never
 # activates the app. Pinned to a specific rev on the v2.1 branch (Tauri v2
 # compatible) so the build is reproducible and an accidental `cargo update`

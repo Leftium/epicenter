@@ -331,6 +331,13 @@ export type DictationCapability =
 	 */
 	| 'unsupported'
 	/**
+	 *  No bound shortcut needs the tap (no Fn or modifier-only binding), so it is
+	 *  deliberately not running and no Accessibility is touched. This is the
+	 *  permission-free floor: chords go through the global-shortcut plugin and
+	 *  the tap stays dormant until the user opts into a binding that needs it.
+	 */
+	| 'inactive'
+	/**
 	 *  macOS Accessibility is not granted. The tap is not running; turning
 	 *  Whispering on in System Settings unlocks it.
 	 */

@@ -147,8 +147,8 @@ pub fn listen<F: Fn(Edge, Input)>(callback: F) -> Result<(), TapError> {
 }
 
 /// Ask the live tap (if any) to stop and return from `listen`. Safe to call from
-/// any thread and when nothing is running.
-#[allow(dead_code)] // Reserved for the supervisor's explicit stop path.
+/// any thread and when nothing is running. Called by the supervisor's
+/// `request_tap_stop` when the last tap-needing binding leaves.
 pub fn stop() {
     STOP.store(true, Ordering::SeqCst);
     if let Ok(active) = ACTIVE_LOOP.lock() {

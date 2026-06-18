@@ -319,7 +319,10 @@ const shortcuts = {
 	// These getDefault thunks are the single source for the in-app shortcut
 	// defaults. The web backend (platform/shortcuts.browser.ts) reads them back
 	// through `settings.getDefault('shortcut.*')` instead of redeclaring them, so
-	// the schema and the backend can never drift.
+	// the schema and the backend can never drift. Values are the readable manual
+	// grammar (`parseManualBinding`): `'space'`, `'c'`, `'ctrl+shift+a'`. The cell
+	// stays `field.string()`, so this is a value re-spelling, not a migration; a
+	// stale logical value (e.g. a stored `' '`) fails the parse and reads as unset.
 	//
 	// Push-to-talk ships unbound in-app: a stray Space-style tap would fire
 	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
@@ -330,7 +333,7 @@ const shortcuts = {
 	),
 	'shortcut.toggleManualRecording': defineKv(
 		nullable(field.string()),
-		(): string | null => ' ',
+		(): string | null => 'space',
 	),
 	// Renamed from `shortcut.cancelManualRecording` (cancel now aborts manual or
 	// VAD capture, so the "manual" qualifier is gone). No migration: pre-release,

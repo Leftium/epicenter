@@ -1,6 +1,5 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
-import { os } from '#platform/os';
 import type { Command } from '$lib/commands';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
@@ -8,7 +7,7 @@ import {
 } from '$lib/state/device-config.svelte';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 import { type ChordRegistration, tauriOnly } from '$lib/tauri.tauri';
-import { keyBindingToLabel, resolveBinding } from '$lib/utils/key-binding';
+import { resolveBinding } from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -21,22 +20,21 @@ import type { Shortcuts } from './types';
 
 const globalKey = (id: Command['id']) => `shortcuts.global.${id}` as const;
 
-function readBinding(id: Command['id']) {
-	return deviceConfig.get(globalKey(id));
+/**
+ * The stored shape's `keys` are plain `string[]` (validated structurally in
+ * device-config and by name in Rust), so the read crosses into the IPC
+ * `KeyBinding` (`keys: Key[]`) with one documented cast at this boundary.
+ */
+function readBinding(id: Command['id']): KeyBinding | null {
+	return (deviceConfig.get(globalKey(id)) as KeyBinding | null) ?? null;
 }
 
-/** The stored global-binding shape (`keys` are plain strings, validated by Rust). */
-type GlobalBinding = NonNullable<ReturnType<typeof readBinding>>;
-
-export const shortcuts: Shortcuts = createShortcuts<GlobalBinding>({
+export const shortcuts: Shortcuts = createShortcuts({
 	read: readBinding,
 	getDefault: (id) => DEFAULT_GLOBAL_BINDINGS[id] ?? null,
 	write: (id, binding) => deviceConfig.set(globalKey(id), binding),
-	label: (binding) => (binding ? keyBindingToLabel(binding, os.isApple) : ''),
 	syncErrorTitle: 'Error registering global shortcuts',
 	async push(entries) {
-		// The cast bridges the stored `string[]` to the IPC `Key[]`; the keys are
-		// validated structurally on store and by Rust at the IPC boundary.
 		const bindings: CommandBinding[] = entries
 			.filter((entry) => entry.binding !== null)
 			.map((entry) => ({

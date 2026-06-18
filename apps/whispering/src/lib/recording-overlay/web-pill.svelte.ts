@@ -1,7 +1,4 @@
-// Raw RMS for speech is small (~0.05 quiet, ~0.2 loud); this gain on a sqrt
-// curve maps that range across the meter without clipping early. Mirrors the
-// curve the Tauri overlay webview applies to the mic-level event.
-const LEVEL_GAIN = 2.4;
+import { foldMicLevel } from '$lib/recording-overlay/level';
 
 /**
  * Reactive mic level for the web pill. On desktop the level travels over a Tauri
@@ -20,9 +17,7 @@ function createWebPillLevel() {
 
 		/** Fold a raw RMS sample into the smoothed level. */
 		report(raw: number): void {
-			const normalized = Math.min(1, Math.sqrt(raw) * LEVEL_GAIN);
-			// Exponential smoothing so the bars glide instead of jittering.
-			level = level * 0.6 + normalized * 0.4;
+			level = foldMicLevel(level, raw);
 		},
 	};
 }

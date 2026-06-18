@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
+	import { foldMicLevel } from '$lib/recording-overlay/level';
 	import RecordingPill from '$lib/recording-overlay/RecordingPill.svelte';
 	import {
 		RECORDING_OVERLAY_ACTION,
@@ -22,13 +23,9 @@
 	// Live, smoothed mic loudness, 0 (silent) to 1 (loud). Driven by the
 	// `mic-level` event: VAD frames in JS for voice-activated capture, the Rust
 	// CPAL worker for manual recording. Both send a raw RMS amplitude; we apply
-	// the perceptual curve and smoothing here so the bars react to the actual
-	// voice rather than looping on a timer.
+	// the perceptual curve and smoothing (shared with the web pill) so the bars
+	// react to the actual voice rather than looping on a timer.
 	let level = $state(0);
-
-	// Raw RMS for speech is small (~0.05 quiet, ~0.2 loud); this gain on a sqrt
-	// curve maps that range across the meter without clipping early.
-	const LEVEL_GAIN = 2.4;
 
 	const unlisteners: UnlistenFn[] = [];
 
@@ -41,9 +38,7 @@
 				},
 			),
 			await listen<number>(RECORDING_OVERLAY_MIC_LEVEL, (event) => {
-				const normalized = Math.min(1, Math.sqrt(event.payload) * LEVEL_GAIN);
-				// Exponential smoothing so the bars glide instead of jittering.
-				level = level * 0.6 + normalized * 0.4;
+				level = foldMicLevel(level, event.payload);
 			}),
 		);
 		// Tell the main window we are ready so it re-sends the latest status.

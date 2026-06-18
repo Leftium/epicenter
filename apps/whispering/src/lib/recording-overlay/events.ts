@@ -47,16 +47,6 @@ export const recordingOverlayReady = defineWindowEvent(
 );
 
 /**
- * overlay -> main: clicking the pill body (anywhere that is not a control) asks
- * the main window to come to the front. Kept separate from `action` so it never
- * routes through the recorder: stop/cancel only stop/cancel, and revealing the
- * window is its own gesture.
- */
-export const recordingOverlayFocusMain = defineWindowEvent(
-	'recording-overlay:focus-main',
-);
-
-/**
  * Live mic level (main -> overlay), a raw RMS amplitude (~0 silent, ~0.3 loud
  * speech). The overlay applies the perceptual gain and smoothing so both
  * producers, VAD frames in JS and the CPAL worker in Rust, can stay dumb and

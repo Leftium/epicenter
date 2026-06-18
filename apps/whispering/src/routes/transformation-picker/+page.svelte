@@ -4,7 +4,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Kbd } from '@epicenter/ui/kbd';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
-	import { emit, type UnlistenFn } from '@tauri-apps/api/event';
+	import { type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { type Candidate, createCandidate } from '$lib/operations/candidates';
 	import { persistCompletedRun } from '$lib/operations/transform';
@@ -14,6 +14,7 @@
 	import { services } from '$lib/services';
 	import { transformations } from '$lib/state/transformations.svelte';
 	import CandidateCards from '$lib/components/CandidateCards.svelte';
+	import { revealMainWindow } from '$lib/main-window';
 	import * as pickerWindow from './transformationPickerWindow.tauri';
 
 	// The captured selection, handed over by the main window after the shortcut
@@ -139,7 +140,7 @@
 
 	async function manageTransformations() {
 		await dismiss();
-		await emit('navigate-main-window', { path: '/transformations' });
+		await revealMainWindow.emit({ path: '/transformations' });
 	}
 
 	// Capture phase so the picker owns these keys before the chips' bits-ui roving

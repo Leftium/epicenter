@@ -88,5 +88,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0014](0014-view-transitions-morph-a-re-expressed-glyph-not-its-container.md) | View transitions morph a re-expressed glyph, not its container | Accepted |
 | [0015](0015-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md) | Agent conversations are durable child docs driven by an observing actor | Proposed |
 | [0015](0015-the-brand-mark-has-one-canonical-source-every-other-form-is-generated.md) | The brand mark has one canonical source; every other form is generated | Proposed |
+| [0017](0017-pause-system-media-playback-while-recording.md) | Pause system media playback while recording through one cross-platform controller | Accepted |
+| [0018](0018-macos-resume-is-gated-on-a-coreaudio-output-read.md) | macOS resume is gated on a CoreAudio output read, not a MediaRemote read shim | Accepted |
 
 When you add an ADR, add its row here.

@@ -244,14 +244,22 @@ export const commands = {
 	 */
 	cancelDownload: (downloadId: string) =>
 		__TAURI_INVOKE<void>('cancel_download', { downloadId }),
-	pauseActiveMedia: () =>
-		typedError<PauseActiveMediaOutcome, string>(
-			__TAURI_INVOKE('pause_active_media'),
-		),
-	resumeMedia: (players: MediaPlayer[]) =>
-		typedError<MediaControlFailure[], string>(
-			__TAURI_INVOKE('resume_media', { players }),
-		),
+	/**
+	 *  Pause every system media session currently playing. Returns one opaque token
+	 *  per session paused, to hand back to `resume_playback`. Pausing is gated to
+	 *  never *start* playback: only sessions observed playing are touched, and the
+	 *  dedicated pause command (never a play/pause toggle) is sent.
+	 */
+	pausePlayback: () =>
+		typedError<string[], string>(__TAURI_INVOKE('pause_playback')),
+	/**
+	 *  Resume the sessions named by `sessions`, which must be tokens returned by a
+	 *  prior `pause_playback`. A session that vanished, was already resumed by the
+	 *  user, or can't be resumed is silently skipped. Safety rule: we only ever send
+	 *  *play* to a session we personally paused.
+	 */
+	resumePlayback: (sessions: string[]) =>
+		typedError<null, string>(__TAURI_INVOKE('resume_playback', { sessions })),
 	/**
 	 *  Replace the full set of registered global shortcuts. The FE computes the
 	 *  complete list from device-config and pushes it on startup and on every
@@ -505,14 +513,6 @@ export type LocalModelState = {
 	status: ModelStatus;
 };
 
-export type MediaControlFailure = {
-	player: MediaPlayer;
-	message: string;
-	permissionDenied: boolean;
-};
-
-export type MediaPlayer = 'music' | 'spotify';
-
 /**  One selectable entry in an engine's models folder. */
 export type ModelEntry = {
 	/**  File or directory name inside the engine's models folder. */
@@ -649,11 +649,6 @@ export type ModelStatus =
  *  global-shortcut plugin could never express.
  */
 export type Modifier = 'ctrl' | 'alt' | 'shift' | 'meta' | 'fn';
-
-export type PauseActiveMediaOutcome = {
-	paused: MediaPlayer[];
-	failures: MediaControlFailure[];
-};
 
 /**
  *  Serializable handle returned to the JS side. The id is the lookup key

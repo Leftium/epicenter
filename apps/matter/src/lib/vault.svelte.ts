@@ -67,10 +67,9 @@ export function createVault(root: string) {
 		const incoming = new Set(paths);
 		for (const [path, table] of tables) {
 			if (incoming.has(path)) continue;
-			const { folderName: name } = table;
 			table.dispose();
 			tables.delete(path);
-			mirror.dropTable(name); // the folder left: its SQL table must not linger in the shared db
+			mirror.dropTable(table.folderName); // the folder left: its SQL table must not linger in the shared db
 		}
 		for (const path of paths) {
 			if (!tables.has(path)) {

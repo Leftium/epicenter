@@ -55,7 +55,8 @@ fn to_sql(value: &serde_json::Value) -> Value {
         J::Number(n) => n
             .as_i64()
             .map(Value::Integer)
-            .unwrap_or_else(|| Value::Real(n.as_f64().unwrap_or(0.0))),
+            .or_else(|| n.as_f64().map(Value::Real))
+            .unwrap_or_else(|| Value::Text(n.to_string())),
         J::Bool(b) => Value::Integer(*b as i64),
         J::Null => Value::Null,
         other => Value::Text(other.to_string()),

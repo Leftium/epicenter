@@ -50,9 +50,11 @@ export type SqliteProjection = {
 };
 
 /**
- * Quote a SQL identifier, doubling embedded quotes, so any field name is safe. The ONE
- * identifier-quoting implementation: the vault reuses it to build the WHERE filter's
- * `SELECT` so the table name is never quoted by hand in a second place.
+ * Quote a SQL identifier, doubling embedded quotes, so any field name is safe. The single
+ * quoter for every statement JS assembles: the vault reuses it for the WHERE filter's
+ * `SELECT`, so a table name is never quoted by hand in JS-built SQL. The one place quoting
+ * lives elsewhere is Rust's `drop_mirror_table`, which receives a bare folder name (not
+ * built SQL) and applies the same doubling — trivial and identical, kept in sync by eye.
  */
 export function quoteIdent(name: string): string {
 	return `"${name.replace(/"/g, '""')}"`;

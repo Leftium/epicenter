@@ -48,12 +48,12 @@ import {
  * and fills from the first pushed batch once `watch()` runs, so there is no
  * separate initial read and no read-then-watch gap.
  *
- * `onChange` (optional) is invoked at the end of each applied watcher batch — the
- * Vault passes an adapter that projects this one table into the shared `.matter`
+ * `onChange` is invoked at the end of each applied watcher batch — the Vault
+ * passes an adapter that projects this one table into the shared `.matter`
  * mirror. The Table owns no SQLite itself; the callback keeps the rebuild trigger
  * imperative and at its source (the batch), not laundered through a reactive effect.
  */
-export function createTable(path: string, onChange?: () => void) {
+export function createTable(path: string, onChange: () => void) {
 	const folderName = basename(path);
 
 	// ONE store, keyed by filename: each entry is a `Result` that is either a
@@ -95,7 +95,7 @@ export function createTable(path: string, onChange?: () => void) {
 		// shared `.matter` mirror (off the UI task; the grid is already current from the map
 		// mutations above). Per-batch, not debounced: the native watcher already coalesces a
 		// burst into one batch. The Table itself touches no SQLite.
-		onChange?.();
+		onChange();
 	}
 
 	/**

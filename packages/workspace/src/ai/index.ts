@@ -1,4 +1,3 @@
-export { attachChatReaction, type ChatStream } from './chat-reaction';
 export {
 	type AnswerableTurn,
 	appendAssistantMessage,
@@ -7,6 +6,12 @@ export {
 	CHAT_DOC_ACTIVE_GENERATION_WINDOW_MS,
 	type ChatDocFinish,
 	type ChatDocMessage,
+	type ChatDocPart,
+	type ChatDocTextPart,
+	type ChatDocToolCallPart,
+	type ChatDocToolCallState,
+	type ChatDocToolResultPart,
+	type ChatDocToolResultState,
 	chatDocToPrompt,
 	findActiveChatDocGeneration,
 	findLatestUserTurn,
@@ -16,6 +21,7 @@ export {
 	requestLatestUserTurnCancel,
 	setLatestUserTurnGenerationId,
 } from './chat-doc';
+export { attachChatReaction, type ChatStream } from './chat-reaction';
 export {
 	type ActionNames,
 	actionsToAiTools,

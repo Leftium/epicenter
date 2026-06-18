@@ -30,16 +30,19 @@ branch order is load-bearing: `broken` is caught before the plain untrusted case
 		</Alert.Description>
 	</Alert.Root>
 {:else if dictationCapability.isStale}
-	<!-- A macOS grant that went stale after an update, where toggling does
-	nothing: the fix is remove-and-re-add, so the guide leads. -->
+	<!-- macOS reports Whispering as trusted, but the global tap is not delivering
+	events. The common cause is a grant left stale by an app update, which a
+	remove-and-re-add fixes, so the guide leads. We do not assert that as the only
+	cause: the tap can also stall for reasons re-granting won't touch, so the copy
+	stays honest about what we know (it is not firing) and what usually helps. -->
 	<Alert.Root class="w-full text-left">
 		<TriangleAlertIcon class="size-4" aria-hidden="true" />
-		<Alert.Title>Your global shortcut stopped working</Alert.Title>
+		<Alert.Title>Your global shortcut isn't working</Alert.Title>
 		<Alert.Description>
-			Whispering's macOS Accessibility access went stale after an update, so your
-			global shortcut and paste-back are off. Toggling it won't help: remove
-			Whispering from Accessibility and add it back to restore them. Until then,
-			transcripts go to your clipboard.
+			Whispering appears to have macOS Accessibility, but your global shortcut and
+			paste-back aren't firing. Re-granting access (remove Whispering from
+			Accessibility, then add it back) usually fixes it. Until then, transcripts
+			go to your clipboard.
 		</Alert.Description>
 		<Alert.Action>
 			<Button size="sm" onclick={() => accessibilityGuide.open()}>

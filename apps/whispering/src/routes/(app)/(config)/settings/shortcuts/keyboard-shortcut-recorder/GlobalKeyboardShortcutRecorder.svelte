@@ -21,7 +21,7 @@
 		parseManualBinding,
 	} from '$lib/utils/key-binding';
 	import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
-	import { createWebviewChordRecorder } from './create-webview-chord-recorder.svelte';
+	import { createWebviewChordRecorder } from './create-webview-chord-recorder';
 	import RecorderShell from './RecorderShell.svelte';
 
 	// `tauri` is passed non-null from the Tauri-gated global settings page.
@@ -71,6 +71,10 @@
 		if (useTapCapture) {
 			capturedModifiers = new Set();
 			capturedKeys = new Set();
+			// `listenForCapture` resolves async; if trust flips and this effect tears
+			// down before it does, detach the moment it lands so the listener cannot
+			// leak (the pattern dictation-capability.svelte.ts uses for the same race).
+			let torn = false;
 			let unlisten: (() => void) | undefined;
 			void tauri.globalShortcuts
 				.listenForCapture((combo) => {
@@ -88,9 +92,13 @@
 					}
 				})
 				.then((fn) => {
-					unlisten = fn;
+					if (torn) fn();
+					else unlisten = fn;
 				});
-			return () => unlisten?.();
+			return () => {
+				torn = true;
+				unlisten?.();
+			};
 		}
 		webviewRecorder.start();
 		return () => webviewRecorder.stop();

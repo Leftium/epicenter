@@ -42,7 +42,9 @@ export function createWebviewChordRecorder({
 }: {
 	onCapture: (binding: KeyBinding) => void;
 }) {
-	let isListening = $state(false);
+	// Internal control-flow guard only (the owner tracks its own session state), so
+	// a plain bool, not reactive.
+	let isListening = false;
 	// Accumulated across the capture window, like createKeyRecorder's set union:
 	// the modifiers ever held and the last physical key seen.
 	let capturedModifiers: Modifier[] = [];
@@ -125,15 +127,5 @@ export function createWebviewChordRecorder({
 		detach = undefined;
 	}
 
-	return {
-		get isListening() {
-			return isListening;
-		},
-		start,
-		stop,
-	};
+	return { start, stop };
 }
-
-export type WebviewChordRecorder = ReturnType<
-	typeof createWebviewChordRecorder
->;

@@ -12,43 +12,17 @@ import {
 	RECORDING_OVERLAY_ACTION,
 	RECORDING_OVERLAY_FOCUS_MAIN,
 	type RecordingOverlayAction,
-	type RecordingOverlayStatus,
 } from '$lib/recording-overlay/events';
+import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
-
-/**
- * Project the main window's dictation lifecycle into the serializable status the
- * overlay pill renders. `idle` hides the pill (`null`). The live error object
- * stays in the main window (it cannot cross Tauri IPC and the failure detail
- * lives on the recordings row); only a terse title is sent to the overlay.
- */
-function toOverlayStatus(): RecordingOverlayStatus | null {
-	const lifecycle = dictationLifecycle.current;
-	switch (lifecycle.phase) {
-		case 'idle':
-			return null;
-		case 'recording':
-			return lifecycle.trigger === 'manual'
-				? { phase: 'recording', trigger: 'manual' }
-				: { phase: 'recording', trigger: 'vad', vadState: lifecycle.vadState };
-		case 'transcribing':
-			return { phase: 'transcribing' };
-		case 'delivered':
-			return { phase: 'delivered' };
-		case 'failed':
-			return {
-				phase: 'failed',
-				tier: lifecycle.tier,
-				title: lifecycle.error.message,
-			};
-	}
-}
 
 export function attachRecordingOverlay() {
 	let unlistenAction: UnlistenFn | undefined;
 	let unlistenFocus: UnlistenFn | undefined;
 
-	const overlayStatus = $derived(toOverlayStatus());
+	const overlayStatus = $derived(
+		projectLifecycleToStatus(dictationLifecycle.current),
+	);
 
 	$effect(() => {
 		recordingOverlay.sync(overlayStatus);

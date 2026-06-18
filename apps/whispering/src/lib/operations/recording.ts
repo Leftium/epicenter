@@ -192,7 +192,7 @@ export async function cancelRecording() {
 // only while you actually speak. A return to listening (speech end or a misfire)
 // schedules a debounced resume so back-to-back utterances do not flutter the
 // music; the next speech start cancels that pending resume. Ending the session
-// resumes immediately. See ADR-0021.
+// resumes immediately. See ADR-0027.
 let vadResumeTimer: ReturnType<typeof setTimeout> | undefined;
 const VAD_RESUME_DELAY_MS = 1500;
 

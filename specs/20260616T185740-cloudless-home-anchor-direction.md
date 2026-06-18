@@ -33,6 +33,80 @@ home anchor
   stays app-semantics-blind
 ```
 
+## Composable Roles
+
+The clean model has three roles, not one "server" shape.
+
+```txt
+relay:
+  sends packets between peers
+  should be blind to application plaintext
+  does not store durable workspace truth
+
+anchor:
+  stores durable Y.Doc replicas
+  stays app-blind: no schemas, prompts, tools, or app actions
+  can be Epicenter-hosted or self-hosted
+
+agent:
+  observes synced docs
+  runs the model loop and app actions
+  writes answers or computed effects back into the docs
+  can be Epicenter-hosted or self-hosted
+```
+
+Cloudflare rooms currently bundle relay and anchor. The Iroh direction splits
+them: Iroh gives the peer connection system and blind relay path; the chosen
+anchor is the durable peer that stores the Y.Doc state. The agent is separate
+from both. One physical machine may run anchor and agent processes, but the
+roles stay separate so the anchor can remain boring and app-blind.
+
+```txt
+                        ACTOR / AGENT
+                 hosted cloud      |      self-hosted device
+ANCHOR      -----------------------+---------------------------
+hosted      default hosted shape   | cloud holds docs,
+            cloud holds docs       | device answers with local
+            cloud can answer       | tools and local data
+
+self-hosted user-owned docs,       | full self custody:
+            hosted model           | user-owned docs,
+            optional               | user-owned tools/model
+```
+
+The same workspace can be composed from any row and column. "Use my own anchor"
+moves down the table. "Use my laptop agent" moves right. These choices must not
+be fused in code or product language.
+
+## Replica Rule
+
+Many peers can hold replicas of the same Y.Doc. The anchor is not the only copy;
+it is the copy we rely on to be durable and reachable.
+
+```txt
+phone/browser:
+  in-memory Y.Doc
+  optional IndexedDB cache
+  not always online
+
+desktop app:
+  local Y.Doc replica
+  optional local persistence
+  not guaranteed always online
+
+agent daemon:
+  local Y.Doc replica
+  observes matching docs
+  writes answers
+
+anchor:
+  durable Y.Doc replica
+  expected to stay online
+```
+
+This keeps the answer to "who stores the doc?" precise: everyone may cache or
+replicate it, but the anchor is the product's availability promise.
+
 The folder is the local mount/projection site. It is not automatically the remote corpus identity. For app-global products like Fuji, the workspace id can stay fixed per app and signed-in owner: `epicenter-fuji` means "this user's Fuji corpus." Two folders that both mount `fuji()` while signed in as the same owner are two local projections of the same corpus.
 
 The mount name is a local label, not a routing namespace. Current CLI action addresses are bare action keys inside the one served mount, e.g. `epicenter run entries_update`. Cloudless sync must preserve that shape: one folder serves one mount, and transport routing happens below the daemon.
@@ -133,6 +207,33 @@ desktop daemon -> local sidecar -> Iroh -> Mac Studio anchor
 
 Peerwise Iroh or gossip can be an optimization later. It should not be the base model, because it does not answer the durability question: where does the update go when every other device is asleep?
 
+The star is a topology, not an authority model. The anchor is a normal peer with
+an availability job. Other peers may connect directly when Iroh can make that
+link, but the product still needs a durable place for async work.
+
+```txt
+co-online mesh:
+  phone <---- sync while both are awake ----> laptop agent
+
+hosted anchor:
+  phone <----> Epicenter anchor <----> laptop agent
+
+self-hosted anchor:
+  phone <----> home anchor <----> laptop agent
+```
+
+For chat, the topology does not decide who answers. The conversation row does:
+
+```txt
+conversation.agent = laptop-books-agent
+
+laptop-books-agent:
+  if row.agent === selfAgentId:
+    answer
+  else:
+    ignore
+```
+
 ## What The Spike Proved
 
 Throwaway spike: `/Users/braden/Code/epicenter-anchor-experiment`.
@@ -147,7 +248,9 @@ What it did not prove:
 - Real `@epicenter/sync` frame transport.
 - Room multiplexing.
 - Pairing, revocation, auth, packaging, supervision.
-- Browser-direct networking.
+- Browser/WASM Iroh inside Epicenter. Upstream Iroh supports browser peers over
+  WebSocket relays and keeps relays blind to application plaintext, but this repo
+  has not yet proven a browser Y.Doc syncing through Iroh to an anchor.
 - Production daemon-to-sidecar integration against the repo's current `nodeId` model.
 
 ## Recommended Next Slice
@@ -162,7 +265,9 @@ What it did not prove:
 ## Grill Prompt
 
 ```md
-We are reviewing Epicenter's cloudless home-anchor direction.
+We are reviewing Epicenter's cloudless home-anchor and agent direction. The goal
+is to make the model canonical enough that a future agent can implement slices
+without re-litigating the topology.
 
 Current thesis:
 - One app folder has one `epicenter.config.ts`.
@@ -170,9 +275,17 @@ Current thesis:
 - The folder is a local mount/projection site.
 - The workspace id / `ydoc.guid` is the remote corpus identity. Same id means same synced data.
 - Yjs `clientID` and daemon `nodeId` are local actor identities and must be unique per live daemon/node.
-- Iroh belongs below the daemon as an alternate transport, not inside app factories.
-- A shared Rust sidecar can multiplex many Yjs rooms to one home anchor.
-- The home anchor is the always-on trusted peer for cloudless custody.
+- Iroh belongs below the daemon as an alternate byte transport, not inside app factories.
+- Relay, anchor, and agent are separate roles:
+  - relay moves packets and should be blind to application plaintext
+  - anchor stores durable Y.Doc replicas and stays app-blind
+  - agent observes docs, runs models/tools/actions, and writes results
+- Cloudflare rooms currently bundle relay and anchor. Iroh lets us split them.
+- A shared Rust sidecar can multiplex many Yjs rooms to one chosen anchor.
+- The home anchor is the always-on trusted peer for cloudless custody, but it is not the agent by definition.
+- Many peers can cache/replicate the Y.Doc; the anchor is the replica we rely on to be durable and reachable.
+- A conversation is bound to exactly one `AgentId`; many peers may sync it, but only the bound agent answers.
+- Epicenter Cloud can be the default hosted anchor and/or managed agent; users must be able to designate their own anchor independently from which agent answers.
 
 Please review whether this direction is coherent against the repo. Focus on:
 
@@ -183,12 +296,27 @@ Please review whether this direction is coherent against the repo. Focus on:
 5. Whether any product semantics accidentally move into Rust/Iroh.
 6. Whether multiplexing belongs only in the sidecar/anchor, not config.
 7. Whether star topology around the anchor should remain the default over peerwise gossip.
-8. The smallest implementation slice that proves this without overbuilding.
+8. Whether the product language keeps relay, anchor, and agent separate.
+9. Whether hosted vs self-hosted composition is independent per layer:
+   - hosted anchor + hosted agent
+   - hosted anchor + self-hosted agent
+   - self-hosted anchor + hosted agent
+   - self-hosted anchor + self-hosted agent
+10. Whether the browser/Iroh claim is proven enough for a product decision:
+    upstream Iroh supports browser peers over WebSocket relays, but Epicenter
+    still needs its own browser Y.Doc to Iroh anchor spike.
+11. The smallest implementation slice that proves this without overbuilding.
+
+One-sentence test:
+Can the design be explained as "relays move bytes, anchors keep docs alive,
+agents think and write, and conversations bind to one agent" without exceptions?
 
 Relevant files:
 - specs/20260616T185740-cloudless-home-anchor-direction.md
 - specs/20260614T120000-app-folder-as-root-and-jsrepo-blocks.md
 - specs/20260615T120000-trusted-relay-and-collaborative-fields.md
+- docs/adr/0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md
+- docs/adr/0013-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md
 - docs/encryption.md
 - packages/workspace/src/daemon/attach-mount-infrastructure.ts
 - packages/workspace/src/config/daemon-node-id.ts

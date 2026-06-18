@@ -5,35 +5,67 @@
 
 ## Context
 
-Epicenter syncs a workspace through a custody and transport node: a hosted relay
-(a Cloudflare Durable Object per room) today, and a user-owned home anchor over
-Iroh in the cloudless direction. That node is deliberately app-blind; it routes
-opaque room bytes and knows no schema, and [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md)
-makes privacy a property of who runs it, not of what it can read. Apps also need
-always-on semantic work: stream an assistant turn into a conversation, run the
-app's actions, query a local read model. Today that work runs as an HTTP route on
-the hosted Worker, which fuses it with the relay deployment and ties it to the
-cloud. The recurring confusion is calling the always-on device an "anchor" when it
-is being asked to do both jobs.
+Epicenter currently syncs a workspace through a hosted Cloudflare room. That room
+does two jobs at once: it carries Yjs update bytes between peers, and it stores
+the durable room state a sleeping device later catches up from. In the Iroh
+direction those jobs split. A blind relay helps peers reach each other and
+forwards encrypted packets; an anchor is the durable app-blind replica that stores
+Y.Doc state. [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) still
+applies to any durable anchor that can materialize plaintext: privacy is a
+property of who runs that anchor, not of the CRDT bytes being unreadable.
+
+Apps also need always-on semantic work: stream an assistant turn into a
+conversation, run the app's actions, query a local read model. Today that work
+runs as an HTTP route on the hosted Worker, which fuses it with the cloud
+deployment and ties it to hosted infrastructure. The recurring confusion is
+calling the always-on device an "anchor" when it is being asked to store docs,
+move bytes, and think.
 
 ## Decision
 
-Custody/transport and semantic work are two roles with two names. An **anchor**
-(cloudless) or **relay** (hosted) is app-blind: it stores and routes room bytes and
-knows no schema, child-doc layout, action, or product semantic. An **actor** is
-app-aware: it holds a live replica of a workspace doc, observes it, runs the app's
-actions and inference, and writes results back through the workspace protocol. An
-actor runs beside the anchor, never inside it. One device may host both, but never
-in one code path. Epicenter Cloud is therefore a trusted relay (always) plus
-optional managed actors (per app, opt-in); a user-owned box is an app-blind anchor
-plus per-app actors. Relay and anchor are two deployments of one custody contract;
-the managed cloud actor and the home daemon are two deployments of one actor
-contract.
+Transport, custody, and semantic work are three roles with three names:
+
+```txt
+relay:
+  moves packets between peers
+  should be blind to application plaintext
+  is not durable workspace storage
+
+anchor:
+  stores and serves durable Y.Doc state
+  stays app-blind: no schema, layout, actions, prompts, or tools
+  may be hosted by Epicenter or self-hosted by the user
+
+actor:
+  holds a live workspace replica
+  observes docs, runs app actions and inference, and writes results back
+  may run in Epicenter Cloud or on a user device
+```
+
+An actor runs beside an anchor, never inside the anchor role. One machine may host
+both, but the contracts stay separate: the anchor keeps docs alive; the actor
+thinks and writes. Epicenter Cloud can therefore be a blind relay, a hosted
+anchor, and a managed actor deployment, but those are three composable roles, not
+one product shape. A user-owned box can be an anchor, an actor host, or both.
+
+```txt
+                         ACTOR
+                    hosted    |    self-hosted
+ANCHOR          --------------+----------------
+hosted          cloud default | hosted custody,
+                shape         | local tools
+self-hosted     self custody, | full self custody
+                hosted model  | and local tools
+```
 
 ## Consequences
 
 - "Anchor" stays app-blind, so one Rust/Iroh sidecar can multiplex many rooms and
-  the topology-privacy claim of ADR-0004 holds.
+  the custody claim of ADR-0004 stays honest. The anchor may hold readable
+  plaintext CRDT state; the relay should not.
+- The product can make Epicenter Cloud easy without making it mandatory:
+  Epicenter-hosted anchor is the default, self-hosted anchor is a custody swap,
+  and actors can move independently of either choice.
 - The hosted AI route is revealed as a co-located managed actor, not part of the
   relay. When an app's actor runs on the user's own device, the hosted route is
   unnecessary, and private facts never leave the machine.
@@ -53,13 +85,16 @@ contract.
   single-owner derivation forecloses. Only an observable layout (one exposing
   `observe`) can carry an actor.
 - Forecloses a single "anchor runtime" that hosts app actors as one fused thing.
-  Fusing the contracts would make the relay app-aware again and break both
-  multiplexing and topology privacy.
+  Fusing the contracts would make the durable app-blind role app-aware again and
+  break both multiplexing and custody clarity.
 
 ## Considered alternatives
 
 - **One "anchor" that does custody and semantics.** Rejected: it contradicts the
   app-blind premise the cloudless transport depends on.
+- **One "relay" that means both network forwarding and durable storage.**
+  Rejected: Cloudflare rooms currently bundle those jobs, but Iroh splits them.
+  Keeping one word hides the privacy and deployment choice users actually make.
 - **Actors only in the cloud (the status quo HTTP route).** Rejected: it ties
   semantic work to the cloud and forecloses local inference and the cloudless
   topology.

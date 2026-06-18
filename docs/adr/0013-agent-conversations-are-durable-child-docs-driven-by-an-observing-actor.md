@@ -24,9 +24,11 @@ A conversation is one human and one agent, for life. The conversation row carrie
 single immutable `agent: AgentId`, set once by the client that creates it. An
 `AgentId` is the durable, configuration-authored address of an answering agent (a
 hosted cloud agent, an always-on home daemon, a laptop daemon), not a per-install
-node id and not a Yjs `clientID`; presence resolves a live `AgentId` to whatever
-node currently hosts it. The cloud agent is `epicenter-cloud`, whose runtime is the
-metered HTTP route; a daemon answers when a conversation is bound to its agent id.
+node id and not a Yjs `clientID`. Presence can decorate the configured agent list
+with live/offline status and capabilities, but it is not durable routing truth.
+The binding is the row field. The cloud agent is `epicenter-cloud`, whose current
+runtime is the metered HTTP route; a daemon answers when a conversation is bound
+to its agent id.
 
 This single field is the whole binding, and the collapse it buys is the reason it is
 immutable. Because the agent never changes, the conversation's content only ever
@@ -93,11 +95,11 @@ doorbell), never the durable queue (the doc is the mailbox).
   reassigned; the transcript carries no agent identity, so it stays portable content.
   To run a history against a different agent you fork it: snapshot the transcript into
   a new row bound to that agent (confirmable when the fork crosses a trust boundary,
-  the only place content moves between agents). Naming an agent needs a roster, so
-  binding at creation time depends on presence advertising which agents are live; the
-  durable address is the stable `AgentId`, and presence resolves it to a concrete
-  node. This is what the earlier "target a capability through the roster" refinement
-  named, pulled forward: the address was a concrete node id and is now the agent.
+  the only place content moves between agents). Naming an agent needs a configured
+  catalog, not a presence-only roster: the durable address is the stable `AgentId`.
+  Presence may tell the UI whether that agent is live right now, but a configured
+  offline daemon can still be the correct binding because the conversation doc is
+  the durable mailbox it will read when it wakes.
 - This is the conversation and transport layer. The bulk-mutation trust model
   (emit bounded data, dry-run on a forked Y.Doc, approve the computed effect) is
   Model 1 of the AI-workflows consolidated design and is unchanged here.

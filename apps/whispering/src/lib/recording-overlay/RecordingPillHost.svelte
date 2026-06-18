@@ -6,6 +6,7 @@
 		stopManualRecording,
 		stopVadRecording,
 	} from '$lib/operations/recording';
+	import { openFailedDictationDetail } from '$lib/recording-overlay/focus-failure';
 	import RecordingPill from '$lib/recording-overlay/RecordingPill.svelte';
 	import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
 	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
@@ -35,8 +36,8 @@
 
 	function handleFocusMain() {
 		// On web the app window is already the focused surface, so there is no
-		// window to raise. Landing on the failed recording's row is wired in a
-		// later wave.
+		// window to raise; a failure still opens the recording's row.
+		openFailedDictationDetail();
 	}
 </script>
 

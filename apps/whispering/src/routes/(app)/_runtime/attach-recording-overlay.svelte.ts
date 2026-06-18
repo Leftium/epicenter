@@ -13,6 +13,7 @@ import {
 	RECORDING_OVERLAY_FOCUS_MAIN,
 	type RecordingOverlayAction,
 } from '$lib/recording-overlay/events';
+import { openFailedDictationDetail } from '$lib/recording-overlay/focus-failure';
 import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
@@ -55,6 +56,9 @@ export function attachRecordingOverlay() {
 					await mainWindow.unminimize();
 					await mainWindow.setFocus().catch(() => {});
 				})();
+				// When the pill is reporting a failure, the body click also opens
+				// the failed recording's row, the detail surface.
+				openFailedDictationDetail();
 			});
 		})();
 	}

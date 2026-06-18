@@ -1,5 +1,5 @@
-import { goto } from '$app/navigation';
 import { tauri } from '#platform/tauri';
+import { goto } from '$app/navigation';
 import { log, report } from '$lib/report';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';

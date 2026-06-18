@@ -69,7 +69,14 @@ import type {
 	MediaPlayer,
 } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
-import { keyBindingToAccelerator } from '$lib/utils/key-binding';
+
+/**
+ * A Tier-0 chord resolved to the accelerator the plugin registers under. The
+ * caller (`platform/shortcuts.tauri.ts`) resolves each binding once via
+ * `resolveBinding`, so `registerChords` registers the string instead of
+ * re-deriving it.
+ */
+export type ChordRegistration = { commandId: string; accelerator: string };
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({
@@ -335,19 +342,17 @@ const tray = {
 const globalShortcuts = {
 	/**
 	 * Register the Tier-0 chord backend (`tauri-plugin-global-shortcut`). Replaces
-	 * the whole set: unregister everything, then register each binding that maps
-	 * to an accelerator. The plugin's own callback delivers Pressed/Released,
+	 * the whole set: unregister everything, then register each resolved chord
+	 * under its accelerator. The plugin's own callback delivers Pressed/Released,
 	 * which we dispatch into the command layer (the convergence point the browser
 	 * backend also feeds). Bindings with no accelerator (Fn, modifier-only) are
-	 * skipped here: they are the Tier-1 tap's job (see `setBindings`). Carbon's
-	 * `RegisterEventHotKey` needs no Accessibility grant, so this is the floor.
+	 * the Tier-1 tap's job (see `setBindings`). Carbon's `RegisterEventHotKey`
+	 * needs no Accessibility grant, so this is the floor.
 	 */
-	registerChords: async (bindings: CommandBinding[]) => {
+	registerChords: async (chords: ChordRegistration[]) => {
 		await unregisterAllShortcuts();
 		const { dispatchCommandTrigger } = await import('$lib/commands');
-		for (const { commandId, binding } of bindings) {
-			const accelerator = keyBindingToAccelerator(binding);
-			if (!accelerator) continue;
+		for (const { commandId, accelerator } of chords) {
 			await registerShortcut(accelerator, (event) =>
 				dispatchCommandTrigger(commandId, event.state),
 			);

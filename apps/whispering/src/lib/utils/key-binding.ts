@@ -170,16 +170,37 @@ export function keyBindingToAccelerator(binding: BindingLike): string | null {
 }
 
 /**
+ * Which backend can execute a binding. A Tier-0 `chord` registers through the
+ * permission-free `tauri-plugin-global-shortcut` and carries the accelerator
+ * string it registers under; a `tap` binding (an Fn or modifier-only hold) is
+ * owned by the Tier-1 rdev tap behind the Accessibility grant and matched on its
+ * structured `KeyBinding`, so it needs no accelerator.
+ */
+export type ResolvedBinding =
+	| { tier: 'chord'; accelerator: string }
+	| { tier: 'tap' };
+
+/**
+ * The single owner of the Tier-0/Tier-1 split. Resolves a binding to its backend
+ * and, for a chord, computes the accelerator once here so the partition and the
+ * plugin registration never re-derive it. {@link isTierZeroChord} is the boolean
+ * view of this for callers that only need the predicate.
+ */
+export function resolveBinding(binding: BindingLike): ResolvedBinding {
+	const accelerator = keyBindingToAccelerator(binding);
+	return accelerator !== null
+		? { tier: 'chord', accelerator }
+		: { tier: 'tap' };
+}
+
+/**
  * Whether a binding is a Tier-0 chord: a gesture the permission-free
- * `tauri-plugin-global-shortcut` can register with no Accessibility grant. True
- * exactly when {@link keyBindingToAccelerator} can spell it (one key plus at
- * least one non-Fn modifier). A binding that is not Tier-0, an Fn hold or a
- * modifier-only hold, belongs to the Tier-1 keyboard tap. This is the canonical
- * tier test: partition and capture-reject decisions route through it rather than
- * re-checking the accelerator inline.
+ * `tauri-plugin-global-shortcut` can register with no Accessibility grant. The
+ * boolean view of {@link resolveBinding}; an Fn hold or a modifier-only hold is
+ * not Tier-0 and belongs to the Tier-1 keyboard tap.
  */
 export function isTierZeroChord(binding: BindingLike): boolean {
-	return keyBindingToAccelerator(binding) !== null;
+	return resolveBinding(binding).tier === 'chord';
 }
 
 /**

@@ -5,6 +5,7 @@ import {
 	domCodeToKey,
 	isTierZeroChord,
 	keyBindingToAccelerator,
+	resolveBinding,
 } from './key-binding';
 
 test('a binding overlaps a superset of itself', () => {
@@ -100,6 +101,21 @@ test('a modifier-only hold is not a Tier-0 accelerator', () => {
 
 test('a bare key with no modifier is refused', () => {
 	expect(keyBindingToAccelerator({ modifiers: [], keys: ['keyA'] })).toBeNull();
+});
+
+test('resolveBinding routes a chord to the plugin with its accelerator', () => {
+	expect(
+		resolveBinding({ modifiers: ['meta', 'shift'], keys: ['space'] }),
+	).toEqual({ tier: 'chord', accelerator: 'Shift+Super+Space' });
+});
+
+test('resolveBinding routes Fn and modifier-only holds to the tap', () => {
+	expect(resolveBinding({ modifiers: ['fn'], keys: ['space'] })).toEqual({
+		tier: 'tap',
+	});
+	expect(resolveBinding({ modifiers: ['meta'], keys: [] })).toEqual({
+		tier: 'tap',
+	});
 });
 
 test('isTierZeroChord names the permission-free tier boundary', () => {

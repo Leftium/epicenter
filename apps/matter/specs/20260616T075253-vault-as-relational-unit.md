@@ -1,9 +1,9 @@
 # Vault as the Relational Unit (`apps/matter`)
 
 **Date**: 2026-06-16
-**Status**: Proposed (greenfield direction; compatibility pressure explicitly released by the owner). Revised once to fold conformance and references into one composed integrity model; revised again (grilling pass) to make that composition return ONE rich structure every surface selects from, to give tables four honest states, and to scope Wave 2 to full pipeline unification.
+**Status**: **Implemented through Wave 4; Wave 5 (per-vault SQLite) is the only open wave.** Greenfield direction; compatibility pressure explicitly released by the owner. Shipped as PR #2081 (merged): the primitive promotion (folder -> vault), the one-integrity-report model, and the live vault view are landed and green. Revised to fold conformance and references into one composed integrity model; again (grilling pass) to make that composition return ONE rich structure every surface selects from and give tables four honest states; and again (2026-06-17) to demote per-vault SQLite from "the point" to an ergonomic read surface, with the W5 design locked — see *W5 locked: per-Vault SQLite is a JavaScript ownership move*.
 **Owner**: Braden
-**Branch**: feat/field-reference-kind
+**Branch**: feat/field-reference-kind (merged as #2081); Wave 5 lands on a follow-up branch
 **Depends on**: the reference field kind (`packages/field`), `checkReferences` (`src/lib/check/references.ts`), per-table conformance (`src/lib/core/conformance.ts`), the per-folder watcher (`src-tauri/src/watch.rs`), and the SQLite mirror (`src/lib/core/sqlite.ts` + `src-tauri/src/mirror.rs`), all already shipped or in flight on this branch.
 
 ## One Sentence
@@ -96,9 +96,13 @@ The Vault is the **live union of its Tables' self-declared contracts**. It decla
 
 `/demo/references` stops being a second implementation. "Demo" becomes **"open the bundled `examples/matter/content-vault` as a Vault."** The Notion-like relation view (table switcher, reference chips colored by verdict, the integrity panel) becomes the **real Vault view**, driven by the real `readFolder` + integrity pipeline. Delete `references-fixtures.ts` and the inlined `createReferencesDemo`. One view, one code path, both the example and a user's own vault flow through it.
 
-### The SQLite mirror goes per-Vault (the sleeper win)
+### The SQLite mirror goes per-Vault (clean folders + a legible query surface)
 
-Today each folder writes its own `matter.sqlite`. Move it to **one database per Vault, one SQL table per folder.** This makes the operation that is impossible today possible:
+Today each folder writes its own `matter.sqlite` **into the content folder**, beside the user's hand-authored markdown. Move it to **one database per Vault, one SQL table per folder, each table named for its folder.** The case is ergonomic, and — crucially — it does NOT depend on any new feature:
+
+1. **Content folders stay pure markdown.** No derived binary sits next to the `.md` files the user wrote. matter's identity is "your folder of markdown IS the database"; a `matter.sqlite` dropped into every table folder contradicts that.
+2. **The query surface is legible.** One SQL table per folder means table names ARE folder names: `FROM pages JOIN adaptations`. The per-folder layout names every table `entries` (the `MIRROR_TABLE` constant) inside its own file, so any cross-table read would mean `ATTACH`-ing N files and writing `FROM pages.entries JOIN adaptations.entries` — the real name buried behind a db alias. One db with real names is a surface a human or an agent can actually read.
+3. **Cross-table JOIN queries become possible** — a bonus, not the reason:
 
 ```sql
 SELECT p.file, a.title
@@ -106,14 +110,14 @@ FROM publications p
 JOIN adaptations a ON a.stem = p.adaptation
 ```
 
-References stop being a bolt-on validator and become **actual relational joins** over the vault. The `WHERE` filter (`matchingFileNames`) generalizes from one table to "the active table in the vault." The projector (`projectToSqlite`) already builds per-table SQL; it gains a vault-level orchestrator that rebuilds the whole db (still a full DROP + CREATE + INSERT, still a pure function of disk, still self-healing).
+Wins 1 and 2 apply to the surface matter **already ships** (the mirror runs today for the `WHERE` filter), so they hold whether or not anyone ever writes a JOIN. The `WHERE` filter (`matchingFileNames`) moves from the constant table name to `FROM "<active table>"`, incidentally clearer. See *W5 locked* below for the ownership move and the rules that keep the shared db a pure function of disk — including why the rebuild is per-table grain, not a whole-db rebuild.
 
 > **Decision (2026-06-17): the per-Vault SQLite is a projection, not the reference-resolution engine.**
 > The JOIN above is a *user / agent query* convenience. `assess` (`src/lib/core/integrity.ts`,
 > which absorbed the old `resolveReferences`) stays the SOLE owner of reference verdicts
 > (`resolved` / `dangling` / `missing-target`); the grid and the integrity panel render those
-> verdicts, never a SQL result. The "actual relational joins" framing above means *queries become
-> possible*, not that SQL replaces the validator.
+> verdicts, never a SQL result. "JOIN queries become possible" (win 3 above) means exactly that —
+> *queries become possible* — not that SQL replaces the validator.
 >
 > - **Candidate**: let W5's JOINs resolve references — SQL becomes the source of `dangling`.
 > - **Refusal**: two engines (the JS index in `assess` AND SQL) would then both compute "dangling"
@@ -127,6 +131,111 @@ References stop being a bolt-on validator and become **actual relational joins**
 > - **Trigger to revisit**: a resolution rule the JS index cannot express (transitive closure,
 >   aggregate constraints). Then SQL becomes a *computed input to* `assess`, never a parallel
 >   verdict source.
+
+### W5 locked: per-Vault SQLite is a JavaScript ownership move, not a Rust project
+
+> **Locked 2026-06-17 (grilling pass).** The "real Rust cost" framing in *The Rust change* below
+> over-counts the work. `write_mirror` / `query_mirror` (`src-tauri/src/mirror.rs`) are already
+> schema-blind: the JS builds *all* the SQL, including the table name, and Rust only opens the file
+> at the given `path`, runs the script, and binds rows. So W5 passes `<root>/.matter` as that path
+> and names each SQL table after its folder — the `write_mirror` / `query_mirror` SQL logic is
+> unchanged. W5 is a re-homing of the mirror's ownership from the Table up to the Vault, plus five
+> edge-case rules and one small file-lifecycle touch (ensure `.matter/` exists; delete the db on
+> open), which the fs plugin or a tiny command covers.
+
+The one rule:
+
+> **One database per Vault, hidden at `<root>/.matter/matter.sqlite`, one SQL table per folder,
+> owned by the Vault. The Table stops touching SQLite entirely.** Hidden so content folders stay
+> pure markdown even for a one-table vault (where the root IS the table folder); classification
+> already skips dot-dirs, so `.matter/` is never mistaken for a table.
+
+The ownership move (before → after):
+
+```
+db file            <folder>/matter.sqlite (one per Table)   ->  <root>/.matter/matter.sqlite (one hidden db per Vault)
+SQL table name     constant 'entries' (MIRROR_TABLE)         ->  the folder name (so a JOIN can name it)
+who writes it      createTable.reconcileMirror               ->  createVault
+who queries it     table.matchingFileNames(where)            ->  vault.queryTable(name, where)
+the WHERE filter   createWhereFilter(table)                  ->  createWhereFilter(vault, activeTableName)
+freshness signal   table.mirrorVersion                       ->  one vault-level mirrorVersion
+Rust mirror.rs     —                                         ->  unchanged SQL; path is now <root>/.matter (JS ensures it exists)
+```
+
+The five edge-case rules that keep the shared db a pure function of disk:
+
+1. **Per-table rebuild grain, not whole-db.** A change in one folder rebuilds (DROP + CREATE +
+   INSERT) only *that folder's* SQL table, preserving today's "rebuild only what changed" cadence. A
+   whole-db rebuild on every keystroke would be a regression.
+2. **DROP on removal.** With one shared db, a removed folder's SQL table would linger; the Vault's
+   `reconcile` (which already disposes a departed table's watch) drops its SQL table in the same step.
+3. **Fresh db on open.** A table present last session but gone now never fires a rebuild, so its
+   stale SQL table would survive in the file. Each vault open starts from a fresh db (delete
+   `.matter/matter.sqlite`, then refill incrementally as tables load). This delete is the one file op
+   `mirror.rs` does not already expose (`write_mirror` can't pure-DROP, `query_mirror` is read-only),
+   so it rides the fs plugin or a 3-line `remove_mirror` command — the same touch that `mkdir`s
+   `.matter/`. With (2), the db is always a pure function of *current* disk, and stays disposable
+   (delete it, reopen, identical).
+4. **Untyped folders are absent.** No `matter.json` = no contract = no columns = no SQL table. A JOIN
+   against an untyped folder errors (the user's own read-only query problem). Refuse projecting a raw
+   `(file, _json)` table for now; earn it later if a real consumer asks.
+5. **Concurrency is already handled.** Two folders rebuilding into one file serialize on SQLite's
+   write lock; `write_mirror`'s 5s `busy_timeout` waits rather than failing with SQLITE_BUSY. No new
+   work.
+
+Locked ownership (post-W5):
+
+```
+the db file            the Vault (one hidden .matter/ db per root, fresh on open)
+one SQL table's rows   projectToSqlite(folderName, contract, conformance) — pure, per table
+rebuild a table        the Vault, when that table's read changes (per-table grain)
+drop a table           the Vault, when that folder leaves the set
+the WHERE filter       per active-table pane, querying vault.queryTable(name, where)
+freshness signal       one vault-level mirrorVersion, bumped per rebuild
+reference verdicts     assess (the JS index) — NEVER SQL        (the protected invariant)
+the Table              does not touch SQLite at all
+```
+
+Files (W5):
+
+```
+core/sqlite.ts          projectToSqlite gains a folderName param; DELETE the MIRROR_TABLE constant
+                        (quoteIdent stays; it now quotes folder names too).
+table.svelte.ts         DELETE reconcileMirror, matchingFileNames, mirrorVersion + the sqlite imports.
+                        The Table no longer owns a mirror.
+vault.svelte.ts         ADD the per-table rebuild, DROP-on-removal, queryTable(name, where), and the
+                        vault-level mirrorVersion; calls projectToSqlite per table; ensures `.matter/`
+                        exists and deletes the db on open (fresh db); points the mirror at `<root>/.matter`.
+where-filter.svelte.ts  createWhereFilter(vault, activeTableName); reads vault.mirrorVersion and calls
+                        vault.queryTable.
+TableGrid / TablePane   thread the vault + active table name to the filter (small prop change).
+src-tauri/src/mirror.rs  UNCHANGED SQL; `path` is now `<root>/.matter`. W5 adds the file-lifecycle
+                        step (ensure `.matter/` exists; delete the db on open) via the fs plugin or a
+                        tiny `remove_mirror` command, and updates the "next to matter.json" docstring.
+```
+
+Two refusals this lock pins:
+
+```
+Candidate:  Resolve references via the new cross-table JOINs (SQL becomes the source of dangling).
+Refusal:    Re-states the 2026-06-17 decision above. Two engines (assess's JS index AND SQL) would
+            both compute "dangling" and could disagree; the mirror is rebuilt async, so a SQL verdict
+            lags the grid. assess owns verdicts; SQL is a query surface.
+User loss:  None. Cross-table JOIN queries still ship; they are simply not the app's verdict source.
+Decision:   Refuse. SQL is a query surface, never a verdict source.
+Trigger:    A resolution rule the JS index cannot express (transitive closure, aggregate constraints):
+            then SQL becomes a computed INPUT to assess, never a parallel verdict.
+```
+
+```
+Candidate:  Rebuild the whole db on any change (the simplest "pure function of disk").
+Refusal:    A one-file edit in a 20-table vault would re-INSERT all 20 tables. Per-table grain keeps
+            today's cadence; (2) DROP-on-removal and (3) fresh-on-open keep the whole db a pure
+            function of disk anyway.
+User loss:  None.
+Decision:   Refuse whole-db rebuild. Per-table grain + drop-on-removal + fresh-on-open.
+Trigger:    None foreseen.
+```
 
 ### Routes and UX
 
@@ -284,7 +393,7 @@ core/folder.ts           -> core/table.ts                LoadedTable, buildView,
 "model" type/file        -> "contract" (Contract)        model.ts -> contract.ts (Wave 3, with the folder rename)
 LoadedFolder {table,read}-> LoadedTable {name,read}      defined in core/references.ts over FolderRead (Wave 2; re-homes to core/table.ts in Wave 3)
 checkReferences()        -> resolveReferences(tables)    pure primitive over CLASSIFIED tables, moved to core/references.ts (Wave 2)
-matter.sqlite (per dir)  -> matter.sqlite (per vault root) one db, one table per folder (Wave 5)
+matter.sqlite (per dir)  -> one db per vault, one SQL table per folder NAMED for the folder; MIRROR_TABLE deleted (Wave 5)
 check/ (dir)             -> report/ (dir)                projections for the outside world: violations.ts, expected.ts, format.ts, exit-code.ts (Wave 2)
 CheckReport/FatalCheckReport -> (deleted)                replaced by VaultIntegrity + toViolations + summarize (Wave 2)
 check/check.ts reportFromRead -> (deleted)               the single-folder re-derivation; CLI runs assess + project instead (Wave 2)
@@ -309,7 +418,7 @@ per-cell state       core/conformance.ts (per table)           the grid's per-ro
 reference resolution core/references.ts (per vault)             stems becoming links, the cross-table answer
 integrity report     core/integrity.ts (composes the above)    the one "what is wrong" vocabulary
 vault membership     the Vault's root discovery watch           which folders are tables right now
-sqlite mirror        the Vault (one db, full rebuild)           the external relational read surface
+sqlite mirror        the Vault (one db, per-table rebuild grain) the external read surface (W5)
 table watch lifetime the Vault (composes + disposes tables)     no table outlives its vault
 ```
 
@@ -455,7 +564,7 @@ The watcher grows from "watch one folder" to "shallow-watch a root + compose per
 - Keep `watch_folder` / `unwatch_folder` as the **Table** primitive. It is correct and stays.
 - Add a depth-1 watch on the vault root that emits a delta when a child folder appears, disappears, or gains/loses a `matter.json`. This is the **vault membership** signal; the JS Vault reacts by composing or disposing a Table watch.
 - `FileDelta` is unchanged for Tables. The root signal is a separate, smaller payload (a folder name plus present/absent); regenerate the ts-rs binding with `cargo test`.
-- `write_mirror` / `query_mirror` move from a folder path to the vault root path with a table-name argument (one db, many tables). `read_entry` / `write_entry` are unchanged (still per-file).
+- `write_mirror` / `query_mirror` stay UNCHANGED: they are already schema-blind (the JS builds all the SQL, table name included), so W5 only passes the vault root as `path` instead of a folder path — one db, one SQL table per folder, named in the JS-built script. `read_entry` / `write_entry` are unchanged (still per-file). See *W5 locked* above.
 
 This is the chunk that was correctly out of scope for the small documentation fix. It is the point of the redesign, isolated to Wave 3 and Wave 5.
 
@@ -517,7 +626,8 @@ W4  Live integrity. integrity(vault) as a $derived; the integrity panel + grid r
     ReferenceDatabase. The example vault IS the demo now.
 
 W5  Per-vault SQLite. One db per vault root, one SQL table per folder; WHERE scoped to the active table;
-    cross-table JOIN queries enabled.
+    cross-table JOIN queries enabled. Locked design (ownership move Table -> Vault, five edge-case
+    rules, Rust unchanged): see "W5 locked: per-Vault SQLite is a JavaScript ownership move" above.
 ```
 
 Tabs stay per-folder through W1 and W2 and flip to per-vault at W3, so working behavior is never lost mid-stream. W1 is safe to start immediately while the rest of the design settles.
@@ -538,8 +648,8 @@ A table-folder removed      the Vault disposes its watch; inbound references to 
 Nested vaults               a table-folder that itself contains table-folders: depth-1 discovery only;
                             do not recurse arbitrarily (refuse the tree-walker).
 matter.json appears later   the root discovery watch upgrades an untyped Table to modeled, live.
-Table fails to load         status 'fatal' in the report; no violations of its own; inbound references
-                            to it become missing-target.
+Table fails to load         status 'unreadable' (the model's failure state, NOT 'fatal'); no violations
+                            of its own; inbound references to it become missing-target.
 ```
 
 ## Open Forks (owner's taste, not the code's)
@@ -550,7 +660,7 @@ Table fails to load         status 'fatal' in the report; no violations of its o
 
 3. **One tab = one Vault (with an in-vault Table switcher), or tabs stay per-Table.** Recommended: one tab per Vault, Notion-style shell. Affects Wave 3's route shape.
 
-4. **Per-vault SQLite now (Wave 5) or keep per-folder and add joins later.** Recommended: do it with the rename, because cross-table joins are the whole reason the primitive matters, and retrofitting later touches the same files twice.
+4. **Per-vault SQLite: when, not whether.** Resolved by reality: the renames (W1–W3) shipped WITHOUT it and nothing broke, which is itself the evidence that joins were never load-bearing — the live app never reads cross-table SQL (`assess` owns every verdict). The shape is settled (see *W5 locked*); only timing is open. Lean: do it as a focused follow-up, because the ergonomic wins (clean content folders, a legible real-named query surface) apply to the surface already shipped and don't wait on a JOIN consumer. Defer only if the small fs work (table-name-per-folder, drop-on-removal, fresh-on-open) outweighs the clutter this cycle.
 
 ## Success Criteria
 

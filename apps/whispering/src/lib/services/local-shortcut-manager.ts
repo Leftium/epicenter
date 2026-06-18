@@ -7,7 +7,6 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { Command, ShortcutEventState } from '$lib/commands';
-import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 import type { Key, KeyBinding } from '$lib/tauri/commands';
 import {
 	bindingsEqual,
@@ -283,26 +282,4 @@ function isTypingInInput(): boolean {
 	if (activeElement.getAttribute('role') === 'textbox') return true;
 
 	return false;
-}
-
-/**
- * Convert a shortcut string to an array of keys
- * @example "ctrl+shift+a" → ["ctrl", "shift", "a"]
- */
-export function shortcutStringToArray(
-	shortcut: string,
-): KeyboardEventSupportedKey[] {
-	return shortcut
-		.split('+')
-		.map((key) => key.toLowerCase() as KeyboardEventSupportedKey);
-}
-
-/**
- * Join an array of keys into a shortcut string
- * @example ["ctrl", "shift", "a"] → "ctrl+shift+a"
- */
-export function arrayToShortcutString(
-	keys: KeyboardEventSupportedKey[],
-): string {
-	return keys.map((key) => key.toLowerCase()).join('+');
 }

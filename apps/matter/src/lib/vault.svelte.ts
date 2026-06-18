@@ -17,6 +17,13 @@
  * VaultIntegrity} that the grid, the Table switcher, and the integrity panel all select from. The
  * single open table case is just a degenerate Vault of one Table.
  *
+ * The Vault also composes the vault's SQLite mirror ({@link createMirror}): one hidden
+ * `<root>/.matter/matter.sqlite` holding one SQL table per folder, so an agent or SQL console can
+ * JOIN across the whole vault (`FROM pages JOIN adaptations`). The Vault wires each Table's onChange
+ * to `mirror.syncTable` and drops a table's slice when its folder leaves; the mirror owns the db
+ * lifecycle itself. It is a PROJECTION only: `assess` owns every reference verdict; SQL never resolves
+ * references.
+ *
  * Desktop-only: it talks to Tauri directly (no platform seam), mirroring {@link createTable}.
  */
 
@@ -24,6 +31,7 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import { assess, type VaultIntegrity } from './core/integrity';
 import { basename } from './core/path';
+import { createMirror } from './mirror.svelte';
 import { createTable, type TableHandle } from './table.svelte';
 
 /**
@@ -33,6 +41,12 @@ import { createTable, type TableHandle } from './table.svelte';
  */
 export function createVault(root: string) {
 	const folderName = basename(root);
+
+	// The vault's SQLite projection, hidden at `<root>/.matter` (content folders stay pure markdown;
+	// classification skips dot-dirs, so `.matter/` is never mistaken for a table, even in a one-table
+	// vault where the root IS the folder). Rust owns the on-disk layout, so the Vault passes only the
+	// root; the mirror owns its own db lifecycle (fresh on open, single-writer rebuilds).
+	const mirror = createMirror(root);
 
 	// table folder path -> its live Table. The table list from `watch_vault` reconciles this map;
 	// the `tables` getter sorts by name so the switcher and integrity read a stable order
@@ -55,9 +69,20 @@ export function createVault(root: string) {
 			if (incoming.has(path)) continue;
 			table.dispose();
 			tables.delete(path);
+			mirror.dropTable(table.folderName); // the folder left: its SQL table must not linger in the shared db
 		}
 		for (const path of paths) {
-			if (!tables.has(path)) tables.set(path, createTable(path));
+			if (!tables.has(path)) {
+				// Each applied watcher batch syncs this table's slice into the mirror. The lookup guards
+				// a late batch that fires after the table was disposed (then there is nothing to sync).
+				tables.set(
+					path,
+					createTable(path, () => {
+						const table = tables.get(path);
+						if (table) mirror.syncTable(table.folderName, table.read);
+					}),
+				);
+			}
 		}
 	}
 
@@ -114,6 +139,9 @@ export function createVault(root: string) {
 		root,
 		whenReady,
 		dispose,
+		/** The vault's SQLite projection. The per-tab WHERE filter queries it; the filter's freshness
+		 *  signal (`mirror.version`) and query seam live here, not on the vault. */
+		mirror,
 		/** The vault's live tables, sorted by folder name. A pure read with no side effects. */
 		get tables(): TableHandle[] {
 			return orderedTables;

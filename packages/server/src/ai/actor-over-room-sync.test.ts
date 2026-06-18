@@ -28,7 +28,14 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { field } from '@epicenter/field';
 import { encodeSyncRequest } from '@epicenter/sync';
+import {
+	attachChildDocActor,
+	type ConnectedChildDoc,
+	createWorkspace,
+	defineTable,
+} from '@epicenter/workspace';
 import { attachChatActor, attachChatTranscript } from '@epicenter/workspace/ai';
 import { EventType, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
@@ -247,5 +254,142 @@ describe('chat actor over real room sync', () => {
 		daemon.dispose();
 		daemonDoc.destroy();
 		clientDoc.destroy();
+	});
+
+	// ──────────────────────────────────────────────────────────────────────────
+	// Test 3: designation over real sync (the V0 "0 duplicate streams" claim in
+	// the real composition). Tests 1-2 prove a single daemon answers and honors a
+	// cancel; neither exercises designation, because the harness attaches the
+	// actor straight to a body. This one runs the REAL observe loop
+	// (`attachChildDocActor`) over a table of two conversations bound to two
+	// different agents, composed exactly as the Zhongwen mount does
+	// (`isDesignated = row.agent === selfAgentId`, `layout = attachChatTranscript`,
+	// `actorFor = attachChatActor`). It proves the daemon answers ONLY the
+	// conversation bound to its agent and never even opens the other, so a turn for
+	// another agent is left to that agent (the browser's cloud path), never
+	// double-answered here.
+	// ──────────────────────────────────────────────────────────────────────────
+	test('the daemon answers only the conversation bound to its agent, over sync', async () => {
+		const SELF_AGENT = 'zhongwen-home';
+
+		// One `createRoomCore` is one logical room, so each synced doc gets its own
+		// core: the root table is one room, each transcript body another. This is
+		// the same one-core-per-body shape tests 1-2 use, extended to the root.
+		const rootCore = createRoomCore({ updateLog: createMemoryUpdateLog() });
+		const childCores = new Map<string, RoomCore>();
+		const coreFor = (guid: string): RoomCore => {
+			const existing = childCores.get(guid);
+			if (existing) return existing;
+			const core = createRoomCore({ updateLog: createMemoryUpdateLog() });
+			childCores.set(guid, core);
+			return core;
+		};
+
+		// A conversation table mirroring Zhongwen's: each row carries an immutable
+		// bound `agent`, and `messages` is a transcript child doc keyed by row id.
+		const conversations = defineTable({
+			id: field.string(),
+			agent: field.string(),
+		}).docs({ messages: attachChatTranscript });
+
+		// Two peers, each its own workspace synced through `rootCore`: the asking
+		// client and the always-on daemon.
+		const clientWs = createWorkspace({
+			id: 'ws-designation',
+			tables: { conversations },
+			kv: {},
+		});
+		const daemonWs = createWorkspace({
+			id: 'ws-designation',
+			tables: { conversations },
+			kv: {},
+		});
+
+		// The client opens two conversations: one bound to the daemon's agent, one
+		// bound to the cloud agent the browser would answer over HTTP.
+		clientWs.tables.conversations.set({ id: 'home', agent: SELF_AGENT });
+		clientWs.tables.conversations.set({
+			id: 'cloud',
+			agent: 'epicenter-cloud',
+		});
+
+		const homeGuid = clientWs.tables.conversations.docs.messages.guid('home');
+
+		// The daemon runs the real observe loop, designated to SELF_AGENT. Each
+		// hosted body is a fresh Y.Doc synced through its per-guid core; the set of
+		// opened bodies is the proof of which conversations the loop hosted.
+		const daemonBodies: Y.Doc[] = [];
+		const actor = attachChildDocActor({
+			rootDoc: daemonWs.ydoc,
+			table: daemonWs.tables.conversations,
+			guidFor: daemonWs.tables.conversations.docs.messages.guid,
+			connectBody: (guid): ConnectedChildDoc => {
+				const ydoc = new Y.Doc({ guid, gc: true });
+				daemonBodies.push(ydoc);
+				const { promise: whenDisposed, resolve } =
+					Promise.withResolvers<void>();
+				ydoc.once('destroy', () => resolve());
+				return { ydoc, whenDisposed, dispose: () => ydoc.destroy() };
+			},
+			layout: attachChatTranscript,
+			actorFor: ({ ydoc }) =>
+				attachChatActor({ ydoc, startStream: streamOf('你', '好', '!') }),
+			isDesignated: (rowId) =>
+				daemonWs.tables.conversations.get(rowId).data?.agent === SELF_AGENT,
+		});
+
+		// The client writes a user turn into the home transcript. Designation is
+		// decided on the root row's agent, never the transcript, so the cloud
+		// conversation needs no body here: its root row alone is what the daemon
+		// must see and skip.
+		const homeClientBody = new Y.Doc({ guid: homeGuid, gc: true });
+		const homeClient = attachChatTranscript(homeClientBody);
+		homeClient.appendUser({
+			id: 'u1',
+			content: 'hi',
+			createdAt: 1,
+			generationId: 'gen-home',
+		});
+
+		// Pump the root table first so the daemon sees the rows and their agents and
+		// reconciles its hosted set, then every body through its own core. A daemon
+		// body opened mid-pump joins `daemonBodies` and syncs from the next round.
+		const pump = (): void => {
+			syncStep(daemonWs.ydoc, rootCore);
+			syncStep(clientWs.ydoc, rootCore);
+			syncStep(homeClientBody, coreFor(homeGuid));
+			for (const body of daemonBodies) syncStep(body, coreFor(body.guid));
+		};
+		for (let round = 0; round < 80; round++) {
+			pump();
+			if (
+				homeClient.read().find((m) => m.id === 'gen-home')?.finish !== undefined
+			)
+				break;
+			await tick();
+		}
+
+		// The home conversation: exactly one finished answer, streamed by the daemon.
+		const homeMessages = homeClient.read();
+		expect(homeMessages).toHaveLength(2);
+		expect(homeMessages[1]).toMatchObject({
+			id: 'gen-home',
+			role: 'assistant',
+			text: '你好!',
+			finish: { kind: 'completed' },
+		});
+		expect(
+			homeMessages.filter((m) => m.role === 'assistant' && m.id === 'gen-home'),
+		).toHaveLength(1);
+
+		// The daemon hosted exactly the designated conversation: it saw the cloud
+		// row in the root table and skipped it, never opening that transcript. The
+		// hosted set is the direct evidence of the single-answerer guarantee.
+		expect(daemonBodies.map((body) => body.guid)).toEqual([homeGuid]);
+
+		actor[Symbol.dispose]();
+		daemonWs[Symbol.dispose]();
+		clientWs[Symbol.dispose]();
+		homeClientBody.destroy();
 	});
 });

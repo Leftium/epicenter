@@ -1,4 +1,7 @@
+import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
+import { loadVault } from '../load/fs';
 import { classifyRows } from './conformance';
 import { validateContract } from './contract';
 import type { Row } from './parse';
@@ -60,10 +63,10 @@ const invalid: Row = {
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
 	test('drops then recreates: file PK, one nullable column per field by storage class, _extra JSON', () => {
-		const { schema } = projectToSqlite(m, []);
+		const { schema } = projectToSqlite('posts', m, []);
 		expect(schema).toBe(
-			'DROP TABLE IF EXISTS "entries";\n' +
-				'CREATE TABLE "entries" (' +
+			'DROP TABLE IF EXISTS "posts";\n' +
+				'CREATE TABLE "posts" (' +
 				'"file" TEXT PRIMARY KEY, ' +
 				'"title" TEXT, ' +
 				'"status" TEXT, ' +
@@ -78,17 +81,24 @@ describe('schema script (DROP + CREATE, one execute_batch)', () => {
 
 	test('field identifiers with quotes/spaces are escaped, and stay nullable', () => {
 		const weird = contract({ 'a "b"': { type: 'string' } });
-		const { schema } = projectToSqlite(weird, []);
+		const { schema } = projectToSqlite('posts', weird, []);
 		expect(schema).toContain('"a ""b""" TEXT');
 		expect(schema).not.toContain('"a ""b""" TEXT NOT NULL');
+	});
+
+	test('the table name is the folder name, quoted', () => {
+		const { schema, insert } = projectToSqlite('my posts', m, []);
+		expect(schema).toContain('CREATE TABLE "my posts" (');
+		expect(schema).toContain('DROP TABLE IF EXISTS "my posts"');
+		expect(insert).toContain('INSERT INTO "my posts" (');
 	});
 });
 
 describe('insert template (one ? per column, bound positionally)', () => {
 	test('lists every column in order with one placeholder each', () => {
-		const { insert } = projectToSqlite(m, []);
+		const { insert } = projectToSqlite('posts', m, []);
 		expect(insert).toBe(
-			'INSERT INTO "entries" (' +
+			'INSERT INTO "posts" (' +
 				'"file", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
@@ -99,7 +109,7 @@ describe('insert template (one ? per column, bound positionally)', () => {
 
 describe('rows (every readable row, serialized by conformance state)', () => {
 	const conformance = classifyRows(m.fields, [valid, incomplete]);
-	const proj = projectToSqlite(m, conformance);
+	const proj = projectToSqlite('posts', m, conformance);
 
 	test('valid AND incomplete rows both project, in folder order', () => {
 		expect(proj.rows).toHaveLength(2);
@@ -150,16 +160,70 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 			'OK',
 			'MISSING_OPTIONAL',
 		]);
-		const p = projectToSqlite(optionalContract, conformance);
+		const p = projectToSqlite('posts', optionalContract, conformance);
 		expect(p.rows[0]).toEqual(['person.md', 'Alice', null, '{}']);
 	});
 
 	test('an out-of-domain cell keeps its raw value so the draft stays filterable', () => {
-		const p = projectToSqlite(m, classifyRows(m.fields, [invalid]));
+		const p = projectToSqlite('posts', m, classifyRows(m.fields, [invalid]));
 		const [file, title, status, count] = p.rows[0]!;
 		expect(file).toBe('post-3.md');
 		expect(title).toBe('Bad');
 		expect(status).toBe('bogus'); // not in the enum, kept raw
 		expect(count).toBe(1.5); // not an integer, kept raw
+	});
+});
+
+describe('projects a vault into one db whose tables JOIN', () => {
+	// W5's payoff: one db per vault, one SQL table per folder NAMED for the folder, so a cross-table
+	// JOIN falls out of real table names with no new code. This drives the real projector over the
+	// bundled content-vault and runs its SQL through bun:sqlite (the same engine the Tauri command
+	// uses), so the success criterion is proven end to end, not asserted on the SQL strings alone.
+	const appRoot = resolve(import.meta.dir, '../../..');
+	const exampleVault = resolve(appRoot, '../../examples/matter/content-vault');
+
+	test('adaptations JOIN pages on the reference column returns the resolved rows', async () => {
+		// Load the fixture and project every typed table into one in-memory db, exactly as the Vault
+		// fills its shared .matter db (each folder -> a table named for the folder).
+		const tables = await loadVault(exampleVault);
+		const db = new Database(':memory:');
+		for (const table of tables) {
+			if (table.status !== 'readable' || table.read.view.mode !== 'typed')
+				continue;
+			const { schema, insert, rows } = projectToSqlite(
+				table.name,
+				table.read.view.contract,
+				table.read.view.conformance,
+			);
+			db.exec(schema); // DROP + CREATE for this folder's table
+			const stmt = db.prepare(insert);
+			for (const row of rows) stmt.run(...row);
+		}
+
+		// `adaptations.page` holds a page's basename (no extension); the mirror's `file` column keeps
+		// the `.md`, so the JOIN key is `page || '.md' = file`. An INNER JOIN naturally drops the
+		// deliberately-dangling orphan-adaptation (page `ghost-page`, which has no pages row).
+		const joined = db
+			.query(
+				`SELECT a."file" AS adaptation, p."file" AS page
+				 FROM adaptations a JOIN pages p ON a."page" || '.md' = p."file"
+				 ORDER BY a."file"`,
+			)
+			.all() as { adaptation: string; page: string }[];
+
+		expect(joined).toEqual([
+			{
+				adaptation: 'become-the-source-carousel.md',
+				page: 'become-the-source.md',
+			},
+			{
+				adaptation: 'become-the-source-thread.md',
+				page: 'become-the-source.md',
+			},
+			{
+				adaptation: 'plan-yourself-short.md',
+				page: 'how-we-plan-ourselves.md',
+			},
+		]);
 	});
 });

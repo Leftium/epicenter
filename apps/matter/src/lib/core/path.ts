@@ -6,14 +6,3 @@
  */
 export const basename = (path: string): string =>
 	path.split(/[/\\]/).pop() ?? path;
-
-/**
- * Join a segment onto an absolute folder path, reusing the path's own separator (a
- * Windows path keeps `\`, a POSIX path keeps `/`). The one place the vault builds its
- * hidden `<root>/.matter` dir path, so the separator rule lives next to {@link basename}
- * rather than being hand-spliced at the call site.
- */
-export const join = (path: string, segment: string): string => {
-	const separator = path.includes('\\') ? '\\' : '/';
-	return `${path.replace(/[/\\]+$/, '')}${separator}${segment}`;
-};

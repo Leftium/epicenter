@@ -23,19 +23,23 @@ import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import { projectToSqlite, quoteIdent } from './core/sqlite';
 import type { TableRead } from './core/table';
 
-/** Open the mirror at `dir` (`<root>/.matter`). Synchronous: the reset is dispatched now and becomes
- *  the head of the write-chain, so the first table write is structurally ordered after it. */
-export function createMirror(dir: string) {
+/** Open the mirror for vault `root` (the db lives at `<root>/.matter/matter.sqlite`; Rust owns that
+ *  layout, this side passes only the root). Synchronous: the reset is dispatched now and becomes the
+ *  head of the write-chain, so the first table write is structurally ordered after it. */
+export function createMirror(root: string) {
 	let version = $state(0);
+
+	// Drop one folder's SQL table. The one structural-drop op, shared by a folder leaving (dropTable)
+	// and a folder going untyped (syncTable); idempotent Rust-side (DROP TABLE IF EXISTS).
+	const dropSql = (name: string) =>
+		invoke('drop_mirror_table', { root, table: name });
 
 	// The single-writer chain. Its head is the fresh-on-open reset (mkdir `.matter` + delete the db,
 	// so a folder gone since last session leaves no stale table); each enqueued link runs after it and
 	// bumps `version` on success. A failed link is swallowed so the chain never stalls — the next full
 	// rebuild self-heals it. Projection runs inside a link (after the prior link's IPC resolved), so it
 	// never lands on the synchronous batch tick that paints the grid.
-	let tail: Promise<unknown> = invoke('reset_mirror', { path: dir }).catch(
-		() => {},
-	);
+	let tail: Promise<unknown> = invoke('reset_mirror', { root }).catch(() => {});
 	function enqueue(run: () => Promise<unknown>): void {
 		tail = tail.then(async () => {
 			try {
@@ -55,22 +59,20 @@ export function createMirror(dir: string) {
 	 */
 	function syncTable(name: string, read: TableRead): void {
 		enqueue(() => {
-			if (read.view.mode !== 'typed') {
-				return invoke('drop_mirror_table', { path: dir, table: name });
-			}
+			if (read.view.mode !== 'typed') return dropSql(name);
 			const { schema, insert, rows } = projectToSqlite(
 				name,
 				read.view.contract,
 				read.view.conformance,
 			);
-			return invoke('write_mirror', { path: dir, schema, insert, rows });
+			return invoke('write_mirror', { root, schema, insert, rows });
 		});
 	}
 
 	/** Drop one folder's SQL table when its folder leaves the vault, so it does not linger in the
 	 *  shared db. Enqueued after that folder's last write, so the table ends absent. */
 	function dropTable(name: string): void {
-		enqueue(() => invoke('drop_mirror_table', { path: dir, table: name }));
+		enqueue(() => dropSql(name));
 	}
 
 	/**
@@ -85,10 +87,11 @@ export function createMirror(dir: string) {
 		const sql = `SELECT "file" FROM ${quoteIdent(name)} WHERE ${where}`;
 		return tryAsync({
 			try: async () => {
-				const { rows } = await invoke<{ columns: string[]; rows: unknown[][] }>(
-					'query_mirror',
-					{ path: dir, sql, limit: null },
-				);
+				const { rows } = await invoke<{ rows: unknown[][] }>('query_mirror', {
+					root,
+					sql,
+					limit: null,
+				});
 				return new Set(rows.map((row) => String(row[0])));
 			},
 			catch: (cause) => Err({ message: extractErrorMessage(cause) }),

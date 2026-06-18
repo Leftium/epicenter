@@ -18,18 +18,28 @@
 
 use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// Open `<path>/matter.sqlite` with the given access flags (`path` is the vault's hidden
-/// `.matter` dir). The single opener the commands share, so the ONLY difference between a
-/// rebuild and a query is the flag:
-/// `OpenFlags::default()` (read-write, create) for `write_mirror` versus
-/// `SQLITE_OPEN_READ_ONLY` for `query_mirror`. `busy_timeout` lets either wait out an
-/// in-flight rebuild instead of failing with SQLITE_BUSY.
-fn open_mirror(path: &str, flags: OpenFlags) -> Result<Connection, String> {
-    let db = Path::new(path).join("matter.sqlite");
-    let conn = Connection::open_with_flags(&db, flags).map_err(|e| e.to_string())?;
+/// The vault's hidden mirror dir (`<root>/.matter`) and the db inside it
+/// (`<root>/.matter/matter.sqlite`). The ONE place the on-disk layout lives: every command takes the
+/// vault ROOT and never the `.matter` segment, the same way `entry.rs` takes a folder + filename and
+/// joins them itself. So the frontend owns no path logic here beyond naming the vault root.
+fn mirror_dir(root: &str) -> PathBuf {
+    Path::new(root).join(".matter")
+}
+fn mirror_db(root: &str) -> PathBuf {
+    mirror_dir(root).join("matter.sqlite")
+}
+
+/// Open the vault's mirror db with the given access flags. The single opener the commands share, so
+/// the ONLY difference between a rebuild and a query is the flag: `OpenFlags::default()` (read-write,
+/// create) for `write_mirror` versus `SQLITE_OPEN_READ_ONLY` for `query_mirror`. The `.matter` dir
+/// must already exist — `reset_mirror` makes it on open, the head of the write-chain — so a writable
+/// open only creates the db file, never its parent. `busy_timeout` lets either wait out an in-flight
+/// rebuild instead of failing with SQLITE_BUSY.
+fn open_mirror(root: &str, flags: OpenFlags) -> Result<Connection, String> {
+    let conn = Connection::open_with_flags(mirror_db(root), flags).map_err(|e| e.to_string())?;
     conn.busy_timeout(Duration::from_secs(5))
         .map_err(|e| e.to_string())?;
     Ok(conn)
@@ -52,13 +62,13 @@ fn to_sql(value: &serde_json::Value) -> Value {
     }
 }
 
-/// Rebuild `<path>/matter.sqlite` from the projected rows. `schema` (a `DROP` + `CREATE`
-/// script) and `insert` are the SQL the JS projector built; `rows` is one tuple per
-/// readable row, positional against the insert's columns. Full drop-and-recreate in one
-/// transaction, so the file is disposable.
+/// Rebuild one folder's table in the vault's mirror from the projected rows. `root` is the vault
+/// root (the db is `<root>/.matter/matter.sqlite`); `schema` (a `DROP` + `CREATE` script) and
+/// `insert` are the SQL the JS projector built; `rows` is one tuple per readable row, positional
+/// against the insert's columns. Full drop-and-recreate in one transaction, so the file is disposable.
 #[tauri::command]
 pub fn write_mirror(
-    path: String,
+    root: String,
     schema: String,
     insert: String,
     rows: Vec<Vec<serde_json::Value>>,
@@ -67,7 +77,7 @@ pub fn write_mirror(
     // overlap on a large folder (or with an agent reading). The shared `busy_timeout`
     // waits for the lock instead of failing fast with SQLITE_BUSY; the rebuild is a full
     // drop-and-recreate, so a brief wait is cheaper than a lost rebuild.
-    let mut conn = open_mirror(&path, OpenFlags::default())?;
+    let mut conn = open_mirror(&root, OpenFlags::default())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // execute_batch runs the multi-statement DROP + CREATE script (no params).
@@ -85,15 +95,16 @@ pub fn write_mirror(
     Ok(())
 }
 
-/// Reset the vault's mirror at vault open: ensure the hidden `.matter` dir exists, then
-/// delete `matter.sqlite` so the db starts empty and refills incrementally as each table
-/// loads (rule 3, "fresh db on open" — a table gone since last session leaves no stale SQL
-/// table). One call does the `mkdir(.matter)` and the delete; a missing db is not an error.
+/// Reset the vault's mirror at vault open: ensure the hidden `.matter` dir exists, then delete
+/// `matter.sqlite` so the db starts empty and refills incrementally as each table loads (rule 3,
+/// "fresh db on open" — a table gone since last session leaves no stale SQL table). `root` is the
+/// vault root; this is the only command that creates the `.matter` dir (the head of the write-chain),
+/// so a later `write`/`drop` only opens the db. One call does the `mkdir(.matter)` and the delete; a
+/// missing db is not an error.
 #[tauri::command]
-pub fn reset_mirror(path: String) -> Result<(), String> {
-    std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
-    let db = Path::new(&path).join("matter.sqlite");
-    match std::fs::remove_file(&db) {
+pub fn reset_mirror(root: String) -> Result<(), String> {
+    std::fs::create_dir_all(mirror_dir(&root)).map_err(|e| e.to_string())?;
+    match std::fs::remove_file(mirror_db(&root)) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e.to_string()),
@@ -103,10 +114,10 @@ pub fn reset_mirror(path: String) -> Result<(), String> {
 /// Drop one folder's SQL table from the vault's mirror (rule 2, "DROP on removal"): the
 /// vault calls this when a folder leaves the set or goes untyped, so its table does not
 /// linger in the shared db. `table` is quoted here (doubling embedded quotes) since it is a
-/// folder name, not projector-built SQL. `IF EXISTS` makes it idempotent.
+/// folder name, not projector-built SQL. `IF EXISTS` makes it idempotent. `root` is the vault root.
 #[tauri::command]
-pub fn drop_mirror_table(path: String, table: String) -> Result<(), String> {
-    let conn = open_mirror(&path, OpenFlags::default())?;
+pub fn drop_mirror_table(root: String, table: String) -> Result<(), String> {
+    let conn = open_mirror(&root, OpenFlags::default())?;
     let quoted = format!("\"{}\"", table.replace('"', "\"\""));
     conn.execute_batch(&format!("DROP TABLE IF EXISTS {quoted}"))
         .map_err(|e| e.to_string())?;
@@ -137,19 +148,19 @@ fn from_sql(value: rusqlite::types::ValueRef) -> serde_json::Value {
     }
 }
 
-/// Run a READ-ONLY query against `<path>/matter.sqlite` and return the rows, up to
-/// `limit`, or every match when `limit` is `None`. The connection is opened read-only,
-/// so a query can never mutate the disposable mirror (a write would be lost on the next
-/// reconcile anyway). The SQL is the caller's (the user's own query against their own
-/// local file), so Rust stays schema-blind: it runs the statement and hands back column
-/// names and JSON values, nothing interpreted.
+/// Run a READ-ONLY query against the vault's mirror (`<root>/.matter/matter.sqlite`) and return the
+/// rows, up to `limit`, or every match when `limit` is `None`. The connection is opened read-only, so
+/// a query can never mutate the disposable mirror (a write would be lost on the next reconcile
+/// anyway). The SQL is the caller's (the user's own query against their own local file), so Rust
+/// stays schema-blind: it runs the statement and hands back column names and JSON values, nothing
+/// interpreted.
 #[tauri::command]
 pub fn query_mirror(
-    path: String,
+    root: String,
     sql: String,
     limit: Option<usize>,
 ) -> Result<QueryResult, String> {
-    let conn = open_mirror(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let conn = open_mirror(&root, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
 
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
@@ -181,7 +192,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// A unique scratch dir under the OS temp dir (mirrors `entry.rs`).
+    /// A unique scratch vault root under the OS temp dir (mirrors `entry.rs`).
     fn scratch() -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "matter-mirror-test-{}-{:?}",
@@ -192,21 +203,29 @@ mod tests {
         dir
     }
 
+    /// A scratch vault root with its mirror reset (so `.matter/` exists), the production sequence a
+    /// write/drop assumes — `reset_mirror` is the head of the write-chain. Returns the root.
+    fn fresh() -> std::path::PathBuf {
+        let dir = scratch();
+        reset_mirror(dir.to_string_lossy().into()).unwrap();
+        dir
+    }
+
     const SCHEMA: &str = r#"DROP TABLE IF EXISTS "drafts";
 CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" INTEGER NOT NULL, "_extra" TEXT NOT NULL)"#;
     const INSERT: &str =
         r#"INSERT INTO "drafts" ("path", "title", "count", "_extra") VALUES (?, ?, ?, ?)"#;
 
-    fn count(dir: &std::path::Path) -> i64 {
-        Connection::open(dir.join("matter.sqlite"))
+    fn count(root: &std::path::Path) -> i64 {
+        Connection::open(mirror_db(&root.to_string_lossy()))
             .unwrap()
             .query_row(r#"SELECT COUNT(*) FROM "drafts""#, [], |r| r.get(0))
             .unwrap()
     }
 
     #[test]
-    fn writes_the_db_at_the_given_path_with_typed_values() {
-        let dir = scratch();
+    fn writes_the_db_under_dot_matter_with_typed_values() {
+        let dir = fresh();
         let path: String = dir.to_string_lossy().into();
         let rows = vec![
             vec![json!("a.md"), json!("Hello"), json!(3), json!("{}")],
@@ -215,10 +234,11 @@ CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" I
 
         write_mirror(path, SCHEMA.into(), INSERT.into(), rows).unwrap();
 
-        // The file lands in the given folder (the vault's `.matter` dir), not elsewhere.
-        assert!(dir.join("matter.sqlite").exists());
+        // The db lands at `<root>/.matter/matter.sqlite` — Rust owns the layout, the caller passes
+        // only the vault root.
+        assert!(mirror_db(&dir.to_string_lossy()).exists());
 
-        let conn = Connection::open(dir.join("matter.sqlite")).unwrap();
+        let conn = Connection::open(mirror_db(&dir.to_string_lossy())).unwrap();
         let (title, n): (String, i64) = conn
             .query_row(
                 r#"SELECT "title", "count" FROM "drafts" WHERE "path" = ?"#,
@@ -233,7 +253,7 @@ CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" I
 
     #[test]
     fn rebuild_is_a_full_drop_and_recreate() {
-        let dir = scratch();
+        let dir = fresh();
         let path: String = dir.to_string_lossy().into();
 
         write_mirror(
@@ -261,7 +281,7 @@ CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" I
 
     #[test]
     fn query_mirror_reads_rows_limits_and_rejects_writes() {
-        let dir = scratch();
+        let dir = fresh();
         let path: String = dir.to_string_lossy().into();
         write_mirror(
             path.clone(),
@@ -299,27 +319,26 @@ CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" I
     }
 
     #[test]
-    fn reset_mirror_makes_the_dir_and_deletes_the_db() {
-        let base = scratch();
-        // A nested `.matter` dir that does not exist yet: reset must create it.
-        let matter = base.join(".matter");
-        let path: String = matter.to_string_lossy().into();
+    fn reset_mirror_makes_dot_matter_and_deletes_the_db() {
+        let root = scratch();
+        let path: String = root.to_string_lossy().into();
+        let matter = root.join(".matter");
 
-        // First reset on a missing dir: create_dir_all makes it, the missing db is fine.
+        // First reset on a root with no `.matter` yet: create_dir_all makes it, the missing db is fine.
         reset_mirror(path.clone()).unwrap();
         assert!(matter.exists());
-        assert!(!matter.join("matter.sqlite").exists());
+        assert!(!mirror_db(&path).exists());
 
         // Write a table, then reset again: the db file is gone (fresh on open).
         write_mirror(path.clone(), SCHEMA.into(), INSERT.into(), vec![]).unwrap();
-        assert!(matter.join("matter.sqlite").exists());
-        reset_mirror(path).unwrap();
-        assert!(!matter.join("matter.sqlite").exists());
+        assert!(mirror_db(&path).exists());
+        reset_mirror(path.clone()).unwrap();
+        assert!(!mirror_db(&path).exists());
     }
 
     #[test]
     fn drop_mirror_table_removes_one_table_and_is_idempotent() {
-        let dir = scratch();
+        let dir = fresh();
         let path: String = dir.to_string_lossy().into();
         write_mirror(
             path.clone(),
@@ -343,7 +362,7 @@ CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" I
     fn binds_null_for_a_missing_cell() {
         // The projector emits null for a NEEDS_VALUE cell (a draft in progress) against a
         // nullable column; it must bind as SQL NULL so `IS NULL` finds the draft.
-        let dir = scratch();
+        let dir = fresh();
         let path: String = dir.to_string_lossy().into();
         let schema = "DROP TABLE IF EXISTS \"drafts\";\nCREATE TABLE \"drafts\" (\"path\" TEXT PRIMARY KEY, \"title\" TEXT)";
         let insert = r#"INSERT INTO "drafts" ("path", "title") VALUES (?, ?)"#;

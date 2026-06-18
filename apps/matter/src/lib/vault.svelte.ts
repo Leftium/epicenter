@@ -30,7 +30,7 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import { assess, type VaultIntegrity } from './core/integrity';
-import { basename, join } from './core/path';
+import { basename } from './core/path';
 import { createMirror } from './mirror.svelte';
 import { createTable, type TableHandle } from './table.svelte';
 
@@ -44,9 +44,9 @@ export function createVault(root: string) {
 
 	// The vault's SQLite projection, hidden at `<root>/.matter` (content folders stay pure markdown;
 	// classification skips dot-dirs, so `.matter/` is never mistaken for a table, even in a one-table
-	// vault where the root IS the folder). It owns its own db lifecycle (fresh on open, single-writer
-	// rebuilds); the Vault only feeds it table reads and drops.
-	const mirror = createMirror(join(root, '.matter'));
+	// vault where the root IS the folder). Rust owns the on-disk layout, so the Vault passes only the
+	// root; the mirror owns its own db lifecycle (fresh on open, single-writer rebuilds).
+	const mirror = createMirror(root);
 
 	// table folder path -> its live Table. The table list from `watch_vault` reconciles this map;
 	// the `tables` getter sorts by name so the switcher and integrity read a stable order

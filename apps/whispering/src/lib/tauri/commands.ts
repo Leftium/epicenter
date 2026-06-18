@@ -112,8 +112,6 @@ export type {
 	Key,
 	KeyBinding,
 	LocalModelState,
-	MediaControlFailure,
-	MediaPlayer,
 	ModelEntry,
 	ModelFileDownload,
 	ModelFileStatus,

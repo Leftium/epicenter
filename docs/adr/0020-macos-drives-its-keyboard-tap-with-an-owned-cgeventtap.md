@@ -1,4 +1,4 @@
-# 0018. macOS drives its keyboard tap with an owned CGEventTap, not the rdev fork
+# 0020. macOS drives its keyboard tap with an owned CGEventTap, not the rdev fork
 
 - **Status:** Accepted
 - **Date:** 2026-06-18

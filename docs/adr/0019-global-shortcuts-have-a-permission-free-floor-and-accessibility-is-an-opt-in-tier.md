@@ -1,4 +1,4 @@
-# 0017. Global shortcuts have a permission-free floor and Accessibility is an opt-in tier
+# 0019. Global shortcuts have a permission-free floor and Accessibility is an opt-in tier
 
 - **Status:** Accepted
 - **Date:** 2026-06-18

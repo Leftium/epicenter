@@ -66,7 +66,6 @@ import type {
 	CommandBinding,
 	DictationCapability,
 	KeyBinding,
-	MediaPlayer,
 } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
 
@@ -438,8 +437,8 @@ const globalShortcuts = {
 
 // media -------------------------------------------------------------
 const media = {
-	pause: () => commands.pauseActiveMedia(),
-	resume: (players: MediaPlayer[]) => commands.resumeMedia(players),
+	pause: () => commands.pausePlayback(),
+	resume: (sessions: string[]) => commands.resumePlayback(sessions),
 };
 
 // opener ------------------------------------------------------------

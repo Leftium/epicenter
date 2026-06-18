@@ -3,6 +3,7 @@ import { attachAnalytics } from './attach-analytics.svelte';
 import { attachAutoPasteIntent } from './attach-auto-paste-intent.svelte';
 import { attachDebugCommands } from './attach-debug-commands';
 import { attachDeepLinkNavigation } from './attach-deep-link-navigation';
+import { attachDictationExceptions } from './attach-dictation-exceptions.svelte';
 import { attachGlobalShortcutTriggers } from './attach-global-shortcut-triggers';
 import { attachLocalShortcutListener } from './attach-local-shortcut-listener.svelte';
 import { attachRecordingOverlay } from './attach-recording-overlay.svelte';
@@ -21,6 +22,7 @@ export const runtimeOwners = [
 	{ attach: attachGlobalShortcutTriggers },
 	{ attach: attachSyncIconWithRecorderState },
 	{ attach: attachRecordingOverlay },
+	{ attach: attachDictationExceptions },
 	{ attach: attachUnloadPolicy },
 	{ attach: attachRecordingRetention },
 	{ attach: attachUpdateCheck },

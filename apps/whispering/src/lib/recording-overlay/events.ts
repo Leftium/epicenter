@@ -63,7 +63,7 @@ export type RecordingOverlayStatus =
 	| { phase: 'recording'; trigger: 'manual' }
 	| { phase: 'recording'; trigger: 'vad'; vadState: Exclude<VadState, 'IDLE'> }
 	| { phase: 'transcribing' }
-	| { phase: 'delivered' }
+	| { phase: 'delivered'; degraded: boolean }
 	| { phase: 'failed'; tier: DictationFailureTier; title: string };
 
 /**

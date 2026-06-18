@@ -3,6 +3,7 @@ import { IanaTimeZone } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { goto } from '$app/navigation';
 import {
+	type DeliveryOutcome,
 	deliverTranscriptionResult,
 	deliverTransformationResult,
 	type TranscriptionSource,
@@ -85,51 +86,64 @@ export async function processRecordingPipeline({
 					error: extractErrorMessage(saveError),
 				},
 			});
-			if (isDictation)
+			if (isDictation) {
+				// The pill is the dictation alert; no toast in the dictation path.
 				dictationLifecycle.markFailed({
 					tier: 'transcription',
 					error: saveError,
 					recordingId,
 				});
-			report.error({
-				title: 'Failed to save recording',
-				description:
-					'We could not write the recording bytes; transcription cannot continue.',
-				cause: saveError,
-			});
+			} else {
+				report.error({
+					title: 'Failed to save recording',
+					description:
+						'We could not write the recording bytes; transcription cannot continue.',
+					cause: saveError,
+				});
+			}
 			return;
 		}
 	}
 
-	const transcribeLoading = report.loading({
-		title: '📋 Transcribing...',
-		description: 'Your recording is being transcribed...',
-	});
+	// File import has no pill, so it keeps a progress toast; the dictation path is
+	// driven by the lifecycle markers above (the pill), with no toast.
+	const transcribeLoading = isDictation
+		? null
+		: report.loading({
+				title: '📋 Transcribing...',
+				description: 'Your recording is being transcribed...',
+			});
 
 	const { data: transcribedText, error: transcribeError } =
 		await transcribeAndPersist(recordingId);
 
 	if (transcribeError) {
-		if (isDictation)
+		if (isDictation) {
 			dictationLifecycle.markFailed({
 				tier: 'transcription',
 				error: transcribeError,
 				recordingId,
 			});
-		transcribeLoading.reject({ cause: transcribeError });
+		} else {
+			transcribeLoading?.reject({ cause: transcribeError });
+		}
 		return;
 	}
 
 	sound.playSoundIfEnabled('transcriptionComplete');
-	const transcribeNotice = await deliverTranscriptionResult({
-		text: transcribedText,
-		source: deliverySource,
-	});
-	transcribeLoading.resolve(transcribeNotice);
-	// The transcript landed: flash the delivered confirmation on the pill. The
-	// transformation step below, if any, runs as a background enhancement and is
-	// not part of the dictation receipt.
-	if (isDictation) dictationLifecycle.markDelivered();
+	const { outcome: transcriptDelivery, notice: transcribeNotice } =
+		await deliverTranscriptionResult({
+			text: transcribedText,
+			source: deliverySource,
+		});
+	if (isDictation) {
+		// The transcript is the dictation receipt; the transformation below, if
+		// any, runs as a background enhancement (logged in transformation runs)
+		// rather than reopening the pill.
+		markDictationDelivery(transcriptDelivery, recordingId);
+	} else {
+		transcribeLoading?.resolve(transcribeNotice);
+	}
 
 	const transformationId = settings.get('transformation.selectedId');
 	if (!transformationId) return;
@@ -149,11 +163,13 @@ export async function processRecordingPipeline({
 		return;
 	}
 
-	const transformLoading = report.loading({
-		title: '🔄 Running transformation...',
-		description:
-			'Applying your selected transformation to the transcribed text...',
-	});
+	const transformLoading = isDictation
+		? null
+		: report.loading({
+				title: '🔄 Running transformation...',
+				description:
+					'Applying your selected transformation to the transcribed text...',
+			});
 
 	const { data: transformedText, error: transformError } =
 		await runTransformation({
@@ -162,17 +178,42 @@ export async function processRecordingPipeline({
 			recordingId,
 		});
 	if (transformError) {
-		transformLoading.reject({ cause: transformError });
+		// The transformation failed, but the transcript was already delivered, so
+		// the dictation is not a failure: the durable transformation run records
+		// the error. File import surfaces it on its toast.
+		transformLoading?.reject({ cause: transformError });
 		return;
 	}
 
 	sound.playSoundIfEnabled('transformationComplete');
 
-	const transformNotice = await deliverTransformationResult({
+	const { notice: transformNotice } = await deliverTransformationResult({
 		text: transformedText,
 		recordingId,
 	});
-	transformLoading.resolve(transformNotice);
+	transformLoading?.resolve(transformNotice);
+}
+
+/**
+ * Map a delivery outcome onto the dictation pill: a clean or clipboard-only
+ * delivered flash, or a quiet delivery-tier failure when nothing landed (the
+ * transcript still lives in the recordings row).
+ */
+function markDictationDelivery(
+	outcome: DeliveryOutcome,
+	recordingId: string,
+): void {
+	if (outcome.delivered) {
+		dictationLifecycle.markDelivered(outcome.degraded);
+		return;
+	}
+	dictationLifecycle.markFailed({
+		tier: 'delivery',
+		error: outcome.error,
+		// Delivery is the last step the recordingId is needed for: retry re-runs
+		// transcription and delivery for the saved audio.
+		recordingId,
+	});
 }
 
 /**
@@ -200,6 +241,8 @@ export async function runTranscriptionForRecording(
 	}
 
 	sound.playSoundIfEnabled('transcriptionComplete');
-	await deliverTranscriptionResult({ text: transcribedText });
-	dictationLifecycle.markDelivered();
+	const { outcome } = await deliverTranscriptionResult({
+		text: transcribedText,
+	});
+	markDictationDelivery(outcome, recordingId);
 }

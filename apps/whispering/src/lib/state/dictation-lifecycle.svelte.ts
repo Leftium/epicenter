@@ -23,7 +23,7 @@ export type DictationLifecycle =
 	| { phase: 'recording'; trigger: 'manual' }
 	| { phase: 'recording'; trigger: 'vad'; vadState: Exclude<VadState, 'IDLE'> }
 	| { phase: 'transcribing' }
-	| { phase: 'delivered' }
+	| { phase: 'delivered'; degraded: boolean }
 	| {
 			phase: 'failed';
 			tier: DictationFailureTier;
@@ -53,7 +53,7 @@ const DELIVERED_FLASH_MS = 900;
 type ProcessSignal =
 	| { kind: 'idle' }
 	| { kind: 'transcribing' }
-	| { kind: 'delivered' }
+	| { kind: 'delivered'; degraded: boolean }
 	| { kind: 'failed'; failure: DictationFailure };
 
 function createDictationLifecycle() {
@@ -74,14 +74,18 @@ function createDictationLifecycle() {
 			vadRecorder.state === 'LISTENING' ||
 			vadRecorder.state === 'SPEECH_DETECTED'
 		)
-			return { phase: 'recording', trigger: 'vad', vadState: vadRecorder.state };
+			return {
+				phase: 'recording',
+				trigger: 'vad',
+				vadState: vadRecorder.state,
+			};
 		switch (signal.kind) {
 			case 'idle':
 				return { phase: 'idle' };
 			case 'transcribing':
 				return { phase: 'transcribing' };
 			case 'delivered':
-				return { phase: 'delivered' };
+				return { phase: 'delivered', degraded: signal.degraded };
 			case 'failed':
 				return { phase: 'failed', ...signal.failure };
 		}
@@ -108,10 +112,14 @@ function createDictationLifecycle() {
 			signal = { kind: 'transcribing' };
 		},
 
-		/** The transcript landed: flash a confirmation, then retire to idle. */
-		markDelivered(): void {
+		/**
+		 * The transcript landed: flash a confirmation, then retire to idle.
+		 * `degraded` marks a clipboard-only fallback (a requested cursor write
+		 * failed), which the pill notes instead of a clean delivered flash.
+		 */
+		markDelivered(degraded: boolean): void {
 			clearDeliveredTimer();
-			signal = { kind: 'delivered' };
+			signal = { kind: 'delivered', degraded };
 			deliveredTimer = setTimeout(() => {
 				deliveredTimer = undefined;
 				// Only retire the flash if a newer phase has not taken over.

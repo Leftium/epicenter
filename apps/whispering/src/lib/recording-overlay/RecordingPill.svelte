@@ -130,10 +130,12 @@
 			</div>
 			<span class="label">Transcribing</span>
 		{:else if status.phase === 'delivered'}
-			<div class="icon delivered-icon">
+			<div class="icon" class:delivered-icon={!status.degraded} class:degraded-icon={status.degraded}>
 				<CheckIcon class="size-4" />
 			</div>
-			<span class="label">Delivered</span>
+			<span class="label">
+				{status.degraded ? 'Copied to clipboard' : 'Delivered'}
+			</span>
 		{:else if status.phase === 'failed'}
 			<div class="icon">
 				<TriangleAlertIcon class="size-4" />
@@ -193,6 +195,12 @@
 
 	.delivered-icon {
 		color: #7ee2a8;
+	}
+
+	/* Clipboard-only fallback: amber, so the glance reads "landed, but not where
+	   you asked" rather than a clean success. */
+	.degraded-icon {
+		color: #f5c97b;
 	}
 
 	.overlay.failed .icon {

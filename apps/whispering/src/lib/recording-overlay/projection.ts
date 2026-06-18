@@ -24,7 +24,7 @@ export function projectLifecycleToStatus(
 		case 'transcribing':
 			return { phase: 'transcribing' };
 		case 'delivered':
-			return { phase: 'delivered' };
+			return { phase: 'delivered', degraded: lifecycle.degraded };
 		case 'failed':
 			return {
 				phase: 'failed',

@@ -14,9 +14,11 @@
 >   truth (disk), zero new runtime surface. Its only job is to measure, on real
 >   hardware, whether the disk round-trip and the cold model load are worth
 >   removing.
-> - **The handoff + async-persist optimization is fully designed, implemented,
->   and parked** on `feat/whispering-pcm-handoff-optimization` (mergeable in
->   minutes), **gated on PR 1's measurement.** See "PR 1b (parked)".
+> - **The handoff + async-persist optimization is fully designed and implemented,
+>   parked** on `feat/whispering-pcm-handoff-optimization`, **gated on PR 1's
+>   measurement.** Reviving it = rebase onto main and reconcile the instrument
+>   overlap (the parked branch predates this split, so it carries its own copy of
+>   the timing changes). See "PR 1b (parked)".
 >
 > Promote "Durable decisions" to an ADR once the direction is locked; keep this
 > spec In Progress through PR 2 / PR 3.
@@ -223,9 +225,11 @@ Defender on) to provoke the fsync tail. Record 5/15/60 s clips, `grep '[timing]'
 
 ### PR 1b — In-process PCM handoff + async persist — DESIGNED, PARKED (gated on PR 1's data)
 
-Fully implemented on `feat/whispering-pcm-handoff-optimization`, ready to merge in
-minutes. **Held back deliberately** until PR 1's measurement shows the round-trip /
-fsync tail is worth removing. Honest framing of what it is:
+Fully implemented on `feat/whispering-pcm-handoff-optimization`. **Held back
+deliberately** until PR 1's measurement shows the round-trip / fsync tail is worth
+removing. (Reviving it is a rebase onto main plus reconciling the timing changes it
+duplicates from PR 1, since the branch predates this split.) Honest framing of what it
+is:
 
 - **`audio::PcmHandoff`** is a Tauri-managed, single-slot store of the most recent
   finalized PCM, keyed by recording id. **It is not "the AudioEngine" and does not

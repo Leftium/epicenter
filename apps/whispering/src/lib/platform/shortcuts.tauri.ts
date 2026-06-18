@@ -1,6 +1,5 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
-import { os } from '#platform/os';
 import type { Command } from '$lib/commands';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
@@ -8,7 +7,7 @@ import {
 } from '$lib/state/device-config.svelte';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 import { type ChordRegistration, tauriOnly } from '$lib/tauri.tauri';
-import { keyBindingToLabel, resolveBinding } from '$lib/utils/key-binding';
+import { resolveBinding } from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -34,7 +33,6 @@ export const shortcuts: Shortcuts = createShortcuts({
 	read: readBinding,
 	getDefault: (id) => DEFAULT_GLOBAL_BINDINGS[id] ?? null,
 	write: (id, binding) => deviceConfig.set(globalKey(id), binding),
-	label: (binding) => (binding ? keyBindingToLabel(binding, os.isApple) : ''),
 	syncErrorTitle: 'Error registering global shortcuts',
 	async push(entries) {
 		const bindings: CommandBinding[] = entries

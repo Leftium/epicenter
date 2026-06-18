@@ -1,16 +1,11 @@
 import { partitionResults } from 'wellcrafted/result';
-import { os } from '#platform/os';
 import type { Command } from '$lib/commands';
 import {
 	type CommandId,
 	localShortcuts,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
-import {
-	keyBindingToLabel,
-	keyBindingToString,
-	parseManualBinding,
-} from '$lib/utils/key-binding';
+import { keyBindingToString, parseManualBinding } from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -38,7 +33,6 @@ export const shortcuts: Shortcuts = createShortcuts({
 	},
 	write: (id, binding) =>
 		settings.set(localKey(id), binding ? keyBindingToString(binding) : null),
-	label: (binding) => (binding ? keyBindingToLabel(binding, os.isApple) : ''),
 	syncErrorTitle: 'Error registering local commands',
 	async push(entries) {
 		const results = await Promise.all(

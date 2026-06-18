@@ -50,5 +50,6 @@ executes the JS-built SQL; it is schema-blind.
   input to* `assess`, never a parallel verdict source.
 
 The full design exploration lived in the spec
+<!-- doc-path-check: ignore-next-line -->
 `apps/matter/specs/20260616T075253-vault-as-relational-unit.md`, retired in the
 same change that records this ADR; recover its body from git history.

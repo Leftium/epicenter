@@ -44,8 +44,10 @@ and a human present on the same device:
    Cloud is a relay plus optional managed actors; a user-owned box is an anchor plus
    per-app actors.
 2. **Doc-as-wire driven by an observing actor** (ADR-0013): the agent turn is a
-   durable doc record, not an HTTP request. The actor observes, claims, streams into
-   a `Y.Text`, honors a durable cancel, writes a write-once `finish`.
+   durable doc record, not an HTTP request. The actor observes, streams into a
+   `Y.Text`, honors a durable cancel, writes a write-once `finish`. It answers as
+   one agent (`AgentId`); the conversation row's immutable `agent` is what binds a
+   turn to it, so there is no claim.
 3. **Durable, multi-device approval**: because the actor and the approver may be on
    different devices, an approval is a durable record in the doc that any device
    resolves, not the in-app, single-device prompt of
@@ -66,7 +68,8 @@ sync transport (app-blind, ADR-0012)
 
 actor (app-aware, ADR-0012/0013), beside the anchor
   syncs the same rooms; holds live replicas
-  observes the unanswered turn, claims it (designated single actor + idempotent id)
+  answers as a fixed agent; its loop hosts only conversations bound to that agent
+  observes the unanswered turn and answers it (no claim; idempotent id dedupes)
   runs the app's actions as tools; runs inference (hosted or local)
   queries its own SQLite/read models locally
   writes assistant tokens into the transcript Y.Text
@@ -154,8 +157,10 @@ the conversation is the audit log of what the agent did.
 PROVE (hosted sync, no Iroh, extend Zhongwen)
   1. Move the request identity (generationId) from the POST body into the turn.
   2. Build the observer: a local actor reads the conversations table, opens and
-     observes each transcript child doc, claims an unanswered turn as the sole
-     designated actor. This is the core new capability (child-doc observe loop).
+     observes each transcript child doc whose row is bound to its agent, and
+     answers an unanswered turn. It is the sole answerer by construction (the loop
+     filters by the row's immutable `agent`, ADR-0013), not by claiming. This is
+     the core new capability (child-doc observe loop).
      Hosting is schema-driven, symmetric with the browser opener: `mount({ actors })`
      derives the table, guid, and layout from the table's `docDecls` (the same the
      browser `connect()` reads), so the app registers behavior only, a per-body
@@ -209,12 +214,13 @@ Open questions to investigate while V0/V1 build:
 ## Open Questions (Ranked by Load-Bearing Risk)
 
 ```txt
-1. RESOLVED (ADR-0013, 2026-06-17): designation is data, not a race. The
-   conversation row carries a target `actorNodeId` (single-writer, the durable
-   analogue of dispatch's `to`); each actor reconciles the rows targeted at its own
-   node. Whole-conversation grain; the binding lives on the row, the transcript
-   stays portable content. No duplicate streams, by construction. (Build deferred
-   until a second actor exists; V0 has one node.)
+1. RESOLVED (ADR-0013, 2026-06-17): binding is data, not a race. The conversation
+   row carries an immutable `agent: AgentId` (the durable address, set once at
+   creation, not a per-install node id). Each actor's observe loop hosts a live
+   replica only of the conversations whose `agent` equals the agent it answers as,
+   so it answers only those. Whole-conversation grain; the binding lives on the
+   row, the transcript stays portable content. No claim and no duplicate streams,
+   by construction. (Build deferred until a second actor exists; V0 has one agent.)
 2. The child-doc observe loop: enumerate active conversations, open + observe each
    transcript, dispose idle ones. The real new runtime capability.
 3. The read-back departure: confirm single-writer-per-field holds end to end.

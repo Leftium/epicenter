@@ -48,6 +48,26 @@ thinks and writes. Epicenter Cloud can therefore be a blind relay, a hosted
 anchor, and a managed actor deployment, but those are three composable roles, not
 one product shape. A user-owned box can be an anchor, an actor host, or both.
 
+### Agent and actor are not one word for one thing
+
+The triad above is about runtimes. Binding is about identity, and the two use
+different words on purpose:
+
+- An **actor** is a running process: the role above that holds a live replica,
+  observes, and writes.
+- An **agent** is the durable, configuration-authored *address* a conversation
+  binds to (`AgentId`, [ADR-0013](0013-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md)),
+  and that one or more actors answer *as*.
+
+A laptop daemon is one actor that answers as the agent a user named it;
+Epicenter's managed deployment is an actor that answers as `epicenter-cloud`.
+Presence resolves a live agent to whatever node currently runs its actor, so the
+per-install `NodeId` (transport identity) and the Yjs `clientID` (CRDT identity)
+churn underneath while the `AgentId` stays put. Anchor and relay carry no agent
+identity at all: they never answer, only store and forward. "Which agent answers"
+is a row field; "where the actor runs" is the right-hand column of the grid
+below; they move independently.
+
 ```txt
                          ACTOR
                     hosted    |    self-hosted
@@ -57,6 +77,11 @@ hosted          cloud default | hosted custody,
 self-hosted     self custody, | full self custody
                 hosted model  | and local tools
 ```
+
+Relay is a third, independent axis, left off the grid because it is blind either
+way: you can self-host the anchor and still use Epicenter's relay for NAT
+traversal, or run a fully local relay. Moving the anchor or the actor never forces
+the relay to move with it.
 
 ## Consequences
 

@@ -48,21 +48,27 @@ anchor:
   stays app-blind: no schemas, prompts, tools, or app actions
   can be Epicenter-hosted or self-hosted
 
-agent:
+actor:
   observes synced docs
   runs the model loop and app actions
   writes answers or computed effects back into the docs
+  answers as one or more agents (an AgentId is the address; ADR-0013)
   can be Epicenter-hosted or self-hosted
 ```
 
+The third role is the **actor** (the running process); the **agent** is the
+durable address a conversation binds to, which an actor answers as. The two are
+not interchangeable; see the "Agent and actor are not one word for one thing"
+section of ADR-0012.
+
 Cloudflare rooms currently bundle relay and anchor. The Iroh direction splits
 them: Iroh gives the peer connection system and blind relay path; the chosen
-anchor is the durable peer that stores the Y.Doc state. The agent is separate
-from both. One physical machine may run anchor and agent processes, but the
+anchor is the durable peer that stores the Y.Doc state. The actor is separate
+from both. One physical machine may run anchor and actor processes, but the
 roles stay separate so the anchor can remain boring and app-blind.
 
 ```txt
-                        ACTOR / AGENT
+                            ACTOR
                  hosted cloud      |      self-hosted device
 ANCHOR      -----------------------+---------------------------
 hosted      default hosted shape   | cloud holds docs,
@@ -75,8 +81,11 @@ self-hosted user-owned docs,       | full self custody:
 ```
 
 The same workspace can be composed from any row and column. "Use my own anchor"
-moves down the table. "Use my laptop agent" moves right. These choices must not
-be fused in code or product language.
+moves down the table. "Run the actor on my own device" moves right. Relay is a
+third, independent axis not shown: it is blind either way, so you can self-host
+the anchor and still use Epicenter's relay for reachability, and moving the
+anchor or the actor never drags the relay with it. These choices must not be
+fused in code or product language.
 
 ## Replica Rule
 
@@ -234,6 +243,12 @@ laptop-books-agent:
     ignore
 ```
 
+The optional wake nudge (the doorbell, ADR-0013) follows the same rule: it
+targets the bound agent's runtime, never the anchor. The anchor stores and
+forwards; it is never the endpoint you ping to make an answer happen. Wiring the
+doorbell to the anchor would re-fuse the durable-storage role with the
+who-answers question the row already owns.
+
 ## What The Spike Proved
 
 Throwaway spike: `/Users/braden/Code/epicenter-anchor-experiment`.
@@ -276,10 +291,12 @@ Current thesis:
 - The workspace id / `ydoc.guid` is the remote corpus identity. Same id means same synced data.
 - Yjs `clientID` and daemon `nodeId` are local actor identities and must be unique per live daemon/node.
 - Iroh belongs below the daemon as an alternate byte transport, not inside app factories.
-- Relay, anchor, and agent are separate roles:
+- Relay, anchor, and actor are separate runtime roles:
   - relay moves packets and should be blind to application plaintext
   - anchor stores durable Y.Doc replicas and stays app-blind
-  - agent observes docs, runs models/tools/actions, and writes results
+  - actor observes docs, runs models/tools/actions, and writes results
+- An `AgentId` is the durable address a conversation binds to; an actor answers
+  as one or more agents. Agent (identity) and actor (process) are distinct.
 - Cloudflare rooms currently bundle relay and anchor. Iroh lets us split them.
 - A shared Rust sidecar can multiplex many Yjs rooms to one chosen anchor.
 - The home anchor is the always-on trusted peer for cloudless custody, but it is not the agent by definition.
@@ -309,7 +326,7 @@ Please review whether this direction is coherent against the repo. Focus on:
 
 One-sentence test:
 Can the design be explained as "relays move bytes, anchors keep docs alive,
-agents think and write, and conversations bind to one agent" without exceptions?
+actors think and write, and conversations bind to one agent" without exceptions?
 
 Relevant files:
 - specs/20260616T185740-cloudless-home-anchor-direction.md

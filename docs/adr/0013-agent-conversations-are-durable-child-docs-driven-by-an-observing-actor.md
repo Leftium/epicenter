@@ -24,7 +24,10 @@ A conversation is one human and one agent, for life. The conversation row carrie
 single immutable `agent: AgentId`, set once by the client that creates it. An
 `AgentId` is the durable, configuration-authored address of an answering agent (a
 hosted cloud agent, an always-on home daemon, a laptop daemon), not a per-install
-node id and not a Yjs `clientID`. Presence can decorate the configured agent list
+node id and not a Yjs `clientID`. The agent is the address; the *actor* is the
+process that answers as it (the role distinction is pinned in
+[ADR-0012](0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md)).
+Presence can decorate the configured agent list
 with live/offline status and capabilities, but it is not durable routing truth.
 The binding is the row field. The cloud agent is `epicenter-cloud`, whose current
 runtime is the metered HTTP route; a daemon answers when a conversation is bound

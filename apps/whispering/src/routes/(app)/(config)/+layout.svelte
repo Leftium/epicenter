@@ -34,88 +34,81 @@
 	</Button>
 
 	<div class="flex items-center gap-1.5">
-		<div class="flex items-center gap-1.5">
-			{#if captureSurface.current === 'manual'}
-				{#if manualRecorder.state === 'RECORDING'}
+		{#if captureSurface.current === 'manual'}
+			{#if manualRecorder.state === 'RECORDING'}
+				<Button
+					tooltip="Cancel recording"
+					onclick={() => commandCallbacks.cancelRecording()}
+					variant="ghost"
+					size="icon"
+					style="view-transition-name: {viewTransition.global.cancel};"
+				>
+					🚫
+				</Button>
+				<Button
+					tooltip="Stop recording"
+					onclick={() => commandCallbacks.toggleManualRecording()}
+					variant="ghost"
+					size="icon"
+					style="view-transition-name: {viewTransition.global.microphone}"
+				>
+					{RECORDER_STATE_TO_ICON[manualRecorder.state]}
+				</Button>
+			{:else}
+				<ManualDeviceSelector />
+				<TranscriptionSelector variant="standalone" />
+				<TransformationSelector />
+				<div class="flex">
 					<Button
-						tooltip="Cancel recording"
-						onclick={() => commandCallbacks.cancelRecording()}
-						variant="ghost"
-						size="icon"
-						style="view-transition-name: {viewTransition.global.cancel};"
-					>
-						🚫
-					</Button>
-				{:else}
-					<ManualDeviceSelector />
-					<TranscriptionSelector variant="standalone" />
-					<TransformationSelector />
-				{/if}
-				{#if manualRecorder.state === 'RECORDING'}
-					<Button
-						tooltip="Stop recording"
+						tooltip="Start recording"
 						onclick={() => commandCallbacks.toggleManualRecording()}
 						variant="ghost"
 						size="icon"
 						style="view-transition-name: {viewTransition.global.microphone}"
+						class="rounded-r-none border-r-0"
 					>
 						{RECORDER_STATE_TO_ICON[manualRecorder.state]}
 					</Button>
-				{:else}
-					<div class="flex">
-						<Button
-							tooltip="Start recording"
-							onclick={() => commandCallbacks.toggleManualRecording()}
-							variant="ghost"
-							size="icon"
-							style="view-transition-name: {viewTransition.global.microphone}"
-							class="rounded-r-none border-r-0"
-						>
-							{RECORDER_STATE_TO_ICON[manualRecorder.state]}
-						</Button>
-						<CaptureSurfaceSelector class="rounded-l-none" />
-					</div>
-				{/if}
-			{:else if captureSurface.current === 'vad'}
-				{#if vadRecorder.state === 'IDLE'}
-					<VadDeviceSelector />
-					<TranscriptionSelector variant="standalone" />
-					<TransformationSelector />
-				{/if}
-				{#if vadRecorder.state === 'IDLE'}
-					<div class="flex">
-						<Button
-							tooltip="Start voice activated recording"
-							onclick={() => commandCallbacks.toggleVadRecording()}
-							variant="ghost"
-							size="icon"
-							style="view-transition-name: {viewTransition.global.microphone}"
-							class="rounded-r-none border-r-0"
-						>
-							{VAD_STATE_TO_ICON[vadRecorder.state]}
-						</Button>
-						<CaptureSurfaceSelector class="rounded-l-none" />
-					</div>
-				{:else}
+					<CaptureSurfaceSelector class="rounded-l-none" />
+				</div>
+			{/if}
+		{:else if captureSurface.current === 'vad'}
+			{#if vadRecorder.state === 'IDLE'}
+				<VadDeviceSelector />
+				<TranscriptionSelector variant="standalone" />
+				<TransformationSelector />
+				<div class="flex">
 					<Button
-						tooltip="Stop voice activated recording"
+						tooltip="Start voice activated recording"
 						onclick={() => commandCallbacks.toggleVadRecording()}
 						variant="ghost"
 						size="icon"
 						style="view-transition-name: {viewTransition.global.microphone}"
+						class="rounded-r-none border-r-0"
 					>
 						{VAD_STATE_TO_ICON[vadRecorder.state]}
 					</Button>
-				{/if}
-			{:else if captureSurface.current === 'upload'}
-				<TranscriptionSelector variant="standalone" />
-				<TransformationSelector />
-				<div class="flex">
-					<ImportFileButton class="rounded-r-none border-r-0" />
 					<CaptureSurfaceSelector class="rounded-l-none" />
 				</div>
+			{:else}
+				<Button
+					tooltip="Stop voice activated recording"
+					onclick={() => commandCallbacks.toggleVadRecording()}
+					variant="ghost"
+					size="icon"
+					style="view-transition-name: {viewTransition.global.microphone}"
+				>
+					{VAD_STATE_TO_ICON[vadRecorder.state]}
+				</Button>
 			{/if}
-		</div>
+		{:else if captureSurface.current === 'upload'}
+			<TranscriptionSelector variant="standalone" />
+			<TransformationSelector />
+			<div class="flex">
+				<ImportFileButton class="rounded-r-none border-r-0" />
+				<CaptureSurfaceSelector class="rounded-l-none" />
+			</div>
+		{/if}
 	</div>
 </header>
 

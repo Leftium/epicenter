@@ -308,7 +308,10 @@ describe('chat actor over real room sync', () => {
 		// The client opens two conversations: one bound to the daemon's agent, one
 		// bound to the cloud agent the browser would answer over HTTP.
 		clientWs.tables.conversations.set({ id: 'home', agent: SELF_AGENT });
-		clientWs.tables.conversations.set({ id: 'cloud', agent: 'epicenter-cloud' });
+		clientWs.tables.conversations.set({
+			id: 'cloud',
+			agent: 'epicenter-cloud',
+		});
 
 		const homeGuid = clientWs.tables.conversations.docs.messages.guid('home');
 
@@ -323,7 +326,8 @@ describe('chat actor over real room sync', () => {
 			connectBody: (guid): ConnectedChildDoc => {
 				const ydoc = new Y.Doc({ guid, gc: true });
 				daemonBodies.push(ydoc);
-				const { promise: whenDisposed, resolve } = Promise.withResolvers<void>();
+				const { promise: whenDisposed, resolve } =
+					Promise.withResolvers<void>();
 				ydoc.once('destroy', () => resolve());
 				return { ydoc, whenDisposed, dispose: () => ydoc.destroy() };
 			},

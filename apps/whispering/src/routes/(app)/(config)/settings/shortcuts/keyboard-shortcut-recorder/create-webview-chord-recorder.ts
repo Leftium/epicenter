@@ -1,7 +1,7 @@
 import { debounce } from '@epicenter/workspace';
 import { on } from 'svelte/events';
 import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
-import { domCodeToKey } from '$lib/utils/key-binding';
+import { domCodeToKey, isEmptyBinding } from '$lib/utils/key-binding';
 
 const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys, as in createKeyRecorder.
 
@@ -63,7 +63,6 @@ export function createWebviewChordRecorder({
 	function commit() {
 		if (!isListening) return;
 		completeAfterWindow.cancel();
-		const hasGesture = capturedKey !== null || capturedModifiers.length > 0;
 		const binding: KeyBinding = {
 			modifiers: capturedModifiers,
 			keys: capturedKey ? [capturedKey] : [],
@@ -71,7 +70,7 @@ export function createWebviewChordRecorder({
 		// Stay listening: the owner decides whether to accept (and stop us) or
 		// refuse a non-chord; reset so the next attempt starts clean either way.
 		reset();
-		if (hasGesture) onCapture(binding);
+		if (!isEmptyBinding(binding)) onCapture(binding);
 	}
 
 	// Quiet for CAPTURE_WINDOW_MS after the last key change = the gesture is done.

@@ -1,5 +1,5 @@
 import type { VadState, WhisperingRecordingState } from '$lib/constants/audio';
-import { defineWindowEvent } from '$lib/window-events';
+import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 
 /**
  * Event contract for the recording overlay window.
@@ -42,7 +42,7 @@ export const recordingOverlayAction = defineWindowEvent<RecordingOverlayAction>(
  * window should re-send the latest status. Without this handshake the first
  * status can be emitted before the overlay's listener is attached and get lost.
  */
-export const recordingOverlayReady = defineWindowEvent(
+export const recordingOverlayReady = defineWindowSignal(
 	'recording-overlay:ready',
 );
 

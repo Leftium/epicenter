@@ -1,6 +1,6 @@
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { defineWindowEvent } from '$lib/window-events';
+import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 
 const WINDOW_LABEL = 'transformation-picker';
 
@@ -18,7 +18,7 @@ const WINDOW_LABEL = 'transformation-picker';
 export const pickerInput = defineWindowEvent<{ input: string }>(
 	'transformation-picker:input',
 );
-export const pickerReady = defineWindowEvent('transformation-picker:ready');
+export const pickerReady = defineWindowSignal('transformation-picker:ready');
 
 /** The most recent captured selection, replayed when the window asks for it. */
 let pendingInput = '';

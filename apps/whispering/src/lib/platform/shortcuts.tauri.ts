@@ -84,8 +84,8 @@ export const shortcuts: Shortcuts = createShortcuts({
 		// key fails the whole replace-all; surface it instead of partially binding.
 		const { error } = await tryAsync({
 			try: async () => {
-				await tauriOnly.globalShortcuts.registerChords(chords);
-				await tauriOnly.globalShortcuts.setBindings(taps);
+				await tauriOnly.keyboard.registerChords(chords);
+				await tauriOnly.keyboard.setBindings(taps);
 			},
 			catch: (cause) =>
 				Err({

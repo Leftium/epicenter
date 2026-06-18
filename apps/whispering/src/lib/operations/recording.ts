@@ -282,7 +282,8 @@ export async function startVadRecording() {
 			});
 		},
 		onVADMisfire: () => {
-			// False start: undo the pause we took on speech start.
+			// False start: schedule the same debounced resume as a real speech
+			// end, so an immediate retry does not flutter the music.
 			scheduleResumeAfterSpeech();
 		},
 	});

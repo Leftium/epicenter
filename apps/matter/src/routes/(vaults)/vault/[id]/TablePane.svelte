@@ -6,23 +6,29 @@
 	import TableGrid from '$lib/components/TableGrid.svelte';
 	import type { TableAssessment } from '$lib/core/integrity';
 	import type { TableHandle } from '$lib/table.svelte';
+	import type { VaultHandle } from '$lib/vault.svelte';
 	import { createWhereFilter } from '$lib/where-filter.svelte';
 
 	// One table of the active vault. The Vault constructs and disposes the table (it owns the
-	// watcher lifetime); this pane just renders it. VaultShell keys this component on the active
-	// table, so switching tables remounts the pane with a fresh filter and its own effect.
-	// `assessment` is this table's slice of the vault's live integrity, carrying the cross-table
-	// reference verdicts the grid colors its chips by.
+	// watcher lifetime) and owns the shared `.matter` mirror the filter queries; this pane just
+	// renders it. VaultShell keys this component on the active table, so switching tables remounts
+	// the pane with a fresh filter and its own effect. `assessment` is this table's slice of the
+	// vault's live integrity, carrying the cross-table reference verdicts the grid colors its chips by.
 	let {
+		vault,
 		table,
 		assessment,
-	}: { table: TableHandle; assessment?: TableAssessment } = $props();
+	}: {
+		vault: VaultHandle;
+		table: TableHandle;
+		assessment?: TableAssessment;
+	} = $props();
 
-	// One WHERE filter per pane: it takes the table at construction and owns its own effect
-	// (re-querying on a clause or mirror change, cancelling stale runs). The remount-per-table
-	// keying is what makes "take the table at construction" safe.
+	// One WHERE filter per pane: it queries the vault's mirror for this table and owns its own effect
+	// (re-querying on a clause or mirror change, cancelling stale runs). The remount-per-table keying
+	// is what makes capturing this table's name at construction safe.
 	// svelte-ignore state_referenced_locally - VaultShell keys this pane on the active table, so it remounts (not re-renders) when the table changes; capturing the construction-time table is the intent.
-	const filter = createWhereFilter(table);
+	const filter = createWhereFilter(vault, () => table.folderName);
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">

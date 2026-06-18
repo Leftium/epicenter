@@ -84,7 +84,7 @@
 			</div>
 			{#if activeTable}
 				{#key activeTable}
-					<TablePane table={activeTable} assessment={activeAssessment} />
+					<TablePane {vault} table={activeTable} assessment={activeAssessment} />
 				{/key}
 			{/if}
 			<IntegrityPanel integrity={vault.integrity} />

@@ -270,6 +270,15 @@ export const commands = {
 	setKeyboardShortcuts: (bindings: CommandBinding[]) =>
 		__TAURI_INVOKE<void>('set_keyboard_shortcuts', { bindings }),
 	/**
+	 *  Tell the keyboard supervisor whether auto-paste-at-cursor is enabled. Paste
+	 *  writes a synthetic Cmd/Ctrl+V through the same macOS Accessibility grant the
+	 *  tap reads through, so the supervisor holds the tap whenever paste is on (even
+	 *  with no binding) to track that grant and surface the notice when it is
+	 *  missing. The FE pushes this on startup and whenever the output settings change.
+	 */
+	setAutoPasteEnabled: (enabled: boolean) =>
+		__TAURI_INVOKE<void>('set_auto_paste_enabled', { enabled }),
+	/**
 	 *  Enter or leave binding-capture mode for the settings recorder. While
 	 *  capturing, the listener emits the held combo as a `ShortcutCaptureEvent`
 	 *  (which the recorder accumulates) instead of firing command triggers, so the
@@ -338,6 +347,13 @@ export type DictationCapability =
 	 *  receives no events). Terminal for the session.
 	 */
 	| 'unsupported'
+	/**
+	 *  No bound shortcut needs the tap (no Fn or modifier-only binding), so it is
+	 *  deliberately not running and no Accessibility is touched. This is the
+	 *  permission-free floor: chords go through the global-shortcut plugin and
+	 *  the tap stays dormant until the user opts into a binding that needs it.
+	 */
+	| 'inactive'
 	/**
 	 *  macOS Accessibility is not granted. The tap is not running; turning
 	 *  Whispering on in System Settings unlocks it.

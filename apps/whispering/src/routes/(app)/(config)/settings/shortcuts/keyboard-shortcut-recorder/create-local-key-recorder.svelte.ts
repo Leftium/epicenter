@@ -21,7 +21,7 @@ const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys in a combinat
  * - Single keys (F5)
  * - Complex combinations built over time
  */
-export function createKeyRecorder({
+export function createLocalKeyRecorder({
 	pressedKeys,
 	onRegister,
 	onClear,
@@ -109,4 +109,4 @@ export function createKeyRecorder({
 	};
 }
 
-export type KeyRecorder = ReturnType<typeof createKeyRecorder>;
+export type LocalKeyRecorder = ReturnType<typeof createLocalKeyRecorder>;

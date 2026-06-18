@@ -75,7 +75,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0005](0005-child-docs-are-bound-through-the-workspace.md) | Child docs are bound through the workspace, not the component | Accepted |
 | [0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md) | Schema evolution keeps the version tuple and refuses repair APIs | Accepted |
 | [0007](0007-local-shortcuts-sync-global-shortcuts-stay-per-device.md) | Local shortcuts sync, global shortcuts stay per-device | Accepted |
-| [0008](0008-rdev-backs-the-desktop-global-trigger.md) | rdev backs the desktop global trigger | Accepted |
+| [0008](0008-rdev-backs-the-desktop-global-trigger.md) | rdev backs the desktop global trigger | Accepted (macOS path amended by 0020) |
 | [0009](0009-the-cli-dispatches-through-a-mandatory-daemon.md) | The CLI dispatches through a mandatory daemon; automation lives in library scripts | Accepted |
 | [0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0010](0010-whispering-exports-recordings-as-a-zip-continuous-markdown-is-the-mounts-job.md) | Whispering exports recordings as a zip; continuous Markdown is the mount's job | Accepted |
@@ -90,5 +90,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0015](0015-the-brand-mark-has-one-canonical-source-every-other-form-is-generated.md) | The brand mark has one canonical source; every other form is generated | Proposed |
 | [0017](0017-pause-system-media-playback-while-recording.md) | Pause system media playback while recording through one cross-platform controller | Accepted |
 | [0018](0018-macos-resume-is-gated-on-a-coreaudio-output-read.md) | macOS resume is gated on a CoreAudio output read, not a MediaRemote read shim | Accepted |
+| [0019](0019-global-shortcuts-have-a-permission-free-floor-and-accessibility-is-an-opt-in-tier.md) | Global shortcuts have a permission-free floor; Accessibility is an opt-in tier | Accepted |
+| [0020](0020-macos-drives-its-keyboard-tap-with-an-owned-cgeventtap.md) | macOS drives its keyboard tap with an owned CGEventTap, not the rdev fork | Accepted |
 
 When you add an ADR, add its row here.

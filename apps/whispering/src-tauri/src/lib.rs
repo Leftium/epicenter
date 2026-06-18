@@ -80,6 +80,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             pause_playback,
             resume_playback,
             keyboard::commands::set_keyboard_shortcuts,
+            keyboard::commands::set_auto_paste_enabled,
             keyboard::commands::set_keyboard_capturing,
             keyboard::commands::get_dictation_capability,
         ])
@@ -234,6 +235,7 @@ pub async fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
@@ -263,7 +265,7 @@ pub async fn run() {
             // views. There is no FE-driven start: trust is a fact about the
             // process that holds the tap, so the tap holder owns it.
             #[cfg(desktop)]
-            app.manage(keyboard::KeyboardListener::new(app.handle().clone()));
+            app.manage(keyboard::TapController::new(app.handle().clone()));
 
             // Create the recording overlay as a non-activating NSPanel up front
             // (hidden); the frontend shows it when recording starts.

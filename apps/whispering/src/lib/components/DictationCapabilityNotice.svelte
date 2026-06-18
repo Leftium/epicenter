@@ -7,6 +7,7 @@
 		accessibilityGuide,
 		openSystemSettings,
 	} from '$lib/components/MacosAccessibilityGuideDialog.svelte';
+	import { clipboardFallback } from '$lib/components/accessibility-feature-copy';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 </script>
 
@@ -51,15 +52,23 @@ branch order is load-bearing: `broken` is caught before the plain untrusted case
 		</Alert.Action>
 	</Alert.Root>
 {:else if dictationCapability.needsAccessibility}
-	<!-- macOS never granted (broken is handled above): a capability pitch.
-	Open Settings, toggle on. -->
+	<!-- macOS never granted (broken is handled above): an upgrade pitch, not a
+	wall. Dictation already works through the keyboard shortcut and the clipboard;
+	this grant unlocks two ergonomics features. Open Settings, toggle on. -->
 	<Alert.Root class="w-full text-left">
 		<WandSparklesIcon class="size-4" aria-hidden="true" />
-		<Alert.Title>Dictate into any app, hands-free</Alert.Title>
-		<Alert.Description>
-			Open macOS Accessibility settings, then turn on Whispering to start
-			recording with your global shortcut and paste transcripts where you're
-			typing. Until then, transcripts go to your clipboard.
+		<Alert.Title>Hold a key to talk, paste hands-free</Alert.Title>
+		<Alert.Description class="space-y-2">
+			<p>
+				Dictation already works: your shortcut starts recording and the
+				transcript lands on your clipboard. Turn on Whispering in macOS
+				Accessibility to add two upgrades:
+			</p>
+			<ul class="list-disc space-y-1 pl-4">
+				<li>Hold a key to talk: press to record, release to stop.</li>
+				<li>Paste hands-free: transcripts land where you're typing.</li>
+			</ul>
+			<p>{clipboardFallback}</p>
 			<Button
 				variant="link"
 				class="h-auto p-0 text-sm font-normal"

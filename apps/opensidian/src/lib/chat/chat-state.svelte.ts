@@ -31,10 +31,7 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { InstantString } from '@epicenter/field';
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import {
-	type ChatDocMessage,
-	findActiveChatDocGeneration,
-} from '@epicenter/workspace/ai';
+import { type ChatDocMessage, chatRenderState } from '@epicenter/workspace/ai';
 import {
 	asConversationId,
 	type Conversation,
@@ -53,16 +50,6 @@ import {
 import { chatDocMessageToUiMessage } from '$lib/chat/ui-message';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
-
-/**
- * How long after the last doc update an unfinished trailing assistant message
- * still counts as live. Past this it reads as interrupted; the finish write
- * (the normal terminal) flips liveness off well before it matters.
- */
-const STREAM_GRACE_MS = 3000;
-
-/** Status the message list reads, mirroring TanStack AI's chat status union. */
-type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error';
 
 export function createAiChatState({
 	auth,
@@ -171,31 +158,15 @@ export function createAiChatState({
 			}),
 		);
 
-		const trailing = $derived(docMessages.at(-1));
-		const activeGeneration = $derived(
-			findActiveChatDocGeneration(docMessages, now),
+		// The shared doc -> render-state projection owns liveness/status; the only
+		// thing left here is converting the visible doc messages to UIMessage for
+		// the render components. opensidian is browser-answered (the claim is
+		// synchronous), so there is no external trigger to OR in.
+		const render = $derived(
+			chatRenderState(docMessages, { now, lastChangeAt: lastDocChangeAt }),
 		);
-		const failure = $derived(
-			trailing?.finish?.kind === 'failed' ? trailing.finish : undefined,
-		);
-		const isGenerating = $derived(activeGeneration !== undefined);
-
-		const status = $derived<ChatStatus>(
-			failure
-				? 'error'
-				: activeGeneration === undefined
-					? 'ready'
-					: activeGeneration.text.length > 0
-						? 'streaming'
-						: 'submitted',
-		);
-
-		// Render every turn except the empty assistant placeholder a claim
-		// appends before its first token; the typing bubble stands in for it.
 		const messages = $derived(
-			docMessages
-				.filter((message) => message.role === 'user' || message.text.length > 0)
-				.map(chatDocMessageToUiMessage),
+			render.visibleMessages.map(chatDocMessageToUiMessage),
 		);
 
 		return {
@@ -227,28 +198,28 @@ export function createAiChatState({
 			},
 
 			get isLoading() {
-				return isGenerating;
+				return render.isGenerating;
 			},
 
 			get status() {
-				return status;
+				return render.status;
 			},
 
 			get error() {
-				return failure ? { message: failure.message } : null;
+				return render.failure ? { message: render.failure.message } : null;
 			},
 
 			get isCreditsExhausted() {
-				return failure?.code === 'InsufficientCredits';
+				return render.failure?.code === 'InsufficientCredits';
 			},
 
 			get isUnauthorized() {
-				return failure?.code === 'Unauthorized';
+				return render.failure?.code === 'Unauthorized';
 			},
 
 			sendMessage(content: string) {
 				const text = content.trim();
-				if (!text || isGenerating) return;
+				if (!text || render.isGenerating) return;
 
 				// One durable transcript write: the user turn carries the assistant
 				// id it awaits, and the answerer reads it off the doc and claims.

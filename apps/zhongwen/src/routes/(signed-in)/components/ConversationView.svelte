@@ -5,12 +5,6 @@
 	// auth is a module singleton, so the wrapped fetch is built once and shared
 	// across every mounted ConversationView.
 	const aiChatFetch = createAiChatFetch(auth.fetch);
-
-	/**
-	 * How long after the last doc update a finish-less trailing assistant
-	 * message still counts as live. Past this it derives as interrupted.
-	 */
-	const STREAM_GRACE_MS = 3000;
 </script>
 
 <script lang="ts">
@@ -24,8 +18,9 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import { generateId, InstantString } from '@epicenter/workspace';
 	import {
-		findActiveChatDocGeneration,
 		type ChatDocMessage,
+		chatRenderState,
+		findActiveChatDocGeneration,
 	} from '@epicenter/workspace/ai';
 	import {
 		agentConfig,
@@ -97,31 +92,20 @@
 	let dismissedError = $state(false);
 	let inputValue = $state('');
 
-	const trailing = $derived(messages.at(-1));
-	const activeGeneration = $derived(
-		findActiveChatDocGeneration(messages, now),
+	// The shared doc -> render-state projection. The cloud kickoff's open HTTP
+	// request is the one liveness signal the doc cannot yet show (the server has
+	// not claimed), so it rides in as `externallyGenerating`.
+	const render = $derived(
+		chatRenderState(messages, {
+			now,
+			lastChangeAt: lastDocChangeAt,
+			externallyGenerating: kickoffController !== null,
+		}),
 	);
-	const isRemoteLive = $derived(
-		activeGeneration !== undefined && now - lastDocChangeAt < STREAM_GRACE_MS,
-	);
-	const isGenerating = $derived(kickoffController !== null || isRemoteLive);
-	const isThinking = $derived(
-		isGenerating &&
-			(activeGeneration?.text.length === 0 ||
-				(activeGeneration === undefined && trailing?.role !== 'assistant')),
-	);
-	const isInterrupted = $derived(
-		trailing?.role === 'assistant' &&
-			trailing.finish === undefined &&
-			!isGenerating,
-	);
-	const failure = $derived(
-		trailing?.finish?.kind === 'failed' ? trailing.finish : undefined,
-	);
-	const error = $derived(sendError?.message ?? failure?.message ?? null);
+	const error = $derived(sendError?.message ?? render.failure?.message ?? null);
 	const canRetry = $derived(
 		sendError?.name === 'GenerationInProgress'
-			? activeGeneration === undefined
+			? render.activeGeneration === undefined
 			: true,
 	);
 
@@ -202,7 +186,7 @@
 	 */
 	function sendMessage(content: string) {
 		const text = content.trim();
-		if (!text || isGenerating) return;
+		if (!text || render.isGenerating) return;
 		// The turn carries the assistant id it awaits: the reaction reads this
 		// generationId off the doc, so the kickoff POST need not carry it.
 		docHandle.appendUser({
@@ -242,21 +226,19 @@
 </script>
 
 <Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
-	{#if messages.length === 0}
+	{#if render.visibleMessages.length === 0}
 		<div class="flex flex-1 items-center justify-center text-muted-foreground">
 			<p>Ask a question in English and get a response in Chinese and English.</p>
 		</div>
 	{:else}
-		{#each messages as message (message.id)}
-			<!-- An empty assistant message is the in-progress turn before its first
-				token; the typing bubble below stands in for it. -->
-			{#if message.role === 'user' || message.text.length > 0}
-				<ChatMessage {message} {showPinyin} />
-			{/if}
+		<!-- visibleMessages drops the empty assistant placeholder of an in-progress
+			turn; the typing bubble below stands in for it. -->
+		{#each render.visibleMessages as message (message.id)}
+			<ChatMessage {message} {showPinyin} />
 		{/each}
 	{/if}
 
-	{#if isThinking}
+	{#if render.isThinking}
 		<Chat.Bubble variant="received">
 			<Chat.BubbleMessage typing />
 		</Chat.Bubble>
@@ -274,7 +256,7 @@
 				✕
 			</Button>
 		</div>
-	{:else if isInterrupted}
+	{:else if render.isInterrupted}
 		<div
 			class="flex items-center gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
 		>
@@ -286,7 +268,7 @@
 
 <ChatInput
 	bind:value={inputValue}
-	{isGenerating}
+	isGenerating={render.isGenerating}
 	onSend={sendMessage}
 	onStop={stopGeneration}
 />

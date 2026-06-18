@@ -28,6 +28,14 @@ export {
 	setLatestUserTurnGenerationId,
 } from './chat-doc';
 export { attachChatBrowserAnswerer } from './chat-browser-answerer';
+export {
+	CHAT_STREAM_GRACE_MS,
+	type ChatFailure,
+	type ChatRenderInput,
+	type ChatRenderState,
+	type ChatRenderStatus,
+	chatRenderState,
+} from './chat-render-state';
 export { attachChatReaction } from './chat-reaction';
 export {
 	type ActionNames,

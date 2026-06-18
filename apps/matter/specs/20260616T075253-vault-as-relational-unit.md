@@ -108,6 +108,26 @@ JOIN adaptations a ON a.stem = p.adaptation
 
 References stop being a bolt-on validator and become **actual relational joins** over the vault. The `WHERE` filter (`matchingFileNames`) generalizes from one table to "the active table in the vault." The projector (`projectToSqlite`) already builds per-table SQL; it gains a vault-level orchestrator that rebuilds the whole db (still a full DROP + CREATE + INSERT, still a pure function of disk, still self-healing).
 
+> **Decision (2026-06-17): the per-Vault SQLite is a projection, not the reference-resolution engine.**
+> The JOIN above is a *user / agent query* convenience. `assess` (`src/lib/core/integrity.ts`,
+> which absorbed the old `resolveReferences`) stays the SOLE owner of reference verdicts
+> (`resolved` / `dangling` / `missing-target`); the grid and the integrity panel render those
+> verdicts, never a SQL result. The "actual relational joins" framing above means *queries become
+> possible*, not that SQL replaces the validator.
+>
+> - **Candidate**: let W5's JOINs resolve references — SQL becomes the source of `dangling`.
+> - **Refusal**: two engines (the JS index in `assess` AND SQL) would then both compute "dangling"
+>   and could disagree — the exact two-vocabularies problem this spec opens by diagnosing. The
+>   mirror is also rebuilt async (in-memory rows lead the file by the rebuild), so a verdict read
+>   from SQL would lag the grid.
+> - **User loss**: none. Cross-table JOIN *queries* still ship in W5; they are just not the source
+>   of the app's verdicts.
+> - **Decision**: SQLite is the external read surface (`sqlite.ts` already says so); `assess` owns
+>   resolution. W5 = per-vault db + JOIN queries, nothing more.
+> - **Trigger to revisit**: a resolution rule the JS index cannot express (transitive closure,
+>   aggregate constraints). Then SQL becomes a *computed input to* `assess`, never a parallel
+>   verdict source.
+
 ### Routes and UX
 
 ```

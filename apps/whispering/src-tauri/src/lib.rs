@@ -80,6 +80,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             pause_active_media,
             resume_media,
             keyboard::commands::set_keyboard_shortcuts,
+            keyboard::commands::set_auto_paste_enabled,
             keyboard::commands::set_keyboard_capturing,
             keyboard::commands::get_dictation_capability,
         ])

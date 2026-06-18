@@ -144,6 +144,14 @@ impl KeyboardListener {
         let _ = self.control_tx.send(Control::Bindings(needs_tap));
     }
 
+    /// Tell the supervisor whether auto-paste-at-cursor is enabled. It writes via
+    /// the same macOS Accessibility grant the tap reads through, so when it is on
+    /// the tap is held to track that grant (and surface the notice if it is
+    /// missing) even with no binding. Pushed by the FE on launch and on change.
+    pub fn set_auto_paste_enabled(&self, enabled: bool) {
+        let _ = self.control_tx.send(Control::AutoPaste(enabled));
+    }
+
     /// Enter or leave capture mode. While capturing, the tap forwards the held
     /// combo to the settings recorder as a `ShortcutCaptureEvent` instead of
     /// matching registered bindings (see `Matcher::set_capturing`).
@@ -295,22 +303,57 @@ fn spawn_supervisor(
 enum Control {
     /// The tap thread exited; the payload is its debug-formatted reason (log only).
     TapStopped(Option<String>),
-    /// The set of tap-needing bindings changed; the bool is whether any remain.
-    /// `true` means at least one Fn / modifier-only binding is bound (start the
-    /// tap); `false` means none are (tear it down, touch no Accessibility).
+    /// Whether any Fn / modifier-only binding is bound (`true` = the tap is needed
+    /// to read it).
     Bindings(bool),
+    /// Whether auto-paste-at-cursor is enabled. It writes a synthetic Cmd/Ctrl+V
+    /// via the same macOS Accessibility grant the tap needs, so when it is on we
+    /// hold the tap even with no binding: the tap's liveness is how we know the
+    /// grant is real (a stale grant reads as trusted but the tap dies), which is
+    /// the only way to catch the `Broken` case for paste too.
+    AutoPaste(bool),
+}
+
+/// Reconcile the tap to the live intent: run it when something needs the
+/// Accessibility grant (a Fn/modifier-only binding or auto-paste) and we are
+/// trusted, tear it down when nothing does. Returns the phase to publish.
+/// `TapStopped` is handled separately because it carries restart-backoff state.
+fn reconcile_tap(
+    app: &AppHandle,
+    matcher: &Arc<Mutex<Matcher>>,
+    control_tx: &Sender<Control>,
+    needs_tap: bool,
+    tap_running: &mut bool,
+) -> DictationCapability {
+    if !needs_tap {
+        // Nothing needs the grant. Ask the tap to stop (the `TapStopped` that
+        // follows settles it); publish `Inactive` now so the floor shows nothing.
+        if *tap_running {
+            request_tap_stop();
+        }
+        DictationCapability::Inactive
+    } else if !is_trusted() {
+        DictationCapability::Untrusted
+    } else {
+        if !*tap_running {
+            spawn_listener(app, matcher, control_tx);
+            *tap_running = true;
+        }
+        DictationCapability::Active
+    }
 }
 
 /// The single owner of the tap's lifecycle and the published `DictationCapability`.
 ///
-/// Three facts it designs around: the tap is only needed when a Tier-1 binding
-/// exists (chords go to the plugin), `mac_tap`/`rdev` give a thread-death signal
-/// but no positive "alive" signal, and macOS gives no event when Accessibility
-/// flips. So the tap is spawned only while a binding needs it AND we are trusted
-/// (an untrusted tap silently drops events, looking alive); its liveness is the
-/// death channel; and the grant is sampled by a bounded poll that runs only
-/// while we want the tap but cannot run it. All of that lives here, beside the
-/// tap, instead of being smeared across the webview.
+/// Three facts it designs around: the tap is only needed when something wants the
+/// Accessibility grant (a Tier-1 binding, or auto-paste; chords go to the
+/// plugin), `mac_tap`/`rdev` give a thread-death signal but no positive "alive"
+/// signal, and macOS gives no event when Accessibility flips. So the tap is
+/// spawned only while it is wanted AND we are trusted (an untrusted tap silently
+/// drops events, looking alive); its liveness is the death channel; and the
+/// grant is sampled by a bounded poll that runs only while we want the tap but
+/// cannot run it. All of that lives here, beside the tap, instead of being
+/// smeared across the webview.
 fn run_supervisor(
     app: AppHandle,
     matcher: Arc<Mutex<Matcher>>,
@@ -324,22 +367,25 @@ fn run_supervisor(
         return;
     }
 
-    let mut needs_tap = false;
+    // Two independent reasons to hold the tap; either one makes it "needed".
+    let mut has_tap_bindings = false;
+    let mut auto_paste = false;
     let mut tap_running = false;
     let mut restart_attempt = 0usize;
     let mut last_stop: Option<Instant> = None;
 
-    // Start dormant: nothing is bound to the tap yet, so it does not run and no
-    // Accessibility is touched. The FE pushes the bound set on launch, which
-    // wakes us via `Control::Bindings`.
+    // Start dormant: nothing wants the grant yet, so the tap does not run and no
+    // Accessibility is touched. The FE pushes the bound set and auto-paste state
+    // on launch, which wakes us via `Control::Bindings` / `Control::AutoPaste`.
     let mut phase = DictationCapability::Inactive;
     set_capability(&app, &capability, phase);
 
     loop {
+        let needs_tap = has_tap_bindings || auto_paste;
         // Poll the grant only while we want the tap but cannot run it (`Untrusted`
         // after the user opted in, or `Broken`), so a toggle in System Settings
         // (which fires no event) is caught. Otherwise block: `Inactive` waits for
-        // a binding, `Active` waits for the tap to die or the bound set to change.
+        // intent, `Active` waits for the tap to die or the intent to change.
         let waiting_for_grant = needs_tap
             && matches!(
                 phase,
@@ -378,28 +424,29 @@ fn run_supervisor(
                 }
             }
 
-            // The bound set changed. A fresh intent, so the restart budget resets.
-            Some(Control::Bindings(next_needs_tap)) => {
-                needs_tap = next_needs_tap;
+            // Intent changed. A fresh intent, so the restart budget resets, then
+            // the tap is reconciled to whether anything still wants the grant.
+            Some(Control::Bindings(next)) => {
+                has_tap_bindings = next;
                 restart_attempt = 0;
-                if !needs_tap {
-                    // No binding needs the tap. Ask it to stop (the `TapStopped`
-                    // that follows confirms it); publish `Inactive` now so the
-                    // floor shows nothing while the stop lands.
-                    if tap_running {
-                        request_tap_stop();
-                    }
-                    phase = DictationCapability::Inactive;
-                } else if !is_trusted() {
-                    phase = DictationCapability::Untrusted;
-                } else if !tap_running {
-                    spawn_listener(&app, &matcher, &control_tx);
-                    tap_running = true;
-                    phase = DictationCapability::Active;
-                } else {
-                    // Already running: the matcher swap already took effect.
-                    phase = DictationCapability::Active;
-                }
+                phase = reconcile_tap(
+                    &app,
+                    &matcher,
+                    &control_tx,
+                    has_tap_bindings || auto_paste,
+                    &mut tap_running,
+                );
+            }
+            Some(Control::AutoPaste(next)) => {
+                auto_paste = next;
+                restart_attempt = 0;
+                phase = reconcile_tap(
+                    &app,
+                    &matcher,
+                    &control_tx,
+                    has_tap_bindings || auto_paste,
+                    &mut tap_running,
+                );
             }
 
             // The tap exited.

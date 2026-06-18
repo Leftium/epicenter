@@ -358,13 +358,25 @@ const globalShortcuts = {
 	unregisterChords: () => unregisterAllShortcuts(),
 
 	/**
-	 * Replace the full set of registered global shortcuts on the rdev backend.
-	 * The registrar computes the complete list from device-config and pushes it
-	 * on startup and on every change; replace-all keeps the FE the single source
-	 * of truth with no add/remove bookkeeping.
+	 * Replace the full set of bindings the Tier-1 tap owns (the Fn / modifier-only
+	 * holds; chords go to the plugin). The registrar computes the complete list
+	 * from device-config and pushes it on startup and on every change; replace-all
+	 * keeps the FE the single source of truth with no add/remove bookkeeping. The
+	 * supervisor spins the tap up when this is non-empty and tears it down when it
+	 * empties (unless auto-paste still wants it).
 	 */
 	setBindings: (bindings: CommandBinding[]) =>
 		commands.setKeyboardShortcuts(bindings),
+
+	/**
+	 * Tell the tap supervisor whether auto-paste-at-cursor is on. Paste writes
+	 * through the same macOS Accessibility grant the tap reads through, so when it
+	 * is on the supervisor holds the tap to track that grant (and surface the
+	 * notice if it is missing) even with no binding. Pushed on startup and on
+	 * every output-settings change.
+	 */
+	setAutoPasteEnabled: (enabled: boolean) =>
+		commands.setAutoPasteEnabled(enabled),
 
 	/**
 	 * The current dictation capability, for the FE's seed on attach. The Rust

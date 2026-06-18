@@ -173,22 +173,32 @@ The five edge-case rules that keep the shared db a pure function of disk:
    stale SQL table would survive in the file. Each vault open starts from a fresh db (delete
    `.matter/matter.sqlite`, then refill incrementally as tables load). This delete is the one file op
    `mirror.rs` does not already expose (`write_mirror` can't pure-DROP, `query_mirror` is read-only),
-   so it rides the fs plugin or a 3-line `remove_mirror` command — the same touch that `mkdir`s
-   `.matter/`. With (2), the db is always a pure function of *current* disk, and stays disposable
-   (delete it, reopen, identical).
+   so it rides a small `reset_mirror` command (`create_dir_all` the `.matter/` dir + delete the db),
+   called once at vault open — the same command that ensures `.matter/` exists. Removal (rule 2) uses
+   a sibling `drop_mirror_table` command. With (2), the db is always a pure function of *current*
+   disk, and stays disposable (delete it, reopen, identical).
 4. **Untyped folders are absent.** No `matter.json` = no contract = no columns = no SQL table. A JOIN
    against an untyped folder errors (the user's own read-only query problem). Refuse projecting a raw
    `(file, _json)` table for now; earn it later if a real consumer asks.
 5. **Concurrency is already handled.** Two folders rebuilding into one file serialize on SQLite's
    write lock; `write_mirror`'s 5s `busy_timeout` waits rather than failing with SQLITE_BUSY. No new
    work.
+6. **The rebuild trigger is a callback, not a reactive effect.** `createTable(path, onChange?)` calls
+   `onChange` after each applied watcher batch (exactly where today's `reconcileMirror` setTimeout
+   sits); the Vault passes an adapter that projects that one table and writes its slice (or drops it
+   if it just went untyped). The trigger stays imperative and AT ITS SOURCE — the watcher batch —
+   instead of laundering a disk event through a `$derived` read into a `$effect.root` (a foot-gun:
+   manual effect lifecycle, coarse re-runs, a reactive→imperative round-trip for what is plainly an
+   external event). The Table imports no SQLite; the Vault is the sole mirror owner. `mirrorVersion`
+   stays a vault `$state` the WHERE filter reads — read-side reactivity is fine; only the write
+   trigger must not be an effect.
 
 Locked ownership (post-W5):
 
 ```
 the db file            the Vault (one hidden .matter/ db per root, fresh on open)
 one SQL table's rows   projectToSqlite(folderName, contract, conformance) — pure, per table
-rebuild a table        the Vault, when that table's read changes (per-table grain)
+rebuild a table        the Vault, on a table's onChange callback (per-table grain, not an effect)
 drop a table           the Vault, when that folder leaves the set
 the WHERE filter       per active-table pane, querying vault.queryTable(name, where)
 freshness signal       one vault-level mirrorVersion, bumped per rebuild

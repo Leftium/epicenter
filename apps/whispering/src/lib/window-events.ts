@@ -19,7 +19,6 @@ import { emit, emitTo, listen } from '@tauri-apps/api/event';
  */
 export function defineWindowEvent<T>(name: string) {
 	return {
-		name,
 		emit: (payload: T) => emit(name, payload),
 		emitTo: (label: string, payload: T) => emitTo(label, name, payload),
 		listen: (handler: EventCallback<T>) => listen<T>(name, handler),
@@ -32,7 +31,6 @@ export function defineWindowEvent<T>(name: string) {
  */
 export function defineWindowSignal(name: string) {
 	return {
-		name,
 		emit: () => emit(name),
 		listen: (handler: () => void) => listen(name, handler),
 	};

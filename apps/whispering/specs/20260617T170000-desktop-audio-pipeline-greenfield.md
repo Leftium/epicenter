@@ -1,7 +1,7 @@
 # Desktop Audio Pipeline: Greenfield Direction
 
 **Date**: 2026-06-17
-**Status**: In Progress (measurement pending; timing tool on `feat/whispering-timing-instrumentation`, optimization parked on `feat/whispering-pcm-handoff-optimization`, both gated on the owed measurement)
+**Status**: In Progress (PR 2 prewarm + instrumentation on `feat/whispering-prewarm-on-capture`, pending review; disk-handoff optimization parked on `feat/whispering-pcm-handoff-optimization`, gated on the contended-disk measurement)
 **Owner**: Braden
 **Supersedes**: `specs/transcription-latency-optimization.md` (deletion staged on the work branches; lands with whatever merges first, or a docs-only cleanup; see "Superseded work")
 
@@ -264,16 +264,55 @@ The merge criterion is in "Falsification benchmark": if the round-trip is a mean
 share of stop→delivery, OR the fsync tail shows up on real user disks, merge it. If the
 model stays warm and disks are fast, it stays parked and PR 2 is where the effort goes.
 
-### PR 2 — Prewarm on record-start (contended; may land as a refusal)
+### PR 2 — Prewarm on capture start — IMPLEMENTED (this branch)
 
-- Trigger the existing guarded lazy-load when `start_recording` fires for a local
-  provider, overlapping load with the user's speech (the dead time we want to fill).
-- Reuse `LoadingGuard`; add zero generation tokens. Respect `UnloadPolicy`.
-- Benchmark cold-start stop→delivery before/after. If it can't stay clean vs
-  `model-lifecycle-lazy-collapse.md`, write up the refusal and stop.
+The lever. Your own logs settled it: cold model load is **~1 s** (rec 1: 1245 ms
+load+infer for a 4 s clip; rec 2 warm: 460 ms for 7.5 s ⇒ inference ~60 ms/s ⇒
+~250 ms for 4 s ⇒ load ≈ ~1 s), and with the default `AfterFiveMinutes` eviction,
+intermittent dictation pays it on most recordings. Everything else in the budget is
+single-digit-percent next to that. So prewarm is built; nothing else from the menu is.
 
-Why separate: it touches the one subsystem the repo deliberately simplified, so it needs
-its own scrutiny and its own benchmark, and it must be reversible without touching PR 1.
+Shape, as built:
+
+- **`ModelCache::prewarm(spec)`**: loads the model without inference, through the
+  **same** load path transcribe uses. To get there cleanly, the per-engine
+  `(can_reuse, load)` logic that was duplicated across the three `with_*` methods was
+  extracted into one `ensure_engine_loaded(spec, path)`; `prewarm` calls it and drops
+  the guard, `run_loaded` (was `with_engine`) calls it then runs inference. Net: the
+  load logic lives in exactly one place, and prewarm warms *exactly* the model
+  transcribe will use (one resolution, no drift). This is a simplification, not just
+  an addition.
+- **`prewarm_model` command** + FE `prewarmLocalModel()` fired fire-and-forget at
+  capture start from both `startManualRecording` and `startVadRecording`. No-op for
+  cloud/web or when no local model is selected.
+- **Holds the prewarm tension** (`model-lifecycle-lazy-collapse.md`): zero generation
+  tokens. Prewarm and transcribe both go through `ensure_engine_loaded`, which keys on
+  path + disk identity; a mid-recording model change just reloads at transcribe time
+  (prewarm load wasted, never wrong). The cache mutex already serializes loads one at a
+  time — no new lifecycle machinery. This is "prewarm on a discrete capture-start
+  action," not the refused "eager preload on settings selection."
+
+**VAD decision (resolved):** prewarm fires when VAD listening is **armed**
+(`startVadRecording`), not on speech-detect — symmetric with manual record-start
+("starting a capture mode warms the selected local model"), and early enough that the
+model is ready before the first word even for a short utterance.
+
+- *Accepted edge:* arm VAD, stay silent > 5 min ⇒ the idle evictor frees the model ⇒
+  the next speech reloads cold. Acceptable for v1. **Trigger to revisit:** if users
+  report cold VAD after idle, teach the idle watcher to treat an armed VAD session as
+  activity (don't build it speculatively now).
+- *Accepted cost:* starting then cancelling a capture warms a model you didn't use; it
+  sits resident until the idle evictor. Cheap and rare.
+
+**Measurement (owed, same instrument):** with `WHISPERING_TIMING=1`, a cold recording
+should now show `model.load COLD` firing *during* capture (overlapped) rather than the
+load time landing after stop. Confirm stop→delivery on a cold recording drops by ~the
+load time on Apple-Silicon and a CPU-only box.
+
+Why it ships with the timing instrumentation: the timing tool measures prewarm's own
+effect (cold load overlapped vs paid-after-stop), so per the "instrument rides in with
+the change it justifies" rule, they land together here rather than as a standalone
+timing merge.
 
 ### PR 3 — VAD in Rust on the shared cpal engine (conditional on PR 1 data)
 

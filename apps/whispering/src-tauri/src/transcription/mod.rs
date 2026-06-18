@@ -62,6 +62,29 @@ pub async fn transcribe_recording(
         .map_err(join_err)?
 }
 
+/// Prewarm the local model for `spec` so a following transcribe finds it
+/// warm. The frontend fires this fire-and-forget at capture start (manual
+/// record or VAD listen) for a local provider, overlapping the ~1 s model
+/// load with the user's speech instead of paying it after they stop.
+///
+/// Idempotent and cheap: a no-op when the exact model is already resident.
+/// Shares the one load path with `transcribe_recording` (`ModelCache::prewarm`
+/// and `transcribe` both resolve through `ensure_engine_loaded`), so the model
+/// warmed here is exactly the one transcribe will use, and a mid-recording
+/// model change simply reloads at transcribe time. A failure here is
+/// non-fatal: transcribe will load normally and surface any real error then.
+#[tauri::command]
+#[specta::specta]
+pub async fn prewarm_model(
+    spec: TranscriptionSpec,
+    model_cache: State<'_, ModelCache>,
+) -> Result<(), TranscriptionError> {
+    let cache = model_cache.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || cache.prewarm(&spec))
+        .await
+        .map_err(join_err)?
+}
+
 /// Map a join failure from spawn_blocking into a TranscriptionError so the
 /// frontend always sees a structured error even when the background task
 /// panics or is cancelled.

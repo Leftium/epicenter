@@ -6,6 +6,7 @@ import { analytics } from '$lib/operations/analytics';
 import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
+import { prewarmLocalModel } from '$lib/operations/transcribe';
 import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -59,6 +60,11 @@ function isVadRecordingActive() {
 
 export async function startManualRecording() {
 	settings.set('recording.trigger', 'manual');
+
+	// Kick off the local model load now, concurrently with bringing up the
+	// recorder, so the ~1 s cold load overlaps the speech you're about to
+	// record rather than being paid after you stop. No-op for cloud/web.
+	prewarmLocalModel();
 
 	const loading = report.loading({
 		title: '🎙️ Preparing to record...',
@@ -175,6 +181,12 @@ export async function cancelRecording() {
 
 export async function startVadRecording() {
 	settings.set('recording.trigger', 'vad');
+
+	// Warm the local model when listening is armed (not when speech is
+	// detected): arming VAD is the "about to dictate" signal, and starting the
+	// load now means the model is ready before the first word, even for a short
+	// utterance. No-op for cloud/web.
+	prewarmLocalModel();
 
 	log.info('Starting voice activated capture');
 	const loading = report.loading({

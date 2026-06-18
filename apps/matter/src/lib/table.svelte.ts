@@ -35,7 +35,6 @@ import type { FileDelta } from './bindings/FileDelta';
 import { parseEntry, type Row } from './core/parse';
 import { basename } from './core/path';
 import { editBody, editField } from './core/serialize';
-import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
 import {
 	buildView,
 	loadContract,
@@ -48,8 +47,13 @@ import {
  * Open `path` as a live table. Synchronous and IO-free: the store starts empty
  * and fills from the first pushed batch once `watch()` runs, so there is no
  * separate initial read and no read-then-watch gap.
+ *
+ * `onChange` is invoked at the end of each applied watcher batch — the Vault
+ * passes an adapter that projects this one table into the shared `.matter`
+ * mirror. The Table owns no SQLite itself; the callback keeps the rebuild trigger
+ * imperative and at its source (the batch), not laundered through a reactive effect.
  */
-export function createTable(path: string) {
+export function createTable(path: string, onChange: () => void) {
 	const folderName = basename(path);
 
 	// ONE store, keyed by filename: each entry is a `Result` that is either a
@@ -61,10 +65,6 @@ export function createTable(path: string) {
 	// Set when the LAST save could not reach disk. A save never mutates the store
 	// (that is the watcher's job); this is the only state a write touches.
 	let writeError = $state<string | undefined>(undefined);
-	// Bumped after each successful `matter.sqlite` rebuild, so a reader can key its query on
-	// the mirror being fresh rather than on the in-memory rows (which lead the file by the
-	// async rebuild). The WHERE filter reacts to this; see `reconcileMirror`.
-	let mirrorVersion = $state(0);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
 	const loaded = $derived(loadContract(contractText));
@@ -91,21 +91,19 @@ export function createTable(path: string) {
 					break;
 			}
 		}
-		// Rebuild the read-only SQLite mirror once per batch, off the UI task: the grid is
-		// already current from the map mutations above, so defer the (potentially large)
-		// projection with setTimeout so it never delays paint. Per-batch, not debounced:
-		// the native watcher already coalesces a burst into one batch, and a rebuild that
-		// lands after teardown just writes that folder's own final truth.
-		setTimeout(reconcileMirror, 0);
+		// One signal per applied batch: the Vault's adapter projects this table into the
+		// shared `.matter` mirror (off the UI task; the grid is already current from the map
+		// mutations above). Per-batch, not debounced: the native watcher already coalesces a
+		// burst into one batch. The Table itself touches no SQLite.
+		onChange();
 	}
 
 	/**
 	 * The current classified folder, derived from the files map + the loaded contract.
-	 * The ONE place "files map -> TableRead" lives, MEMOIZED so the `read` getter (the
-	 * UI surface) and `reconcileMirror` (the SQLite mirror) share a single classification
-	 * instead of each recomputing it. Recomputes only when `files` or the loaded contract
-	 * changes; `reconcileMirror` reads it when its deferred rebuild runs, so it sees the
-	 * latest classification rather than a stale snapshot.
+	 * The ONE place "files map -> TableRead" lives, MEMOIZED so the `read` getter (the UI
+	 * surface) and the Vault's mirror adapter (which reads `read` in its deferred rebuild)
+	 * share a single classification instead of each recomputing it. Recomputes only when
+	 * `files` or the loaded contract changes.
 	 */
 	const read = $derived.by((): TableRead => {
 		const rows: TableRead['rows'] = [];
@@ -116,36 +114,6 @@ export function createTable(path: string) {
 		}
 		return { rows, unreadable, view: buildView(rows, loaded) };
 	});
-
-	/**
-	 * Reconcile `<path>/matter.sqlite` from the current readable rows (valid AND drafts
-	 * in progress): a FULL DROP + CREATE + INSERT, so the file is a pure function of the
-	 * folder (self-healing, no incremental drift to debug, no stale row an agent could
-	 * read). The SvelteMap stays the live in-app surface; this file is the EXTERNAL one.
-	 * An untyped folder has no typed table, so it is skipped. Fire-and-forget: a failure never blocks the
-	 * grid and self-heals on the next batch (the rebuild is a full DROP + CREATE + INSERT),
-	 * so a transient error needs no surfacing. The JS projector builds all the SQL; the
-	 * Rust `write_mirror` command only executes it and binds the rows.
-	 *
-	 * A full rebuild (not an incremental sync) is deliberate: benchmarks keep it well
-	 * under a frame to ~50k rows, it runs off the UI task (scheduled with setTimeout from
-	 * `applyDeltas`), and for an agent read surface "pure function of truth" is a safety
-	 * property, not just simplicity.
-	 */
-	function reconcileMirror(): void {
-		const { view } = read;
-		if (view.mode !== 'typed') return;
-		const {
-			schema,
-			insert,
-			rows: tuples,
-		} = projectToSqlite(view.contract, view.conformance);
-		void invoke('write_mirror', { path, schema, insert, rows: tuples })
-			.then(() => {
-				mirrorVersion++; // the file is now fresh: wake any reader keyed on the mirror
-			})
-			.catch(() => {});
-	}
 
 	/**
 	 * Serialize writes to one file. A folder edit is read-modify-write (read the
@@ -228,33 +196,6 @@ export function createTable(path: string) {
 		return write(fileName, (raw) => editBody(raw, body));
 	}
 
-	/**
-	 * Filter the folder with a SQL WHERE clause: run it against the mirror
-	 * (`matter.sqlite`, read-only) and return the FILE NAMES of the matching rows, so the
-	 * grid can narrow its live rows by a SQL predicate while still rendering them with the
-	 * rich, editable widgets. Every readable row is in the mirror (drafts included), with
-	 * a missing cell as NULL, so a clause like `format = 'carousel'` finds an in-progress
-	 * draft too; only unparseable files (which never became a row) are absent. The clause
-	 * is interpolated raw, it is the user's own query on their own local file and the
-	 * connection is read-only, so the worst a bad clause does is return an error.
-	 */
-	function matchingFileNames(
-		where: string,
-	): Promise<Result<Set<string>, { message: string }>> {
-		const sql = `SELECT "file" FROM ${quoteIdent(MIRROR_TABLE)} WHERE ${where}`;
-		return tryAsync({
-			try: async () => {
-				// No limit: a name-only filter returns every matching row, never a silent cap.
-				const { rows } = await invoke<{ columns: string[]; rows: unknown[][] }>(
-					'query_mirror',
-					{ path, sql, limit: null },
-				);
-				return new Set(rows.map((row) => String(row[0])));
-			},
-			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
-		});
-	}
-
 	// Opening a vault IS observing it: arm the OS watcher now. `watch_folder` seeds the store
 	// with the folder's current contents, then streams a batch per change, all through
 	// `applyDeltas`. `whenReady` resolves once the watch is armed (the seed scan finishes
@@ -282,7 +223,6 @@ export function createTable(path: string) {
 		path,
 		saveField,
 		saveBody,
-		matchingFileNames,
 		dispose,
 		/** Resolves once the OS watcher is armed (the folder is being observed), with the
 		 *  seed contents already applied; rejects if it could not be armed. */
@@ -295,11 +235,6 @@ export function createTable(path: string) {
 		get writeError(): string | undefined {
 			return writeError;
 		},
-		/** Increments after each successful `matter.sqlite` rebuild. Read it (reactively) to
-		 *  re-run only once the mirror is fresh, rather than the moment the in-memory rows change. */
-		get mirrorVersion(): number {
-			return mirrorVersion;
-		},
 	};
 }
 
@@ -309,8 +244,8 @@ export type TableHandle = ReturnType<typeof createTable>;
  * The slice of a {@link TableHandle} the grid renders from: the folder name, the
  * classified read, and the two save commands. This is the narrow dependency boundary
  * `TableGrid` depends on, NOT the full table handle, so the grid cannot reach the
- * watcher lifecycle (`whenReady` / `dispose` / `path` / `mirrorVersion`) it has no
- * business touching, and a `Pick` of the live handle satisfies it for free.
+ * watcher lifecycle (`whenReady` / `dispose` / `path`) it has no business touching,
+ * and a `Pick` of the live handle satisfies it for free.
  */
 export type TableView = Pick<
 	TableHandle,

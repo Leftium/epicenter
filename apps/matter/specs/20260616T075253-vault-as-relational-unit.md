@@ -185,25 +185,36 @@ The five edge-case rules that keep the shared db a pure function of disk:
    work.
 6. **The rebuild trigger is a callback, not a reactive effect.** `createTable(path, onChange?)` calls
    `onChange` after each applied watcher batch (exactly where today's `reconcileMirror` setTimeout
-   sits); the Vault passes an adapter that projects that one table and writes its slice (or drops it
-   if it just went untyped). The trigger stays imperative and AT ITS SOURCE — the watcher batch —
-   instead of laundering a disk event through a `$derived` read into a `$effect.root` (a foot-gun:
-   manual effect lifecycle, coarse re-runs, a reactive→imperative round-trip for what is plainly an
-   external event). The Table imports no SQLite; the Vault is the sole mirror owner. `mirrorVersion`
-   stays a vault `$state` the WHERE filter reads — read-side reactivity is fine; only the write
-   trigger must not be an effect.
+   sits); the Vault's adapter projects that one table and writes its slice (or drops it if it just
+   went untyped). The trigger stays imperative and AT ITS SOURCE — the watcher batch — instead of
+   laundering a disk event through a `$derived` read into a `$effect.root` (a foot-gun: manual effect
+   lifecycle, coarse re-runs, a reactive→imperative round-trip for what is plainly an external event).
+   The Table imports no SQLite. `mirror.version` is a `$state` the WHERE filter reads — read-side
+   reactivity is fine; only the write trigger must not be an effect.
+
+7. **The mirror is a single-writer primitive, not lifecycle scattered in the Vault.** *Greenfield pass,
+   2026-06-17.* The mirror's open-time reset, per-table rebuild, drop-on-leave, and query are one
+   owner — `createMirror(dir)` (`mirror.svelte.ts`) — composed by the Vault, not inlined into it. Its
+   core is ONE ordered write-chain: a promise whose head is the reset (mkdir `.matter` + delete the
+   db) and whose every link is a `syncTable`/`dropTable`. Ordering is then *structural*, which deletes
+   the per-call coordination the inline version carried: no "await the reset" gate (the reset is the
+   head, so every mutation is after it), no "table left before the deferred write ran" guard (a leave
+   enqueues its drop after that table's last write), no `setTimeout(0)` off-paint hop (the chain sits
+   behind the reset's IPC), and one `version++` in the chain tail instead of a copy per mutation. It
+   also removes an ownership leak: the WHERE filter took `Pick<VaultHandle, 'mirrorVersion' |
+   'queryTable'>` — a hand-rebuilt mirror interface — and now depends on the `Mirror` type directly.
 
 Locked ownership (post-W5):
 
 ```
-the db file            the Vault (one hidden .matter/ db per root, fresh on open)
+the db file            createMirror — one hidden .matter/ db per root, fresh on open (the chain's head)
 one SQL table's rows   projectToSqlite(folderName, contract, conformance) — pure, per table
-rebuild a table        the Vault, on a table's onChange callback (per-table grain, not an effect)
-drop a table           the Vault, when that folder leaves the set
-the WHERE filter       per active-table pane, querying vault.queryTable(name, where)
-freshness signal       one vault-level mirrorVersion, bumped per rebuild
+rebuild a table        mirror.syncTable, enqueued from a table's onChange callback (per-table, not an effect)
+drop a table           mirror.dropTable, when that folder leaves the set (enqueued after its last write)
+the WHERE filter       per active-table pane, querying mirror.query(name, where)
+freshness signal       mirror.version, bumped once per applied chain link
 reference verdicts     assess (the JS index) — NEVER SQL        (the protected invariant)
-the Table              does not touch SQLite at all
+the Vault              composes {Tables, Mirror} and assesses; the Table touches no SQLite
 ```
 
 Files (W5):
@@ -211,17 +222,16 @@ Files (W5):
 ```
 core/sqlite.ts          projectToSqlite gains a folderName param; DELETE the MIRROR_TABLE constant
                         (quoteIdent stays; it now quotes folder names too).
+mirror.svelte.ts        NEW createMirror(dir): the single-writer primitive — reset-headed write-chain
+                        with syncTable / dropTable / query / version. Owns the whole db lifecycle.
 table.svelte.ts         DELETE reconcileMirror, matchingFileNames, mirrorVersion + the sqlite imports.
-                        The Table no longer owns a mirror.
-vault.svelte.ts         ADD the per-table rebuild, DROP-on-removal, queryTable(name, where), and the
-                        vault-level mirrorVersion; calls projectToSqlite per table; ensures `.matter/`
-                        exists and deletes the db on open (fresh db); points the mirror at `<root>/.matter`.
-where-filter.svelte.ts  createWhereFilter(vault, activeTableName); reads vault.mirrorVersion and calls
-                        vault.queryTable.
-TableGrid / TablePane   thread the vault + active table name to the filter (small prop change).
-src-tauri/src/mirror.rs  UNCHANGED SQL; `path` is now `<root>/.matter`. W5 adds the file-lifecycle
-                        step (ensure `.matter/` exists; delete the db on open) via the fs plugin or a
-                        tiny `remove_mirror` command, and updates the "next to matter.json" docstring.
+                        Gains an onChange callback fired per batch; no longer touches SQLite.
+vault.svelte.ts         Composes createMirror, wires each Table's onChange to mirror.syncTable and
+                        mirror.dropTable on leave, exposes `mirror`. Back to compose + assess.
+where-filter.svelte.ts  createWhereFilter(mirror, () => tableName); reads mirror.version, calls mirror.query.
+TablePane               derives its assessment from the vault; passes vault.mirror to the filter.
+src-tauri/src/mirror.rs  UNCHANGED SQL; `path` is now `<root>/.matter`. Adds reset_mirror (mkdir + delete
+                        the db on open) and drop_mirror_table (DROP TABLE IF EXISTS); docstring retargeted.
 ```
 
 Two refusals this lock pins:

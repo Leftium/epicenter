@@ -4,11 +4,11 @@ import { settings } from '$lib/state/settings.svelte';
 /**
  * Which capture surface the home page and the config header are currently
  * showing: a microphone trigger (`manual`/`vad`) or the file-import overlay
- * (`upload`).
+ * (`import`).
  *
  * This is a thin, transient presentation layer over the durable
  * `recording.trigger` setting. `manual`/`vad` read straight through to that
- * setting; `upload` is a module-level boolean that is never persisted (file
+ * setting; `import` is a module-level boolean that is never persisted (file
  * import is a one-shot, so each launch starts on your durable trigger) and
  * never written back to `recording.trigger`. Keeping it here, rather than as a
  * third trigger value, is what lets the UI offer the three-way choice while the
@@ -22,11 +22,11 @@ import { settings } from '$lib/state/settings.svelte';
 let isImportSurfaceShowing = $state(false);
 
 export const captureSurface = {
-	/** The surface on screen now: `upload` while the import overlay is open,
+	/** The surface on screen now: `import` while the import overlay is open,
 	 *  otherwise the durable recording trigger. */
 	get current(): CaptureSurface {
 		return isImportSurfaceShowing
-			? 'upload'
+			? 'import'
 			: settings.get('recording.trigger');
 	},
 

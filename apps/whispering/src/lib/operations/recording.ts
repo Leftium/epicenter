@@ -63,7 +63,7 @@ function isVadRecordingActive() {
 export async function startManualRecording() {
 	settings.set('recording.trigger', 'manual');
 	// A capture just started, so leave the import overlay if it was open: the
-	// surface should follow the live recording, not stay parked on upload.
+	// surface should follow the live recording, not stay parked on import.
 	captureSurface.dismissImport();
 
 	// Kick off the local model load now, concurrently with bringing up the
@@ -291,16 +291,16 @@ export function toggleVadRecording() {
 
 /**
  * Select a capture surface from the homepage tabs or the header dropdown.
- * `upload` opens the transient import overlay without touching
+ * `import` opens the transient import overlay without touching
  * `recording.trigger`; `manual`/`vad` close the overlay and switch the durable
  * trigger. Either way, a live capture on a different surface is stopped first so
- * two captures never overlap (`upload` keeps neither recorder, so both stop).
+ * two captures never overlap (`import` keeps neither recorder, so both stop).
  */
 export async function selectCaptureSurface(surface: CaptureSurface) {
 	// Flip the surface first so the tab/dropdown responds instantly; the live
 	// capture stopped below finalizes and transcribes in the background rather
 	// than blocking the switch.
-	if (surface === 'upload') {
+	if (surface === 'import') {
 		captureSurface.showImport();
 	} else {
 		captureSurface.dismissImport();
@@ -310,7 +310,7 @@ export async function selectCaptureSurface(surface: CaptureSurface) {
 	}
 
 	// Stop a live capture on a different surface so two captures never overlap
-	// (`upload` keeps neither recorder, so both stop). Stopping finalizes it: a
+	// (`import` keeps neither recorder, so both stop). Stopping finalizes it: a
 	// manual recording is saved and transcribed, and a voice-activated utterance
 	// in progress is flushed through the pipeline (the VAD runs with
 	// `submitUserSpeechOnPause`), so nothing you already said is lost.

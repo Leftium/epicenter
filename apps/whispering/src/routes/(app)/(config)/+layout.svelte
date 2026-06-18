@@ -101,7 +101,7 @@
 					{VAD_STATE_TO_ICON[vadRecorder.state]}
 				</Button>
 			{/if}
-		{:else if captureSurface.current === 'upload'}
+		{:else if captureSurface.current === 'import'}
 			<TranscriptionSelector variant="standalone" />
 			<TransformationSelector />
 			<div class="flex">

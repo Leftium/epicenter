@@ -254,7 +254,7 @@
 			<div class="flex w-full flex-col items-center gap-3">
 				<VadRecordingAction pipeline={vadPipeline} />
 			</div>
-		{:else if captureSurface.current === 'upload'}
+		{:else if captureSurface.current === 'import'}
 			<div class="flex w-full flex-col items-center gap-4">
 				<FileDropZone
 					accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"

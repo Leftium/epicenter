@@ -14,7 +14,7 @@
  *  - `apps/opensidian/mount.ts`                      -> `opensidian()` mount factory
  */
 
-import { field, jsonValue } from '@epicenter/field';
+import { field } from '@epicenter/field';
 import { filesTable } from '@epicenter/filesystem';
 import {
 	defineActions,
@@ -26,7 +26,12 @@ import {
 	nullable,
 	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
-import { Type } from 'typebox';
+import {
+	attachChatBrowserAnswerer,
+	attachChatTranscript,
+	type ChatStream,
+} from '@epicenter/workspace/ai';
+import type * as Y from 'yjs';
 import type { Brand } from 'wellcrafted/brand';
 
 /**
@@ -81,11 +86,33 @@ export const generateChatMessageId = (): ChatMessageId =>
 	generateId<ChatMessageId>();
 
 /**
+ * The conversation transcript child doc plus the browser in-process answerer.
+ *
+ * Each conversation owns one synced transcript doc (the doc-as-wire body,
+ * ADR-0020/0021): the user turn and the streamed assistant parts live here, and
+ * the UI renders from it. `answer(startStream)` runs the in-process answerer
+ * (ADR-0021's `in-process` trigger) that claims the unanswered turn and streams
+ * the reply into this same doc, sharing the daemon's claim predicate
+ * (`findUnansweredTurn`). Opensidian has no cloud agent and no daemon hosting
+ * these conversations, so the browser is the sole answerer: no double-answer.
+ */
+function attachOpensidianTranscript(doc: Y.Doc) {
+	return {
+		...attachChatTranscript(doc),
+		/** Run the in-process answerer over this transcript; returns a stop fn. */
+		answer(startStream: ChatStream): () => void {
+			return attachChatBrowserAnswerer({ doc, startStream });
+		},
+	};
+}
+
+/**
  * Conversations: metadata for each chat thread.
  *
  * Stores the thread title, optional parent/subpage relationship, source
  * message linkage, and the chosen model. The provider is derived from the
- * model by the catalog, so it is not stored.
+ * model by the catalog, so it is not stored. The turns themselves are not rows:
+ * each conversation's `messages` handle opens its synced transcript child doc.
  */
 const conversationsTable = defineTable({
 	id: field.string<ConversationId>(),
@@ -96,23 +123,8 @@ const conversationsTable = defineTable({
 	model: field.string(),
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
-});
+}).docs({ messages: attachOpensidianTranscript });
 export type Conversation = InferTableRow<typeof conversationsTable>;
-
-/**
- * Chat messages: the persisted content of each conversation turn.
- *
- * Stores the role, structured content parts, and creation timestamp so the UI
- * can replay the exact chat history without depending on live model state.
- */
-const chatMessagesTable = defineTable({
-	id: field.string<ChatMessageId>(),
-	conversationId: field.string<ConversationId>(),
-	role: field.select(['user', 'assistant', 'system']),
-	parts: field.json(Type.Array(jsonValue)),
-	createdAt: field.instant(),
-});
-export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 /**
  * Tool trust: per-tool approval preferences for chat actions.
@@ -146,7 +158,6 @@ export const opensidianWorkspace = defineWorkspace({
 	tables: {
 		files: filesTable,
 		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
 		toolTrust: toolTrustTable,
 	},
 	kv: {},

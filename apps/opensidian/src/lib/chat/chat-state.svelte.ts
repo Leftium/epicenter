@@ -1,35 +1,68 @@
+/**
+ * Reactive AI chat state, rendered from the conversation doc.
+ *
+ * Since the render-from-doc migration (ADR-0021, Phase C), a conversation is a
+ * synced transcript child doc, not a `createChat` in-memory state plus a
+ * `chatMessages` table. Each handle opens its conversation's transcript
+ * (`tables.conversations.docs.messages`), renders from `read()` / `observe()`,
+ * and runs an in-process answerer (`docHandle.answer`) whose inference rides the
+ * metered Epicenter provider (the house key over `/api/ai/chat`). A send is one
+ * local doc write (the optimistic echo); the answerer claims that turn and
+ * streams the reply into the same doc, so every device renders one stream.
+ *
+ * The conversation list is the `conversations` table (title, model, recency);
+ * the turns live in each conversation's doc. There is no second conversation
+ * store and no `onFinish` persistence: the doc is the single owner.
+ *
+ * Tools are not wired in this path. Opensidian's chat had file/bash tools behind
+ * a per-call approval UX, but the text-only browser answerer does not run the
+ * tool loop (that is Phase B: the agentic loop in the answer core plus
+ * doc-mediated approval). `approveToolCall` / `denyToolCall` stay on the handle
+ * as inert no-ops so the components keep their shape; no tool-call parts are
+ * produced, so they never fire.
+ *
+ * Components read this through `opensidian.state.chat`.
+ */
+
 import type { AuthClient } from '@epicenter/auth';
 import { createAiChatFetch } from '@epicenter/client';
-import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { InstantString } from '@epicenter/field';
 import { fromTable } from '@epicenter/svelte';
-import { actionsToAiTools } from '@epicenter/workspace/ai';
-import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
+import { generateId } from '@epicenter/workspace';
 import {
-	asChatMessageId,
+	type ChatDocMessage,
+	findActiveChatDocGeneration,
+} from '@epicenter/workspace/ai';
+import {
 	asConversationId,
 	type Conversation,
 	type ConversationId,
-	generateChatMessageId,
 	generateConversationId,
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
 import { SvelteMap } from 'svelte/reactivity';
+import { createEpicenterProviderChatStream } from '$lib/chat/epicenter-provider';
 import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	buildGlobalSkillsPrompt,
 	buildVaultSkillsPrompt,
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
-import { toPersistedParts, toUiMessage } from '$lib/chat/ui-message';
+import { chatDocMessageToUiMessage } from '$lib/chat/ui-message';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
-type SessionAiTools = ReturnType<
-	typeof actionsToAiTools<OpensidianBrowser['collaboration']['actions']>
->;
-export type SessionTools = SessionAiTools['tools'];
+/**
+ * How long after the last doc update an unfinished trailing assistant message
+ * still counts as live. Past this it reads as interrupted; the finish write
+ * (the normal terminal) flips liveness off well before it matters.
+ */
+const STREAM_GRACE_MS = 3000;
+
+/** Status the message list reads, mirroring TanStack AI's chat status union. */
+type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error';
 
 export function createAiChatState({
 	auth,
@@ -40,7 +73,9 @@ export function createAiChatState({
 	workspace: OpensidianBrowser;
 	skills: SkillState;
 }) {
-	const sessionAiTools = actionsToAiTools(workspace.collaboration.actions);
+	const aiChatUrl = API_ROUTES.ai.chat.url(APP_URLS.API);
+	const aiFetch = createAiChatFetch(auth.fetch);
+
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort((a, b) =>
@@ -48,24 +83,30 @@ export function createAiChatState({
 		),
 	);
 
-	function ensureDefaultConversation(): ConversationId | undefined {
-		if (conversations.length > 0) return undefined;
+	// One shared liveness clock for every handle, so an interrupted answer (no
+	// finish written) decays past the grace window without a timer per handle.
+	let now = $state(Date.now());
+	const ticker = setInterval(() => {
+		now = Date.now();
+	}, 1000);
 
-		const id = generateConversationId();
-		const now = InstantString.now();
-
-		workspace.tables.conversations.set({
-			id,
-			title: 'New Chat',
-			parentId: null,
-			sourceMessageId: null,
-			systemPrompt: null,
-			model: DEFAULT_MODEL,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		return id;
+	/** The layered system prompts an answer is generated under, read per turn. */
+	function buildSystemPrompts(): string[] {
+		return [
+			OPENSIDIAN_SYSTEM_PROMPT,
+			buildGlobalSkillsPrompt(
+				skills.globalSkills.map((skill) => ({
+					name: skill.name,
+					instructions: skill.instructions,
+				})),
+			),
+			buildVaultSkillsPrompt(
+				skills.vaultSkills.map((skill) => ({
+					name: skill.name,
+					content: skill.content,
+				})),
+			),
+		].filter(Boolean);
 	}
 
 	function updateConversation(
@@ -78,12 +119,22 @@ export function createAiChatState({
 		});
 	}
 
-	function loadMessages(conversationId: ConversationId) {
-		return workspace.tables.chatMessages
-			.scan()
-			.rows.filter((message) => message.conversationId === conversationId)
-			.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-			.map(toUiMessage);
+	function ensureDefaultConversation(): ConversationId | undefined {
+		if (conversations.length > 0) return undefined;
+
+		const id = generateConversationId();
+		const nowIso = InstantString.now();
+		workspace.tables.conversations.set({
+			id,
+			title: 'New Chat',
+			parentId: null,
+			sourceMessageId: null,
+			systemPrompt: null,
+			model: DEFAULT_MODEL,
+			createdAt: nowIso,
+			updatedAt: nowIso,
+		});
+		return id;
 	}
 
 	const handles = new SvelteMap<
@@ -94,66 +145,66 @@ export function createAiChatState({
 	function createConversationHandle(conversationId: ConversationId) {
 		const metadata = $derived(conversationsMap.get(conversationId));
 
-		const chat = createChat({
-			initialMessages: loadMessages(conversationId),
-			tools: sessionAiTools.tools,
-			connection: fetchServerSentEvents(
-				`${APP_URLS.API}/ai/chat`,
-				async () => ({
-					fetchClient: createAiChatFetch(auth.fetch),
-					body: {
-						data: {
-							model: metadata?.model ?? DEFAULT_MODEL,
-							systemPrompts: [
-								OPENSIDIAN_SYSTEM_PROMPT,
-								buildGlobalSkillsPrompt(
-									skills.globalSkills.map((skill) => ({
-										name: skill.name,
-										instructions: skill.instructions,
-									})),
-								),
-								buildVaultSkillsPrompt(
-									skills.vaultSkills.map((skill) => ({
-										name: skill.name,
-										content: skill.content,
-									})),
-								),
-							].filter(Boolean),
-							tools: sessionAiTools.definitions,
-						},
-					},
-				}),
-			),
-			onFinish: (message) => {
-				workspace.tables.chatMessages.set({
-					id: asChatMessageId(message.id),
-					conversationId,
-					role: 'assistant',
-					parts: toPersistedParts(message.parts),
-					createdAt: message.createdAt
-						? (message.createdAt.toISOString() as InstantString)
-						: InstantString.now(),
-				});
+		// The transcript child doc is the single source of truth. Open it once
+		// (the handle is keyed by conversationId), render from snapshots, and run
+		// the in-process answerer over it.
+		const docHandle =
+			workspace.tables.conversations.docs.messages.open(conversationId);
 
-				updateConversation(conversationId, {});
-			},
-			onError: (error) => {
-				console.error(
-					'[opensidian-ai-chat] stream error:',
-					error.message,
-					'conversation:',
-					conversationId,
-				);
-			},
+		let docMessages = $state.raw<ChatDocMessage[]>(docHandle.read());
+		let lastDocChangeAt = $state(0);
+		const unobserve = docHandle.observe(() => {
+			docMessages = docHandle.read();
+			lastDocChangeAt = Date.now();
 		});
 
+		// The answerer's inference backend: the Epicenter provider, reading the
+		// conversation's current model and skill prompts per turn.
+		const stopAnswerer = docHandle.answer(
+			createEpicenterProviderChatStream({
+				fetch: aiFetch,
+				url: aiChatUrl,
+				data: () => ({
+					model: metadata?.model ?? DEFAULT_MODEL,
+					systemPrompts: buildSystemPrompts(),
+				}),
+			}),
+		);
+
+		const trailing = $derived(docMessages.at(-1));
+		const activeGeneration = $derived(
+			findActiveChatDocGeneration(docMessages, now),
+		);
+		const failure = $derived(
+			trailing?.finish?.kind === 'failed' ? trailing.finish : undefined,
+		);
+		const isGenerating = $derived(activeGeneration !== undefined);
+
+		const status = $derived<ChatStatus>(
+			failure
+				? 'error'
+				: activeGeneration === undefined
+					? 'ready'
+					: activeGeneration.text.length > 0
+						? 'streaming'
+						: 'submitted',
+		);
+
+		// Render every turn except the empty assistant placeholder a claim
+		// appends before its first token; the typing bubble stands in for it.
+		const messages = $derived(
+			docMessages
+				.filter((message) => message.role === 'user' || message.text.length > 0)
+				.map(chatDocMessageToUiMessage),
+		);
+
 		return {
-			// Abort any in-flight stream, then release the devtools bridge,
-			// which holds the client in a globalThis registry that would
-			// otherwise outlive the handle.
 			[Symbol.dispose]() {
-				chat.stop();
-				chat.dispose();
+				// Stop the answerer (aborts any in-flight stream; no finish, an
+				// interrupted artifact the user can retry) before disposing the doc.
+				stopAnswerer();
+				unobserve();
+				docHandle[Symbol.dispose]();
 			},
 
 			get id() {
@@ -172,88 +223,65 @@ export function createAiChatState({
 			},
 
 			get messages() {
-				return chat.messages;
+				return messages;
 			},
 
 			get isLoading() {
-				return chat.isLoading;
-			},
-
-			get error() {
-				return chat.error;
+				return isGenerating;
 			},
 
 			get status() {
-				return chat.status;
+				return status;
+			},
+
+			get error() {
+				return failure ? { message: failure.message } : null;
 			},
 
 			get isCreditsExhausted() {
-				return (
-					chat.error instanceof AiChatHttpError &&
-					chat.error.detail.name === 'InsufficientCredits'
-				);
+				return failure?.code === 'InsufficientCredits';
 			},
 
 			get isUnauthorized() {
-				return (
-					chat.error instanceof AiChatHttpError &&
-					chat.error.detail.name === 'Unauthorized'
-				);
+				return failure?.code === 'Unauthorized';
 			},
 
 			sendMessage(content: string) {
-				if (!content.trim()) return;
+				const text = content.trim();
+				if (!text || isGenerating) return;
 
-				const userMessageId = generateChatMessageId();
-
-				void chat.sendMessage({
-					content,
-					id: userMessageId,
-				});
-
-				workspace.tables.chatMessages.set({
-					id: userMessageId,
-					conversationId,
-					role: 'user',
-					parts: toPersistedParts([{ type: 'text', content }]),
-					createdAt: InstantString.now(),
+				// One durable transcript write: the user turn carries the assistant
+				// id it awaits, and the answerer reads it off the doc and claims.
+				docHandle.appendUser({
+					id: generateId(),
+					content: text,
+					createdAt: Date.now(),
+					generationId: generateId(),
 				});
 
 				const currentTitle = metadata?.title ?? 'New Chat';
-
 				updateConversation(conversationId, {
 					title:
-						currentTitle === 'New Chat'
-							? content.trim().slice(0, 50)
-							: currentTitle,
+						currentTitle === 'New Chat' ? text.slice(0, 50) : currentTitle,
 				});
 			},
 
 			reload() {
-				const lastMessage = chat.messages.at(-1);
-				if (lastMessage?.role === 'assistant') {
-					workspace.tables.chatMessages.delete(asChatMessageId(lastMessage.id));
-				}
-
-				void chat.reload();
+				// Re-mint the latest turn's generationId so the answerer starts a
+				// fresh generation instead of seeing the old answer already claimed.
+				docHandle.remintGeneration(generateId());
 			},
 
 			stop() {
-				chat.stop();
+				// The durable cancel the answerer reads back; it aborts the stream and
+				// writes a `cancelled` finish, so it works from any device.
+				docHandle.requestCancel(Date.now());
 			},
 
-			approveToolCall(approvalId: string) {
-				void chat.addToolApprovalResponse({ id: approvalId, approved: true });
-			},
-
-			denyToolCall(approvalId: string) {
-				void chat.addToolApprovalResponse({ id: approvalId, approved: false });
-			},
-
-			refreshMessages() {
-				if (chat.isLoading) return;
-				chat.setMessages(loadMessages(conversationId));
-			},
+			// Tool approval is Phase B (the answer core does not run the tool loop
+			// yet), so these are inert: no tool-call parts are produced to approve.
+			approveToolCall(_approvalId: string) {},
+			denyToolCall(_approvalId: string) {},
 		};
 	}
 
@@ -261,6 +289,10 @@ export function createAiChatState({
 		handles.get(conversationId)?.[Symbol.dispose]();
 		handles.delete(conversationId);
 	}
+
+	const activeConversationId = $derived(
+		asConversationId(searchParams.chat ?? ''),
+	);
 
 	function reconcileHandles() {
 		for (const conversationId of handles.keys()) {
@@ -279,21 +311,11 @@ export function createAiChatState({
 		const firstConversation = conversations[0];
 		if (!firstConversation) return;
 		if (handles.has(activeConversationId)) return;
-
-		const newActiveId = asConversationId(firstConversation.id);
-		searchParams.update({ chat: newActiveId });
-		handles.get(newActiveId)?.refreshMessages();
+		searchParams.update({ chat: asConversationId(firstConversation.id) });
 	}
-
-	const activeConversationId = $derived(
-		asConversationId(searchParams.chat ?? ''),
-	);
 
 	const _unobserveConversations = workspace.tables.conversations.observe(() => {
 		reconcileHandles();
-	});
-	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
-		handles.get(activeConversationId)?.refreshMessages();
 	});
 
 	void workspace.idb.whenLoaded.then(() => {
@@ -303,23 +325,20 @@ export function createAiChatState({
 		const newId = ensureDefaultConversation();
 		if (newId) {
 			searchParams.update({ chat: newId });
-			handles.get(newId)?.refreshMessages();
 			return;
 		}
 
 		const firstConversation = conversations[0];
-		if (!firstConversation) return;
-
-		const activeId = asConversationId(firstConversation.id);
-		searchParams.update({ chat: activeId });
-		handles.get(activeId)?.refreshMessages();
+		if (firstConversation) {
+			searchParams.update({ chat: asConversationId(firstConversation.id) });
+		}
 	});
 
 	reconcileHandles();
 
 	function newConversation() {
 		const id = generateConversationId();
-		const now = InstantString.now();
+		const nowIso = InstantString.now();
 		const active = handles.get(activeConversationId);
 
 		workspace.tables.conversations.set({
@@ -329,20 +348,18 @@ export function createAiChatState({
 			sourceMessageId: null,
 			systemPrompt: null,
 			model: active?.model ?? DEFAULT_MODEL,
-			createdAt: now,
-			updatedAt: now,
+			createdAt: nowIso,
+			updatedAt: nowIso,
 		});
 
 		searchParams.update({ chat: id });
-		handles.get(id)?.refreshMessages();
-
 		return id;
 	}
 
 	return {
 		[Symbol.dispose]() {
+			clearInterval(ticker);
 			_unobserveConversations();
-			_unobserveChatMessages();
 			conversationsMap[Symbol.dispose]();
 			for (const conversationId of [...handles.keys()]) {
 				destroyConversation(conversationId);

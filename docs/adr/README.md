@@ -90,5 +90,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0015](0015-the-brand-mark-has-one-canonical-source-every-other-form-is-generated.md) | The brand mark has one canonical source; every other form is generated | Proposed |
 | [0017](0017-durable-storage-is-one-per-person-coordination-box.md) | Durable storage is one per-person coordination box: an app-blind anchor and store | Accepted |
 | [0018](0018-agents-are-immutable-capability-bundles.md) | Agents are immutable capability bundles; arbitrary code runs only on a trusted box | Accepted |
+| [0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) | Collaboration is addressed single-writer regions in a child doc | Proposed (supersedes 0015) |
+| [0020](0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) | An answer body is a native parts array; its text streams into Y.Text | Proposed (resolves 0019's streaming open decision) |
+| [0021](0021-a-conversation-has-one-transport-and-two-triggers.md) | A conversation has one transport (the synced doc) and two triggers; SSE is deleted, the billed kickoff is not | Proposed |
 
 When you add an ADR, add its row here.

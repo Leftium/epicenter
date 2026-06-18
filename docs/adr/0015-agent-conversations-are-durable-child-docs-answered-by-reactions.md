@@ -1,9 +1,12 @@
 # 0015. Agent conversations are durable child docs answered by reactions
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-06-16
+- **Superseded by:** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md)
 
 > **Vocabulary (2026-06-18):** a **reaction** is the running behavior that observes the transcript and writes the answer. The **agent** is the durable address a conversation binds to.
+>
+> **Superseded (2026-06-18):** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) generalizes this from one human and one agent to N participants and replaces the single `messages` array, the `generationId`, and "claim by existence" with addressed single-writer regions. The binding, privacy, and attribution decisions below survive there, generalized to a participant set; the transcript mechanism does not.
 
 ## Context
 

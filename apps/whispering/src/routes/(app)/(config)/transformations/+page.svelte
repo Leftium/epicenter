@@ -260,6 +260,8 @@
 			<Table.Body>
 				{#if table.getRowModel().rows?.length}
 					{#each table.getRowModel().rows as row (row.id)}
+						<!-- Table.Row is a component, so the name rides a style prop string;
+						     the style: directive used elsewhere only applies to elements. -->
 						<Table.Row
 							style="view-transition-name: {viewTransition.transformation(
 								row.id,

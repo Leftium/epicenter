@@ -79,9 +79,7 @@
 						>
 							<span
 								class="inline-flex shrink-0"
-								style="view-transition-name: {viewTransition.recordingMode(
-									'manual',
-								)}"
+								style:view-transition-name={viewTransition.recordingMode('manual')}
 							>
 								<ManualButtonIcon class="size-4" />
 							</span>
@@ -111,9 +109,7 @@
 						>
 							<span
 								class="inline-flex shrink-0"
-								style="view-transition-name: {viewTransition.recordingMode(
-									'vad',
-								)}"
+								style:view-transition-name={viewTransition.recordingMode('vad')}
 							>
 								<VadButtonIcon class="size-4" />
 							</span>

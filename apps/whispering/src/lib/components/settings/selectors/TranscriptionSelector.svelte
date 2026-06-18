@@ -22,7 +22,6 @@
 	} from '$lib/settings/transcription-validation';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 	import { tauri } from '#platform/tauri';
 
 	let {
@@ -44,10 +43,6 @@
 		/** When set, names the trigger's brand glyph for a cross-page view transition. */
 		iconViewTransitionName?: string;
 	} = $props();
-
-	const iconTransitionStyle = $derived(
-		viewTransitionStyle(iconViewTransitionName),
-	);
 
 	const selectedService = $derived(getSelectedTranscriptionService());
 	const isSelectedServiceReady = $derived(
@@ -170,7 +165,10 @@
 				size={variant === 'pipeline' ? 'default' : 'icon'}
 			>
 				{#if variant === 'pipeline'}
-					<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+					<span
+						class="inline-flex shrink-0"
+						style:view-transition-name={iconViewTransitionName}
+					>
 						{#if selectedService}
 							{@render renderServiceIcon(selectedService)}
 						{:else}
@@ -196,12 +194,15 @@
 								'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
 							!isSelectedServiceReady && 'opacity-60',
 						)}
-						style={iconTransitionStyle}
+						style:view-transition-name={iconViewTransitionName}
 					>
 						{@html selectedService.icon}
 					</div>
 				{:else}
-					<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+					<span
+						class="inline-flex shrink-0"
+						style:view-transition-name={iconViewTransitionName}
+					>
 						<MicIcon class="size-4 text-muted-foreground" />
 					</span>
 				{/if}

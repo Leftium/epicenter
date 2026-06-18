@@ -13,7 +13,6 @@
 	import { rpc } from '$lib/rpc';
 	import { settings } from '$lib/state/settings.svelte';
 	import { transformations } from '$lib/state/transformations.svelte';
-	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 	import type { Transformation } from '$lib/workspace';
 
 	const sortedTransformations = $derived(transformations.sorted);
@@ -67,7 +66,7 @@
 			>
 				<span
 					class="inline-flex shrink-0"
-					style={viewTransitionStyle(iconViewTransitionName)}
+					style:view-transition-name={iconViewTransitionName}
 				>
 					{#if selectedTransformation}
 						<SparklesIcon class="size-4 text-green-500" />

@@ -5,7 +5,6 @@
 	import { cn } from '@epicenter/ui/utils';
 	import type { Component, Snippet } from 'svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
-	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 
 	// The caller owns its own state machine, so it picks which icon to show
 	// and hands us one `icon`. We only decide presentation: a spinner while
@@ -78,9 +77,7 @@
 			{:else}
 				<span
 					class="inline-flex"
-					style={active
-						? undefined
-						: viewTransitionStyle(iconViewTransitionName)}
+					style:view-transition-name={active ? undefined : iconViewTransitionName}
 				>
 					<Icon
 						class={cn('size-7', active && 'size-6 fill-current stroke-[1.75]')}

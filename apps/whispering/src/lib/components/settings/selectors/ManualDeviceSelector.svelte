@@ -13,7 +13,6 @@
 	import { tauri } from '#platform/tauri';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 
 	let {
 		iconViewTransitionName,
@@ -61,7 +60,7 @@
 			>
 				<span
 					class="inline-flex shrink-0"
-					style={viewTransitionStyle(iconViewTransitionName)}
+					style:view-transition-name={iconViewTransitionName}
 				>
 					{#if manualRecorderConfig.deviceId}
 						<MicIcon class="size-4 text-green-500" />

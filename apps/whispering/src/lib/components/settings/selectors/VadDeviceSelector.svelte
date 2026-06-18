@@ -12,7 +12,6 @@
 	import { report } from '$lib/report';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 
 	let {
 		iconViewTransitionName,
@@ -56,7 +55,7 @@
 			>
 				<span
 					class="inline-flex shrink-0"
-					style={viewTransitionStyle(iconViewTransitionName)}
+					style:view-transition-name={iconViewTransitionName}
 				>
 					{#if selectedDeviceId}
 						<MicIcon class="size-4 text-green-500" />

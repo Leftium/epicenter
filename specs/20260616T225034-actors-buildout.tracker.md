@@ -11,7 +11,7 @@ file is STATE; the specs and ADRs are TRUTH. When they disagree, the ADRs win.
 
 Read for invariants every slice:
 - `specs/20260616T225034-always-on-actors-over-synced-docs.md` (the vision)
-- `docs/adr/0013-...observing-actor.md`, `docs/adr/0012-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`
+- `docs/adr/0015-...observing-actor.md`, `docs/adr/0014-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`
 - `specs/20260530T100000-ai-workflows-consolidated-design.md` (CANONICAL; Model 1 / Model 2)
 
 ## Dependency Rules

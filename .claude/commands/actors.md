@@ -8,7 +8,7 @@ You are continuing the "always-on actors over synced docs" buildout. Do ONE slic
 
 1. `specs/20260616T225034-actors-buildout.tracker.md` (state + slices + invariants + dependency rules)
 2. `specs/20260616T225034-always-on-actors-over-synced-docs.md` (the vision)
-3. `docs/adr/0013-...observing-actor.md`, `docs/adr/0012-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`, `specs/20260530T100000-ai-workflows-consolidated-design.md`
+3. `docs/adr/0015-...observing-actor.md`, `docs/adr/0014-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`, `specs/20260530T100000-ai-workflows-consolidated-design.md`
 4. `git log --oneline -15` to see what already landed.
 
 ## Each run

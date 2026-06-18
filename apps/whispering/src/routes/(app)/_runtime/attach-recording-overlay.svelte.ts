@@ -4,6 +4,7 @@ import { recordingOverlay } from '#platform/recording-overlay';
 import { tauri } from '#platform/tauri';
 import {
 	cancelRecording,
+	retryDictation,
 	stopManualRecording,
 	stopVadRecording,
 } from '$lib/operations/recording';
@@ -13,23 +14,41 @@ import {
 	type RecordingOverlayAction,
 	type RecordingOverlayStatus,
 } from '$lib/recording-overlay/events';
-import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
+
+/**
+ * Project the main window's dictation lifecycle into the serializable status the
+ * overlay pill renders. `idle` hides the pill (`null`). The live error object
+ * stays in the main window (it cannot cross Tauri IPC and the failure detail
+ * lives on the recordings row); only a terse title is sent to the overlay.
+ */
+function toOverlayStatus(): RecordingOverlayStatus | null {
+	const lifecycle = dictationLifecycle.current;
+	switch (lifecycle.phase) {
+		case 'idle':
+			return null;
+		case 'recording':
+			return lifecycle.trigger === 'manual'
+				? { phase: 'recording', trigger: 'manual' }
+				: { phase: 'recording', trigger: 'vad', vadState: lifecycle.vadState };
+		case 'transcribing':
+			return { phase: 'transcribing' };
+		case 'delivered':
+			return { phase: 'delivered' };
+		case 'failed':
+			return {
+				phase: 'failed',
+				tier: lifecycle.tier,
+				title: lifecycle.error.message,
+			};
+	}
+}
 
 export function attachRecordingOverlay() {
 	let unlistenAction: UnlistenFn | undefined;
 	let unlistenFocus: UnlistenFn | undefined;
 
-	const overlayStatus = $derived.by((): RecordingOverlayStatus | null => {
-		if (manualRecorder.state === 'RECORDING')
-			return { trigger: 'manual', state: 'RECORDING' };
-		if (
-			vadRecorder.state === 'LISTENING' ||
-			vadRecorder.state === 'SPEECH_DETECTED'
-		)
-			return { trigger: 'vad', state: vadRecorder.state };
-		return null;
-	});
+	const overlayStatus = $derived(toOverlayStatus());
 
 	$effect(() => {
 		recordingOverlay.sync(overlayStatus);
@@ -40,8 +59,14 @@ export function attachRecordingOverlay() {
 			unlistenAction = await listen<RecordingOverlayAction>(
 				RECORDING_OVERLAY_ACTION,
 				(event) => {
-					if (!overlayStatus) return;
-					if (overlayStatus.trigger === 'manual') {
+					if (event.payload === 'retry') {
+						void retryDictation();
+						return;
+					}
+					// Stop/cancel act on a live capture; ignore them otherwise.
+					const lifecycle = dictationLifecycle.current;
+					if (lifecycle.phase !== 'recording') return;
+					if (lifecycle.trigger === 'manual') {
 						if (event.payload === 'cancel') void cancelRecording();
 						else void stopManualRecording();
 						return;

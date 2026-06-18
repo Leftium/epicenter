@@ -1,4 +1,4 @@
-import type { VadState, WhisperingRecordingState } from '$lib/constants/audio';
+import type { VadState } from '$lib/constants/audio';
 
 /**
  * Event contract for the recording overlay window.
@@ -38,13 +38,36 @@ export const RECORDING_OVERLAY_FOCUS_MAIN = 'recording-overlay:focus-main';
 export const RECORDING_OVERLAY_MIC_LEVEL = 'mic-level';
 
 /**
- * What the overlay should display. Only the non-idle states are
- * representable: an idle recorder hides the overlay rather than emitting a
- * status, so there is no `IDLE` variant to render.
+ * How severe a dictation failure is, which decides how loudly it surfaces.
+ * Severity is a function of where the dictation failed, not the error's name:
+ *
+ * - `silent-loss`: the recording never started (no mic, denied permission), so
+ *   there is no artifact to recover. Loudest, because the user spoke into
+ *   nothing.
+ * - `transcription`: the recording was captured (a recordings row exists) but
+ *   transcription failed. The audio is safe and the failure is retryable.
+ * - `delivery`: the text transcribed but paste/injection failed. Quietest, the
+ *   text is already on the clipboard.
+ */
+export type DictationFailureTier = 'silent-loss' | 'transcription' | 'delivery';
+
+/**
+ * What the pill should display, the serializable projection of the main
+ * window's dictation lifecycle. Only the non-idle phases are representable: an
+ * idle dictation hides the pill rather than emitting a status, so there is no
+ * `idle` variant to render. The `failed` variant carries only a terse `title`
+ * string (never the live error object) so it can cross the Tauri IPC boundary
+ * to the overlay webview; the full error detail lives on the recordings row.
  */
 export type RecordingOverlayStatus =
-	| { trigger: 'manual'; state: Extract<WhisperingRecordingState, 'RECORDING'> }
-	| { trigger: 'vad'; state: Exclude<VadState, 'IDLE'> };
+	| { phase: 'recording'; trigger: 'manual' }
+	| { phase: 'recording'; trigger: 'vad'; vadState: Exclude<VadState, 'IDLE'> }
+	| { phase: 'transcribing' }
+	| { phase: 'delivered' }
+	| { phase: 'failed'; tier: DictationFailureTier; title: string };
 
-/** The control the user invoked from the overlay. */
-export type RecordingOverlayAction = 'stop' | 'cancel';
+/**
+ * The control the user invoked from the overlay. `stop`/`cancel` act on a live
+ * capture; `retry` re-runs a failed dictation.
+ */
+export type RecordingOverlayAction = 'stop' | 'cancel' | 'retry';

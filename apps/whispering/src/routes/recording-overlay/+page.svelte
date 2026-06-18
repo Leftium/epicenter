@@ -70,6 +70,7 @@
 	{level}
 	onStop={() => sendAction('stop')}
 	onCancel={() => sendAction('cancel')}
+	onRetry={() => sendAction('retry')}
 	onFocusMain={focusMainWindow}
 />
 

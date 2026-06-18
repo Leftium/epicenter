@@ -13,6 +13,7 @@ import { runTransformation } from '$lib/operations/transform';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import type { RecorderStopResult } from '$lib/services/recorder/types';
+import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
@@ -50,6 +51,13 @@ export async function processRecordingPipeline({
 	const recordingId =
 		source.kind === 'artifact' ? source.artifact.id : source.recordingId;
 
+	// A live dictation (not a file import) drives the dictation pill. The
+	// recorder is already idle by the time we get here, so the lifecycle hands
+	// the pill from `recording` to `transcribing`. File imports have their own
+	// surface, so they leave the dictation lifecycle untouched.
+	const isDictation = deliverySource === 'recording';
+	if (isDictation) dictationLifecycle.markTranscribing();
+
 	recordings.set({
 		id: recordingId,
 		title: '',
@@ -77,6 +85,12 @@ export async function processRecordingPipeline({
 					error: extractErrorMessage(saveError),
 				},
 			});
+			if (isDictation)
+				dictationLifecycle.markFailed({
+					tier: 'transcription',
+					error: saveError,
+					recordingId,
+				});
 			report.error({
 				title: 'Failed to save recording',
 				description:
@@ -96,6 +110,12 @@ export async function processRecordingPipeline({
 		await transcribeAndPersist(recordingId);
 
 	if (transcribeError) {
+		if (isDictation)
+			dictationLifecycle.markFailed({
+				tier: 'transcription',
+				error: transcribeError,
+				recordingId,
+			});
 		transcribeLoading.reject({ cause: transcribeError });
 		return;
 	}
@@ -106,6 +126,10 @@ export async function processRecordingPipeline({
 		source: deliverySource,
 	});
 	transcribeLoading.resolve(transcribeNotice);
+	// The transcript landed: flash the delivered confirmation on the pill. The
+	// transformation step below, if any, runs as a background enhancement and is
+	// not part of the dictation receipt.
+	if (isDictation) dictationLifecycle.markDelivered();
 
 	const transformationId = settings.get('transformation.selectedId');
 	if (!transformationId) return;
@@ -149,4 +173,33 @@ export async function processRecordingPipeline({
 		recordingId,
 	});
 	transformLoading.resolve(transformNotice);
+}
+
+/**
+ * Re-run transcription and delivery for an already-saved recording, driving the
+ * dictation pill the whole way. Used by the failed pill's Retry: the audio is
+ * still on disk under `recordingId`, so this skips capture and the row/blob
+ * setup and just retries the part that failed. Transformation is deliberately
+ * left out, matching the per-row retry: a retry re-transcribes, it does not
+ * re-derive a transformation.
+ */
+export async function runTranscriptionForRecording(
+	recordingId: string,
+): Promise<void> {
+	dictationLifecycle.markTranscribing();
+
+	const { data: transcribedText, error } =
+		await transcribeAndPersist(recordingId);
+	if (error) {
+		dictationLifecycle.markFailed({
+			tier: 'transcription',
+			error,
+			recordingId,
+		});
+		return;
+	}
+
+	sound.playSoundIfEnabled('transcriptionComplete');
+	await deliverTranscriptionResult({ text: transcribedText });
+	dictationLifecycle.markDelivered();
 }

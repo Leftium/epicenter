@@ -5,13 +5,17 @@ import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
 import { analytics } from '$lib/operations/analytics';
 import { recordingMedia } from '$lib/operations/media';
-import { processRecordingPipeline } from '$lib/operations/pipeline';
+import {
+	processRecordingPipeline,
+	runTranscriptionForRecording,
+} from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
 import { prewarmLocalModel } from '$lib/operations/transcribe';
 import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { captureSurface } from '$lib/state/capture-surface.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
@@ -62,6 +66,9 @@ function isVadRecordingActive() {
 
 export async function startManualRecording() {
 	settings.set('recording.trigger', 'manual');
+	// A new dictation is starting: clear any lingering failed/delivered state so
+	// the pill follows this attempt, not the last one.
+	dictationLifecycle.reset();
 	// A capture just started, so leave the import overlay if it was open: the
 	// surface should follow the live recording, not stay parked on import.
 	captureSurface.dismissImport();
@@ -85,6 +92,13 @@ export async function startManualRecording() {
 
 	if (error) {
 		void recordingMedia.resume();
+		// The recording never started, so there is no artifact to recover: the
+		// loudest tier. No row exists, so retry restarts capture.
+		dictationLifecycle.markFailed({
+			tier: 'silent-loss',
+			error,
+			recordingId: null,
+		});
 		loading.reject({ cause: error });
 		return;
 	}
@@ -114,6 +128,13 @@ export async function stopManualRecording() {
 
 	if (error) {
 		void recordingMedia.resume();
+		// Finalizing failed, so the captured audio never reached a row: treat it
+		// as a silent loss rather than a retryable transcription.
+		dictationLifecycle.markFailed({
+			tier: 'silent-loss',
+			error,
+			recordingId: null,
+		});
 		loading.reject({ cause: error });
 		return;
 	}
@@ -148,6 +169,34 @@ export function toggleManualRecording() {
 		return stopManualRecording();
 	}
 	return startManualRecording();
+}
+
+/**
+ * Re-run the dictation the pill is currently reporting as failed. The retry
+ * depends on how far the dictation got:
+ *
+ * - `silent-loss`: capture never started, so there is no audio to re-use. Start
+ *   a fresh capture with the active trigger.
+ * - `transcription` / `delivery`: the audio is saved under the recording id, so
+ *   re-run transcription and delivery for it.
+ *
+ * A no-op unless the lifecycle is `failed`, so a stray retry press is safe.
+ */
+export async function retryDictation() {
+	const lifecycle = dictationLifecycle.current;
+	if (lifecycle.phase !== 'failed') return;
+
+	if (lifecycle.tier === 'silent-loss') {
+		if (settings.get('recording.trigger') === 'vad') {
+			await startVadRecording();
+			return;
+		}
+		await startManualRecording();
+		return;
+	}
+
+	if (!lifecycle.recordingId) return;
+	await runTranscriptionForRecording(lifecycle.recordingId);
 }
 
 export async function cancelRecording() {
@@ -229,6 +278,8 @@ function cancelPendingVadResume() {
 
 export async function startVadRecording() {
 	settings.set('recording.trigger', 'vad');
+	// A new dictation session is starting: clear any lingering terminal state.
+	dictationLifecycle.reset();
 	// A capture just started, so leave the import overlay if it was open (see
 	// startManualRecording).
 	captureSurface.dismissImport();
@@ -290,6 +341,12 @@ export async function startVadRecording() {
 
 	if (error) {
 		resumePlaybackForVadEnd();
+		// Listening never armed, so nothing was captured: a silent loss.
+		dictationLifecycle.markFailed({
+			tier: 'silent-loss',
+			error,
+			recordingId: null,
+		});
 		loading.reject({ cause: error });
 		return;
 	}

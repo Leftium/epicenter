@@ -1,7 +1,11 @@
 <script lang="ts">
 	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import MicIcon from '@lucide/svelte/icons/mic';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SquareIcon from '@lucide/svelte/icons/square';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { RecordingOverlayStatus } from '$lib/recording-overlay/events';
 
@@ -15,9 +19,10 @@
 		level,
 		onStop,
 		onCancel,
+		onRetry,
 		onFocusMain,
 	}: {
-		/** What to display, or `null` before the first status arrives. */
+		/** What to display, or `null` when the dictation is idle (hidden). */
 		status: RecordingOverlayStatus | null;
 		/** Live, smoothed mic loudness, 0 (silent) to 1 (loud). */
 		level: number;
@@ -25,12 +30,20 @@
 		onStop: () => void;
 		/** Discard the live manual recording. */
 		onCancel: () => void;
-		/** Bring the main window to the front. */
+		/** Re-run the failed dictation. */
+		onRetry: () => void;
+		/** Bring the main window to the front (and open the failure detail). */
 		onFocusMain: () => void;
 	} = $props();
 
-	const isManual = $derived(status?.trigger === 'manual');
-	const isSpeaking = $derived(status?.state === 'SPEECH_DETECTED');
+	const isManual = $derived(
+		status?.phase === 'recording' && status.trigger === 'manual',
+	);
+	const isSpeaking = $derived(
+		status?.phase === 'recording' &&
+			status.trigger === 'vad' &&
+			status.vadState === 'SPEECH_DETECTED',
+	);
 
 	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
 	// the same amplitude through a fixed shape reads as a meter, not a flat block.
@@ -53,6 +66,11 @@
 		event.stopPropagation();
 		onCancel();
 	}
+
+	function handleRetry(event: MouseEvent) {
+		event.stopPropagation();
+		onRetry();
+	}
 </script>
 
 <!-- The pill is non-focusable on desktop (an overlay window) and decorative on
@@ -61,54 +79,84 @@
      here, hence the a11y ignores. -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-	class="overlay"
-	class:speaking={isSpeaking}
-	title="Open Whispering"
-	onclick={onFocusMain}
->
-	<div class="icon">
-		{#if isManual}
-			<MicIcon class="size-4" />
-		{:else}
-			<AudioLinesIcon class="size-4" />
+{#if status}
+	<div
+		class="overlay"
+		class:speaking={isSpeaking}
+		class:failed={status.phase === 'failed'}
+		title={status.phase === 'failed' ? status.title : 'Open Whispering'}
+		onclick={onFocusMain}
+	>
+		{#if status.phase === 'recording'}
+			<div class="icon">
+				{#if isManual}
+					<MicIcon class="size-4" />
+				{:else}
+					<AudioLinesIcon class="size-4" />
+				{/if}
+			</div>
+
+			<div class="bars" aria-hidden="true">
+				{#each BAR_ENVELOPE as envelope, i (i)}
+					<span class="bar" style="height: {barHeight(envelope)}px"></span>
+				{/each}
+			</div>
+
+			<div class="actions">
+				<button
+					type="button"
+					class="action stop"
+					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
+					title={isManual ? 'Stop recording' : 'Stop listening'}
+					onclick={handleStop}
+				>
+					<SquareIcon class="size-3.5" />
+				</button>
+				{#if isManual}
+					<button
+						type="button"
+						class="action cancel"
+						aria-label="Cancel recording"
+						title="Cancel recording"
+						onclick={handleCancel}
+					>
+						<XIcon class="size-4" />
+					</button>
+				{/if}
+			</div>
+		{:else if status.phase === 'transcribing'}
+			<div class="icon">
+				<LoaderCircleIcon class="size-4 animate-spin" />
+			</div>
+			<span class="label">Transcribing</span>
+		{:else if status.phase === 'delivered'}
+			<div class="icon delivered-icon">
+				<CheckIcon class="size-4" />
+			</div>
+			<span class="label">Delivered</span>
+		{:else if status.phase === 'failed'}
+			<div class="icon">
+				<TriangleAlertIcon class="size-4" />
+			</div>
+			<span class="label">{status.title}</span>
+			<div class="actions">
+				<button
+					type="button"
+					class="action retry"
+					aria-label="Retry dictation"
+					title="Retry"
+					onclick={handleRetry}
+				>
+					<RotateCcwIcon class="size-3.5" />
+				</button>
+			</div>
 		{/if}
 	</div>
-
-	<div class="bars" aria-hidden="true">
-		{#each BAR_ENVELOPE as envelope, i (i)}
-			<span class="bar" style="height: {barHeight(envelope)}px"></span>
-		{/each}
-	</div>
-
-	<div class="actions">
-		<button
-			type="button"
-			class="action stop"
-			aria-label={isManual ? 'Stop recording' : 'Stop listening'}
-			title={isManual ? 'Stop recording' : 'Stop listening'}
-			onclick={handleStop}
-		>
-			<SquareIcon class="size-3.5" />
-		</button>
-		{#if isManual}
-			<button
-				type="button"
-				class="action cancel"
-				aria-label="Cancel recording"
-				title="Cancel recording"
-				onclick={handleCancel}
-			>
-				<XIcon class="size-4" />
-			</button>
-		{/if}
-	</div>
-</div>
+{/if}
 
 <style>
 	.overlay {
-		display: grid;
-		grid-template-columns: auto 1fr auto;
+		display: flex;
 		align-items: center;
 		gap: 8px;
 		/* The pill is a fixed-height chip. On desktop it fills the 40px overlay
@@ -130,13 +178,42 @@
 		cursor: pointer;
 	}
 
+	/* Failed: a red chip so the failure reads at a glance, with the terse reason
+	   in the label and Retry inline. */
+	.overlay.failed {
+		background: rgba(60, 18, 22, 0.92);
+		border-color: rgba(239, 68, 68, 0.55);
+	}
+
 	.icon {
 		display: flex;
 		align-items: center;
 		color: rgba(255, 255, 255, 0.85);
 	}
 
+	.delivered-icon {
+		color: #7ee2a8;
+	}
+
+	.overlay.failed .icon {
+		color: #ffb4b4;
+	}
+
+	/* The middle slot grows to fill the pill, matching the recording meter's
+	   1fr column. Text ellipsizes; the full reason is in the title tooltip, the
+	   OS notification, and the recordings row. */
+	.label {
+		flex: 1;
+		min-width: 0;
+		font-size: 13px;
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
 	.bars {
+		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -205,6 +282,16 @@
 	.action.cancel:hover {
 		background: rgba(250, 162, 202, 0.22);
 		color: #ffd2e4;
+	}
+
+	/* Retry sits on the red failed chip; lighten it so it reads as the action. */
+	.action.retry {
+		background: rgba(255, 255, 255, 0.16);
+		color: #fff;
+	}
+
+	.action.retry:hover {
+		background: rgba(255, 255, 255, 0.28);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

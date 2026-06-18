@@ -59,15 +59,6 @@ export function quoteIdent(name: string): string {
 }
 
 /**
- * The one table in every matter.sqlite. A matter folder is one db file with one table, so
- * the name is a CONSTANT, not the folder's basename: the agent read surface (and the WHERE
- * filter) stays stable no matter what the folder is called or renamed to. The read
- * (`matchingFileNames` in the vault) and the write (`buildDdl`) both name it through this one
- * value, still guarded by `quoteIdent`.
- */
-export const MIRROR_TABLE = 'entries';
-
-/**
  * Serialize one OK (validated) cell value to its storage class. The value passed the
  * field's schema, so the kind determines the encoding: booleans to 0/1, lists to JSON
  * text, everything else to its TEXT/INTEGER/REAL form.
@@ -113,24 +104,25 @@ function serializeInvalid(value: unknown): SqlValue {
  * filter coerces by affinity; a missing cell binds NULL), and an `_extra` JSON column
  * (always present) for the untyped keys, so an agent can see extras too.
  */
-function buildDdl(fields: readonly Field[]): string {
+function buildDdl(tableName: string, fields: readonly Field[]): string {
 	const defs = [
 		`${quoteIdent('file')} TEXT PRIMARY KEY`,
 		...fields.map((c) => `${quoteIdent(c.name)} ${storageOf(c.kind)}`),
 		`${quoteIdent('_extra')} TEXT NOT NULL`,
 	];
-	return `CREATE TABLE ${quoteIdent(MIRROR_TABLE)} (${defs.join(', ')})`;
+	return `CREATE TABLE ${quoteIdent(tableName)} (${defs.join(', ')})`;
 }
 
 /**
- * Project a classified folder into the SQLite artifacts. EVERY readable row is included;
- * each cell is serialized by its conformance state (OK by storage class, INVALID by its
- * raw value, MISSING_REQUIRED/MISSING_OPTIONAL as NULL) and its untyped keys are
- * folded into the `_extra` JSON object. The cells are read off
- * `RowConformance.cells`, which classifyRow built in `contract.fields` order, so they
- * line up positionally with the columns below.
+ * Project a classified folder into the SQLite artifacts. `tableName` is the SQL table's name
+ * (the folder's name, so a cross-table JOIN can refer to it), quoted through {@link quoteIdent}.
+ * EVERY readable row is included; each cell is serialized by its conformance state (OK by storage
+ * class, INVALID by its raw value, MISSING_REQUIRED/MISSING_OPTIONAL as NULL) and its untyped keys
+ * are folded into the `_extra` JSON object. The cells are read off `RowConformance.cells`, which
+ * classifyRow built in `contract.fields` order, so they line up positionally with the columns below.
  */
 export function projectToSqlite(
+	tableName: string,
 	contract: Contract,
 	conformance: readonly RowConformance[],
 ): SqliteProjection {
@@ -156,14 +148,14 @@ export function projectToSqlite(
 	});
 
 	const placeholders = columns.map(() => '?').join(', ');
-	const insert = `INSERT INTO ${quoteIdent(MIRROR_TABLE)} (${columns
+	const insert = `INSERT INTO ${quoteIdent(tableName)} (${columns
 		.map(quoteIdent)
 		.join(', ')}) VALUES (${placeholders})`;
 
 	// DROP + CREATE as one param-less script; the command runs it via execute_batch,
 	// rusqlite's idiom for a multi-statement setup script.
-	const drop = `DROP TABLE IF EXISTS ${quoteIdent(MIRROR_TABLE)}`;
-	const schema = `${drop};\n${buildDdl(contract.fields)}`;
+	const drop = `DROP TABLE IF EXISTS ${quoteIdent(tableName)}`;
+	const schema = `${drop};\n${buildDdl(tableName, contract.fields)}`;
 
 	return { schema, insert, rows };
 }

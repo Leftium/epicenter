@@ -35,7 +35,7 @@ import type { FileDelta } from './bindings/FileDelta';
 import { parseEntry, type Row } from './core/parse';
 import { basename } from './core/path';
 import { editBody, editField } from './core/serialize';
-import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
+import { projectToSqlite, quoteIdent } from './core/sqlite';
 import {
 	buildView,
 	loadContract,
@@ -139,7 +139,7 @@ export function createTable(path: string) {
 			schema,
 			insert,
 			rows: tuples,
-		} = projectToSqlite(view.contract, view.conformance);
+		} = projectToSqlite(folderName, view.contract, view.conformance);
 		void invoke('write_mirror', { path, schema, insert, rows: tuples })
 			.then(() => {
 				mirrorVersion++; // the file is now fresh: wake any reader keyed on the mirror
@@ -241,7 +241,7 @@ export function createTable(path: string) {
 	function matchingFileNames(
 		where: string,
 	): Promise<Result<Set<string>, { message: string }>> {
-		const sql = `SELECT "file" FROM ${quoteIdent(MIRROR_TABLE)} WHERE ${where}`;
+		const sql = `SELECT "file" FROM ${quoteIdent(folderName)} WHERE ${where}`;
 		return tryAsync({
 			try: async () => {
 				// No limit: a name-only filter returns every matching row, never a silent cap.

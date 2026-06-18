@@ -60,10 +60,10 @@ const invalid: Row = {
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
 	test('drops then recreates: file PK, one nullable column per field by storage class, _extra JSON', () => {
-		const { schema } = projectToSqlite(m, []);
+		const { schema } = projectToSqlite('posts', m, []);
 		expect(schema).toBe(
-			'DROP TABLE IF EXISTS "entries";\n' +
-				'CREATE TABLE "entries" (' +
+			'DROP TABLE IF EXISTS "posts";\n' +
+				'CREATE TABLE "posts" (' +
 				'"file" TEXT PRIMARY KEY, ' +
 				'"title" TEXT, ' +
 				'"status" TEXT, ' +
@@ -78,17 +78,24 @@ describe('schema script (DROP + CREATE, one execute_batch)', () => {
 
 	test('field identifiers with quotes/spaces are escaped, and stay nullable', () => {
 		const weird = contract({ 'a "b"': { type: 'string' } });
-		const { schema } = projectToSqlite(weird, []);
+		const { schema } = projectToSqlite('posts', weird, []);
 		expect(schema).toContain('"a ""b""" TEXT');
 		expect(schema).not.toContain('"a ""b""" TEXT NOT NULL');
+	});
+
+	test('the table name is the folder name, quoted', () => {
+		const { schema, insert } = projectToSqlite('my posts', m, []);
+		expect(schema).toContain('CREATE TABLE "my posts" (');
+		expect(schema).toContain('DROP TABLE IF EXISTS "my posts"');
+		expect(insert).toContain('INSERT INTO "my posts" (');
 	});
 });
 
 describe('insert template (one ? per column, bound positionally)', () => {
 	test('lists every column in order with one placeholder each', () => {
-		const { insert } = projectToSqlite(m, []);
+		const { insert } = projectToSqlite('posts', m, []);
 		expect(insert).toBe(
-			'INSERT INTO "entries" (' +
+			'INSERT INTO "posts" (' +
 				'"file", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
@@ -99,7 +106,7 @@ describe('insert template (one ? per column, bound positionally)', () => {
 
 describe('rows (every readable row, serialized by conformance state)', () => {
 	const conformance = classifyRows(m.fields, [valid, incomplete]);
-	const proj = projectToSqlite(m, conformance);
+	const proj = projectToSqlite('posts', m, conformance);
 
 	test('valid AND incomplete rows both project, in folder order', () => {
 		expect(proj.rows).toHaveLength(2);
@@ -150,12 +157,12 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 			'OK',
 			'MISSING_OPTIONAL',
 		]);
-		const p = projectToSqlite(optionalContract, conformance);
+		const p = projectToSqlite('posts', optionalContract, conformance);
 		expect(p.rows[0]).toEqual(['person.md', 'Alice', null, '{}']);
 	});
 
 	test('an out-of-domain cell keeps its raw value so the draft stays filterable', () => {
-		const p = projectToSqlite(m, classifyRows(m.fields, [invalid]));
+		const p = projectToSqlite('posts', m, classifyRows(m.fields, [invalid]));
 		const [file, title, status, count] = p.rows[0]!;
 		expect(file).toBe('post-3.md');
 		expect(title).toBe('Bad');

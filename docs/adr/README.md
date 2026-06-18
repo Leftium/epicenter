@@ -84,7 +84,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0013](0013-file-import-is-a-surface-not-a-recording-mode.md) | File import is a surface, not a recording mode | Accepted |
 | [0013](0013-rust-owns-the-models-folder-the-webview-owns-the-catalog.md) | Rust owns the models folder, the webview owns the catalog | Accepted |
 | [0013](0013-whispering-separates-its-identity-mark-from-lucide-controls.md) | Whispering separates its identity mark from Lucide controls | Accepted |
+| [0014](0014-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on actor runs app semantics beside the app-blind anchor | Proposed |
 | [0014](0014-view-transitions-morph-a-re-expressed-glyph-not-its-container.md) | View transitions morph a re-expressed glyph, not its container | Accepted |
+| [0015](0015-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md) | Agent conversations are durable child docs driven by an observing actor | Proposed |
 | [0015](0015-the-brand-mark-has-one-canonical-source-every-other-form-is-generated.md) | The brand mark has one canonical source; every other form is generated | Proposed |
 
 When you add an ADR, add its row here.

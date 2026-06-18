@@ -1,44 +1,43 @@
 /**
- * The per-tab SQL WHERE filter over a vault's mirror.
+ * The per-tab SQL WHERE filter over one table's slice of the vault mirror.
  *
  * Bundles the three things a filter is, the input (`text`), the result
  * (`matchedFileNames`), and a bad-clause `error`, plus the debounced query and its own
- * reactive lifecycle, into ONE unit. FolderGrid binds `filter.text` and reads
+ * reactive lifecycle, into ONE unit. TableGrid binds `filter.text` and reads
  * `filter.matchedFileNames` instead of carrying three loose `$state`s and a standing effect
  * a reader has to mentally group.
  *
- * The vault is taken at construction (not per call): a tab's vault is non-swappable (a
- * folder switch remounts VaultView with a fresh vault AND a fresh filter), so there is
- * nothing to re-point at call time. The filter owns its own `$effect`, which Svelte ties to
- * the component that constructs it (the same pattern as `createPressedKeys`), so the caller
- * just writes `const filter = createWhereFilter(vault)`, with no effect to wire and no
- * cleanup to honor.
+ * The mirror is the query seam (the vault's SQLite projection); `tableName` names which folder's SQL
+ * table to query. Both are taken at construction (not per call): a tab's table is non-swappable (a
+ * table switch remounts TablePane with a fresh filter), so there is nothing to re-point at call time.
+ * The filter owns its own `$effect`, which Svelte ties to the component that constructs it (the same
+ * pattern as `createPressedKeys`), so the caller just writes `const filter = createWhereFilter(vault.
+ * mirror, () => table.folderName)`, with no effect to wire.
  *
- * The effect re-runs on two reactive reads: `text` (the clause) and `vault.mirrorVersion`
- * (bumped after each rebuild of `matter.sqlite`). Keying on the mirror's version, not the
- * in-memory rows, means the query fires only once the file it reads is actually fresh, so a
- * data edit can never land a result from the pre-rebuild mirror. Each run debounces, and its
- * cleanup cancels the pending/in-flight query so a newer clause or rebuild never lands a
- * stale result set.
+ * The effect re-runs on two reactive reads: `text` (the clause) and `mirror.version` (bumped after
+ * each mirror write or drop). Keying on the mirror's version, not the in-memory rows, means the query
+ * fires only once the file it reads is actually fresh, so a data edit can never land a result from the
+ * pre-rebuild mirror. Each run debounces, and its cleanup cancels the pending/in-flight query so a
+ * newer clause or rebuild never lands a stale result set.
  */
 
-import type { Vault } from './vault.svelte';
+import type { Mirror } from './mirror.svelte';
 
 /** Let a burst of keystrokes (or rapid external edits) settle before querying the mirror. */
 const DEBOUNCE_MS = 200;
 
-export function createWhereFilter(vault: Vault) {
+export function createWhereFilter(mirror: Mirror, tableName: () => string) {
 	let text = $state('');
 	let matchedFileNames = $state<Set<string>>();
 	let error = $state<string>();
 
 	// Resolve the current clause to matched names whenever the clause or the mirror changes.
-	// Reading `vault.mirrorVersion` (discarded) is the subscription: it bumps after each
-	// `matter.sqlite` rebuild, so the query below always reads a fresh file. The cleanup
-	// cancels the pending/in-flight query so a newer clause or rebuild never lands a stale set.
+	// Reading `mirror.version` (discarded) is the subscription: it bumps after each mirror write/drop,
+	// so the query below always reads a fresh file. The cleanup cancels the pending/in-flight query so
+	// a newer clause or rebuild never lands a stale set.
 	$effect(() => {
 		const clause = text.trim();
-		void vault.mirrorVersion; // re-run after the mirror is rebuilt (downstream of row edits)
+		void mirror.version; // re-run after the mirror is rebuilt (downstream of row edits)
 		// Empty clause: there is no filter, so show every row.
 		if (!clause) {
 			matchedFileNames = undefined;
@@ -47,7 +46,7 @@ export function createWhereFilter(vault: Vault) {
 		}
 		let cancelled = false;
 		const handle = setTimeout(async () => {
-			const { data, error: failure } = await vault.matchingFileNames(clause);
+			const { data, error: failure } = await mirror.query(tableName(), clause);
 			if (cancelled) return; // a newer clause, a rebuild, or this tab being torn down won
 			if (failure) error = failure.message;
 			else {

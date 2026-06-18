@@ -258,6 +258,37 @@ async function checkWhisperTruncation(
 	return Ok(undefined);
 }
 
+/**
+ * Warm the selected local model the instant a capture begins, so the cold
+ * load (~1 s) overlaps the user's speech instead of being paid after they
+ * stop. Called fire-and-forget from the manual and VAD start paths.
+ *
+ * No-op unless we are on desktop with a local provider selected and a model
+ * chosen: cloud/self-hosted have no local model to load, and web has no Rust.
+ * It resolves the model exactly the way `transcribeLocally` does, so it warms
+ * the same model transcription will use. Failures are swallowed on purpose:
+ * the worst case is transcription loads the model itself, as it does today.
+ * `language`/`initialPrompt` are inference params, irrelevant to loading, so
+ * they are sent null.
+ */
+export function prewarmLocalModel(): void {
+	if (!tauri) return;
+
+	const selectedService = settings.get('transcription.service');
+	if (!isLocalProviderId(selectedService)) return;
+
+	const provider = PROVIDERS[selectedService];
+	const modelName = deviceConfig.get(provider.modelConfigKey);
+	if (!modelName) return;
+
+	void commands.prewarmModel({
+		engine: selectedService,
+		modelName,
+		language: null,
+		initialPrompt: null,
+	});
+}
+
 async function transcribeLocally(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,

@@ -17,8 +17,8 @@ use recorder::recorder::Recorder;
 pub mod transcription;
 use transcription::{
     delete_model_entry, download_model, get_transcription_state, link_local_model,
-    list_model_entries, resolve_model_files, reveal_models_folder, set_unload_policy,
-    transcribe_recording, ModelCache, ModelStateEvent,
+    list_model_entries, prewarm_model, resolve_model_files, reveal_models_folder,
+    set_unload_policy, transcribe_recording, ModelCache, ModelStateEvent,
 };
 
 pub mod command;
@@ -29,6 +29,11 @@ use download::{cancel_download, DownloadManager};
 
 pub mod media;
 use media::{pause_active_media, resume_media};
+
+// Flag-gated (`WHISPERING_TIMING`) latency instrumentation for the desktop
+// audio pipeline. The `timing_note!` macro it exports is used across the
+// recorder, audio, and transcription modules.
+pub mod timing;
 
 // Desktop global keyboard trigger backend (rdev listener + binding matcher).
 // Built in isolation in Wave 2; the FE registrar swap and listener start-up
@@ -61,6 +66,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             delete_recording_artifacts,
             clear_recording_artifacts,
             transcribe_recording,
+            prewarm_model,
             open_accessibility_settings,
             set_unload_policy,
             get_transcription_state,

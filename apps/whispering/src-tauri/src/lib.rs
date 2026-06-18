@@ -30,6 +30,11 @@ use download::{cancel_download, DownloadManager};
 pub mod media;
 use media::{pause_active_media, resume_media};
 
+// Flag-gated (`WHISPERING_TIMING`) latency instrumentation for the desktop
+// audio pipeline. The `timing_note!` macro it exports is used across the
+// recorder, audio, and transcription modules.
+pub mod timing;
+
 // Desktop global keyboard trigger backend (rdev listener + binding matcher).
 // Built in isolation in Wave 2; the FE registrar swap and listener start-up
 // land in Wave 3. Desktop-only because rdev is a desktop-only dependency.

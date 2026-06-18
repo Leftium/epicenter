@@ -242,10 +242,14 @@ const recording = {
 		field.select(RECORDING_TRIGGERS),
 		() => 'manual' as const,
 	),
-	// Pause system media playback while capturing, resume it when capture ends.
-	// A capture-quality preference (reduce background-audio contamination), so it
-	// roams like the sound toggles even though the pause capability is per-device.
-	'recording.pausePlayback': defineKv(field.boolean(), () => false),
+	// Pause system media playback while your voice is being captured, resume it
+	// after. On by default: hearing music while you talk disrupts dictation, and
+	// pausing media during voice capture is the least-astonishing behavior (it is
+	// what a phone call does to your music). Discoverable without a nudge via the
+	// settings toggle's description and the home-row quick toggle. A roaming
+	// preference, not a per-device capability, so it follows you across machines
+	// like the sound toggles.
+	'recording.pausePlayback': defineKv(field.boolean(), () => true),
 } as const;
 
 /**

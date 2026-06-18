@@ -1,4 +1,7 @@
+import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
+import { loadVault } from '../load/fs';
 import { classifyRows } from './conformance';
 import { validateContract } from './contract';
 import type { Row } from './parse';
@@ -168,5 +171,59 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 		expect(title).toBe('Bad');
 		expect(status).toBe('bogus'); // not in the enum, kept raw
 		expect(count).toBe(1.5); // not an integer, kept raw
+	});
+});
+
+describe('projects a vault into one db whose tables JOIN', () => {
+	// W5's payoff: one db per vault, one SQL table per folder NAMED for the folder, so a cross-table
+	// JOIN falls out of real table names with no new code. This drives the real projector over the
+	// bundled content-vault and runs its SQL through bun:sqlite (the same engine the Tauri command
+	// uses), so the success criterion is proven end to end, not asserted on the SQL strings alone.
+	const appRoot = resolve(import.meta.dir, '../../..');
+	const exampleVault = resolve(appRoot, '../../examples/matter/content-vault');
+
+	test('adaptations JOIN pages on the reference column returns the resolved rows', async () => {
+		// Load the fixture and project every typed table into one in-memory db, exactly as the Vault
+		// fills its shared .matter db (each folder -> a table named for the folder).
+		const tables = await loadVault(exampleVault);
+		const db = new Database(':memory:');
+		for (const table of tables) {
+			if (table.status !== 'readable' || table.read.view.mode !== 'typed')
+				continue;
+			const { schema, insert, rows } = projectToSqlite(
+				table.name,
+				table.read.view.contract,
+				table.read.view.conformance,
+			);
+			db.exec(schema); // DROP + CREATE for this folder's table
+			const stmt = db.prepare(insert);
+			for (const row of rows) stmt.run(...row);
+		}
+
+		// `adaptations.page` holds a page's basename (no extension); the mirror's `file` column keeps
+		// the `.md`, so the JOIN key is `page || '.md' = file`. An INNER JOIN naturally drops the
+		// deliberately-dangling orphan-adaptation (page `ghost-page`, which has no pages row).
+		const joined = db
+			.query(
+				`SELECT a."file" AS adaptation, p."file" AS page
+				 FROM adaptations a JOIN pages p ON a."page" || '.md' = p."file"
+				 ORDER BY a."file"`,
+			)
+			.all() as { adaptation: string; page: string }[];
+
+		expect(joined).toEqual([
+			{
+				adaptation: 'become-the-source-carousel.md',
+				page: 'become-the-source.md',
+			},
+			{
+				adaptation: 'become-the-source-thread.md',
+				page: 'become-the-source.md',
+			},
+			{
+				adaptation: 'plan-yourself-short.md',
+				page: 'how-we-plan-ourselves.md',
+			},
+		]);
 	});
 });

@@ -76,7 +76,7 @@
 			// leak (the pattern dictation-capability.svelte.ts uses for the same race).
 			let torn = false;
 			let unlisten: (() => void) | undefined;
-			void tauri.globalShortcuts
+			void tauri.keyboard
 				.listenForCapture((combo) => {
 					for (const modifier of combo.modifiers) capturedModifiers.add(modifier);
 					for (const key of combo.keys) capturedKeys.add(key);
@@ -110,7 +110,7 @@
 		// the tap up (gated on trust) so an Fn or modifier-only binding is even
 		// recordable; when the tap is already running it just enters capture mode.
 		// An untrusted user lands in `untrusted`, which lights the upgrade hint.
-		await tauri.globalShortcuts.setCapturing(true);
+		await tauri.keyboard.setCapturing(true);
 	}
 
 	async function stopSession() {
@@ -118,7 +118,7 @@
 		capturing = false;
 		// Drop the capture-hold; the tap tears back down to the floor unless a
 		// binding or auto-paste still wants it.
-		await tauri.globalShortcuts.setCapturing(false);
+		await tauri.keyboard.setCapturing(false);
 	}
 
 	// If the recorder is torn down mid-capture (route change, or the popover

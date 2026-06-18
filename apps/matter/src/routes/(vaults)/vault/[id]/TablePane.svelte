@@ -26,7 +26,7 @@
 	// (re-querying on a clause or mirror change, cancelling stale runs). The remount-per-table keying
 	// is what makes capturing this table's name at construction safe.
 	// svelte-ignore state_referenced_locally - VaultShell keys this pane on the active table, so it remounts (not re-renders) when the table changes; capturing the construction-time table is the intent.
-	const filter = createWhereFilter(vault, () => table.folderName);
+	const filter = createWhereFilter(vault.mirror, () => table.folderName);
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">

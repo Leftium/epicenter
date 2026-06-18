@@ -67,8 +67,17 @@ transcript.observe(() => {
 	}
 	if (assistant.finish && !finished.has(assistant.id)) {
 		finished.add(assistant.id);
-		if (assistant.finish.kind === 'cancelled') process.stdout.write(' [cancelled]');
-		process.stdout.write('\n');
+		const { finish } = assistant;
+		// One terminal note, kept to a single REPL line. `failed` collapses any
+		// newlines in the provider message so it can't push the prompt mid-text;
+		// the message is already length-capped where the actor writes it.
+		const note =
+			finish.kind === 'cancelled'
+				? ' [cancelled]'
+				: finish.kind === 'failed'
+					? ` [failed: ${finish.code}] ${finish.message.replace(/\s+/g, ' ')}`
+					: '';
+		process.stdout.write(`${note}\n`);
 		rl.prompt();
 	}
 });

@@ -69,6 +69,27 @@ echo, behind the identical `ChatStream` contract (built exactly as
 GEMINI_API_KEY=... bun run actor
 ```
 
+The actor logs the provider path:
+
+```txt
+[gemini] request started · model=gemini-3.5-flash · messages=3
+[gemini] still waiting for first chunk after 5000ms
+[gemini] first chunk after 7420ms · type=TEXT_MESSAGE_CONTENT
+```
+
+If Gemini fails before text arrives, the client renders the failed finish instead
+of looking stuck:
+
+```txt
+assistant:  [failed: stream-error] ApiError: ...
+```
+
+For the fast local echo path, run the actor without the key:
+
+```sh
+env -u GEMINI_API_KEY bun run actor
+```
+
 ## Non-interactive checks
 
 ```sh

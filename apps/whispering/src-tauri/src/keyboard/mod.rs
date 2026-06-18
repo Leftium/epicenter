@@ -155,10 +155,19 @@ impl KeyboardListener {
     /// Enter or leave capture mode. While capturing, the tap forwards the held
     /// combo to the settings recorder as a `ShortcutCaptureEvent` instead of
     /// matching registered bindings (see `Matcher::set_capturing`).
+    ///
+    /// Capture is also a reason to hold the tap: recording an Fn or modifier-only
+    /// binding needs the tap running to read the keys, but from the permission-free
+    /// floor no binding is bound yet, so the tap is dormant. Telling the supervisor
+    /// spins it up for the duration of capture (gated on trust, so an untrusted
+    /// user is routed to grant Accessibility first), which is the only way the
+    /// first Fn binding is ever recordable. The matcher flag is set first so the
+    /// freshly-spawned tap is already in capture mode when its events arrive.
     pub fn set_capturing(&self, capturing: bool) {
         if let Ok(mut matcher) = self.matcher.lock() {
             matcher.set_capturing(capturing);
         }
+        let _ = self.control_tx.send(Control::Capturing(capturing));
     }
 
     /// The current dictation capability, for the FE's seed on attach.
@@ -173,7 +182,11 @@ impl KeyboardListener {
 /// Store the new capability and, if it changed, push it to the frontend. The
 /// supervisor is the only writer, so the compare-and-emit needs no extra
 /// synchronization beyond the cell's own lock.
-fn set_capability(app: &AppHandle, cell: &Arc<Mutex<DictationCapability>>, next: DictationCapability) {
+fn set_capability(
+    app: &AppHandle,
+    cell: &Arc<Mutex<DictationCapability>>,
+    next: DictationCapability,
+) {
     if let Ok(mut current) = cell.lock() {
         if *current == next {
             return;
@@ -312,11 +325,40 @@ enum Control {
     /// grant is real (a stale grant reads as trusted but the tap dies), which is
     /// the only way to catch the `Broken` case for paste too.
     AutoPaste(bool),
+    /// Whether the settings recorder is capturing a binding. Capture needs the tap
+    /// running to read Fn and physical keys, so it holds the tap for its duration
+    /// even with no binding bound: this is what lets the first Fn binding be
+    /// recorded from the dormant floor. Just another reason to want the grant; the
+    /// tap does not care which reason holds it.
+    Capturing(bool),
+}
+
+/// The reasons the tap may be held, all of which mean the same thing to the tap:
+/// something wants the macOS Accessibility grant. The supervisor never acts on
+/// *which* reason, only on whether any holds, so the disjunction lives in one
+/// place ({@link wants_tap}) instead of being rewritten at each call site.
+#[derive(Default)]
+struct TapIntent {
+    /// An Fn or modifier-only binding is bound (chords go to the plugin instead).
+    bindings: bool,
+    /// Auto-paste-at-cursor is on (it injects through the same grant).
+    auto_paste: bool,
+    /// The settings recorder is capturing a binding.
+    capturing: bool,
+}
+
+impl TapIntent {
+    /// Whether anything wants the tap held. The single source of the predicate the
+    /// supervisor gates on.
+    fn wants_tap(&self) -> bool {
+        self.bindings || self.auto_paste || self.capturing
+    }
 }
 
 /// Reconcile the tap to the live intent: run it when something needs the
-/// Accessibility grant (a Fn/modifier-only binding or auto-paste) and we are
-/// trusted, tear it down when nothing does. Returns the phase to publish.
+/// Accessibility grant (a Fn/modifier-only binding, auto-paste, or an in-progress
+/// capture) and we are trusted, tear it down when nothing does. Returns the phase
+/// to publish.
 /// `TapStopped` is handled separately because it carries restart-backoff state.
 fn reconcile_tap(
     app: &AppHandle,
@@ -346,8 +388,9 @@ fn reconcile_tap(
 /// The single owner of the tap's lifecycle and the published `DictationCapability`.
 ///
 /// Three facts it designs around: the tap is only needed when something wants the
-/// Accessibility grant (a Tier-1 binding, or auto-paste; chords go to the
-/// plugin), `mac_tap`/`rdev` give a thread-death signal but no positive "alive"
+/// Accessibility grant (a Tier-1 binding, auto-paste, or an in-progress capture;
+/// chords go to the plugin), `mac_tap`/`rdev` give a thread-death signal but no
+/// positive "alive"
 /// signal, and macOS gives no event when Accessibility flips. So the tap is
 /// spawned only while it is wanted AND we are trusted (an untrusted tap silently
 /// drops events, looking alive); its liveness is the death channel; and the
@@ -367,9 +410,8 @@ fn run_supervisor(
         return;
     }
 
-    // Two independent reasons to hold the tap; either one makes it "needed".
-    let mut has_tap_bindings = false;
-    let mut auto_paste = false;
+    // Several independent reasons can hold the tap; any one makes it "needed".
+    let mut intent = TapIntent::default();
     let mut tap_running = false;
     let mut restart_attempt = 0usize;
     let mut last_stop: Option<Instant> = None;
@@ -381,7 +423,7 @@ fn run_supervisor(
     set_capability(&app, &capability, phase);
 
     loop {
-        let needs_tap = has_tap_bindings || auto_paste;
+        let needs_tap = intent.wants_tap();
         // Poll the grant only while we want the tap but cannot run it (`Untrusted`
         // after the user opted in, or `Broken`), so a toggle in System Settings
         // (which fires no event) is caught. Otherwise block: `Inactive` waits for
@@ -424,27 +466,39 @@ fn run_supervisor(
                 }
             }
 
-            // Intent changed. A fresh intent, so the restart budget resets, then
-            // the tap is reconciled to whether anything still wants the grant.
+            // Intent changed (a binding set, auto-paste, or capture mode). A fresh
+            // intent, so the restart budget resets, then the tap is reconciled to
+            // whether anything still wants the grant.
             Some(Control::Bindings(next)) => {
-                has_tap_bindings = next;
+                intent.bindings = next;
                 restart_attempt = 0;
                 phase = reconcile_tap(
                     &app,
                     &matcher,
                     &control_tx,
-                    has_tap_bindings || auto_paste,
+                    intent.wants_tap(),
                     &mut tap_running,
                 );
             }
             Some(Control::AutoPaste(next)) => {
-                auto_paste = next;
+                intent.auto_paste = next;
                 restart_attempt = 0;
                 phase = reconcile_tap(
                     &app,
                     &matcher,
                     &control_tx,
-                    has_tap_bindings || auto_paste,
+                    intent.wants_tap(),
+                    &mut tap_running,
+                );
+            }
+            Some(Control::Capturing(next)) => {
+                intent.capturing = next;
+                restart_attempt = 0;
+                phase = reconcile_tap(
+                    &app,
+                    &matcher,
+                    &control_tx,
+                    intent.wants_tap(),
                     &mut tap_running,
                 );
             }

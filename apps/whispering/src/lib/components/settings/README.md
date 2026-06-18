@@ -35,7 +35,7 @@ settings/
 │   ├── VadDeviceSelector.svelte
 │   ├── TransformationSelector.svelte
 │   ├── TranscriptionSelector.svelte
-│   └── RecordingTriggerSelector.svelte
+│   └── CaptureSurfaceSelector.svelte
 ├── LocalModelSelector.svelte
 ├── LocalModelDownloadCard.svelte
 ├── TranscriptionServiceSelect.svelte

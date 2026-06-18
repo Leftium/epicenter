@@ -3,8 +3,9 @@
 	import { cn } from '@epicenter/ui/utils';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { commandCallbacks } from '$lib/commands';
+	import ImportFileButton from '$lib/components/ImportFileButton.svelte';
 	import {
-		RecordingTriggerSelector,
+		CaptureSurfaceSelector,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -14,8 +15,8 @@
 		MANUAL_RECORDING_BUTTON,
 		VAD_RECORDING_BUTTON,
 	} from '$lib/constants/audio';
+	import { captureSurface } from '$lib/state/capture-surface.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
@@ -38,96 +39,99 @@
 	</Button>
 
 	<div class="flex items-center gap-1.5">
-		<div class="flex items-center gap-1.5">
-			{#if settings.get('recording.trigger') === 'manual'}
-				{#if manualRecorder.state === 'RECORDING'}
+		{#if captureSurface.current === 'manual'}
+			{#if manualRecorder.state === 'RECORDING'}
+				<Button
+					tooltip="Cancel recording"
+					onclick={() => commandCallbacks.cancelRecording()}
+					variant="ghost"
+					size="icon"
+				>
+					<XIcon class="size-4" />
+				</Button>
+				<Button
+					tooltip="Stop recording"
+					onclick={() => commandCallbacks.toggleManualRecording()}
+					variant="ghost"
+					size="icon"
+				>
+					<ManualButtonIcon class="size-4" />
+				</Button>
+			{:else}
+				<ManualDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="standalone"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
+				<TransformationSelector />
+				<div class="flex">
 					<Button
-						tooltip="Cancel recording"
-						onclick={() => commandCallbacks.cancelRecording()}
-						variant="ghost"
-						size="icon"
-					>
-						<XIcon class="size-4" />
-					</Button>
-				{:else}
-					<ManualDeviceSelector
-						iconViewTransitionName={viewTransition.pipeline.device}
-					/>
-					<TranscriptionSelector
-						variant="standalone"
-						iconViewTransitionName={viewTransition.pipeline.transcription}
-					/>
-					<TransformationSelector />
-				{/if}
-				{#if manualRecorder.state === 'RECORDING'}
-					<Button
-						tooltip="Stop recording"
+						tooltip="Start recording"
 						onclick={() => commandCallbacks.toggleManualRecording()}
 						variant="ghost"
 						size="icon"
+						class="rounded-r-none border-r-0"
 					>
-						<ManualButtonIcon class="size-4" />
+						<span
+							class="inline-flex shrink-0"
+							style:view-transition-name={viewTransition.recordingMode('manual')}
+						>
+							<ManualButtonIcon class="size-4" />
+						</span>
 					</Button>
-				{:else}
-					<div class="flex">
-						<Button
-							tooltip="Start recording"
-							onclick={() => commandCallbacks.toggleManualRecording()}
-							variant="ghost"
-							size="icon"
-							class="rounded-r-none border-r-0"
-						>
-							<span
-								class="inline-flex shrink-0"
-								style:view-transition-name={viewTransition.recordingMode('manual')}
-							>
-								<ManualButtonIcon class="size-4" />
-							</span>
-						</Button>
-						<RecordingTriggerSelector class="rounded-l-none" />
-					</div>
-				{/if}
-			{:else if settings.get('recording.trigger') === 'vad'}
-				{#if vadRecorder.state === 'IDLE'}
-					<VadDeviceSelector
-						iconViewTransitionName={viewTransition.pipeline.device}
-					/>
-					<TranscriptionSelector
-						variant="standalone"
-						iconViewTransitionName={viewTransition.pipeline.transcription}
-					/>
-					<TransformationSelector />
-				{/if}
-				{#if vadRecorder.state === 'IDLE'}
-					<div class="flex">
-						<Button
-							tooltip="Start voice activated recording"
-							onclick={() => commandCallbacks.toggleVadRecording()}
-							variant="ghost"
-							size="icon"
-							class="rounded-r-none border-r-0"
-						>
-							<span
-								class="inline-flex shrink-0"
-								style:view-transition-name={viewTransition.recordingMode('vad')}
-							>
-								<VadButtonIcon class="size-4" />
-							</span>
-						</Button>
-						<RecordingTriggerSelector class="rounded-l-none" />
-					</div>
-				{:else}
+					<CaptureSurfaceSelector class="rounded-l-none" />
+				</div>
+			{/if}
+		{:else if captureSurface.current === 'vad'}
+			{#if vadRecorder.state === 'IDLE'}
+				<VadDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="standalone"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
+				<TransformationSelector />
+				<div class="flex">
 					<Button
-						tooltip="Stop voice activated recording"
+						tooltip="Start voice activated recording"
 						onclick={() => commandCallbacks.toggleVadRecording()}
 						variant="ghost"
 						size="icon"
+						class="rounded-r-none border-r-0"
 					>
-						<VadButtonIcon class="size-4" />
+						<span
+							class="inline-flex shrink-0"
+							style:view-transition-name={viewTransition.recordingMode('vad')}
+						>
+							<VadButtonIcon class="size-4" />
+						</span>
 					</Button>
-				{/if}
+					<CaptureSurfaceSelector class="rounded-l-none" />
+				</div>
+			{:else}
+				<Button
+					tooltip="Stop voice activated recording"
+					onclick={() => commandCallbacks.toggleVadRecording()}
+					variant="ghost"
+					size="icon"
+				>
+					<VadButtonIcon class="size-4" />
+				</Button>
 			{/if}
-		</div>
+		{:else if captureSurface.current === 'import'}
+			<TranscriptionSelector
+				variant="standalone"
+				iconViewTransitionName={viewTransition.pipeline.transcription}
+			/>
+			<TransformationSelector />
+			<div class="flex">
+				<ImportFileButton class="rounded-r-none border-r-0" />
+				<CaptureSurfaceSelector class="rounded-l-none" />
+			</div>
+		{/if}
 	</div>
 </header>
 

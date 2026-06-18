@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import * as Field from '@epicenter/ui/field';
 	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
@@ -24,9 +23,9 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDING_TRIGGER_META,
-		RECORDING_TRIGGER_OPTIONS,
-		type RecordingTrigger,
+		CAPTURE_SURFACE_META,
+		CAPTURE_SURFACE_OPTIONS,
+		type CaptureSurface,
 	} from '$lib/constants/audio';
 	import {
 		IMPORT_ACCEPT,
@@ -36,19 +35,16 @@
 		MAX_IMPORT_FILE_SIZE,
 	} from '$lib/constants/import-formats';
 	import { importFiles } from '$lib/operations/import';
-	import {
-		stopManualRecording,
-		stopVadRecording,
-	} from '$lib/operations/recording';
+	import { selectCaptureSurface } from '$lib/operations/recording';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
+	import { captureSurface } from '$lib/state/capture-surface.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
@@ -178,46 +174,6 @@
 			services.blobs.audio.revokeUrl(latestRecording.id);
 		}
 	});
-
-	async function stopActiveRecordingExcept(triggerToKeep: RecordingTrigger) {
-		const triggers = [
-			{
-				trigger: 'manual' as const,
-				isActive: () => manualRecorder.state === 'RECORDING',
-				stop: () => stopManualRecording(),
-			},
-			{
-				trigger: 'vad' as const,
-				isActive: () => vadRecorder.state !== 'IDLE',
-				stop: () => stopVadRecording(),
-			},
-		] satisfies {
-			trigger: RecordingTrigger;
-			isActive: () => boolean;
-			stop: () => Promise<unknown>;
-		}[];
-
-		const toStop = triggers.filter(
-			(trigger) => trigger.trigger !== triggerToKeep && trigger.isActive(),
-		);
-
-		await Promise.all(toStop.map((trigger) => trigger.stop()));
-	}
-
-	async function switchRecordingTrigger(newTrigger: RecordingTrigger) {
-		await stopActiveRecordingExcept(newTrigger);
-
-		if (settings.get('recording.trigger') !== newTrigger) {
-			settings.set('recording.trigger', newTrigger);
-			const label = RECORDING_TRIGGER_OPTIONS.find(
-				(option) => option.value === newTrigger,
-			)?.label;
-			report.success({
-				title: 'Recording trigger switched',
-				description: `Now using ${label ?? newTrigger}.`,
-			});
-		}
-	}
 </script>
 
 <svelte:head> <title>Whispering</title> </svelte:head>
@@ -255,20 +211,20 @@
 	{:else}
 		<ToggleGroup.Root
 			type="single"
-			bind:value={() => settings.get('recording.trigger'),
-				(trigger) => {
-					if (!trigger) return;
-					void switchRecordingTrigger(trigger as RecordingTrigger);
+			bind:value={() => captureSurface.current,
+				(surface) => {
+					if (!surface) return;
+					void selectCaptureSurface(surface as CaptureSurface);
 				}}
 			class="w-full"
 		>
-			{#each RECORDING_TRIGGER_OPTIONS as option}
-				{@const TriggerIcon = RECORDING_TRIGGER_META[option.value].Icon}
+			{#each CAPTURE_SURFACE_OPTIONS as option}
+				{@const SurfaceIcon = CAPTURE_SURFACE_META[option.value].Icon}
 				<ToggleGroup.Item
 					value={option.value}
-					aria-label="Switch to {option.label.toLowerCase()} recording"
+					aria-label="Switch to {option.label.toLowerCase()}"
 				>
-					<TriggerIcon class="size-4" />
+					<SurfaceIcon class="size-4" />
 					<span class="hidden truncate sm:inline">{option.label}</span>
 				</ToggleGroup.Item>
 			{/each}
@@ -304,7 +260,7 @@
 			</CapturePipeline>
 		{/snippet}
 
-		{#if settings.get('recording.trigger') === 'manual'}
+		{#if captureSurface.current === 'manual'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<ManualRecordingAction pipeline={manualPipeline} />
 				{#if manualRecorder.state === 'RECORDING'}
@@ -319,34 +275,43 @@
 					</Button>
 				{/if}
 			</div>
-		{:else if settings.get('recording.trigger') === 'vad'}
+		{:else if captureSurface.current === 'vad'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<VadRecordingAction pipeline={vadPipeline} />
 			</div>
+		{:else if captureSurface.current === 'import'}
+			<div class="flex w-full flex-col items-center gap-4">
+				<FileDropZone
+					accept={IMPORT_ACCEPT}
+					maxFiles={MAX_IMPORT_FILES}
+					maxFileSize={MAX_IMPORT_FILE_SIZE}
+					onUpload={async (files) => {
+						if (files.length > 0) {
+							await importFiles({ files });
+						}
+					}}
+					onFileRejected={({ file, reason }) => {
+						report.error({
+							cause: PageError.FileRejected({
+								fileName: file.name,
+								reason,
+							}).error,
+							title: 'File rejected',
+						});
+					}}
+					class="h-32 sm:h-36 w-full"
+				/>
+				<CapturePipeline>
+					<TranscriptionSelector
+						variant="pipeline"
+						iconViewTransitionName={viewTransition.pipeline.transcription}
+					/>
+					<TransformationSelector
+						iconViewTransitionName={transformationViewTransitionName}
+					/>
+				</CapturePipeline>
+			</div>
 		{/if}
-
-		<Field.Separator class="w-full">or import a file</Field.Separator>
-
-		<FileDropZone
-			accept={IMPORT_ACCEPT}
-			maxFiles={MAX_IMPORT_FILES}
-			maxFileSize={MAX_IMPORT_FILE_SIZE}
-			onUpload={async (files) => {
-				if (files.length > 0) {
-					await importFiles({ files });
-				}
-			}}
-			onFileRejected={({ file, reason }) => {
-				report.error({
-					cause: PageError.FileRejected({
-						fileName: file.name,
-						reason,
-					}).error,
-					title: 'File rejected',
-				});
-			}}
-			class="h-32 w-full sm:h-36"
-		/>
 
 		{#if latestRecording}
 			<div class="flex w-full flex-col gap-2">
@@ -386,7 +351,7 @@
 		{/if}
 
 		<div class="flex flex-col items-center gap-3">
-			{#if settings.get('recording.trigger') === 'manual'}
+			{#if captureSurface.current === 'manual'}
 				<p class="text-foreground/75 text-center text-sm">
 					{#if manualShortcutLabel}
 						Click the microphone to record{tauri ? ' here' : ''}, or press
@@ -407,7 +372,7 @@
 						Click the microphone to start recording.
 					{/if}
 				</p>
-			{:else if settings.get('recording.trigger') === 'vad'}
+			{:else if captureSurface.current === 'vad'}
 				<p class="text-foreground/75 text-center text-sm">
 					{#if vadShortcutLabel}
 						Click the microphone to listen{tauri ? ' here' : ''}, or press

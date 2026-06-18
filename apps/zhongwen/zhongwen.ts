@@ -50,7 +50,7 @@ export const generateConversationId = (): ConversationId =>
 export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
 
 /**
- * The hosted cloud agent's stable address (ADR-0013). A new conversation is bound
+ * The hosted cloud agent's stable address (ADR-0015). A new conversation is bound
  * to this agent, so the cloud generation path (the metered HTTP route) answers it.
  * The binding is immutable: to talk to a different agent you fork the conversation,
  * so a conversation's history only ever reaches its one bound agent. An always-on
@@ -82,7 +82,7 @@ export type AgentConfig = {
 };
 
 /**
- * The agents a Zhongwen conversation can be bound to (ADR-0013). Config, not
+ * The agents a Zhongwen conversation can be bound to (ADR-0015). Config, not
  * presence: the picker lists every entry here whether or not its runtime is live,
  * because the conversation doc is a durable mailbox: a turn bound to an offline
  * daemon waits in the doc until that daemon wakes and answers. Presence only ever
@@ -159,7 +159,7 @@ const conversationsTable = defineTable({
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
 	/**
-	 * The agent this conversation is bound to (ADR-0013), set once at creation and
+	 * The agent this conversation is bound to (ADR-0015), set once at creation and
 	 * never reassigned. {@link CLOUD_AGENT_ID} routes to the cloud generation path
 	 * (the browser nudges the HTTP route); a daemon's agent id routes to that
 	 * always-on actor over sync, and the browser skips its kickoff. One immutable

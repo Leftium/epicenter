@@ -1,6 +1,6 @@
 # doc-as-wire chat
 
-A runnable demonstration of ADR-0012 / ADR-0013: **a separate, always-on actor
+A runnable demonstration of ADR-0014 / ADR-0015: **a separate, always-on actor
 answers a conversation by writing into a synced document, and another peer
 watches the answer stream back — the doc is the wire.** No HTTP request/response
 between client and actor, no server-sent events.

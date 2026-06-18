@@ -3,7 +3,7 @@
 **Date**: 2026-06-17
 **Status**: Draft
 **Owner**: Braden
-**Builds on**: `20260616T225034-always-on-actors-over-synced-docs.md` (the vision), `20260530T100000-ai-workflows-consolidated-design.md` (Model 1 / Model 2), `docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md`, `docs/adr/0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0013-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`
+**Builds on**: `20260616T225034-always-on-actors-over-synced-docs.md` (the vision), `20260530T100000-ai-workflows-consolidated-design.md` (Model 1 / Model 2), `docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md`, `docs/adr/0014-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`
 
 This is the **V2.R** deliverable from `20260616T225034-actors-buildout.tracker.md`:
 research only, no product code. It answers three questions the vision spec named
@@ -120,7 +120,7 @@ end state that Codex's and Claude Code's vendor lock cannot). [6][9][10]
    (`message_start`/`update`/`end` for assistant text; `tool_execution_start`/
    `update`/`end` for tool-call rows; `turn`/`agent` markers for boundaries) and
    append into the same conversation child-doc transcript the V0 loop writes
-   (assistant `Y.Text` + structured tool-call rows). This reuses ADR-0013's
+   (assistant `Y.Text` + structured tool-call rows). This reuses ADR-0015's
    append-to-`Y.Text`-is-the-wire model verbatim; no SSE. [7]
 2. **Per-tool approval to a durable record**: use pi's in-process
    `beforeToolCall(context, signal) => Promise<{ block, reason } | undefined>`.
@@ -289,7 +289,7 @@ These are load-bearing; the build cannot start clean until they are answered.
 
 V2 is parallel and independent. It depends on **none** of V0/V1 landing, but two of
 its seams reuse V0/V1 primitives rather than reinventing them: the harness writes
-into the **same** conversation child-doc transcript (ADR-0013, the V0 append loop),
+into the **same** conversation child-doc transcript (ADR-0015, the V0 append loop),
 and the per-tool approval reuses the **V1.3 durable approval record** the doc
 already carries. The sandbox's action socket is the RPC face of the **ADR-0010**
 action surface Model 1 already uses. So when V2 is greenlit, it composes onto

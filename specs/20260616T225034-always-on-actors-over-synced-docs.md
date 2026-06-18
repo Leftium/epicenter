@@ -3,7 +3,7 @@
 **Date**: 2026-06-16
 **Status**: Draft
 **Owner**: Braden
-**Builds on**: `20260616T185740-cloudless-home-anchor-direction.md`, `20260530T100000-ai-workflows-consolidated-design.md`, `docs/adr/0012-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0013-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`, `docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md`
+**Builds on**: `20260616T185740-cloudless-home-anchor-direction.md`, `20260530T100000-ai-workflows-consolidated-design.md`, `docs/adr/0014-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`, `docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md`
 
 ## One Sentence
 
@@ -39,11 +39,11 @@ This spec stitches existing decisions together; it does not replace them.
 Three things the documents above do not cover, because they assume hosted inference
 and a human present on the same device:
 
-1. **The role split** (ADR-0012): an app-blind **anchor**/**relay** for custody and
+1. **The role split** (ADR-0014): an app-blind **anchor**/**relay** for custody and
    transport, and an app-aware **actor** for semantics, running beside it. Epicenter
    Cloud is a relay plus optional managed actors; a user-owned box is an anchor plus
    per-app actors.
-2. **Doc-as-wire driven by an observing actor** (ADR-0013): the agent turn is a
+2. **Doc-as-wire driven by an observing actor** (ADR-0015): the agent turn is a
    durable doc record, not an HTTP request. The actor observes, streams into a
    `Y.Text`, honors a durable cancel, writes a write-once `finish`. It answers as
    one agent (`AgentId`); the conversation row's immutable `agent` is what binds a
@@ -62,11 +62,11 @@ thin client (phone, browser)
   observes assistant text streaming into the Y.Text
   resolves approval records when asked
 
-sync transport (app-blind, ADR-0012)
+sync transport (app-blind, ADR-0014)
   hosted:    Epicenter Cloud relay (Durable Object)
   cloudless: Rust/Iroh sidecar to the user's anchor
 
-actor (app-aware, ADR-0012/0013), beside the anchor
+actor (app-aware, ADR-0014/0015), beside the anchor
   syncs the same rooms; holds live replicas
   answers as a fixed agent; its loop hosts only conversations bound to that agent
   observes the unanswered turn and answers it (no claim; idempotent id dedupes)
@@ -90,7 +90,7 @@ local backend (Ollama / llama.cpp / MLX) look identical to the append loop.
 whole of it: structured one-shot completion (classify, extract) and embeddings are
 sibling capabilities an `onChange` may call directly. The actor runtime is agnostic
 to which one a body's behavior uses, so non-chat work reaches the model without
-fabricating a `messages` array (ADR-0012).
+fabricating a `messages` array (ADR-0014).
 
 ## V0 / V1 / V2 Are a Build Order Across Model 1 and Model 2
 
@@ -164,12 +164,12 @@ PROVE (hosted sync, no Iroh, extend Zhongwen)
   2. Build the observer: a local actor reads the conversations table, opens and
      observes each transcript child doc whose row is bound to its agent, and
      answers an unanswered turn. It is the sole answerer by construction (the loop
-     filters by the row's immutable `agent`, ADR-0013), not by claiming. This is
+     filters by the row's immutable `agent`, ADR-0015), not by claiming. This is
      the core new capability (child-doc observe loop).
      Hosting is schema-driven, symmetric with the browser opener: `mount({ actors })`
      derives the table, guid, and layout from the table's `docDecls` (the same the
      browser `connect()` reads), so the app registers behavior only, a per-body
-     factory keyed by table and field. See ADR-0012.
+     factory keyed by table and field. See ADR-0014.
   3. Stream a fake deterministic response into the assistant Y.Text; write finish.
      Proves observe -> claim -> stream -> finish with no HTTP and no duplicate.   [V0]
   4. Durable cancel: client writes cancelRequestedAt; actor (observing mid-gen)
@@ -206,15 +206,15 @@ Open questions to investigate while V0/V1 build:
 ## What We Refuse
 
 ```txt
-- An "anchor runtime" that fuses custody and semantics (ADR-0012).
-- An HTTP kickoff, a generation_requests table, a CRDT claim field (ADR-0013).
+- An "anchor runtime" that fuses custody and semantics (ADR-0014).
+- An HTTP kickoff, a generation_requests table, a CRDT claim field (ADR-0015).
 - Server-to-client SSE for doc-as-wire (the doc is the wire).
 - A new model taxonomy; V0/V1/V2 are a build order over Model 1 / Model 2.
 - Chat as the actor's only interface: synthesizing a human-addressed turn (a fake
   user message like "system task: classify these 400 rows") to drive autonomous
   work. The transcript is for real human<->agent dialogue; autonomous work observes
   its own target (rows, cells, a schedule) and writes typed results. Conversations
-  are one durable interface to an actor, not its only one (ADR-0012).
+  are one durable interface to an actor, not its only one (ADR-0014).
 - For Model 1: any shell, file, write-SQL, or raw-doc tool (the action surface is
   the sandbox; adding one re-introduces arbitrary execution).
 - Everything the ai-workflows consolidated design already refuses (raw SQL input,
@@ -224,7 +224,7 @@ Open questions to investigate while V0/V1 build:
 ## Open Questions (Ranked by Load-Bearing Risk)
 
 ```txt
-1. RESOLVED (ADR-0013, 2026-06-17): binding is data, not a race. The conversation
+1. RESOLVED (ADR-0015, 2026-06-17): binding is data, not a race. The conversation
    row carries an immutable `agent: AgentId` (the durable address, set once at
    creation, not a per-install node id). Each actor's observe loop hosts a live
    replica only of the conversations whose `agent` equals the agent it answers as,

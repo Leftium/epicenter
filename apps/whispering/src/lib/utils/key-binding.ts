@@ -1,6 +1,9 @@
 /**
- * Display helpers for the desktop `KeyBinding` shape (the structured binding the
- * rdev backend matches on). Pure: no Tauri or DOM dependency.
+ * The shared `KeyBinding` core: parse, serialize, label, and match the
+ * structured physical binding both shortcut tiers speak. No Tauri dependency and
+ * no DOM side effects; the only DOM contact is reading `KeyboardEvent` fields
+ * (`.code`, the modifier flags) in {@link domCodeToKey} and {@link eventModifiers},
+ * which is the capture side of the same physical-key model.
  */
 
 import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
@@ -230,6 +233,24 @@ export function domCodeToKey(code: string): Key | null {
 	return null;
 }
 
+/**
+ * Read the live modifier set from a `KeyboardEvent`'s boolean flags rather than
+ * its `.code`, so a gesture carries its modifiers no matter which key fired and
+ * a stuck modifier-keyup can never strand state (the flags are always current).
+ * Fn has no flag (and no `.code`), so a webview capture or the browser matcher
+ * can never produce an Fn modifier: that is exactly why Fn holds belong to the
+ * Tier-1 native tap, not the in-app tier. Shared by the chord recorder and the
+ * browser matcher so both read modifiers the same way.
+ */
+export function eventModifiers(e: KeyboardEvent): Modifier[] {
+	const modifiers: Modifier[] = [];
+	if (e.ctrlKey) modifiers.push('ctrl');
+	if (e.altKey) modifiers.push('alt');
+	if (e.shiftKey) modifiers.push('shift');
+	if (e.metaKey) modifiers.push('meta');
+	return modifiers;
+}
+
 /** A binding with no modifiers and no keys can never fire; treat it as unset. */
 export function isEmptyBinding(binding: BindingLike): boolean {
 	return binding.modifiers.length === 0 && binding.keys.length === 0;
@@ -253,6 +274,16 @@ function isContainedBy(subset: BindingLike, superset: BindingLike): boolean {
  */
 export function bindingsOverlap(a: BindingLike, b: BindingLike): boolean {
 	return isContainedBy(a, b) || isContainedBy(b, a);
+}
+
+/**
+ * Whether two bindings are the same gesture: identical modifier and key sets,
+ * order-independent. The browser matcher arms a shortcut when the live held set
+ * equals its stored binding, so this is the in-app match test (the rdev tap does
+ * the same set-equality natively).
+ */
+export function bindingsEqual(a: BindingLike, b: BindingLike): boolean {
+	return isContainedBy(a, b) && isContainedBy(b, a);
 }
 
 const MANUAL_MODIFIER_ALIASES: Record<string, Modifier> = {

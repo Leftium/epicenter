@@ -11,9 +11,9 @@ export {
 	MANUAL_RECORDING_BUTTON,
 	VAD_RECORDING_BUTTON,
 } from './recording-buttons';
-export {
-	type VadState,
-	type WhisperingRecordingState,
+export type {
+	VadState,
+	WhisperingRecordingState,
 } from './recording-states';
 export {
 	RECORDING_TRIGGER_META,

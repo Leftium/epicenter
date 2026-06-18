@@ -3,26 +3,26 @@
  *
  * One pipeline, scope inferred from the path (`load/fs`): point it at a table folder and it checks
  * that one table; point it at a vault of table folders and it checks the whole vault, references
- * and all. The path becomes `TableInput[]`, `assess` classifies it once, and the `report/`
- * selectors project that one structure into the human text, the `--json`, and the exit code, so
- * every surface agrees by construction.
+ * and all. The path becomes `TableInput[]`, `assess` classifies it once, the `core` selectors
+ * (`toViolations`, `summarize`) project that one structure, and `report/` renders it into the human
+ * text, the `--json`, and the exit code, so every surface agrees by construction.
  *
  * A single-table check is a one-table vault: its references have no target tables loaded, so every
  * reference is `missing-target`. Those are un-evaluable in isolation, surfaced as a note, not a
  * failure: checking `pages/` must not fail for references only the whole vault can resolve.
  */
 
+import { describeExpected } from '../lib/core/expected';
 import { assess } from '../lib/core/integrity';
-import { loadPath } from '../lib/load/fs';
-import { exitCodeFor } from '../lib/report/exit-code';
-import { describeExpected } from '../lib/report/expected';
-import { formatReport } from '../lib/report/format';
 import {
 	type Summary,
 	summarize,
 	toViolations,
 	type Violation,
-} from '../lib/report/violations';
+} from '../lib/core/violations';
+import { loadPath } from '../lib/load/fs';
+import { exitCodeFor } from '../lib/report/exit-code';
+import { formatReport } from '../lib/report/format';
 
 type Args = { json: boolean; path: string } | { json: boolean; error: string };
 

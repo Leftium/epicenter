@@ -14,7 +14,7 @@
  * violation. Keeping that choice at the edge keeps this function a pure, scope-blind verdict.
  */
 
-import type { Summary, Violation } from './violations';
+import type { Summary, Violation } from '../core/violations';
 
 type ExitCode = 0 | 1 | 2;
 

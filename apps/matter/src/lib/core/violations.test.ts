@@ -13,9 +13,9 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { assess, type TableInput } from '../core/integrity';
-import { readTable } from '../core/table';
 import { describeExpected } from './expected';
+import { assess, type TableInput } from './integrity';
+import { readTable } from './table';
 import { summarize, toViolations, type Violation } from './violations';
 
 type Entries = Parameters<typeof readTable>[0];

@@ -5,10 +5,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { formatExpected } from '../core/expected';
 import { assess, type TableInput } from '../core/integrity';
 import { readTable } from '../core/table';
-import { formatExpected, formatReport } from './format';
-import { summarize, toViolations } from './violations';
+import { summarize, toViolations } from '../core/violations';
+import { formatReport } from './format';
 
 type Entries = Parameters<typeof readTable>[0];
 

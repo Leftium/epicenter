@@ -22,8 +22,8 @@
  */
 
 import type { Field } from '@epicenter/field';
-import type { TableAssessment, VaultIntegrity } from '../core/integrity';
-import { stemOf } from '../core/parse';
+import type { TableAssessment, VaultIntegrity } from './integrity';
+import { stemOf } from './parse';
 
 /**
  * One thing wrong with the vault's data, located for a flat list. The four kinds are exactly the

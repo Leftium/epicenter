@@ -7,8 +7,8 @@
 import { describe, expect, test } from 'bun:test';
 import { assess, type TableInput } from '../core/integrity';
 import { readTable } from '../core/table';
+import { summarize, toViolations } from '../core/violations';
 import { exitCodeFor } from './exit-code';
-import { summarize, toViolations } from './violations';
 
 type Entries = Parameters<typeof readTable>[0];
 

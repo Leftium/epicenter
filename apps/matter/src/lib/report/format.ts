@@ -1,23 +1,19 @@
 /**
  * Human text over the flat projections: {@link Violation}[] grouped by where it happened, plus a
- * {@link Summary} roll-up line. The text edge that mirrors the `--json` edge; both read the same
- * selectors, so the printed report and the serialized one carry the same facts.
+ * {@link Summary} roll-up line. The CLI text edge that mirrors the `--json` edge; both read the
+ * same selectors, so the printed report and the serialized one carry the same facts.
  *
- * `formatExpected` is the second half of the expected-as-render-projection seam: `describeExpected`
- * (in `./expected`) turns a field into a serializable {@link ExpectedValue}, and this turns that
- * value into the phrase a user reads ("expected one of a, b"). An `invalid-type` violation carries
- * its field, so the phrase is computed HERE at render time, never stored upstream.
+ * The "what was expected" phrase for an `invalid-type` violation is the shared `describeExpected`
+ * -> `formatExpected` projection in `core/expected` (the same pair the in-app integrity panel
+ * reads); the violation carries its field, so the phrase is computed HERE at render time, never
+ * stored upstream.
  */
 
-import { describeExpected, type ExpectedValue } from './expected';
-import type { Summary, Violation } from './violations';
+import { describeExpected, formatExpected } from '../core/expected';
+import type { Summary, Violation } from '../core/violations';
 
 function plural(count: number, word: string, pluralWord = `${word}s`): string {
 	return `${count} ${count === 1 ? word : pluralWord}`;
-}
-
-function valuesText(values: readonly unknown[]): string {
-	return values.map((value) => String(value)).join(', ');
 }
 
 /** A short, quoted preview of a raw value, truncated so one bad blob cannot flood the report. */
@@ -27,40 +23,6 @@ function previewValue(value: unknown): string {
 			? JSON.stringify(value)
 			: (JSON.stringify(value) ?? String(value));
 	return text.length > 80 ? `${text.slice(0, 77)}...` : text;
-}
-
-/** Turn the serializable {@link ExpectedValue} into the phrase a user reads. */
-export function formatExpected(expected: ExpectedValue): string {
-	switch (expected.kind) {
-		case 'string':
-			return 'string';
-		case 'url':
-			return 'url';
-		case 'date':
-			return 'date';
-		case 'instant':
-			return 'UTC instant';
-		case 'datetime':
-			return 'date-time string';
-		case 'integer':
-			return 'integer';
-		case 'number':
-			return 'number';
-		case 'boolean':
-			return 'boolean';
-		case 'select':
-			return `one of ${valuesText(expected.values)}`;
-		case 'tags':
-			return 'array of strings';
-		case 'multiSelect':
-			return `array containing one of ${valuesText(expected.values)}`;
-		case 'json':
-			return 'JSON matching the field schema';
-		case 'reference':
-			return 'reference';
-		default:
-			return expected satisfies never;
-	}
 }
 
 /** The one-line body of a row-scoped violation (table-scoped ones print under their table). */

@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Field } from '@epicenter/field';
-import { validateContract } from '../core/contract';
+import { validateContract } from './contract';
 import { describeExpected } from './expected';
 
 /** Recognize one at-rest field schema into a loaded {@link Field}. */

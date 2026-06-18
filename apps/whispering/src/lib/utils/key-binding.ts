@@ -312,6 +312,66 @@ function manualKey(token: string): Key | null {
 }
 
 /**
+ * Canonical manual-grammar token for each named `Key`, the inverse of the named
+ * entries in {@link MANUAL_KEY_ALIASES}. Letters, digits, and F-keys are handled
+ * by pattern in {@link keyToManualToken}, so only the named keys need a table.
+ * Where the parse side accepts several spellings (`enter`/`return`), this picks
+ * the one canonical token; both parse back to the same `Key`, so the round-trip
+ * still holds.
+ */
+const MANUAL_TOKEN_BY_KEY: Record<string, string> = {
+	space: 'space',
+	return: 'return',
+	tab: 'tab',
+	escape: 'escape',
+	backspace: 'backspace',
+	delete: 'delete',
+	insert: 'insert',
+	upArrow: 'up',
+	downArrow: 'down',
+	leftArrow: 'left',
+	rightArrow: 'right',
+	home: 'home',
+	end: 'end',
+	pageUp: 'pageup',
+	pageDown: 'pagedown',
+	semiColon: ';',
+	quote: "'",
+	comma: ',',
+	dot: '.',
+	slash: '/',
+	minus: '-',
+	equal: '=',
+	leftBracket: '[',
+	rightBracket: ']',
+	backSlash: '\\',
+	backQuote: '`',
+};
+
+/** A `Key` back to the manual-grammar token {@link manualKey} accepts. */
+function keyToManualToken(key: Key): string {
+	if (/^key[A-Z]$/.test(key)) return key.slice(3).toLowerCase(); // keyA -> a
+	if (/^num[0-9]$/.test(key)) return key.slice(3); // num1 -> 1
+	if (/^f([1-9]|1[0-9]|2[0-4])$/.test(key)) return key; // f5 -> f5
+	return MANUAL_TOKEN_BY_KEY[key] ?? key;
+}
+
+/**
+ * Serialize a `KeyBinding` to the readable manual grammar, the lossless inverse
+ * of {@link parseManualBinding}: `parseManualBinding(keyBindingToString(b))`
+ * deep-equals `b`. This is the canonical at-rest form for both shortcut tiers
+ * (`"ctrl+shift+a"`, `"fn+space"`, `"fn"`). Unlike {@link keyBindingToAccelerator}
+ * it never returns null: it spells Fn and modifier-only holds too, because the
+ * manual grammar is the superset the plugin accelerator is not. Modifiers emit in
+ * their stored order followed by the key, so the parse round-trip preserves order.
+ */
+export function keyBindingToString(binding: KeyBinding): string {
+	return [...binding.modifiers, ...binding.keys.map(keyToManualToken)].join(
+		'+',
+	);
+}
+
+/**
  * Parse a typed combo like `cmd+shift+d`, `fn+space`, or `ctrl+alt` into a
  * `KeyBinding`. The manual-entry fallback in the recorder; lenient on modifier
  * spelling. At most one key (rdev bindings carry a single key); a token that is

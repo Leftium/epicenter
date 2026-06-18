@@ -297,20 +297,27 @@ export function toggleVadRecording() {
  * two captures never overlap (`upload` keeps neither recorder, so both stop).
  */
 export async function selectCaptureSurface(surface: CaptureSurface) {
+	// Flip the surface first so the tab/dropdown responds instantly; the live
+	// capture stopped below finalizes and transcribes in the background rather
+	// than blocking the switch.
+	if (surface === 'upload') {
+		captureSurface.showImport();
+	} else {
+		captureSurface.dismissImport();
+		if (settings.get('recording.trigger') !== surface) {
+			settings.set('recording.trigger', surface);
+		}
+	}
+
+	// Stop a live capture on a different surface so two captures never overlap
+	// (`upload` keeps neither recorder, so both stop). Stopping finalizes it: a
+	// manual recording is saved and transcribed, and a voice-activated utterance
+	// in progress is flushed through the pipeline (the VAD runs with
+	// `submitUserSpeechOnPause`), so nothing you already said is lost.
 	if (surface !== 'manual' && manualRecorder.state === 'RECORDING') {
 		await stopManualRecording();
 	}
 	if (surface !== 'vad' && isVadRecordingActive()) {
 		await stopVadRecording();
-	}
-
-	if (surface === 'upload') {
-		captureSurface.showImport();
-		return;
-	}
-
-	captureSurface.dismissImport();
-	if (settings.get('recording.trigger') !== surface) {
-		settings.set('recording.trigger', surface);
 	}
 }

@@ -27,6 +27,7 @@ export {
 	requestLatestUserTurnCancel,
 	setLatestUserTurnGenerationId,
 } from './chat-doc';
+export { attachChatBrowserAnswerer } from './chat-browser-answerer';
 export { attachChatReaction } from './chat-reaction';
 export {
 	type ActionNames,

@@ -46,8 +46,13 @@ bun src/cli/check.ts /tmp/partial   # adaptations.page -> "references pages: no 
 
 ## Opening it in the live app
 
-`content-vault` is a vault: a folder of table folders. Each child folder opens directly as a
-table (`content-vault/pages`, `content-vault/adaptations`, or `content-vault/publications`),
-and each carries its own `matter.json`. The cross-folder reference view over all three comes
-from the whole-vault check above. Browsing a vault as one workspace in the UI is a separate,
-larger feature.
+`content-vault` is a vault: a folder of table folders, read as one relational unit. `bun run dev`,
+then open the `content-vault` parent itself — you get the live Vault view: a table switcher across
+`pages`, `adaptations`, and `publications`, references resolved across tables, and the two dangling
+rows above surfaced in the integrity panel. References resolve at the vault level because they only
+have meaning across two tables of the same vault.
+
+Opening a single child folder (`content-vault/pages`, `content-vault/adaptations`, or
+`content-vault/publications`) works too — each carries its own `matter.json`. It is just the
+degenerate one-table vault, so its cross-table references have no target table loaded and read as
+notes rather than failures.

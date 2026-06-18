@@ -199,16 +199,18 @@ const sound = {
  * configuration: avoids polluting `transcription.*` and `transformation.*`
  * namespaces with unrelated concerns.
  *
- * Cursor default asymmetry (transcription=true, transformation=false): when a
- * transformation runs on the just-finished transcription, the transcription
- * has already typed itself at the cursor. Defaulting transformation.cursor to
- * true would double-type. Users who turn off transcription.cursor specifically
- * to let the transformation be the cursor output can flip the transformation
- * toggle on.
+ * Clipboard is the permission-free default; cursor paste is opt-in. Pasting at
+ * the cursor synthesizes a Cmd/Ctrl+V keystroke (`write_text` -> enigo), and on
+ * macOS injecting keystrokes into another app requires Accessibility. So both
+ * cursor defaults are `false`: out of the box the transcript lands on the
+ * clipboard (no permission, works on first launch) and the user pastes it.
+ * Turning cursor paste on is the deliberate step that asks for Accessibility.
+ * Transformation cursor also stays off so it cannot double-type over a
+ * transcription that already pasted itself once a user turns both on.
  */
 const output = {
 	'output.transcription.clipboard': defineKv(field.boolean(), () => true),
-	'output.transcription.cursor': defineKv(field.boolean(), () => true),
+	'output.transcription.cursor': defineKv(field.boolean(), () => false),
 	'output.transcription.enter': defineKv(field.boolean(), () => false),
 	'output.transformation.clipboard': defineKv(field.boolean(), () => true),
 	'output.transformation.cursor': defineKv(field.boolean(), () => false),

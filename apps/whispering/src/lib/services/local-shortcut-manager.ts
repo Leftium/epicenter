@@ -1,11 +1,5 @@
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
 import type { Command, ShortcutEventState } from '$lib/commands';
 import type { Key, KeyBinding } from '$lib/tauri/commands';
 import {
@@ -13,22 +7,6 @@ import {
 	domCodeToKey,
 	eventModifiers,
 } from '$lib/utils/key-binding';
-
-const LocalShortcutError = defineErrors({
-	RegisterFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to register local shortcut: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	UnregisterFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to unregister local shortcut: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	UnregisterAllFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to unregister all local shortcuts: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type LocalShortcutError = InferErrors<typeof LocalShortcutError>;
 
 export type CommandId = string & Brand<'CommandId'>;
 
@@ -190,35 +168,21 @@ export const LocalShortcutManagerLive = {
 			visibilityChange();
 		};
 	},
-	async register({
-		id,
-		binding,
-	}: {
-		id: CommandId;
-		binding: KeyBinding;
-	}): Promise<Result<void, LocalShortcutError>> {
+	/**
+	 * Register (or replace) a command's binding. In-memory `Map` set, so it cannot
+	 * fail: synchronous and `void`, unlike the desktop tier's genuinely fallible
+	 * IPC registration.
+	 */
+	register(id: CommandId, binding: KeyBinding): void {
 		shortcuts.set(id, binding);
-		return Ok(undefined);
 	},
 
 	/**
-	 * Unregisters a local shortcut by ID.
-	 * This function is idempotent - it can be safely called even if the shortcut
-	 * with the given ID doesn't exist or has already been unregistered.
+	 * Unregister a local shortcut by ID. Idempotent: safe even if the shortcut was
+	 * never registered.
 	 */
-	async unregister(id: CommandId): Promise<Result<void, LocalShortcutError>> {
+	unregister(id: CommandId): void {
 		shortcuts.delete(id);
-		return Ok(undefined);
-	},
-
-	/**
-	 * Unregisters all local shortcuts.
-	 * This function is idempotent - it can be safely called even if no shortcuts
-	 * are currently registered.
-	 */
-	async unregisterAll(): Promise<Result<void, LocalShortcutError>> {
-		shortcuts.clear();
-		return Ok(undefined);
 	},
 };
 
@@ -233,13 +197,9 @@ export const localShortcuts = {
 	}: {
 		command: Command;
 		binding: KeyBinding;
-	}) =>
-		LocalShortcutManagerLive.register({
-			id: command.id as CommandId,
-			binding,
-		}),
+	}) => LocalShortcutManagerLive.register(command.id as CommandId, binding),
 
-	unregisterCommand: async ({ commandId }: { commandId: CommandId }) =>
+	unregisterCommand: ({ commandId }: { commandId: CommandId }) =>
 		LocalShortcutManagerLive.unregister(commandId),
 };
 

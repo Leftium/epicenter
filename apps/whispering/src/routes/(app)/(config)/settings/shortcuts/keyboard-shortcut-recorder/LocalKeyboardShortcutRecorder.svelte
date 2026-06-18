@@ -68,15 +68,9 @@
 	}
 
 	// Register the binding with the matcher and store it as the readable grammar.
-	async function persist(next: KeyBinding) {
-		const { error } = await localShortcuts.registerCommand({
-			command,
-			binding: next,
-		});
-		if (error) {
-			report.error({ title: 'Error registering local shortcut', cause: error });
-			return;
-		}
+	// Registration is an in-memory Map write, so it cannot fail.
+	function persist(next: KeyBinding) {
+		localShortcuts.registerCommand({ command, binding: next });
 		settings.set(localKey(command.id), keyBindingToString(next));
 		report.success({
 			title: `Local shortcut set to ${keyBindingToLabel(next, os.isApple)}`,
@@ -86,7 +80,7 @@
 
 	// On a clean capture: refuse a collision (stay listening so the user can retry),
 	// otherwise persist and close.
-	async function commit(next: KeyBinding) {
+	function commit(next: KeyBinding) {
 		const conflict = conflictingCommand(next);
 		if (conflict) {
 			report.error({
@@ -99,7 +93,7 @@
 			});
 			return;
 		}
-		await persist(next);
+		persist(next);
 		stopSession();
 		open = false;
 	}
@@ -129,21 +123,15 @@
 			});
 			return false;
 		}
-		void persist(next).then(() => {
-			stopSession();
-			open = false;
-		});
+		persist(next);
+		stopSession();
+		open = false;
 		return true;
 	}
 
-	async function clear() {
+	function clear() {
 		stopSession();
-		const { error } = await localShortcuts.unregisterCommand({
-			commandId: command.id as CommandId,
-		});
-		if (error) {
-			report.error({ title: 'Error clearing local shortcut', cause: error });
-		}
+		localShortcuts.unregisterCommand({ commandId: command.id as CommandId });
 		settings.set(localKey(command.id), null);
 		report.success({
 			title: 'Local shortcut cleared',

@@ -1,4 +1,3 @@
-import { partitionResults } from 'wellcrafted/result';
 import type { Command } from '$lib/commands';
 import {
 	type CommandId,
@@ -34,21 +33,16 @@ export const shortcuts: Shortcuts = createShortcuts({
 	write: (id, binding) =>
 		settings.set(localKey(id), binding ? keyBindingToString(binding) : null),
 	syncErrorTitle: 'Error registering local commands',
+	// Registration is an in-memory Map write, so it cannot fail: push always
+	// succeeds. The contract stays async because the desktop tier's push does IPC.
 	async push(entries) {
-		const results = await Promise.all(
-			entries.map(({ command, binding }) =>
-				binding
-					? localShortcuts.registerCommand({ command, binding })
-					: localShortcuts.unregisterCommand({
-							commandId: command.id as CommandId,
-						}),
-			),
-		);
-		const { errs } = partitionResults(results);
-		if (errs.length === 0) return null;
-		return {
-			name: 'LocalShortcutRegistrationFailed',
-			message: errs.map((err) => err.error.message).join('\n'),
-		};
+		for (const { command, binding } of entries) {
+			if (binding) localShortcuts.registerCommand({ command, binding });
+			else
+				localShortcuts.unregisterCommand({
+					commandId: command.id as CommandId,
+				});
+		}
+		return null;
 	},
 });

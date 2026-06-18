@@ -36,6 +36,7 @@ mod mac_tap;
 pub mod matcher;
 #[cfg(not(target_os = "macos"))]
 mod rdev_map;
+mod supervisor;
 
 pub use event::{
     DictationCapability, DictationCapabilityEvent, ShortcutCaptureEvent, ShortcutTriggerEvent,
@@ -51,27 +52,12 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 
 use matcher::{Edge, Input, Matcher};
+use supervisor::{Control, Effect, Supervisor};
 
 /// The window the trigger/capture events are delivered to. We target it
 /// explicitly instead of broadcasting so the overlay and picker webviews never
 /// see shortcut events, which keeps the dispatch single even if they subscribe.
 const MAIN_WINDOW: &str = "main";
-
-/// Backoff for a tap that dies while the grant still holds, so a genuinely
-/// broken tap cannot hot-loop. After the last step the supervisor gives up to
-/// `Broken`. A death more than `RESTART_RESET_WINDOW` after the previous one
-/// starts with a fresh budget, because there is no positive "stayed alive"
-/// signal to reset on.
-const RESTART_BACKOFF_MS: [u64; 5] = [1_000, 2_000, 4_000, 8_000, 16_000];
-const RESTART_RESET_WINDOW: Duration = Duration::from_secs(60);
-
-/// How often the supervisor re-checks `AXIsProcessTrusted` while it is waiting
-/// for the grant. It runs ONLY while the capability is not `Active`, so it is
-/// never a steady-state poll: once the tap is running there is nothing to poll
-/// (the tap reports its own death over the channel). macOS gives no event when
-/// Accessibility flips, so this bounded re-check is the one unavoidable poll,
-/// and it lives in Rust beside the tap rather than in the webview.
-const TRUST_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// rdev's listener is X11-only; on Wayland the tap never receives events.
 #[cfg(target_os = "linux")]
@@ -276,15 +262,14 @@ fn spawn_listener(app: &AppHandle, matcher: &Arc<Mutex<Matcher>>, control_tx: &S
                 matcher.clear_held();
             }
 
-            let reason = run_listen(&app, &matcher);
-            if let Some(reason) = &reason {
+            if let Some(reason) = run_listen(&app, &matcher) {
                 log::error!("keyboard listener stopped: {reason}");
             }
             // Hand the exit to the supervisor, which decides what it means
             // (revoked grant vs requested stop vs transient death vs stale
-            // signature) and whether to restart. The reason rides along for the
-            // log only.
-            let _ = control_tx.send(Control::TapStopped(reason));
+            // signature) and whether to restart. The reason is logged here, so
+            // the signal itself carries no payload.
+            let _ = control_tx.send(Control::TapStopped);
         })
         .expect("failed to spawn keyboard listener thread");
 }
@@ -312,91 +297,22 @@ fn spawn_supervisor(
         .expect("failed to spawn dictation capability supervisor thread");
 }
 
-/// What woke the supervisor on a given loop turn.
-enum Control {
-    /// The tap thread exited; the payload is its debug-formatted reason (log only).
-    TapStopped(Option<String>),
-    /// Whether any Fn / modifier-only binding is bound (`true` = the tap is needed
-    /// to read it).
-    Bindings(bool),
-    /// Whether auto-paste-at-cursor is enabled. It writes a synthetic Cmd/Ctrl+V
-    /// via the same macOS Accessibility grant the tap needs, so when it is on we
-    /// hold the tap even with no binding: the tap's liveness is how we know the
-    /// grant is real (a stale grant reads as trusted but the tap dies), which is
-    /// the only way to catch the `Broken` case for paste too.
-    AutoPaste(bool),
-    /// Whether the settings recorder is capturing a binding. Capture needs the tap
-    /// running to read Fn and physical keys, so it holds the tap for its duration
-    /// even with no binding bound: this is what lets the first Fn binding be
-    /// recorded from the dormant floor. Just another reason to want the grant; the
-    /// tap does not care which reason holds it.
-    Capturing(bool),
-}
-
-/// The reasons the tap may be held, all of which mean the same thing to the tap:
-/// something wants the macOS Accessibility grant. The supervisor never acts on
-/// *which* reason, only on whether any holds, so the disjunction lives in one
-/// place ({@link wants_tap}) instead of being rewritten at each call site.
-#[derive(Default)]
-struct TapIntent {
-    /// An Fn or modifier-only binding is bound (chords go to the plugin instead).
-    bindings: bool,
-    /// Auto-paste-at-cursor is on (it injects through the same grant).
-    auto_paste: bool,
-    /// The settings recorder is capturing a binding.
-    capturing: bool,
-}
-
-impl TapIntent {
-    /// Whether anything wants the tap held. The single source of the predicate the
-    /// supervisor gates on.
-    fn wants_tap(&self) -> bool {
-        self.bindings || self.auto_paste || self.capturing
-    }
-}
-
-/// Reconcile the tap to the live intent: run it when something needs the
-/// Accessibility grant (a Fn/modifier-only binding, auto-paste, or an in-progress
-/// capture) and we are trusted, tear it down when nothing does. Returns the phase
-/// to publish.
-/// `TapStopped` is handled separately because it carries restart-backoff state.
-fn reconcile_tap(
-    app: &AppHandle,
-    matcher: &Arc<Mutex<Matcher>>,
-    control_tx: &Sender<Control>,
-    needs_tap: bool,
-    tap_running: &mut bool,
-) -> DictationCapability {
-    if !needs_tap {
-        // Nothing needs the grant. Ask the tap to stop (the `TapStopped` that
-        // follows settles it); publish `Inactive` now so the floor shows nothing.
-        if *tap_running {
-            request_tap_stop();
-        }
-        DictationCapability::Inactive
-    } else if !is_trusted() {
-        DictationCapability::Untrusted
-    } else {
-        if !*tap_running {
-            spawn_listener(app, matcher, control_tx);
-            *tap_running = true;
-        }
-        DictationCapability::Active
-    }
-}
-
-/// The single owner of the tap's lifecycle and the published `DictationCapability`.
+/// The owning loop around [`Supervisor`]: it performs the I/O the pure decision
+/// core cannot. Each turn it waits for a control message (or a bounded timeout),
+/// samples `AXIsProcessTrusted`, steps the supervisor, and runs whatever the step
+/// returned: spawn or stop the tap, publish the capability, and arm the next
+/// wait. The supervisor decides; this loop acts, so exactly one tap is ever live
+/// (spawns are serialized here).
 ///
-/// Three facts it designs around: the tap is only needed when something wants the
-/// Accessibility grant (a Tier-1 binding, auto-paste, or an in-progress capture;
-/// chords go to the plugin), `mac_tap`/`rdev` give a thread-death signal but no
-/// positive "alive"
-/// signal, and macOS gives no event when Accessibility flips. So the tap is
-/// spawned only while it is wanted AND we are trusted (an untrusted tap silently
-/// drops events, looking alive); its liveness is the death channel; and the
-/// grant is sampled by a bounded poll that runs only while we want the tap but
-/// cannot run it. All of that lives here, beside the tap, instead of being
-/// smeared across the webview.
+/// Three facts the design rests on: the tap is only needed when something wants
+/// the grant (a Tier-1 binding, auto-paste, or an in-progress capture; chords go
+/// to the plugin), `mac_tap`/`rdev` give a thread-death signal but no positive
+/// "alive" signal, and macOS gives no event when Accessibility flips. So the tap
+/// is spawned only while wanted AND trusted (an untrusted tap silently drops
+/// events, looking alive); its liveness is the death channel; and the grant is
+/// sampled by a bounded poll that runs only while we want the tap but cannot run
+/// it. All of it lives here, beside the tap, instead of being smeared across the
+/// webview.
 fn run_supervisor(
     app: AppHandle,
     matcher: Arc<Mutex<Matcher>>,
@@ -410,132 +326,42 @@ fn run_supervisor(
         return;
     }
 
-    // Several independent reasons can hold the tap; any one makes it "needed".
-    let mut intent = TapIntent::default();
-    let mut tap_running = false;
-    let mut restart_attempt = 0usize;
-    let mut last_stop: Option<Instant> = None;
+    let mut supervisor = Supervisor::new();
+    // Monotonic clock for the restart-reset window; only the delta matters, so a
+    // process-relative millisecond count is enough and keeps the core testable.
+    let start = Instant::now();
 
     // Start dormant: nothing wants the grant yet, so the tap does not run and no
     // Accessibility is touched. The FE pushes the bound set and auto-paste state
     // on launch, which wakes us via `Control::Bindings` / `Control::AutoPaste`.
-    let mut phase = DictationCapability::Inactive;
-    set_capability(&app, &capability, phase);
+    set_capability(&app, &capability, DictationCapability::Inactive);
 
+    // `None` blocks until a control message; `Some(d)` waits at most `d`, after
+    // which a `None` control means the wait elapsed (a grant poll or an elapsed
+    // restart backoff, told apart by the supervisor's own state).
+    let mut next_timeout: Option<Duration> = None;
     loop {
-        let needs_tap = intent.wants_tap();
-        // Poll the grant only while we want the tap but cannot run it (`Untrusted`
-        // after the user opted in, or `Broken`), so a toggle in System Settings
-        // (which fires no event) is caught. Otherwise block: `Inactive` waits for
-        // intent, `Active` waits for the tap to die or the intent to change.
-        let waiting_for_grant = needs_tap
-            && matches!(
-                phase,
-                DictationCapability::Untrusted | DictationCapability::Broken
-            );
-        let signal = if waiting_for_grant {
-            match control_rx.recv_timeout(TRUST_POLL_INTERVAL) {
+        let control = match next_timeout {
+            None => match control_rx.recv() {
+                Ok(control) => Some(control),
+                Err(_) => return,
+            },
+            Some(delay) => match control_rx.recv_timeout(delay) {
                 Ok(control) => Some(control),
                 Err(RecvTimeoutError::Timeout) => None,
                 Err(RecvTimeoutError::Disconnected) => return,
-            }
-        } else {
-            match control_rx.recv() {
-                Ok(control) => Some(control),
-                Err(_) => return,
-            }
+            },
         };
 
-        match signal {
-            // Poll tick while waiting for the grant.
-            None => {
-                if is_trusted() {
-                    // `Untrusted` -> trust returned, so start. `Broken` -> keep
-                    // watching for the remove (a trust drop) that precedes a
-                    // re-add; a still-trusted stale grant must not respawn, or the
-                    // tap just dies again.
-                    if phase == DictationCapability::Untrusted {
-                        spawn_listener(&app, &matcher, &control_tx);
-                        tap_running = true;
-                        restart_attempt = 0;
-                        phase = DictationCapability::Active;
-                    }
-                } else {
-                    restart_attempt = 0;
-                    phase = DictationCapability::Untrusted;
-                }
-            }
+        let now_ms = start.elapsed().as_millis() as u64;
+        let outcome = supervisor.step(control, is_trusted(), now_ms);
 
-            // Intent changed (a binding set, auto-paste, or capture mode). A fresh
-            // intent, so the restart budget resets, then the tap is reconciled to
-            // whether anything still wants the grant.
-            Some(Control::Bindings(next)) => {
-                intent.bindings = next;
-                restart_attempt = 0;
-                phase = reconcile_tap(
-                    &app,
-                    &matcher,
-                    &control_tx,
-                    intent.wants_tap(),
-                    &mut tap_running,
-                );
-            }
-            Some(Control::AutoPaste(next)) => {
-                intent.auto_paste = next;
-                restart_attempt = 0;
-                phase = reconcile_tap(
-                    &app,
-                    &matcher,
-                    &control_tx,
-                    intent.wants_tap(),
-                    &mut tap_running,
-                );
-            }
-            Some(Control::Capturing(next)) => {
-                intent.capturing = next;
-                restart_attempt = 0;
-                phase = reconcile_tap(
-                    &app,
-                    &matcher,
-                    &control_tx,
-                    intent.wants_tap(),
-                    &mut tap_running,
-                );
-            }
-
-            // The tap exited.
-            Some(Control::TapStopped(_reason)) => {
-                tap_running = false;
-                if !needs_tap {
-                    // We asked it to stop because the last binding left. Settled.
-                    phase = DictationCapability::Inactive;
-                } else if !is_trusted() {
-                    // The grant vanished; the next grant respawns.
-                    restart_attempt = 0;
-                    phase = DictationCapability::Untrusted;
-                } else {
-                    // Trusted and still wanted, but the tap died: unexpected.
-                    // Restart with capped backoff, then settle on `Broken`.
-                    let now = Instant::now();
-                    if last_stop.is_some_and(|t| now.duration_since(t) > RESTART_RESET_WINDOW) {
-                        restart_attempt = 0;
-                    }
-                    last_stop = Some(now);
-                    if restart_attempt >= RESTART_BACKOFF_MS.len() {
-                        phase = DictationCapability::Broken;
-                    } else {
-                        let delay = RESTART_BACKOFF_MS[restart_attempt];
-                        restart_attempt += 1;
-                        std::thread::sleep(Duration::from_millis(delay));
-                        spawn_listener(&app, &matcher, &control_tx);
-                        tap_running = true;
-                        // Stay `Active` across a transient restart: no user-facing flap.
-                        phase = DictationCapability::Active;
-                    }
-                }
-            }
+        match outcome.effect {
+            Some(Effect::SpawnTap) => spawn_listener(&app, &matcher, &control_tx),
+            Some(Effect::StopTap) => request_tap_stop(),
+            None => {}
         }
-
-        set_capability(&app, &capability, phase);
+        set_capability(&app, &capability, outcome.phase);
+        next_timeout = outcome.next_timeout;
     }
 }

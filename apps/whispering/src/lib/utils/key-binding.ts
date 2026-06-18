@@ -90,6 +90,85 @@ export function keyBindingToLabel(
 	return [...modifiers, ...keys].join(separator);
 }
 
+/**
+ * Accelerator modifier tokens for `tauri-plugin-global-shortcut`. `meta` becomes
+ * `Super`, which the global-hotkey parser maps to Command on macOS and the
+ * Super/Windows key elsewhere. `fn` has no accelerator spelling (Carbon's
+ * `RegisterEventHotKey` cannot bind it), so a binding that needs Fn is not a
+ * Tier-0 chord and {@link keyBindingToAccelerator} returns `null` for it.
+ */
+const ACCELERATOR_MODIFIERS: Record<Modifier, string | null> = {
+	ctrl: 'Control',
+	alt: 'Alt',
+	shift: 'Shift',
+	meta: 'Super',
+	fn: null,
+};
+
+/** `Key` -> a global-hotkey `Code` token (the parser is case-insensitive). */
+const ACCELERATOR_KEYS: Record<string, string> = {
+	space: 'Space',
+	return: 'Enter',
+	tab: 'Tab',
+	escape: 'Escape',
+	backspace: 'Backspace',
+	delete: 'Delete',
+	insert: 'Insert',
+	upArrow: 'ArrowUp',
+	downArrow: 'ArrowDown',
+	leftArrow: 'ArrowLeft',
+	rightArrow: 'ArrowRight',
+	home: 'Home',
+	end: 'End',
+	pageUp: 'PageUp',
+	pageDown: 'PageDown',
+	minus: 'Minus',
+	equal: 'Equal',
+	leftBracket: 'BracketLeft',
+	rightBracket: 'BracketRight',
+	semiColon: 'Semicolon',
+	quote: 'Quote',
+	backQuote: 'Backquote',
+	backSlash: 'Backslash',
+	comma: 'Comma',
+	dot: 'Period',
+	slash: 'Slash',
+};
+
+function acceleratorKey(key: string): string | null {
+	const named = ACCELERATOR_KEYS[key];
+	if (named) return named;
+	if (/^key[A-Z]$/.test(key)) return `Key${key.slice(3)}`; // keyD -> KeyD
+	if (/^num[0-9]$/.test(key)) return `Digit${key.slice(3)}`; // num1 -> Digit1
+	if (/^f([1-9]|1[0-9]|2[0-4])$/.test(key)) return key.toUpperCase(); // f1 -> F1
+	return null;
+}
+
+/**
+ * Render a binding as a `tauri-plugin-global-shortcut` accelerator string (for
+ * example `Control+Shift+Space`), or `null` when it is not a Tier-0 chord the
+ * plugin can register. A binding is not Tier-0 when it carries Fn (no
+ * accelerator spelling) or is not exactly one key plus at least one modifier:
+ * Fn holds and modifier-only holds belong to the Tier-1 keyboard tap, which the
+ * caller routes separately. Modifiers are emitted in a fixed order so the same
+ * binding always produces the same accelerator.
+ */
+export function keyBindingToAccelerator(binding: BindingLike): string | null {
+	const [key, ...rest] = binding.keys;
+	if (!key || rest.length > 0) return null; // accelerators carry exactly one key
+	if (binding.modifiers.length === 0) return null; // a bare key is not a gesture
+	const modifiers: string[] = [];
+	for (const modifier of MODIFIER_ORDER) {
+		if (!binding.modifiers.includes(modifier)) continue;
+		const token = ACCELERATOR_MODIFIERS[modifier];
+		if (!token) return null; // fn -> Tier-1 tap, not the plugin
+		modifiers.push(token);
+	}
+	const keyToken = acceleratorKey(key);
+	if (!keyToken) return null;
+	return [...modifiers, keyToken].join('+');
+}
+
 /** A binding with no modifiers and no keys can never fire; treat it as unset. */
 export function isEmptyBinding(binding: BindingLike): boolean {
 	return binding.modifiers.length === 0 && binding.keys.length === 0;

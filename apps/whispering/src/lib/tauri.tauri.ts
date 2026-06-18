@@ -48,6 +48,10 @@ import {
 	isEnabled as isAutostartEnabled,
 } from '@tauri-apps/plugin-autostart';
 import { readFile } from '@tauri-apps/plugin-fs';
+import {
+	register as registerShortcut,
+	unregisterAll as unregisterAllShortcuts,
+} from '@tauri-apps/plugin-global-shortcut';
 import { openPath as revealPath } from '@tauri-apps/plugin-opener';
 import { exit } from '@tauri-apps/plugin-process';
 import mime from 'mime';
@@ -65,6 +69,7 @@ import type {
 	MediaPlayer,
 } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
+import { keyBindingToAccelerator } from '$lib/utils/key-binding';
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({
@@ -245,14 +250,20 @@ async function initTray() {
 }
 
 // globalShortcuts ---------------------------------------------------
-// The desktop trigger backend is the rdev listener in `src-tauri/src/keyboard`.
-// It emits a `{ commandId, state }` event on every binding transition; we push
-// the user's bindings down with `set_keyboard_shortcuts` and dispatch the
-// events back into the command layer (the single convergence point). No
-// accelerator strings cross this boundary: the registrar parses them to
-// `KeyBinding` before pushing (see `platform/shortcuts.tauri.ts`). The trigger and
-// capture topics are the generated `events.shortcutTriggerEvent` /
-// `events.shortcutCaptureEvent`, so no topic string is mirrored here.
+// Two backends feed one convergence point (`dispatchCommandTrigger`):
+//
+//   Tier 0 (default, no permission): `tauri-plugin-global-shortcut`. The
+//     registrar maps each chord binding to an accelerator and registers it; the
+//     plugin's own callback delivers Pressed/Released. This is the floor, so it
+//     needs no Accessibility grant.
+//   Tier 1 (opt-in): the rdev/tap listener in `src-tauri/src/keyboard`, for the
+//     Fn and modifier-only holds the plugin cannot express. It emits a
+//     `{ commandId, state }` event on every transition (`events.shortcutTriggerEvent`)
+//     and reports its `DictationCapability` (`events.dictationCapabilityEvent`).
+//
+// Backend selection lives in `platform/shortcuts.tauri.ts`: a binding that maps
+// to an accelerator goes to the plugin, the rest to the tap. No accelerator
+// strings reach the tap; it matches the structured `KeyBinding`.
 
 // autostart ---------------------------------------------------------
 const AutostartError = defineErrors({
@@ -322,6 +333,30 @@ const tray = {
 };
 
 const globalShortcuts = {
+	/**
+	 * Register the Tier-0 chord backend (`tauri-plugin-global-shortcut`). Replaces
+	 * the whole set: unregister everything, then register each binding that maps
+	 * to an accelerator. The plugin's own callback delivers Pressed/Released,
+	 * which we dispatch into the command layer (the convergence point the browser
+	 * backend also feeds). Bindings with no accelerator (Fn, modifier-only) are
+	 * skipped here: they are the Tier-1 tap's job (see `setBindings`). Carbon's
+	 * `RegisterEventHotKey` needs no Accessibility grant, so this is the floor.
+	 */
+	registerChords: async (bindings: CommandBinding[]) => {
+		await unregisterAllShortcuts();
+		const { dispatchCommandTrigger } = await import('$lib/commands');
+		for (const { commandId, binding } of bindings) {
+			const accelerator = keyBindingToAccelerator(binding);
+			if (!accelerator) continue;
+			await registerShortcut(accelerator, (event) =>
+				dispatchCommandTrigger(commandId, event.state),
+			);
+		}
+	},
+
+	/** Unregister every plugin-registered chord (teardown). */
+	unregisterChords: () => unregisterAllShortcuts(),
+
 	/**
 	 * Replace the full set of registered global shortcuts on the rdev backend.
 	 * The registrar computes the complete list from device-config and pushes it

@@ -35,18 +35,21 @@ export const shortcuts: Shortcuts = createShortcuts<GlobalBinding>({
 	label: (binding) => (binding ? keyBindingToLabel(binding, os.isApple) : ''),
 	syncErrorTitle: 'Error registering global shortcuts',
 	async push(entries) {
-		// Storage validates keys as plain strings; Rust validates them by name on
-		// register. The cast bridges the stored `string[]` to the IPC `Key[]`.
+		// The cast bridges the stored `string[]` to the IPC `Key[]`; the keys are
+		// validated structurally on store and the accelerator mapping ignores any
+		// it does not recognize.
 		const bindings: CommandBinding[] = entries
 			.filter((entry) => entry.binding !== null)
 			.map((entry) => ({
 				commandId: entry.command.id,
 				binding: entry.binding as KeyBinding,
 			}));
-		// Keys are validated by Rust at the IPC boundary, so a single bad key fails
-		// the whole replace-all call. Surface it instead of silently unregistering.
+		// Tier-0: register the chords on the plugin. Bindings that need Fn or are
+		// modifier-only map to no accelerator and are skipped (the Tier-1 tap will
+		// own them). A register that the OS rejects (a chord another app already
+		// holds) fails the whole replace-all call; surface it.
 		const { error } = await tryAsync({
-			try: () => tauriOnly.globalShortcuts.setBindings(bindings),
+			try: () => tauriOnly.globalShortcuts.registerChords(bindings),
 			catch: (cause) =>
 				Err({
 					name: 'GlobalShortcutRegistrationFailed',

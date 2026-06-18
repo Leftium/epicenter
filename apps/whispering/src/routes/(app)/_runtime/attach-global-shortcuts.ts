@@ -2,20 +2,14 @@ import { shortcuts } from '#platform/shortcuts';
 import { tauri } from '#platform/tauri';
 
 export function attachGlobalShortcuts() {
-	let cleanupShortcutListener: (() => void) | undefined;
-	let shortcutListenerDestroyed = false;
-
+	// `sync` registers the current bindings. On desktop that registers the Tier-0
+	// chords on the plugin, whose own callbacks dispatch into the command layer,
+	// so there is no separate listener to start: registration is the
+	// subscription. The browser backend's `sync` binds in-app keydown the same
+	// way. Teardown unregisters the plugin chords (a no-op on the browser).
 	void shortcuts.sync();
 
-	if (tauri) {
-		void tauri.globalShortcuts.startListening().then((unlisten) => {
-			if (shortcutListenerDestroyed) unlisten();
-			else cleanupShortcutListener = unlisten;
-		});
-	}
-
 	return () => {
-		shortcutListenerDestroyed = true;
-		cleanupShortcutListener?.();
+		void tauri?.globalShortcuts.unregisterChords();
 	};
 }

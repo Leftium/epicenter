@@ -93,6 +93,12 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e
 transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-vulkan", "onnx"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# Tier-0 global-shortcut backend: Carbon `RegisterEventHotKey`, which needs no
+# Accessibility grant and delivers both Pressed and Released. It registers a
+# bound chord and sees nothing else, so it is the permission-free default. Fn
+# and modifier-only holds (which it cannot express) fall to the Tier-1 tap in
+# `src/keyboard/`.
+tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 # Low-level global keyboard listener for the desktop trigger backend

@@ -9,21 +9,21 @@
  * the runner shells out to `codesign`, which only exists on macOS, so it is
  * wired in there and nowhere else.
  */
-import { spawn } from "node:child_process";
+import { spawn } from 'node:child_process';
 
-const configs = ["src-tauri/tauri.dev.conf.json"];
-if (process.platform === "darwin") {
-	configs.push("src-tauri/tauri.dev.macos.conf.json");
+const configs = ['src-tauri/tauri.dev.conf.json'];
+if (process.platform === 'darwin') {
+	configs.push('src-tauri/tauri.dev.macos.conf.json');
 }
 
-const args = ["tauri", "dev"];
+const args = ['tauri', 'dev'];
 for (const config of configs) {
-	args.push("--config", config);
+	args.push('--config', config);
 }
 args.push(...process.argv.slice(2));
 
-const child = spawn("bun", args, { stdio: "inherit" });
-child.on("exit", (code, signal) => {
+const child = spawn('bun', args, { stdio: 'inherit' });
+child.on('exit', (code, signal) => {
 	if (signal) {
 		process.kill(process.pid, signal);
 	} else {

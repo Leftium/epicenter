@@ -68,6 +68,22 @@ identity at all: they never answer, only store and forward. "Which agent answers
 is a row field; "where the actor runs" is the right-hand column of the grid
 below; they move independently.
 
+### Observing a conversation is one trigger, not the actor's definition
+
+The actor's job is to run app semantics beside the anchor: observe app state, run
+inference and the app's actions, write typed results back. A conversation
+transcript is one observable layout it can drive (a child-doc change triggers it,
+streamed `Y.Text` is the result), not the shape of the role. The same observe loop
+hosts any observable child-doc layout, and the broader actor may react to a row or
+cell change, a schedule, or an external event, and write a typed cell, new rows,
+or a durable approval record instead of a `Y.Text`. Three axes stay independent:
+what *triggers* the actor, what *work* it runs, where the *result* lands.
+Collapsing them so all model work must be serialized as chat turns would re-narrow
+the general role into a chatbot substrate. So an actor must never synthesize a
+human-addressed turn to reach the runtime: autonomous work observes its own
+target, it does not impersonate a user message. Conversations are one durable
+interface to an actor, not its only one.
+
 ```txt
                          ACTOR
                     hosted    |    self-hosted

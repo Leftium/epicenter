@@ -86,6 +86,11 @@ only token stream is model-to-actor, and with local inference that is in-process
 The contract to standardize is the one `doc-generation.ts` already has:
 `startStream(messages) => AsyncIterable<StreamChunk>`, so a cloud adapter and a
 local backend (Ollama / llama.cpp / MLX) look identical to the append loop.
+`startStream` is the streaming-dialogue member of a model-access family, not the
+whole of it: structured one-shot completion (classify, extract) and embeddings are
+sibling capabilities an `onChange` may call directly. The actor runtime is agnostic
+to which one a body's behavior uses, so non-chat work reaches the model without
+fabricating a `messages` array (ADR-0012).
 
 ## V0 / V1 / V2 Are a Build Order Across Model 1 and Model 2
 
@@ -205,6 +210,11 @@ Open questions to investigate while V0/V1 build:
 - An HTTP kickoff, a generation_requests table, a CRDT claim field (ADR-0013).
 - Server-to-client SSE for doc-as-wire (the doc is the wire).
 - A new model taxonomy; V0/V1/V2 are a build order over Model 1 / Model 2.
+- Chat as the actor's only interface: synthesizing a human-addressed turn (a fake
+  user message like "system task: classify these 400 rows") to drive autonomous
+  work. The transcript is for real human<->agent dialogue; autonomous work observes
+  its own target (rows, cells, a schedule) and writes typed results. Conversations
+  are one durable interface to an actor, not its only one (ADR-0012).
 - For Model 1: any shell, file, write-SQL, or raw-doc tool (the action surface is
   the sandbox; adding one re-introduces arbitrary execution).
 - Everything the ai-workflows consolidated design already refuses (raw SQL input,

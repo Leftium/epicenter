@@ -11,7 +11,7 @@
  * The two transports are not interchangeable, and SSE is not legacy. SSE
  * carries interactive tool-calling chat: tools run in the client against its
  * local workspace and mutations wait on human approval mid-turn. A doc-as-wire
- * sync peer cannot express that, because the actor snapshots the prompt once,
+ * sync peer cannot express that, because the reaction snapshots the prompt once,
  * writes as the single owner of the assistant message, and never reads the doc
  * back mid-generation. Doc-as-wire is for server-authored text streamed into a
  * synced doc (cross-device continuity, background completion). Folding SSE onto
@@ -100,7 +100,7 @@ const DOC_GUID_REGEX =
 
 const aiChatDocBody = type({
 	guid: type('string').narrow((s) => DOC_GUID_REGEX.test(s)),
-	// The generation identity is no longer in the body: the actor reads the
+	// The generation identity is no longer in the body: the reaction reads the
 	// client-minted `generationId` off the unanswered user turn in the doc.
 	// This POST is a wake nudge that names the room and the model.
 	// Same options as the SSE route minus `tools` (doc-as-wire chat is
@@ -217,7 +217,7 @@ const aiApp = new Hono<Env>()
 			const room = c.var.rooms.get(doName(c.var.ownerId, guid));
 
 			// Stop = the client aborting this fetch. Forward the request
-			// signal so the provider stream cancels and the actor writes
+			// signal so the provider stream cancels and the reaction writes
 			// `finish: cancelled` (its final sync rides ctx.waitUntil).
 			const abortController = new AbortController();
 			const requestSignal = c.req.raw.signal;

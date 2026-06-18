@@ -117,6 +117,7 @@ export type {
 	ConnectedChildDoc,
 	ObservableChildDocLayout,
 } from './document/child-doc-actor.js';
+export { attachChildDocActor } from './document/child-doc-actor.js';
 export { type ConnectionConfig, connectDoc } from './document/connect-doc.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';

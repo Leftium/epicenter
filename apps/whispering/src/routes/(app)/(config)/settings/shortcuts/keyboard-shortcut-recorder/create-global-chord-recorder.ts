@@ -3,7 +3,7 @@ import { on } from 'svelte/events';
 import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 import { domCodeToKey, isEmptyBinding } from '$lib/utils/key-binding';
 
-const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys, as in createKeyRecorder.
+const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys, as in createLocalKeyRecorder.
 
 /**
  * Read the live modifier set from a `KeyboardEvent`'s boolean flags rather than
@@ -28,7 +28,7 @@ function eventModifiers(e: KeyboardEvent): Modifier[] {
  * one non-Fn modifier. Fn and modifier-only holds are invisible here and stay
  * the tap's job.
  *
- * The completion model mirrors {@link createKeyRecorder}: each new key extends a
+ * The completion model mirrors {@link createLocalKeyRecorder}: each new key extends a
  * 300ms window, and the gesture commits when every key releases (immediate) or
  * the window expires (the safety net for the macOS quirk where a key's `keyup`
  * is swallowed while a modifier is still held). `onCapture` receives each
@@ -37,7 +37,7 @@ function eventModifiers(e: KeyboardEvent): Modifier[] {
  * re-opening. The owner calls `stop()` once a capture is accepted. Escape is left
  * to bubble; the session owner cancels.
  */
-export function createWebviewChordRecorder({
+export function createGlobalChordRecorder({
 	onCapture,
 }: {
 	onCapture: (binding: KeyBinding) => void;
@@ -45,7 +45,7 @@ export function createWebviewChordRecorder({
 	// Internal control-flow guard only (the owner tracks its own session state), so
 	// a plain bool, not reactive.
 	let isListening = false;
-	// Accumulated across the capture window, like createKeyRecorder's set union:
+	// Accumulated across the capture window, like createLocalKeyRecorder's set union:
 	// the modifiers ever held and the last physical key seen.
 	let capturedModifiers: Modifier[] = [];
 	let capturedKey: Key | null = null;

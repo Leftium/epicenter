@@ -21,7 +21,7 @@
 		parseManualBinding,
 	} from '$lib/utils/key-binding';
 	import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
-	import { createWebviewChordRecorder } from './create-webview-chord-recorder';
+	import { createGlobalChordRecorder } from './create-global-chord-recorder';
 	import RecorderShell from './RecorderShell.svelte';
 
 	// `tauri` is passed non-null from the Tauri-gated global settings page.
@@ -59,7 +59,7 @@
 	let capturedModifiers = new Set<Modifier>();
 	let capturedKeys = new Set<Key>();
 
-	const webviewRecorder = createWebviewChordRecorder({
+	const chordRecorder = createGlobalChordRecorder({
 		onCapture: (next) => void commitWebviewChord(next),
 	});
 
@@ -100,8 +100,8 @@
 				unlisten?.();
 			};
 		}
-		webviewRecorder.start();
-		return () => webviewRecorder.stop();
+		chordRecorder.start();
+		return () => chordRecorder.stop();
 	});
 
 	async function startSession() {

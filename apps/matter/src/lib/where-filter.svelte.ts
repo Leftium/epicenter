@@ -2,9 +2,9 @@
  * The per-tab SQL WHERE filter over one table's slice of the vault mirror.
  *
  * Bundles the three things a filter is, the input (`text`), the result
- * (`matchedFileNames`), and a bad-clause `error`, plus the debounced query and its own
+ * (`matchedStems`), and a bad-clause `error`, plus the debounced query and its own
  * reactive lifecycle, into ONE unit. TableGrid binds `filter.text` and reads
- * `filter.matchedFileNames` instead of carrying three loose `$state`s and a standing effect
+ * `filter.matchedStems` instead of carrying three loose `$state`s and a standing effect
  * a reader has to mentally group.
  *
  * The mirror is the query seam (the vault's SQLite projection); `tableName` names which folder's SQL
@@ -28,7 +28,7 @@ const DEBOUNCE_MS = 200;
 
 export function createWhereFilter(mirror: Mirror, tableName: () => string) {
 	let text = $state('');
-	let matchedFileNames = $state<Set<string>>();
+	let matchedStems = $state<Set<string>>();
 	let error = $state<string>();
 
 	// Resolve the current clause to matched names whenever the clause or the mirror changes.
@@ -40,7 +40,7 @@ export function createWhereFilter(mirror: Mirror, tableName: () => string) {
 		void mirror.version; // re-run after the mirror is rebuilt (downstream of row edits)
 		// Empty clause: there is no filter, so show every row.
 		if (!clause) {
-			matchedFileNames = undefined;
+			matchedStems = undefined;
 			error = undefined;
 			return;
 		}
@@ -50,7 +50,7 @@ export function createWhereFilter(mirror: Mirror, tableName: () => string) {
 			if (cancelled) return; // a newer clause, a rebuild, or this tab being torn down won
 			if (failure) error = failure.message;
 			else {
-				matchedFileNames = data;
+				matchedStems = data;
 				error = undefined;
 			}
 		}, DEBOUNCE_MS);
@@ -68,11 +68,11 @@ export function createWhereFilter(mirror: Mirror, tableName: () => string) {
 		set text(value: string) {
 			text = value;
 		},
-		/** The names the clause matched, or `undefined` when no clause is active. */
-		get matchedFileNames() {
-			return matchedFileNames;
+		/** The stems the clause matched, or `undefined` when no clause is active. */
+		get matchedStems() {
+			return matchedStems;
 		},
-		/** A bad clause's message; the last good `matchedFileNames` is kept until it parses. */
+		/** A bad clause's message; the last good `matchedStems` is kept until it parses. */
 		get error() {
 			return error;
 		},

@@ -76,15 +76,16 @@ export function createMirror(root: string) {
 	}
 
 	/**
-	 * Run a WHERE clause against one folder's SQL table and return the matching file names. The clause
-	 * is the user's own raw SQL against their own read-only local db, so the worst a bad clause does is
-	 * return an error. No limit: a name-only filter returns every match, never a silent cap.
+	 * Run a WHERE clause against one folder's SQL table and return the matching row stems (the table's
+	 * `stem` primary key, the row's reference identity). The clause is the user's own raw SQL against
+	 * their own read-only local db, so the worst a bad clause does is return an error. No limit: a
+	 * name-only filter returns every match, never a silent cap.
 	 */
 	function query(
 		name: string,
 		where: string,
 	): Promise<Result<Set<string>, { message: string }>> {
-		const sql = `SELECT "file" FROM ${quoteIdent(name)} WHERE ${where}`;
+		const sql = `SELECT "stem" FROM ${quoteIdent(name)} WHERE ${where}`;
 		return tryAsync({
 			try: async () => {
 				const { rows } = await invoke<{ rows: unknown[][] }>('query_mirror', {

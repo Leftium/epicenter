@@ -68,7 +68,9 @@
 	"scripts": {
 		"dev:web": "vite dev",
 		"dev": "bun run dev:local",
-		"dev:local": "bun tauri dev --config '{\"identifier\": \"so.epicenter.whispering.dev\"}'",
+		"dev:local": "bun run scripts/launch-dev.ts",
+		"dev:doctor": "bun run scripts/dev-doctor.ts",
+		"test": "bun test tests/",
 		"build": "NODE_ENV=production vite build",
 		"check": "bun run typecheck",
 		"preview": "vite preview",

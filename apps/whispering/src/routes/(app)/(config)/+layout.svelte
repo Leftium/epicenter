@@ -2,8 +2,9 @@
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
 	import { commandCallbacks } from '$lib/commands';
+	import ImportFileButton from '$lib/components/ImportFileButton.svelte';
 	import {
-		RecordingTriggerSelector,
+		CaptureSurfaceSelector,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -13,8 +14,8 @@
 		RECORDER_STATE_TO_ICON,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
+	import { captureSurface } from '$lib/state/capture-surface.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
@@ -34,7 +35,7 @@
 
 	<div class="flex items-center gap-1.5">
 		<div class="flex items-center gap-1.5">
-			{#if settings.get('recording.trigger') === 'manual'}
+			{#if captureSurface.current === 'manual'}
 				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording"
@@ -72,10 +73,10 @@
 						>
 							{RECORDER_STATE_TO_ICON[manualRecorder.state]}
 						</Button>
-						<RecordingTriggerSelector class="rounded-l-none" />
+						<CaptureSurfaceSelector class="rounded-l-none" />
 					</div>
 				{/if}
-			{:else if settings.get('recording.trigger') === 'vad'}
+			{:else if captureSurface.current === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
 					<VadDeviceSelector />
 					<TranscriptionSelector variant="standalone" />
@@ -93,7 +94,7 @@
 						>
 							{VAD_STATE_TO_ICON[vadRecorder.state]}
 						</Button>
-						<RecordingTriggerSelector class="rounded-l-none" />
+						<CaptureSurfaceSelector class="rounded-l-none" />
 					</div>
 				{:else}
 					<Button
@@ -106,6 +107,13 @@
 						{VAD_STATE_TO_ICON[vadRecorder.state]}
 					</Button>
 				{/if}
+			{:else if captureSurface.current === 'upload'}
+				<TranscriptionSelector variant="standalone" />
+				<TransformationSelector />
+				<div class="flex">
+					<ImportFileButton class="rounded-r-none border-r-0" />
+					<CaptureSurfaceSelector class="rounded-l-none" />
+				</div>
 			{/if}
 		</div>
 	</div>

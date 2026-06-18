@@ -1,0 +1,52 @@
+/**
+ * A capture surface is one of the three ways to start a transcription from the
+ * home page or the config header: the two microphone triggers (`manual`, `vad`)
+ * plus `upload` (file import).
+ *
+ * `manual` and `vad` mirror the durable `recording.trigger` setting (they have a
+ * device, a shortcut, an overlay, and live capture). `upload` is deliberately
+ * NOT a trigger: it has none of those, so it never persists and never writes
+ * `recording.trigger`. It's a transient presentational overlay, owned by
+ * `capture-surface.svelte.ts`. Modeling it only here, layered on top of the
+ * triggers, restores the old three-way UI choice without re-conflating import
+ * back into the trigger setting (the split made in `17dbd3c14`).
+ */
+
+import FileUpIcon from '@lucide/svelte/icons/file-up';
+import type { Component } from 'svelte';
+import { RECORDING_TRIGGER_META } from './recording-triggers';
+
+export const CAPTURE_SURFACES = ['manual', 'vad', 'upload'] as const;
+export type CaptureSurface = (typeof CAPTURE_SURFACES)[number];
+
+/**
+ * Per-surface metadata. The two triggers reuse `RECORDING_TRIGGER_META`
+ * verbatim, so a trigger is still described in exactly one place; only `upload`
+ * adds its own label and icons here.
+ */
+export const CAPTURE_SURFACE_META = {
+	...RECORDING_TRIGGER_META,
+	upload: {
+		label: 'Upload File',
+		emoji: '📁',
+		Icon: FileUpIcon,
+	},
+} as const satisfies Record<
+	CaptureSurface,
+	{
+		label: string;
+		emoji: string;
+		Icon: Component<{ class?: string }>;
+	}
+>;
+
+/**
+ * Render-ready surface list (value, label, compact emoji) in display order,
+ * for the homepage tabs and the header dropdown. The full-size lucide icon for
+ * the tabs lives on `CAPTURE_SURFACE_META[value].Icon`.
+ */
+export const CAPTURE_SURFACE_OPTIONS = CAPTURE_SURFACES.map((value) => ({
+	value,
+	label: CAPTURE_SURFACE_META[value].label,
+	icon: CAPTURE_SURFACE_META[value].emoji,
+}));

@@ -7,8 +7,10 @@ import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
 import { prewarmLocalModel } from '$lib/operations/transcribe';
+import type { CaptureSurface, RecordingTrigger } from '$lib/constants/audio';
 import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
+import { captureSurface } from '$lib/state/capture-surface.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -60,6 +62,9 @@ function isVadRecordingActive() {
 
 export async function startManualRecording() {
 	settings.set('recording.trigger', 'manual');
+	// A capture just started, so leave the import overlay if it was open: the
+	// surface should follow the live recording, not stay parked on upload.
+	captureSurface.dismissImport();
 
 	// Kick off the local model load now, concurrently with bringing up the
 	// recorder, so the ~1 s cold load overlaps the speech you're about to
@@ -181,6 +186,9 @@ export async function cancelRecording() {
 
 export async function startVadRecording() {
 	settings.set('recording.trigger', 'vad');
+	// A capture just started, so leave the import overlay if it was open (see
+	// startManualRecording).
+	captureSurface.dismissImport();
 
 	// Warm the local model when listening is armed (not when speech is
 	// detected): arming VAD is the "about to dictate" signal, and starting the
@@ -279,4 +287,43 @@ export function toggleVadRecording() {
 		return stopVadRecording();
 	}
 	return startVadRecording();
+}
+
+/** Stop whichever recorder is mid-capture, if any. */
+async function stopActiveRecording() {
+	if (manualRecorder.state === 'RECORDING') await stopManualRecording();
+	if (isVadRecordingActive()) await stopVadRecording();
+}
+
+/**
+ * Switch the active microphone trigger, stopping the other recorder first if
+ * it's mid-capture so two captures never overlap. Writes the durable
+ * `recording.trigger`; the choice persists.
+ */
+export async function switchRecordingTrigger(trigger: RecordingTrigger) {
+	if (trigger !== 'manual' && manualRecorder.state === 'RECORDING') {
+		await stopManualRecording();
+	}
+	if (trigger !== 'vad' && isVadRecordingActive()) {
+		await stopVadRecording();
+	}
+	if (settings.get('recording.trigger') !== trigger) {
+		settings.set('recording.trigger', trigger);
+	}
+}
+
+/**
+ * Select a capture surface from the homepage tabs or the header dropdown.
+ * `upload` opens the transient import overlay (stopping any live capture behind
+ * it) without touching `recording.trigger`; `manual`/`vad` close the overlay and
+ * switch the durable trigger.
+ */
+export async function selectCaptureSurface(surface: CaptureSurface) {
+	if (surface === 'upload') {
+		await stopActiveRecording();
+		captureSurface.showImport();
+		return;
+	}
+	captureSurface.dismissImport();
+	await switchRecordingTrigger(surface);
 }

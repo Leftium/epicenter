@@ -4,6 +4,12 @@ export {
 	DEFAULT_BITRATE_KBPS,
 } from './bitrate';
 export {
+	CAPTURE_SURFACE_META,
+	CAPTURE_SURFACE_OPTIONS,
+	CAPTURE_SURFACES,
+	type CaptureSurface,
+} from './capture-surfaces';
+export {
 	TIMESLICE_MS,
 	WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
 } from './media-constraints';

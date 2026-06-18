@@ -6,16 +6,20 @@
 	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import { RECORDING_TRIGGER_OPTIONS } from '$lib/constants/audio';
-	import { settings } from '$lib/state/settings.svelte';
+	import {
+		CAPTURE_SURFACE_OPTIONS,
+		type CaptureSurface,
+	} from '$lib/constants/audio';
+	import { selectCaptureSurface } from '$lib/operations/recording';
+	import { captureSurface } from '$lib/state/capture-surface.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const combobox = useCombobox();
 
-	const currentTrigger = $derived(
-		RECORDING_TRIGGER_OPTIONS.find(
-			(trigger) => trigger.value === settings.get('recording.trigger'),
+	const current = $derived(
+		CAPTURE_SURFACE_OPTIONS.find(
+			(surface) => surface.value === captureSurface.current,
 		),
 	);
 </script>
@@ -26,9 +30,9 @@
 			<Button
 				{...props}
 				class={cn('relative', className)}
-				tooltip={currentTrigger
-					? `Recording trigger: ${currentTrigger.label}`
-					: 'Select recording trigger'}
+				tooltip={current
+					? `Capture: ${current.label}`
+					: 'Select capture surface'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
@@ -42,14 +46,13 @@
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>
-					{#each RECORDING_TRIGGER_OPTIONS as trigger (trigger.value)}
-						{@const isSelected =
-							settings.get('recording.trigger') === trigger.value}
+					{#each CAPTURE_SURFACE_OPTIONS as surface (surface.value)}
+						{@const isSelected = captureSurface.current === surface.value}
 						<Command.Item
-							value={trigger.value}
+							value={surface.value}
 							onSelect={async () => {
-								settings.set('recording.trigger', trigger.value);
 								combobox.closeAndFocusTrigger();
+								await selectCaptureSurface(surface.value as CaptureSurface);
 							}}
 							class="flex items-center gap-2 px-2 py-2"
 						>
@@ -58,8 +61,8 @@
 									'text-transparent': !isSelected,
 								})}
 							/>
-							<span class="text-base">{trigger.icon}</span>
-							<span class="text-sm">{trigger.label}</span>
+							<span class="text-base">{surface.icon}</span>
+							<span class="text-sm">{surface.label}</span>
 						</Command.Item>
 					{/each}
 				</Command.Group>

@@ -14,27 +14,71 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
 	import type { Cell } from '$lib/core/conformance';
-	import type { FolderGridVault } from '$lib/vault.svelte';
+	import type {
+		ReferenceVerdict,
+		TableAssessment,
+	} from '$lib/core/integrity';
+	import type { TableView } from '$lib/table.svelte';
 	import type { WhereFilter } from '$lib/where-filter.svelte';
 	import ModeledCell from './ModeledCell.svelte';
+	import ReferenceVerdictIndicator from './ReferenceVerdict.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
 
-	// The grid renders from any {@link FolderGridVault}: the live disk vault or the
-	// in-memory demo vault, injected by the route. The narrow getters are bound once
-	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
-	// vault swap (open another folder) flows through these derivations.
-	// `filter` is the tab's WHERE filter (the live vault provides one; the demo does not).
-	// The grid renders its input in the header and narrows rows to the names it matched;
-	// `undefined` (no filter, or an empty clause) means show every row.
-	let { vault, filter }: { vault: FolderGridVault; filter?: WhereFilter } = $props();
+	// The grid renders from a {@link TableView} (the slice of a live table the grid is allowed to
+	// touch), injected by the active TablePane. The narrow getters are bound once here so the
+	// template reads `read` / `folder` / `onSave*` directly, and a table swap (switch tables in the
+	// vault) flows through these derivations.
+	// `filter` is the tab's WHERE filter. The grid renders its input in the header and narrows rows
+	// to the names it matched; `undefined` (no filter, or an empty clause) means show every row.
+	// `assessment` is THIS table's place in the vault's integrity: it carries the cross-table
+	// reference verdicts (resolved / dangling / missing-target) the conformance `Cell` cannot
+	// know on its own. Optional, so a table rendered outside a vault simply shows no chips.
+	let {
+		table,
+		filter,
+		assessment,
+	}: {
+		table: TableView;
+		filter?: WhereFilter;
+		assessment?: TableAssessment;
+	} = $props();
+
+	// fileName -> field name -> the reference verdict for that cell, built once per assessment.
+	// Only present, valid pointers land here (the three reference-only states); a missing or
+	// invalid reference value has no verdict and renders through the ordinary editor.
+	const referenceVerdicts = $derived.by(() => {
+		const byFile = new Map<string, Map<string, ReferenceVerdict>>();
+		if (assessment?.status !== 'typed') return byFile;
+		for (const { row, cells } of assessment.rows) {
+			const byField = new Map<string, ReferenceVerdict>();
+			for (const cell of cells) {
+				if (
+					cell.state === 'resolved' ||
+					cell.state === 'dangling' ||
+					cell.state === 'missing-target'
+				) {
+					byField.set(cell.field.name, cell);
+				}
+			}
+			if (byField.size > 0) byFile.set(row.fileName, byField);
+		}
+		return byFile;
+	});
+
+	function verdictFor(
+		fileName: string,
+		fieldName: string,
+	): ReferenceVerdict | undefined {
+		return referenceVerdicts.get(fileName)?.get(fieldName);
+	}
 
 	// The file names the WHERE clause matched, or undefined when no clause is active.
 	const matchedFileNames = $derived(filter?.matchedFileNames);
 
-	const read = $derived(vault.read);
-	const folder = $derived(vault.folderName);
-	const onSaveField = $derived(vault.saveField);
-	const onSaveBody = $derived(vault.saveBody);
+	const read = $derived(table.read);
+	const folder = $derived(table.folderName);
+	const onSaveField = $derived(table.saveField);
+	const onSaveBody = $derived(table.saveBody);
 	const view = $derived(read.view);
 
 	type RowFilter = 'all' | 'attention' | 'ready';
@@ -43,7 +87,7 @@
 	let rowFilter = $state<RowFilter>('all');
 
 	const filteredRows = $derived.by(() => {
-		if (view.mode !== 'modeled') return [];
+		if (view.mode !== 'typed') return [];
 		// The WHERE filter (matched row file names from the mirror, computed by the page)
 		// narrows the visible set; no active filter leaves it undefined, nothing to do. The
 		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
@@ -61,7 +105,7 @@
 	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
 	const isFiltered = $derived(rowFilter !== 'all' || matchedFileNames !== undefined);
 
-	// The modeled empty-state copy as ONE mutually exclusive decision, so the title and the
+	// The typed empty-state copy as ONE mutually exclusive decision, so the title and the
 	// description always describe the same case. Reads top-down like the question a person
 	// asks ("is a filter on? is attention on? otherwise it is just empty") instead of two
 	// nested ternaries in the markup that have to be kept in sync by hand.
@@ -76,7 +120,7 @@
 				title: matchedFileNames ? 'No matching rows need attention' : 'No rows need attention',
 				description: matchedFileNames
 					? 'Rows matched by this WHERE clause are valid.'
-					: 'Every readable row matches this model.',
+					: 'Every readable row matches this contract.',
 			};
 		if (rowFilter === 'ready')
 			return {
@@ -97,7 +141,7 @@
 	let detailOpen = $state(false);
 	let detailFileName = $state<string>();
 	const detailConformance = $derived.by(() => {
-		if (view.mode !== 'modeled' || !detailFileName) return undefined;
+		if (view.mode !== 'typed' || !detailFileName) return undefined;
 		return view.conformance.find((conf) => conf.row.fileName === detailFileName);
 	});
 
@@ -109,6 +153,7 @@
 	// width here, the same exhaustiveness gate the widget registry carries.
 	const COLUMN_WIDTH = {
 		string: 'w-56',
+		reference: 'w-56',
 		url: 'w-56',
 		date: 'w-32',
 		instant: 'w-44',
@@ -170,7 +215,7 @@
 	});
 </script>
 
-<!-- Raw value render for the unmodeled view: plain text, no type guessing. -->
+<!-- Raw value render for the untyped view: plain text, no type guessing. -->
 {#snippet rawValue(value: unknown)}
 	{#if value === null || value === undefined}
 		<span class="text-muted-foreground/50">.</span>
@@ -189,6 +234,18 @@
 	{:else}
 		<span class="block truncate">{String(value)}</span>
 	{/if}
+{/snippet}
+
+<!-- The editable cell widget, shared by the plain path and the reference-adorned path so the two
+     never drift. The reference path wraps this with a verdict indicator; everything else renders
+     it bare. -->
+{#snippet cellEditor(cell: Cell, fileName: string)}
+	<ModeledCell
+		{cell}
+		mode="grid"
+		save={(value) => onSaveField(fileName, cell.field.name, value)}
+		clear={() => onSaveField(fileName, cell.field.name, undefined)}
+	/>
 {/snippet}
 
 {#snippet rowFilterItem(
@@ -211,7 +268,7 @@
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
-	{#if view.mode === 'unmodeled'}
+	{#if view.mode === 'untyped'}
 		<header
 			class="flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3"
 		>
@@ -225,16 +282,16 @@
 					{/if}
 				</div>
 			</div>
-			<Badge variant="outline">no model</Badge>
+			<Badge variant="outline">no contract</Badge>
 		</header>
 
 		<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
 			<FileWarningIcon />
 			<Alert.Description class="text-xs">
-				{#if view.modelError}
-					Could not read matter.json ({view.modelError.message}). Showing the raw frontmatter; add a valid matter.json to classify files against a contract.
+				{#if view.contractError}
+					Could not read matter.json ({view.contractError.message}). Showing the raw frontmatter; add a valid matter.json to classify files against a contract.
 				{:else}
-					No model for this folder. Showing the raw frontmatter; add a matter.json to classify files against a contract.
+					No contract for this folder. Showing the raw frontmatter; add a matter.json to classify files against a contract.
 				{/if}
 			</Alert.Description>
 		</Alert.Root>
@@ -290,7 +347,7 @@
 							? `${visibleRows.length} of ${read.rows.length} rows`
 							: `${read.rows.length} rows`}
 					</Badge>
-					<Badge variant="secondary">{view.model.fields.length} fields</Badge>
+					<Badge variant="secondary">{view.contract.fields.length} fields</Badge>
 					{#if read.unreadable.length}
 						<Badge variant="destructive">{read.unreadable.length} unreadable</Badge>
 					{/if}
@@ -348,22 +405,22 @@
 			</div>
 		</header>
 
-		{#if view.model.unmodeled.length}
+		{#if view.contract.untyped.length}
 			<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
 				<TriangleAlertIcon />
 				<Alert.Description class="text-xs">
-					{view.model.unmodeled.length}
-					{view.model.unmodeled.length === 1 ? 'field has' : 'fields have'} an unrecognized
-					shape ({view.model.unmodeled.join(', ')}). Values show raw in the row detail panel, not as typed columns.
+					{view.contract.untyped.length}
+					{view.contract.untyped.length === 1 ? 'field has' : 'fields have'} an unrecognized
+					shape ({view.contract.untyped.join(', ')}). Values show raw in the row detail panel, not as typed columns.
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
 
-		{#if view.model.unmatchedOptional.length}
+		{#if view.contract.unmatchedOptional.length}
 			<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
 				<TriangleAlertIcon />
 				<Alert.Description class="text-xs">
-					Optional entries do not match typed fields ({view.model.unmatchedOptional.join(', ')}).
+					Optional entries do not match typed fields ({view.contract.unmatchedOptional.join(', ')}).
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
@@ -376,7 +433,7 @@
 				     stretching the column to the widest value. -->
 				<colgroup>
 					<col class="w-60" />
-					{#each view.model.fields as field (field.name)}
+					{#each view.contract.fields as field (field.name)}
 						<col class={COLUMN_WIDTH[field.kind]} />
 					{/each}
 				</colgroup>
@@ -385,7 +442,7 @@
 						<Table.Head class="sticky left-0 top-0 z-30 border-r bg-background align-bottom">
 							<span class="text-xs font-medium text-muted-foreground">file</span>
 						</Table.Head>
-						{#each view.model.fields as field (field.name)}
+						{#each view.contract.fields as field (field.name)}
 							<Table.Head class="sticky top-0 z-20 bg-background align-bottom">
 								<div
 									class={['flex flex-col gap-0.5', columnAlign(field.kind).head]}
@@ -407,7 +464,7 @@
 				<Table.Body>
 					{#if visibleRows.length === 0}
 						<Table.Row>
-							<Table.Cell colspan={view.model.fields.length + 1}>
+							<Table.Cell colspan={view.contract.fields.length + 1}>
 								<Empty.Root class="min-h-64 border-0">
 									<Empty.Header>
 										<Empty.Title>{emptyState.title}</Empty.Title>
@@ -447,6 +504,7 @@
 									</div>
 								</Table.Cell>
 								{#each conf.cells as cell (cell.field.name)}
+									{@const verdict = verdictFor(conf.row.fileName, cell.field.name)}
 									<Table.Cell
 										aria-invalid={cell.state === 'INVALID' || cell.state === 'MISSING_REQUIRED'}
 										class={[
@@ -454,12 +512,16 @@
 											cellStateClass(cell.state),
 										]}
 									>
-										<ModeledCell
-											{cell}
-											mode="grid"
-											save={(value) => onSaveField(conf.row.fileName, cell.field.name, value)}
-											clear={() => onSaveField(conf.row.fileName, cell.field.name, undefined)}
-										/>
+										{#if verdict}
+											<div class="flex items-center gap-1.5">
+												<ReferenceVerdictIndicator {verdict} />
+												<div class="min-w-0 flex-1">
+													{@render cellEditor(cell, conf.row.fileName)}
+												</div>
+											</div>
+										{:else}
+											{@render cellEditor(cell, conf.row.fileName)}
+										{/if}
 									</Table.Cell>
 								{/each}
 							</Table.Row>

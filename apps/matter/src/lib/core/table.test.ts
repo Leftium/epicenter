@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from './folder';
+import { readTable } from './table';
 
-describe('readFolder', () => {
+describe('readTable', () => {
 	test('splits readable rows from unreadable files and lists raw columns', () => {
-		const result = readFolder([
+		const result = readTable([
 			{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
 			{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' },
 			{ fileName: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
@@ -23,21 +23,21 @@ describe('readFolder', () => {
 			['broken.md', 'InvalidYaml'],
 			['conflict.md', 'ConflictMarkers'],
 		]);
-		// No model supplied: a raw untyped view, columns ordered by frequency then
+		// No contract supplied: a raw untyped view, columns ordered by frequency then
 		// first-seen, no type inference.
-		expect(result.view.mode).toBe('unmodeled');
-		if (result.view.mode !== 'unmodeled') throw new Error('expected unmodeled');
+		expect(result.view.mode).toBe('untyped');
+		if (result.view.mode !== 'untyped') throw new Error('expected untyped');
 		expect(result.view.columns).toEqual(['title', 'rating']);
 	});
 
-	test('a valid matter.json produces a modeled view with per-cell conformance', () => {
-		const model = JSON.stringify({
+	test('a valid matter.json produces a typed view with per-cell conformance', () => {
+		const contract = JSON.stringify({
 			fields: {
 				title: { type: 'string' },
 				rating: { type: 'integer' },
 			},
 		});
-		const result = readFolder(
+		const result = readTable(
 			[
 				{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
 				{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> MISSING_REQUIRED
@@ -46,33 +46,33 @@ describe('readFolder', () => {
 					content: '---\ntitle: C\nrating: "high"\n---\nbody',
 				}, // INVALID
 			],
-			model,
+			contract,
 		);
 
-		expect(result.view.mode).toBe('modeled');
-		if (result.view.mode !== 'modeled') throw new Error('expected modeled');
+		expect(result.view.mode).toBe('typed');
+		if (result.view.mode !== 'typed') throw new Error('expected typed');
 		const valid = result.view.conformance.map((c) => c.rowValid);
 		expect(valid).toEqual([true, false, false]);
 	});
 
-	test('optional modeled fields can be absent or null without invalidating a row', () => {
-		const model = JSON.stringify({
+	test('optional typed fields can be absent or null without invalidating a row', () => {
+		const contract = JSON.stringify({
 			fields: {
 				title: { type: 'string' },
 				reviewBy: { type: 'string', format: 'date' },
 			},
 			optional: ['reviewBy'],
 		});
-		const result = readFolder(
+		const result = readTable(
 			[
 				{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' },
 				{ fileName: 'b.md', content: '---\ntitle: B\nreviewBy:\n---\nbody' },
 			],
-			model,
+			contract,
 		);
 
-		expect(result.view.mode).toBe('modeled');
-		if (result.view.mode !== 'modeled') throw new Error('expected modeled');
+		expect(result.view.mode).toBe('typed');
+		if (result.view.mode !== 'typed') throw new Error('expected typed');
 		expect(result.view.conformance.map((c) => c.rowValid)).toEqual([
 			true,
 			true,
@@ -86,12 +86,12 @@ describe('readFolder', () => {
 	});
 
 	test('a junk matter.json degrades to the raw view with a diagnostic', () => {
-		const result = readFolder(
+		const result = readTable(
 			[{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' }],
 			'{ not json',
 		);
-		expect(result.view.mode).toBe('unmodeled');
-		if (result.view.mode !== 'unmodeled') throw new Error('expected unmodeled');
-		expect(result.view.modelError?.name).toBe('InvalidJson');
+		expect(result.view.mode).toBe('untyped');
+		if (result.view.mode !== 'untyped') throw new Error('expected untyped');
+		expect(result.view.contractError?.name).toBe('InvalidJson');
 	});
 });

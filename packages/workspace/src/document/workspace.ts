@@ -61,6 +61,7 @@ import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
 import { onLocalUpdate } from './on-local-update.js';
 import type { Collaboration } from './open-collaboration.js';
+import { assertReferenceTargets } from './reference-check.js';
 import {
 	type BaseRow,
 	type ChildDocDeclaration,
@@ -455,6 +456,10 @@ export function createWorkspace<
 	TKv extends KvDefinitions,
 >(options: CreateWorkspaceOptions<TTables, TKv>): Workspace<TTables, TKv, {}> {
 	assertSafeSegment(options.id, 'workspace id');
+	// Referential floor: every field.reference(table) column must name a table defined in
+	// this same workspace. Throws here so a dangling target fails at construction, not
+	// silently at query time. A no-op unless a table actually uses field.reference().
+	assertReferenceTargets(options.tables);
 	const ydoc = new Y.Doc({
 		guid: options.id,
 		gc: true,

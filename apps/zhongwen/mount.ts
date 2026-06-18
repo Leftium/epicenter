@@ -93,7 +93,9 @@ function resolveChatStream(): ChatStream {
 	const apiKey = process.env.GEMINI_API_KEY;
 	if (!apiKey) {
 		log.warn(
-			'GEMINI_API_KEY is not set; the Zhongwen daemon answers with the placeholder stream (real inference is not live on this host).',
+			new Error(
+				'GEMINI_API_KEY is not set; the Zhongwen daemon answers with the placeholder stream (real inference is not live on this host).',
+			),
 		);
 		return fakeChatStream;
 	}

@@ -45,6 +45,7 @@
 					{#each RECORDING_TRIGGER_OPTIONS as trigger (trigger.value)}
 						{@const isSelected =
 							settings.get('recording.trigger') === trigger.value}
+						{@const TriggerIcon = trigger.Icon}
 						<Command.Item
 							value={trigger.value}
 							onSelect={async () => {
@@ -58,7 +59,7 @@
 									'text-transparent': !isSelected,
 								})}
 							/>
-							<span class="text-base">{trigger.icon}</span>
+							<TriggerIcon class="size-4 shrink-0" />
 							<span class="text-sm">{trigger.label}</span>
 						</Command.Item>
 					{/each}

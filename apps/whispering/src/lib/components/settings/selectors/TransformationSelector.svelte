@@ -13,15 +13,23 @@
 	import { rpc } from '$lib/rpc';
 	import { settings } from '$lib/state/settings.svelte';
 	import { transformations } from '$lib/state/transformations.svelte';
-	import { viewTransition } from '$lib/utils/viewTransitions';
 	import type { Transformation } from '$lib/workspace';
 
 	const sortedTransformations = $derived(transformations.sorted);
 
 	let {
 		class: className,
+		iconViewTransitionName,
 	}: {
 		class?: string;
+		/**
+		 * When set, names the selected-transformation glyph for a cross-page view
+		 * transition: it morphs into that transformation's row on the
+		 * `/transformations` list. Only the home pipeline opts in; the config
+		 * topbar leaves it unset, since that topbar overlays `/transformations`
+		 * itself, where the name would collide with the row and abort the morph.
+		 */
+		iconViewTransitionName?: string;
 	} = $props();
 
 	const selectedTransformation = $derived(
@@ -55,15 +63,17 @@
 				aria-expanded={combobox.open}
 				variant="ghost"
 				size="icon"
-				style="view-transition-name: {viewTransition.transformation(
-					selectedTransformation?.id ?? null,
-				)}"
 			>
-				{#if selectedTransformation}
-					<SparklesIcon class="size-4 text-green-500" />
-				{:else}
-					<WandIcon class="size-4 text-warning" />
-				{/if}
+				<span
+					class="inline-flex shrink-0"
+					style:view-transition-name={iconViewTransitionName}
+				>
+					{#if selectedTransformation}
+						<SparklesIcon class="size-4 text-green-500" />
+					{:else}
+						<WandIcon class="size-4 text-warning" />
+					{/if}
+				</span>
 				{#if !selectedTransformation}
 					<span
 						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-primary/50 before:animate-ping"

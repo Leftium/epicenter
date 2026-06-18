@@ -31,7 +31,7 @@ function handleDeviceAcquisitionOutcome(
 	switch (outcome.reason) {
 		case 'no-device-selected':
 			return {
-				title: '🎙️ Switched to available microphone',
+				title: 'Switched to available microphone',
 				description:
 					'No microphone was selected, so we automatically connected to an available one. You can update your selection in settings.',
 				action: {
@@ -41,7 +41,7 @@ function handleDeviceAcquisitionOutcome(
 			};
 		case 'preferred-device-unavailable':
 			return {
-				title: '🎙️ Switched to different microphone',
+				title: 'Switched to different microphone',
 				description:
 					"Your previously selected microphone wasn't found, so we automatically connected to an available one.",
 				action: {
@@ -67,7 +67,7 @@ export async function startManualRecording() {
 	prewarmLocalModel();
 
 	const loading = report.loading({
-		title: '🎙️ Preparing to record...',
+		title: 'Preparing to record...',
 		description: 'Setting up your recording environment...',
 	});
 
@@ -84,7 +84,7 @@ export async function startManualRecording() {
 	loading.resolve(
 		handleDeviceAcquisitionOutcome(
 			outcome,
-			'🎙️ Whispering is recording...',
+			'Whispering is recording...',
 			'Speak now and stop recording when done',
 			(deviceId) => {
 				manualRecorderConfig.deviceId = deviceId;
@@ -98,7 +98,7 @@ export async function startManualRecording() {
 
 export async function stopManualRecording() {
 	const loading = report.loading({
-		title: '⏸️ Stopping recording...',
+		title: 'Stopping recording...',
 		description: 'Finalizing your audio capture...',
 	});
 
@@ -116,7 +116,7 @@ export async function stopManualRecording() {
 		source.kind === 'artifact' ? source.artifact.byteLength : source.blob.size;
 
 	loading.resolve({
-		title: '🎙️ Recording stopped',
+		title: 'Recording stopped',
 		description: 'Your recording has been saved',
 	});
 	log.info('Recording stopped');
@@ -165,7 +165,7 @@ export async function cancelRecording() {
 	if (data.status === 'cancelled') {
 		void recordingMedia.resume();
 		sound.playSoundIfEnabled('manual-cancel');
-		report.success({ title: '✅ Recording cancelled' });
+		report.success({ title: 'Recording cancelled' });
 		log.info('Recording cancelled');
 		return;
 	}
@@ -190,7 +190,7 @@ export async function startVadRecording() {
 
 	log.info('Starting voice activated capture');
 	const loading = report.loading({
-		title: '🎙️ Starting voice activated capture',
+		title: 'Starting voice activated capture',
 		description: 'Your voice activated capture is starting...',
 	});
 
@@ -200,13 +200,13 @@ export async function startVadRecording() {
 		onLevel: (level) => recordingOverlay.reportLevel(level),
 		onSpeechStart: () => {
 			report.success({
-				title: '🎙️ Speech started',
+				title: 'Speech started',
 				description: 'Recording started. Speak clearly and loudly.',
 			});
 		},
 		onSpeechEnd: async (blob) => {
 			report.success({
-				title: '🎙️ Voice activated speech captured',
+				title: 'Voice activated speech captured',
 				description: 'Your voice activated speech has been captured.',
 			});
 			log.info('Voice activated speech captured');
@@ -238,7 +238,7 @@ export async function startVadRecording() {
 	loading.resolve(
 		handleDeviceAcquisitionOutcome(
 			outcome,
-			'🎙️ Voice activated capture started',
+			'Voice activated capture started',
 			'Your voice activated capture has been started.',
 			(deviceId) => deviceConfig.set('recording.navigator.deviceId', deviceId),
 		),
@@ -252,7 +252,7 @@ export async function stopVadRecording() {
 
 	log.info('Stopping voice activated capture');
 	const loading = report.loading({
-		title: '⏸️ Stopping voice activated capture...',
+		title: 'Stopping voice activated capture...',
 		description: 'Finalizing your voice activated capture...',
 	});
 	const { data, error } = await vadRecorder.stopActiveListening();
@@ -262,7 +262,7 @@ export async function stopVadRecording() {
 		return;
 	}
 	const stoppedNotice = {
-		title: '🎙️ Voice activated capture stopped',
+		title: 'Voice activated capture stopped',
 		description: 'Your voice activated capture has been stopped.',
 	};
 	if (data.status === 'idle') {

@@ -62,12 +62,12 @@ const invalid: Row = {
 };
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
-	test('drops then recreates: file PK, one nullable column per field by storage class, _extra JSON', () => {
+	test('drops then recreates: stem PK, one nullable column per field by storage class, _extra JSON', () => {
 		const { schema } = projectToSqlite('posts', m, []);
 		expect(schema).toBe(
 			'DROP TABLE IF EXISTS "posts";\n' +
 				'CREATE TABLE "posts" (' +
-				'"file" TEXT PRIMARY KEY, ' +
+				'"stem" TEXT PRIMARY KEY, ' +
 				'"title" TEXT, ' +
 				'"status" TEXT, ' +
 				'"count" INTEGER, ' +
@@ -99,10 +99,10 @@ describe('insert template (one ? per column, bound positionally)', () => {
 		const { insert } = projectToSqlite('posts', m, []);
 		expect(insert).toBe(
 			'INSERT INTO "posts" (' +
-				'"file", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
+				'"stem", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
-		// name + 7 typed fields + _extra = 9 placeholders.
+		// stem + 7 typed fields + _extra = 9 placeholders.
 		expect((insert.match(/\?/g) ?? []).length).toBe(9);
 	});
 });
@@ -113,13 +113,13 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 
 	test('valid AND incomplete rows both project, in folder order', () => {
 		expect(proj.rows).toHaveLength(2);
-		expect(proj.rows.map((r) => r[0])).toEqual(['post-1.md', 'post-2.md']);
+		expect(proj.rows.map((r) => r[0])).toEqual(['post-1', 'post-2']);
 	});
 
 	test('an OK cell is serialized to its storage class', () => {
-		const [file, title, status, count, score, live, tags, url, extra] =
+		const [stem, title, status, count, score, live, tags, url, extra] =
 			proj.rows[0]!;
-		expect(file).toBe('post-1.md');
+		expect(stem).toBe('post-1');
 		expect(title).toBe('Hello');
 		expect(status).toBe('draft');
 		expect(count).toBe(3); // INTEGER stays a number
@@ -131,8 +131,8 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 	});
 
 	test('a missing required cell binds NULL (the draft is still a row)', () => {
-		const [file, title, status, count, , , tags, url, extra] = proj.rows[1]!;
-		expect(file).toBe('post-2.md');
+		const [stem, title, status, count, , , tags, url, extra] = proj.rows[1]!;
+		expect(stem).toBe('post-2');
 		expect(title).toBe('Partial');
 		expect(status).toBeNull();
 		expect(count).toBeNull();
@@ -161,13 +161,13 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 			'MISSING_OPTIONAL',
 		]);
 		const p = projectToSqlite('posts', optionalContract, conformance);
-		expect(p.rows[0]).toEqual(['person.md', 'Alice', null, '{}']);
+		expect(p.rows[0]).toEqual(['person', 'Alice', null, '{}']);
 	});
 
 	test('an out-of-domain cell keeps its raw value so the draft stays filterable', () => {
 		const p = projectToSqlite('posts', m, classifyRows(m.fields, [invalid]));
-		const [file, title, status, count] = p.rows[0]!;
-		expect(file).toBe('post-3.md');
+		const [stem, title, status, count] = p.rows[0]!;
+		expect(stem).toBe('post-3');
 		expect(title).toBe('Bad');
 		expect(status).toBe('bogus'); // not in the enum, kept raw
 		expect(count).toBe(1.5); // not an integer, kept raw
@@ -200,29 +200,30 @@ describe('projects a vault into one db whose tables JOIN', () => {
 			for (const row of rows) stmt.run(...row);
 		}
 
-		// `adaptations.page` holds a page's basename (no extension); the mirror's `file` column keeps
-		// the `.md`, so the JOIN key is `page || '.md' = file`. An INNER JOIN naturally drops the
-		// deliberately-dangling orphan-adaptation (page `ghost-page`, which has no pages row).
+		// `adaptations.page` holds a page's stem (basename, no extension), and the mirror's `stem`
+		// column IS that same reference identity, so the JOIN key is just `a.page = p.stem` — no
+		// `.md` juggling. An INNER JOIN naturally drops the deliberately-dangling orphan-adaptation
+		// (page `ghost-page`, which has no pages row).
 		const joined = db
 			.query(
-				`SELECT a."file" AS adaptation, p."file" AS page
-				 FROM adaptations a JOIN pages p ON a."page" || '.md' = p."file"
-				 ORDER BY a."file"`,
+				`SELECT a."stem" AS adaptation, p."stem" AS page
+				 FROM adaptations a JOIN pages p ON a."page" = p."stem"
+				 ORDER BY a."stem"`,
 			)
 			.all() as { adaptation: string; page: string }[];
 
 		expect(joined).toEqual([
 			{
-				adaptation: 'become-the-source-carousel.md',
-				page: 'become-the-source.md',
+				adaptation: 'become-the-source-carousel',
+				page: 'become-the-source',
 			},
 			{
-				adaptation: 'become-the-source-thread.md',
-				page: 'become-the-source.md',
+				adaptation: 'become-the-source-thread',
+				page: 'become-the-source',
 			},
 			{
-				adaptation: 'plan-yourself-short.md',
-				page: 'how-we-plan-ourselves.md',
+				adaptation: 'plan-yourself-short',
+				page: 'how-we-plan-ourselves',
 			},
 		]);
 	});

@@ -14,6 +14,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
 	import type { Cell } from '$lib/core/conformance';
+	import { stemOf } from '$lib/core/parse';
 	import type {
 		ReferenceVerdict,
 		TableAssessment,
@@ -72,8 +73,8 @@
 		return referenceVerdicts.get(fileName)?.get(fieldName);
 	}
 
-	// The file names the WHERE clause matched, or undefined when no clause is active.
-	const matchedFileNames = $derived(filter?.matchedFileNames);
+	// The row stems the WHERE clause matched, or undefined when no clause is active.
+	const matchedStems = $derived(filter?.matchedStems);
 
 	const read = $derived(table.read);
 	const folder = $derived(table.folderName);
@@ -88,11 +89,11 @@
 
 	const filteredRows = $derived.by(() => {
 		if (view.mode !== 'typed') return [];
-		// The WHERE filter (matched row file names from the mirror, computed by the page)
+		// The WHERE filter (matched row stems from the mirror, computed by the page)
 		// narrows the visible set; no active filter leaves it undefined, nothing to do. The
 		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
-		const fileNames = matchedFileNames;
-		if (fileNames) return view.conformance.filter((c) => fileNames.has(c.row.fileName));
+		const stems = matchedStems;
+		if (stems) return view.conformance.filter((c) => stems.has(stemOf(c.row.fileName)));
 		return view.conformance;
 	});
 
@@ -103,29 +104,29 @@
 	});
 
 	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
-	const isFiltered = $derived(rowFilter !== 'all' || matchedFileNames !== undefined);
+	const isFiltered = $derived(rowFilter !== 'all' || matchedStems !== undefined);
 
 	// The typed empty-state copy as ONE mutually exclusive decision, so the title and the
 	// description always describe the same case. Reads top-down like the question a person
 	// asks ("is a filter on? is attention on? otherwise it is just empty") instead of two
 	// nested ternaries in the markup that have to be kept in sync by hand.
 	const emptyState = $derived.by(() => {
-		if (matchedFileNames && filteredRows.length === 0)
+		if (matchedStems && filteredRows.length === 0)
 			return {
 				title: 'No rows match the filter',
 				description: 'No rows match this WHERE clause.',
 			};
 		if (rowFilter === 'attention')
 			return {
-				title: matchedFileNames ? 'No matching rows need attention' : 'No rows need attention',
-				description: matchedFileNames
+				title: matchedStems ? 'No matching rows need attention' : 'No rows need attention',
+				description: matchedStems
 					? 'Rows matched by this WHERE clause are valid.'
 					: 'Every readable row matches this contract.',
 			};
 		if (rowFilter === 'ready')
 			return {
-				title: matchedFileNames ? 'No matching ready rows' : 'No ready rows',
-				description: matchedFileNames
+				title: matchedStems ? 'No matching ready rows' : 'No ready rows',
+				description: matchedStems
 					? 'Rows matched by this WHERE clause need attention.'
 					: 'Fix required or invalid fields to make rows ready.',
 			};

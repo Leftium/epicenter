@@ -30,6 +30,7 @@
 import { type Field, storageOf } from '@epicenter/field';
 import type { RowConformance } from './conformance';
 import type { Contract } from './contract';
+import { stemOf } from './parse';
 
 /** A SQLite-bindable scalar. Missing cells bind NULL, so values are nullable. */
 export type SqlValue = string | number | null;
@@ -101,14 +102,16 @@ function serializeInvalid(value: unknown): SqlValue {
 }
 
 /**
- * Build the `CREATE TABLE` for a folder: `file` primary key (the row's basename
- * identity), one NULLABLE column per typed field (typed by its storage class so the
- * filter coerces by affinity; a missing cell binds NULL), and an `_extra` JSON column
- * (always present) for the untyped keys, so an agent can see extras too.
+ * Build the `CREATE TABLE` for a folder: `stem` primary key (the row's reference
+ * identity, basename without `.md` — the exact value a reference field stores, so a
+ * cross-table JOIN matches references directly with no `.md` juggling), one NULLABLE
+ * column per typed field (typed by its storage class so the filter coerces by affinity;
+ * a missing cell binds NULL), and an `_extra` JSON column (always present) for the
+ * untyped keys, so an agent can see extras too.
  */
 function buildDdl(tableName: string, fields: readonly Field[]): string {
 	const defs = [
-		`${quoteIdent('file')} TEXT PRIMARY KEY`,
+		`${quoteIdent('stem')} TEXT PRIMARY KEY`,
 		...fields.map((c) => `${quoteIdent(c.name)} ${storageOf(c.kind)}`),
 		`${quoteIdent('_extra')} TEXT NOT NULL`,
 	];
@@ -128,7 +131,7 @@ export function projectToSqlite(
 	contract: Contract,
 	conformance: readonly RowConformance[],
 ): SqliteProjection {
-	const columns = ['file', ...contract.fields.map((c) => c.name), '_extra'];
+	const columns = ['stem', ...contract.fields.map((c) => c.name), '_extra'];
 	const rows = conformance.map((c) => {
 		const cells = c.cells.map((cell): SqlValue => {
 			switch (cell.state) {
@@ -146,7 +149,7 @@ export function projectToSqlite(
 		const extra = JSON.stringify(
 			Object.fromEntries(c.extras.map((e) => [e.key, e.value])),
 		);
-		return [c.row.fileName, ...cells, extra];
+		return [stemOf(c.row.fileName), ...cells, extra];
 	});
 
 	const placeholders = columns.map(() => '?').join(', ');

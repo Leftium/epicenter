@@ -590,6 +590,22 @@
         "vite": "catalog:",
       },
     },
+    "examples/doc-as-wire-chat": {
+      "name": "@epicenter/example-doc-as-wire-chat",
+      "version": "0.0.0",
+      "dependencies": {
+        "@epicenter/sync": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
+        "@tanstack/ai": "catalog:",
+        "lib0": "catalog:",
+        "nanoid": "catalog:",
+        "yjs": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "examples/fuji": {
       "name": "@examples/fuji",
       "version": "0.0.2",
@@ -1265,6 +1281,8 @@
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
+
+    "@epicenter/example-doc-as-wire-chat": ["@epicenter/example-doc-as-wire-chat@workspace:examples/doc-as-wire-chat"],
 
     "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
 

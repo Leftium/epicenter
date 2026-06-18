@@ -23,9 +23,9 @@
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
-	const exportMarkdown = createMutation(() =>
+	const exportRecordings = createMutation(() =>
 		mutationOptions({
-			mutationKey: ['recordings', 'exportMarkdown'],
+			mutationKey: ['recordings', 'export'],
 			mutationFn: whispering.actions.recordings_export_markdown,
 		}),
 	);
@@ -140,7 +140,7 @@
 				variant="outline"
 				class="w-fit"
 				onclick={() => {
-					exportMarkdown.mutate(undefined, {
+					exportRecordings.mutate(undefined, {
 						onSuccess: (data) => {
 							if (data.written === 0) {
 								report.info({
@@ -151,7 +151,7 @@
 							}
 							report.success({
 								title: 'Recordings exported',
-								description: `Saved ${data.written} ${data.written === 1 ? 'recording' : 'recordings'} to recordings.zip.`,
+								description: `Saved ${data.written} ${data.written === 1 ? 'recording' : 'recordings'} as a zip file.`,
 							});
 						},
 						onError: (error) => {
@@ -164,9 +164,9 @@
 						},
 					});
 				}}
-				disabled={exportMarkdown.isPending}
+				disabled={exportRecordings.isPending}
 			>
-				{exportMarkdown.isPending ? 'Exporting...' : 'Export recordings (.zip)'}
+				{exportRecordings.isPending ? 'Exporting...' : 'Export recordings (.zip)'}
 			</Button>
 			<Field.Description>
 				Download every recording as a zip of Markdown files. This is a

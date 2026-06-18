@@ -169,6 +169,33 @@ export function keyBindingToAccelerator(binding: BindingLike): string | null {
 	return [...modifiers, keyToken].join('+');
 }
 
+/**
+ * Inverse of {@link ACCELERATOR_KEYS}: a W3C `KeyboardEvent.code` token back to
+ * our `Key`. Built from the same source so the two directions can never drift.
+ */
+const KEY_BY_ACCELERATOR_CODE: Record<string, string> = Object.fromEntries(
+	Object.entries(ACCELERATOR_KEYS).map(([key, code]) => [code, key]),
+);
+
+/**
+ * Map a physical `KeyboardEvent.code` (for example `KeyD`, `Digit1`, `Space`)
+ * to our `Key`, or `null` when the code is not a bindable key (a modifier code
+ * like `MetaLeft`, or anything outside the Tier-0 chord alphabet). Reading
+ * `.code` not `.key` keeps capture in physical-key space, matching the rdev tap
+ * and sidestepping the macOS Option-character problem the `.key`-based local
+ * recorder has to normalize. The accepted set is exactly the one
+ * {@link keyBindingToAccelerator} can spell, so a chord captured here always
+ * routes to the permission-free plugin. The inverse of {@link acceleratorKey}.
+ */
+export function domCodeToKey(code: string): Key | null {
+	const named = KEY_BY_ACCELERATOR_CODE[code];
+	if (named) return named as Key;
+	if (/^Key[A-Z]$/.test(code)) return `key${code.slice(3)}` as Key; // KeyD -> keyD
+	if (/^Digit[0-9]$/.test(code)) return `num${code.slice(5)}` as Key; // Digit1 -> num1
+	if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code.toLowerCase() as Key; // F1 -> f1
+	return null;
+}
+
 /** A binding with no modifiers and no keys can never fire; treat it as unset. */
 export function isEmptyBinding(binding: BindingLike): boolean {
 	return binding.modifiers.length === 0 && binding.keys.length === 0;

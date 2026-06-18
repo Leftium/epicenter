@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import {
 	type BindingLike,
 	bindingsOverlap,
+	domCodeToKey,
 	keyBindingToAccelerator,
 } from './key-binding';
 
@@ -98,4 +99,50 @@ test('a modifier-only hold is not a Tier-0 accelerator', () => {
 
 test('a bare key with no modifier is refused', () => {
 	expect(keyBindingToAccelerator({ modifiers: [], keys: ['keyA'] })).toBeNull();
+});
+
+test('domCodeToKey maps physical codes to our Key space', () => {
+	expect(domCodeToKey('KeyD')).toBe('keyD');
+	expect(domCodeToKey('Digit1')).toBe('num1');
+	expect(domCodeToKey('Space')).toBe('space');
+	expect(domCodeToKey('Enter')).toBe('return');
+	expect(domCodeToKey('Period')).toBe('dot');
+	expect(domCodeToKey('BracketLeft')).toBe('leftBracket');
+	expect(domCodeToKey('F5')).toBe('f5');
+});
+
+test('domCodeToKey rejects modifier codes and anything off the chord alphabet', () => {
+	// Modifiers are read from the event's flags, not its code.
+	expect(domCodeToKey('MetaLeft')).toBeNull();
+	expect(domCodeToKey('ShiftRight')).toBeNull();
+	expect(domCodeToKey('ControlLeft')).toBeNull();
+	// Outside the alphabet keyBindingToAccelerator can spell.
+	expect(domCodeToKey('Numpad1')).toBeNull();
+	expect(domCodeToKey('Lang1')).toBeNull();
+});
+
+test('domCodeToKey is the inverse of acceleratorKey for every chord key', () => {
+	// Every key a chord can carry round-trips: Key -> accelerator code -> Key. This
+	// is what guarantees a webview-captured code always lands on a bindable Key.
+	const keys = [
+		'keyA',
+		'keyZ',
+		'num0',
+		'num9',
+		'f1',
+		'f12',
+		'space',
+		'return',
+		'comma',
+		'slash',
+		'leftBracket',
+		'semiColon',
+	] as const;
+	for (const key of keys) {
+		const code = keyBindingToAccelerator({ modifiers: ['ctrl'], keys: [key] })
+			?.split('+')
+			.at(-1);
+		expect(code).toBeDefined();
+		expect(domCodeToKey(code as string)).toBe(key);
+	}
 });

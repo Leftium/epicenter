@@ -8,10 +8,7 @@ import {
 } from '$lib/state/device-config.svelte';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 import { tauriOnly } from '$lib/tauri.tauri';
-import {
-	keyBindingToAccelerator,
-	keyBindingToLabel,
-} from '$lib/utils/key-binding';
+import { isTierZeroChord, keyBindingToLabel } from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -50,12 +47,8 @@ export const shortcuts: Shortcuts = createShortcuts<GlobalBinding>({
 		// goes to the permission-free plugin (Tier 0); an Fn or modifier-only hold
 		// maps to none and goes to the tap (Tier 1), which spins up only for these.
 		// Each binding lands in exactly one backend, so the two never double-fire.
-		const chords = bindings.filter(
-			(b) => keyBindingToAccelerator(b.binding) !== null,
-		);
-		const taps = bindings.filter(
-			(b) => keyBindingToAccelerator(b.binding) === null,
-		);
+		const chords = bindings.filter((b) => isTierZeroChord(b.binding));
+		const taps = bindings.filter((b) => !isTierZeroChord(b.binding));
 		// A plugin register the OS rejects (a chord another app holds) or a bad tap
 		// key fails the whole replace-all; surface it instead of partially binding.
 		const { error } = await tryAsync({

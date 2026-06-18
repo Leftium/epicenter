@@ -3,6 +3,7 @@ import {
 	type BindingLike,
 	bindingsOverlap,
 	domCodeToKey,
+	isTierZeroChord,
 	keyBindingToAccelerator,
 } from './key-binding';
 
@@ -99,6 +100,17 @@ test('a modifier-only hold is not a Tier-0 accelerator', () => {
 
 test('a bare key with no modifier is refused', () => {
 	expect(keyBindingToAccelerator({ modifiers: [], keys: ['keyA'] })).toBeNull();
+});
+
+test('isTierZeroChord names the permission-free tier boundary', () => {
+	// A chord (one key plus a non-Fn modifier) is the only Tier-0 shape; Fn holds,
+	// modifier-only holds, and bare keys all fall through to the Tier-1 tap.
+	expect(
+		isTierZeroChord({ modifiers: ['meta', 'shift'], keys: ['space'] }),
+	).toBe(true);
+	expect(isTierZeroChord({ modifiers: ['fn'], keys: ['space'] })).toBe(false);
+	expect(isTierZeroChord({ modifiers: ['meta'], keys: [] })).toBe(false);
+	expect(isTierZeroChord({ modifiers: [], keys: ['keyA'] })).toBe(false);
 });
 
 test('domCodeToKey maps physical codes to our Key space', () => {

@@ -170,6 +170,19 @@ export function keyBindingToAccelerator(binding: BindingLike): string | null {
 }
 
 /**
+ * Whether a binding is a Tier-0 chord: a gesture the permission-free
+ * `tauri-plugin-global-shortcut` can register with no Accessibility grant. True
+ * exactly when {@link keyBindingToAccelerator} can spell it (one key plus at
+ * least one non-Fn modifier). A binding that is not Tier-0, an Fn hold or a
+ * modifier-only hold, belongs to the Tier-1 keyboard tap. This is the canonical
+ * tier test: partition and capture-reject decisions route through it rather than
+ * re-checking the accelerator inline.
+ */
+export function isTierZeroChord(binding: BindingLike): boolean {
+	return keyBindingToAccelerator(binding) !== null;
+}
+
+/**
  * Inverse of {@link ACCELERATOR_KEYS}: a W3C `KeyboardEvent.code` token back to
  * our `Key`. Built from the same source so the two directions can never drift.
  */

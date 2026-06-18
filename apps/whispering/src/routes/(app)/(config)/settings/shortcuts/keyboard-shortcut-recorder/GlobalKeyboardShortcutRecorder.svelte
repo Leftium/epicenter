@@ -16,7 +16,7 @@
 	import {
 		bindingsOverlap,
 		isEmptyBinding,
-		keyBindingToAccelerator,
+		isTierZeroChord,
 		keyBindingToLabel,
 		parseManualBinding,
 	} from '$lib/utils/key-binding';
@@ -166,7 +166,7 @@
 	// it and point Fn / modifier-only holds at the grant that unlocks the tap. The
 	// recorder stays listening, so the user just adds a modifier and tries again.
 	async function commitWebviewChord(next: KeyBinding) {
-		if (keyBindingToAccelerator(next) === null) {
+		if (!isTierZeroChord(next)) {
 			report.error({
 				title: 'Add a modifier',
 				description:

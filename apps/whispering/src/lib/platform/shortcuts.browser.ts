@@ -1,10 +1,14 @@
-import type { Command } from '$lib/commands';
+import { type Command, commands } from '$lib/commands';
 import {
 	type CommandId,
 	localShortcuts,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
-import { keyBindingToString, parseManualBinding } from '$lib/utils/key-binding';
+import {
+	bindingsEqual,
+	keyBindingToString,
+	parseManualBinding,
+} from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -32,6 +36,18 @@ export const shortcuts: Shortcuts = createShortcuts({
 	},
 	write: (id, binding) =>
 		settings.set(localKey(id), binding ? keyBindingToString(binding) : null),
+	// The keydown matcher fires every command whose set matches, so two commands
+	// sharing a set would both trigger. Refuse an exact duplicate at write time.
+	findConflict: (id, binding) => {
+		for (const command of commands) {
+			if (command.id === id) continue;
+			const other = readBinding(command.id);
+			if (other && bindingsEqual(other, binding)) {
+				return `Those keys already trigger "${command.title}". Pick a different combination.`;
+			}
+		}
+		return null;
+	},
 	syncErrorTitle: 'Error registering local commands',
 	// Registration is an in-memory Map write, so it cannot fail: push always
 	// succeeds. The contract stays async because the desktop tier's push does IPC.

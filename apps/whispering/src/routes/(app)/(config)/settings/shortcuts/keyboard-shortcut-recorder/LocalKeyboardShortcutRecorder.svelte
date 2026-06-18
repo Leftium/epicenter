@@ -1,13 +1,11 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { type Command, commands } from '$lib/commands';
+	import type { Command } from '$lib/commands';
 	import { report } from '$lib/report';
-	import { type CommandId, localShortcuts } from '$lib/services/local-shortcut-manager';
-	import { settings } from '$lib/state/settings.svelte';
+	import { shortcuts } from '#platform/shortcuts';
 	import { os } from '#platform/os';
 	import type { KeyBinding } from '$lib/tauri/commands';
 	import {
-		bindingsEqual,
 		keyBindingToLabel,
 		keyBindingToString,
 		parseManualBinding,
@@ -23,10 +21,7 @@
 		placeholder?: string;
 	} = $props();
 
-	const localKey = (id: Command['id']) => `shortcut.${id}` as const;
-
-	const stored = $derived(settings.get(localKey(command.id)));
-	const binding = $derived(stored ? parseManualBinding(stored) : null);
+	const binding = $derived(shortcuts.current(command.id));
 	const label = $derived(binding ? keyBindingToLabel(binding, os.isApple) : null);
 
 	// Whether the recorder popover is open, and whether a capture session is
@@ -53,25 +48,24 @@
 	// dismissed by unmount), the window listeners would leak; always stop.
 	onDestroy(stopSession);
 
-	// The other command bound to the same key set, if any. The keydown matcher
-	// fires every command whose set matches, so two commands sharing a set would
-	// both trigger. Refuse the collision at write time, as the global recorder
-	// refuses an overlapping gesture.
-	function conflictingCommand(next: KeyBinding): Command | null {
-		for (const other of commands) {
-			if (other.id === command.id) continue;
-			const otherStored = settings.get(localKey(other.id));
-			const otherBinding = otherStored ? parseManualBinding(otherStored) : null;
-			if (otherBinding && bindingsEqual(otherBinding, next)) return other;
-		}
-		return null;
+	// Report why a binding is refused (the seam owns the policy: an exact duplicate
+	// would make the matcher fire two commands). Returns true when refused.
+	function rejectConflict(next: KeyBinding): boolean {
+		const reason = shortcuts.findConflict(command.id, next);
+		if (!reason) return false;
+		report.error({
+			title: 'That shortcut is already in use',
+			description: reason,
+			cause: {
+				name: 'ShortcutConflict',
+				message: `${keyBindingToLabel(next, os.isApple)}: ${reason}`,
+			},
+		});
+		return true;
 	}
 
-	// Register the binding with the matcher and store it as the readable grammar.
-	// Registration is an in-memory Map write, so it cannot fail.
-	function persist(next: KeyBinding) {
-		localShortcuts.registerCommand({ command, binding: next });
-		settings.set(localKey(command.id), keyBindingToString(next));
+	async function persist(next: KeyBinding) {
+		await shortcuts.set(command.id, next);
 		report.success({
 			title: `Local shortcut set to ${keyBindingToLabel(next, os.isApple)}`,
 			description: `Press the shortcut to trigger "${command.title}"`,
@@ -80,20 +74,9 @@
 
 	// On a clean capture: refuse a collision (stay listening so the user can retry),
 	// otherwise persist and close.
-	function commit(next: KeyBinding) {
-		const conflict = conflictingCommand(next);
-		if (conflict) {
-			report.error({
-				title: 'That shortcut is already in use',
-				description: `Those keys already trigger "${conflict.title}". Pick a different combination.`,
-				cause: {
-					name: 'DuplicateLocalShortcut',
-					message: `${keyBindingToLabel(next, os.isApple)} is bound to "${conflict.title}".`,
-				},
-			});
-			return;
-		}
-		persist(next);
+	async function commit(next: KeyBinding) {
+		if (rejectConflict(next)) return;
+		await persist(next);
 		stopSession();
 		open = false;
 	}
@@ -111,28 +94,17 @@
 			});
 			return false;
 		}
-		const conflict = conflictingCommand(next);
-		if (conflict) {
-			report.error({
-				title: 'That shortcut is already in use',
-				description: `Those keys already trigger "${conflict.title}". Pick a different combination.`,
-				cause: {
-					name: 'DuplicateLocalShortcut',
-					message: `${keyBindingToLabel(next, os.isApple)} is bound to "${conflict.title}".`,
-				},
-			});
-			return false;
-		}
-		persist(next);
-		stopSession();
-		open = false;
+		if (rejectConflict(next)) return false;
+		void persist(next).then(() => {
+			stopSession();
+			open = false;
+		});
 		return true;
 	}
 
-	function clear() {
+	async function clear() {
 		stopSession();
-		localShortcuts.unregisterCommand({ commandId: command.id as CommandId });
-		settings.set(localKey(command.id), null);
+		await shortcuts.clear(command.id);
 		report.success({
 			title: 'Local shortcut cleared',
 			description: `Please set a new shortcut to trigger "${command.title}"`,
@@ -147,7 +119,7 @@
 			return label;
 		},
 		get manualInitial() {
-			return stored ?? '';
+			return binding ? keyBindingToString(binding) : '';
 		},
 		start: startSession,
 		stop: stopSession,

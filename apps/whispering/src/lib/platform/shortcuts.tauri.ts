@@ -1,13 +1,20 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
-import type { Command } from '$lib/commands';
+import { os } from '#platform/os';
+import { type Command, commands } from '$lib/commands';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
 	deviceConfig,
 } from '$lib/state/device-config.svelte';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 import { type ChordRegistration, tauriOnly } from '$lib/tauri.tauri';
-import { resolveBinding } from '$lib/utils/key-binding';
+import {
+	bindingsOverlap,
+	isEmptyBinding,
+	keyBindingToLabel,
+	resolveBinding,
+} from '$lib/utils/key-binding';
+import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -33,6 +40,21 @@ export const shortcuts: Shortcuts = createShortcuts({
 	read: readBinding,
 	getDefault: (id) => DEFAULT_GLOBAL_BINDINGS[id] ?? null,
 	write: (id, binding) => deviceConfig.set(globalKey(id), binding),
+	// The rdev matcher fires on exact set equality with no prefix resolution, so a
+	// gesture that contains (or is contained by) another would shadow it or be
+	// unreachable. Refuse reserved gestures and overlaps, naming the collision.
+	findConflict: (id, binding) => {
+		const reserved = validateGlobalBinding(binding);
+		if (reserved) return reserved;
+		for (const command of commands) {
+			if (command.id === id) continue;
+			const other = readBinding(command.id);
+			if (other && !isEmptyBinding(other) && bindingsOverlap(other, binding)) {
+				return `Those keys are already part of the "${command.title}" gesture (${keyBindingToLabel(other, os.isApple)}). Each global gesture needs its own keys, so a key used by one gesture cannot be part of another.`;
+			}
+		}
+		return null;
+	},
 	syncErrorTitle: 'Error registering global shortcuts',
 	async push(entries) {
 		const bindings: CommandBinding[] = entries

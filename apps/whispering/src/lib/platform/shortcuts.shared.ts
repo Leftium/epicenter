@@ -28,6 +28,12 @@ export type ShortcutBackend = {
 	/** Persist a binding for this command. */
 	write(commandId: Command['id'], binding: KeyBinding | null): void;
 	/**
+	 * Why `binding` cannot be assigned to this command, or `null` when allowed.
+	 * The per-tier conflict policy (set-equality for in-app, reserved + overlap
+	 * for global) and its message live here, beside the storage the policy reads.
+	 */
+	findConflict(commandId: Command['id'], binding: KeyBinding): string | null;
+	/**
 	 * Push the full set of current bindings to the platform runtime. Returns the
 	 * error to surface, or `null` on success.
 	 */
@@ -63,10 +69,27 @@ export function createShortcuts(backend: ShortcutBackend): Shortcuts {
 		void sync();
 	}
 
+	// Persist one command's binding (or its removal), then push so the change is
+	// live. The recorders go through here instead of writing storage and pushing
+	// themselves, so the storage-key scheme stays owned by the backend.
+	async function set(id: Command['id'], binding: KeyBinding): Promise<void> {
+		backend.write(id, binding);
+		await sync();
+	}
+
+	async function clear(id: Command['id']): Promise<void> {
+		backend.write(id, null);
+		await sync();
+	}
+
 	return {
 		sync,
 		reset,
+		set,
+		clear,
 		defaultLabel: (id) => label(backend.getDefault(id)),
 		currentLabel: (id) => label(backend.read(id)),
+		current: (id) => backend.read(id),
+		findConflict: (id, binding) => backend.findConflict(id, binding),
 	};
 }

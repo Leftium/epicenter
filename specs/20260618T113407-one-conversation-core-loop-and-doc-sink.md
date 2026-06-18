@@ -11,7 +11,7 @@
 
 ## One Sentence
 
-Every answerer in every runtime runs one shared answer core (the inference loop that sinks parts into the conversation doc); runtimes differ only in how they are triggered, where inference runs, and which tools they can execute, and the SSE transport is deleted.
+Every answerer in every runtime runs one shared answer core (the inference loop that sinks parts into the conversation doc); runtimes differ only in how they are triggered, where inference runs, and which tools they can execute, and the second conversation-state owner (the browser's `createChat`-as-truth) is deleted while the inference endpoint stays as a metered backend.
 
 ## How to read this spec
 
@@ -75,16 +75,17 @@ zhongwen is the byte-identical tracer through Phase A (text-only, exercised on *
 
 A "runtime" is not a hardcoded enum; it is three orthogonal axes. "Cloud" is just one corner of the cube (ADR-0021): hosted location + kickoff trigger + an injected billing policy. Pulling the axes apart is the deeper collapse and answers "can a self-hoster have a billed box" (yes: inject a policy).
 
-| Runtime | Loop runs in | Trigger | Inference | Tools execute | Billed |
+| Runtime | Loop runs in | Trigger | Inference backend | Tools execute | Billed |
 | --- | --- | --- | --- | --- | --- |
-| Cloud | hosted Durable Object | **billed kickoff** (authed POST) | house key (metered) | where the data lives, often the browser -> a relay round-trip | yes (policy injected by `apps/api`) |
-| Self-host daemon | the user's daemon process | **ambient** (sync propagation) | local model or the user's key | the daemon machine | no (`apps/self-host` injects no policy) |
-| BYOK browser | the browser | **in-process** (the user sends) | the user's key or a browser-runnable model | the browser, in-process | no |
+| Cloud | hosted Durable Object | **kickoff** (authed POST) | house key (metered) | cloud-safe tools only; a remote tool is a relay round-trip | yes (the house key) |
+| Self-host daemon | the user's daemon process | **ambient** (sync propagation) | local model, BYOK key, or the **Epicenter provider** (credits) | the daemon machine | only if it uses the Epicenter provider |
+| BYOK browser | the browser | **in-process** (the user sends) | local model, BYOK key, or the **Epicenter provider** (credits) | the browser, in-process | only if it uses the Epicenter provider |
 
-Two facts the matrix encodes:
+Three facts the matrix encodes:
 
 - **The trigger fork is the floor of the collapse.** The browser needs exactly one bit: kickoff or not (`agentConfig(agent).runtime`). It never "hits" the daemon; it writes the doc and the always-on daemon observes (the doc is the mailbox). Collapsing past the trigger means making the cloud ambient (the B2 refusal: loses the synchronous 402, auth, rate-limit) or making the daemon kicked off (pointless). So the core is shared and the trigger is forked, deliberately.
-- **Inference location and tool-execution location are independent.** A tool runs where its data lives (ADR-0020); inference may run elsewhere. House-key cloud inference can call a browser tool (the relay round-trip). The agent declares its tool set as actions (ADR-0010/0018); the core receives that set and dispatches each action to wherever it runs. zhongwen's set is empty today; Local Books' is a local SQL tool.
+- **Inference location and tool-execution location are independent.** A tool runs where its data lives (ADR-0020); inference may run elsewhere. The agent declares its tool set as actions (ADR-0010/0018); the core receives that set and dispatches each action to wherever it runs. zhongwen's set is empty today; Local Books' is a local SQL tool.
+- **Billing rides the inference backend, not the trigger (ADR-0021).** House-key tokens are metered (Autumn) wherever they are spent: the cloud kickoff, or a local loop calling the metered inference endpoint as an **Epicenter provider** (a `ChatStream` adapter holding the user's account credential, so a daemon gets credits with no raw key). So a daemon can be ambient *and* billed. The three backends (local / BYOK / Epicenter provider) are a per-agent choice; the privacy ladder follows the backend (local = nothing leaves; BYOK = leaves to that provider; Epicenter = leaves to us and the provider), the default is local, and any cloud choice is explicit.
 
 ## Why one core (the duplication today)
 
@@ -100,7 +101,7 @@ The parts-body spec's Phase 4 (and `chat-reaction.ts:46`) slated `doc-generation
 
 - `doc-generation.ts` is **not deleted**. It becomes the cloud-runtime caller of the shared core (the kickoff handler).
 - The duplication it carries is resolved by **extraction** (Phase A), and the stale `chat-reaction.ts:46` "slated for deletion / deliberately not shared" comment is rewritten to "shared via the core."
-- The deletion prize is the **SSE route**, not the kickoff.
+- The deletion prize is the **second conversation-state owner** (the browser's `createChat`-as-source-of-truth and its dual persistence), not the kickoff and not the inference endpoint. `/api/ai/chat` is kept and reframed as the metered **Epicenter provider** backend a local loop calls (it already runs `chat()` with tools and is billed by the existing policy); what dies is a client rendering a conversation from that stream as in-memory state.
 
 ## Architecture
 
@@ -142,20 +143,27 @@ zhongwen text-only is the tracer; both the cloud kickoff and the daemon must sta
 
 ### Phase C: The browser as answerer (render-from-doc tracer) — Build, gates the SSE deletion
 
-- [ ] **C.1** A browser answerer that runs `streamAnswer` in-process (TanStack `chat()` as the `ChatStream` with the user's key; browser-dispatched tools) and writes into the local conversation doc.
+- [ ] **C.1** A browser answerer that runs `streamAnswer` in-process (a `ChatStream` backend: a local model, the user's BYOK key, or the **Epicenter provider** that calls the metered `/api/ai/chat` for credits; browser-dispatched tools) and writes into the local conversation doc.
 - [ ] **C.2** Migrate ONE SSE app (opensidian or tab-manager) off `createChat`-as-source-of-truth to render-from-doc. This is where render-from-doc's UX (optimistic echo, tool-approval, streaming smoothness) is proven or found wanting.
 - [ ] **C.3** Migrate the remaining SSE app.
 
-### Phase D: Delete SSE (collect the prize) — Build, after C
+### Phase D: Delete the second state owner (collect the prize) — Build, after C
 
-- [ ] **D.1** Delete `/api/ai/chat` and `toServerSentEventsResponse` once no consumer calls it.
-- [ ] **D.2** Delete the browser's in-memory `createChat`-as-truth and the dual persistence; the doc is the one store.
-- [ ] **D.3** Sweep stragglers: the SSE fetch wrapper, the transport fork, any text-only-vs-tools branches.
+> Precise: this deletes the conversation STATE MODEL, not the inference endpoint.
+> `/api/ai/chat` survives, reframed as the metered Epicenter-provider backend (it
+> already runs `chat()` with tools and is billed); `toServerSentEventsResponse`
+> stays as its inference-stream wire format. What dies is a client rendering a
+> conversation from that stream as in-memory state.
 
-### Phase E: Billing precision (cloud wrapper) — Build alongside B/C
+- [ ] **D.1** Delete the browser's in-memory `createChat`-as-source-of-truth and the dual persistence; the doc is the one store. Update the `/api/ai/chat` route header comment (`routes/ai.ts:11-19`), which still defends SSE as "the interactive transport": it is now an inference backend, and tool execution + approval live in the doc (ADR-0019/0020).
+- [ ] **D.2** Sweep stragglers: the createChat-render wrapper, the transport fork in the browser, any text-only-vs-tools branches.
+- [ ] **D.3** Keep `/api/ai/chat` (the inference endpoint) and `toServerSentEventsResponse`; they are the Epicenter-provider backend, not part of the deletion.
 
-- [ ] **E.1** Key the reservation to the reply being produced (`(responder, entry)` / `generationId`) so a retried kickoff reuses the reservation (ADR-0021 bill-at-the-claim).
-- [ ] **E.2** Decide finalize location (Open Question 2): keep the confirm in the route middleware (kickoff stays open) or move `trackTokens` into the DO reaction so the kickoff is a short trigger. Prefer the short trigger; confirm against CF wall-clock limits.
+### Phase E: Billing and the Epicenter provider — Build alongside B/C
+
+- [ ] **E.1** The **Epicenter provider**: a client-side `ChatStream` adapter (daemon and browser) that holds the user's account credential and calls the metered `/api/ai/chat`, so a local loop gets cloud credits without a raw provider key. No new server code (the route and its Autumn policy exist); this is the daemon's `resolveChatStream` gaining a third backend beside local-model and BYOK.
+- [ ] **E.2** Key the reservation to the reply being produced (`(responder, entry)` / `generationId`) so a retried kickoff reuses the reservation (ADR-0021 bill-at-the-claim).
+- [ ] **E.3** Decide finalize location (Open Question 2): keep the confirm in the route middleware (kickoff stays open) or move `trackTokens` into the DO reaction so the kickoff is a short trigger. Prefer the short trigger; confirm against CF wall-clock limits.
 
 ## Greenfield scope: collapse, keep, refuse
 
@@ -165,8 +173,8 @@ Product sentence: *one answer core every runtime runs; one transport (the doc); 
 | --- | --- | --- |
 | `streamReply` (chat-reaction) + inline loop (doc-generation) | collapse now (A) | one algorithm, two copies; extract to `streamAnswer` |
 | stale `chat-reaction.ts:46` "slated for deletion" comment | collapse now (A) | ADR-0021 keeps the kickoff; rewrite to "shared via the core" |
-| SSE route + `toServerSentEventsResponse` | delete (D) | the transport collapse; ADR-0021's deletion prize |
-| in-memory `createChat` as source of truth | delete (C/D) | render from the doc; one state owner |
+| in-memory `createChat` as source of truth + dual persistence | delete (C/D) | render from the doc; one state owner. THE deletion prize |
+| `/api/ai/chat` inference endpoint + `toServerSentEventsResponse` | keep, reframe | the metered Epicenter-provider backend a local loop calls; NOT deleted. Rewrite its "SSE is the interactive transport" header comment |
 | the cloud kickoff (`doc-generation.ts`) | keep | the billing/auth/rate-limit/402 seam; ADR-0021 B2 refusal |
 | the writer API (`appendText`/`finish`) | keep | the single write seam (ADR-0020) the core writes through |
 | the trigger fork (`if cloud-runtime kickoff`) | keep | the floor of the collapse; collapsing it is the B2 mistake |

@@ -35,17 +35,27 @@ Object or background context, so metering does not need an open HTTP request.
 
 ## Decision
 
-A conversation has **one transport and two triggers**. Every answerer, in every
-runtime, streams parts into the synced child doc (ADR-0019's reply regions,
-ADR-0020's parts body); the client always renders the doc and never receives SSE.
-The **SSE route is deleted.** Answerers differ only in *where the loop runs and
-where its tools execute*, and in how they are *triggered*:
+A conversation has **one transport and two triggers**, and **billing rides the
+inference backend, not the trigger**. Every answerer, in every runtime, streams
+parts into the synced child doc (ADR-0019's reply regions, ADR-0020's parts body);
+the client always renders the doc. What is deleted is the **second
+conversation-state owner** (the browser holding the thread in `createChat` as the
+source of truth and rendering from an SSE stream), not the inference endpoint,
+which survives as a metered backend (see the deletion-prize consequence).
+Answerers vary on three orthogonal axes:
 
 ```txt
-transport (how the answer arrives):  the synced doc.            ONE. SSE deleted.
-trigger   (how the answerer starts): cloud  -> a billed kickoff (hosted-only)
-                                     daemon -> ambient observe of the doc (free)
-                                     BYOK   -> the browser's own loop (free)
+transport (how the answer arrives):  the synced doc.  ONE. The client always renders the doc.
+
+trigger   (how the answerer starts): kickoff    -> hosted, an authed POST (the 402/auth/rate-limit boundary)
+                                     ambient    -> a daemon observing the doc (the mailbox)
+                                     in-process -> a browser running its own loop
+
+inference (whose tokens, who bills): house key  -> metered via Autumn wherever it is spent:
+                                                   the cloud kickoff, OR an "Epicenter provider"
+                                                   a local loop calls for credits
+                                     BYOK       -> the user's own provider key; free of Epicenter
+                                     local      -> a model on the user's machine; free, nothing leaves
 ```
 
 - **Collapse the transport; keep the trigger fork.** The browser no longer chooses
@@ -82,49 +92,78 @@ trigger   (how the answerer starts): cloud  -> a billed kickoff (hosted-only)
   Idempotent billing falls out of the existence-is-the-claim mechanism the doc
   already has.
 
-- **Deleting SSE does not force BYOK.** House-key managed inference (log in, manage
-  no keys) is the *cloud* runtime and survives untouched: it is the billed product,
-  reached through the kickoff, answered into the doc. The three runtimes line up
-  with the business model exactly. Cloud (house key) is billed at the kickoff; BYOK
-  browser and self-hosted daemon are free by construction. SSE deletion is
-  orthogonal to all of it.
+- **Billing rides the inference backend, via the Epicenter provider; a daemon need
+  not wire a raw key.** House-key tokens are metered (Autumn) at whatever authed
+  boundary spends them, and there are two: the cloud kickoff (the cloud runs the
+  whole loop) and the inference endpoint (a local daemon or browser runs the loop
+  and calls out only for inference). The second is the **Epicenter provider**: a
+  client-side `ChatStream` adapter that holds the user's account credential and
+  calls the metered endpoint, so a daemon gets cloud credits without a raw provider
+  key. This is cheap: the endpoint already exists (`/api/ai/chat` runs `chat()` with
+  tools and is billed by the existing `chargeAiCreditsWithAutumn` policy), so the
+  Epicenter provider is client code only. Consequence: a daemon can be
+  ambient-triggered *and* billed. "Billed = cloud kickoff, free = daemon" was too
+  coarse; billing follows whose tokens pay, not how the answerer was triggered.
 
-- **BYOK and self-host stay free, and share the kickoff branch crisply.** A BYOK
-  cloud call carries the user's key and bypasses billing (the policy already skips
-  on `apiKey`); a daemon or BYOK-browser conversation never fires the kickoff at
-  all. The hosted-only billing policy is injected via `mountAiApp`; self-host passes
-  none. The `personal()` / `shared({ admit })` deployment seam is untouched.
+- **Inference is a per-agent choice of three backends.** Local model (free, nothing
+  leaves the machine), BYOK provider (the user's key; free of Epicenter; data goes
+  to that provider), or the Epicenter provider (the user's credits; metered). The
+  daemon's existing `ChatStream` seam is the plug. So managed "log in, no keys"
+  inference survives SSE deletion at every runtime, not just the cloud kickoff, and
+  BYOK is one option, never a requirement.
+
+- **Self-host stays free by configuration, not by construction.** A self-host daemon
+  on a local model or a BYOK key is free; the hosted-only billing policy is injected
+  via `mountAiApp` and self-host passes none. (A self-host that pointed its loop at
+  the hosted Epicenter provider would bill, but that is a deliberate choice, not the
+  default.) The `personal()` / `shared({ admit })` deployment seam is untouched.
 
 The doctrine is one sentence: *a conversation is a synced doc that every answerer
-streams parts into; the client renders the doc, never SSE; the cloud answerer is
-triggered by a billed kickoff, and every answerer the user runs is free and
-ambient.*
+streams parts into and the client always renders; the answerer's trigger and its
+inference backend are independent axes, and billing follows the backend (the house
+key), not the trigger.*
 
 ## Consequences
 
-- **The deletion prize is a whole transport plus its duplicates.** Gone: the SSE
-  route and `toServerSentEventsResponse`; the browser's in-memory `createChat` as
-  the source of truth (render the doc instead); the text-only-vs-tools split
-  (ADR-0020); dual persistence (the doc is the one store); the transport fork in the
-  browser. `runDocGeneration` becomes the cloud-runtime call of one shared core, and
-  `chat-reaction.ts`'s bespoke reduction becomes the TanStack loop plus a doc-sink
-  (the B1 / Phase-3 work, designed as the universal core, not a cloud/daemon dedup).
+- **The deletion prize is the second conversation-state owner, not an HTTP
+  endpoint.** Be precise here, because the naive reading deletes the wrong thing.
+  Gone: the browser holding the thread in `createChat` as the source of truth; the
+  dual persistence (a client store beside the doc); the text-only-vs-tools split
+  (ADR-0020); the transport fork in the browser. The client renders the doc.
+  **Kept and reframed:** the inference endpoint (`/api/ai/chat`, which already runs
+  `chat()` with `tools` and is billed by the existing Autumn policy) becomes the
+  metered **Epicenter provider** backend a local loop calls; its
+  `toServerSentEventsResponse` wire format stays (SSE is a fine inference-stream
+  format, the way providers stream). What dies is *a client rendering a conversation
+  from that stream as in-memory state*, not the stream itself. `runDocGeneration`
+  becomes the cloud-runtime call of one shared core; `chat-reaction.ts`'s reduction
+  becomes the shared loop plus a doc-sink (the B1 / Phase-3 work, the universal core,
+  not a cloud/daemon dedup).
 
 - **Wins beyond dedup.** Every tab and device renders one stream from the shared
   doc instead of fragmenting per in-memory client. A turn bound to an offline
   daemon waits in the doc until that daemon wakes (SSE cannot queue). And there is
   one conversation primitive to test.
 
-- **The one accepted cost: a relay round-trip for remote tools.** House-key
-  inference plus a *browser-side* tool plus interactive approval, all in one turn,
-  was the single thing SSE did better: the open connection interleaved
-  server-inference and browser-tool-execution at low latency. Under the doc model
-  that interleaving still works (the cloud reaction writes a tool-call part, the
-  browser runs the tool and writes a tool-result part back, the reaction continues),
-  but each tool round-trip goes through the relay instead of an open channel. For a
-  local-first app where tools run where their data lives, this latency is accepted,
-  not a reason to keep a second transport. It dissolves entirely when a browser
-  agent runs inference locally (BYOK), because then the whole loop is local.
+- **Privacy is a user-controlled, transparent choice, not a fixed promise.** An
+  earlier framing ("the data never leaves the house") was too absolute. A
+  data-reading agent's tool results enter the prompt, so the *inference backend*
+  decides where the data goes: a local model keeps it on the machine, a BYOK cloud
+  provider sends it to that provider, the Epicenter provider sends it to us and the
+  provider. The decision: the user controls the backend, the default is local, any
+  cloud choice is explicit, and a private result is never routed to a model the user
+  did not choose (no silent cloud binding). Local Books defaults to local inference
+  as a transparent default, not a hard lock. The promise is control and
+  transparency, not absolute locality.
+
+- **The relay round-trip is an edge case the local-loop model avoids.** The one
+  thing an open SSE connection did better was interleaving cloud inference with a
+  browser-side tool at low latency in a single turn. That only bites when the
+  *cloud* runs the loop while a tool runs elsewhere. The local-loop model sidesteps
+  it: when the daemon or browser runs the loop in-process, its tools run in-process
+  too and only the inference calls go out (the round-trips any cloud inference pays).
+  So the cost lands only if you insist the cloud run the loop with a remote tool, and
+  it dissolves whenever the loop is local.
 
 - **Time-to-first-token regresses slightly for cloud answers.** The user's own
   message echoes instantly (a local doc write), but the assistant's first token now

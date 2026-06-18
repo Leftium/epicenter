@@ -265,7 +265,7 @@ pub async fn run() {
             // views. There is no FE-driven start: trust is a fact about the
             // process that holds the tap, so the tap holder owns it.
             #[cfg(desktop)]
-            app.manage(keyboard::KeyboardListener::new(app.handle().clone()));
+            app.manage(keyboard::TapController::new(app.handle().clone()));
 
             // Create the recording overlay as a non-activating NSPanel up front
             // (hidden); the frontend shows it when recording starts.

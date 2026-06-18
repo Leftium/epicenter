@@ -84,12 +84,12 @@ fn is_trusted() -> bool {
     }
 }
 
-/// Owns the registered bindings and the current dictation capability. The tap
-/// thread itself is owned by a supervisor spawned in `new` (see
-/// `run_supervisor`); this struct is the command-facing handle, constructed in
-/// `setup` and managed via `app.manage(...)` so commands reach it with
-/// `app.state::<...>()`.
-pub struct KeyboardListener {
+/// The command-facing handle to the keyboard tap: owns the registered bindings
+/// and the current dictation capability, and forwards intent changes to the
+/// supervisor. The tap thread itself is owned by a supervisor spawned in `new`
+/// (see `run_supervisor`); this struct is constructed in `setup` and managed via
+/// `app.manage(...)` so commands reach it with `app.state::<...>()`.
+pub struct TapController {
     matcher: Arc<Mutex<Matcher>>,
     capability: Arc<Mutex<DictationCapability>>,
     /// Wakes the supervisor when the bound set changes, so it can start the tap
@@ -97,7 +97,7 @@ pub struct KeyboardListener {
     control_tx: Sender<Control>,
 }
 
-impl KeyboardListener {
+impl TapController {
     pub fn new(app: AppHandle) -> Self {
         let matcher = Arc::new(Mutex::new(Matcher::new()));
         let capability = Arc::new(Mutex::new(DictationCapability::Unknown));

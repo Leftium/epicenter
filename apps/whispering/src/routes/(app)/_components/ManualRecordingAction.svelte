@@ -8,6 +8,7 @@
 	} from '$lib/operations/recording';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import RecordingActionCard from './RecordingActionCard.svelte';
 
 	let {
@@ -65,6 +66,9 @@
 	{description}
 	footer={isRecording ? undefined : pipeline}
 	icon={button.Icon}
+	iconViewTransitionName={isRecording
+		? undefined
+		: viewTransition.recordingMode('manual')}
 	{label}
 	pending={isPending}
 	{shortcutLabel}

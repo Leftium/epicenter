@@ -5,6 +5,7 @@
 	import { cn } from '@epicenter/ui/utils';
 	import type { Component, Snippet } from 'svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 
 	// The caller owns its own state machine, so it picks which icon to show
 	// and hands us one `icon`. We only decide presentation: a spinner while
@@ -14,6 +15,7 @@
 		description,
 		footer,
 		icon: Icon,
+		iconViewTransitionName,
 		label,
 		onclick,
 		pending = false,
@@ -24,6 +26,8 @@
 		description: string;
 		footer?: Snippet;
 		icon: Component<{ class?: string }>;
+		/** When set, names the action glyph for a cross-page view transition. */
+		iconViewTransitionName?: string;
 		label: string;
 		onclick: () => void;
 		pending?: boolean;
@@ -66,9 +70,11 @@
 			{#if pending}
 				<Spinner class="size-7" />
 			{:else}
-				<Icon
-					class={cn('size-7', active && 'size-6 fill-current stroke-[1.75]')}
-				/>
+				<span class="inline-flex" style={viewTransitionStyle(iconViewTransitionName)}>
+					<Icon
+						class={cn('size-7', active && 'size-6 fill-current stroke-[1.75]')}
+					/>
+				</span>
 			{/if}
 		</span>
 		<span class="flex min-w-0 flex-1 flex-col gap-1">

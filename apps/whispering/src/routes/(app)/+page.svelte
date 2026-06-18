@@ -59,6 +59,15 @@
 
 	const latestRecording = $derived(recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness());
+	// The selected transformation's pipeline glyph morphs into that
+	// transformation's row on the /transformations list, so name it with the same
+	// id the row carries. Only the home pipeline opts in; the config topbar leaves
+	// its selector unnamed so it never collides with the rows on /transformations.
+	const transformationViewTransitionName = $derived(
+		viewTransition.transformation(
+			settings.get('transformation.selectedId') ?? null,
+		),
+	);
 	// The recording shortcut that actually fires on this platform, via the
 	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
 	// and ships the toggle unbound, so prefer it; the browser shows the local
@@ -259,14 +268,7 @@
 					value={option.value}
 					aria-label="Switch to {option.label.toLowerCase()} recording"
 				>
-					<span
-						class="inline-flex shrink-0"
-						style="view-transition-name: {viewTransition.recordingMode(
-							option.value,
-						)}"
-					>
-						<TriggerIcon class="size-4" />
-					</span>
+					<TriggerIcon class="size-4" />
 					<span class="hidden truncate sm:inline">{option.label}</span>
 				</ToggleGroup.Item>
 			{/each}
@@ -281,7 +283,9 @@
 					variant="pipeline"
 					iconViewTransitionName={viewTransition.pipeline.transcription}
 				/>
-				<TransformationSelector />
+				<TransformationSelector
+					iconViewTransitionName={transformationViewTransitionName}
+				/>
 			</CapturePipeline>
 		{/snippet}
 
@@ -294,7 +298,9 @@
 					variant="pipeline"
 					iconViewTransitionName={viewTransition.pipeline.transcription}
 				/>
-				<TransformationSelector />
+				<TransformationSelector
+					iconViewTransitionName={transformationViewTransitionName}
+				/>
 			</CapturePipeline>
 		{/snippet}
 
@@ -382,29 +388,45 @@
 		<div class="flex flex-col items-center gap-3">
 			{#if settings.get('recording.trigger') === 'manual'}
 				<p class="text-foreground/75 text-center text-sm">
-					Click the microphone{#if manualShortcutLabel}
-						or press
+					{#if manualShortcutLabel}
+						Click the microphone to record{tauri ? ' here' : ''}, or press
 						<Link
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
 							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
 								>{manualShortcutLabel}</Kbd.Root>
-						</Link>{/if}
-					to start recording{tauri ? ' from anywhere' : ''}.
+						</Link>
+						{tauri ? 'to record from anywhere.' : 'to record.'}
+					{:else if tauri}
+						Click the microphone to record, or
+						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
+							>set a global shortcut</Link>
+						to record from anywhere.
+					{:else}
+						Click the microphone to start recording.
+					{/if}
 				</p>
 			{:else if settings.get('recording.trigger') === 'vad'}
 				<p class="text-foreground/75 text-center text-sm">
-					Click the microphone{#if vadShortcutLabel}
-						or press
+					{#if vadShortcutLabel}
+						Click the microphone to listen{tauri ? ' here' : ''}, or press
 						<Link
 							tooltip="Configure the voice activation shortcut"
 							href="/settings/shortcuts"
 						>
 							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
 								>{vadShortcutLabel}</Kbd.Root>
-						</Link>{/if}
-					to start a voice activated session.
+						</Link>
+						{tauri ? 'to listen from anywhere.' : 'to listen.'}
+					{:else if tauri}
+						Click the microphone to start a voice activated session, or
+						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
+							>set a global shortcut</Link>
+						to listen from anywhere.
+					{:else}
+						Click the microphone to start a voice activated session.
+					{/if}
 				</p>
 			{/if}
 			<p class="text-muted-foreground text-center text-sm font-light">

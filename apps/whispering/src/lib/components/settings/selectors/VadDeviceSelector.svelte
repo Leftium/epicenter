@@ -12,6 +12,7 @@
 	import { report } from '$lib/report';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 
 	let {
 		iconViewTransitionName,
@@ -21,9 +22,7 @@
 	} = $props();
 
 	const iconTransitionStyle = $derived(
-		iconViewTransitionName
-			? `view-transition-name: ${iconViewTransitionName}`
-			: undefined,
+		viewTransitionStyle(iconViewTransitionName),
 	);
 
 	const combobox = useCombobox();

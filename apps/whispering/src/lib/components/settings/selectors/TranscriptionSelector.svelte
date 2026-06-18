@@ -22,6 +22,7 @@
 	} from '$lib/settings/transcription-validation';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
+	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 	import { tauri } from '#platform/tauri';
 
 	let {
@@ -45,9 +46,7 @@
 	} = $props();
 
 	const iconTransitionStyle = $derived(
-		iconViewTransitionName
-			? `view-transition-name: ${iconViewTransitionName}`
-			: undefined,
+		viewTransitionStyle(iconViewTransitionName),
 	);
 
 	const selectedService = $derived(getSelectedTranscriptionService());

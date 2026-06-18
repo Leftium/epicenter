@@ -5,6 +5,7 @@
 	import { toggleVadRecording } from '$lib/operations/recording';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import RecordingActionCard from './RecordingActionCard.svelte';
 
 	let {
@@ -40,6 +41,9 @@
 	{description}
 	footer={isListening ? undefined : pipeline}
 	icon={button.Icon}
+	iconViewTransitionName={isListening
+		? undefined
+		: viewTransition.recordingMode('vad')}
 	{label}
 	pending={toggleMutation.isPending}
 	{shortcutLabel}

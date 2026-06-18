@@ -13,6 +13,7 @@
 	import { tauri } from '#platform/tauri';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
+	import { viewTransitionStyle } from '$lib/utils/viewTransitions';
 
 	let {
 		iconViewTransitionName,
@@ -22,9 +23,7 @@
 	} = $props();
 
 	const iconTransitionStyle = $derived(
-		iconViewTransitionName
-			? `view-transition-name: ${iconViewTransitionName}`
-			: undefined,
+		viewTransitionStyle(iconViewTransitionName),
 	);
 
 	const combobox = useCombobox();

@@ -88,3 +88,17 @@ export const viewTransition = {
 		transcription: 'pipeline-transcription',
 	},
 } as const;
+
+/**
+ * Express an optional transition name as an inline `style` value: the
+ * `view-transition-name` declaration when a name is supplied, or `undefined` so
+ * the attribute is omitted entirely.
+ *
+ * This is the one place that knows how a name becomes a style, so the reusable
+ * controls that thread an optional name down (the action card, the device and
+ * transcription selectors) never re-spell the ternary. Owners that always carry
+ * a name bind `view-transition-name` in their own `style` string directly.
+ */
+export function viewTransitionStyle(name: string | undefined) {
+	return name ? `view-transition-name: ${name}` : undefined;
+}

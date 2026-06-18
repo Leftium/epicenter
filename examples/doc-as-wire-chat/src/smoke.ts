@@ -1,35 +1,40 @@
 /**
- * Non-interactive end-to-end check: connect as a peer, write one turn, wait for
- * the actor's `finish` to sync back, print it, exit. Proves observe -> stream ->
- * finish over a real WebSocket with no typing. Used by `bun run smoke` and CI-able.
+ * End-to-end check: bind a conversation to the actor's agent, write a turn, wait
+ * for the streamed `finish` to sync back. Proves observe -> stream -> finish over
+ * the real observe loop and a real WebSocket. Exits 0 on success.
  *
- * Run: `bun run src/smoke.ts`  (after the relay and actor are up)
+ * Run: `bun run src/smoke.ts`  (after the relay and actor are up).
  */
 
-import { attachChatTranscript } from '@epicenter/workspace/ai';
 import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
+import { openConversation } from './chat-peer';
 import { connectPeer } from './transport';
 
-const ROOM = process.env.ROOM ?? 'demo';
+const WORKSPACE = process.env.ROOM ?? 'epicenter-demo';
 const PORT = process.env.PORT ?? 8787;
-const URL = `ws://localhost:${PORT}/${ROOM}`;
+const AGENT = process.env.AGENT ?? 'demo-actor';
 
-const doc = new Y.Doc({ gc: true });
-const transcript = attachChatTranscript(doc);
-connectPeer({ url: URL, doc });
+const rootDoc = new Y.Doc({ gc: true });
+connectPeer({ url: `ws://localhost:${PORT}/${WORKSPACE}`, doc: rootDoc });
+
+const { transcript } = openConversation({
+	rootDoc,
+	workspace: WORKSPACE,
+	port: PORT,
+	id: `smoke-${nanoid(6)}`,
+	agent: AGENT,
+});
 
 const generationId = nanoid();
 const { promise, resolve } = Promise.withResolvers<string>();
-
 transcript.observe(() => {
 	const answer = transcript
 		.read()
 		.find((m) => m.role === 'assistant' && m.id === generationId);
-	if (answer?.finish) resolve(answer.text);
+	if (answer?.finish?.kind === 'completed') resolve(answer.text);
 });
 
-// Give the sync handshake a beat to settle, then write the turn.
 setTimeout(() => {
 	transcript.appendUser({
 		id: nanoid(),
@@ -37,12 +42,12 @@ setTimeout(() => {
 		createdAt: Date.now(),
 		generationId,
 	});
-}, 300);
+}, 400);
 
 const answer = await Promise.race([
 	promise,
 	new Promise<string>((_, reject) =>
-		setTimeout(() => reject(new Error('timeout: no finish within 10s')), 10_000),
+		setTimeout(() => reject(new Error('timeout: no completed finish within 12s')), 12_000),
 	),
 ]);
 

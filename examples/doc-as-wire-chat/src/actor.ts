@@ -1,80 +1,98 @@
 /**
- * The ACTOR (ADR-0012/0013): the always-on daemon that answers a conversation by
- * writing into the synced transcript doc, not by replying to an HTTP request.
+ * The ACTOR (ADR-0012/0013), now over the REAL observe loop (S4).
  *
- * It is the production wiring, verbatim: `attachChatTranscript` (the layout) +
- * `attachChatActor` (the per-body behavior) + observe -> onChange. The only thing
- * swapped for the demo is the inference backend: instead of Gemini, we inject a
- * fake `ChatStream` that echoes the user's text character by character. Swapping
- * in a real model later (S5) is this one argument, not a rewrite.
+ * It holds the root workspace doc, runs `attachChildDocActor` (the production
+ * loop from `@epicenter/workspace`) over the `conversations` table, and hosts a
+ * live transcript replica for EVERY conversation bound to the agent it answers
+ * as (`isDesignated: row.agent === SELF_AGENT`). A conversation bound to any
+ * other agent is never opened here, so it is answered only by its own agent.
  *
- * Run: `bun run src/actor.ts`  (after the relay is up)
+ * The inference backend is one argument (`startStream`): echo by default, real
+ * Gemini when `GEMINI_API_KEY` is set (S5).
+ *
+ * Run: `bun run src/actor.ts`  (after the relay is up). Set `AGENT` to change
+ * which agent this daemon answers as (default `demo-actor`).
  */
 
 import {
 	attachChatActor,
 	attachChatTranscript,
-	type ChatStream,
 } from '@epicenter/workspace/ai';
-import { EventType, type StreamChunk } from '@tanstack/ai';
+import {
+	attachChildDocActor,
+	type ConnectedChildDoc,
+} from '@epicenter/workspace';
 import * as Y from 'yjs';
+import {
+	agentOf,
+	listConversations,
+	observeConversations,
+	transcriptGuid,
+} from './conversations';
+import { resolveChatStream } from './inference';
 import { connectPeer } from './transport';
 
-const ROOM = process.env.ROOM ?? 'demo';
+const WORKSPACE = process.env.ROOM ?? 'epicenter-demo';
 const PORT = process.env.PORT ?? 8787;
-const URL = `ws://localhost:${PORT}/${ROOM}`;
-const AGENT = 'demo-actor';
+const SELF_AGENT = process.env.AGENT ?? 'demo-actor';
+const wsUrl = (guid: string) => `ws://localhost:${PORT}/${guid}`;
 
-/**
- * A fake inference backend: take the snapshotted prompt, echo the last user
- * message back, typed out one character at a time so you can watch it stream.
- * Honors the abort signal exactly like a real backend must (S3's durable cancel
- * rides this).
- */
-const echoStream: ChatStream = async function* (messages, signal) {
-	const last = messages[messages.length - 1];
-	const said =
-		typeof last?.content === 'string'
-			? last.content
-			: JSON.stringify(last?.content ?? '');
-	const reply = `You said: "${said}". (demo actor: no model, just an echo streamed through the synced doc)`;
-	for (const char of reply) {
-		if (signal.aborted) return;
-		yield {
-			type: EventType.TEXT_MESSAGE_CONTENT,
-			messageId: 'm',
-			delta: char,
-		} as StreamChunk;
-		await new Promise((resolve) => setTimeout(resolve, 25));
-	}
-};
+const startStream = resolveChatStream();
 
-const doc = new Y.Doc({ gc: true });
-const transcript = attachChatTranscript(doc);
-const actor = attachChatActor({ ydoc: doc, startStream: echoStream });
+// The root workspace doc: holds the conversations table, synced over its own room.
+const rootDoc = new Y.Doc({ gc: true });
+connectPeer({ url: wsUrl(WORKSPACE), doc: rootDoc, onStatus: (s) => console.log(`[root] ${s}`) });
 
-connectPeer({ url: URL, doc, onStatus: (status) => console.log(`[transport] ${status}`) });
+// The production observe loop, wired to a relay-backed child-doc connector.
+attachChildDocActor({
+	rootDoc,
+	table: {
+		scan: () => ({
+			rows: listConversations(rootDoc).map((row) => ({ id: row.id })),
+		}),
+		observe: (callback) => observeConversations(rootDoc, callback),
+	},
+	// Single-owner derivation: the same address the client opener computes.
+	guidFor: (rowId) => transcriptGuid(WORKSPACE, rowId),
+	// Persist + sync one transcript body. Here that is a relay-backed peer.
+	connectBody: (guid): ConnectedChildDoc => {
+		const ydoc = new Y.Doc({ gc: true });
+		const ws = connectPeer({ url: wsUrl(guid), doc: ydoc });
+		const { promise: whenDisposed, resolve } = Promise.withResolvers<void>();
+		return {
+			ydoc,
+			whenDisposed,
+			dispose() {
+				try {
+					ws.close();
+				} finally {
+					ydoc.destroy();
+					resolve();
+				}
+			},
+		};
+	},
+	layout: (ydoc) => attachChatTranscript(ydoc),
+	actorFor: ({ ydoc, rowId }) => {
+		console.log(`▸ hosting "${rowId}" (bound to me) — will answer its turns`);
+		return attachChatActor({ ydoc, startStream });
+	},
+	// The whole binding: host only conversations addressed to the agent I am.
+	isDesignated: (rowId) => agentOf(rootDoc, rowId) === SELF_AGENT,
+});
 
-// The observe loop: every transcript transaction wakes the actor.
-transcript.observe(() => actor.onChange?.());
-
-// Human-readable narration of what the actor sees and writes.
-let seenUsers = 0;
-const announced = new Set<string>();
-transcript.observe(() => {
-	const messages = transcript.read();
-	const users = messages.filter((message) => message.role === 'user');
-	if (users.length > seenUsers) {
-		for (const user of users.slice(seenUsers)) {
-			console.log(`▸ saw turn: "${user.text}" -> streaming an answer…`);
+// Narrate every conversation the actor learns about, designated or not.
+const narrated = new Set<string>();
+observeConversations(rootDoc, () => {
+	for (const conversation of listConversations(rootDoc)) {
+		if (narrated.has(conversation.id)) continue;
+		narrated.add(conversation.id);
+		if (conversation.agent === SELF_AGENT) {
+			console.log(`+ conversation "${conversation.id}" bound to me ("${conversation.agent}")`);
+		} else {
+			console.log(`· conversation "${conversation.id}" bound to "${conversation.agent}" — ignoring (not my agent)`);
 		}
-		seenUsers = users.length;
-	}
-	const assistant = messages.filter((m) => m.role === 'assistant').at(-1);
-	if (assistant?.finish && !announced.has(assistant.id)) {
-		announced.add(assistant.id);
-		console.log(`✓ finished (${assistant.finish.kind}): "${assistant.text}"`);
 	}
 });
 
-console.log(`actor up · answering as agent "${AGENT}" · watching room "${ROOM}"`);
+console.log(`actor up · answering as agent "${SELF_AGENT}" · workspace "${WORKSPACE}"`);

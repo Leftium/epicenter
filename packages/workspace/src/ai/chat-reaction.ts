@@ -40,19 +40,19 @@
  * the client can retry, exactly as an evicted worker would.
  *
  * The flush policy (batching deltas into fewer synced transactions) lives in
- * `streamReply`: buffer text and flush at most once per `FLUSH_INTERVAL_MS`, or
- * sooner if the buffer passes `FLUSH_MAX_CHARS`, so a chatty real provider does
- * not emit one transaction per token. The HTTP generation path
- * (`packages/server/src/ai/doc-generation.ts`) keeps its own copy of this policy
- * until C4 deletes that path wholesale; deliberately NOT shared, since coupling
- * to a route slated for deletion is the opposite of a clean break.
+ * the shared answer core `streamAnswer` (`chat-answer.ts`), which the cloud
+ * kickoff (`packages/server/src/ai/doc-generation.ts`) calls too. The cloud
+ * kickoff is the billing/auth/rate-limit seam and is kept (ADR-0021), so the
+ * two paths share the core: this reaction owns triggering, claiming, and the
+ * daemon finish policy, and the core owns the loop.
  *
  * @module
  */
 
-import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
+import type { ModelMessage } from '@tanstack/ai';
 import type * as Y from 'yjs';
 import type { ChildDocReaction } from '../document/child-doc-reactions.js';
+import { type ChatStream, streamAnswer } from './chat-answer.js';
 import {
 	appendAssistantMessage,
 	chatDocToPrompt,
@@ -62,25 +62,6 @@ import {
 
 /** Cap for provider error text persisted into the doc; details go to logs. */
 const FAILED_MESSAGE_MAX_CHARS = 240;
-
-/** Flush cadence: at most one content transaction per interval... */
-const FLUSH_INTERVAL_MS = 75;
-/** ...unless the buffered text passes this size first. */
-const FLUSH_MAX_CHARS = 512;
-
-/**
- * The one contract every inference backend speaks: take the snapshotted prompt
- * and an abort signal, return an async iterable of text-delta (and error)
- * chunks. A TanStack adapter stream and a local model backend are
- * interchangeable behind it. The backend MUST wire `signal` into the provider
- * call (e.g. `chat({ abortController })`) so a cancel or teardown frees the
- * connection instead of letting the provider keep generating; the reaction also
- * stops consuming on abort, but the signal is what actually stops the work.
- */
-export type ChatStream = (
-	messages: ModelMessage[],
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
 
 /** One in-flight generation: enough to cancel it durably. */
 type InFlightGeneration = {
@@ -199,13 +180,14 @@ export function attachChatReaction({
 }
 
 /**
- * Drive one provider stream into the assistant message: buffer text deltas and
- * flush them on the {@link FLUSH_INTERVAL_MS}/{@link FLUSH_MAX_CHARS} cadence,
- * then write a write-once `completed` (or `failed`) finish that flushes the tail.
- * A signal abort stops the loop and writes NO finish: the caller's `onChange`
- * already wrote
- * `cancelled` for a durable cancel, and a teardown deliberately leaves the
- * message interrupted (and its `Y.Doc` may already be torn down).
+ * Run the shared answer core, then apply the daemon finish policy. The core
+ * drives the loop and hands back the outcome; this wrapper writes the terminal
+ * finish, flushing the buffered tail into it.
+ *
+ * On abort it writes NO finish: a durable cancel already wrote `cancelled` from
+ * `onChange`, and a teardown deliberately leaves the message interrupted (its
+ * `Y.Doc` may already be torn down). A clean run writes `completed`; a provider
+ * error writes `failed` with the capped message.
  */
 async function streamReply(
 	writer: ReturnType<typeof appendAssistantMessage>,
@@ -213,46 +195,13 @@ async function streamReply(
 	prompt: ModelMessage[],
 	signal: AbortSignal,
 ): Promise<void> {
-	let runError: { code: string; message: string } | undefined;
-	// Buffer deltas so a chatty provider becomes a few synced transactions, not
-	// one per token. lastFlushAt starts at 0 so the first delta flushes at once
-	// (the "thinking" marker becomes live text immediately). A still-buffered tail
-	// is discarded on abort (the caller writes the terminal finish, not us) and
-	// flushed into the finish transaction on normal completion.
-	let buffer = '';
-	let lastFlushAt = 0;
-	try {
-		for await (const chunk of startStream(prompt, signal)) {
-			if (signal.aborted) return;
-			if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) {
-				buffer += chunk.delta;
-				const now = Date.now();
-				if (
-					now - lastFlushAt >= FLUSH_INTERVAL_MS ||
-					buffer.length >= FLUSH_MAX_CHARS
-				) {
-					writer.appendText(buffer);
-					buffer = '';
-					lastFlushAt = now;
-				}
-			} else if (chunk.type === EventType.RUN_ERROR) {
-				runError = {
-					code: chunk.code ?? 'provider-error',
-					message: chunk.message,
-				};
-			}
-		}
-	} catch (cause) {
-		// Aborting the provider stream surfaces as a throw; that path is the
-		// caller's cancel/teardown, not a failure.
-		if (signal.aborted) return;
-		runError = {
-			code: 'stream-error',
-			message: cause instanceof Error ? cause.message : String(cause),
-		};
-	}
-	if (signal.aborted) return;
-	// Final transaction: flush any buffered tail alongside the terminal finish.
+	const { aborted, runError, tail } = await streamAnswer({
+		writer,
+		startStream,
+		prompt,
+		signal,
+	});
+	if (aborted) return;
 	writer.finish(
 		runError
 			? {
@@ -261,6 +210,6 @@ async function streamReply(
 					message: runError.message.slice(0, FAILED_MESSAGE_MAX_CHARS),
 				}
 			: { kind: 'completed' },
-		{ text: buffer },
+		{ text: tail },
 	);
 }

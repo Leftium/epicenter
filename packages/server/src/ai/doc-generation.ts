@@ -33,11 +33,13 @@ import { encodeSyncRequest } from '@epicenter/sync';
 import {
 	appendAssistantMessage,
 	type ChatDocFinish,
+	chatDocToPrompt,
 	findActiveChatDocGeneration,
 	findLatestUserTurn,
 	readChatDocMessages,
+	streamAnswer,
 } from '@epicenter/workspace/ai';
-import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
+import type { ModelMessage, StreamChunk } from '@tanstack/ai';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { Ok } from 'wellcrafted/result';
@@ -82,11 +84,6 @@ const DocGenerationError = defineErrors({
 		cause,
 	}),
 });
-
-/** Flush cadence: at most one transaction per interval... */
-const FLUSH_INTERVAL_MS = 75;
-/** ...unless the buffered text passes this size first. */
-const FLUSH_MAX_CHARS = 512;
 
 /** Cap for provider error text persisted into the doc; details go to logs. */
 const FAILED_MESSAGE_MAX_CHARS = 240;
@@ -138,11 +135,10 @@ export async function runDocGeneration({
 		return AiChatError.GenerationInProgress();
 	}
 
-	// Prompt frozen at kickoff. Empty messages (an interrupted assistant
-	// turn that never received a token) carry no signal; skip them.
-	const prompt: ModelMessage[] = messages
-		.filter((message) => message.text.length > 0)
-		.map((message) => ({ role: message.role, content: message.text }));
+	// Prompt frozen at kickoff. `chatDocToPrompt` (the transcript's own prompt
+	// owner) drops empty messages, e.g. an interrupted assistant turn that never
+	// received a token.
+	const prompt = chatDocToPrompt(messages);
 
 	// ── Update forwarding ────────────────────────────────────────────────
 	// One transaction = one updateV2 event. Updates queue in `unsent` and a
@@ -210,41 +206,27 @@ export async function runDocGeneration({
 		createdAt: startedAt,
 	});
 
-	let buffer = '';
-	let lastFlushAt = 0; // forces the first chunk to flush immediately
-	let runError: { code: string; message: string } | null = null;
+	// The shared answer core owns the loop, the flush policy, and the chunk
+	// switch. `startStream` here already has the signal wired in by the caller,
+	// so it ignores the core's signal argument; the signal still classifies the
+	// terminal outcome below.
+	const { aborted, runError, tail } = await streamAnswer({
+		writer,
+		startStream,
+		prompt,
+		signal,
+	});
 
-	try {
-		for await (const chunk of startStream(prompt)) {
-			if (signal.aborted) break;
-			if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) {
-				buffer += chunk.delta;
-				const now = Date.now();
-				if (
-					now - lastFlushAt >= FLUSH_INTERVAL_MS ||
-					buffer.length >= FLUSH_MAX_CHARS
-				) {
-					writer.appendText(buffer);
-					buffer = '';
-					lastFlushAt = now;
-				}
-			} else if (chunk.type === EventType.RUN_ERROR) {
-				runError = {
-					code: chunk.code ?? 'provider-error',
-					message: chunk.message,
-				};
-			}
-		}
-	} catch (cause) {
-		// Aborting the provider stream surfaces as a throw; that path is a
-		// cancellation, not a failure.
-		if (!signal.aborted) {
-			log.error(DocGenerationError.StreamFailed({ generationId, cause }));
-			runError = { code: 'stream-error', message: extractErrorMessage(cause) };
-		}
+	// A thrown stream error (not a RUN_ERROR event) carries its cause; log it.
+	if (runError?.cause !== undefined) {
+		log.error(
+			DocGenerationError.StreamFailed({ generationId, cause: runError.cause }),
+		);
 	}
 
-	const finish: ChatDocFinish = signal.aborted
+	// The cloud finish policy: a client disconnect is `cancelled` (written here,
+	// unlike the daemon), a provider error is `failed`, otherwise `completed`.
+	const finish: ChatDocFinish = aborted
 		? { kind: 'cancelled' }
 		: runError
 			? {
@@ -255,7 +237,7 @@ export async function runDocGeneration({
 			: { kind: 'completed' };
 
 	// Final transaction: remaining buffered text plus the finish key.
-	writer.finish(finish, { text: buffer });
+	writer.finish(finish, { text: tail });
 
 	if (signal.aborted) {
 		// The client is gone; the response will never be read. Keep the

@@ -12,8 +12,9 @@
 import { describe, expect, test } from 'bun:test';
 import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
-import { attachChatReaction, type ChatStream } from './chat-reaction.js';
+import type { ChatStream } from './chat-answer.js';
 import { attachChatTranscript } from './chat-doc.js';
+import { attachChatReaction } from './chat-reaction.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Harness

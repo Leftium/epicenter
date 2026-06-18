@@ -1,4 +1,10 @@
 export {
+	type ChatStream,
+	type StreamAnswerError,
+	type StreamAnswerOutcome,
+	streamAnswer,
+} from './chat-answer';
+export {
 	type AnswerableTurn,
 	appendAssistantMessage,
 	appendUserMessage,
@@ -21,7 +27,7 @@ export {
 	requestLatestUserTurnCancel,
 	setLatestUserTurnGenerationId,
 } from './chat-doc';
-export { attachChatReaction, type ChatStream } from './chat-reaction';
+export { attachChatReaction } from './chat-reaction';
 export {
 	type ActionNames,
 	actionsToAiTools,

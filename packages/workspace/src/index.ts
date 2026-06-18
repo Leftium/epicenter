@@ -54,14 +54,14 @@ export {
 // NODE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
+export type { AgentId } from './document/agent-id.js';
+export { asAgentId } from './document/agent-id.js';
 export type { NodeId } from './document/node-id.js';
 export {
 	asNodeId,
 	createNodeId,
 	createNodeIdAsync,
 } from './document/node-id.js';
-export type { AgentId } from './document/agent-id.js';
-export { asAgentId } from './document/agent-id.js';
 
 // Daemon, config, and Epicenter-root surfaces are node-only (they resolve real
 // paths or sit on the mount contract) and ship from `@epicenter/workspace/node`

@@ -54,18 +54,24 @@ function askAndWaitForAnswer(agent: string, ms: number): Promise<boolean> {
 // A conversation bound to an agent nobody runs must NOT be answered.
 const ignored = await askAndWaitForAnswer('nobody-runs-this-agent', 3_000);
 if (ignored) {
-	console.error('SMOKE-BINDING FAIL · a conversation bound to another agent was answered');
+	console.error(
+		'SMOKE-BINDING FAIL · a conversation bound to another agent was answered',
+	);
 	process.exit(1);
 }
-console.log(`✓ conversation bound to "nobody-runs-this-agent" was ignored (no answer in 3s)`);
+console.log(
+	`✓ conversation bound to "nobody-runs-this-agent" was ignored (no answer in 3s)`,
+);
 
 // A conversation bound to the actor's agent MUST be answered.
 const answered = await askAndWaitForAnswer(SELF_AGENT, 12_000);
 if (!answered) {
-	console.error(`SMOKE-BINDING FAIL · a conversation bound to "${SELF_AGENT}" was not answered`);
+	console.error(
+		`SMOKE-BINDING FAIL · a conversation bound to "${SELF_AGENT}" was not answered`,
+	);
 	process.exit(1);
 }
 console.log(`✓ conversation bound to "${SELF_AGENT}" was answered`);
 
-console.log('SMOKE-BINDING OK · the row\'s agent decides who answers');
+console.log("SMOKE-BINDING OK · the row's agent decides who answers");
 process.exit(0);

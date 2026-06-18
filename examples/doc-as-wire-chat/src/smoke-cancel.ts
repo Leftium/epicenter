@@ -56,13 +56,20 @@ setTimeout(() => {
 const kind = await Promise.race([
 	promise,
 	new Promise<string>((_, reject) =>
-		setTimeout(() => reject(new Error('timeout: no finish within 12s')), 12_000),
+		setTimeout(
+			() => reject(new Error('timeout: no finish within 12s')),
+			12_000,
+		),
 	),
 ]);
 
 if (kind !== 'cancelled') {
-	console.error(`SMOKE-CANCEL FAIL · expected finish "cancelled", got "${kind}"`);
+	console.error(
+		`SMOKE-CANCEL FAIL · expected finish "cancelled", got "${kind}"`,
+	);
 	process.exit(1);
 }
-console.log('SMOKE-CANCEL OK · actor stopped mid-stream and wrote finish: cancelled');
+console.log(
+	'SMOKE-CANCEL OK · actor stopped mid-stream and wrote finish: cancelled',
+);
 process.exit(0);

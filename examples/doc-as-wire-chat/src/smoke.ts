@@ -47,7 +47,10 @@ setTimeout(() => {
 const answer = await Promise.race([
 	promise,
 	new Promise<string>((_, reject) =>
-		setTimeout(() => reject(new Error('timeout: no completed finish within 12s')), 12_000),
+		setTimeout(
+			() => reject(new Error('timeout: no completed finish within 12s')),
+			12_000,
+		),
 	),
 ]);
 

@@ -10,9 +10,9 @@
  * Run: `bun run src/client.ts`  (after the relay and actor are up).
  */
 
+import * as readline from 'node:readline';
 import { attachChatTranscript } from '@epicenter/workspace/ai';
 import { nanoid } from 'nanoid';
-import * as readline from 'node:readline';
 import * as Y from 'yjs';
 import { ensureConversation, transcriptGuid } from './conversations';
 import { connectPeer } from './transport';
@@ -29,7 +29,10 @@ connectPeer({ url: wsUrl(WORKSPACE), doc: rootDoc });
 
 const transcriptDoc = new Y.Doc({ gc: true });
 const transcript = attachChatTranscript(transcriptDoc);
-connectPeer({ url: wsUrl(transcriptGuid(WORKSPACE, CONV)), doc: transcriptDoc });
+connectPeer({
+	url: wsUrl(transcriptGuid(WORKSPACE, CONV)),
+	doc: transcriptDoc,
+});
 
 const rl = readline.createInterface({
 	input: process.stdin,

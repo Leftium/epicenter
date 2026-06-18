@@ -44,8 +44,9 @@ export function resolveChatStream(): ChatStream {
 		console.log('(no GEMINI_API_KEY — using the echo stream)');
 		return echoStream;
 	}
-	const model = (process.env.GEMINI_MODEL ??
-		'gemini-3.5-flash') as Parameters<typeof createGeminiChat>[0];
+	const model = (process.env.GEMINI_MODEL ?? 'gemini-3.5-flash') as Parameters<
+		typeof createGeminiChat
+	>[0];
 	console.log(`(GEMINI_API_KEY set — real inference via ${model})`);
 	const adapter = createGeminiChat(model, apiKey);
 	return async function* geminiStream(messages, signal) {
@@ -66,7 +67,9 @@ export function resolveChatStream(): ChatStream {
 			}
 		}, FIRST_TOKEN_WARN_MS);
 
-		console.log(`[gemini] request started · model=${model} · messages=${messages.length}`);
+		console.log(
+			`[gemini] request started · model=${model} · messages=${messages.length}`,
+		);
 
 		try {
 			for await (const chunk of chat({
@@ -113,6 +116,7 @@ export function resolveChatStream(): ChatStream {
 function formatProviderError(cause: unknown): string {
 	if (!(cause instanceof Error)) return String(cause);
 	const parts = [cause.name, cause.message].filter(Boolean);
-	const maybeStatus = 'status' in cause ? `status=${String(cause.status)}` : undefined;
+	const maybeStatus =
+		'status' in cause ? `status=${String(cause.status)}` : undefined;
 	return [maybeStatus, ...parts].filter(Boolean).join(' · ');
 }

@@ -41,7 +41,10 @@ export function listConversations(doc: Y.Doc): ConversationRow[] {
 }
 
 /** Observe row adds/removes. Returns the unobserve function. */
-export function observeConversations(doc: Y.Doc, callback: () => void): () => void {
+export function observeConversations(
+	doc: Y.Doc,
+	callback: () => void,
+): () => void {
 	const array = rows(doc);
 	const handler = () => callback();
 	array.observe(handler);

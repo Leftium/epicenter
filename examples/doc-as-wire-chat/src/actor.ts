@@ -15,13 +15,10 @@
  */
 
 import {
-	attachChatActor,
-	attachChatTranscript,
-} from '@epicenter/workspace/ai';
-import {
 	attachChildDocActor,
 	type ConnectedChildDoc,
 } from '@epicenter/workspace';
+import { attachChatActor, attachChatTranscript } from '@epicenter/workspace/ai';
 import * as Y from 'yjs';
 import {
 	agentOf,
@@ -41,7 +38,11 @@ const startStream = resolveChatStream();
 
 // The root workspace doc: holds the conversations table, synced over its own room.
 const rootDoc = new Y.Doc({ gc: true });
-connectPeer({ url: wsUrl(WORKSPACE), doc: rootDoc, onStatus: (s) => console.log(`[root] ${s}`) });
+connectPeer({
+	url: wsUrl(WORKSPACE),
+	doc: rootDoc,
+	onStatus: (s) => console.log(`[root] ${s}`),
+});
 
 // The production observe loop, wired to a relay-backed child-doc connector.
 attachChildDocActor({
@@ -88,11 +89,17 @@ observeConversations(rootDoc, () => {
 		if (narrated.has(conversation.id)) continue;
 		narrated.add(conversation.id);
 		if (conversation.agent === SELF_AGENT) {
-			console.log(`+ conversation "${conversation.id}" bound to me ("${conversation.agent}")`);
+			console.log(
+				`+ conversation "${conversation.id}" bound to me ("${conversation.agent}")`,
+			);
 		} else {
-			console.log(`· conversation "${conversation.id}" bound to "${conversation.agent}" — ignoring (not my agent)`);
+			console.log(
+				`· conversation "${conversation.id}" bound to "${conversation.agent}" — ignoring (not my agent)`,
+			);
 		}
 	}
 });
 
-console.log(`actor up · answering as agent "${SELF_AGENT}" · workspace "${WORKSPACE}"`);
+console.log(
+	`actor up · answering as agent "${SELF_AGENT}" · workspace "${WORKSPACE}"`,
+);

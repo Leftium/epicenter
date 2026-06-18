@@ -55,6 +55,7 @@ import type { Guid } from '../shared/id.js';
 import { once } from '../shared/once.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
 import type { Drainable } from '../shared/types.js';
+import type { AgentId } from './agent-id.js';
 import {
 	attachChildDocActor,
 	type ChildDocActor,
@@ -66,7 +67,6 @@ import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
-import type { AgentId } from './agent-id.js';
 import { onLocalUpdate } from './on-local-update.js';
 import type { Collaboration } from './open-collaboration.js';
 import { assertReferenceTargets } from './reference-check.js';
@@ -980,8 +980,7 @@ function connectMountActors<TTableDefinitions extends TableDefinitions>({
 		// daemon with no configured agent (`selfAgentId` undefined) designates
 		// nothing, so every conversation is left to its own bound agent.
 		const isDesignated = (rowId: string): boolean =>
-			selfAgentId !== undefined &&
-			table.get(rowId).data?.agent === selfAgentId;
+			selfAgentId !== undefined && table.get(rowId).data?.agent === selfAgentId;
 
 		for (const [field, actorFor] of Object.entries(fieldActors)) {
 			if (actorFor === undefined) continue;

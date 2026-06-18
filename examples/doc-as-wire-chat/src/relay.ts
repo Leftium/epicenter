@@ -103,4 +103,6 @@ Bun.serve<WsData>({
 	},
 });
 
-console.log(`relay listening :${PORT}  (in-memory rooms; app-blind byte router)`);
+console.log(
+	`relay listening :${PORT}  (in-memory rooms; app-blind byte router)`,
+);

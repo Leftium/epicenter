@@ -49,6 +49,7 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
+	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
@@ -242,6 +243,7 @@
 				<TransformationSelector
 					iconViewTransitionName={transformationViewTransitionName}
 				/>
+				<CaptureBehaviorPopover />
 			</CapturePipeline>
 		{/snippet}
 
@@ -257,6 +259,7 @@
 				<TransformationSelector
 					iconViewTransitionName={transformationViewTransitionName}
 				/>
+				<CaptureBehaviorPopover />
 			</CapturePipeline>
 		{/snippet}
 

@@ -1,4 +1,4 @@
-# 0027. Both shortcut tiers share one physical KeyBinding model
+# 0028. Both shortcut tiers share one physical KeyBinding model
 
 - **Status:** Accepted
 - **Date:** 2026-06-18

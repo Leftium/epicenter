@@ -19,7 +19,6 @@
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { viewTransition } from '$lib/utils/viewTransitions';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
 	import ViewTransformationRunsDialog from './ViewTransformationRunsDialog.svelte';
@@ -121,16 +120,12 @@
 		<CopyButton
 			text={recording.transcript}
 			copyFn={createCopyFn('transcript')}
-			style="view-transition-name: {viewTransition.recording(recordingId)
-				.transcript}"
 		/>
 
 		{#if latestRun?.result?.status === 'completed'}
 			<CopyButton
 				text={latestRun.result.output}
 				copyFn={createCopyFn('latest transformation run output')}
-				style="view-transition-name: {viewTransition.recording(recordingId)
-					.transformationOutput}"
 			>
 				{#snippet icon()}
 					<FileStackIcon class="size-4" />

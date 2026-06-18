@@ -45,6 +45,7 @@
 				<Command.Group>
 					{#each CAPTURE_SURFACE_OPTIONS as surface (surface.value)}
 						{@const isSelected = captureSurface.current === surface.value}
+						{@const SurfaceIcon = surface.Icon}
 						<Command.Item
 							value={surface.value}
 							onSelect={async () => {
@@ -58,7 +59,7 @@
 									'text-transparent': !isSelected,
 								})}
 							/>
-							<span class="text-base">{surface.icon}</span>
+							<SurfaceIcon class="size-4 shrink-0" />
 							<span class="text-sm">{surface.label}</span>
 						</Command.Item>
 					{/each}

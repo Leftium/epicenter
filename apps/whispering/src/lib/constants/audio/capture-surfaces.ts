@@ -22,31 +22,28 @@ export type CaptureSurface = (typeof CAPTURE_SURFACES)[number];
 /**
  * Per-surface metadata. The two triggers reuse `RECORDING_TRIGGER_META`
  * verbatim, so a trigger is still described in exactly one place; only `import`
- * adds its own label and icons here.
+ * adds its own label and icon here.
  */
 export const CAPTURE_SURFACE_META = {
 	...RECORDING_TRIGGER_META,
 	import: {
 		label: 'Upload File',
-		emoji: '📁',
 		Icon: FileUpIcon,
 	},
 } as const satisfies Record<
 	CaptureSurface,
 	{
 		label: string;
-		emoji: string;
 		Icon: Component<{ class?: string }>;
 	}
 >;
 
 /**
- * Render-ready surface list (value, label, compact emoji) in display order,
- * for the homepage tabs and the header dropdown. The full-size lucide icon for
- * the tabs lives on `CAPTURE_SURFACE_META[value].Icon`.
+ * Render-ready surface list (value, label, lucide icon) in display order, for
+ * the homepage tabs and the header dropdown.
  */
 export const CAPTURE_SURFACE_OPTIONS = CAPTURE_SURFACES.map((value) => ({
 	value,
 	label: CAPTURE_SURFACE_META[value].label,
-	icon: CAPTURE_SURFACE_META[value].emoji,
+	Icon: CAPTURE_SURFACE_META[value].Icon,
 }));

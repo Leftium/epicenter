@@ -1,12 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import {
-		ACCEPT_AUDIO,
-		ACCEPT_VIDEO,
-		FileDropZone,
-		MEGABYTE,
-	} from '@epicenter/ui/file-drop-zone';
+	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
@@ -33,8 +28,11 @@
 		type CaptureSurface,
 	} from '$lib/constants/audio';
 	import {
+		IMPORT_ACCEPT,
 		IMPORTABLE_AUDIO_EXTENSIONS,
 		IMPORTABLE_VIDEO_EXTENSIONS,
+		MAX_IMPORT_FILES,
+		MAX_IMPORT_FILE_SIZE,
 	} from '$lib/constants/import-formats';
 	import { importFiles } from '$lib/operations/import';
 	import { selectCaptureSurface } from '$lib/operations/recording';
@@ -46,8 +44,10 @@
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
@@ -55,6 +55,15 @@
 
 	const latestRecording = $derived(recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness());
+	// The selected transformation's pipeline glyph morphs into that
+	// transformation's row on the /transformations list, so name it with the same
+	// id the row carries. Only the home pipeline opts in; the config topbar leaves
+	// its selector unnamed so it never collides with the rows on /transformations.
+	const transformationViewTransitionName = $derived(
+		viewTransition.transformation(
+			settings.get('transformation.selectedId') ?? null,
+		),
+	);
 	// The recording shortcut that actually fires on this platform, via the
 	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
 	// and ships the toggle unbound, so prefer it; the browser shows the local
@@ -172,13 +181,16 @@
 <div
 	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
 >
-	<SectionHeader.Root class="flex flex-col items-center gap-4">
-		<SectionHeader.Title
-			level={1}
-			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
-		>
-			Whispering
-		</SectionHeader.Title>
+	<SectionHeader.Root class="flex flex-col items-center gap-3">
+		<div class="flex items-center gap-3">
+			<img src={studioMicrophone} alt="" class="size-12" />
+			<SectionHeader.Title
+				level={1}
+				class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
+			>
+				Whispering
+			</SectionHeader.Title>
+		</div>
 		<SectionHeader.Description class="text-center">
 			Press shortcut → speak → get text. Free and open source ❤️
 		</SectionHeader.Description>
@@ -220,17 +232,31 @@
 
 		{#snippet manualPipeline()}
 			<CapturePipeline>
-				<ManualDeviceSelector />
-				<TranscriptionSelector variant="pipeline" />
-				<TransformationSelector />
+				<ManualDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="pipeline"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
+				<TransformationSelector
+					iconViewTransitionName={transformationViewTransitionName}
+				/>
 			</CapturePipeline>
 		{/snippet}
 
 		{#snippet vadPipeline()}
 			<CapturePipeline>
-				<VadDeviceSelector />
-				<TranscriptionSelector variant="pipeline" />
-				<TransformationSelector />
+				<VadDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="pipeline"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
+				<TransformationSelector
+					iconViewTransitionName={transformationViewTransitionName}
+				/>
 			</CapturePipeline>
 		{/snippet}
 
@@ -243,7 +269,6 @@
 						onclick={() => commandCallbacks.cancelRecording()}
 						variant="ghost-destructive"
 						size="sm"
-						style="view-transition-name: {viewTransition.global.cancel};"
 					>
 						<XIcon class="size-4" />
 						Cancel
@@ -257,9 +282,9 @@
 		{:else if captureSurface.current === 'import'}
 			<div class="flex w-full flex-col items-center gap-4">
 				<FileDropZone
-					accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
-					maxFiles={10}
-					maxFileSize={25 * MEGABYTE}
+					accept={IMPORT_ACCEPT}
+					maxFiles={MAX_IMPORT_FILES}
+					maxFileSize={MAX_IMPORT_FILE_SIZE}
 					onUpload={async (files) => {
 						if (files.length > 0) {
 							await importFiles({ files });
@@ -277,8 +302,13 @@
 					class="h-32 sm:h-36 w-full"
 				/>
 				<CapturePipeline>
-					<TranscriptionSelector variant="pipeline" />
-					<TransformationSelector />
+					<TranscriptionSelector
+						variant="pipeline"
+						iconViewTransitionName={viewTransition.pipeline.transcription}
+					/>
+					<TransformationSelector
+						iconViewTransitionName={transformationViewTransitionName}
+					/>
 				</CapturePipeline>
 			</div>
 		{/if}
@@ -309,9 +339,9 @@
 
 				{#if audioPlaybackUrlQuery.data}
 					<audio
-						style="view-transition-name: {viewTransition.recording(
+						style:view-transition-name={viewTransition.recording(
 							latestRecording.id,
-						).audio}"
+						).audio}
 						src={audioPlaybackUrlQuery.data}
 						controls
 						class="h-8 w-full"
@@ -323,29 +353,45 @@
 		<div class="flex flex-col items-center gap-3">
 			{#if captureSurface.current === 'manual'}
 				<p class="text-foreground/75 text-center text-sm">
-					Click the microphone{#if manualShortcutLabel}
-						or press
+					{#if manualShortcutLabel}
+						Click the microphone to record{tauri ? ' here' : ''}, or press
 						<Link
 							tooltip="Configure the recording shortcut"
 							href="/settings/shortcuts"
 						>
 							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
 								>{manualShortcutLabel}</Kbd.Root>
-						</Link>{/if}
-					to start recording{tauri ? ' from anywhere' : ''}.
+						</Link>
+						{tauri ? 'to record from anywhere.' : 'to record.'}
+					{:else if tauri}
+						Click the microphone to record, or
+						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
+							>set a global shortcut</Link>
+						to record from anywhere.
+					{:else}
+						Click the microphone to start recording.
+					{/if}
 				</p>
 			{:else if captureSurface.current === 'vad'}
 				<p class="text-foreground/75 text-center text-sm">
-					Click the microphone{#if vadShortcutLabel}
-						or press
+					{#if vadShortcutLabel}
+						Click the microphone to listen{tauri ? ' here' : ''}, or press
 						<Link
 							tooltip="Configure the voice activation shortcut"
 							href="/settings/shortcuts"
 						>
 							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
 								>{vadShortcutLabel}</Kbd.Root>
-						</Link>{/if}
-					to start a voice activated session.
+						</Link>
+						{tauri ? 'to listen from anywhere.' : 'to listen.'}
+					{:else if tauri}
+						Click the microphone to start a voice activated session, or
+						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
+							>set a global shortcut</Link>
+						to listen from anywhere.
+					{:else}
+						Click the microphone to start a voice activated session.
+					{/if}
 				</p>
 			{/if}
 			<p class="text-muted-foreground text-center text-sm font-light">

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { ACCEPT_AUDIO, ACCEPT_VIDEO } from '@epicenter/ui/file-drop-zone';
 	import FileUpIcon from '@lucide/svelte/icons/file-up';
+	import { IMPORT_ACCEPT } from '$lib/constants/import-formats';
 	import { importFiles } from '$lib/operations/import';
 
 	let { class: className }: { class?: string } = $props();
@@ -32,7 +32,7 @@
 <input
 	bind:this={fileInput}
 	type="file"
-	accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
+	accept={IMPORT_ACCEPT}
 	multiple
 	class="hidden"
 	{onchange}

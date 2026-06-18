@@ -13,10 +13,12 @@ export {
 	WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
 } from './media-constraints';
 export {
-	RECORDER_STATE_TO_ICON,
-	VAD_STATE_TO_ICON,
-	type VadState,
-	type WhisperingRecordingState,
+	MANUAL_RECORDING_BUTTON,
+	VAD_RECORDING_BUTTON,
+} from './recording-buttons';
+export type {
+	VadState,
+	WhisperingRecordingState,
 } from './recording-states';
 export {
 	RECORDING_TRIGGER_META,

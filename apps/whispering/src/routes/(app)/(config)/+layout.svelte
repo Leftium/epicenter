@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { commandCallbacks } from '$lib/commands';
 	import ImportFileButton from '$lib/components/ImportFileButton.svelte';
 	import {
@@ -11,8 +12,8 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDER_STATE_TO_ICON,
-		VAD_STATE_TO_ICON,
+		MANUAL_RECORDING_BUTTON,
+		VAD_RECORDING_BUTTON,
 	} from '$lib/constants/audio';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -20,14 +21,18 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	let { children } = $props();
+
+	const ManualButtonIcon = $derived(
+		MANUAL_RECORDING_BUTTON[manualRecorder.state].Icon,
+	);
+	const VadButtonIcon = $derived(VAD_RECORDING_BUTTON[vadRecorder.state].Icon);
 </script>
 
 <header
 	class={cn(
-		'border-border/40 bg-background/95 supports-backdrop-filter:bg-background/60 z-30 border-b shadow-xs backdrop-blur-sm',
+		'border-border/40 bg-background/95 supports-backdrop-filter:bg-background/60 z-10 border-b shadow-xs backdrop-blur-sm',
 		'flex h-14 w-full items-center justify-between px-4 sm:px-8',
 	)}
-	style="view-transition-name: {viewTransition.global.header}"
 >
 	<Button tooltip="Go home" href="/" variant="ghost" class="-ml-4">
 		<span class="text-lg font-bold">whispering</span>
@@ -41,22 +46,25 @@
 					onclick={() => commandCallbacks.cancelRecording()}
 					variant="ghost"
 					size="icon"
-					style="view-transition-name: {viewTransition.global.cancel};"
 				>
-					🚫
+					<XIcon class="size-4" />
 				</Button>
 				<Button
 					tooltip="Stop recording"
 					onclick={() => commandCallbacks.toggleManualRecording()}
 					variant="ghost"
 					size="icon"
-					style="view-transition-name: {viewTransition.global.microphone}"
 				>
-					{RECORDER_STATE_TO_ICON[manualRecorder.state]}
+					<ManualButtonIcon class="size-4" />
 				</Button>
 			{:else}
-				<ManualDeviceSelector />
-				<TranscriptionSelector variant="standalone" />
+				<ManualDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="standalone"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
 				<TransformationSelector />
 				<div class="flex">
 					<Button
@@ -64,18 +72,27 @@
 						onclick={() => commandCallbacks.toggleManualRecording()}
 						variant="ghost"
 						size="icon"
-						style="view-transition-name: {viewTransition.global.microphone}"
 						class="rounded-r-none border-r-0"
 					>
-						{RECORDER_STATE_TO_ICON[manualRecorder.state]}
+						<span
+							class="inline-flex shrink-0"
+							style:view-transition-name={viewTransition.recordingMode('manual')}
+						>
+							<ManualButtonIcon class="size-4" />
+						</span>
 					</Button>
 					<CaptureSurfaceSelector class="rounded-l-none" />
 				</div>
 			{/if}
 		{:else if captureSurface.current === 'vad'}
 			{#if vadRecorder.state === 'IDLE'}
-				<VadDeviceSelector />
-				<TranscriptionSelector variant="standalone" />
+				<VadDeviceSelector
+					iconViewTransitionName={viewTransition.pipeline.device}
+				/>
+				<TranscriptionSelector
+					variant="standalone"
+					iconViewTransitionName={viewTransition.pipeline.transcription}
+				/>
 				<TransformationSelector />
 				<div class="flex">
 					<Button
@@ -83,10 +100,14 @@
 						onclick={() => commandCallbacks.toggleVadRecording()}
 						variant="ghost"
 						size="icon"
-						style="view-transition-name: {viewTransition.global.microphone}"
 						class="rounded-r-none border-r-0"
 					>
-						{VAD_STATE_TO_ICON[vadRecorder.state]}
+						<span
+							class="inline-flex shrink-0"
+							style:view-transition-name={viewTransition.recordingMode('vad')}
+						>
+							<VadButtonIcon class="size-4" />
+						</span>
 					</Button>
 					<CaptureSurfaceSelector class="rounded-l-none" />
 				</div>
@@ -96,9 +117,8 @@
 					onclick={() => commandCallbacks.toggleVadRecording()}
 					variant="ghost"
 					size="icon"
-					style="view-transition-name: {viewTransition.global.microphone}"
 				>
-					{VAD_STATE_TO_ICON[vadRecorder.state]}
+					<VadButtonIcon class="size-4" />
 				</Button>
 			{/if}
 		{:else if captureSurface.current === 'import'}

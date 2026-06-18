@@ -96,5 +96,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) | The Matter vault's SQLite mirror is a read-only projection, never a verdict source | Accepted |
 | [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Accepted |
 | [0028](0028-both-shortcut-tiers-share-one-physical-keybinding-model.md) | Both shortcut tiers share one physical KeyBinding model | Accepted |
+| [0029](0029-dictation-feedback-is-a-projection-of-one-lifecycle-state.md) | Dictation feedback is a projection of one lifecycle state, not an event log | Proposed |
 
 When you add an ADR, add its row here.

@@ -122,7 +122,10 @@
 				</Button>
 			{/if}
 		{:else if captureSurface.current === 'import'}
-			<TranscriptionSelector variant="standalone" />
+			<TranscriptionSelector
+				variant="standalone"
+				iconViewTransitionName={viewTransition.pipeline.transcription}
+			/>
 			<TransformationSelector />
 			<div class="flex">
 				<ImportFileButton class="rounded-r-none border-r-0" />

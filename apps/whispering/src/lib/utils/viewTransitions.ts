@@ -57,6 +57,11 @@ export const viewTransition = {
 	 * topbar record button at rest, so sharing the name lets it slide across the
 	 * home-to-config navigation.
 	 *
+	 * This morph is a recording-trigger affordance: the glyph *is* the action, so
+	 * it stays the same object across pages. File import is deliberately not a
+	 * trigger (it has no live capture, device, or shortcut), so its file-up glyph
+	 * is incidental and does not participate here.
+	 *
 	 * Bind it to the glyph only at rest. Once a recording is live the topbar
 	 * swaps to a stop control, which is a different object and must not inherit
 	 * this name. Both home tabs render at once, but `manual` and `vad` are

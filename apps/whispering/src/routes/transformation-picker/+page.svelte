@@ -4,7 +4,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Kbd } from '@epicenter/ui/kbd';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
-	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import { emit, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { type Candidate, createCandidate } from '$lib/operations/candidates';
 	import { persistCompletedRun } from '$lib/operations/transform';
@@ -37,13 +37,12 @@
 	let unlistenInput: UnlistenFn | null = null;
 
 	onMount(async () => {
-		unlistenInput = await listen<{ input: string }>(
-			pickerWindow.PICKER_INPUT_EVENT,
-			(event) => receiveInput(event.payload.input),
+		unlistenInput = await pickerWindow.pickerInput.listen((event) =>
+			receiveInput(event.payload.input),
 		);
 		// Tell the main window we're mounted so it replays the pending selection;
 		// covers the first open, before the main window knows this webview exists.
-		await emit(pickerWindow.PICKER_READY_EVENT);
+		await pickerWindow.pickerReady.emit();
 	});
 
 	onDestroy(() => unlistenInput?.());

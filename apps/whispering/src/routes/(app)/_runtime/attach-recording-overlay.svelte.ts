@@ -1,4 +1,4 @@
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { recordingOverlay } from '#platform/recording-overlay';
 import { tauri } from '#platform/tauri';
@@ -8,10 +8,9 @@ import {
 	stopVadRecording,
 } from '$lib/operations/recording';
 import {
-	RECORDING_OVERLAY_ACTION,
-	RECORDING_OVERLAY_FOCUS_MAIN,
-	type RecordingOverlayAction,
 	type RecordingOverlayStatus,
+	recordingOverlayAction,
+	recordingOverlayFocusMain,
 } from '$lib/recording-overlay/events';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
@@ -37,19 +36,16 @@ export function attachRecordingOverlay() {
 
 	if (tauri) {
 		void (async () => {
-			unlistenAction = await listen<RecordingOverlayAction>(
-				RECORDING_OVERLAY_ACTION,
-				(event) => {
-					if (!overlayStatus) return;
-					if (overlayStatus.trigger === 'manual') {
-						if (event.payload === 'cancel') void cancelRecording();
-						else void stopManualRecording();
-						return;
-					}
-					if (event.payload === 'stop') void stopVadRecording();
-				},
-			);
-			unlistenFocus = await listen(RECORDING_OVERLAY_FOCUS_MAIN, () => {
+			unlistenAction = await recordingOverlayAction.listen((event) => {
+				if (!overlayStatus) return;
+				if (overlayStatus.trigger === 'manual') {
+					if (event.payload === 'cancel') void cancelRecording();
+					else void stopManualRecording();
+					return;
+				}
+				if (event.payload === 'stop') void stopVadRecording();
+			});
+			unlistenFocus = await recordingOverlayFocusMain.listen(() => {
 				const mainWindow = getCurrentWindow();
 				void (async () => {
 					await mainWindow.show();

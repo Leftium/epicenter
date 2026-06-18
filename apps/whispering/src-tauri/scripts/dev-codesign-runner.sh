@@ -56,7 +56,9 @@ done
 # `--bin whispering` mirrors the default `cargo run` Tauri would invoke: build the
 # app binary and its deps, not every target (a bare `cargo build` also produces
 # the lib's multi-hundred-MB staticlib, which the app never needs).
-cargo build --manifest-path "$SRC_TAURI/Cargo.toml" --bin whispering "${cargo_flags[@]}"
+# The `${arr[@]+"${arr[@]}"}` form expands to nothing when the array is empty,
+# which `set -u` otherwise rejects on the bash 3.2 that ships with macOS.
+cargo build --manifest-path "$SRC_TAURI/Cargo.toml" --bin whispering ${cargo_flags[@]+"${cargo_flags[@]}"}
 
 # Mirror cargo's output layout to find what we just built: honor CARGO_TARGET_DIR
 # and any --target/--release the flags carried.
@@ -96,5 +98,7 @@ codesign --force \
 	"$binary"
 
 # Become the app. Tauri monitors and kills THIS pid to restart, so replacing the
-# process (rather than spawning a child) means no orphaned app on rebuild.
-exec "$binary" "${app_args[@]}"
+# process (rather than spawning a child) means no orphaned app on rebuild. The
+# array guard matters here: Tauri usually passes no app args, so `app_args` is
+# empty, and a bare "${app_args[@]}" would trip `set -u` and abort before exec.
+exec "$binary" ${app_args[@]+"${app_args[@]}"}

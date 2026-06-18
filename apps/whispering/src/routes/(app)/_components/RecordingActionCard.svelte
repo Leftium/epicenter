@@ -26,7 +26,13 @@
 		description: string;
 		footer?: Snippet;
 		icon: Component<{ class?: string }>;
-		/** When set, names the action glyph for a cross-page view transition. */
+		/**
+		 * When set, names the action glyph for a cross-page view transition while
+		 * the card is at rest. Suppressed automatically while `active`, because the
+		 * live glyph (a stop square, a waveform) is a different object and must not
+		 * morph from the resting mode glyph. Callers pass the name unconditionally;
+		 * the card owns the at-rest gate.
+		 */
 		iconViewTransitionName?: string;
 		label: string;
 		onclick: () => void;
@@ -70,7 +76,12 @@
 			{#if pending}
 				<Spinner class="size-7" />
 			{:else}
-				<span class="inline-flex" style={viewTransitionStyle(iconViewTransitionName)}>
+				<span
+					class="inline-flex"
+					style={active
+						? undefined
+						: viewTransitionStyle(iconViewTransitionName)}
+				>
 					<Icon
 						class={cn('size-7', active && 'size-6 fill-current stroke-[1.75]')}
 					/>

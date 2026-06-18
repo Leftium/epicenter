@@ -22,10 +22,6 @@
 		iconViewTransitionName?: string;
 	} = $props();
 
-	const iconTransitionStyle = $derived(
-		viewTransitionStyle(iconViewTransitionName),
-	);
-
 	const combobox = useCombobox();
 
 	const getDevicesQuery = createQuery(() => ({
@@ -63,7 +59,10 @@
 				variant="ghost"
 				size="icon"
 			>
-				<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+				<span
+					class="inline-flex shrink-0"
+					style={viewTransitionStyle(iconViewTransitionName)}
+				>
 					{#if manualRecorderConfig.deviceId}
 						<MicIcon class="size-4 text-green-500" />
 					{:else}

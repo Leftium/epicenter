@@ -41,9 +41,7 @@
 	{description}
 	footer={isListening ? undefined : pipeline}
 	icon={button.Icon}
-	iconViewTransitionName={isListening
-		? undefined
-		: viewTransition.recordingMode('vad')}
+	iconViewTransitionName={viewTransition.recordingMode('vad')}
 	{label}
 	pending={toggleMutation.isPending}
 	{shortcutLabel}

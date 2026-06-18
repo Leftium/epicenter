@@ -33,10 +33,6 @@
 		iconViewTransitionName?: string;
 	} = $props();
 
-	const iconTransitionStyle = $derived(
-		viewTransitionStyle(iconViewTransitionName),
-	);
-
 	const selectedTransformation = $derived(
 		sortedTransformations.find(
 			(t) => t.id === settings.get('transformation.selectedId'),
@@ -69,7 +65,10 @@
 				variant="ghost"
 				size="icon"
 			>
-				<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+				<span
+					class="inline-flex shrink-0"
+					style={viewTransitionStyle(iconViewTransitionName)}
+				>
 					{#if selectedTransformation}
 						<SparklesIcon class="size-4 text-green-500" />
 					{:else}

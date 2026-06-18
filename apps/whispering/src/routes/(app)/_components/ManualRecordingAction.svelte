@@ -66,9 +66,7 @@
 	{description}
 	footer={isRecording ? undefined : pipeline}
 	icon={button.Icon}
-	iconViewTransitionName={isRecording
-		? undefined
-		: viewTransition.recordingMode('manual')}
+	iconViewTransitionName={viewTransition.recordingMode('manual')}
 	{label}
 	pending={isPending}
 	{shortcutLabel}

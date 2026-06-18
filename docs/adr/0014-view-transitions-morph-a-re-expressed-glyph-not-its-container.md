@@ -48,7 +48,11 @@ Concretely, the narrow `viewTransition` additions are:
   active name (aborting the transition) and compete with the action card for the
   one allowed source. Once a recording is live the card and topbar swap to a stop
   or waveform glyph, a different object owned by a live state machine, which must
-  not inherit the name (`isRecording ? undefined : recordingMode(...)`).
+  not inherit the name. The action card owns this at-rest gate: it already knows
+  whether it is `active`, so it suppresses the name whenever active and callers
+  pass the mode name unconditionally. A live glyph can never morph by accident,
+  and the rule lives with the state that defines "live" rather than being
+  re-spelled at every call site.
 - `pipeline.device` and `pipeline.transcription` on the device-selector mic glyph
   and the transcription-service brand glyph, which appear in both the home
   pipeline and the topbar. These are pure pipeline chrome: constant names (no id)

@@ -21,10 +21,6 @@
 		iconViewTransitionName?: string;
 	} = $props();
 
-	const iconTransitionStyle = $derived(
-		viewTransitionStyle(iconViewTransitionName),
-	);
-
 	const combobox = useCombobox();
 
 	// VAD always uses navigator device ID
@@ -58,7 +54,10 @@
 				size="icon"
 				class="relative"
 			>
-				<span class="inline-flex shrink-0" style={iconTransitionStyle}>
+				<span
+					class="inline-flex shrink-0"
+					style={viewTransitionStyle(iconViewTransitionName)}
+				>
 					{#if selectedDeviceId}
 						<MicIcon class="size-4 text-green-500" />
 					{:else}

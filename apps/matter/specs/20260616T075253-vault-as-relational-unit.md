@@ -222,16 +222,18 @@ Files (W5):
 ```
 core/sqlite.ts          projectToSqlite gains a folderName param; DELETE the MIRROR_TABLE constant
                         (quoteIdent stays; it now quotes folder names too).
-mirror.svelte.ts        NEW createMirror(dir): the single-writer primitive — reset-headed write-chain
-                        with syncTable / dropTable / query / version. Owns the whole db lifecycle.
+mirror.svelte.ts        NEW createMirror(root): the single-writer primitive — reset-headed write-chain
+                        with syncTable / dropTable / query / version. Owns the whole db lifecycle; passes
+                        only the vault root (Rust owns the `.matter/matter.sqlite` layout).
 table.svelte.ts         DELETE reconcileMirror, matchingFileNames, mirrorVersion + the sqlite imports.
                         Gains an onChange callback fired per batch; no longer touches SQLite.
 vault.svelte.ts         Composes createMirror, wires each Table's onChange to mirror.syncTable and
                         mirror.dropTable on leave, exposes `mirror`. Back to compose + assess.
 where-filter.svelte.ts  createWhereFilter(mirror, () => tableName); reads mirror.version, calls mirror.query.
 TablePane               derives its assessment from the vault; passes vault.mirror to the filter.
-src-tauri/src/mirror.rs  UNCHANGED SQL; `path` is now `<root>/.matter`. Adds reset_mirror (mkdir + delete
-                        the db on open) and drop_mirror_table (DROP TABLE IF EXISTS); docstring retargeted.
+src-tauri/src/mirror.rs  UNCHANGED SQL; commands take the vault ROOT and own the `.matter/matter.sqlite`
+                        layout (mirror_dir/mirror_db), like entry.rs joins folder + filename. Adds
+                        reset_mirror (mkdir `.matter` + delete the db on open) and drop_mirror_table.
 ```
 
 Two refusals this lock pins:

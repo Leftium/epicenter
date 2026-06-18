@@ -4,7 +4,6 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import TableGrid from '$lib/components/TableGrid.svelte';
-	import type { TableAssessment } from '$lib/core/integrity';
 	import type { TableHandle } from '$lib/table.svelte';
 	import type { VaultHandle } from '$lib/vault.svelte';
 	import { createWhereFilter } from '$lib/where-filter.svelte';
@@ -12,17 +11,16 @@
 	// One table of the active vault. The Vault constructs and disposes the table (it owns the
 	// watcher lifetime) and owns the shared `.matter` mirror the filter queries; this pane just
 	// renders it. VaultShell keys this component on the active table, so switching tables remounts
-	// the pane with a fresh filter and its own effect. `assessment` is this table's slice of the
-	// vault's live integrity, carrying the cross-table reference verdicts the grid colors its chips by.
-	let {
-		vault,
-		table,
-		assessment,
-	}: {
-		vault: VaultHandle;
-		table: TableHandle;
-		assessment?: TableAssessment;
-	} = $props();
+	// the pane with a fresh filter and its own effect.
+	let { vault, table }: { vault: VaultHandle; table: TableHandle } = $props();
+
+	// This table's slice of the vault-wide integrity, selected from the one live model the
+	// IntegrityPanel also reads, so the grid's reference chips and the panel's findings agree by
+	// construction. Derived here, next to the grid that consumes it, rather than threaded from the
+	// shell: the pane already holds the vault, so the slice is a pure selector with no prop hop.
+	const assessment = $derived(
+		vault.integrity.tables.find((t) => t.name === table.folderName),
+	);
 
 	// One WHERE filter per pane: it queries the vault's mirror for this table and owns its own effect
 	// (re-querying on a clause or mirror change, cancelling stale runs). The remount-per-table keying

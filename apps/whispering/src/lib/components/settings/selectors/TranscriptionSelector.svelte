@@ -26,7 +26,7 @@
 
 	let {
 		class: className,
-		triggerVariant,
+		variant,
 	}: {
 		class?: string;
 		/**
@@ -38,7 +38,7 @@
 		 * - `standalone`: a quick provider switcher. Shows the selected service's
 		 *   brand icon and warns only when a selected service is misconfigured.
 		 */
-		triggerVariant: 'standalone' | 'pipeline';
+		variant: 'standalone' | 'pipeline';
 	} = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
@@ -46,7 +46,7 @@
 		!!selectedService && isTranscriptionServiceConfigured(selectedService),
 	);
 	const showConfigurationWarning = $derived(
-		triggerVariant === 'pipeline'
+		variant === 'pipeline'
 			? !isSelectedServiceReady
 			: !!selectedService && !isSelectedServiceReady,
 	);
@@ -63,7 +63,7 @@
 	// echoing the visible value. The standalone switcher keeps the value, since
 	// there it is the brand icon, not text, that is on screen.
 	const triggerTooltip = $derived.by(() => {
-		if (triggerVariant === 'pipeline') {
+		if (variant === 'pipeline') {
 			return selectedService
 				? 'Change transcription model'
 				: 'Choose transcription model';
@@ -152,16 +152,16 @@
 				{...props}
 				class={cn(
 					'relative',
-					triggerVariant === 'pipeline' && 'min-w-0 flex-1 justify-start',
+					variant === 'pipeline' && 'min-w-0 flex-1 justify-start',
 					className,
 				)}
 				tooltip={triggerTooltip}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
-				size={triggerVariant === 'pipeline' ? 'default' : 'icon'}
+				size={variant === 'pipeline' ? 'default' : 'icon'}
 			>
-				{#if triggerVariant === 'pipeline'}
+				{#if variant === 'pipeline'}
 					{#if selectedService}
 						{@render renderServiceIcon(selectedService)}
 					{:else}
@@ -192,7 +192,7 @@
 				{:else}
 					<MicIcon class="size-4 text-muted-foreground" />
 				{/if}
-				{#if showConfigurationWarning && triggerVariant === 'standalone'}
+				{#if showConfigurationWarning && variant === 'standalone'}
 					<span
 						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
 					></span>

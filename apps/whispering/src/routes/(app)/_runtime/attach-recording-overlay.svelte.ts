@@ -22,12 +22,12 @@ export function attachRecordingOverlay() {
 
 	const overlayStatus = $derived.by((): RecordingOverlayStatus | null => {
 		if (manualRecorder.state === 'RECORDING')
-			return { mode: 'manual', state: 'RECORDING' };
+			return { trigger: 'manual', state: 'RECORDING' };
 		if (
 			vadRecorder.state === 'LISTENING' ||
 			vadRecorder.state === 'SPEECH_DETECTED'
 		)
-			return { mode: 'vad', state: vadRecorder.state };
+			return { trigger: 'vad', state: vadRecorder.state };
 		return null;
 	});
 
@@ -41,7 +41,7 @@ export function attachRecordingOverlay() {
 				RECORDING_OVERLAY_ACTION,
 				(event) => {
 					if (!overlayStatus) return;
-					if (overlayStatus.mode === 'manual') {
+					if (overlayStatus.trigger === 'manual') {
 						if (event.payload === 'cancel') void cancelRecording();
 						else void stopManualRecording();
 						return;

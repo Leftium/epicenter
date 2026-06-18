@@ -6,7 +6,7 @@
  * typed folder. The live in-app grid stays reactive JS over the projection; this is
  * the external read surface, not the app's query engine.
  *
- * This module is the PURE half: given the model and the classified rows, it produces
+ * This module is the PURE half: given the contract and the classified rows, it produces
  * the schema script (`DROP` + `CREATE`) and the row tuples to insert. The impure half
  * (writing the file) is a thin Tauri command that runs the script and parameter-binds
  * the rows; keeping serialization here makes it unit-testable with no filesystem.
@@ -29,7 +29,7 @@
 
 import { type Field, storageOf } from '@epicenter/field';
 import type { RowConformance } from './conformance';
-import type { MatterModel } from './model';
+import type { Contract } from './contract';
 
 /** A SQLite-bindable scalar. Missing cells bind NULL, so values are nullable. */
 export type SqlValue = string | number | null;
@@ -109,9 +109,9 @@ function serializeInvalid(value: unknown): SqlValue {
 
 /**
  * Build the `CREATE TABLE` for a folder: `file` primary key (the row's basename
- * identity), one NULLABLE column per modeled field (typed by its storage class so the
+ * identity), one NULLABLE column per typed field (typed by its storage class so the
  * filter coerces by affinity; a missing cell binds NULL), and an `_extra` JSON column
- * (always present) for the unmodeled keys, so an agent can see extras too.
+ * (always present) for the untyped keys, so an agent can see extras too.
  */
 function buildDdl(fields: readonly Field[]): string {
 	const defs = [
@@ -125,16 +125,16 @@ function buildDdl(fields: readonly Field[]): string {
 /**
  * Project a classified folder into the SQLite artifacts. EVERY readable row is included;
  * each cell is serialized by its conformance state (OK by storage class, INVALID by its
- * raw value, MISSING_REQUIRED/MISSING_OPTIONAL as NULL) and its unmodeled keys are
+ * raw value, MISSING_REQUIRED/MISSING_OPTIONAL as NULL) and its untyped keys are
  * folded into the `_extra` JSON object. The cells are read off
- * `RowConformance.cells`, which classifyRow built in `model.fields` order, so they
+ * `RowConformance.cells`, which classifyRow built in `contract.fields` order, so they
  * line up positionally with the columns below.
  */
 export function projectToSqlite(
-	model: MatterModel,
+	contract: Contract,
 	conformance: readonly RowConformance[],
 ): SqliteProjection {
-	const columns = ['file', ...model.fields.map((c) => c.name), '_extra'];
+	const columns = ['file', ...contract.fields.map((c) => c.name), '_extra'];
 	const rows = conformance.map((c) => {
 		const cells = c.cells.map((cell): SqlValue => {
 			switch (cell.state) {
@@ -163,7 +163,7 @@ export function projectToSqlite(
 	// DROP + CREATE as one param-less script; the command runs it via execute_batch,
 	// rusqlite's idiom for a multi-statement setup script.
 	const drop = `DROP TABLE IF EXISTS ${quoteIdent(MIRROR_TABLE)}`;
-	const schema = `${drop};\n${buildDdl(model.fields)}`;
+	const schema = `${drop};\n${buildDdl(contract.fields)}`;
 
 	return { schema, insert, rows };
 }

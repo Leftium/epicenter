@@ -19,7 +19,6 @@ import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/
 import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/groq';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
-import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
 	type CloudProviderId,
 	isLocalProviderId,
@@ -151,7 +150,7 @@ async function loadForCloudUpload(
  * point for transcription:
  *
  * - The cpal stop path saves the WAV via Rust and returns the id.
- * - The navigator / VAD / file-upload paths save the blob via the
+ * - The navigator / VAD / file import paths save the blob via the
  *   recordings blob store and pass the id here.
  *
  * Local transcription always goes through `transcribe_recording(id)`.
@@ -237,20 +236,22 @@ async function checkWhisperTruncation(
 	const modelConfig = WHISPER_MODELS.find((m) => m.file.filename === modelName);
 	if (!modelConfig) return Ok(undefined);
 
-	// Rust resolves the entry through any link and stats it; an empty filename
-	// list means "the entry is itself the file" (Whisper). A missing/unstattable
-	// file passes through (Rust reports load errors itself).
-	const { data: sizes } = await commands.resolveModelFileSizes(
+	// Rust resolves the entry through any link, stats it, and applies the 90%
+	// completeness rule against the catalog size we pass; an empty filename list
+	// means "the entry is itself the file" (Whisper). A missing/unstattable file
+	// passes through (Rust reports load errors itself).
+	const { data: statuses } = await commands.resolveModelFiles(
 		'whispercpp',
 		modelName,
 		[],
+		[modelConfig.sizeBytes],
 	);
-	const actualSize = sizes?.[0];
-	if (actualSize == null) return Ok(undefined);
+	const status = statuses?.[0];
+	if (!status || status.size == null) return Ok(undefined);
 
-	if (!isModelFileSizeValid(actualSize, modelConfig.sizeBytes)) {
+	if (!status.complete) {
 		return TranscriptionOperationError.CorruptedModelFile({
-			actualSizeMb: Math.round(actualSize / 1000000),
+			actualSizeMb: Math.round(status.size / 1000000),
 			expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 		});
 	}
@@ -270,8 +271,8 @@ async function transcribeLocally(
 	}
 	const provider = PROVIDERS[selectedService];
 
-	// Rust owns model resolution and validation: it joins the configured name
-	// under its models directory and reports missing or invalid models with
+	// Rust owns model resolution and validation: it joins this model name under
+	// its models directory and reports missing or invalid models with
 	// user-facing messages. The FE keeps two checks Rust cannot make as well:
 	// "nothing selected yet" (instant, no IPC) and the catalog-size truncation
 	// check (the expected sizes live in the JS catalog).
@@ -288,10 +289,17 @@ async function transcribeLocally(
 		if (truncated.error) return truncated;
 	}
 
-	// Rust reads engine, modelName, language, prompt, and unloadPolicy from
-	// the ambient config pushed via `setTranscriptionConfig` in the layout
-	// effect. Anything that affects inference output is already there.
-	return commands.transcribeRecording(recordingId);
+	// Read-at-use: the per-call spec is built right here, where it is consumed,
+	// so there is no ambient config to go stale. `auto` language and an empty
+	// prompt map to null (the wire's "unset").
+	const language = settings.get('transcription.language');
+	const prompt = settings.get('transcription.prompt');
+	return commands.transcribeRecording(recordingId, {
+		engine: selectedService,
+		modelName,
+		language: language === 'auto' ? null : language,
+		initialPrompt: prompt || null,
+	});
 }
 
 async function transcribeViaUpload(

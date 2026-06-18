@@ -95,14 +95,12 @@ export const commands = {
 	/**
 	 *  Canonical transcribe-by-id path. Resolves the audio file under
 	 *  `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
-	 *  navigator-saved webm/opus/mp4, etc.), decodes, runs inference using
-	 *  the ambient configuration pushed via `set_transcription_config`.
-	 *
-	 *  Returns `NoConfig` if the FE has not pushed a config yet.
+	 *  navigator-saved webm/opus/mp4, etc.), decodes, then runs inference using
+	 *  the per-call transcription spec supplied by the frontend.
 	 */
-	transcribeRecording: (recordingId: string) =>
+	transcribeRecording: (recordingId: string, spec: TranscriptionSpec) =>
 		typedError<string, TranscriptionError>(
-			__TAURI_INVOKE('transcribe_recording', { recordingId }),
+			__TAURI_INVOKE('transcribe_recording', { recordingId, spec }),
 		),
 	/**
 	 *  Open macOS Accessibility settings.
@@ -114,26 +112,20 @@ export const commands = {
 	openAccessibilitySettings: () =>
 		typedError<null, string>(__TAURI_INVOKE('open_accessibility_settings')),
 	/**
-	 *  Push the ambient transcription configuration. Replaces the per-call
-	 *  `config` argument that `transcribe_recording` used to take. The FE
-	 *  invokes this once at startup and on every subsequent change to
-	 *  settings, model selection, language, prompt, or unload policy.
-	 *
-	 *  Drift in `(engine, model_name)` triggers a background preload so the
-	 *  next `transcribe_recording` call does not pay cold-start latency.
-	 *  Other field changes take effect on the next transcription with no
-	 *  reload.
+	 *  Reconcile the current local-model unload policy into the native idle
+	 *  watcher. The frontend owns the value and pushes it on every change; Rust
+	 *  owns the clock. Unlike the old ambient config, it carries no model
+	 *  identity, so it applies whether or not a model is selected.
 	 */
-	setTranscriptionConfig: (config: TranscriptionConfig) =>
-		__TAURI_INVOKE<void>('set_transcription_config', { config }),
+	setUnloadPolicy: (policy: UnloadPolicy) =>
+		__TAURI_INVOKE<void>('set_unload_policy', { policy }),
 	/**
 	 *  Snapshot the current model state. Used by late-mounted observers (a
 	 *  second window, the settings panel re-opening, etc.) to catch up to
 	 *  the current lifecycle state without waiting for the next event on
 	 *  `transcription://model-state`.
 	 *
-	 *  Reads a lock-free status field plus the ambient config; never touches
-	 *  the cache mutex, so it returns immediately even mid-inference.
+	 *  Reads the status plus resident model identity, if any.
 	 */
 	getTranscriptionState: () =>
 		__TAURI_INVOKE<LocalModelState>('get_transcription_state'),
@@ -169,16 +161,30 @@ export const commands = {
 			__TAURI_INVOKE('delete_model_entry', { engine, name }),
 		),
 	/**
-	 *  Resolve an entry **through any symlink** and return the size of each file, or
-	 *  `None` for a missing/unreadable one. The catalog-size comparison stays in JS
-	 *  (the 90% threshold). An empty `filenames` means the entry is itself the file
-	 *  (Whisper) and returns one element; otherwise one element per filename
-	 *  (directory engines). A dead link stats to `None`, so a linked-but-broken
-	 *  model reads as not installed.
+	 *  Resolve an entry **through any symlink** and report each expected file's size
+	 *  and completeness verdict. The webview passes the expected catalog sizes (it
+	 *  owns the catalog); the 90% completeness rule lives here next to the stat, so
+	 *  "what counts as a complete file on disk" has one owner shared with the
+	 *  download integrity check (`is_size_complete`). An empty `filenames` means the
+	 *  entry is itself the file (Whisper) and returns one element checked against
+	 *  `expected_sizes[0]`; otherwise one element per filename (directory engines),
+	 *  each checked against the aligned `expected_sizes`. A dead link reports
+	 *  `size: None, complete: false`, so a linked-but-broken model reads as not
+	 *  installed.
 	 */
-	resolveModelFileSizes: (engine: Engine, name: string, filenames: string[]) =>
-		typedError<(number | null)[], ModelFolderError>(
-			__TAURI_INVOKE('resolve_model_file_sizes', { engine, name, filenames }),
+	resolveModelFiles: (
+		engine: Engine,
+		name: string,
+		filenames: string[],
+		expectedSizes: (number | null)[],
+	) =>
+		typedError<ModelFileStatus[], ModelFolderError>(
+			__TAURI_INVOKE('resolve_model_files', {
+				engine,
+				name,
+				filenames,
+				expectedSizes,
+			}),
 		),
 	/**
 	 *  Download a model into its engine folder, cancelable via
@@ -476,7 +482,7 @@ export type LocalModelState = {
 	engine: Engine | null;
 	/**
 	 *  Entry name inside the engine's models directory, mirroring
-	 *  `TranscriptionConfig::model_name`.
+	 *  `TranscriptionSpec::model_name`.
 	 */
 	modelName: string | null;
 	status: ModelStatus;
@@ -514,6 +520,26 @@ export type ModelFileDownload = {
 	filename: string;
 	/**  Catalog size in bytes; the integrity check and progress total use it. */
 	sizeBytes: number | null;
+};
+
+/**
+ *  One file's presence and completeness in a model entry, resolved through any
+ *  symlink. The webview supplies expected catalog sizes and reads back both the
+ *  stat'd `size` (for messaging) and the `complete` verdict (for installed /
+ *  truncated decisions). The completeness rule itself lives in Rust; see
+ *  `is_size_complete`.
+ */
+export type ModelFileStatus = {
+	/**
+	 *  File size in bytes, following symlinks. `None` when missing or unreadable
+	 *  (a dead link whose target is gone, or a file never created).
+	 */
+	size: number | null;
+	/**
+	 *  Whether the file is present and at least the completeness floor (90%) of
+	 *  its expected catalog size. A missing file is never complete.
+	 */
+	complete: boolean;
 };
 
 export type ModelFolderError =
@@ -571,12 +597,11 @@ export type ModelStateEvent =
 	| { kind: 'inference_started'; state: LocalModelState }
 	| { kind: 'inference_completed'; state: LocalModelState; elapsedMs: number }
 	| { kind: 'inference_failed'; state: LocalModelState; error: string }
-	| { kind: 'unloaded'; state: LocalModelState; reason: UnloadReason }
-	| { kind: 'selection_changed'; state: LocalModelState };
+	| { kind: 'unloaded'; state: LocalModelState; reason: UnloadReason };
 
 /**
  *  Lifecycle state of the resident model. Owned by an `Arc<RwLock<...>>`
- *  inside `ModelManager` so `snapshot()` can read it without touching the
+ *  inside `ModelCache` so `snapshot()` can read it without touching the
  *  cache mutex (which is held across long-running inference).
  */
 export type ModelStatus =
@@ -664,43 +689,35 @@ export type ShortcutTriggerEvent = {
 	state: TriggerState;
 };
 
-/**
- *  Ambient configuration the frontend pushes once per change. The Rust side
- *  reads this on every `transcribe_recording` call instead of receiving
- *  a per-call payload. The model loads lazily on the next transcription, so a
- *  changed `(engine, model_name)` is picked up then; drift in other fields
- *  takes effect on the next transcription with no reload.
- */
-export type TranscriptionConfig = {
-	engine: Engine;
-	/**
-	 *  Entry name inside the engine's models directory (a single file or
-	 *  directory name, never a path). `ModelManager` resolves it under
-	 *  `{app_data}/models/{engine}/` at load time, so a path never exists
-	 *  as data anywhere in the system.
-	 */
-	modelName: string;
-	language?: string | null;
-	initialPrompt?: string | null;
-	unloadPolicy: UnloadPolicy;
-};
-
 export type TranscriptionError =
 	| { name: 'AudioReadError'; message: string }
 	| { name: 'GpuError'; message: string }
 	| { name: 'ModelLoadError'; message: string }
 	| { name: 'TranscriptionError'; message: string }
 	/**
-	 *  `transcribe_recording` was called before `set_transcription_config`
-	 *  pushed an ambient config. The FE should disable the transcribe button
-	 *  until `localModel.state.engine !== null` to avoid this.
-	 */
-	| { name: 'NoConfig'; message: string }
-	/**
-	 *  The ambient config holds a value that cannot be dispatched (e.g. a
+	 *  The per-call spec holds a value that cannot be dispatched (e.g. a
 	 *  Moonshine model path that does not match `moonshine-{variant}-{lang}`).
 	 */
 	| { name: 'ConfigError'; message: string };
+
+/**
+ *  Per-call transcription inputs owned by the frontend. The Rust side receives
+ *  this with `transcribe_recording`, resolves the model at point of use, and
+ *  keeps only the resident model cache. Nothing here is retained between calls,
+ *  so there is no ambient config to go stale.
+ */
+export type TranscriptionSpec = {
+	engine: Engine;
+	/**
+	 *  Entry name inside the engine's models directory (a single file or
+	 *  directory name, never a path). `ModelCache` resolves it under
+	 *  `{app_data}/models/{engine}/` at load time, so a path never exists
+	 *  as data anywhere in the system.
+	 */
+	modelName: string;
+	language?: string | null;
+	initialPrompt?: string | null;
+};
 
 /**
  *  Whether a binding just became fully held (`Pressed`) or stopped being fully
@@ -714,8 +731,7 @@ export type TriggerState = 'Pressed' | 'Released';
 /**
  *  How long after the last transcription the resident model should be
  *  dropped. Mirrors the frontend `transcription.localModelUnloadPolicy`
- *  device setting; serde tags below match its wire format exactly so the
- *  FE value pushes straight through.
+ *  device setting; serde tags below match its wire format exactly.
  *
  *  `Immediately` is enforced synchronously at the end of each transcription;
  *  timed variants are enforced by the background idle watcher.
@@ -741,12 +757,7 @@ export type UnloadReason =
 	 *  Background idle watcher dropped the model after the configured timeout
 	 *  elapsed without activity.
 	 */
-	| { kind: 'idle'; idleSecs: number }
-	/**
-	 *  User selected a different model in settings; the old one was dropped
-	 *  before the new one preloads.
-	 */
-	| { kind: 'config_changed' };
+	| { kind: 'idle'; idleSecs: number };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(

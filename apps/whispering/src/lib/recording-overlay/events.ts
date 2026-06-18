@@ -43,8 +43,8 @@ export const RECORDING_OVERLAY_MIC_LEVEL = 'mic-level';
  * status, so there is no `IDLE` variant to render.
  */
 export type RecordingOverlayStatus =
-	| { mode: 'manual'; state: Extract<WhisperingRecordingState, 'RECORDING'> }
-	| { mode: 'vad'; state: Exclude<VadState, 'IDLE'> };
+	| { trigger: 'manual'; state: Extract<WhisperingRecordingState, 'RECORDING'> }
+	| { trigger: 'vad'; state: Exclude<VadState, 'IDLE'> };
 
 /** The control the user invoked from the overlay. */
 export type RecordingOverlayAction = 'stop' | 'cancel';

@@ -1,17 +1,17 @@
-# Always-On Actors Buildout: Tracker
+# Always-On Reactions Buildout: Tracker
 
 **Date**: 2026-06-16
 **Status**: In Progress
 **Owner**: Braden
 
 The living state for building toward the vision in
-`20260616T225034-always-on-actors-over-synced-docs.md`. The driver prompt (below)
+`20260616T225034-always-on-reactions-over-synced-docs.md`. The driver prompt (below)
 reads this file every run, does one slice, commits, ticks a box, and stops. This
 file is STATE; the specs and ADRs are TRUTH. When they disagree, the ADRs win.
 
 Read for invariants every slice:
-- `specs/20260616T225034-always-on-actors-over-synced-docs.md` (the vision)
-- `docs/adr/0015-...observing-actor.md`, `docs/adr/0014-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`
+- `specs/20260616T225034-always-on-reactions-over-synced-docs.md` (the vision)
+- `docs/adr/0015-...observing-reaction.md`, `docs/adr/0014-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`
 - `specs/20260530T100000-ai-workflows-consolidated-design.md` (CANONICAL; Model 1 / Model 2)
 
 ## Dependency Rules
@@ -23,23 +23,23 @@ V2 (research only) independent; advance it whenever the build track is blocked o
             my review. Writes a spec, never product code.
 
 Invariants (never violate, every slice):
-  single writer per field (client owns turn + cancel, actor owns finish)
+  single writer per field (client owns turn + cancel, reaction owns finish)
   generationId is the idempotent assistant message id
   dispatch is at most a wake nudge, never the durable queue
-  no server-to-client SSE (the actor appends to Y.Text; Yjs sync is the wire)
+  no server-to-client SSE (the reaction appends to Y.Text; Yjs sync is the wire)
   tools are published actions only (no bash / file / write-SQL / raw Y.Doc)
   V2 stays research-only until I explicitly say "build V2"
 ```
 
 ## Slices
 
-### V0: the observing actor (hosted sync, no Iroh, extend Zhongwen)
+### V0: the observing reaction (hosted sync, no Iroh, extend Zhongwen)
 
 - [x] **V0.1** Move `generationId` from the chatDoc POST body into the pending turn in the transcript doc. `commit: 86f5730ad`
-- [x] **V0.2** Child-doc observe loop in the mount runtime: actor reads the conversations table, opens + observes each transcript child doc via the bound `.docs` accessor, disposes idle ones. (Core new capability; `mount-runtime.ts` hosts only the root doc today.) `commit: 73789f93a` then refactored schema-driven (`commit: c13060107`): `mount({ actors })` derives table+guid+layout from the schema like the browser `connect()`; the app registers behavior only via a per-body factory; layout/guid can no longer disagree with the schema; only observable layouts qualify.
-- [x] **V0.3** Actor claims an unanswered user turn as the SOLE designated actor and streams a FAKE deterministic response into the assistant `Y.Text`, then writes `finish`. No HTTP, no duplicate stream. Fill the per-body factory's `onChange` seam in `apps/zhongwen/mount.ts` (`actors.conversations.messages`): build per-conversation generation state in the factory body, claim on the idempotent `generationId` (existence check, not a lock), stream via `appendAssistantMessage`. Port the claim/finish logic from `packages/server/src/ai/doc-generation.ts` minus HTTP. `commit: 7acc1043e` Departures from `doc-generation.ts`: no `room.sync` update-forwarding/`drain` (the connected body persists and syncs itself, so the actor writes the live `ydoc` directly) and no `signal`/`waitUntil` (no HTTP request to outlive). The doc is the lock: existence of the assistant map keyed to `generationId` is the claim and short-circuits the actor's own streaming writes; `findActiveChatDocGeneration` serialises a turn that arrives mid-stream until the finish write wakes `onChange`. The only in-memory state is an `AbortController` so teardown stops the loop before the body is destroyed (and is the seam V0.4's durable cancel reuses). CORRECTION (2026-06-17, adversarial review): "no duplicate stream" holds only per-replica within the actor. While `ConversationView` still fires the HTTP kickoff AND a daemon actor observes the same room, BOTH transports claim on their own replica and the CRDT merge keeps two assistant maps: a real cross-transport double-answer. The single-actor guarantee depends on the `actorNodeId` designation (R), which is decided but unbuilt; closing it is tracked as D3 and is the gate before a daemon ships real inference (V0.5).
-- [x] **V0.4** Durable cancel: client writes `cancelRequestedAt`; actor observes mid-generation and writes `finish: cancelled`. (The read-back departure from `doc-generation.ts`.) `commit: 9400820bf` The field is client-owned on the user turn (single writer per field, the actor still owns the assistant finish). The actor honors two timings: mid-stream (abort + finish cancelled, checked BEFORE the answer path so it is reached even while the existence-claim would short-circuit) and pre-stream (claimed-then-finished-cancelled without streaming). `remintGeneration` clears the stale cancel so a retry is not born cancelled. `ConversationView` Stop now writes the durable cancel beside the transitional HTTP abort. Rode C1 (below). Actor behavior test deferred to C2 per the documented V0.3 precedent (the fake stream is still inline/un-injectable); the data-layer primitives (`findUnansweredTurn`, `requestCancel`, remint-clear) are fully tested in `chat-doc.test.ts`.
-- [x] **V0.5** Real inference behind `startStream(messages) => AsyncIterable<StreamChunk>`. Audit that supported model adapters (TanStack AI cloud + a local backend slot) all expose text deltas through this contract, so the append loop is backend-agnostic. `commit: 5a2631569` C2 (`2ca8ddddc`) landed the backend-agnostic seam (actor -> `@epicenter/workspace/ai` as `attachChatActor`, parameterized by a `ChatStream`); C3 (`4ae29e402`) gave the actor the flush policy. The real-provider swap now lands: Zhongwen's mount resolves a Gemini adapter from `GEMINI_API_KEY` and drives it with the same `chat()` call the hosted route makes (D2 option (b)), under the shared `ZHONGWEN_SYSTEM_PROMPT`, falling back to the placeholder + a warn when no key (the explicit "real inference not wired on this host" boundary). DeepWiki-verified the two facts the swap rests on: `chat()` streams `AsyncIterable<StreamChunk>` and a `createGeminiChat` adapter is stateless/safe to share across concurrent generations (built once, each generation its own `AbortController`). NO new test: this is provider glue on the same untested boundary as `routes/ai.ts` (whose real `chat()` call is likewise untested); the designation/single-answerer/cancel behavior is already proven at the `ChatStream` seam by `actor-over-room-sync.test.ts`. The LIVE two-device real-inference exit additionally needs the daemon to actually run (no `epicenter.config.ts` for Zhongwen yet) and a node picker to designate a conversation to it; both are deferred (see C4).
+- [x] **V0.2** Child-doc observe loop in the mount runtime: reaction reads the conversations table, opens + observes each transcript child doc via the bound `.docs` accessor, disposes idle ones. (Core new capability; `mount-runtime.ts` hosts only the root doc today.) `commit: 73789f93a` then refactored schema-driven (`commit: c13060107`): `mount({ reactions })` derives table+guid+layout from the schema like the browser `connect()`; the app registers behavior only via a per-body factory; layout/guid can no longer disagree with the schema; only observable layouts qualify.
+- [x] **V0.3** Reaction claims an unanswered user turn as the SOLE designated reaction and streams a FAKE deterministic response into the assistant `Y.Text`, then writes `finish`. No HTTP, no duplicate stream. Fill the per-body factory's `onChange` seam in `apps/zhongwen/mount.ts` (`reactions.conversations.messages`): build per-conversation generation state in the factory body, claim on the idempotent `generationId` (existence check, not a lock), stream via `appendAssistantMessage`. Port the claim/finish logic from `packages/server/src/ai/doc-generation.ts` minus HTTP. `commit: 7acc1043e` Departures from `doc-generation.ts`: no `room.sync` update-forwarding/`drain` (the connected body persists and syncs itself, so the reaction writes the live `ydoc` directly) and no `signal`/`waitUntil` (no HTTP request to outlive). The doc is the lock: existence of the assistant map keyed to `generationId` is the claim and short-circuits the reaction's own streaming writes; `findActiveChatDocGeneration` serialises a turn that arrives mid-stream until the finish write wakes `onChange`. The only in-memory state is an `AbortController` so teardown stops the loop before the body is destroyed (and is the seam V0.4's durable cancel reuses). CORRECTION (2026-06-17, adversarial review): "no duplicate stream" holds only per-replica within the reaction. While `ConversationView` still fires the HTTP kickoff AND a daemon reaction observes the same room, BOTH transports claim on their own replica and the CRDT merge keeps two assistant maps: a real cross-transport double-answer. The single-reaction guarantee depends on the `agent` designation (R), which is decided but unbuilt; closing it is tracked as D3 and is the gate before a daemon ships real inference (V0.5).
+- [x] **V0.4** Durable cancel: client writes `cancelRequestedAt`; reaction observes mid-generation and writes `finish: cancelled`. (The read-back departure from `doc-generation.ts`.) `commit: 9400820bf` The field is client-owned on the user turn (single writer per field, the reaction still owns the assistant finish). The reaction honors two timings: mid-stream (abort + finish cancelled, checked BEFORE the answer path so it is reached even while the existence-claim would short-circuit) and pre-stream (claimed-then-finished-cancelled without streaming). `remintGeneration` clears the stale cancel so a retry is not born cancelled. `ConversationView` Stop now writes the durable cancel beside the transitional HTTP abort. Rode C1 (below). Reaction behavior test deferred to C2 per the documented V0.3 precedent (the fake stream is still inline/un-injectable); the data-layer primitives (`findUnansweredTurn`, `requestCancel`, remint-clear) are fully tested in `chat-doc.test.ts`.
+- [x] **V0.5** Real inference behind `startStream(messages) => AsyncIterable<StreamChunk>`. Audit that supported model adapters (TanStack AI cloud + a local backend slot) all expose text deltas through this contract, so the append loop is backend-agnostic. `commit: 5a2631569` C2 (`2ca8ddddc`) landed the backend-agnostic seam (reaction -> `@epicenter/workspace/ai` as `attachChatReaction`, parameterized by a `ChatStream`); C3 (`4ae29e402`) gave the reaction the flush policy. The real-provider swap now lands: Zhongwen's mount resolves a Gemini adapter from `GEMINI_API_KEY` and drives it with the same `chat()` call the hosted route makes (D2 option (b)), under the shared `ZHONGWEN_SYSTEM_PROMPT`, falling back to the placeholder + a warn when no key (the explicit "real inference not wired on this host" boundary). DeepWiki-verified the two facts the swap rests on: `chat()` streams `AsyncIterable<StreamChunk>` and a `createGeminiChat` adapter is stateless/safe to share across concurrent generations (built once, each generation its own `AbortController`). NO new test: this is provider glue on the same untested boundary as `routes/ai.ts` (whose real `chat()` call is likewise untested); the designation/single-answerer/cancel behavior is already proven at the `ChatStream` seam by `reaction-over-room-sync.test.ts`. The LIVE two-device real-inference exit additionally needs the daemon to actually run (no `epicenter.config.ts` for Zhongwen yet) and a node picker to designate a conversation to it; both are deferred (see C4).
 
 V0 done when: a phone and a desktop see the same streamed reply over hosted sync, cancel works after a disconnect, 0 duplicate streams, `bun run typecheck` + workspace tests green.
 
@@ -49,68 +49,68 @@ V0 done when: a phone and a desktop see the same streamed reply over hosted sync
 - [ ] **V1.2** Reuse the ai-workflows engine for bounded programs: predicate-AST selection + typed transform + dry-run on a forked Y.Doc + approve the effect. Do NOT re-derive the trust model. `commit:`
 - [ ] **V1.3** Durable approval record in the conversation doc that ANY device resolves. Reconcile with `20260318T155243-tool-approval-architecture.md` (in-app, single-device); do not duplicate it. `commit:`
 
-V1 done when: a phone requests a mutation, the actor proposes the effect, the phone approves, the mutation lands through a typed action, and the approval record survives a reconnect.
+V1 done when: a phone requests a mutation, the reaction proposes the effect, the phone approves, the mutation lands through a typed action, and the approval record survives a reconnect.
 
 ### V2: research only (parallel; does not block V0/V1)
 
-- [x] **V2.R** Write `specs/<new-ts>-v2-coding-actor-sandbox-and-harness.md`. No product code. Use WebSearch + DeepWiki and cite every claim. Answer: (1) sandbox choice (OpenHands swappable-workspace vs E2B/Modal/Daytona vs Docker; must mount ONLY the daemon socket + read-only mirror); (2) harness (verify pi / Codex / Claude Code / Hermes RPC + per-tool approval hook; recommend the embeddable default + adapter shape); (3) local inference behind the `startStream` contract. `commit:` written as `specs/20260617T235900-v2-coding-actor-sandbox-and-harness.md` from the completed workflow research (the synthesis agent 529'd, so the spec was authored from the three research blocks directly, every claim cited). Decisions: (1) OpenHands-style swappable sandbox = local process default + rootless Docker, managed microVMs rejected as the foundation; (2) pi embedded in-process as the default harness, adapter contract named in ACP's shape so Codex/Claude Code/Hermes are each one binding; (3) Ollama first via `@tanstack/ai-ollama`, `openaiCompatible({ baseURL })` the universal fallback. 8 open questions recorded, O1 (does the action surface have a socket transport yet) flagged as the linchpin.
+- [x] **V2.R** Write `specs/<new-ts>-v2-coding-reaction-sandbox-and-harness.md`. No product code. Use WebSearch + DeepWiki and cite every claim. Answer: (1) sandbox choice (OpenHands swappable-workspace vs E2B/Modal/Daytona vs Docker; must mount ONLY the daemon socket + read-only mirror); (2) harness (verify pi / Codex / Claude Code / Hermes RPC + per-tool approval hook; recommend the embeddable default + adapter shape); (3) local inference behind the `startStream` contract. `commit:` written as `specs/20260617T235900-v2-coding-reaction-sandbox-and-harness.md` from the completed workflow research (the synthesis agent 529'd, so the spec was authored from the three research blocks directly, every claim cited). Decisions: (1) OpenHands-style swappable sandbox = local process default + rootless Docker, managed microVMs rejected as the foundation; (2) pi embedded in-process as the default harness, adapter contract named in ACP's shape so Codex/Claude Code/Hermes are each one binding; (3) Ollama first via `@tanstack/ai-ollama`, `openaiCompatible({ baseURL })` the universal fallback. 8 open questions recorded, O1 (does the action surface have a socket transport yet) flagged as the linchpin.
 
 ## Collapse Ledger (greenfield collapses; each rides the slice that touches its surface)
 
 Not a separate work queue. Each entry is consumed by the build slice that already
-edits that surface, so no big-bang refactor. North star: the actor model deletes
+edits that surface, so no big-bang refactor. North star: the reaction model deletes
 the HTTP generation path, and the doc is the only wire and the only lock.
 
 ```txt
 C1  Collapse the duplicated answer predicate.  DONE (9400820bf, rode V0.4)
-    doc-generation.ts (server) and apps/zhongwen/mount.ts (actor) both inline
+    doc-generation.ts (server) and apps/zhongwen/mount.ts (reaction) both inline
     findLatestUserTurn -> generationId guard -> existence check -> active check.
     Extract ONE pure `findUnansweredTurn(messages, now): AnswerableTurn |
     undefined` into chat-doc.ts, beside its sibling readers (the module that owns
     the transcript shape). Both call sites collapse to `const turn =
     findUnansweredTurn(read(), now); if (!turn) return;`. NO reason-union: the
     skip reasons were the server's HTTP error taxonomy (400 vs 409) leaking into
-    the actor, which only needs turn-or-nothing. The server keeps that taxonomy
+    the reaction, which only needs turn-or-nothing. The server keeps that taxonomy
     in its own HTTP wrapper while that wrapper still lives (C4 deletes it).
 
 C2  Inject startStream; the fake becomes a fixture.  DONE (2ca8ddddc, rides V0.5)
-    createChatActor's streamFakeReply is a test fixture compiled into production.
+    createChatReaction's streamFakeReply is a test fixture compiled into production.
     The vision already names the seam: startStream(messages) =>
-    AsyncIterable<StreamChunk>. Parameterise the actor by it; V0.3's fake is the
-    injected instance, V0.5's real provider is a one-line swap. Move the actor to
-    @epicenter/workspace/ai (attachChatActor) beside attachChatTranscript. This
+    AsyncIterable<StreamChunk>. Parameterise the reaction by it; V0.3's fake is the
+    injected instance, V0.5's real provider is a one-line swap. Move the reaction to
+    @epicenter/workspace/ai (attachChatReaction) beside attachChatTranscript. This
     is also what makes the claim -> stream -> finish path testable: inject a 2-
     chunk fake, assert the doc ends [user, assistant(text, finish:completed)],
     assert a re-fire is a no-op. V0.3 shipped with no such test BY CONSTRUCTION
     (the stream was inline + un-injectable); C2 fixes the fake and the test gap
     together (they are the same defect).
 
-C3  Give the actor the flush policy.  DONE (4ae29e402, rode V0.5)
+C3  Give the reaction the flush policy.  DONE (4ae29e402, rode V0.5)
     Taken GREENFIELD instead of the original "extract one shared core both the
-    server and actor call". The only thing the actor lacked was the flush policy
+    server and reaction call". The only thing the reaction lacked was the flush policy
     (FLUSH_INTERVAL_MS / FLUSH_MAX_CHARS); a chatty real provider would otherwise
-    emit one sync update per token. So the policy went straight into the actor's
+    emit one sync update per token. So the policy went straight into the reaction's
     streamReply (buffer + interval/size flush + tail-on-finish), and
     doc-generation.ts was left UNTOUCHED. Rationale: the HTTP path is slated for
     deletion (C4), so building a shared seam across the server<->workspace
     boundary now only to half-dismantle it at C4 is the opposite of a clean break
     (server touched twice vs once). The abort disposition also genuinely differs
-    (server-abort writes `cancelled`; actor-abort writes nothing), which is the
+    (server-abort writes `cancelled`; reaction-abort writes nothing), which is the
     tell that the "sharing" was thin. The constants live in two files during the
     coexistence window; that duplication is resolved by DELETION at C4, not by a
     cross-boundary abstraction. The teardown invariant stays where it is owned
-    (the actor's Symbol.dispose), so nothing was centralised that had to be.
+    (the reaction's Symbol.dispose), so nothing was centralised that had to be.
 
 C4  Delete the HTTP generation route.                       V1+ (R landed; unblocked)
-    The vision says it: once every room has an actor (home daemon or a cloud
-    managed actor running this same loop as a sync peer), runDocGeneration + the
+    The vision says it: once every room has a reaction (home daemon or a cloud
+    managed reaction running this same loop as a sync peer), runDocGeneration + the
     room.sync forwarding + the drain retry are dead code. Biggest deletion on the
     board. WAS gated on R; R landed (the designation gate now keeps the daemon and
     the HTTP path on disjoint conversations), and V0.5 landed real daemon inference.
     Still deferred, now on ONE unbuilt piece, NOT on inference code:
       (1) the daemon does not actually run for Zhongwen (no epicenter.config.ts
           wiring zhongwen({ agentId }) into `epicenter up`), so no room has a live
-          actor, so a conversation bound to the home-daemon agent waits unanswered.
+          reaction, so a conversation bound to the home-daemon agent waits unanswered.
     Gate (2) is RESOLVED: the agent picker landed (scoped-redesign slice 2), so a
     conversation can be bound at creation to the `zhongwen-home` daemon agent
     instead of the cloud agent (`mount.ts` already forwards `agentId` into the
@@ -123,14 +123,14 @@ C4  Delete the HTTP generation route.                       V1+ (R landed; unblo
     cloud agent (whose runtime IS this route, so C4 deletes the null-as-cloud
     handling and the transitional kickoff, not the cloud answerer).
 
-R   Reframe: "claim" -> "reconcile a targeted turn."  DONE (actorNodeId designation)
+R   Reframe: "claim" -> "reconcile a targeted turn."  DONE (agent designation)
     (DECIDED in ADR-0015, resolves OQ#1; BUILT 2026-06-17)
-    "Claim" imported a contention model the single-actor design does not have. The
-    actor is a RECONCILER (observe -> compute the missing answer -> produce it),
+    "Claim" imported a contention model the single-reaction design does not have. The
+    reaction is a RECONCILER (observe -> compute the missing answer -> produce it),
     like the materializers. Designation is DATA, not a race or a global config: the
-    conversation ROW carries a target `actorNodeId` (written by the client that
+    conversation ROW carries a target `agent` (written by the client that
     creates/re-points it = single writer), the durable analogue of dispatch's `to`.
-    The actor's observe loop filters rows to its own node. Dispatch is the doorbell
+    The reaction's observe loop filters rows to its own node. Dispatch is the doorbell
     (ephemeral nudge), the doc is the mailbox (durable, answered on reconnect even if
     the nudge is lost).
     GRAIN = whole conversation, never per-message (an answer needs the thread's
@@ -138,15 +138,15 @@ R   Reframe: "claim" -> "reconcile a targeted turn."  DONE (actorNodeId designat
     PRIMITIVE = the binding lives on the ROW, not in the transcript. The transcript
     child doc stays pure portable content (no node identity); the row carries the
     routing. That existing row/child-doc split IS the portability seam, so the three
-    operations fall out: DIRECT (write actorNodeId), REASSIGN between turns (another
+    operations fall out: DIRECT (write agent), REASSIGN between turns (another
     write, rewrites no history), FORK (snapshot the transcript into a new row bound
     to a different node). NOT a separate routing table (doc is the only control
     plane; no parallel source of truth).
     DEPENDS ON a node roster/picker (presence/awareness) so a client can name the
     target. FUTURE refinement: target a capability (the node with the SQLite mirror)
     over a concrete node id, resolved through that roster.
-    BUILD timing: model decided now; the actorNodeId field + loop filter + picker
-    are load-bearing only once a second actor exists, so execution defers (V0 has one
+    BUILD timing: model decided now; the agent field + loop filter + picker
+    are load-bearing only once a second reaction exists, so execution defers (V0 has one
     node; the race is theoretical). C4 (delete the HTTP route) unblocks once this lands.
 ```
 
@@ -156,7 +156,7 @@ R   Reframe: "claim" -> "reconcile a targeted turn."  DONE (actorNodeId designat
 D1 (V0.2, non-blocking, confirm when convenient)
    "dispose idle ones" landed as dispose-on-row-removal + shutdown, NOT a
    timeout evictor. Reason: an idle conversation can still receive a new user
-   turn later; evicting its replica on a timer means the actor stops syncing
+   turn later; evicting its replica on a timer means the reaction stops syncing
    that room and would miss the turn. Re-opening an evicted room without that
    gap needs a signal (the dispatch wake-nudge the spec names), which is not
    built yet. So a timed evictor is correct only once the wake-nudge exists.
@@ -173,7 +173,7 @@ D2 (V0.5) RESOLVED 2026-06-17: (b) the daemon holds a provider key and calls
    ChatStream built from a daemon-side provider key, then the V0 exit holds.
    Original options below for the record.
 
-   How does the always-on actor obtain real inference behind the now-existing
+   How does the always-on reaction obtain real inference behind the now-existing
    `ChatStream` seam? The app's mount factory closes over its own `startStream`,
    so this is purely "what instance does Zhongwen's daemon inject in production".
    Three candidates, none pinned by the specs/ADRs:
@@ -195,21 +195,21 @@ D2 (V0.5) RESOLVED 2026-06-17: (b) the daemon holds a provider key and calls
    (a) as a non-goal since it fights C4. Does that hold?
 
 D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers only
-   conversations designated to its node (`actorNodeId === selfNodeId`) and the
-   browser skips the HTTP kickoff whenever `actorNodeId` is set, so exactly one of
-   {HTTP server actor, daemon actor} reconciles any conversation. The
-   actor-over-room test that asserted the two-map bug now asserts ONE map. Original
+   conversations designated to its node (`agent === selfNodeId`) and the
+   browser skips the HTTP kickoff whenever `agent` is set, so exactly one of
+   {HTTP server reaction, daemon reaction} reconciles any conversation. The
+   reaction-over-room test that asserted the two-map bug now asserts ONE map. Original
    options kept below for the record.
 
    The dual-transport double-answer must be closed BEFORE a daemon ships real
    inference, or one turn gets two real replies. Today `ConversationView` fires
-   the HTTP kickoff (-> server `runDocGeneration`) AND the daemon actor answers
+   the HTTP kickoff (-> server `runDocGeneration`) AND the daemon reaction answers
    the same room; the existence-based claim cannot serialise across two replicas,
-   so the merge keeps two assistant maps. The actor-local hardening (commit
-   0f188d4f4) fixes only the SINGLE-actor duplicate paths (in-flight guard +
+   so the merge keeps two assistant maps. The reaction-local hardening (commit
+   0f188d4f4) fixes only the SINGLE-reaction duplicate paths (in-flight guard +
    orphan supersession); it does NOT touch the cross-transport race. Options to
-   sequence: (i) land R's `actorNodeId` designation so exactly one of {HTTP
-   server actor, daemon actor} reconciles a conversation; (ii) bring C4 forward
+   sequence: (i) land R's `agent` designation so exactly one of {HTTP
+   server reaction, daemon reaction} reconciles a conversation; (ii) bring C4 forward
    and stop firing the HTTP kickoff for daemon-targeted conversations; (iii)
    keep the daemon and the HTTP path on DISJOINT conversation sets during the
    transition (today they are de facto disjoint: no production daemon runs yet,
@@ -224,13 +224,13 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
 ```txt
 2026-06-16  tracker created; V0/V1/V2 slices defined.
 2026-06-16  V0.1 (86f5730ad): generationId now rides the user turn in the doc;
-            actor derives it (findLatestUserTurn), POST body drops it; retry
+            reaction derives it (findLatestUserTurn), POST body drops it; retry
             re-mints via handle.remintGeneration. 525 workspace + 19 server
             tests green, server typecheck clean.
 2026-06-16  V0.2 (73789f93a): the daemon child-doc observe loop. New
-            attachChildDocActor (transport-agnostic loop: enumerate rows, open +
+            attachChildDocReactions (transport-agnostic loop: enumerate rows, open +
             observe each transcript via the field guid deriver, dispose on
-            row-removal, flush on root destroy) + attachMountChildDocActor (the
+            row-removal, flush on root destroy) + attachMountChildDocReaction (the
             node-only per-body connector: clientID + disk log + cloud join,
             drain-enrolled), wired into the Zhongwen mount. onChange is the V0.3
             claim->stream->finish seam. DECISION recorded below: timeout-based
@@ -240,12 +240,12 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
 2026-06-17  V0.2 reshaped schema-driven (c13060107) after a design grill: the
             first cut hand-wired the loop in Zhongwen's compose, re-passing
             table+guid+layout+rootDoc (all schema-owned) and letting layout and
-            guid disagree silently. Now mount({ actors }) derives them from the
+            guid disagree silently. Now mount({ reactions }) derives them from the
             schema like the browser connect(); app registers behavior only (a
             per-body factory, the V0.3 onChange seam); node connector injected
             via nodeMountRuntime().connectChildDoc; loop moved to
-            document/child-doc-actor.ts. ADR-0014/0015 updated. 531 tests green.
-2026-06-17  V0.3 (7acc1043e): filled the conversations.messages actor seam with
+            document/child-doc-reactions.ts. ADR-0014/0015 updated. 531 tests green.
+2026-06-17  V0.3 (7acc1043e): filled the conversations.messages reaction seam with
             the claim -> stream -> finish loop. onChange reads the transcript,
             claims the unanswered user turn on its idempotent generationId by
             existence (the appended assistant map IS the claim, not a lock),
@@ -257,25 +257,25 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             (teardown stop + V0.4's cancel seam). zhongwen + workspace typecheck
             clean, 531 workspace tests green.
 2026-06-17  V0.4 (9400820bf) + C1: durable cancel. Client owns
-            cancelRequestedAt on its user turn; actor reads it back and writes
+            cancelRequestedAt on its user turn; reaction reads it back and writes
             finish: cancelled (mid-stream abort, checked before the answer path;
             and pre-stream claimed-then-cancelled). remintGeneration clears the
             stale cancel on retry. ConversationView Stop writes the durable
             cancel beside the HTTP abort. C1 rode along: extracted
             findUnansweredTurn(messages, now) to chat-doc.ts (turn-or-nothing,
-            no reason-union); the actor collapsed its inline predicate to one
-            call; the server keeps its 400/409 taxonomy until C4. Actor behavior
+            no reason-union); the reaction collapsed its inline predicate to one
+            call; the server keeps its 400/409 taxonomy until C4. Reaction behavior
             test deferred to C2 (fake stream still inline); data-layer
             primitives fully tested. workspace + zhongwen + server typecheck
             clean, 539 workspace tests green.
-2026-06-17  V0.5 IN PROGRESS / C2 (2ca8ddddc): backend-agnostic chat actor.
-            Moved the per-conversation actor out of Zhongwen's mount into
-            @epicenter/workspace/ai as attachChatActor, parameterized by a
+2026-06-17  V0.5 IN PROGRESS / C2 (2ca8ddddc): backend-agnostic chat reaction.
+            Moved the per-conversation reaction out of Zhongwen's mount into
+            @epicenter/workspace/ai as attachChatReaction, parameterized by a
             ChatStream (startStream(messages) => AsyncIterable<StreamChunk>).
             V0.3 shipped the stream inline + un-injectable so the claim ->
             stream -> finish path and the V0.4 cancel had no test BY
             CONSTRUCTION; with startStream parameterized the fake is a fixture
-            (mount injects fakeChatStream) and chat-actor.test.ts now covers
+            (mount injects fakeChatStream) and chat-reaction.test.ts now covers
             completed, re-fire no-op, RUN_ERROR -> failed, mid-stream cancel,
             pre-stream cancel, and teardown-no-finish (6 tests). Extracted
             chatDocToPrompt into chat-doc.ts. Did NOT touch the server (C3 does
@@ -292,7 +292,7 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
 2026-06-17  Orchestrated a background workflow (verify shipped code + V2.R
             research + synthesis). Verify + research succeeded; the synthesis
             agent died on a transient 529 (plan/V2.R-spec draft not produced).
-            Verify found real bugs in the C2/V0.4 actor: (high) the actor
+            Verify found real bugs in the C2/V0.4 reaction: (high) the reaction
             ignored its own in-flight state so a generation outliving the 2-min
             active window could be double-streamed by a retry/second turn;
             (high) a retry re-minted the generationId and orphaned the prior
@@ -300,33 +300,33 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             never stopped the provider; plus a misleading re-entrancy comment.
             Also (BLOCKER, transitional) the dual-transport double-answer ->
             recorded as D3 and corrected the V0.3 "no duplicate stream" claim.
-2026-06-17  Hardening wave (0f188d4f4): actor never runs two streams at once
+2026-06-17  Hardening wave (0f188d4f4): reaction never runs two streams at once
             (in-flight guard, so the createdAt window cannot trick a live
-            actor); a re-pointed/removed turn finishes its orphan cancelled then
+            reaction); a re-pointed/removed turn finishes its orphan cancelled then
             the new turn is claimed; ChatStream is now (messages, signal) and the
-            actor aborts the provider on cancel/teardown; reworded the claim
+            reaction aborts the provider on cancel/teardown; reworded the claim
             comment. 4 new tests (no concurrent stream, retry supersedes,
             provider signal aborts, late cancel inert). workspace + zhongwen
             typecheck clean, 549 workspace tests green. STILL OPEN: V2.R spec
             (write from the completed research, synthesis 529'd), C3, D3
             sequencing, then the V0.5 real-provider swap.
-2026-06-17  C3 (4ae29e402): gave the actor the flush policy directly. Buffer
+2026-06-17  C3 (4ae29e402): gave the reaction the flush policy directly. Buffer
             deltas in streamReply, flush at most once per FLUSH_INTERVAL_MS (or
             sooner past FLUSH_MAX_CHARS), ride the tail on the finish write;
             lastFlushAt starts at 0 so the first delta is live at once. Done
             GREENFIELD per the user's call: doc-generation.ts left UNTOUCHED
             rather than sharing one core with it (the HTTP path dies at C4;
-            coupling the actor to a route slated for deletion is not a clean
-            break, and the abort disposition differs server vs actor). Constants
+            coupling the reaction to a route slated for deletion is not a clean
+            break, and the abort disposition differs server vs reaction). Constants
             duplicated for the coexistence window, resolved by deletion at C4.
             Also fixed the stale one-argument ChatStream comments (it is
-            (messages, signal)) in chat-actor.ts + mount.ts. New flush test (8
+            (messages, signal)) in chat-reaction.ts + mount.ts. New flush test (8
             rapid deltas -> < 8 transactions, text intact). workspace 550 +
             zhongwen + server typecheck clean; server doc-generation 11 tests
             still pass (untouched). V0.5 stays UNTICKED: the real-provider swap
             (D2-resolved: direct chat() with a daemon key) and D3 sequencing
             remain.
-2026-06-17  Post-C3 review collapse (af2f00930): re-reading C3, the chat actor
+2026-06-17  Post-C3 review collapse (af2f00930): re-reading C3, the chat reaction
             took both a `handle` view and the `ydoc` it wraps, reading through
             the handle but writing through the raw doc. It is a doc-level writer
             like the server, not a layout consumer, so it now takes only `ydoc`
@@ -334,17 +334,17 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             and the ChatTranscriptReader one-method type. Also merged the
             byte-identical mid-stream-cancel and superseded-orphan guards into one
             (turn === undefined || cancelRequestedAt !== undefined). workspace +
-            zhongwen typecheck clean, actor suite green.
+            zhongwen typecheck clean, reaction suite green.
 2026-06-17  Model validated over a REAL room (6ae96a124):
-            packages/server/src/ai/actor-over-room-sync.test.ts. Every prior
-            actor test drove onChange by hand over a lone in-memory Y.Doc; this
-            is the first proof the always-on actor works as a SYNC PEER. A daemon
-            peer runs attachChatActor over a body synced through a live
+            packages/server/src/ai/reaction-over-room-sync.test.ts. Every prior
+            reaction test drove onChange by hand over a lone in-memory Y.Doc; this
+            is the first proof the always-on reaction works as a SYNC PEER. A daemon
+            peer runs attachChatReaction over a body synced through a live
             createRoomCore; a separate client peer reads the answer back. 3 green:
             (1) the daemon answers a turn written by another peer and the streamed
-            reply syncs back (the V0 exit, actor path); (2) a durable cancel from
+            reply syncs back (the V0 exit, reaction path); (2) a durable cancel from
             another peer stops the answer mid-stream over sync; (3) THE D3 HAZARD
-            IS REAL AND DETERMINISTIC: daemon actor + HTTP runDocGeneration both
+            IS REAL AND DETERMINISTIC: daemon reaction + HTTP runDocGeneration both
             answer one turn -> the merge keeps TWO assistant maps. Test 3 asserts
             the bug EXISTS today; R must flip it to assert ONE map (red-by-design
             gate, exactly what the verify workflow asked for). FINDING that pins
@@ -353,9 +353,9 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             one; nothing wires them), so the daemon has never actually run for
             zhongwen, and running it today would reproduce test 3's double-answer.
             So the real two-browser e2e is gated on (a) daemon config wiring +
-            (b) R. Evidence-backed next step is therefore R (actorNodeId), now
+            (b) R. Evidence-backed next step is therefore R (agent), now
             justified by a concrete failing-intent test, not a theoretical race.
-2026-06-17  V2.R DONE: wrote specs/20260617T235900-v2-coding-actor-sandbox-and-
+2026-06-17  V2.R DONE: wrote specs/20260617T235900-v2-coding-reaction-sandbox-and-
             harness.md from the completed workflow research (synthesis 529'd, so
             authored from the three research blocks, every claim cited). Sandbox =
             OpenHands swappable (local default + rootless Docker; managed microVMs
@@ -364,35 +364,35 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             first, openaiCompatible({ baseURL }) the universal fallback. 8 open
             questions; O1 (action-surface socket transport) is the linchpin. No
             product code. doc-hygiene clean.
-2026-06-17  R DONE (actorNodeId designation): closed D3, the dual-transport
-            double-answer. Added `actorNodeId: nullable(field.string<NodeId>())` to
+2026-06-17  R DONE (agent designation): closed D3, the dual-transport
+            double-answer. Added `agent: nullable(field.string<NodeId>())` to
             the conversations row (null = cloud-default, the HTTP path answers). The
-            generic child-doc actor context now carries the daemon's `selfNodeId`
+            generic child-doc reaction context now carries the daemon's `selfNodeId`
             and a reactive `readRow()` onto the parent row (designation lives on the
-            row, never in the transcript child doc); the chat actor gained an
+            row, never in the transcript child doc); the chat reaction gained an
             `isDesignated` gate (default always-on for unit callers) and the Zhongwen
-            mount builds it as `() => readRow()?.actorNodeId === selfNodeId`.
-            ConversationView skips its HTTP kickoff when `actorNodeId` is set, so a
+            mount builds it as `() => readRow()?.agent === selfNodeId`.
+            ConversationView skips its HTTP kickoff when `agent` is set, so a
             designated conversation is answered only by its daemon and a cloud-
-            default one only by the HTTP path. Flipped the actor-over-room D3 test:
+            default one only by the HTTP path. Flipped the reaction-over-room D3 test:
             an undesignated daemon abstains and the HTTP path is the sole answerer
             (one assistant map, asserted to be the HTTP reply); added unit coverage
-            (undesignated actor never claims; a designation that flips on is honored
-            next observe) and a child-doc-actor context test (selfNodeId + reactive
+            (undesignated reaction never claims; a designation that flips on is honored
+            next observe) and a child-doc-reaction context test (selfNodeId + reactive
             readRow). workspace + zhongwen + server typecheck clean; workspace 553 +
             server ai 14 green. C4 now unblocked (still deferred to V0.5 inference).
-2026-06-17  R greenfield correction: moved designation from an actor-level gate to
-            the LOOP filter the R decision actually names ("the actor's observe loop
+2026-06-17  R greenfield correction: moved designation from a reaction-level gate to
+            the LOOP filter the R decision actually names ("the reaction's observe loop
             filters rows to its own node"). The first cut had the child-doc loop host
-            EVERY row and the chat actor abstain via an isDesignated thunk, which made
-            the app-aware actor do the app-blind anchor's availability job in one code
-            path (ADR-0014 forbids exactly this) and duplicated the actorNodeId ===
+            EVERY row and the chat reaction abstain via an isDesignated thunk, which made
+            the app-aware reaction do the app-blind anchor's availability job in one code
+            path (ADR-0014 forbids exactly this) and duplicated the agent ===
             selfNodeId contract into every app's factory. Now: the loop takes one
             isDesignated(rowId) predicate and reconciles only its node's rows (re-
             designation opens/closes a body reactively, since the loop already
-            observes the table); connectMountActors composes the contract once (the
-            single owner); attachChatActor is pure {ydoc, startStream} again with no
-            designation concept; the actor context dropped selfNodeId/readRow/TRow.
+            observes the table); connectMountReactions composes the contract once (the
+            single owner); attachChatReaction is pure {ydoc, startStream} again with no
+            designation concept; the reaction context dropped selfNodeId/readRow/TRow.
             The D3 proof moved with the mechanism: the over-room suite is back to its
             two sync proofs (answer, cancel), and the daemon half of D3 is proven at
             the loop unit (hosts only designated rows; opens/closes on re-designation)
@@ -410,7 +410,7 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             @tanstack/ai + @tanstack/ai-gemini deps. NO new test by design: provider
             glue on the same untested boundary as routes/ai.ts (its real chat() call
             is untested too); the seam behavior is already proven by
-            actor-over-room-sync.test.ts. Considered and rejected: a chat-injection
+            reaction-over-room-sync.test.ts. Considered and rejected: a chat-injection
             seam (indirection the system doesn't need) and an e2e through real
             chat() (no public mock adapter ships, so it would mean hand-rolling a
             TextAdapter or a flaky network call). zhongwen typecheck + server ai 13
@@ -430,14 +430,14 @@ D3 (V0.5 GATE) RESOLVED 2026-06-17 by R (option (i)): the daemon now answers onl
             answered, so no per-message author field and the transcript stays portable
             with no agent identity). This AFFIRMS ADR-0015's whole-conversation binding
             and its "transcript holds no node identity" seam; what changed is the
-            address type (node id -> AgentId) and killing `actorNodeId: null`. Changes:
+            address type (node id -> AgentId) and killing `agent: null`. Changes:
             new AgentId brand + asAgentId (workspace, exported); MountOptions.agentId
             injects the daemon's agent identity (app/config policy, not threaded through
-            MountContext); connectMountActors filters `row.agent === selfAgentId`
-            (undefined selfAgentId designates nothing); zhongwen schema actorNodeId ->
+            MountContext); connectMountReactions filters `row.agent === selfAgentId`
+            (undefined selfAgentId designates nothing); zhongwen schema agent ->
             agent (non-null, CLOUD_AGENT_ID default at creation); +page binds new convos
             to CLOUD_AGENT_ID; ConversationView kickoffUnlessDaemonOwned -> nudgeBoundAgent
-            (nudge route iff agent === CLOUD_AGENT_ID). chat-doc/chat-actor/doc-generation
+            (nudge route iff agent === CLOUD_AGENT_ID). chat-doc/chat-reaction/doc-generation
             schemas UNCHANGED (attribution is the row's agent), the tell the collapse was
             real. ADR-0015 Decision + alternatives updated (per-message rejection now
             grounded in the privacy/DM-model rationale). workspace 552 + server ai 13 green;

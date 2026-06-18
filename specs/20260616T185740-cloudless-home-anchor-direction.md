@@ -48,7 +48,7 @@ anchor:
   stays app-blind: no schemas, prompts, tools, or app actions
   can be Epicenter-hosted or self-hosted
 
-actor:
+reaction:
   observes synced docs
   runs the model loop and app actions
   writes answers or computed effects back into the docs
@@ -56,19 +56,19 @@ actor:
   can be Epicenter-hosted or self-hosted
 ```
 
-The third role is the **actor** (the running process); the **agent** is the
-durable address a conversation binds to, which an actor answers as. The two are
-not interchangeable; see the "Agent and actor are not one word for one thing"
+The third role is the **reaction** (the running process); the **agent** is the
+durable address a conversation binds to, which a reaction answers as. The two are
+not interchangeable; see the "Agent and reaction are not one word for one thing"
 section of ADR-0014.
 
 Cloudflare rooms currently bundle relay and anchor. The Iroh direction splits
 them: Iroh gives the peer connection system and blind relay path; the chosen
-anchor is the durable peer that stores the Y.Doc state. The actor is separate
-from both. One physical machine may run anchor and actor processes, but the
+anchor is the durable peer that stores the Y.Doc state. The reaction is separate
+from both. One physical machine may run anchor and reaction processes, but the
 roles stay separate so the anchor can remain boring and app-blind.
 
 ```txt
-                            ACTOR
+                            REACTION
                  hosted cloud      |      self-hosted device
 ANCHOR      -----------------------+---------------------------
 hosted      default hosted shape   | cloud holds docs,
@@ -81,10 +81,10 @@ self-hosted user-owned docs,       | full self custody:
 ```
 
 The same workspace can be composed from any row and column. "Use my own anchor"
-moves down the table. "Run the actor on my own device" moves right. Relay is a
+moves down the table. "Run the reaction on my own device" moves right. Relay is a
 third, independent axis not shown: it is blind either way, so you can self-host
 the anchor and still use Epicenter's relay for reachability, and moving the
-anchor or the actor never drags the relay with it. These choices must not be
+anchor or the reaction never drags the relay with it. These choices must not be
 fused in code or product language.
 
 ## Replica Rule
@@ -127,7 +127,7 @@ These identities must not be collapsed:
 | Identity | Means | Same value implies | Collision risk |
 | --- | --- | --- | --- |
 | `ydoc.guid` / workspace id | Which data corpus or child doc | Sync the same data | Intentional when two replicas join the same room |
-| Yjs `clientID` | Which CRDT actor produced operations | Same live writer | Dangerous if two live processes share it |
+| Yjs `clientID` | Which CRDT reaction produced operations | Same live writer | Dangerous if two live processes share it |
 | `nodeId` | Which reachable runtime presence/dispatch targets | Same online node/process | Dangerous if two daemons share it |
 | Iroh endpoint id | Which native peer to connect to | Same cryptographic network peer | Must be persisted per native peer |
 
@@ -152,7 +152,7 @@ attachMountInfrastructure(...)
   ydoc.clientID = hashYDocClientId(ctx.nodeId)
 ```
 
-The node file is local machine state. It is ignored, not synced, and created once per app folder per machine. Because `nodeId` is random and persisted per root, two folders of the same app can intentionally sync the same corpus without sharing the same live actor identity.
+The node file is local machine state. It is ignored, not synced, and created once per app folder per machine. Because `nodeId` is random and persisted per root, two folders of the same app can intentionally sync the same corpus without sharing the same live reaction identity.
 
 ## Transport Placement
 
@@ -177,7 +177,7 @@ The sidecar must not learn Fuji tables, actions, materializers, child-doc layout
 
 ## Scope: App-Blind Custody Only
 
-The home anchor here routes opaque room bytes and never learns app schemas, layouts, actions, or product semantics. The always-on device *also* runs per-app **actors** (observe synced docs, run inference, execute the app's actions as agent tools), but those are a separate, app-aware role: daemons that sit beside the anchor, never inside the Iroh sidecar. "Anchor" in this spec always means the app-blind role. The actor/agent layer is specified in `docs/adr/0014-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`, and `specs/20260616T225034-always-on-actors-over-synced-docs.md`.
+The home anchor here routes opaque room bytes and never learns app schemas, layouts, actions, or product semantics. The always-on device *also* runs per-app **reactions** (observe synced docs, run inference, execute the app's actions as agent tools), but those are a separate, app-aware role: daemons that sit beside the anchor, never inside the Iroh sidecar. "Anchor" in this spec always means the app-blind role. The reaction/agent layer is specified in `docs/adr/0014-an-always-on-reaction-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-answered-by-reactions.md`, and `specs/20260616T225034-always-on-reactions-over-synced-docs.md`.
 
 ## Multiplexing Rule
 
@@ -274,7 +274,7 @@ What it did not prove:
 2. Make the sidecar carry real `@epicenter/sync` binary frames for one room.
 3. Add sidecar room multiplexing.
 4. Define pairing: how a daemon learns and trusts the home anchor's Iroh endpoint id.
-5. Treat the app-blind anchor/sidecar and the app-aware actor (daemon) as separate roles with separate packaging. The sidecar multiplexes opaque rooms; the actor mounts an app workspace, observes its docs, and runs the app's actions as agent tools. Do not fold the actor into the sidecar. See ADR-0014.
+5. Treat the app-blind anchor/sidecar and the app-aware reaction (daemon) as separate roles with separate packaging. The sidecar multiplexes opaque rooms; the reaction mounts an app workspace, observes its docs, and runs the app's actions as agent tools. Do not fold the reaction into the sidecar. See ADR-0014.
 6. Only then add product packaging and browser/native wrapper decisions.
 
 ## Grill Prompt
@@ -289,14 +289,14 @@ Current thesis:
 - That config default-exports one `Mount`, not `Mount[]`.
 - The folder is a local mount/projection site.
 - The workspace id / `ydoc.guid` is the remote corpus identity. Same id means same synced data.
-- Yjs `clientID` and daemon `nodeId` are local actor identities and must be unique per live daemon/node.
+- Yjs `clientID` and daemon `nodeId` are local reaction identities and must be unique per live daemon/node.
 - Iroh belongs below the daemon as an alternate byte transport, not inside app factories.
-- Relay, anchor, and actor are separate runtime roles:
+- Relay, anchor, and reaction are separate runtime roles:
   - relay moves packets and should be blind to application plaintext
   - anchor stores durable Y.Doc replicas and stays app-blind
-  - actor observes docs, runs models/tools/actions, and writes results
-- An `AgentId` is the durable address a conversation binds to; an actor answers
-  as one or more agents. Agent (identity) and actor (process) are distinct.
+  - reaction observes docs, runs models/tools/actions, and writes results
+- An `AgentId` is the durable address a conversation binds to; a reaction answers
+  as one or more agents. Agent (identity) and reaction (process) are distinct.
 - Cloudflare rooms currently bundle relay and anchor. Iroh lets us split them.
 - A shared Rust sidecar can multiplex many Yjs rooms to one chosen anchor.
 - The home anchor is the always-on trusted peer for cloudless custody, but it is not the agent by definition.
@@ -326,14 +326,14 @@ Please review whether this direction is coherent against the repo. Focus on:
 
 One-sentence test:
 Can the design be explained as "relays move bytes, anchors keep docs alive,
-actors think and write, and conversations bind to one agent" without exceptions?
+reactions think and write, and conversations bind to one agent" without exceptions?
 
 Relevant files:
 - specs/20260616T185740-cloudless-home-anchor-direction.md
 - specs/20260614T120000-app-folder-as-root-and-jsrepo-blocks.md
 - specs/20260615T120000-trusted-relay-and-collaborative-fields.md
-- docs/adr/0014-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md
-- docs/adr/0015-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md
+- docs/adr/0014-an-always-on-reaction-runs-app-semantics-beside-the-app-blind-anchor.md
+- docs/adr/0015-agent-conversations-are-durable-child-docs-answered-by-reactions.md
 - docs/encryption.md
 - packages/workspace/src/daemon/attach-mount-infrastructure.ts
 - packages/workspace/src/config/daemon-node-id.ts

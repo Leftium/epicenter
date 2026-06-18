@@ -1,25 +1,25 @@
-# V2 Coding Actor: Sandbox and Harness
+# V2 Coding Reaction: Sandbox and Harness
 
 **Date**: 2026-06-17
 **Status**: Draft
 **Owner**: Braden
-**Builds on**: `20260616T225034-always-on-actors-over-synced-docs.md` (the vision), `20260530T100000-ai-workflows-consolidated-design.md` (Model 1 / Model 2), `docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md`, `docs/adr/0014-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`
+**Builds on**: `20260616T225034-always-on-reactions-over-synced-docs.md` (the vision), `20260530T100000-ai-workflows-consolidated-design.md` (Model 1 / Model 2), `docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md`, `docs/adr/0014-an-always-on-reaction-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-answered-by-reactions.md`
 
-This is the **V2.R** deliverable from `20260616T225034-actors-buildout.tracker.md`:
+This is the **V2.R** deliverable from `20260616T225034-reactions-buildout.tracker.md`:
 research only, no product code. It answers three questions the vision spec named
-but deferred: what hosts the Model 2 coding actor, which agent harness it embeds,
+but deferred: what hosts the Model 2 coding reaction, which agent harness it embeds,
 and how local inference reaches the `startStream` seam. Every claim cites its
 source. Nothing here is built until Braden says "build V2"; V2 is independent of
 the V0/V1 build track and does not block it.
 
 ## One Sentence
 
-The Model 2 coding actor is a backend-agnostic harness (pi, embedded in-process)
+The Model 2 coding reaction is a backend-agnostic harness (pi, embedded in-process)
 running inside a swappable sandbox (local subprocess on a trusted home box,
 rootless Docker when remote or untrusted) that can reach **only** the daemon
 action socket plus a read-only data mirror, with local inference injected through
 the same `startStream(messages, signal) => AsyncIterable<StreamChunk>` contract the
-chat actor already speaks.
+chat reaction already speaks.
 
 ## Scope and Non-Goals
 
@@ -55,7 +55,7 @@ selected by config. [1][2]
 **The two backends**:
 
 - **Local process (default, trusted home box)**: spawn the harness under the
-  actor's uid, hand it the socket path and the read-only mirror by convention.
+  reaction's uid, hand it the socket path and the read-only mirror by convention.
   Zero Docker/KVM/cloud dependency: the cloudless-anchor common case. This mirrors
   OpenHands' real default-when-Docker-absent and inherits its explicit warning:
   the local backend runs agent code with **full host filesystem access and no OS
@@ -68,7 +68,7 @@ selected by config. [1][2]
   Caveat: plain Docker (runc) shares the host kernel; a runc/kernel CVE (e.g.
   CVE-2019-5736) can escape. [4] For a genuinely adversarial multi-tenant **hosted**
   tier (not a home box), slot gVisor/Kata/Firecracker under the same container
-  backend, or add a `RemoteSandbox` variant, **without changing the actor**. That
+  backend, or add a `RemoteSandbox` variant, **without changing the reaction**. That
   escalation is precisely what the swappable shape buys. **Never** bind the real
   `/var/run/docker.sock`; only the daemon's own narrow RPC action socket. [5]
 
@@ -78,7 +78,7 @@ selected by config. [1][2]
 same action surface Model 1 uses, per ADR-0010: actions are the only cross-process
 surface), never a raw fs/net/Y.Doc handle; `dispose()`. Backends:
 `LocalProcessSandbox`, `DockerSandbox`, and a deferred `RemoteSandbox`. Selection is
-policy-driven, exactly like OpenHands' `RUNTIME` switch, so the coding-actor code
+policy-driven, exactly like OpenHands' `RUNTIME` switch, so the coding-reaction code
 stays backend-agnostic.
 
 **Sources**:
@@ -102,11 +102,11 @@ stays backend-agnostic.
 
 **Choice**: embed **pi** (`earendil-works/pi`) as the default harness via its
 in-process TypeScript SDK (`@earendil-works/pi-coding-agent` AgentSession over
-`pi-agent-core`). Define the actor adapter contract in **ACP's** shape so any
+`pi-agent-core`). Define the reaction adapter contract in **ACP's** shape so any
 harness (Codex, Claude Code, Hermes/ACP) can be swapped in later as one binding.
 
-**Why pi as the default**: the actor is already an in-process TypeScript daemon
-body (`attachChatActor` in `@epicenter/workspace/ai`, parameterized by a
+**Why pi as the default**: the reaction is already an in-process TypeScript daemon
+body (`attachChatReaction` in `@epicenter/workspace/ai`, parameterized by a
 `ChatStream`). pi is the only candidate that is (a) pure TypeScript, (b)
 MIT-licensed (so it can be a real dependency of the workspace library, unlike
 Claude Code's proprietary SDK), (c) embeddable in-process (unlike Codex's Rust
@@ -127,7 +127,7 @@ end state that Codex's and Claude Code's vendor lock cannot). [6][9][10]
    Inside that callback the adapter writes a durable approval-request record into
    the conversation doc (the V1.3 durable-approval shape, reconciled with the
    ai-workflows effect card), awaits its resolution via the same Yjs observer the
-   actor already uses, then returns `undefined` (allow) or `{ block, reason }`
+   reaction already uses, then returns `undefined` (allow) or `{ block, reason }`
    (deny). Because the await happens inside an in-process callback, no wire
    round-trip is needed: this is pi's decisive advantage over the subprocess
    harnesses for the first cut. [8]
@@ -204,7 +204,7 @@ is the only local backend with a first-party TanStack adapter, so its
 with **zero custom mapping code**, and it is the lowest-friction always-on runtime
 (single daemon, one-command model pull, cross-platform). [16][17][18] That makes it
 the cleanest one-argument instance for the C2 `ChatStream` seam and the most direct
-path to D2 candidate (c), the privacy end state, while keeping the actor's append
+path to D2 candidate (c), the privacy end state, while keeping the reaction's append
 loop backend-agnostic.
 
 **The uniform contract is satisfied two ways**: (1) first-party adapters (Ollama,
@@ -262,22 +262,22 @@ These are load-bearing; the build cannot start clean until they are answered.
   per-run chroot/landlock, or simply accept it because the home box is
   single-user-trusted. Decide the floor.
 - **O3**: what concrete predicate flips the policy local -> container? Proposed
-  triggers: remote actor, shared/multi-user box, or an unreviewed script.
+  triggers: remote reaction, shared/multi-user box, or an unreviewed script.
   "Untrusted" is doing a lot of work; pin the predicate.
-- **O4**: is a hosted managed-actor tier (cloud) in scope for V2 at all? If yes,
+- **O4**: is a hosted managed-reaction tier (cloud) in scope for V2 at all? If yes,
   that is the only case justifying a `RemoteSandbox` (E2B/Modal/Daytona) adapter and
   gVisor/Firecracker-grade isolation; if no, ship local + Docker and defer the
   remote variant entirely.
 - **O5**: data-mirror mechanics: directory bind-mount (`:ro`) or FUSE/overlay view?
-  If the coding actor needs scratch space, give it a tmpfs discarded on dispose;
+  If the coding reaction needs scratch space, give it a tmpfs discarded on dispose;
   scratch is fine, but persistence must go through actions.
 - **O6**: does C3's shared stream/flush/finish concern constrain the `StreamChunk`
   subset local backends must emit? V0.5 is text-only, but if reasoning/tool-call
-  chunks flow later, confirm the actor's append loop handles `REASONING_*` and
+  chunks flow later, confirm the reaction's append loop handles `REASONING_*` and
   `TOOL_CALL_*` AG-UI events from local backends. (Note: per the buildout's C3, the
-  actor owns its own flush loop; the server copy dies at C4, so this is the actor's
+  reaction owns its own flush loop; the server copy dies at C4, so this is the reaction's
   call alone.)
-- **O7**: does the actor assume an externally-running Ollama/llama-server, or
+- **O7**: does the reaction assume an externally-running Ollama/llama-server, or
   spawn/supervise the local runtime itself (model load/unload, health, port)? This
   is the real ops surface, separate from the streaming contract.
 - **O8**: first-party adapter per local backend, or standardize on

@@ -142,17 +142,16 @@ describe('parseContract (raw text classifies the marker)', () => {
 		expect(parseContract('{"views":{}}').kind).toBe('untyped');
 	});
 
-	test('a fields map is a typed contract, distinct from the {} marker', () => {
+	test('a non-empty fields map is a typed contract, distinct from the {} marker', () => {
 		const parsed = parseContract('{"fields":{"title":{"type":"string"}}}');
 		expect(parsed.kind).toBe('typed');
 		if (parsed.kind !== 'typed') throw new Error('expected typed');
 		expect(parsed.contract.fields).toHaveLength(1);
 	});
 
-	test('an explicit empty fields map {"fields":{}} is typed with zero fields', () => {
-		const parsed = parseContract('{"fields":{}}');
-		expect(parsed.kind).toBe('typed');
-		if (parsed.kind !== 'typed') throw new Error('expected typed');
-		expect(parsed.contract.fields).toEqual([]);
+	test('an empty fields map {"fields":{}} is untyped, same as {}', () => {
+		// Empty `fields` declares no schema, so it is the untyped raw grid, not a strict
+		// zero-field table: the `{}`-vs-`{"fields":{}}` flip (permissive vs strict) was a footgun.
+		expect(parseContract('{"fields":{}}').kind).toBe('untyped');
 	});
 });

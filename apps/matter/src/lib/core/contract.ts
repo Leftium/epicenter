@@ -81,9 +81,9 @@ export function validateContract(
 ): Result<Contract, ContractError> {
 	if (!isPlainObject(raw)) return ContractError.NotAnObject();
 
-	// A `matter.json` with no `fields` map is the untyped marker; `parseContract` routes
-	// that to the raw grid before it reaches here. Validated as a typed contract it is
-	// simply a contract with zero declared fields (the `{"fields":{}}` case).
+	// A `matter.json` with no (or an empty) `fields` map is the untyped marker; `parseContract`
+	// routes that to the raw grid before it reaches here. Called directly with such an object it
+	// degrades to a zero-field contract rather than throwing.
 	const fieldsRaw = isPlainObject(raw.fields) ? raw.fields : {};
 
 	const optionalRaw = raw.optional;
@@ -129,9 +129,10 @@ export function validateContract(
 /**
  * A `matter.json`'s text, classified into the three things a present marker can be:
  *
- *   - `typed`   the marker declares a `fields` map: a usable, compiled {@link Contract}.
- *   - `untyped` the marker has no `fields` map (`{}`, or any object without one): a declared
- *               but untyped table, shown as the raw grid. The canonical untyped marker.
+ *   - `typed`   the marker declares a non-empty `fields` map: a usable, compiled {@link Contract}.
+ *   - `untyped` the marker declares no fields (`{}`, `{"fields":{}}`, or any object without a
+ *               non-empty `fields` map): a declared but untyped table, shown as the raw grid.
+ *               `{}` is the canonical untyped marker.
  *   - `error`   the marker is broken (bad JSON, or a non-object top level): a claimed table
  *               whose contract could not be read, surfaced as a diagnostic, never silently typed.
  *
@@ -146,7 +147,8 @@ export type ParsedContract =
 /**
  * Parse the raw text of a `matter.json` file into its {@link ParsedContract} classification.
  * Catches JSON syntax errors as `error` rather than throwing, so a junk file degrades to the raw
- * view with a diagnostic; an object with no `fields` map is the untyped marker, never an error.
+ * view with a diagnostic; an object with no (or an empty) `fields` map is the untyped marker,
+ * never an error.
  */
 export function parseContract(text: string): ParsedContract {
 	const { data: raw, error } = trySync({
@@ -157,9 +159,12 @@ export function parseContract(text: string): ParsedContract {
 	if (!isPlainObject(raw)) {
 		return { kind: 'error', error: ContractError.NotAnObject().error };
 	}
-	// No `fields` map (`{}`, or any object without one): the untyped marker, a declared table
-	// shown raw. `{"fields":{}}` is distinct (a typed contract with zero fields) and falls through.
-	if (!isPlainObject(raw.fields)) return { kind: 'untyped' };
+	// No `fields` map, or an empty one (`{}`, `{"fields":{}}`, or any object without declared
+	// fields): the untyped marker, a declared table shown as the raw grid. A table is typed only
+	// when it declares at least one field, so empty `fields` is untyped, not a strict zero-field
+	// table: the `{}`-vs-`{"fields":{}}` distinction (permissive vs strict) was an unguessable flip.
+	if (!isPlainObject(raw.fields) || Object.keys(raw.fields).length === 0)
+		return { kind: 'untyped' };
 	const { data: contract, error: contractError } = validateContract(raw);
 	return contractError
 		? { kind: 'error', error: contractError }

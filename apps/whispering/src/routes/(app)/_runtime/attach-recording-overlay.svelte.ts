@@ -3,17 +3,14 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { recordingOverlay } from '#platform/recording-overlay';
 import { tauri } from '#platform/tauri';
 import {
-	cancelRecording,
-	retryDictation,
-	stopManualRecording,
-	stopVadRecording,
-} from '$lib/operations/recording';
-import {
 	RECORDING_OVERLAY_ACTION,
 	RECORDING_OVERLAY_FOCUS_MAIN,
 	type RecordingOverlayAction,
 } from '$lib/recording-overlay/events';
-import { openFailedDictationDetail } from '$lib/recording-overlay/focus-failure';
+import {
+	dispatchPillAction,
+	openFailedDictationDetail,
+} from '$lib/recording-overlay/pill-actions';
 import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
@@ -33,21 +30,7 @@ export function attachRecordingOverlay() {
 		void (async () => {
 			unlistenAction = await listen<RecordingOverlayAction>(
 				RECORDING_OVERLAY_ACTION,
-				(event) => {
-					if (event.payload === 'retry') {
-						void retryDictation();
-						return;
-					}
-					// Stop/cancel act on a live capture; ignore them otherwise.
-					const { capture } = dictationLifecycle.current;
-					if (capture.kind !== 'recording') return;
-					if (capture.trigger === 'manual') {
-						if (event.payload === 'cancel') void cancelRecording();
-						else void stopManualRecording();
-						return;
-					}
-					if (event.payload === 'stop') void stopVadRecording();
-				},
+				(event) => dispatchPillAction(event.payload),
 			);
 			unlistenFocus = await listen(RECORDING_OVERLAY_FOCUS_MAIN, () => {
 				const mainWindow = getCurrentWindow();

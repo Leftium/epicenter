@@ -90,13 +90,20 @@ cheapest thing an "adopt folder" action can write.
 
 ## Wave order
 
-1. **Contract + loader (TS):** `{}` → untyped, remove `MissingFields`; marker
-   rule in `loadPath`/`loadVault`; drop `scope`. Invert the shape-based loader
-   tests.
-2. **Integrity + CLI + fixtures:** `check.ts` `tables.length` rule; `--json`
-   drops `scope`; migrate `missing-model`; add the "not a table" fixture/tests.
+1. **Contract + loader (TS): DONE.** `{}` → untyped, removed `MissingFields`
+   (`parseContract` now classifies typed/untyped/error); marker rule in
+   `loadPath`/`loadVault`; dropped `scope` (`loadPath` returns `TableInput[]`).
+   Shape-based loader tests inverted to the marker/nesting model.
+2. **Integrity + CLI + fixtures: DONE.** `check.ts` uses `tables.length === 1`;
+   `--json` dropped `scope`; `missing-model` migrated to a `{}` marker;
+   `not-a-table` fixture + "no tables here" test added. `integrity.ts` needed no
+   change: the loader filters unmarked folders out, and the `untyped` path was
+   already valid. (Waves 1+2 landed together because dropping `LoadedPath.scope`
+   forces the `check.ts` change in the same green step.)
 3. **Watcher (Rust):** `scan_vault` marker rule + live `matter.json`
-   create/delete detection; mirror tests in `watch.rs`.
+   create/delete detection; mirror tests in `watch.rs`. The live vault
+   (`vault.svelte.ts` → `watch_vault`) still uses the old shape rule until this
+   wave; the CLI/pure-TS path is already on the marker rule.
 4. **UI:** render subtables (nesting navigation) + an "adopt folder as table"
    action that writes `{}`.
 

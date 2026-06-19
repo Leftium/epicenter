@@ -22,7 +22,12 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { classifyRows, type RowConformance } from './conformance';
-import { type Contract, type ContractError, parseContract } from './contract';
+import {
+	type Contract,
+	type ContractError,
+	type ParsedContract,
+	parseContract,
+} from './contract';
 import { type MatterParseError, parseEntry, type Row } from './parse';
 
 export type TableEntry =
@@ -138,44 +143,20 @@ export function readTable(
 }
 
 /**
- * A folder's contract after the expensive load step. Four states, mapping the
- * three {@link ParsedContract} classifications plus the no-`matter.json` case:
+ * Parse AND compile a folder's `matter.json` into its {@link ParsedContract} classification, ONCE.
+ * `validateContract` is where compilation (`Schema.Compile`) happens, so memoize this off the
+ * contract text (a `$derived` in the live vault) and pass the result to {@link buildView}; a
+ * single-file change then reclassifies against the cached fields without recompiling.
  *
- *   - `none`    no `matter.json` text at all. In the declared-store model a real table
- *               always has one (the loader only reads marked folders), but the pure
- *               transform still accepts no text and shows the raw grid.
- *   - `untyped` a `matter.json` with no `fields` map (`{}`): a declared but untyped table.
- *   - `error`   a present-but-broken `matter.json` (junk), carrying its diagnostic.
- *   - `loaded`  a typed contract; `validateContract` compiled each field's validator once,
- *               so the loaded contract's `fields` are already the precompiled validators.
+ * No `matter.json` text maps to `untyped` (the raw grid), identical to a `{}` marker: this is the
+ * one thing it adds to {@link parseContract}, which only takes present text. A real declared table
+ * always has a marker (the loader only reads marked folders), so the no-text case is only the
+ * TOCTOU race where the marker vanished between the stat and the read, or a direct pure-transform
+ * call; either way the raw grid is the honest view, so it needs no distinct state of its own.
  */
-export type LoadedContract =
-	| { kind: 'none' }
-	| { kind: 'untyped' }
-	| { kind: 'error'; error: ContractError }
-	| { kind: 'loaded'; contract: Contract };
-
-/**
- * Parse AND compile a folder's `matter.json` ONCE. `validateContract` is where
- * compilation (`Schema.Compile`) happens, so memoize this off the contract text (a
- * `$derived` in the live vault) and pass the result to {@link buildView}; a
- * single-file change then reclassifies against the cached fields without
- * recompiling. Adds the no-text `none` case to {@link parseContract}'s three.
- */
-export function loadContract(contractText: string | undefined): LoadedContract {
-	if (contractText === undefined) return { kind: 'none' };
-	const parsed = parseContract(contractText);
-	switch (parsed.kind) {
-		// An untyped marker (`{}`) shows the raw grid, like no contract but declared on purpose.
-		case 'untyped':
-			return { kind: 'untyped' };
-		// Junk contract carries its diagnostic so the UI can surface it; deleting
-		// matter.json always recovers a working raw view.
-		case 'error':
-			return { kind: 'error', error: parsed.error };
-		case 'typed':
-			return { kind: 'loaded', contract: parsed.contract };
-	}
+export function loadContract(contractText: string | undefined): ParsedContract {
+	if (contractText === undefined) return { kind: 'untyped' };
+	return parseContract(contractText);
 }
 
 /**
@@ -185,28 +166,27 @@ export function loadContract(contractText: string | undefined): LoadedContract {
  */
 export function buildView(
 	rows: readonly Row[],
-	loaded: LoadedContract,
+	parsed: ParsedContract,
 ): TypedView | UntypedView {
-	if (loaded.kind === 'loaded') {
+	if (parsed.kind === 'typed') {
 		return {
 			mode: 'typed',
-			contract: loaded.contract,
-			conformance: classifyRows(loaded.contract.fields, rows),
+			contract: parsed.contract,
+			conformance: classifyRows(parsed.contract.fields, rows),
 		};
 	}
-	// No usable contract: the raw untyped view, carrying the diagnostic if a
-	// matter.json existed but was junk. Exhaustive over the remaining
-	// 'none' | 'untyped' | 'error' so a new LoadedContract variant fails to compile
-	// here instead of silently rendering as an empty grid. `none` (no marker) and
-	// `untyped` (a `{}` marker) render identically; only `error` carries a diagnostic.
+	// No usable contract: the raw untyped view, carrying the diagnostic if a matter.json existed
+	// but was junk. Exhaustive over the remaining 'untyped' | 'error' so a new ParsedContract
+	// variant fails to compile here instead of silently rendering as an empty grid. An untyped
+	// marker (`{}`, or no marker text at all) renders as the raw grid; only 'error' carries a
+	// diagnostic.
 	const columns = frontmatterColumns(rows);
-	switch (loaded.kind) {
-		case 'none':
+	switch (parsed.kind) {
 		case 'untyped':
 			return { mode: 'untyped', columns };
 		case 'error':
-			return { mode: 'untyped', columns, contractError: loaded.error };
+			return { mode: 'untyped', columns, contractError: parsed.error };
 		default:
-			return loaded satisfies never;
+			return parsed satisfies never;
 	}
 }

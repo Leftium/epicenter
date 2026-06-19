@@ -112,6 +112,21 @@ export async function loadVault(root: string): Promise<TableInput[]> {
 	const rootPath = resolve(root);
 	const names = await readdir(rootPath).catch(() => null);
 	if (names === null) return [];
+	return loadMarkedChildren(rootPath, names);
+}
+
+/**
+ * Load the marked immediate children of an ALREADY-listed folder into tables, sorted. Shared by
+ * {@link loadVault} and {@link loadPath} so the container case lists the directory exactly once
+ * (the caller passes the listing it already read) instead of re-running `readdir`.
+ *
+ * @param rootPath the container's resolved path.
+ * @param names the container's `readdir` listing.
+ */
+async function loadMarkedChildren(
+	rootPath: string,
+	names: string[],
+): Promise<TableInput[]> {
 	const markedDirs = await Promise.all(
 		names.map(async (name): Promise<string | null> => {
 			if (name.startsWith('.')) return null;
@@ -147,14 +162,15 @@ export async function loadVault(root: string): Promise<TableInput[]> {
  */
 export async function loadPath(path: string): Promise<TableInput[]> {
 	const dirPath = resolve(path);
-	const listing = await readdir(dirPath).catch(() => null);
-	if (listing === null) {
-		// Could not list the path at all: surface it as one unreadable table.
-		return [await loadTable(dirPath)];
-	}
 
-	// Marked folder XOR container of its marked children (ADR-0032); see the contract above.
-	return (await isMarked(dirPath))
-		? [await loadTable(dirPath)]
-		: loadVault(dirPath);
+	// Marked folder XOR container of its marked children (ADR-0032); see the contract above. The
+	// marked branch reads the folder once (loadTable lists it); the container branch lists once
+	// here and hands the listing to loadMarkedChildren, so no path is read twice.
+	if (await isMarked(dirPath)) return [await loadTable(dirPath)];
+
+	const names = await readdir(dirPath).catch(() => null);
+	// Could not list the path at all (and it is not a marked table): surface it as one unreadable
+	// table, so the failure flows through the same pipeline as any other.
+	if (names === null) return [await loadTable(dirPath)];
+	return loadMarkedChildren(dirPath, names);
 }

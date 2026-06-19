@@ -166,10 +166,10 @@ export function toggleManualRecording() {
  * A no-op unless the lifecycle is `failed`, so a stray retry press is safe.
  */
 export async function retryDictation() {
-	const lifecycle = dictationLifecycle.current;
-	if (lifecycle.phase !== 'failed') return;
+	const { outcome } = dictationLifecycle.current;
+	if (outcome.kind !== 'failed') return;
 
-	if (lifecycle.tier === 'silent-loss') {
+	if (outcome.tier === 'silent-loss') {
 		if (settings.get('recording.trigger') === 'vad') {
 			await startVadRecording();
 			return;
@@ -178,8 +178,8 @@ export async function retryDictation() {
 		return;
 	}
 
-	if (!lifecycle.recordingId) return;
-	await runTranscriptionForRecording(lifecycle.recordingId);
+	if (!outcome.recordingId) return;
+	await runTranscriptionForRecording(outcome.recordingId);
 }
 
 export async function cancelRecording() {
@@ -332,6 +332,10 @@ export async function startVadRecording() {
 
 export async function stopVadRecording() {
 	if (!isVadRecordingActive()) return;
+
+	// Disarming is one of the latch's clear actions: ending the session retires
+	// the live failure pip. The recordings row and any OS notification remain.
+	dictationLifecycle.clearUnreviewedFailure();
 
 	log.info('Stopping voice activated capture');
 	const { data, error } = await vadRecorder.stopActiveListening();

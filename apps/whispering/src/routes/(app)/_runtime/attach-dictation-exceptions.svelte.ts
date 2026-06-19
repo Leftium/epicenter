@@ -14,16 +14,11 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
  * warnings (revoked Accessibility, dead listener) are a different, present-tense
  * path and are untouched.
  */
-function notificationTitle(tier: DictationFailureTier): string {
-	switch (tier) {
-		case 'silent-loss':
-			return 'Recording failed';
-		case 'transcription':
-			return 'Transcription failed';
-		case 'delivery':
-			return 'Delivery failed';
-	}
-}
+const NOTIFICATION_TITLE = {
+	'silent-loss': 'Recording failed',
+	transcription: 'Transcription failed',
+	delivery: 'Delivery failed',
+} as const satisfies Record<DictationFailureTier, string>;
 
 export function attachDictationExceptions() {
 	// The failure's error object is stable for the life of one failure, so it is
@@ -32,17 +27,20 @@ export function attachDictationExceptions() {
 	let lastNotifiedError: AnyTaggedError | undefined;
 
 	$effect(() => {
-		const lifecycle = dictationLifecycle.current;
-		if (lifecycle.phase !== 'failed') return;
-		if (lifecycle.error === lastNotifiedError) return;
-		lastNotifiedError = lifecycle.error;
+		// Read the outcome track directly, never the composed pill value: a VAD
+		// utterance fails while the session keeps listening, so a failure must
+		// notify even though the live meter is what the pill is showing.
+		const { outcome } = dictationLifecycle.current;
+		if (outcome.kind !== 'failed') return;
+		if (outcome.error === lastNotifiedError) return;
+		lastNotifiedError = outcome.error;
 
 		// Delivery failures are quiet: the transcript is in history, so they do not
 		// earn an OS notification. The loud tiers do, but only when unfocused: when
 		// the window is focused the pill (and the recordings row) already show it.
-		if (lifecycle.tier === 'delivery') return;
+		if (outcome.tier === 'delivery') return;
 		if (document.hasFocus()) return;
-		osNotify(notificationTitle(lifecycle.tier), lifecycle.error.message);
+		osNotify(NOTIFICATION_TITLE[outcome.tier], outcome.error.message);
 	});
 
 	return () => {};

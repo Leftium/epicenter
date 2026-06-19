@@ -44,6 +44,13 @@
 			status.trigger === 'vad' &&
 			status.vadState === 'SPEECH_DETECTED',
 	);
+	// The secondary pip riding beside a live VAD meter, or undefined when none
+	// rides (manual recording, or a VAD session at rest).
+	const vadPip = $derived(
+		status?.phase === 'recording' && status.trigger === 'vad'
+			? status.pip
+			: undefined,
+	);
 
 	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
 	// the same amplitude through a fixed shape reads as a meter, not a flat block.
@@ -101,6 +108,22 @@
 					<span class="bar" style="height: {barHeight(envelope)}px"></span>
 				{/each}
 			</div>
+
+			{#if vadPip}
+				<div
+					class="pip"
+					class:pip-failed={vadPip === 'failed'}
+					title={vadPip === 'failed'
+						? 'A phrase failed. Click to review.'
+						: 'Transcribing previous phrase'}
+				>
+					{#if vadPip === 'transcribing'}
+						<LoaderCircleIcon class="size-3.5 animate-spin" />
+					{:else}
+						<TriangleAlertIcon class="size-3.5" />
+					{/if}
+				</div>
+			{/if}
 
 			<div class="actions">
 				<button
@@ -242,6 +265,19 @@
 	   threshold, on top of the height already reacting to loudness. */
 	.overlay.speaking .bar {
 		background: #ffe5ee;
+	}
+
+	/* The VAD outcome pip: the previous utterance's status riding beside the live
+	   meter. Dimmed so it reads as secondary to the meter; red when that utterance
+	   failed. No success state: the landing text is the receipt. */
+	.pip {
+		display: flex;
+		align-items: center;
+		color: rgba(255, 255, 255, 0.5);
+	}
+
+	.pip-failed {
+		color: #ffb4b4;
 	}
 
 	.actions {

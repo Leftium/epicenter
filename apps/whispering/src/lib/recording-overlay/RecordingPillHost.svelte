@@ -20,9 +20,9 @@
 
 	function handleStop() {
 		// Stop acts on whichever capture is live.
-		const lifecycle = dictationLifecycle.current;
-		if (lifecycle.phase !== 'recording') return;
-		if (lifecycle.trigger === 'manual') void stopManualRecording();
+		const { capture } = dictationLifecycle.current;
+		if (capture.kind !== 'recording') return;
+		if (capture.trigger === 'manual') void stopManualRecording();
 		else void stopVadRecording();
 	}
 

@@ -21,16 +21,38 @@ is still the only feedback, so the two platforms have drifted into two models.
 
 ## Decision
 
-Dictation feedback derives from one lifecycle value owned by the main window:
-`idle | recording | transcribing | delivered | failed`. Every surface is a pure
-projection of it, never an imperative emission.
+Dictation feedback derives from one lifecycle value owned by the main window,
+modeled as two orthogonal tracks: **capture** (`idle | recording-manual |
+listening | speaking`, the live session, derived from the recorder machines) and
+**outcome** (`none | transcribing | delivered | failed`, the most-recent
+utterance's pipeline result). Every surface is a pure projection, never an
+imperative emission. The two tracks exist because voice-activated capture is
+*continuous*: an utterance transcribes while the session keeps listening, so
+capture and outcome run concurrently. Manual capture is sequential, so its two
+tracks never overlap and it reads as one linear phase sequence.
 
-- The **pill is the status surface.** It renders all non-idle phases (recording
-  and VAD as today, plus a transcribing indicator, a sub-second delivered flash,
-  and a red failed state). It is the same Svelte component on both platforms; the
-  Tauri build mounts it in a native always-on-top window driven over IPC, the web
-  build mounts it as a fixed in-page element driven directly. Style, icons, and
-  states are identical by construction; only mount target and wiring differ.
+Outcome is most-recent-wins, which is right for the OS-notification path (each
+distinct failure notifies once) but too weak for the live pill: a focused VAD
+user could miss a failure that the next utterance's spinner or success overwrites
+before it is read. So a third fact, an **unreviewed-failure latch**, holds the
+failed VAD utterance until the user reviews it (opens its row) or ends the
+session (disarm or restart). Failure breaks through; success never clears it.
+
+- The **pill is the status surface.** It projects the pair. When capture is idle
+  (manual after stop, or a VAD session after disarm) the outcome is the pill's
+  primary content: a transcribing indicator, a sub-second delivered flash, or a
+  red failed state with inline Retry. While VAD capture is live, the listening
+  meter is the primary content and the outcome rides alongside it as a small
+  secondary pip: a spinner while an utterance transcribes, cleared when it lands
+  (the delivered text is the receipt, so a continuous session shows no
+  per-utterance success flash), and a red mark while an unreviewed failure is
+  latched. The latched failure outranks an in-flight spinner, so it stays red
+  until reviewed or the session ends, never overwritten by the next utterance.
+  Manual keeps the full linear flow unchanged. It is the same Svelte component on both
+  platforms; the Tauri build mounts it in a native always-on-top window driven
+  over IPC, the web build mounts it as a fixed in-page element driven directly.
+  Style, icons, and states are identical by construction; only mount target and
+  wiring differ.
 - The **happy path emits no toast.** Success is the output: the transcribed text
   landing in the clipboard or cursor is the receipt. The delivered flash plus the
   existing opt-in completion sound are the only success feedback.
@@ -42,6 +64,9 @@ projection of it, never an imperative emission.
   injection failed) is quiet, because the text is in the clipboard. When the
   window is unfocused, a failure also fires the existing OS notification
   (`report/index.ts`, error and unfocused), the one earned platform conditional.
+  The exception projection reads the **outcome** track directly, never the
+  composed pill value, so a VAD utterance that fails mid-session still notifies
+  even though the live meter is what the pill is showing.
 - **The dictation path emits no toasts.** The pill is the alert and carries the
   primary action (Retry), the recordings row is the failure-detail surface, and
   the OS notification is the unfocused alert. There is no toast in the dictation
@@ -70,11 +95,14 @@ projection of it, never an imperative emission.
 - One value has one set of consumers, so "what is my dictation doing" and "what
   failed" each have exactly one home (the pill, the recordings list). Toasts stop
   being an accidental, reload-losing log.
-- Cost: the pill is single-valued, so two overlapping dictations cannot both own
-  it. We accept most-recent-wins: a superseded older dictation goes silent on
-  success (its text still delivers) and its failure still reaches the user
-  through the exception projection (OS notification or toast) and the recordings
-  row. We do not turn the pill into a queue.
+- Cost: the latch holds one failure at a time, so in a rapid VAD burst a second
+  failure replaces the first on the pip before it is read. This is acceptable
+  because the pip is the live glance, not a queue: the durable record is the
+  per-failure OS notification (when unfocused) and the recordings rows, which keep
+  every failure. The latch only guarantees that *some* unreviewed failure stays
+  visible, not that each is individually acknowledged. Capture and outcome no
+  longer compete for the pill, so the live meter and the in-flight/failure pip
+  render at once instead of one masking the other.
 - Cost: extending the pill to terminal phases adds timed transitions (the
   delivered flash auto-hides; the failed state persists until the next dictation),
   which the current RECORDING-only pill did not have.
@@ -99,3 +127,16 @@ projection of it, never an imperative emission.
   so the toast is redundant; when unfocused the toast is in a window the user is
   not looking at, so it is useless. The pill's inline Retry plus the OS
   notification cover both, and the pill works cross-app where a toast cannot.
+- **Collapse the two tracks into one most-recent-wins value (the original
+  shape).** Lost because a live capture masks the outcome: for continuous VAD an
+  entire armed session would then show no transcribing, delivered, or failed
+  state, silently dropping per-utterance failures and their OS notification. The
+  single-value collapse is sound only when capture and outcome are sequential, as
+  in manual mode; voice activation makes them concurrent, so they must be two
+  tracks.
+- **Show a per-utterance delivered flash in VAD too (symmetric with manual).**
+  Lost because in continuous dictation the landing text is the receipt, and a
+  green flash every few seconds reads as nagging. Comparable continuous-dictation
+  apps (superwhisper, live-caption tools) surface processing and errors but not
+  per-utterance success. In VAD, success earns no pixels; only in-flight and
+  failure do.

@@ -39,9 +39,9 @@ export function attachRecordingOverlay() {
 						return;
 					}
 					// Stop/cancel act on a live capture; ignore them otherwise.
-					const lifecycle = dictationLifecycle.current;
-					if (lifecycle.phase !== 'recording') return;
-					if (lifecycle.trigger === 'manual') {
+					const { capture } = dictationLifecycle.current;
+					if (capture.kind !== 'recording') return;
+					if (capture.trigger === 'manual') {
 						if (event.payload === 'cancel') void cancelRecording();
 						else void stopManualRecording();
 						return;

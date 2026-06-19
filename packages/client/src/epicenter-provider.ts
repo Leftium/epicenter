@@ -8,8 +8,10 @@
  * The endpoint streams the answer back as Server-Sent Events
  * (`toServerSentEventsResponse`), the way a provider streams; this adapter turns
  * that wire format back into the raw AG-UI `StreamChunk` iterable the answer core
- * (`streamAnswer`) consumes. TanStack does not expose its SSE connection parser
- * as a standalone utility, so the `data:` frames are parsed here.
+ * (`streamAnswer`) consumes. TanStack ai-client (0.16.3) exposes no standalone SSE
+ * parser, only `fetchServerSentEvents`, a full connection adapter that would POST
+ * an AG-UI `RunAgentInput` envelope this custom `/api/ai/chat` contract does not
+ * speak, so the `data:` frames are parsed here (verified; see ADR-0037).
  *
  * This lives in `@epicenter/client` (beside `createAiChatFetch`, the authed fetch
  * it expects) so every app that answers a cloud conversation in-process shares one

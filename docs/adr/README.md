@@ -104,5 +104,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0034](0034-the-cloud-doc-generation-queue-is-withdrawn.md) | The cloud doc-generation queue is withdrawn | Superseded by 0033 |
 | [0035](0035-durable-storage-is-one-per-person-coordination-box.md) | Durable storage is one per-person coordination box: an app-blind anchor and store | Accepted |
 | [0036](0036-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) | An answer body is a native parts array; its text streams into Y.Text | Accepted |
+| [0037](0037-adapter-construction-is-a-shared-leaf-package-keyed-on-the-model-catalog.md) | Adapter construction is a shared leaf package keyed on the model catalog | Accepted |
 
 When you add an ADR, add its row here.

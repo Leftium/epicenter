@@ -1,13 +1,7 @@
 # 0029. A matter.json marks a table; matter is a declared store, not a discovered lens
 
-- **Status:** Accepted (nesting clause reversed by [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md))
+- **Status:** Accepted
 - **Date:** 2026-06-19
-
-> The marker rule and declared-store framing below stand. The "nesting is
-> first-class: a table can contain tables" clause is reversed by
-> [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md): a
-> folder is a table XOR a container of tables, never both, so a marked folder's
-> subfolders are ignored rather than shown as subtables.
 
 ## Context
 
@@ -17,9 +11,7 @@ table. Every shape-based rule hit one irreducible ambiguity: a `.md` next to a
 subfolder could be a data row or a document, and a subfolder could be a table or
 an attachment bundle. Shape cannot tell them apart, so every variant either
 silently dropped rows (the asset-folder bug, where `pages/` with image
-subfolders vanished its `.md`) or turned a root `README.md` into a row. An
-earlier draft of this ADR tried "a folder is both a table and a vault"; that
-relocated the ambiguity rather than removing it.
+subfolders vanished its `.md`) or turned a root `README.md` into a row.
 
 ## Decision
 
@@ -27,26 +19,23 @@ A folder is a table **if and only if it contains a `matter.json`.** The marker i
 the declaration; matter never guesses a table from shape.
 
 - A marked folder's `.md` files are its rows.
-- A marked folder's immediate child folders that are **themselves marked** are
-  its subtables. Nesting is now first-class: a table can contain tables.
 - An unmarked folder is not data. It is ignored (an attachment bundle, a junk
   dir, a purely organizational folder).
-- Opening folder `F` shows `F`'s own rows (when `F` is marked) plus its immediate
-  marked children as subtables. **No recursion:** depth is reached by opening a
-  subtable. `F` itself need not be marked for its marked children to show, so you
-  can point matter at an unmarked container and still see the tables inside it.
-- Contract semantics:
-  - `matter.json` with a valid `fields` map → a **typed** table;
-  - `matter.json` with no `fields` (including `{}`) → an **untyped** table (the
-    raw grid, columns from frontmatter). `{}` becomes the canonical untyped-table
-    marker, replacing the old `MissingFields` error;
+- Contract semantics (what the marker's contents say about typing):
+  - `matter.json` with a non-empty `fields` map → a **typed** table;
+  - `matter.json` that declares no fields (`{}`, `{"fields":{}}`, or any object
+    without a non-empty `fields` map) → an **untyped** table (the raw grid,
+    columns from frontmatter). `{}` is the canonical untyped-table marker. A
+    table is typed only when it declares at least one field, so there is no
+    strict zero-field table and no permissive-vs-strict flip on the `fields` key;
   - unparseable `matter.json` → a table whose contract is broken, surfaced as
     `invalid-contract` (still a claimed table, not "not a table");
-  - no `matter.json` → **not a table**.
+  - no `matter.json` → **not a table.**
 
 This redefines matter as a **declared store**, not a lens that auto-discovers
-tables in arbitrary markdown. Reference resolution across the new nesting is
-governed by [ADR-0030](0030-references-resolve-within-a-folder-and-its-immediate-children.md).
+tables in arbitrary markdown. Whether a path is a single table or a container of
+tables, and how references resolve across the loaded scope, are governed by
+[ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md).
 
 ## Consequences
 
@@ -58,11 +47,6 @@ Dissolved, not relocated:
 - the silent `.md`-drop footgun class.
 
 matter asks instead of guessing.
-
-Gained:
-
-- nesting / subtables (a marked folder inside a marked folder), expressible
-  cleanly with no new noise.
 
 Cost:
 
@@ -80,15 +64,13 @@ Migration:
 
 Reverses:
 
-- the "altitude is pure shape" direction and the earlier full-collapse draft of
-  this ADR.
+- the "altitude is pure shape" direction.
 
 ## Considered alternatives
 
 - **Fix the classifier (a subfolder counts as a table only if it contains
-  `.md`).** Keeps zero-ceremony discovery, but cannot express a folder that has
-  both its own rows and child tables, and retains a narrow silent drop. Rejected
-  once matter became a declared store.
+  `.md`).** Keeps zero-ceremony discovery, but retains a narrow silent drop and
+  cannot express intent. Rejected once matter became a declared store.
 - **Full collapse (a folder is both a table and a vault, shape-driven).** Never
   drops a `.md`, but turns a root `README.md` into a row and shows attachment
   folders as empty tables. Rejected: relocates the ambiguity instead of removing

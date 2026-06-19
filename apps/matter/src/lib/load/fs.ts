@@ -138,7 +138,7 @@ async function loadMarkedChildren(
 }
 
 /**
- * Load a path into the tables in its scope (ADR-0029/0030/0032), so `matter check <path>` works
+ * Load a path into the tables in its scope (ADR-0029/0032), so `matter check <path>` works
  * whether the user points at one table folder or at a folder of tables. A folder is a table XOR a
  * container of tables, never both (ADR-0032):
  *

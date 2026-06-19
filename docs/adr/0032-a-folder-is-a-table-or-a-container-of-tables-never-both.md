@@ -2,29 +2,26 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-19
-- **Supersedes:** [ADR-0031](0031-subtables-are-navigated-by-re-rooting-the-scope.md)
 
 ## Context
 
-[ADR-0029](0029-matter-json-marks-a-table.md) made a `matter.json` the table
-marker and, in the same record, made nesting first-class: a marked folder could
-be both a table (its own rows) and a container of marked child tables shown
-beside it. [ADR-0030](0030-references-resolve-within-a-folder-and-its-immediate-children.md)
-then had to bound reference resolution to one level, and
-[ADR-0031](0031-subtables-are-navigated-by-re-rooting-the-scope.md) had to invent
+[ADR-0029](0029-matter-json-marks-a-table.md) makes a `matter.json` the table
+marker. An early draft of the marker model also made nesting first-class: a
+marked folder would be both a table (its own rows) and a container of marked
+child tables shown beside it, with reference resolution bounded to one level and
 a descend-by-re-rooting UI to reach deeper tables.
 
 But matter's reason to exist is **cross-table references** (`adaptations.page ->
 pages`), and references need a **flat, co-resident, closed universe**: every
-participating table loaded in one scope. Nesting works against that. ADR-0030
-deliberately stops references at one level, so each level of nesting **fragments**
-the reference graph into islands that cannot see each other. The feature that
-makes matter worth using wants everything flat; subtables push the other way. No
-real or example vault nests (every one is an unmarked root of marked leaf
-tables), and the cases that motivated nesting all resolve better flat: sibling
-tables with a foreign key (`chapters.character -> characters`), co-located
-independent datasets (open each as its own vault), or asset bundles (already
-handled by the marker rule ignoring unmarked subfolders).
+participating table loaded in one scope. Nesting works against that. Bounding
+references to one level **fragments** the reference graph into islands that
+cannot see each other, and reaching deeper tables needs a descend UI that is
+pure chrome for a capability nothing uses. No real or example vault nests (every
+one is an unmarked root of marked leaf tables), and the cases that motivated
+nesting all resolve better flat: sibling tables with a foreign key
+(`chapters.character -> characters`), co-located independent datasets (open each
+as its own vault), or asset bundles (already handled by the marker rule ignoring
+unmarked subfolders).
 
 ## Decision
 
@@ -45,22 +42,31 @@ The vault view renders that scope as a **flat tab bar** of peer tables. There is
 no subtable, no descend affordance, and no scope coordinate in the URL; opening a
 different folder is the only way to change which closed universe is loaded.
 
+### References resolve within the one loaded scope
+
+A reference is a **bare table name** that must resolve inside the loaded scope,
+which is exactly one of the two sets above:
+
+- References stay bare names. With a single flat scope they are unambiguous and
+  **the on-disk `.md` format does not change.**
+- A reference whose target is not in the loaded scope is *unevaluable* when the
+  scope is a lone table (no sibling tables loaded) and a *dangling-reference*
+  failure when sibling tables are loaded (the scope is then the complete, closed
+  universe). This reduces to `tables.length === 1` and is the honest replacement
+  for the old `scope: 'table' | 'vault'` discriminant. The UI and the CLI use the
+  same scope.
+
 ## Consequences
 
 Dissolved:
 
-- the "a folder is both a table and a container" case, and with it the whole
-  descend / re-rooting plan ADR-0031 deferred (its three open questions evaporate);
+- the "a folder is both a table and a container" case, and with it any descend or
+  re-rooting UI;
 - the only way a loaded scope could span more than one level, so every view is a
   clean flat reference universe by construction.
 
-Simpler:
-
-- [ADR-0030](0030-references-resolve-within-a-folder-and-its-immediate-children.md)
-  stands unchanged in mechanism (one scope, bare names, no durable format change,
-  reduces to `tables.length === 1`), but the "own rows PLUS immediate marked
-  children" case it anticipated can no longer co-occur: the scope is either one
-  lone marked table or a container's marked children.
+No durable content migration: a flat vault validates exactly as before (its root
+has no rows; its marked children are the scope).
 
 Cost (the one sharp edge):
 
@@ -70,12 +76,24 @@ Cost (the one sharp edge):
   correct ("you told me this folder is a table, so I show it as one"), but it is a
   real discontinuity at the marker.
 
+Forecloses references spanning more than one level. If ever needed, that is a
+**new ADR introducing path-qualified references** (`pages/intro`), a deliberate
+durable-format change.
+
+- **Trigger to revisit:** a real vault needs a row to reference a grandchild or
+  cousin table and neither flattening nor opening that folder directly can
+  express it.
+
 ## Considered alternatives
 
-- **Keep nesting first-class (ADR-0029 as written).** Rejected: it fragments the
-  reference graph that is matter's entire point, needs the deferred descend UI to
-  be usable, and no vault actually nests. The shipped loader was already ~95% the
-  flat model; nesting only added the both-at-once case and the unbuilt descent.
-- **Grouped or indented tabs / a flat list across all levels.** Already rejected
-  by ADR-0031 for misrepresenting the peer relationship or dissolving the closed
-  universe; moot once subtables are gone.
+- **Keep nesting first-class.** Rejected: it fragments the reference graph that
+  is matter's entire point, needs a descend UI to be usable, and no vault
+  actually nests. The shipped loader was already ~95% the flat model; nesting
+  only added the both-at-once case and an unbuilt descent.
+- **Whole-subtree reference resolution.** Rejected: forces path-qualified
+  references now, or leaves bare names ambiguous across levels. Defer the durable
+  change until a real need triggers it.
+- **Grouped or indented tabs, or a flat list across all levels.** Rejected: the
+  first implies a hierarchy the scope does not have (the tables are reference
+  peers); the second dissolves the closed universe, forcing cross-level
+  resolution this ADR deliberately excludes. Moot once subtables are gone.

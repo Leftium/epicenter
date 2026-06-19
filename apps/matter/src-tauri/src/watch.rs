@@ -167,7 +167,7 @@ fn is_marked(dir: &Path) -> bool {
 }
 
 /// The vault's tables as absolute paths, applying the SAME marker rule the CLI loader uses
-/// (`src/lib/load/fs.ts` `loadPath`, ADR-0029/0030/0032), so the GUI and the CLI agree on what a
+/// (`src/lib/load/fs.ts` `loadPath`, ADR-0029/0032), so the GUI and the CLI agree on what a
 /// path is. A folder is a table XOR a container of tables, never both (ADR-0032):
 ///
 ///   - a MARKED root IS a single table (its `.md` files are rows); its subfolders are ignored;

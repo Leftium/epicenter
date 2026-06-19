@@ -135,11 +135,27 @@ export function createVault(root: string) {
 		tables.clear();
 	}
 
+	/**
+	 * Adopt the root folder as a table by writing the canonical untyped marker
+	 * (`matter.json` = `{}`) into it (ADR-0029). A folder is a table iff it has a marker, so an
+	 * unmarked root shows no tables until adopted. Writing the marker at the root is a top-level
+	 * change the non-recursive root watch already sees, so it re-scans and surfaces the now-marked
+	 * root as a table live: there is nothing to reconcile here. The empty state calls this.
+	 */
+	async function adopt(): Promise<void> {
+		await invoke('write_entry', {
+			path: root,
+			fileName: 'matter.json',
+			content: '{}',
+		});
+	}
+
 	return {
 		folderName,
 		root,
 		whenReady,
 		dispose,
+		adopt,
 		/** The vault's SQLite projection. The per-tab WHERE filter queries it; the filter's freshness
 		 *  signal (`mirror.version`) and query seam live here, not on the vault. */
 		mirror,

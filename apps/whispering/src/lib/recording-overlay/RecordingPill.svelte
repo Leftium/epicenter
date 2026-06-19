@@ -21,7 +21,7 @@
 		onStop,
 		onCancel,
 		onRetry,
-		onFocusMain,
+		onReveal,
 	}: {
 		/** What to display, or `null` when the dictation is idle (hidden). */
 		status: RecordingOverlayStatus | null;
@@ -33,8 +33,9 @@
 		onCancel: () => void;
 		/** Re-run the failed dictation. */
 		onRetry: () => void;
-		/** Bring the main window to the front (and open the failure detail). */
-		onFocusMain: () => void;
+		/** Reveal Whispering: raise the main window (desktop) and open the failed
+		 * recording's detail when a failure is showing. */
+		onReveal: () => void;
 	} = $props();
 
 	const isManual = $derived(
@@ -93,7 +94,7 @@
 		class:speaking={isSpeaking}
 		class:failed={status.phase === 'failed'}
 		title={status.phase === 'failed' ? status.title : 'Open Whispering'}
-		onclick={onFocusMain}
+		onclick={onReveal}
 	>
 		{#if status.phase === 'recording'}
 			<div class="icon">

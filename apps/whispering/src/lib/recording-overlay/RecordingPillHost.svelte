@@ -26,7 +26,7 @@
 			onStop={() => dispatchPillAction('stop')}
 			onCancel={() => dispatchPillAction('cancel')}
 			onRetry={() => dispatchPillAction('retry')}
-			onFocusMain={openFailedDictationDetail}
+			onReveal={openFailedDictationDetail}
 		/>
 	</div>
 {/if}

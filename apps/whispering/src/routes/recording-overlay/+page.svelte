@@ -61,14 +61,16 @@
 	}
 </script>
 
-<RecordingPill
-	{status}
-	{level}
-	onStop={() => sendAction('stop')}
-	onCancel={() => sendAction('cancel')}
-	onRetry={() => sendAction('retry')}
-	onFocusMain={focusMainWindow}
-/>
+<div class="overlay-center">
+	<RecordingPill
+		{status}
+		{level}
+		onStop={() => sendAction('stop')}
+		onCancel={() => sendAction('cancel')}
+		onRetry={() => sendAction('retry')}
+		onReveal={focusMainWindow}
+	/>
+</div>
 
 <style>
 	/* These `:global` document rules belong to the overlay webview, not the pill:
@@ -86,6 +88,17 @@
 		   which makes the browser paint a dark canvas behind the pill in this
 		   transparent webview. Reset it so only the pill is visible. */
 		color-scheme: normal !important;
+	}
+
+	/* The pill hugs its content, so center it within the fixed overlay window (the
+	   web host centers its own copy). A fixed full-window flex box centers the chip
+	   regardless of how the layout nests the route. */
+	.overlay-center {
+		position: fixed;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	/* The Svelte inspector toggle (svelte.config.js `showToggleButton: always`)

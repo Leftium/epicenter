@@ -4,7 +4,6 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import MicIcon from '@lucide/svelte/icons/mic';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -20,7 +19,6 @@
 		level,
 		onStop,
 		onCancel,
-		onRetry,
 		onReveal,
 	}: {
 		/** What to display, or `null` when the dictation is idle (hidden). */
@@ -31,11 +29,9 @@
 		onStop: () => void;
 		/** Discard the live manual recording. */
 		onCancel: () => void;
-		/** Re-run the failed dictation. */
-		onRetry: () => void;
-		/** Reveal Whispering: raise the main window (desktop) and open the failed
-		 * recording's detail when a failure is showing. */
-		onReveal: () => void;
+		/** Reveal Whispering by raising the main window (desktop). Omitted on web,
+		 * where the app window is already in front. */
+		onReveal?: () => void;
 	} = $props();
 
 	const isManual = $derived(
@@ -75,11 +71,6 @@
 		event.stopPropagation();
 		onCancel();
 	}
-
-	function handleRetry(event: MouseEvent) {
-		event.stopPropagation();
-		onRetry();
-	}
 </script>
 
 <!-- The pill is non-focusable on desktop (an overlay window) and decorative on
@@ -112,22 +103,17 @@
 			</div>
 
 			{#if !isManual}
-				<!-- The VAD outcome pip holds a fixed-width slot for the whole
-				     session, full or empty, so the pill does not resize when a
-				     phrase's pip appears or clears. Empty at rest. -->
+				<!-- The VAD pip holds a fixed-width slot for the whole session, full or
+				     empty, so the pill does not resize when the previous phrase's
+				     spinner appears or clears. Empty at rest. -->
 				<div
 					class="pip"
-					class:pip-failed={vadPip === 'failed'}
-					title={vadPip === 'failed'
-						? 'A phrase failed. Click to review.'
-						: vadPip === 'transcribing'
-							? 'Transcribing previous phrase'
-							: undefined}
+					title={vadPip === 'transcribing'
+						? 'Transcribing previous phrase'
+						: undefined}
 				>
 					{#if vadPip === 'transcribing'}
 						<LoaderCircleIcon class="size-3.5 animate-spin" />
-					{:else if vadPip === 'failed'}
-						<TriangleAlertIcon class="size-3.5" />
 					{/if}
 				</div>
 			{/if}
@@ -181,21 +167,12 @@
 				<span class="label">Delivered</span>
 			{/if}
 		{:else if status.phase === 'failed'}
+			<!-- A glanceable failure: the terse reason, no action. Detail and retry
+			     live on the recordings row (ADR-0029). -->
 			<div class="icon">
 				<TriangleAlertIcon class="size-4" />
 			</div>
 			<span class="label">{status.title}</span>
-			<div class="actions">
-				<button
-					type="button"
-					class="action retry"
-					aria-label="Retry dictation"
-					title="Retry"
-					onclick={handleRetry}
-				>
-					<RotateCcwIcon class="size-3.5" />
-				</button>
-			</div>
 		{/if}
 	</div>
 {/if}
@@ -231,7 +208,7 @@
 	}
 
 	/* Failed: a red chip so the failure reads at a glance, with the terse reason
-	   in the label and Retry inline. */
+	   in the label. No action: detail and retry live on the recordings row. */
 	.overlay.failed {
 		background: rgba(60, 18, 22, 0.92);
 		border-color: rgba(239, 68, 68, 0.55);
@@ -292,9 +269,10 @@
 		background: #ffe5ee;
 	}
 
-	/* The VAD outcome pip: the previous utterance's status riding beside the live
-	   meter. Dimmed so it reads as secondary to the meter; red when that utterance
-	   failed. No success state: the landing text is the receipt. */
+	/* The VAD pip: the previous utterance's transcribe spinner riding beside the
+	   live meter. Dimmed so it reads as secondary to the meter. No success or
+	   failure state: success is the landing text, failure goes to the notification
+	   and the recordings row. */
 	.pip {
 		/* A fixed-width slot (the size-3.5 icon's width) reserved for the whole VAD
 		   session, so the pill keeps a steady width as the pip toggles. */
@@ -304,10 +282,6 @@
 		align-items: center;
 		justify-content: center;
 		color: rgba(255, 255, 255, 0.5);
-	}
-
-	.pip-failed {
-		color: #ffb4b4;
 	}
 
 	.actions {
@@ -356,16 +330,6 @@
 	.action.cancel:hover {
 		background: rgba(250, 162, 202, 0.22);
 		color: #ffd2e4;
-	}
-
-	/* Retry sits on the red failed chip; lighten it so it reads as the action. */
-	.action.retry {
-		background: rgba(255, 255, 255, 0.16);
-		color: #fff;
-	}
-
-	.action.retry:hover {
-		background: rgba(255, 255, 255, 0.28);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

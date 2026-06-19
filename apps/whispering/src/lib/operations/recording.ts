@@ -5,10 +5,7 @@ import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
 import { analytics } from '$lib/operations/analytics';
 import { recordingMedia } from '$lib/operations/media';
-import {
-	processRecordingPipeline,
-	runTranscriptionForRecording,
-} from '$lib/operations/pipeline';
+import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
 import { prewarmLocalModel } from '$lib/operations/transcribe';
 import { log, report } from '$lib/report';
@@ -95,13 +92,9 @@ export async function startManualRecording() {
 	if (error) {
 		void recordingMedia.resume();
 		// The recording never started, so there is no artifact to recover: the
-		// loudest tier. No row exists, so retry restarts capture. The pill is the
-		// alert, so there is no toast.
-		dictationLifecycle.markFailed({
-			tier: 'silent-loss',
-			error,
-			recordingId: null,
-		});
+		// loudest tier. The pill glances it and the notification fires when
+		// unfocused, so there is no toast.
+		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
 		return;
 	}
 
@@ -121,11 +114,7 @@ export async function stopManualRecording() {
 		void recordingMedia.resume();
 		// Finalizing failed, so the captured audio never reached a row: treat it
 		// as a silent loss rather than a retryable transcription.
-		dictationLifecycle.markFailed({
-			tier: 'silent-loss',
-			error,
-			recordingId: null,
-		});
+		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
 		return;
 	}
 
@@ -157,36 +146,6 @@ export function toggleManualRecording() {
 		return stopManualRecording();
 	}
 	return startManualRecording();
-}
-
-/**
- * Re-run the dictation the pill is currently reporting as failed. The retry
- * depends on how far the dictation got:
- *
- * - `silent-loss`: capture never started, so there is no audio to re-use. Start
- *   a fresh capture with the active trigger.
- * - `transcription`: the audio is saved under the recording id, so re-run
- *   transcription and delivery for it.
- *
- * A no-op unless the lifecycle is `failed`, so a stray retry press is safe. A
- * delivery that missed its output is a reach, not a failure, so it never lands
- * here and has no Retry: the transcript is recoverable from its recordings row.
- */
-export async function retryDictation() {
-	const { outcome } = dictationLifecycle.current;
-	if (outcome.kind !== 'failed') return;
-
-	if (outcome.tier === 'silent-loss') {
-		if (settings.get('recording.trigger') === 'vad') {
-			await startVadRecording();
-			return;
-		}
-		await startManualRecording();
-		return;
-	}
-
-	if (!outcome.recordingId) return;
-	await runTranscriptionForRecording(outcome.recordingId);
 }
 
 export async function cancelRecording() {
@@ -321,11 +280,7 @@ export async function startVadRecording() {
 	if (error) {
 		resumePlaybackForVadEnd();
 		// Listening never armed, so nothing was captured: a silent loss.
-		dictationLifecycle.markFailed({
-			tier: 'silent-loss',
-			error,
-			recordingId: null,
-		});
+		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
 		return;
 	}
 
@@ -340,16 +295,23 @@ export async function startVadRecording() {
 export async function stopVadRecording() {
 	if (!isVadRecordingActive()) return;
 
-	// Disarming is one of the latch's clear actions: ending the session retires
-	// the live failure pip. The recordings row and any OS notification remain.
-	dictationLifecycle.clearUnreviewedFailure();
-
 	log.info('Stopping voice activated capture');
 	const { data, error } = await vadRecorder.stopActiveListening();
 	// Disarming ends the session: restore playback now, do not wait on the
 	// per-utterance debounce.
 	resumePlaybackForVadEnd();
-	if (error) return;
+	if (error) {
+		// Stop is an operation with no capture/outcome phase, so the pill cannot
+		// carry it: a failed disarm keeps a toast (ADR-0029's operation-condition
+		// carve-out). The session may still be live, so the user must know it did
+		// not stop.
+		report.error({
+			title: "Couldn't stop voice activated capture",
+			description: 'The session may still be running. Try stopping it again.',
+			cause: error,
+		});
+		return;
+	}
 	if (data.status === 'idle') return;
 	sound.playSoundIfEnabled('vad-stop');
 }

@@ -4,7 +4,6 @@
 	import { revealMainWindow } from '$lib/main-window';
 	import {
 		recordingOverlayAction,
-		recordingOverlayFocusFailure,
 		recordingOverlayMicLevel,
 		recordingOverlayReady,
 		recordingOverlayStatus,
@@ -54,10 +53,8 @@
 	}
 
 	function focusMainWindow() {
-		// Raise the main window (the shared reveal), and ask it to open the failed
-		// recording's row: a no-op in the main window unless a failure is showing.
+		// Clicking the pill body raises the main window (the shared reveal).
 		void revealMainWindow.emit({});
-		void recordingOverlayFocusFailure.emit();
 	}
 </script>
 
@@ -67,7 +64,6 @@
 		{level}
 		onStop={() => sendAction('stop')}
 		onCancel={() => sendAction('cancel')}
-		onRetry={() => sendAction('retry')}
 		onReveal={focusMainWindow}
 	/>
 </div>

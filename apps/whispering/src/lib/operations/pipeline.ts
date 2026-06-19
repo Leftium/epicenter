@@ -87,11 +87,11 @@ export async function processRecordingPipeline({
 				},
 			});
 			if (isDictation) {
-				// The pill is the dictation alert; no toast in the dictation path.
+				// No toast in the dictation path: the failure goes to the notification
+				// (when unfocused) and the recordings row.
 				dictationLifecycle.markFailed({
 					tier: 'transcription',
 					error: saveError,
-					recordingId,
 				});
 			} else {
 				report.error({
@@ -122,7 +122,6 @@ export async function processRecordingPipeline({
 			dictationLifecycle.markFailed({
 				tier: 'transcription',
 				error: transcribeError,
-				recordingId,
 			});
 		} else {
 			transcribeLoading?.reject({ cause: transcribeError });
@@ -195,12 +194,13 @@ export async function processRecordingPipeline({
 }
 
 /**
- * Map a delivery outcome onto the dictation pill. Every delivery reach is a
- * success (the transcript is saved), so this is always a `delivered` flash; the
- * reach just colors it: a clean `output`, a `clipboard` fallback, or
- * `history`-only when a requested channel failed. A `history` reach logs the
- * underlying error for diagnostics, but the user's recovery is the transcript in
- * the recordings row, not a retry, so it is not a dictation failure (ADR-0029).
+ * Map a delivery outcome onto the dictation lifecycle. Every delivery reach is a
+ * success (the transcript is saved), so this is always a `delivered` outcome; the
+ * reach colors it and decides whether it flashes (a clean `output`) or persists
+ * on the pill (a reduced `clipboard` or `history` reach). A `history` reach logs
+ * the underlying error for diagnostics, but the user's recovery is the transcript
+ * in the recordings row, not a retry, so it is not a dictation failure and fires
+ * no notification (ADR-0029).
  */
 function markDictationDelivery(outcome: DeliveryOutcome): void {
 	if (outcome.reach === 'history') {
@@ -209,35 +209,4 @@ function markDictationDelivery(outcome: DeliveryOutcome): void {
 		);
 	}
 	dictationLifecycle.markDelivered(outcome.reach);
-}
-
-/**
- * Re-run transcription and delivery for an already-saved recording, driving the
- * dictation pill the whole way. Used by the failed pill's Retry: the audio is
- * still on disk under `recordingId`, so this skips capture and the row/blob
- * setup and just retries the part that failed. Transformation is deliberately
- * left out, matching the per-row retry: a retry re-transcribes, it does not
- * re-derive a transformation.
- */
-export async function runTranscriptionForRecording(
-	recordingId: string,
-): Promise<void> {
-	dictationLifecycle.markTranscribing();
-
-	const { data: transcribedText, error } =
-		await transcribeAndPersist(recordingId);
-	if (error) {
-		dictationLifecycle.markFailed({
-			tier: 'transcription',
-			error,
-			recordingId,
-		});
-		return;
-	}
-
-	sound.playSoundIfEnabled('transcriptionComplete');
-	const { outcome } = await deliverTranscriptionResult({
-		text: transcribedText,
-	});
-	markDictationDelivery(outcome);
 }

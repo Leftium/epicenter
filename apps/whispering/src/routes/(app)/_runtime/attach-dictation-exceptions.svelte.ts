@@ -4,15 +4,21 @@ import type { DictationFailureTier } from '$lib/recording-overlay/events';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
 /**
- * The exception projection over the dictation lifecycle. The pill is the visible
- * alert and carries Retry, so the only thing this adds is the unfocused case: a
- * red pill in a window the user is not looking at is useless, so a failure also
- * fires the OS notification, the one earned platform conditional (ADR-0029).
+ * The exception projection over the dictation lifecycle. A manual failure
+ * glances on the pill, and a VAD failure does not show there at all, so the
+ * durable cross-app signal is the OS notification: every real failure fires it,
+ * focused or not, because VAD runs unattended and shows nothing on the live pill
+ * (ADR-0029). Detail and retry live on the recordings row, not here.
  *
- * There is no toast and no `MoreDetailsDialog` here: the pill is the alert and
- * the recordings row is the detail. `report.warning` and standing-condition
- * warnings (revoked Accessibility, dead listener) are a different, present-tense
- * path and are untouched.
+ * A reduced delivery reach is not a failure: the transcript is saved, so it never
+ * reaches this projection. It surfaces on the pill instead (a `clipboard` or
+ * `history` tag that persists until the next dictation), which is enough because
+ * the dominant `history` cause, a revoked Accessibility grant, already raises its
+ * own standing notice.
+ *
+ * There is no toast and no `MoreDetailsDialog`. `report.warning` and
+ * standing-condition warnings (revoked Accessibility, dead listener) are a
+ * different, present-tense path and are untouched.
  */
 const NOTIFICATION_TITLE = {
 	'silent-loss': 'Recording failed',
@@ -26,20 +32,21 @@ export function attachDictationExceptions() {
 	let lastNotifiedError: AnyTaggedError | undefined;
 
 	$effect(() => {
-		// Read the outcome track directly, never the composed pill value: a VAD
-		// utterance fails while the session keeps listening, so a failure must
-		// notify even though the live meter is what the pill is showing.
+		// The outcome track is the failure source: a VAD utterance fails while the
+		// session keeps listening, so the failure never shows on the pill and the
+		// notification is its only proactive surface.
 		const { outcome } = dictationLifecycle.current;
 		if (outcome.kind !== 'failed') return;
 		if (outcome.error === lastNotifiedError) return;
 		lastNotifiedError = outcome.error;
 
-		// A failure notifies only when unfocused: when the window is focused the
-		// pill (and the recordings row) already show it. Both surviving tiers are
-		// real failures with no usable text, so both earn the notification. A
-		// transcript that merely missed its configured output is a delivery reach,
+		// Notify on every real failure, focused or not. VAD is the deciding case:
+		// it runs unattended and shows nothing on the pill, so a focused user
+		// staring at the listening meter would otherwise get no signal that an
+		// utterance was lost. A failure notification is the non-annoying kind (we
+		// already dropped success and progress toasts), so firing it while focused
+		// is a worthwhile floor, not noise. A reduced delivery reach is a success,
 		// not a failure, and never reaches this projection.
-		if (document.hasFocus()) return;
 		osNotify(NOTIFICATION_TITLE[outcome.tier], outcome.error.message);
 	});
 

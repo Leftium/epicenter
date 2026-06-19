@@ -16,20 +16,17 @@ import type { RecordingOverlayStatus, VadOutcomePip } from './events';
 export function projectLifecycleToStatus(
 	lifecycle: DictationLifecycle,
 ): RecordingOverlayStatus | null {
-	const { capture, outcome, unreviewedFailure } = lifecycle;
+	const { capture, outcome } = lifecycle;
 
-	// A live capture owns the pill: the recording meter is the primary content.
-	// A VAD session also carries the concurrent utterance work as a side pip,
-	// where a latched failure outranks an in-flight transcribe (failure breaks
-	// through). Success earns no pip.
+	// A live capture owns the pill: the recording meter is the primary content. A
+	// VAD session also carries the previous utterance's transcribe as a side pip
+	// spinner. Success and failure earn no pip: success is the landing text, and a
+	// failure goes to the notification and the recordings row, not the pill.
 	if (capture.kind === 'recording') {
 		if (capture.trigger === 'manual')
 			return { phase: 'recording', trigger: 'manual' };
-		const pip: VadOutcomePip | undefined = unreviewedFailure
-			? 'failed'
-			: outcome.kind === 'transcribing'
-				? 'transcribing'
-				: undefined;
+		const pip: VadOutcomePip | undefined =
+			outcome.kind === 'transcribing' ? 'transcribing' : undefined;
 		return {
 			phase: 'recording',
 			trigger: 'vad',
@@ -48,10 +45,6 @@ export function projectLifecycleToStatus(
 		case 'delivered':
 			return { phase: 'delivered', reach: outcome.reach };
 		case 'failed':
-			return {
-				phase: 'failed',
-				tier: outcome.tier,
-				title: outcome.error.message,
-			};
+			return { phase: 'failed', title: outcome.error.message };
 	}
 }

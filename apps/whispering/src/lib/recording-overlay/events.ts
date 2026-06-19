@@ -34,15 +34,14 @@ export type DictationFailureTier = 'silent-loss' | 'transcription';
 
 /**
  * The secondary pip riding alongside a live VAD meter, when there is one. In a
- * continuous session the meter (listening) and the per-utterance work run at
- * once, so the work shows as a small pip on the meter rather than replacing it:
- * `transcribing` is a spinner, `failed` is a red mark, and an absent pip is the
- * resting state. There is deliberately no `delivered` pip: the landing text is
- * the receipt, so a continuous session shows no per-utterance success flash
- * (ADR-0029). Failure outranks transcribing, so an unreviewed failure stays red
- * even while the next utterance is in flight.
+ * continuous session the meter (listening) and the previous utterance's work run
+ * at once, so the work shows as a small spinner on the meter rather than
+ * replacing it; an absent pip is the resting state. There is deliberately no
+ * `delivered` pip (the landing text is the receipt) and no `failed` pip: a VAD
+ * failure is not shown on the pill, it goes to the OS notification and the
+ * recordings row (ADR-0029).
  */
-export type VadOutcomePip = 'transcribing' | 'failed';
+export type VadOutcomePip = 'transcribing';
 
 /**
  * What the pill should display, the serializable projection of the main
@@ -66,20 +65,21 @@ export type RecordingOverlayStatus =
 	  }
 	| { phase: 'transcribing' }
 	| { phase: 'delivered'; reach: DeliveryReach }
-	| { phase: 'failed'; tier: DictationFailureTier; title: string };
+	| { phase: 'failed'; title: string };
 
 /**
  * The control the user invoked from the overlay. `stop`/`cancel` act on a live
- * capture; `retry` re-runs a failed dictation.
+ * capture. There is no retry here: a failed dictation is retried from its
+ * recordings row, not the pill (ADR-0029).
  */
-export type RecordingOverlayAction = 'stop' | 'cancel' | 'retry';
+export type RecordingOverlayAction = 'stop' | 'cancel';
 
 /** main -> overlay: what to display, or that the overlay is shown. */
 export const recordingOverlayStatus = defineWindowEvent<RecordingOverlayStatus>(
 	'recording-overlay:status',
 );
 
-/** overlay -> main: the user clicked stop, cancel, or retry. */
+/** overlay -> main: the user clicked stop or cancel. */
 export const recordingOverlayAction = defineWindowEvent<RecordingOverlayAction>(
 	'recording-overlay:action',
 );
@@ -91,18 +91,6 @@ export const recordingOverlayAction = defineWindowEvent<RecordingOverlayAction>(
  */
 export const recordingOverlayReady = defineWindowSignal(
 	'recording-overlay:ready',
-);
-
-/**
- * overlay -> main: the user clicked the pill body, which also opens the failed
- * recording's row when the pill is reporting a failure (ADR-0029). Kept separate
- * from the generic `revealMainWindow` (which only raises the window) because
- * opening the failed row and clearing the failure latch need the dictation
- * lifecycle, which lives in the main window; routing it through the shared reveal
- * would let it hijack another window's reveal. A no-op when no failure is shown.
- */
-export const recordingOverlayFocusFailure = defineWindowSignal(
-	'recording-overlay:focus-failure',
 );
 
 /**

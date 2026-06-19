@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { tauri } from '#platform/tauri';
-	import {
-		dispatchPillAction,
-		openFailedDictationDetail,
-	} from '$lib/recording-overlay/pill-actions';
+	import { dispatchPillAction } from '$lib/recording-overlay/pill-actions';
 	import RecordingPill from '$lib/recording-overlay/RecordingPill.svelte';
 	import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
 	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
@@ -13,8 +10,8 @@
 	// overlay window, so this host renders nothing there; on web it places the
 	// same `RecordingPill` as a fixed bottom-center element and drives it straight
 	// from the lifecycle value, routing gestures through `pill-actions` (no IPC).
-	// On web the app window is already focused, so the body click only opens the
-	// failed recording's row; there is no window to raise.
+	// The pill body has no reveal action on web: the app window is already in
+	// front, and a failure is surfaced by the notification and the recordings row.
 	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
 </script>
 
@@ -25,8 +22,6 @@
 			level={webPillLevel.level}
 			onStop={() => dispatchPillAction('stop')}
 			onCancel={() => dispatchPillAction('cancel')}
-			onRetry={() => dispatchPillAction('retry')}
-			onReveal={openFailedDictationDetail}
 		/>
 	</div>
 {/if}

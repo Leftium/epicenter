@@ -10,19 +10,17 @@ import { vadRecorder } from '$lib/state/vad-recorder.svelte';
  *
  * Voice-activated capture is *continuous*: an utterance transcribes while the
  * session keeps listening, so a live meter and a pipeline outcome run at once.
- * Manual capture is sequential. Three facts keep both honest:
+ * Manual capture is sequential. Two facts keep both honest:
  *
  * - `capture` is *derived* from the recorder machines: the live session, with no
  *   second copy of "are we recording" to drift.
  * - `outcome` is the most-recent utterance's pipeline result, an ephemeral signal
- *   the pipeline drives. Most-recent-wins: the OS-notification path reads it and
- *   wants each distinct failure exactly once, so a new utterance overwrites it.
- * - `unreviewedFailure` is a VAD-only latch. Because `outcome` is overwritten by
- *   the next utterance, a focused user could miss a failure that a later spinner
- *   or success buries. The latch holds the failed utterance until the user
- *   reviews it (opens its row) or ends the session (disarm/restart), so failure
- *   breaks through where most-recent-wins is too weak. It is the pill pip's only
- *   persistent fact; the notification path stays on `outcome`.
+ *   the pipeline drives. Most-recent-wins: a new utterance overwrites it, and the
+ *   OS-notification path reads it and wants each distinct failure exactly once.
+ *
+ * A failure is transient here, not a held state: the pill glances it (manual),
+ * the notification fires it (when unfocused), and the recordings row is the
+ * durable record. The pill is not a review surface, so there is no failure latch.
  */
 export type DictationCapture =
 	| { kind: 'idle' }
@@ -38,23 +36,20 @@ export type DictationOutcome =
 export type DictationLifecycle = {
 	capture: DictationCapture;
 	outcome: DictationOutcome;
-	/** The latched VAD failure awaiting review, or `null`. Always `null` outside a
-	 * live VAD session (cleared on disarm), so only the live VAD pip reads it. */
-	unreviewedFailure: DictationFailure | null;
 };
 
 /** A dictation failure, carrying the live error object for the projection. */
 export type DictationFailure = {
 	tier: DictationFailureTier;
 	error: AnyTaggedError;
-	/** The recording row to retry/inspect, or `null` for a silent loss. */
-	recordingId: string | null;
 };
 
-// How long the delivered checkmark flashes before the outcome retires to `none`.
-// Sub-second: the transcribed text landing is the real receipt; this is a glance
-// confirming it, not a notice to read. (A live VAD session projects `delivered`
-// to no pip, so this flash only ever shows once capture is idle.)
+// How long a clean delivery's checkmark flashes before the outcome retires to
+// `none`. Sub-second: the transcribed text landing is the real receipt, so this
+// is a glance confirming it, not a notice to read. Only the clean `output` reach
+// flashes; a reduced reach persists instead (see `markDelivered`). (A live VAD
+// session projects `delivered` to no pip, so this flash only ever shows once
+// capture is idle.)
 const DELIVERED_FLASH_MS = 900;
 
 function createDictationLifecycle() {
@@ -63,9 +58,6 @@ function createDictationLifecycle() {
 	// when a new dictation begins so a stale `failed` never lingers past the next
 	// attempt.
 	let outcome = $state<DictationOutcome>({ kind: 'none' });
-	// The VAD failure latch (see the type doc). Set by `markFailed` only when a
-	// VAD session is live; cleared on review, disarm, or restart.
-	let unreviewedFailure = $state<DictationFailure | null>(null);
 	let deliveredTimer: ReturnType<typeof setTimeout> | undefined;
 
 	function clearDeliveredTimer() {
@@ -87,11 +79,7 @@ function createDictationLifecycle() {
 		return { kind: 'idle' };
 	});
 
-	const current = $derived<DictationLifecycle>({
-		capture,
-		outcome,
-		unreviewedFailure,
-	});
+	const current = $derived<DictationLifecycle>({ capture, outcome });
 
 	return {
 		/** The current lifecycle facts. Read reactively to project them. */
@@ -100,14 +88,12 @@ function createDictationLifecycle() {
 		},
 
 		/**
-		 * A new dictation is starting: clear any terminal outcome and the VAD
-		 * failure latch from the last one so neither lingers into this attempt.
-		 * (This is the latch's restart-clears path.)
+		 * A new dictation is starting: clear any terminal outcome from the last one
+		 * so it does not linger into this attempt.
 		 */
 		reset(): void {
 			clearDeliveredTimer();
 			outcome = { kind: 'none' };
-			unreviewedFailure = null;
 		},
 
 		/** The recorder stopped (or a VAD utterance ended); now transcribing. */
@@ -117,16 +103,25 @@ function createDictationLifecycle() {
 		},
 
 		/**
-		 * The transcript landed: flash a confirmation, then retire to `none`.
-		 * `reach` is how far it got toward the configured output: a clean `output`,
-		 * a `clipboard` fallback, or `history`-only when a requested channel failed.
-		 * Every reach is a success (the text is saved), so none of them is a
-		 * dictation failure; the manual pill notes the reduced ones instead of a
-		 * clean delivered flash.
+		 * The transcript landed. `reach` is how far it got toward the configured
+		 * output: a clean `output`, a `clipboard` fallback, or `history`-only when a
+		 * requested channel failed. Every reach is a success (the text is saved), so
+		 * none of them is a dictation failure.
+		 *
+		 * A clean `output` flashes for a beat and retires: the landing text is the
+		 * receipt, so the pill is just a glance. A reduced reach (`clipboard` or
+		 * `history`) instead persists until the next dictation, like a failure does:
+		 * the text did not land where the user asked, so the tag carries information
+		 * the text alone does not, and a sub-second flash is too easy to miss. There
+		 * is no notification for a reduced reach (ADR-0029): the persistent pill tag
+		 * and the recordings row are the surfaces, and the dominant `history` cause
+		 * (a revoked Accessibility grant) already raises its own standing notice.
 		 */
 		markDelivered(reach: DeliveryReach): void {
 			clearDeliveredTimer();
 			outcome = { kind: 'delivered', reach };
+			// Only the clean reach auto-retires; a reduced reach stays put.
+			if (reach !== 'output') return;
 			deliveredTimer = setTimeout(() => {
 				deliveredTimer = undefined;
 				// Only retire the flash if a newer outcome has not taken over.
@@ -134,23 +129,12 @@ function createDictationLifecycle() {
 			}, DELIVERED_FLASH_MS);
 		},
 
-		/** A dictation failed: hold the failed outcome until the next dictation. If
-		 * the failure landed mid VAD session, also latch it so a later utterance's
-		 * spinner or success cannot bury it before the user sees it. */
+		/** A dictation failed: hold the failed outcome until the next dictation
+		 * resets it. Transient, not a held state: the pill glances it (manual), the
+		 * notification path fires it, and the recordings row is the durable record. */
 		markFailed(failure: DictationFailure): void {
 			clearDeliveredTimer();
 			outcome = { kind: 'failed', ...failure };
-			if (capture.kind === 'recording' && capture.trigger === 'vad')
-				unreviewedFailure = failure;
-		},
-
-		/**
-		 * The user reviewed the latched VAD failure (opened its row) or ended the
-		 * session (disarm). Clear the latch only; `outcome` is left alone so a
-		 * just-failed utterance still shows on the idle pill after disarm.
-		 */
-		clearUnreviewedFailure(): void {
-			unreviewedFailure = null;
 		},
 	};
 }

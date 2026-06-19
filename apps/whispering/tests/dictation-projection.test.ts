@@ -3,11 +3,12 @@ import { projectLifecycleToStatus } from '../src/lib/recording-overlay/projectio
 
 /**
  * Locks the dictation pill's projection invariants (ADR-0029). The projection is
- * the one place capture, outcome, and the VAD failure latch are flattened into
- * the serializable status both pill mounts render, so a regression here silently
- * changes desktop and web at once. These cases pin the subtle rules: a live VAD
- * meter is never replaced, failure outranks an in-flight spinner and survives a
- * later success, and success earns no pixels.
+ * the one place capture and outcome are flattened into the serializable status
+ * both pill mounts render, so a regression here silently changes desktop and web
+ * at once. These cases pin the subtle rules: a live VAD meter is never replaced,
+ * the previous utterance rides alongside it as a transcribing pip, and neither
+ * success nor failure earns a pip (success is the landing text; failure goes to
+ * the notification and the recordings row).
  *
  * The lifecycle types are structural, so the inputs are plain objects (the
  * `import type` in the projection erases at runtime, leaving a pure function).
@@ -16,15 +17,11 @@ const idle = { kind: 'idle' } as const;
 const manual = { kind: 'recording', trigger: 'manual' } as const;
 const vad = (vadState: 'LISTENING' | 'SPEECH_DETECTED') =>
 	({ kind: 'recording', trigger: 'vad', vadState }) as const;
-const failure = {
-	tier: 'transcription',
-	error: { message: 'boom' },
-	recordingId: 'r1',
-} as const;
+const failure = { tier: 'transcription', error: { message: 'boom' } } as const;
 
 // biome-ignore lint/suspicious/noExplicitAny: structural lifecycle stand-ins.
-const project = (capture: any, outcome: any, unreviewedFailure: any = null) =>
-	projectLifecycleToStatus({ capture, outcome, unreviewedFailure });
+const project = (capture: any, outcome: any) =>
+	projectLifecycleToStatus({ capture, outcome });
 
 describe('dictation pill projection', () => {
 	test('idle capture with no outcome hides the pill', () => {
@@ -56,46 +53,20 @@ describe('dictation pill projection', () => {
 		});
 	});
 
-	test('a latched VAD failure outranks an in-flight transcribe (breaks through)', () => {
+	test('a VAD failure does not show on the pill: meter only, no pip', () => {
 		expect(
-			project(vad('SPEECH_DETECTED'), { kind: 'transcribing' }, failure),
+			project(vad('SPEECH_DETECTED'), { kind: 'failed', ...failure }),
 		).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
 			vadState: 'SPEECH_DETECTED',
-			pip: 'failed',
-		});
-	});
-
-	test('a later success does not clear the latched failure pip', () => {
-		expect(
-			project(
-				vad('LISTENING'),
-				{ kind: 'delivered', reach: 'output' },
-				failure,
-			),
-		).toEqual({
-			phase: 'recording',
-			trigger: 'vad',
-			vadState: 'LISTENING',
-			pip: 'failed',
-		});
-	});
-
-	test('VAD success without a latch earns no pip', () => {
-		expect(
-			project(vad('LISTENING'), { kind: 'delivered', reach: 'output' }),
-		).toEqual({
-			phase: 'recording',
-			trigger: 'vad',
-			vadState: 'LISTENING',
 			pip: undefined,
 		});
 	});
 
-	test('a history-only delivery in VAD is a success, so it earns no pip', () => {
+	test('a VAD success earns no pip', () => {
 		expect(
-			project(vad('LISTENING'), { kind: 'delivered', reach: 'history' }),
+			project(vad('LISTENING'), { kind: 'delivered', reach: 'output' }),
 		).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
@@ -118,7 +89,6 @@ describe('dictation pill projection', () => {
 		});
 		expect(project(idle, { kind: 'failed', ...failure })).toEqual({
 			phase: 'failed',
-			tier: 'transcription',
 			title: 'boom',
 		});
 	});

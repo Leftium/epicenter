@@ -44,8 +44,7 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { type } from 'arktype';
-	import { createRawSnippet, tick } from 'svelte';
-	import { page } from '$app/state';
+	import { createRawSnippet } from 'svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import { PATHS } from '$lib/services/fs-paths';
 	import { report } from '$lib/report';
@@ -269,27 +268,6 @@
 	});
 	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
 	let globalFilter = $state('');
-
-	// Landing from the failed pill (or its OS notification): the recordings list
-	// is the failure-detail surface (ADR-0029), so a `focus` query param naming a
-	// recording jumps to it and briefly highlights it. The failed recording is the
-	// newest, so it sits on the first page.
-	let highlightedRecordingId = $state<string | null>(null);
-	$effect(() => {
-		const focus = page.url.searchParams.get('focus');
-		if (!focus) return;
-		pagination.pageIndex = 0;
-		highlightedRecordingId = focus;
-		void tick().then(() => {
-			document
-				.querySelector(`[data-recording-id="${focus}"]`)
-				?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-		});
-		const timer = setTimeout(() => {
-			highlightedRecordingId = null;
-		}, 2500);
-		return () => clearTimeout(timer);
-	});
 
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
@@ -621,13 +599,7 @@
 				<Table.Body>
 					{#if table.getRowModel().rows?.length}
 						{#each table.getRowModel().rows as row (row.id)}
-							<Table.Row
-								data-recording-id={row.original.id}
-								class={cn(
-									highlightedRecordingId === row.original.id &&
-										'bg-primary/10 transition-colors',
-								)}
-							>
+							<Table.Row>
 								{#each row.getVisibleCells() as cell}
 									<Table.Cell>
 										<FlexRender

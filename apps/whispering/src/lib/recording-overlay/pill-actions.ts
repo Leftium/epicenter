@@ -46,11 +46,19 @@ export function dispatchPillAction(action: RecordingOverlayAction): void {
  * Opening the row is the latch's review action, so this prefers the latched VAD
  * failure (which persists past later utterances) and clears it on open, then
  * falls back to the current outcome for the manual/idle failed pill.
+ *
+ * The latch is only honored while VAD is live, matching the projection: disarm
+ * and restart clear it, but a recorder death can leave it set while capture goes
+ * idle, and an idle pill shows the current outcome, not the stale latch.
  */
 export function openFailedDictationDetail(): void {
-	const { outcome, unreviewedFailure } = dictationLifecycle.current;
+	const { capture, outcome, unreviewedFailure } = dictationLifecycle.current;
+	const liveVadFailure =
+		capture.kind === 'recording' && capture.trigger === 'vad'
+			? unreviewedFailure
+			: null;
 	const failure =
-		unreviewedFailure ?? (outcome.kind === 'failed' ? outcome : null);
+		liveVadFailure ?? (outcome.kind === 'failed' ? outcome : null);
 	if (!failure?.recordingId) return;
 	dictationLifecycle.clearUnreviewedFailure();
 	void goto(`${WHISPERING_RECORDINGS_PATHNAME}?focus=${failure.recordingId}`);

@@ -1,7 +1,13 @@
 # 0031. The vault view is one scope; subtables are navigated by re-rooting
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-19
+- **Superseded by:** [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md)
+
+> Superseded by [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md):
+> subtables are dropped entirely (a folder is a table XOR a container of tables),
+> so there is nothing to descend into and no re-rooting. The flat tab bar over the
+> current scope survives; the descend plan below does not.
 
 ## Context
 

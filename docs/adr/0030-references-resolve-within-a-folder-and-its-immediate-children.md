@@ -1,7 +1,14 @@
 # 0030. References resolve within a folder and its immediate child tables
 
-- **Status:** Accepted
+- **Status:** Accepted (scope simplified by [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md))
 - **Date:** 2026-06-19
+
+> The one-scope rule, bare names, no durable format change, and the
+> `tables.length === 1` discriminant below all stand.
+> [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md) drops
+> subtables, so the "a folder's own rows PLUS its immediate marked child tables"
+> case never co-occurs: a scope is either one lone marked table or a container's
+> marked children.
 
 ## Context
 

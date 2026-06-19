@@ -1,7 +1,13 @@
 # 0029. A matter.json marks a table; matter is a declared store, not a discovered lens
 
-- **Status:** Accepted
+- **Status:** Accepted (nesting clause reversed by [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md))
 - **Date:** 2026-06-19
+
+> The marker rule and declared-store framing below stand. The "nesting is
+> first-class: a table can contain tables" clause is reversed by
+> [ADR-0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md): a
+> folder is a table XOR a container of tables, never both, so a marked folder's
+> subfolders are ignored rather than shown as subtables.
 
 ## Context
 

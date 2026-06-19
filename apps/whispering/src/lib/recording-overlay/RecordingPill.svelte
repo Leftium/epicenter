@@ -7,7 +7,11 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
-	import type { RecordingOverlayStatus } from '$lib/recording-overlay/events';
+	import type { DeliveryReach } from '$lib/operations/delivery';
+	import {
+		FAILURE_LABEL,
+		type RecordingOverlayStatus,
+	} from '$lib/recording-overlay/events';
 
 	// The floating dictation pill, presentational and platform-free. It renders
 	// whatever status it is handed and reports control gestures through callback
@@ -50,6 +54,54 @@
 			: undefined,
 	);
 
+	// Every non-recording phase is a "chip": one icon plus a short, fixed label,
+	// with a tone that tints the icon (and, when failed, the whole pill). They
+	// render through one block below instead of a branch apiece. The label is
+	// always a closed, glanceable token, never a raw error message, so it fits the
+	// fixed-width pill without truncation; the full failure detail lives in the OS
+	// notification and the recordings row (ADR-0029).
+	type ChipTone = 'neutral' | 'success' | 'degraded' | 'failed';
+	type Chip = {
+		Icon: typeof CheckIcon;
+		label: string;
+		tone: ChipTone;
+		spin?: boolean;
+	};
+
+	// A delivery is a success at every reach: a clean `output` reads green; a
+	// reduced reach (`clipboard`/`history`) reads amber, "landed, but not where you
+	// asked".
+	const DELIVERED_CHIP = {
+		output: { Icon: CheckIcon, label: 'Delivered', tone: 'success' },
+		clipboard: {
+			Icon: CheckIcon,
+			label: 'Copied to clipboard',
+			tone: 'degraded',
+		},
+		history: { Icon: ArchiveIcon, label: 'Saved to history', tone: 'degraded' },
+	} as const satisfies Record<DeliveryReach, Chip>;
+
+	const chip = $derived.by((): Chip | null => {
+		if (!status || status.phase === 'recording') return null;
+		switch (status.phase) {
+			case 'transcribing':
+				return {
+					Icon: LoaderCircleIcon,
+					label: 'Transcribing',
+					tone: 'neutral',
+					spin: true,
+				};
+			case 'delivered':
+				return DELIVERED_CHIP[status.reach];
+			case 'failed':
+				return {
+					Icon: TriangleAlertIcon,
+					label: FAILURE_LABEL[status.tier],
+					tone: 'failed',
+				};
+		}
+	});
+
 	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
 	// the same amplitude through a fixed shape reads as a meter, not a flat block.
 	const BAR_ENVELOPE = [0.5, 0.72, 0.9, 1, 0.9, 0.72, 0.5];
@@ -83,8 +135,9 @@
 	<div
 		class="overlay"
 		class:speaking={isSpeaking}
-		class:failed={status.phase === 'failed'}
-		title={status.phase === 'failed' ? status.title : 'Open Whispering'}
+		class:failed={chip?.tone === 'failed'}
+		class:revealable={Boolean(onReveal)}
+		title={onReveal ? 'Open Whispering' : undefined}
 		onclick={onReveal}
 	>
 		{#if status.phase === 'recording'}
@@ -140,39 +193,20 @@
 					</button>
 				{/if}
 			</div>
-		{:else if status.phase === 'transcribing'}
-			<div class="icon">
-				<LoaderCircleIcon class="size-4 animate-spin" />
+		{:else if chip}
+			<!-- One chip block for every non-recording phase. A failure is glanceable
+			     by design: the terse label, no action; detail and retry live on the
+			     recordings row (ADR-0029). -->
+			{@const Icon = chip.Icon}
+			<div
+				class="icon"
+				class:tone-success={chip.tone === 'success'}
+				class:tone-degraded={chip.tone === 'degraded'}
+				class:tone-failed={chip.tone === 'failed'}
+			>
+				<Icon class="size-4 {chip.spin ? 'animate-spin' : ''}" />
 			</div>
-			<span class="label">Transcribing</span>
-		{:else if status.phase === 'delivered'}
-			{#if status.reach === 'history'}
-				<!-- Reached history only: a requested cursor/clipboard write failed, so
-				     the text is recoverable from its row but did not land where asked.
-				     Amber, not red: the transcript is safe, this is a reduced reach, not
-				     a failure (ADR-0029). -->
-				<div class="icon degraded-icon">
-					<ArchiveIcon class="size-4" />
-				</div>
-				<span class="label">Saved to history</span>
-			{:else if status.reach === 'clipboard'}
-				<div class="icon degraded-icon">
-					<CheckIcon class="size-4" />
-				</div>
-				<span class="label">Copied to clipboard</span>
-			{:else}
-				<div class="icon delivered-icon">
-					<CheckIcon class="size-4" />
-				</div>
-				<span class="label">Delivered</span>
-			{/if}
-		{:else if status.phase === 'failed'}
-			<!-- A glanceable failure: the terse reason, no action. Detail and retry
-			     live on the recordings row (ADR-0029). -->
-			<div class="icon">
-				<TriangleAlertIcon class="size-4" />
-			</div>
-			<span class="label">{status.title}</span>
+			<span class="label">{chip.label}</span>
 		{/if}
 	</div>
 {/if}
@@ -202,8 +236,13 @@
 		backdrop-filter: blur(12px);
 		user-select: none;
 		-webkit-user-select: none;
-		/* The body is clickable (opens the main window); the action buttons
-		   stop propagation so only the empty areas trigger it. */
+	}
+
+	/* The body is clickable only where it can reveal the main window: desktop,
+	   where `onReveal` is wired. On web the app window is already in front, so
+	   `onReveal` is omitted and the body shows no pointer or tooltip (the action
+	   buttons stop propagation so only the empty areas would have triggered it). */
+	.overlay.revealable {
 		cursor: pointer;
 	}
 
@@ -220,23 +259,26 @@
 		color: rgba(255, 255, 255, 0.85);
 	}
 
-	.delivered-icon {
+	/* A clean delivery: green. */
+	.icon.tone-success {
 		color: #7ee2a8;
 	}
 
-	/* Clipboard-only fallback: amber, so the glance reads "landed, but not where
-	   you asked" rather than a clean success. */
-	.degraded-icon {
+	/* A reduced reach (clipboard/history): amber, so the glance reads "landed, but
+	   not where you asked" rather than a clean success. */
+	.icon.tone-degraded {
 		color: #f5c97b;
 	}
 
-	.overlay.failed .icon {
+	/* A failure: red, paired with the red pill background below. */
+	.icon.tone-failed {
 		color: #ffb4b4;
 	}
 
-	/* The label takes only its text's width in the snug chip; in the failed state
-	   it grows to the pill's max width and ellipsizes a long reason (the full text
-	   is in the title tooltip, the OS notification, and the recordings row). */
+	/* The label takes only its text's width in the snug chip. Labels are closed,
+	   short tokens that fit the fixed-width pill; the ellipsis is a safety net, not
+	   a load-bearing truncation. The full failure detail lives in the OS
+	   notification and the recordings row, never here. */
 	.label {
 		flex: 1;
 		min-width: 0;

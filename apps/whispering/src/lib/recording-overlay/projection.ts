@@ -6,8 +6,9 @@ import type { RecordingOverlayStatus, VadOutcomePip } from './events';
  * pill renders. A live capture is the pill's primary content; when capture is
  * idle (manual after stop, a VAD session after disarm) the outcome takes the
  * pill. `idle`/`none` hides the pill (`null`). The live error object is dropped
- * in favor of a terse `title`, because the pill display must cross Tauri IPC on
- * desktop and the full failure detail lives on the recordings row.
+ * in favor of the failure `tier`, because the pill display must cross Tauri IPC on
+ * desktop and the full failure detail lives on the recordings row and in the OS
+ * notification.
  *
  * Shared by both pill mounts so desktop and web project identically: the Tauri
  * driver (`attach-recording-overlay`) sends the result over IPC; the web host
@@ -45,6 +46,6 @@ export function projectLifecycleToStatus(
 		case 'delivered':
 			return { phase: 'delivered', reach: outcome.reach };
 		case 'failed':
-			return { phase: 'failed', title: outcome.error.message };
+			return { phase: 'failed', tier: outcome.tier };
 	}
 }

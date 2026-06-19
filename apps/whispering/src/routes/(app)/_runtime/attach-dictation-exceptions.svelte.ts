@@ -1,6 +1,6 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
 import { osNotify } from '#platform/os-notify';
-import type { DictationFailureTier } from '$lib/recording-overlay/events';
+import { FAILURE_LABEL } from '$lib/recording-overlay/events';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
 /**
@@ -20,11 +20,6 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
  * standing-condition warnings (revoked Accessibility, dead listener) are a
  * different, present-tense path and are untouched.
  */
-const NOTIFICATION_TITLE = {
-	'silent-loss': 'Recording failed',
-	transcription: 'Transcription failed',
-} as const satisfies Record<DictationFailureTier, string>;
-
 export function attachDictationExceptions() {
 	// The failure's error object is stable for the life of one failure, so it is
 	// the identity that gates "have I already notified for this one". Each new
@@ -47,7 +42,7 @@ export function attachDictationExceptions() {
 		// already dropped success and progress toasts), so firing it while focused
 		// is a worthwhile floor, not noise. A reduced delivery reach is a success,
 		// not a failure, and never reaches this projection.
-		osNotify(NOTIFICATION_TITLE[outcome.tier], outcome.error.message);
+		osNotify(FAILURE_LABEL[outcome.tier], outcome.error.message);
 	});
 
 	return () => {};

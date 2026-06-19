@@ -33,6 +33,19 @@ import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 export type DictationFailureTier = 'silent-loss' | 'transcription';
 
 /**
+ * The terse, glanceable name of each failure tier, and the single source of
+ * failure copy: the pill renders it as the failed chip's label, and the OS
+ * notification uses it as the notification title (see attach-dictation-exceptions).
+ * It is deliberately a short closed token, never a raw error message, so it fits
+ * the fixed-width pill without truncation. The full error detail is never here; it
+ * lives on the recordings row and in the notification body.
+ */
+export const FAILURE_LABEL = {
+	'silent-loss': 'Recording failed',
+	transcription: 'Transcription failed',
+} as const satisfies Record<DictationFailureTier, string>;
+
+/**
  * The secondary pip riding alongside a live VAD meter, when there is one. In a
  * continuous session the meter (listening) and the previous utterance's work run
  * at once, so the work shows as a small spinner on the meter rather than
@@ -47,9 +60,10 @@ export type VadOutcomePip = 'transcribing';
  * What the pill should display, the serializable projection of the main
  * window's dictation lifecycle. Only the non-idle phases are representable: an
  * idle dictation hides the pill rather than emitting a status, so there is no
- * `idle` variant to render. The `failed` variant carries only a terse `title`
- * string (never the live error object) so it can cross the Tauri IPC boundary
- * to the overlay webview; the full error detail lives on the recordings row.
+ * `idle` variant to render. The `failed` variant carries only the failure `tier`
+ * (never the live error object) so it can cross the Tauri IPC boundary to the
+ * overlay webview; the pill maps it to a terse label via `FAILURE_LABEL`, and the
+ * full error detail lives on the recordings row and in the OS notification.
  *
  * The VAD `recording` variant may also carry `pip`: the live meter is the
  * primary content, and a concurrent utterance's work rides beside it. The pip is
@@ -65,7 +79,7 @@ export type RecordingOverlayStatus =
 	  }
 	| { phase: 'transcribing' }
 	| { phase: 'delivered'; reach: DeliveryReach }
-	| { phase: 'failed'; title: string };
+	| { phase: 'failed'; tier: DictationFailureTier };
 
 /**
  * The control the user invoked from the overlay. `stop`/`cancel` act on a live

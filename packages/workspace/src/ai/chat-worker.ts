@@ -1,8 +1,8 @@
 /**
- * The per-conversation chat actor: the daemon behavior for one hosted transcript
+ * The per-conversation chat worker: the daemon behavior for one hosted transcript
  * child doc (ADR-0024/0025).
  *
- * `attachChatActor` is the backend-agnostic append loop the always-on actor runs
+ * `attachChatWorker` is the backend-agnostic append loop the always-on worker runs
  * over a conversation transcript. It is parameterized by a {@link ChatStream},
  * the one contract every inference backend speaks:
  *
@@ -33,26 +33,25 @@
  *    cancelled before the re-pointed turn is claimed.
  *
  * Single writer per field: the client owns the user turn (including the cancel
- * stamp), the actor owns the assistant message (text + finish). The doc itself is
+ * stamp), the worker owns the assistant message (text + finish). The doc itself is
  * the lock, so the only in-memory state is the in-flight stream's abort. Teardown
  * (the row removed, or a daemon shutdown) aborts that stream before the body is
  * destroyed and deliberately writes no finish, leaving an interrupted artifact
  * the client can retry, exactly as an evicted worker would.
  *
  * The flush policy (batching deltas into fewer synced transactions) lives in
- * `streamReply`: buffer text and flush at most once per `FLUSH_INTERVAL_MS`, or
- * sooner if the buffer passes `FLUSH_MAX_CHARS`, so a chatty real provider does
- * not emit one transaction per token. The HTTP generation path
- * (`packages/server/src/ai/doc-generation.ts`) keeps its own copy of this policy
- * until C4 deletes that path wholesale; deliberately NOT shared, since coupling
- * to a route slated for deletion is the opposite of a clean break.
+ * the shared answer core `streamAnswer` (`chat-answer.ts`), which the in-process
+ * browser answerer (`chat-browser-answerer.ts`) calls too: the daemon and an
+ * open browser tab run this same loop over the doc (ADR-0033). This worker
+ * owns triggering, claiming, and the daemon finish policy; the core owns the loop.
  *
  * @module
  */
 
-import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
+import type { ModelMessage } from '@tanstack/ai';
 import type * as Y from 'yjs';
-import type { ChildDocActorHandle } from '../document/child-doc-actor.js';
+import type { ChildDocWorkerHandle } from '../document/child-doc-worker.js';
+import { type ChatStream, streamAnswer } from './chat-answer.js';
 import {
 	appendAssistantMessage,
 	chatDocToPrompt,
@@ -63,25 +62,6 @@ import {
 /** Cap for provider error text persisted into the doc; details go to logs. */
 const FAILED_MESSAGE_MAX_CHARS = 240;
 
-/** Flush cadence: at most one content transaction per interval... */
-const FLUSH_INTERVAL_MS = 75;
-/** ...unless the buffered text passes this size first. */
-const FLUSH_MAX_CHARS = 512;
-
-/**
- * The one contract every inference backend speaks: take the snapshotted prompt
- * and an abort signal, return an async iterable of text-delta (and error)
- * chunks. A TanStack adapter stream and a local model backend are
- * interchangeable behind it. The backend MUST wire `signal` into the provider
- * call (e.g. `chat({ abortController })`) so a cancel or teardown frees the
- * connection instead of letting the provider keep generating; the actor also
- * stops consuming on abort, but the signal is what actually stops the work.
- */
-export type ChatStream = (
-	messages: ModelMessage[],
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
-
 /** One in-flight generation: enough to cancel it durably. */
 type InFlightGeneration = {
 	generationId: string;
@@ -90,29 +70,29 @@ type InFlightGeneration = {
 };
 
 /**
- * Build the per-body chat actor for one hosted transcript child doc. Pass the
+ * Build the per-body chat worker for one hosted transcript child doc. Pass the
  * body `Y.Doc` and the inference backend as a {@link ChatStream}. Like the server
- * generation path, the actor is a doc-level writer: it reads the transcript with
+ * generation path, the worker is a doc-level writer: it reads the transcript with
  * `readChatDocMessages` and appends the assistant message with
  * `appendAssistantMessage`, both directly over the `ydoc` (the layout handle
  * exposes only the client's user-message writer, never the assistant one). The
- * returned handle is what a mount's child-doc actor factory yields.
+ * returned handle is what a mount's child-doc worker factory yields.
  *
- * Designation (R, ADR-0025) is NOT the actor's concern. The child-doc observe
- * loop only ever builds this actor for a conversation bound to this daemon's
+ * Designation (R, ADR-0025) is NOT the worker's concern. The child-doc observe
+ * loop only ever builds this worker for a conversation bound to this daemon's
  * agent (`row.agent === selfAgentId`); a conversation bound to another agent is
- * never hosted here, so the actor unconditionally answers whatever body it is
+ * never hosted here, so the worker unconditionally answers whatever body it is
  * given. The complementary half lives in the browser, which skips its HTTP
  * kickoff unless the conversation is bound to the cloud agent. The two together
  * are what stop the daemon and the cloud HTTP path from both answering one turn.
  */
-export function attachChatActor({
+export function attachChatWorker({
 	ydoc,
 	startStream,
 }: {
 	ydoc: Y.Doc;
 	startStream: ChatStream;
-}): ChildDocActorHandle {
+}): ChildDocWorkerHandle {
 	let inFlight: InFlightGeneration | undefined;
 
 	function stop(): void {
@@ -151,7 +131,7 @@ export function attachChatActor({
 				// concurrently: the active-generation window is createdAt-based (it
 				// exists to detect an evicted cross-process worker) and can lapse
 				// while a slow local model is still producing, so it must not trick a
-				// live actor into a second concurrent claim.
+				// live worker into a second concurrent claim.
 				return;
 			}
 
@@ -199,13 +179,14 @@ export function attachChatActor({
 }
 
 /**
- * Drive one provider stream into the assistant message: buffer text deltas and
- * flush them on the {@link FLUSH_INTERVAL_MS}/{@link FLUSH_MAX_CHARS} cadence,
- * then write a write-once `completed` (or `failed`) finish that flushes the tail.
- * A signal abort stops the loop and writes NO finish: the caller's `onChange`
- * already wrote
- * `cancelled` for a durable cancel, and a teardown deliberately leaves the
- * message interrupted (and its `Y.Doc` may already be torn down).
+ * Run the shared answer core, then apply the daemon finish policy. The core
+ * drives the loop and hands back the outcome; this wrapper writes the terminal
+ * finish, flushing the buffered tail into it.
+ *
+ * On abort it writes NO finish: a durable cancel already wrote `cancelled` from
+ * `onChange`, and a teardown deliberately leaves the message interrupted (its
+ * `Y.Doc` may already be torn down). A clean run writes `completed`; a provider
+ * error writes `failed` with the capped message.
  */
 async function streamReply(
 	writer: ReturnType<typeof appendAssistantMessage>,
@@ -213,46 +194,13 @@ async function streamReply(
 	prompt: ModelMessage[],
 	signal: AbortSignal,
 ): Promise<void> {
-	let runError: { code: string; message: string } | undefined;
-	// Buffer deltas so a chatty provider becomes a few synced transactions, not
-	// one per token. lastFlushAt starts at 0 so the first delta flushes at once
-	// (the "thinking" marker becomes live text immediately). A still-buffered tail
-	// is discarded on abort (the caller writes the terminal finish, not us) and
-	// flushed into the finish transaction on normal completion.
-	let buffer = '';
-	let lastFlushAt = 0;
-	try {
-		for await (const chunk of startStream(prompt, signal)) {
-			if (signal.aborted) return;
-			if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) {
-				buffer += chunk.delta;
-				const now = Date.now();
-				if (
-					now - lastFlushAt >= FLUSH_INTERVAL_MS ||
-					buffer.length >= FLUSH_MAX_CHARS
-				) {
-					writer.appendText(buffer);
-					buffer = '';
-					lastFlushAt = now;
-				}
-			} else if (chunk.type === EventType.RUN_ERROR) {
-				runError = {
-					code: chunk.code ?? 'provider-error',
-					message: chunk.message,
-				};
-			}
-		}
-	} catch (cause) {
-		// Aborting the provider stream surfaces as a throw; that path is the
-		// caller's cancel/teardown, not a failure.
-		if (signal.aborted) return;
-		runError = {
-			code: 'stream-error',
-			message: cause instanceof Error ? cause.message : String(cause),
-		};
-	}
-	if (signal.aborted) return;
-	// Final transaction: flush any buffered tail alongside the terminal finish.
+	const { aborted, runError, tail } = await streamAnswer({
+		writer,
+		startStream,
+		prompt,
+		signal,
+	});
+	if (aborted) return;
 	writer.finish(
 		runError
 			? {
@@ -261,6 +209,6 @@ async function streamReply(
 					message: runError.message.slice(0, FAILED_MESSAGE_MAX_CHARS),
 				}
 			: { kind: 'completed' },
-		{ text: buffer },
+		{ text: tail },
 	);
 }

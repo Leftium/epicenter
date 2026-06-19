@@ -43,7 +43,7 @@ Waves 1–2 (server + daemon construction) are independent of Wave 3 (browser tr
 
 > **Home decision (greenfield, verified).** The construction must carry a *runtime* `createGeminiChat`/`createOpenaiChat` import. The browser imports `@epicenter/constants/ai-providers` at **6+ surfaces** (opensidian / zhongwen / tab-manager model pickers, api/ui `ModelCostGuide` + `ActivityFeed`), so putting construction in `ai-providers.ts` would risk pulling the provider SDKs into every browser bundle. A `constants/ai-adapters` subpath would isolate the bundle but make the SDKs a runtime dependency of the most-imported package in the repo. A **new leaf package** keeps `@epicenter/constants` pure (SDK stays a type-only devDep, unchanged) and isolates the SDK runtime weight to a leaf only `server` + `daemon` import. DAG: `constants/ai-providers (data) ← @epicenter/ai-adapters (construction) ← {server, daemon}`. Browser never touches `ai-adapters` → zero provider SDK in any browser bundle, deterministically (no reliance on third-party `sideEffects` flags).
 
-- [ ] **1.1** Scaffold `@epicenter/ai-adapters` (`packages/ai-adapters/`): `package.json` (deps: `@epicenter/constants`, `@tanstack/ai`, `@tanstack/ai-gemini`, `@tanstack/ai-openai` — all catalog), `tsconfig`, single `src/index.ts`:
+- [x] **1.1** Scaffold `@epicenter/ai-adapters` (`packages/ai-adapters/`): `package.json` (deps: `@epicenter/constants`, `@tanstack/ai`, `@tanstack/ai-gemini`, `@tanstack/ai-openai` — all catalog), `tsconfig`, single `src/index.ts`:
   ```ts
   export function createAdapterForModel(model: ServableModel, apiKey: string): AnyTextAdapter {
     const entry = MODELS_BY_ID[model];
@@ -55,8 +55,9 @@ Waves 1–2 (server + daemon construction) are independent of Wave 3 (browser tr
   }
   ```
   Body is **only** the provider switch + construction — no key policy, no `Result`. (`AnyTextAdapter` is already exported from `@tanstack/ai` and used by `resolveAdapter` today.)
-- [ ] **1.2** Rewrite `resolveAdapter` in `packages/server/src/routes/ai.ts` to keep its key policy (`userApiKey ?? env.X_API_KEY`, `ProviderNotConfigured` on no key) but delegate construction to `createAdapterForModel`. Drop the direct `createGeminiChat`/`createOpenaiChat` imports from the route and the two provider-SDK deps from `packages/server/package.json` (now owned by `@epicenter/ai-adapters`). Add `@epicenter/ai-adapters` as a server dep.
-- [ ] Checkpoint: `bun run --filter @epicenter/server typecheck`; `ai.test.ts` green (the `ProviderNotConfigured` and adapter-resolution cases are unchanged behavior). Commit.
+- [x] **1.2** Rewrite `resolveAdapter` in `packages/server/src/routes/ai.ts` to keep its key policy (`userApiKey ?? env.X_API_KEY`, `ProviderNotConfigured` on no key) but delegate construction to `createAdapterForModel`. Drop the direct `createGeminiChat`/`createOpenaiChat` imports from the route and the two provider-SDK deps from `packages/server/package.json` (now owned by `@epicenter/ai-adapters`). Add `@epicenter/ai-adapters` as a server dep.
+  > **Note**: key policy kept as an exhaustive `switch` selecting the per-provider house key (`OPENAI_API_KEY`/`GEMINI_API_KEY`), preserving `satisfies never`; construction delegated. Two switches on different concerns (policy in the route, construction in the leaf), as designed.
+- [x] Checkpoint: `bun run --filter @epicenter/server typecheck`; `ai.test.ts` green (the `ProviderNotConfigured` and adapter-resolution cases are unchanged behavior). Commit. — green: ai-adapters + server typecheck pass, ai.test.ts 6/6.
 
 ### Wave 2: Daemon hot-swaps any provider through the shared switch — the rewire
 

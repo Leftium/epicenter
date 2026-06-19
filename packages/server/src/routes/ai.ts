@@ -32,6 +32,7 @@
  * both at deploy time; see apps/api/wrangler.jsonc for why.
  */
 
+import { createAdapterForModel } from '@epicenter/ai-adapters';
 import {
 	AiChatError,
 	AiChatErrorStatus,
@@ -50,8 +51,6 @@ import {
 	type Tool,
 	toServerSentEventsResponse,
 } from '@tanstack/ai';
-import { createGeminiChat } from '@tanstack/ai-gemini';
-import { createOpenaiChat } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -101,28 +100,27 @@ export function resolveAdapter({
 	AnyTextAdapter,
 	ReturnType<typeof AiChatError.ProviderNotConfigured>['error']
 > {
-	// The catalog entry is discriminated on `provider`, so this switch narrows
-	// `entry.id` to the matching SDK model union: each adapter call is typed
-	// with no cast.
+	// Key policy stays here: BYOK wins, else the deployment's per-provider house
+	// key, else `ProviderNotConfigured`. The catalog entry is discriminated on
+	// `provider`, so the switch picks the matching env key exhaustively; adapter
+	// construction is delegated to `@epicenter/ai-adapters`.
 	const entry = MODELS_BY_ID[model];
+	let houseKey: string | undefined;
 	switch (entry.provider) {
-		case 'openai': {
-			const apiKey = userApiKey ?? env.OPENAI_API_KEY;
-			if (!apiKey) {
-				return AiChatError.ProviderNotConfigured({ provider: entry.provider });
-			}
-			return Ok(createOpenaiChat(entry.id, apiKey));
-		}
-		case 'gemini': {
-			const apiKey = userApiKey ?? env.GEMINI_API_KEY;
-			if (!apiKey) {
-				return AiChatError.ProviderNotConfigured({ provider: entry.provider });
-			}
-			return Ok(createGeminiChat(entry.id, apiKey));
-		}
+		case 'openai':
+			houseKey = env.OPENAI_API_KEY;
+			break;
+		case 'gemini':
+			houseKey = env.GEMINI_API_KEY;
+			break;
 		default:
 			return entry satisfies never;
 	}
+	const apiKey = userApiKey ?? houseKey;
+	if (!apiKey) {
+		return AiChatError.ProviderNotConfigured({ provider: entry.provider });
+	}
+	return Ok(createAdapterForModel(model, apiKey));
 }
 
 /**

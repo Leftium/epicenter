@@ -1,9 +1,9 @@
 /**
  * `matter check <path>`: certify a vault's integrity from the command line.
  *
- * One pipeline over the path's scope (`load/fs` `loadPath`, ADR-0029/0030): point it at a marked
- * table folder and it checks that table plus its immediate marked child tables; point it at a
- * folder of tables and it checks them all, references and all. The path becomes `TableInput[]`,
+ * One pipeline over the path's scope (`load/fs` `loadPath`, ADR-0029/0030/0032): point it at a
+ * marked table folder and it checks that one table; point it at a folder of tables and it checks
+ * them all, references and all (a folder is a table XOR a container). The path becomes `TableInput[]`,
  * `assess` classifies it once, the `core` selectors (`toViolations`, `summarize`) project that one
  * structure, and `report/` renders it into the human text, the `--json`, and the exit code, so
  * every surface agrees by construction.

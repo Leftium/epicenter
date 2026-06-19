@@ -4,11 +4,12 @@
  * This is the layer above {@link createTable}. A Table watches ONE folder's files; a Vault watches
  * the ROOT (`watch_vault`, depth-1) for its table set changing, and composes a `createTable` per
  * table the watcher resolves. `watch_vault` applies the same marker rule as the CLI loader
- * (`load/fs.ts` `loadPath`, ADR-0029): a `matter.json` MARKS a table, so the table set is the root
- * itself when marked, plus its immediate marked child folders as subtables. An unmarked folder is
- * not data and is skipped, so opening a marked leaf and opening a container of marked folders both
- * work, and a marked folder can nest subtables. The marker's contents type a Table; its presence is
- * what makes the folder a Table at all. It owns its Tables' lifetimes:
+ * (`load/fs.ts` `loadPath`, ADR-0029/0032): a folder is a table XOR a container of tables. A marked
+ * root IS the single table (its subfolders are ignored); an unmarked root is a container whose
+ * immediate marked child folders are the tables. An unmarked folder is not data and is skipped, so
+ * opening a marked leaf and opening a container of marked folders both work; depth is reached by
+ * re-opening the deeper folder, never by loading two levels at once. The marker's contents type a
+ * Table; its presence is what makes the folder a Table at all. It owns its Tables' lifetimes:
  * dispose the Vault and every Table watch and the root watch stop. The Vault declares nothing
  * itself: it is the live union of its Tables' self-declared contracts, discovered, not configured.
  *
@@ -56,7 +57,7 @@ export function createVault(root: string) {
 
 	/**
 	 * Reconcile the live tables against a fresh table list (the whole set `watch_vault` resolved:
-	 * the root itself when marked, plus its immediate marked child folders): dispose the folders
+	 * the root itself when marked, else its immediate marked child folders): dispose the folders
 	 * that left, compose the folders that arrived, leave the rest untouched so an unrelated change
 	 * (a loose file written at the root) churns nothing.
 	 */

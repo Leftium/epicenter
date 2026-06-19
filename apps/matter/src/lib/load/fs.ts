@@ -130,17 +130,18 @@ export async function loadVault(root: string): Promise<TableInput[]> {
 }
 
 /**
- * Load a path into the tables in its scope (ADR-0029/0030), so `matter check <path>` works whether
- * the user points at one table folder, at a folder of tables, or at a marked folder that itself
- * nests tables. A `matter.json` marks a table; the scope is:
+ * Load a path into the tables in its scope (ADR-0029/0030/0032), so `matter check <path>` works
+ * whether the user points at one table folder or at a folder of tables. A folder is a table XOR a
+ * container of tables, never both (ADR-0032):
  *
- *   - the path itself, when it is marked (its `.md` files are rows); plus
- *   - its immediate marked child folders, as subtables.
+ *   - a MARKED path IS a single table (its `.md` files are rows); its subfolders are ignored;
+ *   - an UNMARKED path is a container, and its immediate marked child folders are the tables.
  *
- * No recursion: depth is reached by pointing `check` at a subtable. An unmarked path with no
- * marked children loads as the empty set ("no tables here"), never an untyped pass. A path that
- * cannot be listed at all is a single unreadable table, so the failure flows through the same
- * pipeline as any other. A lone table (`tables.length === 1`) has no sibling tables loaded, so the
+ * No recursion either way: depth is reached by pointing `check` at the deeper folder, never by
+ * loading two levels at once. An unmarked path with no marked children loads as the empty set ("no
+ * tables here"), never an untyped pass. A path that cannot be listed at all is a single unreadable
+ * table, so the failure flows through the same pipeline as any other. A lone table
+ * (`tables.length === 1`, i.e. a marked path opened directly) has no sibling tables loaded, so the
  * caller surfaces its references as un-evaluable rather than failing (the old `scope` discriminant).
  */
 export async function loadPath(path: string): Promise<TableInput[]> {
@@ -151,9 +152,9 @@ export async function loadPath(path: string): Promise<TableInput[]> {
 		return [await loadTable(dirPath)];
 	}
 
-	const selfTables = (await isMarked(dirPath))
+	// A marked folder IS the table; an unmarked folder is a container of its marked children. Never
+	// both, so a marked folder's own subfolders never load as subtables (ADR-0032).
+	return (await isMarked(dirPath))
 		? [await loadTable(dirPath)]
-		: [];
-	const childTables = await loadVault(dirPath);
-	return [...selfTables, ...childTables];
+		: loadVault(dirPath);
 }

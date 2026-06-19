@@ -1,9 +1,9 @@
 /**
  * Loader tests for the one filesystem boundary, under the declared-store model (ADR-0029): a
  * `matter.json` marks a table. Hermetic temp-dir cases pin the precise behaviors (name from
- * basename, readable vs unreadable, the `{}` untyped marker, unmarked folders skipped, the scope =
- * marked self + marked children, sorted), and one case over the bundled example vault proves the
- * loader feeds `assess` end to end.
+ * basename, readable vs unreadable, the `{}` untyped marker, unmarked folders skipped, a folder is
+ * a table XOR a container of its marked children), and one case over the bundled example vault
+ * proves the loader feeds `assess` end to end.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -144,7 +144,7 @@ describe('loadVault', () => {
 	});
 });
 
-describe('loadPath: scope = marked self + marked children', () => {
+describe('loadPath: a folder is a table XOR a container of tables', () => {
 	test('a marked folder with no marked children is a lone table', async () => {
 		await withTempDir(async (root) => {
 			const dir = join(root, 'pages');
@@ -169,25 +169,26 @@ describe('loadPath: scope = marked self + marked children', () => {
 		});
 	});
 
-	test('a marked folder that nests marked children is itself a table PLUS its subtables', async () => {
+	test('a marked folder is just itself, even when its subfolders are marked', async () => {
 		await withTempDir(async (root) => {
-			// First-class nesting: the parent has its own rows AND child tables.
+			// XOR (ADR-0032): a marked folder IS the table; its subfolders are ignored, even when
+			// marked. The sharp edge: marking a container hides its child tables.
 			const parent = join(root, 'pages');
 			await makeTable(parent, pagesModel);
 			await makeTable(join(parent, 'drafts'), pagesModel);
 			await makeTable(join(parent, 'archive'), pagesModel);
 
 			const tables = await loadPath(parent);
-			// Self first, then immediate marked children sorted: no recursion past one level.
-			expect(tables.map((t) => t.name)).toEqual(['pages', 'archive', 'drafts']);
+			expect(tables.map((t) => t.name)).toEqual(['pages']);
 		});
 	});
 
-	test('an unmarked subfolder under a marked folder is not a subtable', async () => {
+	test('an unmarked subfolder under a marked folder is ignored', async () => {
 		await withTempDir(async (root) => {
 			const parent = join(root, 'pages');
 			await makeTable(parent, pagesModel);
-			// An attachment bundle: a subfolder with no matter.json is ignored, never a subtable.
+			// A marked folder's subfolders are ignored regardless (ADR-0032), so an attachment
+			// bundle never becomes a table.
 			const images = join(parent, 'images');
 			await mkdir(images);
 			await writeFile(join(images, 'cover.md'), '---\ncaption: hi\n---');
@@ -209,14 +210,15 @@ describe('loadPath: scope = marked self + marked children', () => {
 		});
 	});
 
-	test('hidden directories are never tables nor subtables', async () => {
+	test('a hidden marked child of a container is never a table', async () => {
 		await withTempDir(async (root) => {
-			const dir = join(root, 'notes');
-			await makeTable(dir, pagesModel);
-			await makeTable(join(dir, '.git'), pagesModel); // hidden: skipped
+			// The container branch is where the hidden-skip bites: a hidden marked dir is dropped
+			// before the marker check, while a real sibling table still loads.
+			await makeTable(join(root, 'pages'), pagesModel);
+			await makeTable(join(root, '.obsidian'), pagesModel); // hidden: skipped
 
-			const tables = await loadPath(dir);
-			expect(tables.map((t) => t.name)).toEqual(['notes']);
+			const tables = await loadPath(root);
+			expect(tables.map((t) => t.name)).toEqual(['pages']);
 		});
 	});
 

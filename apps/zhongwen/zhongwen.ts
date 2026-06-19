@@ -50,9 +50,9 @@ export const generateConversationId = (): ConversationId =>
 export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
 
 /**
- * The hosted cloud agent's stable address (ADR-0015). A new conversation is bound
+ * The hosted cloud agent's stable address (ADR-0025). A new conversation is bound
  * to this agent, so the browser answers it in-process, sourcing tokens from the
- * metered `/api/ai/chat` stream via the Epicenter provider (ADR-0021).
+ * metered `/api/ai/chat` stream via the Epicenter provider (ADR-0033).
  * The binding is immutable: to talk to a different agent you fork the conversation,
  * so a conversation's history only ever reaches its one bound agent. An always-on
  * daemon answers instead when a conversation is bound to that daemon's agent id.
@@ -66,14 +66,14 @@ export type { AgentId };
 /**
  * One agent Zhongwen can bind a conversation to: its durable {@link AgentId},
  * a display `label` for the picker, the `model` it answers with, the action keys
- * it may call as tools (ADR-0010; none yet), and where its runtime lives.
+ * it may call as tools (ADR-0021; none yet), and where its runtime lives.
  *
  * `runtime` is the routing fork the browser reads: a `'cloud'` agent is answered
  * in-process by the browser (the Epicenter provider sourcing tokens from the
  * metered `/api/ai/chat` stream); a `'daemon'` agent is an always-on resident
  * worker that answers over sync, so the browser stays out of the way (both
  * answering would answer one turn twice, the D3 hazard). The catalog is the one
- * place that fork is declared (ADR-0021).
+ * place that fork is declared (ADR-0033).
  */
 export type AgentConfig = {
 	readonly id: AgentId;
@@ -84,7 +84,7 @@ export type AgentConfig = {
 };
 
 /**
- * The agents a Zhongwen conversation can be bound to (ADR-0015). Config, not
+ * The agents a Zhongwen conversation can be bound to (ADR-0025). Config, not
  * presence: the picker lists every entry here whether or not its runtime is live,
  * because the conversation doc is a durable mailbox: a turn bound to an offline
  * daemon waits in the doc until that daemon wakes and answers. Presence only ever
@@ -162,7 +162,7 @@ const conversationsTable = defineTable({
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
 	/**
-	 * The agent this conversation is bound to (ADR-0015), set once at creation and
+	 * The agent this conversation is bound to (ADR-0025), set once at creation and
 	 * never reassigned. {@link CLOUD_AGENT_ID} routes to the browser answering
 	 * in-process (the Epicenter provider); a daemon's agent id routes to that
 	 * always-on worker over sync, and the browser stays out. One immutable

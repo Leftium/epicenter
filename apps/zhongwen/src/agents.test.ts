@@ -1,5 +1,5 @@
 /**
- * The agent catalog's routing invariants (ADR-0015/0021).
+ * The agent catalog's routing invariants (ADR-0025/0033).
  *
  * The browser answers a conversation in-process (the Epicenter provider sourcing
  * tokens from `/api/ai/chat`) for, and only for, a bound agent that is NOT

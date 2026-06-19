@@ -7,15 +7,18 @@
  * network or a browser.
  */
 
-import { AiChatError, AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
+import { describe, expect, test } from 'bun:test';
+import { createEpicenterProviderChatStream } from '@epicenter/client';
+import {
+	AiChatError,
+	AiChatHttpError,
+} from '@epicenter/constants/ai-chat-errors';
 import {
 	attachChatBrowserAnswerer,
 	attachChatTranscript,
 } from '@epicenter/workspace/ai';
 import { EventType, type StreamChunk } from '@tanstack/ai';
-import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createEpicenterProviderChatStream } from '@epicenter/client';
 
 /** Encode chunks as the `data: <json>\n\n` frames `toServerSentEventsResponse` emits. */
 function sseResponse(

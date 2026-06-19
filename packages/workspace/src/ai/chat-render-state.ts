@@ -4,7 +4,7 @@
  * UI paints.
  *
  * Every answerer writes the same conversation doc and every client renders it
- * (ADR-0021), so every client independently re-derived the same questions from a
+ * (ADR-0033), so every client independently re-derived the same questions from a
  * message snapshot plus a clock: is a turn live, is it still thinking, did it
  * stream text, was it interrupted, did it fail. That derivation is pure and was
  * copied across apps; it belongs here once, beside {@link findActiveChatDocGeneration},

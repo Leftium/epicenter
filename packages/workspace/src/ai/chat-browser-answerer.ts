@@ -1,8 +1,8 @@
 /**
  * The browser trigger wrapper: an in-process answerer for a conversation a
- * browser tab answers itself (ADR-0021's `in-process` trigger).
+ * browser tab answers itself (ADR-0033's `in-process` trigger).
  *
- * A conversation is answered by an in-process peer (ADR-0021): an always-on
+ * A conversation is answered by an in-process peer (ADR-0033): an always-on
  * daemon answers ambiently via {@link attachChatWorker}; an open browser tab
  * answers here. The inference backend is a {@link ChatStream} (a local model,
  * the user's BYOK key, or the Epicenter provider that calls the metered

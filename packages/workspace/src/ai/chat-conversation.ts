@@ -3,7 +3,7 @@
  *
  * `attachChatTranscript` is the raw transcript (read/observe plus the durable
  * writes a turn needs). Every chat UI then re-wrapped it the same way: open the
- * doc, run an in-process answerer over it (ADR-0021's `in-process` trigger),
+ * doc, run an in-process answerer over it (ADR-0033's `in-process` trigger),
  * tick a clock, project the snapshot through {@link chatRenderState}, and expose
  * send/stop/retry. This folds that controller onto the handle so apps stop
  * reimplementing it: `tables.<t>.docs.<field>.open(rowId)` returns a handle that

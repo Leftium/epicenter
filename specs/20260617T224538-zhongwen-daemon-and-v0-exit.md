@@ -3,7 +3,7 @@
 **Date**: 2026-06-17
 **Status**: Draft
 **Owner**: Braden
-**Builds on**: `specs/20260616T225034-workers-buildout.tracker.md` (V0 done-when), `docs/adr/0014-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-answered-by-workers.md`
+**Builds on**: `specs/20260616T225034-workers-buildout.tracker.md` (V0 done-when), `docs/adr/0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md`
 **Lands on**: a fresh branch off `origin/main` after PR #2077 merges (do not stack on the `codex/...` branch)
 
 ## One Sentence
@@ -16,7 +16,7 @@ PR #2077 lands the always-on worker primitives and a runnable proof (`examples/d
 
 ## The Roles, So The Plan Reads Cleanly
 
-Four roles, never fused (ADR-0014):
+Four roles, never fused (ADR-0024):
 
 - **relay**: moves sealed bytes, blind to plaintext, stores nothing durable.
 - **anchor**: always-on, durable, app-blind replica; the availability promise.

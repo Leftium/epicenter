@@ -1,8 +1,8 @@
-# 0022. The cloud doc-generation queue is withdrawn (the cloud is a metered inference stream, not a doc writer)
+# 0034. The cloud doc-generation queue is withdrawn (the cloud is a metered inference stream, not a doc writer)
 
-- **Status:** Superseded by [ADR-0021](0021-a-conversation-has-one-transport-and-two-triggers.md) (revised)
+- **Status:** Superseded by [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) (revised)
 - **Date:** 2026-06-18
-- **Relates:** [ADR-0017](0017-durable-storage-is-one-per-person-coordination-box.md), [ADR-0018](0018-agents-are-immutable-capability-bundles.md), [ADR-0020](0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md)
+- **Relates:** [ADR-0029](0029-durable-storage-is-one-per-person-coordination-box.md), [ADR-0030](0030-agents-are-immutable-capability-bundles.md), [ADR-0032](0032-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md)
 
 ## What this ADR proposed, and why it is withdrawn
 
@@ -20,13 +20,13 @@ have. The argument, in one chain:
    generation, well under 1% of the inference bill it rides on. Per-generation
    execution cost does not justify a queue.
 2. **The durable, background, always-on answerer already exists: the daemon**
-   (ADR-0017's worker spoke), which gets durability for free on the owner's
+   (ADR-0029's worker spoke), which gets durability for free on the owner's
    hardware. The *cloud* answer is the **interactive** case where the user is
    watching; it does not need to outlive the client.
 3. **The synchronous-402 boundary the kickoff existed to provide already exists**
    on the `/api/ai/chat` SSE endpoint (`chargeAiCreditsWithAutumn` reserves before
    streaming). A separate server kickoff was redundant.
-4. **ADR-0017 forbids the box thinking; the worker is a peer spoke.** The
+4. **ADR-0029 forbids the box thinking; the worker is a peer spoke.** The
    cleanest answerer is therefore an in-process peer, and one already shipped:
    opensidian answers cloud conversations in the browser via the Epicenter
    provider (`attachChatBrowserAnswerer` + `createEpicenterProviderChatStream`),
@@ -36,9 +36,9 @@ So the server is **not** a doc writer at all. The cloud is a blind sync network
 plus a stateless metered inference stream (`/api/ai/chat`); an in-process peer (a
 browser tab or a daemon) is the only thing that writes a conversation doc. The
 queue, the consumer, the cross-invocation billing, and `runDocGeneration` itself
-are deleted. The live decision is the revised [ADR-0021](0021-a-conversation-has-one-transport-and-two-triggers.md).
+are deleted. The live decision is the revised [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md).
 
 This record is kept so the queue is not re-proposed without first answering: *which
 answerer needs to be durable and client-independent without a daemon?* If a future
 "managed background agent" genuinely needs that, it is a server-side worker in
-the Model-2 sandbox lane (ADR-0018), not a general server-writes-every-doc path.
+the Model-2 sandbox lane (ADR-0030), not a general server-writes-every-doc path.

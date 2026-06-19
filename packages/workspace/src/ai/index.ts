@@ -32,7 +32,6 @@ export {
 	requestLatestUserTurnCancel,
 	setLatestUserTurnGenerationId,
 } from './chat-doc';
-export { attachChatWorker } from './chat-worker';
 export {
 	CHAT_STREAM_GRACE_MS,
 	type ChatFailure,
@@ -41,6 +40,7 @@ export {
 	type ChatRenderStatus,
 	chatRenderState,
 } from './chat-render-state';
+export { attachChatWorker } from './chat-worker';
 export {
 	type ActionNames,
 	actionsToAiTools,

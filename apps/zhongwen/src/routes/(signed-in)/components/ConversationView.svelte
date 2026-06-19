@@ -45,7 +45,7 @@
 	// answered in-process: the browser runs the same answerer the daemon does,
 	// sourcing tokens from the Epicenter provider (the metered /api/ai/chat SSE
 	// stream). The bound agent is immutable, so this never flips mid-conversation.
-	// ADR-0021: a conversation is a synced doc only an in-process peer writes.
+	// ADR-0033: a conversation is a synced doc only an in-process peer writes.
 	// svelte-ignore state_referenced_locally
 	const boundAgent = readRow()?.agent;
 	const answer =

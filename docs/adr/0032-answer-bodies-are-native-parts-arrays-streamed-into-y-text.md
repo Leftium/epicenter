@@ -1,12 +1,12 @@
-# 0020. An answer body is a native parts array; its text streams into Y.Text
+# 0032. An answer body is a native parts array; its text streams into Y.Text
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-18
-- **Resolves:** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md)'s open decision on how a streaming answer body is stored
-- **Relates:** [ADR-0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the tools), [ADR-0018](0018-agents-are-immutable-capability-bundles.md) (agents)
+- **Resolves:** [ADR-0031](0031-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md)'s open decision on how a streaming answer body is stored
+- **Relates:** [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the tools), [ADR-0030](0030-agents-are-immutable-capability-bundles.md) (agents)
 
 > **Vocabulary:** an **answer body** is the `body` of an addressed reply region
-> (ADR-0019). A **part** is one element of a TanStack AI `MessagePart[]`: a `text`,
+> (ADR-0031). A **part** is one element of a TanStack AI `MessagePart[]`: a `text`,
 > `tool-call`, `tool-result`, or `thinking` segment. A **recipe** is the durable
 > input a tool-call carries (for Local Books, the SQL string); a **result** is the
 > output that input produces. A **capped result** is a result stored truncated to a
@@ -14,7 +14,7 @@
 
 ## Context
 
-ADR-0019 left open how a streaming answer body is stored and framed it as a choice
+ADR-0031 left open how a streaming answer body is stored and framed it as a choice
 over streamed text: into a durable `Y.Text` (a device can refresh mid-stream and
 still see the partial, but it feared a per-token insert floor) or over awareness
 (no floor, no durable partial). Two facts sharpen the answer. The request/response
@@ -29,9 +29,9 @@ The floor fear was the deciding force, so it had to be checked against Yjs rathe
 than assumed. With gc enabled, Yjs merges contiguous same-client items (`mergeWith`)
 both while live and, as `GC` structs, after deletion. A single writer streaming N
 tokens into a `Y.Text` therefore compacts to roughly the content size, live or
-deleted; the unbounded fragmentation ADR-0019 worried about comes from interleaved
+deleted; the unbounded fragmentation ADR-0031 worried about comes from interleaved
 multi-client history, not from one agent streaming one answer. The floor is a
-multi-writer phenomenon, and a reply region is single-writer by ADR-0019's own
+multi-writer phenomenon, and a reply region is single-writer by ADR-0031's own
 decision.
 
 ## Decision
@@ -80,7 +80,7 @@ mechanism that already works.
 
 ## Consequences
 
-- **Resolves ADR-0019's open decision toward its own option A: stream into the
+- **Resolves ADR-0031's open decision toward its own option A: stream into the
   durable `Y.Text`.** The partial survives a mid-stream refresh, and the floor cost
   it feared is negligible for a single-writer region because Yjs merges the
   contiguous same-client inserts. Awareness streaming is unnecessary.
@@ -130,7 +130,7 @@ mechanism that already works.
   cross-device rendering for an unsynced local cache, and forces every rendering
   device to hold the cache. Token savings come from prompt-pruning instead, which is
   orthogonal to storage.
-- **Stream over awareness and commit once (ADR-0019's option B).** Rejected: drops
+- **Stream over awareness and commit once (ADR-0031's option B).** Rejected: drops
   the durable mid-stream partial, which native streaming keeps at negligible floor
   cost.
 

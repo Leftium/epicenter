@@ -1,7 +1,7 @@
 /**
  * Reactive AI chat state, rendered from the conversation doc.
  *
- * Since the render-from-doc migration (ADR-0021, Phase C), a conversation is a
+ * Since the render-from-doc migration (ADR-0033, Phase C), a conversation is a
  * synced transcript child doc, not a `createChat` in-memory state plus a
  * `chatMessages` table. Each handle binds its conversation's transcript
  * (`bindConversation` over `tables.conversations.docs.messages.open`), which owns

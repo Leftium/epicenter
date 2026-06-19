@@ -2,7 +2,7 @@
  * The Epicenter provider: a browser `ChatStream` that runs inference through the
  * metered `/api/ai/chat` endpoint on the user's account (the house key), so an
  * in-process answerer (`attachChatBrowserAnswerer` / `attachChatWorker` from
- * `@epicenter/workspace/ai`) gets credits without a raw provider key (ADR-0021's
+ * `@epicenter/workspace/ai`) gets credits without a raw provider key (ADR-0033's
  * Epicenter-provider backend).
  *
  * The endpoint streams the answer back as Server-Sent Events

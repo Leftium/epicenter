@@ -5,7 +5,7 @@
  *                     stream back over the open HTTP connection.
  *
  * This is a stateless, metered inference stream: it sees a prompt and returns
- * tokens, and it never reads or writes a conversation doc (ADR-0021). A
+ * tokens, and it never reads or writes a conversation doc (ADR-0033). A
  * conversation is a synced doc written only by an in-process peer (a browser tab
  * or a daemon); the cloud is a blind relay plus this token stream. The browser's
  * Epicenter provider posts here for house-key inference and writes the tokens
@@ -129,42 +129,41 @@ export function resolveAdapter({
  * `/api/ai/chat` sub-app. Auth and credit policies are supplied by the
  * deployment via {@link mountAiApp}.
  */
-const aiApp = new Hono<Env>()
-	.post(
-		API_ROUTES.ai.chat.pattern,
-		describeRoute({
-			description: 'Stream AI chat completions via SSE',
-			tags: ['ai'],
-		}),
-		sValidator('json', aiChatBody),
-		async (c) => {
-			const { messages, data, apiKey: userApiKey } = c.req.valid('json');
-			const { model, tools, ...options } = data;
+const aiApp = new Hono<Env>().post(
+	API_ROUTES.ai.chat.pattern,
+	describeRoute({
+		description: 'Stream AI chat completions via SSE',
+		tags: ['ai'],
+	}),
+	sValidator('json', aiChatBody),
+	async (c) => {
+		const { messages, data, apiKey: userApiKey } = c.req.valid('json');
+		const { model, tools, ...options } = data;
 
-			const { data: adapter, error: adapterError } = resolveAdapter({
-				model,
-				userApiKey,
-				env: c.env,
-			});
-			if (adapterError) {
-				return c.json(
-					{ data: null, error: adapterError },
-					AiChatErrorStatus.ProviderNotConfigured,
-				);
-			}
+		const { data: adapter, error: adapterError } = resolveAdapter({
+			model,
+			userApiKey,
+			env: c.env,
+		});
+		if (adapterError) {
+			return c.json(
+				{ data: null, error: adapterError },
+				AiChatErrorStatus.ProviderNotConfigured,
+			);
+		}
 
-			const abortController = new AbortController();
-			const stream = chat({
-				adapter,
-				messages: messages as Array<ModelMessage>,
-				...options,
-				tools: tools as Array<Tool> | undefined,
-				abortController,
-			});
+		const abortController = new AbortController();
+		const stream = chat({
+			adapter,
+			messages: messages as Array<ModelMessage>,
+			...options,
+			tools: tools as Array<Tool> | undefined,
+			abortController,
+		});
 
-			return toServerSentEventsResponse(stream, { abortController });
-		},
-	);
+		return toServerSentEventsResponse(stream, { abortController });
+	},
+);
 
 /**
  * Mount the AI surface on a deployment's server app.

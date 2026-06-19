@@ -1,5 +1,5 @@
 /**
- * The worker (ADR-0014/0015), now over the REAL observe loop (S4).
+ * The worker (ADR-0024/0025), now over the REAL observe loop (S4).
  *
  * It holds the root workspace doc, runs `attachChildDocWorker` (the production
  * loop from `@epicenter/workspace`) over the `conversations` table, and hosts a
@@ -18,7 +18,10 @@ import {
 	attachChildDocWorker,
 	type ConnectedChildDoc,
 } from '@epicenter/workspace';
-import { attachChatWorker, attachChatTranscript } from '@epicenter/workspace/ai';
+import {
+	attachChatTranscript,
+	attachChatWorker,
+} from '@epicenter/workspace/ai';
 import * as Y from 'yjs';
 import {
 	agentOf,

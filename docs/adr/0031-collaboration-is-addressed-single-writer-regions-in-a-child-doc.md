@@ -1,24 +1,24 @@
-# 0019. Collaboration is addressed single-writer regions in a child doc
+# 0031. Collaboration is addressed single-writer regions in a child doc
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-18
-- **Supersedes:** [ADR-0015](0015-agent-conversations-are-durable-child-docs-answered-by-workers.md)
+- **Supersedes:** [ADR-0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md)
 
 > **Vocabulary:** a **participant** is anyone who can write to a doc: a person
-> through a UI, or a program through a worker (ADR-0014). An **entry** is a root
+> through a UI, or a program through a worker (ADR-0024). An **entry** is a root
 > contribution a participant mints. A **reply** is a contribution a participant
 > derives, addressed by `(responder, entry)`. A **region** is a single-writer
-> territory inside the doc. This ADR generalizes ADR-0015's one-human-one-agent
+> territory inside the doc. This ADR generalizes ADR-0025's one-human-one-agent
 > conversation to N participants and replaces its message-array-and-claim
 > mechanism with addressing.
 
 ## Context
 
-ADR-0015 made an agent conversation a child doc keyed by a row, with a single
+ADR-0025 made an agent conversation a child doc keyed by a row, with a single
 `messages` array both sides append to, an assistant turn keyed to a client-minted
 `generationId`, and a "claim by existence" guard. The same shape recurs for
 transcription, polish, extraction, and approval, so it wants to be one named
-pattern. But three things in the 0015 mechanism were carrying contention
+pattern. But three things in the 0025 mechanism were carrying contention
 semantics over a system that has no contention: the word "claim", the separate
 `generationId`, and a single array with two writers (single-writer by convention,
 not by structure). The answerer is already ordained by the binding, so nothing is
@@ -59,12 +59,12 @@ replies:  Y.Map<ParticipantId, Y.Map<entryId, { body, outcome? }>>
   `Y.Array` for a sequence (transcript segments, tool-call log), `Y.Map` for a
   keyed object (extraction, an approval decision), `Y.XmlFragment` for rich text.
   The shape is payload; the addressing is protocol.
-- **Binding is a participant set on the row**, generalizing ADR-0015's single
+- **Binding is a participant set on the row**, generalizing ADR-0025's single
   immutable `agent`. One bound agent is the common case (a conversation). Adding a
   participant exposes existing content to it, so adding is a confirmable act when
   it crosses a trust boundary; removing is a fork. Attribution falls out of region
   ownership (`by` and the address), so no per-message author field and no agent
-  identity in the portable body. These were ADR-0015's load-bearing privacy and
+  identity in the portable body. These were ADR-0025's load-bearing privacy and
   attribution properties; they survive at N.
 - **Entry ids are random** (a nanoid, not a sequential counter). `Y.Array` never
   dedupes by an app-level `id`: two devices that mint the same id leave two
@@ -158,7 +158,7 @@ weight.*
 
 ## Considered alternatives
 
-- **Keep ADR-0015's message array and `generationId`.** Rejected: the array is
+- **Keep ADR-0025's message array and `generationId`.** Rejected: the array is
   single-writer only by convention, and `generationId` plus "claim by existence"
   name contention that designation already foreclosed. Addressing makes the
   invariant structural and deletes both words.
@@ -169,7 +169,7 @@ weight.*
 - **Absorb human-to-human co-editing into addresses.** Rejected: co-editing one
   region is genuinely multi-writer and has no single owner. It sits beside this
   primitive as a shared region; it is not an addressed reply.
-- **Make presence the routing truth.** Rejected (inherited from ADR-0015):
+- **Make presence the routing truth.** Rejected (inherited from ADR-0025):
   presence is ephemeral, the binding set is durable. Presence decorates, it does
   not route.
 
@@ -192,7 +192,7 @@ cleanly. Pick when deletion (beyond supersede-collapse) becomes real.
 
 ## Open decision: durable partial vs bounded floor when streaming
 
-Resolved by [ADR-0020](0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md)
+Resolved by [ADR-0032](0032-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md)
 in favor of option A below: stream into the durable `Y.Text`. The body is a native
 `MessagePart[]` (a `Y.Array` of typed parts whose text parts are `Y.Text`), so the
 partial survives a refresh. The floor cost feared below is negligible for a

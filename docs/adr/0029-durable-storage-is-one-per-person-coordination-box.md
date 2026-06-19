@@ -1,11 +1,11 @@
-# 0017. Durable storage is one per-person coordination box: an app-blind anchor and store
+# 0029. Durable storage is one per-person coordination box: an app-blind anchor and store
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
 
 ## Context
 
-ADR-0014 split three runtime roles: a blind relay that moves packets, an anchor that keeps durable Y.Doc state alive, and an app-aware worker beside it. Two forces have since sharpened the picture. Large binaries like audio cannot ride a CRDT (the Yjs threat model and Epicenter's own 2MB/5MB caps rule it out, the same finding behind ADR-0004's asset work), so they need durable storage of their own. And the always-on box that holds a person's docs is, for almost everyone, a single machine: a hosted Epicenter room today, a Mac Studio under Iroh later. The open question was whether to model that as a general mesh or commit to the shape people actually run.
+ADR-0024 split three runtime roles: a blind relay that moves packets, an anchor that keeps durable Y.Doc state alive, and an app-aware worker beside it. Two forces have since sharpened the picture. Large binaries like audio cannot ride a CRDT (the Yjs threat model and Epicenter's own 2MB/5MB caps rule it out, the same finding behind ADR-0004's asset work), so they need durable storage of their own. And the always-on box that holds a person's docs is, for almost everyone, a single machine: a hosted Epicenter room today, a Mac Studio under Iroh later. The open question was whether to model that as a general mesh or commit to the shape people actually run.
 
 ## Decision
 
@@ -20,7 +20,7 @@ Workers are independently placeable spokes, not part of the box. A worker connec
 
 ## Consequences
 
-- The role list is now five: relay (moves bytes), anchor (keeps docs), store (keeps blobs), worker (thinks), and the agent (the durable address a worker answers as, ADR-0015). Three never think, one thinks, one is a name.
+- The role list is now five: relay (moves bytes), anchor (keeps docs), store (keeps blobs), worker (thinks), and the agent (the durable address a worker answers as, ADR-0025). Three never think, one thinks, one is a name.
 - Self-hosting is one Bun process that re-implements the same contracts. A Durable Object's embedded SQLite becomes Bun plus disk, R2 becomes the local filesystem, the managed worker becomes the user's own daemon. The interface is the boundary; the backend swaps (per `specs/20260522T220000-api-runtime-portability.md`).
 - "Star" is a deployment fact, not a contract apps depend on. Apps talk to roles, so the topology can gain direct peer links (LAN shortcuts, a future mesh) without an app rewrite.
 - Refusing federation deletes the hardest problems up front: no split-brain across competing durable replicas, no consensus on which box owns a doc, no cross-center merge. The cost is that a person with several always-on boxes still names one as the coordination center, and the others are worker spokes.

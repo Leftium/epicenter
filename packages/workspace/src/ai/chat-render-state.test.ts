@@ -24,7 +24,10 @@ function user(text: string): ChatDocMessage {
 
 function assistant(
 	text: string,
-	{ createdAt = NOW, finish }: { createdAt?: number; finish?: ChatDocFinish } = {},
+	{
+		createdAt = NOW,
+		finish,
+	}: { createdAt?: number; finish?: ChatDocFinish } = {},
 ): ChatDocMessage {
 	return {
 		id: 'a1',
@@ -84,7 +87,11 @@ describe('chatRenderState', () => {
 	});
 
 	test('a failed turn surfaces the failure as an error', () => {
-		const failure = { kind: 'failed', code: 'InsufficientCredits', message: 'nope' } as const;
+		const failure = {
+			kind: 'failed',
+			code: 'InsufficientCredits',
+			message: 'nope',
+		} as const;
 		const state = chatRenderState(
 			[user('hi'), assistant('', { finish: failure })],
 			clock,

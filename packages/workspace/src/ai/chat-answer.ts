@@ -2,7 +2,7 @@
  * The shared answer core: one runtime-agnostic loop that sinks a provider
  * stream into a conversation doc.
  *
- * Every answerer in every runtime runs this loop (ADR-0021). They differ only
+ * Every answerer in every runtime runs this loop (ADR-0033). They differ only
  * in how they are triggered, where inference runs, and how the doc propagates;
  * the buffer/flush policy and the chunk switch are the same algorithm, so they
  * live here once instead of being copied into each trigger wrapper. The daemon

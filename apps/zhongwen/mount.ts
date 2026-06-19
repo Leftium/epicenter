@@ -14,9 +14,10 @@
  * The worker is parameterized by a `ChatStream`
  * (`startStream(messages, signal) => AsyncIterable<StreamChunk>`), the one
  * contract every inference backend speaks. The daemon builds the real one from
- * the same `chat()` call the hosted route makes ({@link resolveChatStream}): a
- * Gemini adapter keyed on `GEMINI_API_KEY`, under the shared
- * `ZHONGWEN_SYSTEM_PROMPT`. With no key it falls back to {@link fakeChatStream},
+ * the same `chat()` call the hosted route makes ({@link resolveChatStream}): an
+ * adapter for the configured `ZHONGWEN_MODEL` keyed on the matching provider key,
+ * under the shared `ZHONGWEN_SYSTEM_PROMPT`. With no key it falls back to
+ * {@link fakeChatStream},
  * a deterministic placeholder, and says so in the log: that fallback is the
  * explicit "real inference not wired on this host yet" boundary. The worker
  * itself observes -> answers -> streams -> finishes and honors the client's
@@ -32,6 +33,8 @@
  * answered twice.
  */
 
+import { createAdapterForModel } from '@epicenter/ai-adapters';
+import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
 import type { AgentId } from '@epicenter/workspace';
 import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
@@ -41,7 +44,6 @@ import {
 	type ModelMessage,
 	type StreamChunk,
 } from '@tanstack/ai';
-import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createLogger } from 'wellcrafted/logger';
 import {
 	ZHONGWEN_MODEL,
@@ -82,24 +84,43 @@ export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
 }
 
 /**
- * The daemon's inference backend as a {@link ChatStream}. With `GEMINI_API_KEY`
- * set, this is real inference: a Gemini adapter (built once) driven by the same
- * `chat()` call the hosted route makes, under {@link ZHONGWEN_SYSTEM_PROMPT}. The
- * worker hands a `signal`; `chat()` cancels on an `AbortController`, so the signal
- * is forwarded onto one. With no key it returns the deterministic placeholder and
- * logs that real inference is not live on this host.
+ * The daemon's inference backend as a {@link ChatStream}. The daemon answers as
+ * whatever provider its `ZHONGWEN_MODEL` names: the catalog gives the provider,
+ * and the matching house key (`OPENAI_API_KEY` / `GEMINI_API_KEY`) is read from
+ * the environment. With that key set, this is real inference: an adapter (built
+ * once via `createAdapterForModel`) driven by the same `chat()` call the hosted
+ * route makes, under {@link ZHONGWEN_SYSTEM_PROMPT}. The worker hands a `signal`;
+ * `chat()` cancels on an `AbortController`, so the signal is forwarded onto one.
+ * With no key it returns the deterministic placeholder and logs that real
+ * inference is not live on this host. Switching providers is a catalog + env-key
+ * change, no code edit.
  */
 function resolveChatStream(): ChatStream {
-	const apiKey = process.env.GEMINI_API_KEY;
+	// Key policy: the catalog gives the provider, the provider picks its house-key
+	// env var (exhaustive, so a new provider is a compile error here, not a silent
+	// wrong key). Construction is delegated to `@epicenter/ai-adapters`.
+	const { provider } = MODELS_BY_ID[ZHONGWEN_MODEL];
+	let envVar: 'OPENAI_API_KEY' | 'GEMINI_API_KEY';
+	switch (provider) {
+		case 'openai':
+			envVar = 'OPENAI_API_KEY';
+			break;
+		case 'gemini':
+			envVar = 'GEMINI_API_KEY';
+			break;
+		default:
+			return provider satisfies never;
+	}
+	const apiKey = process.env[envVar];
 	if (!apiKey) {
 		log.warn(
 			new Error(
-				'GEMINI_API_KEY is not set; the Zhongwen daemon answers with the placeholder stream (real inference is not live on this host).',
+				`${envVar} is not set; the Zhongwen daemon answers with the placeholder stream (real inference is not live on this host).`,
 			),
 		);
 		return fakeChatStream;
 	}
-	const adapter = createGeminiChat(ZHONGWEN_MODEL, apiKey);
+	const adapter = createAdapterForModel(ZHONGWEN_MODEL, apiKey);
 	return (messages, signal) => {
 		const abortController = new AbortController();
 		if (signal.aborted) abortController.abort();
@@ -126,7 +147,7 @@ const fakeChatStream: ChatStream = async function* (
 	messages: ModelMessage[],
 ): AsyncGenerator<StreamChunk> {
 	const userText = String(messages.at(-1)?.content ?? '');
-	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on worker; set GEMINI_API_KEY for real inference.`;
+	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on worker; set the configured provider's API key for real inference.`;
 	for (const token of reply.match(/\S+\s*/g) ?? [reply]) {
 		yield {
 			type: EventType.TEXT_MESSAGE_CONTENT,

@@ -5,8 +5,8 @@
 **Owner**: Braden
 **Branch**: (to start) `feat/conversation-core`
 **Implements**: [ADR-0021](../docs/adr/0021-a-conversation-has-one-transport-and-two-triggers.md)
-**Relates**: [ADR-0020](../docs/adr/0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body the core writes), [ADR-0019](../docs/adr/0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) (the regions a reply lives in), [ADR-0018](../docs/adr/0018-agents-are-immutable-capability-bundles.md) (tools are the agent's bundle), [ADR-0010](../docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (a tool is an action), [ADR-0014](../docs/adr/0014-an-always-on-reaction-runs-app-semantics-beside-the-app-blind-anchor.md)/[0015](../docs/adr/0015-agent-conversations-are-durable-child-docs-answered-by-reactions.md) (reactions)
-**Parent buildout**: `specs/20260616T225034-reactions-buildout.tracker.md`
+**Relates**: [ADR-0020](../docs/adr/0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body the core writes), [ADR-0019](../docs/adr/0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) (the regions a reply lives in), [ADR-0018](../docs/adr/0018-agents-are-immutable-capability-bundles.md) (tools are the agent's bundle), [ADR-0010](../docs/adr/0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (a tool is an action), [ADR-0014](../docs/adr/0014-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md)/[0015](../docs/adr/0015-agent-conversations-are-durable-child-docs-answered-by-workers.md) (workers)
+**Parent buildout**: `specs/20260616T225034-workers-buildout.tracker.md`
 **Supersedes the forward half of**: `specs/20260618T100631-chat-transcript-parts-body.md` (its Phase 1+2 landed; this spec carries its Phase 3+4 and corrects the C4 premise, see below)
 
 > **Superseded note (2026-06-18, later same day): the kickoff is deleted, not
@@ -61,9 +61,9 @@ An answer is produced three ways, forked along two seams at once:
 
 - **SSE route** (`packages/server/src/routes/ai.ts:157`): `/api/ai/chat` streams tokens over an open HTTP connection; the browser holds the conversation in TanStack `createChat` in-memory state and persists rows on `onFinish` (opensidian `chat-state.svelte.ts`, tab-manager `chat-state.svelte.ts`).
 - **Cloud doc kickoff** (`ai.ts:193` -> `packages/server/src/ai/doc-generation.ts`): `/api/ai/chat/doc` hydrates the room replica, appends the assistant message, streams provider deltas into its `Y.Text`, forwards `updateV2` via `room.sync`, writes `finish`.
-- **Daemon observer** (`packages/workspace/src/ai/chat-reaction.ts`): `attachChatReaction` observes the doc, claims the unanswered turn, streams deltas into the same writer, writes `finish`. No HTTP.
+- **Daemon observer** (`packages/workspace/src/ai/chat-worker.ts`): `attachChatWorker` observes the doc, claims the unanswered turn, streams deltas into the same writer, writes `finish`. No HTTP.
 
-The flush-into-writer loop is **copied** in `chat-reaction.ts` (`streamReply`) and `doc-generation.ts` (the inline `for await` loop): same buffer, same `FLUSH_INTERVAL_MS`/`FLUSH_MAX_CHARS`, same finish-with-tail. `chat-reaction.ts:46` even documents the duplication as deliberate-until-deleted. That comment encodes the old plan (delete the HTTP path); ADR-0021 reverses it (keep the kickoff, delete SSE), so the duplication should be resolved by **extraction**, not deletion.
+The flush-into-writer loop is **copied** in `chat-worker.ts` (`streamReply`) and `doc-generation.ts` (the inline `for await` loop): same buffer, same `FLUSH_INTERVAL_MS`/`FLUSH_MAX_CHARS`, same finish-with-tail. `chat-worker.ts:46` even documents the duplication as deliberate-until-deleted. That comment encodes the old plan (delete the HTTP path); ADR-0021 reverses it (keep the kickoff, delete SSE), so the duplication should be resolved by **extraction**, not deletion.
 
 ### Desired State
 
@@ -78,7 +78,7 @@ core (runtime-agnostic):
     abort           -> no finish (cancel/teardown owns the terminal write)
 
 trigger wrappers (per runtime):
-  daemon  attachChatReaction   onChange -> claim -> streamAnswer        ambient, free
+  daemon  attachChatWorker   onChange -> claim -> streamAnswer        ambient, free
   cloud   runDocGeneration     kickoff  -> validate + reserve -> claim -> streamAnswer -> reconcile   billed
   browser (new, Phase C)       user send -> claim in local doc -> streamAnswer (TanStack chat + browser tools)   in-process, free
 
@@ -113,10 +113,10 @@ The stream-into-writer loop is the same algorithm in two files. Extracting it is
 
 ## The C4 correction
 
-The parts-body spec's Phase 4 (and `chat-reaction.ts:46`) slated `doc-generation.ts` for deletion. That assumed an ambient cloud reaction host (the B2 model). **ADR-0021 refuses B2**: the cloud kickoff is the billing/auth/rate-limit/abuse seam and is kept. So:
+The parts-body spec's Phase 4 (and `chat-worker.ts:46`) slated `doc-generation.ts` for deletion. That assumed an ambient cloud worker host (the B2 model). **ADR-0021 refuses B2**: the cloud kickoff is the billing/auth/rate-limit/abuse seam and is kept. So:
 
 - `doc-generation.ts` is **not deleted**. It becomes the cloud-runtime caller of the shared core (the kickoff handler).
-- The duplication it carries is resolved by **extraction** (Phase A), and the stale `chat-reaction.ts:46` "slated for deletion / deliberately not shared" comment is rewritten to "shared via the core."
+- The duplication it carries is resolved by **extraction** (Phase A), and the stale `chat-worker.ts:46` "slated for deletion / deliberately not shared" comment is rewritten to "shared via the core."
 - The deletion prize is the **second conversation-state owner** (the browser's `createChat`-as-source-of-truth and its dual persistence), not the kickoff and not the inference endpoint. `/api/ai/chat` is kept and reframed as the metered **Epicenter provider** backend a local loop calls (it already runs `chat()` with tools and is billed by the existing policy); what dies is a client rendering a conversation from that stream as in-memory state.
 
 ## Architecture
@@ -125,7 +125,7 @@ The parts-body spec's Phase 4 (and `chat-reaction.ts:46`) slated `doc-generation
 packages/workspace/src/ai/
   chat-doc.ts        owns the Y layout + the writer (appendText/finish, + tool writers Phase B)   [unchanged seam]
   chat-answer.ts     NEW: streamAnswer({ writer, startStream, prompt, signal, tools? })            [the core]
-  chat-reaction.ts   attachChatReaction: the daemon trigger wrapper -> calls streamAnswer
+  chat-worker.ts   attachChatWorker: the daemon trigger wrapper -> calls streamAnswer
   tool-bridge.ts     actionsToAiTools: the agent's action set as provider tools (Phase B feeds the core)
 
 packages/server/src/ai/
@@ -143,10 +143,10 @@ The core owns the flush policy (one copy of `FLUSH_INTERVAL_MS`/`FLUSH_MAX_CHARS
 zhongwen text-only is the tracer; both the cloud kickoff and the daemon must stay byte-identical.
 
 - [ ] **A.1** Add `packages/workspace/src/ai/chat-answer.ts`: hoist `streamReply` (the buffer/flush/finish loop) into `streamAnswer({ writer, startStream, prompt, signal })`. One copy of the flush constants.
-- [ ] **A.2** `chat-reaction.ts`: `attachChatReaction` calls `streamAnswer` instead of its private `streamReply`. Behavior unchanged (the cancel/teardown/finish semantics stay in the wrapper).
+- [ ] **A.2** `chat-worker.ts`: `attachChatWorker` calls `streamAnswer` instead of its private `streamReply`. Behavior unchanged (the cancel/teardown/finish semantics stay in the wrapper).
 - [ ] **A.3** `doc-generation.ts`: replace the inline `for await` loop with a `streamAnswer` call; keep the kickoff wrapper (validate, `room.sync` forwarding, `waitUntil` drain). Delete its duplicate flush constants.
-- [ ] **A.4** Rewrite the stale `chat-reaction.ts:46` comment: the HTTP path is kept (the billed kickoff, ADR-0021) and shares the core; it is no longer "slated for deletion."
-- [ ] **A.5** Tests: `chat-answer.test.ts` for the core; confirm `chat-reaction.test.ts` and the server doc-generation tests stay green unchanged. zhongwen end to end on both paths.
+- [ ] **A.4** Rewrite the stale `chat-worker.ts:46` comment: the HTTP path is kept (the billed kickoff, ADR-0021) and shares the core; it is no longer "slated for deletion."
+- [ ] **A.5** Tests: `chat-answer.test.ts` for the core; confirm `chat-worker.test.ts` and the server doc-generation tests stay green unchanged. zhongwen end to end on both paths.
 
 ### Phase B: The agentic tool loop in the core — needs a forcing consumer (Local Books) — Spike then Build
 
@@ -175,7 +175,7 @@ Grounded against the installed `@tanstack/ai@0.28.0` / `@tanstack/ai-client@0.16
 
 ### Phase C: The browser as answerer (render-from-doc tracer) — Build, gates the SSE deletion
 
-- [x] **C.1** A browser answerer that runs `streamAnswer` in-process and writes into the local conversation doc. Built as `attachChatBrowserAnswerer({ doc, startStream })` in `packages/workspace/src/ai/chat-browser-answerer.ts`: it **reuses `attachChatReaction` verbatim**, wired to the transcript doc's own `observe` exactly as the daemon mount's child-doc runtime wires it (`attachChildDocReactions` does `handle.observe(() => reaction.onChange())`). So the in-process trigger is the same answerer as the daemon, differing only in how `onChange` is fired and which `ChatStream` runs (text-only here; tools are Phase B). The inference backend in the tracer is the **Epicenter provider** (see C.2). Tested in `chat-browser-answerer.test.ts` (answers from the optimistic echo alone, reconciles a turn pending at attach, stops cleanly).
+- [x] **C.1** A browser answerer that runs `streamAnswer` in-process and writes into the local conversation doc. Built as `attachChatBrowserAnswerer({ doc, startStream })` in `packages/workspace/src/ai/chat-browser-answerer.ts`: it **reuses `attachChatWorker` verbatim**, wired to the transcript doc's own `observe` exactly as the daemon mount's child-doc runtime wires it (`attachChildDocWorker` does `handle.observe(() => worker.onChange())`). So the in-process trigger is the same answerer as the daemon, differing only in how `onChange` is fired and which `ChatStream` runs (text-only here; tools are Phase B). The inference backend in the tracer is the **Epicenter provider** (see C.2). Tested in `chat-browser-answerer.test.ts` (answers from the optimistic echo alone, reconciles a turn pending at attach, stops cleanly).
 - [x] **C.2** Migrated **opensidian** off `createChat`-as-source-of-truth to render-from-doc. The conversation `messages` are now a synced transcript child doc (`conversations.docs.messages`, `attachChatTranscript` + the app's `answer()` wrapper); `chat-state.svelte.ts` renders from `read()`/`observe()` and runs the answerer; the `chatMessages` table, its dual `onFinish` persistence, and `ui-message.ts`'s table converter are gone (the doc is the single owner). The browser's inference backend is `epicenter-provider.ts`, a `ChatStream` that POSTs the prompt to the metered `/api/ai/chat` and parses the SSE response back into the raw `StreamChunk` stream the core sinks (the Epicenter provider, E.1 in miniature; the same house-key route opensidian already called, now sinking into the doc instead of `createChat`). `bun test` green (workspace ai + opensidian chat), `svelte-check` 0 errors. **Why opensidian over tab-manager:** opensidian already persisted chat in the workspace CRDT and had the `ui-message.ts` boundary, so it is the closer tracer; tab-manager deliberately keeps chat in device-local IndexedDB (not the Y.Doc) and carries real tab-mutation tools, a bigger structural change with a worse regression surface. See the OQ3 parity findings below.
 - [ ] **C.3** Migrate the remaining SSE app (tab-manager).
 
@@ -183,11 +183,11 @@ Grounded against the installed `@tanstack/ai@0.28.0` / `@tanstack/ai-client@0.16
 
 Re-examined zhongwen-first (the greenfield render-from-doc shape), setting opensidian's legacy constraints aside. It does perfectly collapse, and the collapse bottoms out exactly where ADR-0021 said it would; the old SSE + `createChat` design did not collapse (two transports, two state owners), this does.
 
-- **The browser answerer is the daemon answerer.** `attachChatBrowserAnswerer` adds no new state machine; it is `attachChatReaction` wired to the doc's observer, the identical wiring the daemon mount's `attachChildDocReactions` already uses (`handle.observe(() => reaction.onChange())`). So there is one answerer primitive (`attachChatReaction`) over one loop (`streamAnswer`) over one transport (the doc); the trigger is the only fork, and it is the floor (ADR-0021's B2 refusal). Nothing collapses further without losing the billed kickoff. This is the perfect collapse: the three runtimes share the answerer and diverge only on trigger + backend.
+- **The browser answerer is the daemon answerer.** `attachChatBrowserAnswerer` adds no new state machine; it is `attachChatWorker` wired to the doc's observer, the identical wiring the daemon mount's `attachChildDocWorker` already uses (`handle.observe(() => worker.onChange())`). So there is one answerer primitive (`attachChatWorker`) over one loop (`streamAnswer`) over one transport (the doc); the trigger is the only fork, and it is the floor (ADR-0021's B2 refusal). Nothing collapses further without losing the billed kickoff. This is the perfect collapse: the three runtimes share the answerer and diverge only on trigger + backend.
 - **The client SSE parser (the Epicenter provider) is the local-tool corner's backend, not a general need.** The runtime cube has three browser inference backends and only one needs client-side SSE: text-only / house-key → the **cloud kickoff** (zhongwen; the server runs the loop, no client parser); BYOK / local model → browser **`chat()`** (a native `StreamChunk` iterable, no parser); **house-key + a local tool** (opensidian, Local Books) → browser answerer + the **Epicenter provider** (`/api/ai/chat` parsed back to chunks), because the loop must be local (the tool's data is local) while inference is metered. So `epicenter-provider.ts`'s SSE parser is confined to the local-tool corner and earns its keep only there; a pure zhongwen-shaped app calls `chat()` (or just kicks off) and carries no parser. opensidian is that corner's tracer (its file/bash tools land in Phase B). The asymmetry to keep in mind: do **not** generalize the client SSE parser to every render-from-doc app; it is a local-tool affordance.
 - **The doc→render-state collapse: DONE 2026-06-18.** zhongwen's `ConversationView` and opensidian's `chat-state` each re-derived the same liveness/status from a snapshot + a clock (active generation, thinking, streaming, interrupted, failed, plus the empty-placeholder filter). That projection is now one pure `chatRenderState(messages, { now, lastChangeAt, externallyGenerating })` in `@epicenter/workspace/ai` (with `CHAT_STREAM_GRACE_MS`), beside `findActiveChatDocGeneration`, so every renderer agrees on "live vs interrupted" the way server and client already agree on "active generation." Both apps now bind to it (zhongwen passes `externallyGenerating: kickoffController !== null` for the cloud kickoff's pre-claim window; the in-process answerer passes `false`). A new render-from-doc app is a thin view over this one projection; this also fixed a latent opensidian bug (a stalled stream never decayed to interrupted, because opensidian's old `isGenerating` ignored the grace window). The render-state collapse is orthogonal to and now complete alongside the transport collapse.
 
-- **zhongwen stays cloud + daemon; no browser-local agent (2026-06-18).** A browser-runtime agent for zhongwen was considered and refused. zhongwen is text-only (`tools: []`) on a Chinese-tuned cloud model, so the browser answerer is strictly dominated by the cloud kickoff: no local tool forces the loop local, there is no local model and no BYOK UI, and a small in-browser model would be a *materially worse* product (Chinese degrades most in small quantized models). The browser-answerer corner is already proven by opensidian (C.1/C.2) + the daemon (`mount.ts` runs native `chat()` through the same `attachChatReaction`) + the verbatim reuse, so a zhongwen browser agent would prove nothing and ship a Potemkin catalog entry. BYOK and local-model belong in a **daemon the user registers**, not the browser; the browser stays a pure doc client. zhongwen's model is "Epicenter Cloud (hot, ready) OR register your own daemon." The browser answerer earns its keep only in the local-tool corner (opensidian, Local Books), where a local tool's data forces the loop local even though inference is cloud.
+- **zhongwen stays cloud + daemon; no browser-local agent (2026-06-18).** A browser-runtime agent for zhongwen was considered and refused. zhongwen is text-only (`tools: []`) on a Chinese-tuned cloud model, so the browser answerer is strictly dominated by the cloud kickoff: no local tool forces the loop local, there is no local model and no BYOK UI, and a small in-browser model would be a *materially worse* product (Chinese degrades most in small quantized models). The browser-answerer corner is already proven by opensidian (C.1/C.2) + the daemon (`mount.ts` runs native `chat()` through the same `attachChatWorker`) + the verbatim reuse, so a zhongwen browser agent would prove nothing and ship a Potemkin catalog entry. BYOK and local-model belong in a **daemon the user registers**, not the browser; the browser stays a pure doc client. zhongwen's model is "Epicenter Cloud (hot, ready) OR register your own daemon." The browser answerer earns its keep only in the local-tool corner (opensidian, Local Books), where a local tool's data forces the loop local even though inference is cloud.
 
 - **The trigger fork is compute ownership, not a chat concept ([ADR-0022](../docs/adr/0022-the-trigger-forks-on-compute-ownership-and-cloud-generation-runs-off-a-queue.md), 2026-06-18).** Re-examining "why two triggers" bottomed out at a Cloudflare cost asymmetry: a Durable Object bills for resident I/O-wait wall-clock and a Worker does not, and an ambient cloud would force conversation semantics into the app-blind relay (ADR-0017/0004). So the cloud is **not** made ambient and the trigger fork is **not** collapsed to one. Instead the held-open kickoff collapses into a short reserve-and-enqueue plus an **ephemeral queue-consumer Worker** (client-independent, no DO duration, relay stays blind). The browser's trigger fork stays one honest bit — resident listener (do nothing) vs rented compute (poke) — and `AgentConfig.runtime` is recharacterized from a chat concept to a compute-site property. This is the corrected, concrete form of Phase D/E for the cloud runtime; the execution-ready plan is `specs/20260618T160358-cloud-kickoff-to-queue-generation.md`. The deferred shared doc-chat controller hook (the controller collapse) is sequenced into that spec's Phase 5, built once against the final short-kickoff trigger shape.
 
@@ -215,7 +215,7 @@ Re-examined zhongwen-first (the greenfield render-from-doc shape), setting opens
 
 - [ ] **E.1** The **Epicenter provider**: a client-side `ChatStream` adapter (daemon and browser) that holds the user's account credential and calls the metered `/api/ai/chat`, so a local loop gets cloud credits without a raw provider key. No new server code (the route and its Autumn policy exist); this is the daemon's `resolveChatStream` gaining a third backend beside local-model and BYOK.
 - [ ] **E.2** Key the reservation to the reply being produced (`(responder, entry)` / `generationId`) so a retried kickoff reuses the reservation (ADR-0021 bill-at-the-claim).
-- [ ] **E.3** Decide finalize location (Open Question 2): keep the confirm in the route middleware (kickoff stays open) or move `trackTokens` into the DO reaction so the kickoff is a short trigger. Prefer the short trigger; confirm against CF wall-clock limits.
+- [ ] **E.3** Decide finalize location (Open Question 2): keep the confirm in the route middleware (kickoff stays open) or move `trackTokens` into the DO worker so the kickoff is a short trigger. Prefer the short trigger; confirm against CF wall-clock limits.
 
 ## Greenfield scope: collapse, keep, refuse
 
@@ -223,8 +223,8 @@ Product sentence: *one answer core every runtime runs; one transport (the doc); 
 
 | Path | Verdict | Reason |
 | --- | --- | --- |
-| `streamReply` (chat-reaction) + inline loop (doc-generation) | collapse now (A) | one algorithm, two copies; extract to `streamAnswer` |
-| stale `chat-reaction.ts:46` "slated for deletion" comment | collapse now (A) | ADR-0021 keeps the kickoff; rewrite to "shared via the core" |
+| `streamReply` (chat-worker) + inline loop (doc-generation) | collapse now (A) | one algorithm, two copies; extract to `streamAnswer` |
+| stale `chat-worker.ts:46` "slated for deletion" comment | collapse now (A) | ADR-0021 keeps the kickoff; rewrite to "shared via the core" |
 | in-memory `createChat` as source of truth + dual persistence | delete (C/D) | render from the doc; one state owner. THE deletion prize |
 | `/api/ai/chat` inference endpoint + `toServerSentEventsResponse` | keep, reframe | the metered Epicenter-provider backend a local loop calls; NOT deleted. Rewrite its "SSE is the interactive transport" header comment |
 | the cloud kickoff (`doc-generation.ts`) | keep | the billing/auth/rate-limit/402 seam; ADR-0021 B2 refusal |
@@ -244,11 +244,11 @@ Product sentence: *one answer core every runtime runs; one transport (the doc); 
    - **New wins the SSE path could not give:** a second tab or device renders the *same* stream from the synced doc (SSE fragmented per in-memory client), and an unanswered turn sent before a reload is answered on reload (the answerer reconciles pending turns on attach; SSE lost the in-flight turn). 
 
    **Recommendation: proceed.** Render-from-doc is proven for text and is a net win on persistence and multi-device; the streaming-granularity cost is the one ADR-0021 already accepted; tool-approval is a scope boundary (Phase B), not a reason to reconsider the approach. Do not delete SSE until Phase B lets the tool-using apps reach full parity.
-4. **Where the browser answerer's claim lives. RESOLVED 2026-06-18: it is the *same* predicate, by construction.** `attachChatBrowserAnswerer` does not reimplement the claim; it builds an `attachChatReaction` over the local doc and fires its `onChange` from the doc observer, the identical wiring the daemon mount uses. So both the browser answerer and a future daemon reconcile the one `findUnansweredTurn` existence-claim: the assistant message keyed to the turn's `generationId` *is* the claim, and whoever appends it first wins; the other re-reads the committed state and short-circuits on the existing id. They cannot double-answer one turn across processes. The one residual is two *simultaneous* in-process answerers on the same doc (e.g. two browser tabs of the same conversation) both reading the pre-claim snapshot inside the same sub-transaction window before either append syncs, the identical narrow race the daemon-reconnect / double-kickoff case already carries and accepts; the existence-claim narrows it to that window rather than eliminating it. Single-tab and browser-vs-daemon are fully covered.
+4. **Where the browser answerer's claim lives. RESOLVED 2026-06-18: it is the *same* predicate, by construction.** `attachChatBrowserAnswerer` does not reimplement the claim; it builds an `attachChatWorker` over the local doc and fires its `onChange` from the doc observer, the identical wiring the daemon mount uses. So both the browser answerer and a future daemon reconcile the one `findUnansweredTurn` existence-claim: the assistant message keyed to the turn's `generationId` *is* the claim, and whoever appends it first wins; the other re-reads the committed state and short-circuits on the existing id. They cannot double-answer one turn across processes. The one residual is two *simultaneous* in-process answerers on the same doc (e.g. two browser tabs of the same conversation) both reading the pre-claim snapshot inside the same sub-transaction window before either append syncs, the identical narrow race the daemon-reconnect / double-kickoff case already carries and accepts; the existence-claim narrows it to that window rather than eliminating it. Single-tab and browser-vs-daemon are fully covered.
 
 ## Success Criteria
 
-- [ ] One `streamAnswer` core; `chat-reaction.ts` and `doc-generation.ts` both call it; no duplicate flush loop. zhongwen byte-identical on both the cloud kickoff and the daemon (Phase A gate).
+- [ ] One `streamAnswer` core; `chat-worker.ts` and `doc-generation.ts` both call it; no duplicate flush loop. zhongwen byte-identical on both the cloud kickoff and the daemon (Phase A gate).
 - [ ] A tool-using agent (Local Books) runs the same core: tool-call recipe + capped tool-result round-trip through the doc and render on a device without the tool's data (Phase B).
 - [ ] One SSE app renders from the doc with acceptable UX; SSE is deleted with no consumer left on it (Phases C/D).
 - [ ] House-key cloud inference still works with no BYOK required, billed once at the kickoff, idempotent under retry (Phase E).
@@ -256,7 +256,7 @@ Product sentence: *one answer core every runtime runs; one transport (the doc); 
 
 ## References
 
-- `packages/workspace/src/ai/chat-reaction.ts` - `streamReply` to hoist; the daemon trigger wrapper
+- `packages/workspace/src/ai/chat-worker.ts` - `streamReply` to hoist; the daemon trigger wrapper
 - `packages/server/src/ai/doc-generation.ts` - the inline loop to replace; the KEPT cloud kickoff wrapper
 - `packages/server/src/routes/ai.ts` - the SSE route (`:157`) to delete and the kickoff route (`:193`) to keep
 - `apps/opensidian/src/lib/chat/chat-state.svelte.ts`, `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` - the `createChat` SSE consumers to migrate

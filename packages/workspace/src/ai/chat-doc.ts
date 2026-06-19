@@ -26,12 +26,12 @@
  *
  * The user turn carries its own `generationId`: the durable, client-minted id
  * that names the assistant answer it awaits and doubles as that answer's
- * message id. An unanswered user turn IS the work queue, so a reaction that only
+ * message id. An unanswered user turn IS the work queue, so a worker that only
  * observes the doc (no HTTP kickoff body) reads the identity from the turn
  * itself.
  *
  * Single writer per map: the creating client for user messages, the server
- * generation reaction for assistant messages. Both sides import this module so
+ * generation worker for assistant messages. Both sides import this module so
  * the CRDT layout never forks; consumers see snapshots and writers, never
  * raw Y types.
  */
@@ -42,7 +42,7 @@ import * as Y from 'yjs';
 
 /**
  * Terminal outcome of an assistant message, written at most once by the
- * generation reaction. Absence means the message is not terminal: either still
+ * generation worker. Absence means the message is not terminal: either still
  * streaming (recent updates) or an interrupted artifact (quiet past the
  * grace window).
  */
@@ -132,13 +132,13 @@ export type ChatDocMessage = {
 	 */
 	text: string;
 	/**
-	 * User turns only: the assistant id this turn awaits, used by the reaction as
+	 * User turns only: the assistant id this turn awaits, used by the worker as
 	 * the idempotent assistant message id. Absent on assistant messages.
 	 */
 	generationId?: string;
 	/**
 	 * User turns only: a client-owned request to cancel the in-flight answer to
-	 * this turn. The client writes it (single writer per field); the reaction reads
+	 * this turn. The client writes it (single writer per field); the worker reads
 	 * it back mid-answer and writes a `cancelled` finish. A retry that re-points
 	 * the turn's `generationId` clears it, so the fresh generation is not born
 	 * cancelled.
@@ -149,7 +149,7 @@ export type ChatDocMessage = {
 
 /**
  * A user turn that is ready to be answered: its `generationId` is present (so
- * the reaction has the idempotent assistant id) and {@link findUnansweredTurn} has
+ * the worker has the idempotent assistant id) and {@link findUnansweredTurn} has
  * confirmed no answer or active generation exists yet.
  */
 export type AnswerableTurn = ChatDocMessage & { generationId: string };
@@ -233,7 +233,7 @@ export function appendUserMessage(
 /**
  * Re-point the latest user turn's `generationId`, returning the id written or
  * `undefined` when no user turn has synced yet. Retry after a terminal answer
- * (failed or interrupted) mints a fresh id so the reaction starts a new
+ * (failed or interrupted) mints a fresh id so the worker starts a new
  * generation instead of colliding with the answer already keyed to the old
  * id. The user turn belongs to the creating client, so re-pointing its
  * `generationId` stays single-writer.
@@ -262,7 +262,7 @@ export function setLatestUserTurnGenerationId(
  * Stamp a client-owned cancel request on the latest user turn, returning the
  * timestamp written or `undefined` when no user turn has synced yet. The turn
  * belongs to the creating client, so writing `cancelRequestedAt` stays
- * single-writer; the reaction reads it back mid-answer (its read-back departure
+ * single-writer; the worker reads it back mid-answer (its read-back departure
  * from the snapshot-once HTTP path) and writes a `cancelled` finish.
  */
 export function requestLatestUserTurnCancel(
@@ -438,7 +438,7 @@ export function readChatDocMessages(doc: Y.Doc): ChatDocMessage[] {
 
 /**
  * The latest user message in transcript order, or `undefined` when none has
- * synced yet. The reaction answers this turn, taking its `generationId` as the
+ * synced yet. The worker answers this turn, taking its `generationId` as the
  * idempotent assistant message id. Pure over a snapshot; never touches the doc.
  */
 export function findLatestUserTurn(
@@ -476,13 +476,13 @@ export function findActiveChatDocGeneration(
 /**
  * The latest user turn that is ready to be answered, or `undefined` when there
  * is nothing to answer yet. This is the single answer predicate the observing
- * reaction reconciles: a turn qualifies only when it carries a `generationId`, no
+ * worker reconciles: a turn qualifies only when it carries a `generationId`, no
  * message is already keyed to that id (the existence-based claim), and no recent
  * unfinished assistant turn is still streaming.
  *
  * Pure over a snapshot; never touches the doc. It is deliberately turn-or-
  * nothing: the HTTP generation path keeps its own 400-vs-409 taxonomy for its
- * response, but the reaction only needs "answer this turn, or nothing".
+ * response, but the worker only needs "answer this turn, or nothing".
  */
 export function findUnansweredTurn(
 	messages: readonly ChatDocMessage[],
@@ -509,7 +509,7 @@ export function findUnansweredTurn(
  * same `{ role, content }` sequence the single-content body did.
  *
  * The transcript module owns this conversion because it owns the body shape;
- * both the reaction and the HTTP generation path freeze their prompt this way.
+ * both the worker and the HTTP generation path freeze their prompt this way.
  */
 export function chatDocToPrompt(
 	messages: readonly ChatDocMessage[],
@@ -549,7 +549,7 @@ export function observeChatDocMessages(
  *
  * This is the client surface of the transcript: read the messages, observe
  * changes, and append a user message (the one write a browser client owns). The
- * assistant-message writer is the server generation reaction, which imports
+ * assistant-message writer is the server generation worker, which imports
  * {@link appendAssistantMessage} directly; that writer policy is exactly why
  * this handle exposes `appendUser` and not an assistant writer.
  *
@@ -594,7 +594,7 @@ export function attachChatTranscript(doc: Y.Doc) {
 		},
 		/**
 		 * Request cancellation of the latest user turn's in-flight answer. The
-		 * client owns this field; the reaction reads it back mid-answer and writes a
+		 * client owns this field; the worker reads it back mid-answer and writes a
 		 * `cancelled` finish. Returns the timestamp written, or `undefined` when no
 		 * user turn has synced yet. See {@link requestLatestUserTurnCancel}.
 		 */

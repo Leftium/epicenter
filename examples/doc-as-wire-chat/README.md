@@ -1,16 +1,16 @@
 # doc-as-wire chat
 
-A runnable demonstration of ADR-0014 / ADR-0015: **a separate, always-on reaction
+A runnable demonstration of ADR-0014 / ADR-0015: **a separate, always-on worker
 answers a conversation by writing into a synced document, and another peer
 watches the answer stream back — the doc is the wire.** No HTTP request/response
-between client and reaction, no server-sent events.
+between client and worker, no server-sent events.
 
 It reuses the production primitives unchanged:
 
 - `@epicenter/sync` — the STEP1/STEP2/UPDATE wire protocol the real relay speaks.
-- `attachChildDocReactions` — the REAL observe loop: host a live transcript replica
-  for every conversation bound to this reaction's agent, answer each one.
-- `attachChatTranscript` / `attachChatReaction` — the transcript layout and the
+- `attachChildDocWorker` — the REAL observe loop: host a live transcript replica
+  for every conversation bound to this worker's agent, answer each one.
+- `attachChatTranscript` / `attachChatWorker` — the transcript layout and the
   per-conversation append loop (claim -> stream into the `Y.Text` -> write `finish`).
 
 The only thing faked is the model (an echo `ChatStream`), and only when no
@@ -20,7 +20,7 @@ The only thing faked is the model (an echo `ChatStream`), and only when no
 
 ```txt
 relay.ts      the RELAY     app-blind byte router; one Y.Doc per room, fans out frames
-reaction.ts   the REACTION  always-on daemon; runs the observe loop, streams answers in
+worker.ts   the WORKER  always-on daemon; runs the observe loop, streams answers in
 client.ts     the CLIENT    thin REPL; binds a conversation, writes turns, renders the doc
 ```
 
@@ -28,7 +28,7 @@ client.ts     the CLIENT    thin REPL; binds a conversation, writes turns, rende
 
 ```sh
 bun run relay      # terminal 1
-bun run reaction      # terminal 2  (answers as agent "demo-agent")
+bun run worker      # terminal 2  (answers as agent "demo-agent")
 bun run client     # terminal 3  (binds a conversation to "demo-agent")
 ```
 
@@ -36,19 +36,19 @@ Type in terminal 3 and watch the reply stream in character by character.
 
 ## The slices, and how to see each
 
-**Stream (S1).** Type a message; the reaction (a separate process) streams the reply
+**Stream (S1).** Type a message; the worker (a separate process) streams the reply
 into the synced transcript. Watch terminal 1: it only logs `fwd ... Nb (opaque
 bytes)` — the relay never decodes an app field.
 
 **Durable cancel (S3).** While a reply is streaming, type `/cancel` and Enter. The
-reaction stops mid-stream and writes a `cancelled` finish. The cancel is a durable
+worker stops mid-stream and writes a `cancelled` finish. The cancel is a durable
 field in the doc, so it survives a disconnect — not an in-process abort.
 
 ```sh
 bun run smoke:cancel
 ```
 
-**Agent binding (S4).** A conversation carries an immutable `agent`. The reaction's
+**Agent binding (S4).** A conversation carries an immutable `agent`. The worker's
 observe loop hosts only conversations bound to the agent it answers as; everything
 else it ignores. See it both ways:
 
@@ -61,15 +61,15 @@ AGENT=other      bun run client    # ignored — nobody runs "other"
 bun run smoke:binding
 ```
 
-**Real inference (S5).** Set a key and the same reaction uses Gemini instead of the
+**Real inference (S5).** Set a key and the same worker uses Gemini instead of the
 echo, behind the identical `ChatStream` contract (built exactly as
 `apps/zhongwen/mount.ts` builds it):
 
 ```sh
-GEMINI_API_KEY=... bun run reaction
+GEMINI_API_KEY=... bun run worker
 ```
 
-The reaction logs the provider path:
+The worker logs the provider path:
 
 ```txt
 [gemini] request started · model=gemini-3.5-flash · messages=3
@@ -84,17 +84,17 @@ of looking stuck:
 assistant:  [failed: stream-error] ApiError: ...
 ```
 
-For the fast local echo path, run the reaction without the key:
+For the fast local echo path, run the worker without the key:
 
 ```sh
-env -u GEMINI_API_KEY bun run reaction
+env -u GEMINI_API_KEY bun run worker
 ```
 
 ## Non-interactive checks
 
 ```sh
 bun run relay        # terminal 1
-bun run reaction        # terminal 2
+bun run worker        # terminal 2
 bun run smoke            # S1: observe -> stream -> finish (completed)
 bun run smoke:cancel     # S3: cancel mid-stream -> finish (cancelled)
 bun run smoke:binding    # S4: bound agent answers, others are ignored
@@ -107,7 +107,7 @@ root doc (room "epicenter-demo")
   conversations table: rows { id, agent }          ← the binding lives on the row
 
 transcript child doc (room "epicenter-demo.conversations.<id>.transcript")
-  derived 1:1 address; the reaction's observe loop and the client opener
+  derived 1:1 address; the worker's observe loop and the client opener
   compute the SAME guid with zero coordination (single-owner derivation)
 ```
 

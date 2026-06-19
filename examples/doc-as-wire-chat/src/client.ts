@@ -2,12 +2,12 @@
  * The thin CLIENT (ADR-0014/0015): bind a conversation to an agent, then chat by
  * WRITING turns into its transcript child doc and OBSERVING the answer stream in.
  *
- * - Default `AGENT=demo-agent` binds to the running reaction, so it answers.
+ * - Default `AGENT=demo-agent` binds to the running worker, so it answers.
  * - `AGENT=other bun run client` binds to an agent nobody runs, so it is ignored
  *   (S4: the binding decides who answers, not the topology).
  * - Type `/cancel` mid-stream to stop a reply durably (S3).
  *
- * Run: `bun run src/client.ts`  (after the relay and reaction are up).
+ * Run: `bun run src/client.ts`  (after the relay and worker are up).
  */
 
 import * as readline from 'node:readline';
@@ -73,7 +73,7 @@ transcript.observe(() => {
 		const { finish } = assistant;
 		// One terminal note, kept to a single REPL line. `failed` collapses any
 		// newlines in the provider message so it can't push the prompt mid-text;
-		// the message is already length-capped where the reaction writes it.
+		// the message is already length-capped where the worker writes it.
 		const note =
 			finish.kind === 'cancelled'
 				? ' [cancelled]'
@@ -92,7 +92,7 @@ rl.on('line', (line) => {
 		return;
 	}
 	if (content === '/cancel') {
-		// Durable cancel: a client-owned field the reaction reads back mid-answer.
+		// Durable cancel: a client-owned field the worker reads back mid-answer.
 		const at = transcript.requestCancel(Date.now());
 		if (at === undefined) {
 			process.stdout.write('(nothing to cancel)\n');

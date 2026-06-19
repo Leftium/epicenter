@@ -6,8 +6,8 @@
  * in how they are triggered, where inference runs, and how the doc propagates;
  * the buffer/flush policy and the chunk switch are the same algorithm, so they
  * live here once instead of being copied into each trigger wrapper. The daemon
- * reaction (`chat-reaction.ts`) and the in-process browser answerer
- * (`chat-browser-answerer.ts`, which reuses the reaction) both call
+ * worker (`chat-worker.ts`) and the in-process browser answerer
+ * (`chat-browser-answerer.ts`, which reuses the worker) both call
  * {@link streamAnswer}.
  *
  * The core owns the loop and returns an outcome; it never writes the terminal

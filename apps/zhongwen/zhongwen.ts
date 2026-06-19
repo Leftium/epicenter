@@ -45,7 +45,7 @@ export const generateConversationId = (): ConversationId =>
  * per-conversation choice, so it is never stored on the conversation row. Both
  * answer paths read it: the browser passes it to the Epicenter provider it answers
  * cloud conversations with (the metered `/api/ai/chat` stream), and the always-on
- * daemon reaction builds its Gemini adapter from it directly.
+ * daemon worker builds its Gemini adapter from it directly.
  */
 export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
 
@@ -71,7 +71,7 @@ export type { AgentId };
  * `runtime` is the routing fork the browser reads: a `'cloud'` agent is answered
  * in-process by the browser (the Epicenter provider sourcing tokens from the
  * metered `/api/ai/chat` stream); a `'daemon'` agent is an always-on resident
- * reaction that answers over sync, so the browser stays out of the way (both
+ * worker that answers over sync, so the browser stays out of the way (both
  * answering would answer one turn twice, the D3 hazard). The catalog is the one
  * place that fork is declared (ADR-0021).
  */
@@ -92,7 +92,7 @@ export type AgentConfig = {
  *
  * The hosted cloud agent is always available (the browser answers it in-process
  * against the hosted inference stream, no daemon required). The home daemon is the
- * always-on reaction a user co-deploys; binding a
+ * always-on worker a user co-deploys; binding a
  * conversation to it is what a later "co-deploy a live daemon" slice brings online.
  */
 export const ZHONGWEN_AGENTS = [
@@ -133,7 +133,7 @@ export function agentConfig(id: AgentId): AgentConfig | undefined {
  * The bilingual system prompt every Zhongwen answer is generated under. An app
  * constant like {@link ZHONGWEN_MODEL}, shared by both answer paths so they
  * produce the same voice: the browser passes it to the Epicenter provider, and the
- * always-on daemon reaction passes it to its provider. It lives here, in the
+ * always-on daemon worker passes it to its provider. It lives here, in the
  * isomorphic contract, rather than in a route folder so the node daemon can read
  * it without importing browser code.
  */
@@ -165,7 +165,7 @@ const conversationsTable = defineTable({
 	 * The agent this conversation is bound to (ADR-0015), set once at creation and
 	 * never reassigned. {@link CLOUD_AGENT_ID} routes to the browser answering
 	 * in-process (the Epicenter provider); a daemon's agent id routes to that
-	 * always-on reaction over sync, and the browser stays out. One immutable
+	 * always-on worker over sync, and the browser stays out. One immutable
 	 * field is who was addressed and who answered, for every turn: the history
 	 * cannot disagree with itself, and the conversation's content only ever reaches
 	 * this one agent. Switching agents is a fork, not a write here.
@@ -183,7 +183,7 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  *
  * Conversation transcripts are not rows: each `conversations.messages` handle
  * opens a synced child doc derived from the conversation id and streamed into
- * by the server generation reaction.
+ * by the server generation worker.
  */
 export const zhongwenWorkspace = defineWorkspace({
 	id: 'epicenter-zhongwen',

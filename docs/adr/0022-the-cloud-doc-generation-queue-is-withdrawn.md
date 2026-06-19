@@ -20,13 +20,13 @@ have. The argument, in one chain:
    generation, well under 1% of the inference bill it rides on. Per-generation
    execution cost does not justify a queue.
 2. **The durable, background, always-on answerer already exists: the daemon**
-   (ADR-0017's reaction spoke), which gets durability for free on the owner's
+   (ADR-0017's worker spoke), which gets durability for free on the owner's
    hardware. The *cloud* answer is the **interactive** case where the user is
    watching; it does not need to outlive the client.
 3. **The synchronous-402 boundary the kickoff existed to provide already exists**
    on the `/api/ai/chat` SSE endpoint (`chargeAiCreditsWithAutumn` reserves before
    streaming). A separate server kickoff was redundant.
-4. **ADR-0017 forbids the box thinking; the reaction is a peer spoke.** The
+4. **ADR-0017 forbids the box thinking; the worker is a peer spoke.** The
    cleanest answerer is therefore an in-process peer, and one already shipped:
    opensidian answers cloud conversations in the browser via the Epicenter
    provider (`attachChatBrowserAnswerer` + `createEpicenterProviderChatStream`),
@@ -40,5 +40,5 @@ are deleted. The live decision is the revised [ADR-0021](0021-a-conversation-has
 
 This record is kept so the queue is not re-proposed without first answering: *which
 answerer needs to be durable and client-independent without a daemon?* If a future
-"managed background agent" genuinely needs that, it is a server-side reaction in
+"managed background agent" genuinely needs that, it is a server-side worker in
 the Model-2 sandbox lane (ADR-0018), not a general server-writes-every-doc path.

@@ -1,10 +1,10 @@
 /**
  * Agent-binding check (S4): a conversation bound to an agent nobody runs is
- * ignored; one bound to the reaction's agent is answered. Proves the row's `agent`
+ * ignored; one bound to the worker's agent is answered. Proves the row's `agent`
  * decides who answers, by construction (the observe loop hosts only its own
  * conversations), not the topology.
  *
- * Run: `bun run src/smoke-binding.ts`  (after the relay and a reaction answering
+ * Run: `bun run src/smoke-binding.ts`  (after the relay and a worker answering
  * as `demo-agent` are up).
  */
 
@@ -63,7 +63,7 @@ console.log(
 	`✓ conversation bound to "nobody-runs-this-agent" was ignored (no answer in 3s)`,
 );
 
-// A conversation bound to the reaction's agent MUST be answered.
+// A conversation bound to the worker's agent MUST be answered.
 const answered = await askAndWaitForAnswer(SELF_AGENT, 12_000);
 if (!answered) {
 	console.error(

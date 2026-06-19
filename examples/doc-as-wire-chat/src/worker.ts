@@ -1,7 +1,7 @@
 /**
- * The reaction (ADR-0014/0015), now over the REAL observe loop (S4).
+ * The worker (ADR-0014/0015), now over the REAL observe loop (S4).
  *
- * It holds the root workspace doc, runs `attachChildDocReactions` (the production
+ * It holds the root workspace doc, runs `attachChildDocWorker` (the production
  * loop from `@epicenter/workspace`) over the `conversations` table, and hosts a
  * live transcript replica for EVERY conversation bound to the agent it answers
  * as (`isDesignated: row.agent === SELF_AGENT`). A conversation bound to any
@@ -10,15 +10,15 @@
  * The inference backend is one argument (`startStream`): echo by default, real
  * Gemini when `GEMINI_API_KEY` is set (S5).
  *
- * Run: `bun run src/reaction.ts`  (after the relay is up). Set `AGENT` to change
+ * Run: `bun run src/worker.ts`  (after the relay is up). Set `AGENT` to change
  * which agent this daemon answers as (default `demo-agent`).
  */
 
 import {
-	attachChildDocReactions,
+	attachChildDocWorker,
 	type ConnectedChildDoc,
 } from '@epicenter/workspace';
-import { attachChatReaction, attachChatTranscript } from '@epicenter/workspace/ai';
+import { attachChatWorker, attachChatTranscript } from '@epicenter/workspace/ai';
 import * as Y from 'yjs';
 import {
 	agentOf,
@@ -45,7 +45,7 @@ connectPeer({
 });
 
 // The production observe loop, wired to a relay-backed child-doc connector.
-attachChildDocReactions({
+attachChildDocWorker({
 	rootDoc,
 	table: {
 		scan: () => ({
@@ -74,15 +74,15 @@ attachChildDocReactions({
 		};
 	},
 	layout: (ydoc) => attachChatTranscript(ydoc),
-	reactionFor: ({ ydoc, rowId }) => {
+	workerFor: ({ ydoc, rowId }) => {
 		console.log(`▸ hosting "${rowId}" (bound to me) — will answer its turns`);
-		return attachChatReaction({ ydoc, startStream });
+		return attachChatWorker({ ydoc, startStream });
 	},
 	// The whole binding: host only conversations addressed to the agent I am.
 	isDesignated: (rowId) => agentOf(rootDoc, rowId) === SELF_AGENT,
 });
 
-// Narrate every conversation the reaction learns about, designated or not.
+// Narrate every conversation the worker learns about, designated or not.
 const narrated = new Set<string>();
 observeConversations(rootDoc, () => {
 	for (const conversation of listConversations(rootDoc)) {
@@ -101,5 +101,5 @@ observeConversations(rootDoc, () => {
 });
 
 console.log(
-	`reaction up · answering as agent "${SELF_AGENT}" · workspace "${WORKSPACE}"`,
+	`worker up · answering as agent "${SELF_AGENT}" · workspace "${WORKSPACE}"`,
 );

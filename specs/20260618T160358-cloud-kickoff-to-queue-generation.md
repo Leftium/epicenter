@@ -13,7 +13,7 @@ zhongwen becomes opensidian: a cloud conversation is answered **in the browser**
 
 The grilling trail lives in ADR-0021 (revised) and ADR-0022 (withdrawn). The load-bearing facts, all verified in-repo:
 
-- `runDocGeneration` (server hydrates a replica, forwards updates over `room.sync` RPC) has **one** production caller: the `/api/ai/chat/doc` route. The daemon (`attachChatReaction`) and the browser (`attachChatBrowserAnswerer`) write a **local** `Y.Doc` in-process and never use it.
+- `runDocGeneration` (server hydrates a replica, forwards updates over `room.sync` RPC) has **one** production caller: the `/api/ai/chat/doc` route. The daemon (`attachChatWorker`) and the browser (`attachChatBrowserAnswerer`) write a **local** `Y.Doc` in-process and never use it.
 - **opensidian already ships the target pattern** and tests it: `apps/opensidian/src/lib/chat/epicenter-provider.ts` (`createEpicenterProviderChatStream`) + `attachChatBrowserAnswerer` answer cloud conversations in the browser with no kickoff. `epicenter-provider.test.ts` proves it.
 - The Epicenter provider has **no opensidian-specific deps** (`@epicenter/constants`, `@epicenter/workspace/ai`, `@tanstack/ai`, `wellcrafted`) → it promotes to a shared package cleanly.
 - The synchronous-402 billing boundary already exists on `/api/ai/chat` (`chargeAiCreditsWithAutumn`). No kickoff, no queue, no cross-invocation finalize.
@@ -22,7 +22,7 @@ The grilling trail lives in ADR-0021 (revised) and ADR-0022 (withdrawn). The loa
 
 - **zhongwen** (`apps/zhongwen/src/routes/(signed-in)/components/ConversationView.svelte`): cloud conversations call `nudgeBoundAgent()` → `kickoffGeneration()` → POST `API_ROUTES.ai.chatDoc` (the server kickoff), holding `kickoffController` open and feeding `externallyGenerating` into `chatRenderState`. `stop()` aborts the kickoff. `AgentConfig.runtime` is `'cloud' | 'daemon'`.
 - **opensidian** (`apps/opensidian/src/lib/chat/`): the reference. `chat-state.svelte.ts` does `docHandle.answer(createEpicenterProviderChatStream({ fetch, url, data }))` — browser-answered, no trigger to OR in.
-- **Server vertical to delete**: `packages/server/src/ai/doc-generation.ts` (+ `doc-generation.test.ts`, `reaction-over-room-sync.test.ts`), the `/api/ai/chat/doc` route + body schema in `packages/server/src/routes/ai.ts` (+ its `ai.test.ts` cases), the `runDocGeneration` export (`packages/server/src/index.ts` / `ai/index.ts`), and `apps/api/worker/ai-generation-consumer.ts` (untracked WIP toward the withdrawn queue).
+- **Server vertical to delete**: `packages/server/src/ai/doc-generation.ts` (+ `doc-generation.test.ts`, `worker-over-room-sync.test.ts`), the `/api/ai/chat/doc` route + body schema in `packages/server/src/routes/ai.ts` (+ its `ai.test.ts` cases), the `runDocGeneration` export (`packages/server/src/index.ts` / `ai/index.ts`), and `apps/api/worker/ai-generation-consumer.ts` (untracked WIP toward the withdrawn queue).
 - **SSE endpoint** `/api/ai/chat` (`packages/server/src/routes/ai.ts`, billed by `chargeAiCreditsWithAutumn`): **kept, unchanged.** It is the metered inference stream the Epicenter provider calls.
 
 ## Implementation Plan
@@ -45,9 +45,9 @@ The grilling trail lives in ADR-0021 (revised) and ADR-0022 (withdrawn). The loa
 
 - [x] **3.1** Removed the `/api/ai/chat/doc` route + `aiChatDocBody` + `DOC_GUID_REGEX` from `packages/server/src/routes/ai.ts`; `mountAiApp` mounts SSE only. The module docstring is rewritten to one transport.
   > No doc-route-specific `chargeAiCreditsWithAutumn` wrapping existed to drop: the policy is applied uniformly via `mountAiApp`'s `policies` and is unchanged.
-- [x] **3.2** Deleted `packages/server/src/ai/doc-generation.ts`, `doc-generation.test.ts`, `reaction-over-room-sync.test.ts`, and the `runDocGeneration` export (`packages/server/src/index.ts`; there was no `ai/index.ts`). Deleted the untracked `apps/api/worker/ai-generation-consumer.ts`, the worker `queue()` entrypoint, and the `queues` block in `wrangler.jsonc` (then `wrangler types` dropped the `AI_GENERATION_QUEUE` binding). Removed `API_ROUTES.ai.chatDoc` (no caller remained: zhongwen migrated in Wave 2).
+- [x] **3.2** Deleted `packages/server/src/ai/doc-generation.ts`, `doc-generation.test.ts`, `worker-over-room-sync.test.ts`, and the `runDocGeneration` export (`packages/server/src/index.ts`; there was no `ai/index.ts`). Deleted the untracked `apps/api/worker/ai-generation-consumer.ts`, the worker `queue()` entrypoint, and the `queues` block in `wrangler.jsonc` (then `wrangler types` dropped the `AI_GENERATION_QUEUE` binding). Removed `API_ROUTES.ai.chatDoc` (no caller remained: zhongwen migrated in Wave 2).
   > `doName` and `createDurableObjectRooms` exports stay: they have other internal consumers (`rooms.ts`, `server-app.ts`), unrelated to the deleted vertical. `resolveAdapter` stays (the kept SSE route uses it).
-- [x] **3.3** Dropped the doc-route cases from `packages/server/src/routes/ai.test.ts`. Rewrote the now-stale "kickoff is kept" docstrings in `chat-answer.ts`, `chat-reaction.ts`, and `chat-browser-answerer.ts` onto the in-process answerer. `apps/api`/`apps/self-host` worker entries needed no change beyond removing the `queue()` handler.
+- [x] **3.3** Dropped the doc-route cases from `packages/server/src/routes/ai.test.ts`. Rewrote the now-stale "kickoff is kept" docstrings in `chat-answer.ts`, `chat-worker.ts`, and `chat-browser-answerer.ts` onto the in-process answerer. `apps/api`/`apps/self-host` worker entries needed no change beyond removing the `queue()` handler.
 - [x] Checkpoint: `packages/server` + `packages/constants` + `apps/api` + `packages/workspace` typecheck all clean (exit 0). Server tests: the AI route tests pass; the only 5 failures are pre-existing `requireBearerUser` failures in `require-auth.test.ts` (untouched by this work). No new `console.*` in library code.
 
 ### Wave 4: Verify + harvest
@@ -71,7 +71,7 @@ The grilling trail lives in ADR-0021 (revised) and ADR-0022 (withdrawn). The loa
 
 - [ ] No server-side doc generation remains: `runDocGeneration`, `/api/ai/chat/doc`, and the queue consumer are deleted; `mountAiApp` mounts SSE only; nothing in `packages/server` request handlers reads conversation semantics.
 - [ ] zhongwen answers a cloud conversation in the browser via the shared Epicenter provider; the user message echoes instantly and the assistant streams directly from `/api/ai/chat` into the synced doc; a second device sees it via sync.
-- [ ] The daemon path (`attachChatReaction`) is untouched and still answers ambiently; one turn is never answered twice across a browser and a daemon.
+- [ ] The daemon path (`attachChatWorker`) is untouched and still answers ambiently; one turn is never answered twice across a browser and a daemon.
 - [ ] "Out of credits" still returns a synchronous 402 on `/api/ai/chat`; billing reserves and confirms in that one request (no queue, no finalize dance).
 - [ ] Self-host mounts SSE only and is free; the `personal()` / `shared({ admit })` seam is untouched.
 - [ ] `bun test` green in touched packages; `svelte-check` 0 errors for touched apps; typecheck clean; no `console.*` in library code.
@@ -80,7 +80,7 @@ The grilling trail lives in ADR-0021 (revised) and ADR-0022 (withdrawn). The loa
 
 - `apps/opensidian/src/lib/chat/epicenter-provider.ts` + `chat-state.svelte.ts` — the working reference pattern to generalize
 - `packages/workspace/src/ai/chat-browser-answerer.ts` — the in-process answerer (drop its "browser does NOT run for cloud-runtime" caveat in the docstring)
-- `packages/workspace/src/ai/chat-reaction.ts` — the shared answer loop + claim guard (unchanged)
+- `packages/workspace/src/ai/chat-worker.ts` — the shared answer loop + claim guard (unchanged)
 - `packages/server/src/routes/ai.ts` — keep SSE, delete the doc route
 - `packages/server/src/ai/doc-generation.ts` — deleted (its only caller was the doc route)
 - `apps/zhongwen/src/routes/(signed-in)/components/ConversationView.svelte`, `apps/zhongwen/src/agents.ts` — the rewire

@@ -110,14 +110,14 @@ export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
 export type {
-	ChildDocReactions,
-	ChildDocReactionContext,
-	ChildDocReactionFactory,
-	ChildDocReaction,
+	ChildDocWorker,
+	ChildDocWorkerContext,
+	ChildDocWorkerFactory,
+	ChildDocWorkerHandle,
 	ConnectedChildDoc,
 	ObservableChildDocLayout,
-} from './document/child-doc-reactions.js';
-export { attachChildDocReactions } from './document/child-doc-reactions.js';
+} from './document/child-doc-worker.js';
+export { attachChildDocWorker } from './document/child-doc-worker.js';
 export { type ConnectionConfig, connectDoc } from './document/connect-doc.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
@@ -176,7 +176,7 @@ export {
 	createWorkspace,
 	type DefineWorkspaceOptions,
 	defineWorkspace,
-	type MountReactions,
+	type MountWorkers,
 	type MountComposeContext,
 	type MountComposition,
 	type MountOptions,

@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-06-18
-- **Relates:** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) (the addressed regions a reply is written into), [ADR-0020](0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body streamed into Y.Text), [ADR-0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the tools), [ADR-0017](0017-durable-storage-is-one-per-person-coordination-box.md) (the anchor never thinks; reactions are peer spokes), [ADR-0018](0018-agents-are-immutable-capability-bundles.md) (agents), [ADR-0022](0022-the-cloud-doc-generation-queue-is-withdrawn.md) (the withdrawn server-side cloud generation this supersedes)
+- **Relates:** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) (the addressed regions a reply is written into), [ADR-0020](0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body streamed into Y.Text), [ADR-0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the tools), [ADR-0017](0017-durable-storage-is-one-per-person-coordination-box.md) (the anchor never thinks; workers are peer spokes), [ADR-0018](0018-agents-are-immutable-capability-bundles.md) (agents), [ADR-0022](0022-the-cloud-doc-generation-queue-is-withdrawn.md) (the withdrawn server-side cloud generation this supersedes)
 
 > **Vocabulary:** a **transport** is how an answer reaches the people watching a
 > conversation; here it is always the synced child doc. An **answerer** is an
@@ -21,7 +21,7 @@ connection while the browser held the conversation in TanStack `createChat`
 in-memory state. The cloud doc one-shot (`runDocGeneration`, behind
 `/api/ai/chat/doc`) had the **server** stream into a synced Y.Doc as a sync peer
 of the room (hydrate a replica, forward updates over `room.sync` RPC). The daemon
-observer (`attachChatReaction`) did the same doc streaming with no HTTP at all.
+observer (`attachChatWorker`) did the same doc streaming with no HTTP at all.
 ADR-0020 made the body one shape (parts streamed into Y.Text), removing the last
 structural reason for a separate SSE-rendered state owner.
 
@@ -31,7 +31,7 @@ durable mailbox cheaply. Grilling that against the rest of the system showed it
 solved a problem the product does not have: it added a queue, a consumer, a
 cross-invocation billing dance, and a server-side Yjs peer, all to make a
 **cloud** answer survive the client disconnecting. But the durable, always-on,
-background answerer is the **daemon** (ADR-0017's reaction spoke), which gets that
+background answerer is the **daemon** (ADR-0017's worker spoke), which gets that
 property for free; the **cloud** answer is the interactive case where the user is
 watching. The decisive observation: opensidian already answers cloud
 conversations *in the browser* using the Epicenter provider
@@ -53,9 +53,9 @@ EPICENTER CLOUD = two primitives, neither chat-aware:
   1. relay + anchor + store   the blind network (moves bytes for ALL docs; ADR-0017)
   2. /api/ai/chat (SSE)        a stateless, metered inference stream (sees a prompt, returns tokens)
 
-WHO WRITES THE DOC = always an in-process peer (a reaction; ADR-0017):
+WHO WRITES THE DOC = always an in-process peer (a worker; ADR-0017):
   browser tab   -> attachChatBrowserAnswerer   interactive, the user is watching
-  daemon        -> attachChatReaction          ambient, always-on, durable for free
+  daemon        -> attachChatWorker          ambient, always-on, durable for free
 
 INFERENCE (a per-agent ChatStream, orthogonal to who writes):
   Epicenter provider -> posts to /api/ai/chat; house-key, metered via Autumn (the synchronous 402 boundary)
@@ -65,7 +65,7 @@ INFERENCE (a per-agent ChatStream, orthogonal to who writes):
 
 - **The answerer is always an in-process peer; there is no kickoff.** The browser
   answers a conversation it is watching exactly as a daemon answers one it
-  observes: the same `attachChatReaction` loop, the same existence-is-the-claim
+  observes: the same `attachChatWorker` loop, the same existence-is-the-claim
   guard (`findUnansweredTurn`), so a browser and a daemon on the same conversation
   never double-answer one turn. The cloud-vs-daemon fork is **not** a trigger
   fork; it is a designation fork (ADR-0015): a conversation bound to a resident
@@ -95,7 +95,7 @@ INFERENCE (a per-agent ChatStream, orthogonal to who writes):
 - **Inference is a per-agent choice of three backends; managed "log in, no keys"
   survives at every runtime.** Local model, BYOK provider, or the Epicenter
   provider (the user's credits; metered). The answerer's `ChatStream` seam is the
-  plug, so a daemon, a browser tab, and a future reaction host all get cloud
+  plug, so a daemon, a browser tab, and a future worker host all get cloud
   credits without a raw key, and BYOK is one option, never a requirement.
 
 - **Self-host stays free by configuration, not construction.** A self-host daemon
@@ -114,7 +114,7 @@ a conversation doc.*
 - **The deletion prize is the entire server-side doc-generation vertical.** Gone:
   `runDocGeneration` (the server-as-Yjs-peer), the `/api/ai/chat/doc` route, the
   withdrawn queue + consumer, the cross-invocation billing reservation, and the
-  browser's "fire a kickoff" path. Kept and now universal: `attachChatReaction` /
+  browser's "fire a kickoff" path. Kept and now universal: `attachChatWorker` /
   `attachChatBrowserAnswerer` (the in-process answerer), the `/api/ai/chat` SSE
   endpoint (the metered inference stream, billed by the existing Autumn policy),
   and the Epicenter provider `ChatStream` (promoted from opensidian to a shared
@@ -148,7 +148,7 @@ a conversation doc.*
 - **Foreclosed: house-key server-side generation that outlives the client without
   a daemon (a "managed background agent").** That is the deliberate trade. If a
   product genuinely needs it later, it reopens one explicitly-justified
-  server-side reaction (the Model-2 sandbox lane, ADR-0018), not a general
+  server-side worker (the Model-2 sandbox lane, ADR-0018), not a general
   server-writes-every-doc path.
 
 ## Considered alternatives
@@ -165,7 +165,7 @@ a conversation doc.*
   split. The SSE *wire format* survives as the inference stream; what dies is a
   client rendering a conversation from it as in-memory state.
 - **Generate inside the room DO (ambient cloud).** Rejected by ADR-0017: the
-  coordination box never thinks; reactions are peer spokes, not the box.
+  coordination box never thinks; workers are peer spokes, not the box.
 - **Stream over awareness instead of the durable doc.** Rejected in ADR-0020.
 
 ## Open questions

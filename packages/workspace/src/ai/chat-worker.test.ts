@@ -1,7 +1,7 @@
 /**
- * Tests for `attachChatReaction`: the backend-agnostic chat append loop.
+ * Tests for `attachChatWorker`: the backend-agnostic chat append loop.
  *
- * The reaction is driven directly (the mount wires `observe -> onChange`; here the
+ * The worker is driven directly (the mount wires `observe -> onChange`; here the
  * test calls `onChange` after each write) over a real transcript doc, with the
  * inference backend injected as a fake `ChatStream`. This is the claim -> stream
  * -> finish path V0.3 shipped un-injectable and untested; with `startStream`
@@ -14,7 +14,7 @@ import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
 import type { ChatStream } from './chat-answer.js';
 import { attachChatTranscript } from './chat-doc.js';
-import { attachChatReaction } from './chat-reaction.js';
+import { attachChatWorker } from './chat-worker.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Harness
@@ -55,24 +55,24 @@ function gatedStream(): { startStream: ChatStream; release: () => void } {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function setup(startStream: ChatStream) {
-	const doc = new Y.Doc({ guid: 'chat-reaction-test' });
+	const doc = new Y.Doc({ guid: 'chat-worker-test' });
 	const transcript = attachChatTranscript(doc);
-	const reaction = attachChatReaction({ ydoc: doc, startStream });
-	return { doc, transcript, reaction };
+	const worker = attachChatWorker({ ydoc: doc, startStream });
+	return { doc, transcript, worker };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('attachChatReaction', () => {
+describe('attachChatWorker', () => {
 	test('claims the unanswered turn, streams the reply, writes finish completed', async () => {
 		let prompt: ModelMessage[] | undefined;
 		const startStream: ChatStream = (messages, signal) => {
 			prompt = messages;
 			return streamOf('你', '好', '!')(messages, signal);
 		};
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -80,7 +80,7 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
 		expect(prompt).toEqual([{ role: 'user', content: 'hi' }]);
@@ -100,7 +100,7 @@ describe('attachChatReaction', () => {
 		// Eight deltas that arrive faster than FLUSH_INTERVAL_MS (75ms): the first
 		// flushes at once, the rest buffer and ride the finish transaction.
 		const deltas = Array.from({ length: 8 }, (_, index) => `d${index}`);
-		const { doc, transcript, reaction } = setup(streamOf(...deltas));
+		const { doc, transcript, worker } = setup(streamOf(...deltas));
 
 		let updates = 0;
 		doc.on('updateV2', () => updates++);
@@ -112,7 +112,7 @@ describe('attachChatReaction', () => {
 			generationId: 'gen-1',
 		});
 		const baseline = updates; // the user-append transaction
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
 		// claim + first flush + finish-with-tail; far fewer than one per delta.
@@ -125,7 +125,7 @@ describe('attachChatReaction', () => {
 	});
 
 	test('a re-fire after completion is a no-op (the answer already exists)', async () => {
-		const { doc, transcript, reaction } = setup(streamOf('done'));
+		const { doc, transcript, worker } = setup(streamOf('done'));
 
 		transcript.appendUser({
 			id: 'u1',
@@ -133,12 +133,12 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 		const after = transcript.read();
 
 		// A re-fire (e.g. our own finish write waking onChange) must not claim again.
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 		expect(transcript.read()).toEqual(after);
 		expect(transcript.read()).toHaveLength(2);
@@ -154,7 +154,7 @@ describe('attachChatReaction', () => {
 				code: 'provider-overloaded',
 			} as StreamChunk;
 		};
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -162,7 +162,7 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
 		expect(transcript.read().at(-1)).toMatchObject({
@@ -178,7 +178,7 @@ describe('attachChatReaction', () => {
 
 	test('a durable cancel mid-stream aborts and writes finish cancelled', async () => {
 		const { startStream, release } = gatedStream();
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -186,12 +186,12 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick(); // 'first ' appended; the stream is parked at the gate
 
 		// The client stamps the cancel on its own turn; the next observe honors it.
 		transcript.requestCancel(2);
-		reaction.onChange?.();
+		worker.onChange?.();
 
 		release(); // unpark the stream; the aborted loop must not append 'second'
 		await tick();
@@ -208,7 +208,7 @@ describe('attachChatReaction', () => {
 			started = true;
 			return streamOf('should never run')(messages, signal);
 		};
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -216,9 +216,9 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		// Cancel arrives before the reaction observes the turn at all.
+		// Cancel arrives before the worker observes the turn at all.
 		transcript.requestCancel(2);
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
 		expect(started).toBe(false);
@@ -233,7 +233,7 @@ describe('attachChatReaction', () => {
 
 	test('teardown stops the stream and leaves an interrupted artifact (no finish)', async () => {
 		const { startStream, release } = gatedStream();
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -241,11 +241,11 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick(); // 'first ' appended; the stream is parked
 
 		// A teardown (row removed or daemon shutdown) aborts without finishing.
-		reaction[Symbol.dispose]?.();
+		worker[Symbol.dispose]?.();
 		release();
 		await tick();
 
@@ -260,7 +260,7 @@ describe('attachChatReaction', () => {
 
 	test('does not start a second stream while one is in flight (no duplicate answer)', async () => {
 		const { startStream, release } = gatedStream();
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -268,7 +268,7 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick(); // gen-1 claimed and streaming, parked at the gate
 
 		// A second turn arrives (e.g. another device) while gen-1 is still live.
@@ -278,16 +278,16 @@ describe('attachChatReaction', () => {
 			createdAt: 2,
 			generationId: 'gen-2',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
-		// The reaction must NOT claim gen-2 concurrently: exactly one assistant stream.
+		// The worker must NOT claim gen-2 concurrently: exactly one assistant stream.
 		expect(assistantCount(transcript)).toBe(1);
 
-		// gen-1 finishes, then the reaction claims the queued gen-2.
+		// gen-1 finishes, then the worker claims the queued gen-2.
 		release();
 		await tick();
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
 		expect(assistantCount(transcript)).toBe(2);
@@ -300,7 +300,7 @@ describe('attachChatReaction', () => {
 
 	test('a retry that re-mints the turn supersedes the in-flight stream (orphan finished cancelled)', async () => {
 		const { startStream, release } = gatedStream();
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -308,12 +308,12 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick(); // gen-1 streaming, parked
 
 		// The client retries: re-point the turn to a fresh id (clears the old one).
 		transcript.remintGeneration('gen-2');
-		reaction.onChange?.();
+		worker.onChange?.();
 
 		// The orphaned gen-1 stream is finished cancelled, not left blocking.
 		expect(transcript.read().find((m) => m.id === 'gen-1')?.finish).toEqual({
@@ -323,7 +323,7 @@ describe('attachChatReaction', () => {
 		// The re-pointed turn is then claimed and answered.
 		release();
 		await tick();
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 		expect(transcript.read().at(-1)).toMatchObject({
 			id: 'gen-2',
@@ -342,7 +342,7 @@ describe('attachChatReaction', () => {
 				await gate.promise; // park; a real provider would abort on the signal
 			})();
 		};
-		const { doc, transcript, reaction } = setup(startStream);
+		const { doc, transcript, worker } = setup(startStream);
 
 		transcript.appendUser({
 			id: 'u1',
@@ -350,12 +350,12 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
 		expect(captured?.aborted).toBe(false);
 		transcript.requestCancel(2);
-		reaction.onChange?.();
+		worker.onChange?.();
 
 		// The provider's signal is aborted, so a real backend would stop generating.
 		expect(captured?.aborted).toBe(true);
@@ -365,7 +365,7 @@ describe('attachChatReaction', () => {
 	});
 
 	test('a cancel stamped after a terminal finish is an inert no-op', async () => {
-		const { doc, transcript, reaction } = setup(streamOf('done'));
+		const { doc, transcript, worker } = setup(streamOf('done'));
 
 		transcript.appendUser({
 			id: 'u1',
@@ -373,12 +373,12 @@ describe('attachChatReaction', () => {
 			createdAt: 1,
 			generationId: 'gen-1',
 		});
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick(); // completed
 
 		// A late cancel must not write a second finish or start a new stream.
 		transcript.requestCancel(99);
-		reaction.onChange?.();
+		worker.onChange?.();
 		await tick();
 
 		const messages = transcript.read();

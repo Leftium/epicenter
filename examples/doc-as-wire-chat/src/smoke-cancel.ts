@@ -1,10 +1,10 @@
 /**
  * Durable-cancel check (S3): write a turn, wait until the answer starts
- * streaming, write `cancelRequestedAt`, and assert the reaction stops mid-stream and
+ * streaming, write `cancelRequestedAt`, and assert the worker stops mid-stream and
  * writes a `cancelled` finish. Run with the echo stream (no GEMINI_API_KEY) so
  * the answer is slow enough to catch mid-flight.
  *
- * Run: `bun run src/smoke-cancel.ts`  (after the relay and reaction are up).
+ * Run: `bun run src/smoke-cancel.ts`  (after the relay and worker are up).
  */
 
 import { nanoid } from 'nanoid';
@@ -70,6 +70,6 @@ if (kind !== 'cancelled') {
 	process.exit(1);
 }
 console.log(
-	'SMOKE-CANCEL OK · reaction stopped mid-stream and wrote finish: cancelled',
+	'SMOKE-CANCEL OK · worker stopped mid-stream and wrote finish: cancelled',
 );
 process.exit(0);

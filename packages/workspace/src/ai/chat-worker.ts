@@ -1,8 +1,8 @@
 /**
- * The per-conversation chat reaction: the daemon behavior for one hosted transcript
+ * The per-conversation chat worker: the daemon behavior for one hosted transcript
  * child doc (ADR-0014/0015).
  *
- * `attachChatReaction` is the backend-agnostic append loop the always-on reaction runs
+ * `attachChatWorker` is the backend-agnostic append loop the always-on worker runs
  * over a conversation transcript. It is parameterized by a {@link ChatStream},
  * the one contract every inference backend speaks:
  *
@@ -33,7 +33,7 @@
  *    cancelled before the re-pointed turn is claimed.
  *
  * Single writer per field: the client owns the user turn (including the cancel
- * stamp), the reaction owns the assistant message (text + finish). The doc itself is
+ * stamp), the worker owns the assistant message (text + finish). The doc itself is
  * the lock, so the only in-memory state is the in-flight stream's abort. Teardown
  * (the row removed, or a daemon shutdown) aborts that stream before the body is
  * destroyed and deliberately writes no finish, leaving an interrupted artifact
@@ -42,7 +42,7 @@
  * The flush policy (batching deltas into fewer synced transactions) lives in
  * the shared answer core `streamAnswer` (`chat-answer.ts`), which the in-process
  * browser answerer (`chat-browser-answerer.ts`) calls too: the daemon and an
- * open browser tab run this same loop over the doc (ADR-0021). This reaction
+ * open browser tab run this same loop over the doc (ADR-0021). This worker
  * owns triggering, claiming, and the daemon finish policy; the core owns the loop.
  *
  * @module
@@ -50,7 +50,7 @@
 
 import type { ModelMessage } from '@tanstack/ai';
 import type * as Y from 'yjs';
-import type { ChildDocReaction } from '../document/child-doc-reactions.js';
+import type { ChildDocWorkerHandle } from '../document/child-doc-worker.js';
 import { type ChatStream, streamAnswer } from './chat-answer.js';
 import {
 	appendAssistantMessage,
@@ -70,29 +70,29 @@ type InFlightGeneration = {
 };
 
 /**
- * Build the per-body chat reaction for one hosted transcript child doc. Pass the
+ * Build the per-body chat worker for one hosted transcript child doc. Pass the
  * body `Y.Doc` and the inference backend as a {@link ChatStream}. Like the server
- * generation path, the reaction is a doc-level writer: it reads the transcript with
+ * generation path, the worker is a doc-level writer: it reads the transcript with
  * `readChatDocMessages` and appends the assistant message with
  * `appendAssistantMessage`, both directly over the `ydoc` (the layout handle
  * exposes only the client's user-message writer, never the assistant one). The
- * returned handle is what a mount's child-doc reaction factory yields.
+ * returned handle is what a mount's child-doc worker factory yields.
  *
- * Designation (R, ADR-0015) is NOT the reaction's concern. The child-doc observe
- * loop only ever builds this reaction for a conversation bound to this daemon's
+ * Designation (R, ADR-0015) is NOT the worker's concern. The child-doc observe
+ * loop only ever builds this worker for a conversation bound to this daemon's
  * agent (`row.agent === selfAgentId`); a conversation bound to another agent is
- * never hosted here, so the reaction unconditionally answers whatever body it is
+ * never hosted here, so the worker unconditionally answers whatever body it is
  * given. The complementary half lives in the browser, which skips its HTTP
  * kickoff unless the conversation is bound to the cloud agent. The two together
  * are what stop the daemon and the cloud HTTP path from both answering one turn.
  */
-export function attachChatReaction({
+export function attachChatWorker({
 	ydoc,
 	startStream,
 }: {
 	ydoc: Y.Doc;
 	startStream: ChatStream;
-}): ChildDocReaction {
+}): ChildDocWorkerHandle {
 	let inFlight: InFlightGeneration | undefined;
 
 	function stop(): void {
@@ -131,7 +131,7 @@ export function attachChatReaction({
 				// concurrently: the active-generation window is createdAt-based (it
 				// exists to detect an evicted cross-process worker) and can lapse
 				// while a slow local model is still producing, so it must not trick a
-				// live reaction into a second concurrent claim.
+				// live worker into a second concurrent claim.
 				return;
 			}
 

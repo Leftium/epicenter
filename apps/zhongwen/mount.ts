@@ -4,26 +4,26 @@
  * `zhongwen()` returns the `Mount` that an `epicenter.config.ts`
  * default-exports. Zhongwen has no daemon actions to add and no materializers,
  * so the daemon hosts the root Y.Doc on disk and bridges cloud sync, then runs
- * one child-doc reaction: an always-on observe loop (ADR-0014/0015) over the
+ * one child-doc worker: an always-on observe loop (ADR-0014/0015) over the
  * `conversations.messages` transcripts. Registering the field is all the app
  * declares; the table, the guid, and the layout come from the schema. The
  * factory is the behavior seam, and it hands each hosted transcript to
- * `attachChatReaction`, the backend-agnostic append loop in
+ * `attachChatWorker`, the backend-agnostic append loop in
  * `@epicenter/workspace/ai`.
  *
- * The reaction is parameterized by a `ChatStream`
+ * The worker is parameterized by a `ChatStream`
  * (`startStream(messages, signal) => AsyncIterable<StreamChunk>`), the one
  * contract every inference backend speaks. The daemon builds the real one from
  * the same `chat()` call the hosted route makes ({@link resolveChatStream}): a
  * Gemini adapter keyed on `GEMINI_API_KEY`, under the shared
  * `ZHONGWEN_SYSTEM_PROMPT`. With no key it falls back to {@link fakeChatStream},
  * a deterministic placeholder, and says so in the log: that fallback is the
- * explicit "real inference not wired on this host yet" boundary. The reaction
+ * explicit "real inference not wired on this host yet" boundary. The worker
  * itself observes -> answers -> streams -> finishes and honors the client's
  * durable cancel, all over hosted sync with no HTTP and no duplicate stream.
  *
  * Designation (R, ADR-0015) is the observe loop's concern, not this factory's:
- * the loop builds a reaction only for conversations bound to this daemon's agent
+ * the loop builds a worker only for conversations bound to this daemon's agent
  * (`row.agent === selfAgentId`), so the factory supplies behavior alone. The
  * `agentId` option names which catalog agent this daemon answers as (a
  * `ZHONGWEN_AGENTS` id like `zhongwen-home`); omit it and the daemon hosts
@@ -33,7 +33,7 @@
  */
 
 import type { AgentId } from '@epicenter/workspace';
-import { attachChatReaction, type ChatStream } from '@epicenter/workspace/ai';
+import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
 import {
 	chat,
@@ -73,9 +73,9 @@ export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
 		baseURL,
 		agentId,
 		runtime: nodeMountRuntime(),
-		reactions: {
+		workers: {
 			conversations: {
-				messages: ({ ydoc }) => attachChatReaction({ ydoc, startStream }),
+				messages: ({ ydoc }) => attachChatWorker({ ydoc, startStream }),
 			},
 		},
 	});
@@ -85,7 +85,7 @@ export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
  * The daemon's inference backend as a {@link ChatStream}. With `GEMINI_API_KEY`
  * set, this is real inference: a Gemini adapter (built once) driven by the same
  * `chat()` call the hosted route makes, under {@link ZHONGWEN_SYSTEM_PROMPT}. The
- * reaction hands a `signal`; `chat()` cancels on an `AbortController`, so the signal
+ * worker hands a `signal`; `chat()` cancels on an `AbortController`, so the signal
  * is forwarded onto one. With no key it returns the deterministic placeholder and
  * logs that real inference is not live on this host.
  */
@@ -126,7 +126,7 @@ const fakeChatStream: ChatStream = async function* (
 	messages: ModelMessage[],
 ): AsyncGenerator<StreamChunk> {
 	const userText = String(messages.at(-1)?.content ?? '');
-	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on reaction; set GEMINI_API_KEY for real inference.`;
+	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on worker; set GEMINI_API_KEY for real inference.`;
 	for (const token of reply.match(/\S+\s*/g) ?? [reply]) {
 		yield {
 			type: EventType.TEXT_MESSAGE_CONTENT,

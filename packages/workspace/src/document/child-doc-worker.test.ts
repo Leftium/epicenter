@@ -1,7 +1,7 @@
 /**
  * Child-doc observe loop tests. The loop is driven with an in-memory
  * `connectBody` (no disk, no sockets), so these exercise the loop itself:
- * enumerate rows, open + observe each body, run the per-body reaction, dispose a
+ * enumerate rows, open + observe each body, run the per-body worker, dispose a
  * body whose row is gone, and flush every body on root destroy.
  */
 
@@ -10,9 +10,9 @@ import { field } from '@epicenter/field';
 import * as Y from 'yjs';
 import { appendUserMessage, attachChatTranscript } from '../ai/index.js';
 import {
-	attachChildDocReactions,
+	attachChildDocWorker,
 	type ConnectedChildDoc,
-} from './child-doc-reactions.js';
+} from './child-doc-worker.js';
 import { defineTable } from './define-table.js';
 import { createWorkspace } from './workspace.js';
 
@@ -28,7 +28,7 @@ const conversationsDefinition = defineTable({
  */
 function setup() {
 	const workspace = createWorkspace({
-		id: 'ws-reaction-test',
+		id: 'ws-worker-test',
 		tables: { conversations: conversationsDefinition },
 		kv: {},
 	});
@@ -49,8 +49,8 @@ function setup() {
 	return { workspace, bodies, connectBody };
 }
 
-/** The common args, with a no-op reaction unless a test overrides `reactionFor`. */
-function reactionArgs(
+/** The common args, with a no-op worker unless a test overrides `workerFor`. */
+function workerArgs(
 	workspace: ReturnType<typeof setup>['workspace'],
 	connectBody: ReturnType<typeof setup>['connectBody'],
 ) {
@@ -61,7 +61,7 @@ function reactionArgs(
 		guidFor: conversations.docs.messages.guid,
 		connectBody,
 		layout: attachChatTranscript,
-		reactionFor: () => ({}),
+		workerFor: () => ({}),
 		// Designation is the loop's filter; most tests host every row, and the
 		// designation-specific tests below override it. The schema-derived
 		// `row.agent === selfAgentId` composition lives in the mount coordinator
@@ -70,19 +70,19 @@ function reactionArgs(
 	};
 }
 
-describe('attachChildDocReactions', () => {
+describe('attachChildDocWorker', () => {
 	test('opens a body for each conversation row', () => {
 		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
 		conversations.set({ id: 'c1', title: 'first' });
 		conversations.set({ id: 'c2', title: 'second' });
 
-		const reaction = attachChildDocReactions(reactionArgs(workspace, connectBody));
+		const worker = attachChildDocWorker(workerArgs(workspace, connectBody));
 
 		expect(bodies.has(conversations.docs.messages.guid('c1'))).toBe(true);
 		expect(bodies.has(conversations.docs.messages.guid('c2'))).toBe(true);
 
-		reaction[Symbol.dispose]();
+		worker[Symbol.dispose]();
 		workspace[Symbol.dispose]();
 	});
 
@@ -90,32 +90,32 @@ describe('attachChildDocReactions', () => {
 		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
 
-		const reaction = attachChildDocReactions(reactionArgs(workspace, connectBody));
+		const worker = attachChildDocWorker(workerArgs(workspace, connectBody));
 		expect(bodies.size).toBe(0);
 
 		conversations.set({ id: 'c1', title: 'later' });
 		expect(bodies.has(conversations.docs.messages.guid('c1'))).toBe(true);
 
-		reaction[Symbol.dispose]();
+		worker[Symbol.dispose]();
 		workspace[Symbol.dispose]();
 	});
 
-	test('runs the per-body reaction and fires onChange on a transcript change', () => {
+	test('runs the per-body worker and fires onChange on a transcript change', () => {
 		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
 		conversations.set({ id: 'c1', title: 'first' });
 
 		const built: string[] = [];
 		const changed: string[] = [];
-		const reaction = attachChildDocReactions({
-			...reactionArgs(workspace, connectBody),
-			reactionFor: ({ rowId }) => {
+		const worker = attachChildDocWorker({
+			...workerArgs(workspace, connectBody),
+			workerFor: ({ rowId }) => {
 				built.push(rowId);
 				return { onChange: () => changed.push(rowId) };
 			},
 		});
 
-		// The reaction is built once per opened body, before any change.
+		// The worker is built once per opened body, before any change.
 		expect(built).toEqual(['c1']);
 
 		const body = bodies.get(conversations.docs.messages.guid('c1'))!;
@@ -128,7 +128,7 @@ describe('attachChildDocReactions', () => {
 
 		expect(changed).toEqual(['c1']);
 
-		reaction[Symbol.dispose]();
+		worker[Symbol.dispose]();
 		workspace[Symbol.dispose]();
 	});
 
@@ -138,17 +138,17 @@ describe('attachChildDocReactions', () => {
 		conversations.set({ id: 'mine', title: 'a' });
 		conversations.set({ id: 'theirs', title: 'b' });
 
-		// The reaction reconciles only its node's conversations; an undesignated row
+		// The worker reconciles only its node's conversations; an undesignated row
 		// stays available through the anchor, never hosted here.
-		const reaction = attachChildDocReactions({
-			...reactionArgs(workspace, connectBody),
+		const worker = attachChildDocWorker({
+			...workerArgs(workspace, connectBody),
 			isDesignated: (rowId) => rowId === 'mine',
 		});
 
 		expect(bodies.has(conversations.docs.messages.guid('mine'))).toBe(true);
 		expect(bodies.has(conversations.docs.messages.guid('theirs'))).toBe(false);
 
-		reaction[Symbol.dispose]();
+		worker[Symbol.dispose]();
 		workspace[Symbol.dispose]();
 	});
 
@@ -158,8 +158,8 @@ describe('attachChildDocReactions', () => {
 		conversations.set({ id: 'c1', title: 'a' });
 
 		let designated = false;
-		const reaction = attachChildDocReactions({
-			...reactionArgs(workspace, connectBody),
+		const worker = attachChildDocWorker({
+			...workerArgs(workspace, connectBody),
 			isDesignated: () => designated,
 		});
 		const guid = conversations.docs.messages.guid('c1');
@@ -177,19 +177,19 @@ describe('attachChildDocReactions', () => {
 		conversations.set({ id: 'c1', title: 'a3' });
 		expect(body?.isDestroyed).toBe(true);
 
-		reaction[Symbol.dispose]();
+		worker[Symbol.dispose]();
 		workspace[Symbol.dispose]();
 	});
 
-	test('disposes a body and its reaction when the row is removed', () => {
+	test('disposes a body and its worker when the row is removed', () => {
 		const { workspace, bodies, connectBody } = setup();
 		const { conversations } = workspace.tables;
 		conversations.set({ id: 'c1', title: 'first' });
 
 		const disposed: string[] = [];
-		const reaction = attachChildDocReactions({
-			...reactionArgs(workspace, connectBody),
-			reactionFor: ({ rowId }) => ({
+		const worker = attachChildDocWorker({
+			...workerArgs(workspace, connectBody),
+			workerFor: ({ rowId }) => ({
 				[Symbol.dispose]: () => disposed.push(rowId),
 			}),
 		});
@@ -200,7 +200,7 @@ describe('attachChildDocReactions', () => {
 		expect(disposed).toEqual(['c1']);
 		expect(body.isDestroyed).toBe(true);
 
-		reaction[Symbol.dispose]();
+		worker[Symbol.dispose]();
 		workspace[Symbol.dispose]();
 	});
 
@@ -210,10 +210,10 @@ describe('attachChildDocReactions', () => {
 		conversations.set({ id: 'c1', title: 'first' });
 		conversations.set({ id: 'c2', title: 'second' });
 
-		const reaction = attachChildDocReactions(reactionArgs(workspace, connectBody));
+		const worker = attachChildDocWorker(workerArgs(workspace, connectBody));
 
 		workspace[Symbol.dispose]();
-		await reaction.whenDisposed;
+		await worker.whenDisposed;
 
 		for (const body of bodies.values()) {
 			expect(body.isDestroyed).toBe(true);

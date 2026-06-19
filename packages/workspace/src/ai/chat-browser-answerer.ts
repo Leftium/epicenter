@@ -3,7 +3,7 @@
  * browser tab answers itself (ADR-0021's `in-process` trigger).
  *
  * A conversation is answered by an in-process peer (ADR-0021): an always-on
- * daemon answers ambiently via {@link attachChatReaction}; an open browser tab
+ * daemon answers ambiently via {@link attachChatWorker}; an open browser tab
  * answers here. The inference backend is a {@link ChatStream} (a local model,
  * the user's BYOK key, or the Epicenter provider that calls the metered
  * `/api/ai/chat` for house-key cloud inference). The answer never travels over
@@ -12,10 +12,10 @@
  * the doc.
  *
  * This is deliberately the *same* answerer as the daemon: it builds an
- * {@link attachChatReaction} over the local transcript doc and wires its
+ * {@link attachChatWorker} over the local transcript doc and wires its
  * `onChange` to the doc's own observer, exactly as the daemon mount's child-doc
- * runtime does (`attachChildDocReactions` calls `handle.observe(() =>
- * reaction.onChange())`). So the claim is the identical existence-based claim
+ * runtime does (`attachChildDocWorker` calls `handle.observe(() =>
+ * worker.onChange())`). So the claim is the identical existence-based claim
  * (`findUnansweredTurn`): a browser answerer and a future daemon on the same
  * conversation reconcile the same predicate and never double-answer one turn
  * (the message keyed to the turn's `generationId` is the claim, whoever appends
@@ -24,7 +24,7 @@
  * for every conversation the tab itself answers, the cloud agent included.
  *
  * The lifecycle matches the daemon too. On the user's durable cancel
- * (`requestCancel` writes `cancelRequestedAt`) the reaction aborts the stream and
+ * (`requestCancel` writes `cancelRequestedAt`) the worker aborts the stream and
  * writes `cancelled`. On teardown (the tab navigates away or the handle is
  * disposed mid-answer) it aborts and writes no finish, leaving an interrupted
  * artifact the user can retry, exactly as an evicted daemon would. That is the
@@ -37,7 +37,7 @@
 import type * as Y from 'yjs';
 import type { ChatStream } from './chat-answer.js';
 import { observeChatDocMessages } from './chat-doc.js';
-import { attachChatReaction } from './chat-reaction.js';
+import { attachChatWorker } from './chat-worker.js';
 
 /**
  * Run an in-process answerer over a local conversation doc and return a stop
@@ -45,11 +45,11 @@ import { attachChatReaction } from './chat-reaction.js';
  * {@link ChatStream} (a local model, the user's BYOK provider, or the Epicenter
  * provider that calls the metered inference endpoint).
  *
- * Wiring mirrors the daemon mount: observe the transcript, fire the reaction's
+ * Wiring mirrors the daemon mount: observe the transcript, fire the worker's
  * `onChange` per transaction, and fire it once now so a turn already pending at
  * attach time (synced from another device, or this tab reopened mid-conversation)
  * is reconciled immediately. The returned stop function unobserves and disposes
- * the reaction (aborting any in-flight stream without writing a finish).
+ * the worker (aborting any in-flight stream without writing a finish).
  */
 export function attachChatBrowserAnswerer({
 	doc,
@@ -58,12 +58,12 @@ export function attachChatBrowserAnswerer({
 	doc: Y.Doc;
 	startStream: ChatStream;
 }): () => void {
-	const reaction = attachChatReaction({ ydoc: doc, startStream });
-	const unobserve = observeChatDocMessages(doc, () => reaction.onChange?.());
+	const worker = attachChatWorker({ ydoc: doc, startStream });
+	const unobserve = observeChatDocMessages(doc, () => worker.onChange?.());
 	// Claim a turn already pending when the answerer attaches.
-	reaction.onChange?.();
+	worker.onChange?.();
 	return () => {
 		unobserve();
-		reaction[Symbol.dispose]?.();
+		worker[Symbol.dispose]?.();
 	};
 }

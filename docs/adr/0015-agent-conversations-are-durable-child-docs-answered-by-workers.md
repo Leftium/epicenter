@@ -1,10 +1,10 @@
-# 0015. Agent conversations are durable child docs answered by reactions
+# 0015. Agent conversations are durable child docs answered by workers
 
 - **Status:** Superseded
 - **Date:** 2026-06-16
 - **Superseded by:** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md)
 
-> **Vocabulary (2026-06-18):** a **reaction** is the running behavior that observes the transcript and writes the answer. The **agent** is the durable address a conversation binds to.
+> **Vocabulary (2026-06-18):** a **worker** is the running behavior that observes the transcript and writes the answer. The **agent** is the durable address a conversation binds to.
 >
 > **Superseded (2026-06-18):** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) generalizes this from one human and one agent to N participants and replaces the single `messages` array, the `generationId`, and "claim by existence" with addressed single-writer regions. The binding, privacy, and attribution decisions below survive there, generalized to a participant set; the transcript mechanism does not.
 
@@ -13,10 +13,10 @@
 Doc-as-wire chat (Zhongwen) already streams an assistant turn into a conversation
 child doc by acting as a sync peer, so persistence, multi-device live view, and
 refresh-resume fall out of one source of truth rather than separate features. But
-it still needs an HTTP kickoff carrying the turn id, model, and prompts; the reaction
+it still needs an HTTP kickoff carrying the turn id, model, and prompts; the worker
 snapshots the prompt once and never reads the doc back; cancellation is request
-abort; and interactive tools are excluded. None of that survives moving the reaction
-to a user-owned always-on device (see [ADR-0014](0014-an-always-on-reaction-runs-app-semantics-beside-the-app-blind-anchor.md))
+abort; and interactive tools are excluded. None of that survives moving the worker
+to a user-owned always-on device (see [ADR-0014](0014-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md))
 or running it as a durable background service.
 
 ## Decision
@@ -29,9 +29,9 @@ A conversation is one human and one agent, for life. The conversation row carrie
 single immutable `agent: AgentId`, set once by the client that creates it. An
 `AgentId` is the durable, configuration-authored address of an answering agent (a
 hosted cloud agent, an always-on home daemon, a laptop daemon), not a per-install
-node id and not a Yjs `clientID`. The agent is the address; the *reaction* is the
+node id and not a Yjs `clientID`. The agent is the address; the *worker* is the
 process that answers as it (the role distinction is pinned in
-[ADR-0014](0014-an-always-on-reaction-runs-app-semantics-beside-the-app-blind-anchor.md)).
+[ADR-0014](0014-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md)).
 Presence can decorate the configured agent list
 with live/offline status and capabilities, but it is not durable routing truth.
 The binding is the row field. The cloud agent is `epicenter-cloud`, whose current
@@ -57,7 +57,7 @@ the durable client-minted `generationId` used as the assistant message id. There
 no claim and no race, because exactly one agent is named per conversation (and CRDT
 merges could not enforce a claimant anyway).
 
-The reaction observes the transcript mid-answer so it can honor a durable, client-owned
+The worker observes the transcript mid-answer so it can honor a durable, client-owned
 cancel field, and it writes the write-once `finish`. Tool calls are the workspace's
 published actions ([ADR-0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md));
 when a call needs approval, the approval is a durable record in the doc that any
@@ -68,27 +68,27 @@ doorbell), never the durable queue (the doc is the mailbox).
 
 - Refresh-resume, multi-device live view, offline-survivable cancel, and
   multi-device approval all fall out of one source of truth. No server-to-client SSE
-  is built: the reaction appends to a `Y.Text` and Yjs sync is the transport. Only the
-  model-to-reaction token stream remains, and that is in-process for local inference.
-- The reaction gains a child-doc observe loop (a new mount-runtime capability) and a
-  read-back path (a departure from the snapshot-once, write-only reaction in
+  is built: the worker appends to a `Y.Text` and Yjs sync is the transport. Only the
+  model-to-worker token stream remains, and that is in-process for local inference.
+- The worker gains a child-doc observe loop (a new mount-runtime capability) and a
+  read-back path (a departure from the snapshot-once, write-only worker in
   `packages/server/src/ai/doc-generation.ts`). The loop hosts a live replica of
   each registered child doc, observes it, and tears it down when its row is gone.
   The app registers the conversation field on the mount; the per-body factory it
   supplies returns `{ onChange, [Symbol.dispose] }`, and `onChange` is the seam
   where answer, stream, and write-once `finish` live. Whether a turn is unanswered
   is a pure reader over the transcript snapshot (`findUnansweredTurn`), owned by the
-  transcript layout module beside its sibling readers, so the reaction and the
+  transcript layout module beside its sibling readers, so the worker and the
   transitional HTTP path share one predicate instead of inlining it twice. The
   factory runs once per body, so the only per-conversation state it holds is the
   in-flight stream (its abort), not a claim.
 - The single-answerer guarantee is enforced on both sides of the transition, not by
   a lock. The observe loop hosts a live replica only of the conversations whose
-  `agent` equals the agent the daemon answers as, so the reaction is built and runs only
+  `agent` equals the agent the daemon answers as, so the worker is built and runs only
   for those: filtering the open set, not abstaining after the fact, is what keeps the
-  app-aware reaction out of the app-blind anchor's availability job
-  ([ADR-0014](0014-an-always-on-reaction-runs-app-semantics-beside-the-app-blind-anchor.md)).
-  The reaction itself carries no designation concept. The browser supplies the
+  app-aware worker out of the app-blind anchor's availability job
+  ([ADR-0014](0014-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md)).
+  The worker itself carries no designation concept. The browser supplies the
   complementary half: it nudges the cloud agent's HTTP route only when the
   conversation is bound to the cloud agent (`epicenter-cloud`), and does nothing for
   a conversation bound to a daemon agent (that daemon answers over sync). So a
@@ -114,7 +114,7 @@ doorbell), never the durable queue (the doc is the mailbox).
   Arbitrary-code agents are that design's Model 2 lane.
 - Forecloses a `generation_requests` table, a CRDT claim field (CRDT merges cannot
   enforce a single claimant), and runtime claim-pools (deferred until N
-  interchangeable reactions per room actually exist, and then via a compare-and-set
+  interchangeable workers per room actually exist, and then via a compare-and-set
   action, not a raw field).
 
 ## Considered alternatives
@@ -124,12 +124,12 @@ doorbell), never the durable queue (the doc is the mailbox).
 - **A durable `generation_requests` table.** Rejected: the unanswered turn already
   encodes the work; a parallel table is a second source of truth to reconcile.
 - **A Yjs claim field per turn.** Rejected: CRDT merges cannot enforce a single
-  claimant, so two reactions both "win"; a per-conversation bound agent plus an
+  claimant, so two workers both "win"; a per-conversation bound agent plus an
   idempotent id is sufficient and simpler.
 - **A separate table mapping conversations to agents.** Rejected: the doc is
   the only wire and control plane (no side channel), and a parallel table is a
   second source of truth to reconcile, the same reason the `generation_requests`
-  table was rejected. The row already syncs to every device and to the reaction's
+  table was rejected. The row already syncs to every device and to the worker's
   filter, so the binding belongs on it.
 - **Per-message targeting (a different agent per turn).** Rejected, and the
   rejection is load-bearing, not incidental. Per-turn addressing would put agent

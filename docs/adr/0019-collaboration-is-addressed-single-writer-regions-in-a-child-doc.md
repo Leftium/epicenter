@@ -2,10 +2,10 @@
 
 - **Status:** Proposed
 - **Date:** 2026-06-18
-- **Supersedes:** [ADR-0015](0015-agent-conversations-are-durable-child-docs-answered-by-reactions.md)
+- **Supersedes:** [ADR-0015](0015-agent-conversations-are-durable-child-docs-answered-by-workers.md)
 
 > **Vocabulary:** a **participant** is anyone who can write to a doc: a person
-> through a UI, or a program through a reaction (ADR-0014). An **entry** is a root
+> through a UI, or a program through a worker (ADR-0014). An **entry** is a root
 > contribution a participant mints. A **reply** is a contribution a participant
 > derives, addressed by `(responder, entry)`. A **region** is a single-writer
 > territory inside the doc. This ADR generalizes ADR-0015's one-human-one-agent

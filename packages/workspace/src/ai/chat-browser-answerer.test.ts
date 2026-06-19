@@ -1,10 +1,10 @@
 /**
  * Tests for `attachChatBrowserAnswerer`: the in-process (browser) trigger
- * wrapper. Unlike `chat-reaction.test.ts`, which drives `onChange` by hand, this
+ * wrapper. Unlike `chat-worker.test.ts`, which drives `onChange` by hand, this
  * suite proves the self-wiring: the answerer observes the transcript itself, so a
  * plain `appendUser` (the optimistic echo a browser tab writes) is enough to make
  * it claim, stream, and finish, with no manual nudge. The claim path it runs is
- * `attachChatReaction`'s, so the existence-based `findUnansweredTurn` claim is
+ * `attachChatWorker`'s, so the existence-based `findUnansweredTurn` claim is
  * covered there; here we cover the wiring and teardown.
  */
 

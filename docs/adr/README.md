@@ -98,5 +98,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0028](0028-both-shortcut-tiers-share-one-physical-keybinding-model.md) | Both shortcut tiers share one physical KeyBinding model | Accepted |
 | [0029](0029-matter-json-marks-a-table.md) | A matter.json marks a table; matter is a declared store, not a discovered lens | Accepted |
 | [0030](0030-references-resolve-within-a-folder-and-its-immediate-children.md) | References resolve within a folder and its immediate child tables | Accepted |
+| [0031](0031-subtables-are-navigated-by-re-rooting-the-scope.md) | The vault view is one scope; subtables are navigated by re-rooting | Accepted |
 
 When you add an ADR, add its row here.

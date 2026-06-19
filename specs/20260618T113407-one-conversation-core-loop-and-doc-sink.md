@@ -9,6 +9,22 @@
 **Parent buildout**: `specs/20260616T225034-reactions-buildout.tracker.md`
 **Supersedes the forward half of**: `specs/20260618T100631-chat-transcript-parts-body.md` (its Phase 1+2 landed; this spec carries its Phase 3+4 and corrects the C4 premise, see below)
 
+> **Superseded note (2026-06-18, later same day): the kickoff is deleted, not
+> kept.** The transport/trigger/kickoff conclusions below are superseded by
+> **ADR-0021 (revised)** and its execution plan
+> **`specs/20260618T160358-cloud-kickoff-to-queue-generation.md`** (whose filename
+> is a vestige; its content deletes the server doc-generation vertical). Those
+> reverse this spec's **"C4 correction"**: the cloud kickoff and the entire
+> server-side doc-generation vertical (`runDocGeneration`, `/api/ai/chat/doc`) are
+> **deleted**, not kept. A cloud conversation is answered **in the browser** by the
+> in-process answerer sourcing tokens from the Epicenter provider; durability maps
+> onto the daemon, never the cloud. Phase A's `streamAnswer` core extraction here
+> already landed. The one un-superseded frontier this spec still owns is **Phase B
+> (the agentic tool loop + doc-mediated tool approval)**. Treat C4, Phase A's "keep
+> `doc-generation.ts`", and every reference below to ADR-0022's withdrawn queue as
+> historical. The broken `0022-the-trigger-forks-...` links should read
+> `0022-the-cloud-doc-generation-queue-is-withdrawn.md`.
+
 ## One Sentence
 
 Every answerer in every runtime runs one shared answer core (the inference loop that sinks parts into the conversation doc); runtimes differ only in how they are triggered, where inference runs, and which tools they can execute, and the second conversation-state owner (the browser's `createChat`-as-truth) is deleted while the inference endpoint stays as a metered backend.
@@ -171,6 +187,10 @@ Re-examined zhongwen-first (the greenfield render-from-doc shape), setting opens
 - **The client SSE parser (the Epicenter provider) is the local-tool corner's backend, not a general need.** The runtime cube has three browser inference backends and only one needs client-side SSE: text-only / house-key → the **cloud kickoff** (zhongwen; the server runs the loop, no client parser); BYOK / local model → browser **`chat()`** (a native `StreamChunk` iterable, no parser); **house-key + a local tool** (opensidian, Local Books) → browser answerer + the **Epicenter provider** (`/api/ai/chat` parsed back to chunks), because the loop must be local (the tool's data is local) while inference is metered. So `epicenter-provider.ts`'s SSE parser is confined to the local-tool corner and earns its keep only there; a pure zhongwen-shaped app calls `chat()` (or just kicks off) and carries no parser. opensidian is that corner's tracer (its file/bash tools land in Phase B). The asymmetry to keep in mind: do **not** generalize the client SSE parser to every render-from-doc app; it is a local-tool affordance.
 - **The doc→render-state collapse: DONE 2026-06-18.** zhongwen's `ConversationView` and opensidian's `chat-state` each re-derived the same liveness/status from a snapshot + a clock (active generation, thinking, streaming, interrupted, failed, plus the empty-placeholder filter). That projection is now one pure `chatRenderState(messages, { now, lastChangeAt, externallyGenerating })` in `@epicenter/workspace/ai` (with `CHAT_STREAM_GRACE_MS`), beside `findActiveChatDocGeneration`, so every renderer agrees on "live vs interrupted" the way server and client already agree on "active generation." Both apps now bind to it (zhongwen passes `externallyGenerating: kickoffController !== null` for the cloud kickoff's pre-claim window; the in-process answerer passes `false`). A new render-from-doc app is a thin view over this one projection; this also fixed a latent opensidian bug (a stalled stream never decayed to interrupted, because opensidian's old `isGenerating` ignored the grace window). The render-state collapse is orthogonal to and now complete alongside the transport collapse.
 
+- **zhongwen stays cloud + daemon; no browser-local agent (2026-06-18).** A browser-runtime agent for zhongwen was considered and refused. zhongwen is text-only (`tools: []`) on a Chinese-tuned cloud model, so the browser answerer is strictly dominated by the cloud kickoff: no local tool forces the loop local, there is no local model and no BYOK UI, and a small in-browser model would be a *materially worse* product (Chinese degrades most in small quantized models). The browser-answerer corner is already proven by opensidian (C.1/C.2) + the daemon (`mount.ts` runs native `chat()` through the same `attachChatReaction`) + the verbatim reuse, so a zhongwen browser agent would prove nothing and ship a Potemkin catalog entry. BYOK and local-model belong in a **daemon the user registers**, not the browser; the browser stays a pure doc client. zhongwen's model is "Epicenter Cloud (hot, ready) OR register your own daemon." The browser answerer earns its keep only in the local-tool corner (opensidian, Local Books), where a local tool's data forces the loop local even though inference is cloud.
+
+- **The trigger fork is compute ownership, not a chat concept ([ADR-0022](../docs/adr/0022-the-trigger-forks-on-compute-ownership-and-cloud-generation-runs-off-a-queue.md), 2026-06-18).** Re-examining "why two triggers" bottomed out at a Cloudflare cost asymmetry: a Durable Object bills for resident I/O-wait wall-clock and a Worker does not, and an ambient cloud would force conversation semantics into the app-blind relay (ADR-0017/0004). So the cloud is **not** made ambient and the trigger fork is **not** collapsed to one. Instead the held-open kickoff collapses into a short reserve-and-enqueue plus an **ephemeral queue-consumer Worker** (client-independent, no DO duration, relay stays blind). The browser's trigger fork stays one honest bit — resident listener (do nothing) vs rented compute (poke) — and `AgentConfig.runtime` is recharacterized from a chat concept to a compute-site property. This is the corrected, concrete form of Phase D/E for the cloud runtime; the execution-ready plan is `specs/20260618T160358-cloud-kickoff-to-queue-generation.md`. The deferred shared doc-chat controller hook (the controller collapse) is sequenced into that spec's Phase 5, built once against the final short-kickoff trigger shape.
+
 ### Phase D: Delete the second state owner (collect the prize) — Build, after C
 
 > Precise: this deletes the conversation STATE MODEL, not the inference endpoint.
@@ -184,6 +204,14 @@ Re-examined zhongwen-first (the greenfield render-from-doc shape), setting opens
 - [ ] **D.3** Keep `/api/ai/chat` (the inference endpoint) and `toServerSentEventsResponse`; they are the Epicenter-provider backend, not part of the deletion.
 
 ### Phase E: Billing and the Epicenter provider — Build alongside B/C
+
+> **The cloud execution-context half of this phase moved to its own
+> execution-ready spec:** `specs/20260618T160358-cloud-kickoff-to-queue-generation.md`
+> ([ADR-0022](../docs/adr/0022-the-trigger-forks-on-compute-ownership-and-cloud-generation-runs-off-a-queue.md)).
+> It resolves E.3 (the short kickoff reserves + enqueues; `trackTokens` reconciles
+> in an ephemeral queue consumer, not a held-open request or a resident DO) and
+> carries E.2 (reservation keyed to `generationId`). E.1 (the Epicenter provider
+> as a client-side `ChatStream`) stays here, the browser/daemon-side backend.
 
 - [ ] **E.1** The **Epicenter provider**: a client-side `ChatStream` adapter (daemon and browser) that holds the user's account credential and calls the metered `/api/ai/chat`, so a local loop gets cloud credits without a raw provider key. No new server code (the route and its Autumn policy exist); this is the daemon's `resolveChatStream` gaining a third backend beside local-model and BYOK.
 - [ ] **E.2** Key the reservation to the reply being produced (`(responder, entry)` / `generationId`) so a retried kickoff reuses the reservation (ADR-0021 bill-at-the-claim).

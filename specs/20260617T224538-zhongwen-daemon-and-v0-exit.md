@@ -3,27 +3,27 @@
 **Date**: 2026-06-17
 **Status**: Draft
 **Owner**: Braden
-**Builds on**: `specs/20260616T225034-workers-buildout.tracker.md` (V0 done-when), `docs/adr/0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md`
+**Builds on**: `specs/20260616T225034-workers-buildout.tracker.md` (V0 done-when), `docs/adr/0014-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0015-agent-conversations-are-durable-child-docs-answered-by-workers.md`
 **Lands on**: a fresh branch off `origin/main` after PR #2077 merges (do not stack on the `codex/...` branch)
 
 ## One Sentence
 
-Give the Zhongwen app a daemon entry so its always-on actor actually runs, then prove the V0 exit in the real app: a daemon answers a conversation bound to its agent, the browser abstains, exactly one answer, cancel survives a disconnect.
+Give the Zhongwen app a daemon entry so its always-on worker actually runs, then prove the V0 exit in the real app: a daemon answers a conversation bound to its agent, the browser abstains, exactly one answer, cancel survives a disconnect.
 
 ## Why Now
 
-PR #2077 lands the always-on actor primitives and a runnable proof (`examples/doc-as-wire-chat`), but that example proves the model in isolation: a standalone actor process with no competing transport. The real app, Zhongwen, has never run the daemon, because there is no `apps/zhongwen/epicenter.config.ts` for `epicenter up` to load. So the V0 done-when ("a phone and a desktop see the same streamed reply over hosted sync, cancel works after a disconnect, 0 duplicate streams") is unproven where it matters: in a shipping app, over hosted sync, against the browser's competing HTTP generation path.
+PR #2077 lands the always-on worker primitives and a runnable proof (`examples/doc-as-wire-chat`), but that example proves the model in isolation: a standalone worker process with no competing transport. The real app, Zhongwen, has never run the daemon, because there is no `apps/zhongwen/epicenter.config.ts` for `epicenter up` to load. So the V0 done-when ("a phone and a desktop see the same streamed reply over hosted sync, cancel works after a disconnect, 0 duplicate streams") is unproven where it matters: in a shipping app, over hosted sync, against the browser's competing HTTP generation path.
 
 ## The Roles, So The Plan Reads Cleanly
 
-Four roles, never fused (ADR-0024):
+Four roles, never fused (ADR-0014):
 
 - **relay**: moves sealed bytes, blind to plaintext, stores nothing durable.
 - **anchor**: always-on, durable, app-blind replica; the availability promise.
-- **actor**: the running process that observes docs, thinks, and writes answers.
-- **agent**: the durable address a conversation binds to; an actor answers *as* an agent.
+- **worker**: the running process that observes docs, thinks, and writes answers.
+- **agent**: the durable address a conversation binds to; a worker answers *as* an agent.
 
-`epicenter.config.ts` is none of these. It is the declaration that names which app a folder runs and which agent its actor answers as. The daemon loads it; the actor (the observe loop) responds, and only to conversations whose `row.agent` matches that agent. The doc's `agent` field decides who answers, never the topology.
+`epicenter.config.ts` is none of these. It is the declaration that names which app a folder runs and which agent its worker answers as. The daemon loads it; the worker (the observe loop) responds, and only to conversations whose `row.agent` matches that agent. The doc's `agent` field decides who answers, never the topology.
 
 ## The Honest Finding: Designation (R) Is Already Built
 
@@ -57,7 +57,7 @@ import { zhongwen } from './mount.js';
 export default zhongwen({ agentId: asAgentId('zhongwen-home') });
 ```
 
-Everything else (nodeId from `.epicenter/node.json`, the Unix socket, the actor loop, sync) wires automatically. The mount factory already accepts `agentId`, the actor is already registered (`actors.conversations.messages`), and the designation predicate is built in `workspace.ts`.
+Everything else (nodeId from `.epicenter/node.json`, the Unix socket, the worker loop, sync) wires automatically. The mount factory already accepts `agentId`, the worker is already registered (`workers.conversations.messages`), and the designation predicate is built in `workspace.ts`.
 
 Exit: `epicenter up` in `apps/zhongwen` starts a daemon without error.
 
@@ -91,4 +91,4 @@ Once Slice 2 proves the daemon answers, the HTTP generation path (`packages/serv
 
 ## Out Of Scope
 
-The cloudless Iroh anchor (thread 3, `specs/20260616T185740-cloudless-home-anchor-direction.md`) is not part of this. This thread proves the actor half over the existing hosted relay/anchor; the self-hosted anchor is a later, separate slice that depends on this being solid.
+The cloudless Iroh anchor (thread 3, `specs/20260616T185740-cloudless-home-anchor-direction.md`) is not part of this. This thread proves the worker half over the existing hosted relay/anchor; the self-hosted anchor is a later, separate slice that depends on this being solid.

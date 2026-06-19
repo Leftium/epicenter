@@ -1,14 +1,14 @@
 /**
- * The child-doc observe loop: the daemon-side WORKER (ADR-0024) that hosts a live
+ * The child-doc observe loop: the daemon-side worker (ADR-0014) that hosts a live
  * replica of every conversation bound to the agent THIS daemon answers as and
  * watches it.
  *
- * ADR-0024 splits two roles one device may host but never in one code path: the
+ * ADR-0014 splits two roles one device may host but never in one code path: the
  * app-blind ANCHOR/relay stores and routes opaque room bytes for availability
  * (it keeps every conversation reachable while knowing no schema), and the
- * app-aware WORKER holds a live typed replica of the docs it answers. This loop is
+ * app-aware worker holds a live typed replica of the docs it answers. This loop is
  * the worker, so it reconciles only the conversations bound to its agent
- * (ADR-0025: designation is the row's `agent`). A conversation bound to another
+ * (ADR-0015: designation is the row's `agent`). A conversation bound to another
  * agent stays available through the anchor, never hosted here: filtering to the
  * designated set is exactly what keeps the worker out of the anchor's job.
  *
@@ -125,7 +125,7 @@ export type ChildDocWorkerConfig<TRowId extends string, THandle> = {
 	readonly workerFor: ChildDocWorkerFactory<TRowId, THandle>;
 	/**
 	 * Whether this daemon hosts (and so answers) a row's child doc. The worker
-	 * reconciles only the conversations bound to its agent (ADR-0025: the row's
+	 * reconciles only the conversations bound to its agent (ADR-0015: the row's
 	 * `agent` names it); the mount composes this as `row.agent === selfAgentId`.
 	 * Re-evaluated on every table change, so a re-binding opens or closes the body
 	 * reactively. A conversation bound to another agent is left to the app-blind
@@ -199,9 +199,9 @@ export function attachChildDocWorker<TRowId extends string, THandle>(
 
 	function reconcile(): void {
 		if (disposed) return;
-		// Host only the conversations bound to this daemon's agent (ADR-0025); the
+		// Host only the conversations bound to this daemon's agent (ADR-0015); the
 		// rest stay available through the app-blind anchor, not in this worker's
-		// replica set (ADR-0024: worker and anchor are never one code path).
+		// replica set (ADR-0014: worker and anchor are never one code path).
 		const wanted = new Set(
 			table
 				.scan()

@@ -1,5 +1,5 @@
 /**
- * The WORKER (ADR-0024/0025), now over the REAL observe loop (S4).
+ * The worker (ADR-0014/0015), now over the REAL observe loop (S4).
  *
  * It holds the root workspace doc, runs `attachChildDocWorker` (the production
  * loop from `@epicenter/workspace`) over the `conversations` table, and hosts a
@@ -11,7 +11,7 @@
  * Gemini when `GEMINI_API_KEY` is set (S5).
  *
  * Run: `bun run src/worker.ts`  (after the relay is up). Set `AGENT` to change
- * which agent this daemon answers as (default `demo-worker`).
+ * which agent this daemon answers as (default `demo-agent`).
  */
 
 import {
@@ -31,7 +31,7 @@ import { connectPeer } from './transport';
 
 const WORKSPACE = process.env.ROOM ?? 'epicenter-demo';
 const PORT = process.env.PORT ?? 8787;
-const SELF_AGENT = process.env.AGENT ?? 'demo-worker';
+const SELF_AGENT = process.env.AGENT ?? 'demo-agent';
 const wsUrl = (guid: string) => `ws://localhost:${PORT}/${guid}`;
 
 const startStream = resolveChatStream();

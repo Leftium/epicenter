@@ -1,6 +1,6 @@
 # doc-as-wire chat
 
-A runnable demonstration of ADR-0024 / ADR-0025: **a separate, always-on worker
+A runnable demonstration of ADR-0014 / ADR-0015: **a separate, always-on worker
 answers a conversation by writing into a synced document, and another peer
 watches the answer stream back — the doc is the wire.** No HTTP request/response
 between client and worker, no server-sent events.
@@ -19,17 +19,17 @@ The only thing faked is the model (an echo `ChatStream`), and only when no
 ## The three roles, as three processes
 
 ```txt
-relay.ts    the RELAY   app-blind byte router; one Y.Doc per room, fans out frames
-worker.ts    the WORKER   always-on daemon; runs the observe loop, streams answers in
-client.ts   the CLIENT  thin REPL; binds a conversation, writes turns, renders the doc
+relay.ts      the RELAY     app-blind byte router; one Y.Doc per room, fans out frames
+worker.ts   the WORKER  always-on daemon; runs the observe loop, streams answers in
+client.ts     the CLIENT    thin REPL; binds a conversation, writes turns, renders the doc
 ```
 
 ## Run it (3 terminals)
 
 ```sh
 bun run relay      # terminal 1
-bun run worker      # terminal 2  (answers as agent "demo-worker")
-bun run client     # terminal 3  (binds a conversation to "demo-worker")
+bun run worker      # terminal 2  (answers as agent "demo-agent")
+bun run client     # terminal 3  (binds a conversation to "demo-agent")
 ```
 
 Type in terminal 3 and watch the reply stream in character by character.
@@ -53,7 +53,7 @@ observe loop hosts only conversations bound to the agent it answers as; everythi
 else it ignores. See it both ways:
 
 ```sh
-AGENT=demo-worker bun run client    # answered
+AGENT=demo-agent bun run client    # answered
 AGENT=other      bun run client    # ignored — nobody runs "other"
 ```
 

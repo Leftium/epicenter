@@ -1,8 +1,8 @@
 /**
- * The thin CLIENT (ADR-0024/0025): bind a conversation to an agent, then chat by
+ * The thin CLIENT (ADR-0014/0015): bind a conversation to an agent, then chat by
  * WRITING turns into its transcript child doc and OBSERVING the answer stream in.
  *
- * - Default `AGENT=demo-worker` binds to the running worker, so it answers.
+ * - Default `AGENT=demo-agent` binds to the running worker, so it answers.
  * - `AGENT=other bun run client` binds to an agent nobody runs, so it is ignored
  *   (S4: the binding decides who answers, not the topology).
  * - Type `/cancel` mid-stream to stop a reply durably (S3).
@@ -19,7 +19,7 @@ import { connectPeer } from './transport';
 
 const WORKSPACE = process.env.ROOM ?? 'epicenter-demo';
 const PORT = process.env.PORT ?? 8787;
-const AGENT = process.env.AGENT ?? 'demo-worker';
+const AGENT = process.env.AGENT ?? 'demo-agent';
 const CONV = process.env.CONV ?? 'demo';
 const wsUrl = (guid: string) => `ws://localhost:${PORT}/${guid}`;
 

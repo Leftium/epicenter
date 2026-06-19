@@ -5,7 +5,7 @@
  * conversations), not the topology.
  *
  * Run: `bun run src/smoke-binding.ts`  (after the relay and a worker answering
- * as `demo-worker` are up).
+ * as `demo-agent` are up).
  */
 
 import { nanoid } from 'nanoid';
@@ -15,7 +15,7 @@ import { connectPeer } from './transport';
 
 const WORKSPACE = process.env.ROOM ?? 'epicenter-demo';
 const PORT = process.env.PORT ?? 8787;
-const SELF_AGENT = process.env.AGENT ?? 'demo-worker';
+const SELF_AGENT = process.env.AGENT ?? 'demo-agent';
 
 const rootDoc = new Y.Doc({ gc: true });
 connectPeer({ url: `ws://localhost:${PORT}/${WORKSPACE}`, doc: rootDoc });

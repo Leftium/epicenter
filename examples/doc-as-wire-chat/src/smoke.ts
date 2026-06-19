@@ -13,7 +13,7 @@ import { connectPeer } from './transport';
 
 const WORKSPACE = process.env.ROOM ?? 'epicenter-demo';
 const PORT = process.env.PORT ?? 8787;
-const AGENT = process.env.AGENT ?? 'demo-worker';
+const AGENT = process.env.AGENT ?? 'demo-agent';
 
 const rootDoc = new Y.Doc({ gc: true });
 connectPeer({ url: `ws://localhost:${PORT}/${WORKSPACE}`, doc: rootDoc });

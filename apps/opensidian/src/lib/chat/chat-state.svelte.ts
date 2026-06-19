@@ -3,9 +3,9 @@
  *
  * Since the render-from-doc migration (ADR-0021, Phase C), a conversation is a
  * synced transcript child doc, not a `createChat` in-memory state plus a
- * `chatMessages` table. Each handle opens its conversation's transcript
- * (`tables.conversations.docs.messages`), renders from `read()` / `observe()`,
- * and runs an in-process answerer (`docHandle.answer`) whose inference rides the
+ * `chatMessages` table. Each handle binds its conversation's transcript
+ * (`bindConversation` over `tables.conversations.docs.messages.open`), which owns
+ * the render projection and an in-process answerer whose inference rides the
  * metered Epicenter provider (the house key over `/api/ai/chat`). A send is one
  * local doc write (the optimistic echo); the answerer claims that turn and
  * streams the reply into the same doc, so every device renders one stream.
@@ -32,9 +32,7 @@ import {
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { InstantString } from '@epicenter/field';
-import { fromTable } from '@epicenter/svelte';
-import { generateId } from '@epicenter/workspace';
-import { type ChatDocMessage, chatRenderState } from '@epicenter/workspace/ai';
+import { bindConversation, fromTable } from '@epicenter/svelte';
 import {
 	asConversationId,
 	type Conversation,
@@ -134,50 +132,36 @@ export function createAiChatState({
 	function createConversationHandle(conversationId: ConversationId) {
 		const metadata = $derived(conversationsMap.get(conversationId));
 
-		// The transcript child doc is the single source of truth. Open it once
-		// (the handle is keyed by conversationId), render from snapshots, and run
-		// the in-process answerer over it.
-		const docHandle =
-			workspace.tables.conversations.docs.messages.open(conversationId);
-
-		let docMessages = $state.raw<ChatDocMessage[]>(docHandle.read());
-		let lastDocChangeAt = $state(0);
-		const unobserve = docHandle.observe(() => {
-			docMessages = docHandle.read();
-			lastDocChangeAt = Date.now();
-		});
-
-		// The answerer's inference backend: the Epicenter provider, reading the
-		// conversation's current model and skill prompts per turn.
-		const stopAnswerer = docHandle.answer(
-			createEpicenterProviderChatStream({
-				fetch: aiFetch,
-				url: aiChatUrl,
-				data: () => ({
-					model: metadata?.model ?? DEFAULT_MODEL,
-					systemPrompts: buildSystemPrompts(),
+		// The transcript child doc is the single source of truth. Bind it once (the
+		// handle is keyed by conversationId): the binding owns the in-process
+		// answerer, the render projection, and send/stop/retry. Opensidian has no
+		// daemon binding, so the browser always answers; inference rides the
+		// Epicenter provider, reading the conversation's model and skill prompts per
+		// turn. The shared clock keeps one ticker across every open conversation.
+		const convo = bindConversation(
+			workspace.tables.conversations.docs.messages.open(conversationId),
+			{
+				answer: createEpicenterProviderChatStream({
+					fetch: aiFetch,
+					url: aiChatUrl,
+					data: () => ({
+						model: metadata?.model ?? DEFAULT_MODEL,
+						systemPrompts: buildSystemPrompts(),
+					}),
 				}),
-			}),
+				now: () => now,
+			},
 		);
 
-		// The shared doc -> render-state projection owns liveness/status; the only
-		// thing left here is converting the visible doc messages to UIMessage for
-		// the render components. opensidian is browser-answered (the claim is
-		// synchronous), so there is no external trigger to OR in.
-		const render = $derived(
-			chatRenderState(docMessages, { now, lastChangeAt: lastDocChangeAt }),
-		);
+		// The binding's render-state owns liveness/status; the only thing left here
+		// is converting the visible doc messages to UIMessage for the components.
 		const messages = $derived(
-			render.visibleMessages.map(chatDocMessageToUiMessage),
+			convo.render.visibleMessages.map(chatDocMessageToUiMessage),
 		);
 
 		return {
 			[Symbol.dispose]() {
-				// Stop the answerer (aborts any in-flight stream; no finish, an
-				// interrupted artifact the user can retry) before disposing the doc.
-				stopAnswerer();
-				unobserve();
-				docHandle[Symbol.dispose]();
+				convo[Symbol.dispose]();
 			},
 
 			get id() {
@@ -200,55 +184,47 @@ export function createAiChatState({
 			},
 
 			get isLoading() {
-				return render.isGenerating;
+				return convo.render.isGenerating;
 			},
 
 			get status() {
-				return render.status;
+				return convo.render.status;
 			},
 
 			get error() {
-				return render.failure ? { message: render.failure.message } : null;
+				return convo.render.failure
+					? { message: convo.render.failure.message }
+					: null;
 			},
 
 			get isCreditsExhausted() {
-				return render.failure?.code === 'InsufficientCredits';
+				return convo.render.failure?.code === 'InsufficientCredits';
 			},
 
 			get isUnauthorized() {
-				return render.failure?.code === 'Unauthorized';
+				return convo.render.failure?.code === 'Unauthorized';
 			},
 
 			sendMessage(content: string) {
 				const text = content.trim();
-				if (!text || render.isGenerating) return;
+				if (!text || convo.render.isGenerating) return;
 
-				// One durable transcript write: the user turn carries the assistant
-				// id it awaits, and the answerer reads it off the doc and claims.
-				docHandle.appendUser({
-					id: generateId(),
-					content: text,
-					createdAt: Date.now(),
-					generationId: generateId(),
-				});
+				// One durable transcript write: `convo.send` mints the user turn and
+				// the answerer reads it off the doc and claims.
+				convo.send(text);
 
 				const currentTitle = metadata?.title ?? 'New Chat';
 				updateConversation(conversationId, {
-					title:
-						currentTitle === 'New Chat' ? text.slice(0, 50) : currentTitle,
+					title: currentTitle === 'New Chat' ? text.slice(0, 50) : currentTitle,
 				});
 			},
 
 			reload() {
-				// Re-mint the latest turn's generationId so the answerer starts a
-				// fresh generation instead of seeing the old answer already claimed.
-				docHandle.remintGeneration(generateId());
+				convo.retry();
 			},
 
 			stop() {
-				// The durable cancel the answerer reads back; it aborts the stream and
-				// writes a `cancelled` finish, so it works from any device.
-				docHandle.requestCancel(Date.now());
+				convo.stop();
 			},
 
 			// Tool approval is Phase B (the answer core does not run the tool loop

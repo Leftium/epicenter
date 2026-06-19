@@ -28,7 +28,7 @@ import {
 	type Id,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { attachChatTranscript } from '@epicenter/workspace/ai';
+import { attachChatConversation } from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -171,7 +171,7 @@ const conversationsTable = defineTable({
 	 * this one agent. Switching agents is a fork, not a write here.
 	 */
 	agent: field.string<AgentId>(),
-}).docs({ messages: attachChatTranscript });
+}).docs({ messages: attachChatConversation });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────

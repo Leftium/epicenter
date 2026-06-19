@@ -69,7 +69,11 @@ describe('dictation pill projection', () => {
 
 	test('a later success does not clear the latched failure pip', () => {
 		expect(
-			project(vad('LISTENING'), { kind: 'delivered', reach: 'output' }, failure),
+			project(
+				vad('LISTENING'),
+				{ kind: 'delivered', reach: 'output' },
+				failure,
+			),
 		).toEqual({
 			phase: 'recording',
 			trigger: 'vad',

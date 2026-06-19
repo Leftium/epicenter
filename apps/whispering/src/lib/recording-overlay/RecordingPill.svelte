@@ -51,6 +51,13 @@
 			? status.pip
 			: undefined,
 	);
+	// Transcribing and delivered are passive status, not a control bar, so the
+	// icon+label center as a unit. Without this they clump at the left edge of the
+	// fixed-width pill with dead space to the right. Failed keeps the action-bar
+	// layout: its Retry button owns the right edge.
+	const isCenteredStatus = $derived(
+		status?.phase === 'transcribing' || status?.phase === 'delivered',
+	);
 
 	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
 	// the same amplitude through a fixed shape reads as a meter, not a flat block.
@@ -90,6 +97,7 @@
 	<div
 		class="overlay"
 		class:speaking={isSpeaking}
+		class:centered={isCenteredStatus}
 		class:failed={status.phase === 'failed'}
 		title={status.phase === 'failed' ? status.title : 'Open Whispering'}
 		onclick={onFocusMain}
@@ -109,17 +117,22 @@
 				{/each}
 			</div>
 
-			{#if vadPip}
+			{#if !isManual}
+				<!-- The VAD outcome pip holds a fixed-width slot for the whole
+				     session, full or empty, so the meter never reflows when a
+				     phrase's pip appears or clears. Empty at rest. -->
 				<div
 					class="pip"
 					class:pip-failed={vadPip === 'failed'}
 					title={vadPip === 'failed'
 						? 'A phrase failed. Click to review.'
-						: 'Transcribing previous phrase'}
+						: vadPip === 'transcribing'
+							? 'Transcribing previous phrase'
+							: undefined}
 				>
 					{#if vadPip === 'transcribing'}
 						<LoaderCircleIcon class="size-3.5 animate-spin" />
-					{:else}
+					{:else if vadPip === 'failed'}
 						<TriangleAlertIcon class="size-3.5" />
 					{/if}
 				</div>
@@ -230,9 +243,9 @@
 		color: #ffb4b4;
 	}
 
-	/* The middle slot grows to fill the pill, matching the recording meter's
-	   1fr column. Text ellipsizes; the full reason is in the title tooltip, the
-	   OS notification, and the recordings row. */
+	/* The failed state's label grows to fill the pill, pushing Retry to the right
+	   edge, and ellipsizes its reason; the full text is in the title tooltip, the
+	   OS notification, and the recordings row. The centered states override this. */
 	.label {
 		flex: 1;
 		min-width: 0;
@@ -241,6 +254,17 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	/* Transcribing and delivered are passive status: center the icon+label as a
+	   unit so the chip reads balanced in the fixed-width window, instead of
+	   clumping at the left with dead space on the right. */
+	.overlay.centered {
+		justify-content: center;
+	}
+
+	.overlay.centered .label {
+		flex: none;
 	}
 
 	.bars {
@@ -271,8 +295,13 @@
 	   meter. Dimmed so it reads as secondary to the meter; red when that utterance
 	   failed. No success state: the landing text is the receipt. */
 	.pip {
+		/* A fixed-width slot (the size-3.5 icon's width) reserved for the whole VAD
+		   session, so the centered meter holds its place when the pip toggles. */
+		flex: none;
+		width: 14px;
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		color: rgba(255, 255, 255, 0.5);
 	}
 

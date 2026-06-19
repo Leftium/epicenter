@@ -25,7 +25,10 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import { createAiChatFetch } from '@epicenter/client';
+import {
+	createAiChatFetch,
+	createEpicenterProviderChatStream,
+} from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { InstantString } from '@epicenter/field';
@@ -40,7 +43,6 @@ import {
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
 import { SvelteMap } from 'svelte/reactivity';
-import { createEpicenterProviderChatStream } from '$lib/chat/epicenter-provider';
 import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	buildGlobalSkillsPrompt,

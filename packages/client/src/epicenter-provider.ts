@@ -1,24 +1,35 @@
 /**
  * The Epicenter provider: a browser `ChatStream` that runs inference through the
- * metered `/api/ai/chat` endpoint on the user's account (the house key), so the
- * in-process answerer (`attachChatBrowserAnswerer`) gets credits without a raw
- * provider key (ADR-0021's Epicenter-provider backend).
+ * metered `/api/ai/chat` endpoint on the user's account (the house key), so an
+ * in-process answerer (`attachChatBrowserAnswerer` / `attachChatReaction` from
+ * `@epicenter/workspace/ai`) gets credits without a raw provider key (ADR-0021's
+ * Epicenter-provider backend).
  *
  * The endpoint streams the answer back as Server-Sent Events
  * (`toServerSentEventsResponse`), the way a provider streams; this adapter turns
  * that wire format back into the raw AG-UI `StreamChunk` iterable the answer core
- * (`streamAnswer`) already consumes. TanStack does not expose its SSE connection
- * parser as a standalone utility, so the `data:` frames are parsed here.
+ * (`streamAnswer`) consumes. TanStack does not expose its SSE connection parser
+ * as a standalone utility, so the `data:` frames are parsed here.
  *
- * The transport is the same `/api/ai/chat` SSE route opensidian called before
- * the render-from-doc migration; what changed is that the stream now sinks into
- * the conversation doc instead of into a `createChat` in-memory state.
+ * This lives in `@epicenter/client` (beside `createAiChatFetch`, the authed fetch
+ * it expects) so every app that answers a cloud conversation in-process shares one
+ * implementation. The return value is structurally a `@epicenter/workspace/ai`
+ * `ChatStream`; the type is inlined here to keep the client decoupled from the
+ * workspace core.
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
-import type { ChatStream } from '@epicenter/workspace/ai';
 import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { extractErrorMessage } from 'wellcrafted/error';
+
+/**
+ * Structurally `@epicenter/workspace/ai`'s `ChatStream`. Inlined so the client
+ * does not depend on the workspace core for a function signature.
+ */
+type ChatStream = (
+	messages: ModelMessage[],
+	signal: AbortSignal,
+) => AsyncIterable<StreamChunk>;
 
 /** The body options the `/api/ai/chat` route reads (model + system prompts). */
 export type EpicenterProviderData = {

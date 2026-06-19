@@ -15,7 +15,7 @@ import {
 import { EventType, type StreamChunk } from '@tanstack/ai';
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createEpicenterProviderChatStream } from './epicenter-provider.js';
+import { createEpicenterProviderChatStream } from '@epicenter/client';
 
 /** Encode chunks as the `data: <json>\n\n` frames `toServerSentEventsResponse` emits. */
 function sseResponse(

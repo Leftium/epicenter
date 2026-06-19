@@ -17,7 +17,6 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 const NOTIFICATION_TITLE = {
 	'silent-loss': 'Recording failed',
 	transcription: 'Transcription failed',
-	delivery: 'Delivery failed',
 } as const satisfies Record<DictationFailureTier, string>;
 
 export function attachDictationExceptions() {
@@ -35,10 +34,11 @@ export function attachDictationExceptions() {
 		if (outcome.error === lastNotifiedError) return;
 		lastNotifiedError = outcome.error;
 
-		// Delivery failures are quiet: the transcript is in history, so they do not
-		// earn an OS notification. The loud tiers do, but only when unfocused: when
-		// the window is focused the pill (and the recordings row) already show it.
-		if (outcome.tier === 'delivery') return;
+		// A failure notifies only when unfocused: when the window is focused the
+		// pill (and the recordings row) already show it. Both surviving tiers are
+		// real failures with no usable text, so both earn the notification. A
+		// transcript that merely missed its configured output is a delivery reach,
+		// not a failure, and never reaches this projection.
 		if (document.hasFocus()) return;
 		osNotify(NOTIFICATION_TITLE[outcome.tier], outcome.error.message);
 	});

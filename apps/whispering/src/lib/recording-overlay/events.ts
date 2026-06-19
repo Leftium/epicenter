@@ -1,4 +1,5 @@
 import type { VadState } from '$lib/constants/audio';
+import type { DeliveryReach } from '$lib/operations/delivery';
 import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 
 /**
@@ -17,17 +18,19 @@ import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 
 /**
  * How severe a dictation failure is, which decides how loudly it surfaces.
- * Severity is a function of where the dictation failed, not the error's name:
+ * Severity is a function of where the dictation failed, not the error's name. A
+ * failure means no usable text was produced. A transcript that was produced but
+ * not delivered to the configured output is not a failure: it is a reduced
+ * delivery reach (see `DeliveryReach` in operations/delivery), so it is absent
+ * here.
  *
  * - `silent-loss`: the recording never started (no mic, denied permission), so
  *   there is no artifact to recover. Loudest, because the user spoke into
  *   nothing.
  * - `transcription`: the recording was captured (a recordings row exists) but
  *   transcription failed. The audio is safe and the failure is retryable.
- * - `delivery`: the text transcribed but paste/injection failed. Quietest, the
- *   text is already on the clipboard.
  */
-export type DictationFailureTier = 'silent-loss' | 'transcription' | 'delivery';
+export type DictationFailureTier = 'silent-loss' | 'transcription';
 
 /**
  * The secondary pip riding alongside a live VAD meter, when there is one. In a
@@ -62,7 +65,7 @@ export type RecordingOverlayStatus =
 			pip?: VadOutcomePip;
 	  }
 	| { phase: 'transcribing' }
-	| { phase: 'delivered'; degraded: boolean }
+	| { phase: 'delivered'; reach: DeliveryReach }
 	| { phase: 'failed'; tier: DictationFailureTier; title: string };
 
 /**

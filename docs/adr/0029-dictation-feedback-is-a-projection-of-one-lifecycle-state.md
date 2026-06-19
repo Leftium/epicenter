@@ -25,7 +25,9 @@ Dictation feedback derives from one lifecycle value owned by the main window,
 modeled as two orthogonal tracks: **capture** (`idle | recording-manual |
 listening | speaking`, the live session, derived from the recorder machines) and
 **outcome** (`none | transcribing | delivered | failed`, the most-recent
-utterance's pipeline result). Every surface is a pure projection, never an
+utterance's pipeline result, where `delivered` carries a *reach*: landed at the
+configured output, fell back to the clipboard, or saved to history only). Every
+surface is a pure projection, never an
 imperative emission. The two tracks exist because voice-activated capture is
 *continuous*: an utterance transcribes while the session keeps listening, so
 capture and outcome run concurrently. Manual capture is sequential, so its two
@@ -56,13 +58,19 @@ session (disarm or restart). Failure breaks through; success never clears it.
 - The **happy path emits no toast.** Success is the output: the transcribed text
   landing in the clipboard or cursor is the receipt. The delivered flash plus the
   existing opt-in completion sound are the only success feedback.
-- **Failures surface by severity, not as one bucket.** Silent-loss failures
+- **Failure means no usable text; only two tiers qualify.** Silent-loss failures
   (recording never started: no mic, denied permission) are the loudest, because
   the user is talking into nothing and there is no artifact to recover. A failed
   transcription is a red pill carrying an inline Retry, because the audio is safe
-  in the recordings list. A delivery failure (text transcribed but paste or
-  injection failed) is quiet, because the text is in the clipboard. When the
-  window is unfocused, a failure also fires the existing OS notification
+  in the recordings list. A transcript that was produced but missed its
+  configured output (paste or injection failed) is **not** a failure: the text is
+  saved, so it is a reduced *delivery reach*, not a tier. It rides on the
+  `delivered` outcome (a clean `output`, a `clipboard` fallback, or `history`
+  only) and shows an amber flash, never a red pill, never an OS notification, and
+  never the VAD latch. Folding delivery into the reach axis is what makes the
+  latch tier-correct by construction: the latch holds failures, and a missed
+  delivery is no longer one, so no `tier !== 'delivery'` guard is needed. When the
+  window is unfocused, a real failure also fires the existing OS notification
   (`report/index.ts`, error and unfocused), the one earned platform conditional.
   The exception projection reads the **outcome** track directly, never the
   composed pill value, so a VAD utterance that fails mid-session still notifies
@@ -81,6 +89,13 @@ session (disarm or restart). Failure breaks through; success never clears it.
   grant, a dead listener, or a disconnected mic is a present condition that
   self-clears, owned by the pill's degraded state and the existing dedup-by-id
   `report.warning`, not the per-event lifecycle.
+- **A few adjacent notices stay toasts.** A device-fallback notice ("switched to
+  an available microphone"), a missing-transformation notice (the selected
+  transformation was deleted), and a cancel-operation failure all fire from the
+  dictation operations but are config or operation conditions with no
+  capture/outcome phase, so the pill cannot carry them and they keep `report.*`.
+  The no-toast rule governs dictation lifecycle feedback, not every notice that
+  happens to originate in `recording.ts` or `pipeline.ts`.
 
 ## Consequences
 

@@ -69,11 +69,7 @@ describe('dictation pill projection', () => {
 
 	test('a later success does not clear the latched failure pip', () => {
 		expect(
-			project(
-				vad('LISTENING'),
-				{ kind: 'delivered', degraded: false },
-				failure,
-			),
+			project(vad('LISTENING'), { kind: 'delivered', reach: 'output' }, failure),
 		).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
@@ -84,7 +80,18 @@ describe('dictation pill projection', () => {
 
 	test('VAD success without a latch earns no pip', () => {
 		expect(
-			project(vad('LISTENING'), { kind: 'delivered', degraded: false }),
+			project(vad('LISTENING'), { kind: 'delivered', reach: 'output' }),
+		).toEqual({
+			phase: 'recording',
+			trigger: 'vad',
+			vadState: 'LISTENING',
+			pip: undefined,
+		});
+	});
+
+	test('a history-only delivery in VAD is a success, so it earns no pip', () => {
+		expect(
+			project(vad('LISTENING'), { kind: 'delivered', reach: 'history' }),
 		).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
@@ -97,9 +104,13 @@ describe('dictation pill projection', () => {
 		expect(project(idle, { kind: 'transcribing' })).toEqual({
 			phase: 'transcribing',
 		});
-		expect(project(idle, { kind: 'delivered', degraded: true })).toEqual({
+		expect(project(idle, { kind: 'delivered', reach: 'clipboard' })).toEqual({
 			phase: 'delivered',
-			degraded: true,
+			reach: 'clipboard',
+		});
+		expect(project(idle, { kind: 'delivered', reach: 'history' })).toEqual({
+			phase: 'delivered',
+			reach: 'history',
 		});
 		expect(project(idle, { kind: 'failed', ...failure })).toEqual({
 			phase: 'failed',

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArchiveIcon from '@lucide/svelte/icons/archive';
 	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
@@ -51,13 +52,6 @@
 			? status.pip
 			: undefined,
 	);
-	// Transcribing and delivered are passive status, not a control bar, so the
-	// icon+label center as a unit. Without this they clump at the left edge of the
-	// fixed-width pill with dead space to the right. Failed keeps the action-bar
-	// layout: its Retry button owns the right edge.
-	const isCenteredStatus = $derived(
-		status?.phase === 'transcribing' || status?.phase === 'delivered',
-	);
 
 	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
 	// the same amplitude through a fixed shape reads as a meter, not a flat block.
@@ -97,7 +91,6 @@
 	<div
 		class="overlay"
 		class:speaking={isSpeaking}
-		class:centered={isCenteredStatus}
 		class:failed={status.phase === 'failed'}
 		title={status.phase === 'failed' ? status.title : 'Open Whispering'}
 		onclick={onFocusMain}
@@ -119,7 +112,7 @@
 
 			{#if !isManual}
 				<!-- The VAD outcome pip holds a fixed-width slot for the whole
-				     session, full or empty, so the meter never reflows when a
+				     session, full or empty, so the pill does not resize when a
 				     phrase's pip appears or clears. Empty at rest. -->
 				<div
 					class="pip"
@@ -166,12 +159,26 @@
 			</div>
 			<span class="label">Transcribing</span>
 		{:else if status.phase === 'delivered'}
-			<div class="icon" class:delivered-icon={!status.degraded} class:degraded-icon={status.degraded}>
-				<CheckIcon class="size-4" />
-			</div>
-			<span class="label">
-				{status.degraded ? 'Copied to clipboard' : 'Delivered'}
-			</span>
+			{#if status.reach === 'history'}
+				<!-- Reached history only: a requested cursor/clipboard write failed, so
+				     the text is recoverable from its row but did not land where asked.
+				     Amber, not red: the transcript is safe, this is a reduced reach, not
+				     a failure (ADR-0029). -->
+				<div class="icon degraded-icon">
+					<ArchiveIcon class="size-4" />
+				</div>
+				<span class="label">Saved to history</span>
+			{:else if status.reach === 'clipboard'}
+				<div class="icon degraded-icon">
+					<CheckIcon class="size-4" />
+				</div>
+				<span class="label">Copied to clipboard</span>
+			{:else}
+				<div class="icon delivered-icon">
+					<CheckIcon class="size-4" />
+				</div>
+				<span class="label">Delivered</span>
+			{/if}
 		{:else if status.phase === 'failed'}
 			<div class="icon">
 				<TriangleAlertIcon class="size-4" />
@@ -197,8 +204,14 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		/* The pill is a fixed-height chip. On desktop it fills the 40px overlay
-		   window; on web the mount site positions a 40px-tall element. */
+		/* The pill hugs its content and is centered within its mount (the desktop
+		   overlay window centers it; the web host translates it to center), so each
+		   state is a snug chip with no dead space to leave the meter looking
+		   off-center. The mount centers a fixed 40px-tall, up-to-184px-wide pill;
+		   `max-width` caps it to that window so a long failed reason ellipsizes
+		   rather than overflowing. */
+		width: fit-content;
+		max-width: 184px;
 		height: 40px;
 		padding: 0 10px;
 		box-sizing: border-box;
@@ -243,9 +256,9 @@
 		color: #ffb4b4;
 	}
 
-	/* The failed state's label grows to fill the pill, pushing Retry to the right
-	   edge, and ellipsizes its reason; the full text is in the title tooltip, the
-	   OS notification, and the recordings row. The centered states override this. */
+	/* The label takes only its text's width in the snug chip; in the failed state
+	   it grows to the pill's max width and ellipsizes a long reason (the full text
+	   is in the title tooltip, the OS notification, and the recordings row). */
 	.label {
 		flex: 1;
 		min-width: 0;
@@ -256,22 +269,9 @@
 		text-overflow: ellipsis;
 	}
 
-	/* Transcribing and delivered are passive status: center the icon+label as a
-	   unit so the chip reads balanced in the fixed-width window, instead of
-	   clumping at the left with dead space on the right. */
-	.overlay.centered {
-		justify-content: center;
-	}
-
-	.overlay.centered .label {
-		flex: none;
-	}
-
 	.bars {
-		flex: 1;
 		display: flex;
 		align-items: center;
-		justify-content: center;
 		gap: 3px;
 		height: 20px;
 	}
@@ -296,7 +296,7 @@
 	   failed. No success state: the landing text is the receipt. */
 	.pip {
 		/* A fixed-width slot (the size-3.5 icon's width) reserved for the whole VAD
-		   session, so the centered meter holds its place when the pip toggles. */
+		   session, so the pill keeps a steady width as the pip toggles. */
 		flex: none;
 		width: 14px;
 		display: flex;

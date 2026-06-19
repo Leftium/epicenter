@@ -1,5 +1,6 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
 import type { VadState } from '$lib/constants/audio';
+import type { DeliveryReach } from '$lib/operations/delivery';
 import type { DictationFailureTier } from '$lib/recording-overlay/events';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
@@ -31,7 +32,7 @@ export type DictationCapture =
 export type DictationOutcome =
 	| { kind: 'none' }
 	| { kind: 'transcribing' }
-	| { kind: 'delivered'; degraded: boolean }
+	| { kind: 'delivered'; reach: DeliveryReach }
 	| ({ kind: 'failed' } & DictationFailure);
 
 export type DictationLifecycle = {
@@ -117,12 +118,15 @@ function createDictationLifecycle() {
 
 		/**
 		 * The transcript landed: flash a confirmation, then retire to `none`.
-		 * `degraded` marks a clipboard-only fallback (a requested cursor write
-		 * failed), which the manual pill notes instead of a clean delivered flash.
+		 * `reach` is how far it got toward the configured output: a clean `output`,
+		 * a `clipboard` fallback, or `history`-only when a requested channel failed.
+		 * Every reach is a success (the text is saved), so none of them is a
+		 * dictation failure; the manual pill notes the reduced ones instead of a
+		 * clean delivered flash.
 		 */
-		markDelivered(degraded: boolean): void {
+		markDelivered(reach: DeliveryReach): void {
 			clearDeliveredTimer();
-			outcome = { kind: 'delivered', degraded };
+			outcome = { kind: 'delivered', reach };
 			deliveredTimer = setTimeout(() => {
 				deliveredTimer = undefined;
 				// Only retire the flash if a newer outcome has not taken over.

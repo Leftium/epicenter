@@ -37,20 +37,25 @@ const TRANSCRIPTION_SUCCESS_COPY = {
 } as const satisfies Record<TranscriptionSource, string>;
 
 /**
- * How far text got toward the user's configured output. Delivery is an
- * operation, not a notifier: it returns this so each caller presents it on its
- * own surface (the dictation pill, or a toast for file import and row actions).
+ * How far the text reached, relative to the user's configured output. Delivery
+ * is a reduced-reach axis, not a pass/fail: the transcript is always saved to
+ * history, so even the worst case (`history`) is a recoverable success, never a
+ * dictation failure (ADR-0029). Delivery is an operation, not a notifier: it
+ * returns this so each caller presents it on its own surface (the dictation
+ * pill, or a toast for file import and row actions).
  *
- * - `delivered: true` means text reached an output (or only history, when no
- *   auto-output is configured). `degraded` is true when a requested cursor write
- *   failed and delivery fell back to the clipboard, so the caller can note "copied
- *   to clipboard" instead of a clean success.
- * - `delivered: false` means an attempted channel failed and nothing landed in
- *   the clipboard or at the cursor. The transcript is still saved to history.
+ * - `output`: landed where configured (the cursor, the clipboard, or history
+ *   when history is the only configured sink). The clean case.
+ * - `clipboard`: a cursor write was requested but failed, so delivery fell back
+ *   to the clipboard. Usable, but not where the user asked.
+ * - `history`: a requested live channel errored and nothing landed at the cursor
+ *   or clipboard. The transcript is still in history, recoverable from its row.
  */
+export type DeliveryReach = 'output' | 'clipboard' | 'history';
+
 export type DeliveryOutcome =
-	| { delivered: true; degraded: boolean }
-	| { delivered: false; error: AnyTaggedError };
+	| { reach: 'output' | 'clipboard' }
+	| { reach: 'history'; error: AnyTaggedError };
 
 /** A delivery result: the structured outcome plus a human notice for toasts. */
 export type DeliveryResult = { outcome: DeliveryOutcome; notice: Notice };
@@ -159,7 +164,7 @@ async function deliverResult({
 
 	if (written) {
 		return {
-			outcome: { delivered: true, degraded: false },
+			outcome: { reach: 'output' },
 			notice: {
 				title: copied
 					? `${successCopy}, copied to clipboard, and written to cursor!`
@@ -175,7 +180,7 @@ async function deliverResult({
 		// but usable delivery.
 		const degraded = cursorRequested;
 		return {
-			outcome: { delivered: true, degraded },
+			outcome: { reach: degraded ? 'clipboard' : 'output' },
 			notice: {
 				title: degraded
 					? `${successCopy}, copied to clipboard (couldn't write to cursor)`
@@ -192,7 +197,7 @@ async function deliverResult({
 	const error = copyError ?? writeError;
 	if (error) {
 		return {
-			outcome: { delivered: false, error },
+			outcome: { reach: 'history', error },
 			notice: {
 				title: "Couldn't deliver transcription",
 				description: text,
@@ -203,7 +208,7 @@ async function deliverResult({
 	}
 
 	return {
-		outcome: { delivered: true, degraded: false },
+		outcome: { reach: 'output' },
 		notice: {
 			title: `${successCopy}!`,
 			description: text,

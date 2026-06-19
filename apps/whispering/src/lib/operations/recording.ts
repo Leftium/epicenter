@@ -160,10 +160,12 @@ export function toggleManualRecording() {
  *
  * - `silent-loss`: capture never started, so there is no audio to re-use. Start
  *   a fresh capture with the active trigger.
- * - `transcription` / `delivery`: the audio is saved under the recording id, so
- *   re-run transcription and delivery for it.
+ * - `transcription`: the audio is saved under the recording id, so re-run
+ *   transcription and delivery for it.
  *
- * A no-op unless the lifecycle is `failed`, so a stray retry press is safe.
+ * A no-op unless the lifecycle is `failed`, so a stray retry press is safe. A
+ * delivery that missed its output is a reach, not a failure, so it never lands
+ * here and has no Retry: the transcript is recoverable from its recordings row.
  */
 export async function retryDictation() {
 	const { outcome } = dictationLifecycle.current;

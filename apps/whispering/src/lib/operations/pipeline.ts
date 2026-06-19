@@ -11,7 +11,7 @@ import {
 import { sound } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
-import { report } from '$lib/report';
+import { log, report } from '$lib/report';
 import { services } from '$lib/services';
 import type { RecorderStopResult } from '$lib/services/recorder/types';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
@@ -140,7 +140,7 @@ export async function processRecordingPipeline({
 		// The transcript is the dictation receipt; the transformation below, if
 		// any, runs as a background enhancement (logged in transformation runs)
 		// rather than reopening the pill.
-		markDictationDelivery(transcriptDelivery, recordingId);
+		markDictationDelivery(transcriptDelivery);
 	} else {
 		transcribeLoading?.resolve(transcribeNotice);
 	}
@@ -195,25 +195,20 @@ export async function processRecordingPipeline({
 }
 
 /**
- * Map a delivery outcome onto the dictation pill: a clean or clipboard-only
- * delivered flash, or a quiet delivery-tier failure when nothing landed (the
- * transcript still lives in the recordings row).
+ * Map a delivery outcome onto the dictation pill. Every delivery reach is a
+ * success (the transcript is saved), so this is always a `delivered` flash; the
+ * reach just colors it: a clean `output`, a `clipboard` fallback, or
+ * `history`-only when a requested channel failed. A `history` reach logs the
+ * underlying error for diagnostics, but the user's recovery is the transcript in
+ * the recordings row, not a retry, so it is not a dictation failure (ADR-0029).
  */
-function markDictationDelivery(
-	outcome: DeliveryOutcome,
-	recordingId: string,
-): void {
-	if (outcome.delivered) {
-		dictationLifecycle.markDelivered(outcome.degraded);
-		return;
+function markDictationDelivery(outcome: DeliveryOutcome): void {
+	if (outcome.reach === 'history') {
+		log.warn(
+			new Error(`Dictation reached history only: ${outcome.error.message}`),
+		);
 	}
-	dictationLifecycle.markFailed({
-		tier: 'delivery',
-		error: outcome.error,
-		// Delivery is the last step the recordingId is needed for: retry re-runs
-		// transcription and delivery for the saved audio.
-		recordingId,
-	});
+	dictationLifecycle.markDelivered(outcome.reach);
 }
 
 /**
@@ -244,5 +239,5 @@ export async function runTranscriptionForRecording(
 	const { outcome } = await deliverTranscriptionResult({
 		text: transcribedText,
 	});
-	markDictationDelivery(outcome, recordingId);
+	markDictationDelivery(outcome);
 }

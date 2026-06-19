@@ -7,13 +7,13 @@
  * This is the single home for the disk listing the CLI (`src/cli/check.ts`) and the app surfaces
  * share, instead of each writing their own copy: list a folder's
  * `.md` files, read each (a read failure becomes an unreadable entry, never a dropped file), and
- * read its `matter.json`. {@link loadTable} is the single-folder case; {@link loadVault} loads a
- * folder's immediate child tables.
+ * read its `matter.json`. {@link loadTable} loads one folder; {@link loadPath} is the entry point
+ * that classifies a path as a marked table or a container of marked children.
  *
  * A `matter.json` MARKS a table (ADR-0029): a folder is a table if and only if it contains one.
- * {@link loadVault} loads only the marked immediate children and skips the rest (an unmarked
- * folder is not data: an attachment bundle, a junk dir, an organizational folder). The marker can
- * be `{}` (an untyped raw grid), a `fields` map (typed), or junk (a claimed-but-broken table); its
+ * A container loads only its marked immediate children and skips the rest (an unmarked folder is
+ * not data: an attachment bundle, a junk dir, an organizational folder). The marker can be `{}`
+ * (an untyped raw grid), a `fields` map (typed), or junk (a claimed-but-broken table); its
  * contents type the table but never decide whether it IS one.
  *
  * It emits {@link TableInput} (the shape `assess` classifies) because a filesystem is exactly
@@ -24,12 +24,9 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
+import { extractErrorMessage } from 'wellcrafted/error';
 import type { TableInput } from '../core/integrity';
 import { MatterReadError, readTable, type TableEntry } from '../core/table';
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * The folder's `.md` files as {@link TableEntry}s, sorted by name for deterministic output. A
@@ -91,7 +88,7 @@ export async function loadTable(dir: string): Promise<TableInput> {
 	try {
 		entries = await readEntries(dirPath);
 	} catch (error) {
-		return { name, status: 'unreadable', message: messageOf(error) };
+		return { name, status: 'unreadable', message: extractErrorMessage(error) };
 	}
 
 	const read = readTable(entries, await readContractText(dirPath));
@@ -108,17 +105,13 @@ export async function loadTable(dir: string): Promise<TableInput> {
  *
  * @param root the folder whose marked children to load.
  */
-export async function loadVault(root: string): Promise<TableInput[]> {
-	const rootPath = resolve(root);
-	const names = await readdir(rootPath).catch(() => null);
-	if (names === null) return [];
-	return loadMarkedChildren(rootPath, names);
-}
-
 /**
- * Load the marked immediate children of an ALREADY-listed folder into tables, sorted. Shared by
- * {@link loadVault} and {@link loadPath} so the container case lists the directory exactly once
- * (the caller passes the listing it already read) instead of re-running `readdir`.
+ * Load the marked immediate children of an ALREADY-listed container into tables, sorted. The
+ * container branch of {@link loadPath} passes the listing it already read, so the directory is
+ * listed exactly once: every immediate subfolder that is MARKED (contains a `matter.json`,
+ * ADR-0029) loads; unmarked subfolders are skipped (one `stat` each, no tree-walk) as attachment
+ * bundles, junk, or organizational dirs; hidden directories (`.git`, `.obsidian`) and loose files
+ * never become tables.
  *
  * @param rootPath the container's resolved path.
  * @param names the container's `readdir` listing.

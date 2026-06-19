@@ -11,7 +11,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { assess } from '../core/integrity';
-import { loadPath, loadTable, loadVault } from './fs';
+import { loadPath, loadTable } from './fs';
 
 /** A scratch directory, cleaned up after `body` runs. */
 async function withTempDir<T>(body: (dir: string) => Promise<T>): Promise<T> {
@@ -93,58 +93,24 @@ describe('loadTable', () => {
 	});
 });
 
-describe('loadVault', () => {
-	test('loads every MARKED immediate subfolder as a table, sorted, ignoring loose files', async () => {
+describe('loadPath: a folder is a table XOR a container of tables', () => {
+	test('a container loads its marked children, sorted, and skips unmarked sibling dirs', async () => {
 		await withTempDir(async (root) => {
 			// Created out of order to prove the loader sorts.
 			await makeTable(join(root, 'pages'), pagesModel);
 			await makeTable(join(root, 'adaptations'), pagesModel);
+			// An unmarked sibling (an attachment bundle / junk dir): no matter.json, so not loaded.
+			const assets = join(root, 'assets');
+			await mkdir(assets);
+			await writeFile(join(assets, 'cover.md'), '---\ncaption: hi\n---');
 			await writeFile(join(root, 'README.md'), '# not a table');
 
-			const tables = await loadVault(root);
+			const tables = await loadPath(root);
 			expect(tables.map((t) => t.name)).toEqual(['adaptations', 'pages']);
 			expect(tables.every((t) => t.status === 'readable')).toBe(true);
 		});
 	});
 
-	test('skips unmarked subfolders: a folder with no matter.json is not a table', async () => {
-		await withTempDir(async (root) => {
-			await makeTable(join(root, 'pages'), pagesModel);
-			// An unmarked folder (an attachment bundle / junk dir): no matter.json, so not loaded.
-			const assets = join(root, 'assets');
-			await mkdir(assets);
-			await writeFile(join(assets, 'cover.md'), '---\ncaption: hi\n---');
-
-			const tables = await loadVault(root);
-			expect(tables.map((t) => t.name)).toEqual(['pages']);
-		});
-	});
-
-	test('an empty root loads as an empty set, not an error', async () => {
-		await withTempDir(async (root) => {
-			expect(await loadVault(root)).toEqual([]);
-		});
-	});
-
-	test('an unreadable root loads as an empty set, not a throw', async () => {
-		await withTempDir(async (root) => {
-			expect(await loadVault(join(root, 'does-not-exist'))).toEqual([]);
-		});
-	});
-
-	test('hidden directories (.git, .obsidian) are not tables even if marked', async () => {
-		await withTempDir(async (root) => {
-			await makeTable(join(root, 'pages'), pagesModel);
-			// A hidden dir is skipped before the marker is even checked.
-			await makeTable(join(root, '.obsidian'), pagesModel);
-
-			const tables = await loadVault(root);
-			expect(tables.map((t) => t.name)).toEqual(['pages']);
-		});
-	});
-});
-
-describe('loadPath: a folder is a table XOR a container of tables', () => {
 	test('a marked folder with no marked children is a lone table', async () => {
 		await withTempDir(async (root) => {
 			const dir = join(root, 'pages');
@@ -231,12 +197,12 @@ describe('loadPath: a folder is a table XOR a container of tables', () => {
 	});
 });
 
-describe('loadVault feeds the pipeline', () => {
+describe('loadPath feeds the pipeline', () => {
 	const appRoot = resolve(import.meta.dir, '../../..');
 	const exampleVault = resolve(appRoot, '../../examples/matter/content-vault');
 
 	test('the bundled content-vault loads three typed tables that assess', async () => {
-		const tables = await loadVault(exampleVault);
+		const tables = await loadPath(exampleVault);
 		expect(tables.map((t) => t.name)).toEqual([
 			'adaptations',
 			'pages',

@@ -141,8 +141,9 @@ export async function loadVault(root: string): Promise<TableInput[]> {
  * loading two levels at once. An unmarked path with no marked children loads as the empty set ("no
  * tables here"), never an untyped pass. A path that cannot be listed at all is a single unreadable
  * table, so the failure flows through the same pipeline as any other. A lone table
- * (`tables.length === 1`, i.e. a marked path opened directly) has no sibling tables loaded, so the
- * caller surfaces its references as un-evaluable rather than failing (the old `scope` discriminant).
+ * (`tables.length === 1`: a marked path opened directly, or a container with a single marked child)
+ * has no sibling tables loaded, so the caller surfaces its references as un-evaluable rather than
+ * failing (the old `scope` discriminant).
  */
 export async function loadPath(path: string): Promise<TableInput[]> {
 	const dirPath = resolve(path);
@@ -152,8 +153,7 @@ export async function loadPath(path: string): Promise<TableInput[]> {
 		return [await loadTable(dirPath)];
 	}
 
-	// A marked folder IS the table; an unmarked folder is a container of its marked children. Never
-	// both, so a marked folder's own subfolders never load as subtables (ADR-0032).
+	// Marked folder XOR container of its marked children (ADR-0032); see the contract above.
 	return (await isMarked(dirPath))
 		? [await loadTable(dirPath)]
 		: loadVault(dirPath);

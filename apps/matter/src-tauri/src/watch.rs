@@ -180,8 +180,9 @@ fn is_marked(dir: &Path) -> bool {
 /// root with no marked children lists NOTHING ("no tables here"), the honest answer in the
 /// declared-store model, where the old shape rule would have called the same folder one table.
 ///
-/// Errors only if the root itself cannot be listed; a child that races away mid-scan just does not
-/// appear, surfacing on the next re-scan.
+/// Errors only when an UNMARKED root cannot be listed; a marked root is reported without reading
+/// its children (its table-ness does not depend on them), so it never fails here. A child that
+/// races away mid-scan just does not appear, surfacing on the next re-scan.
 fn scan_vault(root: &Path) -> Result<Vec<String>, String> {
     // A marked root IS the table; its subfolders never load as subtables (ADR-0032).
     if is_marked(root) {
@@ -209,7 +210,7 @@ fn scan_vault(root: &Path) -> Result<Vec<String>, String> {
 /// Watch a VAULT root: stream its table list as a full, sorted snapshot. This is the layer above
 /// `watch_folder`: where that watches ONE folder's files, this watches the root NON-recursively for
 /// the table set changing, and the JS Vault reacts by composing or disposing a per-folder
-/// `watch_folder`. Under the marker rule (ADR-0029) the set changes when a top-level entry appears
+/// `watch_folder`. Under the marker rule (ADR-0029/0032) the set changes when a top-level entry appears
 /// or disappears: a child directory (a table when the root is an unmarked container) OR the root's
 /// own `matter.json` (which flips the root between BEING the single table and being a container of
 /// its marked children, ADR-0032). The root's `matter.json` is no longer an inert loose file;
@@ -218,7 +219,7 @@ fn scan_vault(root: &Path) -> Result<Vec<String>, String> {
 /// Each push is the WHOLE table list, not a precise add/remove delta, and the JS reconciles it
 /// against its current set (the same "a full rebuild is a pure function of truth" stance the
 /// per-table SQLite mirror takes). A remove event cannot be stat-ed to tell folder from file, so
-/// re-listing is both simpler and correct: any debounced change at the root re-scans.
+/// re-listing is both simpler and correct: any debounced change at the root re-scans (ADR-0029/0032).
 ///
 /// Live-detection depth: the watch is non-recursive, so a `matter.json`
 /// gained or lost INSIDE an existing child folder does NOT fire here, and a child that is not yet a

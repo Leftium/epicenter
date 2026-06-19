@@ -11,19 +11,20 @@
 
 > **Superseded note (2026-06-18, later same day): the kickoff is deleted, not
 > kept.** The transport/trigger/kickoff conclusions below are superseded by
-> **ADR-0033 (revised)** and its execution plan
-> **`specs/20260618T160358-cloud-kickoff-to-queue-generation.md`** (whose filename
-> is a vestige; its content deletes the server doc-generation vertical). Those
-> reverse this spec's **"C4 correction"**: the cloud kickoff and the entire
-> server-side doc-generation vertical (`runDocGeneration`, `/api/ai/chat/doc`) are
-> **deleted**, not kept. A cloud conversation is answered **in the browser** by the
-> in-process answerer sourcing tokens from the Epicenter provider; durability maps
-> onto the daemon, never the cloud. Phase A's `streamAnswer` core extraction here
-> already landed. The one un-superseded frontier this spec still owns is **Phase B
-> (the agentic tool loop + doc-mediated tool approval)**. Treat C4, Phase A's "keep
-> `doc-generation.ts`", and every reference below to ADR-0034's withdrawn queue as
-> historical. The broken `0034-the-trigger-forks-...` links should read
-> `0034-the-cloud-doc-generation-queue-is-withdrawn.md`.
+> **[ADR-0033](../docs/adr/0033-a-conversation-has-one-transport-and-two-triggers.md)**
+> (a conversation is a synced doc only an in-process peer writes; the cloud is a
+> metered inference stream) and **[ADR-0034](../docs/adr/0034-the-cloud-doc-generation-queue-is-withdrawn.md)**
+> (the queue is withdrawn). Both reverse this spec's **"C4 correction"**: the cloud
+> kickoff and the entire server-side doc-generation vertical (`runDocGeneration`,
+> `/api/ai/chat/doc`) are **deleted**, not kept. That deletion has now landed; its
+> one-off execution spec is spent and gone. A cloud conversation is answered **in
+> the browser** by the in-process answerer sourcing tokens from the Epicenter
+> provider; durability maps onto the daemon, never the cloud. Phase A's
+> `streamAnswer` core extraction here already landed. The one un-superseded frontier
+> this spec still owns is **Phase B (the agentic tool loop + doc-mediated tool
+> approval)**. Treat C4, Phase A's "keep `doc-generation.ts`", and every reference
+> below to the withdrawn queue (every mention of an enqueue/consumer Worker) as
+> historical.
 
 ## One Sentence
 
@@ -171,7 +172,7 @@ Grounded against the installed `@tanstack/ai@0.28.0` / `@tanstack/ai-client@0.16
 
 **4. Sink seam shape: additive arms on the existing chunk switch; `chat-doc.ts` stays the sole Y owner.** The doc write stays where it is, inside `streamAnswer`'s `switch (chunk.type)`. Phase B adds arms that call new writer methods on `chat-doc.ts` (sketch: `appendToolCall(id, name)` creates a tool-call part in `input-streaming`; `appendToolCallArgs(id, delta)` suffix-appends; `finalizeToolCall(id, parsedInput)` flips to `input-complete` and freezes `input`; `appendToolResult(toolCallId, cappedContent)` writes the capped result part). The core still touches no raw Y types; the writer remains the only handle to the layout. Because the switch already dispatches on `chunk.type`, this is purely additive: no redesign of the text path, no new core parameter. The wrapper closes the tools into the `ChatStream` it builds, so the core signature is untouched.
 
-**Flagged for B.2 (not a B.1 blocker): `needsApproval` is not honored by the in-loop executor.** `tool-bridge.ts` sets `needsApproval: true` on mutations, but `chat()`'s in-loop tool runner executes any `execute`-bearing tool immediately; the approval gate lives in the *standalone* `executeToolCalls` path the browser `ChatClient` uses, not in `chat()`'s loop. The read-only SQL tracer is a query (no approval), so the spike scope is unaffected. But a write action dispatched by an in-process daemon loop would run without an approval round-trip. Tool-approval for mutations is doc-mediated (ADR-0031/0032) and a Phase B.2/C concern; it must not depend on `chat()`'s in-loop executor to gate. Decide in B.2 whether write tools are withheld from the in-loop `tools` set (dispatched by the wrapper after a doc-recorded approval) or approval is enforced another way.
+**Flagged for B.2 (not a B.1 blocker): `needsApproval` is not honored by the in-loop executor.** `tool-bridge.ts` sets `needsApproval: true` on mutations, but `chat()`'s in-loop tool runner executes any `execute`-bearing tool immediately; the approval gate lives in the *standalone* `executeToolCalls` path the browser `ChatClient` uses, not in `chat()`'s loop. The read-only SQL tracer is a query (no approval), so the spike scope is unaffected. But a write action dispatched by an in-process daemon loop would run without an approval round-trip. Tool-approval for mutations is doc-mediated (ADR-0031/0036) and a Phase B.2/C concern; it must not depend on `chat()`'s in-loop executor to gate. Decide in B.2 whether write tools are withheld from the in-loop `tools` set (dispatched by the wrapper after a doc-recorded approval) or approval is enforced another way.
 
 ### Phase C: The browser as answerer (render-from-doc tracer) — Build, gates the SSE deletion
 
@@ -189,7 +190,7 @@ Re-examined zhongwen-first (the greenfield render-from-doc shape), setting opens
 
 - **zhongwen stays cloud + daemon; no browser-local agent (2026-06-18).** A browser-runtime agent for zhongwen was considered and refused. zhongwen is text-only (`tools: []`) on a Chinese-tuned cloud model, so the browser answerer is strictly dominated by the cloud kickoff: no local tool forces the loop local, there is no local model and no BYOK UI, and a small in-browser model would be a *materially worse* product (Chinese degrades most in small quantized models). The browser-answerer corner is already proven by opensidian (C.1/C.2) + the daemon (`mount.ts` runs native `chat()` through the same `attachChatWorker`) + the verbatim reuse, so a zhongwen browser agent would prove nothing and ship a Potemkin catalog entry. BYOK and local-model belong in a **daemon the user registers**, not the browser; the browser stays a pure doc client. zhongwen's model is "Epicenter Cloud (hot, ready) OR register your own daemon." The browser answerer earns its keep only in the local-tool corner (opensidian, Local Books), where a local tool's data forces the loop local even though inference is cloud.
 
-- **The trigger fork is compute ownership, not a chat concept ([ADR-0034](../docs/adr/0034-the-cloud-doc-generation-queue-is-withdrawn.md), 2026-06-18).** Re-examining "why two triggers" bottomed out at a Cloudflare cost asymmetry: a Durable Object bills for resident I/O-wait wall-clock and a Worker does not, and an ambient cloud would force conversation semantics into the app-blind relay (ADR-0035/0004). So the cloud is **not** made ambient and the trigger fork is **not** collapsed to one. Instead the held-open kickoff collapses into a short reserve-and-enqueue plus an **ephemeral queue-consumer Worker** (client-independent, no DO duration, relay stays blind). The browser's trigger fork stays one honest bit — resident listener (do nothing) vs rented compute (poke) — and `AgentConfig.runtime` is recharacterized from a chat concept to a compute-site property. This is the corrected, concrete form of Phase D/E for the cloud runtime; the execution-ready plan is `specs/20260618T160358-cloud-kickoff-to-queue-generation.md`. The deferred shared doc-chat controller hook (the controller collapse) is sequenced into that spec's Phase 5, built once against the final short-kickoff trigger shape.
+- **The trigger fork is compute ownership, not a chat concept ([ADR-0034](../docs/adr/0034-the-cloud-doc-generation-queue-is-withdrawn.md), 2026-06-18).** Re-examining "why two triggers" bottomed out at a Cloudflare cost asymmetry: a Durable Object bills for resident I/O-wait wall-clock and a Worker does not, and an ambient cloud would force conversation semantics into the app-blind relay (ADR-0035/0004). So the cloud is **not** made ambient and the trigger fork is **not** collapsed to one. Instead the held-open kickoff collapses into a short reserve-and-enqueue plus an **ephemeral queue-consumer Worker** (client-independent, no DO duration, relay stays blind). The browser's trigger fork stays one honest bit — resident listener (do nothing) vs rented compute (poke) — and `AgentConfig.runtime` is recharacterized from a chat concept to a compute-site property. This whole queue/kickoff line was later withdrawn (ADR-0034): the cloud is not made ambient and there is no enqueue/consumer Worker; a cloud conversation is answered in the browser and billing rides the Epicenter provider's SSE request (ADR-0033). Retained here only as the historical reasoning that led to that reversal.
 
 ### Phase D: Delete the second state owner (collect the prize) — Build, after C
 
@@ -199,19 +200,21 @@ Re-examined zhongwen-first (the greenfield render-from-doc shape), setting opens
 > stays as its inference-stream wire format. What dies is a client rendering a
 > conversation from that stream as in-memory state.
 
-- [ ] **D.1** Delete the browser's in-memory `createChat`-as-source-of-truth and the dual persistence; the doc is the one store. Update the `/api/ai/chat` route header comment (`routes/ai.ts:11-19`), which still defends SSE as "the interactive transport": it is now an inference backend, and tool execution + approval live in the doc (ADR-0031/0032).
+- [ ] **D.1** Delete the browser's in-memory `createChat`-as-source-of-truth and the dual persistence; the doc is the one store. Update the `/api/ai/chat` route header comment (`routes/ai.ts:11-19`), which still defends SSE as "the interactive transport": it is now an inference backend, and tool execution + approval live in the doc (ADR-0031/0036).
 - [ ] **D.2** Sweep stragglers: the createChat-render wrapper, the transport fork in the browser, any text-only-vs-tools branches.
 - [ ] **D.3** Keep `/api/ai/chat` (the inference endpoint) and `toServerSentEventsResponse`; they are the Epicenter-provider backend, not part of the deletion.
 
 ### Phase E: Billing and the Epicenter provider — Build alongside B/C
 
-> **The cloud execution-context half of this phase moved to its own
-> execution-ready spec:** `specs/20260618T160358-cloud-kickoff-to-queue-generation.md`
-> ([ADR-0034](../docs/adr/0034-the-cloud-doc-generation-queue-is-withdrawn.md)).
-> It resolves E.3 (the short kickoff reserves + enqueues; `trackTokens` reconciles
-> in an ephemeral queue consumer, not a held-open request or a resident DO) and
-> carries E.2 (reservation keyed to `generationId`). E.1 (the Epicenter provider
-> as a client-side `ChatStream`) stays here, the browser/daemon-side backend.
+> **Withdrawn:** the cloud execution-context half of this phase once moved to a
+> kickoff-to-queue spec, now deleted along with the queue itself by
+> [ADR-0034](../docs/adr/0034-the-cloud-doc-generation-queue-is-withdrawn.md). Per
+> [ADR-0033](../docs/adr/0033-a-conversation-has-one-transport-and-two-triggers.md),
+> billing rides the Epicenter provider's own `/api/ai/chat` request (reserve → 402 →
+> confirm in one request), so E.2/E.3 below (reservation keyed to `generationId`, a
+> short kickoff that enqueues) are superseded; there is no queue, consumer, or
+> cross-process reservation. E.1 (the Epicenter provider as a client-side
+> `ChatStream`) stays here, the browser/daemon-side backend.
 
 - [ ] **E.1** The **Epicenter provider**: a client-side `ChatStream` adapter (daemon and browser) that holds the user's account credential and calls the metered `/api/ai/chat`, so a local loop gets cloud credits without a raw provider key. No new server code (the route and its Autumn policy exist); this is the daemon's `resolveChatStream` gaining a third backend beside local-model and BYOK.
 - [ ] **E.2** Key the reservation to the reply being produced (`(responder, entry)` / `generationId`) so a retried kickoff reuses the reservation (ADR-0033 bill-at-the-claim).
@@ -234,7 +237,7 @@ Product sentence: *one answer core every runtime runs; one transport (the doc); 
 
 ## Open Questions
 
-1. **Reuse TanStack's loop vs hand-roll (Phase B). RESOLVED 2026-06-18: reuse `chat()`, sink the raw chunk stream.** `chat()` runs the full provider->tool->continue loop internally (default `maxIterations(5)`), auto-executes any `execute`-bearing tool (it keys on `execute` presence, not the `__toolSide` brand), appends the result, and re-invokes the adapter; we drive no continuation. It is exactly one `ChatStream` (`(messages, signal) => AsyncIterable<StreamChunk>`), so it slots into the Phase-A seam unchanged. The sink is incremental suffix-append from the raw chunk stream (`TOOL_CALL_ARGS.delta` into the args `Y.Text`, mirroring `TEXT_MESSAGE_CONTENT.delta`), *not* `StreamProcessor` (whose callbacks are snapshots, not deltas, and would force overwrite). The loop is node-clean (runs in the CF Worker today and under Bun in the spike). Full decision: Phase B, "B.1 decision". One follow-up surfaced: `chat()`'s in-loop executor ignores `needsApproval`, so write-tool approval (ADR-0031/0032) is a B.2 design point, not a reuse blocker.
+1. **Reuse TanStack's loop vs hand-roll (Phase B). RESOLVED 2026-06-18: reuse `chat()`, sink the raw chunk stream.** `chat()` runs the full provider->tool->continue loop internally (default `maxIterations(5)`), auto-executes any `execute`-bearing tool (it keys on `execute` presence, not the `__toolSide` brand), appends the result, and re-invokes the adapter; we drive no continuation. It is exactly one `ChatStream` (`(messages, signal) => AsyncIterable<StreamChunk>`), so it slots into the Phase-A seam unchanged. The sink is incremental suffix-append from the raw chunk stream (`TOOL_CALL_ARGS.delta` into the args `Y.Text`, mirroring `TEXT_MESSAGE_CONTENT.delta`), *not* `StreamProcessor` (whose callbacks are snapshots, not deltas, and would force overwrite). The loop is node-clean (runs in the CF Worker today and under Bun in the spike). Full decision: Phase B, "B.1 decision". One follow-up surfaced: `chat()`'s in-loop executor ignores `needsApproval`, so write-tool approval (ADR-0031/0036) is a B.2 design point, not a reuse blocker.
 2. **Billing finalize location (Phase E).** Middleware-with-open-kickoff (today) vs `trackTokens` in the DO with a short trigger. Prefer the short trigger; confirm CF limits.
 3. **Render-from-doc UX parity (Phase C). RESOLVED 2026-06-18 on the opensidian tracer: proceed for text; the only real gap is tool-approval, which is Phase B, not a render-from-doc flaw.** Dimension by dimension, honestly:
    - **Optimistic echo: at parity (no regression).** The user turn is a local doc write (`appendUser`) the render observer paints synchronously, exactly as `createChat`'s optimistic add did. The claim (the empty assistant placeholder) lands in the same transaction cycle, so the typing bubble appears with no flicker.

@@ -29,15 +29,17 @@ The grilling trail lives in ADR-0021 (revised) and ADR-0022 (withdrawn). The loa
 
 ### Wave 1: Promote the Epicenter provider to a shared package — additive
 
-- [ ] **1.1** Move `createEpicenterProviderChatStream` (+ `EpicenterProviderData`) out of `apps/opensidian/src/lib/chat/epicenter-provider.ts` into a shared home next to `createAiChatFetch` (`@epicenter/client` is the natural fit; it already exports the auth fetch). Move the test with it.
-- [ ] **1.2** Point opensidian at the shared export; delete the opensidian-local copy. Verify opensidian `svelte-check` + the moved test stay green.
+- [x] **1.1** Move `createEpicenterProviderChatStream` (+ `EpicenterProviderData`) out of `apps/opensidian/src/lib/chat/epicenter-provider.ts` into a shared home next to `createAiChatFetch` (`@epicenter/client` is the natural fit; it already exports the auth fetch). Move the test with it.
+  > **Landed** `18b0df48b` (`refactor(client): promote the Epicenter provider into @epicenter/client`). Exported from `@epicenter/client`; `EpicenterProviderData = { model, systemPrompts }`.
+- [x] **1.2** Point opensidian at the shared export; delete the opensidian-local copy. Verify opensidian `svelte-check` + the moved test stay green.
 
 ### Wave 2: zhongwen answers cloud conversations in the browser — the rewire
 
-- [ ] **2.1** In `ConversationView.svelte`, for a cloud-runtime (non-resident) conversation, attach the in-process answerer over the conversation doc with the Epicenter provider as its `ChatStream` (mirror opensidian's `docHandle.answer(createEpicenterProviderChatStream({ fetch: aiChatFetch, url: API_ROUTES.ai.chat.url(APP_URLS.API), data: () => ({ model, systemPrompts }) }))`). A daemon-bound conversation attaches nothing (the daemon answers).
-- [ ] **2.2** Delete `nudgeBoundAgent`, `kickoffGeneration`, `kickoffController`, the `externallyGenerating` OR-in (opensidian's `chatRenderState` already drives liveness from the doc), and the cloud branch of `stop()` (a closed tab is an interrupted artifact the user retries; ADR-0021). `send()` becomes one durable transcript write; the attached answerer claims the turn.
-- [ ] **2.3** Recharacterize `AgentConfig.runtime` (`'cloud' | 'daemon'`) to read the one honest bit "is this agent answered by a resident listener?" (a daemon) — if not, the browser is the answerer. Keep zhongwen's two agents; update `agents.test.ts`.
-- [ ] Checkpoint: zhongwen `svelte-check` 0 errors; `agents.test.ts` green. Commit.
+- [x] **2.1** In `ConversationView.svelte`, for a cloud-runtime (non-resident) conversation, attach the in-process answerer over the conversation doc with the Epicenter provider as its `ChatStream`.
+  > **Note (deviation from the opensidian reference):** opensidian's `docHandle.answer(...)` does **not** exist in the workspace yet (it is unimplemented WIP on this branch). zhongwen uses the real, shipped primitive directly: `attachChatBrowserAnswerer({ doc: docHandle.ydoc, startStream: createEpicenterProviderChatStream({ fetch: aiChatFetch, url: API_ROUTES.ai.chat.url(APP_URLS.API), data: () => ({ model: ZHONGWEN_MODEL, systemPrompts: [ZHONGWEN_SYSTEM_PROMPT] }) }) })`. `ChildDocHandle` exposes `ydoc` (`workspace.ts:176`), so no new handle method is needed. A future `docHandle.answer()` convenience is the separate authoring-surface "fold into `.open()`" collapse, not a Wave 2 dependency. A daemon-bound conversation attaches nothing.
+- [x] **2.2** Delete `nudgeBoundAgent`, `kickoffGeneration`, `kickoffController`, the `externallyGenerating` OR-in, and the cloud branch of `stop()`. `send()` is one durable transcript write; the attached answerer claims the turn. A provider 402/network failure now lands as a `finish: failed` (the provider carries `InsufficientCredits` as the chunk code) and surfaces via `render.failure`, so the bespoke `toSendError`/`AiChatHttpError` plumbing is gone.
+- [x] **2.3** Recharacterize `AgentConfig.runtime` semantics to "is this answered by a resident daemon?" The `'cloud' | 'daemon'` values are kept (still drive the fork); the routing comments in `zhongwen.ts` (the catalog file, not `agents.ts`), the `agents.test.ts` framing, and the README "How it works" are all rewritten off the kickoff onto the in-process answerer. `ConversationView` reads `agentConfig().runtime !== 'daemon'`.
+- [x] Checkpoint: zhongwen `svelte-check` 0 errors, 0 warnings; `agents.test.ts` green. Commit.
 
 ### Wave 3: Delete the server doc-generation vertical — the break
 

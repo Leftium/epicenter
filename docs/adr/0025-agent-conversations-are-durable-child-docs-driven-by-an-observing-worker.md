@@ -66,8 +66,9 @@ doorbell), never the durable queue (the doc is the mailbox).
   is built: the worker appends to a `Y.Text` and Yjs sync is the transport. Only the
   model-to-worker token stream remains, and that is in-process for local inference.
 - The worker gains a child-doc observe loop (a new mount-runtime capability) and a
-  read-back path (a departure from the snapshot-once, write-only worker in
-  `packages/server/src/ai/doc-generation.ts`). The loop hosts a live replica of
+  read-back path (a departure from the snapshot-once, write-only server-side
+  doc-generation vertical, since deleted by
+  [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md)). The loop hosts a live replica of
   each registered child doc, observes it, and tears it down when its row is gone.
   The app registers the conversation field on the mount; the per-body factory it
   supplies returns `{ onChange, [Symbol.dispose] }`, and `onChange` is the seam

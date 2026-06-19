@@ -55,6 +55,13 @@ session (disarm or restart). Failure breaks through; success never clears it.
   over IPC, the web build mounts it as a fixed in-page element driven directly.
   Style, icons, and states are identical by construction; only mount target and
   wiring differ.
+- The **tray icon is the menubar projection.** On desktop the tray reflects the
+  same lifecycle at the coarsest grain: active whenever a capture is live, manual
+  or VAD, and idle otherwise. It carries no in-flight or terminal phase (those are
+  the pill's); it is the always-present ambient cue, robust where the
+  always-on-top pill is weaker (Windows/Linux, occlusion, another Space). It reads
+  the lifecycle, not the manual recorder alone, so it never sits on the idle icon
+  through a VAD session the pill is already showing.
 - The **happy path emits no toast.** Success is the output: the transcribed text
   landing in the clipboard or cursor is the receipt. The delivered flash plus the
   existing opt-in completion sound are the only success feedback.

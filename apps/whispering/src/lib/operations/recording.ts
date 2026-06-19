@@ -85,7 +85,12 @@ export async function startManualRecording() {
 	cancelPendingVadResume();
 	recordingMedia.pause();
 
-	const { data: outcome, error } = await manualRecorder.startRecording();
+	// Feed the pill's meter the live mic level. On web the navigator recorder taps
+	// its stream to drive this; on desktop the CPAL worker emits the level from
+	// Rust straight to the overlay, so this callback is never invoked there.
+	const { data: outcome, error } = await manualRecorder.startRecording((level) =>
+		recordingOverlay.reportLevel(level),
+	);
 
 	if (error) {
 		void recordingMedia.resume();

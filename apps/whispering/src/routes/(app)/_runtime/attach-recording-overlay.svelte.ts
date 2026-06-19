@@ -1,11 +1,9 @@
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { recordingOverlay } from '#platform/recording-overlay';
 import { tauri } from '#platform/tauri';
 import {
-	RECORDING_OVERLAY_ACTION,
-	RECORDING_OVERLAY_FOCUS_MAIN,
-	type RecordingOverlayAction,
+	recordingOverlayAction,
+	recordingOverlayFocusFailure,
 } from '$lib/recording-overlay/events';
 import {
 	dispatchPillAction,
@@ -16,7 +14,7 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
 export function attachRecordingOverlay() {
 	let unlistenAction: UnlistenFn | undefined;
-	let unlistenFocus: UnlistenFn | undefined;
+	let unlistenFocusFailure: UnlistenFn | undefined;
 
 	const overlayStatus = $derived(
 		projectLifecycleToStatus(dictationLifecycle.current),
@@ -28,19 +26,15 @@ export function attachRecordingOverlay() {
 
 	if (tauri) {
 		void (async () => {
-			unlistenAction = await listen<RecordingOverlayAction>(
-				RECORDING_OVERLAY_ACTION,
-				(event) => dispatchPillAction(event.payload),
+			unlistenAction = await recordingOverlayAction.listen((event) =>
+				dispatchPillAction(event.payload),
 			);
-			unlistenFocus = await listen(RECORDING_OVERLAY_FOCUS_MAIN, () => {
-				const mainWindow = getCurrentWindow();
-				void (async () => {
-					await mainWindow.show();
-					await mainWindow.unminimize();
-					await mainWindow.setFocus().catch(() => {});
-				})();
-				// When the pill is reporting a failure, the body click also opens
-				// the failed recording's row, the detail surface.
+			// The pill body click raises the main window through the shared
+			// `revealMainWindow` (attachMainWindowReveal owns the raise). It also
+			// fires this so the main window, which owns the dictation lifecycle, can
+			// open the failed recording's row and clear the latch. A no-op unless a
+			// failure is showing.
+			unlistenFocusFailure = await recordingOverlayFocusFailure.listen(() => {
 				openFailedDictationDetail();
 			});
 		})();
@@ -48,6 +42,6 @@ export function attachRecordingOverlay() {
 
 	return () => {
 		unlistenAction?.();
-		unlistenFocus?.();
+		unlistenFocusFailure?.();
 	};
 }

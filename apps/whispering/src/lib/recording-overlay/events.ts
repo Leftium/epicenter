@@ -1,41 +1,19 @@
 import type { VadState } from '$lib/constants/audio';
+import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 
 /**
  * Event contract for the recording overlay window.
  *
  * The overlay lives in its own webview and therefore cannot read the recorder
  * state modules directly. The main window pushes the current status to the
- * overlay, and the overlay pushes user actions back. Three Tauri event
- * channels carry that traffic:
+ * overlay, and the overlay pushes user actions back. The channels below carry
+ * that traffic; each binds its name to its payload so emitter and listener stay
+ * in sync (see `defineWindowEvent`).
  *
- * - `status` (main -> overlay): what to display, or that the overlay is shown.
- * - `action` (overlay -> main): the user clicked stop or cancel.
- * - `ready`  (overlay -> main): the overlay mounted and its listener is live,
- *   so the main window should re-send the latest status. Without this
- *   handshake the first status can be emitted before the overlay's listener
- *   is attached and get lost.
- *
- * This module imports no Tauri APIs so it stays loadable on web (where the
- * overlay never exists) and from the overlay page itself.
+ * This module imports no Tauri runtime APIs beyond the typed-channel helper, so
+ * it stays loadable on web (where the overlay never exists) and from the overlay
+ * page itself.
  */
-export const RECORDING_OVERLAY_STATUS = 'recording-overlay:status';
-export const RECORDING_OVERLAY_ACTION = 'recording-overlay:action';
-export const RECORDING_OVERLAY_READY = 'recording-overlay:ready';
-/**
- * Clicking the pill body (anywhere that is not a control) asks the main window
- * to come to the front. Kept separate from `action` so it never routes through
- * the recorder: stop/cancel only stop/cancel, and revealing the window is its
- * own gesture.
- */
-export const RECORDING_OVERLAY_FOCUS_MAIN = 'recording-overlay:focus-main';
-/**
- * Live mic level (main -> overlay), a raw RMS amplitude (~0 silent, ~0.3 loud
- * speech). The overlay applies the perceptual gain and smoothing so both
- * producers, VAD frames in JS and the CPAL worker in Rust, can stay dumb and
- * just report RMS. Kept as the bare string `mic-level` because the Rust
- * recorder emits the same channel (see recorder.rs `MIC_LEVEL_EVENT`).
- */
-export const RECORDING_OVERLAY_MIC_LEVEL = 'mic-level';
 
 /**
  * How severe a dictation failure is, which decides how loudly it surfaces.
@@ -92,3 +70,43 @@ export type RecordingOverlayStatus =
  * capture; `retry` re-runs a failed dictation.
  */
 export type RecordingOverlayAction = 'stop' | 'cancel' | 'retry';
+
+/** main -> overlay: what to display, or that the overlay is shown. */
+export const recordingOverlayStatus = defineWindowEvent<RecordingOverlayStatus>(
+	'recording-overlay:status',
+);
+
+/** overlay -> main: the user clicked stop, cancel, or retry. */
+export const recordingOverlayAction = defineWindowEvent<RecordingOverlayAction>(
+	'recording-overlay:action',
+);
+
+/**
+ * overlay -> main: the overlay mounted and its listener is live, so the main
+ * window should re-send the latest status. Without this handshake the first
+ * status can be emitted before the overlay's listener is attached and get lost.
+ */
+export const recordingOverlayReady = defineWindowSignal(
+	'recording-overlay:ready',
+);
+
+/**
+ * overlay -> main: the user clicked the pill body, which also opens the failed
+ * recording's row when the pill is reporting a failure (ADR-0029). Kept separate
+ * from the generic `revealMainWindow` (which only raises the window) because
+ * opening the failed row and clearing the failure latch need the dictation
+ * lifecycle, which lives in the main window; routing it through the shared reveal
+ * would let it hijack another window's reveal. A no-op when no failure is shown.
+ */
+export const recordingOverlayFocusFailure = defineWindowSignal(
+	'recording-overlay:focus-failure',
+);
+
+/**
+ * Live mic level (main -> overlay), a raw RMS amplitude (~0 silent, ~0.3 loud
+ * speech). The overlay applies the perceptual gain and smoothing so both
+ * producers, VAD frames in JS and the CPAL worker in Rust, can stay dumb and
+ * just report RMS. The name stays the bare string `mic-level` because the Rust
+ * recorder emits the same channel (see recorder.rs `MIC_LEVEL_EVENT`).
+ */
+export const recordingOverlayMicLevel = defineWindowEvent<number>('mic-level');

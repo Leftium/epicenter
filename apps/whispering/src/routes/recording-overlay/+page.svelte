@@ -1,17 +1,18 @@
 <script lang="ts">
-	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import { type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
-	import { foldMicLevel } from '$lib/recording-overlay/level';
-	import RecordingPill from '$lib/recording-overlay/RecordingPill.svelte';
+	import { revealMainWindow } from '$lib/main-window';
 	import {
-		RECORDING_OVERLAY_ACTION,
-		RECORDING_OVERLAY_FOCUS_MAIN,
-		RECORDING_OVERLAY_MIC_LEVEL,
-		RECORDING_OVERLAY_READY,
-		RECORDING_OVERLAY_STATUS,
+		recordingOverlayAction,
+		recordingOverlayFocusFailure,
+		recordingOverlayMicLevel,
+		recordingOverlayReady,
+		recordingOverlayStatus,
 		type RecordingOverlayAction,
 		type RecordingOverlayStatus,
 	} from '$lib/recording-overlay/events';
+	import { foldMicLevel } from '$lib/recording-overlay/level';
+	import RecordingPill from '$lib/recording-overlay/RecordingPill.svelte';
 
 	// Tauri adapter for the recording pill. The overlay lives in its own webview,
 	// so it cannot read the recorder state modules directly: the main window
@@ -31,20 +32,17 @@
 
 	onMount(async () => {
 		unlisteners.push(
-			await listen<RecordingOverlayStatus>(
-				RECORDING_OVERLAY_STATUS,
-				(event) => {
-					status = event.payload;
-				},
-			),
-			await listen<number>(RECORDING_OVERLAY_MIC_LEVEL, (event) => {
+			await recordingOverlayStatus.listen((event) => {
+				status = event.payload;
+			}),
+			await recordingOverlayMicLevel.listen((event) => {
 				level = foldMicLevel(level, event.payload);
 			}),
 		);
 		// Tell the main window we are ready so it re-sends the latest status.
 		// Without this handshake the status emitted right after window creation
 		// can land before our listener is attached.
-		await emit(RECORDING_OVERLAY_READY);
+		await recordingOverlayReady.emit();
 	});
 
 	onDestroy(() => {
@@ -52,11 +50,14 @@
 	});
 
 	function sendAction(action: RecordingOverlayAction) {
-		void emit(RECORDING_OVERLAY_ACTION, action);
+		void recordingOverlayAction.emit(action);
 	}
 
 	function focusMainWindow() {
-		void emit(RECORDING_OVERLAY_FOCUS_MAIN);
+		// Raise the main window (the shared reveal), and ask it to open the failed
+		// recording's row: a no-op in the main window unless a failure is showing.
+		void revealMainWindow.emit({});
+		void recordingOverlayFocusFailure.emit();
 	}
 </script>
 

@@ -146,7 +146,7 @@
 	/**
 	 * Nudge the conversation's bound agent. A `'cloud'`-runtime agent answers over
 	 * the HTTP route, so a cloud-bound conversation kicks it off here. Any other
-	 * runtime is an always-on actor that answers over sync, so the browser does
+	 * runtime is an always-on worker that answers over sync, so the browser does
 	 * nothing: nudging it too would answer the same turn twice (the D3 hazard). The
 	 * catalog owns that routing fork (`agentConfig().runtime`); the bound agent is
 	 * immutable, so this decision never flips mid-conversation.
@@ -158,7 +158,7 @@
 	}
 
 	/**
-	 * Start one server actor for this transcript doc. The AbortController is local
+	 * Start one server worker for this transcript doc. The AbortController is local
 	 * UI state; durable progress and terminal outcome stay in the Yjs doc.
 	 */
 	async function kickoffGeneration() {
@@ -181,7 +181,7 @@
 				signal: controller.signal,
 			});
 			// The kickoff resolving (200) IS the finish signal for the requester.
-			// The server generation actor only writes the transcript child doc, not
+			// The server generation worker only writes the transcript child doc, not
 			// the conversations list table, and a completed reply only lands while
 			// this requester is alive, so the requester owns the list-recency bump.
 			zhongwen.tables.conversations.update(conversationId, {
@@ -203,7 +203,7 @@
 	function sendMessage(content: string) {
 		const text = content.trim();
 		if (!text || isGenerating) return;
-		// The turn carries the assistant id it awaits: the actor reads this
+		// The turn carries the assistant id it awaits: the worker reads this
 		// generationId off the doc, so the kickoff POST need not carry it.
 		docHandle.appendUser({
 			id: generateId(),
@@ -222,7 +222,7 @@
 	/**
 	 * Stop the in-flight answer. Aborting the local kickoff fetch only stops the
 	 * transitional HTTP path on this device; the durable cancel is the write the
-	 * always-on actor reads back, so it works after a disconnect and from any
+	 * always-on worker reads back, so it works after a disconnect and from any
 	 * device. Single writer: the cancel lands on this client's own user turn.
 	 */
 	function stopGeneration() {
@@ -234,7 +234,7 @@
 		sendError = null;
 		dismissedError = false;
 		// A terminal answer (failed or interrupted) is already keyed to the old
-		// generationId. Re-mint the turn's generationId so the actor starts a
+		// generationId. Re-mint the turn's generationId so the worker starts a
 		// fresh generation instead of replaying the no-op 409.
 		docHandle.remintGeneration(generateId());
 		nudgeBoundAgent();

@@ -177,7 +177,7 @@ The sidecar must not learn Fuji tables, actions, materializers, child-doc layout
 
 ## Scope: App-Blind Custody Only
 
-The home anchor here routes opaque room bytes and never learns app schemas, layouts, actions, or product semantics. The always-on device *also* runs per-app **actors** (observe synced docs, run inference, execute the app's actions as agent tools), but those are a separate, app-aware role: daemons that sit beside the anchor, never inside the Iroh sidecar. "Anchor" in this spec always means the app-blind role. The actor/agent layer is specified in `docs/adr/0024-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`, and `specs/20260616T225034-always-on-actors-over-synced-docs.md`.
+The home anchor here routes opaque room bytes and never learns app schemas, layouts, actions, or product semantics. The always-on device *also* runs per-app **actors** (observe synced docs, run inference, execute the app's actions as agent tools), but those are a separate, app-aware role: daemons that sit beside the anchor, never inside the Iroh sidecar. "Anchor" in this spec always means the app-blind role. The actor/agent layer is specified in `docs/adr/0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md`, and `specs/20260616T225034-always-on-workers-over-synced-docs.md`.
 
 ## Multiplexing Rule
 
@@ -332,8 +332,8 @@ Relevant files:
 - specs/20260616T185740-cloudless-home-anchor-direction.md
 - specs/20260614T120000-app-folder-as-root-and-jsrepo-blocks.md
 - specs/20260615T120000-trusted-relay-and-collaborative-fields.md
-- docs/adr/0024-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md
-- docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md
+- docs/adr/0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md
+- docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md
 - docs/encryption.md
 - packages/workspace/src/daemon/attach-mount-infrastructure.ts
 - packages/workspace/src/config/daemon-node-id.ts

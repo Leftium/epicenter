@@ -91,8 +91,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0022](0022-rust-owns-the-models-folder-the-webview-owns-the-catalog.md) | Rust owns the models folder, the webview owns the catalog | Accepted |
 | [0023](0023-whispering-separates-its-identity-mark-from-lucide-controls.md) | Whispering separates its identity mark from Lucide controls | Accepted |
-| [0024](0024-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on actor runs app semantics beside the app-blind anchor | Proposed |
-| [0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md) | Agent conversations are durable child docs driven by an observing actor | Proposed |
+| [0024](0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on worker runs app semantics beside the app-blind anchor | Proposed |
+| [0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md) | Agent conversations are durable child docs driven by an observing worker | Proposed |
 | [0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) | The Matter vault's SQLite mirror is a read-only projection, never a verdict source | Accepted |
 | [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Accepted |
 | [0028](0028-both-shortcut-tiers-share-one-physical-keybinding-model.md) | Both shortcut tiers share one physical KeyBinding model | Accepted |

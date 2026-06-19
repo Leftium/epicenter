@@ -3,7 +3,7 @@
 **Date**: 2026-06-17
 **Status**: Draft
 **Owner**: Braden
-**Builds on**: `specs/20260616T225034-actors-buildout.tracker.md` (V0 done-when), `docs/adr/0024-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md`
+**Builds on**: `specs/20260616T225034-workers-buildout.tracker.md` (V0 done-when), `docs/adr/0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md`, `docs/adr/0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md`
 **Lands on**: a fresh branch off `origin/main` after PR #2077 merges (do not stack on the `codex/...` branch)
 
 ## One Sentence
@@ -29,7 +29,7 @@ Four roles, never fused (ADR-0024):
 
 Investigation against the merged tree shows both halves of single-answerer designation already exist. This is NOT new work for thread 2; verify it still holds, then build on it.
 
-- **Daemon half** (`packages/workspace/src/document/child-doc-actor.ts`): the observe loop filters `.filter(isDesignated)` where `isDesignated(rowId) = row.agent === selfAgentId`. The daemon hosts only conversations bound to its agent.
+- **Daemon half** (`packages/workspace/src/document/child-doc-worker.ts`): the observe loop filters `.filter(isDesignated)` where `isDesignated(rowId) = row.agent === selfAgentId`. The daemon hosts only conversations bound to its agent.
 - **Browser half** (`apps/zhongwen/src/routes/(signed-in)/components/ConversationView.svelte`, `nudgeBoundAgent()`): the browser skips its HTTP kickoff unless `agentConfig(agent)?.runtime === 'cloud'`. A `zhongwen-home`-bound conversation never triggers the cloud path.
 - **Catalog** (`apps/zhongwen/zhongwen.ts`): `ZHONGWEN_AGENTS` already defines `epicenter-cloud` (`runtime: 'cloud'`) and `zhongwen-home` (`runtime: 'daemon'`); the conversation row carries an immutable `agent` set at creation.
 
@@ -42,7 +42,7 @@ Both sides key off the same `agent` address, so the double-answer is already str
 Do not trust the finding above; confirm it on freshly merged `main`.
 
 - Re-read the daemon filter, the browser `nudgeBoundAgent` runtime check, and that a Zhongwen conversation carries an immutable `agent` at creation.
-- Confirm what `packages/server/src/ai/actor-over-room-sync.test.ts` test 3 currently asserts (one map vs two), so it is known whether any R work remains or it is purely config plus proof.
+- Confirm what `packages/server/src/ai/worker-over-room-sync.test.ts` test 3 currently asserts (one map vs two), so it is known whether any R work remains or it is purely config plus proof.
 
 Exit: a one-paragraph written confirmation of what is built and what (if anything) is not.
 
@@ -73,11 +73,11 @@ The slice where reality bites. Run the daemon, open Zhongwen in a browser, creat
 
 The bugs found here are the real content of thread 2: auth/session for the daemon, room provisioning, and the browser rendering a daemon-authored answer it did not kick off.
 
-Exit: a real two-surface run (or an integration test against a live room, in the shape of `actor-over-room-sync.test.ts`) showing one answer, durable cancel, and survival across reconnect.
+Exit: a real two-surface run (or an integration test against a live room, in the shape of `worker-over-room-sync.test.ts`) showing one answer, durable cancel, and survival across reconnect.
 
 ### Slice 3: Collapse pass on the new surface (rides along)
 
-The new files are greenfield. Per the collapse-pass Implementation Gate, audit every new helper, wrapper, and file-split. First targets: the example's `smoke.ts` / `smoke-cancel.ts` / `smoke-binding.ts` trio and the `transport.ts` / `conversations.ts` helpers; plus one-caller boundaries in the new workspace files. Leave the `chat-actor.ts` and `doc-generation.ts` flush-policy duplication alone: that is the deliberate C4 deferral.
+The new files are greenfield. Per the collapse-pass Implementation Gate, audit every new helper, wrapper, and file-split. First targets: the example's `smoke.ts` / `smoke-cancel.ts` / `smoke-binding.ts` trio and the `transport.ts` / `conversations.ts` helpers; plus one-caller boundaries in the new workspace files. Leave the `chat-worker.ts` and `doc-generation.ts` flush-policy duplication alone: that is the deliberate C4 deferral.
 
 ### Slice 4: C4, delete the HTTP generation path (optional, now unblocked)
 

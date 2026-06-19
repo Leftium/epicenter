@@ -1,4 +1,4 @@
-# 0024. An always-on actor runs app semantics beside the app-blind anchor
+# 0024. An always-on worker runs app semantics beside the app-blind anchor
 
 - **Status:** Proposed
 - **Date:** 2026-06-16
@@ -36,56 +36,56 @@ anchor:
   stays app-blind: no schema, layout, actions, prompts, or tools
   may be hosted by Epicenter or self-hosted by the user
 
-actor:
+worker:
   holds a live workspace replica
   observes docs, runs app actions and inference, and writes results back
   may run in Epicenter Cloud or on a user device
 ```
 
-An actor runs beside an anchor, never inside the anchor role. One machine may host
-both, but the contracts stay separate: the anchor keeps docs alive; the actor
+A worker runs beside an anchor, never inside the anchor role. One machine may host
+both, but the contracts stay separate: the anchor keeps docs alive; the worker
 thinks and writes. Epicenter Cloud can therefore be a blind relay, a hosted
-anchor, and a managed actor deployment, but those are three composable roles, not
-one product shape. A user-owned box can be an anchor, an actor host, or both.
+anchor, and a managed worker deployment, but those are three composable roles, not
+one product shape. A user-owned box can be an anchor, a worker host, or both.
 
-### Agent and actor are not one word for one thing
+### Agent and worker are not one word for one thing
 
 The triad above is about runtimes. Binding is about identity, and the two use
 different words on purpose:
 
-- An **actor** is a running process: the role above that holds a live replica,
+- An **worker** is a running process: the role above that holds a live replica,
   observes, and writes.
 - An **agent** is the durable, configuration-authored *address* a conversation
-  binds to (`AgentId`, [ADR-0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md)),
-  and that one or more actors answer *as*.
+  binds to (`AgentId`, [ADR-0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md)),
+  and that one or more workers answer *as*.
 
-A laptop daemon is one actor that answers as the agent a user named it;
-Epicenter's managed deployment is an actor that answers as `epicenter-cloud`.
-Presence resolves a live agent to whatever node currently runs its actor, so the
+A laptop daemon is one worker that answers as the agent a user named it;
+Epicenter's managed deployment is a worker that answers as `epicenter-cloud`.
+Presence resolves a live agent to whatever node currently runs its worker, so the
 per-install `NodeId` (transport identity) and the Yjs `clientID` (CRDT identity)
 churn underneath while the `AgentId` stays put. Anchor and relay carry no agent
 identity at all: they never answer, only store and forward. "Which agent answers"
-is a row field; "where the actor runs" is the right-hand column of the grid
+is a row field; "where the worker runs" is the right-hand column of the grid
 below; they move independently.
 
-### Observing a conversation is one trigger, not the actor's definition
+### Observing a conversation is one trigger, not the worker's definition
 
-The actor's job is to run app semantics beside the anchor: observe app state, run
+The worker's job is to run app semantics beside the anchor: observe app state, run
 inference and the app's actions, write typed results back. A conversation
 transcript is one observable layout it can drive (a child-doc change triggers it,
 streamed `Y.Text` is the result), not the shape of the role. The same observe loop
-hosts any observable child-doc layout, and the broader actor may react to a row or
+hosts any observable child-doc layout, and the broader worker may react to a row or
 cell change, a schedule, or an external event, and write a typed cell, new rows,
 or a durable approval record instead of a `Y.Text`. Three axes stay independent:
-what *triggers* the actor, what *work* it runs, where the *result* lands.
+what *triggers* the worker, what *work* it runs, where the *result* lands.
 Collapsing them so all model work must be serialized as chat turns would re-narrow
-the general role into a chatbot substrate. So an actor must never synthesize a
+the general role into a chatbot substrate. So a worker must never synthesize a
 human-addressed turn to reach the runtime: autonomous work observes its own
 target, it does not impersonate a user message. Conversations are one durable
-interface to an actor, not its only one.
+interface to a worker, not its only one.
 
 ```txt
-                         ACTOR
+                         WORKER
                     hosted    |    self-hosted
 ANCHOR          --------------+----------------
 hosted          cloud default | hosted custody,
@@ -96,7 +96,7 @@ self-hosted     self custody, | full self custody
 
 Relay is a third, independent axis, left off the grid because it is blind either
 way: you can self-host the anchor and still use Epicenter's relay for NAT
-traversal, or run a fully local relay. Moving the anchor or the actor never forces
+traversal, or run a fully local relay. Moving the anchor or the worker never forces
 the relay to move with it.
 
 ## Consequences
@@ -106,26 +106,26 @@ the relay to move with it.
   plaintext CRDT state; the relay should not.
 - The product can make Epicenter Cloud easy without making it mandatory:
   Epicenter-hosted anchor is the default, self-hosted anchor is a custody swap,
-  and actors can move independently of either choice.
-- The hosted AI route is revealed as a co-located managed actor, not part of the
-  relay. When an app's actor runs on the user's own device, the hosted route is
+  and workers can move independently of either choice.
+- The hosted AI route is revealed as a co-located managed worker, not part of the
+  relay. When an app's worker runs on the user's own device, the hosted route is
   unnecessary, and private facts never leave the machine.
-- An actor is the existing daemon body plus an observe loop, not a new process
+- A worker is the existing daemon body plus an observe loop, not a new process
   kind. The mount runtime gains a child-doc observe loop
-  (`packages/workspace/src/document/child-doc-actor.ts`) over a node-only body
+  (`packages/workspace/src/document/child-doc-worker.ts`) over a node-only body
   connector injected through `nodeMountRuntime().connectChildDoc`
   (`packages/workspace/src/daemon/mount-runtime.ts`); both are additive.
 - Hosting is schema-driven, symmetric with the browser child-doc opener. A
   browser `connect()` reads the table's `docDecls` and hands the UI
-  `tables.<t>.docs.<field>.open(rowId)`; a daemon `mount({ actors })` reads the
+  `tables.<t>.docs.<field>.open(rowId)`; a daemon `mount({ workers })` reads the
   same `docDecls` and runs an observe loop per registered field. The app
   registers behavior only (a per-body factory keyed by table and field); the
   table, the guid deriver, and the layout all come from the schema, never
-  re-passed at the call site. Re-passing them would let an actor read a body
+  re-passed at the call site. Re-passing them would let a worker read a body
   with a layout that disagrees with the schema, the one corruption the
   single-owner derivation forecloses. Only an observable layout (one exposing
-  `observe`) can carry an actor.
-- Forecloses a single "anchor runtime" that hosts app actors as one fused thing.
+  `observe`) can carry a worker.
+- Forecloses a single "anchor runtime" that hosts app workers as one fused thing.
   Fusing the contracts would make the durable app-blind role app-aware again and
   break both multiplexing and custody clarity.
 
@@ -136,6 +136,6 @@ the relay to move with it.
 - **One "relay" that means both network forwarding and durable storage.**
   Rejected: Cloudflare rooms currently bundle those jobs, but Iroh splits them.
   Keeping one word hides the privacy and deployment choice users actually make.
-- **Actors only in the cloud (the status quo HTTP route).** Rejected: it ties
+- **Workers only in the cloud (the status quo HTTP route).** Rejected: it ties
   semantic work to the cloud and forecloses local inference and the cloudless
   topology.

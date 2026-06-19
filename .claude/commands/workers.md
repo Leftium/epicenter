@@ -1,14 +1,14 @@
 ---
-description: Advance the always-on actors buildout by one slice, then stop and report.
+description: Advance the always-on workers buildout by one slice, then stop and report.
 ---
 
-You are continuing the "always-on actors over synced docs" buildout. Do ONE slice, commit, update the tracker, and stop. The stop-and-report IS the checkpoint; do not batch slices.
+You are continuing the "always-on workers over synced docs" buildout. Do ONE slice, commit, update the tracker, and stop. The stop-and-report IS the checkpoint; do not batch slices.
 
 ## Read first (every run)
 
-1. `specs/20260616T225034-actors-buildout.tracker.md` (state + slices + invariants + dependency rules)
-2. `specs/20260616T225034-always-on-actors-over-synced-docs.md` (the vision)
-3. `docs/adr/0015-...observing-actor.md`, `docs/adr/0014-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`, `specs/20260530T100000-ai-workflows-consolidated-design.md`
+1. `specs/20260616T225034-workers-buildout.tracker.md` (state + slices + invariants + dependency rules)
+2. `specs/20260616T225034-always-on-workers-over-synced-docs.md` (the vision)
+3. `docs/adr/0015-...observing-worker.md`, `docs/adr/0014-...app-blind-anchor.md`, `docs/adr/0010-...process-boundary.md`, `specs/20260530T100000-ai-workflows-consolidated-design.md`
 4. `git log --oneline -15` to see what already landed.
 
 ## Each run

@@ -43,10 +43,12 @@ The grilling trail lives in ADR-0021 (revised) and ADR-0022 (withdrawn). The loa
 
 ### Wave 3: Delete the server doc-generation vertical — the break
 
-- [ ] **3.1** Remove the `/api/ai/chat/doc` route + `aiChatDocBody` + the `DOC_GUID_REGEX` from `packages/server/src/routes/ai.ts`; `mountAiApp` now mounts SSE only. Drop the `chargeAiCreditsWithAutumn` wrapping that was doc-route-specific (the SSE policy stays).
-- [ ] **3.2** Delete `packages/server/src/ai/doc-generation.ts`, `doc-generation.test.ts`, `reaction-over-room-sync.test.ts`, and the `runDocGeneration` export. Delete `apps/api/worker/ai-generation-consumer.ts`. Remove `API_ROUTES.ai.chatDoc` if no other caller remains.
-- [ ] **3.3** Update `packages/server/src/routes/ai.test.ts` (drop doc-route cases), the module docstring, and `apps/self-host` / `apps/api` worker entries if they reference the deleted surface (they should not; worker entry stays `export default app`).
-- [ ] Checkpoint: `bun test` green in `packages/server`, `apps/api`, `apps/opensidian`, `apps/zhongwen`; workspace + server + api typecheck clean; no `console.*` in library code. Commit.
+- [x] **3.1** Removed the `/api/ai/chat/doc` route + `aiChatDocBody` + `DOC_GUID_REGEX` from `packages/server/src/routes/ai.ts`; `mountAiApp` mounts SSE only. The module docstring is rewritten to one transport.
+  > No doc-route-specific `chargeAiCreditsWithAutumn` wrapping existed to drop: the policy is applied uniformly via `mountAiApp`'s `policies` and is unchanged.
+- [x] **3.2** Deleted `packages/server/src/ai/doc-generation.ts`, `doc-generation.test.ts`, `reaction-over-room-sync.test.ts`, and the `runDocGeneration` export (`packages/server/src/index.ts`; there was no `ai/index.ts`). Deleted the untracked `apps/api/worker/ai-generation-consumer.ts`, the worker `queue()` entrypoint, and the `queues` block in `wrangler.jsonc` (then `wrangler types` dropped the `AI_GENERATION_QUEUE` binding). Removed `API_ROUTES.ai.chatDoc` (no caller remained: zhongwen migrated in Wave 2).
+  > `doName` and `createDurableObjectRooms` exports stay: they have other internal consumers (`rooms.ts`, `server-app.ts`), unrelated to the deleted vertical. `resolveAdapter` stays (the kept SSE route uses it).
+- [x] **3.3** Dropped the doc-route cases from `packages/server/src/routes/ai.test.ts`. Rewrote the now-stale "kickoff is kept" docstrings in `chat-answer.ts`, `chat-reaction.ts`, and `chat-browser-answerer.ts` onto the in-process answerer. `apps/api`/`apps/self-host` worker entries needed no change beyond removing the `queue()` handler.
+- [x] Checkpoint: `packages/server` + `packages/constants` + `apps/api` + `packages/workspace` typecheck all clean (exit 0). Server tests: the AI route tests pass; the only 5 failures are pre-existing `requireBearerUser` failures in `require-auth.test.ts` (untouched by this work). No new `console.*` in library code.
 
 ### Wave 4: Verify + harvest
 

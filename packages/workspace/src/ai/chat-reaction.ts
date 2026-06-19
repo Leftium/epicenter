@@ -40,11 +40,10 @@
  * the client can retry, exactly as an evicted worker would.
  *
  * The flush policy (batching deltas into fewer synced transactions) lives in
- * the shared answer core `streamAnswer` (`chat-answer.ts`), which the cloud
- * kickoff (`packages/server/src/ai/doc-generation.ts`) calls too. The cloud
- * kickoff is the billing/auth/rate-limit seam and is kept (ADR-0021), so the
- * two paths share the core: this reaction owns triggering, claiming, and the
- * daemon finish policy, and the core owns the loop.
+ * the shared answer core `streamAnswer` (`chat-answer.ts`), which the in-process
+ * browser answerer (`chat-browser-answerer.ts`) calls too: the daemon and an
+ * open browser tab run this same loop over the doc (ADR-0021). This reaction
+ * owns triggering, claiming, and the daemon finish policy; the core owns the loop.
  *
  * @module
  */

@@ -6,15 +6,16 @@
  * in how they are triggered, where inference runs, and how the doc propagates;
  * the buffer/flush policy and the chunk switch are the same algorithm, so they
  * live here once instead of being copied into each trigger wrapper. The daemon
- * reaction (`chat-reaction.ts`) and the cloud kickoff
- * (`packages/server/src/ai/doc-generation.ts`) both call {@link streamAnswer}.
+ * reaction (`chat-reaction.ts`) and the in-process browser answerer
+ * (`chat-browser-answerer.ts`, which reuses the reaction) both call
+ * {@link streamAnswer}.
  *
  * The core owns the loop and returns an outcome; it never writes the terminal
- * `finish`. The terminal write is the one place the wrappers genuinely diverge:
- * the daemon writes no finish on abort (the cancel path already wrote
- * `cancelled`, a teardown leaves an interrupted artifact), while the cloud
- * writes `cancelled` itself on a client disconnect. So the core hands back
- * `{ aborted, runError?, tail }` and each wrapper applies its own finish policy.
+ * `finish`. The terminal write is the wrapper's: on abort it writes no finish
+ * (the cancel path already wrote `cancelled`, a teardown leaves an interrupted
+ * artifact the client can retry); a clean run writes `completed`, a provider
+ * error `failed`. So the core hands back
+ * `{ aborted, runError?, tail }` and the wrapper applies its own finish policy.
  * On a clean run both flush the buffered tail into their finish transaction.
  *
  * The core touches no raw Y types: it writes through the {@link ChatStream}'s

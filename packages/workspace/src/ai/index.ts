@@ -4,6 +4,11 @@ export {
 	type StreamAnswerOutcome,
 	streamAnswer,
 } from './chat-answer';
+export { attachChatBrowserAnswerer } from './chat-browser-answerer';
+export {
+	attachChatConversation,
+	type ChatConversationHandle,
+} from './chat-conversation';
 export {
 	type AnswerableTurn,
 	appendAssistantMessage,
@@ -27,7 +32,7 @@ export {
 	requestLatestUserTurnCancel,
 	setLatestUserTurnGenerationId,
 } from './chat-doc';
-export { attachChatBrowserAnswerer } from './chat-browser-answerer';
+export { attachChatReaction } from './chat-reaction';
 export {
 	CHAT_STREAM_GRACE_MS,
 	type ChatFailure,
@@ -36,7 +41,6 @@ export {
 	type ChatRenderStatus,
 	chatRenderState,
 } from './chat-render-state';
-export { attachChatReaction } from './chat-reaction';
 export {
 	type ActionNames,
 	actionsToAiTools,

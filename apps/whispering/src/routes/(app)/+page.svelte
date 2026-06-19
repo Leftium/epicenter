@@ -200,12 +200,17 @@
 	<DictationCapabilityNotice />
 
 	{#if !transcriptionReadiness.isReady}
-		<div class="w-full">
+		<div class="w-full space-y-3">
+			<div class="space-y-1">
+				<h2 class="text-base font-semibold">Set up transcription</h2>
+				<p class="text-sm text-muted-foreground">
+					{transcriptionReadiness.primaryIssue ??
+						'Choose how Whispering turns your speech into text.'}
+				</p>
+			</div>
 			<TranscriptionRuntimeConfig
 				id="home-transcription-service"
-				label="Runtime"
-				description={transcriptionReadiness.primaryIssue ??
-					'Choose a runtime and fill in the required fields.'}
+				label="Service"
 				showAdvanced={false}
 			/>
 		</div>

@@ -20,8 +20,9 @@
  * The acceptance rule is the meta-schema in `@epicenter/field`: a field whose stored
  * shape is a legal palette member becomes a typed Field; a field OUTSIDE the palette (a
  * typo, an unmarked object, a nullable wrapper) is recorded in `untyped` and shown raw,
- * rather than erroring the whole contract. Only WHOLE-FILE junk (bad JSON, no `fields`
- * object) rejects the contract to the raw view.
+ * rather than erroring the whole contract. Only WHOLE-FILE junk (bad JSON, a non-object
+ * top level) rejects the contract to the raw view; an object with no `fields` map is the
+ * canonical untyped marker (the raw grid), not a rejection.
  *
  * Optionality is a Matter policy, not a field-palette kind. By default every typed
  * field is required; top-level `optional: ["name"]` names the exceptions. "Must have
@@ -34,14 +35,11 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
+import { Ok, type Result, trySync } from 'wellcrafted/result';
 
 /** Why a stored `matter.json` could not be read into a usable contract at all. */
 export const ContractError = defineErrors({
 	NotAnObject: () => ({ message: 'matter.json must be a JSON object' }),
-	MissingFields: () => ({
-		message: 'matter.json must have a "fields" object',
-	}),
 	InvalidOptional: () => ({
 		message: 'matter.json optional must be an array of field names',
 	}),
@@ -83,8 +81,10 @@ export function validateContract(
 ): Result<Contract, ContractError> {
 	if (!isPlainObject(raw)) return ContractError.NotAnObject();
 
-	const fieldsRaw = raw.fields;
-	if (!isPlainObject(fieldsRaw)) return ContractError.MissingFields();
+	// A `matter.json` with no `fields` map is the untyped marker; `parseContract` routes
+	// that to the raw grid before it reaches here. Validated as a typed contract it is
+	// simply a contract with zero declared fields (the `{"fields":{}}` case).
+	const fieldsRaw = isPlainObject(raw.fields) ? raw.fields : {};
 
 	const optionalRaw = raw.optional;
 	if (
@@ -127,15 +127,41 @@ export function validateContract(
 }
 
 /**
- * Parse the raw text of a `matter.json` file. Catches JSON syntax errors as an `Err`
- * (carrying the parser error as `cause`) rather than throwing, so a junk file degrades
- * to the raw view with a diagnostic.
+ * A `matter.json`'s text, classified into the three things a present marker can be:
+ *
+ *   - `typed`   the marker declares a `fields` map: a usable, compiled {@link Contract}.
+ *   - `untyped` the marker has no `fields` map (`{}`, or any object without one): a declared
+ *               but untyped table, shown as the raw grid. The canonical untyped marker.
+ *   - `error`   the marker is broken (bad JSON, or a non-object top level): a claimed table
+ *               whose contract could not be read, surfaced as a diagnostic, never silently typed.
+ *
+ * Absence of `matter.json` is NOT one of these: that is "not a table" and is decided by the loader
+ * before any text reaches here (see {@link loadContract}, which adds the no-text case).
  */
-export function parseContract(text: string): Result<Contract, ContractError> {
+export type ParsedContract =
+	| { kind: 'untyped' }
+	| { kind: 'error'; error: ContractError }
+	| { kind: 'typed'; contract: Contract };
+
+/**
+ * Parse the raw text of a `matter.json` file into its {@link ParsedContract} classification.
+ * Catches JSON syntax errors as `error` rather than throwing, so a junk file degrades to the raw
+ * view with a diagnostic; an object with no `fields` map is the untyped marker, never an error.
+ */
+export function parseContract(text: string): ParsedContract {
 	const { data: raw, error } = trySync({
 		try: () => JSON.parse(text) as unknown,
 		catch: (cause) => ContractError.InvalidJson({ cause }),
 	});
-	if (error) return Err(error);
-	return validateContract(raw);
+	if (error) return { kind: 'error', error };
+	if (!isPlainObject(raw)) {
+		return { kind: 'error', error: ContractError.NotAnObject().error };
+	}
+	// No `fields` map (`{}`, or any object without one): the untyped marker, a declared table
+	// shown raw. `{"fields":{}}` is distinct (a typed contract with zero fields) and falls through.
+	if (!isPlainObject(raw.fields)) return { kind: 'untyped' };
+	const { data: contract, error: contractError } = validateContract(raw);
+	return contractError
+		? { kind: 'error', error: contractError }
+		: { kind: 'typed', contract };
 }

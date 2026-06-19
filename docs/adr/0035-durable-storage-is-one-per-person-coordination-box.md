@@ -1,4 +1,4 @@
-# 0029. Durable storage is one per-person coordination box: an app-blind anchor and store
+# 0035. Durable storage is one per-person coordination box: an app-blind anchor and store
 
 - **Status:** Accepted
 - **Date:** 2026-06-18

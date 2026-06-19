@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
-- **Relates:** [ADR-0031](0031-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) (the addressed regions a reply is written into), [ADR-0032](0032-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body streamed into Y.Text), [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the tools), [ADR-0029](0029-durable-storage-is-one-per-person-coordination-box.md) (the anchor never thinks; workers are peer spokes), [ADR-0030](0030-agents-are-immutable-capability-bundles.md) (agents), [ADR-0034](0034-the-cloud-doc-generation-queue-is-withdrawn.md) (the withdrawn server-side cloud generation this supersedes)
+- **Relates:** [ADR-0031](0031-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) (the addressed regions a reply is written into), [ADR-0036](0036-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body streamed into Y.Text), [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the tools), [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md) (the anchor never thinks; workers are peer spokes), [ADR-0030](0030-agents-are-immutable-capability-bundles.md) (agents), [ADR-0034](0034-the-cloud-doc-generation-queue-is-withdrawn.md) (the withdrawn server-side cloud generation this supersedes)
 
 > **Vocabulary:** a **transport** is how an answer reaches the people watching a
 > conversation; here it is always the synced child doc. An **answerer** is an
@@ -22,7 +22,7 @@ in-memory state. The cloud doc one-shot (`runDocGeneration`, behind
 `/api/ai/chat/doc`) had the **server** stream into a synced Y.Doc as a sync peer
 of the room (hydrate a replica, forward updates over `room.sync` RPC). The daemon
 observer (`attachChatWorker`) did the same doc streaming with no HTTP at all.
-ADR-0032 made the body one shape (parts streamed into Y.Text), removing the last
+ADR-0036 made the body one shape (parts streamed into Y.Text), removing the last
 structural reason for a separate SSE-rendered state owner.
 
 A first collapse (the now-withdrawn ADR-0034) tried to keep the server as a doc
@@ -31,7 +31,7 @@ durable mailbox cheaply. Grilling that against the rest of the system showed it
 solved a problem the product does not have: it added a queue, a consumer, a
 cross-invocation billing dance, and a server-side Yjs peer, all to make a
 **cloud** answer survive the client disconnecting. But the durable, always-on,
-background answerer is the **daemon** (ADR-0029's worker spoke), which gets that
+background answerer is the **daemon** (ADR-0035's worker spoke), which gets that
 property for free; the **cloud** answer is the interactive case where the user is
 watching. The decisive observation: opensidian already answers cloud
 conversations *in the browser* using the Epicenter provider
@@ -44,16 +44,16 @@ server-side generator.
 A conversation is **one transport (the synced doc), written only by an in-process
 peer**, and **billing rides the inference backend (the Epicenter provider), not a
 trigger**. Every answerer, in every runtime, observes the doc and streams parts
-(ADR-0031's reply regions, ADR-0032's parts body) into it; the client always
+(ADR-0031's reply regions, ADR-0036's parts body) into it; the client always
 renders the doc. The server is **never** a doc writer for chat. It offers two
 clean, separate things, neither of which reads or writes a conversation doc:
 
 ```txt
 EPICENTER CLOUD = two primitives, neither chat-aware:
-  1. relay + anchor + store   the blind network (moves bytes for ALL docs; ADR-0029)
+  1. relay + anchor + store   the blind network (moves bytes for ALL docs; ADR-0035)
   2. /api/ai/chat (SSE)        a stateless, metered inference stream (sees a prompt, returns tokens)
 
-WHO WRITES THE DOC = always an in-process peer (a worker; ADR-0029):
+WHO WRITES THE DOC = always an in-process peer (a worker; ADR-0035):
   browser tab   -> attachChatBrowserAnswerer   interactive, the user is watching
   daemon        -> attachChatWorker          ambient, always-on, durable for free
 
@@ -78,7 +78,7 @@ INFERENCE (a per-agent ChatStream, orthogonal to who writes):
   prompt to `/api/ai/chat`, receives tokens, and the browser writes them into its
   local doc (which syncs to every device). The server sees a prompt and returns
   tokens; it never sees the room, the doc, or the conversation. This keeps the
-  relay strictly blind (ADR-0029) and makes the inference endpoint a general API
+  relay strictly blind (ADR-0035) and makes the inference endpoint a general API
   any client can call.
 
 - **Billing rides the Epicenter provider's SSE request: reserve, then confirm.**
@@ -135,7 +135,7 @@ a conversation doc.*
 
 - **The relay stays strictly blind and the cloud stays maximally reusable.** No
   conversation semantics live in any request handler in `packages/server`; the
-  room DO never gains chat code (ADR-0029 strengthened). `/api/ai/chat` is a
+  room DO never gains chat code (ADR-0035 strengthened). `/api/ai/chat` is a
   general inference API — browser, mobile, CLI, or a daemon's Epicenter provider
   can all call it.
 
@@ -164,9 +164,9 @@ a conversation doc.*
   `createChat`).** Rejected: that was two state owners and the text-vs-tools
   split. The SSE *wire format* survives as the inference stream; what dies is a
   client rendering a conversation from it as in-memory state.
-- **Generate inside the room DO (ambient cloud).** Rejected by ADR-0029: the
+- **Generate inside the room DO (ambient cloud).** Rejected by ADR-0035: the
   coordination box never thinks; workers are peer spokes, not the box.
-- **Stream over awareness instead of the durable doc.** Rejected in ADR-0032.
+- **Stream over awareness instead of the durable doc.** Rejected in ADR-0036.
 
 ## Open questions
 
@@ -174,4 +174,4 @@ a conversation doc.*
   conversation open, the existence-claim means one wins; bias the *active* tab so
   the watched device answers. Minor, post-tracer.
 - **Prompt-pruning of old tool-results** (the AI SDK `before-last-N` policy),
-  deferred by ADR-0032; orthogonal, needed only once results accumulate.
+  deferred by ADR-0036; orthogonal, needed only once results accumulate.

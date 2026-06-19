@@ -96,11 +96,11 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) | The Matter vault's SQLite mirror is a read-only projection, never a verdict source | Accepted |
 | [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Accepted |
 | [0028](0028-both-shortcut-tiers-share-one-physical-keybinding-model.md) | Both shortcut tiers share one physical KeyBinding model | Accepted |
-| [0029](0029-durable-storage-is-one-per-person-coordination-box.md) | Durable storage is one per-person coordination box: an app-blind anchor and store | Accepted |
 | [0030](0030-agents-are-immutable-capability-bundles.md) | Agents are immutable capability bundles; arbitrary code runs only on a trusted box | Accepted |
 | [0031](0031-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) | Collaboration is addressed single-writer regions in a child doc | Accepted (supersedes 0025) |
-| [0032](0032-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) | An answer body is a native parts array; its text streams into Y.Text | Accepted |
 | [0033](0033-a-conversation-has-one-transport-and-two-triggers.md) | A conversation is a synced doc answered only by in-process peers; the cloud is a metered inference stream | Accepted |
 | [0034](0034-the-cloud-doc-generation-queue-is-withdrawn.md) | The cloud doc-generation queue is withdrawn | Superseded by 0033 |
+| [0035](0035-durable-storage-is-one-per-person-coordination-box.md) | Durable storage is one per-person coordination box: an app-blind anchor and store | Accepted |
+| [0036](0036-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) | An answer body is a native parts array; its text streams into Y.Text | Accepted |
 
 When you add an ADR, add its row here.

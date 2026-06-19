@@ -1,4 +1,4 @@
-# 0032. An answer body is a native parts array; its text streams into Y.Text
+# 0036. An answer body is a native parts array; its text streams into Y.Text
 
 - **Status:** Accepted
 - **Date:** 2026-06-18

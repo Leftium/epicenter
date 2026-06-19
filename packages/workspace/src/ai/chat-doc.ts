@@ -16,7 +16,7 @@
  * }
  * ```
  *
- * The body is an ordered parts array (ADR-0032), not a single text run. Each
+ * The body is an ordered parts array (ADR-0036), not a single text run. Each
  * part is a typed `Y.Map` keyed by `type`; a text part streams tokens into its
  * own `Y.Text`. A text-only answer (zhongwen) is one text part, behaviorally
  * identical to the old single `content`; a tool-using answer (Local Books)

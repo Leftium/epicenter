@@ -5,7 +5,7 @@
 
 ## Context
 
-ADR-0025 binds a conversation to one immutable agent and leaves the agent's makeup to "configuration," and ADR-0029 puts workers on a coordination box that may be Epicenter's or the user's own. That raises the question those two defer: how is an agent actually constituted, and may a user ship arbitrary code as one? The answer has to hold the privacy line (you should know what saw your data and what it could do) and keep Epicenter's hosted surface safe, while still letting a user point a local model with local-data tools at their own box.
+ADR-0025 binds a conversation to one immutable agent and leaves the agent's makeup to "configuration," and ADR-0035 puts workers on a coordination box that may be Epicenter's or the user's own. That raises the question those two defer: how is an agent actually constituted, and may a user ship arbitrary code as one? The answer has to hold the privacy line (you should know what saw your data and what it could do) and keep Epicenter's hosted surface safe, while still letting a user point a local model with local-data tools at their own box.
 
 ## Decision
 
@@ -20,7 +20,7 @@ Arbitrary code is bounded by the trust location, not by a flag. Authoring an age
 - The privacy guarantee of ADR-0025 now covers capabilities, not just routing. Because the bundle is declared and immutable, you always know which model saw a conversation and which tools could fire in it, with no mid-conversation drift.
 - The catalog is the discovery surface. Naming an agent needs a config entry (Epicenter's or yours), so a configured-but-offline home daemon is still a valid binding; the conversation doc is the durable mailbox it reads when it wakes.
 - Epicenter's hosted surface stays small and safe: a curated set with no arbitrary-code attack surface. Growing what Epicenter offers is publishing another bundle, not opening a code-upload endpoint.
-- A local agent is first-class, not a downgrade. The worker tier of ADR-0029 is what makes "my own model, my own data, my own box" a normal catalog entry rather than a special case.
+- A local agent is first-class, not a downgrade. The worker tier of ADR-0035 is what makes "my own model, my own data, my own box" a normal catalog entry rather than a special case.
 - Forecloses per-turn model or tool selection (the capability version of the per-message targeting ADR-0025 refused), a global "any tool, any chat" mode, and arbitrary user code on Epicenter's infrastructure before the sandbox exists.
 
 ## Considered alternatives

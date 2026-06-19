@@ -2,7 +2,7 @@
 
 - **Status:** Superseded by [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) (revised)
 - **Date:** 2026-06-18
-- **Relates:** [ADR-0029](0029-durable-storage-is-one-per-person-coordination-box.md), [ADR-0030](0030-agents-are-immutable-capability-bundles.md), [ADR-0032](0032-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md)
+- **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0030](0030-agents-are-immutable-capability-bundles.md), [ADR-0036](0036-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md)
 
 ## What this ADR proposed, and why it is withdrawn
 
@@ -20,13 +20,13 @@ have. The argument, in one chain:
    generation, well under 1% of the inference bill it rides on. Per-generation
    execution cost does not justify a queue.
 2. **The durable, background, always-on answerer already exists: the daemon**
-   (ADR-0029's worker spoke), which gets durability for free on the owner's
+   (ADR-0035's worker spoke), which gets durability for free on the owner's
    hardware. The *cloud* answer is the **interactive** case where the user is
    watching; it does not need to outlive the client.
 3. **The synchronous-402 boundary the kickoff existed to provide already exists**
    on the `/api/ai/chat` SSE endpoint (`chargeAiCreditsWithAutumn` reserves before
    streaming). A separate server kickoff was redundant.
-4. **ADR-0029 forbids the box thinking; the worker is a peer spoke.** The
+4. **ADR-0035 forbids the box thinking; the worker is a peer spoke.** The
    cleanest answerer is therefore an in-process peer, and one already shipped:
    opensidian answers cloud conversations in the browser via the Epicenter
    provider (`attachChatBrowserAnswerer` + `createEpicenterProviderChatStream`),

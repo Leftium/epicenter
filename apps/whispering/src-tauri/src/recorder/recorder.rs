@@ -95,7 +95,7 @@ impl Recorder {
         let devices = host
             .input_devices()
             .map_err(|e| RecorderError::classify_cpal("Failed to get input devices", e))?
-            .filter_map(|device| device.name().ok())
+            .map(|device| device.to_string())
             .collect();
 
         Ok(devices)
@@ -121,12 +121,12 @@ impl Recorder {
         let device = find_device(&host, &device_name)?;
         let config = get_optimal_config(&device, preferred_sample_rate)?;
         let sample_format = config.sample_format();
-        let device_rate = config.sample_rate().0;
+        let device_rate = config.sample_rate();
         let device_channels = config.channels();
 
         let stream_config = cpal::StreamConfig {
             channels: device_channels,
-            sample_rate: cpal::SampleRate(device_rate),
+            sample_rate: device_rate,
             buffer_size: cpal::BufferSize::Default,
         };
 
@@ -372,10 +372,8 @@ fn find_device(host: &cpal::Host, device_name: &str) -> Result<Device> {
         .map_err(|e| RecorderError::classify_cpal("Failed to list input devices", e))?
         .collect();
     for device in devices {
-        if let Ok(name) = device.name() {
-            if name == device_name {
-                return Ok(device);
-            }
+        if device.to_string() == device_name {
+            return Ok(device);
         }
     }
     Err(RecorderError::no_input_device(format!(
@@ -432,18 +430,18 @@ fn get_optimal_config(
     // Mono at target rate if possible.
     for config in &compatible_configs {
         if config.channels() == 1 {
-            let (min, max) = (config.min_sample_rate().0, config.max_sample_rate().0);
+            let (min, max) = (config.min_sample_rate(), config.max_sample_rate());
             if min <= target_sample_rate && max >= target_sample_rate {
-                return Ok(config.with_sample_rate(cpal::SampleRate(target_sample_rate)));
+                return Ok(config.with_sample_rate(target_sample_rate));
             }
         }
     }
 
     // Any channel count at target rate.
     for config in &compatible_configs {
-        let (min, max) = (config.min_sample_rate().0, config.max_sample_rate().0);
+        let (min, max) = (config.min_sample_rate(), config.max_sample_rate());
         if min <= target_sample_rate && max >= target_sample_rate {
-            return Ok(config.with_sample_rate(cpal::SampleRate(target_sample_rate)));
+            return Ok(config.with_sample_rate(target_sample_rate));
         }
     }
 
@@ -454,7 +452,7 @@ fn get_optimal_config(
         if config.channels() != 1 {
             continue;
         }
-        let (min, max) = (config.min_sample_rate().0, config.max_sample_rate().0);
+        let (min, max) = (config.min_sample_rate(), config.max_sample_rate());
         let closest = if target_sample_rate < min {
             min
         } else if target_sample_rate > max {
@@ -465,7 +463,7 @@ fn get_optimal_config(
         let diff = (closest as i32 - target_sample_rate as i32).unsigned_abs();
         if diff < best_diff {
             best_diff = diff;
-            best_config = Some(config.with_sample_rate(cpal::SampleRate(closest)));
+            best_config = Some(config.with_sample_rate(closest));
         }
     }
 
@@ -475,13 +473,13 @@ fn get_optimal_config(
     // configuration" failure left to model.
     Ok(best_config.unwrap_or_else(|| {
         let config = compatible_configs[0];
-        let (min, max) = (config.min_sample_rate().0, config.max_sample_rate().0);
+        let (min, max) = (config.min_sample_rate(), config.max_sample_rate());
         let rate = if min <= target_sample_rate && max >= target_sample_rate {
             target_sample_rate
         } else {
             min
         };
-        config.with_sample_rate(cpal::SampleRate(rate))
+        config.with_sample_rate(rate)
     }))
 }
 
@@ -501,7 +499,7 @@ fn build_input_stream(
     let stream = match sample_format {
         SampleFormat::F32 => device
             .build_input_stream(
-                config,
+                *config,
                 move |data: &[f32], _: &_| {
                     let _ = sample_tx.send(downmix_f32(data, n_channels));
                 },
@@ -511,7 +509,7 @@ fn build_input_stream(
             .map_err(|e| RecorderError::classify_cpal("Failed to build F32 stream", e))?,
         SampleFormat::I16 => device
             .build_input_stream(
-                config,
+                *config,
                 move |data: &[i16], _: &_| {
                     let _ = sample_tx.send(downmix_i16(data, n_channels));
                 },
@@ -521,7 +519,7 @@ fn build_input_stream(
             .map_err(|e| RecorderError::classify_cpal("Failed to build I16 stream", e))?,
         SampleFormat::U16 => device
             .build_input_stream(
-                config,
+                *config,
                 move |data: &[u16], _: &_| {
                     let _ = sample_tx.send(downmix_u16(data, n_channels));
                 },

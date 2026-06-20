@@ -3,7 +3,12 @@ import {
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
-import type { AnyTextAdapter } from '@tanstack/ai';
+import {
+	type AnyTextAdapter,
+	chat,
+	type ModelMessage,
+	type StreamChunk,
+} from '@tanstack/ai';
 import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createOpenaiChat } from '@tanstack/ai-openai';
 
@@ -32,6 +37,45 @@ export function createAdapterForModel(
 		default:
 			return entry satisfies never;
 	}
+}
+
+/**
+ * Structurally `@epicenter/workspace/ai`'s `ChatStream`, the one contract every
+ * inference backend speaks. Inlined so this leaf does not depend on the
+ * workspace core for a function signature, the same decoupling
+ * `@epicenter/client`'s `createEpicenterProviderChatStream` makes.
+ */
+type ChatStream = (
+	messages: ModelMessage[],
+	signal: AbortSignal,
+) => AsyncIterable<StreamChunk>;
+
+/**
+ * Drive a constructed text adapter as a {@link ChatStream}: the BYOK inference
+ * backend (ADR-0038's `byok` arm). Pair it with {@link createAdapterForModel}:
+ * the catalog gives the provider, that builds the adapter from a key, and this
+ * turns the adapter into the stream the answer loop consumes.
+ *
+ * The answer loop hands an `AbortSignal`; `chat()` cancels on an
+ * `AbortController`, so the signal is bridged onto one (forwarded if already
+ * aborted, else once on the first abort). The metered backend
+ * (`createEpicenterProviderChatStream`) and the daemon's placeholder are its
+ * siblings; this is the adapter arm, named once so every SDK-driven host (the
+ * zhongwen daemon today) shares one builder instead of re-bridging the signal.
+ */
+export function chatStreamFromAdapter(
+	adapter: AnyTextAdapter,
+	systemPrompts: string[],
+): ChatStream {
+	return (messages, signal) => {
+		const abortController = new AbortController();
+		if (signal.aborted) abortController.abort();
+		else
+			signal.addEventListener('abort', () => abortController.abort(), {
+				once: true,
+			});
+		return chat({ adapter, messages, systemPrompts, abortController });
+	};
 }
 
 /**

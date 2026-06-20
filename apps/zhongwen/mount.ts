@@ -34,6 +34,7 @@
  */
 
 import {
+	chatStreamFromAdapter,
 	createAdapterForModel,
 	HOUSE_KEY_ENV_VAR,
 } from '@epicenter/ai-adapters';
@@ -41,12 +42,7 @@ import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
 import type { AgentId } from '@epicenter/workspace';
 import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
-import {
-	chat,
-	EventType,
-	type ModelMessage,
-	type StreamChunk,
-} from '@tanstack/ai';
+import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { createLogger } from 'wellcrafted/logger';
 import {
 	ZHONGWEN_MODEL,
@@ -121,20 +117,7 @@ function resolveChatStream(): ChatStream {
 		return fakeChatStream;
 	}
 	const adapter = createAdapterForModel(ZHONGWEN_MODEL, apiKey);
-	return (messages, signal) => {
-		const abortController = new AbortController();
-		if (signal.aborted) abortController.abort();
-		else
-			signal.addEventListener('abort', () => abortController.abort(), {
-				once: true,
-			});
-		return chat({
-			adapter,
-			messages,
-			systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-			abortController,
-		});
-	};
+	return chatStreamFromAdapter(adapter, [ZHONGWEN_SYSTEM_PROMPT]);
 }
 
 /**

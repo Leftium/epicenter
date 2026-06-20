@@ -7,21 +7,21 @@
 		type ConversationId,
 		DEFAULT_AGENT_ID,
 		generateConversationId,
-	} from '@epicenter/zhongwen';
+	} from '@epicenter/vocab';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { requireZhongwen } from '$lib/session';
+	import { requireVocab } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import ConversationView from './components/ConversationView.svelte';
-	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
+	import VocabSidebar from './components/VocabSidebar.svelte';
 
-	const zhongwen = requireZhongwen();
-	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
-	const conversationsMap = fromTable(zhongwen.tables.conversations);
+	const vocab = requireVocab();
+	const showPinyin = fromKv(vocab.kv, 'showPinyin');
+	const conversationsMap = fromTable(vocab.tables.conversations);
 
 	/**
 	 * Read the current table map directly. Startup and delete paths call this
@@ -40,14 +40,14 @@
 	/**
 	 * Write only the cheap list row, bound to `agent` for life (ADR-0025). The
 	 * transcript child doc is opened lazily by `ConversationView`, keyed by the row
-	 * id. The model is an app constant (`ZHONGWEN_MODEL`), so it is not stored per
+	 * id. The model is an app constant (`VOCAB_MODEL`), so it is not stored per
 	 * conversation. This is the one place a conversation's `agent` is written;
 	 * switching agents later is a fork, never a rewrite here.
 	 */
 	function createConversationRow(agent: AgentId): ConversationId {
 		const id = generateConversationId();
 		const timestamp = InstantString.now();
-		zhongwen.tables.conversations.set({
+		vocab.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			createdAt: timestamp,
@@ -77,20 +77,20 @@
 
 	function deleteConversation(conversationId: ConversationId) {
 		const wasActive = activeConversationId === conversationId;
-		zhongwen.tables.conversations.delete(conversationId);
+		vocab.tables.conversations.delete(conversationId);
 		if (wasActive) {
 			activeConversationId = ensureDefaultConversation(conversationId);
 		}
 	}
 
-	const unobserveConversations = zhongwen.tables.conversations.observe(() => {
+	const unobserveConversations = vocab.tables.conversations.observe(() => {
 		if (activeConversationId && !conversationsMap.has(activeConversationId)) {
 			activeConversationId = ensureDefaultConversation();
 		}
 	});
 
 	let isDestroyed = false;
-	void zhongwen.idb.whenLoaded.then(() => {
+	void vocab.idb.whenLoaded.then(() => {
 		if (!isDestroyed) {
 			activeConversationId ??= ensureDefaultConversation();
 		}
@@ -110,11 +110,11 @@
 		confirmationDialog.open({
 			title: 'Forget this device?',
 			description:
-				'This deletes local Zhongwen data on this device. Account data on the server stays in your account.',
+				'This deletes local Vocab data on this device. Account data on the server stays in your account.',
 			confirm: { text: 'Forget device', variant: 'destructive' },
 			onConfirm: async () => {
 				try {
-					await zhongwen.wipe();
+					await vocab.wipe();
 					await auth.signOut();
 				} catch (error) {
 					toast.error('Failed to forget this device', {
@@ -127,7 +127,7 @@
 </script>
 
 <Sidebar.Provider>
-	<ZhongwenSidebar
+	<VocabSidebar
 		{conversations}
 		{activeConversationId}
 		onCreate={createConversation}
@@ -139,7 +139,7 @@
 		<header class="flex items-center justify-between border-b px-4 py-3">
 			<div class="flex items-center gap-3">
 				<Sidebar.Trigger />
-				<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
+				<h1 class="text-lg font-semibold">中文 Vocab</h1>
 			</div>
 
 			<div class="flex items-center gap-2">

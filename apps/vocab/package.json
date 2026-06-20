@@ -1,12 +1,12 @@
 {
-	"name": "@epicenter/zhongwen",
+	"name": "@epicenter/vocab",
 	"description": "Bilingual Chinese-English chat app for learning Mandarin",
 	"private": true,
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./zhongwen.ts",
-		"./browser": "./zhongwen.browser.ts",
+		".": "./vocab.ts",
+		"./browser": "./vocab.browser.ts",
 		"./engine": "./epicenter-engine.ts",
 		"./mount": "./mount.ts"
 	},

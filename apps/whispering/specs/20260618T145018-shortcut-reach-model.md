@@ -282,8 +282,8 @@ The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`,
 
 ### Phase 3: Run both backends on desktop (Build)
 
-- [ ] **3.1** Split `#platform/shortcuts` (the pick-one seam) into a universal focused module that populates the matcher registry on every platform and a Tauri-only system seam; have desktop run both. (Precondition: Phase 1.2, so desktop's focused store does not double-bind recording.)
-- [ ] **3.2** Add the first focused nav command (`openSettings` -> `Cmd+,`, via `goto('/settings')`); confirm `Cmd+,` does not register globally on desktop (reach ceiling clamps it).
+- [x] **3.1** DONE (commit `425e7af9b`). Split `#platform/shortcuts` (the pick-one seam) into the universal `focusedShortcuts` (populates the matcher registry on every platform) and the Tauri-only `#platform/system-shortcuts` (`null` on web); `shortcuts.ts` is the live reach-router that runs both. Desktop now syncs the in-app matcher and the rdev/plugin tier together. The old seam is deleted.
+- [x] **3.2** DONE. Added `openSettings` to the catalog (`reach: 'focused'`, category `Navigation`, `run: () => goto('/settings')`), with the focused default `meta+,` in `definition.ts` and an always-null `shortcuts.global.openSettings` slot in device-config (so the system backend's all-commands sync stays type-total). The reach ceiling clamps the Cmd+, chord to focused, so it never registers globally. Desktop smoke verification (Cmd+, opens settings in-app, no global registration) pending.
 
 ### Phase 4: Settings UI (Build)
 

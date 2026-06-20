@@ -95,7 +95,10 @@ impl Recorder {
         let devices = host
             .input_devices()
             .map_err(|e| RecorderError::classify_cpal("Failed to get input devices", e))?
-            .map(|device| device.to_string())
+            // A device names itself via `description()`. Skip any that can't
+            // describe themselves rather than letting `Display`/`to_string()`
+            // panic on the underlying description failure.
+            .filter_map(|device| device.description().ok().map(|d| d.name().to_string()))
             .collect();
 
         Ok(devices)
@@ -144,7 +147,7 @@ impl Recorder {
             // share a thread.
             let stream = match build_input_stream(
                 &device,
-                &stream_config,
+                stream_config,
                 sample_format,
                 device_channels,
                 sample_tx,
@@ -372,8 +375,10 @@ fn find_device(host: &cpal::Host, device_name: &str) -> Result<Device> {
         .map_err(|e| RecorderError::classify_cpal("Failed to list input devices", e))?
         .collect();
     for device in devices {
-        if device.to_string() == device_name {
-            return Ok(device);
+        if let Ok(desc) = device.description() {
+            if desc.name() == device_name {
+                return Ok(device);
+            }
         }
     }
     Err(RecorderError::no_input_device(format!(
@@ -396,11 +401,12 @@ fn get_optimal_config(
     // record from it," so both classify as NoInputDevice ("connect a microphone")
     // rather than a generic Failed the user can't act on.
     //
-    // On macOS (cpal 0.16) the error case is *always* BackendSpecific, never the
-    // typed DeviceNotAvailable, so classify_cpal alone would mislabel a vanished
-    // mic as Failed. Collapse that fallback to NoInputDevice here, while still
-    // surfacing a permission denial if cpal reported one in the description
-    // (Windows WASAPI E_ACCESSDENIED).
+    // A query error here means the device can't describe how to record from it,
+    // which for the user is indistinguishable from "no mic," so collapse it to
+    // NoInputDevice. cpal 0.18 types a true denial as PermissionDenied and often
+    // routes a vanished-mic config query to a generic kind (macOS sends the
+    // OSStatus failure to BackendError), so only a Failed is remapped; a
+    // PermissionDenied passes through untouched.
     let configs: Vec<_> = device
         .supported_input_configs()
         .map_err(
@@ -488,7 +494,7 @@ fn get_optimal_config(
 /// everything else.
 fn build_input_stream(
     device: &Device,
-    config: &cpal::StreamConfig,
+    config: cpal::StreamConfig,
     sample_format: SampleFormat,
     channels: u16,
     sample_tx: mpsc::Sender<Vec<f32>>,
@@ -499,7 +505,7 @@ fn build_input_stream(
     let stream = match sample_format {
         SampleFormat::F32 => device
             .build_input_stream(
-                *config,
+                config,
                 move |data: &[f32], _: &_| {
                     let _ = sample_tx.send(downmix_f32(data, n_channels));
                 },
@@ -509,7 +515,7 @@ fn build_input_stream(
             .map_err(|e| RecorderError::classify_cpal("Failed to build F32 stream", e))?,
         SampleFormat::I16 => device
             .build_input_stream(
-                *config,
+                config,
                 move |data: &[i16], _: &_| {
                     let _ = sample_tx.send(downmix_i16(data, n_channels));
                 },
@@ -519,7 +525,7 @@ fn build_input_stream(
             .map_err(|e| RecorderError::classify_cpal("Failed to build I16 stream", e))?,
         SampleFormat::U16 => device
             .build_input_stream(
-                *config,
+                config,
                 move |data: &[u16], _: &_| {
                     let _ = sample_tx.send(downmix_u16(data, n_channels));
                 },

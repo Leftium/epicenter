@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	// Single source of the macOS Accessibility remove/re-add instructions: a
 	// screen recording plus the written steps, embedded in the global
 	// `MacosAccessibilityGuideDialog`. Kept as one component so any surface can
@@ -13,7 +15,7 @@
 		'https://github.com/EpicenterHQ/epicenter/releases/download/_assets/macos_enable_accessibility.mp4';
 </script>
 
-<div class="flex flex-col gap-4">
+<div class="flex flex-col gap-5">
 	<video
 		class="bg-muted aspect-video w-full rounded-lg border object-cover"
 		src={GUIDE_VIDEO_URL}
@@ -28,25 +30,51 @@
 			Video guide not available. Please follow the written instructions below.
 		</p>
 	</video>
-	<ol
-		class="text-muted-foreground list-inside list-decimal space-y-2 text-sm"
-	>
-		<li>
-			Go to
-			<span class="text-primary font-semibold tracking-tight">
-				System Settings > Privacy & Security > Accessibility
-			</span>.
-		</li>
-		<li>
-			Click on
-			<span class="text-primary font-semibold tracking-tight">Whispering</span>
-			and remove it using the minus icon (-).
-		</li>
-		<li>
-			Re-add Whispering by pressing the plus icon (+) and selecting
-			<span class="text-primary font-semibold tracking-tight"
-				>Whispering.app</span
-			>.
-		</li>
+	<ol class="flex flex-col gap-3">
+		{#snippet step(number: number, body: Snippet)}
+			<li class="flex items-start gap-3">
+				<span
+					class="bg-muted text-foreground mt-px flex size-5 shrink-0 items-center justify-center rounded-full border text-xs font-medium tabular-nums"
+					aria-hidden="true"
+				>
+					{number}
+				</span>
+				<span class="text-muted-foreground text-sm leading-relaxed">
+					{@render body()}
+				</span>
+			</li>
+		{/snippet}
+
+		{@render step(1, goToAccessibility)}
+		{@render step(2, removeWhispering)}
+		{@render step(3, readdWhispering)}
 	</ol>
 </div>
+
+{#snippet term(text: string)}
+	<span class="text-foreground font-medium">{text}</span>
+{/snippet}
+
+{#snippet key(symbol: string)}
+	<kbd
+		class="bg-background text-foreground inline-flex h-5 min-w-5 items-center justify-center rounded border px-1 align-text-bottom font-mono text-xs"
+	>
+		{symbol}
+	</kbd>
+{/snippet}
+
+{#snippet goToAccessibility()}
+	Go to {@render term('System Settings > Privacy & Security > Accessibility')}.
+{/snippet}
+
+{#snippet removeWhispering()}
+	Click on {@render term('Whispering')} and remove it with the {@render key(
+		'−',
+	)} button.
+{/snippet}
+
+{#snippet readdWhispering()}
+	Press the {@render key('+')} button and re-add {@render term(
+		'Whispering.app',
+	)}.
+{/snippet}

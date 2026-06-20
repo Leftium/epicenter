@@ -112,10 +112,10 @@
 
 	// Resting state is a filled chip, not a bare icon, so the controls read as
 	// buttons at a glance in the small pill. Each control composes its own tone over
-	// this shared base. Per-property durations: colors glide at 150ms, the press
-	// scale snaps at 100ms.
+	// this shared base, which carries the hover/press feedback: background and
+	// press-scale glide together at 150ms.
 	const actionBase =
-		'flex size-6 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white/92 [transition:background-color_150ms_ease-out,color_150ms_ease-out,transform_100ms_ease-out] hover:scale-[1.08] active:scale-95';
+		'flex size-6 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white/90 transition duration-150 ease-out hover:scale-[1.08] active:scale-95';
 
 	function handleStop(event: MouseEvent) {
 		// Don't let a button click bubble to the pill's focus-main handler:
@@ -144,12 +144,12 @@
 			// state is a snug chip with no dead space leaving the meter off-center. The
 			// mount centers a fixed 40px-tall, up-to-184px-wide pill; max-w-[184px] caps
 			// it to that window so a long failed reason ellipsizes rather than overflowing.
-			'box-border flex h-10 w-fit max-w-[184px] items-center gap-2 rounded-full px-2.5 text-white/92 shadow-[0_6px_20px_rgba(0,0,0,0.35)] backdrop-blur-[12px] select-none',
+			'box-border flex h-10 w-fit max-w-[184px] items-center gap-2 rounded-full px-2.5 text-white/90 shadow-[0_6px_20px_rgba(0,0,0,0.35)] backdrop-blur-md select-none',
 			// Failed: a red chip so the failure reads at a glance, with the terse reason
 			// in the label. No action: detail and retry live on the recordings row.
 			chip?.tone === 'failed'
-				? 'border border-red-500/55 bg-[#3c1216]/92'
-				: 'border border-white/8 bg-[#0f0f11]/82',
+				? 'border border-red-500/55 bg-[#3c1216]/90'
+				: 'border border-white/10 bg-[#0f0f11]/80',
 			// Clickable only where it can reveal the main window: desktop, where onReveal
 			// is wired. On web the app window is already in front, so onReveal is omitted
 			// and the body shows no pointer or tooltip (the action buttons stop
@@ -160,7 +160,7 @@
 		onclick={onReveal}
 	>
 		{#if status.phase === 'recording'}
-			<div class="flex items-center text-white/85">
+			<div class="flex items-center text-white/80">
 				{#if isManual}
 					<MicIcon class="size-4" />
 				{:else}
@@ -177,7 +177,7 @@
 					     reacting to loudness. -->
 					<span
 						class={cn(
-							'w-[3px] rounded-full bg-white/85 transition-[height] duration-[80ms] ease-linear motion-reduce:transition-none',
+							'w-[3px] rounded-full bg-white/80 transition-[height] duration-[80ms] ease-linear motion-reduce:transition-none',
 							isSpeaking && 'bg-[#ffe5ee]',
 						)}
 						style="height: {barHeight(envelope)}px"
@@ -209,7 +209,7 @@
 				<!-- Stop is the primary action: a red chip so it reads as "stop recording". -->
 				<button
 					type="button"
-					class={cn(actionBase, 'bg-red-500/28 text-white hover:bg-red-500/50')}
+					class={cn(actionBase, 'bg-red-500/30 text-white hover:bg-red-500/50')}
 					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
 					title={isManual ? 'Stop recording' : 'Stop listening'}
 					onclick={handleStop}
@@ -219,7 +219,7 @@
 				{#if isManual}
 					<button
 						type="button"
-						class={cn(actionBase, 'hover:bg-[#faa2ca]/22 hover:text-[#ffd2e4]')}
+						class={cn(actionBase, 'hover:bg-[#faa2ca]/20 hover:text-[#ffd2e4]')}
 						aria-label="Cancel recording"
 						title="Cancel recording"
 						onclick={handleCancel}
@@ -235,7 +235,7 @@
 			{@const Icon = chip.Icon}
 			<div
 				class={cn(
-					'flex items-center text-white/85',
+					'flex items-center text-white/80',
 					// A clean delivery reads green; a reduced reach (clipboard/history)
 					// reads amber, "landed, but not where you asked" rather than a clean
 					// success; a failure reads red, paired with the red pill background.

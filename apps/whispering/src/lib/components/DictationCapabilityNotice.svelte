@@ -6,24 +6,38 @@
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { recordings } from '$lib/state/recordings.svelte';
 
 	// One declarative view over the dictation capability Rust owns, in three
-	// registers because the situations differ in kind, not just wording:
-	//   - broken: a stale grant left the global tap dead. A real FAULT, so an
-	//     outlined `role="alert"` banner with an amber glyph and a primary action.
-	//   - untrusted (first grant): never granted. An optional UPGRADE, not a wall —
-	//     dictation already works through the shortcut and clipboard. A faint muted
-	//     banner with an outline action, sitting quietly until you grant.
-	//   - unsupported (Wayland): a platform FACT, nothing to grant. A calm info
-	//     banner pointing at the mic that still works; no action.
-	// All three are one slim `Item` (icon · message · trailing action) at the same
-	// size, so the padding is uniform by construction. None is dismissable: each
+	// registers that differ in kind, not just wording:
+	//   - broken: a stale grant left the global tap dead. A real FAULT, so an amber
+	//     glyph, a `role="alert"`, and a primary action.
+	//   - untrusted (first grant): never granted. An optional UPGRADE, not a wall.
+	//     Dictation already works through the shortcut and clipboard, so the glyph
+	//     is calm and the action is a quiet outline button.
+	//   - unsupported (Wayland): a platform FACT, nothing to grant. An info glyph
+	//     pointing at the mic that still works; no action.
+	// All three share one slim outlined `Item` (icon · message · trailing action)
+	// at the same size, so backgrounds and padding stay uniform and only the glyph
+	// and the action carry the register. None is dismissable: each
 	// clears itself when the capability flips, and a quiet banner never needs
 	// hiding. The detailed steps live in the guide dialog the action opens. The
 	// branch order is load-bearing: `broken` is caught before the plain untrusted
 	// case (`needsAccessibility` covers both).
+	//
+	// The optional pitch waits for the first transcript. It is a pitch, not a
+	// problem, and "hold a key to talk" only means something once you have pressed
+	// once and watched a transcript land. Holding it back keeps a brand-new home
+	// clean and lets the pitch arrive when it is finally relevant. Derived from the
+	// recordings that already exist, so it costs no dismissal flag. Breakage and
+	// the Wayland limit are never gated: those are immediate.
+	const hasDictatedOnce = $derived(
+		recordings.sorted.some((r) => r.transcript.trim()),
+	);
 	const isFirstGrant = $derived(
-		dictationCapability.needsAccessibility && !dictationCapability.isStale,
+		dictationCapability.needsAccessibility &&
+			!dictationCapability.isStale &&
+			hasDictatedOnce,
 	);
 </script>
 
@@ -46,15 +60,14 @@
 		</Item.Actions>
 	</Item.Root>
 {:else if isFirstGrant}
-	<Item.Root variant="muted" size="sm" class="w-full">
+	<Item.Root variant="outline" size="sm" class="w-full">
 		<Item.Media>
 			<WandSparklesIcon class="size-4" aria-hidden="true" />
 		</Item.Media>
 		<Item.Content>
 			<Item.Title>Hold a key to talk, paste hands-free</Item.Title>
 			<Item.Description>
-				Optional upgrade — dictation already works through your shortcut and
-				clipboard.
+				Your shortcut already copies transcripts to your clipboard.
 			</Item.Description>
 		</Item.Content>
 		<Item.Actions>
@@ -68,7 +81,7 @@
 		</Item.Actions>
 	</Item.Root>
 {:else if dictationCapability.isUnsupported}
-	<Item.Root variant="muted" size="sm" class="w-full">
+	<Item.Root variant="outline" size="sm" class="w-full">
 		<Item.Media>
 			<InfoIcon class="size-4" aria-hidden="true" />
 		</Item.Media>

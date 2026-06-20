@@ -84,6 +84,11 @@ transcribe-rs = { version = "=0.3.8", features = ["whisper-vulkan", "ort-directm
 # `GetSessions()`; `Win32_System_Com` provides the `CoInitializeEx` the crate
 # does not call for us. See src/media/windows.rs.
 windows = { version = "0.62", features = ["Media_Control", "Foundation", "Foundation_Collections", "Win32_System_Com"] }
+# Reads the microphone privacy choice from the CapabilityAccessManager
+# ConsentStore registry keys. Windows exposes no programmatic mic-permission
+# API for an unpackaged desktop app, only this user-visible Allow/Deny, so the
+# proactive check in `command.rs` is a registry read. See `get_microphone_permission`.
+winreg = "0.55"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-metal", "onnx", "ort-coreml"] }

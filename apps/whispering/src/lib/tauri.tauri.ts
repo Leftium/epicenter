@@ -57,7 +57,6 @@ import { exit } from '@tauri-apps/plugin-process';
 import mime from 'mime';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { os } from '#platform/os';
 import { goto } from '$app/navigation';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
@@ -133,22 +132,19 @@ const PermissionsError = defineErrors({
 
 const permissions = {
 	accessibility: {
+		// Rust owns the platform dispatch (macOS prompts via the permissions
+		// plugin, elsewhere a no-op), so the FE just calls the command. The prompt
+		// cannot grant in place; the live grant is observed by the Rust tap
+		// supervisor, so the Result here only reports whether the nudge fired.
 		async request() {
-			if (!os.isApple) return Ok(true);
 			return tryAsync({
-				try: async () => {
-					const { requestAccessibilityPermission } = await import(
-						'tauri-plugin-macos-permissions-api'
-					);
-					return requestAccessibilityPermission();
-				},
+				try: () => commands.requestAccessibilityPermission(),
 				catch: (error) =>
 					PermissionsError.RequestAccessibility({ cause: error }),
 			});
 		},
 
 		async openSettings() {
-			if (!os.isApple) return Ok(undefined);
 			const { error } = await commands.openAccessibilitySettings();
 			if (error !== null) {
 				return PermissionsError.OpenAccessibilitySettings({ cause: error });
@@ -158,30 +154,29 @@ const permissions = {
 	},
 
 	microphone: {
+		// One transport for every platform: Rust owns "what does the OS say about
+		// mic access" (macOS via the permissions plugin, Windows via the consent
+		// store, `unknown` elsewhere). Only an explicit `denied` gates; `granted`
+		// and `unknown` both read as available, so a missing consent entry never
+		// newly blocks a setup that was recording fine, and the recorder's
+		// stream-open fallback still classifies any real denial.
 		async check() {
-			if (!os.isApple) return Ok(true);
 			return tryAsync({
-				try: async () => {
-					const { checkMicrophonePermission } = await import(
-						'tauri-plugin-macos-permissions-api'
-					);
-					return checkMicrophonePermission();
-				},
+				try: async () =>
+					(await commands.getMicrophonePermission()) !== 'denied',
 				catch: (error) => PermissionsError.CheckMicrophone({ cause: error }),
 			});
 		},
 
+		// Elicit a grant the way the platform allows (macOS prompt, Windows privacy
+		// page when denied); the caller re-checks afterward. No platform can grant
+		// in place, so this only reports whether the nudge itself succeeded.
 		async request() {
-			if (!os.isApple) return Ok(true);
-			return tryAsync({
-				try: async () => {
-					const { requestMicrophonePermission } = await import(
-						'tauri-plugin-macos-permissions-api'
-					);
-					return requestMicrophonePermission();
-				},
-				catch: (error) => PermissionsError.RequestMicrophone({ cause: error }),
-			});
+			const { error } = await commands.requestMicrophonePermission();
+			if (error !== null) {
+				return PermissionsError.RequestMicrophone({ cause: error });
+			}
+			return Ok(undefined);
 		},
 	},
 };

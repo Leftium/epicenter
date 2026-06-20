@@ -13,15 +13,21 @@
  *
  * The worker is parameterized by a `ChatStream`
  * (`startStream(messages, signal) => AsyncIterable<StreamChunk>`), the one
- * contract every inference backend speaks. The daemon builds the real one from
- * the same `chat()` call the hosted route makes ({@link resolveChatStream}): an
- * adapter for the configured `ZHONGWEN_MODEL` keyed on the matching provider key,
- * under the shared `ZHONGWEN_SYSTEM_PROMPT`. With no key it falls back to
- * {@link fakeChatStream},
- * a deterministic placeholder, and says so in the log: that fallback is the
- * explicit "real inference not wired on this host yet" boundary. The worker
- * itself observes -> answers -> streams -> finishes and honors the client's
- * durable cancel, all over hosted sync with no HTTP and no duplicate stream.
+ * contract every inference backend speaks. The daemon resolves which backend
+ * serves a turn as a priority chain over the backends it can satisfy
+ * ({@link resolveChatStream}, ADR-0038), not a hardcoded constant:
+ *
+ * ```txt
+ * byok(key)                if a local provider key is present (answer free)
+ * ?? metered(session)      else if opted in to the user's metered account
+ * ?? null                  else (host sync, do not answer)
+ * ```
+ *
+ * A `null` resolution means no real backend on this host: the daemon hosts the
+ * conversation's sync but writes nothing into it (there is no placeholder
+ * reply), leaving the turn for a configured answerer. The worker itself observes
+ * -> answers -> streams -> finishes and honors the client's durable cancel, all
+ * over hosted sync with no HTTP and no duplicate stream.
  *
  * Designation (R, ADR-0025) is the observe loop's concern, not this factory's:
  * the loop builds a worker only for conversations bound to this daemon's agent
@@ -34,19 +40,19 @@
  */
 
 import {
+	chatStreamFromAdapter,
 	createAdapterForModel,
 	HOUSE_KEY_ENV_VAR,
 } from '@epicenter/ai-adapters';
+import {
+	createAiChatFetch,
+	createEpicenterProviderChatStream,
+} from '@epicenter/client';
 import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
-import type { AgentId } from '@epicenter/workspace';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
+import type { AgentId, MountWorkerContext } from '@epicenter/workspace';
 import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
-import {
-	chat,
-	EventType,
-	type ModelMessage,
-	type StreamChunk,
-} from '@tanstack/ai';
 import { createLogger } from 'wellcrafted/logger';
 import {
 	ZHONGWEN_MODEL,
@@ -71,85 +77,109 @@ export type ZhongwenMountOptions = {
 };
 
 export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
-	// Resolve the inference backend once: the adapter is built a single time and
-	// the closure is shared across every hosted transcript.
-	const startStream = resolveChatStream();
+	// Resolve the backend once per mount, the first time a body opens: the
+	// session and base URL are identical for every hosted body, and the priority
+	// chain reads only the host's env and that session. `null` = no real backend
+	// on this host; the worker then hosts the transcript's sync but does not
+	// answer (it writes nothing, leaving the turn for a configured answerer).
+	let backend: { startStream: ChatStream | null } | undefined;
 	return zhongwenWorkspace.mount({
 		baseURL,
 		agentId,
 		runtime: nodeMountRuntime(),
 		workers: {
 			conversations: {
-				messages: ({ ydoc }) => attachChatWorker({ ydoc, startStream }),
+				messages: (ctx) => {
+					backend ??= { startStream: resolveChatStream(ctx) };
+					return backend.startStream
+						? attachChatWorker({
+								ydoc: ctx.ydoc,
+								startStream: backend.startStream,
+							})
+						: {};
+				},
 			},
 		},
 	});
 }
 
 /**
- * The daemon's inference backend as a {@link ChatStream}. The daemon answers as
- * whatever provider its `ZHONGWEN_MODEL` names: the catalog gives the provider,
- * and the matching house key (`OPENAI_API_KEY` / `GEMINI_API_KEY`) is read from
- * the environment. With that key set, this is real inference: an adapter (built
- * once via `createAdapterForModel`) driven by the same `chat()` call the hosted
- * route makes, under {@link ZHONGWEN_SYSTEM_PROMPT}. The worker hands a `signal`;
- * `chat()` cancels on an `AbortController`, so the signal is forwarded onto one.
- * With no key it returns the deterministic placeholder and logs that real
- * inference is not live on this host. Switching providers is a catalog + env-key
- * change, no code edit.
+ * Resolve the daemon's inference backend as ADR-0038's priority `??` chain over
+ * the three sibling `ChatStream` constructors, returning the first the host can
+ * satisfy or `null` when it can satisfy none:
+ *
+ *  - **byok**: a local provider key (`OPENAI_API_KEY` / `GEMINI_API_KEY`, the
+ *    catalog picks which) answers free, with no cloud round-trip. The only path
+ *    for an offline or self-hosted daemon, so it stays first.
+ *  - **metered**: answer on the user's metered Epicenter account through the same
+ *    `/api/ai/chat` SSE path the browser uses (`createEpicenterProviderChatStream`),
+ *    authenticated with the `AuthedFetch` the daemon already syncs with. Opt-in
+ *    only ({@link isMeteredEnabled}): spending credits is a deliberate choice,
+ *    symmetric with BYOK needing a key, so a keyless signed-in daemon never
+ *    silently bills the user.
+ *  - **neither**: host the conversation's sync but answer nothing. The daemon
+ *    writes no placeholder into a real, synced conversation; the turn stays
+ *    unanswered for a configured answerer (a keyed daemon, or an open browser tab
+ *    on the metered account).
+ *
+ * Switching the provider is a catalog + env-key change, no code edit. The
+ * `session` and `baseURL` are the mount environment the worker factory receives
+ * (ADR-0038's keystone): the credential the metered arm needs only exists once
+ * the mount is open, never at `zhongwen({...})` construction.
  */
-function resolveChatStream(): ChatStream {
-	// Key policy: the catalog gives the provider, and the provider -> house-key
-	// env var mapping is single-homed in `@epicenter/ai-adapters` (exhaustive, so
-	// a new provider is a compile error there, not a silent wrong key here).
-	// Construction is delegated to the same leaf.
+function resolveChatStream({
+	session,
+	baseURL,
+}: Pick<
+	MountWorkerContext<string, unknown>,
+	'session' | 'baseURL'
+>): ChatStream | null {
+	// The catalog gives the provider, and the provider -> house-key env var
+	// mapping is single-homed in `@epicenter/ai-adapters` (exhaustive, so a new
+	// provider is a compile error there, not a silent wrong key here).
 	const { provider } = MODELS_BY_ID[ZHONGWEN_MODEL];
 	const envVar = HOUSE_KEY_ENV_VAR[provider];
-	const apiKey = process.env[envVar];
-	if (!apiKey) {
+
+	const byok = (): ChatStream | null => {
+		const apiKey = process.env[envVar];
+		return apiKey
+			? chatStreamFromAdapter(createAdapterForModel(ZHONGWEN_MODEL, apiKey), [
+					ZHONGWEN_SYSTEM_PROMPT,
+				])
+			: null;
+	};
+
+	const metered = (): ChatStream | null =>
+		isMeteredEnabled()
+			? createEpicenterProviderChatStream({
+					fetch: createAiChatFetch(session.fetch),
+					url: API_ROUTES.ai.chat.url(baseURL),
+					data: () => ({
+						model: ZHONGWEN_MODEL,
+						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
+					}),
+				})
+			: null;
+
+	const hostWithoutAnswering = (): null => {
 		log.warn(
 			new Error(
-				`${envVar} is not set; the Zhongwen daemon answers with the placeholder stream (real inference is not live on this host).`,
+				`The Zhongwen daemon has no inference backend: ${envVar} is unset and ZHONGWEN_USE_METERED is off. It hosts conversation sync but does not answer. Set ${envVar} for local inference, or ZHONGWEN_USE_METERED=1 to answer on your metered Epicenter account.`,
 			),
 		);
-		return fakeChatStream;
-	}
-	const adapter = createAdapterForModel(ZHONGWEN_MODEL, apiKey);
-	return (messages, signal) => {
-		const abortController = new AbortController();
-		if (signal.aborted) abortController.abort();
-		else
-			signal.addEventListener('abort', () => abortController.abort(), {
-				once: true,
-			});
-		return chat({
-			adapter,
-			messages,
-			systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-			abortController,
-		});
+		return null;
 	};
+
+	return byok() ?? metered() ?? hostWithoutAnswering();
 }
 
 /**
- * A deterministic placeholder {@link ChatStream}: stream a fixed reply one
- * text-delta per word so the claim -> stream -> finish path is exercised end to
- * end without a provider. Used when the daemon has no provider key; real
- * inference is the same contract, so swapping it changes nothing downstream.
+ * Whether the daemon is opted in to answering on the user's metered Epicenter
+ * account. Off by default: a signed-in daemon must not silently spend credits,
+ * so the metered backend is reached only when `ZHONGWEN_USE_METERED` is set to
+ * `1` or `true`.
  */
-const fakeChatStream: ChatStream = async function* (
-	messages: ModelMessage[],
-): AsyncGenerator<StreamChunk> {
-	const userText = String(messages.at(-1)?.content ?? '');
-	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on worker; set the configured provider's API key for real inference.`;
-	for (const token of reply.match(/\S+\s*/g) ?? [reply]) {
-		yield {
-			type: EventType.TEXT_MESSAGE_CONTENT,
-			messageId: 'fake',
-			delta: token,
-		} as StreamChunk;
-		// Yield between tokens so each append is its own synced transaction and a
-		// teardown or cancel abort can land between them.
-		await Promise.resolve();
-	}
-};
+function isMeteredEnabled(): boolean {
+	const value = process.env.ZHONGWEN_USE_METERED;
+	return value === '1' || value === 'true';
+}

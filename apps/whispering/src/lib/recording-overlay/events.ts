@@ -52,7 +52,7 @@ export const FAILURE_LABEL = {
  * replacing it; an absent pip is the resting state. There is deliberately no
  * `delivered` pip (the landing text is the receipt) and no `failed` pip: a VAD
  * failure is not shown on the pill, it goes to the OS notification and the
- * recordings row (ADR-0029).
+ * recordings row (ADR-0039).
  */
 export type VadOutcomePip = 'transcribing';
 
@@ -84,7 +84,7 @@ export type RecordingOverlayStatus =
 /**
  * The control the user invoked from the overlay. `stop`/`cancel` act on a live
  * capture. There is no retry here: a failed dictation is retried from its
- * recordings row, not the pill (ADR-0029).
+ * recordings row, not the pill (ADR-0039).
  */
 export type RecordingOverlayAction = 'stop' | 'cancel';
 

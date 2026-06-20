@@ -200,7 +200,7 @@ export async function processRecordingPipeline({
  * on the pill (a reduced `clipboard` or `history` reach). A `history` reach logs
  * the underlying error for diagnostics, but the user's recovery is the transcript
  * in the recordings row, not a retry, so it is not a dictation failure and fires
- * no notification (ADR-0029).
+ * no notification (ADR-0039).
  */
 function markDictationDelivery(outcome: DeliveryOutcome): void {
 	if (outcome.reach === 'history') {

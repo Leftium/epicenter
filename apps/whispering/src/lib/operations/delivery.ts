@@ -40,7 +40,7 @@ const TRANSCRIPTION_SUCCESS_COPY = {
  * How far the text reached, relative to the user's configured output. Delivery
  * is a reduced-reach axis, not a pass/fail: the transcript is always saved to
  * history, so even the worst case (`history`) is a recoverable success, never a
- * dictation failure (ADR-0029). Delivery is an operation, not a notifier: it
+ * dictation failure (ADR-0039). Delivery is an operation, not a notifier: it
  * returns this so each caller presents it on its own surface (the dictation
  * pill, or a toast for file import and row actions).
  *

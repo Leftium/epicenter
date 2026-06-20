@@ -302,7 +302,7 @@ export async function stopVadRecording() {
 	resumePlaybackForVadEnd();
 	if (error) {
 		// Stop is an operation with no capture/outcome phase, so the pill cannot
-		// carry it: a failed disarm keeps a toast (ADR-0029's operation-condition
+		// carry it: a failed disarm keeps a toast (ADR-0039's operation-condition
 		// carve-out). The session may still be live, so the user must know it did
 		// not stop.
 		report.error({

@@ -8,7 +8,7 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
  * glances on the pill, and a VAD failure does not show there at all, so the
  * durable cross-app signal is the OS notification: every real failure fires it,
  * focused or not, because VAD runs unattended and shows nothing on the live pill
- * (ADR-0029). Detail and retry live on the recordings row, not here.
+ * (ADR-0039). Detail and retry live on the recordings row, not here.
  *
  * A reduced delivery reach is not a failure: the transcript is saved, so it never
  * reaches this projection. It surfaces on the pill instead (a `clipboard` or

@@ -1,4 +1,4 @@
-# 0029. Dictation feedback is a projection of one lifecycle state, not an event log
+# 0039. Dictation feedback is a projection of one lifecycle state, not an event log
 
 - **Status:** Accepted
 - **Date:** 2026-06-18

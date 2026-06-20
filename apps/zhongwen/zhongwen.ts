@@ -66,21 +66,25 @@ export type { AgentId };
 /**
  * One agent Zhongwen can bind a conversation to: its durable {@link AgentId},
  * a display `label` for the picker, the `model` it answers with, the action keys
- * it may call as tools (ADR-0021; none yet), and where its runtime lives.
+ * it may call as tools (ADR-0021; none yet), and the `owner` kind that writes its
+ * conversations.
  *
- * `runtime` is the routing fork the browser reads: a `'cloud'` agent is answered
- * in-process by the browser (the Epicenter provider sourcing tokens from the
- * metered `/api/ai/chat` stream); a `'daemon'` agent is an always-on resident
- * worker that answers over sync, so the browser stays out of the way (both
- * answering would answer one turn twice, the D3 hazard). The catalog is the one
- * place that fork is declared (ADR-0033).
+ * `owner` is the routing fork the browser reads, and it names who writes the
+ * transcript, not where tokens come from (ADR-0025). An `'ephemeral'` agent
+ * (`epicenter-cloud`) is owned by the open browser tab, which answers in-process
+ * and stops when it closes. A `'durable'` agent is an always-on resident daemon,
+ * which answers over sync and survives the tab closing, so the browser stays out
+ * of the way (both answering would answer one turn twice, the D3 hazard). The
+ * engine each writer uses (a local key, the user's metered account) is an
+ * orthogonal sub-choice it resolves for itself (ADR-0038), never a property of
+ * the owner. The catalog is the one place the owner fork is declared (ADR-0033).
  */
 export type AgentConfig = {
 	readonly id: AgentId;
 	readonly label: string;
 	readonly model: ServableModel;
 	readonly tools: readonly string[];
-	readonly runtime: 'cloud' | 'daemon';
+	readonly owner: 'ephemeral' | 'durable';
 };
 
 /**
@@ -101,14 +105,14 @@ export const ZHONGWEN_AGENTS = [
 		label: 'Epicenter Cloud',
 		model: ZHONGWEN_MODEL,
 		tools: [],
-		runtime: 'cloud',
+		owner: 'ephemeral',
 	},
 	{
 		id: asAgentId('zhongwen-home'),
 		label: 'Home daemon',
 		model: ZHONGWEN_MODEL,
 		tools: [],
-		runtime: 'daemon',
+		owner: 'durable',
 	},
 ] as const satisfies readonly AgentConfig[];
 
@@ -122,8 +126,8 @@ export const DEFAULT_AGENT_ID: AgentId = CLOUD_AGENT_ID;
 /**
  * The catalog entry for a bound `agent`, or `undefined` for an id no longer in
  * the catalog (a conversation bound before the agent was removed). Callers read
- * `runtime` to route: anything that is not a resident `'daemon'` the browser
- * answers in-process; a `'daemon'` agent is left to answer over sync.
+ * `owner` to route: an `'ephemeral'` agent the browser answers in-process; a
+ * `'durable'` agent is left to its resident daemon over sync.
  */
 export function agentConfig(id: AgentId): AgentConfig | undefined {
 	return ZHONGWEN_AGENTS.find((agent) => agent.id === id);

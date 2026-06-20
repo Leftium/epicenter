@@ -39,17 +39,18 @@
 		return zhongwen.tables.conversations.get(conversationId).data;
 	}
 
-	// Who answers this conversation? A daemon-runtime agent is a resident listener
+	// Who answers this conversation? A `'durable'`-owner agent is a resident daemon
 	// that answers ambiently over sync, so the browser stays out (answering too
-	// would double-answer one turn). Any other binding (the cloud agent) is
-	// answered in-process: the browser runs the same answerer the daemon does,
-	// sourcing tokens from the Epicenter provider (the metered /api/ai/chat SSE
-	// stream). The bound agent is immutable, so this never flips mid-conversation.
+	// would double-answer one turn). An `'ephemeral'`-owner binding (the cloud
+	// agent) is owned by this tab and answered in-process: the browser runs the
+	// same answerer the daemon does, sourcing tokens from the Epicenter provider
+	// (the metered /api/ai/chat SSE stream). The bound agent is immutable, so this
+	// never flips mid-conversation.
 	// ADR-0033: a conversation is a synced doc only an in-process peer writes.
 	// svelte-ignore state_referenced_locally
 	const boundAgent = readRow()?.agent;
 	const answer =
-		boundAgent !== undefined && agentConfig(boundAgent)?.runtime !== 'daemon'
+		boundAgent !== undefined && agentConfig(boundAgent)?.owner === 'ephemeral'
 			? createEpicenterProviderChatStream({
 					fetch: aiChatFetch,
 					url: API_ROUTES.ai.chat.url(APP_URLS.API),

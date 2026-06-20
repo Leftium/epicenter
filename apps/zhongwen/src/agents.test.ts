@@ -15,15 +15,15 @@ import { asAgentId } from '@epicenter/workspace';
 import type { ChatStream } from '@epicenter/workspace/ai';
 import {
 	agentConfig,
-	CLOUD_AGENT_ID,
 	DEFAULT_AGENT_ID,
 	resolveEngine,
+	THIS_DEVICE_AGENT_ID,
 	ZHONGWEN_AGENTS,
 } from '../zhongwen.js';
 
 describe('agent catalog', () => {
-	test('the cloud agent is ephemeral-owned so the browser answers it in-process', () => {
-		expect(agentConfig(CLOUD_AGENT_ID)?.owner).toBe('ephemeral');
+	test('the this-device agent is ephemeral-owned so the browser answers it in-process', () => {
+		expect(agentConfig(THIS_DEVICE_AGENT_ID)?.owner).toBe('ephemeral');
 	});
 
 	test('the default agent resolves to an ephemeral-owned agent (no daemon required)', () => {

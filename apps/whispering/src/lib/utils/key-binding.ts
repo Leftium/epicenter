@@ -9,6 +9,15 @@
 import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 
 /**
+ * How far a shortcut fires, ordered `focused < global`. The one reach scale,
+ * shared by a command's intrinsic ceiling, a key's capability, the platform, and
+ * the realized minimum of the three. There is no separate "system" word: a
+ * binding whose realized reach is `global` is the one that lives in the
+ * per-device store. See ADR-0041.
+ */
+export type Reach = 'focused' | 'global';
+
+/**
  * A binding for display/dedup purposes. Accepts both the IPC `KeyBinding`
  * (`keys: Key[]`) and the stored shape (`keys: string[]`, validated structurally
  * in device-config and by name in Rust), so the same helpers serve both.

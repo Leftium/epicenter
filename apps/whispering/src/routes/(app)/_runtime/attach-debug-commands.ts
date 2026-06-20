@@ -1,8 +1,8 @@
 import { goto } from '$app/navigation';
-import { commandCallbacks } from '$lib/commands';
+import { commandRunners } from '$lib/commands';
 
 export function attachDebugCommands() {
-	window.commands = commandCallbacks;
+	window.commands = commandRunners;
 	window.goto = goto;
 
 	return () => {};

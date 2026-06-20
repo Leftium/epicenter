@@ -12,7 +12,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
-	import { commandCallbacks } from '$lib/commands';
+	import { commandRunners } from '$lib/commands';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
@@ -266,7 +266,7 @@
 				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording and discard audio"
-						onclick={() => commandCallbacks.cancelRecording()}
+						onclick={() => commandRunners.cancelRecording()}
 						variant="ghost-destructive"
 						size="sm"
 					>

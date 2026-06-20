@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { commandCallbacks } from '$lib/commands';
+	import { commandRunners } from '$lib/commands';
 	import ImportFileButton from '$lib/components/ImportFileButton.svelte';
 	import {
 		CaptureSurfaceSelector,
@@ -43,7 +43,7 @@
 			{#if manualRecorder.state === 'RECORDING'}
 				<Button
 					tooltip="Cancel recording"
-					onclick={() => commandCallbacks.cancelRecording()}
+					onclick={() => commandRunners.cancelRecording()}
 					variant="ghost"
 					size="icon"
 				>
@@ -51,7 +51,7 @@
 				</Button>
 				<Button
 					tooltip="Stop recording"
-					onclick={() => commandCallbacks.toggleManualRecording()}
+					onclick={() => commandRunners.toggleManualRecording()}
 					variant="ghost"
 					size="icon"
 				>
@@ -69,7 +69,7 @@
 				<div class="flex">
 					<Button
 						tooltip="Start recording"
-						onclick={() => commandCallbacks.toggleManualRecording()}
+						onclick={() => commandRunners.toggleManualRecording()}
 						variant="ghost"
 						size="icon"
 						class="rounded-r-none border-r-0"
@@ -97,7 +97,7 @@
 				<div class="flex">
 					<Button
 						tooltip="Start voice activated recording"
-						onclick={() => commandCallbacks.toggleVadRecording()}
+						onclick={() => commandRunners.toggleVadRecording()}
 						variant="ghost"
 						size="icon"
 						class="rounded-r-none border-r-0"
@@ -114,7 +114,7 @@
 			{:else}
 				<Button
 					tooltip="Stop voice activated recording"
-					onclick={() => commandCallbacks.toggleVadRecording()}
+					onclick={() => commandRunners.toggleVadRecording()}
 					variant="ghost"
 					size="icon"
 				>

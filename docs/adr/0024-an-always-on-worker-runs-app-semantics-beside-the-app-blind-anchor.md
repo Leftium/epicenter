@@ -1,7 +1,8 @@
 # 0024. An always-on worker runs app semantics beside the app-blind anchor
 
-- **Status:** Proposed
+- **Status:** Proposed (load-bearing for [ADR-0041](0041-every-answerer-is-a-worker-the-browser-never-answers.md), 2026-06-20)
 - **Date:** 2026-06-16
+- **Note (2026-06-20):** ADR-0041 resolves the latent tension between this ADR and [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) in favor of the grid below: the "hosted anchor / hosted worker" quadrant is realized as the on-demand Epicenter-hosted answerer for the managed agent. The worker stays a separate app-aware spoke beside the app-blind anchor; it never fuses into the anchor/room DO.
 
 ## Context
 

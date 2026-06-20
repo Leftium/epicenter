@@ -1,7 +1,8 @@
 # 0025. Agent conversations are durable child docs driven by an observing worker
 
-- **Status:** Accepted (amended 2026-06-19)
+- **Status:** Accepted (amended 2026-06-19; amended 2026-06-20 by [ADR-0041](0041-every-answerer-is-a-worker-the-browser-never-answers.md))
 - **Date:** 2026-06-16
+- **Amendment (2026-06-20):** The **ephemeral writer** is removed. ADR-0041 makes every answerer a worker (Epicenter-hosted or a user daemon), so the open browser tab is no longer a writer of any kind, and the `epicenter-cloud` / `this-device` ephemeral binding dissolves into a *managed* (hosted-worker) agent. Every binding is now a **durable** writer distinguished only by trust location (managed vs the user's box). Everything else here stands: the immutable per-conversation agent binding, the unanswered turn as the work queue, existence-is-the-claim, the durable client-owned cancel, and approval as a durable doc record any device resolves.
 
 ## Context
 

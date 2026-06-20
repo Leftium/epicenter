@@ -38,9 +38,20 @@ shapes, see `docs/adr/`.
   through `ws.tables.X.docs.field.open(rowId)`. The workspace owns guid derivation.
 - **Worker**: running behavior that observes workspace state and writes results
   back. Workers may be local (every node runs them) or agent-bound (one
-  configured agent answers).
+  configured agent answers). Every conversation answer is written by a worker;
+  the browser never answers, it writes user turns and renders the synced doc
+  (ADR-0041).
 - **Agent**: the durable address a row or conversation binds to. An agent names
-  who should answer; the worker is the runtime that answers as it.
+  who should answer; the worker is the runtime that answers as it. Every agent
+  is durable, distinguished only by **trust location** (ADR-0030).
+- **Trust location**: where an agent's worker runs, and therefore where its data
+  goes. **Managed** = an Epicenter-hosted worker (the user chose Epicenter's
+  metered inference, so its prompt and transcript flow there). **Home daemon** =
+  the user's own always-on box (nothing leaves the house). Blindness is per-agent,
+  not global (ADR-0041).
+- **Answerer**: an in-process peer that observes a conversation child doc and
+  writes the reply into it. Always a worker (hosted or daemon); never the cloud
+  relay/anchor, which stays blind, and never the browser.
 - **Materializer**: a local, addressless worker that projects workspace data into
   another store (markdown, sqlite).
 - **`attach*` vs `create*`**: `attach*` are side-effectful primitives that register

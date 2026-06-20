@@ -42,11 +42,14 @@ branch order is load-bearing: `broken` is caught before the plain untrusted case
 			Accessibility, then add it back) usually fixes it. Until then, transcripts
 			go to your clipboard.
 		</Alert.Description>
-		<Alert.Action>
+		<!-- Same footer placement as the never-granted notice below: both are the
+		same kind of remediation card with the same action, so they share one
+		layout instead of one floating top-right and one at the bottom. -->
+		<div class="col-start-2 mt-3">
 			<Button size="sm" onclick={() => accessibilityGuide.open()}>
 				Show me how
 			</Button>
-		</Alert.Action>
+		</div>
 	</Alert.Root>
 {:else if dictationCapability.needsAccessibility}
 	<!-- macOS never granted (broken is handled above): an upgrade pitch, not a

@@ -1,17 +1,17 @@
 /**
  * Terse per-feature copy for the two Tier-1 features that sit behind the one
  * macOS Accessibility grant: Fn push-to-talk and paste-back. The home notice
- * (`DictationCapabilityNotice`) pitches both features together in a richer,
- * upgrade-flavored register; these strings are the short inline form for the
- * surfaces that annotate a single feature in place.
+ * (`DictationCapabilityNotice`) only teases these features in a one-line banner
+ * and defers the detail to the guide dialog; these strings are the short inline
+ * form for the settings surfaces that annotate a single feature in place.
  *
- * What earns the module is the shared `clipboardFallback` line: the home notice
- * (`DictationCapabilityNotice`) and the auto-paste annotation both render it, so
- * the "you don't lose anything" promise stays worded identically. The shortcut
- * recorder row reads `pushToTalk`; the auto-paste annotation reads `pasteBack`.
+ * The shortcut recorder row reads `pushToTalk`; the auto-paste annotation reads
+ * `pasteBack` followed by the shared `clipboardFallback` "you don't lose
+ * anything" line, kept here so that promise stays worded identically wherever a
+ * surface spells it out.
  */
 
-/** Shared closing line, matched to the home notice for consistency. */
+/** Shared closing line for surfaces that spell out the clipboard fallback. */
 export const clipboardFallback =
 	'Without it, transcripts still go to your clipboard.';
 

@@ -1,85 +1,83 @@
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
+	import * as Item from '@epicenter/ui/item';
+	import InfoIcon from '@lucide/svelte/icons/info';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
-	import { clipboardFallback } from '$lib/components/accessibility-feature-copy';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+
+	// One declarative view over the dictation capability Rust owns, in three
+	// registers because the situations differ in kind, not just wording:
+	//   - broken: a stale grant left the global tap dead. A real FAULT, so an
+	//     outlined `role="alert"` banner with an amber glyph and a primary action.
+	//   - untrusted (first grant): never granted. An optional UPGRADE, not a wall —
+	//     dictation already works through the shortcut and clipboard. A faint muted
+	//     banner with an outline action, sitting quietly until you grant.
+	//   - unsupported (Wayland): a platform FACT, nothing to grant. A calm info
+	//     banner pointing at the mic that still works; no action.
+	// All three are one slim `Item` (icon · message · trailing action) at the same
+	// size, so the padding is uniform by construction. None is dismissable: each
+	// clears itself when the capability flips, and a quiet banner never needs
+	// hiding. The detailed steps live in the guide dialog the action opens. The
+	// branch order is load-bearing: `broken` is caught before the plain untrusted
+	// case (`needsAccessibility` covers both).
+	const isFirstGrant = $derived(
+		dictationCapability.needsAccessibility && !dictationCapability.isStale,
+	);
 </script>
 
-<!-- One declarative view over the dictation capability Rust owns: the matching
-panel when the global tap cannot fire, nothing while it works (`active`) or is
-still seeding (`unknown`). Each state has its own remediation and only the
-capability owner can tell them apart, so we read the value, never infer it. The
-branch order is load-bearing: `broken` is caught before the plain untrusted case
-(`needsAccessibility` covers both), so the last branch is the never-granted pitch. -->
-{#if dictationCapability.isUnsupported}
-	<!-- Linux Wayland: the tap can never run, so there is nothing to grant.
-	Explain the limit, no settings button. -->
-	<Alert.Root class="w-full text-left">
-		<TriangleAlertIcon class="size-4" aria-hidden="true" />
-		<Alert.Title>Global shortcuts need an X11 session</Alert.Title>
-		<Alert.Description>
-			On Wayland, Whispering can't read your keyboard globally, so the recording
-			shortcut and paste-back stay off. Click the microphone to record, or switch
-			to an X11 session to use the shortcut. Either way, transcripts go to your
-			clipboard.
-		</Alert.Description>
-	</Alert.Root>
-{:else if dictationCapability.isStale}
-	<!-- macOS reports Whispering as trusted, but the global tap is not delivering
-	events. The common cause is a grant left stale by an app update, which a
-	remove-and-re-add fixes, so the guide leads. We do not assert that as the only
-	cause: the tap can also stall for reasons re-granting won't touch, so the copy
-	stays honest about what we know (it is not firing) and what usually helps. -->
-	<Alert.Root class="w-full text-left">
-		<TriangleAlertIcon class="size-4" aria-hidden="true" />
-		<Alert.Title>Your global shortcut isn't working</Alert.Title>
-		<Alert.Description>
-			Whispering appears to have macOS Accessibility, but your global shortcut and
-			paste-back aren't firing. Re-granting access (remove Whispering from
-			Accessibility, then add it back) usually fixes it. Until then, transcripts
-			go to your clipboard.
-		</Alert.Description>
-		<!-- Same footer placement as the never-granted notice below: both are the
-		same kind of remediation card with the same action, so they share one
-		layout instead of one floating top-right and one at the bottom. -->
-		<div class="col-start-2 mt-3">
+{#if dictationCapability.isStale}
+	<Item.Root variant="outline" size="sm" class="w-full" role="alert">
+		<Item.Media>
+			<TriangleAlertIcon class="text-warning size-4" aria-hidden="true" />
+		</Item.Media>
+		<Item.Content>
+			<Item.Title>Your global shortcut isn't firing</Item.Title>
+			<Item.Description>
+				Re-granting macOS Accessibility usually fixes it. Until then, transcripts
+				go to your clipboard.
+			</Item.Description>
+		</Item.Content>
+		<Item.Actions>
 			<Button size="sm" onclick={() => accessibilityGuide.open()}>
 				Show me how
 			</Button>
-		</div>
-	</Alert.Root>
-{:else if dictationCapability.needsAccessibility}
-	<!-- macOS never granted (broken is handled above): an upgrade pitch, not a
-	wall. Dictation already works through the keyboard shortcut and the clipboard;
-	this grant unlocks two ergonomics features. Open Settings, toggle on. -->
-	<Alert.Root class="w-full text-left">
-		<WandSparklesIcon class="size-4" aria-hidden="true" />
-		<Alert.Title>Hold a key to talk, paste hands-free</Alert.Title>
-		<Alert.Description class="space-y-2">
-			<p>
-				Dictation already works: your shortcut starts recording and the
-				transcript lands on your clipboard. Turn on Whispering in macOS
-				Accessibility to add two upgrades:
-			</p>
-			<ul class="list-disc space-y-1 pl-4">
-				<li>Hold a key to talk: press to record, release to stop.</li>
-				<li>Paste hands-free: transcripts land where you're typing.</li>
-			</ul>
-			<p>{clipboardFallback}</p>
-		</Alert.Description>
-		<!-- One CTA into the guide, which is the actual "how to add it" answer: it
-		walks the steps, carries the Open System Settings deep-link, and flips to
-		"granted" live. The notice doesn't deep-link itself, so a first-timer is
-		never dropped into System Settings without instructions. The button reads
-		after the pitch in a footer row aligned to the content column (`col-start-2`
-		clears the icon), so a longer label can never crowd the title. -->
-		<div class="col-start-2 mt-3">
-			<Button size="sm" onclick={() => accessibilityGuide.open()}>
+		</Item.Actions>
+	</Item.Root>
+{:else if isFirstGrant}
+	<Item.Root variant="muted" size="sm" class="w-full">
+		<Item.Media>
+			<WandSparklesIcon class="size-4" aria-hidden="true" />
+		</Item.Media>
+		<Item.Content>
+			<Item.Title>Hold a key to talk, paste hands-free</Item.Title>
+			<Item.Description>
+				Optional upgrade — dictation already works through your shortcut and
+				clipboard.
+			</Item.Description>
+		</Item.Content>
+		<Item.Actions>
+			<Button
+				size="sm"
+				variant="outline"
+				onclick={() => accessibilityGuide.open()}
+			>
 				Show me how
 			</Button>
-		</div>
-	</Alert.Root>
+		</Item.Actions>
+	</Item.Root>
+{:else if dictationCapability.isUnsupported}
+	<Item.Root variant="muted" size="sm" class="w-full">
+		<Item.Media>
+			<InfoIcon class="size-4" aria-hidden="true" />
+		</Item.Media>
+		<Item.Content>
+			<Item.Title>Global shortcuts need an X11 session</Item.Title>
+			<Item.Description>
+				On Wayland, Whispering can't tap your keyboard globally. Click the mic to
+				record instead.
+			</Item.Description>
+		</Item.Content>
+	</Item.Root>
 {/if}

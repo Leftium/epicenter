@@ -680,7 +680,8 @@ export type RecorderError =
 	| { name: 'PermissionDenied'; message: string }
 	/**
 	 *  No usable input device: none selected and no default, the named device
-	 *  is gone, or cpal reports the device unavailable mid-open.
+	 *  is gone, cpal reports the device unavailable mid-open, or the device
+	 *  yields no input configurations at all (query errors or returns empty).
 	 */
 	| { name: 'NoInputDevice'; message: string }
 	/**

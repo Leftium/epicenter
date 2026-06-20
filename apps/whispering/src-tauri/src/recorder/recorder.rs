@@ -393,13 +393,16 @@ fn get_optimal_config(
 ) -> Result<cpal::SupportedStreamConfig> {
     let target_sample_rate = preferred_sample_rate.unwrap_or(TARGET_RATE);
 
-    // A device that cannot report its input configs is unusable as an input.
-    // On macOS (cpal 0.16) this failure is *always* BackendSpecific, never the
+    // A device that yields no input configs is unusable as an input, whether the
+    // query *errors* or returns *empty*: both mean "this mic can't tell us how to
+    // record from it," so both classify as NoInputDevice ("connect a microphone")
+    // rather than a generic Failed the user can't act on.
+    //
+    // On macOS (cpal 0.16) the error case is *always* BackendSpecific, never the
     // typed DeviceNotAvailable, so classify_cpal alone would mislabel a vanished
-    // mic as a generic Failed (and the user would see a generic error instead of
-    // "connect a microphone"). Collapse that fallback to NoInputDevice here,
-    // while still surfacing a permission denial if cpal reported one in the
-    // description (Windows WASAPI E_ACCESSDENIED).
+    // mic as Failed. Collapse that fallback to NoInputDevice here, while still
+    // surfacing a permission denial if cpal reported one in the description
+    // (Windows WASAPI E_ACCESSDENIED).
     let configs: Vec<_> = device
         .supported_input_configs()
         .map_err(
@@ -410,7 +413,7 @@ fn get_optimal_config(
         )?
         .collect();
     if configs.is_empty() {
-        return Err(RecorderError::failed(
+        return Err(RecorderError::no_input_device(
             "No supported input configurations",
         ));
     }
@@ -466,7 +469,11 @@ fn get_optimal_config(
         }
     }
 
-    if best_config.is_none() {
+    // No mono config matched a rate window above; fall back to the first
+    // compatible config. `compatible_configs` is non-empty here (guarded
+    // earlier), so a config always exists: there is no "no suitable
+    // configuration" failure left to model.
+    Ok(best_config.unwrap_or_else(|| {
         let config = compatible_configs[0];
         let (min, max) = (config.min_sample_rate().0, config.max_sample_rate().0);
         let rate = if min <= target_sample_rate && max >= target_sample_rate {
@@ -474,10 +481,8 @@ fn get_optimal_config(
         } else {
             min
         };
-        best_config = Some(config.with_sample_rate(cpal::SampleRate(rate)));
-    }
-
-    best_config.ok_or_else(|| RecorderError::failed("Failed to find suitable audio configuration"))
+        config.with_sample_rate(cpal::SampleRate(rate))
+    }))
 }
 
 /// Build the cpal input stream. The callback's only job is to downmix to

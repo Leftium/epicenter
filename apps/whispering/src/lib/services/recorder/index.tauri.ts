@@ -242,12 +242,11 @@ function createCpalRecorder() {
 
 			const deviceIds = devices.map((d) => d.id);
 			const fallbackDeviceId = deviceIds.at(0);
+			// Empty device list: there is no microphone to fall back to, whether or
+			// not one was previously selected. Same condition, same recovery as a
+			// device that vanishes mid-open, so it surfaces the one NoInputDevice.
 			if (!fallbackDeviceId) {
-				return RecorderError.NoDevice({
-					message: selectedDeviceId
-						? "We couldn't find the selected microphone. Make sure it's connected and try again!"
-						: "We couldn't find any microphones. Make sure they're connected and try again!",
-				});
+				return RecorderError.NoInputDevice();
 			}
 
 			const deviceOutcome: DeviceAcquisitionOutcome = (() => {

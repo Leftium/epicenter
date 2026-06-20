@@ -28,7 +28,8 @@ pub enum RecorderError {
     PermissionDenied { message: String },
 
     /// No usable input device: none selected and no default, the named device
-    /// is gone, or cpal reports the device unavailable mid-open.
+    /// is gone, cpal reports the device unavailable mid-open, or the device
+    /// yields no input configurations at all (query errors or returns empty).
     #[error("{message}")]
     NoInputDevice { message: String },
 

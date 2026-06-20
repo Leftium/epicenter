@@ -12,9 +12,9 @@
  *
  * A TanStack cloud adapter (`chat({ adapter, messages })`) and a local backend
  * (Ollama / llama.cpp / MLX) look identical to this loop, so swapping the
- * provider is one argument, not a rewrite. The deterministic placeholder reply
- * Zhongwen ships in V0 is just one injected `ChatStream`; the test suite injects
- * its own fixtures the same way.
+ * provider is one argument, not a rewrite. The daemon resolves which backend
+ * fills it as a priority chain (ADR-0038); the test suite injects its own
+ * fixtures the same way.
  *
  * The loop:
  *

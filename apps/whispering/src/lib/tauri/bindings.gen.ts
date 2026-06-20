@@ -39,17 +39,19 @@ export const commands = {
 	simulateCopyKeystroke: () =>
 		typedError<null, string>(__TAURI_INVOKE('simulate_copy_keystroke')),
 	getCurrentRecordingId: () =>
-		typedError<string | null, string>(
+		typedError<string | null, RecorderError>(
 			__TAURI_INVOKE('get_current_recording_id'),
 		),
 	enumerateRecordingDevices: () =>
-		typedError<string[], string>(__TAURI_INVOKE('enumerate_recording_devices')),
+		typedError<string[], RecorderError>(
+			__TAURI_INVOKE('enumerate_recording_devices'),
+		),
 	initRecordingSession: (
 		deviceIdentifier: string,
 		recordingId: string,
 		sampleRate: number | null,
 	) =>
-		typedError<null, string>(
+		typedError<null, RecorderError>(
 			__TAURI_INVOKE('init_recording_session', {
 				deviceIdentifier,
 				recordingId,
@@ -57,9 +59,9 @@ export const commands = {
 			}),
 		),
 	closeRecordingSession: () =>
-		typedError<null, string>(__TAURI_INVOKE('close_recording_session')),
+		typedError<null, RecorderError>(__TAURI_INVOKE('close_recording_session')),
 	startRecording: () =>
-		typedError<null, string>(__TAURI_INVOKE('start_recording')),
+		typedError<null, RecorderError>(__TAURI_INVOKE('start_recording')),
 	/**
 	 *  Stop the recorder, write the canonical WAV artifact to
 	 *  `<appDataDir>/recordings/{id}.wav`, return the small JSON handle.
@@ -69,9 +71,11 @@ export const commands = {
 	 *  and `delete_recording_artifacts`).
 	 */
 	stopRecording: () =>
-		typedError<RecordingArtifact, string>(__TAURI_INVOKE('stop_recording')),
+		typedError<RecordingArtifact, RecorderError>(
+			__TAURI_INVOKE('stop_recording'),
+		),
 	cancelRecording: () =>
-		typedError<null, string>(__TAURI_INVOKE('cancel_recording')),
+		typedError<null, RecorderError>(__TAURI_INVOKE('cancel_recording')),
 	/**
 	 *  Delete recording artifacts by id.
 	 *
@@ -81,7 +85,7 @@ export const commands = {
 	 *  arbitrary files. Missing artifacts are ignored to keep cleanup retryable.
 	 */
 	deleteRecordingArtifacts: (recordingIds: string[]) =>
-		typedError<number, string>(
+		typedError<number, RecorderError>(
 			__TAURI_INVOKE('delete_recording_artifacts', { recordingIds }),
 		),
 	/**
@@ -92,7 +96,9 @@ export const commands = {
 	 *  deletion and transcription lookup.
 	 */
 	clearRecordingArtifacts: () =>
-		typedError<number, string>(__TAURI_INVOKE('clear_recording_artifacts')),
+		typedError<number, RecorderError>(
+			__TAURI_INVOKE('clear_recording_artifacts'),
+		),
 	/**
 	 *  Canonical transcribe-by-id path. Resolves the audio file under
 	 *  `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
@@ -251,8 +257,7 @@ export const commands = {
 	 *  never *start* playback: only sessions observed playing are touched, and the
 	 *  dedicated pause command (never a play/pause toggle) is sent.
 	 */
-	pausePlayback: () =>
-		typedError<string[], string>(__TAURI_INVOKE('pause_playback')),
+	pausePlayback: () => __TAURI_INVOKE<string[]>('pause_playback'),
 	/**
 	 *  Resume the sessions named by `sessions`, which must be tokens returned by a
 	 *  prior `pause_playback`. A session that vanished, was already resumed by the
@@ -260,7 +265,7 @@ export const commands = {
 	 *  *play* to a session we personally paused.
 	 */
 	resumePlayback: (sessions: string[]) =>
-		typedError<null, string>(__TAURI_INVOKE('resume_playback', { sessions })),
+		__TAURI_INVOKE<void>('resume_playback', { sessions }),
 	/**
 	 *  Replace the full set of registered global shortcuts. The FE computes the
 	 *  complete list from device-config and pushes it on startup and on every
@@ -666,6 +671,25 @@ export type ModelStatus =
  *  global-shortcut plugin could never express.
  */
 export type Modifier = 'ctrl' | 'alt' | 'shift' | 'meta' | 'fn';
+
+export type RecorderError =
+	/**
+	 *  The OS refused microphone access. The frontend checks microphone
+	 *  permission before recording, so this is the stream-open fallback for a
+	 *  denial that slips past that gate (e.g. a declined first-run prompt).
+	 */
+	| { name: 'PermissionDenied'; message: string }
+	/**
+	 *  No usable input device: none selected and no default, the named device
+	 *  is gone, cpal reports the device unavailable mid-open, or the device
+	 *  yields no input configurations at all (query errors or returns empty).
+	 */
+	| { name: 'NoInputDevice'; message: string }
+	/**
+	 *  Any other recording failure (device config, stream build, filesystem,
+	 *  session lifecycle, internal). The frontend does not branch on these.
+	 */
+	| { name: 'Failed'; message: string };
 
 /**
  *  Serializable handle returned to the JS side. The id is the lookup key

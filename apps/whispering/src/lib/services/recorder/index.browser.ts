@@ -8,7 +8,7 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '$lib/services/device-stream';
-import { categorizeRecorderError } from './categorize-error';
+import { categorizeBrowserStreamError } from './categorize-error';
 import type {
 	NavigatorRecordingParams,
 	RecorderService,
@@ -136,7 +136,7 @@ function createNavigatorRecorder() {
 				await getRecordingStream({ selectedDeviceId });
 			if (acquireStreamError) {
 				return (
-					categorizeRecorderError(acquireStreamError) ??
+					categorizeBrowserStreamError(acquireStreamError) ??
 					RecorderError.StreamAcquisition({ cause: acquireStreamError })
 				);
 			}

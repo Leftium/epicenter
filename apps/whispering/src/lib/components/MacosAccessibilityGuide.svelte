@@ -13,22 +13,23 @@
 		'https://github.com/EpicenterHQ/epicenter/releases/download/_assets/macos_enable_accessibility.mp4';
 </script>
 
-<div class="flex flex-col items-center gap-2">
+<div class="flex flex-col gap-4">
 	<video
-		class="max-w-md rounded-lg border"
+		class="bg-muted aspect-video w-full rounded-lg border object-cover"
 		src={GUIDE_VIDEO_URL}
 		aria-label="macOS Accessibility walkthrough"
 		loop
 		controls
 		muted
 		playsinline
+		autoplay
 	>
 		<p class="text-muted-foreground text-sm">
 			Video guide not available. Please follow the written instructions below.
 		</p>
 	</video>
 	<ol
-		class="text-muted-foreground list-inside list-decimal space-y-1 text-sm leading-7"
+		class="text-muted-foreground list-inside list-decimal space-y-2 text-sm"
 	>
 		<li>
 			Go to

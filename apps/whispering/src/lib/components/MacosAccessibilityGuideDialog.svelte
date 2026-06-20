@@ -82,7 +82,7 @@
 </script>
 
 <Dialog.Root bind:open={accessibilityGuide.isOpen}>
-	<Dialog.Content class="sm:max-w-2xl">
+	<Dialog.Content class="sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Enable Accessibility</Dialog.Title>
 			<Dialog.Description>

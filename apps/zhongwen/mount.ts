@@ -33,7 +33,10 @@
  * answered twice.
  */
 
-import { createAdapterForModel } from '@epicenter/ai-adapters';
+import {
+	createAdapterForModel,
+	HOUSE_KEY_ENV_VAR,
+} from '@epicenter/ai-adapters';
 import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
 import type { AgentId } from '@epicenter/workspace';
 import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
@@ -96,21 +99,12 @@ export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
  * change, no code edit.
  */
 function resolveChatStream(): ChatStream {
-	// Key policy: the catalog gives the provider, the provider picks its house-key
-	// env var (exhaustive, so a new provider is a compile error here, not a silent
-	// wrong key). Construction is delegated to `@epicenter/ai-adapters`.
+	// Key policy: the catalog gives the provider, and the provider -> house-key
+	// env var mapping is single-homed in `@epicenter/ai-adapters` (exhaustive, so
+	// a new provider is a compile error there, not a silent wrong key here).
+	// Construction is delegated to the same leaf.
 	const { provider } = MODELS_BY_ID[ZHONGWEN_MODEL];
-	let envVar: 'OPENAI_API_KEY' | 'GEMINI_API_KEY';
-	switch (provider) {
-		case 'openai':
-			envVar = 'OPENAI_API_KEY';
-			break;
-		case 'gemini':
-			envVar = 'GEMINI_API_KEY';
-			break;
-		default:
-			return provider satisfies never;
-	}
+	const envVar = HOUSE_KEY_ENV_VAR[provider];
 	const apiKey = process.env[envVar];
 	if (!apiKey) {
 		log.warn(

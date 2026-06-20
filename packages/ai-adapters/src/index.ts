@@ -1,4 +1,5 @@
 import {
+	type AiProvider,
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
@@ -32,3 +33,18 @@ export function createAdapterForModel(
 			return entry satisfies never;
 	}
 }
+
+/**
+ * The deployment env var that holds each provider's house key, in one place.
+ * Both house-key consumers (`resolveAdapter` in `@epicenter/server` and the
+ * zhongwen daemon's `resolveChatStream`) read this rather than re-deriving the
+ * name, so the provider -> env-var fact is single-homed. `satisfies Record<…>`
+ * keeps it exhaustive: a new provider that lacks an entry is a compile error.
+ *
+ * It lives in this server/daemon-only leaf, not the browser-facing catalog, so
+ * the secret-naming never reaches a browser bundle.
+ */
+export const HOUSE_KEY_ENV_VAR = {
+	openai: 'OPENAI_API_KEY',
+	gemini: 'GEMINI_API_KEY',
+} as const satisfies Record<AiProvider, string>;

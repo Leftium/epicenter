@@ -32,7 +32,10 @@
  * both at deploy time; see apps/api/wrangler.jsonc for why.
  */
 
-import { createAdapterForModel } from '@epicenter/ai-adapters';
+import {
+	createAdapterForModel,
+	HOUSE_KEY_ENV_VAR,
+} from '@epicenter/ai-adapters';
 import {
 	AiChatError,
 	AiChatErrorStatus,
@@ -101,21 +104,11 @@ export function resolveAdapter({
 	ReturnType<typeof AiChatError.ProviderNotConfigured>['error']
 > {
 	// Key policy stays here: BYOK wins, else the deployment's per-provider house
-	// key, else `ProviderNotConfigured`. The catalog entry is discriminated on
-	// `provider`, so the switch picks the matching env key exhaustively; adapter
-	// construction is delegated to `@epicenter/ai-adapters`.
+	// key, else `ProviderNotConfigured`. The env var that holds each house key is
+	// single-homed in `@epicenter/ai-adapters`; adapter construction is delegated
+	// there too.
 	const entry = MODELS_BY_ID[model];
-	let houseKey: string | undefined;
-	switch (entry.provider) {
-		case 'openai':
-			houseKey = env.OPENAI_API_KEY;
-			break;
-		case 'gemini':
-			houseKey = env.GEMINI_API_KEY;
-			break;
-		default:
-			return entry satisfies never;
-	}
+	const houseKey = env[HOUSE_KEY_ENV_VAR[entry.provider]];
 	const apiKey = userApiKey ?? houseKey;
 	if (!apiKey) {
 		return AiChatError.ProviderNotConfigured({ provider: entry.provider });

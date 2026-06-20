@@ -354,6 +354,15 @@ const shortcuts = {
 		nullable(field.string()),
 		(): string | null => 'r',
 	),
+	// Navigation, focused by nature: Cmd+, (the platform "open preferences"
+	// gesture) opens settings in-app. A chord on a `focused` command still clamps
+	// to focused reach, so this never registers globally; it lives only in the
+	// synced focused store. `meta+,` is platform-free here (the synced default
+	// must be), surfacing as Cmd+, on macOS and Win+, elsewhere.
+	'shortcut.openSettings': defineKv(
+		nullable(field.string()),
+		(): string | null => 'meta+,',
+	),
 } as const;
 
 type CreateWhisperingOptions = {

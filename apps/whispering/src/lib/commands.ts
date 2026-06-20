@@ -1,3 +1,4 @@
+import { goto } from '$app/navigation';
 import { platformCommands } from '#platform/commands';
 import {
 	cancelRecording,
@@ -113,6 +114,18 @@ const sharedCommands = [
 		reach: 'global',
 		on: ['Pressed'],
 		run: () => runTransformationOnClipboard(),
+	},
+	{
+		id: 'openSettings',
+		title: 'Open settings',
+		category: 'Navigation',
+		// The first focused-reach command: navigation is meaningless from another
+		// app, so its reach ceiling is `focused`. A capable chord like Cmd+, cannot
+		// escape that ceiling (realizedReach clamps it to focused), so it never
+		// registers globally; it fires only with Whispering in front. See ADR-0041.
+		reach: 'focused',
+		on: ['Pressed'],
+		run: () => goto('/settings'),
 	},
 ] as const satisfies SatisfiedCommand[];
 

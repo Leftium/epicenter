@@ -57,6 +57,11 @@ export const DEFAULT_GLOBAL_BINDINGS = {
 	toggleVadRecording: null,
 	openTransformationPicker: null,
 	runTransformationOnClipboard: null,
+	// Focused-reach command (ADR-0041): its reach ceiling clamps any key to the
+	// in-app store, so the router never writes this global slot. It stays here only
+	// so the system backend's all-commands sync keeps one entry per command;
+	// always null.
+	openSettings: null,
 } satisfies Record<string, KeyBinding | null>;
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
@@ -167,6 +172,13 @@ const DEVICE_DEFINITIONS = {
 	'shortcuts.global.runTransformationOnClipboard': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.runTransformationOnClipboard,
+	),
+	// Always null: `openSettings` is focused-reach, so the router never routes a
+	// write here. Present only to keep one global slot per command for the system
+	// backend's uniform sync (see DEFAULT_GLOBAL_BINDINGS.openSettings).
+	'shortcuts.global.openSettings': defineEntry(
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.openSettings,
 	),
 
 	// ── One-time UI notices (device-local: a per-install nudge, not synced) ─

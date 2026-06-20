@@ -509,7 +509,6 @@
         "nanoid": "catalog:",
         "openai": "^5.7.0",
         "tailwind-variants": "catalog:",
-        "tauri-plugin-macos-permissions-api": "^2.3.0",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yjs": "catalog:",
@@ -3728,8 +3727,6 @@
 
     "tar-stream": ["tar-stream@2.2.0", "", { "dependencies": { "bl": "^4.0.3", "end-of-stream": "^1.4.1", "fs-constants": "^1.0.0", "inherits": "^2.0.3", "readable-stream": "^3.1.1" } }, "sha512-ujeqbceABgwMZxEJnk2HDY2DlnUZ+9oEcb1KzTVfYHio0UE6dG71n60d8D2I4qNvleWrrXpmjpt7vZeF1LnMZQ=="],
 
-    "tauri-plugin-macos-permissions-api": ["tauri-plugin-macos-permissions-api@2.3.0", "", { "dependencies": { "@tauri-apps/api": "^2.5.0" } }, "sha512-pZp0jmDySysBqrGueknd1a7Rr4XEO9aXpMv9TNrT2PDHP0MSH20njieOagsFYJ5MCVb8A+wcaK0cIkjUC2dOww=="],
-
     "temporal-polyfill": ["temporal-polyfill@0.3.2", "", { "dependencies": { "temporal-spec": "0.3.1" } }, "sha512-TzHthD/heRK947GNiSu3Y5gSPpeUDH34+LESnfsq8bqpFhsB79HFBX8+Z834IVX68P3EUyRPZK5bL/1fh437Eg=="],
 
     "temporal-spec": ["temporal-spec@0.3.1", "", {}, "sha512-B4TUhezh9knfSIMwt7RVggApDRJZo73uZdj8AacL2mZ8RP5KtLianh2MXxL06GN9ESYiIsiuoLQhgVfwe55Yhw=="],
@@ -4391,8 +4388,6 @@
     "svgo/commander": ["commander@11.1.0", "", {}, "sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ=="],
 
     "tar-stream/readable-stream": ["readable-stream@3.6.2", "", { "dependencies": { "inherits": "^2.0.3", "string_decoder": "^1.1.1", "util-deprecate": "^1.0.1" } }, "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA=="],
-
-    "tauri-plugin-macos-permissions-api/@tauri-apps/api": ["@tauri-apps/api@2.10.1", "", {}, "sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw=="],
 
     "to-buffer/isarray": ["isarray@2.0.5", "", {}, "sha512-xHjhDr3cNBK0BzdUJSPXZntQUx/mwMS5Rw4A7lPJ90XGAO6ISP/ePDNuo0vhqOZU+UD5JoodwCAAoZQd3FeAKw=="],
 

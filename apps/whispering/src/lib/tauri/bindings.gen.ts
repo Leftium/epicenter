@@ -136,6 +136,43 @@ export const commands = {
 	openAccessibilitySettings: () =>
 		typedError<null, string>(__TAURI_INVOKE('open_accessibility_settings')),
 	/**
+	 *  Show the macOS Accessibility permission prompt.
+	 *
+	 *  macOS never lets an app grant itself Accessibility, so this only surfaces the
+	 *  system prompt (which also adds the app to the Accessibility list, toggled
+	 *  off); the live grant is observed by the Rust tap supervisor, not returned
+	 *  here. Off macOS there is no such prompt, so this does nothing. Pairs with
+	 *  `open_accessibility_settings` the way `request_microphone_permission` does
+	 *  with the microphone privacy page.
+	 */
+	requestAccessibilityPermission: () =>
+		__TAURI_INVOKE<void>('request_accessibility_permission'),
+	/**
+	 *  Read the microphone authorization the OS records up front.
+	 *
+	 *  One owner for every platform. macOS answers through
+	 *  `tauri-plugin-macos-permissions` (AVFoundation), which reports a definitive
+	 *  authorized-or-not, so macOS only ever reads `Granted` or `Denied` (a
+	 *  not-yet-determined status reads as `Denied` and is resolved by the prompt in
+	 *  `request_microphone_permission`). Windows reads the CapabilityAccessManager
+	 *  ConsentStore. Every other platform (Linux) returns `Unknown`, where there is
+	 *  no such store and the stream-open fallback stays the sole classifier.
+	 */
+	getMicrophonePermission: () =>
+		__TAURI_INVOKE<MicrophonePermission>('get_microphone_permission'),
+	/**
+	 *  Elicit a microphone grant the way each platform allows, then let the caller
+	 *  re-read `get_microphone_permission`.
+	 *
+	 *  macOS shows the system permission prompt (its only programmatic grant path).
+	 *  Windows has no programmatic grant for an unpackaged desktop app, so when the
+	 *  consent store reads `Denied` it deep-links the privacy page for the user to
+	 *  toggle; an `Unknown`/`Granted` reading needs no nudge. Other platforms (Linux)
+	 *  have no such affordance and do nothing.
+	 */
+	requestMicrophonePermission: () =>
+		typedError<null, string>(__TAURI_INVOKE('request_microphone_permission')),
+	/**
 	 *  Reconcile the current local-model unload policy into the native idle
 	 *  watcher. The frontend owns the value and pushes it on every change; Rust
 	 *  owns the clock. Unlike the old ambient config, it carries no model
@@ -534,6 +571,18 @@ export type LocalModelState = {
 	modelName: string | null;
 	status: ModelStatus;
 };
+
+/**
+ *  The OS-level microphone authorization, read from the platform privacy store.
+ *
+ *  Only an explicit `Denied` gates recording. `Unknown` (no entry in the store,
+ *  or a platform with no such gate) means "can't tell from here": the caller
+ *  treats it as available and lets the recorder's stream-open fallback
+ *  (`recorder::error::classify_cpal`) classify any real denial from the error
+ *  itself. So this signal can only *add* a pre-record denial; it never newly
+ *  blocks a setup that was already working.
+ */
+export type MicrophonePermission = 'granted' | 'denied' | 'unknown';
 
 /**  One selectable entry in an engine's models folder. */
 export type ModelEntry = {

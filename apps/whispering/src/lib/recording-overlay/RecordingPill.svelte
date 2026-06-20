@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cn } from '@epicenter/ui/utils';
 	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
@@ -109,6 +110,13 @@
 		return MIN_BAR_PX + envelope * level * (MAX_BAR_PX - MIN_BAR_PX);
 	}
 
+	// Resting state is a filled chip, not a bare icon, so the controls read as
+	// buttons at a glance in the small pill. Each control composes its own tone over
+	// this shared base. Per-property durations: colors glide at 150ms, the press
+	// scale snaps at 100ms.
+	const actionBase =
+		'flex size-6 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white/92 [transition:background-color_150ms_ease-out,color_150ms_ease-out,transform_100ms_ease-out] hover:scale-[1.08] active:scale-95';
+
 	function handleStop(event: MouseEvent) {
 		// Don't let a button click bubble to the pill's focus-main handler:
 		// stop/cancel should only stop/cancel, never reveal the main window.
@@ -130,15 +138,29 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 {#if status}
 	<div
-		class="overlay"
-		class:speaking={isSpeaking}
-		class:failed={chip?.tone === 'failed'}
-		class:revealable={Boolean(onReveal)}
+		class={cn(
+			// The pill hugs its content and is centered within its mount (the desktop
+			// overlay window centers it; the web host translates it to center), so each
+			// state is a snug chip with no dead space leaving the meter off-center. The
+			// mount centers a fixed 40px-tall, up-to-184px-wide pill; max-w-[184px] caps
+			// it to that window so a long failed reason ellipsizes rather than overflowing.
+			'box-border flex h-10 w-fit max-w-[184px] items-center gap-2 rounded-full px-2.5 text-white/92 shadow-[0_6px_20px_rgba(0,0,0,0.35)] backdrop-blur-[12px] select-none',
+			// Failed: a red chip so the failure reads at a glance, with the terse reason
+			// in the label. No action: detail and retry live on the recordings row.
+			chip?.tone === 'failed'
+				? 'border border-red-500/55 bg-[#3c1216]/92'
+				: 'border border-white/8 bg-[#0f0f11]/82',
+			// Clickable only where it can reveal the main window: desktop, where onReveal
+			// is wired. On web the app window is already in front, so onReveal is omitted
+			// and the body shows no pointer or tooltip (the action buttons stop
+			// propagation, so only the empty areas would have triggered it).
+			onReveal && 'cursor-pointer',
+		)}
 		title={onReveal ? 'Open Whispering' : undefined}
 		onclick={onReveal}
 	>
 		{#if status.phase === 'recording'}
-			<div class="icon">
+			<div class="flex items-center text-white/85">
 				{#if isManual}
 					<MicIcon class="size-4" />
 				{:else}
@@ -146,18 +168,33 @@
 				{/if}
 			</div>
 
-			<div class="bars" aria-hidden="true">
+			<div class="flex h-5 items-center gap-[3px]" aria-hidden="true">
 				{#each BAR_ENVELOPE as envelope, i (i)}
-					<span class="bar" style="height: {barHeight(envelope)}px"></span>
+					<!-- Height is set inline from the live mic level; the transition glides
+					     between samples (~20-30 Hz) so the meter looks continuous, and is
+					     dropped under reduced motion. Speech detected (VAD) tints the bar so
+					     the user sees it cross the threshold, on top of the height already
+					     reacting to loudness. -->
+					<span
+						class={cn(
+							'w-[3px] rounded-full bg-white/85 transition-[height] duration-[80ms] ease-linear motion-reduce:transition-none',
+							isSpeaking && 'bg-[#ffe5ee]',
+						)}
+						style="height: {barHeight(envelope)}px"
+					></span>
 				{/each}
 			</div>
 
 			{#if !isManual}
-				<!-- The VAD pip holds a fixed-width slot for the whole session, full or
-				     empty, so the pill does not resize when the previous phrase's
-				     spinner appears or clears. Empty at rest. -->
+				<!-- The VAD pip is the previous utterance's transcribe spinner riding
+				     beside the live meter. It holds a fixed-width slot (the size-3.5 icon's
+				     width) for the whole session, full or empty, so the pill does not
+				     resize when the spinner appears or clears. Dimmed so it reads as
+				     secondary to the meter. No success or failure state: success is the
+				     landing text, failure goes to the notification and the recordings row.
+				     Empty at rest. -->
 				<div
-					class="pip"
+					class="flex w-[14px] flex-none items-center justify-center text-white/50"
 					title={vadPip === 'transcribing'
 						? 'Transcribing previous phrase'
 						: undefined}
@@ -168,10 +205,11 @@
 				</div>
 			{/if}
 
-			<div class="actions">
+			<div class="flex items-center gap-1">
+				<!-- Stop is the primary action: a red chip so it reads as "stop recording". -->
 				<button
 					type="button"
-					class="action stop"
+					class={cn(actionBase, 'bg-red-500/28 text-white hover:bg-red-500/50')}
 					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
 					title={isManual ? 'Stop recording' : 'Stop listening'}
 					onclick={handleStop}
@@ -181,7 +219,7 @@
 				{#if isManual}
 					<button
 						type="button"
-						class="action cancel"
+						class={cn(actionBase, 'hover:bg-[#faa2ca]/22 hover:text-[#ffd2e4]')}
 						aria-label="Cancel recording"
 						title="Cancel recording"
 						onclick={handleCancel}
@@ -196,184 +234,25 @@
 			     recordings row (ADR-0039). -->
 			{@const Icon = chip.Icon}
 			<div
-				class="icon"
-				class:tone-success={chip.tone === 'success'}
-				class:tone-degraded={chip.tone === 'degraded'}
-				class:tone-failed={chip.tone === 'failed'}
+				class={cn(
+					'flex items-center text-white/85',
+					// A clean delivery reads green; a reduced reach (clipboard/history)
+					// reads amber, "landed, but not where you asked" rather than a clean
+					// success; a failure reads red, paired with the red pill background.
+					chip.tone === 'success' && 'text-[#7ee2a8]',
+					chip.tone === 'degraded' && 'text-[#f5c97b]',
+					chip.tone === 'failed' && 'text-[#ffb4b4]',
+				)}
 			>
 				<Icon class="size-4 {chip.spin ? 'animate-spin' : ''}" />
 			</div>
-			<span class="label">{chip.label}</span>
+			<!-- The label takes only its text's width in the snug chip. Labels are
+			     closed, short tokens that fit the fixed-width pill; truncate's ellipsis
+			     is a safety net, not load-bearing truncation. The full failure detail
+			     lives in the OS notification and the recordings row, never here. -->
+			<span class="min-w-0 flex-1 truncate text-[13px] font-medium"
+				>{chip.label}</span
+			>
 		{/if}
 	</div>
 {/if}
-
-<style>
-	.overlay {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		/* The pill hugs its content and is centered within its mount (the desktop
-		   overlay window centers it; the web host translates it to center), so each
-		   state is a snug chip with no dead space to leave the meter looking
-		   off-center. The mount centers a fixed 40px-tall, up-to-184px-wide pill;
-		   `max-width` caps it to that window so a long failed reason ellipsizes
-		   rather than overflowing. */
-		width: fit-content;
-		max-width: 184px;
-		height: 40px;
-		padding: 0 10px;
-		box-sizing: border-box;
-		border-radius: 9999px;
-		background: rgba(15, 15, 17, 0.82);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-		color: rgba(255, 255, 255, 0.92);
-		-webkit-backdrop-filter: blur(12px);
-		backdrop-filter: blur(12px);
-		user-select: none;
-		-webkit-user-select: none;
-	}
-
-	/* The body is clickable only where it can reveal the main window: desktop,
-	   where `onReveal` is wired. On web the app window is already in front, so
-	   `onReveal` is omitted and the body shows no pointer or tooltip (the action
-	   buttons stop propagation so only the empty areas would have triggered it). */
-	.overlay.revealable {
-		cursor: pointer;
-	}
-
-	/* Failed: a red chip so the failure reads at a glance, with the terse reason
-	   in the label. No action: detail and retry live on the recordings row. */
-	.overlay.failed {
-		background: rgba(60, 18, 22, 0.92);
-		border-color: rgba(239, 68, 68, 0.55);
-	}
-
-	.icon {
-		display: flex;
-		align-items: center;
-		color: rgba(255, 255, 255, 0.85);
-	}
-
-	/* A clean delivery: green. */
-	.icon.tone-success {
-		color: #7ee2a8;
-	}
-
-	/* A reduced reach (clipboard/history): amber, so the glance reads "landed, but
-	   not where you asked" rather than a clean success. */
-	.icon.tone-degraded {
-		color: #f5c97b;
-	}
-
-	/* A failure: red, paired with the red pill background below. */
-	.icon.tone-failed {
-		color: #ffb4b4;
-	}
-
-	/* The label takes only its text's width in the snug chip. Labels are closed,
-	   short tokens that fit the fixed-width pill; the ellipsis is a safety net, not
-	   a load-bearing truncation. The full failure detail lives in the OS
-	   notification and the recordings row, never here. */
-	.label {
-		flex: 1;
-		min-width: 0;
-		font-size: 13px;
-		font-weight: 500;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.bars {
-		display: flex;
-		align-items: center;
-		gap: 3px;
-		height: 20px;
-	}
-
-	.bar {
-		width: 3px;
-		border-radius: 9999px;
-		background: rgba(255, 255, 255, 0.85);
-		/* Height is set inline from the live mic level; the transition glides
-		   between samples (~20-30 Hz) so the meter looks continuous. */
-		transition: height 80ms linear;
-	}
-
-	/* Speech detected (VAD): tint the meter so the user sees it cross the
-	   threshold, on top of the height already reacting to loudness. */
-	.overlay.speaking .bar {
-		background: #ffe5ee;
-	}
-
-	/* The VAD pip: the previous utterance's transcribe spinner riding beside the
-	   live meter. Dimmed so it reads as secondary to the meter. No success or
-	   failure state: success is the landing text, failure goes to the notification
-	   and the recordings row. */
-	.pip {
-		/* A fixed-width slot (the size-3.5 icon's width) reserved for the whole VAD
-		   session, so the pill keeps a steady width as the pip toggles. */
-		flex: none;
-		width: 14px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: rgba(255, 255, 255, 0.5);
-	}
-
-	.actions {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-	}
-
-	/* Resting state is a filled chip, not a bare icon, so the controls read as
-	   buttons at a glance in the small pill. */
-	.action {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 24px;
-		height: 24px;
-		border: none;
-		border-radius: 9999px;
-		background: rgba(255, 255, 255, 0.1);
-		color: rgba(255, 255, 255, 0.92);
-		cursor: pointer;
-		transition:
-			background-color 150ms ease-out,
-			color 150ms ease-out,
-			transform 100ms ease-out;
-	}
-
-	.action:hover {
-		transform: scale(1.08);
-	}
-
-	.action:active {
-		transform: scale(0.95);
-	}
-
-	/* Stop is the primary action: a red chip so it reads as "stop recording". */
-	.action.stop {
-		background: rgba(239, 68, 68, 0.28);
-		color: #fff;
-	}
-
-	.action.stop:hover {
-		background: rgba(239, 68, 68, 0.5);
-	}
-
-	.action.cancel:hover {
-		background: rgba(250, 162, 202, 0.22);
-		color: #ffd2e4;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.bar {
-			transition: none;
-		}
-	}
-</style>

@@ -185,38 +185,15 @@
 				{/each}
 			</div>
 
-			{#if !isManual}
-				<!-- The VAD pip is the previous utterance's transcribe spinner riding
-				     beside the live meter. It holds a fixed-width slot (the size-3.5 icon's
-				     width) for the whole session, full or empty, so the pill does not
-				     resize when the spinner appears or clears. Dimmed so it reads as
-				     secondary to the meter. No success or failure state: success is the
-				     landing text, failure goes to the notification and the recordings row.
-				     Empty at rest. -->
-				<div
-					class="flex w-[14px] flex-none items-center justify-center text-white/50"
-					title={vadPip === 'transcribing'
-						? 'Transcribing previous phrase'
-						: undefined}
-				>
-					{#if vadPip === 'transcribing'}
-						<LoaderCircleIcon class="size-3.5 animate-spin" />
-					{/if}
-				</div>
-			{/if}
-
+			<!-- Trailing cluster: a contextual slot, then stop as the constant right
+			     anchor. Manual and VAD share this skeleton (slot then stop), so the
+			     meter and the stop button land in the same place in both modes and only
+			     the slot's content differs. The slot is always the cancel button's
+			     width, so the cluster reads as balanced and the pill keeps a steady
+			     width as the slot's content changes. -->
 			<div class="flex items-center gap-1">
-				<!-- Stop is the primary action: a red chip so it reads as "stop recording". -->
-				<button
-					type="button"
-					class={cn(actionBase, 'bg-red-500/30 text-white hover:bg-red-500/50')}
-					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
-					title={isManual ? 'Stop recording' : 'Stop listening'}
-					onclick={handleStop}
-				>
-					<SquareIcon class="size-3.5" />
-				</button>
 				{#if isManual}
+					<!-- Manual can discard the take, so the slot is the cancel button. -->
 					<button
 						type="button"
 						class={cn(actionBase, 'hover:bg-[#faa2ca]/20 hover:text-[#ffd2e4]')}
@@ -226,7 +203,38 @@
 					>
 						<XIcon class="size-4" />
 					</button>
+				{:else}
+					<!-- VAD has no per-utterance cancel, so the slot holds an indicator the
+					     same size as the cancel button: the previous phrase's transcribe
+					     spinner while one is running, otherwise a faint dot that reads as
+					     "armed and listening" while the meter sits flat through silence. No
+					     success or failure state: success is the landing text, failure goes
+					     to the notification and the recordings row. -->
+					<div
+						class="flex size-6 items-center justify-center text-white/50"
+						title={vadPip === 'transcribing'
+							? 'Transcribing previous phrase'
+							: undefined}
+					>
+						{#if vadPip === 'transcribing'}
+							<LoaderCircleIcon class="size-3.5 animate-spin" />
+						{:else}
+							<span class="size-1.5 rounded-full bg-white/40"></span>
+						{/if}
+					</div>
 				{/if}
+
+				<!-- Stop: the primary action and the constant right anchor. A red chip so
+				     it reads as "stop recording". -->
+				<button
+					type="button"
+					class={cn(actionBase, 'bg-red-500/30 text-white hover:bg-red-500/50')}
+					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
+					title={isManual ? 'Stop recording' : 'Stop listening'}
+					onclick={handleStop}
+				>
+					<SquareIcon class="size-3.5" />
+				</button>
 			</div>
 		{:else if chip}
 			<!-- One chip block for every non-recording phase. A failure is glanceable

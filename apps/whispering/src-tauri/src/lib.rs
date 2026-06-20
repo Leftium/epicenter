@@ -344,6 +344,20 @@ pub enum WriteTextOutcome {
     LeftOnClipboard,
 }
 
+/// Wait after writing the transcript to the clipboard before posting ⌘V. The
+/// clipboard write is synchronous (the plugin blocks on the OS pasteboard), so
+/// this is not "waiting for the clipboard" — it gives the freshly built event tap
+/// a beat to come up before the keystroke is posted.
+const PRE_PASTE_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Wait after posting ⌘V before restoring the user's original clipboard. enigo
+/// exposes no paste-completion signal (`CGEventPost` returns nothing), so this is
+/// the window the target app has to consume the paste before the old clipboard
+/// goes back. Restore too early and a slow app pastes the original content
+/// instead of the transcript. Espanso's equivalent default is 300ms; ours is
+/// 100ms (mirrored by `COPY_SETTLE_MS` in selection.ts — keep them in step).
+const PRE_RESTORE_SETTLE: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// Delivers text to the cursor, falling back to the clipboard when it cannot.
 ///
 /// The reach is decided from the live Accessibility *capability* before the
@@ -391,8 +405,8 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<WriteTextOutc
         .write_text(&text)
         .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
 
-    // Small delay to ensure clipboard is updated
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    // Let the event tap settle before posting the keystroke (see PRE_PASTE_SETTLE).
+    tokio::time::sleep(PRE_PASTE_SETTLE).await;
 
     // Simulate paste using virtual key codes (layout-independent). Issue every
     // press/release even on a mid-sequence error so a failure can never leave the
@@ -423,8 +437,9 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<WriteTextOutc
         return Ok(WriteTextOutcome::LeftOnClipboard);
     }
 
-    // Small delay to ensure paste completes
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // Give the target app the paste-consume window before restoring the clipboard
+    // (see PRE_RESTORE_SETTLE).
+    tokio::time::sleep(PRE_RESTORE_SETTLE).await;
 
     // Restore the user's original clipboard now that the paste has landed.
     if let Some(content) = original_clipboard {

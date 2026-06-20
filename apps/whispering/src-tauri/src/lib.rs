@@ -22,7 +22,10 @@ use transcription::{
 };
 
 pub mod command;
-use command::open_accessibility_settings;
+use command::{
+    get_microphone_permission, open_accessibility_settings, request_accessibility_permission,
+    request_microphone_permission,
+};
 
 pub mod download;
 use download::{cancel_download, DownloadManager};
@@ -68,6 +71,9 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             transcribe_recording,
             prewarm_model,
             open_accessibility_settings,
+            request_accessibility_permission,
+            get_microphone_permission,
+            request_microphone_permission,
             set_unload_policy,
             get_transcription_state,
             link_local_model,

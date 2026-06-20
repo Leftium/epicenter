@@ -44,16 +44,12 @@ import {
 	createAdapterForModel,
 	HOUSE_KEY_ENV_VAR,
 } from '@epicenter/ai-adapters';
-import {
-	createAiChatFetch,
-	createEpicenterProviderChatStream,
-} from '@epicenter/client';
 import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
-import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { AgentId, MountWorkerContext } from '@epicenter/workspace';
 import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
+import { epicenterMeteredEngine } from './epicenter-engine.js';
 import {
 	type Engine,
 	resolveEngine,
@@ -116,12 +112,12 @@ export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
  *  - **byok**: a local provider key (`OPENAI_API_KEY` / `GEMINI_API_KEY`, the
  *    catalog picks which) answers free, with no cloud round-trip. The only path
  *    for an offline or self-hosted daemon, so it stays first.
- *  - **metered**: answer on the user's metered Epicenter account through the same
- *    `/api/ai/chat` SSE path the browser uses (`createEpicenterProviderChatStream`),
- *    authenticated with the `AuthedFetch` the daemon already syncs with. Opt-in
- *    only ({@link isMeteredEnabled}): spending credits is a deliberate choice,
- *    symmetric with BYOK needing a key, so a keyless signed-in daemon never
- *    silently bills the user.
+ *  - **metered**: answer on the user's metered Epicenter account over the same
+ *    `/api/ai/chat` SSE path the browser uses ({@link epicenterMeteredEngine}, the
+ *    shared builder), authenticated with the `AuthedFetch` the daemon already
+ *    syncs with. Opt-in only ({@link isMeteredEnabled}): spending credits is a
+ *    deliberate choice, symmetric with BYOK needing a key, so a keyless signed-in
+ *    daemon never silently bills the user.
  *
  * `null` (neither engine satisfiable) means host the conversation's sync but
  * answer nothing: the daemon writes no placeholder into a real, synced
@@ -146,6 +142,9 @@ function resolveDaemonStream(
 	const { provider } = MODELS_BY_ID[ZHONGWEN_MODEL];
 	const envVar = HOUSE_KEY_ENV_VAR[provider];
 
+	// The metered engine builds the same way for every peer; only the opt-in gate
+	// is the daemon's (a keyless signed-in daemon must not silently spend credits).
+	const metered = epicenterMeteredEngine(session.fetch, baseURL);
 	const engines: readonly Engine[] = [
 		() => {
 			const apiKey = process.env[envVar];
@@ -155,17 +154,7 @@ function resolveDaemonStream(
 					])
 				: null;
 		},
-		() =>
-			isMeteredEnabled()
-				? createEpicenterProviderChatStream({
-						fetch: createAiChatFetch(session.fetch),
-						url: API_ROUTES.ai.chat.url(baseURL),
-						data: () => ({
-							model: ZHONGWEN_MODEL,
-							systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-						}),
-					})
-				: null,
+		() => (isMeteredEnabled() ? metered() : null),
 	];
 
 	const stream = resolveEngine(engines);

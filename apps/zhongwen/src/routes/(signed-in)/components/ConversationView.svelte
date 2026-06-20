@@ -1,36 +1,15 @@
 <script module lang="ts">
-	import {
-		createAiChatFetch,
-		createEpicenterProviderChatStream,
-	} from '@epicenter/client';
-	import { API_ROUTES } from '@epicenter/constants/api-routes';
 	import { APP_URLS } from '@epicenter/constants/vite';
-	import {
-		type Engine,
-		ZHONGWEN_MODEL,
-		ZHONGWEN_SYSTEM_PROMPT,
-	} from '@epicenter/zhongwen';
+	import type { Engine } from '@epicenter/zhongwen';
+	import { epicenterMeteredEngine } from '@epicenter/zhongwen/engine';
 	import { auth } from '$platform/auth';
 
-	// auth is a module singleton, so the wrapped fetch is built once and shared
-	// across every mounted ConversationView.
-	const aiChatFetch = createAiChatFetch(auth.fetch);
-
-	// The engines this tab can power, highest priority first, sharing the one
-	// wrapped fetch. Today just the metered Epicenter account over the
-	// `/api/ai/chat` SSE stream; adding a local-key engine ahead of it is the whole
-	// of "engine unification" (the same list the daemon walks). Built once, shared
-	// across every mounted view.
+	// The engines this tab can power, highest priority first. Today just the
+	// metered Epicenter account over the `/api/ai/chat` SSE stream; adding a
+	// local-key engine ahead of it is the whole of "engine unification" (the same
+	// list the daemon walks). Built once, shared across every mounted view.
 	const browserEngines: readonly Engine[] = [
-		() =>
-			createEpicenterProviderChatStream({
-				fetch: aiChatFetch,
-				url: API_ROUTES.ai.chat.url(APP_URLS.API),
-				data: () => ({
-					model: ZHONGWEN_MODEL,
-					systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-				}),
-			}),
+		epicenterMeteredEngine(auth.fetch, APP_URLS.API),
 	];
 </script>
 

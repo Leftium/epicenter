@@ -18,8 +18,8 @@ import {
 	DEFAULT_AGENT_ID,
 	resolveEngine,
 	THIS_DEVICE_AGENT_ID,
-	ZHONGWEN_AGENTS,
-} from '../zhongwen.js';
+	VOCAB_AGENTS,
+} from '../vocab.js';
 
 describe('agent catalog', () => {
 	test('the this-device agent is ephemeral-owned so the browser answers it in-process', () => {
@@ -31,7 +31,7 @@ describe('agent catalog', () => {
 	});
 
 	test('the home daemon is durable-owned so the browser leaves it to sync', () => {
-		expect(agentConfig(asAgentId('zhongwen-home'))?.owner).toBe('durable');
+		expect(agentConfig(asAgentId('vocab-home'))?.owner).toBe('durable');
 	});
 
 	test('an id no longer in the catalog resolves to undefined, never answered', () => {
@@ -39,7 +39,7 @@ describe('agent catalog', () => {
 	});
 
 	test('every catalog id is unique (one entry per agent)', () => {
-		const ids = ZHONGWEN_AGENTS.map((agent) => agent.id);
+		const ids = VOCAB_AGENTS.map((agent) => agent.id);
 		expect(new Set(ids).size).toBe(ids.length);
 	});
 });

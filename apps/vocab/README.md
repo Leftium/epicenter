@@ -1,4 +1,4 @@
-# Zhongwen
+# Vocab
 
 Bilingual Chinese-English chat app for learning Mandarin. Users ask questions in English; the AI responds with mixed English and Chinese. The client automatically annotates Chinese characters with pinyin using `<ruby>` tags. The system prompt tells the AI to never include pinyin itself.
 
@@ -8,20 +8,20 @@ Bilingual Chinese-English chat app for learning Mandarin. Users ask questions in
 
 **Markdown + pinyin**: Assistant messages are parsed with `marked` (GFM, breaks enabled) into HTML, then `annotateHtml()` in `src/lib/pinyin/annotate.ts` walks text nodes (splitting on HTML tags via regex) and wraps CJK runs with `<ruby>` pinyin tags using `pinyin-pro`. Output is sanitized with DOMPurify (allowing ruby/rt/rp), memoized via `$derived` in `AssistantMessagePart.svelte`, and rendered via `{@html}` inside `<div class="prose prose-sm">`.
 
-**Workspace state**: `zhongwenWorkspace` in `zhongwen.ts` is the shared isomorphic definition. It defines `epicenter-zhongwen`, the `conversations` table (the cheap list: title and timestamps), the `conversations.messages` child doc layout, the `showPinyin` KV value, and the Zhongwen model constant. Transcripts are not a table; they are per-conversation child docs opened as `zhongwen.tables.conversations.docs.messages.open(conversationId)`. `openZhongwenBrowser()` opens the definition with the signed-in browser connection, which attaches local storage, root collaboration, and the child-doc runtime.
+**Workspace state**: `vocabWorkspace` in `vocab.ts` is the shared isomorphic definition. It defines `epicenter-vocab`, the `conversations` table (the cheap list: title and timestamps), the `conversations.messages` child doc layout, the `showPinyin` KV value, and the Vocab model constant. Transcripts are not a table; they are per-conversation child docs opened as `vocab.tables.conversations.docs.messages.open(conversationId)`. `openVocabBrowser()` opens the definition with the signed-in browser connection, which attaches local storage, root collaboration, and the child-doc runtime.
 
 ```txt
 defineWorkspace()
-  -> zhongwenWorkspace
-    -> openZhongwenBrowser() opens with a browser connection
-    -> zhongwen() opens without a browser connection, then adds daemon infrastructure
+  -> vocabWorkspace
+    -> openVocabBrowser() opens with a browser connection
+    -> vocab() opens without a browser connection, then adds daemon infrastructure
 ```
 
 **UI state**: split by lifetime. `src/routes/(signed-in)/+page.svelte` owns the page-local root-doc concerns: the conversation list (the `conversations` table), which conversation is active, and CRUD. The per-conversation runtime lives in `ConversationView.svelte`, mounted via `{#key activeConversationId}`, so the transcript doc gets a real component lifecycle (opened in setup, disposed in `onDestroy`). `ConversationView` opens the active conversation's `messages` child doc (IDB + websocket), renders messages from a doc observer, and derives liveness from update recency, never stored: a trailing assistant message with no `finish` and recent updates is streaming, the same message gone quiet past a ~3s grace window is interrupted (offer retry), and the terminal outcome is the message's write-once `finish` key.
 
 **Auth**: Google OAuth through the shared Epicenter auth/session path. The browser runtime is built through `createSession`, so storage and sync only mount after a signed-in identity provides `ownerId` and WebSocket transport functions.
 
-**Providers**: `@epicenter/constants/ai-providers` owns the shared servable model registry. `zhongwen.ts` owns Zhongwen's Gemini model.
+**Providers**: `@epicenter/constants/ai-providers` owns the shared servable model registry. `vocab.ts` owns Vocab's Gemini model.
 
 ## File map
 
@@ -29,7 +29,7 @@ defineWorkspace()
 src/
   lib/
     platform/auth/auth.ts  # OAuth auth client
-    session.ts             # createSession + openZhongwenBrowser singleton
+    session.ts             # createSession + openVocabBrowser singleton
     pinyin/
       annotate.ts          # annotateHtml(): CJK detection and ruby annotation
   routes/
@@ -44,9 +44,9 @@ src/
         ChatMessage.svelte       # Renders one ChatDocMessage; delegates assistant text to AssistantMessagePart
         AssistantMessagePart.svelte # Markdown parse + pinyin annotate + DOMPurify, memoized via $derived
         ChatInput.svelte         # Textarea + send button, Enter to submit
-        ZhongwenSidebar.svelte   # Sidebar conversation list with create/switch/delete
-zhongwen.ts                    # Shared isomorphic model (tables, KV, conversation child docs)
-zhongwen.browser.ts            # openZhongwenBrowser runtime wiring
+        VocabSidebar.svelte   # Sidebar conversation list with create/switch/delete
+vocab.ts                    # Shared isomorphic model (tables, KV, conversation child docs)
+vocab.browser.ts            # openVocabBrowser runtime wiring
 ```
 
 ## Key decisions

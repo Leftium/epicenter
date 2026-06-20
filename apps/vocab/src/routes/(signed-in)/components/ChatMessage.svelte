@@ -15,7 +15,7 @@
 
 <Chat.Bubble variant={isUser ? 'sent' : 'received'}>
 	<Chat.BubbleMessage>
-		<!-- Text-only by design: zhongwen chat docs carry a single Y.Text per
+		<!-- Text-only by design: vocab chat docs carry a single Y.Text per
 			message; there are no tool or media parts to dispatch on. -->
 		{#if isUser}
 			{message.text}

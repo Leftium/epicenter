@@ -1,8 +1,8 @@
 /**
- * Zhongwen mount.
+ * Vocab mount.
  *
- * `zhongwen()` returns the `Mount` that an `epicenter.config.ts`
- * default-exports. Zhongwen has no daemon actions to add and no materializers,
+ * `vocab()` returns the `Mount` that an `epicenter.config.ts`
+ * default-exports. Vocab has no daemon actions to add and no materializers,
  * so the daemon hosts the root Y.Doc on disk and bridges cloud sync, then runs
  * one child-doc worker: an always-on observe loop (ADR-0024/0025) over the
  * `conversations.messages` transcripts. Registering the field is all the app
@@ -33,7 +33,7 @@
  * the loop builds a worker only for conversations bound to this daemon's agent
  * (`row.agent === selfAgentId`), so the factory supplies behavior alone. The
  * `agentId` option names which catalog agent this daemon answers as (a
- * `ZHONGWEN_AGENTS` id like `zhongwen-home`); omit it and the daemon hosts
+ * `VOCAB_AGENTS` id like `vocab-home`); omit it and the daemon hosts
  * nothing, leaving every conversation to its bound agent. The browser answers
  * in-process only the conversations it claims (an `'ephemeral'`-owner agent), so
  * a single turn is never answered twice.
@@ -53,35 +53,35 @@ import { epicenterMeteredEngine } from './epicenter-engine.js';
 import {
 	type Engine,
 	resolveEngine,
-	ZHONGWEN_MODEL,
-	ZHONGWEN_SYSTEM_PROMPT,
-	zhongwenWorkspace,
-} from './zhongwen.js';
+	VOCAB_MODEL,
+	VOCAB_SYSTEM_PROMPT,
+	vocabWorkspace,
+} from './vocab.js';
 
-const log = createLogger('zhongwen/mount');
+const log = createLogger('vocab/mount');
 
-export type ZhongwenMountOptions = {
+export type VocabMountOptions = {
 	/**
 	 * Base URL of the Epicenter cloud API used for sync.
 	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.
 	 */
 	baseURL?: string;
 	/**
-	 * The catalog agent this daemon answers as (ADR-0025): a `ZHONGWEN_AGENTS` id
-	 * such as `zhongwen-home`. The observe loop then hosts exactly the
+	 * The catalog agent this daemon answers as (ADR-0025): a `VOCAB_AGENTS` id
+	 * such as `vocab-home`. The observe loop then hosts exactly the
 	 * conversations bound to it. Omit it and the daemon hosts nothing.
 	 */
 	agentId?: AgentId;
 };
 
-export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
+export function vocab({ baseURL, agentId }: VocabMountOptions = {}) {
 	// Resolve the backend once per mount, the first time a body opens: the
 	// session and base URL are identical for every hosted body, and the priority
 	// chain reads only the host's env and that session. `null` = no real backend
 	// on this host; the worker then hosts the transcript's sync but does not
 	// answer (it writes nothing, leaving the turn for a configured answerer).
 	let backend: { startStream: ChatStream | null } | undefined;
-	return zhongwenWorkspace.mount({
+	return vocabWorkspace.mount({
 		baseURL,
 		agentId,
 		runtime: nodeMountRuntime(),
@@ -127,7 +127,7 @@ export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
  * Switching the provider is a catalog + env-key change, no code edit. The
  * `session` and `baseURL` are the mount environment the worker factory receives
  * (ADR-0038's keystone): the credential the metered arm needs only exists once
- * the mount is open, never at `zhongwen({...})` construction.
+ * the mount is open, never at `vocab({...})` construction.
  */
 function resolveDaemonStream(
 	{
@@ -139,7 +139,7 @@ function resolveDaemonStream(
 	// The catalog gives the provider, and the provider -> house-key env var
 	// mapping is single-homed in `@epicenter/ai-adapters` (exhaustive, so a new
 	// provider is a compile error there, not a silent wrong key here).
-	const { provider } = MODELS_BY_ID[ZHONGWEN_MODEL];
+	const { provider } = MODELS_BY_ID[VOCAB_MODEL];
 	const envVar = HOUSE_KEY_ENV_VAR[provider];
 
 	// The metered engine builds the same way for every peer; only the opt-in gate
@@ -149,8 +149,8 @@ function resolveDaemonStream(
 		() => {
 			const apiKey = process.env[envVar];
 			return apiKey
-				? chatStreamFromAdapter(createAdapterForModel(ZHONGWEN_MODEL, apiKey), [
-						ZHONGWEN_SYSTEM_PROMPT,
+				? chatStreamFromAdapter(createAdapterForModel(VOCAB_MODEL, apiKey), [
+						VOCAB_SYSTEM_PROMPT,
 					])
 				: null;
 		},
@@ -161,7 +161,7 @@ function resolveDaemonStream(
 	if (agentId && !stream) {
 		log.warn(
 			new Error(
-				`The Zhongwen daemon has no inference backend: ${envVar} is unset and ZHONGWEN_USE_METERED is off. It hosts conversation sync but does not answer. Set ${envVar} for local inference, or ZHONGWEN_USE_METERED=1 to answer on your metered Epicenter account.`,
+				`The Vocab daemon has no inference backend: ${envVar} is unset and VOCAB_USE_METERED is off. It hosts conversation sync but does not answer. Set ${envVar} for local inference, or VOCAB_USE_METERED=1 to answer on your metered Epicenter account.`,
 			),
 		);
 	}
@@ -171,10 +171,10 @@ function resolveDaemonStream(
 /**
  * Whether the daemon is opted in to answering on the user's metered Epicenter
  * account. Off by default: a signed-in daemon must not silently spend credits,
- * so the metered backend is reached only when `ZHONGWEN_USE_METERED` is set to
+ * so the metered backend is reached only when `VOCAB_USE_METERED` is set to
  * `1` or `true`.
  */
 function isMeteredEnabled(): boolean {
-	const value = process.env.ZHONGWEN_USE_METERED;
+	const value = process.env.VOCAB_USE_METERED;
 	return value === '1' || value === 'true';
 }

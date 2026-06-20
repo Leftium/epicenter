@@ -6,8 +6,8 @@
 		type Conversation,
 		type ConversationId,
 		DEFAULT_AGENT_ID,
-		ZHONGWEN_AGENTS,
-	} from '@epicenter/zhongwen';
+		VOCAB_AGENTS,
+	} from '@epicenter/vocab';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import MessageSquareTextIcon from '@lucide/svelte/icons/message-square-text';
@@ -56,7 +56,7 @@
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="start" side="right" class="w-44">
 						<DropdownMenu.Label>New chat with</DropdownMenu.Label>
-						{#each ZHONGWEN_AGENTS as agent (agent.id)}
+						{#each VOCAB_AGENTS as agent (agent.id)}
 							<DropdownMenu.Item onclick={() => onCreate(agent.id)}>
 								{agent.label}
 							</DropdownMenu.Item>

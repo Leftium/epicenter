@@ -27,7 +27,7 @@
 
 <main class="flex h-dvh flex-col">
 	<header class="flex items-center justify-between border-b px-4 py-3">
-		<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
+		<h1 class="text-lg font-semibold">中文 Vocab</h1>
 		<Button size="sm" onclick={startSignIn} disabled={signingIn}>
 			{#if signingIn}
 				<LoaderCircle class="size-4 animate-spin" />

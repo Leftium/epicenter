@@ -1,9 +1,9 @@
 /**
- * Zhongwen workspace contract: id, branded types, tables, kv, actions, and
+ * Vocab workspace contract: id, branded types, tables, kv, actions, and
  * the workspace factory. Isomorphic: no IndexedDB, WebSockets, Svelte state,
  * browser APIs, or daemon process lifecycle.
  *
- * Distribution: this file is the `@epicenter/zhongwen` package root file
+ * Distribution: this file is the `@epicenter/vocab` package root file
  * (the target of the package's `"."` export). Browser and daemon entrypoints
  * import the schema from here and compose runtime-specific attachments
  * around it. The table and KV shapes here are the wire contract for sync;
@@ -11,9 +11,9 @@
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/zhongwen/zhongwen.browser.ts`
- *      → `openZhongwenBrowser({ signedIn, nodeId })`
- *  - `apps/zhongwen/mount.ts` → `zhongwen()` mount factory
+ *  - `apps/vocab/vocab.browser.ts`
+ *      → `openVocabBrowser({ signedIn, nodeId })`
+ *  - `apps/vocab/mount.ts` → `vocab()` mount factory
  */
 
 import type { ServableModel } from '@epicenter/constants/ai-providers';
@@ -44,13 +44,13 @@ export const generateConversationId = (): ConversationId =>
 	generateId<ConversationId>();
 
 /**
- * Zhongwen runs a single Chinese-tuned model. It is an app constant, not a
+ * Vocab runs a single Chinese-tuned model. It is an app constant, not a
  * per-conversation choice, so it is never stored on the conversation row. Both
  * answer paths read it: the browser passes it to the Epicenter provider it answers
  * cloud conversations with (the metered `/api/ai/chat` stream), and the always-on
  * daemon worker builds its Gemini adapter from it directly.
  */
-export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
+export const VOCAB_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
 
 /**
  * The ephemeral agent's stable address (ADR-0025): the one the open browser tab
@@ -66,11 +66,11 @@ export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
 export const THIS_DEVICE_AGENT_ID: AgentId = asAgentId('this-device');
 
 // Re-export the agent address type so app UI binds against one import surface
-// (`@epicenter/zhongwen`) for the agent catalog and the ids it hands the picker.
+// (`@epicenter/vocab`) for the agent catalog and the ids it hands the picker.
 export type { AgentId };
 
 /**
- * One agent Zhongwen can bind a conversation to: its durable {@link AgentId},
+ * One agent Vocab can bind a conversation to: its durable {@link AgentId},
  * a display `label` for the picker, the `model` it answers with, the action keys
  * it may call as tools (ADR-0021; none yet), and the `owner` kind that writes its
  * conversations.
@@ -94,7 +94,7 @@ export type AgentConfig = {
 };
 
 /**
- * The agents a Zhongwen conversation can be bound to (ADR-0025). Config, not
+ * The agents a Vocab conversation can be bound to (ADR-0025). Config, not
  * presence: the picker lists every entry here whether or not its runtime is live,
  * because the conversation doc is a durable mailbox: a turn bound to an offline
  * daemon waits in the doc until that daemon wakes and answers. Presence only ever
@@ -105,18 +105,18 @@ export type AgentConfig = {
  * always-on worker a user co-deploys; binding a
  * conversation to it is what a later "co-deploy a live daemon" slice brings online.
  */
-export const ZHONGWEN_AGENTS = [
+export const VOCAB_AGENTS = [
 	{
 		id: THIS_DEVICE_AGENT_ID,
 		label: 'This device',
-		model: ZHONGWEN_MODEL,
+		model: VOCAB_MODEL,
 		tools: [],
 		owner: 'ephemeral',
 	},
 	{
-		id: asAgentId('zhongwen-home'),
+		id: asAgentId('vocab-home'),
 		label: 'Home daemon',
-		model: ZHONGWEN_MODEL,
+		model: VOCAB_MODEL,
 		tools: [],
 		owner: 'durable',
 	},
@@ -136,7 +136,7 @@ export const DEFAULT_AGENT_ID: AgentId = THIS_DEVICE_AGENT_ID;
  * `'durable'` agent is left to its resident daemon over sync.
  */
 export function agentConfig(id: AgentId): AgentConfig | undefined {
-	return ZHONGWEN_AGENTS.find((agent) => agent.id === id);
+	return VOCAB_AGENTS.find((agent) => agent.id === id);
 }
 
 /**
@@ -171,14 +171,14 @@ export function resolveEngine(engines: readonly Engine[]): ChatStream | null {
 }
 
 /**
- * The bilingual system prompt every Zhongwen answer is generated under. An app
- * constant like {@link ZHONGWEN_MODEL}, shared by both answer paths so they
+ * The bilingual system prompt every Vocab answer is generated under. An app
+ * constant like {@link VOCAB_MODEL}, shared by both answer paths so they
  * produce the same voice: the browser passes it to the Epicenter provider, and the
  * always-on daemon worker passes it to its provider. It lives here, in the
  * isomorphic contract, rather than in a route folder so the node daemon can read
  * it without importing browser code.
  */
-export const ZHONGWEN_SYSTEM_PROMPT = `You are a bilingual Chinese-English language assistant. Your responses mix English and Mandarin Chinese naturally.
+export const VOCAB_SYSTEM_PROMPT = `You are a bilingual Chinese-English language assistant. Your responses mix English and Mandarin Chinese naturally.
 
 Guidelines:
 - Use English for explanations, transitions, and meta-commentary
@@ -220,15 +220,15 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The isomorphic Zhongwen workspace definition.
+ * The isomorphic Vocab workspace definition.
  *
  * Conversation transcripts are not rows: each `conversations.messages` handle
  * opens a synced child doc derived from the conversation id and streamed into
  * by the server generation worker.
  */
-export const zhongwenWorkspace = defineWorkspace({
-	id: 'epicenter-zhongwen',
-	name: 'zhongwen',
+export const vocabWorkspace = defineWorkspace({
+	id: 'epicenter-vocab',
+	name: 'vocab',
 	tables: {
 		conversations: conversationsTable,
 	},

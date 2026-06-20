@@ -2,7 +2,7 @@
 	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
-	import { requireZhongwen, session } from '$lib/session';
+	import { requireVocab, session } from '$lib/session';
 	import { auth } from '$platform/auth';
 
 	let { children } = $props();
@@ -19,7 +19,7 @@
 {#if current}
 	<WorkspaceGate
 		pending={current.idb.whenLoaded}
-		onForgetDevice={() => requireZhongwen().wipe()}
+		onForgetDevice={() => requireVocab().wipe()}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children?.()}

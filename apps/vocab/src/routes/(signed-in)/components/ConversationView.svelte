@@ -1,7 +1,7 @@
 <script module lang="ts">
 	import { APP_URLS } from '@epicenter/constants/vite';
-	import type { Engine } from '@epicenter/zhongwen';
-	import { epicenterMeteredEngine } from '@epicenter/zhongwen/engine';
+	import type { Engine } from '@epicenter/vocab';
+	import { epicenterMeteredEngine } from '@epicenter/vocab/engine';
 	import { auth } from '$platform/auth';
 
 	// The engines this tab can power, highest priority first. Today just the
@@ -22,9 +22,9 @@
 		agentConfig,
 		type ConversationId,
 		resolveEngine,
-	} from '@epicenter/zhongwen';
+	} from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
-	import { requireZhongwen } from '$lib/session';
+	import { requireVocab } from '$lib/session';
 	import ChatInput from './ChatInput.svelte';
 	import ChatMessage from './ChatMessage.svelte';
 
@@ -33,12 +33,12 @@
 		showPinyin,
 	}: { conversationId: ConversationId; showPinyin: boolean } = $props();
 
-	const zhongwen = requireZhongwen();
+	const vocab = requireVocab();
 
 	// The durable conversation row (title, bound agent) is read at action time,
 	// never in the template, so a plain read suffices.
 	function readRow() {
-		return zhongwen.tables.conversations.get(conversationId).data;
+		return vocab.tables.conversations.get(conversationId).data;
 	}
 
 	// Who answers this conversation? Two orthogonal questions (ADR-0033). First,
@@ -62,7 +62,7 @@
 	// and the render projection live in the handle + shim), dispose on unmount.
 	// svelte-ignore state_referenced_locally
 	const convo = bindConversation(
-		zhongwen.tables.conversations.docs.messages.open(conversationId),
+		vocab.tables.conversations.docs.messages.open(conversationId),
 		{ answer },
 	);
 
@@ -85,7 +85,7 @@
 		dismissedError = false;
 		convo.send(text);
 		const title = readRow()?.title;
-		zhongwen.tables.conversations.update(conversationId, {
+		vocab.tables.conversations.update(conversationId, {
 			title: title === 'New Chat' ? text.slice(0, 50) : title,
 			updatedAt: InstantString.now(),
 		});

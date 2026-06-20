@@ -3,7 +3,7 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
 /**
  * Project the dictation lifecycle onto the tray icon: the menubar is one more
- * surface of the single lifecycle the pill renders (ADR-0029), not a second,
+ * surface of the single lifecycle the pill renders (ADR-0039), not a second,
  * unrelated read. The tray is a coarse ambient cue with two icons, so it
  * reflects only whether a capture is live; the in-flight and terminal phases
  * (transcribing, delivered, failed) stay the pill's job. Reading the lifecycle

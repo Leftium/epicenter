@@ -9,7 +9,7 @@ const SMOOTHING = 0.6;
  * Fold a raw RMS sample into the smoothed 0..1 mic level the pill meter draws.
  * Shared so the desktop overlay webview and the in-page web pill apply the
  * identical perceptual curve by construction, rather than keeping two copies of
- * the constants in sync by hand (ADR-0029).
+ * the constants in sync by hand (ADR-0039).
  */
 export function foldMicLevel(previous: number, rawRms: number): number {
 	const normalized = Math.min(1, Math.sqrt(rawRms) * LEVEL_GAIN);

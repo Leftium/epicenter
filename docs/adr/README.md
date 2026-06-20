@@ -91,11 +91,22 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0022](0022-rust-owns-the-models-folder-the-webview-owns-the-catalog.md) | Rust owns the models folder, the webview owns the catalog | Accepted |
 | [0023](0023-whispering-separates-its-identity-mark-from-lucide-controls.md) | Whispering separates its identity mark from Lucide controls | Accepted |
-| [0024](0024-an-always-on-actor-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on actor runs app semantics beside the app-blind anchor | Proposed |
-| [0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-actor.md) | Agent conversations are durable child docs driven by an observing actor | Proposed |
+| [0024](0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on worker runs app semantics beside the app-blind anchor | Proposed |
+| [0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md) | Agent conversations are durable child docs driven by an observing worker | Proposed |
 | [0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) | The Matter vault's SQLite mirror is a read-only projection, never a verdict source | Accepted |
 | [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Accepted |
 | [0028](0028-both-shortcut-tiers-share-one-physical-keybinding-model.md) | Both shortcut tiers share one physical KeyBinding model | Accepted |
-| [0029](0029-dictation-feedback-is-a-projection-of-one-lifecycle-state.md) | Dictation feedback is a projection of one lifecycle state, not an event log | Accepted |
+| [0029](0029-matter-json-marks-a-table.md) | A matter.json marks a table; matter is a declared store, not a discovered lens | Accepted |
+| [0030](0030-agents-are-immutable-capability-bundles.md) | Agents are immutable capability bundles; arbitrary code runs only on a trusted box | Accepted |
+| [0031](0031-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) | Collaboration is addressed single-writer regions in a child doc | Accepted (supersedes 0025) |
+| [0032](0032-a-folder-is-a-table-or-a-container-of-tables-never-both.md) | A folder is a table or a container of tables, never both (owns reference resolution) | Accepted |
+| [0033](0033-a-conversation-has-one-transport-and-two-triggers.md) | A conversation is a synced doc answered only by in-process peers; the cloud is a metered inference stream | Accepted |
+| [0034](0034-the-cloud-doc-generation-queue-is-withdrawn.md) | The cloud doc-generation queue is withdrawn | Superseded by 0033 |
+| [0035](0035-durable-storage-is-one-per-person-coordination-box.md) | Durable storage is one per-person coordination box: an app-blind anchor and store | Accepted |
+| [0036](0036-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) | An answer body is a native parts array; its text streams into Y.Text | Accepted |
+| [0037](0037-adapter-construction-is-a-shared-leaf-package-keyed-on-the-model-catalog.md) | Adapter construction is a shared leaf package keyed on the model catalog | Accepted |
+| [0038](0038-a-daemon-answers-through-the-first-inference-backend-it-can-satisfy.md) | A daemon answers through the first inference backend it can satisfy: byok, else metered, else placeholder | Proposed |
+| [0039](0039-dictation-feedback-is-a-projection-of-one-lifecycle-state.md) | Dictation feedback is a projection of one lifecycle state, not an event log | Accepted |
+| [0040](0040-a-cursor-write-that-cannot-paste-falls-back-to-the-clipboard-decided-from-the-grant.md) | A cursor write that cannot paste falls back to the clipboard, decided from the grant | Accepted |
 
 When you add an ADR, add its row here.

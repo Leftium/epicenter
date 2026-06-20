@@ -236,41 +236,33 @@
 			{/each}
 		</ToggleGroup.Root>
 
-		{#snippet manualPipeline()}
-			<CapturePipeline>
-				<ManualDeviceSelector
-					iconViewTransitionName={viewTransition.pipeline.device}
-				/>
-				<TranscriptionSelector
-					variant="pipeline"
-					iconViewTransitionName={viewTransition.pipeline.transcription}
-				/>
-				<TransformationSelector
-					iconViewTransitionName={transformationViewTransitionName}
-				/>
-				<CaptureBehaviorPopover />
-			</CapturePipeline>
-		{/snippet}
-
-		{#snippet vadPipeline()}
-			<CapturePipeline>
-				<VadDeviceSelector
-					iconViewTransitionName={viewTransition.pipeline.device}
-				/>
-				<TranscriptionSelector
-					variant="pipeline"
-					iconViewTransitionName={viewTransition.pipeline.transcription}
-				/>
-				<TransformationSelector
-					iconViewTransitionName={transformationViewTransitionName}
-				/>
-				<CaptureBehaviorPopover />
-			</CapturePipeline>
-		{/snippet}
-
+		<!--
+			The capture pipeline is each recording action's idle footer (the action
+			hides it while live), so it's defined inline per surface. Manual and VAD
+			differ only by their device selector; each owns a distinct one backed by a
+			different recorder config. The shared tail repeats, but that keeps each
+			surface's footer co-located with the branch that already chose it, rather
+			than re-deriving the surface inside a shared snippet.
+		-->
 		{#if captureSurface.current === 'manual'}
 			<div class="flex w-full flex-col items-center gap-3">
-				<ManualRecordingAction pipeline={manualPipeline} />
+				<ManualRecordingAction>
+					{#snippet pipeline()}
+						<CapturePipeline>
+							<ManualDeviceSelector
+								iconViewTransitionName={viewTransition.pipeline.device}
+							/>
+							<TranscriptionSelector
+								variant="pipeline"
+								iconViewTransitionName={viewTransition.pipeline.transcription}
+							/>
+							<TransformationSelector
+								iconViewTransitionName={transformationViewTransitionName}
+							/>
+							<CaptureBehaviorPopover />
+						</CapturePipeline>
+					{/snippet}
+				</ManualRecordingAction>
 				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording and discard audio"
@@ -285,7 +277,23 @@
 			</div>
 		{:else if captureSurface.current === 'vad'}
 			<div class="flex w-full flex-col items-center gap-3">
-				<VadRecordingAction pipeline={vadPipeline} />
+				<VadRecordingAction>
+					{#snippet pipeline()}
+						<CapturePipeline>
+							<VadDeviceSelector
+								iconViewTransitionName={viewTransition.pipeline.device}
+							/>
+							<TranscriptionSelector
+								variant="pipeline"
+								iconViewTransitionName={viewTransition.pipeline.transcription}
+							/>
+							<TransformationSelector
+								iconViewTransitionName={transformationViewTransitionName}
+							/>
+							<CaptureBehaviorPopover />
+						</CapturePipeline>
+					{/snippet}
+				</VadRecordingAction>
 			</div>
 		{:else if captureSurface.current === 'import'}
 			<div class="flex w-full flex-col items-center gap-4">

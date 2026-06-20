@@ -1,12 +1,12 @@
-# 0030. A cursor write that cannot paste falls back to the clipboard, decided from the grant
+# 0040. A cursor write that cannot paste falls back to the clipboard, decided from the grant
 
 - **Status:** Accepted
 - **Date:** 2026-06-19
-- **Amends:** [ADR-0029](0029-dictation-feedback-is-a-projection-of-one-lifecycle-state.md) (collapses the delivery reach from three rungs to two)
+- **Amends:** [ADR-0039](0039-dictation-feedback-is-a-projection-of-one-lifecycle-state.md) (collapses the delivery reach from three rungs to two)
 
 ## Context
 
-[ADR-0029](0029-dictation-feedback-is-a-projection-of-one-lifecycle-state.md)
+[ADR-0039](0039-dictation-feedback-is-a-projection-of-one-lifecycle-state.md)
 modeled delivery as a *reach* with three rungs: `output` (landed where
 configured), `clipboard` (a cursor write fell back to the clipboard), and
 `history` (a requested channel errored and nothing landed at the cursor or
@@ -52,7 +52,7 @@ keystroke**, never from its result.
   toggle still governs the normal path; this override applies only when a
   requested paste is impossible.
 - The transcript is independently saved to history regardless, so a reduced reach
-  stays a recoverable success, never data loss — ADR-0029's reach-not-failure rule
+  stays a recoverable success, never data loss — ADR-0039's reach-not-failure rule
   holds, now over two rungs instead of three.
 
 ## Consequences

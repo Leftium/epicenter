@@ -6,7 +6,7 @@ import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
 /**
- * The dictation lifecycle owned by the main window. See ADR-0029.
+ * The dictation lifecycle owned by the main window. See ADR-0039.
  *
  * Voice-activated capture is *continuous*: an utterance transcribes while the
  * session keeps listening, so a live meter and a pipeline outcome run at once.
@@ -113,7 +113,7 @@ function createDictationLifecycle() {
 		 * `history`) instead persists until the next dictation, like a failure does:
 		 * the text did not land where the user asked, so the tag carries information
 		 * the text alone does not, and a sub-second flash is too easy to miss. There
-		 * is no notification for a reduced reach (ADR-0029): the persistent pill tag
+		 * is no notification for a reduced reach (ADR-0039): the persistent pill tag
 		 * and the recordings row are the surfaces, and the dominant `history` cause
 		 * (a revoked Accessibility grant) already raises its own standing notice.
 		 */

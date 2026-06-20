@@ -1,8 +1,8 @@
-# 0029. Dictation feedback is a projection of one lifecycle state, not an event log
+# 0039. Dictation feedback is a projection of one lifecycle state, not an event log
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
-- **Amended by:** [ADR-0030](0030-a-cursor-write-that-cannot-paste-falls-back-to-the-clipboard-decided-from-the-grant.md) — the delivery reach below collapsed from three rungs (`output`/`clipboard`/`history`) to two (`output`/`clipboard`); a cursor write that cannot paste now leaves the transcript on the clipboard instead of stranding it in history.
+- **Amended by:** [ADR-0040](0040-a-cursor-write-that-cannot-paste-falls-back-to-the-clipboard-decided-from-the-grant.md) — the delivery reach below collapsed from three rungs (`output`/`clipboard`/`history`) to two (`output`/`clipboard`); a cursor write that cannot paste now leaves the transcript on the clipboard instead of stranding it in history.
 
 ## Context
 
@@ -27,7 +27,7 @@ modeled as two orthogonal tracks: **capture** (`idle | recording-manual |
 listening | speaking`, the live session, derived from the recorder machines) and
 **outcome** (`none | transcribing | delivered | failed`, the most-recent
 utterance's pipeline result, where `delivered` carries a *reach*: landed at the
-configured output, or fell back to the clipboard — ADR-0030 collapsed the former
+configured output, or fell back to the clipboard — ADR-0040 collapsed the former
 history-only rung). Every
 surface is a pure projection, never an
 imperative emission. The two tracks exist because voice-activated capture is
@@ -74,7 +74,7 @@ durable log and the home of retry.
   but missed its
   configured output (paste or injection failed) is **not** a failure: the text is
   saved, so it is a reduced *delivery reach*, not a tier. It rides on the
-  `delivered` outcome (a clean `output`, or a `clipboard` fallback; see ADR-0030)
+  `delivered` outcome (a clean `output`, or a `clipboard` fallback; see ADR-0040)
   and shows an amber tag, never a red pill and never an OS notification.
   Folding delivery into the reach axis keeps failure clean: a missed delivery is a
   reduced success, not a failure, so the failure path carries only the two real
@@ -95,7 +95,7 @@ durable log and the home of retry.
   failure and fires no notification: the persistent pill tag and the recordings row
   are enough, and the dominant cause, a revoked Accessibility grant
   (cursor paste-back shares the same trust as the keyboard tap), already raises its
-  own standing notice. Under ADR-0030 a paste that cannot land falls back to the
+  own standing notice. Under ADR-0040 a paste that cannot land falls back to the
   clipboard rather than stranding the transcript, so the reduced reach is always
   recoverable with one ⌘V.
 - **The dictation path emits no toasts.** The pill glances the status, the OS

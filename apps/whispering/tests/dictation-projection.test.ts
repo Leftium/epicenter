@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { projectLifecycleToStatus } from '../src/lib/recording-overlay/projection';
 
 /**
- * Locks the dictation pill's projection invariants (ADR-0029). The projection is
+ * Locks the dictation pill's projection invariants (ADR-0039). The projection is
  * the one place capture and outcome are flattened into the serializable status
  * both pill mounts render, so a regression here silently changes desktop and web
  * at once. These cases pin the subtle rules: a live VAD meter is never replaced,

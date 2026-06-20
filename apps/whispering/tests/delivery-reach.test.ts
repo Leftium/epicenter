@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { reachForCursorWrite } from '../src/lib/operations/delivery-reach';
 
 /**
- * Locks the reach policy for a cursor write (ADR-0030). The reach is decided from
+ * Locks the reach policy for a cursor write (ADR-0040). The reach is decided from
  * where `write_text` reports the transcript landed, never from observing the
  * keystroke, so the only mapping that matters is outcome -> reach.
  */

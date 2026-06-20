@@ -4,26 +4,27 @@
  * `zhongwen()` returns the `Mount` that an `epicenter.config.ts`
  * default-exports. Zhongwen has no daemon actions to add and no materializers,
  * so the daemon hosts the root Y.Doc on disk and bridges cloud sync, then runs
- * one child-doc actor: an always-on observe loop (ADR-0024/0025) over the
+ * one child-doc worker: an always-on observe loop (ADR-0024/0025) over the
  * `conversations.messages` transcripts. Registering the field is all the app
  * declares; the table, the guid, and the layout come from the schema. The
  * factory is the behavior seam, and it hands each hosted transcript to
- * `attachChatActor`, the backend-agnostic append loop in
+ * `attachChatWorker`, the backend-agnostic append loop in
  * `@epicenter/workspace/ai`.
  *
- * The actor is parameterized by a `ChatStream`
+ * The worker is parameterized by a `ChatStream`
  * (`startStream(messages, signal) => AsyncIterable<StreamChunk>`), the one
  * contract every inference backend speaks. The daemon builds the real one from
- * the same `chat()` call the hosted route makes ({@link resolveChatStream}): a
- * Gemini adapter keyed on `GEMINI_API_KEY`, under the shared
- * `ZHONGWEN_SYSTEM_PROMPT`. With no key it falls back to {@link fakeChatStream},
+ * the same `chat()` call the hosted route makes ({@link resolveChatStream}): an
+ * adapter for the configured `ZHONGWEN_MODEL` keyed on the matching provider key,
+ * under the shared `ZHONGWEN_SYSTEM_PROMPT`. With no key it falls back to
+ * {@link fakeChatStream},
  * a deterministic placeholder, and says so in the log: that fallback is the
- * explicit "real inference not wired on this host yet" boundary. The actor
+ * explicit "real inference not wired on this host yet" boundary. The worker
  * itself observes -> answers -> streams -> finishes and honors the client's
  * durable cancel, all over hosted sync with no HTTP and no duplicate stream.
  *
  * Designation (R, ADR-0025) is the observe loop's concern, not this factory's:
- * the loop builds an actor only for conversations bound to this daemon's agent
+ * the loop builds a worker only for conversations bound to this daemon's agent
  * (`row.agent === selfAgentId`), so the factory supplies behavior alone. The
  * `agentId` option names which catalog agent this daemon answers as (a
  * `ZHONGWEN_AGENTS` id like `zhongwen-home`); omit it and the daemon hosts
@@ -32,8 +33,13 @@
  * answered twice.
  */
 
+import {
+	createAdapterForModel,
+	HOUSE_KEY_ENV_VAR,
+} from '@epicenter/ai-adapters';
+import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
 import type { AgentId } from '@epicenter/workspace';
-import { attachChatActor, type ChatStream } from '@epicenter/workspace/ai';
+import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
 import {
 	chat,
@@ -41,7 +47,6 @@ import {
 	type ModelMessage,
 	type StreamChunk,
 } from '@tanstack/ai';
-import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createLogger } from 'wellcrafted/logger';
 import {
 	ZHONGWEN_MODEL,
@@ -73,33 +78,43 @@ export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
 		baseURL,
 		agentId,
 		runtime: nodeMountRuntime(),
-		actors: {
+		workers: {
 			conversations: {
-				messages: ({ ydoc }) => attachChatActor({ ydoc, startStream }),
+				messages: ({ ydoc }) => attachChatWorker({ ydoc, startStream }),
 			},
 		},
 	});
 }
 
 /**
- * The daemon's inference backend as a {@link ChatStream}. With `GEMINI_API_KEY`
- * set, this is real inference: a Gemini adapter (built once) driven by the same
- * `chat()` call the hosted route makes, under {@link ZHONGWEN_SYSTEM_PROMPT}. The
- * actor hands a `signal`; `chat()` cancels on an `AbortController`, so the signal
- * is forwarded onto one. With no key it returns the deterministic placeholder and
- * logs that real inference is not live on this host.
+ * The daemon's inference backend as a {@link ChatStream}. The daemon answers as
+ * whatever provider its `ZHONGWEN_MODEL` names: the catalog gives the provider,
+ * and the matching house key (`OPENAI_API_KEY` / `GEMINI_API_KEY`) is read from
+ * the environment. With that key set, this is real inference: an adapter (built
+ * once via `createAdapterForModel`) driven by the same `chat()` call the hosted
+ * route makes, under {@link ZHONGWEN_SYSTEM_PROMPT}. The worker hands a `signal`;
+ * `chat()` cancels on an `AbortController`, so the signal is forwarded onto one.
+ * With no key it returns the deterministic placeholder and logs that real
+ * inference is not live on this host. Switching providers is a catalog + env-key
+ * change, no code edit.
  */
 function resolveChatStream(): ChatStream {
-	const apiKey = process.env.GEMINI_API_KEY;
+	// Key policy: the catalog gives the provider, and the provider -> house-key
+	// env var mapping is single-homed in `@epicenter/ai-adapters` (exhaustive, so
+	// a new provider is a compile error there, not a silent wrong key here).
+	// Construction is delegated to the same leaf.
+	const { provider } = MODELS_BY_ID[ZHONGWEN_MODEL];
+	const envVar = HOUSE_KEY_ENV_VAR[provider];
+	const apiKey = process.env[envVar];
 	if (!apiKey) {
 		log.warn(
 			new Error(
-				'GEMINI_API_KEY is not set; the Zhongwen daemon answers with the placeholder stream (real inference is not live on this host).',
+				`${envVar} is not set; the Zhongwen daemon answers with the placeholder stream (real inference is not live on this host).`,
 			),
 		);
 		return fakeChatStream;
 	}
-	const adapter = createGeminiChat(ZHONGWEN_MODEL, apiKey);
+	const adapter = createAdapterForModel(ZHONGWEN_MODEL, apiKey);
 	return (messages, signal) => {
 		const abortController = new AbortController();
 		if (signal.aborted) abortController.abort();
@@ -126,7 +141,7 @@ const fakeChatStream: ChatStream = async function* (
 	messages: ModelMessage[],
 ): AsyncGenerator<StreamChunk> {
 	const userText = String(messages.at(-1)?.content ?? '');
-	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on actor; set GEMINI_API_KEY for real inference.`;
+	const reply = `Received: "${userText.trim()}". This is a placeholder reply streamed by the always-on worker; set the configured provider's API key for real inference.`;
 	for (const token of reply.match(/\S+\s*/g) ?? [reply]) {
 		yield {
 			type: EventType.TEXT_MESSAGE_CONTENT,

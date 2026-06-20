@@ -58,7 +58,7 @@
 	// render through one block below instead of a branch apiece. The label is
 	// always a closed, glanceable token, never a raw error message, so it fits the
 	// fixed-width pill without truncation; the full failure detail lives in the OS
-	// notification and the recordings row (ADR-0029).
+	// notification and the recordings row (ADR-0039).
 	type ChipTone = 'neutral' | 'success' | 'degraded' | 'failed';
 	type Chip = {
 		Icon: typeof CheckIcon;
@@ -193,7 +193,7 @@
 		{:else if chip}
 			<!-- One chip block for every non-recording phase. A failure is glanceable
 			     by design: the terse label, no action; detail and retry live on the
-			     recordings row (ADR-0029). -->
+			     recordings row (ADR-0039). -->
 			{@const Icon = chip.Icon}
 			<div
 				class="icon"

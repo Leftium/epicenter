@@ -216,6 +216,62 @@ export function isTierZeroChord(binding: BindingLike): boolean {
 }
 
 /**
+ * A reach with whether reaching that far needs the macOS Accessibility grant.
+ * The shape of both a key's capability and the realized outcome, since the
+ * Accessibility need is a property of the gesture that survives (or does not) the
+ * reach min().
+ */
+export type ReachWithGrant = { reach: Reach; needsAccessibility: boolean };
+
+/**
+ * How far a key can fire, by its physical shape alone (the second term of the
+ * reach formula, ADR-0041). A chord (a non-Fn modifier plus a key) fires
+ * globally with no permission. A bare key (a single key, no modifiers) can only
+ * fire in-app: bound globally it would swallow that key in every app, so it caps
+ * at `focused`. Everything else (an Fn hold, a modifier-only hold, an Fn+key
+ * hold) fires globally but only behind the Accessibility grant (ADR-0019).
+ * Callers pass a non-empty binding.
+ */
+export function keyCapability(binding: BindingLike): ReachWithGrant {
+	if (isTierZeroChord(binding))
+		return { reach: 'global', needsAccessibility: false };
+	const isBareKey = binding.modifiers.length === 0 && binding.keys.length === 1;
+	if (isBareKey) return { reach: 'focused', needsAccessibility: false };
+	return { reach: 'global', needsAccessibility: true };
+}
+
+/** `focused` is more restrictive than `global`; the smaller reach wins a min(). */
+const REACH_RANK: Record<Reach, number> = { focused: 0, global: 1 };
+
+function minReach(a: Reach, b: Reach): Reach {
+	return REACH_RANK[b] < REACH_RANK[a] ? b : a;
+}
+
+/**
+ * The reach a binding actually achieves for a command on a platform: the minimum
+ * of the command's intrinsic ceiling, the key's capability, and what the
+ * platform allows (web caps at `focused`, desktop reaches `global`). The most
+ * restrictive wins, so reach only ever clamps down, never up. The Accessibility
+ * grant requirement is carried through only when the realized reach is still
+ * `global`; a gesture clamped to `focused` (a hold on web, a chord on a focused
+ * command) needs no grant. This is the one place the reach formula lives, fed
+ * `command.reach` and a `platformReach` so it stays free of catalog and platform
+ * imports. See ADR-0041.
+ */
+export function realizedReach(
+	commandReach: Reach,
+	binding: BindingLike,
+	platformReach: Reach,
+): ReachWithGrant {
+	const key = keyCapability(binding);
+	const reach = minReach(minReach(commandReach, key.reach), platformReach);
+	return {
+		reach,
+		needsAccessibility: reach === 'global' && key.needsAccessibility,
+	};
+}
+
+/**
  * Inverse of {@link ACCELERATOR_KEYS}: a W3C `KeyboardEvent.code` token back to
  * our `Key`. Built from the same source so the two directions can never drift.
  */

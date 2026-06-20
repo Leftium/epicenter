@@ -3,10 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
-	import {
-		accessibilityGuide,
-		openSystemSettings,
-	} from '$lib/components/MacosAccessibilityGuideDialog.svelte';
+	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { clipboardFallback } from '$lib/components/accessibility-feature-copy';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 </script>
@@ -69,16 +66,17 @@ branch order is load-bearing: `broken` is caught before the plain untrusted case
 				<li>Paste hands-free: transcripts land where you're typing.</li>
 			</ul>
 			<p>{clipboardFallback}</p>
-			<Button
-				variant="link"
-				class="h-auto p-0 text-sm font-normal"
-				onclick={() => accessibilityGuide.open()}
-			>
-				Already enabled but not working?
-			</Button>
 		</Alert.Description>
-		<Alert.Action>
-			<Button size="sm" onclick={openSystemSettings}>Open Settings</Button>
-		</Alert.Action>
+		<!-- One CTA into the guide, which is the actual "how to add it" answer: it
+		walks the steps, carries the Open System Settings deep-link, and flips to
+		"granted" live. The notice doesn't deep-link itself, so a first-timer is
+		never dropped into System Settings without instructions. The button reads
+		after the pitch in a footer row aligned to the content column (`col-start-2`
+		clears the icon), so a longer label can never crowd the title. -->
+		<div class="col-start-2 mt-3">
+			<Button size="sm" onclick={() => accessibilityGuide.open()}>
+				Show me how
+			</Button>
+		</div>
 	</Alert.Root>
 {/if}

@@ -13,8 +13,8 @@ the zhongwen daemon's `resolveChatStream` is BYOK-only (read the house key from
 `process.env`, else a placeholder), and the browser is metered-only
 (`createEpicenterProviderChatStream`). A daemon that wants to answer on the
 user's metered Epicenter account, with no raw provider key on the box, has no
-path, even though the daemon already holds a cloud sync session
-(`@epicenter/workspace/daemon` mount runtime: `session.ownerId` + `openWebSocket`).
+path, even though the daemon's signed-in `MountSession` already carries an
+`AuthedFetch` (`session.fetch`) beside `ownerId` and `openWebSocket`.
 
 This ADR refines ADR-0033: it settles how a daemon resolves which backend serves
 a turn. It relates to ADR-0037, whose leaf package builds the BYOK arm's adapter.
@@ -53,10 +53,15 @@ cloud round-trip.
 - The "second adapter -> `ChatStream` caller" the leaf was waiting for now exists
   (the daemon's BYOK arm as a named builder), so extracting a BYOK `ChatStream`
   constructor into the leaf is no longer premature.
-- Keystone, and the reason this is `Proposed` not `Accepted`: the metered arm
-  needs the daemon to expose its sync session credential as an `AuthFetch`
-  (`createAiChatFetch` wraps one). The mount runtime holds the session but does
-  not yet surface an HTTP `AuthFetch`. This ADR lands when that one seam exists.
+- Keystone, and the reason this is `Proposed` not `Accepted`: the credential
+  already exists. `MountSession.fetch` is an `AuthedFetch`, byte-identical to the
+  `AuthFetch` that `createAiChatFetch` wraps, so the metered arm needs no new auth
+  plumbing. The gap is structural: `resolveChatStream()` runs at config-build time
+  (inside `zhongwen({...})`) where no session exists yet, and the mount runtime
+  forwards `ownerId` / `openWebSocket` to workers but not `fetch`. The work is to
+  thread `session.fetch` to the worker factory and resolve the `ChatStream`
+  per-body, with the session in hand, instead of once at construction. This ADR
+  lands when that wiring exists.
 
 ## Considered alternatives
 

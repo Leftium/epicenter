@@ -26,23 +26,29 @@ host into a priority `??` chain.
 
 ## Keystone (do this first; the rest is blocked on it)
 
-The metered arm needs `createAiChatFetch(authFetch: AuthFetch)`. The daemon mount
-runtime (`packages/workspace/src/daemon/mount-runtime.ts`) holds a `session` with
-`ownerId` + `openWebSocket` but exposes no HTTP `AuthFetch`. Surface the session's
-existing credential as an `AuthFetch` (e.g. `session.authFetch`) alongside
-`openWebSocket`. This is the one new seam; verify it before building the chain.
+The credential already exists: `MountSession.fetch`
+(`packages/workspace/src/daemon/define-mount.ts:52`) is an `AuthedFetch`,
+byte-identical to the `AuthFetch` that `createAiChatFetch` wraps, so
+`createAiChatFetch(session.fetch)` typechecks directly: no new auth plumbing. The
+gap is structural. `resolveChatStream()` runs at config-build time inside
+`zhongwen({...})` (`apps/zhongwen/mount.ts`), where no session exists, and the
+mount runtime forwards `ownerId` / `openWebSocket` to workers but not `fetch`. So
+thread `session.fetch` to the worker factory and resolve the `ChatStream`
+per-body, session in hand, instead of once at construction.
 
 ## Plan
 
 Each wave independently green and revertible; separate commit per wave.
 
-### Wave 1: Surface the daemon session credential as an `AuthFetch` (the keystone)
+### Wave 1: Thread the existing session `AuthedFetch` to per-body resolution (the keystone)
 
-- [ ] **1.1** In `@epicenter/workspace/daemon`, expose the sync session's credential
-  as an `AuthFetch` (the shape `@epicenter/auth` exports and `createAiChatFetch`
-  wraps). Type-only at the consumer; the runtime constructs it at the host edge.
-- [ ] Checkpoint: a Node smoke that the daemon's `AuthFetch` authenticates a GET
-  against the cloud (same credential the WebSocket sync already uses). Commit.
+- [ ] **1.1** Forward `session.fetch` from the `.mount()` coordinator
+  (`SessionMountContext`) into the worker factory context (`ChildDocWorkerContext`,
+  today `{ ydoc }` only), and move `resolveChatStream()` out of `zhongwen({...})`
+  construction into the per-body factory so it sees the session. No new auth type:
+  `createAiChatFetch(session.fetch)` typechecks directly.
+- [ ] Checkpoint: a Node smoke that `session.fetch` GETs the cloud with the same
+  credential sync uses. Commit.
 
 ### Wave 2: Name the three backends as sibling `ChatStream` constructors
 

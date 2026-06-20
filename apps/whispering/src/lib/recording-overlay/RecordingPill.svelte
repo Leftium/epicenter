@@ -102,7 +102,9 @@
 
 	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
 	// the same amplitude through a fixed shape reads as a meter, not a flat block.
-	const BAR_ENVELOPE = [0.5, 0.72, 0.9, 1, 0.9, 0.72, 0.5];
+	const BAR_ENVELOPE = [
+		0.35, 0.5, 0.68, 0.84, 0.95, 1, 0.95, 0.84, 0.68, 0.5, 0.35,
+	];
 	const MIN_BAR_PX = 3;
 	const MAX_BAR_PX = 18;
 
@@ -139,12 +141,18 @@
 {#if status}
 	<div
 		class={cn(
-			// The pill hugs its content and is centered within its mount (the desktop
-			// overlay window centers it; the web host translates it to center), so each
-			// state is a snug chip with no dead space leaving the meter off-center. The
-			// mount centers a fixed 40px-tall, up-to-184px-wide pill; max-w-[184px] caps
-			// it to that window so a long failed reason ellipsizes rather than overflowing.
-			'box-border flex h-10 w-fit max-w-[184px] items-center gap-2 rounded-full px-2.5 text-white/90 shadow-[0_6px_20px_rgba(0,0,0,0.35)] backdrop-blur-md select-none',
+			// 40px-tall pill, shared look. gap-2.5 spaces the chip icon from its label;
+			// in recording it is only the floor (justify-between distributes wider). The
+			// width differs by phase (next arg).
+			'box-border flex h-10 items-center gap-2.5 rounded-full px-2.5 text-white/90 shadow-[0_6px_20px_rgba(0,0,0,0.35)] backdrop-blur-md select-none',
+			// Recording is a wider bar: the mic pins the left edge and stop the right,
+			// with the meter spread between them (justify-between). The text chips hug
+			// their content, capped wide enough for the longest label ("Transcription
+			// failed") to show in full. The 224px cap is mirrored by the desktop overlay
+			// window (OVERLAY_WIDTH in overlay.rs / index.tauri.ts), which must stay in sync.
+			status.phase === 'recording'
+				? 'w-[208px] justify-between'
+				: 'w-fit max-w-[224px]',
 			// Failed: a red chip so the failure reads at a glance, with the terse reason
 			// in the label. No action: detail and retry live on the recordings row.
 			chip?.tone === 'failed'
@@ -205,21 +213,29 @@
 					</button>
 				{:else}
 					<!-- VAD has no per-utterance cancel, so the slot holds an indicator the
-					     same size as the cancel button: the previous phrase's transcribe
-					     spinner while one is running, otherwise a faint dot that reads as
-					     "armed and listening" while the meter sits flat through silence. No
-					     success or failure state: success is the landing text, failure goes
-					     to the notification and the recordings row. -->
+					     same size as the cancel button. While a previous phrase is still
+					     transcribing it is the spinner; otherwise it is the capture dot. The
+					     bars track raw mic level continuously, but whether VAD has actually
+					     latched onto speech is a separate fact (with a detection delay): the
+					     dot is dim while armed and lights up the instant capture begins, so
+					     the user can tell "being recorded now" from "just hearing sound". -->
 					<div
 						class="flex size-6 items-center justify-center text-white/50"
 						title={vadPip === 'transcribing'
 							? 'Transcribing previous phrase'
-							: undefined}
+							: isSpeaking
+								? 'Capturing speech'
+								: 'Listening'}
 					>
 						{#if vadPip === 'transcribing'}
 							<LoaderCircleIcon class="size-3.5 animate-spin" />
 						{:else}
-							<span class="size-1.5 rounded-full bg-white/40"></span>
+							<span
+								class={cn(
+									'size-2 rounded-full',
+									isSpeaking ? 'bg-pink-300' : 'bg-white/40',
+								)}
+							></span>
 						{/if}
 					</div>
 				{/if}
@@ -228,7 +244,7 @@
 				     it reads as "stop recording". -->
 				<button
 					type="button"
-					class={cn(actionBase, 'bg-red-500/30 text-white hover:bg-red-500/50')}
+					class={cn(actionBase, 'bg-red-500/60 text-white hover:bg-red-500/80')}
 					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
 					title={isManual ? 'Stop recording' : 'Stop listening'}
 					onclick={handleStop}
@@ -258,9 +274,7 @@
 			     closed, short tokens that fit the fixed-width pill; truncate's ellipsis
 			     is a safety net, not load-bearing truncation. The full failure detail
 			     lives in the OS notification and the recordings row, never here. -->
-			<span class="min-w-0 flex-1 truncate text-[13px] font-medium"
-				>{chip.label}</span
-			>
+			<span class="min-w-0 truncate text-[13px] font-medium">{chip.label}</span>
 		{/if}
 	</div>
 {/if}

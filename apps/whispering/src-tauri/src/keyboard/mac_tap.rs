@@ -266,12 +266,12 @@ fn key_from_keycode(keycode: u16) -> Option<Key> {
         36 => Key::Return,
         48 => Key::Tab,
         49 => Key::Space,
-        51 => Key::Backspace,    // kVK_Delete is the Backspace key
+        51 => Key::Backspace, // kVK_Delete is the Backspace key
         53 => Key::Escape,
-        114 => Key::Insert,      // kVK_Help
+        114 => Key::Insert, // kVK_Help
         115 => Key::Home,
         116 => Key::PageUp,
-        117 => Key::Delete,      // kVK_ForwardDelete
+        117 => Key::Delete, // kVK_ForwardDelete
         119 => Key::End,
         121 => Key::PageDown,
         // Arrows

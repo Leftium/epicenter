@@ -32,10 +32,7 @@ pub struct CommandBinding {
 /// what is bound, with no add/remove bookkeeping to drift.
 #[tauri::command]
 #[specta::specta]
-pub fn set_keyboard_shortcuts(
-    controller: State<'_, TapController>,
-    bindings: Vec<CommandBinding>,
-) {
+pub fn set_keyboard_shortcuts(controller: State<'_, TapController>, bindings: Vec<CommandBinding>) {
     controller.set_bindings(
         bindings
             .into_iter()

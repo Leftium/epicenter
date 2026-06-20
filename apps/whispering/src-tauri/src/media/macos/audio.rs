@@ -22,8 +22,8 @@
 
 use core_foundation_sys::base::{Boolean, CFIndex, CFRelease, CFTypeRef};
 use core_foundation_sys::string::{
-    kCFStringEncodingUTF8, CFStringGetCString, CFStringGetCStringPtr, CFStringGetLength,
-    CFStringEncoding, CFStringRef,
+    kCFStringEncodingUTF8, CFStringEncoding, CFStringGetCString, CFStringGetCStringPtr,
+    CFStringGetLength, CFStringRef,
 };
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
@@ -188,6 +188,10 @@ fn cf_string_to_string(cf_string: CFStringRef) -> Option<String> {
         if copied == 0 {
             return None;
         }
-        Some(CStr::from_ptr(buffer.as_ptr()).to_string_lossy().into_owned())
+        Some(
+            CStr::from_ptr(buffer.as_ptr())
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 }

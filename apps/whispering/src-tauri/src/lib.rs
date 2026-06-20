@@ -328,23 +328,47 @@ pub async fn run() {
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-/// Writes text at the cursor position using the clipboard sandwich technique
+/// Where `write_text` left the transcript.
 ///
-/// This method preserves the user's existing clipboard content by:
-/// 1. Saving the current clipboard content
-/// 2. Writing the new text to clipboard
-/// 3. Simulating a paste operation (Cmd+V on macOS, Ctrl+V elsewhere)
-/// 4. Restoring the original clipboard content
+/// - `Pasted`: a synthetic paste landed it at the cursor and the user's original
+///   clipboard was restored.
+/// - `LeftOnClipboard`: delivery could not paste (no Accessibility grant, or the
+///   paste itself failed), so the transcript was left on the clipboard as the
+///   fallback — always one ⌘V away.
 ///
-/// This approach is faster than typing character-by-character and preserves
-/// the user's clipboard, making it ideal for inserting transcribed text.
+/// The frontend maps this to the dictation pill's delivery reach.
+#[derive(Clone, Copy, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum WriteTextOutcome {
+    Pasted,
+    LeftOnClipboard,
+}
+
+/// Delivers text to the cursor, falling back to the clipboard when it cannot.
+///
+/// The reach is decided from the Accessibility grant *before* the keystroke, not
+/// from the keystroke's result: an untrusted synthetic ⌘V silently no-ops on
+/// macOS, so observing whether it landed is unreliable. When we can paste, the
+/// clipboard sandwich (save → write → paste → restore) preserves the user's
+/// clipboard; when we cannot, the transcript is left on the clipboard as the
+/// fallback. The transcript is independently saved to history either way, so this
+/// is a reduced reach, never data loss.
 #[tauri::command]
 #[specta::specta]
-async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
-    // 1. Save current clipboard content
+async fn write_text(app: tauri::AppHandle, text: String) -> Result<WriteTextOutcome, String> {
+    // Untrusted: a synthetic paste would silently no-op, and restoring afterward
+    // would wipe the transcript. Leave it on the clipboard as the fallback instead.
+    if !crate::keyboard::is_trusted() {
+        app.clipboard()
+            .write_text(&text)
+            .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
+        return Ok(WriteTextOutcome::LeftOnClipboard);
+    }
+
+    // Clipboard sandwich: borrow the clipboard to carry the paste, restore it only
+    // once the paste has provably landed.
     let original_clipboard = app.clipboard().read_text().ok();
 
-    // 2. Write new text to clipboard
     app.clipboard()
         .write_text(&text)
         .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
@@ -352,44 +376,46 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     // Small delay to ensure clipboard is updated
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-    // 3. Simulate paste operation using virtual key codes (layout-independent)
-    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+    // Simulate paste using virtual key codes (layout-independent). Issue every
+    // press/release even on a mid-sequence error so a failure can never leave the
+    // modifier stuck down.
+    let paste_result = (|| -> Result<(), String> {
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        let (modifier, v_key) = (Key::Meta, Key::Other(9)); // Virtual key code for V on macOS
+        #[cfg(target_os = "windows")]
+        let (modifier, v_key) = (Key::Control, Key::Other(0x56)); // VK_V on Windows
+        #[cfg(target_os = "linux")]
+        let (modifier, v_key) = (Key::Control, Key::Unicode('v')); // Fallback for Linux
 
-    // Use virtual key codes for V to work with any keyboard layout
-    #[cfg(target_os = "macos")]
-    let (modifier, v_key) = (Key::Meta, Key::Other(9)); // Virtual key code for V on macOS
-    #[cfg(target_os = "windows")]
-    let (modifier, v_key) = (Key::Control, Key::Other(0x56)); // VK_V on Windows
-    #[cfg(target_os = "linux")]
-    let (modifier, v_key) = (Key::Control, Key::Unicode('v')); // Fallback for Linux
+        let press_modifier = enigo.key(modifier, Direction::Press);
+        let press_v = enigo.key(v_key, Direction::Press);
+        let release_v = enigo.key(v_key, Direction::Release);
+        let release_modifier = enigo.key(modifier, Direction::Release);
+        press_modifier
+            .and(press_v)
+            .and(release_v)
+            .and(release_modifier)
+            .map_err(|e| format!("Failed to simulate paste: {}", e))
+    })();
 
-    // Press modifier + V
-    enigo
-        .key(modifier, Direction::Press)
-        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
-    enigo
-        .key(v_key, Direction::Press)
-        .map_err(|e| format!("Failed to press V key: {}", e))?;
-
-    // Release V + modifier (in reverse order for proper cleanup)
-    enigo
-        .key(v_key, Direction::Release)
-        .map_err(|e| format!("Failed to release V key: {}", e))?;
-    enigo
-        .key(modifier, Direction::Release)
-        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+    if paste_result.is_err() {
+        // Trusted but the paste still failed (rare). The transcript is already on
+        // the clipboard from above; keep it there rather than restoring it away.
+        return Ok(WriteTextOutcome::LeftOnClipboard);
+    }
 
     // Small delay to ensure paste completes
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // 4. Restore original clipboard content
+    // Restore the user's original clipboard now that the paste has landed.
     if let Some(content) = original_clipboard {
         app.clipboard()
             .write_text(&content)
             .map_err(|e| format!("Failed to restore clipboard: {}", e))?;
     }
 
-    Ok(())
+    Ok(WriteTextOutcome::Pasted)
 }
 
 /// Simulates pressing the Enter/Return key

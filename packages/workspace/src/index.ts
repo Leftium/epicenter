@@ -179,6 +179,8 @@ export {
 	type MountComposeContext,
 	type MountComposition,
 	type MountOptions,
+	type MountWorkerContext,
+	type MountWorkerFactory,
 	type MountWorkers,
 	satisfiesWorkspace,
 	type Workspace,

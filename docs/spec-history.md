@@ -16,27 +16,29 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1276 specs ever** (572 still in tree, 704 removed).
+**1278 specs ever** (571 still in tree, 707 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-06-19 | collapse-inference-onto-tanstack-adapters | removed | specs/20260619T210000-collapse-inference-onto-tanstack-adapters.md |
 | 2026-06-19 | matter-json-marks-a-table | removed | apps/matter/specs/20260619T100000-matter-json-marks-a-table.md |
+| 2026-06-18 | chat-transcript-parts-body | in tree | specs/20260618T100631-chat-transcript-parts-body.md |
 | 2026-06-18 | cloud-kickoff-to-queue-generation | removed | specs/20260618T160358-cloud-kickoff-to-queue-generation.md |
 | 2026-06-18 | dictation-feedback-projection | removed | apps/whispering/specs/20260618T120000-dictation-feedback-projection.md |
 | 2026-06-18 | playback-pause-speaking-window | removed | apps/whispering/specs/20260618T113342-playback-pause-speaking-window.md |
-| 2026-06-18 | one-conversation-core-loop-and-doc-sink | removed | specs/20260618T113407-one-conversation-core-loop-and-doc-sink.md |
+| 2026-06-18 | one-conversation-core-loop-and-doc-sink | in tree | specs/20260618T113407-one-conversation-core-loop-and-doc-sink.md |
 | 2026-06-18 | keyboard-tap-foundation-research | removed | apps/whispering/specs/20260618T000000-keyboard-tap-foundation-research.md |
 | 2026-06-17 | zhongwen-daemon-and-v0-exit | in tree | specs/20260617T224538-zhongwen-daemon-and-v0-exit.md |
 | 2026-06-17 | desktop-audio-pipeline-greenfield | removed | apps/whispering/specs/20260617T170000-desktop-audio-pipeline-greenfield.md |
 | 2026-06-17 | table-vault-classification | removed | apps/matter/specs/20260617T152631-table-vault-classification.md |
 | 2026-06-17 | brand-asset-pipeline | in tree | specs/20260617T100000-brand-asset-pipeline.md |
-| 2026-06-17 | v2-coding-actor-sandbox-and-harness | in tree | specs/20260617T235900-v2-coding-actor-sandbox-and-harness.md |
+| 2026-06-17 | v2-coding-actor-sandbox-and-harness | removed | specs/20260617T235900-v2-coding-actor-sandbox-and-harness.md |
 | 2026-06-16 | pause-playback-while-recording | removed | apps/whispering/specs/20260616T180000-pause-playback-while-recording.md |
-| 2026-06-16 | always-on-actors-over-synced-docs | in tree | specs/20260616T225034-always-on-actors-over-synced-docs.md |
-| 2026-06-16 | actors-buildout.tracker | in tree | specs/20260616T225034-actors-buildout.tracker.md |
+| 2026-06-16 | always-on-actors-over-synced-docs | removed | specs/20260616T225034-always-on-actors-over-synced-docs.md |
+| 2026-06-16 | actors-buildout.tracker | removed | specs/20260616T225034-actors-buildout.tracker.md |
 | 2026-06-16 | cleanup-and-portable-formats-greenfield | removed | specs/20260616T230000-cleanup-and-portable-formats-greenfield.md |
 | 2026-06-16 | cleanup-and-portable-formats-greenfield | removed | apps/whispering/specs/20260616T230000-cleanup-and-portable-formats-greenfield.md |
 | 2026-06-16 | cloudless-home-anchor-direction | in tree | specs/20260616T185740-cloudless-home-anchor-direction.md |

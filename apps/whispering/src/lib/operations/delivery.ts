@@ -1,16 +1,12 @@
 import { goto } from '$app/navigation';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/urls';
-import {
-	type DeliveryOutcome,
-	reachForCursorWrite,
-} from '$lib/operations/delivery-reach';
+import type { DeliveryOutcome } from '$lib/operations/delivery-reach';
 import type { Notice } from '$lib/report';
 import { services } from '$lib/services';
 import { settings } from '$lib/state/settings.svelte';
 
-// The reach types live in the pure `delivery-reach` module (no clipboard/settings
-// IO), so the reach policy stays testable; re-exported here so callers keep one
-// delivery import.
+// The reach types live in their own `delivery-reach` module next to their ADR
+// docstrings; re-exported here so callers keep one delivery import.
 export type {
 	DeliveryOutcome,
 	DeliveryReach,
@@ -163,7 +159,9 @@ async function deliverResult({
 		await services.text.simulateEnterKeystroke();
 	}
 
-	const reach = reachForCursorWrite(writeOutcome);
+	// A clean `pasted` reached the configured output; a `leftOnClipboard` fallback
+	// is a reduced (but recoverable) reach — see DeliveryReach and ADR-0039/0040.
+	const reach = writeOutcome === 'pasted' ? 'output' : 'clipboard';
 	return {
 		outcome: { reach },
 		notice: {

@@ -1,5 +1,3 @@
-import type { WriteTextOutcome } from '$lib/tauri/bindings.gen';
-
 /**
  * How far the text reached, relative to the user's configured output. Delivery is
  * a reduced-reach axis, not a pass/fail: the transcript is always saved to
@@ -19,12 +17,3 @@ import type { WriteTextOutcome } from '$lib/tauri/bindings.gen';
 export type DeliveryReach = 'output' | 'clipboard';
 
 export type DeliveryOutcome = { reach: DeliveryReach };
-
-/**
- * Map a cursor-write outcome to its delivery reach: a clean `pasted` reached the
- * configured output; a `leftOnClipboard` fallback is a reduced reach. Pure so the
- * reach policy can be read and tested without delivery's clipboard/settings IO.
- */
-export function reachForCursorWrite(outcome: WriteTextOutcome): DeliveryReach {
-	return outcome === 'pasted' ? 'output' : 'clipboard';
-}

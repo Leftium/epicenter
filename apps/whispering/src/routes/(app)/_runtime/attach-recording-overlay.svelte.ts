@@ -1,31 +1,17 @@
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { recordingOverlay } from '#platform/recording-overlay';
 import { tauri } from '#platform/tauri';
-import {
-	cancelRecording,
-	stopManualRecording,
-	stopVadRecording,
-} from '$lib/operations/recording';
-import {
-	type RecordingOverlayStatus,
-	recordingOverlayAction,
-} from '$lib/recording-overlay/events';
-import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+import { recordingOverlayAction } from '$lib/recording-overlay/events';
+import { dispatchPillAction } from '$lib/recording-overlay/pill-actions';
+import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
+import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
 export function attachRecordingOverlay() {
 	let unlistenAction: UnlistenFn | undefined;
 
-	const overlayStatus = $derived.by((): RecordingOverlayStatus | null => {
-		if (manualRecorder.state === 'RECORDING')
-			return { trigger: 'manual', state: 'RECORDING' };
-		if (
-			vadRecorder.state === 'LISTENING' ||
-			vadRecorder.state === 'SPEECH_DETECTED'
-		)
-			return { trigger: 'vad', state: vadRecorder.state };
-		return null;
-	});
+	const overlayStatus = $derived(
+		projectLifecycleToStatus(dictationLifecycle.current),
+	);
 
 	$effect(() => {
 		recordingOverlay.sync(overlayStatus);
@@ -33,15 +19,9 @@ export function attachRecordingOverlay() {
 
 	if (tauri) {
 		void (async () => {
-			unlistenAction = await recordingOverlayAction.listen((event) => {
-				if (!overlayStatus) return;
-				if (overlayStatus.trigger === 'manual') {
-					if (event.payload === 'cancel') void cancelRecording();
-					else void stopManualRecording();
-					return;
-				}
-				if (event.payload === 'stop') void stopVadRecording();
-			});
+			unlistenAction = await recordingOverlayAction.listen((event) =>
+				dispatchPillAction(event.payload),
+			);
 		})();
 	}
 

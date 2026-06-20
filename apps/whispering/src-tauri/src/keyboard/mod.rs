@@ -72,9 +72,12 @@ fn is_wayland() -> bool {
 /// live Accessibility check (`AXIsProcessTrusted`); every other desktop has no
 /// such gate, so the tap is always allowed.
 ///
-/// Also read by `write_text` to decide, before attempting a synthetic paste,
-/// whether the paste can land at all (an untrusted ⌘V silently no-ops on macOS).
-pub(crate) fn is_trusted() -> bool {
+/// This is the supervisor's raw trust input — it gets folded with tap liveness
+/// into the `DictationCapability` the rest of the app reads. Consumers deciding
+/// whether delivery can land must read that capability, not this bare probe: a
+/// `Broken` grant reads as trusted here but cannot actually paste (see
+/// `write_text`). Private on purpose, so that rule has one enforcement point.
+fn is_trusted() -> bool {
     #[cfg(target_os = "macos")]
     {
         // SAFETY: `AXIsProcessTrusted` is an argument-free, thread-safe TCC query

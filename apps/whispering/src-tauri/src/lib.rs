@@ -344,21 +344,53 @@ pub enum WriteTextOutcome {
     LeftOnClipboard,
 }
 
+/// Wait after writing the transcript to the clipboard before posting ⌘V. The
+/// clipboard write is synchronous (the plugin blocks on the OS pasteboard), so
+/// this is not "waiting for the clipboard" — it gives the freshly built event tap
+/// a beat to come up before the keystroke is posted.
+const PRE_PASTE_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Wait after posting ⌘V before restoring the user's original clipboard. enigo
+/// exposes no paste-completion signal (`CGEventPost` returns nothing), so this is
+/// the window the target app has to consume the paste before the old clipboard
+/// goes back. Restore too early and a slow app pastes the original content
+/// instead of the transcript. Espanso's equivalent default is 300ms; ours is
+/// 100ms (mirrored by `COPY_SETTLE_MS` in selection.ts — keep them in step).
+const PRE_RESTORE_SETTLE: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// Delivers text to the cursor, falling back to the clipboard when it cannot.
 ///
-/// The reach is decided from the Accessibility grant *before* the keystroke, not
-/// from the keystroke's result: an untrusted synthetic ⌘V silently no-ops on
-/// macOS, so observing whether it landed is unreliable. When we can paste, the
-/// clipboard sandwich (save → write → paste → restore) preserves the user's
-/// clipboard; when we cannot, the transcript is left on the clipboard as the
-/// fallback. The transcript is independently saved to history either way, so this
-/// is a reduced reach, never data loss.
+/// The reach is decided from the live Accessibility *capability* before the
+/// keystroke, not from the keystroke's result. A `Broken` grant — one that still
+/// reads as trusted via `AXIsProcessTrusted` but whose synthetic events the OS
+/// drops — lets the paste return `Ok` while nothing lands, so observing the
+/// result is unreliable. When we can paste, the clipboard sandwich (save → write
+/// → paste → restore) preserves the user's clipboard; when we cannot, the
+/// transcript is left on the clipboard as the fallback. The transcript is
+/// independently saved to history either way, so this is a reduced reach, never
+/// data loss.
 #[tauri::command]
 #[specta::specta]
 async fn write_text(app: tauri::AppHandle, text: String) -> Result<WriteTextOutcome, String> {
-    // Untrusted: a synthetic paste would silently no-op, and restoring afterward
-    // would wipe the transcript. Leave it on the clipboard as the fallback instead.
-    if !crate::keyboard::is_trusted() {
+    // Can a synthetic ⌘V actually land right now? On macOS, gate on the
+    // supervisor's capability, not a bare `AXIsProcessTrusted`. The supervisor
+    // folds the tap's liveness into the value, so `Active` alone is paste-capable.
+    // `Broken` is a stale post-update grant that still reads as trusted — so
+    // `is_trusted()`, and enigo's own `Enigo::new` permission check (which calls
+    // the same API), would both wave it through — but whose ⌘V the OS silently
+    // drops while `enigo` still returns `Ok`. The old `is_trusted()` gate took
+    // that path: it reported `Pasted` and restored the clipboard over the
+    // transcript, a silent loss. Refuse it here. Every other desktop has no
+    // Accessibility gate, so they paste unconditionally.
+    #[cfg(target_os = "macos")]
+    let can_paste = {
+        use crate::keyboard::{DictationCapability, TapController};
+        app.state::<TapController>().capability() == DictationCapability::Active
+    };
+    #[cfg(not(target_os = "macos"))]
+    let can_paste = true;
+
+    if !can_paste {
         app.clipboard()
             .write_text(&text)
             .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
@@ -373,8 +405,8 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<WriteTextOutc
         .write_text(&text)
         .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
 
-    // Small delay to ensure clipboard is updated
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    // Let the event tap settle before posting the keystroke (see PRE_PASTE_SETTLE).
+    tokio::time::sleep(PRE_PASTE_SETTLE).await;
 
     // Simulate paste using virtual key codes (layout-independent). Issue every
     // press/release even on a mid-sequence error so a failure can never leave the
@@ -405,8 +437,9 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<WriteTextOutc
         return Ok(WriteTextOutcome::LeftOnClipboard);
     }
 
-    // Small delay to ensure paste completes
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // Give the target app the paste-consume window before restoring the clipboard
+    // (see PRE_RESTORE_SETTLE).
+    tokio::time::sleep(PRE_RESTORE_SETTLE).await;
 
     // Restore the user's original clipboard now that the paste has landed.
     if let Some(content) = original_clipboard {

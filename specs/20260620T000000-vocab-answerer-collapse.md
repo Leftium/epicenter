@@ -10,8 +10,10 @@ self-contained handoff prompt per wave. Delete this spec when the waves land
 ## Decisions (the lasting record is the ADRs)
 
 - **ADR-0041** — every answerer is a worker; the **browser never answers**;
-  blindness is per-agent; **BYOK is cloud-proxied**; the managed answerer is an
-  on-demand hibernating Durable Object woken by the existing dispatch doorbell.
+  blindness is per-agent. The managed answerer is **trusted-internal** Epicenter
+  infra (house-key Gemini, bills the room `ownerId` in-process, reads/writes the
+  doc via the anchor's RPC, woken by the existing dispatch doorbell). Cloud-proxied
+  BYOK is **deferred** (needs the secret vault).
 - **ADR-0042** — the agent loop is the worker's, over the doc-as-message-array;
   the engine stays a pure token source; durable doc-mediated approval. **Build
   deferred** to a real tool consumer (not Vocab).
@@ -25,7 +27,7 @@ self-contained handoff prompt per wave. Delete this spec when the waves land
 - One app: a single Chinese vocab assistant. One model (`VOCAB_MODEL`), one
   system prompt, `tools: []`.
 - Two **durable** agents in the catalog, distinguished by trust location:
-  - **Managed** (Epicenter-hosted worker, metered Gemini, cloud-proxied BYOK).
+  - **Managed** (Epicenter-hosted worker, house-key Gemini, billed to the room owner).
   - **Home daemon** (`vocab-home`, the user's own box).
 - The browser writes user turns and renders the synced doc. It constructs no
   engine and runs no answer loop.
@@ -46,10 +48,10 @@ answerers (daemon + hosted) exist, so it follows 2 and 3.
 
 ## PR / branch disposition
 
-- **#2127** (owner ⊥ engine): **superseded by wave 4.** The owner fork is deleted
-  there. Cherry-pick only the metered-engine single-homing (`epicenterMeteredEngine`,
-  the `@epicenter/zhongwen/engine` subpath) into the **worker** side in wave 3,
-  not the browser. Close #2127 once wave 4 lands.
+- **#2127** (owner ⊥ engine): **MERGED into main** (2026-06-20). Its `this-device`
+  rename, owner fork, and `epicenterMeteredEngine` / `@epicenter/vocab/engine` subpath
+  are now in main. Wave 4 deletes the owner fork + browser engine walk from main;
+  the engine code wave 3 needs is lifted from main, not cherry-picked from a PR.
 - **#2128** (presence slice 1): **parked.** Presence decorates liveness, never
   gates binding (the doc is a durable mailbox). Revisit as a fast-follow after
   wave 2, framed as the dead-mailbox warning ("you bound to your home daemon but
@@ -145,55 +147,60 @@ the existence-is-the-claim guard prevents any double-answer with a watching tab
 
 ---
 
-## Wave 3 — Hosted managed worker (on-demand Durable Object)
+## Wave 3 — Hosted managed worker (trusted-internal, house-key)
 
-**Goal.** The Epicenter-hosted answerer for the **managed** agent: an on-demand DO
-that hibernates when idle, is woken by the existing dispatch doorbell when a turn
-is written, syncs the conversation child doc as a y-protocols peer, runs the same
-answer loop, streams parts into the doc, and hibernates again. BYOK is
-cloud-proxied (the worker uses the user's key per request). This is the largest
-wave but builds on primitives the room DO already proves.
+**Goal.** The Epicenter-hosted answerer for the **managed** agent, as the daemon's
+answer loop hosted by us. It is **trusted-internal**: woken by the existing dispatch
+doorbell when a turn is written, it reads/writes the conversation doc via the
+anchor's internal RPC (co-located, no remote y-protocols handshake), runs the same
+`attachChatWorker` loop, streams parts into the doc, and bills the room's `ownerId`
+directly via the in-process Autumn primitive. **House-key Gemini only** — no
+user-impersonation credential, no HTTP loopback to `/api/ai/chat`, and no
+server-side key storage (cloud-proxied BYOK is deferred until the secret vault
+exists). Host shape: a doorbell-triggered worker suffices for text-only answers
+(no approval pause); the hibernating-DO upgrade arrives with F.
 
-**Reuse (do not reinvent).** `packages/server/src/room/` is already a hibernating
-server-side Yjs peer: `createRoomCore` (runtime-agnostic, holds a live `Y.Doc`,
-y-protocols SYNC, dispatch + presence), the Cloudflare adapter
-(`durable-object.ts`: `acceptWebSocket`, `getWebSockets`, alarms,
-`setWebSocketAutoResponse`), and the DO-SQLite update log. The **dispatch protocol**
-(`dispatch_request`/`dispatch_inbound`) is the doorbell. The answer loop is the
-daemon's `attachChatWorker`. `keepAlive`/`keepAliveWhile` (Cloudflare `Agent`
-class pattern) prevents idle eviction during a streaming response.
+**Reuse (do not reinvent).** `packages/server/src/room/` already holds the live
+`Y.Doc` and exposes `getDoc`/`sync` RPC + the `dispatch_request`/`dispatch_inbound`
+doorbell; `createRoomCore` is runtime-agnostic. The answer loop is the daemon's
+`attachChatWorker` (wave 2), reused verbatim. If a hibernating DO is chosen for the
+host, the room DO's hibernation patterns (`durable-object.ts`: `acceptWebSocket`,
+`getWebSockets`, alarms) and `keepAlive`/`keepAliveWhile` (Cloudflare `Agent` class)
+are the reference.
 
-**Scope / files.** A new hosted-worker DO (its own class + wrangler binding),
-the cloud-proxied BYOK engine (the metered/BYOK `ChatStream` built worker-side,
-re-homing #2127's `epicenterMeteredEngine` here), the doorbell wake endpoint, the
-child-doc sync peer, the engine resolution (ADR-0038), `apps/api` wiring
-(`apps/api/worker/index.ts`, billing remains hosted-only). Keep the worker a
-separate spoke — never put answer logic in the room/anchor DO (ADR-0035).
+**Scope / files.** The hosted-worker host (Worker or DO + wrangler binding), the
+house-key engine (the provider adapter from `@epicenter/ai-adapters`, built
+worker-side), the doorbell wake endpoint, anchor-RPC read/write of the conversation
+doc (`getDoc`/`sync`), and in-process Autumn billing keyed to the room's `ownerId`
+(`apps/api/worker/index.ts` + `apps/api/worker/billing`, hosted-only). Keep the
+worker a separate spoke — never put answer logic in the room/anchor DO (ADR-0035).
 
 **Acceptance.** A conversation bound to the managed agent is answered server-side
-with no browser open; idle/approval-pause incurs no DO duration (hibernated);
-generation bills only the stream wall-clock; billing/Autumn still gates the
-metered path; a missed doorbell still gets answered (alarm backstop / next sync).
+with no browser open and no daemon; the answer is billed to the room's `ownerId`
+via Autumn; a missed doorbell still gets answered (alarm backstop / next sync);
+the anchor never runs answer logic (stays blind).
 
-**Handoff prompt.**
+**Handoff prompt.** (PAIR with Braden on the host shape before building — this
+touches billing + the trust boundary.)
 > Build the Epicenter-hosted managed worker for Vocab per ADR-0041 (worktree
 > `/Users/braden/Code/.worktrees/epicenter-row-childdocs`, after waves 1–2). It is
-> an on-demand Durable Object that hibernates when idle, is woken by the existing
-> dispatch doorbell (`dispatch_request`/`dispatch_inbound` in
-> `packages/server/src/room/core.ts`) when a managed-agent turn is written, syncs
-> the conversation child doc as a y-protocols peer, runs the existing
-> `attachChatWorker` answer loop, streams parts into the doc, and hibernates again
-> (free across approval pauses). Reuse the room DO's hibernation patterns
-> (`packages/server/src/room/backends/cloudflare/durable-object.ts`:
-> `acceptWebSocket`, `getWebSockets`, alarms) and use `keepAlive`/`keepAliveWhile`
-> during streaming so a long generation isn't evicted. The engine is cloud-proxied:
-> the worker uses the metered house key (and BYOK keys, server-side) — re-home
-> #2127's `epicenterMeteredEngine` worker-side. Keep this a SEPARATE app-aware
-> spoke; never add answer logic to the room/anchor DO (ADR-0035). Preserve the
-> Autumn billing gate on the metered path (hosted-only, `apps/api/worker/billing`).
-> Ground DO behavior against `cloudflare/cloudflare-docs` via DeepWiki before
-> relying on memory. This is wave 3 of
-> `specs/20260620T000000-vocab-answerer-collapse.md`.
+> **trusted-internal infrastructure**, NOT an external client: do not mint a
+> user-impersonation credential, do not loop back to `/api/ai/chat`, do not store
+> user keys. It is woken by the existing dispatch doorbell
+> (`dispatch_request`/`dispatch_inbound` in `packages/server/src/room/core.ts`)
+> when a managed-agent turn is written; it reads/writes the conversation child doc
+> via the anchor's internal RPC (`getDoc`/`sync` — co-located, no remote
+> y-protocols handshake); it runs the daemon's existing `attachChatWorker` loop
+> (wave 2) verbatim with a **house-key Gemini** engine (provider adapter from
+> `@epicenter/ai-adapters`); and it bills the room's `ownerId` directly via the
+> in-process Autumn primitive (`apps/api/worker/billing`, hosted-only). Host shape:
+> a doorbell-triggered worker suffices (text-only answers have no approval pause);
+> the hibernating-DO upgrade (`acceptWebSocket`/`getWebSockets`/alarms +
+> `keepAlive`) arrives with F. Keep this a SEPARATE app-aware spoke; never add
+> answer logic to the room/anchor DO (ADR-0035). Cloud-proxied BYOK is DEFERRED
+> (needs the secret vault). Ground Cloudflare + Yjs behavior against
+> `cloudflare/cloudflare-docs` and `yjs/yjs` via DeepWiki before relying on memory.
+> This is wave 3 of `specs/20260620T000000-vocab-answerer-collapse.md`.
 
 ---
 

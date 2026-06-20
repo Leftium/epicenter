@@ -75,10 +75,10 @@ export type RoutedShortcuts = {
  * reach of `global` always implies the global backend exists, so a routed write
  * can never target a missing store.
  *
- * This is the Phase 2.2 router; the `#platform/shortcuts` seam split that
- * actually supplies both surfaces on desktop (today the seam picks one) is
- * Phase 3. The catalog (`commands`) is injected rather than imported so the
- * router stays clear of the operations graph behind it.
+ * The seam split that supplies both surfaces (the universal `focusedShortcuts`
+ * and the Tauri-only `systemShortcuts`, `null` on web) lands in `shortcuts.ts`.
+ * The catalog (`commands`) is injected rather than imported so the router stays
+ * clear of the operations graph behind it.
  */
 export function createReachRouter({
 	focused,

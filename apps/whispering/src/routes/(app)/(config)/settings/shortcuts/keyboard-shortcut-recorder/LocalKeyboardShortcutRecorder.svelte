@@ -2,7 +2,7 @@
 	import { onDestroy } from 'svelte';
 	import type { Command } from '$lib/commands';
 	import { report } from '$lib/report';
-	import { shortcuts } from '#platform/shortcuts';
+	import type { Shortcuts } from '$lib/platform/types';
 	import { os } from '#platform/os';
 	import type { KeyBinding } from '$lib/tauri/commands';
 	import {
@@ -13,11 +13,15 @@
 	import { createChordRecorder } from './create-chord-recorder';
 	import RecorderShell from './RecorderShell.svelte';
 
+	// The focused backend is handed in by the page (it owns the focused/system
+	// split), so this component stays free of the platform seam.
 	const {
 		command,
+		shortcuts,
 		placeholder,
 	}: {
 		command: Command;
+		shortcuts: Shortcuts;
 		placeholder?: string;
 	} = $props();
 

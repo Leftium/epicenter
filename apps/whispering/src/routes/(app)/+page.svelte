@@ -66,7 +66,7 @@
 		),
 	);
 	// The recording shortcut that actually fires on this platform, via the
-	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
+	// recording-shortcut label helper: desktop binds push-to-talk (Fn) globally
 	// and ships the toggle unbound, so prefer it; the browser shows the local
 	// toggle. `''` means nothing is bound (hide the hint, fall back to "click").
 	const manualShortcutLabel = $derived(getRecordingShortcutLabel('manual'));

@@ -40,7 +40,7 @@ const globalBinding = type({
 // Cancel is the platform cancel chord (Cmd + . on macOS, the system cancel
 // gesture since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a
 // modifier so it is safe to register globally. Transformation gestures ship
-// unbound: opt-in only. Exported so the reset path in platform/shortcuts.tauri.ts
+// unbound: opt-in only. Exported so the reset path in platform/system-shortcuts.tauri.ts
 // shares this one source of truth.
 const TOGGLE_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['meta', 'shift']

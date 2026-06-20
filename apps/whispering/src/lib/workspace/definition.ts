@@ -317,7 +317,7 @@ const analytics = {
  */
 const shortcuts = {
 	// These getDefault thunks are the single source for the in-app shortcut
-	// defaults. The web backend (platform/shortcuts.browser.ts) reads them back
+	// defaults. The focused backend (platform/focused-shortcuts.ts) reads them back
 	// through `settings.getDefault('shortcut.*')` instead of redeclaring them, so
 	// the schema and the backend can never drift. Values are the readable manual
 	// grammar (`parseManualBinding`): `'space'`, `'c'`, `'ctrl+shift+a'`. The cell

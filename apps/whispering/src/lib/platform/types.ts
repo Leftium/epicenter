@@ -14,12 +14,14 @@ import type { Command } from '$lib/commands';
 import type { KeyBinding } from '$lib/tauri/commands';
 
 /**
- * Contract for `#platform/shortcuts`: the per-platform shortcut backend. The
- * desktop build drives system-global rdev bindings (device-config storage); the
- * web build drives in-app keydown shortcuts (workspace KV storage). Only one
- * runs per platform, so consumers call these names without branching on `tauri`.
- * The trigger dispatch itself converges in `dispatchCommandTrigger`; this owns
- * the binding configuration around it.
+ * Contract for a single shortcut backend. Two implement it: `focusedShortcuts`
+ * (in-app keydown shortcuts in workspace KV, universal) and `systemShortcuts`
+ * (system-global rdev bindings in device-config, Tauri-only). The reach router
+ * (`shortcuts.ts`) composes the two and routes each write by realized reach
+ * (ADR-0041), so app code talks to the router, not to a backend directly; the
+ * settings recorders are handed the specific backend they edit. The trigger
+ * dispatch itself converges in `dispatchCommandTrigger`; this owns the binding
+ * configuration around it.
  */
 export type Shortcuts = {
 	/** Push every command's configured binding to this platform's backend. */

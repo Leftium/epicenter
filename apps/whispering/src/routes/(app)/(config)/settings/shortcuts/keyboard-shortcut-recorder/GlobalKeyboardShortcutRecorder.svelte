@@ -7,7 +7,7 @@
 	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import type { Command } from '$lib/commands';
 	import { report } from '$lib/report';
-	import { shortcuts } from '#platform/shortcuts';
+	import type { Shortcuts } from '$lib/platform/types';
 	import type { Tauri } from '#platform/tauri';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
@@ -22,13 +22,16 @@
 	import { createChordRecorder } from './create-chord-recorder';
 	import RecorderShell from './RecorderShell.svelte';
 
-	// `tauri` is passed non-null from the Tauri-gated global settings page.
+	// `tauri` and the system backend are passed non-null from the Tauri-gated
+	// global settings page, so this component stays free of the platform seam.
 	const {
 		command,
+		shortcuts,
 		placeholder = 'Press a key combination',
 		tauri,
 	}: {
 		command: Command;
+		shortcuts: Shortcuts;
 		placeholder?: string;
 		tauri: Tauri;
 	} = $props();

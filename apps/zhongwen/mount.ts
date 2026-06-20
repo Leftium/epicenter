@@ -71,16 +71,22 @@ export type ZhongwenMountOptions = {
 };
 
 export function zhongwen({ baseURL, agentId }: ZhongwenMountOptions = {}) {
-	// Resolve the inference backend once: the adapter is built a single time and
-	// the closure is shared across every hosted transcript.
-	const startStream = resolveChatStream();
 	return zhongwenWorkspace.mount({
 		baseURL,
 		agentId,
 		runtime: nodeMountRuntime(),
 		workers: {
 			conversations: {
-				messages: ({ ydoc }) => attachChatWorker({ ydoc, startStream }),
+				// Resolve the inference backend per body: the mount hands the factory
+				// its signed-in session and resolved sync base URL (the credential the
+				// metered backend needs), which only exist once the mount is open, not
+				// at `zhongwen({...})` construction. Adapter construction is cheap, so a
+				// per-body resolve is fine.
+				messages: (ctx) =>
+					attachChatWorker({
+						ydoc: ctx.ydoc,
+						startStream: resolveChatStream(),
+					}),
 			},
 		},
 	});

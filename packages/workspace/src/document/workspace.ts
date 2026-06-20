@@ -48,7 +48,11 @@ import { createDisposableCache } from '../cache/disposable-cache.js';
 // barrel never traverses the node-only mount runtime. `.mount()` is a pure
 // coordinator that receives every node capability through its `runtime`
 // argument (built by `nodeMountRuntime()` from `@epicenter/workspace/node`).
-import type { Mount, SessionMountContext } from '../daemon/define-mount.js';
+import type {
+	Mount,
+	MountSession,
+	SessionMountContext,
+} from '../daemon/define-mount.js';
 import type { NodeMountRuntime } from '../daemon/mount-runtime.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import type { Guid } from '../shared/id.js';
@@ -59,7 +63,9 @@ import type { AgentId } from './agent-id.js';
 import {
 	attachChildDocWorker,
 	type ChildDocWorker,
+	type ChildDocWorkerContext,
 	type ChildDocWorkerFactory,
+	type ChildDocWorkerHandle,
 	type ConnectedChildDoc,
 	type ObservableChildDocLayout,
 } from './child-doc-worker.js';
@@ -402,7 +408,7 @@ export type MountWorkers<TTables extends TableDefinitions> = {
 				[F in keyof TDecls]?: ReturnType<LayoutOf<TDecls[F]>> extends {
 					observe(callback: () => void): () => void;
 				}
-					? ChildDocWorkerFactory<
+					? MountWorkerFactory<
 							InferTableRow<TTables[T]>['id'],
 							ReturnType<LayoutOf<TDecls[F]>>
 						>
@@ -410,6 +416,44 @@ export type MountWorkers<TTables extends TableDefinitions> = {
 			}
 		: never;
 };
+
+/**
+ * Per-body context a mount's worker factory receives: the generic observe-loop
+ * body context ({@link ChildDocWorkerContext}: the row id, the layout handle, and
+ * the body `Y.Doc`) plus the daemon's mount environment, the two things every
+ * hosted body shares but the loop itself stays agnostic to:
+ *
+ *  - `session` is the mount's signed-in capability kit ({@link MountSession}: the
+ *    `AuthedFetch`, the owner id, the sockets). Always present, because workers
+ *    are only ever wired under a `defineSessionMount` open. A factory uses it to
+ *    answer on the cloud (e.g. `createAiChatFetch(session.fetch)` for the metered
+ *    inference backend).
+ *  - `baseURL` is the resolved sync base URL the daemon authenticates against, so
+ *    a factory's cloud calls target the same deployment its sync does.
+ *
+ * The generic loop ({@link attachChildDocWorker}) never sees these: its test and
+ * the `doc-as-wire-chat` example drive it with no session, so the mount
+ * environment is injected here, at the daemon coordinator, not threaded through
+ * the transport-agnostic loop.
+ */
+export type MountWorkerContext<
+	TRowId extends string,
+	THandle,
+> = ChildDocWorkerContext<TRowId, THandle> & {
+	readonly session: MountSession;
+	readonly baseURL: string;
+};
+
+/**
+ * Build the per-body behavior for one hosted child doc, with the daemon's mount
+ * environment in hand ({@link MountWorkerContext}). The mount-facing twin of
+ * {@link ChildDocWorkerFactory}: the app registers one of these per child-doc
+ * field, and {@link connectMountWorkers} adapts it down to the loop's plain
+ * factory by injecting `session` and `baseURL`.
+ */
+export type MountWorkerFactory<TRowId extends string, THandle> = (
+	context: MountWorkerContext<TRowId, THandle>,
+) => ChildDocWorkerHandle;
 
 /**
  * Options for `definition.mount(...)`, the daemon runtime. The mount's display
@@ -761,6 +805,11 @@ export function defineWorkspace<
 						connectBody: runtime.connectChildDoc(ctx, baseURL),
 						selfAgentId: mountOptions.agentId,
 						registerDrain: scope.registerDrain,
+						// The mount environment every worker factory answers with: the
+						// signed-in session (guaranteed by `defineSessionMount`) and the
+						// resolved sync base URL its cloud calls target.
+						session: ctx.session,
+						baseURL,
 					});
 				}
 				// `attachInfrastructure` serves `composition.actions` to peers and
@@ -941,6 +990,8 @@ function connectMountWorkers<TTableDefinitions extends TableDefinitions>({
 	connectBody,
 	selfAgentId,
 	registerDrain,
+	session,
+	baseURL,
 }: {
 	workers: MountWorkers<TTableDefinitions>;
 	workspace: Workspace<TTableDefinitions, KvDefinitions, ActionRegistry>;
@@ -953,13 +1004,21 @@ function connectMountWorkers<TTableDefinitions extends TableDefinitions>({
 	 */
 	selfAgentId: AgentId | undefined;
 	registerDrain: (drainable: ChildDocWorker) => void;
+	/**
+	 * The mount environment injected into every per-body factory: the signed-in
+	 * session and the resolved sync base URL ({@link MountWorkerContext}). The
+	 * generic loop never sees these; this coordinator adapts the app's
+	 * session-aware factory down to the loop's plain one.
+	 */
+	session: MountSession;
+	baseURL: string;
 }): void {
 	// `Object.entries` erases the per-table types the public `MountWorkers` already
 	// enforced, so the loop body works in the widened `string`/`unknown` forms and
 	// casts at the schema reads (layout, guid) and the designation read.
 	for (const [collection, fieldWorkers] of Object.entries(workers) as [
 		string,
-		Record<string, ChildDocWorkerFactory<string, unknown>> | undefined,
+		Record<string, MountWorkerFactory<string, unknown>> | undefined,
 	][]) {
 		if (fieldWorkers === undefined) continue;
 		const definition = definitions[collection as keyof TTableDefinitions]!;
@@ -989,13 +1048,18 @@ function connectMountWorkers<TTableDefinitions extends TableDefinitions>({
 			const layout =
 				typeof declaration === 'function' ? declaration : declaration.layout;
 			const guidEntry = table.docs[field]!;
+			// Adapt the app's session-aware factory down to the loop's plain one by
+			// injecting the mount environment. The loop stays transport-agnostic; the
+			// daemon environment lives only here.
+			const loopWorkerFor: ChildDocWorkerFactory<string, unknown> = (context) =>
+				workerFor({ ...context, session, baseURL });
 			const worker = attachChildDocWorker<string, unknown>({
 				rootDoc: workspace.ydoc,
 				table,
 				guidFor: (rowId) => guidEntry.guid(rowId),
 				connectBody,
 				layout: layout as unknown as ObservableChildDocLayout<unknown>,
-				workerFor,
+				workerFor: loopWorkerFor,
 				isDesignated,
 			});
 			registerDrain(worker);

@@ -9,7 +9,7 @@
 
 ## Decision
 
-A shortcut's reach is computed, not chosen. Each command declares one intrinsic ceiling, `reach: 'focused' | 'global'` (default `focused`), in the catalog; it is the only reach fact a human states, and a programmer states it once. The realized reach of a binding is the minimum of three independent ceilings:
+A shortcut's reach is computed, not chosen. Each command declares one intrinsic ceiling, `reach: 'focused' | 'global'` (required; `focused` is the conservative choice for a new command), in the catalog; it is the only reach fact a human states, and a programmer states it once. The realized reach of a binding is the minimum of three independent ceilings:
 
 ```
 realizedReach = min(
@@ -26,7 +26,7 @@ The most restrictive ceiling wins, so reach can only ever clamp down: a bare key
 - The focused/system scope choice is deleted from the UI. The settings page becomes one flat list with a per-row reach badge, no scope tabs and no `tauri` branch.
 - Desktop gains in-app (focused) shortcuts, which it had no way to express before. The `#platform/shortcuts` pick-one seam splits into a universal focused module plus a Tauri-only system seam, composed by a reach-router; the webview matcher already runs in the Tauri window, so this is wiring, not a new backend.
 - Reach is a ceiling, so user preference can only clamp down through key choice. The model deliberately ships no lever to confine a global-capable key to the focused window; adding one would reintroduce a smaller scope toggle. It returns later as an explicit per-binding clamp only if real usage demands it.
-- Default bindings must be platform-computed from one literal. On desktop the focused slot for recording commands is `null` (the focused store seeds navigation only), or the focused backend going universal would double-bind recording against its system default and reintroduce bare-key recording in-app.
+- Default bindings stay in their two homes, not one literal: focused defaults in the synced workspace schema (platform-free, because a synced default must be the same on every machine), global defaults per-device (platform-dependent). Merging them into one "platform-computed" literal was considered and refused: it would push platform identity into the synced schema to serve the half that must never depend on it, and the two stores hold different values, so there is nothing to single-source. Because the focused and global defaults are different keys, a command can carry both at once with no double-fire (only the same key in both stores double-fires; the conflict checker refuses that).
 - `reach` now names two axes in this app: shortcut reach (how far a keystroke fires) and `DeliveryReach` ([ADR-0039](0039-dictation-feedback-is-a-projection-of-one-lifecycle-state.md), how far a finished transcript got toward its output). Every use of the shortcut sense must stay qualified by context, or the codebase becomes harder to talk about.
 
 ## Considered alternatives

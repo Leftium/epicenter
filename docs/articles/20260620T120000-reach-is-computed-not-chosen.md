@@ -45,7 +45,7 @@ Bindings live in two maps, routed by the reach the key realized, not by anything
 ```ts
 type Keybindings = {
   focused: Partial<Record<CommandId, KeyBinding | null>>;  // synced workspace KV: in-app keys roam
-  system:  Partial<Record<CommandId, KeyBinding | null>>;  // per-device device-config: global keys stay local
+  global:  Partial<Record<CommandId, KeyBinding | null>>;  // per-device device-config: global keys stay local
 };
 ```
 

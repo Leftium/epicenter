@@ -19,7 +19,7 @@ This spec was first written against `ce5d25714` (the #2096 merge). `origin/main`
 - The `Shortcuts` contract already grew past the old Phase-2 facade sketch: it has `set`, `clear`, `current`, and `findConflict` (per-tier conflict policy: in-app refuses exact duplicates, global refuses reserved gestures and overlaps). The "build a facade" task becomes "add reach-routing over the two backends that already exist."
 - The webview matcher already runs inside the Tauri window: `attachLocalShortcutListener` is in the ungated `runtimeOwners` array and `services.localShortcutManager` is a plain service, not a `#platform` seam. The only reason focused shortcuts do not fire on desktop is that nothing populates the matcher's registry there (on desktop `#platform/shortcuts` resolves to the rdev/plugin tier, whose `push()` never touches the matcher `Map`). Making focused shortcuts work on desktop is wiring, not a new backend.
 
-What is genuinely left: the command catalog gains `reach`/`category` and `callback` renames to `run` (the catalog is untouched on main); one platform-computed `DEFAULT_KEYBINDINGS` literal replaces the two default sources; `keyCapability`/`realizedReach` get added beside `resolveBinding`; the reach-router composes both backends on desktop; the settings page collapses to one flat list with a live badge.
+What landed since the re-baseline: the catalog gained a required `reach` and `category` and `callback` became `run` (the `Reach` vocabulary lives in `key-binding.ts`), and the reach formula `keyCapability`/`realizedReach` is in the core with tests. What is genuinely left: the reach-router composes both backends on desktop, and the settings page collapses to one flat list with a live badge. The defaults stay in their two homes, not one literal (see the refusal under Phase 1.2).
 
 ## How to read this spec
 
@@ -133,7 +133,7 @@ Bindings live in two maps, **routed by reach, not chosen by the user**:
 ```ts
 type Keybindings = {
   focused: Partial<Record<CommandId, KeyBinding | null>>;  // synced (workspace KV): in-app keys roam
-  system:  Partial<Record<CommandId, KeyBinding | null>>;  // per-device (device-config): global keys collide per machine
+  global:  Partial<Record<CommandId, KeyBinding | null>>;  // per-device (device-config): global keys collide per machine
 };
 ```
 
@@ -141,7 +141,7 @@ Two maps survive (the radical "one map" collapse was rejected, see Design Decisi
 
 These two stores already exist on main, split by platform rather than by reach: focused lives in synced workspace KV (`shortcut.*`), system lives in device-config (`shortcuts.global.*`). Today web only ever reads the focused store and desktop only ever reads the system store, because `#platform/shortcuts` picks one backend per platform. The work is to let desktop read both and route each write by realized reach.
 
-Desktop double-binding hazard: the focused defaults that ship today (`toggleManualRecording = space`, `cancelRecording = c`, `toggleVadRecording = v`) are inert on desktop only because the focused backend never runs there. The moment Phase 3 makes the focused backend universal, desktop would fire both `Cmd+Shift+Space` (system) and bare `Space` (focused) for the same toggle, and reintroduce the bare-Space junk-recording the desktop default deliberately avoids. So `DEFAULT_KEYBINDINGS.focused` must be platform-computed: on desktop, recording commands' focused slot is `null` and the focused store seeds navigation only; web keeps `space/c/v/t/r` (web has no system tier). This makes the single-default-literal step (Phase 1.2) a hard precondition of running both backends (Phase 3), not just a tidy-up.
+Are the shipped focused defaults safe to activate on desktop? Yes. The focused defaults (`pushToTalk = null`, `toggle = space`, `cancel = c`, `vad = v`) are all different keys from the global defaults (`Cmd+Shift+Space`, `Cmd+.`), so when Phase 3 runs the focused backend on desktop, a command like toggle simply gains a second, different key (in-app `Space` alongside global `Cmd+Shift+Space`); both fire cleanly. The earlier "desktop double-binding hazard" was a phantom: only the same key in both stores double-fires, and the conflict checker refuses that. The junk-recording worry is push-to-talk specific (a held key tapped fires start-then-stop), and `pushToTalk` already defaults to `null` in the focused store. So no platform-aware focused defaults are needed. Whether desktop should ship the in-app recording keys by default (vs leaving the focused slot for the user) is a Phase-3 taste call, not a correctness one.
 
 ## Research Findings
 
@@ -164,18 +164,18 @@ Desktop double-binding hazard: the focused defaults that ship today (`toggleManu
 | Reach is derived, not a user scope toggle | 2 coherence | `realizedReach = min(command.reach, keyCapability, platformCapability)` | The keystroke shape already determines in-app vs system; surfacing it as a badge removes a whole user-facing axis. Promote to an ADR on landing. |
 | `command.reach` ceiling, default `focused` | 2 coherence | one ordered bit per command | Replaces `allowedScopes` sets; also the only thing that stops a chord like `Cmd+K` from globally hijacking an in-app command. |
 | One binding format everywhere (LANDED on main) | 2 coherence | structured `KeyBinding`; string is display/at-rest only | Kills the string-vs-struct split. The web tier now stores manual grammar (`"space"`, `"ctrl+shift+a"`) and parses to `KeyBinding`; the matcher matches on `KeyBinding`. `keyBindingToString` is the deliberate at-rest serializer, keep it. |
-| Storage: keep two reach-routed maps | 3 taste | `{ focused: KV-synced, system: device-config }` | Sync semantics differ by reach (in-app roams, global collides per machine). The one-map collapse clobbers a desktop global default with a roamed-in focused binding. Both stores already exist on main, split by platform; reach-routing is what is new. |
+| Storage: keep two reach-routed maps | 3 taste | `{ focused: KV-synced, global: device-config }` | Sync semantics differ by reach (in-app roams, global collides per machine). The one-map collapse clobbers a desktop global default with a roamed-in focused binding. Both stores already exist on main, split by platform; reach-routing is what is new. |
 | Focused backend runs on every platform | 2 coherence | split `#platform/shortcuts` into a universal focused module plus a Tauri-only system seam (`#platform/system-shortcuts` + browser `null`); a reach-router composes them | Desktop gains in-app nav. The webview matcher already runs in the Tauri window; the missing piece is populating its registry there. The pick-one seam cannot express "both backends on desktop," so it splits rather than loosens. |
 | Unified dispatch spine | 2 coherence | every input source (rdev, webview, palette, button) calls `runCommand(id, edge?)` | Generalizes `dispatchCommandTrigger`; the catalog becomes the spine the palette/voice/deep-links hang off later. |
 | Global bindings stay per-device for v1 | 3 taste | no roaming, no collision notice | Roaming adds a code family (collision detection + per-device override + notice UI), not deletes one. The `min()` model makes roaming a clean additive step later. |
-| Double-binding (focused + system for one command) | Deferred | structurally allowed by two maps, but ship one default per platform | Recording commands default global-only on desktop (focused slot `null`), focused slot is for nav. Users may add a second; we do not ship one. |
+| Double-binding (one focused + one global key for a command) | Allowed | two maps make it free, and the shipped defaults already use it: in-app `Space` plus global `Cmd+Shift+Space` are different keys, so both fire cleanly | Only the *same* key in both stores double-fires; the conflict checker refuses that. Users may add their own second key. |
 
 ## Catalogs
 
 ### The Command shape
 
 ```ts
-type ShortcutScope = 'focused' | 'system';   // storage/reach axis, never user-chosen
+type Reach = 'focused' | 'global';   // the one reach scale: ceiling, key, platform, and storage-map name
 type Edge = 'Pressed' | 'Released';
 
 type Command = {
@@ -193,9 +193,9 @@ type Command = {
 
 | Candidate | Why rejected |
 | --- | --- |
-| `allowedScopes: ShortcutScope[]` per command | Subsumed by one ordered `reach` ceiling; reach is a min(), not a set membership test. |
+| `allowedScopes: Reach[]` per command | Subsumed by one ordered `reach` ceiling; reach is a min(), not a set membership test. |
 | One keybinding map `Record<CommandId, KeyBinding>` | A roamed-in focused binding clobbers a per-device global default; two reach-routed maps are earned by sync semantics. |
-| User-facing "system vs focused" toggle | The key shape already decides it; a live reach badge teaches without a choice. |
+| User-facing scope toggle ("system vs focused") | The key shape already decides it; a live reach badge teaches without a choice. |
 | `platforms` field on a command | Platform availability is already expressed by where the command is declared (shared vs `#platform/commands` seam). |
 | Roaming global bindings now | Adds collision machinery; not an asymmetric win. Additive later. |
 
@@ -215,7 +215,7 @@ write path (settings recorder):
   user presses key
     -> resolve keyCapability(key)               bare | chord | hold
     -> realizedReach = min(command.reach, keyCapability, platformCapability)
-    -> route to keybindings.focused or keybindings.system
+    -> route to keybindings.focused or keybindings.global
     -> badge reflects realizedReach
     -> sync() pushes the affected backend
 ```
@@ -256,14 +256,7 @@ const sharedCommands = [
 'shortcut.toggleManualRecording': defineKv(nullable(field.string()), (): string | null => 'space'),
 ```
 
-**After** (default sourced from one literal; the cell stays `field.string()`, serialized via `keyBindingToString`):
-
-```ts
-// reads keyBindingToString(DEFAULT_KEYBINDINGS.focused.toggleManualRecording)
-// web => "space"; desktop => null (recording is system-only; focused store seeds nav)
-```
-
-**Semantic shift to flag**: the binding format is already structured `KeyBinding` at runtime (the KV cell holds the readable manual grammar and parses on read). What changes here is the default source: the per-key `getDefault` thunks stop hand-spelling values and read the one platform-computed `DEFAULT_KEYBINDINGS` literal instead.
+**After**: unchanged. The focused defaults stay in `definition.ts`, the platform-free synced home; there is no single literal to source from (see the Phase 1.2 refusal). The binding format is already structured `KeyBinding` at runtime (the KV cell holds the readable manual grammar and parses on read), so nothing here needs to change.
 
 ## Implementation Plan
 
@@ -271,15 +264,20 @@ const sharedCommands = [
 
 Phase 1.3 (unify binding format, teach the matcher `KeyBinding`) already landed on main, so the first wave is two standalone, dependency-ordered commits, each green with no behavior change.
 
-- [ ] **1.1** Add `reach` (default `focused`), `category`, optional `keywords` to `SatisfiedCommand`/`Command`; rename `callback` -> `run` (and `commandCallbacks`, `triggerTargetById`, `dispatchCommandTrigger`'s target read, plus the `#platform/commands` impls `commands.tauri.ts`/`commands.browser.ts` and every in-app `.callback` consumer). Tag `toggleManualRecording`, `pushToTalk`, `cancelRecording`, `toggleVadRecording`, `runTransformationOnClipboard` as `reach: 'global'`. Keep `dispatchCommandTrigger` named as-is; generalizing to `runCommand` is the Phase-2 spine.
-- [ ] **1.2** Introduce one platform-computed `DEFAULT_KEYBINDINGS = { focused, system }` literal (structured `KeyBinding` values). `system` folds in today's `DEFAULT_GLOBAL_BINDINGS` verbatim; `focused` is platform-aware: web keeps `space/c/v/t/r`, desktop sets recording commands' focused slot to `null` (per the desktop double-binding hazard above). Point `definition.ts` getDefault (`keyBindingToString(DEFAULT_KEYBINDINGS.focused[id])`) and `device-config` defaults at it. Values are byte-identical to today's effective defaults, so this is single-sourcing, not a behavior change. This commit is what makes Phase 3 safe to flip.
+- [x] **1.1** DONE. Added a required `reach` and `category` (and optional `keywords`) to `SatisfiedCommand`; the `Reach` vocabulary lives in `key-binding.ts`. Renamed `callback` -> `run` (and `commandCallbacks` -> `commandRunners`, `triggerTargetById`, `dispatchCommandTrigger`'s read, the `#platform/commands` impls, and the in-app consumers). All current commands tagged `reach: 'global'`. `dispatchCommandTrigger` keeps its name; the `runCommand` spine is later.
+- [~] **1.2** REFUSED (greenfield grill). No single `DEFAULT_KEYBINDINGS` literal.
+  - Candidate: one platform-computed `{ focused, global }` literal both default sources point at.
+  - Refusal: focused defaults sync (ADR-0007), so they must be platform-free; a "platform-computed" literal would push platform identity (`os`) into the synced schema (`definition.ts`, currently platform-free) to serve the half that must never depend on it. The two stores also hold different values, so there is nothing to single-source.
+  - User loss: none. Defaults are byte-identical and stay in their two correct homes.
+  - Decision: keep focused defaults in `definition.ts` (platform-free) and global defaults in `DEFAULT_GLOBAL_BINDINGS` (per-device). The realized-reach formula expresses defaults in reach terms without co-locating them.
+  - Trigger to revisit: if a focused default ever needs to differ by platform (it must not, while focused bindings sync).
 - [x] **1.3** (DONE on main) Binding format is already structured `KeyBinding` everywhere; the webview matcher (`local-shortcut-manager.ts`) already consumes `KeyBinding` via `domCodeToKey` + `eventModifiers` + `bindingsEqual`; the manual-grammar string is the at-rest/display form.
 
 ### Phase 2: Reach derivation and the reach-router
 
 The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`, so this is not a from-scratch facade. It is the reach-derivation helpers plus a router that composes the two backends.
 
-- [ ] **2.1** Add `keyCapability(binding)` and `realizedReach(command, binding, platform)` to `utils/key-binding.ts` beside the existing `resolveBinding`.
+- [x] **2.1** DONE. Added `keyCapability(binding)` and `realizedReach(commandReach, binding, platformReach)` to `utils/key-binding.ts` beside `resolveBinding`, with unit tests pinning the ADR-0041 worked table. Pure: fed the reach bit and a platform reach, so the core takes no catalog or platform import. Returns `{ reach, needsAccessibility }` for the badge.
 - [ ] **2.2** Add reach-routing over the two backends that already exist: on write, compute `realizedReach` and route to the focused store or the system store; expose `reachBadge(commandId)`. Reuse the existing `set`/`clear`/`reset`/`findConflict`; do not rebuild them.
 
 ### Phase 3: Run both backends on desktop (Build)
@@ -295,7 +293,7 @@ The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`,
 ### Phase 5: Prove, then Remove
 
 - [ ] **5.1** Typecheck, `bun test`, cargo, svelte-check; smoke both web and desktop.
-- [ ] **5.2** Delete the now-dead paths: the dual `getDefault` declarations replaced by `DEFAULT_KEYBINDINGS`, and the old `#platform/shortcuts` "pick one" seam once the split (Phase 3.1) is green. Note the string format is already gone; `keyBindingToString`/`parseManualBinding` are the deliberate at-rest serializers and stay.
+- [ ] **5.2** Delete the now-dead paths: the old `#platform/shortcuts` "pick one" seam once the split (Phase 3.1) is green. The defaults stay in their two homes (Phase 1.2 refusal), and the string format is already gone; `keyBindingToString`/`parseManualBinding` are the deliberate at-rest serializers and stay.
 - [ ] **5.3** The reach model is recorded as [ADR-0041](../../../docs/adr/0041-shortcut-reach-is-the-minimum-of-command-key-and-platform-ceilings.md) (Proposed). On landing, flip it to Accepted and delete this spec. (See also the article `docs/articles/20260620T120000-reach-is-computed-not-chosen.md`.)
 
 ## Edge Cases
@@ -314,24 +312,24 @@ The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`,
 
 ### Same command bound in both maps
 
-1. Desktop has `system.toggleManualRecording = Cmd+Shift+Space` and (hypothetically) `focused.toggleManualRecording = Space`.
-2. Both fire; both call the same `run`. Harmless but redundant.
-3. v1 ships only the system default for recording (focused slot `null`) to avoid the redundancy. See Open Questions.
+1. Two different keys (e.g. `global.toggleManualRecording = Cmd+Shift+Space` and `focused.toggleManualRecording = Space`): both work, each fires once, both call the same `run`. This is the supported double-binding, and the shipped defaults already do it.
+2. The same key in both stores (e.g. both `Cmd+Shift+Space`): the global plugin and the focused webview can both see the keystroke, so it double-fires. The conflict checker refuses this.
+3. v1 ships the defaults as-is; no platform-aware focused defaults are needed.
 
 ## Open Questions (resolved)
 
 1. **Should global bindings roam across devices with a collision notice?** RESOLVED: (a) per-device only for v1. Main already stores system bindings per-device with no roaming; (b) would add collision detection, per-device override, and notice UI, a code family rather than a deletion. The `min()` model keeps (b) a clean additive step later.
 
-2. **Do we ship any double-binding (focused + system) by default?** RESOLVED: no. And on main this is load-bearing, not cosmetic: the existing web focused defaults would become an accidental desktop double-binding the moment Phase 3 runs the focused backend there. So `DEFAULT_KEYBINDINGS.focused` is platform-computed (desktop recording slot `null`, focused store seeds nav), folded into Phase 1.2 as a correctness requirement. Users may still add their own second key.
+2. **Do we ship any double-binding (one focused + one global key) by default?** RESOLVED: effectively yes, and safely. The shipped focused defaults (`space`/`c`/`v`) and the global defaults (`Cmd+Shift+Space`/`Cmd+.`) are different keys, so on desktop a command like toggle just gains a second, different key with no double-fire. The earlier worry about an accidental same-key double-bind was a phantom (only the same key in both stores double-fires, and the conflict checker refuses it). Whether desktop should ship the in-app recording keys at all (vs leaving the focused slot for the user) is a Phase-3 taste call. Users may add their own second key.
 
 3. **Which nav commands seed the focused scope first?** RESOLVED: just `openSettings` (`Cmd+,`, via the existing `goto('/settings')`). The catalog has zero nav commands today, so this is the first focused-reach entry and the cleanest proof the reach ceiling clamps `Cmd+,` to in-app on desktop. The palette is the payoff that justifies the spine; defer it.
 
 ## Success Criteria
 
 - [ ] A command is one catalog entry with `reach`; bindings are two serializable `id -> KeyBinding` maps with one format.
-- [ ] Desktop runs focused and system shortcuts at once; `Cmd+,` opens Settings in-app and does not register globally.
+- [ ] Desktop runs focused and global shortcuts at once; `Cmd+,` opens Settings in-app and does not register globally.
 - [ ] The settings shortcuts page is one flat list with a live reach badge; no scope toggle, no tauri branch in the page.
-- [ ] `toggleManualRecording` defaults to `Cmd+Shift+Space` (desktop) and `Space` (web) sourced from one `DEFAULT_KEYBINDINGS` literal.
+- [ ] `toggleManualRecording` defaults to `Cmd+Shift+Space` in the global store and `Space` in the focused store, from their two homes (per-device `DEFAULT_GLOBAL_BINDINGS`, synced `definition.ts`).
 - [ ] Typecheck, `bun test`, cargo, and svelte-check pass; web and desktop smoke clean.
 - [ ] Reach model recorded as an ADR; this spec deleted.
 
@@ -341,9 +339,9 @@ The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`,
 - `apps/whispering/src/lib/commands.tauri.ts` / `commands.browser.ts` - the `#platform/commands` seam (desktop-only `openTransformationPicker`); also gains the `run`/`reach` shape
 - `apps/whispering/src/lib/platform/shortcuts.{shared,browser,tauri}.ts` - both backends already speak `KeyBinding`; `shared` already exposes `set`/`clear`/`current`/`findConflict`. To re-home by reach (split the pick-one seam).
 - `apps/whispering/src/lib/platform/types.ts` - the `Shortcuts` seam contract (already grew `set`/`clear`/`current`/`findConflict`)
-- `apps/whispering/src/lib/workspace/definition.ts` - focused defaults (`shortcut.*`, now `'space'`/`'c'`/`'v'`/...) to source from `DEFAULT_KEYBINDINGS`
+- `apps/whispering/src/lib/workspace/definition.ts` - the platform-free synced home for the focused defaults (`shortcut.*`, `'space'`/`'c'`/`'v'`/...); stays as-is
 - `apps/whispering/src/lib/state/device-config.svelte.ts` - system defaults (`DEFAULT_GLOBAL_BINDINGS`, already `Cmd+Shift+Space`)
-- `apps/whispering/src/lib/utils/key-binding.ts` - `resolveBinding` (tier), `bindingsEqual`/`eventModifiers`/`domCodeToKey`/`keyBindingToString` (already present); home for `keyCapability` / `realizedReach`
+- `apps/whispering/src/lib/utils/key-binding.ts` - the shortcut core: `Reach`, `resolveBinding` (tier), `bindingsEqual`/`eventModifiers`/`domCodeToKey`/`keyBindingToString`, and now `keyCapability`/`realizedReach` (the reach formula)
 - `apps/whispering/src/lib/services/local-shortcut-manager.ts` - webview matcher (already consumes `KeyBinding`); registry must be populated on desktop
 - `apps/whispering/src/lib/tauri.tauri.ts` - `keyboard.registerChords` + `keyboard.setBindings` (Tier 0 / Tier 1 IPC; namespace renamed from `globalShortcuts`)
 - `apps/whispering/src/routes/(app)/_runtime/` - `attachLocalShortcutListener` (ungated, runs in the Tauri window), `attachShortcutSync`, `attachGlobalShortcutTriggers`

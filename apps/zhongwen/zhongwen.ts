@@ -28,7 +28,10 @@ import {
 	type Id,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { attachChatConversation } from '@epicenter/workspace/ai';
+import {
+	attachChatConversation,
+	type ChatStream,
+} from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -131,6 +134,37 @@ export const DEFAULT_AGENT_ID: AgentId = CLOUD_AGENT_ID;
  */
 export function agentConfig(id: AgentId): AgentConfig | undefined {
 	return ZHONGWEN_AGENTS.find((agent) => agent.id === id);
+}
+
+/**
+ * One inference backend a peer can power, built lazily: it returns a
+ * {@link ChatStream} when the host can satisfy it (a key is present, the account
+ * is opted in) or `null` when it cannot, so {@link resolveEngine} can fall
+ * through to the next engine in priority order (ADR-0038).
+ */
+export type Engine = () => ChatStream | null;
+
+/**
+ * The `ChatStream` to answer with, taken from the first engine this host can
+ * power, or `null` when it can power none: host the conversation's sync, write
+ * nothing, leave the turn for a configured answerer.
+ *
+ * This is only the *engine* half of answering, where tokens come from. The other
+ * half, *designation* (is this turn mine to write?), is the owner fork and is
+ * decided where each peer naturally decides it, never here: a daemon's observe
+ * loop hosts only the conversations bound to its agent (`row.agent ===
+ * selfAgentId`, ADR-0025), so by the time it resolves an engine the turn is
+ * already its own; a browser tab reads the bound agent's `owner` kind before it
+ * mounts an answerer at all. The two halves are orthogonal (owner ⊥ engine,
+ * ADR-0033/0038), so they are not forced through one function: doing so made the
+ * daemon's designation a tautology (it would only ever pass its own agent).
+ */
+export function resolveEngine(engines: readonly Engine[]): ChatStream | null {
+	for (const engine of engines) {
+		const stream = engine();
+		if (stream) return stream; // first engine this host can power
+	}
+	return null; // no engine here → host, don't answer
 }
 
 /**

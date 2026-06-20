@@ -1,16 +1,40 @@
 <script module lang="ts">
-	import { createAiChatFetch } from '@epicenter/client';
+	import {
+		createAiChatFetch,
+		createEpicenterProviderChatStream,
+	} from '@epicenter/client';
+	import { API_ROUTES } from '@epicenter/constants/api-routes';
+	import { APP_URLS } from '@epicenter/constants/vite';
+	import {
+		type Engine,
+		ZHONGWEN_MODEL,
+		ZHONGWEN_SYSTEM_PROMPT,
+	} from '@epicenter/zhongwen';
 	import { auth } from '$platform/auth';
 
 	// auth is a module singleton, so the wrapped fetch is built once and shared
 	// across every mounted ConversationView.
 	const aiChatFetch = createAiChatFetch(auth.fetch);
+
+	// The engines this tab can power, highest priority first, sharing the one
+	// wrapped fetch. Today just the metered Epicenter account over the
+	// `/api/ai/chat` SSE stream; adding a local-key engine ahead of it is the whole
+	// of "engine unification" (the same list the daemon walks). Built once, shared
+	// across every mounted view.
+	const browserEngines: readonly Engine[] = [
+		() =>
+			createEpicenterProviderChatStream({
+				fetch: aiChatFetch,
+				url: API_ROUTES.ai.chat.url(APP_URLS.API),
+				data: () => ({
+					model: ZHONGWEN_MODEL,
+					systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
+				}),
+			}),
+	];
 </script>
 
 <script lang="ts">
-	import { createEpicenterProviderChatStream } from '@epicenter/client';
-	import { API_ROUTES } from '@epicenter/constants/api-routes';
-	import { APP_URLS } from '@epicenter/constants/vite';
 	import { bindConversation } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
@@ -18,8 +42,7 @@
 	import {
 		agentConfig,
 		type ConversationId,
-		ZHONGWEN_MODEL,
-		ZHONGWEN_SYSTEM_PROMPT,
+		resolveEngine,
 	} from '@epicenter/zhongwen';
 	import { onDestroy } from 'svelte';
 	import { requireZhongwen } from '$lib/session';
@@ -39,27 +62,21 @@
 		return zhongwen.tables.conversations.get(conversationId).data;
 	}
 
-	// Who answers this conversation? A `'durable'`-owner agent is a resident daemon
-	// that answers ambiently over sync, so the browser stays out (answering too
-	// would double-answer one turn). An `'ephemeral'`-owner binding (the cloud
-	// agent) is owned by this tab and answered in-process: the browser runs the
-	// same answerer the daemon does, sourcing tokens from the Epicenter provider
-	// (the metered /api/ai/chat SSE stream). The bound agent is immutable, so this
-	// never flips mid-conversation.
-	// ADR-0033: a conversation is a synced doc only an in-process peer writes.
+	// Who answers this conversation? Two orthogonal questions (ADR-0033). First,
+	// designation: does this tab write the turn? A tab answers only the agents it
+	// owns (an `'ephemeral'` owner); a `'durable'` owner is a resident daemon that
+	// answers ambiently over sync, so the tab stays out (answering too would answer
+	// one turn twice). The bound agent is immutable, so this never flips
+	// mid-conversation. Then engine: which backend powers the answer
+	// (`resolveEngine`, ADR-0038). ADR-0033: a conversation is a synced doc only an
+	// in-process peer writes.
 	// svelte-ignore state_referenced_locally
 	const boundAgent = readRow()?.agent;
-	const answer =
-		boundAgent !== undefined && agentConfig(boundAgent)?.owner === 'ephemeral'
-			? createEpicenterProviderChatStream({
-					fetch: aiChatFetch,
-					url: API_ROUTES.ai.chat.url(APP_URLS.API),
-					data: () => ({
-						model: ZHONGWEN_MODEL,
-						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-					}),
-				})
-			: undefined;
+	const answersHere =
+		boundAgent !== undefined && agentConfig(boundAgent)?.owner === 'ephemeral';
+	const answer = answersHere
+		? (resolveEngine(browserEngines) ?? undefined)
+		: undefined;
 
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the transcript doc and bind it (the answerer, the clock,

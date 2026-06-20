@@ -108,5 +108,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0038](0038-a-daemon-answers-through-the-first-inference-backend-it-can-satisfy.md) | A daemon answers through the first inference backend it can satisfy: byok, else metered, else placeholder | Proposed |
 | [0039](0039-dictation-feedback-is-a-projection-of-one-lifecycle-state.md) | Dictation feedback is a projection of one lifecycle state, not an event log | Accepted |
 | [0040](0040-a-cursor-write-that-cannot-paste-falls-back-to-the-clipboard-decided-from-the-grant.md) | A cursor write that cannot paste falls back to the clipboard, decided from the grant | Accepted |
+| [0041](0041-shortcut-reach-is-the-minimum-of-command-key-and-platform-ceilings.md) | Shortcut reach is the minimum of command, key, and platform ceilings, never a user toggle | Proposed |
 
 When you add an ADR, add its row here.

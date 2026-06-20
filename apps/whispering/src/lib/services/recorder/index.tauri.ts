@@ -2,7 +2,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
+import { recorderErrorFromIpc } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
 	type CpalRecordingParams,
@@ -74,7 +74,7 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 		await commands.enumerateRecordingDevices();
 	if (enumerateRecordingDevicesError !== null) {
 		return (
-			categorizeRecorderError(enumerateRecordingDevicesError) ??
+			recorderErrorFromIpc(enumerateRecordingDevicesError) ??
 			RecorderError.EnumerateDevices({
 				cause: enumerateRecordingDevicesError,
 			})
@@ -282,7 +282,7 @@ function createCpalRecorder() {
 				);
 			if (initRecordingSessionError !== null)
 				return (
-					categorizeRecorderError(initRecordingSessionError) ??
+					recorderErrorFromIpc(initRecordingSessionError) ??
 					RecorderError.InitFailed({
 						cause: initRecordingSessionError,
 					})
@@ -297,7 +297,7 @@ function createCpalRecorder() {
 				if (closeError !== null)
 					log.error(RecorderError.StartFailed({ cause: closeError }));
 				return (
-					categorizeRecorderError(startRecordingError) ??
+					recorderErrorFromIpc(startRecordingError) ??
 					RecorderError.StartFailed({ cause: startRecordingError })
 				);
 			}

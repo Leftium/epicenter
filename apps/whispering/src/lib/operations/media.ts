@@ -28,13 +28,11 @@ function shouldPausePlayback(): boolean {
 
 async function pausePlayingSessions(): Promise<string[]> {
 	if (!tauri) return [];
+	// `pause()` is infallible across IPC: Rust logs any platform failure and
+	// reports "paused nothing". The try/catch only guards an unexpected invoke
+	// rejection (e.g. the command going missing), never a playback error.
 	try {
-		const { data, error } = await tauri.media.pause();
-		if (error !== null) {
-			log.warn(new Error(`Failed to pause playback: ${error}`));
-			return [];
-		}
-		return data;
+		return await tauri.media.pause();
 	} catch (error) {
 		log.warn(new Error(`Failed to pause playback: ${String(error)}`));
 		return [];
@@ -43,11 +41,9 @@ async function pausePlayingSessions(): Promise<string[]> {
 
 async function resumeSessions(sessions: string[]): Promise<void> {
 	if (!tauri || sessions.length === 0) return;
+	// `resume()` is infallible across IPC, mirroring `pause()`.
 	try {
-		const { error } = await tauri.media.resume(sessions);
-		if (error !== null) {
-			log.warn(new Error(`Failed to resume playback: ${error}`));
-		}
+		await tauri.media.resume(sessions);
 	} catch (error) {
 		log.warn(new Error(`Failed to resume playback: ${String(error)}`));
 	}

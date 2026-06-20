@@ -120,6 +120,7 @@ export type {
 	ModelStateEvent,
 	ModelStatus,
 	Modifier,
+	RecorderError as IpcRecorderError,
 	RecordingArtifact,
 	TranscriptionError,
 	TranscriptionSpec,

@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
+- **Amended by:** [ADR-0030](0030-a-cursor-write-that-cannot-paste-falls-back-to-the-clipboard-decided-from-the-grant.md) — the delivery reach below collapsed from three rungs (`output`/`clipboard`/`history`) to two (`output`/`clipboard`); a cursor write that cannot paste now leaves the transcript on the clipboard instead of stranding it in history.
 
 ## Context
 
@@ -26,7 +27,8 @@ modeled as two orthogonal tracks: **capture** (`idle | recording-manual |
 listening | speaking`, the live session, derived from the recorder machines) and
 **outcome** (`none | transcribing | delivered | failed`, the most-recent
 utterance's pipeline result, where `delivered` carries a *reach*: landed at the
-configured output, fell back to the clipboard, or saved to history only). Every
+configured output, or fell back to the clipboard — ADR-0030 collapsed the former
+history-only rung). Every
 surface is a pure projection, never an
 imperative emission. The two tracks exist because voice-activated capture is
 *continuous*: an utterance transcribes while the session keeps listening, so
@@ -72,8 +74,8 @@ durable log and the home of retry.
   but missed its
   configured output (paste or injection failed) is **not** a failure: the text is
   saved, so it is a reduced *delivery reach*, not a tier. It rides on the
-  `delivered` outcome (a clean `output`, a `clipboard` fallback, or `history`
-  only) and shows an amber tag, never a red pill and never an OS notification.
+  `delivered` outcome (a clean `output`, or a `clipboard` fallback; see ADR-0030)
+  and shows an amber tag, never a red pill and never an OS notification.
   Folding delivery into the reach axis keeps failure clean: a missed delivery is a
   reduced success, not a failure, so the failure path carries only the two real
   tiers. Every real failure fires the OS notification (`report/index.ts`), focused
@@ -86,16 +88,16 @@ durable log and the home of retry.
   showing.
 - **A clean delivery flashes; a reduced reach persists.** The clean `output` reach
   flashes for a beat and retires, because the landing text is the receipt and the
-  pill is just a glance. A reduced reach (`clipboard` or `history`) instead stays
+  pill is just a glance. The reduced `clipboard` reach instead stays
   on the pill until the next dictation, the way a failure glance does: the text did
   not land where the user asked, so the tag carries information the text alone does
   not, and a sub-second flash is too easy to miss. A reduced reach is still not a
   failure and fires no notification: the persistent pill tag and the recordings row
-  are enough, and the dominant `history` cause, a revoked Accessibility grant
+  are enough, and the dominant cause, a revoked Accessibility grant
   (cursor paste-back shares the same trust as the keyboard tap), already raises its
-  own standing notice. The trade is no cross-app heads-up for a reach that strands
-  mid VAD session, which is rare (the default clipboard reach almost never fails)
-  and root-flagged when it is not.
+  own standing notice. Under ADR-0030 a paste that cannot land falls back to the
+  clipboard rather than stranding the transcript, so the reduced reach is always
+  recoverable with one ⌘V.
 - **The dictation path emits no toasts.** The pill glances the status, the OS
   notification is the cross-app failure alert, and the recordings row is the
   failure-detail surface and the home of retry. There is no toast in the dictation

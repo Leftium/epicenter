@@ -1,8 +1,20 @@
 import { goto } from '$app/navigation';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/urls';
+import {
+	type DeliveryOutcome,
+	reachForCursorWrite,
+} from '$lib/operations/delivery-reach';
 import type { Notice } from '$lib/report';
 import { services } from '$lib/services';
 import { settings } from '$lib/state/settings.svelte';
+
+// The reach types live in the pure `delivery-reach` module (no clipboard/settings
+// IO), so the reach policy stays testable; re-exported here so callers keep one
+// delivery import.
+export type {
+	DeliveryOutcome,
+	DeliveryReach,
+} from '$lib/operations/delivery-reach';
 
 /**
  * The output scopes Whispering delivers into. Each has its own
@@ -34,28 +46,6 @@ const TRANSCRIPTION_SUCCESS_COPY = {
 	recording: '📝 Recording transcribed',
 	import: '📁 File transcribed',
 } as const satisfies Record<TranscriptionSource, string>;
-
-/**
- * How far the text reached, relative to the user's configured output. Delivery
- * is a reduced-reach axis, not a pass/fail: the transcript is always saved to
- * history, so a reduced reach is a recoverable success, never a dictation failure
- * (ADR-0029). Delivery is an operation, not a notifier: it returns this so each
- * caller presents it on its own surface (the dictation pill, or a toast for file
- * import and row actions).
- *
- * - `output`: landed where configured — pasted at the cursor, or copied to the
- *   clipboard / saved to history when that is the configured sink. The clean case.
- * - `clipboard`: a cursor write was requested but could not paste (no
- *   Accessibility grant, or the paste failed), so the transcript was left on the
- *   clipboard. Usable, but not where the user asked.
- *
- * There is no `history`-only reach: a cursor write that cannot paste always leaves
- * the transcript on the clipboard (see `write_text` in src-tauri), so the text is
- * never stranded somewhere the user would not look.
- */
-export type DeliveryReach = 'output' | 'clipboard';
-
-export type DeliveryOutcome = { reach: DeliveryReach };
 
 /** A delivery result: the structured outcome plus a human notice for toasts. */
 export type DeliveryResult = { outcome: DeliveryOutcome; notice: Notice };
@@ -164,27 +154,23 @@ async function deliverResult({
 		};
 	}
 
-	if (writeOutcome === 'pasted') {
-		if (settings.get(`output.${settingsScope}.enter`)) {
-			// The Enter keystroke is a nicety on top of a successful write; a failure
-			// here does not change the delivery outcome.
-			await services.text.simulateEnterKeystroke();
-		}
-		return {
-			outcome: { reach: 'output' },
-			notice: {
-				title: `${successCopy} and written to cursor!`,
-				description: text,
-				action: recordingsAction,
-			},
-		};
+	if (
+		writeOutcome === 'pasted' &&
+		settings.get(`output.${settingsScope}.enter`)
+	) {
+		// The Enter keystroke is a nicety on top of a successful write; a failure
+		// here does not change the delivery outcome.
+		await services.text.simulateEnterKeystroke();
 	}
 
-	// `leftOnClipboard`: couldn't paste, so the transcript is on the clipboard.
+	const reach = reachForCursorWrite(writeOutcome);
 	return {
-		outcome: { reach: 'clipboard' },
+		outcome: { reach },
 		notice: {
-			title: `${successCopy}, copied to clipboard (couldn't write to cursor)`,
+			title:
+				reach === 'output'
+					? `${successCopy} and written to cursor!`
+					: `${successCopy}, copied to clipboard (couldn't write to cursor)`,
 			description: text,
 			action: recordingsAction,
 		},

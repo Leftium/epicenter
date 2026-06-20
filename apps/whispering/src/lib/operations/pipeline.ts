@@ -3,7 +3,6 @@ import { IanaTimeZone } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { goto } from '$app/navigation';
 import {
-	type DeliveryOutcome,
 	deliverTranscriptionResult,
 	deliverTransformationResult,
 	type TranscriptionSource,
@@ -11,7 +10,7 @@ import {
 import { sound } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
-import { log, report } from '$lib/report';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import type { RecorderStopResult } from '$lib/services/recorder/types';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
@@ -138,8 +137,10 @@ export async function processRecordingPipeline({
 	if (isDictation) {
 		// The transcript is the dictation receipt; the transformation below, if
 		// any, runs as a background enhancement (logged in transformation runs)
-		// rather than reopening the pill.
-		markDictationDelivery(transcriptDelivery);
+		// rather than reopening the pill. Every reach is a success (the transcript
+		// is saved), so this is always `delivered`; the reach decides whether the
+		// pill flashes (clean `output`) or persists (a reduced `clipboard`).
+		dictationLifecycle.markDelivered(transcriptDelivery.reach);
 	} else {
 		transcribeLoading?.resolve(transcribeNotice);
 	}
@@ -191,22 +192,4 @@ export async function processRecordingPipeline({
 		recordingId,
 	});
 	transformLoading?.resolve(transformNotice);
-}
-
-/**
- * Map a delivery outcome onto the dictation lifecycle. Every delivery reach is a
- * success (the transcript is saved), so this is always a `delivered` outcome; the
- * reach colors it and decides whether it flashes (a clean `output`) or persists
- * on the pill (a reduced `clipboard` or `history` reach). A `history` reach logs
- * the underlying error for diagnostics, but the user's recovery is the transcript
- * in the recordings row, not a retry, so it is not a dictation failure and fires
- * no notification (ADR-0029).
- */
-function markDictationDelivery(outcome: DeliveryOutcome): void {
-	if (outcome.reach === 'history') {
-		log.warn(
-			new Error(`Dictation reached history only: ${outcome.error.message}`),
-		);
-	}
-	dictationLifecycle.markDelivered(outcome.reach);
 }

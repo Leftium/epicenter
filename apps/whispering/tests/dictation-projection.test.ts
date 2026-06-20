@@ -83,10 +83,6 @@ describe('dictation pill projection', () => {
 			phase: 'delivered',
 			reach: 'clipboard',
 		});
-		expect(project(idle, { kind: 'delivered', reach: 'history' })).toEqual({
-			phase: 'delivered',
-			reach: 'history',
-		});
 		// The failure projects only its tier; the live error (and its message) is
 		// dropped at the seam, mapped to a terse label by the pill.
 		expect(project(idle, { kind: 'failed', ...failure })).toEqual({

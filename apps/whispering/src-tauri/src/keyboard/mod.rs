@@ -71,7 +71,10 @@ fn is_wayland() -> bool {
 /// Whether this process may currently tap the keyboard. On macOS this is the
 /// live Accessibility check (`AXIsProcessTrusted`); every other desktop has no
 /// such gate, so the tap is always allowed.
-fn is_trusted() -> bool {
+///
+/// Also read by `write_text` to decide, before attempting a synthetic paste,
+/// whether the paste can land at all (an untrusted ⌘V silently no-ops on macOS).
+pub(crate) fn is_trusted() -> bool {
     #[cfg(target_os = "macos")]
     {
         // SAFETY: `AXIsProcessTrusted` is an argument-free, thread-safe TCC query

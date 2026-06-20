@@ -1,5 +1,4 @@
 <script lang="ts">
-	import ArchiveIcon from '@lucide/svelte/icons/archive';
 	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
@@ -68,9 +67,8 @@
 		spin?: boolean;
 	};
 
-	// A delivery is a success at every reach: a clean `output` reads green; a
-	// reduced reach (`clipboard`/`history`) reads amber, "landed, but not where you
-	// asked".
+	// A delivery is a success at both reaches: a clean `output` reads green; the
+	// `clipboard` fallback reads amber, "landed, but not where you asked".
 	const DELIVERED_CHIP = {
 		output: { Icon: CheckIcon, label: 'Delivered', tone: 'success' },
 		clipboard: {
@@ -78,7 +76,6 @@
 			label: 'Copied to clipboard',
 			tone: 'degraded',
 		},
-		history: { Icon: ArchiveIcon, label: 'Saved to history', tone: 'degraded' },
 	} as const satisfies Record<DeliveryReach, Chip>;
 
 	const chip = $derived.by((): Chip | null => {

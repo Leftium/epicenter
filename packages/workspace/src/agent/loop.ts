@@ -50,6 +50,14 @@ export type AgentEngine = (
 	signal: AbortSignal,
 ) => AsyncIterable<StreamChunk>;
 
+/**
+ * A failed turn: a human-readable message plus an optional structured code (e.g.
+ * `'InsufficientCredits'`, `'Unauthorized'`) the engine surfaced on its
+ * `RUN_ERROR` chunk, so the UI can branch on the code rather than match the
+ * message string.
+ */
+export type ConversationError = { message: string; code?: string };
+
 /** The render state of one conversation: durable transcript plus the live turn. */
 export type ConversationSnapshot = {
 	/** Persisted messages plus the in-flight turn once it has visible content. */
@@ -58,8 +66,8 @@ export type ConversationSnapshot = {
 	isThinking: boolean;
 	/** A turn is in flight (disable input, offer stop). */
 	isGenerating: boolean;
-	/** The last turn's failure message, or null. Cleared on the next turn. */
-	error: string | null;
+	/** The last turn's failure, or null. Cleared on the next turn. */
+	error: ConversationError | null;
 };
 
 /** The framework-agnostic conversation handle the UI binds to. */
@@ -130,7 +138,7 @@ export function createConversation(
 	// The in-flight turn: assistant messages built this turn, component-only
 	// until a clean finish persists them. Null between turns.
 	let turn: AgentMessage[] | null = null;
-	let error: string | null = null;
+	let error: ConversationError | null = null;
 	let controller: AbortController | null = null;
 
 	function snapshot(): ConversationSnapshot {
@@ -147,11 +155,11 @@ export function createConversation(
 	async function runStep(
 		assistant: AgentMessage,
 		signal: AbortSignal,
-	): Promise<{ calls: AgentToolCall[]; failure?: string }> {
+	): Promise<{ calls: AgentToolCall[]; failure?: ConversationError }> {
 		const prompt = toModelMessages([...persisted, ...(turn ?? [])]);
 		const pending = new Map<string, { toolName: string; args: string }>();
 		const calls: AgentToolCall[] = [];
-		let failure: string | undefined;
+		let failure: ConversationError | undefined;
 
 		try {
 			for await (const chunk of engine(
@@ -188,15 +196,20 @@ export function createConversation(
 						notify();
 						break;
 					}
-					case EventType.RUN_ERROR:
-						failure = chunk.message;
+					case EventType.RUN_ERROR: {
+						const code = (chunk as { code?: string }).code;
+						failure = {
+							message: chunk.message,
+							...(code !== undefined && { code }),
+						};
 						break;
+					}
 					default:
 						break;
 				}
 			}
 		} catch (cause) {
-			if (!signal.aborted) failure = extractErrorMessage(cause);
+			if (!signal.aborted) failure = { message: extractErrorMessage(cause) };
 		}
 
 		return { calls, failure };
@@ -245,7 +258,7 @@ export function createConversation(
 		turn = [];
 		notify();
 
-		let failure: string | undefined;
+		let failure: ConversationError | undefined;
 		while (!signal.aborted) {
 			const assistant: AgentMessage = {
 				id: generateId(),

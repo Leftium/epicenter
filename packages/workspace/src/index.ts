@@ -49,6 +49,11 @@ export {
 	defineMutation,
 	defineQuery,
 } from './shared/actions';
+export {
+	type ActionNames,
+	actionsToAiTools,
+	type ToolDefinition,
+} from './shared/tool-bridge';
 
 // ════════════════════════════════════════════════════════════════════════════
 // NODE IDENTITY

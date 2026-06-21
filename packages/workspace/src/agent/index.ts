@@ -15,6 +15,7 @@ export {
 export {
 	type AgentEngine,
 	type AgentEngineRequest,
+	type ConversationError,
 	type ConversationHandle,
 	type ConversationOptions,
 	type ConversationSnapshot,

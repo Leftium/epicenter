@@ -16,6 +16,10 @@ import type { OwnerId } from '@epicenter/identity';
 
 export { createAiChatFetch } from './ai-chat-fetch.js';
 export {
+	type AgentEngine,
+	type AgentEngineRequest,
+	type AgentEngineToolDefinition,
+	createEpicenterAgentEngine,
 	createEpicenterProviderChatStream,
 	type EpicenterProviderData,
 } from './epicenter-provider.js';

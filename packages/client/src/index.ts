@@ -20,7 +20,6 @@ export {
 	type AgentEngineRequest,
 	type AgentEngineToolDefinition,
 	createEpicenterAgentEngine,
-	createEpicenterProviderChatStream,
 	type EpicenterProviderData,
 } from './epicenter-provider.js';
 

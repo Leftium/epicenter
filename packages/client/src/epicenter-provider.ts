@@ -1,20 +1,12 @@
 /**
- * The Epicenter provider: a browser inference backend that runs through the
- * metered `/api/ai/chat` endpoint on the user's account (the house key), so a
- * client loop gets credits without a raw provider key (ADR-0033's
- * Epicenter-provider backend).
- *
- * Two shapes share one POST-and-parse core:
- *
- *  - {@link createEpicenterAgentEngine} is the `AgentEngine` the client agent
- *    loop (ADR-0047) drives: a request carries the prompt plus the live tool
- *    catalog, and the engine forwards the tool definitions in the request body
- *    so the provider emits tool-call chunks. This is the one shape opensidian
- *    and every tool agent use.
- *  - {@link createEpicenterProviderChatStream} is the older messages-only
- *    `ChatStream` the doc-streaming answerer consumes; it forwards no tools.
- *    Vocab (capability-free) also uses it. It is deleted with the doc-streaming
- *    core once its consumers move to the agent engine.
+ * The Epicenter provider: {@link createEpicenterAgentEngine}, the `AgentEngine`
+ * the client agent loop (ADR-0047) drives. It runs inference through the metered
+ * `/api/ai/chat` endpoint on the user's account (the house key), so the loop
+ * gets credits without a raw provider key (ADR-0033's Epicenter-provider
+ * backend). A request carries the prompt plus the live tool catalog, and the
+ * engine forwards the tool definitions in the request body so the provider emits
+ * tool-call chunks. The capability-free case (Vocab) sends an empty catalog and
+ * the loop runs a single text step per turn; it is the same engine, no tools.
  *
  * The endpoint streams the answer back as Server-Sent Events
  * (`toServerSentEventsResponse`), the way a provider streams; this adapter turns
@@ -26,23 +18,14 @@
  *
  * This lives in `@epicenter/client` (beside `createAiChatFetch`, the authed fetch
  * it expects) so every app that answers a cloud conversation in-process shares one
- * implementation. The return values are structurally the workspace loop's
- * `AgentEngine` / the `@epicenter/workspace/ai` `ChatStream`; the types are
- * inlined here to keep the client decoupled from the workspace core.
+ * implementation. The return value is structurally the workspace loop's
+ * `AgentEngine`; the types are inlined here to keep the client decoupled from the
+ * workspace core.
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { extractErrorMessage } from 'wellcrafted/error';
-
-/**
- * Structurally `@epicenter/workspace/ai`'s `ChatStream`. Inlined so the client
- * does not depend on the workspace core for a function signature.
- */
-type ChatStream = (
-	messages: ModelMessage[],
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
 
 /** The body options the `/api/ai/chat` route reads (model + system prompts). */
 export type EpicenterProviderData = {
@@ -241,22 +224,4 @@ export function createEpicenterAgentEngine({
 			},
 			signal,
 		);
-}
-
-/**
- * Build the messages-only Epicenter-provider {@link ChatStream}. Forwards no
- * tools; the doc-streaming answerer and Vocab consume it. Prefer
- * {@link createEpicenterAgentEngine} for a tool-capable loop.
- */
-export function createEpicenterProviderChatStream({
-	fetch,
-	url,
-	data,
-}: {
-	fetch: typeof globalThis.fetch;
-	url: string;
-	data: () => EpicenterProviderData;
-}): ChatStream {
-	return (messages, signal) =>
-		streamEpicenterChat(fetch, url, { messages, data: data() }, signal);
 }

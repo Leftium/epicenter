@@ -14,29 +14,26 @@
 
 import { bindAgentConversation } from '@epicenter/svelte';
 import { generateMessageId, type VocabMessage } from '@epicenter/vocab';
-import type { VocabChatStream } from '@epicenter/vocab/engine';
 import type { KvStoreHandle } from '@epicenter/workspace';
-import { createConversation as createAgentConversation } from '@epicenter/workspace/agent';
+import {
+	type AgentEngine,
+	createConversation as createAgentConversation,
+} from '@epicenter/workspace/agent';
 
 /** The opened `conversations.messages` child-doc handle (keyed by message id). */
 type MessageStore = KvStoreHandle<VocabMessage> & Disposable;
 
 /**
- * Bind one conversation's message store to the inference stream.
+ * Bind one conversation's message store to the inference engine.
  *
  * @param store  the opened `tables.conversations.docs.messages.open(id)` handle.
- * @param stream the client's inference backend (the metered Epicenter stream).
+ * @param engine the client's inference backend (the metered Epicenter engine).
  */
-export function createConversation(
-	store: MessageStore,
-	stream: VocabChatStream,
-) {
+export function createConversation(store: MessageStore, engine: AgentEngine) {
 	return bindAgentConversation(
 		createAgentConversation({
 			store,
-			// Vocab has no tools, so the engine ignores the (empty) tool list and
-			// the loop runs one text step per turn.
-			engine: (request, signal) => stream(request.messages, signal),
+			engine,
 			generateId: generateMessageId,
 		}),
 	);

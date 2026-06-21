@@ -1,11 +1,11 @@
 <script module lang="ts">
 	import { APP_URLS } from '@epicenter/constants/vite';
-	import { epicenterMeteredChatStream } from '@epicenter/vocab/engine';
+	import { epicenterMeteredEngine } from '@epicenter/vocab/engine';
 	import { auth } from '$platform/auth';
 
 	// The client answers over the metered `/api/ai/chat` SSE stream (ADR-0043).
-	// One stream, built once and shared across every mounted conversation view.
-	const clientStream = epicenterMeteredChatStream(auth.fetch, APP_URLS.API);
+	// One engine, built once and shared across every mounted conversation view.
+	const clientEngine = epicenterMeteredEngine(auth.fetch, APP_URLS.API);
 </script>
 
 <script lang="ts">
@@ -27,13 +27,13 @@
 	const vocab = requireVocab();
 
 	// The component is keyed on conversationId, so it mounts fresh per
-	// conversation: open the message store and bind it to the inference stream.
+	// conversation: open the message store and bind it to the inference engine.
 	// The controller owns streaming, persistence, and the render state; dispose
 	// on unmount.
 	// svelte-ignore state_referenced_locally
 	const convo = createConversation(
 		vocab.tables.conversations.docs.messages.open(conversationId),
-		clientStream,
+		clientEngine,
 	);
 
 	onDestroy(() => convo[Symbol.dispose]());

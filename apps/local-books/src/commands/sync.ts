@@ -63,27 +63,17 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 	}
 
 	const now = () => Date.now();
-	const oauthDeps: OAuthDeps = { now, log: (m) => console.error(m) };
+	const log = (m: string) => console.error(m);
+	const oauthDeps: OAuthDeps = { now, log };
 	const tokens = createTokenManager({
 		config,
 		keyring,
 		token,
 		deps: oauthDeps,
 	});
-	const client = createQbClient({
-		config,
-		realmId,
-		tokens,
-		log: (m) => console.error(m),
-	});
+	const client = createQbClient({ config, realmId, tokens, log });
 	const db = openBooksDb(dbPath(config.dataDir, realmId), realmId);
-	const deps: SyncDeps = {
-		db,
-		client,
-		config,
-		now,
-		log: (m) => console.error(m),
-	};
+	const deps: SyncDeps = { db, client, config, now, log };
 
 	// Looping mode: keep the mirror fresh until interrupted.
 	if (args.intervalMs != null) {

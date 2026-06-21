@@ -213,40 +213,40 @@ export type SyncLoopOptions = {
 	forceFull: boolean;
 	entities: string[];
 	intervalMs: number;
-	/** Aborting the signal stops the loop after the current pass / sleep. */
+	/** Aborting the signal stops the loop after the current pass or sleep. */
 	signal: AbortSignal;
 	/** Called after each pass with its outcome and 1-based pass number. */
 	onPass?: (outcome: SyncAllOutcome, pass: number) => void;
-	/** Injectable for tests; defaults to an interruptible setTimeout. */
-	sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 };
 
-/** A sleep that resolves early when the signal aborts, so Ctrl-C is instant. */
+/**
+ * A sleep that resolves early when the signal aborts, so Ctrl-C is instant. The
+ * abort listener is removed on the timeout path too: without that, a long-lived
+ * loop would leak one dangling listener per pass.
+ */
 function interruptibleSleep(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
-		const timer = setTimeout(resolve, ms);
-		signal.addEventListener(
-			'abort',
-			() => {
-				clearTimeout(timer);
-				resolve();
-			},
-			{ once: true },
-		);
+		const onAbort = () => {
+			clearTimeout(timer);
+			resolve();
+		};
+		const timer = setTimeout(() => {
+			signal.removeEventListener('abort', onAbort);
+			resolve();
+		}, ms);
+		signal.addEventListener('abort', onAbort, { once: true });
 	});
 }
 
 /**
  * Run `syncAll` on a loop until the signal aborts. The first pass honors
  * `forceFull`; every later pass is incremental (the cursor has advanced), so
- * `--full --interval` means "one full pull, then keep up with CDC". Returns the
- * number of passes completed.
+ * `--full --interval` means "one full pull, then keep up with CDC".
  */
 export async function runSyncLoop(
 	deps: SyncDeps,
 	opts: SyncLoopOptions,
-): Promise<number> {
-	const sleep = opts.sleep ?? interruptibleSleep;
+): Promise<void> {
 	let pass = 0;
 	while (!opts.signal.aborted) {
 		const outcome = await syncAll(deps, {
@@ -256,7 +256,6 @@ export async function runSyncLoop(
 		pass += 1;
 		opts.onPass?.(outcome, pass);
 		if (opts.signal.aborted) break;
-		await sleep(opts.intervalMs, opts.signal);
+		await interruptibleSleep(opts.intervalMs, opts.signal);
 	}
-	return pass;
 }

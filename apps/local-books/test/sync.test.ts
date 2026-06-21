@@ -256,22 +256,17 @@ test('runSyncLoop: full first pass, incremental after, stops on abort', async ()
 	ctx.server.put('Invoice', makeInvoice('1'));
 
 	const controller = new AbortController();
-	let sleeps = 0;
-	const sleep = async () => {
-		ctx.advance(); // move the clock forward between passes
-		sleeps += 1;
-		if (sleeps >= 2) controller.abort(); // stop after the 2nd sleep -> 2 passes
-	};
-
-	const passes = await runSyncLoop(ctx.deps, {
+	await runSyncLoop(ctx.deps, {
 		forceFull: true,
 		entities: ['Invoice'],
-		intervalMs: 1000,
+		intervalMs: 1,
 		signal: controller.signal,
-		sleep,
+		onPass: (_outcome, pass) => {
+			ctx.advance(); // move the clock forward between passes
+			if (pass >= 2) controller.abort(); // stop after the 2nd pass
+		},
 	});
 
-	expect(passes).toBe(2);
 	// Pass 1 was FULL (one query), pass 2 was INCREMENTAL (one cdc): no re-pull.
 	expect(ctx.server.hits.query).toBe(1);
 	expect(ctx.server.hits.cdc).toBe(1);

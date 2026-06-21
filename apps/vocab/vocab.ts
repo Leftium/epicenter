@@ -24,6 +24,7 @@ import {
 	type Id,
 	type InferTableRow,
 } from '@epicenter/workspace';
+import type { AgentMessage } from '@epicenter/workspace/agent';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -74,15 +75,14 @@ Example response style:
 /**
  * A complete chat message: the unit Vocab persists. Each finished message is
  * written once, whole, as one JSON blob in the conversation's LWW store keyed by
- * {@link MessageId} (ADR-0046). `createdAt` (epoch ms) orders the transcript.
- * Vocab answers are plain prose, so the body is a single text field.
+ * {@link MessageId} (ADR-0046/0047), the moment a turn finishes.
+ *
+ * It is the shared {@link AgentMessage} so Vocab rides the one client agent loop
+ * (`@epicenter/workspace/agent`). Vocab is capability-free, so every message is
+ * a single text part, but the parts-array shape is the same one a tool agent
+ * fills with tool-call and tool-result parts.
  */
-export type VocabMessage = {
-	id: MessageId;
-	role: 'user' | 'assistant';
-	createdAt: number;
-	text: string;
-};
+export type VocabMessage = AgentMessage;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions

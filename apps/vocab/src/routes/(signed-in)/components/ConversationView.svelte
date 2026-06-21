@@ -86,7 +86,7 @@
 		<div
 			class="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
 		>
-			<span class="flex-1">{error}</span>
+			<span class="flex-1">{error.message}</span>
 			<Button size="sm" variant="outline" onclick={retry}>Retry</Button>
 			<Button size="sm" variant="ghost" onclick={() => (dismissedError = true)}>
 				✕

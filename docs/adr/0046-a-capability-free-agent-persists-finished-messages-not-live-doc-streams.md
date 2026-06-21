@@ -1,6 +1,7 @@
 # 0046. A capability-free agent persists finished messages, not live doc streams
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the client-state-plus-LWW-records shape this drew for capability-free agents becomes universal; tool agents run the same client loop, so the doc-streaming core is deleted rather than kept)
 - **Date:** 2026-06-21
 - **Relates:** [ADR-0043](0043-an-agent-answers-where-its-capability-lives.md) (the capability-free agent answers in the client), [ADR-0036](0036-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (doc-streaming, scoped here to local-data/tool agents), [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) (the metered inference stream the client consumes)
 

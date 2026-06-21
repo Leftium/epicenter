@@ -1,6 +1,7 @@
 # 0043. An agent answers where its capability lives
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (every agent answers in the client; the daemon is reached by dispatched actions, not by running the loop). What carries forward: Epicenter runs no hosted answering worker, and the blind box plus metered stream is the floor.
 - **Date:** 2026-06-20
 - **Supersedes:** [ADR-0041](0041-every-answerer-is-a-worker-the-browser-never-answers.md)
 - **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md) (the blind box a worker syncs through), [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) (the metered inference stream), [ADR-0042](0042-the-agent-loop-is-the-workers-over-the-doc-as-the-message-array.md) (the worker's agent loop), [ADR-0030](0030-agents-are-immutable-capability-bundles.md) (the capability bundle that names where an agent answers), [ADR-0036](0036-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body every answer writes), [ADR-0038](0038-a-daemon-answers-through-the-first-inference-backend-it-can-satisfy.md) (the backend a worker resolves)

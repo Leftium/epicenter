@@ -1,3 +1,4 @@
+import ms from 'ms';
 import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
@@ -24,12 +25,6 @@ function reportOutcome({ results, failures }: SyncAllOutcome): void {
 	for (const f of failures) {
 		console.error(`${f.entity}: FAILED — ${f.error.message}`);
 	}
-}
-
-function formatInterval(ms: number): string {
-	if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
-	if (ms % 60_000 === 0) return `${ms / 60_000}m`;
-	return `${ms / 1000}s`;
 }
 
 /**
@@ -84,7 +79,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		};
 		process.on('SIGINT', stop);
 		console.error(
-			`Syncing ${entities.join(', ')} for company ${realmId} (${config.environment}) every ${formatInterval(args.intervalMs)} — Ctrl-C to stop.`,
+			`Syncing ${entities.join(', ')} for company ${realmId} (${config.environment}) every ${ms(args.intervalMs)} — Ctrl-C to stop.`,
 		);
 		await runSyncLoop(deps, {
 			forceFull: args.full,

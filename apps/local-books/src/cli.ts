@@ -39,7 +39,7 @@ Options:
   -v, --version                Show version.
 
 Environment:
-  LOCAL_BOOKS_QB_CLIENT_ID / _SECRET   Intuit app credentials (required for auth).
+  QB_CLIENT_ID / QB_CLIENT_SECRET      Intuit app credentials (required for auth).
   LOCAL_BOOKS_DIR                       Data directory.
   LOCAL_BOOKS_KEYRING_FILE              Plaintext file token store instead of the OS keyring.
 `;

@@ -19,8 +19,9 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 
 	if (!config.clientId || !config.clientSecret) {
 		console.error(
-			'Missing client credentials. Set LOCAL_BOOKS_QB_CLIENT_ID and LOCAL_BOOKS_QB_CLIENT_SECRET\n' +
-				'from your Intuit app (https://developer.intuit.com → your app → Keys & credentials).',
+			'Missing QuickBooks credentials. Set QB_CLIENT_ID and QB_CLIENT_SECRET\n' +
+				'(or run via `infisical run --path=/apps/local-books`) from your Intuit\n' +
+				'app (https://developer.intuit.com → your app → Keys & credentials).',
 		);
 		return 1;
 	}

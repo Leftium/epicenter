@@ -14,7 +14,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import { InstantString } from '@epicenter/workspace';
-	import { CLIENT_AGENT_ID, type ConversationId } from '@epicenter/vocab';
+	import type { ConversationId } from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
 	import { requireVocab } from '$lib/session';
 	import ChatInput from './ChatInput.svelte';
@@ -33,24 +33,17 @@
 		return vocab.tables.conversations.get(conversationId).data;
 	}
 
-	// Who answers this conversation? An agent answers where its capability lives
-	// (ADR-0043), and the bound agent id names that place. The client tab answers
-	// the capability-free CLIENT_AGENT_ID in-process, running the shared answer
-	// core (ADR-0036) over the metered SSE stream; every other agent (vocab-home)
-	// is a resident daemon that answers over sync, so the tab stays out (answering
-	// too would write one turn twice). The bound agent is immutable, so this never
-	// flips mid-conversation.
-	// svelte-ignore state_referenced_locally
-	const answer =
-		readRow()?.agent === CLIENT_AGENT_ID ? clientStream : undefined;
-
+	// Vocab is capability-free, so the open client tab always answers in-process
+	// (ADR-0043), running the answer core over the metered SSE stream. There is no
+	// daemon to defer to, so no agent routing.
+	//
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the transcript doc and bind it (the answerer, the clock,
 	// and the render projection live in the handle + shim), dispose on unmount.
 	// svelte-ignore state_referenced_locally
 	const convo = bindConversation(
 		vocab.tables.conversations.docs.messages.open(conversationId),
-		{ answer },
+		{ answer: clientStream },
 	);
 
 	onDestroy(() => convo[Symbol.dispose]());

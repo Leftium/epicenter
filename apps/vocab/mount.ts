@@ -34,9 +34,9 @@
  * (`row.agent === selfAgentId`), so the factory supplies behavior alone. The
  * `agentId` option names which catalog agent this daemon answers as (a
  * `VOCAB_AGENTS` id like `vocab-home`); omit it and the daemon hosts
- * nothing, leaving every conversation to its bound agent. The browser answers
- * in-process only the conversations it claims (an `'ephemeral'`-owner agent), so
- * a single turn is never answered twice.
+ * nothing, leaving every conversation to its bound agent. The client tab answers
+ * in-process only the conversations bound to the client agent (ADR-0043), so a
+ * single turn is never answered twice.
  */
 
 import {

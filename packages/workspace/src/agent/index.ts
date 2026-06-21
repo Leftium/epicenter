@@ -8,6 +8,11 @@
  */
 
 export {
+	createDispatchToolCatalog,
+	type DispatchSurface,
+	type DispatchToolCatalogOptions,
+} from './dispatch-catalog.js';
+export {
 	type AgentEngine,
 	type AgentEngineRequest,
 	type ConversationHandle,

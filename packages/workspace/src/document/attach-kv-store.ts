@@ -36,8 +36,6 @@ import {
 export type KvStoreHandle<T> = {
 	/** The value stored under `key`, or `undefined` when it is absent. */
 	get(key: string): T | undefined;
-	/** Whether a value is present under `key`. */
-	has(key: string): boolean;
 	/** Write the complete value under `key`, overwriting any previous one. */
 	set(key: string, value: T): void;
 	/** Remove the value under `key`. */
@@ -50,8 +48,6 @@ export type KvStoreHandle<T> = {
 	 * ones alike, so a consumer can re-read {@link entries} to refresh.
 	 */
 	observe(handler: KvStoreChangeHandler<T>): () => void;
-	/** Number of stored entries after conflict resolution. */
-	readonly size: number;
 };
 
 /**
@@ -68,13 +64,9 @@ export function attachKvStore<T>(
 	ydoc.once('destroy', () => store[Symbol.dispose]());
 	return {
 		get: (k) => store.get(k),
-		has: (k) => store.has(k),
 		set: (k, value) => store.set(k, value),
 		delete: (k) => store.delete(k),
 		entries: () => store.entries(),
 		observe: (handler) => store.observe(handler),
-		get size() {
-			return store.size;
-		},
 	};
 }

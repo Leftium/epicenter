@@ -23,15 +23,13 @@ describe('attachKvStore', () => {
 		const ydoc = new Y.Doc();
 		const store = attachKvStore<Message>(ydoc);
 
-		expect(store.has('m1')).toBe(false);
 		expect(store.get('m1')).toBeUndefined();
 
 		const m1 = message('m1', '你好');
 		store.set('m1', m1);
 
-		expect(store.has('m1')).toBe(true);
 		expect(store.get('m1')).toEqual(m1);
-		expect(store.size).toBe(1);
+		expect([...store.entries()]).toHaveLength(1);
 	});
 
 	test('entries walks every stored value', () => {
@@ -54,8 +52,8 @@ describe('attachKvStore', () => {
 		store.set('m1', message('m1', 'a'));
 		store.delete('m1');
 
-		expect(store.has('m1')).toBe(false);
-		expect(store.size).toBe(0);
+		expect(store.get('m1')).toBeUndefined();
+		expect([...store.entries()]).toHaveLength(0);
 	});
 
 	test('observe fires on local writes', () => {

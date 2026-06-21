@@ -118,11 +118,10 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 	return {
 		dataDir,
 		environment,
-		// Accept the bare QB_* names (what Infisical injects at /apps/local-books)
-		// as well as the namespaced LOCAL_BOOKS_QB_* form.
-		clientId: env('LOCAL_BOOKS_QB_CLIENT_ID') ?? env('QB_CLIENT_ID') ?? null,
-		clientSecret:
-			env('LOCAL_BOOKS_QB_CLIENT_SECRET') ?? env('QB_CLIENT_SECRET') ?? null,
+		// The Intuit app keys are the bare QB_* names, what Infisical injects at
+		// /apps/local-books and the convention Intuit's own docs use.
+		clientId: env('QB_CLIENT_ID') ?? null,
+		clientSecret: env('QB_CLIENT_SECRET') ?? null,
 		redirectUri:
 			env('LOCAL_BOOKS_QB_REDIRECT_URI') ??
 			file.redirectUri ??

@@ -24,7 +24,9 @@ import {
 export const OAuthError = defineErrors({
 	MissingCredentials: () => ({
 		message:
-			'Missing client credentials. Set LOCAL_BOOKS_QB_CLIENT_ID and LOCAL_BOOKS_QB_CLIENT_SECRET.',
+			'Missing QuickBooks credentials. Set QB_CLIENT_ID and QB_CLIENT_SECRET ' +
+			'(or run via `infisical run --path=/apps/local-books`) from your Intuit ' +
+			'app at https://developer.intuit.com.',
 	}),
 	AuthorizationDenied: ({
 		error,

@@ -29,7 +29,7 @@ Mode is chosen from stored state: `--full` / no cursor / cursor older than the C
 
 ## Config (env or `<data-dir>/config.json`)
 
-- `LOCAL_BOOKS_QB_CLIENT_ID` / `LOCAL_BOOKS_QB_CLIENT_SECRET` — your Intuit app keys (required for `auth`). The bare `QB_CLIENT_ID` / `QB_CLIENT_SECRET` names are also accepted, which is what Infisical injects: `infisical run --path=/apps/local-books -- bun run src/bin.ts auth`.
+- `QB_CLIENT_ID` / `QB_CLIENT_SECRET` — your Intuit app keys (required for `auth`). This is what Infisical injects at `/apps/local-books`, so the usual invocation is `infisical run --path=/apps/local-books -- bun run src/bin.ts auth`.
 - `LOCAL_BOOKS_QB_ENV` — `sandbox` (default) or `production`.
 - `LOCAL_BOOKS_DIR` / `--data-dir` — data directory override.
 - `LOCAL_BOOKS_KEYRING_FILE` — opt-in plaintext file token store (CI / headless boxes without a keyring daemon, and the test harness). Default is the OS keyring.

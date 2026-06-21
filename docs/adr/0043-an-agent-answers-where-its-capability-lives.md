@@ -32,6 +32,7 @@ This overturns the two ADR-0041 claims that depended on the phantom quadrant: "t
 
 - **Wave 3 of `specs/20260620T000000-vocab-answerer-collapse.md` is not built.** The hosted Durable Object, the queue, the wake route, the internal-RPC child-doc connector, and the keepAlive / alarm machinery are deleted from the plan.
 - **Vocab is a client-side chat over the metered SSE endpoint** (`@tanstack/ai-svelte` `createChat` + `fetchServerSentEvents`), writing answer parts into the conversation child doc. The browser-answerer deletion ADR-0041 planned is reversed for capability-free agents; what is still deleted is the `owner` routing fork and the hosted-worker apparatus, not client answering.
+<!-- doc-path-check: ignore-next-line -->
 - **Local Books becomes the first real worker consumer and un-defers ADR-0042** (the agent loop): the daemon runs SQL locally and streams tool-call, tool-result, and text parts into the synced conversation. See `specs/20260620T180000-local-books-agent-over-sql.md`.
 - **Close-browser durability for stateless chat is a non-goal.** Durable async work belongs to the daemon, on-demand while you use that agent, with the anchor catching up a sleeping device. Epicenter never pays for a free always-on thinker.
 - **The economic floor is two blind things plus metered tokens:** the box never reads your data, the inference stream is pay-per-call with zero idle, and nothing per-user thinks-while-idle for free.

@@ -62,8 +62,7 @@ bun run smoke:binding
 ```
 
 **Real inference (S5).** Set a key and the same worker uses Gemini instead of the
-echo, behind the identical `ChatStream` contract (built exactly as
-`apps/vocab/mount.ts` builds it):
+echo, behind the identical `ChatStream` contract:
 
 ```sh
 GEMINI_API_KEY=... bun run worker

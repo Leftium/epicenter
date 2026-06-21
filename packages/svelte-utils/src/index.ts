@@ -1,4 +1,8 @@
 export {
+	type BoundAgentConversation,
+	bindAgentConversation,
+} from './agent-conversation.svelte.js';
+export {
 	type BoundConversation,
 	bindConversation,
 } from './bind-conversation.svelte.js';

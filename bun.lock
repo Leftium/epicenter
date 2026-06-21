@@ -590,23 +590,6 @@
         "typescript": "catalog:",
       },
     },
-    "examples/doc-as-wire-chat": {
-      "name": "@epicenter/example-doc-as-wire-chat",
-      "version": "0.0.0",
-      "dependencies": {
-        "@epicenter/sync": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
-        "@tanstack/ai": "catalog:",
-        "@tanstack/ai-gemini": "catalog:",
-        "lib0": "catalog:",
-        "nanoid": "catalog:",
-        "yjs": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "examples/fuji": {
       "name": "@examples/fuji",
       "version": "0.0.2",
@@ -1299,8 +1282,6 @@
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
-
-    "@epicenter/example-doc-as-wire-chat": ["@epicenter/example-doc-as-wire-chat@workspace:examples/doc-as-wire-chat"],
 
     "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
 
@@ -4067,8 +4048,6 @@
     "@devicefarmer/adbkit/commander": ["commander@9.5.0", "", {}, "sha512-KRs7WVDKg86PWiuAqhDrAQnTXZKraVcCc6vFdL14qrZ/DcWwuRo7VoiYXalXO7S5GKpqYiVEwCbgFDfxNHKJBQ=="],
 
     "@devicefarmer/adbkit/debug": ["debug@4.3.7", "", { "dependencies": { "ms": "^2.1.3" } }, "sha512-Er2nc/H7RrMXZBFCEim6TCmMk02Z8vLC2Rbi1KEBggpo0fS6l0S1nnapwmIi3yW/+GOJap1Krg4w0Hg80oCqgQ=="],
-
-    "@epicenter/example-doc-as-wire-chat/nanoid": ["nanoid@5.1.11", "", { "bin": { "nanoid": "bin/nanoid.js" } }, "sha512-v+KEsUv2ps74PaSKv0gHTxTCgMXOIfBEbaqa6w6ISIGC7ZsvHN4N9oJ8d4cmf0n5oTzQz2SLmThbQWhjd/8eKg=="],
 
     "@epicenter/ui/@lucide/svelte": ["@lucide/svelte@1.8.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-+zYQUKqEOVP5lxbGmxL1OVgGMQtRK91eIJ0bR+3Cr1ts4oQEsQfxyzzd5X47psJlblAuGFrl2xm4YuATjR9oaA=="],
 

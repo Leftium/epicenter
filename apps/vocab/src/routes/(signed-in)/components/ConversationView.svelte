@@ -1,16 +1,12 @@
 <script module lang="ts">
 	import { APP_URLS } from '@epicenter/constants/vite';
-	import type { Engine } from '@epicenter/vocab';
-	import { epicenterMeteredEngine } from '@epicenter/vocab/engine';
+	import { epicenterMeteredChatStream } from '@epicenter/vocab/engine';
 	import { auth } from '$platform/auth';
 
-	// The engines this tab can power, highest priority first. Today just the
-	// metered Epicenter account over the `/api/ai/chat` SSE stream; adding a
-	// local-key engine ahead of it is the whole of "engine unification" (the same
-	// list the daemon walks). Built once, shared across every mounted view.
-	const browserEngines: readonly Engine[] = [
-		epicenterMeteredEngine(auth.fetch, APP_URLS.API),
-	];
+	// The client answers the capability-free agent over the metered `/api/ai/chat`
+	// SSE stream (ADR-0043). One backend, built once and shared across every
+	// mounted view; only the daemon walks a multi-backend priority chain (ADR-0038).
+	const clientStream = epicenterMeteredChatStream(auth.fetch, APP_URLS.API);
 </script>
 
 <script lang="ts">
@@ -18,11 +14,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import { InstantString } from '@epicenter/workspace';
-	import {
-		agentConfig,
-		type ConversationId,
-		resolveEngine,
-	} from '@epicenter/vocab';
+	import { CLIENT_AGENT_ID, type ConversationId } from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
 	import { requireVocab } from '$lib/session';
 	import ChatInput from './ChatInput.svelte';
@@ -41,21 +33,16 @@
 		return vocab.tables.conversations.get(conversationId).data;
 	}
 
-	// Who answers this conversation? Two orthogonal questions (ADR-0033). First,
-	// designation: does this tab write the turn? A tab answers only the agents it
-	// owns (an `'ephemeral'` owner); a `'durable'` owner is a resident daemon that
-	// answers ambiently over sync, so the tab stays out (answering too would answer
-	// one turn twice). The bound agent is immutable, so this never flips
-	// mid-conversation. Then engine: which backend powers the answer
-	// (`resolveEngine`, ADR-0038). ADR-0033: a conversation is a synced doc only an
-	// in-process peer writes.
+	// Who answers this conversation? An agent answers where its capability lives
+	// (ADR-0043), and the bound agent id names that place. The client tab answers
+	// the capability-free CLIENT_AGENT_ID in-process, running the shared answer
+	// core (ADR-0036) over the metered SSE stream; every other agent (vocab-home)
+	// is a resident daemon that answers over sync, so the tab stays out (answering
+	// too would write one turn twice). The bound agent is immutable, so this never
+	// flips mid-conversation.
 	// svelte-ignore state_referenced_locally
-	const boundAgent = readRow()?.agent;
-	const answersHere =
-		boundAgent !== undefined && agentConfig(boundAgent)?.owner === 'ephemeral';
-	const answer = answersHere
-		? (resolveEngine(browserEngines) ?? undefined)
-		: undefined;
+	const answer =
+		readRow()?.agent === CLIENT_AGENT_ID ? clientStream : undefined;
 
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the transcript doc and bind it (the answerer, the clock,

@@ -19,8 +19,8 @@ You need an Intuit developer app (https://developer.intuit.com → your app → 
 Provide the keys by environment:
 
 ```sh
-export QB_CLIENT_ID=...        # or LOCAL_BOOKS_QB_CLIENT_ID
-export QB_CLIENT_SECRET=...    # or LOCAL_BOOKS_QB_CLIENT_SECRET
+export QB_CLIENT_ID=...
+export QB_CLIENT_SECRET=...
 ```
 
 In this monorepo the keys live in Infisical at `/apps/local-books`, so prefix any command:

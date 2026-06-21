@@ -16,6 +16,7 @@
 import type { ServableModel } from '@epicenter/constants/ai-providers';
 import { field } from '@epicenter/field';
 import {
+	attachKvStore,
 	defineKv,
 	defineTable,
 	defineWorkspace,
@@ -23,7 +24,6 @@ import {
 	type Id,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { attachChatConversation } from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -34,6 +34,9 @@ import type { Brand } from 'wellcrafted/brand';
 export type ConversationId = Id & Brand<'ConversationId'>;
 export const generateConversationId = (): ConversationId =>
 	generateId<ConversationId>();
+
+export type MessageId = Id & Brand<'MessageId'>;
+export const generateMessageId = (): MessageId => generateId<MessageId>();
 
 /**
  * Vocab runs a single Chinese-tuned model. It is an app constant, not a
@@ -65,6 +68,34 @@ Example response style:
 "The phrase 你好 is the most common greeting. For something more casual with friends, you can say 嘿 or 哈喽. In a formal setting, try 您好. The 您 shows extra respect."`;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Message Model
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One renderable piece of a message. Vocab answers are plain prose, so today a
+ * message holds a single text part; the array leaves room for richer parts
+ * later without reshaping the stored blob.
+ */
+export type MessagePart = { type: 'text'; text: string };
+
+/**
+ * A complete chat message: the unit Vocab persists. Each finished message is
+ * written once, whole, as one JSON blob in the conversation's LWW store keyed by
+ * {@link MessageId} (ADR-0046). `createdAt` (epoch ms) orders the transcript.
+ */
+export type VocabMessage = {
+	id: MessageId;
+	role: 'user' | 'assistant';
+	createdAt: number;
+	parts: MessagePart[];
+};
+
+/** The message's text: its text parts joined in order. */
+export function messageText(message: VocabMessage): string {
+	return message.parts.map((part) => part.text).join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -73,7 +104,7 @@ const conversationsTable = defineTable({
 	title: field.string(),
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
-}).docs({ messages: attachChatConversation });
+}).docs({ messages: (ydoc) => attachKvStore<VocabMessage>(ydoc) });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,8 +115,10 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  * The isomorphic Vocab workspace definition.
  *
  * Conversation transcripts are not rows: each `conversations.messages` handle
- * opens a synced child doc derived from the conversation id, which the open
- * client tab answers in-process (ADR-0043).
+ * opens a synced child doc derived from the conversation id, holding one
+ * {@link VocabMessage} per key (ADR-0046). The open client tab answers
+ * in-process (ADR-0043): it streams the live turn in component state and writes
+ * each finished message into this store.
  */
 export const vocabWorkspace = defineWorkspace({
 	id: 'epicenter-vocab',

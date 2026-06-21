@@ -3,19 +3,18 @@
 	import { epicenterMeteredChatStream } from '@epicenter/vocab/engine';
 	import { auth } from '$platform/auth';
 
-	// The client answers the capability-free agent over the metered `/api/ai/chat`
-	// SSE stream (ADR-0043). One backend, built once and shared across every
-	// mounted view; only the daemon walks a multi-backend priority chain (ADR-0038).
+	// The client answers over the metered `/api/ai/chat` SSE stream (ADR-0043).
+	// One stream, built once and shared across every mounted conversation view.
 	const clientStream = epicenterMeteredChatStream(auth.fetch, APP_URLS.API);
 </script>
 
 <script lang="ts">
-	import { bindConversation } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import { InstantString } from '@epicenter/workspace';
 	import type { ConversationId } from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
+	import { createConversation } from '$lib/conversation.svelte';
 	import { requireVocab } from '$lib/session';
 	import ChatInput from './ChatInput.svelte';
 	import ChatMessage from './ChatMessage.svelte';
@@ -27,23 +26,20 @@
 
 	const vocab = requireVocab();
 
-	// The durable conversation row (title, bound agent) is read at action time,
-	// never in the template, so a plain read suffices.
+	// The durable conversation row (its title) is read at action time, never in
+	// the template, so a plain read suffices.
 	function readRow() {
 		return vocab.tables.conversations.get(conversationId).data;
 	}
 
-	// Vocab is capability-free, so the open client tab always answers in-process
-	// (ADR-0043), running the answer core over the metered SSE stream. There is no
-	// daemon to defer to, so no agent routing.
-	//
 	// The component is keyed on conversationId, so it mounts fresh per
-	// conversation: open the transcript doc and bind it (the answerer, the clock,
-	// and the render projection live in the handle + shim), dispose on unmount.
+	// conversation: open the message store and bind it to the inference stream.
+	// The controller owns streaming, persistence, and the render state; dispose
+	// on unmount.
 	// svelte-ignore state_referenced_locally
-	const convo = bindConversation(
+	const convo = createConversation(
 		vocab.tables.conversations.docs.messages.open(conversationId),
-		{ answer: clientStream },
+		clientStream,
 	);
 
 	onDestroy(() => convo[Symbol.dispose]());
@@ -51,17 +47,15 @@
 	let dismissedError = $state(false);
 	let inputValue = $state('');
 
-	const error = $derived(convo.render.failure?.message ?? null);
+	const error = $derived(convo.error);
 
 	/**
-	 * A send is one durable transcript write: `convo.send` mints the user turn's
-	 * id and the `generationId` the answer awaits. The in-process answerer (or a
-	 * bound daemon) observes the write and claims the turn. There is no kickoff
-	 * and no second message table to reconcile.
+	 * A send persists the user turn and starts the answer. The controller streams
+	 * the reply into component state and writes the finished message to the store.
 	 */
 	function sendMessage(content: string) {
 		const text = content.trim();
-		if (!text || convo.render.isGenerating) return;
+		if (!text || convo.isGenerating) return;
 		dismissedError = false;
 		convo.send(text);
 		const title = readRow()?.title;
@@ -78,19 +72,17 @@
 </script>
 
 <Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
-	{#if convo.render.visibleMessages.length === 0}
+	{#if convo.messages.length === 0}
 		<div class="flex flex-1 items-center justify-center text-muted-foreground">
 			<p>Ask a question in English and get a response in Chinese and English.</p>
 		</div>
 	{:else}
-		<!-- visibleMessages drops the empty assistant placeholder of an in-progress
-			turn; the typing bubble below stands in for it. -->
-		{#each convo.render.visibleMessages as message (message.id)}
+		{#each convo.messages as message (message.id)}
 			<ChatMessage {message} {showPinyin} />
 		{/each}
 	{/if}
 
-	{#if convo.render.isThinking}
+	{#if convo.isThinking}
 		<Chat.Bubble variant="received">
 			<Chat.BubbleMessage typing />
 		</Chat.Bubble>
@@ -106,19 +98,12 @@
 				✕
 			</Button>
 		</div>
-	{:else if convo.render.isInterrupted}
-		<div
-			class="flex items-center gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
-		>
-			<span class="flex-1">This reply was interrupted.</span>
-			<Button size="sm" variant="outline" onclick={retry}>Retry</Button>
-		</div>
 	{/if}
 </Chat.List>
 
 <ChatInput
 	bind:value={inputValue}
-	isGenerating={convo.render.isGenerating}
+	isGenerating={convo.isGenerating}
 	onSend={sendMessage}
 	onStop={() => convo.stop()}
 />

@@ -1,32 +1,24 @@
-import type { ParsedArgs } from '../args.ts';
-import { resolveRealm } from '../companies.ts';
-import { loadConfig } from '../config.ts';
+import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
-import { createKeyring } from '../keyring.ts';
 import type { OAuthDeps } from '../oauth.ts';
 import { dbPath } from '../paths.ts';
 import { createQbClient } from '../qb-client.ts';
 import { type SyncDeps, syncAll } from '../sync.ts';
 import { createTokenManager, loadToken } from '../token-manager.ts';
+import { resolveCompany } from './context.ts';
 
 /**
  * Refresh the local mirror. Mode (FULL vs INCREMENTAL) is chosen per entity from
  * stored `_sync_state`; `--full` forces FULL; `--entity` narrows the set.
  */
 export async function runSync(args: ParsedArgs): Promise<number> {
-	const config = loadConfig({
-		dataDir: args.dataDir,
-		environment: args.environment,
-		realm: args.realm,
-	});
-
-	const realm = resolveRealm(config);
-	if (realm.error !== null) {
-		console.error(realm.error);
+	const { data: company, error } = resolveCompany(args);
+	if (error !== null) {
+		console.error(error);
 		return 1;
 	}
-	const realmId = realm.realmId;
+	const { config, realmId, keyring } = company;
 
 	const entities = args.entities.length > 0 ? args.entities : config.entities;
 	const unknown = entities.filter((name) => !isKnownEntity(name));
@@ -37,7 +29,6 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const keyring = createKeyring(config);
 	const token = await loadToken(keyring, realmId);
 	if (!token) {
 		console.error(

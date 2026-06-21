@@ -6,7 +6,7 @@ Design authority: `specs/20260621T100000-local-books-cli-sync-engine.md` (top-le
 
 ## Shape
 
-- Runtime: Bun. `bun:sqlite` for storage, built-in `fetch` for the QB API, hand-rolled OAuth2 (authorization-code, localhost callback). Zero heavy runtime deps so `bun build --compile` yields one binary. `wellcrafted` is the only runtime dependency (Result/error idioms, pure TS).
+- Runtime: Bun. `bun:sqlite` for storage, built-in `fetch` for the QB API, `oauth4webapi` for the OAuth2 grants (the same client `@epicenter/auth` uses; we own only the localhost callback and the QuickBooks-specific `realmId`). Runtime deps are pure-TS and dependency-free so `bun build --compile` yields one binary: `wellcrafted` (Result/error idioms), `typebox` (validating untrusted token grants and `config.json`), and `oauth4webapi`. All three are cataloged and used elsewhere in the monorepo.
 - One SQLite file per company: `<data-dir>/<realmId>/books.db`. Tokens live in the OS keyring (never the data dir). Sync state lives in the db (`_sync_state`), not a sidecar, so ingest-and-advance is one transaction.
 - One table per QB entity (`invoices`, `customers`, ...): `id`, `raw` (verbatim QB JSON), `updated_at`, `synced_at`, `deleted`, plus a few extracted scalar columns for indexing/joins. New QB fields land in `raw` with no migration.
 
@@ -33,7 +33,7 @@ Mode is chosen from stored state: `--full` / no cursor / cursor older than the C
 - `LOCAL_BOOKS_QB_ENV` — `sandbox` (default) or `production`.
 - `LOCAL_BOOKS_DIR` / `--data-dir` — data directory override.
 - `LOCAL_BOOKS_KEYRING_FILE` — opt-in plaintext file token store (CI / headless boxes without a keyring daemon, and the test harness). Default is the OS keyring.
-- Base-URL overrides (`LOCAL_BOOKS_QB_API_BASE`, `_OAUTH_BASE`, `_AUTH_BASE`) point the client at a mock server for tests.
+- Base-URL overrides (`LOCAL_BOOKS_QB_API_BASE`, `_TOKEN_URL`, `_AUTHORIZE_URL`) point the client at a mock server for tests.
 
 ## Testing
 

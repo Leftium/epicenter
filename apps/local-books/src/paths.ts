@@ -25,12 +25,9 @@ export function resolveDataDir(override?: string): string {
 	return defaultDataDir();
 }
 
-export function companyDir(dataDir: string, realmId: string): string {
-	return join(dataDir, realmId);
-}
-
+/** One SQLite file per company, scoped by `realmId` under the data dir. */
 export function dbPath(dataDir: string, realmId: string): string {
-	return join(companyDir(dataDir, realmId), 'books.db');
+	return join(dataDir, realmId, 'books.db');
 }
 
 /** Tracks which companies have been authenticated and which is the default. */

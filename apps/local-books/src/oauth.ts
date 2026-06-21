@@ -1,5 +1,10 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import * as oauth from 'oauth4webapi';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
 import {
 	type TokenGrantError,
@@ -8,11 +13,12 @@ import {
 } from './tokens.ts';
 
 /**
- * QuickBooks OAuth2, hand-rolled on `fetch` and `Bun.serve`. The spec blesses
- * this over the official `intuit-oauth` CommonJS package: a dependency-free
- * authorization-code flow survives `bun build --compile` cleanly and keeps the
- * runtime footprint minimal. The exchange and refresh calls hit the same token
- * endpoint with HTTP Basic auth (`clientId:clientSecret`).
+ * QuickBooks OAuth2 built on `oauth4webapi` (the same client `@epicenter/auth`
+ * uses) plus `Bun.serve` for the localhost callback. The library owns the wire:
+ * HTTP Basic client auth, the authorization-code and refresh-token grant
+ * requests, and spec validation of the responses. We own only the QuickBooks
+ * specifics: the localhost redirect, the non-standard `realmId` callback param,
+ * and turning a validated grant into a {@link TokenSet}.
  */
 
 export const OAuthError = defineErrors({
@@ -20,26 +26,7 @@ export const OAuthError = defineErrors({
 		message:
 			'Missing client credentials. Set LOCAL_BOOKS_QB_CLIENT_ID and LOCAL_BOOKS_QB_CLIENT_SECRET.',
 	}),
-	Network: ({ cause }: { cause: unknown }) => ({
-		message: `Network error talking to the QuickBooks token endpoint: ${String(cause)}`,
-		cause,
-	}),
-	TokenExchangeFailed: ({
-		status,
-		body,
-	}: {
-		status: number;
-		body: string;
-	}) => ({
-		message: `QuickBooks token endpoint returned ${status}: ${body.slice(0, 500)}`,
-		status,
-		body,
-	}),
-	StateMismatch: () => ({
-		message:
-			'OAuth callback state did not match; aborting to avoid a forged callback.',
-	}),
-	CallbackDenied: ({
+	AuthorizationDenied: ({
 		error,
 		description,
 	}: {
@@ -49,6 +36,10 @@ export const OAuthError = defineErrors({
 		message: `QuickBooks denied authorization: ${error}${description ? ` (${description})` : ''}`,
 		error,
 		description,
+	}),
+	TokenExchangeFailed: ({ cause }: { cause: unknown }) => ({
+		message: `QuickBooks token exchange failed: ${extractErrorMessage(cause)}`,
+		cause,
 	}),
 	Timeout: ({ ms }: { ms: number }) => ({
 		message: `Timed out after ${ms}ms waiting for the OAuth callback.`,
@@ -70,95 +61,129 @@ export type OAuthDeps = {
 	timeoutMs?: number;
 };
 
-function basicAuthHeader(clientId: string, clientSecret: string): string {
-	return `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+type GrantResult = Promise<Result<TokenSet, OAuthError | TokenGrantError>>;
+
+/** Hand-built server metadata; QuickBooks' endpoints are known constants. */
+function authServer(config: AppConfig): oauth.AuthorizationServer {
+	return {
+		issuer: new URL(config.tokenUrl).origin,
+		authorization_endpoint: config.authorizeUrl,
+		token_endpoint: config.tokenUrl,
+	};
 }
 
-/** POST the token endpoint and normalize the grant into a {@link TokenSet}. */
-async function requestToken(
-	config: AppConfig,
-	body: URLSearchParams,
-	{
-		realmId,
-		fallbackRefreshToken,
-	}: { realmId: string; fallbackRefreshToken?: string },
-	deps: OAuthDeps,
-): Promise<Result<TokenSet, OAuthError | TokenGrantError>> {
-	if (!config.clientId || !config.clientSecret) {
-		return OAuthError.MissingCredentials();
-	}
-	const fetchImpl = deps.fetchImpl ?? fetch;
-
-	let response: Response;
-	try {
-		response = await fetchImpl(config.tokenUrl, {
-			method: 'POST',
-			headers: {
-				Authorization: basicAuthHeader(config.clientId, config.clientSecret),
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body,
-		});
-	} catch (cause) {
-		return OAuthError.Network({ cause });
-	}
-
-	if (!response.ok) {
-		const text = await response.text().catch(() => '');
-		return OAuthError.TokenExchangeFailed({
-			status: response.status,
-			body: text,
-		});
-	}
-
-	const json = await response.json().catch(() => null);
-	return tokenSetFromGrant(json, {
-		realmId,
-		environment: config.environment,
-		now: deps.now(),
-		fallbackRefreshToken,
-	});
+/** Allow http for the mock token endpoint in tests; inject a fetch when given. */
+function httpOptions(config: AppConfig, deps: OAuthDeps) {
+	return {
+		[oauth.allowInsecureRequests]:
+			new URL(config.tokenUrl).protocol === 'http:',
+		...(deps.fetchImpl ? { [oauth.customFetch]: deps.fetchImpl } : {}),
+	};
 }
 
-export function exchangeAuthorizationCode(
-	config: AppConfig,
-	{ code, realmId }: { code: string; realmId: string },
-	deps: OAuthDeps,
-): Promise<Result<TokenSet, OAuthError | TokenGrantError>> {
-	const body = new URLSearchParams({
-		grant_type: 'authorization_code',
-		code,
-		redirect_uri: config.redirectUri,
-	});
-	return requestToken(config, body, { realmId }, deps);
-}
-
-export function refreshAccessToken(
+export async function refreshAccessToken(
 	config: AppConfig,
 	token: TokenSet,
 	deps: OAuthDeps,
-): Promise<Result<TokenSet, OAuthError | TokenGrantError>> {
-	const body = new URLSearchParams({
-		grant_type: 'refresh_token',
-		refresh_token: token.refreshToken,
-	});
-	// Rotation: QuickBooks may omit refresh_token when the old one stays valid.
-	return requestToken(
-		config,
-		body,
-		{ realmId: token.realmId, fallbackRefreshToken: token.refreshToken },
-		deps,
-	);
+): GrantResult {
+	if (!config.clientId || !config.clientSecret) {
+		return OAuthError.MissingCredentials();
+	}
+	const as = authServer(config);
+	const client: oauth.Client = { client_id: config.clientId };
+	try {
+		const response = await oauth.refreshTokenGrantRequest(
+			as,
+			client,
+			oauth.ClientSecretBasic(config.clientSecret),
+			token.refreshToken,
+			httpOptions(config, deps),
+		);
+		const grant = await oauth.processRefreshTokenResponse(as, client, response);
+		// Rotation: QuickBooks may omit refresh_token when the old one stays valid.
+		return tokenSetFromGrant(grant, {
+			realmId: token.realmId,
+			environment: config.environment,
+			now: deps.now(),
+			fallbackRefreshToken: token.refreshToken,
+		});
+	} catch (cause) {
+		return OAuthError.TokenExchangeFailed({ cause });
+	}
 }
 
-export function buildAuthorizeUrl(config: AppConfig, state: string): string {
+/**
+ * Exchange a validated callback for a token set. Split out from
+ * {@link runAuthorizationFlow} so the exchange is testable without binding the
+ * localhost server: `validateAuthResponse` requires the callback parameters it
+ * produced, so this is the smallest testable unit of the interactive flow. The
+ * `realmId` is QuickBooks-specific and rides the callback alongside `code`.
+ */
+export async function completeAuthorization(
+	config: AppConfig,
+	{
+		callbackUrl,
+		state,
+		codeVerifier,
+	}: { callbackUrl: URL; state: string; codeVerifier?: string },
+	deps: OAuthDeps,
+): GrantResult {
+	if (!config.clientId || !config.clientSecret) {
+		return OAuthError.MissingCredentials();
+	}
+	const realmId = callbackUrl.searchParams.get('realmId');
+	if (!realmId) {
+		return OAuthError.AuthorizationDenied({
+			error: 'invalid_callback',
+			description: 'Missing realmId in callback.',
+		});
+	}
+	const as = authServer(config);
+	const client: oauth.Client = { client_id: config.clientId };
+	try {
+		const params = oauth.validateAuthResponse(as, client, callbackUrl, state);
+		const response = await oauth.authorizationCodeGrantRequest(
+			as,
+			client,
+			oauth.ClientSecretBasic(config.clientSecret),
+			params,
+			config.redirectUri,
+			codeVerifier ?? oauth.nopkce,
+			httpOptions(config, deps),
+		);
+		const grant = await oauth.processAuthorizationCodeResponse(
+			as,
+			client,
+			response,
+		);
+		return tokenSetFromGrant(grant, {
+			realmId,
+			environment: config.environment,
+			now: deps.now(),
+		});
+	} catch (cause) {
+		if (cause instanceof oauth.AuthorizationResponseError) {
+			return OAuthError.AuthorizationDenied({
+				error: cause.error,
+				description: cause.error_description ?? '',
+			});
+		}
+		return OAuthError.TokenExchangeFailed({ cause });
+	}
+}
+
+function buildAuthorizeUrl(
+	config: AppConfig,
+	{ state, codeChallenge }: { state: string; codeChallenge: string },
+): string {
 	const url = new URL(config.authorizeUrl);
 	url.searchParams.set('client_id', config.clientId ?? '');
 	url.searchParams.set('response_type', 'code');
 	url.searchParams.set('scope', config.scopes.join(' '));
 	url.searchParams.set('redirect_uri', config.redirectUri);
 	url.searchParams.set('state', state);
+	url.searchParams.set('code_challenge', codeChallenge);
+	url.searchParams.set('code_challenge_method', 'S256');
 	return url.toString();
 }
 
@@ -176,32 +201,28 @@ function defaultOpenBrowser(url: string): void {
 	}
 }
 
-type CallbackResult = Result<{ code: string; realmId: string }, OAuthError>;
-
 /**
  * Run the interactive authorization-code flow: spin up a localhost callback
- * server matching `redirectUri`, send the user to QuickBooks, await the
- * redirect, then exchange the code. Returns the persisted token set on success.
+ * server matching `redirectUri`, send the user to QuickBooks with PKCE, await
+ * the redirect, then exchange the code. Returns the persisted token set.
  */
 export async function runAuthorizationFlow(
 	config: AppConfig,
 	deps: OAuthDeps,
-): Promise<Result<TokenSet, OAuthError | TokenGrantError>> {
+): GrantResult {
 	if (!config.clientId || !config.clientSecret) {
 		return OAuthError.MissingCredentials();
 	}
 
-	const state = crypto.randomUUID();
+	const state = oauth.generateRandomState();
+	const codeVerifier = oauth.generateRandomCodeVerifier();
+	const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
 	const redirect = new URL(config.redirectUri);
 	const port = Number(redirect.port || '80');
 	const timeoutMs = deps.timeoutMs ?? 5 * 60 * 1000;
 	const log = deps.log ?? (() => {});
 
-	let resolveCallback!: (result: CallbackResult) => void;
-	const callbackPromise = new Promise<CallbackResult>((resolve) => {
-		resolveCallback = resolve;
-	});
-
+	const { promise: callback, resolve } = Promise.withResolvers<URL | null>();
 	const server = Bun.serve({
 		port,
 		fetch(request) {
@@ -209,41 +230,7 @@ export async function runAuthorizationFlow(
 			if (url.pathname !== redirect.pathname) {
 				return new Response('Not found', { status: 404 });
 			}
-			const error = url.searchParams.get('error');
-			if (error) {
-				resolveCallback(
-					OAuthError.CallbackDenied({
-						error,
-						description: url.searchParams.get('error_description') ?? '',
-					}),
-				);
-				return new Response(
-					'Authorization denied. You can close this window.',
-					{
-						headers: { 'content-type': 'text/html' },
-					},
-				);
-			}
-			if (url.searchParams.get('state') !== state) {
-				resolveCallback(OAuthError.StateMismatch());
-				return new Response('State mismatch. You can close this window.', {
-					headers: { 'content-type': 'text/html' },
-				});
-			}
-			const code = url.searchParams.get('code');
-			const realmId = url.searchParams.get('realmId');
-			if (!code || !realmId) {
-				resolveCallback(
-					OAuthError.CallbackDenied({
-						error: 'invalid_callback',
-						description: 'Missing code or realmId in callback.',
-					}),
-				);
-				return new Response('Missing parameters. You can close this window.', {
-					headers: { 'content-type': 'text/html' },
-				});
-			}
-			resolveCallback(Ok({ code, realmId }));
+			resolve(url);
 			return new Response(
 				'<html><body><h2>local-books connected to QuickBooks.</h2><p>You can close this window and return to the terminal.</p></body></html>',
 				{ headers: { 'content-type': 'text/html' } },
@@ -251,18 +238,21 @@ export async function runAuthorizationFlow(
 		},
 	});
 
-	const authorizeUrl = buildAuthorizeUrl(config, state);
-	log(`Opening your browser to authorize QuickBooks access...`);
+	const authorizeUrl = buildAuthorizeUrl(config, { state, codeChallenge });
+	log('Opening your browser to authorize QuickBooks access...');
 	log(`If it does not open, visit:\n  ${authorizeUrl}`);
 	(deps.openBrowser ?? defaultOpenBrowser)(authorizeUrl);
 
-	const timeout = new Promise<CallbackResult>((resolve) => {
-		setTimeout(() => resolve(OAuthError.Timeout({ ms: timeoutMs })), timeoutMs);
+	const timeout = new Promise<URL | null>((resolveTimeout) => {
+		setTimeout(() => resolveTimeout(null), timeoutMs);
 	});
-
-	const callback = await Promise.race([callbackPromise, timeout]);
+	const callbackUrl = await Promise.race([callback, timeout]);
 	server.stop(true);
+	if (!callbackUrl) return OAuthError.Timeout({ ms: timeoutMs });
 
-	if (callback.error) return Err(callback.error);
-	return exchangeAuthorizationCode(config, callback.data, deps);
+	return completeAuthorization(
+		config,
+		{ callbackUrl, state, codeVerifier },
+		deps,
+	);
 }

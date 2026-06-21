@@ -1,4 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { type Static, Type } from 'typebox';
+import { Value } from 'typebox/value';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
 import { companiesFilePath } from './paths.ts';
 
@@ -7,17 +10,20 @@ import { companiesFilePath } from './paths.ts';
  * `sync` / `status` know which mirror to operate on without the user repeating
  * `--realm` every time. The keyring holds the tokens; this is just the index.
  */
-export type Companies = { realms: string[]; defaultRealm: string | null };
+const CompaniesSchema = Type.Object({
+	realms: Type.Array(Type.String()),
+	defaultRealm: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+export type Companies = Required<Static<typeof CompaniesSchema>>;
 
 export function readCompanies(dataDir: string): Companies {
 	try {
-		const parsed = JSON.parse(readFileSync(companiesFilePath(dataDir), 'utf8'));
-		const realms = Array.isArray(parsed?.realms)
-			? parsed.realms.filter((r: unknown) => typeof r === 'string')
-			: [];
-		const defaultRealm =
-			typeof parsed?.defaultRealm === 'string' ? parsed.defaultRealm : null;
-		return { realms, defaultRealm };
+		const parsed: unknown = JSON.parse(
+			readFileSync(companiesFilePath(dataDir), 'utf8'),
+		);
+		if (!Value.Check(CompaniesSchema, parsed))
+			return { realms: [], defaultRealm: null };
+		return { realms: parsed.realms, defaultRealm: parsed.defaultRealm ?? null };
 	} catch {
 		return { realms: [], defaultRealm: null };
 	}
@@ -41,23 +47,16 @@ export function recordCompany(dataDir: string, realmId: string): void {
  * default, else the only authenticated company. Ambiguity is an error, not a
  * silent guess.
  */
-export function resolveRealm(
-	config: AppConfig,
-): { realmId: string; error: null } | { realmId: null; error: string } {
-	if (config.realmOverride)
-		return { realmId: config.realmOverride, error: null };
+export function resolveRealm(config: AppConfig): Result<string, string> {
+	if (config.realmOverride) return Ok(config.realmOverride);
 
 	const { realms, defaultRealm } = readCompanies(config.dataDir);
-	if (defaultRealm) return { realmId: defaultRealm, error: null };
-	if (realms.length === 1) return { realmId: realms[0] as string, error: null };
+	if (defaultRealm) return Ok(defaultRealm);
+	if (realms.length === 1) return Ok(realms[0] as string);
 	if (realms.length === 0) {
-		return {
-			realmId: null,
-			error: 'No authenticated company. Run "local-books auth" first.',
-		};
+		return Err('No authenticated company. Run "local-books auth" first.');
 	}
-	return {
-		realmId: null,
-		error: `Multiple companies authenticated (${realms.join(', ')}). Pass --realm <realmId>.`,
-	};
+	return Err(
+		`Multiple companies authenticated (${realms.join(', ')}). Pass --realm <realmId>.`,
+	);
 }

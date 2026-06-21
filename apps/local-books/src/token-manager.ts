@@ -1,3 +1,5 @@
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
 import type { Keyring } from './keyring.ts';
@@ -8,6 +10,20 @@ import {
 	isRefreshTokenExpired,
 	type TokenSet,
 } from './tokens.ts';
+
+/** Shape guard for a token set read back from the keyring (all 7 fields). */
+const StoredTokenSchema = Type.Object({
+	realmId: Type.String({ minLength: 1 }),
+	environment: Type.Union([
+		Type.Literal('sandbox'),
+		Type.Literal('production'),
+	]),
+	accessToken: Type.String({ minLength: 1 }),
+	refreshToken: Type.String({ minLength: 1 }),
+	accessTokenExpiresAt: Type.String({ minLength: 1 }),
+	refreshTokenExpiresAt: Type.String({ minLength: 1 }),
+	obtainedAt: Type.String({ minLength: 1 }),
+});
 
 export type TokenError = OAuthError | TokenGrantError;
 
@@ -39,14 +55,8 @@ export async function loadToken(
 	const raw = await keyring.get(realmId);
 	if (!raw) return null;
 	try {
-		const parsed = JSON.parse(raw) as TokenSet;
-		if (
-			typeof parsed?.accessToken === 'string' &&
-			typeof parsed?.refreshToken === 'string'
-		) {
-			return parsed;
-		}
-		return null;
+		const parsed: unknown = JSON.parse(raw);
+		return Value.Check(StoredTokenSchema, parsed) ? parsed : null;
 	} catch {
 		return null;
 	}

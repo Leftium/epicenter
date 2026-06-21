@@ -177,9 +177,8 @@ export function openBooksDb(path: string, realmId: string) {
 	}
 
 	return {
+		/** Escape hatch for ad-hoc queries (tests, diagnostics). */
 		raw: db,
-
-		ensureEntityTable,
 
 		/**
 		 * Apply one entity's sync result atomically: upserts, soft-deletes, and the
@@ -225,10 +224,6 @@ export function openBooksDb(path: string, realmId: string) {
 
 		getMeta(key: string): string | null {
 			return getMetaStmt.get(key)?.value ?? null;
-		},
-
-		setMeta(key: string, value: string): void {
-			setMetaStmt.run(key, value);
 		},
 
 		entityStatus(def: EntityDef): EntityStatus {

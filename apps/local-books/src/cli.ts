@@ -1,8 +1,19 @@
-import type { ParsedArgs } from './args.ts';
 import { runAuth } from './commands/auth.ts';
 import { runStatus } from './commands/status.ts';
 import { runSync } from './commands/sync.ts';
-import type { QbEnvironment } from './tokens.ts';
+import type { QbEnvironment } from './config.ts';
+
+/** Parsed command-line arguments shared by the command handlers. */
+export type ParsedArgs = {
+	command: string;
+	full: boolean;
+	entities: string[];
+	dataDir?: string;
+	realm?: string;
+	environment?: QbEnvironment;
+	help: boolean;
+	version: boolean;
+};
 
 export const VERSION = '0.0.1';
 
@@ -51,13 +62,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 			continue;
 		}
 
-		let name = token;
-		let inlineValue: string | undefined;
 		const eq = token.startsWith('--') ? token.indexOf('=') : -1;
-		if (eq !== -1) {
-			name = token.slice(0, eq);
-			inlineValue = token.slice(eq + 1);
-		}
+		const name = eq === -1 ? token : token.slice(0, eq);
+		const inlineValue = eq === -1 ? undefined : token.slice(eq + 1);
 
 		const takeValue = (): string => {
 			if (inlineValue !== undefined) return inlineValue;

@@ -1,6 +1,5 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { AppConfig } from './config.ts';
 
 /**
@@ -9,6 +8,10 @@ import type { AppConfig } from './config.ts';
  * keychain, the Linux Secret Service (`secret-tool`), an opt-in plaintext file
  * (`LOCAL_BOOKS_KEYRING_FILE`, for CI and headless boxes without a keyring
  * daemon), and an in-memory store for tests.
+ *
+ * Backend failures throw: a missing keychain daemon is fatal and rare, so it
+ * bubbles to the top-level CLI handler rather than threading a Result through
+ * every caller.
  */
 export type Keyring = {
 	readonly backend: string;
@@ -16,11 +19,6 @@ export type Keyring = {
 	set(account: string, secret: string): Promise<void>;
 	delete(account: string): Promise<void>;
 };
-
-export const KeyringError = defineErrors({
-	Backend: ({ message }: { message: string }) => ({ message }),
-});
-export type KeyringError = InferErrors<typeof KeyringError>;
 
 const SERVICE = 'local-books';
 

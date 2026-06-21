@@ -1,10 +1,10 @@
-import type { ParsedArgs } from '../args.ts';
+import type { ParsedArgs } from '../cli.ts';
 import { recordCompany } from '../companies.ts';
 import { loadConfig } from '../config.ts';
 import { createKeyring } from '../keyring.ts';
 import { type OAuthDeps, runAuthorizationFlow } from '../oauth.ts';
 import { storeToken } from '../token-manager.ts';
-import { formatRelative } from '../tokens.ts';
+import { formatRelative } from './context.ts';
 
 /**
  * One-time interactive OAuth2: open the browser, capture the localhost callback,

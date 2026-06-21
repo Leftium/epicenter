@@ -1,7 +1,8 @@
+import { type Static, Type } from 'typebox';
+import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-
-export type QbEnvironment = 'sandbox' | 'production';
+import type { QbEnvironment } from './config.ts';
 
 /**
  * A persisted QuickBooks OAuth2 token, stored verbatim in the OS keyring keyed
@@ -20,14 +21,22 @@ export type TokenSet = {
 	obtainedAt: string;
 };
 
-/** Raw QuickBooks bearer-token grant, as returned by the token endpoint. */
-export type TokenGrant = {
-	token_type: string;
-	access_token: string;
-	refresh_token: string;
-	expires_in: number;
-	x_refresh_token_expires_in?: number;
-};
+/**
+ * The fields we read off a raw QuickBooks bearer-token grant. Unknown fields are
+ * preserved by TypeBox (no `additionalProperties: false`), so a new grant field
+ * never trips validation. `token_type` is `bearer` case-insensitively, checked
+ * after the shape passes since a literal cannot express the case-fold.
+ */
+const TokenGrantSchema = Type.Object({
+	token_type: Type.String({ minLength: 1 }),
+	access_token: Type.String({ minLength: 1 }),
+	refresh_token: Type.Optional(Type.String({ minLength: 1 })),
+	expires_in: Type.Number({ exclusiveMinimum: 0 }),
+	x_refresh_token_expires_in: Type.Optional(
+		Type.Number({ exclusiveMinimum: 0 }),
+	),
+});
+export type TokenGrant = Static<typeof TokenGrantSchema>;
 
 export const TokenGrantError = defineErrors({
 	InvalidGrant: ({ reason }: { reason: string }) => ({
@@ -37,9 +46,8 @@ export const TokenGrantError = defineErrors({
 });
 export type TokenGrantError = InferErrors<typeof TokenGrantError>;
 
-function asString(value: unknown): string | null {
-	return typeof value === 'string' && value.length > 0 ? value : null;
-}
+/** QuickBooks refresh tokens live ~100 days; assume the floor when absent. */
+const REFRESH_TOKEN_FLOOR_SECONDS = 100 * 24 * 60 * 60;
 
 /**
  * Normalize a raw token-endpoint payload into a {@link TokenSet}, converting the
@@ -64,54 +72,35 @@ export function tokenSetFromGrant(
 		fallbackRefreshToken?: string;
 	},
 ): Result<TokenSet, TokenGrantError> {
-	if (payload === null || typeof payload !== 'object') {
-		return TokenGrantError.InvalidGrant({ reason: 'expected a JSON object' });
+	if (!Value.Check(TokenGrantSchema, payload)) {
+		const [first] = Value.Errors(TokenGrantSchema, payload);
+		const reason = first
+			? `${first.message} at ${first.instancePath || '/'}`
+			: 'unexpected shape';
+		return TokenGrantError.InvalidGrant({ reason });
 	}
-	const record = payload as Record<string, unknown>;
 
-	const tokenType = asString(record['token_type']);
-	if (!tokenType || tokenType.toLowerCase() !== 'bearer') {
+	if (payload.token_type.toLowerCase() !== 'bearer') {
 		return TokenGrantError.InvalidGrant({
-			reason: `expected token_type "bearer", got ${JSON.stringify(record['token_type'])}`,
+			reason: `expected token_type "bearer", got ${JSON.stringify(payload.token_type)}`,
 		});
 	}
 
-	const accessToken = asString(record['access_token']);
-	if (!accessToken) {
-		return TokenGrantError.InvalidGrant({ reason: 'missing access_token' });
-	}
-
-	const refreshToken =
-		asString(record['refresh_token']) ?? fallbackRefreshToken;
+	const refreshToken = payload.refresh_token ?? fallbackRefreshToken;
 	if (!refreshToken) {
 		return TokenGrantError.InvalidGrant({ reason: 'missing refresh_token' });
 	}
 
-	const expiresIn = record['expires_in'];
-	if (
-		typeof expiresIn !== 'number' ||
-		!Number.isFinite(expiresIn) ||
-		expiresIn <= 0
-	) {
-		return TokenGrantError.InvalidGrant({
-			reason: 'missing or invalid expires_in',
-		});
-	}
-
-	// QuickBooks refresh tokens live ~100 days. When absent, assume the floor so
-	// we never treat a usable refresh token as expired (a too-early refresh just
-	// gets a fresh window back).
 	const refreshExpiresIn =
-		typeof record['x_refresh_token_expires_in'] === 'number'
-			? (record['x_refresh_token_expires_in'] as number)
-			: 100 * 24 * 60 * 60;
-
+		payload.x_refresh_token_expires_in ?? REFRESH_TOKEN_FLOOR_SECONDS;
 	return Ok({
 		realmId,
 		environment,
-		accessToken,
+		accessToken: payload.access_token,
 		refreshToken,
-		accessTokenExpiresAt: new Date(now + expiresIn * 1000).toISOString(),
+		accessTokenExpiresAt: new Date(
+			now + payload.expires_in * 1000,
+		).toISOString(),
 		refreshTokenExpiresAt: new Date(
 			now + refreshExpiresIn * 1000,
 		).toISOString(),
@@ -136,18 +125,4 @@ export function isAccessTokenExpired(
 
 export function isRefreshTokenExpired(token: TokenSet, now: number): boolean {
 	return Date.parse(token.refreshTokenExpiresAt) <= now;
-}
-
-/** Human-friendly "in 42m" / "expired 3m ago" for `status`. */
-export function formatRelative(targetIso: string, now: number): string {
-	const deltaMs = Date.parse(targetIso) - now;
-	const abs = Math.abs(deltaMs);
-	const mins = Math.round(abs / 60000);
-	const unit =
-		mins < 60
-			? `${mins}m`
-			: mins < 60 * 24
-				? `${Math.round(mins / 60)}h`
-				: `${Math.round(mins / (60 * 24))}d`;
-	return deltaMs >= 0 ? `in ${unit}` : `${unit} ago`;
 }

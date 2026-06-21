@@ -15,9 +15,6 @@
 	"bin": {
 		"local-books": "./src/bin.ts"
 	},
-	"exports": {
-		".": "./src/index.ts"
-	},
 	"scripts": {
 		"local-books": "bun run src/bin.ts",
 		"test": "bun test",
@@ -25,6 +22,8 @@
 		"build:binary": "bun build --compile --outfile dist/local-books src/bin.ts"
 	},
 	"dependencies": {
+		"oauth4webapi": "catalog:",
+		"typebox": "catalog:",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

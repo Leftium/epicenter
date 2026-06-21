@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { type Static, Type } from 'typebox';
+import { Value } from 'typebox/value';
 import { DEFAULT_ENTITIES, isKnownEntity } from './entities.ts';
 import { resolveDataDir } from './paths.ts';
-import type { QbEnvironment } from './tokens.ts';
+
+/** Which QuickBooks deployment a company lives in. */
+export type QbEnvironment = 'sandbox' | 'production';
 
 /**
  * Fully-resolved runtime configuration. Precedence is CLI flags > environment >
@@ -55,24 +59,29 @@ const DEFAULT_REDIRECT_URI = 'http://localhost:8765/callback';
 const DEFAULT_SCOPE = 'com.intuit.quickbooks.accounting';
 const DEFAULT_MINOR_VERSION = '70';
 
-type ConfigFile = {
-	environment?: QbEnvironment;
-	entities?: string[];
-	redirectUri?: string;
-	scopes?: string[];
-	minorVersion?: string;
-	cdcSafeWindowDays?: number;
-	fullBackstopDays?: number;
-	pageSize?: number;
-};
+const ConfigFileSchema = Type.Object({
+	environment: Type.Optional(
+		Type.Union([Type.Literal('sandbox'), Type.Literal('production')]),
+	),
+	entities: Type.Optional(Type.Array(Type.String())),
+	redirectUri: Type.Optional(Type.String({ minLength: 1 })),
+	scopes: Type.Optional(Type.Array(Type.String())),
+	minorVersion: Type.Optional(Type.String({ minLength: 1 })),
+	cdcSafeWindowDays: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+	fullBackstopDays: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+	pageSize: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+});
+type ConfigFile = Static<typeof ConfigFileSchema>;
 
 function readConfigFile(dataDir: string): ConfigFile {
 	try {
-		const text = readFileSync(join(dataDir, 'config.json'), 'utf8');
-		const parsed = JSON.parse(text);
-		return typeof parsed === 'object' && parsed !== null ? parsed : {};
+		const parsed: unknown = JSON.parse(
+			readFileSync(join(dataDir, 'config.json'), 'utf8'),
+		);
+		// A malformed or partially-typed config.json falls back to defaults rather
+		// than crashing: it is an optional convenience file.
+		return Value.Check(ConfigFileSchema, parsed) ? parsed : {};
 	} catch {
-		// Missing/unreadable config.json is fine: it is optional.
 		return {};
 	}
 }

@@ -1,34 +1,21 @@
 import { existsSync } from 'node:fs';
-import type { ParsedArgs } from '../args.ts';
-import { resolveRealm } from '../companies.ts';
-import { loadConfig } from '../config.ts';
+import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { entityDef } from '../entities.ts';
-import { createKeyring } from '../keyring.ts';
 import { dbPath } from '../paths.ts';
 import { loadToken } from '../token-manager.ts';
-import {
-	formatRelative,
-	isAccessTokenExpired,
-	isRefreshTokenExpired,
-} from '../tokens.ts';
+import { isAccessTokenExpired, isRefreshTokenExpired } from '../tokens.ts';
+import { formatRelative, resolveCompany } from './context.ts';
 
 /** Report token state and the per-entity mirror state (cursor, counts). */
 export async function runStatus(args: ParsedArgs): Promise<number> {
-	const config = loadConfig({
-		dataDir: args.dataDir,
-		environment: args.environment,
-		realm: args.realm,
-	});
-
-	const realm = resolveRealm(config);
-	if (realm.error !== null) {
-		console.error(realm.error);
+	const { data: company, error } = resolveCompany(args);
+	if (error !== null) {
+		console.error(error);
 		return 1;
 	}
-	const realmId = realm.realmId;
+	const { config, realmId, keyring } = company;
 
-	const keyring = createKeyring(config);
 	const token = await loadToken(keyring, realmId);
 	const now = Date.now();
 

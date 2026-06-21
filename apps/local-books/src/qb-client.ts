@@ -221,7 +221,8 @@ export function createQbClient(deps: QbClientDeps): QbClient {
 						for (const entity of entities) {
 							const arr = (qr as Record<string, unknown>)[entity];
 							if (Array.isArray(arr)) {
-								(changes[entity] ??= []).push(...(arr as QbObject[]));
+								changes[entity] ??= [];
+								changes[entity].push(...(arr as QbObject[]));
 							}
 						}
 					}

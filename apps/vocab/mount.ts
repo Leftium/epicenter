@@ -49,14 +49,8 @@ import type { AgentId, MountWorkerContext } from '@epicenter/workspace';
 import { attachChatWorker, type ChatStream } from '@epicenter/workspace/ai';
 import { nodeMountRuntime } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { epicenterMeteredEngine } from './epicenter-engine.js';
-import {
-	type Engine,
-	resolveEngine,
-	VOCAB_MODEL,
-	VOCAB_SYSTEM_PROMPT,
-	vocabWorkspace,
-} from './vocab.js';
+import { epicenterMeteredChatStream } from './epicenter-engine.js';
+import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT, vocabWorkspace } from './vocab.js';
 
 const log = createLogger('vocab/mount');
 
@@ -102,24 +96,24 @@ export function vocab({ baseURL, agentId }: VocabMountOptions = {}) {
 }
 
 /**
- * The daemon's inference backend for this mount: the first engine its host can
- * power, ADR-0038's priority chain ({@link resolveEngine}) over the engines
- * below. This resolves only the *engine* (where tokens come from); *designation*
- * (which conversations are this daemon's) is the observe loop's job, which hosts
- * only the conversations bound to this daemon's agent (`row.agent === agentId`,
- * ADR-0025), so by here the turn is already its own.
+ * The daemon's inference backend for this mount: the first backend its host can
+ * satisfy, ADR-0038's priority chain expressed inline below. This resolves only
+ * the *engine* (where tokens come from); *designation* (which conversations are
+ * this daemon's) is the observe loop's job, which hosts only the conversations
+ * bound to this daemon's agent (`row.agent === agentId`, ADR-0025), so by here
+ * the turn is already its own.
  *
  *  - **byok**: a local provider key (`OPENAI_API_KEY` / `GEMINI_API_KEY`, the
  *    catalog picks which) answers free, with no cloud round-trip. The only path
  *    for an offline or self-hosted daemon, so it stays first.
  *  - **metered**: answer on the user's metered Epicenter account over the same
- *    `/api/ai/chat` SSE path the browser uses ({@link epicenterMeteredEngine}, the
- *    shared builder), authenticated with the `AuthedFetch` the daemon already
+ *    `/api/ai/chat` SSE path the browser uses ({@link epicenterMeteredChatStream},
+ *    the shared builder), authenticated with the `AuthedFetch` the daemon already
  *    syncs with. Opt-in only ({@link isMeteredEnabled}): spending credits is a
  *    deliberate choice, symmetric with BYOK needing a key, so a keyless signed-in
  *    daemon never silently bills the user.
  *
- * `null` (neither engine satisfiable) means host the conversation's sync but
+ * `null` (neither backend satisfiable) means host the conversation's sync but
  * answer nothing: the daemon writes no placeholder into a real, synced
  * conversation, and the turn stays unanswered for a configured answerer (a keyed
  * daemon, or an open browser tab on the metered account).
@@ -142,30 +136,31 @@ function resolveDaemonStream(
 	const { provider } = MODELS_BY_ID[VOCAB_MODEL];
 	const envVar = HOUSE_KEY_ENV_VAR[provider];
 
-	// The metered engine builds the same way for every peer; only the opt-in gate
-	// is the daemon's (a keyless signed-in daemon must not silently spend credits).
-	const metered = epicenterMeteredEngine(session.fetch, baseURL);
-	const engines: readonly Engine[] = [
-		() => {
-			const apiKey = process.env[envVar];
-			return apiKey
-				? chatStreamFromAdapter(createAdapterForModel(VOCAB_MODEL, apiKey), [
-						VOCAB_SYSTEM_PROMPT,
-					])
-				: null;
-		},
-		() => (isMeteredEnabled() ? metered() : null),
-	];
+	// First satisfiable backend wins (ADR-0038). BYOK first: a local key answers
+	// free and offline, the only path for an offline or self-hosted daemon.
+	const apiKey = process.env[envVar];
+	if (apiKey) {
+		return chatStreamFromAdapter(createAdapterForModel(VOCAB_MODEL, apiKey), [
+			VOCAB_SYSTEM_PROMPT,
+		]);
+	}
 
-	const stream = resolveEngine(engines);
-	if (agentId && !stream) {
+	// Else the metered account, opt-in only: a keyless signed-in daemon must not
+	// silently spend credits. The builder is shared with the browser; only this
+	// gate is the daemon's.
+	if (isMeteredEnabled()) {
+		return epicenterMeteredChatStream(session.fetch, baseURL);
+	}
+
+	// Neither satisfiable: host the conversation's sync but answer nothing.
+	if (agentId) {
 		log.warn(
 			new Error(
 				`The Vocab daemon has no inference backend: ${envVar} is unset and VOCAB_USE_METERED is off. It hosts conversation sync but does not answer. Set ${envVar} for local inference, or VOCAB_USE_METERED=1 to answer on your metered Epicenter account.`,
 			),
 		);
 	}
-	return stream;
+	return null;
 }
 
 /**

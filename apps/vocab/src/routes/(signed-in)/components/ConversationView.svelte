@@ -1,13 +1,12 @@
 <script module lang="ts">
 	import { APP_URLS } from '@epicenter/constants/vite';
-	import { epicenterMeteredEngine } from '@epicenter/vocab/engine';
+	import { epicenterMeteredChatStream } from '@epicenter/vocab/engine';
 	import { auth } from '$platform/auth';
 
 	// The client answers the capability-free agent over the metered `/api/ai/chat`
-	// SSE stream (ADR-0043). One engine, built once and shared across every mounted
-	// view; the daemon is the only peer that walks a multi-engine priority chain
-	// (ADR-0038), so the client just calls its single engine directly.
-	const clientEngine = epicenterMeteredEngine(auth.fetch, APP_URLS.API);
+	// SSE stream (ADR-0043). One backend, built once and shared across every
+	// mounted view; only the daemon walks a multi-backend priority chain (ADR-0038).
+	const clientStream = epicenterMeteredChatStream(auth.fetch, APP_URLS.API);
 </script>
 
 <script lang="ts">
@@ -43,9 +42,7 @@
 	// flips mid-conversation.
 	// svelte-ignore state_referenced_locally
 	const answer =
-		readRow()?.agent === CLIENT_AGENT_ID
-			? (clientEngine() ?? undefined)
-			: undefined;
+		readRow()?.agent === CLIENT_AGENT_ID ? clientStream : undefined;
 
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the transcript doc and bind it (the answerer, the clock,

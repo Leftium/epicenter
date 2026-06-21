@@ -13,13 +13,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { asAgentId } from '@epicenter/workspace';
-import type { ChatStream } from '@epicenter/workspace/ai';
-import {
-	CLIENT_AGENT_ID,
-	DEFAULT_AGENT_ID,
-	resolveEngine,
-	VOCAB_AGENTS,
-} from '../vocab.js';
+import { CLIENT_AGENT_ID, DEFAULT_AGENT_ID, VOCAB_AGENTS } from '../vocab.js';
 
 describe('agent catalog', () => {
 	test('the default agent is the client agent (no daemon required)', () => {
@@ -34,29 +28,5 @@ describe('agent catalog', () => {
 	test('every catalog id is unique (one entry per agent)', () => {
 		const ids = VOCAB_AGENTS.map((agent) => agent.id);
 		expect(new Set(ids).size).toBe(ids.length);
-	});
-});
-
-describe('resolveEngine', () => {
-	// The daemon walks its multi-engine priority chain through this (ADR-0038); the
-	// client has a single engine and calls it directly. Distinct sentinel streams
-	// so a test can assert *which* engine won.
-	const primary: ChatStream = async function* () {};
-	const fallback: ChatStream = async function* () {};
-
-	test('takes the first engine the host can power', () => {
-		expect(resolveEngine([() => primary, () => fallback])).toBe(primary);
-	});
-
-	test('falls through a null engine to the next in priority order', () => {
-		expect(resolveEngine([() => null, () => fallback])).toBe(fallback);
-	});
-
-	test('no satisfiable engine hosts without answering (null)', () => {
-		expect(resolveEngine([() => null, () => null])).toBeNull();
-	});
-
-	test('an empty engine list answers nothing', () => {
-		expect(resolveEngine([])).toBeNull();
 	});
 });

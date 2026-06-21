@@ -28,10 +28,7 @@ import {
 	type Id,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import {
-	attachChatConversation,
-	type ChatStream,
-} from '@epicenter/workspace/ai';
+import { attachChatConversation } from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -70,9 +67,8 @@ export const CLIENT_AGENT_ID: AgentId = asAgentId('client');
 export type { AgentId };
 
 /**
- * One agent Vocab can bind a conversation to: its durable {@link AgentId},
- * a display `label` for the picker, the `model` it answers with, and the action
- * keys it may call as tools (ADR-0021; none yet).
+ * One agent Vocab can bind a conversation to: its durable {@link AgentId} and a
+ * display `label` for the picker.
  *
  * An agent answers where its capability lives (ADR-0043), and the agent's `id`
  * is what names that place: {@link CLIENT_AGENT_ID} is the capability-free agent
@@ -80,14 +76,17 @@ export type { AgentId };
  * the user co-deploys. There is no separate `owner` enum, because with these two
  * agents the identity already says where the answer is produced; the one peer
  * that answers a given turn is decided by the bound `id`, never a second field.
- * The engine each answerer uses (a local key, the user's metered account) is an
- * orthogonal sub-choice it resolves for itself (ADR-0038).
+ *
+ * The model and toolset are not per-agent here: Vocab runs one model
+ * ({@link VOCAB_MODEL}) with no tools, read as app constants by whichever peer
+ * answers. The two entries are the same capability-free agent in two places, so
+ * the catalog carries only what differs (id, label); the engine each answerer
+ * uses (a local key, the user's metered account) is an orthogonal sub-choice it
+ * resolves for itself (ADR-0038).
  */
 export type AgentConfig = {
 	readonly id: AgentId;
 	readonly label: string;
-	readonly model: ServableModel;
-	readonly tools: readonly string[];
 };
 
 /**
@@ -103,18 +102,8 @@ export type AgentConfig = {
  * conversation to it is what a later "co-deploy a live daemon" slice brings online.
  */
 export const VOCAB_AGENTS = [
-	{
-		id: CLIENT_AGENT_ID,
-		label: 'This device',
-		model: VOCAB_MODEL,
-		tools: [],
-	},
-	{
-		id: asAgentId('vocab-home'),
-		label: 'Home daemon',
-		model: VOCAB_MODEL,
-		tools: [],
-	},
+	{ id: CLIENT_AGENT_ID, label: 'This device' },
+	{ id: asAgentId('vocab-home'), label: 'Home daemon' },
 ] as const satisfies readonly AgentConfig[];
 
 /**
@@ -123,39 +112,6 @@ export const VOCAB_AGENTS = [
  * with no daemon required.
  */
 export const DEFAULT_AGENT_ID: AgentId = CLIENT_AGENT_ID;
-
-/**
- * One inference backend a peer can power, built lazily: it returns a
- * {@link ChatStream} when the host can satisfy it (a key is present, the account
- * is opted in) or `null` when it cannot, so {@link resolveEngine} can fall
- * through to the next engine in priority order (ADR-0038).
- */
-export type Engine = () => ChatStream | null;
-
-/**
- * The `ChatStream` to answer with, taken from the first engine this host can
- * power, or `null` when it can power none: host the conversation's sync, write
- * nothing, leave the turn for a configured answerer.
- *
- * This is only the *engine* half of answering, where tokens come from. The other
- * half, *designation* (is this turn mine to write?), is decided by the bound
- * agent id (ADR-0043), where each peer naturally decides it, never here: a
- * daemon's observe loop hosts only the conversations bound to its agent
- * (`row.agent === selfAgentId`, ADR-0025), so by the time it resolves an engine
- * the turn is already its own; a browser tab answers only the conversations bound
- * to {@link CLIENT_AGENT_ID}. The two halves are orthogonal (designation ⊥
- * engine, ADR-0033/0038), so they are not forced through one function: doing so
- * made the daemon's designation a tautology (it would only ever pass its own
- * agent). Today only the daemon walks more than one engine; the client has a
- * single engine and calls it directly.
- */
-export function resolveEngine(engines: readonly Engine[]): ChatStream | null {
-	for (const engine of engines) {
-		const stream = engine();
-		if (stream) return stream; // first engine this host can power
-	}
-	return null; // no engine here → host, don't answer
-}
 
 /**
  * The bilingual system prompt every Vocab answer is generated under. An app

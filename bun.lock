@@ -213,6 +213,22 @@
         "typescript": "catalog:",
       },
     },
+    "apps/local-books": {
+      "name": "@epicenter/local-books",
+      "version": "0.0.1",
+      "bin": {
+        "local-books": "./src/bin.ts",
+      },
+      "dependencies": {
+        "oauth4webapi": "catalog:",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "apps/matter": {
       "name": "@epicenter/matter",
       "version": "0.0.2",
@@ -1314,6 +1330,8 @@
     "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
 
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
+
+    "@epicenter/local-books": ["@epicenter/local-books@workspace:apps/local-books"],
 
     "@epicenter/matter": ["@epicenter/matter@workspace:apps/matter"],
 

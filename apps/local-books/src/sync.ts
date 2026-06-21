@@ -61,7 +61,10 @@ export function decideMode({
 		};
 	}
 
-	return { mode: 'INCREMENTAL', reason: `cursor ${cursorAgeDays.toFixed(1)}d old, within window` };
+	return {
+		mode: 'INCREMENTAL',
+		reason: `cursor ${cursorAgeDays.toFixed(1)}d old, within window`,
+	};
 }
 
 export type SyncEntityResult = {
@@ -83,7 +86,10 @@ export type SyncDeps = {
 };
 
 /** Split a batch of QB objects into live upserts and soft-deletes. */
-function partition(def: EntityDef, objects: QbObject[]): {
+function partition(
+	def: EntityDef,
+	objects: QbObject[],
+): {
 	upserts: UpsertRow[];
 	deletes: DeleteRow[];
 } {
@@ -97,7 +103,12 @@ function partition(def: EntityDef, objects: QbObject[]): {
 		if (isDeleted(obj)) {
 			deletes.push({ id, raw, updatedAt });
 		} else {
-			upserts.push({ id, raw, updatedAt, columns: def.columns.map((c) => c.extract(obj)) });
+			upserts.push({
+				id,
+				raw,
+				updatedAt,
+				columns: def.columns.map((c) => c.extract(obj)),
+			});
 		}
 	}
 	return { upserts, deletes };
@@ -145,11 +156,17 @@ export async function syncEntity(
 	const newState: SyncStateRow = {
 		entity: def.name,
 		cdcCursor: cursorAfter,
-		lastFullPullAt: mode === 'FULL' ? cursorAfter : (state?.lastFullPullAt ?? null),
+		lastFullPullAt:
+			mode === 'FULL' ? cursorAfter : (state?.lastFullPullAt ?? null),
 		lastSyncedAt: cursorAfter,
 	};
 
-	db.applyEntitySync(def, { upserts, deletes, syncState: newState, syncedAt: cursorAfter });
+	db.applyEntitySync(def, {
+		upserts,
+		deletes,
+		syncState: newState,
+		syncedAt: cursorAfter,
+	});
 
 	return Ok({
 		entity: def.name,

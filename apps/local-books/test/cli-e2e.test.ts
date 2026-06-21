@@ -19,7 +19,10 @@ function seedKeyring(file: string, realmId: string): void {
 		refreshTokenExpiresAt: new Date(now + 8726400 * 1000).toISOString(),
 		obtainedAt: new Date(now).toISOString(),
 	};
-	writeFileSync(file, JSON.stringify({ [realmId]: JSON.stringify(token) }, null, 2));
+	writeFileSync(
+		file,
+		JSON.stringify({ [realmId]: JSON.stringify(token) }, null, 2),
+	);
 }
 
 async function runCli(args: string[], env: Record<string, string>) {
@@ -66,7 +69,9 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 		.query('SELECT count(*) AS n, min(json_valid(raw)) AS v FROM invoices')
 		.get() as { n: number; v: number };
 	const cursor1 = (
-		read1.query("SELECT cdc_cursor FROM _sync_state WHERE entity='Invoice'").get() as {
+		read1
+			.query("SELECT cdc_cursor FROM _sync_state WHERE entity='Invoice'")
+			.get() as {
 			cdc_cursor: string;
 		}
 	).cdc_cursor;
@@ -81,14 +86,21 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 	server.put('Invoice', makeInvoice('3'));
 
 	// Checkpoint 3: incremental.
-	const inc = await runCli(['sync', '--entity', 'Invoice', '--realm', server.realmId], env);
+	const inc = await runCli(
+		['sync', '--entity', 'Invoice', '--realm', server.realmId],
+		env,
+	);
 	expect(inc.exitCode).toBe(0);
 	expect(inc.stdout).toContain('INCREMENTAL');
 
 	const read2 = new Database(dbFile, { readonly: true });
-	const after = read2.query('SELECT count(*) AS n FROM invoices').get() as { n: number };
+	const after = read2.query('SELECT count(*) AS n FROM invoices').get() as {
+		n: number;
+	};
 	const cursor2 = (
-		read2.query("SELECT cdc_cursor FROM _sync_state WHERE entity='Invoice'").get() as {
+		read2
+			.query("SELECT cdc_cursor FROM _sync_state WHERE entity='Invoice'")
+			.get() as {
 			cdc_cursor: string;
 		}
 	).cdc_cursor;

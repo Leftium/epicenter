@@ -41,7 +41,12 @@ describe('tokenSetFromGrant', () => {
 	test('falls back to the prior refresh token during rotation', () => {
 		const { data, error } = tokenSetFromGrant(
 			{ ...validGrant, refresh_token: undefined },
-			{ realmId: '1', environment: 'sandbox', now: NOW, fallbackRefreshToken: 'old-refresh' },
+			{
+				realmId: '1',
+				environment: 'sandbox',
+				now: NOW,
+				fallbackRefreshToken: 'old-refresh',
+			},
 		);
 		expect(error).toBeNull();
 		expect(data?.refreshToken).toBe('old-refresh');

@@ -2,7 +2,7 @@ import type { ParsedArgs } from '../args.ts';
 import { resolveRealm } from '../companies.ts';
 import { loadConfig } from '../config.ts';
 import { openBooksDb } from '../db.ts';
-import { isKnownEntity, DEFAULT_ENTITIES } from '../entities.ts';
+import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
 import { createKeyring } from '../keyring.ts';
 import type { OAuthDeps } from '../oauth.ts';
 import { dbPath } from '../paths.ts';
@@ -40,13 +40,20 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 	const keyring = createKeyring(config);
 	const token = await loadToken(keyring, realmId);
 	if (!token) {
-		console.error(`No stored token for company ${realmId}. Run "local-books auth".`);
+		console.error(
+			`No stored token for company ${realmId}. Run "local-books auth".`,
+		);
 		return 1;
 	}
 
 	const now = () => Date.now();
 	const oauthDeps: OAuthDeps = { now, log: (m) => console.error(m) };
-	const tokens = createTokenManager({ config, keyring, token, deps: oauthDeps });
+	const tokens = createTokenManager({
+		config,
+		keyring,
+		token,
+		deps: oauthDeps,
+	});
 	const client = createQbClient({
 		config,
 		realmId,
@@ -54,12 +61,21 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		log: (m) => console.error(m),
 	});
 	const db = openBooksDb(dbPath(config.dataDir, realmId), realmId);
-	const deps: SyncDeps = { db, client, config, now, log: (m) => console.error(m) };
+	const deps: SyncDeps = {
+		db,
+		client,
+		config,
+		now,
+		log: (m) => console.error(m),
+	};
 
 	console.error(
 		`Syncing ${entities.join(', ')} for company ${realmId} (${config.environment})${args.full ? ' [--full]' : ''}...`,
 	);
-	const { results, failures } = await syncAll(deps, { forceFull: args.full, entities });
+	const { results, failures } = await syncAll(deps, {
+		forceFull: args.full,
+		entities,
+	});
 	db.close();
 
 	for (const r of results) {

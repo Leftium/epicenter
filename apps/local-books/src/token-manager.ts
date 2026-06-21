@@ -1,11 +1,7 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
 import type { Keyring } from './keyring.ts';
-import {
-	OAuthError,
-	type OAuthDeps,
-	refreshAccessToken,
-} from './oauth.ts';
+import { type OAuthDeps, OAuthError, refreshAccessToken } from './oauth.ts';
 import type { TokenGrantError } from './tokens.ts';
 import {
 	isAccessTokenExpired,
@@ -28,7 +24,10 @@ export type TokenManager = {
 };
 
 /** Persist a token set under its realm. The whole set is one keyring secret. */
-export async function storeToken(keyring: Keyring, token: TokenSet): Promise<void> {
+export async function storeToken(
+	keyring: Keyring,
+	token: TokenSet,
+): Promise<void> {
 	await keyring.set(token.realmId, JSON.stringify(token));
 }
 
@@ -41,7 +40,10 @@ export async function loadToken(
 	if (!raw) return null;
 	try {
 		const parsed = JSON.parse(raw) as TokenSet;
-		if (typeof parsed?.accessToken === 'string' && typeof parsed?.refreshToken === 'string') {
+		if (
+			typeof parsed?.accessToken === 'string' &&
+			typeof parsed?.refreshToken === 'string'
+		) {
 			return parsed;
 		}
 		return null;
@@ -67,7 +69,11 @@ export function createTokenManager({
 		if (isRefreshTokenExpired(current, deps.now())) {
 			return OAuthError.ReauthRequired({ reason: 'refresh token expired' });
 		}
-		const { data: refreshed, error } = await refreshAccessToken(config, current, deps);
+		const { data: refreshed, error } = await refreshAccessToken(
+			config,
+			current,
+			deps,
+		);
 		if (error) return { data: null, error };
 		current = refreshed;
 		await storeToken(keyring, refreshed);
@@ -77,7 +83,8 @@ export function createTokenManager({
 	return {
 		current: () => current,
 		async getValidAccessToken() {
-			if (!isAccessTokenExpired(current, deps.now())) return Ok(current.accessToken);
+			if (!isAccessTokenExpired(current, deps.now()))
+				return Ok(current.accessToken);
 			return refresh();
 		},
 		forceRefresh: refresh,

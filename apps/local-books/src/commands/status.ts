@@ -50,7 +50,9 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 
 	const path = dbPath(config.dataDir, realmId);
 	if (!existsSync(path)) {
-		console.log(`Mirror:       not created yet — run "local-books sync --full"`);
+		console.log(
+			`Mirror:       not created yet — run "local-books sync --full"`,
+		);
 		return 0;
 	}
 

@@ -13,8 +13,15 @@ const BIN = join(import.meta.dir, '../src/bin.ts');
 const DATA_DIR = '/tmp/local-books-demo';
 rmSync(DATA_DIR, { recursive: true, force: true });
 
-async function sh(cmd: string[], env: Record<string, string> = {}): Promise<string> {
-	const proc = Bun.spawn(cmd, { env: { ...process.env, ...env }, stdout: 'pipe', stderr: 'pipe' });
+async function sh(
+	cmd: string[],
+	env: Record<string, string> = {},
+): Promise<string> {
+	const proc = Bun.spawn(cmd, {
+		env: { ...process.env, ...env },
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
 	const [out, err] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
@@ -39,7 +46,8 @@ const env = {
 	LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
 	LOCAL_BOOKS_QB_ENV: 'sandbox',
 };
-const cli = (...args: string[]) => sh([process.execPath, BIN, ...args, '--realm', realmId], env);
+const cli = (...args: string[]) =>
+	sh([process.execPath, BIN, ...args, '--realm', realmId], env);
 const sqlite = (sql: string) => sh(['sqlite3', dbFile, sql]);
 
 // Seed a keyring token (good for an hour) so we can run sync/status without the
@@ -71,10 +79,18 @@ async function main() {
 
 	banner('Checkpoint 2 — local-books sync --entity Invoice --full');
 	console.log(await cli('sync', '--entity', 'Invoice', '--full'));
-	console.log('\n$ sqlite3 books.db "SELECT count(*), min(json_valid(raw)) FROM invoices"');
-	console.log(await sqlite('SELECT count(*), min(json_valid(raw)) FROM invoices'));
-	console.log('\n$ sqlite3 books.db "SELECT entity, cdc_cursor FROM _sync_state"');
-	const cursorBefore = await sqlite('SELECT entity, cdc_cursor FROM _sync_state');
+	console.log(
+		'\n$ sqlite3 books.db "SELECT count(*), min(json_valid(raw)) FROM invoices"',
+	);
+	console.log(
+		await sqlite('SELECT count(*), min(json_valid(raw)) FROM invoices'),
+	);
+	console.log(
+		'\n$ sqlite3 books.db "SELECT entity, cdc_cursor FROM _sync_state"',
+	);
+	const cursorBefore = await sqlite(
+		'SELECT entity, cdc_cursor FROM _sync_state',
+	);
 	console.log(cursorBefore);
 
 	// Mutate the QuickBooks source after the full pull.
@@ -85,12 +101,24 @@ async function main() {
 
 	banner('Checkpoint 3 — second local-books sync (no --full) runs INCREMENTAL');
 	console.log(await cli('sync', '--entity', 'Invoice'));
-	console.log('\n$ sqlite3 books.db "SELECT entity, cdc_cursor FROM _sync_state"  (cursor AFTER)');
+	console.log(
+		'\n$ sqlite3 books.db "SELECT entity, cdc_cursor FROM _sync_state"  (cursor AFTER)',
+	);
 	console.log(await sqlite('SELECT entity, cdc_cursor FROM _sync_state'));
-	console.log('\n$ sqlite3 books.db "SELECT count(*) total, sum(deleted) soft_deleted FROM invoices"');
-	console.log(await sqlite('SELECT count(*) AS total, sum(deleted) AS soft_deleted FROM invoices'));
-	console.log('\n$ sqlite3 books.db "SELECT id, total_amt, deleted FROM invoices ORDER BY id"');
-	console.log(await sqlite('SELECT id, total_amt, deleted FROM invoices ORDER BY id'));
+	console.log(
+		'\n$ sqlite3 books.db "SELECT count(*) total, sum(deleted) soft_deleted FROM invoices"',
+	);
+	console.log(
+		await sqlite(
+			'SELECT count(*) AS total, sum(deleted) AS soft_deleted FROM invoices',
+		),
+	);
+	console.log(
+		'\n$ sqlite3 books.db "SELECT id, total_amt, deleted FROM invoices ORDER BY id"',
+	);
+	console.log(
+		await sqlite('SELECT id, total_amt, deleted FROM invoices ORDER BY id'),
+	);
 
 	banner('No full re-pull: mock endpoint hit counts');
 	console.log(`query endpoint hits (full pulls): ${server.hits.query}`);

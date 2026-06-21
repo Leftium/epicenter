@@ -92,7 +92,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 			case '--environment': {
 				const value = takeValue();
 				if (value !== 'sandbox' && value !== 'production') {
-					throw new Error(`--env must be "sandbox" or "production", got "${value}"`);
+					throw new Error(
+						`--env must be "sandbox" or "production", got "${value}"`,
+					);
 				}
 				args.environment = value as QbEnvironment;
 				break;

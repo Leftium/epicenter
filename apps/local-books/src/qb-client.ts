@@ -50,9 +50,15 @@ export type CdcResult = { changes: Record<string, QbObject[]> };
 
 export type QbClient = {
 	readonly realmId: string;
-	queryPage(entity: string, startPosition: number): Promise<Result<QueryPage, QbClientError>>;
+	queryPage(
+		entity: string,
+		startPosition: number,
+	): Promise<Result<QueryPage, QbClientError>>;
 	queryAll(entity: string): Promise<Result<QbObject[], QbClientError>>;
-	cdc(entities: string[], changedSince: string): Promise<Result<CdcResult, QbClientError>>;
+	cdc(
+		entities: string[],
+		changedSince: string,
+	): Promise<Result<CdcResult, QbClientError>>;
 };
 
 export type QbClientDeps = {
@@ -78,20 +84,23 @@ function retryAfterMs(response: Response): number | null {
 export function createQbClient(deps: QbClientDeps): QbClient {
 	const { config, realmId, tokens } = deps;
 	const fetchImpl = deps.fetchImpl ?? fetch;
-	const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+	const sleep =
+		deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 	const log = deps.log ?? (() => {});
 	const maxRetries = deps.maxRetries ?? 5;
 	const throttleWaitMs = deps.throttleWaitMs ?? 60_000;
 	const pageSize = config.pageSize;
 
-	const backoffMs = (attempt: number) => Math.min(throttleWaitMs, 500 * 2 ** attempt);
+	const backoffMs = (attempt: number) =>
+		Math.min(throttleWaitMs, 500 * 2 ** attempt);
 
 	async function request(
 		path: string,
 		params: Record<string, string>,
 	): Promise<Result<unknown, QbClientError>> {
 		const url = new URL(`${config.apiBase}/v3/company/${realmId}/${path}`);
-		for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+		for (const [key, value] of Object.entries(params))
+			url.searchParams.set(key, value);
 		url.searchParams.set('minorversion', config.minorVersion);
 
 		let attempt = 0;
@@ -121,7 +130,9 @@ export function createQbClient(deps: QbClientDeps): QbClient {
 			if (response.ok) {
 				const json = await response.json().catch(() => null);
 				if (json === null || typeof json !== 'object') {
-					return QbApiError.InvalidResponse({ detail: 'body was not a JSON object' });
+					return QbApiError.InvalidResponse({
+						detail: 'body was not a JSON object',
+					});
 				}
 				return Ok(json);
 			}
@@ -134,10 +145,13 @@ export function createQbClient(deps: QbClientDeps): QbClient {
 			}
 
 			if (response.status === 429) {
-				if (attempt >= maxRetries) return QbApiError.Throttled({ retries: attempt });
+				if (attempt >= maxRetries)
+					return QbApiError.Throttled({ retries: attempt });
 				attempt += 1;
 				const wait = retryAfterMs(response) ?? throttleWaitMs;
-				log(`QuickBooks throttled (429); waiting ${wait}ms before retry ${attempt}/${maxRetries}.`);
+				log(
+					`QuickBooks throttled (429); waiting ${wait}ms before retry ${attempt}/${maxRetries}.`,
+				);
 				await sleep(wait);
 				continue;
 			}
@@ -159,7 +173,8 @@ export function createQbClient(deps: QbClientDeps): QbClient {
 	}
 
 	function extractQueryArray(json: unknown, entity: string): QbObject[] {
-		const queryResponse = (json as { QueryResponse?: Record<string, unknown> }).QueryResponse;
+		const queryResponse = (json as { QueryResponse?: Record<string, unknown> })
+			.QueryResponse;
 		const arr = queryResponse?.[entity];
 		return Array.isArray(arr) ? (arr as QbObject[]) : [];
 	}
@@ -199,7 +214,8 @@ export function createQbClient(deps: QbClientDeps): QbClient {
 			const cdcResponse = (data as { CDCResponse?: unknown }).CDCResponse;
 			if (Array.isArray(cdcResponse)) {
 				for (const block of cdcResponse) {
-					const queryResponses = (block as { QueryResponse?: unknown }).QueryResponse;
+					const queryResponses = (block as { QueryResponse?: unknown })
+						.QueryResponse;
 					if (!Array.isArray(queryResponses)) continue;
 					for (const qr of queryResponses) {
 						for (const entity of entities) {

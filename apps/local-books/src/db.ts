@@ -113,7 +113,14 @@ export function openBooksDb(path: string, realmId: string) {
 		const cached = upsertStmts.get(def.table);
 		if (cached) return cached;
 		const cols = def.columns.map((c) => assertIdent(c.name));
-		const insertCols = ['id', 'raw', 'updated_at', 'synced_at', 'deleted', ...cols];
+		const insertCols = [
+			'id',
+			'raw',
+			'updated_at',
+			'synced_at',
+			'deleted',
+			...cols,
+		];
 		const placeholders = ['?', '?', '?', '?', '0', ...cols.map(() => '?')];
 		const updates = [
 			'raw = excluded.raw',
@@ -243,9 +250,13 @@ export function openBooksDb(path: string, realmId: string) {
 					lastSyncedAt: state?.lastSyncedAt ?? null,
 				};
 			}
-			const rows = db.query<{ n: number }, []>(`SELECT count(*) AS n FROM ${table}`).get();
+			const rows = db
+				.query<{ n: number }, []>(`SELECT count(*) AS n FROM ${table}`)
+				.get();
 			const deleted = db
-				.query<{ n: number }, []>(`SELECT count(*) AS n FROM ${table} WHERE deleted = 1`)
+				.query<{ n: number }, []>(
+					`SELECT count(*) AS n FROM ${table} WHERE deleted = 1`,
+				)
 				.get();
 			return {
 				entity: def.name,

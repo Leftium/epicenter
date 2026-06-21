@@ -13,7 +13,10 @@ beforeAll(() => {
 afterAll(() => server.stop());
 
 test('authorization-code exchange yields a token set', async () => {
-	const config = makeConfig({ tokenUrl: server.tokenUrl, realmOverride: server.realmId });
+	const config = makeConfig({
+		tokenUrl: server.tokenUrl,
+		realmOverride: server.realmId,
+	});
 	const { data, error } = await exchangeAuthorizationCode(
 		config,
 		{ code: 'auth-code', realmId: server.realmId },
@@ -27,7 +30,10 @@ test('authorization-code exchange yields a token set', async () => {
 });
 
 test('refresh exchange mints a new token set', async () => {
-	const config = makeConfig({ tokenUrl: server.tokenUrl, realmOverride: server.realmId });
+	const config = makeConfig({
+		tokenUrl: server.tokenUrl,
+		realmOverride: server.realmId,
+	});
 	const before = server.hits.token;
 	const token: TokenSet = {
 		realmId: server.realmId,
@@ -38,7 +44,9 @@ test('refresh exchange mints a new token set', async () => {
 		refreshTokenExpiresAt: new Date(NOW + 8726400 * 1000).toISOString(),
 		obtainedAt: new Date(NOW).toISOString(),
 	};
-	const { data, error } = await refreshAccessToken(config, token, { now: () => NOW });
+	const { data, error } = await refreshAccessToken(config, token, {
+		now: () => NOW,
+	});
 	expect(error).toBeNull();
 	expect(data?.accessToken).not.toBe('old-access');
 	expect(server.hits.token).toBe(before + 1);

@@ -38,8 +38,12 @@ function nowIso(ms: number): string {
 	return new Date(ms).toISOString();
 }
 
-function metaUpdated(obj: Record<string, unknown>, ms: number): Record<string, unknown> {
-	const existingMeta = (obj.MetaData as Record<string, unknown> | undefined) ?? {};
+function metaUpdated(
+	obj: Record<string, unknown>,
+	ms: number,
+): Record<string, unknown> {
+	const existingMeta =
+		(obj.MetaData as Record<string, unknown> | undefined) ?? {};
 	return { ...obj, MetaData: { ...existingMeta, LastUpdatedTime: nowIso(ms) } };
 }
 
@@ -136,7 +140,10 @@ export function startMockQbServer(
 			const url = new URL(request.url);
 
 			// OAuth2 token endpoint (authorization-code + refresh).
-			if (url.pathname === '/oauth2/v1/tokens/bearer' && request.method === 'POST') {
+			if (
+				url.pathname === '/oauth2/v1/tokens/bearer' &&
+				request.method === 'POST'
+			) {
 				hits.token += 1;
 				const accessToken = `access-${Math.random().toString(36).slice(2)}`;
 				return Response.json({
@@ -164,14 +171,20 @@ export function startMockQbServer(
 					.filter((s) => !s.deleted)
 					.sort((a, b) => a.updatedAt - b.updatedAt)
 					.map((s) => s.obj);
-				const page = live.slice(startPosition - 1, startPosition - 1 + maxResults);
+				const page = live.slice(
+					startPosition - 1,
+					startPosition - 1 + maxResults,
+				);
 				const queryResponse: Record<string, unknown> = {
 					startPosition,
 					maxResults: page.length,
 					totalCount: live.length,
 				};
 				if (page.length > 0) queryResponse[entity] = page;
-				return Response.json({ QueryResponse: queryResponse, time: nowIso(now()) });
+				return Response.json({
+					QueryResponse: queryResponse,
+					time: nowIso(now()),
+				});
 			}
 
 			// CDC (incremental).
@@ -183,8 +196,12 @@ export function startMockQbServer(
 				if (denied) return denied;
 
 				hits.cdc += 1;
-				const requested = (url.searchParams.get('entities') ?? '').split(',').filter(Boolean);
-				const changedSince = Date.parse(url.searchParams.get('changedSince') ?? '');
+				const requested = (url.searchParams.get('entities') ?? '')
+					.split(',')
+					.filter(Boolean);
+				const changedSince = Date.parse(
+					url.searchParams.get('changedSince') ?? '',
+				);
 				const blocks = requested.map((entity) => {
 					const changed: Record<string, unknown>[] = [];
 					for (const s of store(entity).values()) {
@@ -226,7 +243,8 @@ export function startMockQbServer(
 		hits,
 		put,
 		remove,
-		liveCount: (entity) => [...store(entity).values()].filter((s) => !s.deleted).length,
+		liveCount: (entity) =>
+			[...store(entity).values()].filter((s) => !s.deleted).length,
 		rejectAccessToken: (token) => rejectedTokens.add(token),
 		fail429: (n) => {
 			pending429 = n;

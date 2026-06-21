@@ -3,7 +3,8 @@ import type { SyncStateRow } from '../src/db.ts';
 import { decideMode } from '../src/sync.ts';
 
 const NOW = Date.parse('2026-06-21T00:00:00.000Z');
-const daysAgo = (n: number) => new Date(NOW - n * 24 * 60 * 60 * 1000).toISOString();
+const daysAgo = (n: number) =>
+	new Date(NOW - n * 24 * 60 * 60 * 1000).toISOString();
 
 const base = {
 	now: NOW,
@@ -33,12 +34,18 @@ describe('decideMode', () => {
 	});
 
 	test('first run (no state) is FULL', () => {
-		expect(decideMode({ ...base, forceFull: false, syncState: null }).mode).toBe('FULL');
+		expect(
+			decideMode({ ...base, forceFull: false, syncState: null }).mode,
+		).toBe('FULL');
 	});
 
 	test('no cursor is FULL', () => {
 		expect(
-			decideMode({ ...base, forceFull: false, syncState: state({ cdcCursor: null }) }).mode,
+			decideMode({
+				...base,
+				forceFull: false,
+				syncState: state({ cdcCursor: null }),
+			}).mode,
 		).toBe('FULL');
 	});
 

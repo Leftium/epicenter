@@ -48,7 +48,8 @@ const API_BASE: Record<QbEnvironment, string> = {
 	production: 'https://quickbooks.api.intuit.com',
 };
 
-const DEFAULT_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
+const DEFAULT_TOKEN_URL =
+	'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const DEFAULT_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
 const DEFAULT_REDIRECT_URI = 'http://localhost:8765/callback';
 const DEFAULT_SCOPE = 'com.intuit.quickbooks.accounting';
@@ -82,7 +83,9 @@ function env(name: string): string | undefined {
 }
 
 function resolveEntities(file: ConfigFile): string[] {
-	const fromEnv = env('LOCAL_BOOKS_ENTITIES')?.split(',').map((s) => s.trim());
+	const fromEnv = env('LOCAL_BOOKS_ENTITIES')
+		?.split(',')
+		.map((s) => s.trim());
 	const requested = fromEnv ?? file.entities ?? DEFAULT_ENTITIES;
 	const unknown = requested.filter((name) => !isKnownEntity(name));
 	if (unknown.length > 0) {
@@ -109,14 +112,21 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 		// Accept the bare QB_* names (what Infisical injects at /apps/local-books)
 		// as well as the namespaced LOCAL_BOOKS_QB_* form.
 		clientId: env('LOCAL_BOOKS_QB_CLIENT_ID') ?? env('QB_CLIENT_ID') ?? null,
-		clientSecret: env('LOCAL_BOOKS_QB_CLIENT_SECRET') ?? env('QB_CLIENT_SECRET') ?? null,
-		redirectUri: env('LOCAL_BOOKS_QB_REDIRECT_URI') ?? file.redirectUri ?? DEFAULT_REDIRECT_URI,
+		clientSecret:
+			env('LOCAL_BOOKS_QB_CLIENT_SECRET') ?? env('QB_CLIENT_SECRET') ?? null,
+		redirectUri:
+			env('LOCAL_BOOKS_QB_REDIRECT_URI') ??
+			file.redirectUri ??
+			DEFAULT_REDIRECT_URI,
 		scopes: file.scopes ?? [DEFAULT_SCOPE],
 		entities: resolveEntities(file),
 		apiBase: env('LOCAL_BOOKS_QB_API_BASE') ?? API_BASE[environment],
 		tokenUrl: env('LOCAL_BOOKS_QB_TOKEN_URL') ?? DEFAULT_TOKEN_URL,
 		authorizeUrl: env('LOCAL_BOOKS_QB_AUTHORIZE_URL') ?? DEFAULT_AUTHORIZE_URL,
-		minorVersion: env('LOCAL_BOOKS_QB_MINOR_VERSION') ?? file.minorVersion ?? DEFAULT_MINOR_VERSION,
+		minorVersion:
+			env('LOCAL_BOOKS_QB_MINOR_VERSION') ??
+			file.minorVersion ??
+			DEFAULT_MINOR_VERSION,
 		cdcSafeWindowDays: file.cdcSafeWindowDays ?? 25,
 		fullBackstopDays: file.fullBackstopDays ?? 7,
 		pageSize: Math.min(file.pageSize ?? 1000, 1000),

@@ -26,7 +26,10 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 	}
 
 	const keyring = createKeyring(config);
-	const deps: OAuthDeps = { now: () => Date.now(), log: (m) => console.error(m) };
+	const deps: OAuthDeps = {
+		now: () => Date.now(),
+		log: (m) => console.error(m),
+	};
 
 	console.error(`Authenticating against QuickBooks (${config.environment})...`);
 	const { data: token, error } = await runAuthorizationFlow(config, deps);
@@ -40,8 +43,12 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 
 	const now = Date.now();
 	console.log(`Connected company ${token.realmId} (${config.environment}).`);
-	console.log(`Access token valid ${formatRelative(token.accessTokenExpiresAt, now)}.`);
-	console.log(`Refresh token valid ${formatRelative(token.refreshTokenExpiresAt, now)}.`);
+	console.log(
+		`Access token valid ${formatRelative(token.accessTokenExpiresAt, now)}.`,
+	);
+	console.log(
+		`Refresh token valid ${formatRelative(token.refreshTokenExpiresAt, now)}.`,
+	);
 	console.log(`Tokens stored in the ${keyring.backend} keyring.`);
 	console.log(`Next: "local-books sync --full" to seed the mirror.`);
 	return 0;

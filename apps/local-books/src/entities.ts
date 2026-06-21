@@ -173,7 +173,9 @@ export function entityDef(name: string): EntityDef {
 
 /** A deleted CDC record carries `status: "Deleted"`; everything else is live. */
 export function isDeleted(raw: QbObject): boolean {
-	return typeof raw.status === 'string' && raw.status.toLowerCase() === 'deleted';
+	return (
+		typeof raw.status === 'string' && raw.status.toLowerCase() === 'deleted'
+	);
 }
 
 export function lastUpdatedTime(raw: QbObject): string | null {

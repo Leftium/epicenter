@@ -1,5 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AppConfig } from './config.ts';
 import { companiesFilePath } from './paths.ts';
 
@@ -13,8 +12,11 @@ export type Companies = { realms: string[]; defaultRealm: string | null };
 export function readCompanies(dataDir: string): Companies {
 	try {
 		const parsed = JSON.parse(readFileSync(companiesFilePath(dataDir), 'utf8'));
-		const realms = Array.isArray(parsed?.realms) ? parsed.realms.filter((r: unknown) => typeof r === 'string') : [];
-		const defaultRealm = typeof parsed?.defaultRealm === 'string' ? parsed.defaultRealm : null;
+		const realms = Array.isArray(parsed?.realms)
+			? parsed.realms.filter((r: unknown) => typeof r === 'string')
+			: [];
+		const defaultRealm =
+			typeof parsed?.defaultRealm === 'string' ? parsed.defaultRealm : null;
 		return { realms, defaultRealm };
 	} catch {
 		return { realms: [], defaultRealm: null };
@@ -42,13 +44,17 @@ export function recordCompany(dataDir: string, realmId: string): void {
 export function resolveRealm(
 	config: AppConfig,
 ): { realmId: string; error: null } | { realmId: null; error: string } {
-	if (config.realmOverride) return { realmId: config.realmOverride, error: null };
+	if (config.realmOverride)
+		return { realmId: config.realmOverride, error: null };
 
 	const { realms, defaultRealm } = readCompanies(config.dataDir);
 	if (defaultRealm) return { realmId: defaultRealm, error: null };
 	if (realms.length === 1) return { realmId: realms[0] as string, error: null };
 	if (realms.length === 0) {
-		return { realmId: null, error: 'No authenticated company. Run "local-books auth" first.' };
+		return {
+			realmId: null,
+			error: 'No authenticated company. Run "local-books auth" first.',
+		};
 	}
 	return {
 		realmId: null,

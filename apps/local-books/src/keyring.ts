@@ -74,11 +74,20 @@ function createMacosKeyring(): Keyring {
 				secret,
 			]);
 			if (exitCode !== 0) {
-				throw new Error(`security add-generic-password failed: ${stderr.trim()}`);
+				throw new Error(
+					`security add-generic-password failed: ${stderr.trim()}`,
+				);
 			}
 		},
 		async delete(account) {
-			await run(['security', 'delete-generic-password', '-s', SERVICE, '-a', account]);
+			await run([
+				'security',
+				'delete-generic-password',
+				'-s',
+				SERVICE,
+				'-a',
+				account,
+			]);
 		},
 	};
 }
@@ -89,14 +98,24 @@ function createSecretToolKeyring(): Keyring {
 	return {
 		backend: 'secret-tool',
 		async get(account) {
-			const { exitCode, stdout } = await run(['secret-tool', 'lookup', ...attrs(account)]);
+			const { exitCode, stdout } = await run([
+				'secret-tool',
+				'lookup',
+				...attrs(account),
+			]);
 			if (exitCode !== 0) return null;
 			const value = stdout.replace(/\n$/, '');
 			return value.length > 0 ? value : null;
 		},
 		async set(account, secret) {
 			const { exitCode, stderr } = await run(
-				['secret-tool', 'store', '--label', `${SERVICE} ${account}`, ...attrs(account)],
+				[
+					'secret-tool',
+					'store',
+					'--label',
+					`${SERVICE} ${account}`,
+					...attrs(account),
+				],
 				{ stdin: secret },
 			);
 			if (exitCode !== 0) {

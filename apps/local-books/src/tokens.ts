@@ -81,14 +81,21 @@ export function tokenSetFromGrant(
 		return TokenGrantError.InvalidGrant({ reason: 'missing access_token' });
 	}
 
-	const refreshToken = asString(record['refresh_token']) ?? fallbackRefreshToken;
+	const refreshToken =
+		asString(record['refresh_token']) ?? fallbackRefreshToken;
 	if (!refreshToken) {
 		return TokenGrantError.InvalidGrant({ reason: 'missing refresh_token' });
 	}
 
 	const expiresIn = record['expires_in'];
-	if (typeof expiresIn !== 'number' || !Number.isFinite(expiresIn) || expiresIn <= 0) {
-		return TokenGrantError.InvalidGrant({ reason: 'missing or invalid expires_in' });
+	if (
+		typeof expiresIn !== 'number' ||
+		!Number.isFinite(expiresIn) ||
+		expiresIn <= 0
+	) {
+		return TokenGrantError.InvalidGrant({
+			reason: 'missing or invalid expires_in',
+		});
 	}
 
 	// QuickBooks refresh tokens live ~100 days. When absent, assume the floor so
@@ -105,7 +112,9 @@ export function tokenSetFromGrant(
 		accessToken,
 		refreshToken,
 		accessTokenExpiresAt: new Date(now + expiresIn * 1000).toISOString(),
-		refreshTokenExpiresAt: new Date(now + refreshExpiresIn * 1000).toISOString(),
+		refreshTokenExpiresAt: new Date(
+			now + refreshExpiresIn * 1000,
+		).toISOString(),
 		obtainedAt: new Date(now).toISOString(),
 	});
 }

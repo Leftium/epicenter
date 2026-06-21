@@ -6,8 +6,12 @@ import { entityDef } from '../src/entities.ts';
 import { createMemoryKeyring } from '../src/keyring.ts';
 import { createQbClient } from '../src/qb-client.ts';
 import { syncEntity } from '../src/sync.ts';
-import { createTokenManager, loadToken, storeToken } from '../src/token-manager.ts';
-import { tokenSetFromGrant, type TokenSet } from '../src/tokens.ts';
+import {
+	createTokenManager,
+	loadToken,
+	storeToken,
+} from '../src/token-manager.ts';
+import { type TokenSet, tokenSetFromGrant } from '../src/tokens.ts';
 import { makeConfig, sampleGrant, tempDir } from './helpers.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
@@ -34,7 +38,12 @@ function setup(configOver: Partial<AppConfig> = {}) {
 		now: clock,
 	}).data as TokenSet;
 	const tokens = createTokenManager({ config, keyring, token, deps: { now } });
-	const client = createQbClient({ config, realmId: server.realmId, tokens, sleep: async () => {} });
+	const client = createQbClient({
+		config,
+		realmId: server.realmId,
+		tokens,
+		sleep: async () => {},
+	});
 	const tmp = tempDir();
 	const db = openBooksDb(join(tmp.dir, 'books.db'), server.realmId);
 
@@ -43,7 +52,14 @@ function setup(configOver: Partial<AppConfig> = {}) {
 		server.stop();
 		tmp.cleanup();
 	};
-	return { server, config, db, deps: { db, client, config, now }, advance, teardown };
+	return {
+		server,
+		config,
+		db,
+		deps: { db, client, config, now },
+		advance,
+		teardown,
+	};
 }
 
 const one = <T>(db: ReturnType<typeof openBooksDb>, sql: string): T =>
@@ -103,16 +119,27 @@ test('incremental upserts only changes, soft-deletes, advances the cursor, and n
 
 	// Cursor advanced, not reset.
 	expect(inc.data?.cursorBefore).toBe(cursorBefore);
-	expect(Date.parse(inc.data!.cursorAfter)).toBeGreaterThan(Date.parse(cursorBefore));
-	expect(ctx.db.readSyncState('Invoice')?.cdcCursor).toBe(inc.data!.cursorAfter);
+	expect(Date.parse(inc.data!.cursorAfter)).toBeGreaterThan(
+		Date.parse(cursorBefore),
+	);
+	expect(ctx.db.readSyncState('Invoice')?.cdcCursor).toBe(
+		inc.data!.cursorAfter,
+	);
 
 	// No full re-pull: exactly one query (the full) and one cdc (the incremental).
 	expect(ctx.server.hits.query).toBe(1);
 	expect(ctx.server.hits.cdc).toBe(1);
 
 	// Mirror reflects the changes.
-	expect(one<{ n: number }>(ctx.db, 'SELECT count(*) AS n FROM invoices').n).toBe(4);
-	expect(one<{ n: number }>(ctx.db, 'SELECT count(*) AS n FROM invoices WHERE deleted=1').n).toBe(1);
+	expect(
+		one<{ n: number }>(ctx.db, 'SELECT count(*) AS n FROM invoices').n,
+	).toBe(4);
+	expect(
+		one<{ n: number }>(
+			ctx.db,
+			'SELECT count(*) AS n FROM invoices WHERE deleted=1',
+		).n,
+	).toBe(1);
 
 	// Updated row reflected in both the extracted column and the blob.
 	const inv2 = one<{ total_amt: number; raw: string }>(
@@ -145,7 +172,9 @@ test('a second incremental with no source changes is a clean no-op that still ad
 	expect(inc.data?.mode).toBe('INCREMENTAL');
 	expect(inc.data?.upserted).toBe(0);
 	expect(inc.data?.deleted).toBe(0);
-	expect(Date.parse(inc.data!.cursorAfter)).toBeGreaterThan(Date.parse(inc.data!.cursorBefore!));
+	expect(Date.parse(inc.data!.cursorAfter)).toBeGreaterThan(
+		Date.parse(inc.data!.cursorBefore!),
+	);
 
 	ctx.teardown();
 });
@@ -187,8 +216,18 @@ test('a 401 triggers a transparent refresh, retries, and persists the new token'
 	await storeToken(keyring, stale);
 	server.rejectAccessToken('stale-access');
 
-	const tokens = createTokenManager({ config, keyring, token: stale, deps: { now } });
-	const client = createQbClient({ config, realmId: server.realmId, tokens, sleep: async () => {} });
+	const tokens = createTokenManager({
+		config,
+		keyring,
+		token: stale,
+		deps: { now },
+	});
+	const client = createQbClient({
+		config,
+		realmId: server.realmId,
+		tokens,
+		sleep: async () => {},
+	});
 	server.put('Invoice', makeInvoice('1'));
 
 	const { data, error } = await client.queryAll('Invoice');

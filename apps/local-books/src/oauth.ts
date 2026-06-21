@@ -24,15 +24,28 @@ export const OAuthError = defineErrors({
 		message: `Network error talking to the QuickBooks token endpoint: ${String(cause)}`,
 		cause,
 	}),
-	TokenExchangeFailed: ({ status, body }: { status: number; body: string }) => ({
+	TokenExchangeFailed: ({
+		status,
+		body,
+	}: {
+		status: number;
+		body: string;
+	}) => ({
 		message: `QuickBooks token endpoint returned ${status}: ${body.slice(0, 500)}`,
 		status,
 		body,
 	}),
 	StateMismatch: () => ({
-		message: 'OAuth callback state did not match; aborting to avoid a forged callback.',
+		message:
+			'OAuth callback state did not match; aborting to avoid a forged callback.',
 	}),
-	CallbackDenied: ({ error, description }: { error: string; description: string }) => ({
+	CallbackDenied: ({
+		error,
+		description,
+	}: {
+		error: string;
+		description: string;
+	}) => ({
 		message: `QuickBooks denied authorization: ${error}${description ? ` (${description})` : ''}`,
 		error,
 		description,
@@ -93,7 +106,10 @@ async function requestToken(
 
 	if (!response.ok) {
 		const text = await response.text().catch(() => '');
-		return OAuthError.TokenExchangeFailed({ status: response.status, body: text });
+		return OAuthError.TokenExchangeFailed({
+			status: response.status,
+			body: text,
+		});
 	}
 
 	const json = await response.json().catch(() => null);
@@ -201,9 +217,12 @@ export async function runAuthorizationFlow(
 						description: url.searchParams.get('error_description') ?? '',
 					}),
 				);
-				return new Response('Authorization denied. You can close this window.', {
-					headers: { 'content-type': 'text/html' },
-				});
+				return new Response(
+					'Authorization denied. You can close this window.',
+					{
+						headers: { 'content-type': 'text/html' },
+					},
+				);
 			}
 			if (url.searchParams.get('state') !== state) {
 				resolveCallback(OAuthError.StateMismatch());

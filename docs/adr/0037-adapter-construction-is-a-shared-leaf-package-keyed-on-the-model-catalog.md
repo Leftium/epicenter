@@ -41,9 +41,8 @@ hand-roll stays.
 - Swapping the daemon (or a route) to a new provider is a catalog + env-key
   change with no construction code edit. An exhaustive provider switch makes an
   unhandled provider a compile error, not a silent wrong key.
-- A second copy of the construction is foreclosed, except the deliberately
-  standalone one in `examples/doc-as-wire-chat/src/inference.ts` (zero-dep
-  pedagogy, left alone on purpose).
+<!-- doc-path-check: ignore-next-line -->
+- A second copy of the construction is foreclosed, except the deliberately standalone one in `examples/doc-as-wire-chat/src/inference.ts` (zero-dep pedagogy, left alone on purpose).
 - The browser SSE parser is not collapsed onto TanStack. Revisit only if TanStack
   exposes a standalone response parser, or our endpoint adopts the AG-UI request
   shape.

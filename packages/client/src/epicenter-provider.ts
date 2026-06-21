@@ -1,48 +1,31 @@
 /**
- * The Epicenter provider: a browser inference backend that runs through the
- * metered `/api/ai/chat` endpoint on the user's account (the house key), so a
- * client loop gets credits without a raw provider key (ADR-0033's
- * Epicenter-provider backend).
- *
- * Two shapes share one POST-and-parse core:
- *
- *  - {@link createEpicenterAgentEngine} is the `AgentEngine` the client agent
- *    loop (ADR-0047) drives: a request carries the prompt plus the live tool
- *    catalog, and the engine forwards the tool definitions in the request body
- *    so the provider emits tool-call chunks. This is the one shape opensidian
- *    and every tool agent use.
- *  - {@link createEpicenterProviderChatStream} is the older messages-only
- *    `ChatStream` the doc-streaming answerer consumes; it forwards no tools.
- *    Vocab (capability-free) also uses it. It is deleted with the doc-streaming
- *    core once its consumers move to the agent engine.
+ * The Epicenter provider: {@link createEpicenterAgentEngine}, the `AgentEngine`
+ * the client agent loop (ADR-0047) drives. It runs inference through the metered
+ * `/api/ai/chat` endpoint on the user's account (the house key), so the loop
+ * gets credits without a raw provider key (ADR-0033's Epicenter-provider
+ * backend). A request carries the prompt plus the live tool catalog, and the
+ * engine forwards the tool definitions in the request body so the provider emits
+ * tool-call chunks. The capability-free case (Vocab) sends an empty catalog and
+ * the loop runs a single text step per turn; it is the same engine, no tools.
  *
  * The endpoint streams the answer back as Server-Sent Events
  * (`toServerSentEventsResponse`), the way a provider streams; this adapter turns
  * that wire format back into the raw AG-UI `StreamChunk` iterable the loop
- * consumes. TanStack ai-client (0.16.3) exposes no standalone SSE parser, only
+ * consumes. TanStack ai-client (0.28.0) exposes no standalone SSE parser, only
  * `fetchServerSentEvents`, a full connection adapter that would POST an AG-UI
  * `RunAgentInput` envelope this custom `/api/ai/chat` contract does not speak,
  * so the `data:` frames are parsed here (verified; see ADR-0037).
  *
  * This lives in `@epicenter/client` (beside `createAiChatFetch`, the authed fetch
  * it expects) so every app that answers a cloud conversation in-process shares one
- * implementation. The return values are structurally the workspace loop's
- * `AgentEngine` / the `@epicenter/workspace/ai` `ChatStream`; the types are
- * inlined here to keep the client decoupled from the workspace core.
+ * implementation. The return value is structurally the workspace loop's
+ * `AgentEngine`; the types are inlined here to keep the client decoupled from the
+ * workspace core.
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { extractErrorMessage } from 'wellcrafted/error';
-
-/**
- * Structurally `@epicenter/workspace/ai`'s `ChatStream`. Inlined so the client
- * does not depend on the workspace core for a function signature.
- */
-type ChatStream = (
-	messages: ModelMessage[],
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
 
 /** The body options the `/api/ai/chat` route reads (model + system prompts). */
 export type EpicenterProviderData = {
@@ -91,6 +74,24 @@ function runErrorChunk(code: string, message: string): StreamChunk {
 }
 
 /**
+ * Flatten a mid-stream failure to the AG-UI top-level shape the loop reads.
+ * TanStack's `toServerSentEventsStream` emits a run failure as
+ * `{ type: RUN_ERROR, error: { message, code } }` rather than top-level
+ * `message`/`code`, so without this the loop sees an undefined message and loses
+ * the code. A spec-compliant frame (or any non-error chunk) passes through.
+ */
+function normalizeChunk(chunk: StreamChunk): StreamChunk {
+	if (chunk.type !== EventType.RUN_ERROR) return chunk;
+	const nested = (chunk as { error?: { message?: string; code?: string } })
+		.error;
+	if (!nested) return chunk;
+	return runErrorChunk(
+		nested.code ?? 'stream-error',
+		nested.message ?? 'The model run failed.',
+	);
+}
+
+/**
  * Parse an SSE chat response into the raw `StreamChunk` stream. Frames are
  * double-newline separated; each carries one JSON chunk on a `data:` line, and a
  * `[DONE]` sentinel ends the run. A malformed frame is skipped (a hole, not a
@@ -120,7 +121,7 @@ async function* parseServerSentEvents(
 				const data = dataLine.slice('data:'.length).trimStart();
 				if (data === '' || data === '[DONE]') continue;
 				try {
-					yield JSON.parse(data) as StreamChunk;
+					yield normalizeChunk(JSON.parse(data) as StreamChunk);
 				} catch {
 					// Skip a frame that is not valid JSON.
 				}
@@ -129,47 +130,6 @@ async function* parseServerSentEvents(
 	} finally {
 		reader.releaseLock();
 	}
-}
-
-/** The `/api/ai/chat` POST body: a snapshotted prompt plus the route's options. */
-type EpicenterChatBody = {
-	messages: ModelMessage[];
-	data: EpicenterProviderData & { tools?: object[] };
-};
-
-/**
- * POST one model call to `/api/ai/chat` and stream its reply as raw
- * `StreamChunk`s. The single network path both shapes share: a non-2xx response
- * (`createAiChatFetch` throws `AiChatHttpError`) becomes a `RUN_ERROR` carrying
- * the structured error name as the code, so the failed turn stays branchable.
- */
-async function* streamEpicenterChat(
-	fetch: typeof globalThis.fetch,
-	url: string,
-	body: EpicenterChatBody,
-	signal: AbortSignal,
-): AsyncIterable<StreamChunk> {
-	let response: Response;
-	try {
-		response = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				accept: 'text/event-stream',
-			},
-			body: JSON.stringify(body),
-			signal,
-		});
-	} catch (error) {
-		if (signal.aborted) return;
-		if (error instanceof AiChatHttpError) {
-			yield runErrorChunk(error.detail.name, error.detail.message);
-			return;
-		}
-		yield runErrorChunk('stream-error', extractErrorMessage(error));
-		return;
-	}
-	yield* parseServerSentEvents(response, signal);
 }
 
 /**
@@ -226,37 +186,40 @@ export function createEpicenterAgentEngine({
 	url: string;
 	data: () => EpicenterProviderData;
 }): AgentEngine {
-	return (request, signal) =>
-		streamEpicenterChat(
-			fetch,
-			url,
-			{
-				messages: request.messages,
-				data: {
-					...data(),
-					...(request.tools.length > 0 && {
-						tools: request.tools.map(toWireTool),
-					}),
-				},
+	return async function* (request, signal) {
+		const body = {
+			messages: request.messages,
+			data: {
+				...data(),
+				...(request.tools.length > 0 && {
+					tools: request.tools.map(toWireTool),
+				}),
 			},
-			signal,
-		);
-}
+		};
 
-/**
- * Build the messages-only Epicenter-provider {@link ChatStream}. Forwards no
- * tools; the doc-streaming answerer and Vocab consume it. Prefer
- * {@link createEpicenterAgentEngine} for a tool-capable loop.
- */
-export function createEpicenterProviderChatStream({
-	fetch,
-	url,
-	data,
-}: {
-	fetch: typeof globalThis.fetch;
-	url: string;
-	data: () => EpicenterProviderData;
-}): ChatStream {
-	return (messages, signal) =>
-		streamEpicenterChat(fetch, url, { messages, data: data() }, signal);
+		let response: Response;
+		try {
+			response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					accept: 'text/event-stream',
+				},
+				body: JSON.stringify(body),
+				signal,
+			});
+		} catch (error) {
+			if (signal.aborted) return;
+			// `createAiChatFetch` throws `AiChatHttpError` on a non-2xx response,
+			// carrying the server's structured error; surface its name as the
+			// RUN_ERROR code so the failed turn stays branchable.
+			if (error instanceof AiChatHttpError) {
+				yield runErrorChunk(error.detail.name, error.detail.message);
+				return;
+			}
+			yield runErrorChunk('stream-error', extractErrorMessage(error));
+			return;
+		}
+		yield* parseServerSentEvents(response, signal);
+	};
 }

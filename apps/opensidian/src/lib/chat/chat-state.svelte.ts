@@ -256,6 +256,10 @@ export function createAiChatState({
 			},
 
 			stop() {
+				// A turn parked on an approval is awaiting `request`, which only the
+				// user settles; unblock it (as a denial) before aborting, the same
+				// order dispose uses, so Stop is never inert mid-approval.
+				settleApproval(false);
 				convo.stop();
 			},
 

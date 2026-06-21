@@ -137,6 +137,33 @@ describe('createEpicenterAgentEngine', () => {
 		]);
 	});
 
+	test('flattens a mid-stream RUN_ERROR with a nested error payload', async () => {
+		// TanStack's SSE emits a run failure nested under `error`, not top-level.
+		const nestedError = {
+			type: EventType.RUN_ERROR,
+			error: { message: 'the model failed', code: 'ModelFailed' },
+		} as unknown as StreamChunk;
+		const { fetch } = capturingFetch(sseResponse([nestedError]));
+		const engine = createEpicenterAgentEngine({
+			fetch,
+			url: 'https://example.test/api/ai/chat',
+			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+		});
+
+		const chunks = await drain(
+			engine(
+				{ messages: [{ role: 'user', content: 'go' }], tools: [] },
+				new AbortController().signal,
+			),
+		);
+
+		const error = chunks.find((c) => c.type === EventType.RUN_ERROR) as
+			| { message?: string; code?: string }
+			| undefined;
+		expect(error?.message).toBe('the model failed');
+		expect(error?.code).toBe('ModelFailed');
+	});
+
 	test('omits the tools key entirely when the catalog is empty', async () => {
 		const { fetch, calls } = capturingFetch(sseResponse([textChunk('ok')]));
 		const engine = createEpicenterAgentEngine({

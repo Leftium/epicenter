@@ -40,10 +40,9 @@ export function createAdapterForModel(
 }
 
 /**
- * Structurally `@epicenter/workspace/ai`'s `ChatStream`, the one contract every
- * inference backend speaks. Inlined so this leaf does not depend on the
- * workspace core for a function signature, the same decoupling
- * `@epicenter/client`'s `createEpicenterProviderChatStream` makes.
+ * The BYOK inference contract (ADR-0038): a snapshotted prompt and an abort
+ * signal in, a stream of AG-UI chunks out. Kept local to this leaf so it does not
+ * depend on a wider package for a function signature.
  */
 type ChatStream = (
 	messages: ModelMessage[],
@@ -58,10 +57,10 @@ type ChatStream = (
  *
  * The answer loop hands an `AbortSignal`; `chat()` cancels on an
  * `AbortController`, so the signal is bridged onto one (forwarded if already
- * aborted, else once on the first abort). The metered backend
- * (`createEpicenterProviderChatStream`) and the daemon's placeholder are its
- * siblings; this is the adapter arm, named once so every SDK-driven host (the
- * vocab daemon today) shares one builder instead of re-bridging the signal.
+ * aborted, else once on the first abort). The metered Epicenter backend
+ * (`createEpicenterAgentEngine`) is its sibling; this is the adapter arm, named
+ * once so every SDK-driven host shares one builder instead of re-bridging the
+ * signal.
  */
 export function chatStreamFromAdapter(
 	adapter: AnyTextAdapter,

@@ -18,12 +18,14 @@ import { searchForWorkspaceRoot, type UserConfig } from 'vite';
  */
 export function workspaceAppViteConfig(app: { port: number }): UserConfig {
 	return {
-		// A consuming app's `@sveltejs/kit` and this package can resolve different
-		// bun peer-variant copies of the same `vite` version (`vite@7.3.5` vs
-		// `vite@7.3.5+<hash>`), whose `Plugin` types are then nominally unrelated,
-		// so `svelte-check` rejects the array against this package's `UserConfig`.
-		// One vite runs at runtime; bridge the array to this package's plugin type.
-		plugins: [sveltekit(), tailwindcss()] as UserConfig['plugins'],
+		// No cast: the isolated install resolves a single `vite` peer-variant that
+		// every package (this one, the app, @sveltejs/kit, @tailwindcss/vite)
+		// symlinks to, so the plugins' `Plugin` type matches this `UserConfig`. If
+		// CI ever reports `Two different types with this name exist, but they are
+		// unrelated` on this line again, bun re-split `vite` into peer-variants
+		// (`vite@7.3.5+<hashA>` vs `+<hashB>`); restore `as UserConfig['plugins']`
+		// here, the one place every workspace app's plugins come from.
+		plugins: [sveltekit(), tailwindcss()],
 		resolve: {
 			dedupe: ['yjs'],
 		},

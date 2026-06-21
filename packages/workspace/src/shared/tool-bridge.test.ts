@@ -5,11 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { Err, Ok } from 'wellcrafted/result';
-import {
-	type ActionRegistry,
-	defineMutation,
-	defineQuery,
-} from '../shared/actions.js';
+import { type ActionRegistry, defineMutation, defineQuery } from './actions.js';
 import { actionsToAiTools } from './tool-bridge.js';
 
 describe('actionsToAiTools', () => {

@@ -41,8 +41,3 @@ export {
 	chatRenderState,
 } from './chat-render-state';
 export { attachChatWorker } from './chat-worker';
-export {
-	type ActionNames,
-	actionsToAiTools,
-	type ToolDefinition,
-} from './tool-bridge';

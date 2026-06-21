@@ -20,8 +20,8 @@
  */
 
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
-import type { Action, ActionRegistry } from '../shared/actions';
-import { invokeAction } from '../shared/actions';
+import type { Action, ActionRegistry } from './actions';
+import { invokeAction } from './actions';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -104,7 +104,7 @@ export type ToolDefinition = {
  *
  * @example
  * ```ts
- * import { actionsToAiTools } from '@epicenter/workspace/ai';
+ * import { actionsToAiTools } from '@epicenter/workspace';
  *
  * export const workspaceAiTools = actionsToAiTools(workspace.actions);
  *

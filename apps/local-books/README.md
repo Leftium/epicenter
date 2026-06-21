@@ -51,7 +51,37 @@ bun run build:binary        # -> dist/local-books
 
 ## Scheduling
 
-`sync` is stateless across runs (the cursor lives in the db). Schedule it with cron / launchd / systemd on the box.
+`sync` is stateless across runs (the cursor lives in the db), so just run it on a timer. Sample units are in [`deploy/`](deploy/).
+
+A scheduled sync needs two things:
+
+- **OAuth tokens** — already handled: they sit in your OS keyring after `local-books auth`. A macOS LaunchAgent and a systemd *user* service both run in your login session, so keyring reads work without prompting. (On a headless Linux box with no desktop keyring, set `LOCAL_BOOKS_KEYRING_FILE` instead.)
+- **Client credentials** — refreshing an expired access token unattended needs `QB_CLIENT_ID` / `QB_CLIENT_SECRET`. Keep them in a `0600` env file, not the unit: copy `deploy/local-books.env.example` to `~/.config/local-books/env` and `chmod 600` it.
+
+### macOS (launchd)
+
+```sh
+mkdir -p ~/.config/local-books ~/Library/Logs
+cp deploy/local-books.env.example ~/.config/local-books/env && chmod 600 ~/.config/local-books/env   # add your keys
+# edit deploy/com.epicenter.local-books.plist: set USERNAME and the script path
+cp deploy/com.epicenter.local-books.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.epicenter.local-books.plist
+```
+
+Runs every 30 minutes; logs to `~/Library/Logs/local-books.log`.
+
+### Linux (systemd user timer)
+
+```sh
+mkdir -p ~/.config/local-books ~/.config/systemd/user
+cp deploy/local-books.env.example ~/.config/local-books/env && chmod 600 ~/.config/local-books/env   # add your keys
+cp deploy/local-books.service deploy/local-books.timer ~/.config/systemd/user/
+systemctl --user enable --now local-books.timer
+```
+
+Runs every 30 minutes; watch it with `journalctl --user -u local-books`.
+
+In this monorepo you can skip the env file and point the wrapper or unit at `infisical run --path=/apps/local-books -- ...` instead.
 
 ## Develop
 

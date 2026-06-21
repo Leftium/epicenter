@@ -1,0 +1,16 @@
+# systemd user service for local-books. Install under ~/.config/systemd/user/
+# and enable via the timer (local-books.timer), not directly.
+#
+# A *user* service runs in your session, so the Secret Service keyring is
+# reachable. On a headless box with no keyring daemon, set LOCAL_BOOKS_KEYRING_FILE
+# in the env file instead.
+[Unit]
+Description=local-books: mirror QuickBooks Online into local SQLite
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# QB_CLIENT_ID / QB_CLIENT_SECRET (+ optional LOCAL_BOOKS_QB_ENV). 0600 file.
+EnvironmentFile=%h/.config/local-books/env
+ExecStart=/usr/local/bin/local-books sync

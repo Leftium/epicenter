@@ -1,0 +1,12 @@
+# systemd user timer for local-books. Install under ~/.config/systemd/user/, then:
+#   systemctl --user enable --now local-books.timer
+[Unit]
+Description=Run local-books sync every 30 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

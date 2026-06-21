@@ -287,8 +287,8 @@ The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`,
 
 ### Phase 4: Settings UI (Build)
 
-- [ ] **4.1** Collapse the shortcuts page to one flat searchable list (no tauri branch, no scope tabs); render a live reach badge per row from `keybindings.reachBadge`.
-- [ ] **4.2** Recorder shows the badge as feedback while capturing; surface the Accessibility `Enable` affordance only when the key resolves to a Tier-1 hold.
+- [x] **4.1** DONE. The page is one flat searchable list (`ShortcutTable` over all commands, no `{#if tauri}`, no scope tabs). Each command's two slots render as reach-badged chips ("Works in Whispering" / "Works everywhere" / "Works everywhere, needs Accessibility") from the router's `reachBadge`, each chip clearable by reach. The single `KeyboardShortcutRecorder` folds the old Local and Global recorders into one router-driven Add popover, routing each write by realized reach; the old recorders and `RecorderShell` are deleted.
+- [~] **4.2** Accessibility `Enable` affordance surfaces in the Add popover on desktop when a grant is needed (the gate the webview's no-Fn limit forces). Per-binding reach badges render on the chips. DEFERRED: a *live* reach badge on the in-progress candidate while capturing (the chip badge already gives the read-only badge ADR-0041 requires; the live preview is a nicety, not a criterion).
 
 ### Phase 5: Prove, then Remove
 

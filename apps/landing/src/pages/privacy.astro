@@ -1,0 +1,86 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const lastUpdated = 'June 21, 2026';
+---
+
+<BaseLayout
+	title="Privacy Policy - Epicenter"
+	description="How Epicenter handles your data: local-first, stored on your device, never on our servers."
+>
+	<main class="mx-auto max-w-2xl px-6 py-16 leading-relaxed">
+		<a href="/" class="text-sm text-muted-foreground hover:underline">&larr; epicenter</a>
+		<h1 class="mt-6 text-3xl font-bold tracking-tight">Privacy Policy</h1>
+		<p class="mt-2 text-sm text-muted-foreground">Last updated: {lastUpdated}</p>
+
+		<section class="mt-8 space-y-4">
+			<p>
+				Epicenter builds local-first software. This policy covers the Epicenter
+				website (epicenter.so) and the Epicenter applications and command-line
+				tools, including local-books.
+			</p>
+
+			<h2 class="pt-4 text-xl font-semibold">Your data stays on your device</h2>
+			<p>
+				Epicenter applications are designed so that your personal and financial
+				data lives on your own device, not on servers we operate. We do not
+				collect, store, sell, or transmit the contents of your data to ourselves
+				or to third parties. Because the data does not leave your machine, we
+				cannot see it.
+			</p>
+
+			<h2 class="pt-4 text-xl font-semibold">Connected services</h2>
+			<p>
+				Some applications can connect to third-party services that you authorize,
+				such as QuickBooks Online. When you connect a service, the application
+				reads data from it using credentials you grant through that service's own
+				authorization flow, and stores a copy locally on your device. That data is
+				not sent to Epicenter.
+			</p>
+			<p>
+				Authorization tokens for connected services are stored in your operating
+				system's secure keyring (for example, the macOS Keychain), not on our
+				servers. You can revoke an application's access at any time from the
+				connected service's account settings (for QuickBooks Online, from your
+				Intuit account under Connected apps).
+			</p>
+
+			<h2 class="pt-4 text-xl font-semibold">Website analytics</h2>
+			<p>
+				The Epicenter website uses privacy-respecting analytics to understand
+				aggregate, anonymous usage (such as which pages are visited). This is
+				limited to the website and does not extend to the contents of any data
+				inside the applications.
+			</p>
+
+			<h2 class="pt-4 text-xl font-semibold">Data security</h2>
+			<p>
+				Because your data is stored locally, its security is governed by your own
+				device. We recommend enabling full-disk encryption (such as FileVault on
+				macOS) and keeping your operating system and the application up to date.
+			</p>
+
+			<h2 class="pt-4 text-xl font-semibold">Children's privacy</h2>
+			<p>
+				Epicenter is not directed at children under 13 and we do not knowingly
+				collect information from them.
+			</p>
+
+			<h2 class="pt-4 text-xl font-semibold">Changes to this policy</h2>
+			<p>
+				We may update this policy from time to time. Material changes will be
+				reflected by the "Last updated" date above.
+			</p>
+
+			<h2 class="pt-4 text-xl font-semibold">Contact</h2>
+			<p>
+				Questions about this policy? Reach us at
+				<a class="underline" href="mailto:hello@epicenter.so">hello@epicenter.so</a>
+				or open an issue at
+				<a class="underline" href="https://github.com/EpicenterHQ/epicenter"
+					>github.com/EpicenterHQ/epicenter</a
+				>.
+			</p>
+		</section>
+	</main>
+</BaseLayout>

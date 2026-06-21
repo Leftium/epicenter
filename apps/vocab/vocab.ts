@@ -72,28 +72,17 @@ Example response style:
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * One renderable piece of a message. Vocab answers are plain prose, so today a
- * message holds a single text part; the array leaves room for richer parts
- * later without reshaping the stored blob.
- */
-export type MessagePart = { type: 'text'; text: string };
-
-/**
  * A complete chat message: the unit Vocab persists. Each finished message is
  * written once, whole, as one JSON blob in the conversation's LWW store keyed by
  * {@link MessageId} (ADR-0046). `createdAt` (epoch ms) orders the transcript.
+ * Vocab answers are plain prose, so the body is a single text field.
  */
 export type VocabMessage = {
 	id: MessageId;
 	role: 'user' | 'assistant';
 	createdAt: number;
-	parts: MessagePart[];
+	text: string;
 };
-
-/** The message's text: its text parts joined in order. */
-export function messageText(message: VocabMessage): string {
-	return message.parts.map((part) => part.text).join('');
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions

@@ -17,7 +17,6 @@
 import {
 	generateMessageId,
 	type MessageId,
-	messageText,
 	type VocabMessage,
 } from '@epicenter/vocab';
 import type { VocabChatStream } from '@epicenter/vocab/engine';
@@ -27,8 +26,6 @@ import { extractErrorMessage } from 'wellcrafted/error';
 
 /** The opened `conversations.messages` child-doc handle (keyed by message id). */
 type MessageStore = KvStoreHandle<VocabMessage> & Disposable;
-
-export type Conversation = ReturnType<typeof createConversation>;
 
 /**
  * Bind one conversation's message store to the inference stream.
@@ -64,7 +61,7 @@ export function createConversation(
 	/** Freeze the durable transcript into a provider prompt, dropping empties. */
 	function buildPrompt(): ModelMessage[] {
 		return readAll()
-			.map((message) => ({ role: message.role, content: messageText(message) }))
+			.map((message) => ({ role: message.role, content: message.text }))
 			.filter((message) => message.content.length > 0);
 	}
 
@@ -105,7 +102,7 @@ export function createConversation(
 				id,
 				role: 'assistant',
 				createdAt: streamingStartedAt,
-				parts: [{ type: 'text', text }],
+				text,
 			});
 		}
 		streamingId = null;
@@ -123,7 +120,7 @@ export function createConversation(
 				id: streamingId,
 				role: 'assistant',
 				createdAt: streamingStartedAt,
-				parts: [{ type: 'text', text: streamingText }],
+				text: streamingText,
 			},
 		];
 	});
@@ -154,7 +151,7 @@ export function createConversation(
 				id,
 				role: 'user',
 				createdAt: Date.now(),
-				parts: [{ type: 'text', text }],
+				text,
 			});
 			void runTurn();
 		},

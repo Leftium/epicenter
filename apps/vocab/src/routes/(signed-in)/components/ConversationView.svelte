@@ -26,12 +26,6 @@
 
 	const vocab = requireVocab();
 
-	// The durable conversation row (its title) is read at action time, never in
-	// the template, so a plain read suffices.
-	function readRow() {
-		return vocab.tables.conversations.get(conversationId).data;
-	}
-
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the message store and bind it to the inference stream.
 	// The controller owns streaming, persistence, and the render state; dispose
@@ -58,7 +52,7 @@
 		if (!text || convo.isGenerating) return;
 		dismissedError = false;
 		convo.send(text);
-		const title = readRow()?.title;
+		const title = vocab.tables.conversations.get(conversationId).data?.title;
 		vocab.tables.conversations.update(conversationId, {
 			title: title === 'New Chat' ? text.slice(0, 50) : title,
 			updatedAt: InstantString.now(),

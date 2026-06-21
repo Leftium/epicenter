@@ -2,10 +2,6 @@ export {
 	type BoundAgentConversation,
 	bindAgentConversation,
 } from './agent-conversation.svelte.js';
-export {
-	type BoundConversation,
-	bindConversation,
-} from './bind-conversation.svelte.js';
 export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export { fromKv } from './from-kv.svelte.js';
 export {

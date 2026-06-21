@@ -3,9 +3,8 @@
  *
  * The loop core (`@epicenter/workspace/agent`) is framework-agnostic: it exposes
  * a {@link ConversationSnapshot} plus a change subscription. This mirrors each
- * change into a `$state` version counter so a component re-reads the snapshot,
- * the same shape the old `bindConversation` gave the doc-streaming handle. The
- * returned object is the controller a chat view drives.
+ * change into a `$state` version counter so a component re-reads the snapshot.
+ * The returned object is the controller a chat view drives.
  */
 import type {
 	ConversationHandle,

@@ -8,6 +8,8 @@ export type ParsedArgs = {
 	command: string;
 	full: boolean;
 	entities: string[];
+	/** When set, `sync` loops on this interval (ms) instead of running once. */
+	intervalMs?: number;
 	dataDir?: string;
 	realm?: string;
 	environment?: QbEnvironment;
@@ -32,6 +34,7 @@ Commands:
 Options:
   --full                       Force a full pull (sync only).
   --entity <name>              Limit sync to these entities (repeatable). Default: all configured.
+  --interval <dur>             Keep syncing on a loop, e.g. 30m or 1h (sync only; Ctrl-C to stop).
   --realm <realmId>            Target company (default: the authenticated one).
   --data-dir <path>            Override the data directory (or LOCAL_BOOKS_DIR).
   --env <sandbox|production>   QuickBooks environment (default: sandbox).
@@ -43,6 +46,18 @@ Environment:
   LOCAL_BOOKS_DIR                       Data directory.
   LOCAL_BOOKS_KEYRING_FILE              Plaintext file token store instead of the OS keyring.
 `;
+
+/** Parse a duration like "30s", "30m", "2h" (a bare number means minutes) into ms. */
+export function parseInterval(input: string): number {
+	const match = /^(\d+)(s|m|h)?$/.exec(input.trim());
+	if (!match) {
+		throw new Error(`Invalid --interval "${input}". Use e.g. 30s, 30m, or 2h.`);
+	}
+	const value = Number(match[1]);
+	const unitMs =
+		match[2] === 's' ? 1000 : match[2] === 'h' ? 3_600_000 : 60_000;
+	return value * unitMs;
+}
 
 export function parseArgs(argv: string[]): ParsedArgs {
 	const args: ParsedArgs = {
@@ -88,6 +103,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 				break;
 			case '--entity':
 				args.entities.push(takeValue());
+				break;
+			case '--interval':
+				args.intervalMs = parseInterval(takeValue());
 				break;
 			case '--realm':
 				args.realm = takeValue();

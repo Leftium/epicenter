@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { parseInterval } from '../src/cli.ts';
 import type { AppConfig } from '../src/config.ts';
 import { openBooksDb } from '../src/db.ts';
 import { entityDef } from '../src/entities.ts';
 import { createMemoryKeyring } from '../src/keyring.ts';
 import { createQbClient } from '../src/qb-client.ts';
-import { syncEntity } from '../src/sync.ts';
+import { runSyncLoop, syncEntity } from '../src/sync.ts';
 import {
 	createTokenManager,
 	loadToken,
@@ -240,4 +241,40 @@ test('a 401 triggers a transparent refresh, retries, and persists the new token'
 	expect(persisted?.accessToken).toBe(tokens.current().accessToken);
 
 	server.stop();
+});
+
+test('parseInterval understands s / m / h and rejects junk', () => {
+	expect(parseInterval('30s')).toBe(30_000);
+	expect(parseInterval('30m')).toBe(30 * 60_000);
+	expect(parseInterval('2h')).toBe(2 * 3_600_000);
+	expect(parseInterval('45')).toBe(45 * 60_000); // a bare number means minutes
+	expect(() => parseInterval('soon')).toThrow();
+});
+
+test('runSyncLoop: full first pass, incremental after, stops on abort', async () => {
+	const ctx = setup();
+	ctx.server.put('Invoice', makeInvoice('1'));
+
+	const controller = new AbortController();
+	let sleeps = 0;
+	const sleep = async () => {
+		ctx.advance(); // move the clock forward between passes
+		sleeps += 1;
+		if (sleeps >= 2) controller.abort(); // stop after the 2nd sleep -> 2 passes
+	};
+
+	const passes = await runSyncLoop(ctx.deps, {
+		forceFull: true,
+		entities: ['Invoice'],
+		intervalMs: 1000,
+		signal: controller.signal,
+		sleep,
+	});
+
+	expect(passes).toBe(2);
+	// Pass 1 was FULL (one query), pass 2 was INCREMENTAL (one cdc): no re-pull.
+	expect(ctx.server.hits.query).toBe(1);
+	expect(ctx.server.hits.cdc).toBe(1);
+
+	ctx.teardown();
 });

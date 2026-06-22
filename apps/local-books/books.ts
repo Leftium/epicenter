@@ -6,42 +6,12 @@
  *
  * Isomorphic: no `bun:sqlite`, no node APIs. The SQLite mirror is the daemon's
  * private data, reached only as a tool result, never synced; this contract holds
- * just the conversation transcripts.
+ * just the conversation transcripts, whose canonical shape lives in
+ * `@epicenter/chat`.
  */
 
-import { field } from '@epicenter/field';
-import {
-	attachRecords,
-	defineActions,
-	defineTable,
-	defineWorkspace,
-	generateId,
-	type Id,
-	type InferTableRow,
-} from '@epicenter/workspace';
-import type { AgentMessage } from '@epicenter/workspace/agent';
-import type { Brand } from 'wellcrafted/brand';
-
-export type ConversationId = Id & Brand<'ConversationId'>;
-export const generateConversationId = (): ConversationId =>
-	generateId<ConversationId>();
-
-export type MessageId = Id & Brand<'MessageId'>;
-export const generateMessageId = (): MessageId => generateId<MessageId>();
-
-/**
- * Conversations: each row's `messages` handle opens a synced child doc, a
- * last-write-wins store of finished {@link AgentMessage} records (ADR-0047). The
- * open client runs the loop and writes each finished message here; the live turn
- * never enters the CRDT.
- */
-const conversationsTable = defineTable({
-	id: field.string<ConversationId>(),
-	title: field.string(),
-	createdAt: field.instant(),
-	updatedAt: field.instant(),
-}).docs({ messages: (ydoc) => attachRecords<AgentMessage>(ydoc) });
-export type Conversation = InferTableRow<typeof conversationsTable>;
+import { conversationsTable } from '@epicenter/chat';
+import { defineActions, defineWorkspace } from '@epicenter/workspace';
 
 export const localBooksWorkspace = defineWorkspace({
 	id: 'epicenter-local-books',

@@ -216,7 +216,7 @@
         "local-books": "./src/bin.ts",
       },
       "dependencies": {
-        "@epicenter/field": "workspace:*",
+        "@epicenter/chat": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "ms": "catalog:",
         "oauth4webapi": "catalog:",

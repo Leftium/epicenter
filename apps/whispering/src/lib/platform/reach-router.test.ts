@@ -186,7 +186,10 @@ test('current reports a null global slot on web', () => {
 
 test('findConflict is checked against the store the key would route into', () => {
 	const focused = fakeShortcuts({ kind: 'duplicate', commandId: 'pushToTalk' });
-	const global = fakeShortcuts({ kind: 'reserved', reason: 'reserved by macOS' });
+	const global = fakeShortcuts({
+		kind: 'reserved',
+		reason: 'reserved by macOS',
+	});
 	const router = createReachRouter({
 		focused: focused.surface,
 		global: global.surface,

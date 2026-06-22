@@ -22,7 +22,9 @@ describe('Purchase extractor', () => {
 			PaymentType: 'Cash',
 			AccountRef: { value: '11', name: 'Every Bank Account' },
 			EntityRef: { value: '112', name: 'Anthropic (Expense)', type: 'Vendor' },
-			Line: [{ AccountBasedExpenseLineDetail: { AccountRef: { name: 'IT Costs' } } }],
+			Line: [
+				{ AccountBasedExpenseLineDetail: { AccountRef: { name: 'IT Costs' } } },
+			],
 		};
 		expect(extract('Purchase', purchase)).toEqual({
 			txn_date: '2026-05-21',

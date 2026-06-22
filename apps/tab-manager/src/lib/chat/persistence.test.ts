@@ -2,7 +2,7 @@
  * Device-local chat store tests (ADR-0051).
  *
  * The store is the device-local half of the converged agent loop: an
- * IndexedDB-backed `KvStoreHandle<AgentMessage>` the loop writes finished
+ * IndexedDB-backed `RecordsHandle<AgentMessage>` the loop writes finished
  * messages into. These tests pin the behavior the loop depends on: a handle
  * hydrates its conversation's messages, by-id writes round-trip, conversations
  * stay isolated by key range, and `observe` fires on both writes and hydration.

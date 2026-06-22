@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import * as Y from 'yjs';
-import { attachKvStore } from './attach-kv-store.js';
+import { attachRecords } from './attach-records.js';
 import {
 	attachChildDocWorker,
 	type ConnectedChildDoc,
@@ -17,7 +17,7 @@ import { defineTable } from './define-table.js';
 import { createWorkspace } from './workspace.js';
 
 /** A sample child-doc layout: any observable handle exercises the loop. */
-const messagesLayout = (ydoc: Y.Doc) => attachKvStore<{ id: string }>(ydoc);
+const messagesLayout = (ydoc: Y.Doc) => attachRecords<{ id: string }>(ydoc);
 
 const conversationsDefinition = defineTable({
 	id: field.string(),
@@ -123,7 +123,7 @@ describe('attachChildDocWorker', () => {
 
 		const body = bodies.get(conversations.docs.messages.guid('c1'))!;
 		// A write to the body's store fires the worker's onChange.
-		attachKvStore<{ id: string }>(body).set('m1', { id: 'm1' });
+		attachRecords<{ id: string }>(body).set('m1', { id: 'm1' });
 
 		expect(changed).toEqual(['c1']);
 

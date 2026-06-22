@@ -17,7 +17,7 @@
  */
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { JsonValue } from 'wellcrafted/json';
-import type { KvStoreHandle } from '../document/attach-kv-store.js';
+import type { RecordsHandle } from '../document/attach-records.js';
 import type { AgentEngine } from './engine.js';
 import {
 	type AgentMessage,
@@ -68,7 +68,7 @@ export type ConversationHandle = {
 
 export type ConversationOptions = {
 	/** The opened `conversations.messages` store, keyed by message id. */
-	store: KvStoreHandle<AgentMessage> & Disposable;
+	store: RecordsHandle<AgentMessage> & Disposable;
 	/** The inference backend (the metered Epicenter stream, BYOK, or local). */
 	engine: AgentEngine;
 	/** The live tool surface; omit for a capability-free agent. */

@@ -26,7 +26,7 @@
  * no conflict-resolution benefit.
  */
 
-import { generateId, type Id, type KvStoreHandle } from '@epicenter/workspace';
+import { generateId, type Id, type RecordsHandle } from '@epicenter/workspace';
 import type { AgentMessage } from '@epicenter/workspace/agent';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -153,14 +153,14 @@ function enqueueMessageWrite(
 	return messageWrites;
 }
 
-// ── The device-local message store: a KvStoreHandle over IndexedDB ──────
+// ── The device-local message store: a RecordsHandle over IndexedDB ──────
 
 /**
- * Open a device-local {@link KvStoreHandle} over one conversation's messages,
+ * Open a device-local {@link RecordsHandle} over one conversation's messages,
  * the store the client agent loop (ADR-0047) writes finished messages into.
  *
  * The handle is the structural twin of the Yjs child-doc store
- * (`attachKvStore`): synchronous reads off an in-memory cache, by-id writes, and
+ * (`attachRecords`): synchronous reads off an in-memory cache, by-id writes, and
  * an `observe` that fires on every change so the loop re-reads. It hydrates the
  * cache from IndexedDB asynchronously and fires `observe` once loaded, the same
  * way the Yjs store repopulates as a doc syncs in; the loop registers its
@@ -170,7 +170,7 @@ function enqueueMessageWrite(
  */
 export function attachConversationStore(
 	conversationId: ConversationId,
-): KvStoreHandle<AgentMessage> & Disposable {
+): RecordsHandle<AgentMessage> & Disposable {
 	const cache = new Map<string, AgentMessage>();
 	const observers = new Set<() => void>();
 	let disposed = false;

@@ -16,7 +16,7 @@
 import type { ServableModel } from '@epicenter/constants/ai-providers';
 import { field } from '@epicenter/field';
 import {
-	attachKvStore,
+	attachRecords,
 	defineKv,
 	defineTable,
 	defineWorkspace,
@@ -93,7 +93,7 @@ const conversationsTable = defineTable({
 	title: field.string(),
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
-}).docs({ messages: (ydoc) => attachKvStore<VocabMessage>(ydoc) });
+}).docs({ messages: (ydoc) => attachRecords<VocabMessage>(ydoc) });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────

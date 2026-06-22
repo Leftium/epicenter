@@ -62,7 +62,7 @@ export type ConnectedChildDoc = Drainable & {
 
 /**
  * The declared child-doc layout, narrowed to what the loop needs: shape a body
- * doc and observe its changes. `attachKvStore` satisfies this.
+ * doc and observe its changes. `attachRecords` satisfies this.
  */
 export type ObservableChildDocLayout<THandle> = (
 	ydoc: Y.Doc,

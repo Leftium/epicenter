@@ -17,7 +17,7 @@
 import { field } from '@epicenter/field';
 import { filesTable } from '@epicenter/filesystem';
 import {
-	attachKvStore,
+	attachRecords,
 	defineActions,
 	defineTable,
 	defineWorkspace,
@@ -101,7 +101,7 @@ const conversationsTable = defineTable({
 	model: field.string(),
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
-}).docs({ messages: (ydoc) => attachKvStore<AgentMessage>(ydoc) });
+}).docs({ messages: (ydoc) => attachRecords<AgentMessage>(ydoc) });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 /**

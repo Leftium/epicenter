@@ -11,7 +11,7 @@ ADR-0043 settled that a capability-free agent (Vocab) answers in the client: the
 
 ## Decision
 
-**A capability-free agent streams its live turn in client state and persists only finished messages; it does not stream into the conversation doc.** The open tab consumes the metered stream's deltas directly into component `$state` (no chat-state binding, no second wire format), and writes each message into the conversation's child doc once, whole, the moment it is finished: the user turn on send, the assistant turn on a clean finish. The child doc is a last-write-wins store keyed by message id (one JSON blob per message via `attachKvStore`), not a `Y.Array` of `Y.Map`s with per-token `Y.Text` (ADR-0036). On open, the client hydrates from the store and observes it, so a message finished on another device shows up.
+**A capability-free agent streams its live turn in client state and persists only finished messages; it does not stream into the conversation doc.** The open tab consumes the metered stream's deltas directly into component `$state` (no chat-state binding, no second wire format), and writes each message into the conversation's child doc once, whole, the moment it is finished: the user turn on send, the assistant turn on a clean finish. The child doc is a last-write-wins store keyed by message id (one JSON blob per message via `attachRecords`), not a `Y.Array` of `Y.Map`s with per-token `Y.Text` (ADR-0036). On open, the client hydrates from the store and observes it, so a message finished on another device shows up.
 
 **This scopes ADR-0036's doc-streaming to local-data and tool agents.** An agent whose worker runs on the daemon (Local Books, ADR-0042's loop) keeps streaming parts into `Y.Text`: its answer can run tools, take real time, and must survive a closed browser, so the synced doc is the right live transport. ADR-0036 holds there. It does not apply to the capability-free client answerer.
 
@@ -22,7 +22,7 @@ This un-unifies Vocab from the shared answer core (`@epicenter/workspace/ai`), w
 - **Vocab's conversation engine is `createConversation` in client `$state`**, not `bindConversation` over the shared core. Live tokens never touch the CRDT, so there is no overwrite-per-flush and no quadratic growth; finished-message writes are linear in message count.
 - **A stopped or failed turn persists nothing.** The partial answer lives only in component state and is dropped; the durable user turn is re-asked. The doc-streaming core's interrupted/stopped artifacts and the write-once `finish` marker do not exist for this agent.
 - **Cross-device live view is gone for the capability-free agent.** A second device sees a turn only once it finishes and syncs. This is the accepted cost of not streaming into the doc; re-asking is free, so live mirroring was never load-bearing.
-- **`attachKvStore` is a new workspace child-doc layout** (a per-id LWW JSON store wrapping `YKeyValueLww`), reusable by any future agent whose document is a keyed bag of finished records rather than a streamed body.
+- **`attachRecords` is a new workspace child-doc layout** (a per-id LWW JSON store wrapping `YKeyValueLww`), reusable by any future agent whose document is a keyed bag of finished records rather than a streamed body.
 - **The shared doc-streaming core is not deleted.** opensidian (a tool agent) still uses it through `attachChatConversation`, and Local Books will. The earlier "collapse the now-dead core" plan assumed Vocab was its only consumer; a monorepo trace showed it is not.
 
 ## Considered alternatives

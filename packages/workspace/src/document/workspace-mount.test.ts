@@ -15,7 +15,7 @@ import type { SessionMountContext } from '../daemon/define-mount.js';
 import type { NodeMountRuntime } from '../daemon/mount-runtime.js';
 import { defineActions, defineQuery } from '../shared/actions.js';
 import type { AgentId } from './agent-id.js';
-import { attachKvStore } from './attach-kv-store.js';
+import { attachRecords } from './attach-records.js';
 import type { ConnectedChildDoc } from './child-doc-worker.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './workspace.js';
@@ -32,7 +32,7 @@ const demoWorkspace = defineWorkspace({
 			// daemon answers as (the mount's `agentId`).
 			agent: field.string<AgentId>(),
 		}).docs({
-			messages: (ydoc: Y.Doc) => attachKvStore<{ id: string }>(ydoc),
+			messages: (ydoc: Y.Doc) => attachRecords<{ id: string }>(ydoc),
 		}),
 	},
 	kv: {},

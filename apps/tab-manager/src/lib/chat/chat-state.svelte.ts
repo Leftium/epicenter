@@ -4,7 +4,7 @@
  * Architecture: the one client agent loop (ADR-0047/0051), one
  * `createConversation` per conversation, persisted to a device-local IndexedDB
  * store (`attachConversationStore`). tab-manager runs no synced Yjs transcript:
- * the loop's store seam takes the IndexedDB-backed `KvStoreHandle`, so chat stays
+ * the loop's store seam takes the IndexedDB-backed `RecordsHandle`, so chat stays
  * device-local with no CRDT cost while sharing the single loop every other
  * surface uses (ADR-0051 retires the separate TanStack `createChat` loop).
  *

@@ -1,21 +1,29 @@
 /**
- * attachKvStore(): bind a per-key last-write-wins JSON store on a Y.Doc to a
- * typed handle.
+ * attachRecords(): make a row's child document a keyed bag of finished records.
  *
- * Reserves `ydoc.getArray(key)` (default `'entries'`) and wraps it in a
- * {@link YKeyValueLww}: each key maps to one complete JSON value, concurrent
- * writes to the same key resolve last-write-wins by timestamp, and storage
- * scales with live data rather than history (gc compacts overwrites and
- * deletes). The Y types stay inside the handle; callers see plain objects in,
- * plain objects out.
+ * This is a child-doc body layout, the third shape alongside {@link attachRichText}
+ * (a `Y.XmlFragment` body) and {@link attachPlainText} (a `Y.Text` body): where
+ * those make the body prose, this makes it a collection of whole JSON records
+ * keyed by id. All three are `(ydoc) => handle` functions handed to a table's
+ * `.docs({ field })`.
  *
- * Use it as a child-doc layout when a row's document is a keyed bag of complete
- * records rather than a streamed body. Each value is written once, whole, the
- * way a server would persist a finished record:
+ * The store underneath is a {@link YKeyValueLww}, the one keyed last-write-wins
+ * bag this package is built on. A table (`createTable`) and the KV slot
+ * (`createKv`) are the other two lenses over that same substrate; this is the
+ * lens with no column schema, no migration, and no materializer: just an open,
+ * homogeneous keyset of one type `T`. Reserves `ydoc.getArray(key)` (default
+ * `'entries'`); each key maps to one complete value, concurrent writes to the
+ * same key resolve last-write-wins by timestamp, and storage scales with live
+ * data rather than history (gc compacts overwrites and deletes). The Y types
+ * stay inside the handle; callers see plain objects in, plain objects out.
+ *
+ * Use it when a row's document is a keyed bag of complete records rather than a
+ * streamed body. Each value is written once, whole, the way a server would
+ * persist a finished record:
  *
  * ```ts
  * defineTable({ id: field.string() })
- *   .docs({ items: (ydoc) => attachKvStore<Item>(ydoc) });
+ *   .docs({ items: (ydoc) => attachRecords<Item>(ydoc) });
  * // then tables.X.docs.items.open(rowId) returns this handle, keyed by item id.
  * ```
  *
@@ -29,8 +37,8 @@ import {
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/y-keyvalue-lww.js';
 
-/** The typed surface {@link attachKvStore} returns over a child doc. */
-export type KvStoreHandle<T> = {
+/** The typed surface {@link attachRecords} returns over a child doc. */
+export type RecordsHandle<T> = {
 	/** The value stored under `key`, or `undefined` when it is absent. */
 	get(key: string): T | undefined;
 	/** Write the complete value under `key`, overwriting any previous one. */
@@ -56,10 +64,10 @@ export type KvStoreHandle<T> = {
  * @param ydoc - Y.Doc to attach to
  * @param key  - name of the `Y.Array` slot that backs the store
  */
-export function attachKvStore<T>(
+export function attachRecords<T>(
 	ydoc: Y.Doc,
 	key = 'entries',
-): KvStoreHandle<T> {
+): RecordsHandle<T> {
 	const store = new YKeyValueLww<T>(ydoc.getArray<YKeyValueLwwEntry<T>>(key));
 	ydoc.once('destroy', () => store[Symbol.dispose]());
 	return {

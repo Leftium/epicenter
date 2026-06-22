@@ -14,14 +14,14 @@
 
 import { bindAgentConversation } from '@epicenter/svelte';
 import { generateMessageId, type VocabMessage } from '@epicenter/vocab';
-import type { KvStoreHandle } from '@epicenter/workspace';
+import type { RecordsHandle } from '@epicenter/workspace';
 import {
 	type AgentEngine,
 	createConversation as createAgentConversation,
 } from '@epicenter/workspace/agent';
 
 /** The opened `conversations.messages` child-doc handle (keyed by message id). */
-type MessageStore = KvStoreHandle<VocabMessage> & Disposable;
+type MessageStore = RecordsHandle<VocabMessage> & Disposable;
 
 /**
  * Bind one conversation's message store to the inference engine.

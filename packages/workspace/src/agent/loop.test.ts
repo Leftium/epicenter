@@ -55,7 +55,6 @@ describe('createConversation', () => {
 			streamOf([
 				{ type: 'text-delta', delta: 'Hello' },
 				{ type: 'text-delta', delta: ' world' },
-				{ type: 'run-finished', finishReason: 'stop' },
 			]);
 
 		const handle = createConversation({
@@ -82,16 +81,15 @@ describe('createConversation', () => {
 			stepCount += 1;
 			if (stepCount === 1) {
 				return streamOf([
-					{ type: 'tool-call-start', toolCallId: 't1', toolName: 'get_time' },
-					{ type: 'tool-call-args', toolCallId: 't1', delta: '{}' },
-					{ type: 'tool-call-end', toolCallId: 't1' },
-					{ type: 'run-finished', finishReason: 'tool_calls' },
+					{
+						type: 'tool-call',
+						toolCallId: 't1',
+						toolName: 'get_time',
+						input: {},
+					},
 				]);
 			}
-			return streamOf([
-				{ type: 'text-delta', delta: 'It is noon.' },
-				{ type: 'run-finished', finishReason: 'stop' },
-			]);
+			return streamOf([{ type: 'text-delta', delta: 'It is noon.' }]);
 		};
 		const resolved: AgentToolCall[] = [];
 		const tools: ToolCatalog = {
@@ -137,15 +135,15 @@ describe('createConversation', () => {
 			stepCount += 1;
 			if (stepCount === 1) {
 				return streamOf([
-					{ type: 'tool-call-start', toolCallId: 'd1', toolName: 'delete_all' },
-					{ type: 'tool-call-end', toolCallId: 'd1', input: {} },
-					{ type: 'run-finished', finishReason: 'tool_calls' },
+					{
+						type: 'tool-call',
+						toolCallId: 'd1',
+						toolName: 'delete_all',
+						input: {},
+					},
 				]);
 			}
-			return streamOf([
-				{ type: 'text-delta', delta: 'Okay, I will not.' },
-				{ type: 'run-finished', finishReason: 'stop' },
-			]);
+			return streamOf([{ type: 'text-delta', delta: 'Okay, I will not.' }]);
 		};
 		let resolveCalled = false;
 		const tools: ToolCatalog = {
@@ -180,10 +178,7 @@ describe('createConversation', () => {
 	test('an aborted turn drops its assistant message, keeping only the user turn', async () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
-			streamOf([
-				{ type: 'text-delta', delta: 'partial' },
-				{ type: 'run-finished', finishReason: 'stop' },
-			]);
+			streamOf([{ type: 'text-delta', delta: 'partial' }]);
 
 		const handle = createConversation({
 			store,
@@ -205,10 +200,7 @@ describe('createConversation', () => {
 	test('every assistant message that renders live also persists', async () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
-			streamOf([
-				{ type: 'text-delta', delta: 'streamed' },
-				{ type: 'run-finished', finishReason: 'stop' },
-			]);
+			streamOf([{ type: 'text-delta', delta: 'streamed' }]);
 
 		const handle = createConversation({
 			store,

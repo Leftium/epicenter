@@ -15,23 +15,23 @@ import type { ModelMessage } from './message.js';
 import type { AgentToolDefinition } from './tools.js';
 
 /**
- * One streamed event from an engine. The minimal set the loop reduces: prose
- * deltas, the three stages of a tool call, a turn-ending failure, and a finish
- * marker. The loop ends a turn on "no tool calls collected", never on
- * {@link finishReason}, so a `run-finished` chunk is informational.
+ * One streamed event from an engine: a prose delta, one completed tool call the
+ * model asked for, or a turn-ending failure. The engine owns provider quirks: it
+ * accumulates a provider's streamed (and possibly fragmented or index-less)
+ * tool-call deltas and emits one finished `tool-call` with parsed input, so the
+ * loop never reduces partial arguments itself. A turn ends when the stream
+ * completes with no tool calls collected; the loop never reads a provider finish
+ * reason (some providers send `finish_reason: "stop"` mid-tool-call).
  */
 export type EngineChunk =
 	| { type: 'text-delta'; delta: string }
-	| { type: 'tool-call-start'; toolCallId: string; toolName: string }
-	| { type: 'tool-call-args'; toolCallId: string; delta: string }
 	| {
-			type: 'tool-call-end';
+			type: 'tool-call';
 			toolCallId: string;
-			toolName?: string;
-			input?: JsonValue;
+			toolName: string;
+			input: JsonValue;
 	  }
-	| { type: 'run-error'; message: string; code?: string }
-	| { type: 'run-finished'; finishReason?: string };
+	| { type: 'run-error'; message: string; code?: string };
 
 /** What the loop asks the model on one step: the prompt plus the live tools. */
 export type AgentEngineRequest = {

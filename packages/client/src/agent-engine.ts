@@ -51,21 +51,19 @@ export type ModelMessage = {
 
 /**
  * One streamed event from an engine: the structural twin of the loop's
- * {@link EngineChunk}. The minimal set the loop reduces: prose deltas, the three
- * stages of a tool call, a turn-ending failure, and a finish marker.
+ * {@link EngineChunk}. A prose delta, one completed tool call (the engine
+ * accumulates a provider's streamed deltas and emits one finished call with
+ * parsed input), or a turn-ending failure.
  */
 export type EngineChunk =
 	| { type: 'text-delta'; delta: string }
-	| { type: 'tool-call-start'; toolCallId: string; toolName: string }
-	| { type: 'tool-call-args'; toolCallId: string; delta: string }
 	| {
-			type: 'tool-call-end';
+			type: 'tool-call';
 			toolCallId: string;
-			toolName?: string;
-			input?: JsonValue;
+			toolName: string;
+			input: JsonValue;
 	  }
-	| { type: 'run-error'; message: string; code?: string }
-	| { type: 'run-finished'; finishReason?: string };
+	| { type: 'run-error'; message: string; code?: string };
 
 /**
  * One tool offered to the model, the subset the wire needs. Structurally the

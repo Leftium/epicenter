@@ -73,7 +73,6 @@ type OpenAiStreamChunk = {
 			content?: string | null;
 			tool_calls?: OpenAiToolCallDelta[];
 		};
-		finish_reason?: string | null;
 	}>;
 	error?: { message?: string; code?: string | null; type?: string };
 };
@@ -216,8 +215,8 @@ async function readErrorChunk(response: Response): Promise<EngineChunk> {
 /**
  * Parse an OpenAI Chat Completions SSE stream into the loop's
  * {@link EngineChunk} stream. Text deltas pass through live; tool calls are
- * accumulated and emitted as one `tool-call-end` each once the stream ends, so
- * the loop never reduces fragmented arguments itself.
+ * accumulated and emitted as one `tool-call` each once the stream ends, so the
+ * loop never reduces fragmented arguments itself.
  */
 async function* parseOpenAiStream(
 	response: Response,
@@ -230,7 +229,6 @@ async function* parseOpenAiStream(
 
 	const byIndex = new Map<number, PendingToolCall>();
 	const indexless: PendingToolCall[] = [];
-	let finishReason: string | undefined;
 
 	try {
 		while (!signal.aborted) {
@@ -267,9 +265,6 @@ async function* parseOpenAiStream(
 
 				const choice = parsed.choices?.[0];
 				if (!choice) continue;
-				if (typeof choice.finish_reason === 'string') {
-					finishReason = choice.finish_reason;
-				}
 				const delta = choice.delta;
 				if (!delta) continue;
 
@@ -292,17 +287,12 @@ async function* parseOpenAiStream(
 		.map((entry) => entry[1]);
 	for (const call of [...ordered, ...indexless]) {
 		yield {
-			type: 'tool-call-end',
+			type: 'tool-call',
 			toolCallId: call.id,
 			toolName: call.name,
 			input: parseArguments(call.args),
 		};
 	}
-
-	yield {
-		type: 'run-finished',
-		...(finishReason !== undefined && { finishReason }),
-	};
 }
 
 /**

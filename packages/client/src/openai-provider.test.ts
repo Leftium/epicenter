@@ -53,10 +53,10 @@ async function drain(
 	return out;
 }
 
-function toolEnds(chunks: EngineChunk[]) {
+function toolCalls(chunks: EngineChunk[]) {
 	return chunks.filter(
-		(c): c is Extract<EngineChunk, { type: 'tool-call-end' }> =>
-			c.type === 'tool-call-end',
+		(c): c is Extract<EngineChunk, { type: 'tool-call' }> =>
+			c.type === 'tool-call',
 	);
 }
 
@@ -252,7 +252,7 @@ describe('createOpenAiAgentEngine', () => {
 			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
 		});
 
-		const ends = toolEnds(
+		const ends = toolCalls(
 			await drain(
 				engine(
 					{ messages: [{ role: 'user', content: 'go' }], tools: [] },
@@ -322,7 +322,7 @@ describe('createOpenAiAgentEngine', () => {
 			data: () => ({ model: 'gemini-3.5-flash', systemPrompts: [] }),
 		});
 
-		const ends = toolEnds(
+		const ends = toolCalls(
 			await drain(
 				engine(
 					{ messages: [{ role: 'user', content: 'weather both' }], tools: [] },

@@ -151,7 +151,6 @@ export function createConversation(
 		signal: AbortSignal,
 	): Promise<{ calls: AgentToolCall[]; failure?: ConversationError }> {
 		const prompt = toModelMessages([...persisted, ...(turn ?? [])]);
-		const pending = new Map<string, { toolName: string; args: string }>();
 		const calls: AgentToolCall[] = [];
 		let failure: ConversationError | undefined;
 
@@ -166,24 +165,11 @@ export function createConversation(
 						appendText(assistant, chunk.delta);
 						notify();
 						break;
-					case 'tool-call-start':
-						pending.set(chunk.toolCallId, {
-							toolName: chunk.toolName,
-							args: '',
-						});
-						break;
-					case 'tool-call-args': {
-						const open = pending.get(chunk.toolCallId);
-						if (open) open.args += chunk.delta;
-						break;
-					}
-					case 'tool-call-end': {
-						const open = pending.get(chunk.toolCallId);
-						pending.delete(chunk.toolCallId);
+					case 'tool-call': {
 						const call: AgentToolCall = {
 							toolCallId: chunk.toolCallId,
-							toolName: chunk.toolName ?? open?.toolName ?? '',
-							input: parseToolInput(chunk.input, open?.args),
+							toolName: chunk.toolName,
+							input: chunk.input,
 						};
 						calls.push(call);
 						assistant.parts.push({ type: 'tool-call', ...call });
@@ -342,15 +328,4 @@ function appendToolResult(
 		output,
 		isError,
 	});
-}
-
-/** Prefer the engine's parsed input; fall back to parsing accumulated args. */
-function parseToolInput(input: unknown, args: string | undefined): JsonValue {
-	if (input !== undefined) return input as JsonValue;
-	if (!args) return {};
-	try {
-		return JSON.parse(args) as JsonValue;
-	} catch {
-		return {};
-	}
 }

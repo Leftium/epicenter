@@ -55,6 +55,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { searchParams } from '$lib/search-params.svelte';
+import { inferenceBackend } from '$lib/state/inference-backend.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
 export function createAiChatState({
@@ -164,14 +165,23 @@ export function createAiChatState({
 				store:
 					workspace.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
-					data: () => ({
-						...resolveInferenceBackend(
-							{ mode: 'hosted' },
-							{ fetch: auth.fetch, baseURL: inferenceBaseUrl },
-						),
-						model: metadata?.model ?? DEFAULT_MODEL,
-						systemPrompts: buildSystemPrompts(),
-					}),
+					data: () => {
+						// Read the device backend per turn so a switch lands next turn.
+						// The model rides with the backend: custom serves its own model;
+						// hosted uses this conversation's catalog pick.
+						const config = inferenceBackend.current;
+						return {
+							...resolveInferenceBackend(config, {
+								fetch: auth.fetch,
+								baseURL: inferenceBaseUrl,
+							}),
+							model:
+								config.mode === 'custom'
+									? config.model
+									: (metadata?.model ?? DEFAULT_MODEL),
+							systemPrompts: buildSystemPrompts(),
+						};
+					},
 				}),
 				tools: toolCatalog,
 				approval: {

@@ -7,7 +7,6 @@
 	import { report } from '$lib/report';
 	import { shortcuts } from '$lib/platform/shortcuts';
 	import KeyboardShortcutRecorder from './keyboard-shortcut-recorder/KeyboardShortcutRecorder.svelte';
-	import ShortcutFormatHelp from './keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from './keyboard-shortcut-recorder/ShortcutTable.svelte';
 
 	// One flat list, no platform branch (ADR-0052): every command gets one
@@ -28,18 +27,13 @@
 <section class="mx-auto max-w-4xl py-6">
 	<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 		<SectionHeader.Root>
-			<div class="flex items-center gap-2">
-				<SectionHeader.Title level={1} class="text-3xl">
-					Keyboard Shortcuts
-				</SectionHeader.Title>
-				<ShortcutFormatHelp type={tauri ? 'global' : 'local'} />
-			</div>
+			<SectionHeader.Title level={1} class="text-3xl">
+				Keyboard Shortcuts
+			</SectionHeader.Title>
 			<SectionHeader.Description class="mt-2">
-				Pick a key for any command and Whispering shows how far it reaches. A
-				bare key works while Whispering is focused, a chord works everywhere, and
-				a hold works everywhere once you grant Accessibility. Reach is computed
-				from the key you press, never a setting you toggle. Focused shortcuts sync
-				across your devices; global ones stay on this computer.
+				Pick a key for any command; Whispering shows how far it reaches as you
+				press it. Shortcuts scoped to this app sync across your devices, and ones
+				that work everywhere stay on this computer.
 			</SectionHeader.Description>
 		</SectionHeader.Root>
 		<Button variant="outline" size="sm" onclick={reset} class="shrink-0">

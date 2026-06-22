@@ -18,7 +18,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import { InstantString } from '@epicenter/workspace';
-	import type { ConversationId } from '@epicenter/vocab';
+	import type { ConversationId } from '@epicenter/chat';
 	import { onDestroy } from 'svelte';
 	import { createConversation } from '$lib/conversation.svelte';
 	import { requireVocab } from '$lib/session';

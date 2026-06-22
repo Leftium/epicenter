@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import type { Conversation, ConversationId } from '@epicenter/vocab';
+	import type { Conversation, ConversationId } from '@epicenter/chat';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import MessageSquareTextIcon from '@lucide/svelte/icons/message-square-text';
 	import TrashIcon from '@lucide/svelte/icons/trash';

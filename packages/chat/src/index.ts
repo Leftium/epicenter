@@ -32,7 +32,7 @@ export type ConversationId = Id & Brand<'ConversationId'>;
 
 /** Mint a unique {@link ConversationId}. */
 export const generateConversationId = (): ConversationId =>
-	generateId() as ConversationId;
+	generateId<ConversationId>();
 
 /**
  * Cast a stored key to a {@link ConversationId}. The constrained `string`

@@ -37,18 +37,8 @@ import type { Brand } from 'wellcrafted/brand';
 export type ChatMessageId = Id & Brand<'ChatMessageId'>;
 
 /**
- * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ChatMessageId` should appear.
- */
-export const asChatMessageId = (value: string): ChatMessageId =>
-	value as ChatMessageId;
-
-/**
- * Generate a unique {@link ChatMessageId} for a new chat message.
- *
- * This mirrors {@link generateConversationId} and centralizes the branded ID
- * cast in one place.
+ * Generate a unique {@link ChatMessageId} for a new chat message, centralizing
+ * the branded id cast in one place.
  */
 export const generateChatMessageId = (): ChatMessageId =>
 	generateId<ChatMessageId>();

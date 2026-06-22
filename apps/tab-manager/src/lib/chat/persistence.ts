@@ -149,7 +149,6 @@ export function attachConversationStore(
 ): KvStoreHandle<AgentMessage> & Disposable {
 	const cache = new Map<string, AgentMessage>();
 	const observers = new Set<() => void>();
-	const origin = Symbol('attachConversationStore');
 	let disposed = false;
 	let writeChain: Promise<unknown> = Promise.resolve();
 
@@ -212,11 +211,8 @@ export function attachConversationStore(
 			for (const [key, val] of cache) yield { key, val };
 		},
 		observe: (handler) => {
-			// The loop's handler ignores its arguments and re-reads `entries()`;
-			// adapt it to the change-free notify this store emits.
-			const wrapped = () => handler(new Map(), origin);
-			observers.add(wrapped);
-			return () => observers.delete(wrapped);
+			observers.add(handler);
+			return () => observers.delete(handler);
 		},
 		[Symbol.dispose]() {
 			disposed = true;

@@ -4,14 +4,18 @@ import type { KeyBinding } from '$lib/tauri/commands';
 // free of the catalog's operations/`#platform` graph and unit-testable in
 // isolation. `key-binding` itself has only type imports, so this is its lone dep.
 import {
+	bindingsEqual,
 	type Reach,
 	type ReachWithGrant,
 	realizedReach,
 } from '../utils/key-binding';
 import type { Shortcuts } from './types';
 
-/** The reach ceiling per command, the only slice of the catalog the router reads. */
-export type CommandReach = { id: Command['id']; reach: Reach };
+/**
+ * The catalog slice the router reads: a command's reach ceiling, plus its title
+ * so a cross-store conflict can name the command it would collide with.
+ */
+export type CommandReach = { id: Command['id']; reach: Reach; title: string };
 
 /**
  * Both stored slots for one command. A command can hold a focused binding and a
@@ -51,10 +55,12 @@ export type RoutedShortcuts = {
 	/** Clear the named slot for a command (a no-op on the global slot on web). */
 	clear(commandId: Command['id'], reach: Reach): Promise<void>;
 	/**
-	 * Why `binding` cannot be assigned to this command, or `null` when allowed,
-	 * checked against the store the key would route into so the per-tier policy
-	 * (focused refuses duplicates; global refuses reserved gestures and overlaps)
-	 * matches where the binding will actually live.
+	 * Why `binding` cannot be assigned to this command, or `null` when allowed.
+	 * First the per-tier policy of the store the key routes into (focused refuses
+	 * duplicates; global refuses reserved gestures and overlaps); then, on desktop,
+	 * a duplicate in the OTHER store, because the focused window runs both backends
+	 * at once and the same gesture in both stores would double-fire on one keypress
+	 * (ADR-0052).
 	 */
 	findConflict(commandId: Command['id'], binding: KeyBinding): string | null;
 	/**
@@ -135,7 +141,29 @@ export function createReachRouter({
 			return surface ? surface.clear(commandId) : Promise.resolve();
 		},
 		findConflict(commandId, binding) {
-			return surfaceFor(commandId, binding).findConflict(commandId, binding);
+			const target = surfaceFor(commandId, binding);
+			const within = target.findConflict(commandId, binding);
+			if (within) return within;
+			// On desktop the focused window runs BOTH backends at once, so a binding
+			// must also not duplicate one already live in the OTHER store, or the two
+			// fire on the same keypress: the cross-store double-fire the per-store
+			// policies cannot see on their own. Web has no global backend, so `other`
+			// is null there and this is skipped.
+			const other = target === focused ? global : focused;
+			if (!other) return null;
+			for (const command of commands) {
+				if (command.id === commandId) continue;
+				const existing = other.current(command.id);
+				// Test exact equality, not overlap: the in-app matcher fires on an
+				// exact set match and tolerates an overlapping prefix (the focused
+				// store's own policy likewise refuses only exact duplicates), so the
+				// unavoidable double-fire is the identical gesture living in both
+				// stores. Matching the focused tier's test keeps the two consistent.
+				if (existing && bindingsEqual(existing, binding)) {
+					return `Those keys are already used by "${command.title}", which also fires in this window. Pick a different combination.`;
+				}
+			}
+			return null;
 		},
 		reachBadge(commandId, binding) {
 			return badge(commandId, binding);

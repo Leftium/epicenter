@@ -138,6 +138,7 @@ export function createOAuthAppAuth({
 	now = Date.now,
 	log = createLogger('auth/oauth-app'),
 }: CreateOAuthAppAuthConfig): SyncAuthClient {
+	const epicenterOrigin = new URL(baseURL).origin;
 	const authSession = createAuthSessionRuntime({
 		initialPersistedAuth: persistedAuthStorage.initial,
 		persistedAuthStorage,
@@ -343,26 +344,30 @@ export function createOAuthAppAuth({
 	}
 
 	/**
+	 * Normalize any auth-fetch input to its absolute target URL. The single place
+	 * the four input shapes (Request, URL, relative string, absolute string) are
+	 * resolved: a relative `/path` resolves against `baseURL`, so it always lands
+	 * on the Epicenter origin. Returns null for an unparseable target so callers
+	 * fail closed.
+	 */
+	function resolveTargetUrl(input: AuthFetchInput): URL | null {
+		try {
+			if (input instanceof Request) return new URL(input.url);
+			if (input instanceof URL) return input;
+			return new URL(input, baseURL);
+		} catch {
+			return null;
+		}
+	}
+
+	/**
 	 * The Epicenter bearer is audience-scoped (ADR-0052): it is attached only to
 	 * the origin this client signed into. A request to any other origin is sent
 	 * with no Epicenter credential, so handing this fetch to a custom inference
-	 * backend or any third party can never leak the token. A relative `/` path
-	 * resolves against `baseURL`, so it is always the Epicenter origin.
+	 * backend or any third party can never leak the token.
 	 */
 	function targetsEpicenter(input: AuthFetchInput): boolean {
-		try {
-			const target =
-				input instanceof Request
-					? input.url
-					: input instanceof URL
-						? input.href
-						: input.startsWith('/')
-							? new URL(input, baseURL).href
-							: input;
-			return new URL(target).origin === new URL(baseURL).origin;
-		} catch {
-			return false; // Unparseable target: fail closed, attach nothing.
-		}
+		return resolveTargetUrl(input)?.origin === epicenterOrigin;
 	}
 
 	async function fetchWithAuth(
@@ -370,21 +375,22 @@ export function createOAuthAppAuth({
 		init: RequestInit | undefined,
 		forceRefresh: boolean,
 	) {
+		const target = resolveTargetUrl(input);
 		const headers = headersFromRequest(input, init);
-		const accessToken = targetsEpicenter(input)
-			? await bearerForNetwork(forceRefresh)
-			: null;
+		const accessToken =
+			target?.origin === epicenterOrigin
+				? await bearerForNetwork(forceRefresh)
+				: null;
 		if (accessToken) {
 			headers.set('Authorization', `Bearer ${accessToken}`);
 		} else {
 			headers.delete('Authorization');
 		}
-		let normalizedInput: AuthFetchInput = input;
-		if (input instanceof Request) {
-			normalizedInput = input.clone() as Request;
-		} else if (typeof input === 'string' && input.startsWith('/')) {
-			normalizedInput = new URL(input, baseURL).toString();
-		}
+		// A Request carries its own method and body, so pass it through (cloned).
+		// Anything else goes as its resolved absolute URL, so a relative `/path`
+		// lands on baseURL; an unparseable input falls through to surface its error.
+		const normalizedInput: AuthFetchInput =
+			input instanceof Request ? input.clone() : (target?.href ?? input);
 		return fetchImpl(normalizedInput, {
 			...init,
 			headers,

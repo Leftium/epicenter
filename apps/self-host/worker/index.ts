@@ -21,6 +21,7 @@ import {
 	createServerApp,
 	mountAiApp,
 	mountAssetsApp,
+	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
 	Room,
@@ -66,6 +67,7 @@ mountSessionApp(app, { ownership });
 mountRoomsApp(app, { ownership });
 mountAssetsApp(app, { ownership });
 mountAiApp(app, { auth: requireBearerUser, ownership });
+mountInferenceApp(app, { auth: requireBearerUser, ownership });
 
 export default app;
 export { Room };

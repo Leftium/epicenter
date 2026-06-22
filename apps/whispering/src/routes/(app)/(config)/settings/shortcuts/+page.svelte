@@ -3,7 +3,6 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import { tauri } from '#platform/tauri';
 	import { report } from '$lib/report';
 	import { shortcuts } from '$lib/platform/shortcuts';
 	import KeyboardShortcutRecorder from './keyboard-shortcut-recorder/KeyboardShortcutRecorder.svelte';
@@ -46,7 +45,7 @@
 
 	<ShortcutTable>
 		{#snippet row(command)}
-			<KeyboardShortcutRecorder {command} {shortcuts} {tauri} />
+			<KeyboardShortcutRecorder {command} />
 		{/snippet}
 	</ShortcutTable>
 </section>

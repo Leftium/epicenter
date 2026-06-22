@@ -1,5 +1,5 @@
-import { goto } from '$app/navigation';
 import { platformCommands } from '#platform/commands';
+import { goto } from '$app/navigation';
 import {
 	cancelRecording,
 	startManualRecording,

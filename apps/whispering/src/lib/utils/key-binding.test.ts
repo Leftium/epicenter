@@ -232,9 +232,9 @@ test('domCodeToKey is the inverse of acceleratorKey for every chord key', () => 
 });
 
 test('keyCapability: a chord reaches global with no Accessibility grant', () => {
-	expect(keyCapability({ modifiers: ['meta', 'shift'], keys: ['space'] })).toEqual(
-		{ reach: 'global', needsAccessibility: false },
-	);
+	expect(
+		keyCapability({ modifiers: ['meta', 'shift'], keys: ['space'] }),
+	).toEqual({ reach: 'global', needsAccessibility: false });
 });
 
 test('keyCapability: a bare key caps at focused', () => {
@@ -289,7 +289,11 @@ test('realizedReach: a focused command on a chord on desktop stays focused', () 
 	// The command's nature is the floor: a capable chord cannot escape it, and a
 	// focused result needs no Accessibility grant.
 	expect(
-		realizedReach('focused', { modifiers: ['meta'], keys: ['comma'] }, 'global'),
+		realizedReach(
+			'focused',
+			{ modifiers: ['meta'], keys: ['comma'] },
+			'global',
+		),
 	).toEqual({ reach: 'focused', needsAccessibility: false });
 });
 

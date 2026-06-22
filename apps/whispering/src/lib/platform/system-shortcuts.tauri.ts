@@ -1,6 +1,5 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
-import { os } from '#platform/os';
 import { type Command, commands } from '$lib/commands';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
@@ -11,7 +10,6 @@ import { type ChordRegistration, tauriOnly } from '$lib/tauri.tauri';
 import {
 	bindingsOverlap,
 	isEmptyBinding,
-	keyBindingToLabel,
 	resolveBinding,
 } from '$lib/utils/key-binding';
 import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
@@ -49,12 +47,12 @@ export const systemShortcuts: Shortcuts | null = createShortcuts({
 	// unreachable. Refuse reserved gestures and overlaps, naming the collision.
 	findConflict: (id, binding) => {
 		const reserved = validateGlobalBinding(binding);
-		if (reserved) return reserved;
+		if (reserved) return { kind: 'reserved', reason: reserved };
 		for (const command of commands) {
 			if (command.id === id) continue;
 			const other = readBinding(command.id);
 			if (other && !isEmptyBinding(other) && bindingsOverlap(other, binding)) {
-				return `Those keys are already part of the "${command.title}" gesture (${keyBindingToLabel(other, os.isApple)}). Each global gesture needs its own keys, so a key used by one gesture cannot be part of another.`;
+				return { kind: 'overlap', commandId: command.id, binding: other };
 			}
 		}
 		return null;

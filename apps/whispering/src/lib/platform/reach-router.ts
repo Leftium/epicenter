@@ -9,13 +9,10 @@ import {
 	type ReachWithGrant,
 	realizedReach,
 } from '../utils/key-binding';
-import type { Shortcuts } from './types';
+import type { ShortcutConflict, Shortcuts } from './types';
 
-/**
- * The catalog slice the router reads: a command's reach ceiling, plus its title
- * so a cross-store conflict can name the command it would collide with.
- */
-export type CommandReach = { id: Command['id']; reach: Reach; title: string };
+/** The reach ceiling per command, the only slice of the catalog the router reads. */
+export type CommandReach = { id: Command['id']; reach: Reach };
 
 /**
  * Both stored slots for one command. A command can hold a focused binding and a
@@ -62,7 +59,10 @@ export type RoutedShortcuts = {
 	 * at once and the same gesture in both stores would double-fire on one keypress
 	 * (ADR-0052).
 	 */
-	findConflict(commandId: Command['id'], binding: KeyBinding): string | null;
+	findConflict(
+		commandId: Command['id'],
+		binding: KeyBinding,
+	): ShortcutConflict | null;
 	/**
 	 * The reach a candidate binding would achieve for a command on this platform,
 	 * with whether it needs the macOS Accessibility grant. Drives the read-only
@@ -160,7 +160,7 @@ export function createReachRouter({
 				// unavoidable double-fire is the identical gesture living in both
 				// stores. Matching the focused tier's test keeps the two consistent.
 				if (existing && bindingsEqual(existing, binding)) {
-					return `Those keys are already used by "${command.title}", which also fires in this window. Pick a different combination.`;
+					return { kind: 'crossStore', commandId: command.id };
 				}
 			}
 			return null;

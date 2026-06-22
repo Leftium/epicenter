@@ -151,7 +151,10 @@ describe('inference gateway', () => {
 		);
 		const res = await post(
 			createTestApp(),
-			{ model: 'gemini-3.5-flash', messages: [{ role: 'user', content: 'go' }] },
+			{
+				model: 'gemini-3.5-flash',
+				messages: [{ role: 'user', content: 'go' }],
+			},
 			{ GEMINI_API_KEY: 'g-house' },
 		);
 		expect(res.status).toBe(200);

@@ -52,7 +52,10 @@ test('custom mode attaches the user key and never runs the hosted fetch', async 
 	};
 	const realFetch = globalThis.fetch;
 	const calls: Array<{ url: string; authorization: string | null }> = [];
-	globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+	globalThis.fetch = (async (
+		input: string | URL | Request,
+		init?: RequestInit,
+	) => {
 		calls.push({
 			url: String(input),
 			authorization: new Headers(init?.headers).get('authorization'),
@@ -87,14 +90,25 @@ test('custom mode attaches the user key and never runs the hosted fetch', async 
 test('custom mode without a key sends no Authorization header', async () => {
 	const realFetch = globalThis.fetch;
 	const seen: Array<string | null> = [];
-	globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+	globalThis.fetch = (async (
+		_input: string | URL | Request,
+		init?: RequestInit,
+	) => {
 		seen.push(new Headers(init?.headers).get('authorization'));
 		return new Response();
 	}) as typeof globalThis.fetch;
 	try {
 		const resolved = resolveInferenceBackend(
-			{ mode: 'custom', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:3b' },
-			{ fetch: async () => new Response(), baseURL: hostedBase, model: 'gateway-model' },
+			{
+				mode: 'custom',
+				baseUrl: 'http://localhost:11434/v1',
+				model: 'qwen2.5:3b',
+			},
+			{
+				fetch: async () => new Response(),
+				baseURL: hostedBase,
+				model: 'gateway-model',
+			},
 		);
 		await resolved.fetch('http://localhost:11434/v1/chat/completions');
 		expect(seen).toEqual([null]);

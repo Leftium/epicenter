@@ -19,7 +19,6 @@
 import {
 	authApp,
 	createServerApp,
-	mountAiApp,
 	mountAssetsApp,
 	mountInferenceApp,
 	mountRoomsApp,
@@ -66,7 +65,6 @@ app.route('/', authApp);
 mountSessionApp(app, { ownership });
 mountRoomsApp(app, { ownership });
 mountAssetsApp(app, { ownership });
-mountAiApp(app, { auth: requireBearerUser, ownership });
 mountInferenceApp(app, { auth: requireBearerUser, ownership });
 
 export default app;

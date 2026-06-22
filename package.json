@@ -79,8 +79,6 @@
 			"@better-auth/drizzle-adapter": "^1.6.18",
 			"jsrepo": "^3.6.2",
 			"@tailwindcss/vite": "^4.1.11",
-			"@tanstack/ai": "^0.28.0",
-			"@tanstack/ai-anthropic": "^0.15.1",
 			"@tanstack/ai-openai": "^0.14.1",
 			"@tanstack/ai-gemini": "^0.15.1",
 			"@hono/standard-validator": "^0.2.2",

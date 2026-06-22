@@ -5,10 +5,10 @@
  * shapes), redefined here so an engine built in this package drops into the
  * workspace loop without the client depending on the workspace core.
  *
- * Both the legacy Epicenter engine (`epicenter-provider.ts`) and the
- * OpenAI-compatible engine (`openai-provider.ts`) build an {@link AgentEngine}
- * that emits {@link EngineChunk}s; the loop only ever sees this vocabulary, so
- * swapping the inference backend is the engine's concern, never the loop's.
+ * The OpenAI-compatible engine (`openai-provider.ts`) builds an
+ * {@link AgentEngine} that emits {@link EngineChunk}s; the loop only ever sees
+ * this vocabulary, so swapping the inference backend is the engine's concern,
+ * never the loop's.
  */
 import type { JsonValue } from 'wellcrafted/json';
 

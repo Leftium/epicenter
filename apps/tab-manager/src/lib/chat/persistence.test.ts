@@ -129,6 +129,18 @@ describe('attachConversationStore', () => {
 		await settle();
 		expect([...afterClear.entries()]).toHaveLength(0);
 	});
+
+	test('a wipe issued before a write settles still removes that write', async () => {
+		const id = freshConversationId();
+		const writer = open(id);
+		writer.set('m1', userMessage('m1', 'one', 1));
+		// No settle: the put is still queued. The shared write queue must commit
+		// the wipe after the put, never before it, or the row would resurrect.
+		await clearConversation(id);
+		const reader = open(id);
+		await settle();
+		expect([...reader.entries()]).toHaveLength(0);
+	});
 });
 
 describe('conversation enumeration', () => {

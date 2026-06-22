@@ -129,6 +129,30 @@ function store(
 	return openDb().then((db) => db.transaction(name, mode).objectStore(name));
 }
 
+// Every write to the `messages` store funnels through one queue, so writes commit
+// in the order they were issued across all conversations: a per-message `set` or
+// `delete` and a whole-conversation wipe (`clearConversation`) can never reorder
+// into a different commit sequence. Reads are unqueued; the cache's
+// hydrate-doesn't-clobber rule (below) covers read/write interleaving.
+let messageWrites: Promise<unknown> = Promise.resolve();
+
+/**
+ * Queue a write against the `messages` store. The returned promise resolves once
+ * this write has committed (after every write queued before it) and never
+ * rejects: a failure is logged so the queue keeps draining.
+ */
+function enqueueMessageWrite(
+	write: (messages: IDBObjectStore) => IDBRequest,
+): Promise<unknown> {
+	messageWrites = messageWrites
+		.then(() => store(MESSAGES_STORE, 'readwrite'))
+		.then((messages) => requestToPromise(write(messages)))
+		.catch((error) => {
+			console.error('[ai-chat] failed to write the chat store:', error);
+		});
+	return messageWrites;
+}
+
 // ── The device-local message store: a KvStoreHandle over IndexedDB ──────
 
 /**
@@ -141,8 +165,8 @@ function store(
  * cache from IndexedDB asynchronously and fires `observe` once loaded, the same
  * way the Yjs store repopulates as a doc syncs in; the loop registers its
  * observer synchronously at construction, so a hydrated message always reaches
- * the snapshot. Writes go through an ordered queue so a delete never races a
- * trailing message write.
+ * the snapshot. Every write, per-message or whole-conversation, goes through one
+ * shared ordered queue, so a delete never races a trailing message write.
  */
 export function attachConversationStore(
 	conversationId: ConversationId,
@@ -150,20 +174,9 @@ export function attachConversationStore(
 	const cache = new Map<string, AgentMessage>();
 	const observers = new Set<() => void>();
 	let disposed = false;
-	let writeChain: Promise<unknown> = Promise.resolve();
 
 	function notify(): void {
 		for (const observer of observers) observer();
-	}
-
-	/** Serialize a write so order matches the in-memory mutations that queued it. */
-	function enqueue(write: (messages: IDBObjectStore) => IDBRequest): void {
-		writeChain = writeChain
-			.then(() => store(MESSAGES_STORE, 'readwrite'))
-			.then((messages) => requestToPromise(write(messages)))
-			.catch((error) => {
-				console.error('[ai-chat] failed to persist a chat message:', error);
-			});
 	}
 
 	// Hydrate the cache from IndexedDB, then fire `observe` so the loop reads the
@@ -198,14 +211,16 @@ export function attachConversationStore(
 		set: (key, value) => {
 			cache.set(key, value);
 			notify();
-			enqueue((messages) =>
+			void enqueueMessageWrite((messages) =>
 				messages.put(value, messageKey(conversationId, key)),
 			);
 		},
 		delete: (key) => {
 			cache.delete(key);
 			notify();
-			enqueue((messages) => messages.delete(messageKey(conversationId, key)));
+			void enqueueMessageWrite((messages) =>
+				messages.delete(messageKey(conversationId, key)),
+			);
 		},
 		*entries() {
 			for (const [key, val] of cache) yield { key, val };
@@ -224,17 +239,15 @@ export function attachConversationStore(
 // ── Whole-conversation operations ──────────────────────────────────────
 
 /**
- * Delete one conversation's entire message history. Used when a conversation is
- * removed; the per-message rows are range-deleted in one transaction.
+ * Delete one conversation's entire message history, range-deleting its rows in
+ * one transaction. Routed through the shared write queue so the wipe commits
+ * after any finished-message write already queued for that conversation, never
+ * before it (which would resurrect a row the delete was meant to remove).
  */
 export async function clearConversation(id: ConversationId): Promise<void> {
-	try {
-		await requestToPromise(
-			(await store(MESSAGES_STORE, 'readwrite')).delete(conversationRange(id)),
-		);
-	} catch (error) {
-		console.error('[ai-chat] failed to delete chat history:', error);
-	}
+	await enqueueMessageWrite((messages) =>
+		messages.delete(conversationRange(id)),
+	);
 }
 
 // ── Startup enumeration and model-choice rows ──────────────────────────

@@ -1,5 +1,5 @@
 /**
- * The device-local inference backend (ADR-0053).
+ * The device-local inference backend (ADR-0054).
  *
  * Which server answers chat is a device-scoped choice: the metered Epicenter
  * gateway, or a custom OpenAI-compatible URL (a local Ollama, a self-hosted

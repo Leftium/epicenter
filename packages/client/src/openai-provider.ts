@@ -33,7 +33,7 @@ import type {
 
 /**
  * Everything the engine needs for one turn, read per turn so a backend or model
- * switch takes effect on the next turn (ADR-0053): the resolved transport
+ * switch takes effect on the next turn (ADR-0054): the resolved transport
  * (`fetch` + `baseURL`) plus the model and the system prompts to prepend.
  */
 export type OpenAiTurnContext = {
@@ -308,7 +308,7 @@ async function* parseOpenAiStream(
  * `fetch` carries auth (the gateway's bearer, a custom backend's key, or none for
  * a local one) and `baseURL` is the inference server, so switching either the
  * backend or the model takes effect on the next turn with no handle rebuild
- * (ADR-0053). The request's `tools` (the live catalog for this step) are mapped to
+ * (ADR-0054). The request's `tools` (the live catalog for this step) are mapped to
  * OpenAI tools so the model emits tool calls.
  */
 export function createOpenAiAgentEngine({

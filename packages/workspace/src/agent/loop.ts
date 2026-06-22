@@ -91,7 +91,7 @@ const DENY_GATED_MUTATIONS: Approval = {
  * A turn's multi-step tool loop is bounded by this runaway backstop, not a product
  * limit. Each step is one model call that either finishes (text, no tools) or asks
  * for tools and re-prompts; the loop never reads a provider finish reason, so a
- * misbehaving backend, or a transcript that spans backends (ADR-0053), could
+ * misbehaving backend, or a transcript that spans backends (ADR-0054), could
  * otherwise re-issue tool calls forever. A well-behaved turn converges far below
  * this.
  */

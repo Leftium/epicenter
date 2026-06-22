@@ -1,11 +1,11 @@
 /**
- * Resolver correctness (ADR-0053): per mode the resolver returns the right
+ * Resolver correctness (ADR-0054): per mode the resolver returns the right
  * transport, model, and key. Hosted returns the supplied Epicenter backend
  * unchanged; custom builds its own base URL and model plus a plain fetch that
  * attaches only the user's key (never the Epicenter bearer).
  *
  * The bearer leak is not prevented here. It is prevented at the credential: the
- * Epicenter bearer is audience-scoped to its origin (ADR-0052), asserted by the
+ * Epicenter bearer is audience-scoped to its origin (ADR-0053), asserted by the
  * auth contract test, so a custom turn cannot reach its URL with the bearer even
  * if mis-wired. These tests pin the resolver's behavior, not the security boundary.
  */

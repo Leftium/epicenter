@@ -361,7 +361,7 @@ export function createOAuthAppAuth({
 	}
 
 	/**
-	 * The Epicenter bearer is audience-scoped (ADR-0052): it is attached only to
+	 * The Epicenter bearer is audience-scoped (ADR-0053): it is attached only to
 	 * the origin this client signed into. A request to any other origin is sent
 	 * with no Epicenter credential, so handing this fetch to a custom inference
 	 * backend or any third party can never leak the token.

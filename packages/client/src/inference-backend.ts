@@ -1,5 +1,5 @@
 /**
- * The inference-backend setting and its resolver (ADR-0053). A chat app stores
+ * The inference-backend setting and its resolver (ADR-0054). A chat app stores
  * one {@link InferenceBackendConfig} per device and resolves it, per turn, to the
  * {@link ResolvedInferenceBackend} the OpenAI-compatible engine drives.
  *
@@ -7,14 +7,14 @@
  * fetch carrying the bearer) on every turn, but the resolver returns it only on the
  * `hosted` branch; custom mode discards it and mints a plain fetch carrying only the
  * user's own key, so a custom turn can never reach its URL with the Epicenter
- * bearer. The bearer is in any case audience-scoped to its origin (ADR-0052), so
+ * bearer. The bearer is in any case audience-scoped to its origin (ADR-0053), so
  * even a wiring mistake cannot send it to a custom URL.
  */
 
 import type { EngineFetch } from './agent-engine.js';
 
 /**
- * A chat app's inference backend, stored device-local (ADR-0053). `hosted` is the
+ * A chat app's inference backend, stored device-local (ADR-0054). `hosted` is the
  * metered Epicenter gateway, whose model is the app's curated catalog. `custom` is
  * any OpenAI-compatible server (a local Ollama, a self-hosted gateway, OpenRouter)
  * reached by `baseUrl`, serving the free-text `model` it was given, with an

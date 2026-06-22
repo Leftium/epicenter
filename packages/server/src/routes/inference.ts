@@ -8,7 +8,7 @@
  * It is a pure passthrough proxy: resolve the provider from the model catalog,
  * inject the deployment's house key, forward the body to the provider's
  * OpenAI-compatible endpoint, and stream the reply straight back, bytes
- * untouched. The client owns OpenAI-SSE normalization (ADR-0053): it accumulates
+ * untouched. The client owns OpenAI-SSE normalization (ADR-0054): it accumulates
  * Gemini's index-less `tool_calls` deltas itself, because custom mode reaches a
  * provider directly and bypasses this gateway, so the gateway rewrites nothing.
  * It never executes a tool and keeps no transcript: a stateless inference turn
@@ -18,7 +18,7 @@
  * policy are supplied by the deployment through {@link mountInferenceApp}:
  * apps/api passes its Autumn metering policy, a self-hosted shared-wiki
  * deployment passes none. The gateway is house-key-only: it accepts no provider
- * key in the body, so it provably never receives a user's key (ADR-0053). BYOK is
+ * key in the body, so it provably never receives a user's key (ADR-0054). BYOK is
  * a custom client backend (your own URL and key), never the Epicenter gateway.
  *
  * Error convention (OpenAI shape, so the client reducer keeps its branchable
@@ -116,7 +116,7 @@ const inferenceApp = new Hono<Env>().post(
 
 		const { provider } = MODELS_BY_ID[model as ServableModel];
 		const upstream = PROVIDER_UPSTREAM[provider];
-		// House-key-only (ADR-0053): the gateway holds the key and never reads one
+		// House-key-only (ADR-0054): the gateway holds the key and never reads one
 		// from the body, so it provably never receives a user's provider key.
 		const apiKey = c.env[upstream.houseKeyEnv];
 		if (!apiKey) {
@@ -167,7 +167,7 @@ const inferenceApp = new Hono<Env>().post(
 			);
 		}
 
-		// Pure passthrough (ADR-0053): the client normalizes provider quirks (it
+		// Pure passthrough (ADR-0054): the client normalizes provider quirks (it
 		// must, for custom backends), so the gateway forwards the stream untouched.
 		return new Response(upstreamResponse.body, {
 			status: 200,

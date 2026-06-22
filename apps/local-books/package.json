@@ -17,6 +17,9 @@
 	},
 	"scripts": {
 		"local-books": "bun run src/bin.ts",
+		"auth:remote": "infisical run --env=prod --path=/apps/local-books -- bun run src/bin.ts auth --env production",
+		"sync:remote": "infisical run --env=prod --path=/apps/local-books -- bun run src/bin.ts sync --env production",
+		"status:remote": "infisical run --env=prod --path=/apps/local-books -- bun run src/bin.ts status --env production",
 		"test": "bun test",
 		"typecheck": "tsc --noEmit",
 		"build:binary": "bun build --compile --outfile dist/local-books src/bin.ts"

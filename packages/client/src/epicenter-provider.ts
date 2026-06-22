@@ -1,31 +1,35 @@
 /**
- * The Epicenter provider: {@link createEpicenterAgentEngine}, the `AgentEngine`
- * the client agent loop (ADR-0047) drives. It runs inference through the metered
- * `/api/ai/chat` endpoint on the user's account (the house key), so the loop
- * gets credits without a raw provider key (ADR-0033's Epicenter-provider
- * backend). A request carries the prompt plus the live tool catalog, and the
- * engine forwards the tool definitions in the request body so the provider emits
- * tool-call chunks. The capability-free case (Vocab) sends an empty catalog and
- * the loop runs a single text step per turn; it is the same engine, no tools.
+ * The legacy Epicenter provider: {@link createEpicenterAgentEngine}, an
+ * {@link AgentEngine} the client agent loop (ADR-0047) drives. It runs inference
+ * through the metered `/api/ai/chat` endpoint on the user's account (the house
+ * key), so the loop gets credits without a raw provider key (ADR-0033's
+ * Epicenter-provider backend). A request carries the prompt plus the live tool
+ * catalog, and the engine forwards the tool definitions in the request body so
+ * the provider emits tool-call chunks.
  *
  * The endpoint streams the answer back as Server-Sent Events
- * (`toServerSentEventsResponse`), the way a provider streams; this adapter turns
- * that wire format back into the raw AG-UI `StreamChunk` iterable the loop
- * consumes. TanStack ai-client (0.28.0) exposes no standalone SSE parser, only
- * `fetchServerSentEvents`, a full connection adapter that would POST an AG-UI
- * `RunAgentInput` envelope this custom `/api/ai/chat` contract does not speak,
- * so the `data:` frames are parsed here (verified; see ADR-0037).
+ * (`toServerSentEventsResponse`), the way a provider streams. This adapter parses
+ * those `data:` frames (raw AG-UI `StreamChunk`s) and maps each to the loop's own
+ * {@link EngineChunk} vocabulary, so the loop is decoupled from the AG-UI wire.
+ *
+ * This is the pre-OpenAI-compatible path (ADR-0050). It coexists with the
+ * OpenAI-compatible engine (`openai-provider.ts`) until the AG-UI server route is
+ * deleted, at which point this file and its `@tanstack/ai` dependency go.
  *
  * This lives in `@epicenter/client` (beside `createAiChatFetch`, the authed fetch
- * it expects) so every app that answers a cloud conversation in-process shares one
- * implementation. The return value is structurally the workspace loop's
- * `AgentEngine`; the types are inlined here to keep the client decoupled from the
- * workspace core.
+ * it expects) so every app that answers a cloud conversation in-process shares
+ * one implementation.
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
-import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
+import { EventType, type StreamChunk } from '@tanstack/ai';
 import { extractErrorMessage } from 'wellcrafted/error';
+import type { JsonValue } from 'wellcrafted/json';
+import type {
+	AgentEngine,
+	AgentEngineToolDefinition,
+	EngineChunk,
+} from './agent-engine.js';
 
 /** The body options the `/api/ai/chat` route reads (model + system prompts). */
 export type EpicenterProviderData = {
@@ -34,73 +38,73 @@ export type EpicenterProviderData = {
 };
 
 /**
- * One tool offered to the model, the subset the wire needs. Structurally the
- * loop's `AgentToolDefinition` (`@epicenter/workspace/agent`), inlined so the
- * client stays decoupled from the workspace core. `kind` and `title` are loop
- * concerns; the wire needs only the name, description, and input schema.
+ * Map one raw AG-UI `StreamChunk` frame to the loop's {@link EngineChunk}, or
+ * `null` to drop a frame the loop does not consume (lifecycle markers like
+ * `RUN_STARTED`, `TEXT_MESSAGE_START`, `RUN_FINISHED`). A `RUN_ERROR` is
+ * flattened: TanStack's `toServerSentEventsStream` nests a run failure under
+ * `error` rather than at top level, so without flattening the loop would see an
+ * undefined message and lose the structured code.
  */
-export type AgentEngineToolDefinition = {
-	name: string;
-	description?: string;
-	inputSchema?: unknown;
-};
-
-/**
- * Structurally the loop's `AgentEngineRequest`: the snapshotted prompt plus the
- * live tool catalog for this step.
- */
-export type AgentEngineRequest = {
-	messages: ModelMessage[];
-	tools: AgentEngineToolDefinition[];
-};
-
-/**
- * Structurally the loop's `AgentEngine` (`@epicenter/workspace/agent`): one
- * model call, a request in, a stream of AG-UI chunks out.
- */
-export type AgentEngine = (
-	request: AgentEngineRequest,
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
-
-/**
- * A `RUN_ERROR` chunk the loop turns into a failed turn. Carrying the structured
- * error `name` as the chunk `code` lets the failed turn keep
- * `InsufficientCredits` / `Unauthorized`, so the UI can branch on the code
- * instead of matching a message string.
- */
-function runErrorChunk(code: string, message: string): StreamChunk {
-	return { type: EventType.RUN_ERROR, code, message } as StreamChunk;
+function toEngineChunk(chunk: StreamChunk): EngineChunk | null {
+	switch (chunk.type) {
+		case EventType.TEXT_MESSAGE_CONTENT:
+			return { type: 'text-delta', delta: chunk.delta };
+		case EventType.TOOL_CALL_START:
+			return {
+				type: 'tool-call-start',
+				toolCallId: chunk.toolCallId,
+				toolName: chunk.toolCallName,
+			};
+		case EventType.TOOL_CALL_ARGS:
+			return {
+				type: 'tool-call-args',
+				toolCallId: chunk.toolCallId,
+				delta: chunk.delta,
+			};
+		case EventType.TOOL_CALL_END:
+			return {
+				type: 'tool-call-end',
+				toolCallId: chunk.toolCallId,
+				...(chunk.toolCallName !== undefined && {
+					toolName: chunk.toolCallName,
+				}),
+				...(chunk.input !== undefined && { input: chunk.input as JsonValue }),
+			};
+		case EventType.RUN_ERROR: {
+			const frame = chunk as {
+				message?: string;
+				code?: string;
+				error?: { message?: string; code?: string };
+			};
+			if (frame.error) {
+				return {
+					type: 'run-error',
+					message: frame.error.message ?? 'The model run failed.',
+					code: frame.error.code ?? 'stream-error',
+				};
+			}
+			return {
+				type: 'run-error',
+				message: frame.message ?? 'The model run failed.',
+				...(frame.code !== undefined && { code: frame.code }),
+			};
+		}
+		default:
+			return null;
+	}
 }
 
 /**
- * Flatten a mid-stream failure to the AG-UI top-level shape the loop reads.
- * TanStack's `toServerSentEventsStream` emits a run failure as
- * `{ type: RUN_ERROR, error: { message, code } }` rather than top-level
- * `message`/`code`, so without this the loop sees an undefined message and loses
- * the code. A spec-compliant frame (or any non-error chunk) passes through.
- */
-function normalizeChunk(chunk: StreamChunk): StreamChunk {
-	if (chunk.type !== EventType.RUN_ERROR) return chunk;
-	const nested = (chunk as { error?: { message?: string; code?: string } })
-		.error;
-	if (!nested) return chunk;
-	return runErrorChunk(
-		nested.code ?? 'stream-error',
-		nested.message ?? 'The model run failed.',
-	);
-}
-
-/**
- * Parse an SSE chat response into the raw `StreamChunk` stream. Frames are
- * double-newline separated; each carries one JSON chunk on a `data:` line, and a
- * `[DONE]` sentinel ends the run. A malformed frame is skipped (a hole, not a
- * crash), matching the loop's tolerance for untrusted input.
+ * Parse an SSE chat response into the loop's {@link EngineChunk} stream. Frames
+ * are double-newline separated; each carries one JSON `StreamChunk` on a `data:`
+ * line, and a `[DONE]` sentinel ends the run. A malformed or unconsumed frame is
+ * skipped (a hole, not a crash), matching the loop's tolerance for untrusted
+ * input.
  */
 async function* parseServerSentEvents(
 	response: Response,
 	signal: AbortSignal,
-): AsyncIterable<StreamChunk> {
+): AsyncIterable<EngineChunk> {
 	if (!response.body) return;
 	const reader = response.body.getReader();
 	const decoder = new TextDecoder();
@@ -120,11 +124,14 @@ async function* parseServerSentEvents(
 				if (!dataLine) continue;
 				const data = dataLine.slice('data:'.length).trimStart();
 				if (data === '' || data === '[DONE]') continue;
+				let parsed: StreamChunk;
 				try {
-					yield normalizeChunk(JSON.parse(data) as StreamChunk);
+					parsed = JSON.parse(data) as StreamChunk;
 				} catch {
-					// Skip a frame that is not valid JSON.
+					continue; // Skip a frame that is not valid JSON.
 				}
+				const engineChunk = toEngineChunk(parsed);
+				if (engineChunk) yield engineChunk;
 			}
 		}
 	} finally {
@@ -212,12 +219,20 @@ export function createEpicenterAgentEngine({
 			if (signal.aborted) return;
 			// `createAiChatFetch` throws `AiChatHttpError` on a non-2xx response,
 			// carrying the server's structured error; surface its name as the
-			// RUN_ERROR code so the failed turn stays branchable.
+			// run-error code so the failed turn stays branchable.
 			if (error instanceof AiChatHttpError) {
-				yield runErrorChunk(error.detail.name, error.detail.message);
+				yield {
+					type: 'run-error',
+					code: error.detail.name,
+					message: error.detail.message,
+				};
 				return;
 			}
-			yield runErrorChunk('stream-error', extractErrorMessage(error));
+			yield {
+				type: 'run-error',
+				code: 'stream-error',
+				message: extractErrorMessage(error),
+			};
 			return;
 		}
 		yield* parseServerSentEvents(response, signal);

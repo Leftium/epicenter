@@ -1,16 +1,15 @@
 /**
- * The Epicenter agent engine forwards the live tool catalog to `/api/ai/chat`
- * (the wire gap ADR-0047 closes) and parses the SSE reply into chunks. A fake
- * `fetch` captures the request body and returns a canned SSE stream, so this
- * exercises the real body builder and the real SSE parser without a network.
+ * The legacy Epicenter engine forwards the live tool catalog to `/api/ai/chat`
+ * and parses the AG-UI SSE reply into the loop's {@link EngineChunk} vocabulary.
+ * A fake `fetch` captures the request body and returns a canned AG-UI SSE stream,
+ * so this exercises the real body builder and the real frame mapper without a
+ * network.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { EventType, type StreamChunk } from '@tanstack/ai';
-import {
-	type AgentEngineRequest,
-	createEpicenterAgentEngine,
-} from './epicenter-provider.js';
+import type { AgentEngineRequest, EngineChunk } from './agent-engine.js';
+import { createEpicenterAgentEngine } from './epicenter-provider.js';
 
 function sseResponse(chunks: StreamChunk[]): Response {
 	const encoder = new TextEncoder();
@@ -30,7 +29,8 @@ function sseResponse(chunks: StreamChunk[]): Response {
 	});
 }
 
-function textChunk(delta: string): StreamChunk {
+/** One AG-UI text frame, the server's wire shape this engine parses. */
+function textFrame(delta: string): StreamChunk {
 	return {
 		type: EventType.TEXT_MESSAGE_CONTENT,
 		messageId: 'm1',
@@ -49,9 +49,9 @@ function capturingFetch(response: Response) {
 }
 
 async function drain(
-	stream: AsyncIterable<StreamChunk>,
-): Promise<StreamChunk[]> {
-	const out: StreamChunk[] = [];
+	stream: AsyncIterable<EngineChunk>,
+): Promise<EngineChunk[]> {
+	const out: EngineChunk[] = [];
 	for await (const chunk of stream) out.push(chunk);
 	return out;
 }
@@ -59,7 +59,7 @@ async function drain(
 describe('createEpicenterAgentEngine', () => {
 	test('forwards tool definitions as wire tools and streams the reply', async () => {
 		const { fetch, calls } = capturingFetch(
-			sseResponse([textChunk('Hello'), textChunk(', world')]),
+			sseResponse([textFrame('Hello'), textFrame(', world')]),
 		);
 		const engine = createEpicenterAgentEngine({
 			fetch,
@@ -83,10 +83,10 @@ describe('createEpicenterAgentEngine', () => {
 		};
 		const chunks = await drain(engine(request, new AbortController().signal));
 
-		// The SSE reply parsed into text chunks.
+		// The AG-UI reply mapped into text-delta chunks.
 		expect(
 			chunks
-				.filter((c) => c.type === EventType.TEXT_MESSAGE_CONTENT)
+				.filter((c) => c.type === 'text-delta')
 				.map((c) => (c as { delta: string }).delta)
 				.join(''),
 		).toBe('Hello, world');
@@ -110,7 +110,7 @@ describe('createEpicenterAgentEngine', () => {
 	});
 
 	test('defaults a missing description and normalizes a bare object schema', async () => {
-		const { fetch, calls } = capturingFetch(sseResponse([textChunk('ok')]));
+		const { fetch, calls } = capturingFetch(sseResponse([textFrame('ok')]));
 		const engine = createEpicenterAgentEngine({
 			fetch,
 			url: 'https://example.test/api/ai/chat',
@@ -157,7 +157,7 @@ describe('createEpicenterAgentEngine', () => {
 			),
 		);
 
-		const error = chunks.find((c) => c.type === EventType.RUN_ERROR) as
+		const error = chunks.find((c) => c.type === 'run-error') as
 			| { message?: string; code?: string }
 			| undefined;
 		expect(error?.message).toBe('the model failed');
@@ -165,7 +165,7 @@ describe('createEpicenterAgentEngine', () => {
 	});
 
 	test('omits the tools key entirely when the catalog is empty', async () => {
-		const { fetch, calls } = capturingFetch(sseResponse([textChunk('ok')]));
+		const { fetch, calls } = capturingFetch(sseResponse([textFrame('ok')]));
 		const engine = createEpicenterAgentEngine({
 			fetch,
 			url: 'https://example.test/api/ai/chat',

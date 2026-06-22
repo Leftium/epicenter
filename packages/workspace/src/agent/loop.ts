@@ -15,10 +15,10 @@
  * transcript; it repeats until a step finishes with no tool calls. The
  * zero-tool case (Vocab) is one step that only ever produces text.
  */
-import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { JsonValue } from 'wellcrafted/json';
 import type { KvStoreHandle } from '../document/attach-kv-store.js';
+import type { AgentEngine } from './engine.js';
 import {
 	type AgentMessage,
 	isPersistableMessage,
@@ -26,34 +26,16 @@ import {
 } from './message.js';
 import {
 	type AgentToolCall,
-	type AgentToolDefinition,
 	type Approval,
 	defaultApprovalDecision,
 	NO_TOOLS,
 	type ToolCatalog,
 } from './tools.js';
 
-/** What the loop asks the model on one step: the prompt plus the live tools. */
-export type AgentEngineRequest = {
-	messages: ModelMessage[];
-	tools: AgentToolDefinition[];
-};
-
-/**
- * One model call: a snapshotted prompt and the available tools in, a stream of
- * AG-UI chunks (text deltas, tool-call requests, finish, error) out. It runs one
- * model invocation and never executes a tool or reads the store (ADR-0033's pure
- * token source). The Epicenter metered stream and a local model both satisfy it.
- */
-export type AgentEngine = (
-	request: AgentEngineRequest,
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
-
 /**
  * A failed turn: a human-readable message plus an optional structured code (e.g.
  * `'InsufficientCredits'`, `'Unauthorized'`) the engine surfaced on its
- * `RUN_ERROR` chunk, so the UI can branch on the code rather than match the
+ * `run-error` chunk, so the UI can branch on the code rather than match the
  * message string.
  */
 export type ConversationError = { message: string; code?: string };
@@ -180,27 +162,27 @@ export function createConversation(
 			)) {
 				if (signal.aborted) break;
 				switch (chunk.type) {
-					case EventType.TEXT_MESSAGE_CONTENT:
+					case 'text-delta':
 						appendText(assistant, chunk.delta);
 						notify();
 						break;
-					case EventType.TOOL_CALL_START:
+					case 'tool-call-start':
 						pending.set(chunk.toolCallId, {
-							toolName: chunk.toolCallName,
+							toolName: chunk.toolName,
 							args: '',
 						});
 						break;
-					case EventType.TOOL_CALL_ARGS: {
+					case 'tool-call-args': {
 						const open = pending.get(chunk.toolCallId);
-						if (open) open.args += chunk.delta ?? '';
+						if (open) open.args += chunk.delta;
 						break;
 					}
-					case EventType.TOOL_CALL_END: {
+					case 'tool-call-end': {
 						const open = pending.get(chunk.toolCallId);
 						pending.delete(chunk.toolCallId);
 						const call: AgentToolCall = {
 							toolCallId: chunk.toolCallId,
-							toolName: chunk.toolCallName ?? open?.toolName ?? '',
+							toolName: chunk.toolName ?? open?.toolName ?? '',
 							input: parseToolInput(chunk.input, open?.args),
 						};
 						calls.push(call);
@@ -208,14 +190,12 @@ export function createConversation(
 						notify();
 						break;
 					}
-					case EventType.RUN_ERROR: {
-						const code = (chunk as { code?: string }).code;
+					case 'run-error':
 						failure = {
 							message: chunk.message,
-							...(code !== undefined && { code }),
+							...(chunk.code !== undefined && { code: chunk.code }),
 						};
 						break;
-					}
 					default:
 						break;
 				}

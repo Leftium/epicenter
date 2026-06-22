@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { EventType, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
 import { attachKvStore } from '../document/attach-kv-store.js';
-import { type AgentEngine, createConversation } from './loop.js';
+import type { AgentEngine, EngineChunk } from './engine.js';
+import { createConversation } from './loop.js';
 import {
 	type AgentMessage,
 	agentMessageText,
@@ -29,15 +29,7 @@ function makeStore() {
 	});
 }
 
-/** Build a stream chunk loosely; tests do not need full AG-UI field fidelity. */
-function chunk(fields: {
-	type: EventType;
-	[key: string]: unknown;
-}): StreamChunk {
-	return fields as unknown as StreamChunk;
-}
-
-function streamOf(chunks: StreamChunk[]): AsyncIterable<StreamChunk> {
+function streamOf(chunks: EngineChunk[]): AsyncIterable<EngineChunk> {
 	return (async function* () {
 		for (const value of chunks) yield value;
 	})();
@@ -61,17 +53,9 @@ describe('createConversation', () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
 			streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'Hello',
-					messageId: 'a',
-				}),
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: ' world',
-					messageId: 'a',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
+				{ type: 'text-delta', delta: 'Hello' },
+				{ type: 'text-delta', delta: ' world' },
+				{ type: 'run-finished', finishReason: 'stop' },
 			]);
 
 		const handle = createConversation({
@@ -98,27 +82,15 @@ describe('createConversation', () => {
 			stepCount += 1;
 			if (stepCount === 1) {
 				return streamOf([
-					chunk({
-						type: EventType.TOOL_CALL_START,
-						toolCallId: 't1',
-						toolCallName: 'get_time',
-					}),
-					chunk({
-						type: EventType.TOOL_CALL_ARGS,
-						toolCallId: 't1',
-						delta: '{}',
-					}),
-					chunk({ type: EventType.TOOL_CALL_END, toolCallId: 't1' }),
-					chunk({ type: EventType.RUN_FINISHED, finishReason: 'tool_calls' }),
+					{ type: 'tool-call-start', toolCallId: 't1', toolName: 'get_time' },
+					{ type: 'tool-call-args', toolCallId: 't1', delta: '{}' },
+					{ type: 'tool-call-end', toolCallId: 't1' },
+					{ type: 'run-finished', finishReason: 'tool_calls' },
 				]);
 			}
 			return streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'It is noon.',
-					messageId: 'b',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
+				{ type: 'text-delta', delta: 'It is noon.' },
+				{ type: 'run-finished', finishReason: 'stop' },
 			]);
 		};
 		const resolved: AgentToolCall[] = [];
@@ -165,22 +137,14 @@ describe('createConversation', () => {
 			stepCount += 1;
 			if (stepCount === 1) {
 				return streamOf([
-					chunk({
-						type: EventType.TOOL_CALL_START,
-						toolCallId: 'd1',
-						toolCallName: 'delete_all',
-					}),
-					chunk({ type: EventType.TOOL_CALL_END, toolCallId: 'd1', input: {} }),
-					chunk({ type: EventType.RUN_FINISHED, finishReason: 'tool_calls' }),
+					{ type: 'tool-call-start', toolCallId: 'd1', toolName: 'delete_all' },
+					{ type: 'tool-call-end', toolCallId: 'd1', input: {} },
+					{ type: 'run-finished', finishReason: 'tool_calls' },
 				]);
 			}
 			return streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'Okay, I will not.',
-					messageId: 'c',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
+				{ type: 'text-delta', delta: 'Okay, I will not.' },
+				{ type: 'run-finished', finishReason: 'stop' },
 			]);
 		};
 		let resolveCalled = false;
@@ -217,12 +181,8 @@ describe('createConversation', () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
 			streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'partial',
-					messageId: 'x',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
+				{ type: 'text-delta', delta: 'partial' },
+				{ type: 'run-finished', finishReason: 'stop' },
 			]);
 
 		const handle = createConversation({
@@ -246,12 +206,8 @@ describe('createConversation', () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
 			streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'streamed',
-					messageId: 'a',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
+				{ type: 'text-delta', delta: 'streamed' },
+				{ type: 'run-finished', finishReason: 'stop' },
 			]);
 
 		const handle = createConversation({

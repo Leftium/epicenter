@@ -502,7 +502,7 @@ export type DeclarableTableDefinition<
 	 *     touch: 'updatedAt',
 	 *   },
 	 *   // a bare layout still works for bodies that need no policy:
-	 *   // messages: (ydoc) => attachKvStore(ydoc),
+	 *   // messages: (ydoc) => attachRecords(ydoc),
 	 * });
 	 * ```
 	 */

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { attachKvStore } from '../document/attach-kv-store.js';
+import { attachRecords } from '../document/attach-records.js';
 import type { AgentEngine, EngineChunk } from './engine.js';
 import { createConversation } from './loop.js';
 import {
@@ -17,11 +17,11 @@ import {
 
 /**
  * A disposable store over an in-memory doc, matching what `docs.open()` returns
- * in an app (the open wrapper adds disposal; `attachKvStore` alone does not).
+ * in an app (the open wrapper adds disposal; `attachRecords` alone does not).
  */
 function makeStore() {
 	const doc = new Y.Doc();
-	const handle = attachKvStore<AgentMessage>(doc);
+	const handle = attachRecords<AgentMessage>(doc);
 	return Object.assign(handle, {
 		[Symbol.dispose]() {
 			doc.destroy();

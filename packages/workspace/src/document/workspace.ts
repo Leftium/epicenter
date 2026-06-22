@@ -397,7 +397,7 @@ export type MountComposition<TActions extends ActionRegistry> = {
  *
  * Only fields whose layout exposes `observe` can be registered: the loop watches
  * each body through it, so a layout without one (e.g. `attachPlainText`) collapses
- * to `never` and the field cannot carry a worker. `attachKvStore` does.
+ * to `never` and the field cannot carry a worker. `attachRecords` does.
  */
 export type MountWorkers<TTables extends TableDefinitions> = {
 	[T in keyof TTables]?: TTables[T] extends TableDefinition<
@@ -864,7 +864,7 @@ export function defineWorkspace<
  *    cascades from `ydoc.destroy()` when the cache evicts the entry.
  *  - **shape**: the CRDT layout and its writer policy, owned by the declared
  *    `attach*(ydoc)` function (`attachPlainText`, `attachRichText`,
- *    `attachKvStore`).
+ *    `attachRecords`).
  *
  * The guid is only the room address: the cache keys by `rowId`, and the address
  * is derived through the field's existing {@link RowDocGuid} so derivation stays

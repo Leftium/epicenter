@@ -19,7 +19,7 @@ import {
 } from '../document/y-keyvalue/index.js';
 import { generateId, measureTime, postDefinition } from './helpers.js';
 
-function attachKvStore(ydoc: Y.Doc, arrayKey: string) {
+function attachStore(ydoc: Y.Doc, arrayKey: string) {
 	return new YKeyValueLww<unknown>(
 		ydoc.getArray<YKeyValueLwwEntry<unknown>>(arrayKey),
 	);
@@ -184,7 +184,7 @@ describe('table operations', () => {
 describe('KV operations', () => {
 	test('repeated set on same key (10,000 times)', () => {
 		const ydoc = new Y.Doc();
-		const ykv = attachKvStore(ydoc, 'kv');
+		const ykv = attachStore(ydoc, 'kv');
 		const kv = createKv(ykv, {
 			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({
 				value: 0,
@@ -206,7 +206,7 @@ describe('KV operations', () => {
 
 	test('set + get alternating (10,000 cycles)', () => {
 		const ydoc = new Y.Doc();
-		const ykv = attachKvStore(ydoc, 'kv');
+		const ykv = attachStore(ydoc, 'kv');
 		const kv = createKv(ykv, {
 			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({
 				value: 0,
@@ -226,7 +226,7 @@ describe('KV operations', () => {
 
 	test('set + delete cycle (1,000 times)', () => {
 		const ydoc = new Y.Doc();
-		const ykv = attachKvStore(ydoc, 'kv');
+		const ykv = attachStore(ydoc, 'kv');
 		const kv = createKv(ykv, {
 			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({
 				value: 0,

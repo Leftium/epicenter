@@ -48,7 +48,7 @@ export type SatisfiedCommand = {
 	 * Whispering in front. Required, because reach is the headline fact of a
 	 * command, so it is always stated rather than defaulted; `focused` is the
 	 * conservative choice for a new command. It is the first term of
-	 * `realizedReach` (see {@link Reach} and ADR-0041).
+	 * `realizedReach` (see {@link Reach} and ADR-0052).
 	 */
 	reach: Reach;
 	/**
@@ -122,7 +122,7 @@ const sharedCommands = [
 		// The first focused-reach command: navigation is meaningless from another
 		// app, so its reach ceiling is `focused`. A capable chord like Cmd+, cannot
 		// escape that ceiling (realizedReach clamps it to focused), so it never
-		// registers globally; it fires only with Whispering in front. See ADR-0041.
+		// registers globally; it fires only with Whispering in front. See ADR-0052.
 		reach: 'focused',
 		on: ['Pressed'],
 		run: () => goto('/settings'),

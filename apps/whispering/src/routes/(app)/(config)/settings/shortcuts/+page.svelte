@@ -10,7 +10,7 @@
 	import ShortcutFormatHelp from './keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from './keyboard-shortcut-recorder/ShortcutTable.svelte';
 
-	// One flat list, no platform branch (ADR-0041): every command gets one
+	// One flat list, no platform branch (ADR-0052): every command gets one
 	// router-driven recorder. The reach of the key the user presses, not a scope
 	// tab, decides whether a binding lands in the synced focused store or the
 	// per-device global store. Reset restores both stores to their defaults.

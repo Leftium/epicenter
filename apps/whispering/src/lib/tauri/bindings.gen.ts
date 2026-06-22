@@ -8,17 +8,34 @@ export const commands = {
 	/**
 	 *  Delivers text to the cursor, falling back to the clipboard when it cannot.
 	 *
-	 *  The reach is decided from the Accessibility grant *before* the keystroke, not
-	 *  from the keystroke's result: an untrusted synthetic ⌘V silently no-ops on
-	 *  macOS, so observing whether it landed is unreliable. When we can paste, the
-	 *  clipboard sandwich (save → write → paste → restore) preserves the user's
-	 *  clipboard; when we cannot, the transcript is left on the clipboard as the
-	 *  fallback. The transcript is independently saved to history either way, so this
-	 *  is a reduced reach, never data loss.
+	 *  The reach is decided from the live Accessibility *capability* before the
+	 *  keystroke, not from the keystroke's result. A `Broken` grant — one that still
+	 *  reads as trusted via `AXIsProcessTrusted` but whose synthetic events the OS
+	 *  drops — lets the paste return `Ok` while nothing lands, so observing the
+	 *  result is unreliable.
+	 *
+	 *  The clipboard is the paste transport, and `keep_on_clipboard` is the caller's
+	 *  statement of what the clipboard should hold *afterward*:
+	 *
+	 *  - `keep_on_clipboard == true` (clipboard output is on): the transcript is the
+	 *    intended final clipboard state, so we write it, paste, and leave it. No
+	 *    snapshot, no restore.
+	 *  - `keep_on_clipboard == false` (clipboard output is off): we borrow the
+	 *    clipboard. Snapshot what the user had, write the transcript (concealed on
+	 *    macOS so clipboard-history managers skip it), paste, then restore the
+	 *    snapshot — so `write_text` leaves the clipboard exactly as it found it. On
+	 *    macOS the snapshot is full-fidelity native `NSPasteboard` save/restore (see
+	 *    `clipboard.rs`), which fixes the silent loss of a non-text clipboard
+	 *    (image, file); every other platform keeps the text-only plugin save/restore.
+	 *
+	 *  When we cannot paste, or the paste fails, the transcript is left on the
+	 *  clipboard as the fallback (this wins over restoring the snapshot). The
+	 *  transcript is independently saved to history either way, so a fallback is a
+	 *  reduced reach, never data loss.
 	 */
-	writeText: (text: string) =>
+	writeText: (text: string, keepOnClipboard: boolean) =>
 		typedError<WriteTextOutcome, string>(
-			__TAURI_INVOKE('write_text', { text }),
+			__TAURI_INVOKE('write_text', { text, keepOnClipboard }),
 		),
 	/**
 	 *  Simulates pressing the Enter/Return key
@@ -864,8 +881,10 @@ export type UnloadReason =
 /**
  *  Where `write_text` left the transcript.
  *
- *  - `Pasted`: a synthetic paste landed it at the cursor and the user's original
- *    clipboard was restored.
+ *  - `Pasted`: a synthetic paste landed it at the cursor. When the caller asked
+ *    to keep the transcript on the clipboard the transcript stays there;
+ *    otherwise the clipboard is restored to whatever the user had (see
+ *    `write_text`).
  *  - `LeftOnClipboard`: delivery could not paste (no Accessibility grant, or the
  *    paste itself failed), so the transcript was left on the clipboard as the
  *    fallback — always one ⌘V away.

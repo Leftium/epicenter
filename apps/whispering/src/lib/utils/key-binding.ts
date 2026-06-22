@@ -13,7 +13,7 @@ import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
  * shared by a command's intrinsic ceiling, a key's capability, the platform, and
  * the realized minimum of the three. There is no separate "system" word: a
  * binding whose realized reach is `global` is the one that lives in the
- * per-device store. See ADR-0041.
+ * per-device store. See ADR-0052.
  */
 export type Reach = 'focused' | 'global';
 
@@ -225,7 +225,7 @@ export type ReachWithGrant = { reach: Reach; needsAccessibility: boolean };
 
 /**
  * How far a key can fire, by its physical shape alone (the second term of the
- * reach formula, ADR-0041). A chord (a non-Fn modifier plus a key) fires
+ * reach formula, ADR-0052). A chord (a non-Fn modifier plus a key) fires
  * globally with no permission. A bare key (a single key, no modifiers) can only
  * fire in-app: bound globally it would swallow that key in every app, so it caps
  * at `focused`. Everything else (an Fn hold, a modifier-only hold, an Fn+key
@@ -256,7 +256,7 @@ function minReach(a: Reach, b: Reach): Reach {
  * `global`; a gesture clamped to `focused` (a hold on web, a chord on a focused
  * command) needs no grant. This is the one place the reach formula lives, fed
  * `command.reach` and a `platformReach` so it stays free of catalog and platform
- * imports. See ADR-0041.
+ * imports. See ADR-0052.
  */
 export function realizedReach(
 	commandReach: Reach,

@@ -18,7 +18,7 @@ export type CommandReach = { id: Command['id']; reach: Reach };
  * global binding at once (on desktop the shipped defaults already do: in-app
  * `Space` alongside global `Cmd+Shift+Space`), so the two-slot shape is the
  * honest read, not a single binding. `global` is always `null` on web, where no
- * system backend exists. See ADR-0041.
+ * system backend exists. See ADR-0052.
  */
 export type CommandBindings = {
 	focused: KeyBinding | null;
@@ -31,7 +31,7 @@ export type CommandBindings = {
  * realized reach of the key the user pressed, a read returns both slots, and a
  * clear names the slot it
  * clears (a command may hold both). The per-tier conflict policy and the storage
- * scheme stay owned by the underlying surfaces; this only routes. See ADR-0041.
+ * scheme stay owned by the underlying surfaces; this only routes. See ADR-0052.
  */
 export type RoutedShortcuts = {
 	/** Push every command's bindings to both backends (the global one only on desktop). */
@@ -68,7 +68,7 @@ export type RoutedShortcuts = {
 
 /**
  * Compose the two reach-routed shortcut backends into one surface that routes by
- * computed reach, never by a user-chosen scope (ADR-0041). The platform ceiling
+ * computed reach, never by a user-chosen scope (ADR-0052). The platform ceiling
  * is read straight off the backends present: desktop supplies a `global` surface
  * and reaches `global`, web passes `null` and caps at `focused`. Because the
  * platform term of {@link realizedReach} is exactly this presence, a realized

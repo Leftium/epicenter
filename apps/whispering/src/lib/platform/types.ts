@@ -18,7 +18,7 @@ import type { KeyBinding } from '$lib/tauri/commands';
  * (in-app keydown shortcuts in workspace KV, universal) and `systemShortcuts`
  * (system-global rdev bindings in device-config, Tauri-only). The reach router
  * (`shortcuts.ts`) composes the two and routes each write by realized reach
- * (ADR-0041), so app code talks to the router, not to a backend directly; the
+ * (ADR-0052), so app code talks to the router, not to a backend directly; the
  * settings recorders are handed the specific backend they edit. The trigger
  * dispatch itself converges in `dispatchCommandTrigger`; this owns the binding
  * configuration around it.

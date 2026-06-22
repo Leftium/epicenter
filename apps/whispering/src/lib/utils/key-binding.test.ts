@@ -261,7 +261,7 @@ test('keyCapability: Fn and modifier-only holds reach global behind the grant', 
 	});
 });
 
-// The worked table from ADR-0041: realizedReach = min(command, key, platform).
+// The worked table from ADR-0052: realizedReach = min(command, key, platform).
 test('realizedReach: a global command on a bare key on web is focused', () => {
 	expect(
 		realizedReach('global', { modifiers: [], keys: ['space'] }, 'focused'),

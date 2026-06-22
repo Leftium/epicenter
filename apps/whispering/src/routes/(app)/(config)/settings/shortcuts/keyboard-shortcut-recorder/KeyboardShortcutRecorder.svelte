@@ -28,7 +28,7 @@
 	} from '$lib/utils/key-binding';
 	import { createChordRecorder } from './create-chord-recorder';
 
-	// The one router-driven recorder (ADR-0041): the user picks a key, never a
+	// The one router-driven recorder (ADR-0052): the user picks a key, never a
 	// store. A command's two slots (focused, global) render as reach-badged chips,
 	// and one "Add" popover captures a key and lets the router route the write by
 	// realized reach. This replaces the old Local/Global split, where the page
@@ -55,7 +55,7 @@
 			),
 	);
 
-	/** ADR-0041 read-only badge text for a realized reach. */
+	/** ADR-0052 read-only badge text for a realized reach. */
 	function reachLabel({ reach, needsAccessibility }: ReachWithGrant): string {
 		if (reach === 'focused') return 'Works in Whispering';
 		return needsAccessibility

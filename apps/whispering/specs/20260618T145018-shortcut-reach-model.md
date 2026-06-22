@@ -277,7 +277,7 @@ Phase 1.3 (unify binding format, teach the matcher `KeyBinding`) already landed 
 
 The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`, so this is not a from-scratch facade. It is the reach-derivation helpers plus a router that composes the two backends.
 
-- [x] **2.1** DONE. Added `keyCapability(binding)` and `realizedReach(commandReach, binding, platformReach)` to `utils/key-binding.ts` beside `resolveBinding`, with unit tests pinning the ADR-0041 worked table. Pure: fed the reach bit and a platform reach, so the core takes no catalog or platform import. Returns `{ reach, needsAccessibility }` for the badge.
+- [x] **2.1** DONE. Added `keyCapability(binding)` and `realizedReach(commandReach, binding, platformReach)` to `utils/key-binding.ts` beside `resolveBinding`, with unit tests pinning the ADR-0052 worked table. Pure: fed the reach bit and a platform reach, so the core takes no catalog or platform import. Returns `{ reach, needsAccessibility }` for the badge.
 - [x] **2.2** DONE. Added `createReachRouter` in `lib/platform/reach-router.ts`: a `RoutedShortcuts` facade over the two existing `Shortcuts` surfaces that routes each write by `realizedReach`, exposes `reachBadge(commandId, binding)`, reads both slots with `current` (`{ focused, global }`), and clears a named slot. It reuses the underlying `set`/`clear`/`reset`/`findConflict` rather than rebuilding them. The platform ceiling is derived from backend presence (`global ? 'global' : 'focused'`), so web (no global backend) clamps every write to focused and a realized `global` reach always implies the global store exists. The catalog reach is injected (`commands: CommandReach[]`), keeping the router free of the operations graph and unit-testable; 11 tests pin the routing. Unwired for now: the seam that supplies both surfaces on desktop is Phase 3.
 
 ### Phase 3: Run both backends on desktop (Build)
@@ -288,13 +288,13 @@ The `Shortcuts` contract already exposes `set`/`clear`/`current`/`findConflict`,
 ### Phase 4: Settings UI (Build)
 
 - [x] **4.1** DONE. The page is one flat searchable list (`ShortcutTable` over all commands, no `{#if tauri}`, no scope tabs). Each command's two slots render as reach-badged chips ("Works in Whispering" / "Works everywhere" / "Works everywhere, needs Accessibility") from the router's `reachBadge`, each chip clearable by reach. The single `KeyboardShortcutRecorder` folds the old Local and Global recorders into one router-driven Add popover, routing each write by realized reach; the old recorders and `RecorderShell` are deleted.
-- [~] **4.2** Accessibility `Enable` affordance surfaces in the Add popover on desktop when a grant is needed (the gate the webview's no-Fn limit forces). Per-binding reach badges render on the chips. DEFERRED: a *live* reach badge on the in-progress candidate while capturing (the chip badge already gives the read-only badge ADR-0041 requires; the live preview is a nicety, not a criterion).
+- [~] **4.2** Accessibility `Enable` affordance surfaces in the Add popover on desktop when a grant is needed (the gate the webview's no-Fn limit forces). Per-binding reach badges render on the chips. DEFERRED: a *live* reach badge on the in-progress candidate while capturing (the chip badge already gives the read-only badge ADR-0052 requires; the live preview is a nicety, not a criterion).
 
 ### Phase 5: Prove, then Remove
 
 - [ ] **5.1** Typecheck, `bun test`, cargo, svelte-check; smoke both web and desktop.
 - [ ] **5.2** Delete the now-dead paths: the old `#platform/shortcuts` "pick one" seam once the split (Phase 3.1) is green. The defaults stay in their two homes (Phase 1.2 refusal), and the string format is already gone; `keyBindingToString`/`parseManualBinding` are the deliberate at-rest serializers and stay.
-- [ ] **5.3** The reach model is recorded as [ADR-0041](../../../docs/adr/0041-shortcut-reach-is-the-minimum-of-command-key-and-platform-ceilings.md) (Proposed). On landing, flip it to Accepted and delete this spec. (See also the article `docs/articles/20260620T120000-reach-is-computed-not-chosen.md`.)
+- [ ] **5.3** The reach model is recorded as [ADR-0052](../../../docs/adr/0052-shortcut-reach-is-the-minimum-of-command-key-and-platform-ceilings.md) (Proposed). On landing, flip it to Accepted and delete this spec. (See also the article `docs/articles/20260620T120000-reach-is-computed-not-chosen.md`.)
 
 ## Edge Cases
 

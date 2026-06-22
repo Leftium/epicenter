@@ -4,7 +4,7 @@ import { focusedShortcuts } from './focused-shortcuts';
 import { createReachRouter } from './reach-router';
 
 /**
- * The live shortcut surface: the reach router (ADR-0041) over the universal
+ * The live shortcut surface: the reach router (ADR-0052) over the universal
  * focused backend and the Tauri-only system backend. A write routes to the
  * synced focused store or the per-device global store by its realized reach, so
  * the user picks a key, never a store; `sync()` pushes both backends, which is

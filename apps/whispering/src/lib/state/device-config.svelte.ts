@@ -57,7 +57,7 @@ export const DEFAULT_GLOBAL_BINDINGS = {
 	toggleVadRecording: null,
 	openTransformationPicker: null,
 	runTransformationOnClipboard: null,
-	// Focused-reach command (ADR-0041): its reach ceiling clamps any key to the
+	// Focused-reach command (ADR-0052): its reach ceiling clamps any key to the
 	// in-app store, so the router never writes this global slot. It stays here only
 	// so the system backend's all-commands sync keeps one entry per command;
 	// always null.
@@ -180,13 +180,6 @@ const DEVICE_DEFINITIONS = {
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.openSettings,
 	),
-
-	// ── One-time UI notices (device-local: a per-install nudge, not synced) ─
-	// Set true the first time `recording.pausePlayback` actually pauses
-	// something, so the explanatory toast (operations/media.ts) shows once per
-	// device and never again. Device-local because it tracks "has this install
-	// shown the toast," not a user preference that should roam.
-	'notices.pausePlaybackExplained': defineEntry(type('boolean'), false),
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────

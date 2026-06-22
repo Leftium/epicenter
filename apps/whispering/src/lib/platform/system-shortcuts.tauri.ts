@@ -26,7 +26,7 @@ import type { Shortcuts } from './types';
  *
  * The reach router (`shortcuts.ts`) composes this with the universal
  * `focusedShortcuts`; the web build of this seam supplies `null` (no system
- * backend), which is how the router caps web at focused reach. See ADR-0041.
+ * backend), which is how the router caps web at focused reach. See ADR-0052.
  */
 
 const globalKey = (id: Command['id']) => `shortcuts.global.${id}` as const;

@@ -1,6 +1,8 @@
+import { os } from '#platform/os';
 import { systemShortcuts } from '#platform/system-shortcuts';
 import type { Command } from '$lib/commands';
 import { focusedShortcuts } from '$lib/platform/focused-shortcuts';
+import { keyBindingToLabel } from '$lib/utils/key-binding';
 
 /**
  * The single backend the recording-key hint reads. The hint shows one label, so
@@ -32,16 +34,16 @@ export type RecordingShortcutMode = keyof typeof RECORDING_SHORTCUT_PREFERENCE;
  * The display label for the shortcut that actually starts this recording mode on
  * this platform, resolved through the primary shortcut backend.
  *
- * Reading a single command (`currentLabel('toggleManualRecording')`) rendered an
- * empty key on a fresh desktop install, where the toggle ships unbound and
- * push-to-talk (Fn) is the gesture that works. Routing through the preference
- * list shows the bound gesture instead. Returns `''` when nothing in the list is
- * bound; callers hide the hint and fall back to "click".
+ * Reading a single command (`toggleManualRecording`) rendered an empty key on a
+ * fresh desktop install, where the toggle ships unbound and push-to-talk (Fn) is
+ * the gesture that works. Routing through the preference list shows the bound
+ * gesture instead. Returns `''` when nothing in the list is bound; callers hide
+ * the hint and fall back to "click".
  */
 export function getRecordingShortcutLabel(mode: RecordingShortcutMode): string {
 	for (const commandId of RECORDING_SHORTCUT_PREFERENCE[mode]) {
-		const label = primaryShortcuts.currentLabel(commandId);
-		if (label) return label;
+		const binding = primaryShortcuts.current(commandId);
+		if (binding) return keyBindingToLabel(binding, os.isApple);
 	}
 	return '';
 }

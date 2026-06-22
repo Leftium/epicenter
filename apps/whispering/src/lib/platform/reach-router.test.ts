@@ -34,8 +34,6 @@ function fakeShortcuts(conflict: string | null = null) {
 		reset() {
 			calls.reset++;
 		},
-		defaultLabel: () => '',
-		currentLabel: () => '',
 		current: (id) => store.get(id) ?? null,
 		async set(id, binding) {
 			store.set(id, binding);

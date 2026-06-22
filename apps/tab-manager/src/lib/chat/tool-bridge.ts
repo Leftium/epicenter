@@ -1,7 +1,8 @@
 /**
  * Bridge between workspace actions and TanStack AI's tool system.
  *
- * TanStack AI needs tools in two places:
+ * tab-manager runs a device-local TanStack `createChat` loop (ADR-0048), which
+ * needs tools in two places:
  *
  * 1. **In the browser**: `createChat({ tools })` expects an array of
  *    `AnyClientTool` objects with `execute` functions so the `ChatClient`
@@ -9,19 +10,27 @@
  *
  * 2. **On the server**: the HTTP request body needs a JSON-serializable
  *    description of each tool (name, description, input schema) so the
- *    server can forward them to the AI provider. Functions like `execute`
- *    can't travel over the wire.
+ *    `/api/ai/chat` route can forward them to the AI provider. Functions like
+ *    `execute` can't travel over the wire.
  *
  * This module converts a flat workspace action registry into both
  * representations at once, so you don't have to build them by hand. The AI
  * tool name is the action key verbatim.
  *
+ * It lives here, not in `@epicenter/workspace`, because TanStack AI is
+ * tab-manager's concern: the workspace client loop speaks the
+ * OpenAI-compatible engine (ADR-0050), so the core library no longer depends on
+ * the AI SDK. tab-manager keeps its own loop and owns this bridge.
+ *
  * @module
  */
 
+import {
+	type Action,
+	type ActionRegistry,
+	invokeAction,
+} from '@epicenter/workspace';
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
-import type { Action, ActionRegistry } from './actions';
-import { invokeAction } from './actions';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -101,30 +110,6 @@ export type ToolDefinition = {
  * a confirmation dialog before executing them. Queries run immediately.
  *
  * @param actions - The flat action registry to expose as tools.
- *
- * @example
- * ```ts
- * import { actionsToAiTools } from '@epicenter/workspace';
- *
- * export const workspaceAiTools = actionsToAiTools(workspace.actions);
- *
- * // Pass .tools to TanStack AI's ChatClient for local execution
- * const chat = createChat({
- *   tools: workspaceAiTools.tools,
- *   connection: fetchServerSentEvents('/ai/chat', () => ({
- *     body: {
- *       data: {
- *         // Pass .definitions to the server so the LLM knows what tools exist
- *         tools: workspaceAiTools.definitions,
- *       },
- *     },
- *   })),
- * });
- *
- * // Show a friendly title in the UI when a tool call comes back
- * const title = workspaceAiTools.definitions
- *   .find(d => d.name === 'tabs_close')?.title; // → 'Close Tabs'
- * ```
  */
 export function actionsToAiTools<TActions extends ActionRegistry>(
 	actions: TActions,

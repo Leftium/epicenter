@@ -133,7 +133,11 @@ function sanitizeFilename(name: string): string {
 		.slice(0, 255);
 }
 
-function createAssetsApp({ ownership }: { ownership: OwnershipRule }): Hono<Env> {
+function createAssetsApp({
+	ownership,
+}: {
+	ownership: OwnershipRule;
+}): Hono<Env> {
 	return (
 		new Hono<Env>()
 			// POST upload (authed).

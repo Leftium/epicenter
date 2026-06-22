@@ -17,7 +17,11 @@
  */
 
 import type { AuthFetch } from '@epicenter/auth';
-import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
+import {
+	type AgentEngine,
+	createOpenAiAgentEngine,
+	resolveInferenceBackend,
+} from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from './vocab.js';
 
@@ -33,9 +37,14 @@ export function epicenterMeteredEngine(
 	baseURL: string,
 ): AgentEngine {
 	return createOpenAiAgentEngine({
-		fetch: sessionFetch,
-		baseURL: API_ROUTES.ai.completions.baseUrl(baseURL),
 		data: () => ({
+			...resolveInferenceBackend(
+				{ mode: 'hosted' },
+				{
+					fetch: sessionFetch,
+					baseURL: API_ROUTES.ai.completions.baseUrl(baseURL),
+				},
+			),
 			model: VOCAB_MODEL,
 			systemPrompts: [VOCAB_SYSTEM_PROMPT],
 		}),

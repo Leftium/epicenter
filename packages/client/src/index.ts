@@ -25,8 +25,14 @@ export type {
 } from './agent-engine.js';
 export {
 	createOpenAiAgentEngine,
-	type OpenAiProviderData,
+	type OpenAiTurnContext,
 } from './openai-provider.js';
+export {
+	type HostedInferenceBackend,
+	type InferenceBackendConfig,
+	resolveInferenceBackend,
+	type ResolvedInferenceBackend,
+} from './inference-backend.js';
 
 export type EpicenterClientOptions = {
 	/** Base URL of the Epicenter server (no trailing slash required). */

@@ -426,8 +426,8 @@ export type MountWorkers<TTables extends TableDefinitions> = {
  *  - `session` is the mount's signed-in capability kit ({@link MountSession}: the
  *    `AuthedFetch`, the owner id, the sockets). Always present, because workers
  *    are only ever wired under a `defineSessionMount` open. A factory uses it to
- *    answer on the cloud (e.g. `createOpenAiAgentEngine({ fetch: session.fetch })`
- *    for the metered inference backend).
+ *    answer on the cloud (the engine's per-turn `data()` returns `session.fetch`
+ *    plus the base URL for the metered inference backend).
  *  - `baseURL` is the resolved sync base URL the daemon authenticates against, so
  *    a factory's cloud calls target the same deployment its sync does.
  *

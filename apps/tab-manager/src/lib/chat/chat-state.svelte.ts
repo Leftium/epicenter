@@ -26,7 +26,10 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import { createOpenAiAgentEngine } from '@epicenter/client';
+import {
+	createOpenAiAgentEngine,
+	resolveInferenceBackend,
+} from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { bindAgentConversation } from '@epicenter/svelte';
@@ -144,9 +147,11 @@ export function createAiChatState({
 			createAgentConversation({
 				store: attachConversationStore(conversationId),
 				engine: createOpenAiAgentEngine({
-					fetch: auth.fetch,
-					baseURL: inferenceBaseUrl,
 					data: () => ({
+						...resolveInferenceBackend(
+							{ mode: 'hosted' },
+							{ fetch: auth.fetch, baseURL: inferenceBaseUrl },
+						),
 						model: modelChoice?.model ?? DEFAULT_MODEL,
 						systemPrompts: [
 							buildDeviceConstraints(tabManager.nodeId),

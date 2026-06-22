@@ -31,8 +31,14 @@ import type {
 	ModelMessage,
 } from './agent-engine.js';
 
-/** The per-turn body options: the model and the system prompts to prepend. */
-export type OpenAiProviderData = {
+/**
+ * Everything the engine needs for one turn, read per turn so a backend or model
+ * switch takes effect on the next turn (ADR-0053): the resolved transport
+ * (`fetch` + `baseURL`) plus the model and the system prompts to prepend.
+ */
+export type OpenAiTurnContext = {
+	fetch: EngineFetch;
+	baseURL: string;
 	model: string;
 	systemPrompts: string[];
 };
@@ -297,24 +303,22 @@ async function* parseOpenAiStream(
 
 /**
  * Build an OpenAI-compatible {@link AgentEngine} the client agent loop drives.
- * `fetch` carries auth (the gateway's bearer, a BYOK key, or none for a local
- * backend), `baseURL` is the inference server (default the Epicenter gateway),
- * and `data()` is read per turn so a mid-conversation model switch takes effect
- * on the next step. The request's `tools` (the live catalog for this step) are
- * mapped to OpenAI tools so the model emits tool calls.
+ * `data()` is read per turn and returns the whole {@link OpenAiTurnContext}: the
+ * resolved transport (`fetch` + `baseURL`) plus the model and system prompts. The
+ * `fetch` carries auth (the gateway's bearer, a custom backend's key, or none for
+ * a local one) and `baseURL` is the inference server, so switching either the
+ * backend or the model takes effect on the next turn with no handle rebuild
+ * (ADR-0053). The request's `tools` (the live catalog for this step) are mapped to
+ * OpenAI tools so the model emits tool calls.
  */
 export function createOpenAiAgentEngine({
-	fetch,
-	baseURL,
 	data,
 }: {
-	fetch: EngineFetch;
-	baseURL: string;
-	data: () => OpenAiProviderData;
+	data: () => OpenAiTurnContext;
 }): AgentEngine {
-	const endpoint = `${baseURL.replace(/\/+$/, '')}/chat/completions`;
 	return async function* (request, signal) {
-		const { model, systemPrompts } = data();
+		const { fetch, baseURL, model, systemPrompts } = data();
+		const endpoint = `${baseURL.replace(/\/+$/, '')}/chat/completions`;
 		const body = {
 			model,
 			messages: [

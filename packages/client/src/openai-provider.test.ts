@@ -70,9 +70,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: ['be brief'] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: ['be brief'],
+			}),
 		});
 
 		const request: AgentEngineRequest = {
@@ -158,9 +161,12 @@ describe('createOpenAiAgentEngine', () => {
 			return fetch(url, init);
 		}) as unknown as typeof globalThis.fetch;
 		const engine = createOpenAiAgentEngine({
-			fetch: recordingFetch,
-			baseURL: 'https://example.test/v1/',
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch: recordingFetch,
+				baseURL: 'https://example.test/v1/',
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		await drain(
@@ -184,9 +190,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		const chunks = await drain(
@@ -247,9 +256,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		const ends = toolCalls(
@@ -317,9 +329,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gemini-3.5-flash', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gemini-3.5-flash',
+				systemPrompts: [],
+			}),
 		});
 
 		const ends = toolCalls(
@@ -347,9 +362,12 @@ describe('createOpenAiAgentEngine', () => {
 		);
 		const { fetch } = capturingFetch(errorResponse);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		const chunks = await drain(

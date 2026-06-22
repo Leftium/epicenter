@@ -160,7 +160,20 @@ export function createConversation(
 		assistant: AgentMessage,
 		signal: AbortSignal,
 	): Promise<{ calls: AgentToolCall[]; failure?: ConversationError }> {
-		const prompt = toModelMessages([...persisted, ...(turn ?? [])]);
+		// The prompt is the transcript BEFORE the message being generated. `turn`
+		// already holds the in-flight `assistant` (pushed before this step), but it
+		// is still empty (`parts: []`), so prompting with it would feed the model the
+		// blank message it is filling. A trailing empty assistant makes ChatML
+		// backends (local Ollama/Qwen) emit a literal "assistant" role token and
+		// role-play the next user turn; the hosted Gemini path tolerated it, so it
+		// stayed latent. `isPersistableMessage` excludes empty messages, so it drops
+		// the in-flight assistant while keeping earlier in-turn assistants (a prior
+		// tool step carries real text and tool results the next step must re-read).
+		// This is the same predicate that gates render and persist: one owner.
+		const prompt = toModelMessages([
+			...persisted,
+			...(turn ?? []).filter(isPersistableMessage),
+		]);
 		const calls: AgentToolCall[] = [];
 		let failure: ConversationError | undefined;
 

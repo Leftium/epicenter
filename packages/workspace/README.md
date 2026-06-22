@@ -143,7 +143,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 |---|---|---|---|---|
 | `define*` | **None**: pure data or type contract | Schemas, defaults, typed bundle values | Plain config object or same value back | `defineTable`, `defineKv`, `defineMutation`, `defineQuery`, `defineWorkspace` |
 | `create*` | **Constructs**: bundles, models, registries, or pure definitions | Definitions, options | Disposable bundle or pure value | `createWorkspace` (root bundle: ydoc + tables + kv + empty actions + dispose), `createFuji` (app model), `createDisposableCache` (refcounted per-row cache) |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config (workspace materializers take the bundle from `createWorkspace`) | Typed handle, non-idempotent, hold the reference | `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachLocalStorage`, `attachYjsLog`, `attachBroadcastChannel`, `attachMarkdownExport`, `attachBunSqliteMaterializer` |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config (workspace materializers take the bundle from `createWorkspace`) | Typed handle, non-idempotent, hold the reference | `attachRichText`, `attachPlainText`, `attachRecords`, `attachTimeline`, `attachIndexedDb`, `attachLocalStorage`, `attachYjsLog`, `attachBroadcastChannel`, `attachMarkdownExport`, `attachBunSqliteMaterializer` |
 | `open*` | **Opens a runtime over a Y.Doc or a local resource**: returns a typed handle with its own teardown. The Y.Doc-bound case (`openCollaboration`) registers `ydoc.on('destroy')` like `attach*` does; the resource case (`openSqliteReader`) takes no Y.Doc and returns a `[Symbol.dispose]()` handle. | Y.Doc + config, or resource config | Typed runtime handle | `openCollaboration`, `openSqliteReader`, `openWorkspaceSqlite` |
 
 `createDisposableCache(build, opts?)` is the refcounted cache primitive. The
@@ -1484,6 +1484,7 @@ Per-row content is just another `attach*` call inside a child document builder.
 Pick the attachment that matches the content shape:
 
 - `attachPlainText(ydoc, name)`: binds a `Y.Text`. Editor gets `bundle.content` as `Y.Text`.
+- `attachRecords(ydoc, name)`: binds a keyed last-write-wins store of whole JSON records, one per id (the shape an agent transcript uses). Bundle field is a `RecordsHandle<T>` with `get / set / delete / entries / observe`.
 - `attachRichText(ydoc, name)`: binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
 - `attachTimeline(ydoc)`: a polymorphic timeline that can project as text, rich text, or a sheet. Exposes `read() / write(text) / appendText(text) / asText() / asRichText() / asSheet() / currentType / observe(...) / restoreFromSnapshot(binary)`.
 

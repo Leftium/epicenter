@@ -1,6 +1,6 @@
 # 0052. Shortcut reach is the minimum of command, key, and platform ceilings, never a user toggle
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-20
 
 ## Context

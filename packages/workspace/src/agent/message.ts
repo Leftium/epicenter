@@ -9,6 +9,11 @@
  * tool-result parts. The shapes mirror TanStack AI's message parts but stay a
  * plain, JSON-stable record (no streaming state, no Yjs), so a finished message
  * round-trips through the LWW store unchanged.
+ *
+ * The id is globally unique, so each key is written exactly once and the LWW
+ * store's conflict resolution never fires. We use the store for its by-id,
+ * idempotent writes and to share one substrate with the table layer, not for
+ * its last-write-wins semantics.
  */
 import type { ModelMessage, ToolCall } from '@tanstack/ai';
 import type { JsonValue } from 'wellcrafted/json';

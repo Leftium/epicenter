@@ -38,20 +38,28 @@ shapes, see `docs/adr/`.
   through `ws.tables.X.docs.field.open(rowId)`. The workspace owns guid derivation.
 - **Worker**: running behavior that observes workspace state and writes results
   back. Workers may be local (every node runs them) or agent-bound (one
-  configured agent answers). A conversation answer is written by the peer the
-  bound agent designates (ADR-0043): the client tab itself for a capability-free
-  agent, the agent's daemon for a local-data agent.
+  configured agent answers). A conversation is answered by the client agent loop
+  in the open tab, for every agent (ADR-0047); the daemon contributes data and
+  side effects as dispatched actions (tools), never by running the loop.
 - **Agent**: the durable address a row or conversation binds to (an immutable
   id). An agent names who should answer; the peer that answers as it is the
   client tab or a daemon, set by the agent's **trust location** (ADR-0030/0043).
-- **Trust location**: where an agent answers, and therefore where its data goes
-  (ADR-0043). **Client** = the open browser tab answers in-process over
-  Epicenter's metered inference stream (a capability-free agent; Epicenter meters
-  tokens but runs no answering worker). **Home daemon** = the user's own always-on
-  box answers (nothing leaves the house). Blindness is per-agent, not global.
-- **Answerer**: an in-process peer that observes a conversation child doc and
-  writes the reply into it. The client tab (capability-free agent) or a daemon
-  (local-data agent); never the cloud relay/anchor, which stays blind (ADR-0043).
+- **Trust location**: where an agent's data and tools live, and therefore where
+  its side effects run (ADR-0030, ADR-0047). The reasoning loop always runs in
+  the client over Epicenter's metered inference stream; what varies is the
+  agent's capability. A **capability-free** agent (Vocab) has no tools. A
+  **local-data** agent (Local Books) keeps its data and action handlers on the
+  user's own always-on daemon, which the client loop reaches by dispatching
+  actions; data leaves the daemon only as a tool result. Epicenter meters tokens
+  but runs no answering worker. Blindness is per-agent, not global.
+- **Conversation loop**: the client-side loop that answers every conversation,
+  streams the live turn into a snapshot the UI renders, and persists finished
+  messages as records (ADR-0047). It replaces the older doc-observing *answerer*
+  (a daemon that wrote the reply into the doc), which ADR-0047 removed. Two
+  implementations exist, chosen by transcript reach (ADR-0048): a transcript that
+  syncs across a person's peers uses the workspace loop (`createConversation`,
+  finished messages in a Yjs child doc); a deliberately device-local transcript
+  uses TanStack `createChat` (tab-manager, IndexedDB).
 - **Materializer**: a local, addressless worker that projects workspace data into
   another store (markdown, sqlite).
 - **`attach*` vs `create*`**: `attach*` are side-effectful primitives that register

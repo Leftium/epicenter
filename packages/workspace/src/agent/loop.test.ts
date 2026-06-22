@@ -3,7 +3,11 @@ import { EventType, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
 import { attachKvStore } from '../document/attach-kv-store.js';
 import { type AgentEngine, createConversation } from './loop.js';
-import { type AgentMessage, agentMessageText } from './message.js';
+import {
+	type AgentMessage,
+	agentMessageText,
+	isPersistableMessage,
+} from './message.js';
 import {
 	type AgentToolCall,
 	type Approval,
@@ -233,5 +237,63 @@ describe('createConversation', () => {
 		const messages = handle.snapshot().messages;
 		expect(messages.map((m) => m.role)).toEqual(['user']);
 		expect(handle.snapshot().isGenerating).toBe(false);
+	});
+
+	// Guards the snapshot/persistence coupling: the live render filter and the
+	// persistence filter must use one predicate, or a message could render
+	// mid-turn and then vanish on a clean finish. See `snapshot` in loop.ts.
+	test('every assistant message that renders live also persists', async () => {
+		const store = makeStore();
+		const engine: AgentEngine = () =>
+			streamOf([
+				chunk({
+					type: EventType.TEXT_MESSAGE_CONTENT,
+					delta: 'streamed',
+					messageId: 'a',
+				}),
+				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
+			]);
+
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
+
+		// Record every assistant id that ever appears in a live snapshot.
+		const renderedLive = new Set<string>();
+		const unsubscribe = handle.subscribe(() => {
+			if (!handle.snapshot().isGenerating) return;
+			for (const message of handle.snapshot().messages) {
+				if (message.role === 'assistant') renderedLive.add(message.id);
+			}
+		});
+
+		handle.send('hi');
+		await settle(handle);
+		unsubscribe();
+
+		const persisted = new Set(
+			[...store.entries()]
+				.map((entry) => entry.val)
+				.filter((message) => message.role === 'assistant')
+				.map((message) => message.id),
+		);
+		expect([...renderedLive].sort()).toEqual([...persisted].sort());
+		expect(persisted.size).toBe(1);
+	});
+
+	// The discriminator the shared predicate closes: a message can hold parts yet
+	// not be persistable (an empty text part). `parts.length > 0` would render it
+	// live; `isPersistableMessage` (used by both filters) drops it consistently.
+	test('a parts-bearing but empty message is not persistable', () => {
+		const message: AgentMessage = {
+			id: 'm1',
+			role: 'assistant',
+			createdAt: 0,
+			parts: [{ type: 'text', text: '' }],
+		};
+		expect(message.parts.length).toBeGreaterThan(0);
+		expect(isPersistableMessage(message)).toBe(false);
 	});
 });

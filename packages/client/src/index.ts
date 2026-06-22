@@ -19,6 +19,7 @@ export type {
 	AgentEngineRequest,
 	AgentEngineToolDefinition,
 	EngineChunk,
+	EngineFetch,
 	ModelMessage,
 	ModelToolCall,
 } from './agent-engine.js';

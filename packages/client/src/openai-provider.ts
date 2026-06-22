@@ -27,6 +27,7 @@ import type {
 	AgentEngine,
 	AgentEngineToolDefinition,
 	EngineChunk,
+	EngineFetch,
 	ModelMessage,
 } from './agent-engine.js';
 
@@ -317,7 +318,7 @@ export function createOpenAiAgentEngine({
 	baseURL,
 	data,
 }: {
-	fetch: typeof globalThis.fetch;
+	fetch: EngineFetch;
 	baseURL: string;
 	data: () => OpenAiProviderData;
 }): AgentEngine {

@@ -8,8 +8,10 @@
  * the turn ends. The live turn never enters the CRDT, and the loop dies with the
  * tab; re-asking the reasoning is free.
  *
- * Inference rides the metered Epicenter provider (the house key over
- * `/api/ai/chat`), reading the conversation's model and skill prompts per turn.
+ * Inference rides the OpenAI-compatible gateway (ADR-0050; the house key over
+ * `/v1/chat/completions`), reading the conversation's model and skill prompts per
+ * turn. The base URL is the swap point: it defaults to the Epicenter gateway but
+ * is the only thing a self-hosted or local backend (Ollama, vLLM) would change.
  * Tools are opensidian's own file and bash actions: opensidian has no daemon, so
  * they are the client's in-process actions, surfaced through
  * `createDispatchToolCatalog` (a local action resolves through `invokeAction`
@@ -23,10 +25,7 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import {
-	createAiChatFetch,
-	createEpicenterAgentEngine,
-} from '@epicenter/client';
+import { createOpenAiAgentEngine } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { InstantString } from '@epicenter/field';
@@ -64,8 +63,9 @@ export function createAiChatState({
 	workspace: OpensidianBrowser;
 	skills: SkillState;
 }) {
-	const aiChatUrl = API_ROUTES.ai.chat.url(APP_URLS.API);
-	const aiFetch = createAiChatFetch(auth.fetch);
+	// The inference server's base URL (the swap point, ADR-0049): default the
+	// Epicenter gateway; the engine appends `/chat/completions`.
+	const inferenceBaseUrl = API_ROUTES.ai.completions.baseUrl(APP_URLS.API);
 
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
@@ -160,9 +160,9 @@ export function createAiChatState({
 			createConversation({
 				store:
 					workspace.tables.conversations.docs.messages.open(conversationId),
-				engine: createEpicenterAgentEngine({
-					fetch: aiFetch,
-					url: aiChatUrl,
+				engine: createOpenAiAgentEngine({
+					fetch: auth.fetch,
+					baseURL: inferenceBaseUrl,
 					data: () => ({
 						model: metadata?.model ?? DEFAULT_MODEL,
 						systemPrompts: buildSystemPrompts(),

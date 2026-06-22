@@ -13,6 +13,18 @@
 import type { JsonValue } from 'wellcrafted/json';
 
 /**
+ * The fetch an engine calls: a function from a URL plus init to a response.
+ * Structurally `@epicenter/auth`'s `AuthFetch` and a plain `globalThis.fetch`,
+ * but typed as the function shape rather than `typeof globalThis.fetch` because
+ * the engine never needs `fetch.preconnect`, and an authed fetch wrapper (which
+ * is what the gateway path passes) does not carry it.
+ */
+export type EngineFetch = (
+	input: string | URL | Request,
+	init?: RequestInit,
+) => Promise<Response>;
+
+/**
  * One tool call in a prompt transcript, in the OpenAI/TanStack function-call
  * shape. The OpenAI-compatible engine maps this to a `tool_calls[]` entry; the
  * legacy engine forwards it verbatim.

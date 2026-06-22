@@ -319,7 +319,7 @@ const analytics = {
  */
 const shortcuts = {
 	// These getDefault thunks are the single source for the in-app shortcut
-	// defaults. The web backend (platform/shortcuts.browser.ts) reads them back
+	// defaults. The focused backend (platform/focused-shortcuts.ts) reads them back
 	// through `settings.getDefault('shortcut.*')` instead of redeclaring them, so
 	// the schema and the backend can never drift. Values are the readable manual
 	// grammar (`parseManualBinding`): `'space'`, `'c'`, `'ctrl+shift+a'`. The cell
@@ -355,6 +355,15 @@ const shortcuts = {
 	'shortcut.runTransformationOnClipboard': defineKv(
 		nullable(field.string()),
 		(): string | null => 'r',
+	),
+	// Navigation, focused by nature: Cmd+, (the platform "open preferences"
+	// gesture) opens settings in-app. A chord on a `focused` command still clamps
+	// to focused reach, so this never registers globally; it lives only in the
+	// synced focused store. `meta+,` is platform-free here (the synced default
+	// must be), surfacing as Cmd+, on macOS and Win+, elsewhere.
+	'shortcut.openSettings': defineKv(
+		nullable(field.string()),
+		(): string | null => 'meta+,',
 	),
 } as const;
 

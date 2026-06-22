@@ -7,7 +7,9 @@ import {
 	isTierZeroChord,
 	keyBindingToAccelerator,
 	keyBindingToString,
+	keyCapability,
 	parseManualBinding,
+	realizedReach,
 	resolveBinding,
 } from './key-binding';
 
@@ -227,4 +229,84 @@ test('domCodeToKey is the inverse of acceleratorKey for every chord key', () => 
 		expect(code).toBeDefined();
 		expect(domCodeToKey(code as string)).toBe(key);
 	}
+});
+
+test('keyCapability: a chord reaches global with no Accessibility grant', () => {
+	expect(
+		keyCapability({ modifiers: ['meta', 'shift'], keys: ['space'] }),
+	).toEqual({ reach: 'global', needsAccessibility: false });
+});
+
+test('keyCapability: a bare key caps at focused', () => {
+	// A global bare key would swallow that key in every app, so it can only act
+	// in-app no matter the platform.
+	expect(keyCapability({ modifiers: [], keys: ['space'] })).toEqual({
+		reach: 'focused',
+		needsAccessibility: false,
+	});
+});
+
+test('keyCapability: Fn and modifier-only holds reach global behind the grant', () => {
+	expect(keyCapability({ modifiers: ['fn'], keys: [] })).toEqual({
+		reach: 'global',
+		needsAccessibility: true,
+	});
+	expect(keyCapability({ modifiers: ['fn'], keys: ['space'] })).toEqual({
+		reach: 'global',
+		needsAccessibility: true,
+	});
+	expect(keyCapability({ modifiers: ['meta'], keys: [] })).toEqual({
+		reach: 'global',
+		needsAccessibility: true,
+	});
+});
+
+// The worked table from ADR-0052: realizedReach = min(command, key, platform).
+test('realizedReach: a global command on a bare key on web is focused', () => {
+	expect(
+		realizedReach('global', { modifiers: [], keys: ['space'] }, 'focused'),
+	).toEqual({ reach: 'focused', needsAccessibility: false });
+});
+
+test('realizedReach: a global command on a chord on desktop is global, no grant', () => {
+	expect(
+		realizedReach(
+			'global',
+			{ modifiers: ['meta', 'shift'], keys: ['space'] },
+			'global',
+		),
+	).toEqual({ reach: 'global', needsAccessibility: false });
+});
+
+test('realizedReach: a global command on a bare key on desktop is focused', () => {
+	// The key shape, not the platform, is the binding floor here.
+	expect(
+		realizedReach('global', { modifiers: [], keys: ['space'] }, 'global'),
+	).toEqual({ reach: 'focused', needsAccessibility: false });
+});
+
+test('realizedReach: a focused command on a chord on desktop stays focused', () => {
+	// The command's nature is the floor: a capable chord cannot escape it, and a
+	// focused result needs no Accessibility grant.
+	expect(
+		realizedReach(
+			'focused',
+			{ modifiers: ['meta'], keys: ['comma'] },
+			'global',
+		),
+	).toEqual({ reach: 'focused', needsAccessibility: false });
+});
+
+test('realizedReach: a global command on an Fn hold on desktop needs Accessibility', () => {
+	expect(
+		realizedReach('global', { modifiers: ['fn'], keys: [] }, 'global'),
+	).toEqual({ reach: 'global', needsAccessibility: true });
+});
+
+test('realizedReach: clamping a hold down to focused drops the grant requirement', () => {
+	// An Fn hold on web (platform caps at focused): the grant is moot once the
+	// gesture cannot reach past the window.
+	expect(
+		realizedReach('global', { modifiers: ['fn'], keys: [] }, 'focused'),
+	).toEqual({ reach: 'focused', needsAccessibility: false });
 });

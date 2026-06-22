@@ -14,31 +14,25 @@ import type { Command } from '$lib/commands';
 import type { KeyBinding } from '$lib/tauri/commands';
 
 /**
- * Contract for `#platform/shortcuts`: the per-platform shortcut backend. The
- * desktop build drives system-global rdev bindings (device-config storage); the
- * web build drives in-app keydown shortcuts (workspace KV storage). Only one
- * runs per platform, so consumers call these names without branching on `tauri`.
- * The trigger dispatch itself converges in `dispatchCommandTrigger`; this owns
- * the binding configuration around it.
+ * Contract for a single shortcut backend. Two implement it: `focusedShortcuts`
+ * (in-app keydown shortcuts in workspace KV, universal) and `systemShortcuts`
+ * (system-global rdev bindings in device-config, Tauri-only). The reach router
+ * (`shortcuts.ts`) composes the two and routes each write by realized reach
+ * (ADR-0052), so app code talks to the router, not to a backend directly; the
+ * settings recorders are handed the specific backend they edit. The trigger
+ * dispatch itself converges in `dispatchCommandTrigger`; this owns the binding
+ * configuration around it.
  */
 export type Shortcuts = {
 	/** Push every command's configured binding to this platform's backend. */
 	sync(): Promise<void>;
 	/** Restore every shortcut to its default binding, then re-sync. */
 	reset(): void;
-	/** A command's default binding, formatted for display (`''` when unbound). */
-	defaultLabel(commandId: Command['id']): string;
-	/**
-	 * The command's *current* binding on this platform, formatted for display
-	 * (`''` when unbound). The single owner of "what key is live for this
-	 * command": display-only consumers (action cards, home-page hints) read this
-	 * instead of reaching into platform storage and re-deriving the `tauri` branch.
-	 */
-	currentLabel(commandId: Command['id']): string;
 	/**
 	 * The command's current binding (`null` when unbound). What the recorder reads
 	 * to show and prefill the binding, instead of reaching into platform storage
-	 * and re-deriving the storage-key scheme the backend already owns.
+	 * and re-deriving the storage-key scheme the backend already owns. Display-only
+	 * consumers format it through `keyBindingToLabel` at the call site.
 	 */
 	current(commandId: Command['id']): KeyBinding | null;
 	/** Persist a binding for this command and push it to the platform runtime. */

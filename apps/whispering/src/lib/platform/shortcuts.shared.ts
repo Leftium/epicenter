@@ -1,9 +1,7 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
-import { os } from '#platform/os';
 import { type Command, commands } from '$lib/commands';
 import { report } from '$lib/report';
 import type { KeyBinding } from '$lib/tauri/commands';
-import { keyBindingToLabel } from '$lib/utils/key-binding';
 import type { Shortcuts } from './types';
 
 /** A command paired with its current stored binding (`null` = unbound). */
@@ -41,11 +39,6 @@ export type ShortcutBackend = {
 	/** Toast title when a push fails. */
 	syncErrorTitle: string;
 };
-
-/** Format a binding for display (`''` when unbound). Both tiers render the same. */
-function label(binding: KeyBinding | null): string {
-	return binding ? keyBindingToLabel(binding, os.isApple) : '';
-}
 
 /**
  * Build the platform-agnostic `Shortcuts` surface over a {@link ShortcutBackend}.
@@ -87,8 +80,6 @@ export function createShortcuts(backend: ShortcutBackend): Shortcuts {
 		reset,
 		set,
 		clear,
-		defaultLabel: (id) => label(backend.getDefault(id)),
-		currentLabel: (id) => label(backend.read(id)),
 		current: (id) => backend.read(id),
 		findConflict: (id, binding) => backend.findConflict(id, binding),
 	};

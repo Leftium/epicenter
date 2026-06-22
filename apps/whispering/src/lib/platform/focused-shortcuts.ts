@@ -1,7 +1,7 @@
 import { type Command, commands } from '$lib/commands';
 import {
 	type CommandId,
-	localShortcuts,
+	LocalShortcutManagerLive,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
 import {
@@ -13,11 +13,17 @@ import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
 /**
- * Web build of `#platform/shortcuts`: in-app (focused-window) shortcuts driven
- * by the browser keydown manager, stored in workspace KV under `shortcut.*` as
- * the readable manual grammar (`"ctrl+shift+a"`). The KV cell is `field.string()`
- * either way; this just speaks the same physical `KeyBinding` the matcher and the
- * desktop tier use, parsed on read and serialized on write.
+ * The focused (in-app) shortcut backend: shortcuts that fire while the Whispering
+ * window is focused, driven by the browser keydown matcher and stored in workspace
+ * KV under `shortcut.*` as the readable manual grammar (`"ctrl+shift+a"`). The KV
+ * cell is `field.string()` either way; this just speaks the same physical
+ * `KeyBinding` the matcher and the system tier use, parsed on read and serialized
+ * on write.
+ *
+ * Universal, not a `#platform` seam: the webview matcher runs in the Tauri window
+ * too, so this same backend is the focused half on every platform. The reach
+ * router (`shortcuts.ts`) composes it with the Tauri-only `systemShortcuts`; on
+ * desktop both run, on web this is the only one. See ADR-0052.
  */
 
 const localKey = (id: Command['id']) => `shortcut.${id}` as const;
@@ -28,7 +34,7 @@ const readBinding = (id: Command['id']) => {
 	return stored ? parseManualBinding(stored) : null;
 };
 
-export const shortcuts: Shortcuts = createShortcuts({
+export const focusedShortcuts: Shortcuts = createShortcuts({
 	read: readBinding,
 	getDefault: (id) => {
 		const stored = settings.getDefault(localKey(id));
@@ -53,11 +59,9 @@ export const shortcuts: Shortcuts = createShortcuts({
 	// succeeds. The contract stays async because the desktop tier's push does IPC.
 	async push(entries) {
 		for (const { command, binding } of entries) {
-			if (binding) localShortcuts.registerCommand({ command, binding });
-			else
-				localShortcuts.unregisterCommand({
-					commandId: command.id as CommandId,
-				});
+			if (binding)
+				LocalShortcutManagerLive.register(command.id as CommandId, binding);
+			else LocalShortcutManagerLive.unregister(command.id as CommandId);
 		}
 		return null;
 	},

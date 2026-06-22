@@ -115,8 +115,10 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0045](0045-playback-pause-is-opt-in-because-resume-can-start-unrelated-media.md) | Playback pause ships opt-in because macOS resume can start unrelated media | Accepted |
 | [0046](0046-a-capability-free-agent-persists-finished-messages-not-live-doc-streams.md) | A capability-free agent persists finished messages, not live doc streams (scopes 0036) | Superseded by 0047 |
 | [0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) | The agent loop runs in the client; tools are dispatched actions, and the daemon provides data, not inference | Accepted (design; core deleted as consumers migrate) |
-| [0048](0048-a-conversations-loop-is-chosen-by-whether-its-transcript-syncs.md) | A conversation's loop is chosen by whether its transcript syncs across peers | Accepted |
+| [0048](0048-a-conversations-loop-is-chosen-by-whether-its-transcript-syncs.md) | A conversation's loop is chosen by whether its transcript syncs across peers | Superseded by 0051 |
 | [0049](0049-inference-is-its-own-box-the-daemon-never-infers.md) | Inference is its own box; the daemon never infers; the client loop talks to a swappable inference server | Accepted |
 | [0050](0050-the-inference-contract-is-openai-compatible.md) | The inference contract is OpenAI-compatible Chat Completions; Epicenter's backend is one swappable gateway | Accepted |
+| [0051](0051-one-agent-loop-its-store-seam-chooses-persistence.md) | There is one agent loop; its store seam chooses persistence, so tab-manager needs no second loop | Accepted (supersedes 0048) |
+| [0052](0052-shortcut-reach-is-the-minimum-of-command-key-and-platform-ceilings.md) | Shortcut reach is the minimum of command, key, and platform ceilings, never a user toggle | Proposed |
 
 When you add an ADR, add its row here.

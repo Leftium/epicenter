@@ -25,11 +25,18 @@ const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys in a combinat
  * resets and keeps listening, so the owner can refuse a binding and let the user
  * try again without re-opening. The owner calls `stop()` once a capture is
  * accepted. Escape is left to bubble; the session owner cancels.
+ *
+ * `onProgress` (optional) fires on every keydown with the combo accumulated so
+ * far, before the gesture completes. The recorder owns capture; the owner owns
+ * meaning, so the owner reads this partial to preview the reach a binding would
+ * earn ("hold a modifier and it reaches everywhere") live, as the user holds.
  */
 export function createChordRecorder({
 	onCapture,
+	onProgress,
 }: {
 	onCapture: (binding: KeyBinding) => void;
+	onProgress?: (binding: KeyBinding) => void;
 }) {
 	// Internal control-flow guard only (the owner tracks its own session state), so
 	// a plain bool, not reactive.
@@ -82,6 +89,10 @@ export function createChordRecorder({
 		const key = domCodeToKey(e.code);
 		if (key) capturedKey = key;
 
+		onProgress?.({
+			modifiers: [...capturedModifiers],
+			keys: capturedKey ? [capturedKey] : [],
+		});
 		completeAfterWindow();
 	}
 

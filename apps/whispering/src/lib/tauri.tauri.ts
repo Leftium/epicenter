@@ -70,7 +70,7 @@ import { commands, events } from '$lib/tauri/commands';
 
 /**
  * A Tier-0 chord resolved to the accelerator the plugin registers under. The
- * caller (`platform/shortcuts.tauri.ts`) resolves each binding once via
+ * caller (`platform/system-shortcuts.tauri.ts`) resolves each binding once via
  * `resolveBinding`, so `registerChords` registers the string instead of
  * re-deriving it.
  */
@@ -264,7 +264,7 @@ async function initTray() {
 //     `{ commandId, state }` event on every transition (`events.shortcutTriggerEvent`)
 //     and reports its `DictationCapability` (`events.dictationCapabilityEvent`).
 //
-// Backend selection lives in `platform/shortcuts.tauri.ts`: a binding that maps
+// Backend selection lives in `platform/system-shortcuts.tauri.ts`: a binding that maps
 // to an accelerator goes to the plugin, the rest to the tap. No accelerator
 // strings reach the tap; it matches the structured `KeyBinding`.
 

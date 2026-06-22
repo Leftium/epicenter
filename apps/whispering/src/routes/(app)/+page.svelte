@@ -12,7 +12,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
-	import { commandCallbacks } from '$lib/commands';
+	import { commandRunners } from '$lib/commands';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
@@ -66,7 +66,7 @@
 		),
 	);
 	// The recording shortcut that actually fires on this platform, via the
-	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
+	// recording-shortcut label helper: desktop binds push-to-talk (Fn) globally
 	// and ships the toggle unbound, so prefer it; the browser shows the local
 	// toggle. `''` means nothing is bound (hide the hint, fall back to "click").
 	const manualShortcutLabel = $derived(getRecordingShortcutLabel('manual'));
@@ -266,7 +266,7 @@
 				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording and discard audio"
-						onclick={() => commandCallbacks.cancelRecording()}
+						onclick={() => commandRunners.cancelRecording()}
 						variant="ghost-destructive"
 						size="sm"
 					>

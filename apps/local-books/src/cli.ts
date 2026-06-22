@@ -1,3 +1,4 @@
+import ms from 'ms';
 import { runAuth } from './commands/auth.ts';
 import { runStatus } from './commands/status.ts';
 import { runSync } from './commands/sync.ts';
@@ -8,6 +9,8 @@ export type ParsedArgs = {
 	command: string;
 	full: boolean;
 	entities: string[];
+	/** When set, `sync` loops on this interval (ms) instead of running once. */
+	intervalMs?: number;
 	dataDir?: string;
 	realm?: string;
 	environment?: QbEnvironment;
@@ -32,6 +35,7 @@ Commands:
 Options:
   --full                       Force a full pull (sync only).
   --entity <name>              Limit sync to these entities (repeatable). Default: all configured.
+  --interval <dur>             Keep syncing on a loop, e.g. 30m or 1h (sync only; Ctrl-C to stop).
   --realm <realmId>            Target company (default: the authenticated one).
   --data-dir <path>            Override the data directory (or LOCAL_BOOKS_DIR).
   --env <sandbox|production>   QuickBooks environment (default: sandbox).
@@ -43,6 +47,22 @@ Environment:
   LOCAL_BOOKS_DIR                       Data directory.
   LOCAL_BOOKS_KEYRING_FILE              Plaintext file token store instead of the OS keyring.
 `;
+
+/** Parse a duration like "30s", "30m", "2h" into ms; a bare number means minutes. */
+export function parseInterval(input: string): number {
+	const trimmed = input.trim();
+	// A bare number means minutes ("30" -> "30m"); ms handles the unit suffixes.
+	const normalized = /^\d+$/.test(trimmed) ? `${trimmed}m` : trimmed;
+	const result = ms(normalized as Parameters<typeof ms>[0]) as
+		| number
+		| undefined;
+	if (result == null || !Number.isFinite(result) || result <= 0) {
+		throw new Error(
+			`Invalid --interval "${input}". Use e.g. 30, 30s, 30m, or 2h.`,
+		);
+	}
+	return result;
+}
 
 export function parseArgs(argv: string[]): ParsedArgs {
 	const args: ParsedArgs = {
@@ -88,6 +108,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 				break;
 			case '--entity':
 				args.entities.push(takeValue());
+				break;
+			case '--interval':
+				args.intervalMs = parseInterval(takeValue());
 				break;
 			case '--realm':
 				args.realm = takeValue();

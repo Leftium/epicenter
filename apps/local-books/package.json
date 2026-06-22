@@ -24,12 +24,14 @@
 	"dependencies": {
 		"@epicenter/field": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
+		"ms": "catalog:",
 		"oauth4webapi": "catalog:",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
+		"@types/ms": "catalog:",
 		"typescript": "catalog:"
 	},
 	"license": "AGPL-3.0-or-later"

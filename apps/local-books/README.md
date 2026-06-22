@@ -49,9 +49,27 @@ Tokens go in the OS keyring (macOS `security`, Linux `secret-tool`). On a headle
 bun run build:binary        # -> dist/local-books
 ```
 
-## Scheduling
+## Keeping it fresh
 
-`sync` is stateless across runs (the cursor lives in the db). Schedule it with cron / launchd / systemd on the box.
+Run a sync whenever you want current data:
+
+```sh
+local-books sync
+```
+
+Or keep it syncing in the background with `--interval`:
+
+```sh
+local-books sync --interval 30m
+```
+
+That runs a sync now and again every 30 minutes until you stop it with Ctrl-C. The first pass honors `--full`; every pass after that is incremental, so `--full --interval` means "one full pull, then keep up with CDC". In this monorepo:
+
+```sh
+infisical run --path=/apps/local-books -- bun run src/bin.ts sync --interval 30m
+```
+
+`sync` is stateless across runs (the cursor lives in the db), so it is safe to stop and restart anytime. To keep it running across logout or reboot, wrap that command in a launchd `KeepAlive` agent (macOS) or a systemd user service — you only need that once this graduates from an experiment.
 
 ## Develop
 

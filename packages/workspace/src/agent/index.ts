@@ -12,9 +12,12 @@ export {
 	type DispatchSurface,
 	type DispatchToolCatalogOptions,
 } from './dispatch-catalog.js';
+export type {
+	AgentEngine,
+	AgentEngineRequest,
+	EngineChunk,
+} from './engine.js';
 export {
-	type AgentEngine,
-	type AgentEngineRequest,
 	type ConversationError,
 	type ConversationHandle,
 	type ConversationOptions,
@@ -30,6 +33,8 @@ export {
 	type AgentToolResultPart,
 	agentMessageText,
 	isPersistableMessage,
+	type ModelMessage,
+	type ModelToolCall,
 	toModelMessages,
 } from './message.js';
 export {

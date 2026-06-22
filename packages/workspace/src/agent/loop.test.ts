@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { EventType, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
 import { attachKvStore } from '../document/attach-kv-store.js';
-import { type AgentEngine, createConversation } from './loop.js';
+import type { AgentEngine, EngineChunk } from './engine.js';
+import { createConversation } from './loop.js';
 import {
 	type AgentMessage,
 	agentMessageText,
@@ -29,15 +29,7 @@ function makeStore() {
 	});
 }
 
-/** Build a stream chunk loosely; tests do not need full AG-UI field fidelity. */
-function chunk(fields: {
-	type: EventType;
-	[key: string]: unknown;
-}): StreamChunk {
-	return fields as unknown as StreamChunk;
-}
-
-function streamOf(chunks: StreamChunk[]): AsyncIterable<StreamChunk> {
+function streamOf(chunks: EngineChunk[]): AsyncIterable<EngineChunk> {
 	return (async function* () {
 		for (const value of chunks) yield value;
 	})();
@@ -61,17 +53,8 @@ describe('createConversation', () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
 			streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'Hello',
-					messageId: 'a',
-				}),
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: ' world',
-					messageId: 'a',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
+				{ type: 'text-delta', delta: 'Hello' },
+				{ type: 'text-delta', delta: ' world' },
 			]);
 
 		const handle = createConversation({
@@ -98,28 +81,15 @@ describe('createConversation', () => {
 			stepCount += 1;
 			if (stepCount === 1) {
 				return streamOf([
-					chunk({
-						type: EventType.TOOL_CALL_START,
+					{
+						type: 'tool-call',
 						toolCallId: 't1',
-						toolCallName: 'get_time',
-					}),
-					chunk({
-						type: EventType.TOOL_CALL_ARGS,
-						toolCallId: 't1',
-						delta: '{}',
-					}),
-					chunk({ type: EventType.TOOL_CALL_END, toolCallId: 't1' }),
-					chunk({ type: EventType.RUN_FINISHED, finishReason: 'tool_calls' }),
+						toolName: 'get_time',
+						input: {},
+					},
 				]);
 			}
-			return streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'It is noon.',
-					messageId: 'b',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
-			]);
+			return streamOf([{ type: 'text-delta', delta: 'It is noon.' }]);
 		};
 		const resolved: AgentToolCall[] = [];
 		const tools: ToolCatalog = {
@@ -165,23 +135,15 @@ describe('createConversation', () => {
 			stepCount += 1;
 			if (stepCount === 1) {
 				return streamOf([
-					chunk({
-						type: EventType.TOOL_CALL_START,
+					{
+						type: 'tool-call',
 						toolCallId: 'd1',
-						toolCallName: 'delete_all',
-					}),
-					chunk({ type: EventType.TOOL_CALL_END, toolCallId: 'd1', input: {} }),
-					chunk({ type: EventType.RUN_FINISHED, finishReason: 'tool_calls' }),
+						toolName: 'delete_all',
+						input: {},
+					},
 				]);
 			}
-			return streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'Okay, I will not.',
-					messageId: 'c',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
-			]);
+			return streamOf([{ type: 'text-delta', delta: 'Okay, I will not.' }]);
 		};
 		let resolveCalled = false;
 		const tools: ToolCatalog = {
@@ -216,14 +178,7 @@ describe('createConversation', () => {
 	test('an aborted turn drops its assistant message, keeping only the user turn', async () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
-			streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'partial',
-					messageId: 'x',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
-			]);
+			streamOf([{ type: 'text-delta', delta: 'partial' }]);
 
 		const handle = createConversation({
 			store,
@@ -245,14 +200,7 @@ describe('createConversation', () => {
 	test('every assistant message that renders live also persists', async () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
-			streamOf([
-				chunk({
-					type: EventType.TEXT_MESSAGE_CONTENT,
-					delta: 'streamed',
-					messageId: 'a',
-				}),
-				chunk({ type: EventType.RUN_FINISHED, finishReason: 'stop' }),
-			]);
+			streamOf([{ type: 'text-delta', delta: 'streamed' }]);
 
 		const handle = createConversation({
 			store,

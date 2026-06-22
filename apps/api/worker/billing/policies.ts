@@ -95,6 +95,51 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 	},
 );
 
+/**
+ * Around `/v1/chat/completions` (the OpenAI-compatible gateway). Same
+ * fixed-per-model reservation as {@link chargeAiCreditsWithAutumn}, but reads the
+ * model from the OpenAI body shape (top-level `model`, not `data.model`) and
+ * answers a guard failure in the OpenAI error shape (`{ error: { message, code }}`)
+ * so the client engine keeps its branchable `error.code`. A BYOK caller (an
+ * `apiKey` in the body) bypasses metering.
+ */
+export const chargeOpenAiCreditsWithAutumn = createMiddleware<Env>(
+	async (c, next) => {
+		const body = (await c.req.json().catch(() => ({}))) as {
+			model?: string;
+			apiKey?: string;
+		};
+
+		if (body.apiKey) {
+			return next();
+		}
+
+		const billing = billingFor(c);
+		const { data: reservation, error: guardError } =
+			await billing.reserveAiChat({ model: body.model ?? '' });
+		if (guardError) {
+			return c.json(toOpenAiError(guardError), aiGuardStatus(guardError));
+		}
+
+		await next();
+
+		c.var.afterResponse.push(
+			c.res.status >= 400 ? reservation.release() : reservation.confirm(),
+		);
+	},
+);
+
+/**
+ * Render a guard failure as the OpenAI error envelope. The variant `name`
+ * (`InsufficientCredits`, `ModelRequiresPaidPlan`, ...) becomes `error.code`, so
+ * the client reducer branches on the same code the AG-UI path carried.
+ */
+function toOpenAiError(error: AiChatError | BillingError): {
+	error: { message: string; code: string };
+} {
+	return { error: { message: error.message, code: error.name } };
+}
+
 export const syncAssetStorageWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
 		const method = c.req.method;

@@ -14,14 +14,20 @@ import type { ApiSessionResponse, AuthFetch } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { OwnerId } from '@epicenter/identity';
 
+export type {
+	AgentEngine,
+	AgentEngineRequest,
+	AgentEngineToolDefinition,
+	EngineChunk,
+	EngineFetch,
+	ModelMessage,
+	ModelToolCall,
+} from './agent-engine.js';
 export { createAiChatFetch } from './ai-chat-fetch.js';
 export {
-	type AgentEngine,
-	type AgentEngineRequest,
-	type AgentEngineToolDefinition,
-	createEpicenterAgentEngine,
-	type EpicenterProviderData,
-} from './epicenter-provider.js';
+	createOpenAiAgentEngine,
+	type OpenAiProviderData,
+} from './openai-provider.js';
 
 export type EpicenterClientOptions = {
 	/** Base URL of the Epicenter server (no trailing slash required). */

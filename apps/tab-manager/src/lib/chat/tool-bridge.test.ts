@@ -4,8 +4,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import {
+	type ActionRegistry,
+	defineMutation,
+	defineQuery,
+} from '@epicenter/workspace';
 import { Err, Ok } from 'wellcrafted/result';
-import { type ActionRegistry, defineMutation, defineQuery } from './actions.js';
 import { actionsToAiTools } from './tool-bridge.js';
 
 describe('actionsToAiTools', () => {

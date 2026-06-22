@@ -15,10 +15,10 @@
  * transcript; it repeats until a step finishes with no tool calls. The
  * zero-tool case (Vocab) is one step that only ever produces text.
  */
-import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { JsonValue } from 'wellcrafted/json';
 import type { KvStoreHandle } from '../document/attach-kv-store.js';
+import type { AgentEngine } from './engine.js';
 import {
 	type AgentMessage,
 	isPersistableMessage,
@@ -26,34 +26,16 @@ import {
 } from './message.js';
 import {
 	type AgentToolCall,
-	type AgentToolDefinition,
 	type Approval,
 	defaultApprovalDecision,
 	NO_TOOLS,
 	type ToolCatalog,
 } from './tools.js';
 
-/** What the loop asks the model on one step: the prompt plus the live tools. */
-export type AgentEngineRequest = {
-	messages: ModelMessage[];
-	tools: AgentToolDefinition[];
-};
-
-/**
- * One model call: a snapshotted prompt and the available tools in, a stream of
- * AG-UI chunks (text deltas, tool-call requests, finish, error) out. It runs one
- * model invocation and never executes a tool or reads the store (ADR-0033's pure
- * token source). The Epicenter metered stream and a local model both satisfy it.
- */
-export type AgentEngine = (
-	request: AgentEngineRequest,
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
-
 /**
  * A failed turn: a human-readable message plus an optional structured code (e.g.
  * `'InsufficientCredits'`, `'Unauthorized'`) the engine surfaced on its
- * `RUN_ERROR` chunk, so the UI can branch on the code rather than match the
+ * `run-error` chunk, so the UI can branch on the code rather than match the
  * message string.
  */
 export type ConversationError = { message: string; code?: string };
@@ -169,7 +151,6 @@ export function createConversation(
 		signal: AbortSignal,
 	): Promise<{ calls: AgentToolCall[]; failure?: ConversationError }> {
 		const prompt = toModelMessages([...persisted, ...(turn ?? [])]);
-		const pending = new Map<string, { toolName: string; args: string }>();
 		const calls: AgentToolCall[] = [];
 		let failure: ConversationError | undefined;
 
@@ -180,42 +161,27 @@ export function createConversation(
 			)) {
 				if (signal.aborted) break;
 				switch (chunk.type) {
-					case EventType.TEXT_MESSAGE_CONTENT:
+					case 'text-delta':
 						appendText(assistant, chunk.delta);
 						notify();
 						break;
-					case EventType.TOOL_CALL_START:
-						pending.set(chunk.toolCallId, {
-							toolName: chunk.toolCallName,
-							args: '',
-						});
-						break;
-					case EventType.TOOL_CALL_ARGS: {
-						const open = pending.get(chunk.toolCallId);
-						if (open) open.args += chunk.delta ?? '';
-						break;
-					}
-					case EventType.TOOL_CALL_END: {
-						const open = pending.get(chunk.toolCallId);
-						pending.delete(chunk.toolCallId);
+					case 'tool-call': {
 						const call: AgentToolCall = {
 							toolCallId: chunk.toolCallId,
-							toolName: chunk.toolCallName ?? open?.toolName ?? '',
-							input: parseToolInput(chunk.input, open?.args),
+							toolName: chunk.toolName,
+							input: chunk.input,
 						};
 						calls.push(call);
 						assistant.parts.push({ type: 'tool-call', ...call });
 						notify();
 						break;
 					}
-					case EventType.RUN_ERROR: {
-						const code = (chunk as { code?: string }).code;
+					case 'run-error':
 						failure = {
 							message: chunk.message,
-							...(code !== undefined && { code }),
+							...(chunk.code !== undefined && { code: chunk.code }),
 						};
 						break;
-					}
 					default:
 						break;
 				}
@@ -362,15 +328,4 @@ function appendToolResult(
 		output,
 		isError,
 	});
-}
-
-/** Prefer the engine's parsed input; fall back to parsing accumulated args. */
-function parseToolInput(input: unknown, args: string | undefined): JsonValue {
-	if (input !== undefined) return input as JsonValue;
-	if (!args) return {};
-	try {
-		return JSON.parse(args) as JsonValue;
-	} catch {
-		return {};
-	}
 }

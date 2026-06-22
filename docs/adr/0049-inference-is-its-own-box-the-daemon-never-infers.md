@@ -1,12 +1,13 @@
 # 0049. Inference is its own box; the daemon never infers; the client loop talks to a swappable inference server
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-21
 - **Supersedes:** [ADR-0038](0038-a-daemon-answers-through-the-first-inference-backend-it-can-satisfy.md) (the daemon no longer resolves a `ChatStream` or answers; inference leaves the daemon entirely)
 - **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the client owns the loop; the daemon provides data as dispatched actions), [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) (the metered inference stream this names a box), [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (tools are dispatched actions), [ADR-0030](0030-agents-are-immutable-capability-bundles.md) (an agent's model and tools), [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md) (the relay stays content-blind), [ADR-0050](0050-the-inference-contract-is-openai-compatible.md) (the wire this box speaks)
 
 ## Context
 
+<!-- doc-path-check: ignore-next-line (historical: epicenter-provider.ts is deleted by this decision) -->
 ADR-0047 put the agent loop in the client and made the daemon a data-and-tools provider that "never runs inference." But [ADR-0038](0038-a-daemon-answers-through-the-first-inference-backend-it-can-satisfy.md) still has the daemon resolve a `ChatStream` (`byok ?? metered ?? null`) and answer, and the code still carries that arm: `chatStreamFromAdapter` in `packages/ai-adapters/src/index.ts` and the daemon's `resolveChatStream`. Both live consumers already answer through the metered client path instead (`packages/client/src/epicenter-provider.ts`, used by `apps/vocab/epicenter-engine.ts` and opensidian), so the daemon-inference arm is a pre-0047 leftover that contradicts the merged decision. Separately, "blind cloud" became overloaded: the **relay** (ADR-0035) is genuinely content-blind, but the **metered inference stream** (ADR-0033) forwards the prompt and tool definitions to the provider (`epicenter-provider.ts:190-195`) and is not content-blind at all. The two are different things wearing one word.
 
 ## Decision

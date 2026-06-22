@@ -19,6 +19,7 @@ import {
 	createServerApp,
 	mountAiApp,
 	mountAssetsApp,
+	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
 	personal,
@@ -30,6 +31,7 @@ import {
 import { describeRoute } from 'hono-openapi';
 import {
 	chargeAiCreditsWithAutumn,
+	chargeOpenAiCreditsWithAutumn,
 	syncAssetStorageWithAutumn,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
@@ -77,6 +79,11 @@ mountAiApp(app, {
 	auth: requireBearerUser,
 	ownership,
 	policies: [chargeAiCreditsWithAutumn],
+});
+mountInferenceApp(app, {
+	auth: requireBearerUser,
+	ownership,
+	policies: [chargeOpenAiCreditsWithAutumn],
 });
 
 // Cloud-only billing data plane. Auth is bundled into the mount so the

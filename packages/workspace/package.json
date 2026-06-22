@@ -49,7 +49,6 @@
 		"@epicenter/field": "workspace:*",
 		"@epicenter/identity": "workspace:*",
 		"@hono/standard-validator": "catalog:",
-		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"@types/bun": "catalog:",

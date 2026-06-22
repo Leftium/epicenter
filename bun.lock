@@ -737,7 +737,6 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
-        "@tanstack/ai": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -958,7 +957,6 @@
         "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@sindresorhus/slugify": "catalog:",
-        "@tanstack/ai": "catalog:",
         "@types/bun": "catalog:",
         "arkregex": "catalog:",
         "arktype": "catalog:",

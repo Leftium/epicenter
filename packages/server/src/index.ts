@@ -54,6 +54,7 @@ export { mountAssetsApp } from './routes/assets.js';
 // optional policies). The bare `authApp` is mounted directly because it
 // has no deployment knobs.
 export { authApp } from './routes/auth.js';
+export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 // Parent app. Wires per-request lifecycle (pg, after-response queue,

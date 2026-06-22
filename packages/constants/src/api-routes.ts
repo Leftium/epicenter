@@ -71,6 +71,18 @@ export const API_ROUTES = {
 			prefixPattern: '/api/ai/*',
 			url: (baseURL: string) => `${stripTrailing(baseURL)}/api/ai/chat`,
 		},
+		/**
+		 * The OpenAI-compatible inference gateway (ADR-0050). Lives at the root
+		 * `/v1` (the de-facto OpenAI path) so any OpenAI-compatible client points
+		 * at `<origin>/v1` and works unchanged. `baseUrl` is what the client engine
+		 * is configured with; it appends `/chat/completions`.
+		 */
+		completions: {
+			pattern: '/v1/chat/completions',
+			prefixPattern: '/v1/*',
+			url: (baseURL: string) => `${stripTrailing(baseURL)}/v1/chat/completions`,
+			baseUrl: (baseURL: string) => `${stripTrailing(baseURL)}/v1`,
+		},
 	},
 } as const;
 // The billing prefix (`/api/billing`) lives in apps/api/worker/billing/routes.ts:

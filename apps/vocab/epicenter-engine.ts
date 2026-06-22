@@ -1,9 +1,11 @@
 /**
  * The metered Epicenter backend: an {@link AgentEngine} the client agent loop
- * (ADR-0047) drives over the `/api/ai/chat` SSE stream on the user's Epicenter
- * account (the Epicenter provider, ADR-0033). The wire shape (the AI-chat fetch
- * wrapper, the route, the `model` + `systemPrompts` body) is single-homed here
- * instead of inlined at the call site.
+ * (ADR-0047) drives over the OpenAI-compatible gateway (`/v1/chat/completions`)
+ * on the user's Epicenter account (ADR-0049/0050). The base URL is the swap
+ * point: it defaults to the Epicenter gateway here, the only thing a self-hosted
+ * or local backend would change. The wire shape (the authed fetch, the base URL,
+ * the `model` + `systemPrompts` body) is single-homed here instead of inlined at
+ * the call site.
  *
  * Vocab is capability-free, so each step sends an empty tool catalog and the loop
  * runs a single text step per turn; the same engine a tool agent uses, with no
@@ -15,11 +17,7 @@
  */
 
 import type { AuthFetch } from '@epicenter/auth';
-import {
-	type AgentEngine,
-	createAiChatFetch,
-	createEpicenterAgentEngine,
-} from '@epicenter/client';
+import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from './vocab.js';
 
@@ -34,9 +32,9 @@ export function epicenterMeteredEngine(
 	sessionFetch: AuthFetch,
 	baseURL: string,
 ): AgentEngine {
-	return createEpicenterAgentEngine({
-		fetch: createAiChatFetch(sessionFetch),
-		url: API_ROUTES.ai.chat.url(baseURL),
+	return createOpenAiAgentEngine({
+		fetch: sessionFetch,
+		baseURL: API_ROUTES.ai.completions.baseUrl(baseURL),
 		data: () => ({
 			model: VOCAB_MODEL,
 			systemPrompts: [VOCAB_SYSTEM_PROMPT],

@@ -43,17 +43,13 @@
 // ACTION SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { ActionManifest, ActionRegistry } from './shared/actions';
+export type { Action, ActionManifest, ActionRegistry } from './shared/actions';
 export {
 	defineActions,
 	defineMutation,
 	defineQuery,
+	invokeAction,
 } from './shared/actions';
-export {
-	type ActionNames,
-	actionsToAiTools,
-	type ToolDefinition,
-} from './shared/tool-bridge';
 
 // ════════════════════════════════════════════════════════════════════════════
 // NODE IDENTITY

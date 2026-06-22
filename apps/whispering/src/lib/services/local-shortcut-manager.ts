@@ -83,6 +83,11 @@ export const LocalShortcutManagerLive = {
 			// Skip shortcut processing if user is typing in an input field
 			if (isTypingInInput()) return;
 
+			// Skip keydowns that belong to an in-progress IME composition (CJK, accent
+			// dead keys): the mid-composition `.code` is not the user's intended key,
+			// so matching on it would misfire.
+			if (e.isComposing) return;
+
 			// Physical key from `e.code` (layout-stable, no Option-character quirk).
 			// Modifier codes and keys off the bindable alphabet map to null and are
 			// not tracked here; modifiers come from the event flags via heldBinding.

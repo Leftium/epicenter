@@ -165,23 +165,17 @@ export function createAiChatState({
 				store:
 					workspace.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
-					data: () => {
-						// Read the device backend per turn so a switch lands next turn.
-						// The model rides with the backend: custom serves its own model;
-						// hosted uses this conversation's catalog pick.
-						const config = inferenceBackend.current;
-						return {
-							...resolveInferenceBackend(config, {
-								fetch: auth.fetch,
-								baseURL: inferenceBaseUrl,
-							}),
-							model:
-								config.mode === 'custom'
-									? config.model
-									: (metadata?.model ?? DEFAULT_MODEL),
-							systemPrompts: buildSystemPrompts(),
-						};
-					},
+					// The device backend is read per turn (so a switch lands next turn) and
+					// carries its own model; this conversation's catalog pick is the hosted
+					// default, used only when the backend is hosted.
+					data: () => ({
+						...resolveInferenceBackend(inferenceBackend.current, {
+							fetch: auth.fetch,
+							baseURL: inferenceBaseUrl,
+							model: metadata?.model ?? DEFAULT_MODEL,
+						}),
+						systemPrompts: buildSystemPrompts(),
+					}),
 				}),
 				tools: toolCatalog,
 				approval: {

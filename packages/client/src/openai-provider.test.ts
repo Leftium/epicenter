@@ -422,9 +422,8 @@ describe('createOpenAiAgentEngine', () => {
 							model: 'qwen2.5:3b',
 							apiKey: 'sk-user',
 						},
-						{ fetch: hostedFetch, baseURL: GATEWAY },
+						{ fetch: hostedFetch, baseURL: GATEWAY, model: 'gateway-model' },
 					),
-					model: 'qwen2.5:3b',
 					systemPrompts: [],
 				}),
 			});

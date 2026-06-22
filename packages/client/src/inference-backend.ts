@@ -3,11 +3,11 @@
  * one {@link InferenceBackendConfig} per device and resolves it, per turn, to the
  * {@link ResolvedInferenceBackend} the OpenAI-compatible engine drives.
  *
- * The leak guard is structural. A custom backend carries no fetch, so an app can
- * never hand the resolver the Epicenter bearer; the resolver references the hosted
- * (Epicenter) fetch in exactly one branch, paired with the Epicenter base URL.
- * Custom mode mints a plain fetch and attaches only the user's own key. The
- * Epicenter bearer is in any case audience-scoped to its origin (ADR-0052), so
+ * The leak guard is structural. The app passes its Epicenter transport (the authed
+ * fetch carrying the bearer) on every turn, but the resolver returns it only on the
+ * `hosted` branch; custom mode discards it and mints a plain fetch carrying only the
+ * user's own key, so a custom turn can never reach its URL with the Epicenter
+ * bearer. The bearer is in any case audience-scoped to its origin (ADR-0052), so
  * even a wiring mistake cannot send it to a custom URL.
  */
 
@@ -26,35 +26,31 @@ export type InferenceBackendConfig =
 	| { mode: 'hosted' }
 	| { mode: 'custom'; baseUrl: string; model: string; apiKey?: string };
 
-/** The transport the engine uses for one turn: a fetch paired with a base URL. */
+/**
+ * What the engine drives for one turn: the transport (`fetch` + `baseURL`) and the
+ * `model` to call. A custom config carries all three itself; the `hosted` argument
+ * to {@link resolveInferenceBackend} supplies them for the hosted case.
+ */
 export type ResolvedInferenceBackend = {
 	fetch: EngineFetch;
 	baseURL: string;
+	model: string;
 };
 
 /**
- * The hosted (Epicenter) transport the app supplies: its authed fetch and the
- * gateway base URL. Used only in the `hosted` branch.
- */
-export type HostedInferenceBackend = {
-	fetch: EngineFetch;
-	baseURL: string;
-};
-
-/**
- * Resolve a backend config to the `{ fetch, baseURL }` the engine drives.
+ * Resolve a backend config to the `{ fetch, baseURL, model }` the engine drives.
  *
- * Hosted returns the Epicenter transport unchanged. Custom returns a plain fetch,
- * never the Epicenter bearer, that attaches the user's key as a Bearer when they
- * gave one; a keyless local backend gets a bare fetch.
+ * Hosted returns the supplied Epicenter backend unchanged. Custom builds its own:
+ * its `baseUrl` and `model`, plus a plain fetch (never the Epicenter bearer) that
+ * attaches the user's key as a Bearer when they gave one; a keyless local backend
+ * gets a bare fetch. The model rides with the backend, so the caller never re-pairs
+ * a model with a transport.
  */
 export function resolveInferenceBackend(
 	config: InferenceBackendConfig,
-	hosted: HostedInferenceBackend,
+	hosted: ResolvedInferenceBackend,
 ): ResolvedInferenceBackend {
-	if (config.mode === 'hosted') {
-		return { fetch: hosted.fetch, baseURL: hosted.baseURL };
-	}
+	if (config.mode === 'hosted') return hosted;
 	const apiKey = config.apiKey?.trim();
 	const fetch: EngineFetch = apiKey
 		? (input, init) => {
@@ -63,5 +59,5 @@ export function resolveInferenceBackend(
 				return globalThis.fetch(input, { ...init, headers });
 			}
 		: globalThis.fetch.bind(globalThis);
-	return { fetch, baseURL: config.baseUrl };
+	return { fetch, baseURL: config.baseUrl, model: config.model };
 }

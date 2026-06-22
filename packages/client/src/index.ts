@@ -28,7 +28,6 @@ export {
 	type OpenAiTurnContext,
 } from './openai-provider.js';
 export {
-	type HostedInferenceBackend,
 	type InferenceBackendConfig,
 	resolveInferenceBackend,
 	type ResolvedInferenceBackend,

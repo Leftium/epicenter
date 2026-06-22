@@ -45,13 +45,15 @@ export function createVocabEngine({
 }): AgentEngine {
 	const hostedBaseURL = API_ROUTES.ai.completions.baseUrl(baseURL);
 	return createOpenAiAgentEngine({
-		data: () => {
-			const config = backend();
-			return {
-				...resolveInferenceBackend(config, { fetch, baseURL: hostedBaseURL }),
-				model: config.mode === 'custom' ? config.model : VOCAB_MODEL,
-				systemPrompts: [VOCAB_SYSTEM_PROMPT],
-			};
-		},
+		// The device backend is read per turn and carries its own model; hosted falls
+		// back to the Chinese-tuned VOCAB_MODEL.
+		data: () => ({
+			...resolveInferenceBackend(backend(), {
+				fetch,
+				baseURL: hostedBaseURL,
+				model: VOCAB_MODEL,
+			}),
+			systemPrompts: [VOCAB_SYSTEM_PROMPT],
+		}),
 	});
 }

@@ -15,13 +15,16 @@ import type { EngineFetch } from './agent-engine.js';
 
 /**
  * A chat app's inference backend, stored device-local (ADR-0053). `hosted` is the
- * metered Epicenter gateway; `custom` is any OpenAI-compatible server (a local
- * Ollama, a self-hosted gateway, OpenRouter) reached by `baseUrl` with an
- * optional Bearer key. A local backend needs no key, so `apiKey` is optional.
+ * metered Epicenter gateway, whose model is the app's curated catalog. `custom` is
+ * any OpenAI-compatible server (a local Ollama, a self-hosted gateway, OpenRouter)
+ * reached by `baseUrl`, serving the free-text `model` it was given, with an
+ * optional Bearer key. A local backend needs no key, so `apiKey` is optional. The
+ * model rides with the backend so the two can never mismatch (a hosted catalog id
+ * is meaningless to Ollama, and vice versa).
  */
 export type InferenceBackendConfig =
 	| { mode: 'hosted' }
-	| { mode: 'custom'; baseUrl: string; apiKey?: string };
+	| { mode: 'custom'; baseUrl: string; model: string; apiKey?: string };
 
 /** The transport the engine uses for one turn: a fetch paired with a base URL. */
 export type ResolvedInferenceBackend = {

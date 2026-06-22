@@ -58,6 +58,7 @@ import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
+import { inferenceBackend } from '$lib/state/inference-backend.svelte';
 import type { ToolTrustState } from '$lib/state/tool-trust.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 
@@ -147,17 +148,26 @@ export function createAiChatState({
 			createAgentConversation({
 				store: attachConversationStore(conversationId),
 				engine: createOpenAiAgentEngine({
-					data: () => ({
-						...resolveInferenceBackend(
-							{ mode: 'hosted' },
-							{ fetch: auth.fetch, baseURL: inferenceBaseUrl },
-						),
-						model: modelChoice?.model ?? DEFAULT_MODEL,
-						systemPrompts: [
-							buildDeviceConstraints(tabManager.nodeId),
-							TAB_MANAGER_SYSTEM_PROMPT,
-						],
-					}),
+					data: () => {
+						// Read the device backend per turn so a switch lands next turn.
+						// The model rides with the backend: a custom backend serves its
+						// own free-text model; hosted uses the conversation's catalog pick.
+						const config = inferenceBackend.get();
+						return {
+							...resolveInferenceBackend(config, {
+								fetch: auth.fetch,
+								baseURL: inferenceBaseUrl,
+							}),
+							model:
+								config.mode === 'custom'
+									? config.model
+									: (modelChoice?.model ?? DEFAULT_MODEL),
+							systemPrompts: [
+								buildDeviceConstraints(tabManager.nodeId),
+								TAB_MANAGER_SYSTEM_PROMPT,
+							],
+						};
+					},
 				}),
 				tools: toolCatalog,
 				approval: {

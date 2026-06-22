@@ -24,7 +24,12 @@ test('hosted mode returns the Epicenter transport unchanged', () => {
 test('custom mode never returns the hosted fetch', () => {
 	const hostedFetch: EngineFetch = async () => new Response();
 	const resolved = resolveInferenceBackend(
-		{ mode: 'custom', baseUrl: 'http://localhost:11434/v1', apiKey: 'sk-user' },
+		{
+			mode: 'custom',
+			baseUrl: 'http://localhost:11434/v1',
+			model: 'qwen2.5:3b',
+			apiKey: 'sk-user',
+		},
 		{ fetch: hostedFetch, baseURL: hostedBase },
 	);
 	expect(resolved.fetch).not.toBe(hostedFetch);
@@ -48,7 +53,12 @@ test('custom mode attaches the user key and never runs the hosted fetch', async 
 	}) as typeof globalThis.fetch;
 	try {
 		const resolved = resolveInferenceBackend(
-			{ mode: 'custom', baseUrl: 'http://localhost:11434/v1', apiKey: 'sk-user' },
+			{
+				mode: 'custom',
+				baseUrl: 'http://localhost:11434/v1',
+				model: 'qwen2.5:3b',
+				apiKey: 'sk-user',
+			},
 			{ fetch: hostedFetch, baseURL: hostedBase },
 		);
 		await resolved.fetch('http://localhost:11434/v1/chat/completions', {
@@ -75,7 +85,7 @@ test('custom mode without a key sends no Authorization header', async () => {
 	}) as typeof globalThis.fetch;
 	try {
 		const resolved = resolveInferenceBackend(
-			{ mode: 'custom', baseUrl: 'http://localhost:11434/v1' },
+			{ mode: 'custom', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:3b' },
 			{ fetch: async () => new Response(), baseURL: hostedBase },
 		);
 		await resolved.fetch('http://localhost:11434/v1/chat/completions');

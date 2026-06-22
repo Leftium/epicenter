@@ -128,6 +128,43 @@ describe('createConversation', () => {
 		expect(agentMessageText(messages[2]!)).toBe('It is noon.');
 	});
 
+	test('a runaway tool loop is bounded by the max-step guard', async () => {
+		const store = makeStore();
+		let calls = 0;
+		// An engine that never finishes: every step asks for the same tool again.
+		const engine: AgentEngine = () => {
+			calls += 1;
+			return streamOf([
+				{
+					type: 'tool-call',
+					toolCallId: `t${calls}`,
+					toolName: 'loop',
+					input: {},
+				},
+			]);
+		};
+		const tools: ToolCatalog = {
+			definitions: () => [{ name: 'loop', kind: 'query' }],
+			resolve: async () => ({ output: 'again', isError: false }),
+		};
+
+		const handle = createConversation({
+			store,
+			engine,
+			tools,
+			generateId: idMinter(),
+		});
+		handle.send('go');
+		await settle(handle);
+
+		expect(handle.snapshot().isGenerating).toBe(false);
+		expect(handle.snapshot().error?.code).toBe('MaxStepsExceeded');
+		// The loop stopped at the cap (one engine call per step) rather than
+		// spinning forever, and the unfinished turn persisted nothing.
+		expect(calls).toBe(50);
+		expect([...store.entries()].map((e) => e.val.role)).toEqual(['user']);
+	});
+
 	test('an asked mutation that is declined records a denial, never resolves', async () => {
 		const store = makeStore();
 		let stepCount = 0;

@@ -25,10 +25,6 @@ export type {
 } from './agent-engine.js';
 export { createAiChatFetch } from './ai-chat-fetch.js';
 export {
-	createEpicenterAgentEngine,
-	type EpicenterProviderData,
-} from './epicenter-provider.js';
-export {
 	createOpenAiAgentEngine,
 	type OpenAiProviderData,
 } from './openai-provider.js';

@@ -3,12 +3,7 @@ import {
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
-import {
-	type AnyTextAdapter,
-	chat,
-	type ModelMessage,
-	type StreamChunk,
-} from '@tanstack/ai';
+import type { AnyTextAdapter } from '@tanstack/ai';
 import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createOpenaiChat } from '@tanstack/ai-openai';
 
@@ -21,8 +16,9 @@ import { createOpenaiChat } from '@tanstack/ai-openai';
  *
  * The body is only the provider switch: no key policy, no `Result`. The caller
  * owns where the key comes from (BYOK vs house) and what an absent key means;
- * see `resolveAdapter` in `@epicenter/server` and `resolveChatStream` in the
- * vocab daemon.
+ * see `resolveAdapter` in `@epicenter/server`, the `/api/ai/chat` route that
+ * drives the TanStack `chat()` stream for tab-manager's device-local loop
+ * (ADR-0048).
  */
 export function createAdapterForModel(
 	model: ServableModel,
@@ -37,44 +33,6 @@ export function createAdapterForModel(
 		default:
 			return entry satisfies never;
 	}
-}
-
-/**
- * The BYOK inference contract (ADR-0038): a snapshotted prompt and an abort
- * signal in, a stream of AG-UI chunks out. Kept local to this leaf so it does not
- * depend on a wider package for a function signature.
- */
-type ChatStream = (
-	messages: ModelMessage[],
-	signal: AbortSignal,
-) => AsyncIterable<StreamChunk>;
-
-/**
- * Drive a constructed text adapter as a {@link ChatStream}: the BYOK inference
- * backend (ADR-0038's `byok` arm). Pair it with {@link createAdapterForModel}:
- * the catalog gives the provider, that builds the adapter from a key, and this
- * turns the adapter into the stream the answer loop consumes.
- *
- * The answer loop hands an `AbortSignal`; `chat()` cancels on an
- * `AbortController`, so the signal is bridged onto one (forwarded if already
- * aborted, else once on the first abort). The metered Epicenter backend
- * (`createEpicenterAgentEngine`) is its sibling; this is the adapter arm, named
- * once so every SDK-driven host shares one builder instead of re-bridging the
- * signal.
- */
-export function chatStreamFromAdapter(
-	adapter: AnyTextAdapter,
-	systemPrompts: string[],
-): ChatStream {
-	return (messages, signal) => {
-		const abortController = new AbortController();
-		if (signal.aborted) abortController.abort();
-		else
-			signal.addEventListener('abort', () => abortController.abort(), {
-				once: true,
-			});
-		return chat({ adapter, messages, systemPrompts, abortController });
-	};
 }
 
 /**

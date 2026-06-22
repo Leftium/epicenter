@@ -41,7 +41,6 @@ import {
 import { SvelteMap } from 'svelte/reactivity';
 import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
-	asConversationId,
 	attachConversationStore,
 	type ConversationId,
 	clearConversation,
@@ -322,7 +321,7 @@ export function createAiChatState({
 
 	// ── Active Conversation ──────────────────────────────────────────
 
-	let activeConversationId = $state<ConversationId>(asConversationId(''));
+	let activeConversationId = $state<ConversationId | null>(null);
 
 	// ── Startup hydration ─────────────────────────────────────────────
 	// The store knows which conversations exist; mirror it into the handle
@@ -353,7 +352,7 @@ export function createAiChatState({
 		// Only pick the active conversation if the user hasn't already created a
 		// draft while this read was in flight; reassigning here would yank the UI
 		// away from it.
-		if (!handles.has(activeConversationId)) {
+		if (activeConversationId === null || !handles.has(activeConversationId)) {
 			const mostRecent = byRecency[0];
 			if (mostRecent) {
 				activeConversationId = mostRecent.id;
@@ -371,7 +370,10 @@ export function createAiChatState({
 	 */
 	function createConversation(): ConversationId {
 		const id = generateConversationId();
-		const current = handles.get(activeConversationId);
+		const current =
+			activeConversationId === null
+				? undefined
+				: handles.get(activeConversationId);
 
 		modelChoices.set(id, { model: current?.model ?? DEFAULT_MODEL });
 		handles.set(id, createConversationHandle(id));
@@ -409,7 +411,9 @@ export function createAiChatState({
 		},
 
 		get active() {
-			return handles.get(activeConversationId);
+			return activeConversationId === null
+				? undefined
+				: handles.get(activeConversationId);
 		},
 
 		get conversations() {

@@ -23,10 +23,7 @@
  * disposes the underlying store and releases the array.
  */
 import type * as Y from 'yjs';
-import type {
-	KvEntry,
-	KvStoreChangeHandler,
-} from './y-keyvalue/observable-kv-store.js';
+import type { KvEntry } from './y-keyvalue/observable-kv-store.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
@@ -44,10 +41,13 @@ export type KvStoreHandle<T> = {
 	entries(): IterableIterator<KvEntry<T>>;
 	/**
 	 * Register a change handler and get back the function that removes it. The
-	 * handler fires once per transaction, for local writes and synced remote
-	 * ones alike, so a consumer can re-read {@link entries} to refresh.
+	 * handler fires once per transaction, for local writes and synced remote ones
+	 * alike, and carries no payload: a consumer re-reads {@link entries} to
+	 * refresh. The underlying store computes a change set, but the only consumer of
+	 * this handle (the agent loop) re-reads wholesale, so the seam is a bare change
+	 * signal.
 	 */
-	observe(handler: KvStoreChangeHandler<T>): () => void;
+	observe(handler: () => void): () => void;
 };
 
 /**

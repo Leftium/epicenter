@@ -87,6 +87,16 @@ const DENY_GATED_MUTATIONS: Approval = {
 	request: async () => false,
 };
 
+/**
+ * A turn's multi-step tool loop is bounded by this runaway backstop, not a product
+ * limit. Each step is one model call that either finishes (text, no tools) or asks
+ * for tools and re-prompts; the loop never reads a provider finish reason, so a
+ * misbehaving backend, or a transcript that spans backends (ADR-0053), could
+ * otherwise re-issue tool calls forever. A well-behaved turn converges far below
+ * this.
+ */
+const MAX_STEPS = 50;
+
 export function createConversation(
 	options: ConversationOptions,
 ): ConversationHandle {
@@ -237,7 +247,15 @@ export function createConversation(
 		notify();
 
 		let failure: ConversationError | undefined;
+		let steps = 0;
 		while (!signal.aborted) {
+			if (steps++ >= MAX_STEPS) {
+				failure = {
+					message: `Stopped after ${MAX_STEPS} steps without a final answer.`,
+					code: 'MaxStepsExceeded',
+				};
+				break;
+			}
 			const assistant: AgentMessage = {
 				id: generateId(),
 				role: 'assistant',
@@ -253,7 +271,10 @@ export function createConversation(
 				failure = step.failure;
 				break;
 			}
-			if (step.calls.length === 0) break; // a text finish ends the turn
+
+			// No tool calls means the model gave its final answer; the turn is done.
+			const isFinalAnswer = step.calls.length === 0;
+			if (isFinalAnswer) break;
 
 			await runTools(assistant, step.calls, signal);
 		}

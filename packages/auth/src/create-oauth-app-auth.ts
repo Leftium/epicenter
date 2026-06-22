@@ -389,8 +389,12 @@ export function createOAuthAppAuth({
 		// A Request carries its own method and body, so pass it through (cloned).
 		// Anything else goes as its resolved absolute URL, so a relative `/path`
 		// lands on baseURL; an unparseable input falls through to surface its error.
+		// The clone is cast to `Request` because a Cloudflare Workers consumer types
+		// `Request.clone()` as its CF-flavored Request, which is not `AuthFetchInput`.
 		const normalizedInput: AuthFetchInput =
-			input instanceof Request ? input.clone() : (target?.href ?? input);
+			input instanceof Request
+				? (input.clone() as Request)
+				: (target?.href ?? input);
 		return fetchImpl(normalizedInput, {
 			...init,
 			headers,

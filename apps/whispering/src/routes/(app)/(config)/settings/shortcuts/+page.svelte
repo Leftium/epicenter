@@ -30,7 +30,7 @@
 				Keyboard Shortcuts
 			</SectionHeader.Title>
 			<SectionHeader.Description class="mt-2">
-				Pick a key for any command. Whispering shows how far it reaches.
+				Configure local and global keyboard shortcuts for Whispering.
 			</SectionHeader.Description>
 		</SectionHeader.Root>
 		<Button variant="outline" size="sm" onclick={reset} class="shrink-0">

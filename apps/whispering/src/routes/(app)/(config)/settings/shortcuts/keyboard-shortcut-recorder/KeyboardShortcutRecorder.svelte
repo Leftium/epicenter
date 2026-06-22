@@ -43,12 +43,15 @@
 			),
 	);
 
-	/** ADR-0052 read-only reach text, the title and screen-reader label of a glyph. */
+	// ADR-0052 read-only reach text: where the shortcut fires, plus whether it syncs
+	// (focused shortcuts live in the synced workspace; global ones are per-device).
+	// One string feeds the glyph tooltip, the live preview, and the success toast.
 	function reachLabel({ reach, needsAccessibility }: ReachWithGrant): string {
-		if (reach === 'focused') return 'Works in Whispering';
+		if (reach === 'focused')
+			return 'Works in Whispering, synced across your devices';
 		return needsAccessibility
-			? 'Works everywhere, needs Accessibility'
-			: 'Works everywhere';
+			? 'Works everywhere on this computer, needs Accessibility'
+			: 'Works everywhere on this computer';
 	}
 
 	// The popover's open state is the whole session: open means listening. The two
@@ -166,11 +169,18 @@
 	</span>
 {/snippet}
 
+{#snippet keyChip(binding: KeyBinding, realized: ReachWithGrant)}
+	<Kbd.Root>{keyBindingToLabel(binding, os.isApple)}</Kbd.Root>
+	{@render reachGlyph(realized)}
+{/snippet}
+
 <div class="flex flex-wrap items-center justify-end gap-2">
 	{#each chips as chip (chip.reach)}
 		<div class="flex items-center gap-1.5">
-			<Kbd.Root>{keyBindingToLabel(chip.binding, os.isApple)}</Kbd.Root>
-			{@render reachGlyph(shortcuts.reachBadge(command.id, chip.binding))}
+			{@render keyChip(
+				chip.binding,
+				shortcuts.reachBadge(command.id, chip.binding),
+			)}
 			<Button
 				variant="ghost"
 				size="icon"
@@ -211,10 +221,7 @@
 				>
 					{#if preview}
 						<div class="flex items-center gap-1.5">
-							<Kbd.Root>
-								{keyBindingToLabel(preview.binding, os.isApple)}
-							</Kbd.Root>
-							{@render reachGlyph(preview.realized)}
+							{@render keyChip(preview.binding, preview.realized)}
 						</div>
 						<p class="text-xs text-muted-foreground">
 							{reachLabel(preview.realized)}

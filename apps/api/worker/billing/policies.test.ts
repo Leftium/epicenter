@@ -138,7 +138,9 @@ test('a guard rejection answers in the OpenAI error shape and reserves nothing',
 	const res = await aiRequest(makeAiApp(200), { model: 'gpt' });
 
 	expect(res.status).toBe(402);
-	const body = (await res.json()) as { error: { code: string; message: string } };
+	const body = (await res.json()) as {
+		error: { code: string; message: string };
+	};
 	expect(body.error.code).toBe('InsufficientCredits');
 	expect(body.error.message).toBeString();
 	expect(finalizeCalls).toHaveLength(0);

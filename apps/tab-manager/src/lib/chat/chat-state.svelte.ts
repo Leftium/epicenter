@@ -32,8 +32,8 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { bindAgentConversation } from '@epicenter/svelte';
 import { type Collaboration, generateId } from '@epicenter/workspace';
 import {
-	agentMessageText,
 	type AgentToolCall,
+	agentMessageText,
 	createConversation as createAgentConversation,
 	createDispatchToolCatalog,
 	defaultApprovalDecision,
@@ -43,8 +43,8 @@ import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	asConversationId,
 	attachConversationStore,
-	clearConversation,
 	type ConversationId,
+	clearConversation,
 	deleteModelChoice,
 	generateConversationId,
 	getAllModelChoices,

@@ -1,6 +1,6 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
-import type { BooksDb, DeleteRow, SyncStateRow, UpsertRow } from './db.ts';
+import type { BooksDb, MirrorRow, SyncStateRow } from './db.ts';
 import {
 	type EntityDef,
 	entityDef,
@@ -86,15 +86,12 @@ export type SyncDeps = {
 };
 
 /** Split a batch of QB objects into live upserts and soft-deletes. */
-function partition(
-	def: EntityDef,
-	objects: QbObject[],
-): {
-	upserts: UpsertRow[];
-	deletes: DeleteRow[];
+function partition(objects: QbObject[]): {
+	upserts: MirrorRow[];
+	deletes: MirrorRow[];
 } {
-	const upserts: UpsertRow[] = [];
-	const deletes: DeleteRow[] = [];
+	const upserts: MirrorRow[] = [];
+	const deletes: MirrorRow[] = [];
 	for (const obj of objects) {
 		const id = obj.Id != null ? String(obj.Id) : null;
 		if (!id) continue; // skip malformed objects with no Id
@@ -103,12 +100,7 @@ function partition(
 		if (isDeleted(obj)) {
 			deletes.push({ id, raw, updatedAt });
 		} else {
-			upserts.push({
-				id,
-				raw,
-				updatedAt,
-				columns: def.columns.map((c) => c.extract(obj)),
-			});
+			upserts.push({ id, raw, updatedAt });
 		}
 	}
 	return { upserts, deletes };
@@ -151,7 +143,7 @@ export async function syncEntity(
 		objects = changed.data.changes[def.name] ?? [];
 	}
 
-	const { upserts, deletes } = partition(def, objects);
+	const { upserts, deletes } = partition(objects);
 
 	const newState: SyncStateRow = {
 		entity: def.name,

@@ -1,12 +1,13 @@
 # 0050. The inference contract is OpenAI-compatible Chat Completions; Epicenter's backend is one swappable gateway
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-21
 - **Supersedes:** [ADR-0037](0037-adapter-construction-is-a-shared-leaf-package-keyed-on-the-model-catalog.md) (the SDK-adapter leaf is no longer the inference seam; the wire is OpenAI-compatible, not AG-UI via a TanStack adapter)
 - **Relates:** [ADR-0049](0049-inference-is-its-own-box-the-daemon-never-infers.md) (the inference-server box this contract defines), [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) (refines its inference transport), [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the client loop that consumes one model turn), [ADR-0044](0044-tool-approval-is-a-per-conversation-policy.md) (approval stays client-side, unaffected by the wire)
 
 ## Context
 
+<!-- doc-path-check: ignore-next-line (historical: epicenter-provider.ts is deleted by this decision) -->
 The inference server ([ADR-0049](0049-inference-is-its-own-box-the-daemon-never-infers.md)) needs one wire. Today it is bespoke: the client engine (`packages/client/src/epicenter-provider.ts`) hand-parses an AG-UI `StreamChunk` SSE stream that the server produces with TanStack AI's `chat()` and `toServerSentEventsResponse()` (`packages/server/src/routes/ai.ts:147-155`), and provider normalization lives in TanStack adapters keyed on the model catalog ([ADR-0037](0037-adapter-construction-is-a-shared-leaf-package-keyed-on-the-model-catalog.md), `packages/ai-adapters/src/index.ts`). That contract is Epicenter's alone, so swapping the backend means writing an adapter for every alternative. The product goal is the opposite: the backend should swap from Epicenter to a self-hosted box or any third party with ease ([ADR-0049](0049-inference-is-its-own-box-the-daemon-never-infers.md)). The provider needs are narrow (OpenAI and Gemini, both with OpenAI-compatible endpoints) and the feature ceiling is text plus tool calls; reasoning traces, prompt caching, and citations are explicitly deferred. For a local-first product, the OpenAI Chat Completions API is the de-facto contract every local runner (Ollama, llama.cpp, LM Studio, vLLM) and aggregator (OpenRouter) already speaks.
 
 ## Decision
@@ -21,7 +22,7 @@ The inference server ([ADR-0049](0049-inference-is-its-own-box-the-daemon-never-
 
 ## Consequences
 
-- `@tanstack/ai` leaves the inference path on both ends; the AG-UI `StreamChunk` parser and the server's `chat()` usage are deleted, and the SDK-adapter leaf of [ADR-0037](0037-adapter-construction-is-a-shared-leaf-package-keyed-on-the-model-catalog.md) dissolves (the model-catalog/provider-routing fact, if still needed, lives in the gateway).
+- `@tanstack/ai` leaves the new inference path: the client AG-UI `StreamChunk` parser is deleted, and the client loop plus `@epicenter/workspace` no longer depend on the SDK. The server's `chat()` route and the SDK-adapter leaf of [ADR-0037](0037-adapter-construction-is-a-shared-leaf-package-keyed-on-the-model-catalog.md) are **kept, not dissolved**: they remain the backend for tab-manager's device-local `createChat` loop ([ADR-0048](0048-a-conversations-loop-is-chosen-by-whether-its-transcript-syncs.md)), which keeps TanStack by design (see the tab-manager consequence below), so `@tanstack/ai` stays in `packages/server` and `packages/ai-adapters`. They become deletable only if tab-manager converges on this engine. The new gateway's model-catalog/provider-routing fact lives in the gateway (`packages/server/src/routes/inference.ts`).
 - Swapping inference backends is configuration, delivering [ADR-0049](0049-inference-is-its-own-box-the-daemon-never-infers.md)'s swappability for free; self-hosting and local models are first-class.
 - We own the OpenAI-SSE tool-call reducer on the client (index-correlated delta accumulation). This is a maintenance cost, but against a stable, ubiquitous format with many reference implementations, not a bespoke one.
 - The contract is lowest-common-denominator: provider-specific behavior leaks. Streamed tool calls are **not** uniform across providers (Anthropic accumulates partial-JSON arg deltas; Gemini embeds thought signatures in tool-call IDs; index correlation varies), so any non-OpenAI-native provider must be normalized at the gateway. This is contained to Epicenter's gateway; the client stays pure. **Open risk to spike before committing Gemini: verify Google's OpenAI-compatible endpoint streams tool calls faithfully, or have the gateway own a thin Gemini→OpenAI translator.**

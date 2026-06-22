@@ -1,6 +1,7 @@
 # 0037. Adapter construction is a shared leaf package keyed on the model catalog
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0050](0050-the-inference-contract-is-openai-compatible.md) (the inference seam is OpenAI-compatible Chat Completions, not an SDK adapter keyed on the catalog). The adapter leaf is not deleted: it survives as the backend for tab-manager's device-local `createChat` loop ([ADR-0048](0048-a-conversations-loop-is-chosen-by-whether-its-transcript-syncs.md)) until that loop converges.
 - **Date:** 2026-06-19
 
 ## Context

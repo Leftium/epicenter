@@ -42,10 +42,11 @@ export function createBooksQueryAction({ dbPath }: { dbPath: string }) {
 		title: 'Query the books',
 		description:
 			'Run a read-only SQL query against the local QuickBooks mirror (SQLite). ' +
-			'Tables: invoices, customers, items, payments, bills, vendors, accounts. ' +
-			'Each row has id, raw (verbatim QB JSON), updated_at, synced_at, ' +
-			'deleted, plus a few extracted scalar columns. Filter `deleted = 0` for ' +
-			'live rows. SELECT only; writes are rejected.',
+			'Tables: invoices, customers, items, payments, bills, vendors, accounts, ' +
+			'purchases (expenses), deposits. Each row has id, raw (verbatim QB JSON), ' +
+			'updated_at, synced_at, deleted, plus a few extracted scalar columns; the ' +
+			"line-level category lives in raw (e.g. json_extract(raw, '$.Line')). " +
+			'Filter `deleted = 0` for live rows. SELECT only; writes are rejected.',
 		input: Type.Object({
 			sql: Type.String({
 				description: 'A read-only SQL query (SELECT / WITH / PRAGMA).',

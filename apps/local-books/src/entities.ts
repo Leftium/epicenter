@@ -152,6 +152,33 @@ export const ENTITY_DEFS: Record<string, EntityDef> = {
 			col('active', 'INTEGER', bool('Active')),
 		],
 	},
+	// Money-out transactions (card/cash/check expenses, incl. posted bank-feed
+	// items). The category lives in Line[].AccountBasedExpenseLineDetail.AccountRef
+	// (1:N), so it stays in `raw`; the extracted columns are the header scalars
+	// worth grouping and joining on.
+	Purchase: {
+		name: 'Purchase',
+		table: 'purchases',
+		columns: [
+			col('txn_date', 'TEXT', text('TxnDate')),
+			col('total_amt', 'REAL', real('TotalAmt')),
+			col('payment_type', 'TEXT', text('PaymentType')),
+			col('account_ref', 'TEXT', text('AccountRef', 'name')),
+			col('payee', 'TEXT', text('EntityRef', 'name')),
+		],
+	},
+	// Money-in transactions (deposits, incl. posted bank-feed credits). The
+	// crediting category lives in Line[].DepositLineDetail.AccountRef (1:N) and
+	// stays in `raw`.
+	Deposit: {
+		name: 'Deposit',
+		table: 'deposits',
+		columns: [
+			col('txn_date', 'TEXT', text('TxnDate')),
+			col('total_amt', 'REAL', real('TotalAmt')),
+			col('deposit_to', 'TEXT', text('DepositToAccountRef', 'name')),
+		],
+	},
 };
 
 /** The default entities mirrored when config does not narrow the set. */

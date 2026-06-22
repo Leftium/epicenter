@@ -43,7 +43,7 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 		return 0;
 	}
 
-	const db = openBooksDb(path, realmId);
+	const db = openBooksDb(path);
 	console.log(`Schema:       v${db.getMeta('schema_version')}`);
 	console.log('');
 	console.log(

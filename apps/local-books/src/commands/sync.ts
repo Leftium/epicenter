@@ -67,7 +67,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		deps: oauthDeps,
 	});
 	const client = createQbClient({ config, realmId, tokens, log });
-	const db = openBooksDb(dbPath(config.dataDir, realmId), realmId);
+	const db = openBooksDb(dbPath(config.dataDir, realmId));
 	const deps: SyncDeps = { db, client, config, now, log };
 
 	// Looping mode: keep the mirror fresh until interrupted.

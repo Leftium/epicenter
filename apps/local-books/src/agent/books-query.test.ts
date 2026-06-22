@@ -28,7 +28,7 @@ const LOCAL_ONLY: DispatchSurface = {
 function fixtureMirror() {
 	const dir = mkdtempSync(join(tmpdir(), 'local-books-'));
 	const path = join(dir, 'realm-1', 'books.db');
-	const db = openBooksDb(path, 'realm-1');
+	const db = openBooksDb(path);
 	db.raw.exec(`
 		CREATE TABLE invoices (
 			id TEXT PRIMARY KEY, raw TEXT NOT NULL, updated_at TEXT,

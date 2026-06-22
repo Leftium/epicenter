@@ -8,6 +8,9 @@ import type { EntityDef } from './entities.ts';
  * type plus `_sync_state` (the per-entity CDC cursor) and `_meta`. The cursor is
  * written in the same transaction as the rows it accounts for, so ingest and
  * cursor-advance are atomic and crash-safe (see the spec's atomicity argument).
+ *
+ * The realm owns its identity through the path (`<dataDir>/<realmId>/books.db`),
+ * not a stored column, so the db need not know which company it holds.
  */
 
 export const SCHEMA_VERSION = '1';
@@ -61,7 +64,7 @@ function jsonExtractPath(segments: string[]): string {
 
 export type BooksDb = ReturnType<typeof openBooksDb>;
 
-export function openBooksDb(path: string, realmId: string) {
+export function openBooksDb(path: string) {
 	mkdirSync(dirname(path), { recursive: true });
 	const db = new Database(path, { create: true });
 	db.exec('PRAGMA journal_mode = WAL;');
@@ -85,7 +88,6 @@ export function openBooksDb(path: string, realmId: string) {
 		`SELECT value FROM _meta WHERE key = ?`,
 	);
 
-	setMetaStmt.run('realmId', realmId);
 	setMetaStmt.run('schema_version', SCHEMA_VERSION);
 
 	// Prepared-statement caches, keyed by table.

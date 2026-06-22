@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { ColumnValue, EntityDef } from './entities.ts';
+import type { EntityDef } from './entities.ts';
 
 /**
  * The local mirror: one SQLite file per company. Holds an entity table per QB
@@ -19,16 +19,13 @@ export type SyncStateRow = {
 	lastSyncedAt: string | null;
 };
 
-/** A live object to upsert; `columns` are in `def.columns` order. */
-export type UpsertRow = {
-	id: string;
-	raw: string;
-	updatedAt: string | null;
-	columns: ColumnValue[];
-};
-
-/** A CDC delete: flip `deleted`, preserve any existing blob. */
-export type DeleteRow = {
+/**
+ * One row destined for an entity table, keyed by QB `id`. The same shape feeds
+ * an upsert (store this blob) and a soft-delete (the blob is a stub, used only
+ * if the row is new); the destiny is the array it lands in, not the type. The
+ * extracted columns are generated from `raw`, so no row carries them.
+ */
+export type MirrorRow = {
 	id: string;
 	raw: string;
 	updatedAt: string | null;
@@ -48,6 +45,18 @@ const IDENT = /^[a-z_][a-z0-9_]*$/;
 function assertIdent(name: string): string {
 	if (!IDENT.test(name)) throw new Error(`Unsafe SQL identifier: ${name}`);
 	return name;
+}
+
+// Generated-column paths are inlined into the CREATE TABLE string literal, so
+// each QB field segment must be a bare identifier (no quotes, dots, or `$`).
+const PATH_SEGMENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function jsonExtractPath(segments: string[]): string {
+	for (const seg of segments) {
+		if (!PATH_SEGMENT.test(seg)) {
+			throw new Error(`Unsafe JSON path segment: ${seg}`);
+		}
+	}
+	return `$.${segments.join('.')}`;
 }
 
 export type BooksDb = ReturnType<typeof openBooksDb>;
@@ -94,8 +103,14 @@ export function openBooksDb(path: string, realmId: string) {
 
 	function ensureEntityTable(def: EntityDef): void {
 		const table = assertIdent(def.table);
+		// Each extracted column is a VIRTUAL generated projection of `raw`, so the
+		// blob stays the single source of truth: no write-path extraction, and a
+		// missing field is `json_extract`'s null for free.
 		const extra = def.columns
-			.map((c) => `${assertIdent(c.name)} ${c.type}`)
+			.map(
+				(c) =>
+					`${assertIdent(c.name)} ${c.type} GENERATED ALWAYS AS (json_extract(raw, '${jsonExtractPath(c.path)}')) VIRTUAL`,
+			)
 			.join(',\n\t\t\t\t');
 		db.exec(`
 			CREATE TABLE IF NOT EXISTS ${table} (
@@ -112,27 +127,16 @@ export function openBooksDb(path: string, realmId: string) {
 	function upsertStmtFor(def: EntityDef) {
 		const cached = upsertStmts.get(def.table);
 		if (cached) return cached;
-		const cols = def.columns.map((c) => assertIdent(c.name));
-		const insertCols = [
-			'id',
-			'raw',
-			'updated_at',
-			'synced_at',
-			'deleted',
-			...cols,
-		];
-		const placeholders = ['?', '?', '?', '?', '0', ...cols.map(() => '?')];
-		const updates = [
-			'raw = excluded.raw',
-			'updated_at = excluded.updated_at',
-			'synced_at = excluded.synced_at',
-			'deleted = 0',
-			...cols.map((c) => `${c} = excluded.${c}`),
-		];
+		// The extracted columns are generated from `raw`, so the upsert writes only
+		// the blob and its bookkeeping; SQLite recomputes the projections.
 		const stmt = db.query(
-			`INSERT INTO ${assertIdent(def.table)} (${insertCols.join(', ')})
-			 VALUES (${placeholders.join(', ')})
-			 ON CONFLICT(id) DO UPDATE SET ${updates.join(', ')}`,
+			`INSERT INTO ${assertIdent(def.table)} (id, raw, updated_at, synced_at, deleted)
+			 VALUES (?, ?, ?, ?, 0)
+			 ON CONFLICT(id) DO UPDATE SET
+			   raw = excluded.raw,
+			   updated_at = excluded.updated_at,
+			   synced_at = excluded.synced_at,
+			   deleted = 0`,
 		);
 		upsertStmts.set(def.table, stmt);
 		return stmt;
@@ -141,8 +145,9 @@ export function openBooksDb(path: string, realmId: string) {
 	function deleteStmtFor(def: EntityDef) {
 		const cached = deleteStmts.get(def.table);
 		if (cached) return cached;
-		// On conflict, only flip the flag + timestamps: keep the existing blob and
-		// extracted columns, since a CDC delete payload is just a stub.
+		// On conflict, only flip the flag + timestamps: keep the existing blob,
+		// since a CDC delete payload is just a stub. The generated columns keep
+		// projecting that preserved blob, so the last-known scalars survive.
 		const stmt = db.query(
 			`INSERT INTO ${assertIdent(def.table)} (id, raw, updated_at, synced_at, deleted)
 			 VALUES (?, ?, ?, ?, 1)
@@ -194,8 +199,8 @@ export function openBooksDb(path: string, realmId: string) {
 				syncState,
 				syncedAt,
 			}: {
-				upserts: UpsertRow[];
-				deletes: DeleteRow[];
+				upserts: MirrorRow[];
+				deletes: MirrorRow[];
 				syncState: SyncStateRow;
 				syncedAt: string;
 			},
@@ -205,7 +210,7 @@ export function openBooksDb(path: string, realmId: string) {
 			const markDeleted = deleteStmtFor(def);
 			const tx = db.transaction(() => {
 				for (const row of upserts) {
-					upsert.run(row.id, row.raw, row.updatedAt, syncedAt, ...row.columns);
+					upsert.run(row.id, row.raw, row.updatedAt, syncedAt);
 				}
 				for (const row of deletes) {
 					markDeleted.run(row.id, row.raw, row.updatedAt, syncedAt);

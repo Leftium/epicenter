@@ -1,6 +1,7 @@
 # 0048. A conversation's loop is chosen by whether its transcript syncs across peers
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0051](0051-one-agent-loop-its-store-seam-chooses-persistence.md) (there is one agent loop; its store seam, not a second loop, chooses persistence, so tab-manager converges and the AG-UI stack is deleted). The shared finished-message record this ADR protected is what makes the convergence cheap.
 - **Date:** 2026-06-21
 - **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the client loop and its LWW-records persistence), [ADR-0046](0046-a-capability-free-agent-persists-finished-messages-not-live-doc-streams.md) (the persisted-record shape both loops share), [ADR-0033](0033-a-conversation-has-one-transport-and-two-triggers.md) (the blind cloud that rules out a server tool loop)
 

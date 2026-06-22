@@ -21,8 +21,8 @@
 // `@epicenter/constants/oauth` (beside `buildTrustedOAuthClients`, its input),
 // so it never imports this request-path auth barrel.
 //
-// Auth middleware. `authApp` is mounted directly; the AI surface accepts
-// `requireBearerUser` via `mountAiApp({ auth })`. Most owner-partitioned
+// Auth middleware. `authApp` is mounted directly; the inference surface accepts
+// `requireBearerUser` via `mountInferenceApp({ auth })`. Most owner-partitioned
 // surfaces wire auth inside their mount primitive and never need these.
 export {
 	requireBearerUser,
@@ -47,7 +47,6 @@ export {
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
 export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-export { mountAiApp, resolveAdapter } from './routes/ai.js';
 export { mountAssetsApp } from './routes/assets.js';
 // Reusable surfaces. Each `mount*` bundles auth + ownership + the route
 // mount, accepting only the deployment-controlled knobs (ownership rule,

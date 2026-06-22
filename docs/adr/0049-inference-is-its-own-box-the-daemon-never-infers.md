@@ -23,6 +23,7 @@ What carries forward from ADR-0038: the three inference *flavors* (metered house
 
 ## Consequences
 
+<!-- doc-path-check: ignore-next-line (historical: ai.ts is later deleted by ADR-0051) -->
 - The daemon-inference arm is deleted: `chatStreamFromAdapter`, the daemon `resolveChatStream`/answerer, and the daemon-BYOK concept go. The metered client path (`epicenter-provider.ts`) and the server route (`packages/server/src/routes/ai.ts`) stay as the inference server's two halves.
 - Self-hosting and local models become first-class: any box that speaks the inference contract is an inference server, so "run my own" and "point at Ollama" are configuration, not new code (see [ADR-0050](0050-the-inference-contract-is-openai-compatible.md)).
 - This reaffirms ADR-0047's foreclosure of an agent that reasons with no client open: if a scheduled or autonomous agent becomes a real need, it reopens a *server-run loop* explicitly; it does not reopen daemon inference.

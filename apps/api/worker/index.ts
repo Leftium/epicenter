@@ -17,7 +17,6 @@ import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
 	authApp,
 	createServerApp,
-	mountAiApp,
 	mountAssetsApp,
 	mountInferenceApp,
 	mountRoomsApp,
@@ -30,7 +29,6 @@ import {
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
 import {
-	chargeAiCreditsWithAutumn,
 	chargeOpenAiCreditsWithAutumn,
 	syncAssetStorageWithAutumn,
 } from './billing/policies.js';
@@ -74,11 +72,6 @@ mountRoomsApp(app, { ownership });
 mountAssetsApp(app, {
 	ownership,
 	policies: [syncAssetStorageWithAutumn],
-});
-mountAiApp(app, {
-	auth: requireBearerUser,
-	ownership,
-	policies: [chargeAiCreditsWithAutumn],
 });
 mountInferenceApp(app, {
 	auth: requireBearerUser,

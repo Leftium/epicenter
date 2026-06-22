@@ -260,8 +260,9 @@ const inferenceApp = new Hono<Env>().post(
 /**
  * Mount the OpenAI-compatible inference gateway on a deployment's server app.
  *
- * Symmetric with {@link mountAiApp}: bundles the deployment's auth, its ownership
- * rule (admission, gating a house-key spend behind membership in shared mode),
+ * Like the other mount primitives, it bundles the deployment's auth, its
+ * ownership rule (admission, gating a house-key spend behind membership in
+ * shared mode),
  * and any deployment policies (apps/api passes its Autumn metering policy; a
  * self-hosted shared-wiki deployment passes none). The library stays
  * billing-agnostic; policies are opaque middleware that run after auth and

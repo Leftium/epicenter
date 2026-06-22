@@ -5,9 +5,8 @@
  * those chunks into messages and runs the tools it asked for.
  *
  * This vocabulary is the loop's own, not a vendor SDK's. An OpenAI-compatible
- * engine parses OpenAI SSE deltas into these chunks; the legacy Epicenter engine
- * maps AG-UI frames into them while it coexists. Either way the loop only ever
- * sees an {@link EngineChunk}, so swapping the inference backend is the engine's
+ * engine parses OpenAI SSE deltas into these chunks, so the loop only ever sees
+ * an {@link EngineChunk} and swapping the inference backend is the engine's
  * concern, never the loop's.
  */
 import type { JsonValue } from 'wellcrafted/json';

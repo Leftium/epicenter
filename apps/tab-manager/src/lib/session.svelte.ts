@@ -4,7 +4,6 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createOAuthAppAuth, createSession } from '@epicenter/svelte/auth';
 import { openCollaboration, roomWsUrl } from '@epicenter/workspace';
 import { createAiChatState } from './chat/chat-state.svelte';
-import { actionsToAiTools } from './chat/tool-bridge';
 import { createDeviceProfile, registerDevice } from './device';
 import {
 	oauthLauncher,
@@ -14,15 +13,7 @@ import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
-import {
-	openTabManagerBrowser,
-	type TabManagerBrowser,
-} from './tab-manager/extension';
-
-export type SessionAiTools = ReturnType<
-	typeof actionsToAiTools<TabManagerBrowser['actions']>
->;
-export type SessionTools = SessionAiTools['tools'];
+import { openTabManagerBrowser } from './tab-manager/extension';
 
 /**
  * Deferred-init values: set exactly once when `persistedAuthStoragePromise`
@@ -32,8 +23,8 @@ export type SessionTools = SessionAiTools['tools'];
  *
  * Once storage and peer are ready, `session` is the synchronous
  * `createSession()` return value. Its `current` getter is `null` when signed
- * out and the augmented tab-manager binding (binding fields + `state` +
- * `sessionAiTools`) when signed in.
+ * out and the augmented tab-manager binding (binding fields + `state`) when
+ * signed in.
  */
 let authClient: SyncAuthClient | undefined;
 let session: ReturnType<typeof buildSession> | undefined;
@@ -77,12 +68,16 @@ function buildSession(
 				actions: tabManager.actions,
 			});
 
-			const sessionAiTools = actionsToAiTools(tabManager.actions);
 			const savedTabs = createSavedTabState(tabManager);
 			const bookmarks = createBookmarkState(tabManager);
 			const toolTrust = createToolTrustState(tabManager);
 			const unifiedView = createUnifiedViewState({ bookmarks, savedTabs });
-			const aiChat = createAiChatState({ auth, tabManager, sessionAiTools });
+			const aiChat = createAiChatState({
+				auth,
+				tabManager,
+				collaboration,
+				toolTrust,
+			});
 			const state = { savedTabs, bookmarks, toolTrust, unifiedView, aiChat };
 
 			void tabManager.idb.whenLoaded.then(() =>
@@ -93,7 +88,6 @@ function buildSession(
 				...tabManager,
 				collaboration,
 				state,
-				sessionAiTools,
 				[Symbol.dispose]() {
 					aiChat[Symbol.dispose]();
 					toolTrust[Symbol.dispose]();

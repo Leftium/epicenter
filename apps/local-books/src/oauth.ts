@@ -220,7 +220,10 @@ export async function runAuthorizationFlow(
 	const codeVerifier = oauth.generateRandomCodeVerifier();
 	const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
 	const redirect = new URL(config.redirectUri);
-	const port = Number(redirect.port || '80');
+	// The public redirect host and the local listen port are decoupled: a public
+	// HTTPS tunnel (Intuit production requires one, since it rejects localhost)
+	// forwards to `callbackPort` here, which has no port of its own in the URL.
+	const port = config.callbackPort ?? Number(redirect.port || '80');
 	const timeoutMs = deps.timeoutMs ?? 5 * 60 * 1000;
 	const log = deps.log ?? (() => {});
 

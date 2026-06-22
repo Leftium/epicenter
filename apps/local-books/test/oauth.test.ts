@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { completeAuthorization, refreshAccessToken } from '../src/oauth.ts';
+import {
+	completeAuthorization,
+	refreshAccessToken,
+	runAuthorizationFlow,
+} from '../src/oauth.ts';
 import type { TokenSet } from '../src/tokens.ts';
 import { makeConfig } from './helpers.ts';
 import { type MockQbServer, startMockQbServer } from './mock-qb-server.ts';
@@ -75,6 +79,37 @@ test('refresh exchange mints a new token set', async () => {
 	expect(error).toBeNull();
 	expect(data?.accessToken).not.toBe('old-access');
 	expect(server.hits.token).toBe(before + 1);
+});
+
+test('callbackPort decouples the local listener from a portless HTTPS redirect', async () => {
+	// Intuit production rejects localhost, so the redirect is a public HTTPS
+	// tunnel with no port; the tunnel forwards to callbackPort on this machine.
+	const PORT = 18765;
+	const config = makeConfig({
+		tokenUrl: server.tokenUrl,
+		realmOverride: server.realmId,
+		redirectUri: 'https://books.example.trycloudflare.com/callback',
+		callbackPort: PORT,
+	});
+	const { data, error } = await runAuthorizationFlow(config, {
+		now: () => NOW,
+		timeoutMs: 5000,
+		// Stand in for the browser: bounce the authorize request straight at the
+		// local callback server on PORT, the way the tunnel would.
+		openBrowser: (url) => {
+			const state = new URL(url).searchParams.get('state') ?? '';
+			const cb = new URL(`http://localhost:${PORT}/callback`);
+			cb.searchParams.set('code', 'auth-code');
+			cb.searchParams.set('state', state);
+			cb.searchParams.set('realmId', server.realmId);
+			// The server force-stops the instant it catches the callback, resetting
+			// this connection; that reset is expected, not a failure.
+			void fetch(cb).catch(() => {});
+		},
+	});
+	expect(error).toBeNull();
+	expect(data?.realmId).toBe(server.realmId);
+	expect(data?.accessToken).toStartWith('access-');
 });
 
 test('a missing client secret is reported, not thrown', async () => {

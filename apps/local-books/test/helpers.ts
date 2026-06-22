@@ -22,6 +22,7 @@ export function makeConfig(over: Partial<AppConfig> = {}): AppConfig {
 		pageSize: 1000,
 		keyringFile: null,
 		realmOverride: null,
+		callbackPort: null,
 		...over,
 	};
 }

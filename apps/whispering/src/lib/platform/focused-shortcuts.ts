@@ -1,7 +1,7 @@
 import { type Command, commands } from '$lib/commands';
 import {
 	type CommandId,
-	localShortcuts,
+	LocalShortcutManagerLive,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
 import {
@@ -59,11 +59,9 @@ export const focusedShortcuts: Shortcuts = createShortcuts({
 	// succeeds. The contract stays async because the desktop tier's push does IPC.
 	async push(entries) {
 		for (const { command, binding } of entries) {
-			if (binding) localShortcuts.registerCommand({ command, binding });
-			else
-				localShortcuts.unregisterCommand({
-					commandId: command.id as CommandId,
-				});
+			if (binding)
+				LocalShortcutManagerLive.register(command.id as CommandId, binding);
+			else LocalShortcutManagerLive.unregister(command.id as CommandId);
 		}
 		return null;
 	},

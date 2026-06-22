@@ -1,6 +1,6 @@
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
-import type { Command, ShortcutEventState } from '$lib/commands';
+import type { ShortcutEventState } from '$lib/commands';
 import type { Key, KeyBinding } from '$lib/tauri/commands';
 import {
 	bindingsEqual,
@@ -184,23 +184,6 @@ export const LocalShortcutManagerLive = {
 	unregister(id: CommandId): void {
 		shortcuts.delete(id);
 	},
-};
-
-/**
- * Local shortcuts: cross-platform browser keyboard events, used by the web app
- * and the in-window recorder UI.
- */
-export const localShortcuts = {
-	registerCommand: ({
-		command,
-		binding,
-	}: {
-		command: Command;
-		binding: KeyBinding;
-	}) => LocalShortcutManagerLive.register(command.id as CommandId, binding),
-
-	unregisterCommand: ({ commandId }: { commandId: CommandId }) =>
-		LocalShortcutManagerLive.unregister(commandId),
 };
 
 /**

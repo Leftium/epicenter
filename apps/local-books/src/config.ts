@@ -39,6 +39,12 @@ export type AppConfig = {
 	pageSize: number;
 	keyringFile: string | null;
 	realmOverride: string | null;
+	/**
+	 * Port the localhost OAuth callback server binds to. Defaults to the port in
+	 * `redirectUri`. Set it when `redirectUri` is a public HTTPS tunnel (no port),
+	 * as Intuit production requires: the tunnel forwards to this local port.
+	 */
+	callbackPort: number | null;
 };
 
 export type CliConfigOverrides = {
@@ -70,6 +76,7 @@ const ConfigFileSchema = Type.Object({
 	cdcSafeWindowDays: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
 	fullBackstopDays: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
 	pageSize: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+	callbackPort: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
 });
 type ConfigFile = Static<typeof ConfigFileSchema>;
 
@@ -108,6 +115,7 @@ function resolveEntities(file: ConfigFile): string[] {
 export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 	const dataDir = resolveDataDir(overrides.dataDir);
 	const file = readConfigFile(dataDir);
+	const callbackPortEnv = env('LOCAL_BOOKS_CALLBACK_PORT');
 
 	const environment: QbEnvironment =
 		overrides.environment ??
@@ -140,5 +148,8 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 		pageSize: Math.min(file.pageSize ?? 1000, 1000),
 		keyringFile: env('LOCAL_BOOKS_KEYRING_FILE') ?? null,
 		realmOverride: overrides.realm ?? env('LOCAL_BOOKS_QB_REALM') ?? null,
+		callbackPort: callbackPortEnv
+			? Number(callbackPortEnv)
+			: (file.callbackPort ?? null),
 	};
 }

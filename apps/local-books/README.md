@@ -14,22 +14,70 @@ local-books status                            # token state + per-entity cursor,
 
 ## Setup
 
-You need an Intuit developer app (https://developer.intuit.com → your app → Keys & credentials). Use the **sandbox / development** keys to mirror a sandbox company. Register `http://localhost:8765/callback` as a redirect URI on the app.
+You need an Intuit developer app (https://developer.intuit.com → your app → Keys & credentials) with `http://localhost:8765/callback` registered as a redirect URI. Intuit issues two key sets, and they are not interchangeable:
 
-Provide the keys by environment:
+- **Development keys** connect sandbox companies only. Use them with `--env sandbox` (the default).
+- **Production keys** connect your real company. Use them with `--env production`. Intuit only issues these once the app has passed their production go-live assessment.
+
+Provide the keys as `QB_CLIENT_ID` / `QB_CLIENT_SECRET`:
 
 ```sh
 export QB_CLIENT_ID=...
 export QB_CLIENT_SECRET=...
 ```
 
-In this monorepo the keys live in Infisical at `/apps/local-books`, so prefix any command:
+In this monorepo the keys live in Infisical at `/apps/local-books`, split by Infisical environment: the `dev` environment holds the development keys, the `prod` environment holds the production keys. Pick the Infisical environment that matches the QuickBooks deployment you are targeting.
+
+### Mirror a sandbox company
 
 ```sh
 infisical run --path=/apps/local-books -- bun run src/bin.ts auth
 infisical run --path=/apps/local-books -- bun run src/bin.ts sync --entity Invoice --full
 infisical run --path=/apps/local-books -- bun run src/bin.ts status
 ```
+
+### Mirror your real company
+
+Two different `--env` flags are in play, and they are easy to confuse:
+
+- `infisical run --env=prod` selects the Infisical environment, which decides which key set is injected.
+- `bun run src/bin.ts ... --env production` selects the QuickBooks deployment, which decides which Intuit API the CLI calls.
+
+Both must say production, on every command. `auth` captures the `realmId` from the OAuth callback, so you never pass `--realm`; you just log into the real company in the browser.
+
+```sh
+infisical run --env=prod --path=/apps/local-books -- bun run src/bin.ts auth --env production
+infisical run --env=prod --path=/apps/local-books -- bun run src/bin.ts sync --env production --entity Invoice --full
+infisical run --env=prod --path=/apps/local-books -- bun run src/bin.ts status --env production
+```
+
+Those three invocations are wrapped as `:remote` scripts so you do not have to assemble the double-`--env` dance by hand (extra flags pass through to the end):
+
+```sh
+bun run auth:remote
+bun run sync:remote --entity Invoice --full
+bun run status:remote
+```
+
+#### Production needs an HTTPS tunnel for the one-time `auth`
+
+Intuit production rejects `http://localhost` redirect URIs (only Development accepts them), so the interactive `auth` hop needs a public HTTPS URL. This is only for `auth`: once tokens are in the keyring, every `sync` refreshes them and never touches the redirect URI again.
+
+1. Start a tunnel to the local callback port (`cloudflared` needs no account):
+   ```sh
+   cloudflared tunnel --url http://localhost:8765
+   ```
+   Copy the `https://<name>.trycloudflare.com` URL it prints.
+2. On the Intuit app's **Production** Redirect URIs, add exactly `https://<name>.trycloudflare.com/callback`.
+3. Run `auth` with the tunnel as the public redirect, pointing the local listener back at 8765:
+   ```sh
+   LOCAL_BOOKS_QB_REDIRECT_URI=https://<name>.trycloudflare.com/callback \
+   LOCAL_BOOKS_CALLBACK_PORT=8765 \
+     bun run auth:remote
+   ```
+   `LOCAL_BOOKS_CALLBACK_PORT` decouples the local listener from the portless tunnel host. After tokens land in the keyring, stop the tunnel; `sync:remote` and `status:remote` need nothing further.
+
+To avoid repeating `--env production` outside the scripts, set `LOCAL_BOOKS_QB_ENV=production` once, or write `{ "environment": "production" }` into `<data-dir>/config.json`.
 
 ## Where things live
 

@@ -1,9 +1,9 @@
 /**
- * The OpenAI-compatible inference gateway: provider routing, key resolution
- * (BYOK vs house), OpenAI passthrough, the Gemini `tool_calls` index injection
- * (the Wave 1 gate), and the OpenAI error convention. The upstream provider call
- * is the global `fetch`, stubbed here to a canned SSE response so the gateway is
- * exercised without a network.
+ * The OpenAI-compatible inference gateway: provider routing, house-key
+ * resolution, pure passthrough (the client owns SSE normalization, ADR-0053),
+ * and the OpenAI error convention. The upstream provider call is the global
+ * `fetch`, stubbed here to a canned SSE response so the gateway is exercised
+ * without a network.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -72,17 +72,6 @@ async function post(
 	);
 }
 
-/** Parse the streamed `data:` frames out of an SSE response body. */
-function parseFrames(text: string): Array<Record<string, unknown>> {
-	return text
-		.split('\n\n')
-		.map((frame) => frame.split('\n').find((l) => l.startsWith('data:')))
-		.filter((line): line is string => Boolean(line))
-		.map((line) => line.slice('data:'.length).trim())
-		.filter((data) => data !== '' && data !== '[DONE]')
-		.map((data) => JSON.parse(data) as Record<string, unknown>);
-}
-
 describe('inference gateway', () => {
 	test('answers ProviderNotConfigured in the OpenAI error shape when no key is available', async () => {
 		const res = await post(
@@ -106,7 +95,7 @@ describe('inference gateway', () => {
 		expect(body.error.code).toBe('UnknownModel');
 	});
 
-	test('OpenAI: forwards to the OpenAI endpoint, uses the BYOK key, strips it from the body, streams back', async () => {
+	test('OpenAI: forwards to the OpenAI endpoint with the house key and streams back', async () => {
 		const calls = stubUpstream(
 			new Response(
 				sse([
@@ -117,89 +106,56 @@ describe('inference gateway', () => {
 		);
 		const res = await post(
 			createTestApp(),
-			{
-				model: 'gpt-5.5',
-				messages: [{ role: 'user', content: 'hi' }],
-				apiKey: 'sk-byok',
-			},
-			{}, // BYOK means no house key needed
+			{ model: 'gpt-5.5', messages: [{ role: 'user', content: 'hi' }] },
+			{ OPENAI_API_KEY: 'sk-house' },
 		);
 		expect(res.status).toBe(200);
 		expect(await res.text()).toContain('"content":"hi"');
 
 		expect(calls[0]?.url).toBe('https://api.openai.com/v1/chat/completions');
-		expect(calls[0]?.headers.authorization).toBe('Bearer sk-byok');
+		expect(calls[0]?.headers.authorization).toBe('Bearer sk-house');
 		const forwarded = JSON.parse(calls[0]?.body ?? '{}');
-		expect('apiKey' in forwarded).toBe(false);
 		expect(forwarded.model).toBe('gpt-5.5');
 	});
 
-	test('Gemini: routes to the compat endpoint and injects sequential tool_calls indices', async () => {
+	test('Gemini: routes to the compat endpoint with the house key and passes the stream through untouched', async () => {
+		// The gateway no longer rewrites the stream (ADR-0053): the client
+		// accumulates Gemini's index-less tool_calls itself, so an index-less delta
+		// must reach the client exactly as the provider sent it.
+		const upstream = sse([
+			{
+				choices: [
+					{
+						delta: {
+							tool_calls: [
+								{
+									id: 'call_a',
+									type: 'function',
+									function: {
+										name: 'get_weather',
+										arguments: '{"city":"Paris"}',
+									},
+								},
+							],
+						},
+						finish_reason: 'stop',
+					},
+				],
+			},
+		]);
 		const calls = stubUpstream(
-			new Response(
-				sse([
-					{
-						choices: [
-							{
-								delta: {
-									tool_calls: [
-										{
-											id: 'call_a',
-											type: 'function',
-											function: {
-												name: 'get_weather',
-												arguments: '{"city":"Paris"}',
-											},
-										},
-									],
-								},
-								finish_reason: null,
-							},
-						],
-					},
-					{
-						choices: [
-							{
-								delta: {
-									tool_calls: [
-										{
-											id: 'call_b',
-											type: 'function',
-											function: {
-												name: 'get_weather',
-												arguments: '{"city":"Tokyo"}',
-											},
-										},
-									],
-								},
-								// Gemini sometimes finishes 'stop' while emitting a tool call.
-								finish_reason: 'stop',
-							},
-						],
-					},
-				]),
-				{ status: 200, headers: { 'content-type': 'text/event-stream' } },
-			),
+			new Response(upstream, {
+				status: 200,
+				headers: { 'content-type': 'text/event-stream' },
+			}),
 		);
 		const res = await post(
 			createTestApp(),
-			{
-				model: 'gemini-3.5-flash',
-				messages: [{ role: 'user', content: 'go' }],
-			},
+			{ model: 'gemini-3.5-flash', messages: [{ role: 'user', content: 'go' }] },
 			{ GEMINI_API_KEY: 'g-house' },
 		);
 		expect(res.status).toBe(200);
-
-		const frames = parseFrames(await res.text());
-		const indices = frames.flatMap((frame) => {
-			const choice = (frame.choices as Array<Record<string, unknown>>)?.[0];
-			const delta = choice?.delta as
-				| { tool_calls?: Array<{ index?: number }> }
-				| undefined;
-			return (delta?.tool_calls ?? []).map((call) => call.index);
-		});
-		expect(indices).toEqual([0, 1]);
+		expect(await res.text()).toBe(upstream);
 
 		expect(calls[0]?.url).toBe(
 			'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',

@@ -25,9 +25,10 @@
 	// against Epicenter.
 	//
 	// AI provider house keys (OPENAI_API_KEY, GEMINI_API_KEY) are optional:
-	// `wrangler secret put` one to serve that provider to all members, or
-	// omit it and members bring their own key per request (BYOK). A house-key
-	// request for a missing key gets 503 ProviderNotConfigured.
+	// `wrangler secret put` one to serve that provider to all members through
+	// this gateway, or omit it and that provider returns 503
+	// ProviderNotConfigured. The gateway is house-key-only (ADR-0053): members
+	// who want their own key point their client at a custom backend instead.
 	"secrets": {
 		"required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_SECRET"]
 	},

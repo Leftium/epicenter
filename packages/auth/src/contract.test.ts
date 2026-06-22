@@ -1113,3 +1113,57 @@ test('/api/session identity update after signOut is discarded without writing id
 	expect(auth.state).toEqual({ status: 'signed-out' });
 	auth[Symbol.dispose]();
 });
+
+// The load-bearing audience-scoping guard (ADR-0052): the Epicenter bearer is
+// attached only to the origin this client signed into. Handing `auth.fetch` to a
+// custom inference backend (a local Ollama, a third-party gateway) must never
+// leak the token, and a bearer request must not follow a cross-origin redirect.
+test('audience-scoped bearer: the Epicenter token never reaches a foreign origin', async () => {
+	const setup = createStorage(cell());
+	const seen: Array<{
+		url: string;
+		authorization: string | null;
+		redirect: RequestRedirect | undefined;
+	}> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => launched() },
+		fetch: async (input, init) => {
+			if (String(input).endsWith('/api/session')) {
+				return json(apiSessionBody('user-1'));
+			}
+			seen.push({
+				url: String(input),
+				authorization: new Headers(init?.headers).get('authorization'),
+				redirect: init?.redirect,
+			});
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	// Same origin (the Epicenter gateway): bearer attached, redirect pinned manual.
+	await auth.fetch('http://localhost:8787/v1/chat/completions', {
+		method: 'POST',
+	});
+	// Foreign origin (a custom backend, e.g. a local Ollama): no bearer at all.
+	await auth.fetch('http://localhost:11434/v1/chat/completions', {
+		method: 'POST',
+	});
+
+	expect(seen).toEqual([
+		{
+			url: 'http://localhost:8787/v1/chat/completions',
+			authorization: 'Bearer access-token',
+			redirect: 'manual',
+		},
+		{
+			url: 'http://localhost:11434/v1/chat/completions',
+			authorization: null,
+			redirect: undefined,
+		},
+	]);
+	auth[Symbol.dispose]();
+});

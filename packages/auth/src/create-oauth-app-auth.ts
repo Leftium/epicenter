@@ -342,13 +342,38 @@ export function createOAuthAppAuth({
 		return verifiedPersistedAuth.grant.accessToken;
 	}
 
+	/**
+	 * The Epicenter bearer is audience-scoped (ADR-0052): it is attached only to
+	 * the origin this client signed into. A request to any other origin is sent
+	 * with no Epicenter credential, so handing this fetch to a custom inference
+	 * backend or any third party can never leak the token. A relative `/` path
+	 * resolves against `baseURL`, so it is always the Epicenter origin.
+	 */
+	function targetsEpicenter(input: AuthFetchInput): boolean {
+		try {
+			const target =
+				input instanceof Request
+					? input.url
+					: input instanceof URL
+						? input.href
+						: input.startsWith('/')
+							? new URL(input, baseURL).href
+							: input;
+			return new URL(target).origin === new URL(baseURL).origin;
+		} catch {
+			return false; // Unparseable target: fail closed, attach nothing.
+		}
+	}
+
 	async function fetchWithAuth(
 		input: AuthFetchInput,
 		init: RequestInit | undefined,
 		forceRefresh: boolean,
 	) {
 		const headers = headersFromRequest(input, init);
-		const accessToken = await bearerForNetwork(forceRefresh);
+		const accessToken = targetsEpicenter(input)
+			? await bearerForNetwork(forceRefresh)
+			: null;
 		if (accessToken) {
 			headers.set('Authorization', `Bearer ${accessToken}`);
 		} else {
@@ -364,6 +389,10 @@ export function createOAuthAppAuth({
 			...init,
 			headers,
 			credentials: 'omit',
+			// A bearer-carrying request must never follow a cross-origin redirect:
+			// some runtimes (reqwest in Tauri, older Chromium) re-send the header to
+			// the new origin. Return the 3xx to the caller instead.
+			...(accessToken ? { redirect: 'manual' as const } : {}),
 		});
 	}
 
@@ -455,7 +484,9 @@ export function createOAuthAppAuth({
 		},
 		async fetch(input, init?: RequestInit) {
 			const response = await fetchWithAuth(input, init, false);
-			if (response.status !== 401) return response;
+			// The 401 refresh/retry/pause dance is for our own API. A non-Epicenter
+			// target never carried our bearer, so its 401 is not ours to react to.
+			if (response.status !== 401 || !targetsEpicenter(input)) return response;
 			const refreshed = await refreshGrant(true);
 			if (!refreshed) return response;
 			const retryResponse = await fetchWithAuth(input, init, false);

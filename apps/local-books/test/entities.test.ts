@@ -18,7 +18,7 @@ function project(entity: string, raw: QbObject): Record<string, unknown> {
 	const tmp = tempDir();
 	let db: BooksDb | undefined;
 	try {
-		db = openBooksDb(join(tmp.dir, 'books.db'), 'realm-test');
+		db = openBooksDb(join(tmp.dir, 'books.db'));
 		const id = String(raw.Id);
 		db.applyEntitySync(def, {
 			upserts: [{ id, raw: JSON.stringify(raw), updatedAt: null }],

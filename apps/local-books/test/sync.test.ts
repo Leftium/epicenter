@@ -46,7 +46,7 @@ function setup(configOver: Partial<AppConfig> = {}) {
 		sleep: async () => {},
 	});
 	const tmp = tempDir();
-	const db = openBooksDb(join(tmp.dir, 'books.db'), server.realmId);
+	const db = openBooksDb(join(tmp.dir, 'books.db'));
 
 	const teardown = () => {
 		db.close();
@@ -91,7 +91,6 @@ test('full pull seeds the mirror with valid JSON and a populated cursor', async 
 	const state = ctx.db.readSyncState('Invoice');
 	expect(state?.cdcCursor).toBe(data!.cursorAfter);
 	expect(state?.lastFullPullAt).toBe(data!.cursorAfter);
-	expect(ctx.db.getMeta('realmId')).toBe(ctx.server.realmId);
 
 	ctx.teardown();
 });

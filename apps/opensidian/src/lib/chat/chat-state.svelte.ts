@@ -26,6 +26,12 @@
 
 import type { AuthClient } from '@epicenter/auth';
 import {
+	asConversationId,
+	type Conversation,
+	type ConversationId,
+	generateConversationId,
+} from '@epicenter/chat';
+import {
 	createOpenAiAgentEngine,
 	resolveInferenceBackend,
 } from '@epicenter/client';
@@ -39,13 +45,7 @@ import {
 	createDispatchToolCatalog,
 	defaultApprovalDecision,
 } from '@epicenter/workspace/agent';
-import {
-	asConversationId,
-	type Conversation,
-	type ConversationId,
-	generateChatMessageId,
-	generateConversationId,
-} from 'opensidian';
+import { generateChatMessageId } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
 import { SvelteMap } from 'svelte/reactivity';
 import { DEFAULT_MODEL } from '$lib/chat/models';
@@ -124,9 +124,6 @@ export function createAiChatState({
 		workspace.tables.conversations.set({
 			id,
 			title: 'New Chat',
-			parentId: null,
-			sourceMessageId: null,
-			systemPrompt: null,
 			model: DEFAULT_MODEL,
 			createdAt: nowIso,
 			updatedAt: nowIso,
@@ -340,9 +337,6 @@ export function createAiChatState({
 		workspace.tables.conversations.set({
 			id,
 			title: 'New Chat',
-			parentId: null,
-			sourceMessageId: null,
-			systemPrompt: null,
 			model: active?.model ?? DEFAULT_MODEL,
 			createdAt: nowIso,
 			updatedAt: nowIso,

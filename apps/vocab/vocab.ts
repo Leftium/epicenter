@@ -13,16 +13,13 @@
  *      → `openVocabBrowser({ signedIn, nodeId })`
  */
 
+import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
-import { field } from '@epicenter/field';
 import {
-	attachRecords,
 	defineKv,
-	defineTable,
 	defineWorkspace,
 	generateId,
 	type Id,
-	type InferTableRow,
 } from '@epicenter/workspace';
 import type { AgentMessage } from '@epicenter/workspace/agent';
 import { Type } from 'typebox';
@@ -32,17 +29,14 @@ import type { Brand } from 'wellcrafted/brand';
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ConversationId = Id & Brand<'ConversationId'>;
-export const generateConversationId = (): ConversationId =>
-	generateId<ConversationId>();
-
 export type MessageId = Id & Brand<'MessageId'>;
 export const generateMessageId = (): MessageId => generateId<MessageId>();
 
 /**
  * Vocab runs a single Chinese-tuned model. It is an app constant, not a
- * per-conversation choice, so it is never stored on the conversation row. The
- * client reads it when it answers a conversation over the metered `/api/ai/chat`
+ * per-conversation choice; the canonical conversations table requires a `model`,
+ * so Vocab writes this constant on every row and never offers a per-conversation
+ * pick. The client also reads it when it answers over the OpenAI-compatible
  * stream.
  */
 export const VOCAB_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
@@ -83,18 +77,6 @@ Example response style:
  * fills with tool-call and tool-result parts.
  */
 export type VocabMessage = AgentMessage;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Table Definitions
-// ─────────────────────────────────────────────────────────────────────────────
-
-const conversationsTable = defineTable({
-	id: field.string<ConversationId>(),
-	title: field.string(),
-	createdAt: field.instant(),
-	updatedAt: field.instant(),
-}).docs({ messages: (ydoc) => attachRecords<VocabMessage>(ydoc) });
-export type Conversation = InferTableRow<typeof conversationsTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Factory

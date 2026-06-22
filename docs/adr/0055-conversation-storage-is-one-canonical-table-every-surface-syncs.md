@@ -1,4 +1,4 @@
-# 0052. Conversation storage is one canonical table in @epicenter/chat, and every chat surface syncs
+# 0055. Conversation storage is one canonical table in @epicenter/chat, and every chat surface syncs
 
 - **Status:** Accepted
 - **Date:** 2026-06-22

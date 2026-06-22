@@ -1,7 +1,7 @@
 # 0051. There is one agent loop; its store seam chooses persistence, so tab-manager needs no second loop
 
 - **Status:** Superseded
-- **Superseded by:** [ADR-0052](0052-conversation-storage-is-one-canonical-table-every-surface-syncs.md) (every chat surface syncs onto one canonical conversations table in `@epicenter/chat`; tab-manager's device-local store is removed and it uses `.connect()` like every other surface). The one-loop decision below carries forward unchanged; only the device-local-versus-synced store choice is reversed.
+- **Superseded by:** [ADR-0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) (every chat surface syncs onto one canonical conversations table in `@epicenter/chat`; tab-manager's device-local store is removed and it uses `.connect()` like every other surface). The one-loop decision below carries forward unchanged; only the device-local-versus-synced store choice is reversed.
 - **Date:** 2026-06-21
 - **Supersedes:** [ADR-0048](0048-a-conversations-loop-is-chosen-by-whether-its-transcript-syncs.md) (a chat surface no longer picks between two loops by transcript reach; there is one loop, and its store impl is chosen by reach)
 - **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the one client loop and its by-id record store), [ADR-0050](0050-the-inference-contract-is-openai-compatible.md) (the OpenAI-compatible engine this loop drives, whose deletion of the AG-UI path this completes), [ADR-0049](0049-inference-is-its-own-box-the-daemon-never-infers.md) (the swappable inference server), [ADR-0046](0046-a-capability-free-agent-persists-finished-messages-not-live-doc-streams.md) (the finished-message record both stores hold)

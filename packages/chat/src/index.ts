@@ -10,7 +10,7 @@
  * finished message into that doc; the live turn never enters the CRDT.
  *
  * This package is the one place allowed to know both the storage primitives
- * (`defineTable` + `attachKvStore`, from `@epicenter/workspace`) and the agent
+ * (`defineTable` + `attachRecords`, from `@epicenter/workspace`) and the agent
  * domain (`AgentMessage`, from `@epicenter/workspace/agent`). The agent loop's
  * package stays storage-agnostic and the workspace package stays
  * domain-agnostic; the conversation storage that needs both lives here.
@@ -18,7 +18,7 @@
 
 import { field } from '@epicenter/field';
 import {
-	attachKvStore,
+	attachRecords,
 	defineTable,
 	generateId,
 	type Id,
@@ -54,7 +54,7 @@ export const conversationsTable = defineTable({
 	model: field.string(),
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
-}).docs({ messages: (ydoc) => attachKvStore<AgentMessage>(ydoc) });
+}).docs({ messages: (ydoc) => attachRecords<AgentMessage>(ydoc) });
 
 /** One conversation row. */
 export type Conversation = InferTableRow<typeof conversationsTable>;

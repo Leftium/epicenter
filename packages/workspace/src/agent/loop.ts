@@ -271,7 +271,10 @@ export function createConversation(
 				failure = step.failure;
 				break;
 			}
-			if (step.calls.length === 0) break; // a text finish ends the turn
+
+			// No tool calls means the model gave its final answer; the turn is done.
+			const isFinalAnswer = step.calls.length === 0;
+			if (isFinalAnswer) break;
 
 			await runTools(assistant, step.calls, signal);
 		}

@@ -5,27 +5,27 @@
  * base URL; pointing it elsewhere (Ollama, OpenRouter, a self-hosted gateway) is
  * configuration, not code.
  *
- * It is a thin reverse proxy: resolve the provider from the model catalog,
- * inject the key (BYOK from the body, else the deployment's house key), forward
- * to the provider's OpenAI-compatible endpoint, and stream the reply straight
- * back. OpenAI is pure passthrough. Gemini's compat endpoint streams tool calls
- * faithfully except it omits the `index` on `tool_calls` deltas, so this gateway
- * injects sequential indices (0, 1, 2, ...) on the way through, making the stream
- * spec-compliant for any OpenAI client (verified, Wave 1; the canonical LiteLLM
- * fix). The gateway never executes a tool and keeps no transcript: it is a
- * stateless inference turn (ADR-0049).
+ * It is a pure passthrough proxy: resolve the provider from the model catalog,
+ * inject the deployment's house key, forward the body to the provider's
+ * OpenAI-compatible endpoint, and stream the reply straight back, bytes
+ * untouched. The client owns OpenAI-SSE normalization (ADR-0054): it accumulates
+ * Gemini's index-less `tool_calls` deltas itself, because custom mode reaches a
+ * provider directly and bypasses this gateway, so the gateway rewrites nothing.
+ * It never executes a tool and keeps no transcript: a stateless inference turn
+ * (ADR-0049).
  *
- * Like `/api/ai/chat`, this is library-side and billing-agnostic. Auth,
- * ownership, and any credit policy are supplied by the deployment through
- * {@link mountInferenceApp}: apps/api passes its Autumn metering policy, a
- * self-hosted shared-wiki deployment passes none. BYOK (an `apiKey` in the body)
- * bypasses the house key and, by convention, the deployment's metering policy.
+ * This is library-side and billing-agnostic. Auth, ownership, and any credit
+ * policy are supplied by the deployment through {@link mountInferenceApp}:
+ * apps/api passes its Autumn metering policy, a self-hosted shared-wiki
+ * deployment passes none. The gateway is house-key-only: it accepts no provider
+ * key in the body, so it provably never receives a user's key (ADR-0054). BYOK is
+ * a custom client backend (your own URL and key), never the Epicenter gateway.
  *
  * Error convention (OpenAI shape, so the client reducer keeps its branchable
  * `error.code`): every failure answers `{ error: { message, code } }`.
  *   - 400 `UnknownModel`           the model is not in the catalog.
  *   - 400 `invalid_request`        the body is malformed.
- *   - 503 `ProviderNotConfigured`  no BYOK key and no house key for the provider.
+ *   - 503 `ProviderNotConfigured`  no house key configured for the provider.
  *   - 402 `InsufficientCredits`    the deployment's metering policy (apps/api).
  *   - 401 `Unauthorized`           the deployment's auth middleware.
  *   - upstream non-2xx             the provider's own OpenAI-shaped error, with
@@ -84,75 +84,6 @@ function clampStatus(status: number): ContentfulStatusCode {
 	return 502;
 }
 
-/**
- * Rewrite a Gemini SSE stream to inject sequential `tool_calls` indices. Gemini's
- * compat endpoint sends each parallel call complete in one delta but omits the
- * `index`; OpenAI clients correlate calls by index, so a missing index would
- * merge parallel calls. We assign 0, 1, 2, ... to each index-less tool-call delta
- * as it streams. OpenAI's own stream already carries indices and never reaches
- * here. Frames are double-newline separated; a non-`data` line, `[DONE]`, or an
- * unparseable frame passes through untouched.
- */
-function injectToolCallIndices(
-	body: ReadableStream<Uint8Array>,
-): ReadableStream<Uint8Array> {
-	const decoder = new TextDecoder();
-	const encoder = new TextEncoder();
-	let buffer = '';
-	let nextIndex = 0;
-
-	function rewriteFrame(frame: string): string {
-		return frame
-			.split('\n')
-			.map((line) => {
-				if (!line.startsWith('data:')) return line;
-				const data = line.slice('data:'.length).trimStart();
-				if (data === '' || data === '[DONE]') return line;
-				let parsed: {
-					choices?: Array<{
-						delta?: { tool_calls?: Array<{ index?: number }> };
-					}>;
-				};
-				try {
-					parsed = JSON.parse(data);
-				} catch {
-					return line;
-				}
-				let mutated = false;
-				for (const choice of parsed.choices ?? []) {
-					const toolCalls = choice.delta?.tool_calls;
-					if (!Array.isArray(toolCalls)) continue;
-					for (const toolCall of toolCalls) {
-						if (typeof toolCall.index !== 'number') {
-							toolCall.index = nextIndex++;
-							mutated = true;
-						}
-					}
-				}
-				return mutated ? `data: ${JSON.stringify(parsed)}` : line;
-			})
-			.join('\n');
-	}
-
-	return body.pipeThrough(
-		new TransformStream<Uint8Array, Uint8Array>({
-			transform(chunk, controller) {
-				buffer += decoder.decode(chunk, { stream: true });
-				const frames = buffer.split('\n\n');
-				buffer = frames.pop() ?? '';
-				for (const frame of frames) {
-					controller.enqueue(encoder.encode(`${rewriteFrame(frame)}\n\n`));
-				}
-			},
-			flush(controller) {
-				if (buffer.length > 0) {
-					controller.enqueue(encoder.encode(rewriteFrame(buffer)));
-				}
-			},
-		}),
-	);
-}
-
 const inferenceApp = new Hono<Env>().post(
 	API_ROUTES.ai.completions.pattern,
 	describeRoute({
@@ -185,21 +116,15 @@ const inferenceApp = new Hono<Env>().post(
 
 		const { provider } = MODELS_BY_ID[model as ServableModel];
 		const upstream = PROVIDER_UPSTREAM[provider];
-		const byokKey =
-			typeof body.apiKey === 'string' && body.apiKey.length > 0
-				? body.apiKey
-				: undefined;
-		const houseKey = c.env[upstream.houseKeyEnv];
-		const apiKey = byokKey ?? houseKey;
+		// House-key-only (ADR-0054): the gateway holds the key and never reads one
+		// from the body, so it provably never receives a user's provider key.
+		const apiKey = c.env[upstream.houseKeyEnv];
 		if (!apiKey) {
 			return c.json(
 				openAiError(`${provider} is not configured.`, 'ProviderNotConfigured'),
 				503,
 			);
 		}
-
-		// Forward the body verbatim minus the BYOK key (the provider never sees it).
-		const { apiKey: _omitApiKey, ...forwardBody } = body;
 
 		let upstreamResponse: Response;
 		try {
@@ -209,7 +134,7 @@ const inferenceApp = new Hono<Env>().post(
 					'content-type': 'application/json',
 					authorization: `Bearer ${apiKey}`,
 				},
-				body: JSON.stringify(forwardBody),
+				body: JSON.stringify(body),
 				signal: c.req.raw.signal,
 			});
 		} catch (error) {
@@ -242,12 +167,9 @@ const inferenceApp = new Hono<Env>().post(
 			);
 		}
 
-		const stream =
-			provider === 'gemini'
-				? injectToolCallIndices(upstreamResponse.body)
-				: upstreamResponse.body;
-
-		return new Response(stream, {
+		// Pure passthrough (ADR-0054): the client normalizes provider quirks (it
+		// must, for custom backends), so the gateway forwards the stream untouched.
+		return new Response(upstreamResponse.body, {
 			status: 200,
 			headers: {
 				'content-type': 'text/event-stream',

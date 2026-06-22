@@ -16,7 +16,8 @@
  *                                  OpenAI-compatible gateway). Reserves credits
  *                                  (a lock) before the call, then confirms on
  *                                  success or releases on a pre-stream failure.
- *                                  BYOK callers bypass billing entirely.
+ *                                  The gateway is house-key-only, so every call
+ *                                  is metered (ADR-0054): no BYOK bypass.
  *   syncAssetStorageWithAutumn     Around `/api/.../assets`. Checks storage
  *                                  before POST uploads, then syncs Autumn to
  *                                  the authoritative asset-table total after
@@ -64,18 +65,14 @@ function billingFor(c: Context<Env>) {
  * the lock TTL. The model is read from the OpenAI body shape (top-level `model`)
  * and a guard failure answers in the OpenAI error shape
  * (`{ error: { message, code } }`) so the client engine keeps its branchable
- * `error.code`. A BYOK caller (an `apiKey` in the body) bypasses metering.
+ * `error.code`. The gateway is house-key-only (ADR-0054), so every call is
+ * metered; there is no BYOK bypass.
  */
 export const chargeOpenAiCreditsWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
 		const body = (await c.req.json().catch(() => ({}))) as {
 			model?: string;
-			apiKey?: string;
 		};
-
-		if (body.apiKey) {
-			return next();
-		}
 
 		const billing = billingFor(c);
 		const { data: reservation, error: guardError } =

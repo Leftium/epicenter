@@ -1,11 +1,17 @@
 <script module lang="ts">
 	import { APP_URLS } from '@epicenter/constants/vite';
-	import { epicenterMeteredEngine } from '@epicenter/vocab/engine';
+	import { createVocabEngine } from '@epicenter/vocab/engine';
 	import { auth } from '$platform/auth';
+	import { inferenceBackend } from '$lib/state/inference-backend.svelte';
 
-	// The client answers over the metered `/api/ai/chat` SSE stream (ADR-0043).
 	// One engine, built once and shared across every mounted conversation view.
-	const clientEngine = epicenterMeteredEngine(auth.fetch, APP_URLS.API);
+	// The backend is read per turn from the device setting (ADR-0054): the metered
+	// Epicenter gateway, or a custom OpenAI-compatible URL (a local Ollama).
+	const clientEngine = createVocabEngine({
+		fetch: auth.fetch,
+		baseURL: APP_URLS.API,
+		backend: () => inferenceBackend.current,
+	});
 </script>
 
 <script lang="ts">

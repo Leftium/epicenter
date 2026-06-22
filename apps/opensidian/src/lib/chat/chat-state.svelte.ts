@@ -25,7 +25,10 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import { createOpenAiAgentEngine } from '@epicenter/client';
+import {
+	createOpenAiAgentEngine,
+	resolveInferenceBackend,
+} from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { InstantString } from '@epicenter/field';
@@ -52,6 +55,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { searchParams } from '$lib/search-params.svelte';
+import { inferenceBackend } from '$lib/state/inference-backend.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
 export function createAiChatState({
@@ -161,10 +165,15 @@ export function createAiChatState({
 				store:
 					workspace.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
-					fetch: auth.fetch,
-					baseURL: inferenceBaseUrl,
+					// The device backend is read per turn (so a switch lands next turn) and
+					// carries its own model; this conversation's catalog pick is the hosted
+					// default, used only when the backend is hosted.
 					data: () => ({
-						model: metadata?.model ?? DEFAULT_MODEL,
+						...resolveInferenceBackend(inferenceBackend.current, {
+							fetch: auth.fetch,
+							baseURL: inferenceBaseUrl,
+							model: metadata?.model ?? DEFAULT_MODEL,
+						}),
 						systemPrompts: buildSystemPrompts(),
 					}),
 				}),

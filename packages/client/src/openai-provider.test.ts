@@ -12,7 +12,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { AgentEngineRequest, EngineChunk } from './agent-engine.js';
+import type {
+	AgentEngineRequest,
+	EngineChunk,
+	EngineFetch,
+} from './agent-engine.js';
+import { resolveInferenceBackend } from './inference-backend.js';
 import { createOpenAiAgentEngine } from './openai-provider.js';
 
 /** Build an OpenAI SSE response: one `data:` frame per chunk, then `[DONE]`. */
@@ -70,9 +75,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: ['be brief'] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: ['be brief'],
+			}),
 		});
 
 		const request: AgentEngineRequest = {
@@ -158,9 +166,12 @@ describe('createOpenAiAgentEngine', () => {
 			return fetch(url, init);
 		}) as unknown as typeof globalThis.fetch;
 		const engine = createOpenAiAgentEngine({
-			fetch: recordingFetch,
-			baseURL: 'https://example.test/v1/',
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch: recordingFetch,
+				baseURL: 'https://example.test/v1/',
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		await drain(
@@ -184,9 +195,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		const chunks = await drain(
@@ -247,9 +261,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		const ends = toolCalls(
@@ -317,9 +334,12 @@ describe('createOpenAiAgentEngine', () => {
 			]),
 		);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gemini-3.5-flash', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gemini-3.5-flash',
+				systemPrompts: [],
+			}),
 		});
 
 		const ends = toolCalls(
@@ -347,9 +367,12 @@ describe('createOpenAiAgentEngine', () => {
 		);
 		const { fetch } = capturingFetch(errorResponse);
 		const engine = createOpenAiAgentEngine({
-			fetch,
-			baseURL: GATEWAY,
-			data: () => ({ model: 'gpt-5.5', systemPrompts: [] }),
+			data: () => ({
+				fetch,
+				baseURL: GATEWAY,
+				model: 'gpt-5.5',
+				systemPrompts: [],
+			}),
 		});
 
 		const chunks = await drain(
@@ -363,5 +386,62 @@ describe('createOpenAiAgentEngine', () => {
 			| undefined;
 		expect(error?.message).toBe('Out of credits');
 		expect(error?.code).toBe('InsufficientCredits');
+	});
+
+	// End-to-end custom backend: the resolver + engine reach a custom URL with the
+	// user's key and never the hosted (Epicenter) fetch. This is the non-interactive
+	// stand-in for "switch tab-manager to a local Ollama"; the live extension test
+	// is the remaining manual check.
+	test('drives a custom backend through the resolver: custom URL, user key, never the hosted bearer', async () => {
+		const realFetch = globalThis.fetch;
+		const calls: Array<{ url: string; authorization: string | null }> = [];
+		globalThis.fetch = (async (
+			url: string | URL | Request,
+			init?: RequestInit,
+		) => {
+			calls.push({
+				url: String(url),
+				authorization: new Headers(init?.headers).get('authorization'),
+			});
+			return openAiSse([
+				{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] },
+			]);
+		}) as typeof globalThis.fetch;
+		let hostedRan = false;
+		const hostedFetch: EngineFetch = async () => {
+			hostedRan = true;
+			return new Response();
+		};
+		try {
+			const engine = createOpenAiAgentEngine({
+				data: () => ({
+					...resolveInferenceBackend(
+						{
+							mode: 'custom',
+							baseUrl: 'http://localhost:11434/v1',
+							model: 'qwen2.5:3b',
+							apiKey: 'sk-user',
+						},
+						{ fetch: hostedFetch, baseURL: GATEWAY, model: 'gateway-model' },
+					),
+					systemPrompts: [],
+				}),
+			});
+			await drain(
+				engine(
+					{ messages: [{ role: 'user', content: 'hi' }], tools: [] },
+					new AbortController().signal,
+				),
+			);
+			expect(calls).toEqual([
+				{
+					url: 'http://localhost:11434/v1/chat/completions',
+					authorization: 'Bearer sk-user',
+				},
+			]);
+			expect(hostedRan).toBe(false);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
 	});
 });

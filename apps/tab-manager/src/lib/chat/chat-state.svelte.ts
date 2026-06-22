@@ -26,7 +26,10 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import { createOpenAiAgentEngine } from '@epicenter/client';
+import {
+	createOpenAiAgentEngine,
+	resolveInferenceBackend,
+} from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { bindAgentConversation } from '@epicenter/svelte';
@@ -55,6 +58,7 @@ import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
+import { inferenceBackend } from '$lib/state/inference-backend.svelte';
 import type { ToolTrustState } from '$lib/state/tool-trust.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 
@@ -144,10 +148,15 @@ export function createAiChatState({
 			createAgentConversation({
 				store: attachConversationStore(conversationId),
 				engine: createOpenAiAgentEngine({
-					fetch: auth.fetch,
-					baseURL: inferenceBaseUrl,
+					// The device backend is read per turn (so a switch lands next turn) and
+					// carries its own model; the conversation's catalog pick is the hosted
+					// default, used only when the backend is hosted.
 					data: () => ({
-						model: modelChoice?.model ?? DEFAULT_MODEL,
+						...resolveInferenceBackend(inferenceBackend.get(), {
+							fetch: auth.fetch,
+							baseURL: inferenceBaseUrl,
+							model: modelChoice?.model ?? DEFAULT_MODEL,
+						}),
 						systemPrompts: [
 							buildDeviceConstraints(tabManager.nodeId),
 							TAB_MANAGER_SYSTEM_PROMPT,

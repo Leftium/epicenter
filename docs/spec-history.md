@@ -16,7 +16,7 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1282 specs ever** (571 still in tree, 711 removed).
+**1282 specs ever** (570 still in tree, 712 removed).
 
 
 ## 2026
@@ -705,7 +705,7 @@
 | 2026-02-23 | shared-provider-models | in tree | specs/20260223T024935-shared-provider-models.md |
 | 2026-02-23 | network-topology-execution-plan | in tree | specs/20260223T102800-network-topology-execution-plan.md |
 | 2026-02-23 | remove-key-store-simplify-api-key-resolution | removed | specs/20260223T102844-remove-key-store-simplify-api-key-resolution.md |
-| 2026-02-23 | byok-api-key-settings | in tree | specs/20260223T160300-byok-api-key-settings.md |
+| 2026-02-23 | byok-api-key-settings | removed | specs/20260223T160300-byok-api-key-settings.md |
 | 2026-02-23 | jwt-auth-for-local-server-and-sync | in tree | specs/20260223T160300-jwt-auth-for-local-server-and-sync.md |
 | 2026-02-23 | background-ai-stream-on-switch | removed | specs/20260223T195800-background-ai-stream-on-switch.md |
 | 2026-02-23 | ai-tools-command-queue | removed | specs/20260223T200500-ai-tools-command-queue.md |

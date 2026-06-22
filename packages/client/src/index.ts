@@ -24,8 +24,13 @@ export type {
 	ModelToolCall,
 } from './agent-engine.js';
 export {
+	type InferenceBackendConfig,
+	type ResolvedInferenceBackend,
+	resolveInferenceBackend,
+} from './inference-backend.js';
+export {
 	createOpenAiAgentEngine,
-	type OpenAiProviderData,
+	type OpenAiTurnContext,
 } from './openai-provider.js';
 
 export type EpicenterClientOptions = {

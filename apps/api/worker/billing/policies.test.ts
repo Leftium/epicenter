@@ -122,16 +122,6 @@ test('a pre-stream failure (>= 400) releases the reservation, never charging', a
 	expect(finalizeCalls).toEqual(['release']);
 });
 
-test('a BYOK key bypasses billing entirely (no reservation)', async () => {
-	const res = await aiRequest(makeAiApp(200), {
-		model: 'gpt',
-		apiKey: 'sk-user-key',
-	});
-
-	expect(res.status).toBe(200);
-	expect(finalizeCalls).toHaveLength(0);
-});
-
 test('a guard rejection answers in the OpenAI error shape and reserves nothing', async () => {
 	aiReserveOutcome = AiChatError.InsufficientCredits({ balance: 0 });
 

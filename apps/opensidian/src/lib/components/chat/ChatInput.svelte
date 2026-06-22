@@ -8,8 +8,12 @@
 	import { APP_MODELS } from '$lib/chat/models';
 
 	import { requireOpensidian } from '$lib/session';
+	import { inferenceBackend } from '$lib/state/inference-backend.svelte';
+	import InferenceSettings from './InferenceSettings.svelte';
 
 	const opensidian = requireOpensidian();
+
+	const backend = $derived(inferenceBackend.current);
 
 	const currentModelLabel = $derived(
 		MODELS_BY_ID[opensidian.state.chat.model as keyof typeof MODELS_BY_ID]
@@ -27,31 +31,43 @@
 </script>
 
 <div class="flex flex-col gap-1.5 border-t bg-background px-2 py-1.5">
-	<!-- Model select: ordered roles (Fast / Best) -->
-	<div class="flex gap-2">
-		<Select.Root
-			type="single"
-			value={opensidian.state.chat.model}
-			onValueChange={(v) => {
-				if (v) opensidian.state.chat.model = v;
-			}}
-		>
-			<Select.Trigger size="sm" class="flex-1">
-				<span class="truncate">{currentModelLabel}</span>
-			</Select.Trigger>
-			<Select.Content>
-				{#each APP_MODELS as id (id)}
-					<Select.Item value={id} label={MODELS_BY_ID[id].label}>
-						<div class="flex w-full items-center justify-between gap-4">
-							<span>{MODELS_BY_ID[id].label}</span>
-							<span class="text-xs text-muted-foreground">
-								{MODELS_BY_ID[id].credits} cr
-							</span>
-						</div>
-					</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
+	<!-- Model picker forks by backend: the curated catalog for the hosted gateway,
+	     the custom backend's own model for a custom URL. The gear edits the
+	     backend. -->
+	<div class="flex items-center gap-2">
+		{#if backend.mode === 'custom'}
+			<div
+				class="flex-1 truncate text-sm text-muted-foreground"
+				title="Custom backend model"
+			>
+				{backend.model || 'No model set'}
+			</div>
+		{:else}
+			<Select.Root
+				type="single"
+				value={opensidian.state.chat.model}
+				onValueChange={(v) => {
+					if (v) opensidian.state.chat.model = v;
+				}}
+			>
+				<Select.Trigger size="sm" class="flex-1">
+					<span class="truncate">{currentModelLabel}</span>
+				</Select.Trigger>
+				<Select.Content>
+					{#each APP_MODELS as id (id)}
+						<Select.Item value={id} label={MODELS_BY_ID[id].label}>
+							<div class="flex w-full items-center justify-between gap-4">
+								<span>{MODELS_BY_ID[id].label}</span>
+								<span class="text-xs text-muted-foreground">
+									{MODELS_BY_ID[id].credits} cr
+								</span>
+							</div>
+						</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		{/if}
+		<InferenceSettings />
 	</div>
 
 	<!-- Input + send/stop button -->

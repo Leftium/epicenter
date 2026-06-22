@@ -15,6 +15,7 @@
 	import { requireVocab } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import ConversationView from './components/ConversationView.svelte';
+	import InferenceSettings from './components/InferenceSettings.svelte';
 	import VocabSidebar from './components/VocabSidebar.svelte';
 
 	const vocab = requireVocab();
@@ -151,6 +152,8 @@
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device
 				</Button>
+
+				<InferenceSettings />
 			</div>
 		</header>
 

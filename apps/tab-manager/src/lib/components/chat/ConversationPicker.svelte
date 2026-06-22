@@ -11,7 +11,7 @@
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
-	import type { ConversationId } from '$lib/chat/persistence';
+	import type { ConversationId } from '@epicenter/chat';
 
 	let {
 		conversations,
@@ -44,8 +44,10 @@
 		conversations.find((c) => c.id === activeId)?.title ?? 'New Chat',
 	);
 
-	/** Format a timestamp as a short relative time string. */
-	function formatRelativeTime(ms: number): string {
+	/** Format an ISO instant (the row's `updatedAt`) as a short relative time. */
+	function formatRelativeTime(iso: string): string {
+		const ms = Date.parse(iso);
+		if (Number.isNaN(ms)) return '';
 		const seconds = Math.floor((Date.now() - ms) / 1000);
 		if (seconds < 60) return 'now';
 		const minutes = Math.floor(seconds / 60);

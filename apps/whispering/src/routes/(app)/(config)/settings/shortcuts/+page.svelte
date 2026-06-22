@@ -30,9 +30,7 @@
 				Keyboard Shortcuts
 			</SectionHeader.Title>
 			<SectionHeader.Description class="mt-2">
-				Pick a key for any command; Whispering shows how far it reaches as you
-				press it. Shortcuts scoped to this app sync across your devices, and ones
-				that work everywhere stay on this computer.
+				Pick a key for any command. Whispering shows how far it reaches.
 			</SectionHeader.Description>
 		</SectionHeader.Root>
 		<Button variant="outline" size="sm" onclick={reset} class="shrink-0">

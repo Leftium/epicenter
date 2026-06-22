@@ -17,11 +17,11 @@ const primaryShortcuts = systemShortcuts ?? focusedShortcuts;
  * Preference order for the shortcut that starts each recording mode: the first
  * command with a binding live on this platform wins.
  *
- * Manual recording has two start commands. Desktop binds push-to-talk (Fn) by
- * default and ships the tap-toggle unbound; the browser ships push-to-talk
- * unbound and the toggle bound. So push-to-talk leads and the toggle backs it
- * up, and whichever the user actually bound is the one we show. VAD has a single
- * command, so its list has one entry.
+ * Manual recording has two start commands. Push-to-talk (a hold) ships unbound:
+ * it needs the native tap and Accessibility, so it is opt-in. The tap-toggle
+ * ships bound (Space in-app, a chord globally), so by default the toggle's key is
+ * what shows. Push-to-talk still leads the list, so once the user binds it that
+ * hold is what we show. VAD has a single command, so its list has one entry.
  */
 const RECORDING_SHORTCUT_PREFERENCE = {
 	manual: ['pushToTalk', 'toggleManualRecording'],

@@ -107,11 +107,10 @@ export function attachMountSqlite<
 	TTables extends TablesRecord,
 	TFts extends FtsConfig<TTables> | undefined = undefined,
 >(
-	scope: MountComposeScope,
+	{ ctx, registerDrain }: MountComposeScope,
 	workspace: MaterializerInput<TTables>,
 	options?: SqliteMountOptions<TTables, TFts>,
 ): ReturnType<typeof attachBunSqliteMaterializer<TTables, TFts>> {
-	const { ctx, registerDrain } = scope;
 	const materializer = attachBunSqliteMaterializer<TTables, TFts>(workspace, {
 		filePath: sqlitePath(ctx.epicenterRoot, workspace.ydoc.guid),
 		fts: options?.fts,
@@ -132,11 +131,10 @@ export function attachMountSqlite<
  * passes only the per-table export config and git policy.
  */
 export function attachMountMarkdown<TTables extends TablesRecord>(
-	scope: MountComposeScope,
+	{ ctx, registerDrain }: MountComposeScope,
 	workspace: MaterializerInput<TTables>,
 	{ tables, git }: MarkdownMountOptions<TTables>,
 ): MarkdownExport {
-	const { ctx, registerDrain } = scope;
 	const markdown = attachMarkdownExport<TTables>(workspace, {
 		dir: ctx.epicenterRoot,
 		tables,

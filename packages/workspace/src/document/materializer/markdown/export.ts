@@ -491,7 +491,14 @@ async function writeMarkdownFile(
  * filesystem write failure (ENOSPC, EACCES) is NOT swallowed: it propagates, so
  * the initial flush rejects and the observer's outer catch surfaces it.
  */
-async function materializeTable(opts: {
+async function materializeTable({
+	table,
+	directory,
+	render,
+	fileState,
+	track,
+	log,
+}: {
 	table: AnyTable;
 	directory: string;
 	render: RenderRow;
@@ -500,8 +507,6 @@ async function materializeTable(opts: {
 	track: (work: Promise<void>) => void;
 	log: Logger;
 }): Promise<() => void> {
-	const { table, directory, render, fileState, track, log } = opts;
-
 	await claimGeneratedDirectory(directory);
 
 	// Write one valid row to disk, shared by the initial flush and the observer.
@@ -576,14 +581,19 @@ async function materializeTable(opts: {
  * then sweep existing `.md` files and write the rendered set. Updates `fileState`
  * so the live observer stays consistent.
  */
-async function rebuildTable(opts: {
+async function rebuildTable({
+	table,
+	directory,
+	render,
+	fileState,
+	log,
+}: {
 	table: AnyTable;
 	directory: string;
 	render: RenderRow;
 	fileState: FileState;
 	log: Logger;
 }): Promise<{ deleted: number; written: number }> {
-	const { table, directory, render, fileState, log } = opts;
 	let deleted = 0;
 	let written = 0;
 	await claimGeneratedDirectory(directory);

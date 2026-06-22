@@ -122,7 +122,12 @@ export function createConversation(
 		for (const listener of listeners) listener();
 	}
 
-	/** The durable transcript, chronologically ordered. */
+	/**
+	 * The durable transcript, chronologically ordered. It is a flat, linear list
+	 * by design: branching and edit history are a product tier built above the
+	 * loop, not a missing primitive (ADR-0047 considered and deferred them, as
+	 * TanStack's own flat `UIMessage[]` does). Deferred indefinitely.
+	 */
 	function readAll(): AgentMessage[] {
 		return [...store.entries()]
 			.map((entry) => entry.val)
@@ -142,7 +147,14 @@ export function createConversation(
 	let controller: AbortController | null = null;
 
 	function snapshot(): ConversationSnapshot {
-		const live = (turn ?? []).filter((message) => message.parts.length > 0);
+		// One predicate decides both what renders live and what persists: a
+		// message the UI shows mid-turn is exactly a message a clean finish
+		// keeps. They must not drift, or a message would render then vanish on
+		// finish. `parts.length > 0` happens to agree today only because
+		// `appendText` never opens an empty text part; a future non-persistable
+		// part type (a reasoning marker, say) would break that. Sharing
+		// `isPersistableMessage` keeps the two in lockstep by construction.
+		const live = (turn ?? []).filter(isPersistableMessage);
 		return {
 			messages: live.length > 0 ? [...persisted, ...live] : persisted,
 			isThinking: turn !== null && live.length === 0,

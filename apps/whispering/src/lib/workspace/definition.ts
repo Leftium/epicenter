@@ -10,6 +10,7 @@ import {
 	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { type Static, type TProperties, Type } from 'typebox';
+import type { KeyBinding } from '$lib/tauri/commands';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
@@ -313,6 +314,27 @@ const analytics = {
 } as const;
 
 /**
+ * A stored in-app shortcut: the structured `KeyBinding` the keydown matcher and
+ * the system tier both speak (physical-key space). `modifiers` is enumerated;
+ * `keys` is validated as strings here and against the real `Key` vocabulary by
+ * Rust at the IPC boundary. This is the same shape device-config stores for the
+ * global tier; persisting it here too (not a joined string) lets both stores read
+ * and write the binding directly, with no manual-grammar codec in between.
+ */
+const KeyBindingSchema = Type.Object({
+	modifiers: Type.Array(
+		Type.Union([
+			Type.Literal('ctrl'),
+			Type.Literal('alt'),
+			Type.Literal('shift'),
+			Type.Literal('meta'),
+			Type.Literal('fn'),
+		]),
+	),
+	keys: Type.Array(Type.String()),
+});
+
+/**
  * In-app keyboard shortcuts. System-global shortcuts are device-specific and stay
  * in localStorage: these are only the shortcuts within the Whispering window.
  * `null` = unbound.
@@ -321,49 +343,49 @@ const shortcuts = {
 	// These getDefault thunks are the single source for the in-app shortcut
 	// defaults. The focused backend (platform/focused-shortcuts.ts) reads them back
 	// through `settings.getDefault('shortcut.*')` instead of redeclaring them, so
-	// the schema and the backend can never drift. Values are the readable manual
-	// grammar (`parseManualBinding`): `'space'`, `'c'`, `'ctrl+shift+a'`. The cell
-	// stays `field.string()`, so this is a value re-spelling, not a migration; a
-	// stale logical value (e.g. a stored `' '`) fails the parse and reads as unset.
+	// the schema and the backend can never drift. Values are the structured
+	// `KeyBinding` (`field.json(KeyBindingSchema)`), the shape the global tier also
+	// stores in device-config. A stored value that fails the schema (such as one
+	// saved in the old manual-grammar string format) reads as the default below.
 	//
 	// Push-to-talk ships unbound in-app: a stray Space-style tap would fire
 	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
 	// in-app default is the toggle below.
 	'shortcut.pushToTalk': defineKv(
-		nullable(field.string()),
-		(): string | null => null,
+		nullable(field.json(KeyBindingSchema)),
+		(): KeyBinding | null => null,
 	),
 	'shortcut.toggleManualRecording': defineKv(
-		nullable(field.string()),
-		(): string | null => 'space',
+		nullable(field.json(KeyBindingSchema)),
+		(): KeyBinding | null => ({ modifiers: [], keys: ['space'] }),
 	),
 	// Renamed from `shortcut.cancelManualRecording` (cancel now aborts manual or
 	// VAD capture, so the "manual" qualifier is gone). No migration: pre-release,
 	// the old key is simply orphaned and this falls back to its default.
 	'shortcut.cancelRecording': defineKv(
-		nullable(field.string()),
-		(): string | null => 'c',
+		nullable(field.json(KeyBindingSchema)),
+		(): KeyBinding | null => ({ modifiers: [], keys: ['keyC'] }),
 	),
 	'shortcut.toggleVadRecording': defineKv(
-		nullable(field.string()),
-		(): string | null => 'v',
+		nullable(field.json(KeyBindingSchema)),
+		(): KeyBinding | null => ({ modifiers: [], keys: ['keyV'] }),
 	),
 	'shortcut.openTransformationPicker': defineKv(
-		nullable(field.string()),
-		(): string | null => 't',
+		nullable(field.json(KeyBindingSchema)),
+		(): KeyBinding | null => ({ modifiers: [], keys: ['keyT'] }),
 	),
 	'shortcut.runTransformationOnClipboard': defineKv(
-		nullable(field.string()),
-		(): string | null => 'r',
+		nullable(field.json(KeyBindingSchema)),
+		(): KeyBinding | null => ({ modifiers: [], keys: ['keyR'] }),
 	),
 	// Navigation, focused by nature: Cmd+, (the platform "open preferences"
 	// gesture) opens settings in-app. A chord on a `focused` command still clamps
 	// to focused reach, so this never registers globally; it lives only in the
-	// synced focused store. `meta+,` is platform-free here (the synced default
-	// must be), surfacing as Cmd+, on macOS and Win+, elsewhere.
+	// synced focused store. `meta` + `comma` is platform-free here (the synced
+	// default must be), surfacing as Cmd+, on macOS and Win+, elsewhere.
 	'shortcut.openSettings': defineKv(
-		nullable(field.string()),
-		(): string | null => 'meta+,',
+		nullable(field.json(KeyBindingSchema)),
+		(): KeyBinding | null => ({ modifiers: ['meta'], keys: ['comma'] }),
 	),
 } as const;
 

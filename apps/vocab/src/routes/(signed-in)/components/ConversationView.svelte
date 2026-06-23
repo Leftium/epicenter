@@ -76,7 +76,11 @@
 		</div>
 	{:else}
 		{#each convo.messages as message (message.id)}
-			<ChatMessage {message} {showPinyin} />
+			<ChatMessage
+				{message}
+				{showPinyin}
+				streaming={message.id === convo.streamingId}
+			/>
 		{/each}
 	{/if}
 

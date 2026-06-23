@@ -42,8 +42,7 @@ import { VOCAB_SYSTEM_PROMPT } from '../vocab.js';
 
 const model = process.argv[2] ?? 'qwen3';
 const userPrompt =
-	process.argv[3] ??
-	'Teach me how to order coffee in Mandarin. Keep it short.';
+	process.argv[3] ?? 'Teach me how to order coffee in Mandarin. Keep it short.';
 const baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1';
 const apiKey = process.env.OLLAMA_API_KEY;
 
@@ -73,7 +72,9 @@ async function preflight(): Promise<void> {
 	}
 	const body = (await response.json()) as { data?: Array<{ id: string }> };
 	const available = (body.data ?? []).map((entry) => entry.id);
-	const present = available.some((id) => id === model || id.startsWith(`${model}:`));
+	const present = available.some(
+		(id) => id === model || id.startsWith(`${model}:`),
+	);
 	if (!present) {
 		console.warn(
 			`! Model "${model}" is not in the server's list (${available.join(', ') || 'none'}).`,
@@ -93,7 +94,12 @@ async function main(): Promise<void> {
 	);
 
 	const engine = createOpenAiAgentEngine({
-		data: () => ({ fetch, baseURL, model, systemPrompts: [VOCAB_SYSTEM_PROMPT] }),
+		data: () => ({
+			fetch,
+			baseURL,
+			model,
+			systemPrompts: [VOCAB_SYSTEM_PROMPT],
+		}),
 	});
 
 	// Vocab is capability-free: one user turn, an empty tool catalog, one text step.
@@ -115,16 +121,22 @@ async function main(): Promise<void> {
 		} else if (chunk.type === 'tool-call') {
 			toolCalls += 1;
 		} else if (chunk.type === 'run-error') {
-			console.error(`\n\n✗ run-error${chunk.code ? ` [${chunk.code}]` : ''}: ${chunk.message}`);
+			console.error(
+				`\n\n✗ run-error${chunk.code ? ` [${chunk.code}]` : ''}: ${chunk.message}`,
+			);
 			process.exit(1);
 		}
 	}
 
 	if (text.length === 0) {
-		console.error('\n✗ Stream finished with no text. The model returned nothing.');
+		console.error(
+			'\n✗ Stream finished with no text. The model returned nothing.',
+		);
 		process.exit(1);
 	}
-	console.log(`\n\n✓ ok — streamed ${text.length} chars${toolCalls ? `, ${toolCalls} tool call(s)` : ''}.`);
+	console.log(
+		`\n\n✓ ok — streamed ${text.length} chars${toolCalls ? `, ${toolCalls} tool call(s)` : ''}.`,
+	);
 }
 
 main().catch((error: unknown) => {

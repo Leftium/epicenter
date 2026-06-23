@@ -70,21 +70,21 @@
 </script>
 
 <Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
-	{#if convo.messages.length === 0}
+	{#if convo.messages.length === 0 && !convo.streaming}
 		<div class="flex flex-1 items-center justify-center text-muted-foreground">
 			<p>Ask a question in English and get a response in Chinese and English.</p>
 		</div>
 	{:else}
 		{#each convo.messages as message (message.id)}
-			<ChatMessage
-				{message}
-				{showPinyin}
-				streaming={message.id === convo.streamingId}
-			/>
+			<ChatMessage {message} {showPinyin} />
 		{/each}
 	{/if}
 
-	{#if convo.isThinking}
+	<!-- The in-flight message renders raw and updates per token; settled messages
+	above render rich. While nothing has streamed yet, show the thinking bubble. -->
+	{#if convo.streaming}
+		<ChatMessage message={convo.streaming} {showPinyin} streaming />
+	{:else if convo.isThinking}
 		<Chat.Bubble variant="received">
 			<Chat.BubbleMessage typing />
 		</Chat.Bubble>

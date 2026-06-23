@@ -43,14 +43,21 @@ export type ConversationError = { message: string; code?: string };
 
 /** The render state of one conversation: durable transcript plus the live turn. */
 export type ConversationSnapshot = {
-	/** Persisted messages plus the in-flight turn once it has visible content. */
+	/**
+	 * Settled messages: persisted history plus any completed in-turn step (a prior
+	 * tool step). These never change again, so they keep a stable identity and a
+	 * keyed `{#each}` over them is referentially inert during a turn. Render rich.
+	 */
 	messages: AgentMessage[];
 	/**
-	 * The id of the message a step is streaming into right now, or null between
-	 * steps and turns. A renderer can show this one cheaply (raw text) and the
-	 * rest richly, since a settled message never changes again.
+	 * The one message a step is streaming into right now, or null between steps and
+	 * turns and until it has content (an empty in-flight message shows as the
+	 * thinking bubble, not here). It is mutated in place as tokens arrive, so it is
+	 * handed out as a fresh object each snapshot: a reactive view keys on identity,
+	 * and a stable reference would freeze it on the first token until a reload.
+	 * Render this one cheaply (raw); it settles into `messages` when the turn ends.
 	 */
-	streamingId: string | null;
+	streaming: AgentMessage | null;
 	/** A turn is claimed but nothing visible has streamed yet (typing bubble). */
 	isThinking: boolean;
 	/** A turn is in flight (disable input, offer stop). */
@@ -152,29 +159,33 @@ export function createConversation(
 	let streamingId: string | null = null;
 
 	function snapshot(): ConversationSnapshot {
-		// One predicate decides both what renders live and what persists: a
-		// message the UI shows mid-turn is exactly a message a clean finish
-		// keeps. They must not drift, or a message would render then vanish on
-		// finish. `parts.length > 0` happens to agree today only because
-		// `appendText` never opens an empty text part; a future non-persistable
-		// part type (a reasoning marker, say) would break that. Sharing
-		// `isPersistableMessage` keeps the two in lockstep by construction.
-		const live = (turn ?? []).filter(isPersistableMessage);
-		// The streaming message is mutated in place as tokens arrive (`appendText`),
-		// so hand out a fresh identity for it each snapshot. A reactive consumer
-		// (Svelte's keyed `{#each}` + `$derived`) keys on the message object; without
-		// a new identity it re-derives once when the message first appears and then
-		// freezes on the first token until a reload reads fresh objects. Settled
-		// messages keep their identity so they are never needlessly re-rendered.
-		const rendered = live.map((message) =>
-			message.id === streamingId
-				? { ...message, parts: [...message.parts] }
-				: message,
+		// `isPersistableMessage` is the single predicate behind all three views:
+		// what streams, what renders settled, and what persists. A message worth
+		// showing mid-turn is exactly one a clean finish keeps, so they cannot
+		// drift (a message that rendered then vanished on finish).
+		const turnMessages = turn ?? [];
+		// The message a step is filling now, handed out as a fresh object so a
+		// reactive view re-reads its growing text instead of freezing on a stable
+		// reference. Null until it has content, so the empty in-flight message is
+		// the thinking bubble, not an empty streaming bubble.
+		const filling = turnMessages.find((message) => message.id === streamingId);
+		const streaming =
+			filling && isPersistableMessage(filling)
+				? { ...filling, parts: [...filling.parts] }
+				: null;
+		// Settled messages keep a stable identity: persisted history, plus any
+		// completed in-turn step (a tool step that is no longer the one filling).
+		// During a single-step turn this is just `persisted`, so the reference is
+		// stable and a keyed `{#each}` over it does not reconcile per token.
+		const completed = turnMessages.filter(
+			(message) => message.id !== streamingId && isPersistableMessage(message),
 		);
+		const messages =
+			completed.length > 0 ? [...persisted, ...completed] : persisted;
 		return {
-			messages: rendered.length > 0 ? [...persisted, ...rendered] : persisted,
-			streamingId,
-			isThinking: turn !== null && rendered.length === 0,
+			messages,
+			streaming,
+			isThinking: turn !== null && streaming === null && completed.length === 0,
 			isGenerating: turn !== null,
 			error,
 		};

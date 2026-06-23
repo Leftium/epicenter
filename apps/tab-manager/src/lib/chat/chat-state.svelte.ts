@@ -243,6 +243,12 @@ export function createAiChatState({
 				return convo.messages;
 			},
 
+			/** The in-flight message, rendered separately so the settled list above
+			 * stays referentially inert during a turn. Null between turns. */
+			get streaming() {
+				return convo.streaming;
+			},
+
 			get isLoading() {
 				return convo.isGenerating;
 			},

@@ -91,31 +91,37 @@ describe('createConversation', () => {
 		await settle(handle);
 	});
 
-	test('streamingId names the in-flight message during a turn, null once settled', async () => {
-		// The render boundary: while a step fills a message, the loop names it so a
-		// view can render it cheaply (raw) and the rest richly; it clears once the
-		// message settles into the store.
+	test('streaming holds the in-flight message during a turn, null once settled', async () => {
+		// The render boundary: while a step fills a message it lives in `streaming`
+		// (rendered cheaply, raw) and stays out of settled `messages`; it moves into
+		// `messages` (rendered rich) once the turn persists.
 		const store = makeStore();
 		const engine: AgentEngine = () =>
 			streamOf([{ type: 'text-delta', delta: 'hi' }]);
 		const handle = createConversation({ store, engine, generateId: idMinter() });
 
-		expect(handle.snapshot().streamingId).toBeNull(); // between turns
+		expect(handle.snapshot().streaming).toBeNull(); // between turns
 
-		const seen: (string | null)[] = [];
-		const unsubscribe = handle.subscribe(() =>
-			seen.push(handle.snapshot().streamingId),
-		);
+		const streamedIds = new Set<string>();
+		const inMessagesWhileLive = new Set<string>();
+		const unsubscribe = handle.subscribe(() => {
+			const snap = handle.snapshot();
+			if (!snap.isGenerating) return; // only inspect mid-turn snapshots
+			if (snap.streaming) streamedIds.add(snap.streaming.id);
+			for (const message of snap.messages) inMessagesWhileLive.add(message.id);
+		});
 		handle.send('hello'); // user = m1, assistant = m2
 		await settle(handle);
 		unsubscribe();
 
-		// While streaming, the in-flight assistant's id is exposed; never the user's.
-		expect(seen).toContain('m2');
-		expect(seen).not.toContain('m1');
-		// Once the turn settles, nothing is streaming.
-		expect(handle.snapshot().streamingId).toBeNull();
-		// The streamed message did persist (the id was real, not a ghost).
+		// While streaming, the in-flight assistant is the `streaming` message, never
+		// the user's turn, and it was never also in settled `messages` mid-turn.
+		expect([...streamedIds]).toEqual(['m2']);
+		expect(inMessagesWhileLive.has('m2')).toBe(false); // stays out of settled list
+		expect(inMessagesWhileLive.has('m1')).toBe(true); // the user turn is settled
+		// Once the turn settles, nothing is streaming and the message persisted.
+		expect(handle.snapshot().streaming).toBeNull();
+		expect(handle.snapshot().messages.map((m) => m.id)).toContain('m2');
 		expect(store.get('m2')).toBeDefined();
 	});
 
@@ -137,8 +143,7 @@ describe('createConversation', () => {
 		const refs = new Set<AgentMessage>();
 		const texts: string[] = [];
 		const unsubscribe = handle.subscribe(() => {
-			const snap = handle.snapshot();
-			const streaming = snap.messages.find((m) => m.id === snap.streamingId);
+			const { streaming } = handle.snapshot();
 			if (streaming) {
 				refs.add(streaming);
 				texts.push(agentMessageText(streaming));
@@ -405,11 +410,15 @@ describe('createConversation', () => {
 			generateId: idMinter(),
 		});
 
-		// Record every assistant id that ever appears in a live snapshot.
+		// Record every assistant id that ever renders live: in settled `messages`
+		// or as the `streaming` message. Both feed the same persist predicate.
 		const renderedLive = new Set<string>();
 		const unsubscribe = handle.subscribe(() => {
-			if (!handle.snapshot().isGenerating) return;
-			for (const message of handle.snapshot().messages) {
+			const snap = handle.snapshot();
+			if (!snap.isGenerating) return;
+			if (snap.streaming?.role === 'assistant')
+				renderedLive.add(snap.streaming.id);
+			for (const message of snap.messages) {
 				if (message.role === 'assistant') renderedLive.add(message.id);
 			}
 		});

@@ -1,25 +1,30 @@
 import { expect, test } from 'bun:test';
 import type { KeyBinding } from '$lib/tauri/commands';
 import { type CommandReach, createReachRouter } from './reach-router';
-import type { Shortcuts } from './types';
+import type { ShortcutConflict, Shortcuts } from './types';
 
 /**
- * The catalog slice the router reads. A `focused` and a `global` command are
- * enough to exercise routing in both reach directions; the full command-ceiling
- * clamp (a chord on a `focused` command) is pinned by `realizedReach`'s own
- * tests, so here it only needs to prove the router consults `command.reach`.
+ * The catalog slice the router reads, with a `focused`-ceiling command alongside
+ * the `global` ones so a chord routes into different stores by command reach: a
+ * `focused` command clamps into the focused store, a `global` command routes to
+ * the global store. The full command-ceiling clamp (a chord on a `focused`
+ * command) is pinned by `realizedReach`'s own tests, so here it only needs to
+ * prove the router consults `command.reach`. `as const satisfies` keeps the
+ * literal ids and reaches while checking the shape, matching `commands.ts`.
  */
-const CATALOG: readonly CommandReach[] = [
+const CATALOG = [
 	{ id: 'toggleManualRecording', reach: 'global' },
 	{ id: 'pushToTalk', reach: 'global' },
-];
+	{ id: 'openSettings', reach: 'focused' },
+	{ id: 'cancelRecording', reach: 'global' },
+] as const satisfies readonly CommandReach[];
 
 /**
  * A `Shortcuts` test double that stores bindings in a map and records the calls
- * the router delegates to it. `conflict` is the canned `findConflict` reason, so
+ * the router delegates to it. `conflict` is the canned `findConflict` result, so
  * a test can prove which backend a conflict check was routed into.
  */
-function fakeShortcuts(conflict: string | null = null) {
+function fakeShortcuts(conflict: ShortcutConflict | null = null) {
 	const store = new Map<string, KeyBinding | null>();
 	const calls = {
 		set: [] as Array<[string, KeyBinding]>,
@@ -180,8 +185,11 @@ test('current reports a null global slot on web', () => {
 });
 
 test('findConflict is checked against the store the key would route into', () => {
-	const focused = fakeShortcuts('focused conflict');
-	const global = fakeShortcuts('global conflict');
+	const focused = fakeShortcuts({ kind: 'duplicate', commandId: 'pushToTalk' });
+	const global = fakeShortcuts({
+		kind: 'reserved',
+		reason: 'reserved by macOS',
+	});
 	const router = createReachRouter({
 		focused: focused.surface,
 		global: global.surface,
@@ -189,13 +197,68 @@ test('findConflict is checked against the store the key would route into', () =>
 	});
 
 	// A chord routes global, so the global policy answers.
-	expect(router.findConflict('toggleManualRecording', CHORD)).toBe(
-		'global conflict',
-	);
+	expect(router.findConflict('toggleManualRecording', CHORD)).toEqual({
+		kind: 'reserved',
+		reason: 'reserved by macOS',
+	});
 	// A bare key routes focused, so the focused policy answers.
-	expect(router.findConflict('toggleManualRecording', BARE)).toBe(
-		'focused conflict',
-	);
+	expect(router.findConflict('toggleManualRecording', BARE)).toEqual({
+		kind: 'duplicate',
+		commandId: 'pushToTalk',
+	});
+});
+
+test('findConflict refuses a binding that would double-fire across both stores (desktop)', () => {
+	const focused = fakeShortcuts();
+	const global = fakeShortcuts();
+	// openSettings (focused ceiling) already holds the chord in the focused store.
+	focused.store.set('openSettings', CHORD);
+	const router = createReachRouter({
+		focused: focused.surface,
+		global: global.surface,
+		commands: CATALOG,
+	});
+
+	// The same chord on a global command routes into the global store, but it would
+	// still fire in the focused window where openSettings is live, so it is refused,
+	// naming the command it collides with.
+	expect(router.findConflict('cancelRecording', CHORD)).toEqual({
+		kind: 'crossStore',
+		commandId: 'openSettings',
+	});
+});
+
+test('the cross-store check refuses only an identical gesture, not a mere overlap (desktop)', () => {
+	const focused = fakeShortcuts();
+	const global = fakeShortcuts();
+	// openSettings holds bare Space in the focused store.
+	focused.store.set('openSettings', BARE);
+	const router = createReachRouter({
+		focused: focused.surface,
+		global: global.surface,
+		commands: CATALOG,
+	});
+
+	// Cmd+Shift+Space (routed global) merely *contains* bare Space; pressing it
+	// never produces the exact `{Space}` held-set the in-app matcher needs, so it
+	// does not double-fire and is allowed. The focused tier itself refuses only
+	// exact duplicates, and the cross-store check matches that.
+	expect(router.findConflict('cancelRecording', CHORD)).toBeNull();
+});
+
+test('the cross-store check is desktop-only: web has no other store to span', () => {
+	const focused = fakeShortcuts();
+	focused.store.set('openSettings', CHORD);
+	const router = createReachRouter({
+		focused: focused.surface,
+		global: null,
+		commands: CATALOG,
+	});
+
+	// On web there is no global backend, so a global command clamps to focused and
+	// its within-store policy (a real backend) owns the collision; the router adds
+	// no cross-store check. The fake reports no within conflict, so null.
+	expect(router.findConflict('cancelRecording', CHORD)).toBeNull();
 });
 
 test('sync pushes both backends; reset resets both (desktop)', async () => {

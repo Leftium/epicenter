@@ -49,7 +49,7 @@ export const focusedShortcuts: Shortcuts = createShortcuts({
 			if (command.id === id) continue;
 			const other = readBinding(command.id);
 			if (other && bindingsEqual(other, binding)) {
-				return `Those keys already trigger "${command.title}". Pick a different combination.`;
+				return { kind: 'duplicate', commandId: command.id };
 			}
 		}
 		return null;

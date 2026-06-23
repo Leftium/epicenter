@@ -14,6 +14,24 @@ import type { Command } from '$lib/commands';
 import type { KeyBinding } from '$lib/tauri/commands';
 
 /**
+ * Why a binding cannot be assigned, as structured data rather than prose. The
+ * backends and the reach router return this; the recorder renders it to a message
+ * (with the command titles and key labels it has on hand) at the one place a
+ * conflict is shown, so the policy layer never owns user-facing strings.
+ *
+ * - `reserved`: an OS-reserved global gesture (`reason` is self-contained).
+ * - `duplicate`: the in-app tier already binds this exact gesture to `commandId`.
+ * - `overlap`: a global gesture for `commandId` (`binding`) overlaps this one.
+ * - `crossStore`: on desktop, `commandId`'s binding in the OTHER store is the same
+ *   gesture, so both would fire in the focused window.
+ */
+export type ShortcutConflict =
+	| { kind: 'reserved'; reason: string }
+	| { kind: 'duplicate'; commandId: Command['id'] }
+	| { kind: 'overlap'; commandId: Command['id']; binding: KeyBinding }
+	| { kind: 'crossStore'; commandId: Command['id'] };
+
+/**
  * Contract for a single shortcut backend. Two implement it: `focusedShortcuts`
  * (in-app keydown shortcuts in workspace KV, universal) and `systemShortcuts`
  * (system-global rdev bindings in device-config, Tauri-only). The reach router
@@ -41,12 +59,16 @@ export type Shortcuts = {
 	clear(commandId: Command['id']): Promise<void>;
 	/**
 	 * Why `binding` cannot be assigned to this command, or `null` when it is
-	 * allowed. The policy is per-tier and lives in the backend: the in-app tier
+	 * allowed, as structured {@link ShortcutConflict} (the recorder renders the
+	 * message). The policy is per-tier and lives in the backend: the in-app tier
 	 * refuses an exact duplicate (its matcher fires every command whose set
 	 * matches); the global tier refuses a reserved gesture or one that overlaps
 	 * another (its matcher has no prefix resolution).
 	 */
-	findConflict(commandId: Command['id'], binding: KeyBinding): string | null;
+	findConflict(
+		commandId: Command['id'],
+		binding: KeyBinding,
+	): ShortcutConflict | null;
 };
 
 /**

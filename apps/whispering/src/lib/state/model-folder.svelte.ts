@@ -30,6 +30,7 @@
  */
 import { SvelteMap } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { tauri } from '#platform/tauri';
 import {
 	type LocalModelConfig,
 	modelEntryName,
@@ -40,7 +41,6 @@ import {
 	type ModelEntry,
 	type ModelFolderError,
 } from '$lib/services/transcription/local-model-folder';
-import { tauri } from '#platform/tauri';
 
 type Engine = LocalModelConfig['engine'];
 
@@ -59,7 +59,9 @@ export type ModelDownloadResult = Result<
 	ModelFolderError
 > | null;
 
-function createModelFolder(catalog: readonly [LocalModelConfig, ...LocalModelConfig[]]) {
+function createModelFolder(
+	catalog: readonly [LocalModelConfig, ...LocalModelConfig[]],
+) {
 	const engine = catalog[0].engine;
 
 	// DISK STATE. `entries` is the folder scan, `null` until the first load so the
@@ -121,9 +123,7 @@ function createModelFolder(catalog: readonly [LocalModelConfig, ...LocalModelCon
 				};
 			const name = modelEntryName(model);
 			const entry = (entries ?? []).find((e) => e.name === name);
-			return entry?.complete
-				? { type: 'ready' }
-				: { type: 'not-downloaded' };
+			return entry?.complete ? { type: 'ready' } : { type: 'not-downloaded' };
 		},
 
 		/**

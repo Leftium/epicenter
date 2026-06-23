@@ -82,7 +82,11 @@ describe('createConversation', () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
 			streamOf([{ type: 'text-delta', delta: 'ok' }]);
-		const handle = createConversation({ store, engine, generateId: idMinter() });
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
 
 		expect(handle.send('')).toBe(false); // empty
 		expect(handle.send('   ')).toBe(false); // whitespace only
@@ -98,7 +102,11 @@ describe('createConversation', () => {
 		const store = makeStore();
 		const engine: AgentEngine = () =>
 			streamOf([{ type: 'text-delta', delta: 'hi' }]);
-		const handle = createConversation({ store, engine, generateId: idMinter() });
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
 
 		expect(handle.snapshot().streaming).toBeNull(); // between turns
 
@@ -138,7 +146,11 @@ describe('createConversation', () => {
 				{ type: 'text-delta', delta: ' there' },
 				{ type: 'text-delta', delta: ' friend' },
 			]);
-		const handle = createConversation({ store, engine, generateId: idMinter() });
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
 
 		const refs = new Set<AgentMessage>();
 		const texts: string[] = [];
@@ -173,7 +185,11 @@ describe('createConversation', () => {
 			return streamOf([{ type: 'text-delta', delta: 'ok' }]);
 		};
 
-		const handle = createConversation({ store, engine, generateId: idMinter() });
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
 		handle.send('one');
 		await settle(handle);
 		handle.send('two');
@@ -206,7 +222,12 @@ describe('createConversation', () => {
 			stepCount += 1;
 			if (stepCount === 1) {
 				return streamOf([
-					{ type: 'tool-call', toolCallId: 't1', toolName: 'get_time', input: {} },
+					{
+						type: 'tool-call',
+						toolCallId: 't1',
+						toolName: 'get_time',
+						input: {},
+					},
 				]);
 			}
 			return streamOf([{ type: 'text-delta', delta: 'It is noon.' }]);
@@ -231,7 +252,11 @@ describe('createConversation', () => {
 		expect(prompts[0]!.map((m) => m.role)).toEqual(['user']);
 		// Step two re-reads the completed tool step (assistant call + tool result) and
 		// ends on the tool message, never a trailing empty assistant.
-		expect(prompts[1]!.map((m) => m.role)).toEqual(['user', 'assistant', 'tool']);
+		expect(prompts[1]!.map((m) => m.role)).toEqual([
+			'user',
+			'assistant',
+			'tool',
+		]);
 		expect(prompts[1]!.at(-1)).toMatchObject({
 			role: 'tool',
 			toolCallId: 't1',

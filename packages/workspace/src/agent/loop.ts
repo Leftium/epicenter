@@ -160,10 +160,21 @@ export function createConversation(
 		// part type (a reasoning marker, say) would break that. Sharing
 		// `isPersistableMessage` keeps the two in lockstep by construction.
 		const live = (turn ?? []).filter(isPersistableMessage);
+		// The streaming message is mutated in place as tokens arrive (`appendText`),
+		// so hand out a fresh identity for it each snapshot. A reactive consumer
+		// (Svelte's keyed `{#each}` + `$derived`) keys on the message object; without
+		// a new identity it re-derives once when the message first appears and then
+		// freezes on the first token until a reload reads fresh objects. Settled
+		// messages keep their identity so they are never needlessly re-rendered.
+		const rendered = live.map((message) =>
+			message.id === streamingId
+				? { ...message, parts: [...message.parts] }
+				: message,
+		);
 		return {
-			messages: live.length > 0 ? [...persisted, ...live] : persisted,
+			messages: rendered.length > 0 ? [...persisted, ...rendered] : persisted,
 			streamingId,
-			isThinking: turn !== null && live.length === 0,
+			isThinking: turn !== null && rendered.length === 0,
 			isGenerating: turn !== null,
 			error,
 		};

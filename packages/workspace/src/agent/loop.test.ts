@@ -119,6 +119,42 @@ describe('createConversation', () => {
 		expect(store.get('m2')).toBeDefined();
 	});
 
+	test('the streaming message gets a fresh identity per delta so reactive views update', async () => {
+		// Regression: the loop mutates the in-flight message in place, so handing out
+		// a stable object reference across deltas makes a memoizing reactive consumer
+		// (Svelte's keyed each + $derived) freeze on the first token until reload.
+		// Each snapshot must materialize the streaming message as a new object whose
+		// text reflects the tokens so far.
+		const store = makeStore();
+		const engine: AgentEngine = () =>
+			streamOf([
+				{ type: 'text-delta', delta: 'Hey' },
+				{ type: 'text-delta', delta: ' there' },
+				{ type: 'text-delta', delta: ' friend' },
+			]);
+		const handle = createConversation({ store, engine, generateId: idMinter() });
+
+		const refs = new Set<AgentMessage>();
+		const texts: string[] = [];
+		const unsubscribe = handle.subscribe(() => {
+			const snap = handle.snapshot();
+			const streaming = snap.messages.find((m) => m.id === snap.streamingId);
+			if (streaming) {
+				refs.add(streaming);
+				texts.push(agentMessageText(streaming));
+			}
+		});
+		handle.send('hi');
+		await settle(handle);
+		unsubscribe();
+
+		// The text grows (the loop works) and the streaming message is a distinct
+		// object each delta (so a view keyed on it re-derives instead of freezing).
+		expect(texts).toContain('Hey');
+		expect(texts).toContain('Hey there friend');
+		expect(refs.size).toBeGreaterThan(1);
+	});
+
 	test('never prompts with the empty in-flight assistant message', async () => {
 		// Regression: the loop pushes the in-flight assistant onto `turn` before a
 		// step, so a naive prompt of `[...persisted, ...turn]` ends with an empty

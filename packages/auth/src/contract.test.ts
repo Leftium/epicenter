@@ -1114,7 +1114,7 @@ test('/api/session identity update after signOut is discarded without writing id
 	auth[Symbol.dispose]();
 });
 
-// The load-bearing audience-scoping guard (ADR-0052): the Epicenter bearer is
+// The load-bearing audience-scoping guard (ADR-0053): the Epicenter bearer is
 // attached only to the origin this client signed into. Handing `auth.fetch` to a
 // custom inference backend (a local Ollama, a third-party gateway) must never
 // leak the token, and a bearer request must not follow a cross-origin redirect.

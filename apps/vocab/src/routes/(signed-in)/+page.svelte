@@ -5,7 +5,8 @@
 		type Conversation,
 		type ConversationId,
 		generateConversationId,
-	} from '@epicenter/vocab';
+	} from '@epicenter/chat';
+	import { VOCAB_MODEL } from '@epicenter/vocab';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -38,8 +39,9 @@
 
 	/**
 	 * Write only the cheap list row. The transcript child doc is opened lazily by
-	 * `ConversationView`, keyed by the row id. The model is an app constant
-	 * (`VOCAB_MODEL`), so it is not stored per conversation.
+	 * `ConversationView`, keyed by the row id. The canonical table requires a
+	 * `model`, so the row carries the app constant (`VOCAB_MODEL`); Vocab offers no
+	 * per-conversation model pick.
 	 */
 	function createConversationRow(): ConversationId {
 		const id = generateConversationId();
@@ -47,6 +49,7 @@
 		vocab.tables.conversations.set({
 			id,
 			title: 'New Chat',
+			model: VOCAB_MODEL,
 			createdAt: timestamp,
 			updatedAt: timestamp,
 		});

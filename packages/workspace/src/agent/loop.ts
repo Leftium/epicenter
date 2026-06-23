@@ -84,9 +84,24 @@ export type ConversationHandle = {
 	[Symbol.dispose](): void;
 };
 
+/**
+ * The loop's persistence seam: the subset of a by-id record store it actually
+ * uses. `attachRecords`'s richer {@link RecordsHandle} satisfies this
+ * structurally; the loop never reads a value by id (`get`) or removes one
+ * (`delete`). It only appends a finished message (`set`), reads the whole
+ * transcript (`entries`), and re-reads on change (`observe`). Naming the subset
+ * keeps the contract honest about what a store must provide and lets a more
+ * minimal backend satisfy it.
+ */
+export type AgentMessageStore = Pick<
+	RecordsHandle<AgentMessage>,
+	'set' | 'entries' | 'observe'
+> &
+	Disposable;
+
 export type ConversationOptions = {
 	/** The opened `conversations.messages` store, keyed by message id. */
-	store: RecordsHandle<AgentMessage> & Disposable;
+	store: AgentMessageStore;
 	/** The inference backend (the metered Epicenter stream, BYOK, or local). */
 	engine: AgentEngine;
 	/** The live tool surface; omit for a capability-free agent. */
@@ -109,7 +124,7 @@ const DENY_GATED_MUTATIONS: Approval = {
  * A turn's multi-step tool loop is bounded by this runaway backstop, not a product
  * limit. Each step is one model call that either finishes (text, no tools) or asks
  * for tools and re-prompts; the loop never reads a provider finish reason, so a
- * misbehaving backend, or a transcript that spans backends (ADR-0053), could
+ * misbehaving backend, or a transcript that spans backends (ADR-0054), could
  * otherwise re-issue tool calls forever. A well-behaved turn converges far below
  * this.
  */

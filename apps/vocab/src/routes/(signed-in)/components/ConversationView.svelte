@@ -5,7 +5,7 @@
 	import { inferenceBackend } from '$lib/state/inference-backend.svelte';
 
 	// One engine, built once and shared across every mounted conversation view.
-	// The backend is read per turn from the device setting (ADR-0053): the metered
+	// The backend is read per turn from the device setting (ADR-0054): the metered
 	// Epicenter gateway, or a custom OpenAI-compatible URL (a local Ollama).
 	const clientEngine = createVocabEngine({
 		fetch: auth.fetch,
@@ -18,10 +18,8 @@
 	import { bindAgentConversation } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
-	import {
-		type ConversationId,
-		generateMessageId,
-	} from '@epicenter/vocab';
+	import type { ConversationId } from '@epicenter/chat';
+	import { generateMessageId } from '@epicenter/vocab';
 	import { InstantString } from '@epicenter/workspace';
 	import { createConversation as createAgentConversation } from '@epicenter/workspace/agent';
 	import { onDestroy } from 'svelte';

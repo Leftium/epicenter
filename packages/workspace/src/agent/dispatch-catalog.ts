@@ -53,10 +53,8 @@ export type DispatchToolCatalogOptions = {
  */
 export function createDispatchToolCatalog(
 	surface: DispatchSurface,
-	options: DispatchToolCatalogOptions = {},
+	{ localActions = {}, selfNodeId }: DispatchToolCatalogOptions = {},
 ): ToolCatalog {
-	const { localActions = {}, selfNodeId } = options;
-
 	function definitions(): AgentToolDefinition[] {
 		const byName = new Map<string, AgentToolDefinition>();
 		for (const [name, action] of Object.entries(localActions)) {

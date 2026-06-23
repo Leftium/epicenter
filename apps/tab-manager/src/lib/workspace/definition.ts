@@ -9,6 +9,7 @@
  * factory.
  */
 
+import { conversationsTable } from '@epicenter/chat';
 import { field } from '@epicenter/field';
 import {
 	defineTable,
@@ -163,6 +164,7 @@ export const tabManagerWorkspace = defineWorkspace({
 		savedTabs: savedTabsTable,
 		bookmarks: bookmarksTable,
 		toolTrust: toolTrustTable,
+		conversations: conversationsTable,
 	},
 	kv: {},
 });

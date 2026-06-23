@@ -2,7 +2,7 @@ import type { AnyTaggedError } from 'wellcrafted/error';
 import { type Command, commands } from '$lib/commands';
 import { report } from '$lib/report';
 import type { KeyBinding } from '$lib/tauri/commands';
-import type { Shortcuts } from './types';
+import type { ShortcutConflict, Shortcuts } from './types';
 
 /** A command paired with its current stored binding (`null` = unbound). */
 export type ShortcutEntry = {
@@ -26,11 +26,15 @@ export type ShortcutBackend = {
 	/** Persist a binding for this command. */
 	write(commandId: Command['id'], binding: KeyBinding | null): void;
 	/**
-	 * Why `binding` cannot be assigned to this command, or `null` when allowed.
+	 * Why `binding` cannot be assigned to this command, or `null` when allowed,
+	 * as structured {@link ShortcutConflict} (the recorder renders the message).
 	 * The per-tier conflict policy (set-equality for in-app, reserved + overlap
-	 * for global) and its message live here, beside the storage the policy reads.
+	 * for global) lives here, beside the storage the policy reads.
 	 */
-	findConflict(commandId: Command['id'], binding: KeyBinding): string | null;
+	findConflict(
+		commandId: Command['id'],
+		binding: KeyBinding,
+	): ShortcutConflict | null;
 	/**
 	 * Push the full set of current bindings to the platform runtime. Returns the
 	 * error to surface, or `null` on success.

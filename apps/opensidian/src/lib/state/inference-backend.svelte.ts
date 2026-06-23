@@ -1,5 +1,5 @@
 /**
- * The device-local inference backend (ADR-0053).
+ * The device-local inference backend (ADR-0054).
  *
  * opensidian's conversations sync, but which server answers chat is a
  * device-scoped choice: a `localhost` URL means nothing on another device and an

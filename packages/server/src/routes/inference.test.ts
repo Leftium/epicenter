@@ -1,6 +1,6 @@
 /**
  * The OpenAI-compatible inference gateway: provider routing, house-key
- * resolution, pure passthrough (the client owns SSE normalization, ADR-0053),
+ * resolution, pure passthrough (the client owns SSE normalization, ADR-0054),
  * and the OpenAI error convention. The upstream provider call is the global
  * `fetch`, stubbed here to a canned SSE response so the gateway is exercised
  * without a network.
@@ -119,7 +119,7 @@ describe('inference gateway', () => {
 	});
 
 	test('Gemini: routes to the compat endpoint with the house key and passes the stream through untouched', async () => {
-		// The gateway no longer rewrites the stream (ADR-0053): the client
+		// The gateway no longer rewrites the stream (ADR-0054): the client
 		// accumulates Gemini's index-less tool_calls itself, so an index-less delta
 		// must reach the client exactly as the provider sent it.
 		const upstream = sse([
@@ -151,7 +151,10 @@ describe('inference gateway', () => {
 		);
 		const res = await post(
 			createTestApp(),
-			{ model: 'gemini-3.5-flash', messages: [{ role: 'user', content: 'go' }] },
+			{
+				model: 'gemini-3.5-flash',
+				messages: [{ role: 'user', content: 'go' }],
+			},
 			{ GEMINI_API_KEY: 'g-house' },
 		);
 		expect(res.status).toBe(200);

@@ -31,7 +31,7 @@ shapes, see `docs/adr/`.
   accepts a provider key), a self-hosted gateway (your key or a local model), or
   any third-party OpenAI-compatible endpoint. A BYOK key is handed to a custom
   inference server (self-hosted or local), never to the Epicenter gateway or a
-  daemon (ADR-0053).
+  daemon (ADR-0054).
 - **Deployable vs library**: one library, `packages/server`, consumed by two
   deployables: `apps/api` (hosted personal cloud) and `apps/self-host` (the
   community shared-wiki reference, not Epicenter-operated).

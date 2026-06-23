@@ -2,7 +2,6 @@ import type { SyncAuthClient } from '@epicenter/auth';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createOAuthAppAuth, createSession } from '@epicenter/svelte/auth';
-import { openCollaboration, roomWsUrl } from '@epicenter/workspace';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createDeviceProfile, registerDevice } from './device';
 import {
@@ -55,19 +54,6 @@ function buildSession(
 				nodeId: profile.nodeId,
 			});
 
-			const collaboration = openCollaboration(tabManager.ydoc, {
-				url: roomWsUrl({
-					baseURL: signedIn.baseURL,
-					ownerId: signedIn.ownerId,
-					guid: tabManager.ydoc.guid,
-					nodeId: profile.nodeId,
-				}),
-				openWebSocket: signedIn.openWebSocket,
-				onReconnectSignal: signedIn.onReconnectSignal,
-				waitFor: tabManager.idb.whenLoaded,
-				actions: tabManager.actions,
-			});
-
 			const savedTabs = createSavedTabState(tabManager);
 			const bookmarks = createBookmarkState(tabManager);
 			const toolTrust = createToolTrustState(tabManager);
@@ -75,7 +61,7 @@ function buildSession(
 			const aiChat = createAiChatState({
 				auth,
 				tabManager,
-				collaboration,
+				collaboration: tabManager.collaboration,
 				toolTrust,
 			});
 			const state = { savedTabs, bookmarks, toolTrust, unifiedView, aiChat };
@@ -86,7 +72,6 @@ function buildSession(
 
 			return {
 				...tabManager,
-				collaboration,
 				state,
 				[Symbol.dispose]() {
 					aiChat[Symbol.dispose]();

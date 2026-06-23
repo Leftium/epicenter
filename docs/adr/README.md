@@ -120,5 +120,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0050](0050-the-inference-contract-is-openai-compatible.md) | The inference contract is OpenAI-compatible Chat Completions; Epicenter's backend is one swappable gateway | Accepted |
 | [0051](0051-one-agent-loop-its-store-seam-chooses-persistence.md) | There is one agent loop; its store seam chooses persistence, so tab-manager needs no second loop | Accepted (supersedes 0048) |
 | [0052](0052-shortcut-reach-is-the-minimum-of-command-key-and-platform-ceilings.md) | Shortcut reach is the minimum of command, key, and platform ceilings, never a user toggle | Proposed |
+| [0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md) | The Epicenter bearer is an audience-scoped credential; auth.fetch attaches it only to its origin | Accepted |
+| [0054](0054-an-inference-backend-is-the-metered-gateway-or-a-custom-server.md) | An inference backend is either the metered Epicenter gateway or a custom OpenAI-compatible server | Accepted |
+| [0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) | Conversation storage is one canonical table in @epicenter/chat; every chat surface syncs | Accepted |
+| [0056](0056-local-inference-is-a-delegated-engine-behind-the-openai-compatible-seam.md) | Local inference is a delegated engine behind the OpenAI-compatible seam; the runtime is a swappable default | Accepted |
 
 When you add an ADR, add its row here.

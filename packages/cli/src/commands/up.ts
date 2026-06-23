@@ -224,9 +224,7 @@ export const upCommand = cmd({
 		} else {
 			const entry = handle.opened.entry;
 			logSyncStatus(`online (${entry.mount})`);
-			printPeersSnapshot(entry);
-			subscribePeers(entry, options.quiet);
-			subscribeSyncStatus(entry);
+			monitorMount(entry, { quiet: options.quiet });
 		}
 
 		const onSignal = () => {
@@ -243,55 +241,54 @@ export const upCommand = cmd({
 	},
 });
 
-function printPeersSnapshot(entry: StartedMount): void {
-	const collaboration = entry.runtime.collaboration;
+/**
+ * Reports one mount's live collaboration over stderr: an initial peer
+ * snapshot, then subscriptions for peer join/leave and sync status changes.
+ * No-op when the mount has no collaboration channel. These three always run
+ * together as one unit, so they share a single guard and `mount` binding.
+ */
+function monitorMount(
+	{ mount, runtime }: StartedMount,
+	{ quiet }: { quiet: boolean },
+): void {
+	const collaboration = runtime.collaboration;
 	if (!collaboration) return;
+
+	// Initial peer snapshot.
 	const peers = collaboration.peers.list();
 	if (peers.length === 0) {
-		process.stderr.write(`${entry.mount}: no peers connected\n`);
-		return;
+		process.stderr.write(`${mount}: no peers connected\n`);
+	} else {
+		for (const peer of peers) {
+			process.stderr.write(`${mount}: peer ${peer.nodeId}\n`);
+		}
 	}
-	for (const peer of peers) {
-		process.stderr.write(`${entry.mount}: peer ${peer.nodeId}\n`);
-	}
-}
 
-function subscribePeers(entry: StartedMount, quiet: boolean): void {
-	const collaboration = entry.runtime.collaboration;
-	if (!collaboration) return;
-	const snapshot = () =>
-		new Set(collaboration.peers.list().map((peer) => peer.nodeId));
-	let prev = snapshot();
+	// Peer join/leave.
+	let prev = new Set(peers.map((peer) => peer.nodeId));
 	collaboration.peers.subscribe(() => {
-		const next = snapshot();
+		const next = new Set(collaboration.peers.list().map((peer) => peer.nodeId));
 		for (const nodeId of next) {
-			if (!prev.has(nodeId)) {
-				if (!quiet) {
-					process.stderr.write(`${entry.mount}: ${nodeId} joined\n`);
-				}
+			if (!prev.has(nodeId) && !quiet) {
+				process.stderr.write(`${mount}: ${nodeId} joined\n`);
 			}
 		}
 		for (const nodeId of prev) {
-			if (!next.has(nodeId)) {
-				if (!quiet) {
-					process.stderr.write(`${entry.mount}: ${nodeId} left\n`);
-				}
+			if (!next.has(nodeId) && !quiet) {
+				process.stderr.write(`${mount}: ${nodeId} left\n`);
 			}
 		}
 		prev = next;
 	});
-}
 
-function subscribeSyncStatus(entry: StartedMount): void {
-	const collaboration = entry.runtime.collaboration;
-	if (!collaboration) return;
+	// Sync status.
 	collaboration.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
-			logSyncStatus(`${entry.mount}: connecting (retry ${status.retries})`);
+			logSyncStatus(`${mount}: connecting (retry ${status.retries})`);
 		} else if (status.phase === 'connected') {
-			logSyncStatus(`${entry.mount}: connected`);
+			logSyncStatus(`${mount}: connected`);
 		} else if (status.phase === 'offline') {
-			logSyncStatus(`${entry.mount}: offline`);
+			logSyncStatus(`${mount}: offline`);
 		}
 	});
 }

@@ -23,6 +23,7 @@
 	} from '$lib/utils/key-binding';
 	import { createChordRecorder } from './create-chord-recorder';
 	import { createTapRecorder } from './create-tap-recorder';
+	import { describeShortcutConflict } from './describe-conflict';
 
 	// The one router-driven recorder (ADR-0052): the user picks a key, never a
 	// store. A command's two slots (focused, global) render as reach-glyphed chips,
@@ -113,8 +114,9 @@
 	// gestures and overlaps) matches where the binding will live. Returns true when
 	// refused.
 	function rejectConflict(next: KeyBinding): boolean {
-		const reason = shortcuts.findConflict(command.id, next);
-		if (!reason) return false;
+		const conflict = shortcuts.findConflict(command.id, next);
+		if (!conflict) return false;
+		const reason = describeShortcutConflict(conflict, os.isApple);
 		report.error({
 			title: 'That shortcut is not available',
 			description: reason,

@@ -1,11 +1,7 @@
 import { debounce } from '@epicenter/workspace';
 import { on } from 'svelte/events';
 import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
-import {
-	domCodeToKey,
-	eventModifiers,
-	isEmptyBinding,
-} from '$lib/utils/key-binding';
+import { domCodeToKey, eventModifiers } from '$lib/utils/key-binding';
 
 const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys in a combination.
 
@@ -64,9 +60,14 @@ export function createChordRecorder({
 			keys: capturedKey ? [capturedKey] : [],
 		};
 		// Stay listening: the owner decides whether to accept (and stop us) or
-		// refuse a non-chord; reset so the next attempt starts clean either way.
+		// refuse a capture; reset so the next attempt starts clean either way.
 		reset();
-		if (!isEmptyBinding(binding)) onCapture(binding);
+		// The webview recorder yields only bare keys and chords. A capture with no
+		// non-modifier key (a lone modifier tapped, or every non-modifier released
+		// past the window leaving only modifiers held) is the native tap's job (Fn
+		// and modifier-only holds), so it never commits here: a stored modifier-only
+		// binding would fire on every press of that modifier in-app.
+		if (binding.keys.length > 0) onCapture(binding);
 	}
 
 	// Quiet for CAPTURE_WINDOW_MS after the last key change = the gesture is done.
@@ -75,6 +76,9 @@ export function createChordRecorder({
 	function onKeydown(e: KeyboardEvent) {
 		if (e.repeat) return; // auto-repeat is not a new key
 		if (e.key === 'Escape') return; // let it bubble; the session owner cancels
+		// Ignore keydowns mid-IME-composition (CJK, accent dead keys): the `.code` is
+		// not the user's intended key.
+		if (e.isComposing) return;
 		// Keep the gesture from triggering anything in the webview while recording.
 		e.preventDefault();
 

@@ -37,7 +37,7 @@ export interface ServerBindings {
 	// AI provider house keys are optional: set one to serve that provider
 	// through the gateway (routes/inference.ts), or omit it and a request for
 	// that provider gets 503 ProviderNotConfigured. The gateway is
-	// house-key-only (ADR-0053); a user's own key lives on a custom client
+	// house-key-only (ADR-0054); a user's own key lives on a custom client
 	// backend, never here. Hosted requires both at deploy time; see
 	// apps/api/wrangler.jsonc for why.
 	OPENAI_API_KEY?: string;

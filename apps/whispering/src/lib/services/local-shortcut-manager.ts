@@ -83,6 +83,11 @@ export const LocalShortcutManagerLive = {
 			// Skip shortcut processing if user is typing in an input field
 			if (isTypingInInput()) return;
 
+			// Skip keydowns that belong to an in-progress IME composition (CJK, accent
+			// dead keys): the mid-composition `.code` is not the user's intended key,
+			// so matching on it would misfire.
+			if (e.isComposing) return;
+
 			// Physical key from `e.code` (layout-stable, no Option-character quirk).
 			// Modifier codes and keys off the bindable alphabet map to null and are
 			// not tracked here; modifiers come from the event flags via heldBinding.
@@ -141,23 +146,31 @@ export const LocalShortcutManagerLive = {
 		});
 
 		/**
-		 * Handle window blur events (switching applications, clicking outside browser)
-		 * Reset all keys when user shifts focus away from the window
+		 * Focus left the window (app switch, click outside) or the tab was hidden,
+		 * possibly while a shortcut was still held. The matching keyup will never
+		 * arrive, so release every armed shortcut here instead of silently dropping
+		 * it: emit `'Released'` for each, which the dispatcher ignores for commands
+		 * that did not subscribe to that edge but runs as the stop edge for a hold
+		 * like push-to-talk, which would otherwise stay stuck on (recording with no
+		 * keyup to ever end it). Then clear the held state.
 		 */
-		const blur = on(window, 'blur', () => {
-			pressedKeys.clear();
+		const releaseAllHeld = () => {
+			for (const id of activeShortcuts) onTrigger(id, 'Released');
 			activeShortcuts.clear();
-		});
+			pressedKeys.clear();
+		};
 
 		/**
-		 * Handle tab visibility changes (switching browser tabs)
-		 * This catches cases where the window doesn't lose focus but the tab is hidden
+		 * Handle window blur events (switching applications, clicking outside browser).
+		 */
+		const blur = on(window, 'blur', releaseAllHeld);
+
+		/**
+		 * Handle tab visibility changes (switching browser tabs). This catches cases
+		 * where the window does not lose focus but the tab is hidden.
 		 */
 		const visibilityChange = on(document, 'visibilitychange', () => {
-			if (document.visibilityState === 'hidden') {
-				pressedKeys.clear();
-				activeShortcuts.clear();
-			}
+			if (document.visibilityState === 'hidden') releaseAllHeld();
 		});
 
 		/** Cleanup function that removes all event listeners */

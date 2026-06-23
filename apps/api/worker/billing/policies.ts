@@ -17,7 +17,7 @@
  *                                  (a lock) before the call, then confirms on
  *                                  success or releases on a pre-stream failure.
  *                                  The gateway is house-key-only, so every call
- *                                  is metered (ADR-0053): no BYOK bypass.
+ *                                  is metered (ADR-0054): no BYOK bypass.
  *   syncAssetStorageWithAutumn     Around `/api/.../assets`. Checks storage
  *                                  before POST uploads, then syncs Autumn to
  *                                  the authoritative asset-table total after
@@ -65,7 +65,7 @@ function billingFor(c: Context<Env>) {
  * the lock TTL. The model is read from the OpenAI body shape (top-level `model`)
  * and a guard failure answers in the OpenAI error shape
  * (`{ error: { message, code } }`) so the client engine keeps its branchable
- * `error.code`. The gateway is house-key-only (ADR-0053), so every call is
+ * `error.code`. The gateway is house-key-only (ADR-0054), so every call is
  * metered; there is no BYOK bypass.
  */
 export const chargeOpenAiCreditsWithAutumn = createMiddleware<Env>(

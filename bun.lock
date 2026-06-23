@@ -216,7 +216,7 @@
         "local-books": "./src/bin.ts",
       },
       "dependencies": {
-        "@epicenter/field": "workspace:*",
+        "@epicenter/chat": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "ms": "catalog:",
         "oauth4webapi": "catalog:",
@@ -275,6 +275,7 @@
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/chat": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/field": "workspace:*",
@@ -402,6 +403,7 @@
       "dependencies": {
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/chat": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/field": "workspace:*",
@@ -475,6 +477,7 @@
       "dependencies": {
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/chat": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/field": "workspace:*",
@@ -681,6 +684,19 @@
         "better-auth": "catalog:",
         "env-paths": "^3.0.0",
         "oauth4webapi": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/chat": {
+      "name": "@epicenter/chat",
+      "version": "0.1.0",
+      "dependencies": {
+        "@epicenter/field": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -1273,6 +1289,8 @@
     "@epicenter/app-shell": ["@epicenter/app-shell@workspace:packages/app-shell"],
 
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
+
+    "@epicenter/chat": ["@epicenter/chat@workspace:packages/chat"],
 
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
 

@@ -1,12 +1,11 @@
 /**
  * Reactive AI chat state with multi-conversation support.
  *
- * Architecture: the one client agent loop (ADR-0047/0051), one
- * `createConversation` per conversation, persisted to a device-local IndexedDB
- * store (`attachConversationStore`). tab-manager runs no synced Yjs transcript:
- * the loop's store seam takes the IndexedDB-backed `RecordsHandle`, so chat stays
- * device-local with no CRDT cost while sharing the single loop every other
- * surface uses (ADR-0051 retires the separate TanStack `createChat` loop).
+ * The conversation list is the synced `conversations` table (@epicenter/chat);
+ * each conversation's turns live in its `messages` child doc, written by the one
+ * client agent loop (ADR-0047). The loop streams the live turn into component
+ * state and writes each finished message into the doc; the live turn never
+ * enters the CRDT, and everything syncs across the user's devices.
  *
  * Inference rides the OpenAI-compatible gateway (ADR-0049/0050): the engine POSTs
  * `/v1/chat/completions`, reading the conversation's model and the device system
@@ -15,24 +14,29 @@
  * with no relay). A mutation is approval-gated by a synchronous pause; the
  * "Always Allow" trust set decides `auto` so a trusted tool never pauses again.
  *
- * The handle registry is the conversation list: it hydrates once from the
- * IndexedDB chat store at startup, and from then on creates and deletes go
- * through the registry, with message bodies persisted by each conversation's
- * store. A new conversation is an in-memory draft until its first message lands,
- * so empty chats are never stored. Titles and recency derive from the messages
- * themselves; the only stored metadata is the per-conversation model pick.
+ * A handle registry mirrors the table: `reconcileHandles` opens a handle for
+ * every row and disposes one whose row is gone. Creating a conversation writes a
+ * row (model carried forward from the active one); its title is set from the
+ * first user message; deleting removes the row and its handle.
  *
  * Components read this through `workspace.state.aiChat`.
  */
 
 import type { AuthClient } from '@epicenter/auth';
 import {
+	asConversationId,
+	type Conversation,
+	type ConversationId,
+	generateConversationId,
+} from '@epicenter/chat';
+import {
 	createOpenAiAgentEngine,
 	resolveInferenceBackend,
 } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { bindAgentConversation } from '@epicenter/svelte';
+import { InstantString } from '@epicenter/field';
+import { bindAgentConversation, fromTable } from '@epicenter/svelte';
 import { type Collaboration, generateId } from '@epicenter/workspace';
 import {
 	type AgentToolCall,
@@ -43,17 +47,6 @@ import {
 } from '@epicenter/workspace/agent';
 import { SvelteMap } from 'svelte/reactivity';
 import { DEFAULT_MODEL } from '$lib/chat/models';
-import {
-	attachConversationStore,
-	type ConversationId,
-	clearConversation,
-	deleteModelChoice,
-	generateConversationId,
-	getAllModelChoices,
-	loadAllConversations,
-	type ModelChoice,
-	setModelChoice,
-} from '$lib/chat/persistence';
 import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,
@@ -77,6 +70,10 @@ export function createAiChatState({
 	// Epicenter gateway; the engine appends `/chat/completions`.
 	const inferenceBaseUrl = API_ROUTES.ai.completions.baseUrl(APP_URLS.API);
 
+	// The conversation list is the synced `conversations` table; a row's turns
+	// live in its `messages` child doc. This reactive map drives the registry.
+	const conversationsMap = fromTable(tabManager.tables.conversations);
+
 	// One catalog for every conversation: tab-manager's own browser actions,
 	// resolved in-process through `invokeAction` with no relay. Peers (other
 	// signed-in devices) advertise their actions too; a local action shadows a
@@ -86,39 +83,44 @@ export function createAiChatState({
 		selfNodeId: tabManager.nodeId,
 	});
 
-	// ── Model choices (write-through mirror of the settings store) ────
-	// Handle getters are synchronous, so the async settings rows hydrate
-	// into this map once at startup and every set writes through.
+	/** Patch a conversation row and bump its recency in one write. */
+	function updateConversation(
+		conversationId: ConversationId,
+		patch: Partial<Omit<Conversation, 'id'>>,
+	) {
+		tabManager.tables.conversations.update(conversationId, {
+			...patch,
+			updatedAt: InstantString.now(),
+		});
+	}
 
-	const modelChoices = new SvelteMap<ConversationId, ModelChoice>();
+	// ── Handle Registry (one handle per conversation row) ──────────────
 
-	// ── Handle Registry (the conversation list) ───────────────────────
-
-	/** Per-conversation handle projections used reactively in templates. */
 	const handles = new SvelteMap<
 		ConversationId,
 		ReturnType<typeof createConversationHandle>
 	>();
 
-	// ── Conversation Handle Factory ──────────────────────────────────
+	/** The conversation list for the picker: handles sorted most-recent first. */
+	const conversationList = $derived(
+		[...handles.values()].sort((a, b) =>
+			b.updatedAt.localeCompare(a.updatedAt),
+		),
+	);
 
 	/**
 	 * Create a self-contained reactive handle for a single conversation.
 	 *
-	 * Binds a device-local `createConversation` (the one client agent loop) to
-	 * Svelte state through `bindAgentConversation`. Domain logic (model choice,
-	 * tool approval and trust, derived metadata) is layered on top. The baked-in
-	 * `conversationId` means getters and actions always target the right
-	 * conversation, even from async callbacks.
+	 * Binds the conversation's `messages` child doc to `createConversation` (the
+	 * one client agent loop) through `bindAgentConversation`. Title and model read
+	 * from the row; the engine reads the model and device prompts per turn, so a
+	 * mid-conversation model switch takes effect on the next answer.
 	 */
 	function createConversationHandle(conversationId: ConversationId) {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
-		/** Recency fallback for drafts: no messages exist until first send. */
-		const lastActivityFallback = Date.now();
-
-		const modelChoice = $derived(modelChoices.get(conversationId));
+		const metadata = $derived(conversationsMap.get(conversationId));
 
 		// The tool call the loop is waiting on a decision for, or null. A mutation
 		// pauses the loop here (the present human is the gate, ADR-0047); a query,
@@ -135,39 +137,25 @@ export function createAiChatState({
 			decision.resolve(approved);
 		}
 
-		/** Write-through: the reactive mirror now, the settings row async. */
-		function rememberModelChoice(choice: ModelChoice) {
-			modelChoices.set(conversationId, choice);
-			void setModelChoice(conversationId, choice);
-		}
-
-		// Message bodies live in extension-local IndexedDB through the loop's store
-		// seam (ADR-0051); the live turn streams in component state and only a
-		// finished message lands in storage.
 		const convo = bindAgentConversation(
 			createAgentConversation({
-				store: attachConversationStore(conversationId),
+				store:
+					tabManager.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
-					data: () => {
-						// Read the device backend per turn so a switch lands next turn.
-						// The model rides with the backend: a custom backend serves its
-						// own free-text model; hosted uses the conversation's catalog pick.
-						const config = inferenceBackend.get();
-						return {
-							...resolveInferenceBackend(config, {
-								fetch: auth.fetch,
-								baseURL: inferenceBaseUrl,
-							}),
-							model:
-								config.mode === 'custom'
-									? config.model
-									: (modelChoice?.model ?? DEFAULT_MODEL),
-							systemPrompts: [
-								buildDeviceConstraints(tabManager.nodeId),
-								TAB_MANAGER_SYSTEM_PROMPT,
-							],
-						};
-					},
+					// The device backend is read per turn (so a switch lands next turn) and
+					// carries its own model; the conversation's catalog pick is the hosted
+					// default, used only when the backend is hosted.
+					data: () => ({
+						...resolveInferenceBackend(inferenceBackend.get(), {
+							fetch: auth.fetch,
+							baseURL: inferenceBaseUrl,
+							model: metadata?.model ?? DEFAULT_MODEL,
+						}),
+						systemPrompts: [
+							buildDeviceConstraints(tabManager.nodeId),
+							TAB_MANAGER_SYSTEM_PROMPT,
+						],
+					}),
 				}),
 				tools: toolCatalog,
 				approval: {
@@ -201,24 +189,19 @@ export function createAiChatState({
 				convo[Symbol.dispose]();
 			},
 
-			// ── Identity ──
+			// ── Identity and metadata (from the row) ──
 
 			get id() {
 				return conversationId;
 			},
 
-			// ── Derived metadata (title and recency come from the messages) ──
-
 			get title() {
-				const firstUserMessage = convo.messages.find((m) => m.role === 'user');
-				const text = firstUserMessage
-					? agentMessageText(firstUserMessage).trim()
-					: '';
-				return text ? text.slice(0, 50) : 'New Chat';
+				return metadata?.title ?? 'New Chat';
 			},
 
+			/** Recency for the conversation list, as the row's ISO instant. */
 			get updatedAt() {
-				return convo.messages.at(-1)?.createdAt ?? lastActivityFallback;
+				return metadata?.updatedAt ?? '';
 			},
 
 			get lastMessagePreview() {
@@ -228,13 +211,13 @@ export function createAiChatState({
 				return text.length > 60 ? `${text.slice(0, 60)}…` : text;
 			},
 
-			// ── Model choice ──
+			// ── Model choice (a row column) ──
 
 			get model() {
-				return modelChoice?.model ?? DEFAULT_MODEL;
+				return metadata?.model ?? DEFAULT_MODEL;
 			},
 			set model(value: string) {
-				rememberModelChoice({ model: value });
+				updateConversation(conversationId, { model: value });
 			},
 
 			// ── Chat state (from the loop) ──
@@ -311,7 +294,17 @@ export function createAiChatState({
 			// ── Actions ──
 
 			sendMessage(content: string) {
-				convo.send(content);
+				const text = content.trim();
+				if (!text || convo.isGenerating) return;
+
+				convo.send(text);
+
+				// First user message names the conversation; later sends just bump
+				// recency (updateConversation always writes updatedAt).
+				const currentTitle = metadata?.title ?? 'New Chat';
+				updateConversation(conversationId, {
+					title: currentTitle === 'New Chat' ? text.slice(0, 50) : currentTitle,
+				});
 			},
 
 			reload() {
@@ -332,8 +325,6 @@ export function createAiChatState({
 		};
 	}
 
-	// ── Lifecycle ────────────────────────────────────────────────────
-
 	/** Dispose the loop and remove the handle for a conversation. */
 	function destroyConversation(id: ConversationId) {
 		handles.get(id)?.[Symbol.dispose]();
@@ -344,69 +335,72 @@ export function createAiChatState({
 
 	let activeConversationId = $state<ConversationId | null>(null);
 
-	// ── Startup hydration ─────────────────────────────────────────────
-	// The store knows which conversations exist; mirror it into the handle
-	// registry once, activate the most recent, and sweep settings rows
-	// orphaned by drafts that died before their first message.
-
-	void (async () => {
-		const [stored, choices] = await Promise.all([
-			loadAllConversations(),
-			getAllModelChoices(),
-		]);
-
-		const storedIds = new Set(stored.map(({ id }) => id));
-		for (const [id, choice] of choices) {
-			if (storedIds.has(id)) modelChoices.set(id, choice);
-			else void deleteModelChoice(id);
+	/**
+	 * Mirror the table into the handle registry: open a handle for every row,
+	 * dispose one whose row is gone, and keep an active conversation selected.
+	 */
+	function reconcileHandles() {
+		for (const id of handles.keys()) {
+			if (!conversationsMap.has(id)) destroyConversation(id);
 		}
-
-		const byRecency = [...stored].sort(
-			(a, b) => b.lastActivity - a.lastActivity,
-		);
-		for (const { id } of byRecency) {
-			if (!handles.has(id)) {
-				handles.set(id, createConversationHandle(id));
+		for (const id of conversationsMap.keys()) {
+			const conversationId = asConversationId(id);
+			if (!handles.has(conversationId)) {
+				handles.set(conversationId, createConversationHandle(conversationId));
 			}
 		}
 
-		// Only pick the active conversation if the user hasn't already created a
-		// draft while this read was in flight; reassigning here would yank the UI
-		// away from it.
-		if (activeConversationId === null || !handles.has(activeConversationId)) {
-			const mostRecent = byRecency[0];
-			if (mostRecent) {
-				activeConversationId = mostRecent.id;
-			} else {
-				createConversation();
-			}
+		// Keep an active conversation pointed at a live handle.
+		if (activeConversationId !== null && handles.has(activeConversationId)) {
+			return;
 		}
-	})();
+		const mostRecent = conversationList[0];
+		if (mostRecent) activeConversationId = mostRecent.id;
+	}
+
+	const _unobserve = tabManager.tables.conversations.observe(() => {
+		reconcileHandles();
+	});
+
+	// Once the synced doc has loaded, mirror it in and guarantee a conversation
+	// to land in (a fresh install has none).
+	void tabManager.idb.whenLoaded.then(() => {
+		reconcileHandles();
+		if (conversationList.length === 0) createConversation();
+	});
+
+	reconcileHandles();
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 
 	/**
-	 * Open a new draft conversation, carrying the active conversation's model
-	 * choice forward. The draft persists nothing until its first message lands.
+	 * Open a new conversation, carrying the active conversation's model choice
+	 * forward, and activate it. The handle is created synchronously so the UI
+	 * never sees a momentarily-missing active conversation.
 	 */
 	function createConversation(): ConversationId {
 		const id = generateConversationId();
+		const nowIso = InstantString.now();
 		const current =
 			activeConversationId === null
 				? undefined
 				: handles.get(activeConversationId);
 
-		modelChoices.set(id, { model: current?.model ?? DEFAULT_MODEL });
-		handles.set(id, createConversationHandle(id));
+		tabManager.tables.conversations.set({
+			id,
+			title: 'New Chat',
+			model: current?.model ?? DEFAULT_MODEL,
+			createdAt: nowIso,
+			updatedAt: nowIso,
+		});
+		if (!handles.has(id)) handles.set(id, createConversationHandle(id));
 		activeConversationId = id;
 		return id;
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
+		tabManager.tables.conversations.delete(conversationId);
 		destroyConversation(conversationId);
-		void clearConversation(conversationId);
-		modelChoices.delete(conversationId);
-		void deleteModelChoice(conversationId);
 
 		if (activeConversationId === conversationId) {
 			const next = conversationList[0];
@@ -420,15 +414,13 @@ export function createAiChatState({
 
 	// ── Public API ────────────────────────────────────────────────────
 
-	const conversationList = $derived(
-		[...handles.values()].sort((a, b) => b.updatedAt - a.updatedAt),
-	);
-
 	return {
 		[Symbol.dispose]() {
-			for (const id of handles.keys()) {
+			_unobserve();
+			for (const id of [...handles.keys()]) {
 				destroyConversation(id);
 			}
+			conversationsMap[Symbol.dispose]();
 		},
 
 		get active() {

@@ -4,21 +4,19 @@ import {
 	LocalShortcutManagerLive,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
-import {
-	bindingsEqual,
-	keyBindingToString,
-	parseManualBinding,
-} from '$lib/utils/key-binding';
+import type { KeyBinding } from '$lib/tauri/commands';
+import { bindingsEqual } from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
 /**
  * The focused (in-app) shortcut backend: shortcuts that fire while the Whispering
  * window is focused, driven by the browser keydown matcher and stored in workspace
- * KV under `shortcut.*` as the readable manual grammar (`"ctrl+shift+a"`). The KV
- * cell is `field.string()` either way; this just speaks the same physical
- * `KeyBinding` the matcher and the system tier use, parsed on read and serialized
- * on write.
+ * KV under `shortcut.*` as the structured `KeyBinding` the matcher and the system
+ * tier already speak (via `field.json`; the global tier stores the same shape in
+ * device-config). Read and written directly, with no string codec in between. A
+ * stale value (a binding saved before this format) fails the cell's schema check
+ * on read and falls back to the default.
  *
  * Universal, not a `#platform` seam: the webview matcher runs in the Tauri window
  * too, so this same backend is the focused half on every platform. The reach
@@ -28,20 +26,16 @@ import type { Shortcuts } from './types';
 
 const localKey = (id: Command['id']) => `shortcut.${id}` as const;
 
-/** A stored shortcut string, parsed to a `KeyBinding` (`null` when unset or stale). */
-const readBinding = (id: Command['id']) => {
-	const stored = settings.get(localKey(id));
-	return stored ? parseManualBinding(stored) : null;
-};
+// The stored value's `keys` are `string[]` (the cell schema validates them
+// structurally; Rust validates the names at the IPC boundary), so the read crosses
+// into `KeyBinding` (`keys: Key[]`) with one documented cast, like the global tier.
+const readBinding = (id: Command['id']): KeyBinding | null =>
+	settings.get(localKey(id)) as KeyBinding | null;
 
 export const focusedShortcuts: Shortcuts = createShortcuts({
 	read: readBinding,
-	getDefault: (id) => {
-		const stored = settings.getDefault(localKey(id));
-		return stored ? parseManualBinding(stored) : null;
-	},
-	write: (id, binding) =>
-		settings.set(localKey(id), binding ? keyBindingToString(binding) : null),
+	getDefault: (id) => settings.getDefault(localKey(id)) as KeyBinding | null,
+	write: (id, binding) => settings.set(localKey(id), binding),
 	// The keydown matcher fires every command whose set matches, so two commands
 	// sharing a set would both trigger. Refuse an exact duplicate at write time.
 	findConflict: (id, binding) => {
@@ -49,7 +43,7 @@ export const focusedShortcuts: Shortcuts = createShortcuts({
 			if (command.id === id) continue;
 			const other = readBinding(command.id);
 			if (other && bindingsEqual(other, binding)) {
-				return `Those keys already trigger "${command.title}". Pick a different combination.`;
+				return { kind: 'duplicate', commandId: command.id };
 			}
 		}
 		return null;

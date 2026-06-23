@@ -24,7 +24,9 @@
 	// alone would mislabel that post-stop window as "starting". VAD can use a single
 	// toggle because its pipeline runs in a separate speech-end callback, not in stop.
 	const startMutation = createMutation(() => ({
-		mutationFn: startManualRecording,
+		// The record button is the `manual` source (the default); wrap so the
+		// mutation takes no variables rather than inferring the optional `source`.
+		mutationFn: () => startManualRecording(),
 	}));
 	const stopMutation = createMutation(() => ({
 		mutationFn: stopManualRecording,

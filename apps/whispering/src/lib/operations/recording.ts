@@ -13,7 +13,10 @@ import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { captureSurface } from '$lib/state/capture-surface.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
-import { manualRecorder } from '$lib/state/manual-recorder.svelte';
+import {
+	manualRecorder,
+	type RecordingSource,
+} from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
@@ -63,7 +66,7 @@ function isVadRecordingActive() {
 	);
 }
 
-export async function startManualRecording() {
+export async function startManualRecording(source: RecordingSource = 'manual') {
 	settings.set('recording.trigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
 	// the pill follows this attempt, not the last one.
@@ -85,9 +88,10 @@ export async function startManualRecording() {
 	// Feed the pill's meter the live mic level. On web the navigator recorder taps
 	// its stream to drive this; on desktop the CPAL worker emits the level from
 	// Rust straight to the overlay, so this callback is never invoked there.
-	const { data: outcome, error } = await manualRecorder.startRecording(
-		(level) => recordingOverlay.reportLevel(level),
-	);
+	const { data: outcome, error } = await manualRecorder.startRecording({
+		source,
+		onLevel: (level) => recordingOverlay.reportLevel(level),
+	});
 
 	if (error) {
 		void recordingMedia.resume();
@@ -139,6 +143,22 @@ export async function stopManualRecording() {
 		source,
 		durationMs,
 	});
+}
+
+/**
+ * Stop the manual recording only if `source` started it and it is live. A no-op
+ * otherwise, so a push-to-talk release that is stray, duplicated, or lands while a
+ * toggle/button recording is live never stops the wrong recording. This is the
+ * idempotent stop the push-to-talk controller routes every stop input through.
+ */
+export async function stopManualRecordingIfOwned(source: RecordingSource) {
+	if (
+		manualRecorder.state !== 'RECORDING' ||
+		manualRecorder.currentSource !== source
+	) {
+		return;
+	}
+	await stopManualRecording();
 }
 
 export function toggleManualRecording() {

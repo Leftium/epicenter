@@ -2,11 +2,10 @@ import { platformCommands } from '#platform/commands';
 import { goto } from '$app/navigation';
 import {
 	cancelRecording,
-	startManualRecording,
-	stopManualRecording,
 	toggleManualRecording,
 	toggleVadRecording,
 } from '$lib/operations/recording';
+import { pushToTalk } from '$lib/operations/push-to-talk';
 import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
 import type { Reach } from '$lib/utils/key-binding';
 
@@ -68,15 +67,18 @@ const sharedCommands = [
 		title: 'Push to talk',
 		category: 'Recording',
 		reach: 'global',
-		// Hold to record, release to stop. Recording starts on the press and stops
-		// on the release; both the desktop rdev backend and the browser keydown
-		// backend emit this Pressed/Released pair. Stateless: the edges are the
-		// whole state machine, so the routing is glue that lives with the command,
-		// not an operation. Default global key is Fn (macOS) / Ctrl+Win (else).
+		// Hold to record, release to stop. The push-to-talk controller owns the
+		// recording its press starts: a release, a synthetic release from the
+		// keyboard backend (a tap restart, a re-sync), or a 5-minute cap stops only
+		// that session, and a release that lands before startup finishes is still
+		// honored. Not "the edges are the whole state machine": a lost release edge
+		// would otherwise leave recording stuck on. Both the desktop rdev backend and
+		// the browser keydown backend emit the Pressed/Released pair. Default global
+		// key is Fn (macOS) / Ctrl+Win (else).
 		on: ['Pressed', 'Released'],
 		run: (state?: ShortcutEventState) => {
-			if (state === 'Pressed') return startManualRecording();
-			if (state === 'Released') return stopManualRecording();
+			if (state === 'Pressed') return pushToTalk.start();
+			if (state === 'Released') return pushToTalk.stop();
 		},
 	},
 	{

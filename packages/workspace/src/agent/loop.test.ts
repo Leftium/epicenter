@@ -75,6 +75,22 @@ describe('createConversation', () => {
 		expect([...store.entries()]).toHaveLength(2);
 	});
 
+	test('send reports whether it started a turn', async () => {
+		// The contract a caller gates side-effects on: a title write fires only when
+		// send actually started a turn, so the loop owns the empty/mid-turn guard
+		// and no view re-derives it.
+		const store = makeStore();
+		const engine: AgentEngine = () =>
+			streamOf([{ type: 'text-delta', delta: 'ok' }]);
+		const handle = createConversation({ store, engine, generateId: idMinter() });
+
+		expect(handle.send('')).toBe(false); // empty
+		expect(handle.send('   ')).toBe(false); // whitespace only
+		expect(handle.send('hi')).toBe(true); // accepted, turn now in flight
+		expect(handle.send('again')).toBe(false); // mid-turn
+		await settle(handle);
+	});
+
 	test('never prompts with the empty in-flight assistant message', async () => {
 		// Regression: the loop pushes the in-flight assistant onto `turn` before a
 		// step, so a naive prompt of `[...persisted, ...turn]` ends with an empty

@@ -58,8 +58,12 @@ export type ConversationHandle = {
 	snapshot(): ConversationSnapshot;
 	/** Register a change listener; returns the remover. Fires on every change. */
 	subscribe(listener: () => void): () => void;
-	/** Persist the user turn and answer it. No-op on empty input or mid-turn. */
-	send(content: string): void;
+	/**
+	 * Persist the user turn and answer it. Returns whether a turn started: `false`
+	 * on empty input or mid-turn, so a caller can gate its own side-effects (a
+	 * title write, say) on the loop's decision instead of re-deriving the guard.
+	 */
+	send(content: string): boolean;
 	/** Abort the in-flight turn; its partial messages are dropped. */
 	stop(): void;
 	/** Re-answer the latest user turn after a failure. */
@@ -322,7 +326,7 @@ export function createConversation(
 		},
 		send(content) {
 			const text = content.trim();
-			if (!text || turn !== null) return;
+			if (!text || turn !== null) return false;
 			const id = generateId();
 			store.set(id, {
 				id,
@@ -331,6 +335,7 @@ export function createConversation(
 				parts: [{ type: 'text', text }],
 			});
 			void runTurn();
+			return true;
 		},
 		stop() {
 			controller?.abort();

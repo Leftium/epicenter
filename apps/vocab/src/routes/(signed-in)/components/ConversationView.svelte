@@ -47,20 +47,18 @@
 	let dismissedError = $state(false);
 	let inputValue = $state('');
 
-	const error = $derived(convo.error);
-
 	/**
-	 * A send persists the user turn and starts the answer. The controller streams
+	 * A send persists the user turn and starts the answer; the controller streams
 	 * the reply into component state and writes the finished message to the store.
+	 * The loop owns the empty/mid-turn guard, so we gate the title write on whether
+	 * it actually started a turn rather than re-deriving the same condition.
 	 */
 	function sendMessage(content: string) {
-		const text = content.trim();
-		if (!text || convo.isGenerating) return;
 		dismissedError = false;
-		convo.send(text);
+		if (!convo.send(content)) return;
 		const title = vocab.tables.conversations.get(conversationId).data?.title;
 		vocab.tables.conversations.update(conversationId, {
-			title: title === 'New Chat' ? text.slice(0, 50) : title,
+			title: title === 'New Chat' ? content.trim().slice(0, 50) : title,
 			updatedAt: InstantString.now(),
 		});
 	}
@@ -88,11 +86,11 @@
 		</Chat.Bubble>
 	{/if}
 
-	{#if error && !dismissedError}
+	{#if convo.error && !dismissedError}
 		<div
 			class="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
 		>
-			<span class="flex-1">{error.message}</span>
+			<span class="flex-1">{convo.error.message}</span>
 			<Button size="sm" variant="outline" onclick={retry}>Retry</Button>
 			<Button size="sm" variant="ghost" onclick={() => (dismissedError = true)}>
 				✕

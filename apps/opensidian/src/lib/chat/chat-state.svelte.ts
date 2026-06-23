@@ -255,14 +255,16 @@ export function createAiChatState({
 			},
 
 			sendMessage(content: string) {
-				const text = content.trim();
-				if (!text || convo.isGenerating) return;
-
-				convo.send(text);
+				// The loop owns the empty/mid-turn guard; gate the title write on
+				// whether it actually started a turn rather than re-deriving it.
+				if (!convo.send(content)) return;
 
 				const currentTitle = metadata?.title ?? 'New Chat';
 				updateConversation(conversationId, {
-					title: currentTitle === 'New Chat' ? text.slice(0, 50) : currentTitle,
+					title:
+						currentTitle === 'New Chat'
+							? content.trim().slice(0, 50)
+							: currentTitle,
 				});
 			},
 

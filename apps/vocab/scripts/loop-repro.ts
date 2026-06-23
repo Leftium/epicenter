@@ -12,12 +12,12 @@ import {
 	createOpenAiAgentEngine,
 	resolveInferenceBackend,
 } from '@epicenter/client';
+import type { RecordsHandle } from '@epicenter/workspace';
 import {
 	type AgentMessage,
 	agentMessageText,
 	createConversation,
 } from '@epicenter/workspace/agent';
-import type { RecordsHandle } from '@epicenter/workspace';
 import { VOCAB_SYSTEM_PROMPT } from '../vocab.js';
 
 const model = process.argv[2] ?? 'qwen3:30b-a3b-instruct-2507-q4_K_M';
@@ -91,7 +91,12 @@ async function main(): Promise<void> {
 	);
 	const engine = loggingEngine(
 		createOpenAiAgentEngine({
-			data: () => ({ fetch, baseURL, model, systemPrompts: [VOCAB_SYSTEM_PROMPT] }),
+			data: () => ({
+				fetch,
+				baseURL,
+				model,
+				systemPrompts: [VOCAB_SYSTEM_PROMPT],
+			}),
 		}),
 	);
 
@@ -104,7 +109,9 @@ async function main(): Promise<void> {
 	});
 
 	for (const userText of ['Hello!', 'Test', "What's your name?"]) {
-		console.log(`\n========== USER SENDS: ${JSON.stringify(userText)} ==========`);
+		console.log(
+			`\n========== USER SENDS: ${JSON.stringify(userText)} ==========`,
+		);
 		await sendAndWait(convo, userText);
 	}
 

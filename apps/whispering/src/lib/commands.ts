@@ -1,11 +1,11 @@
 import { platformCommands } from '#platform/commands';
 import { goto } from '$app/navigation';
+import { pushToTalk } from '$lib/operations/push-to-talk';
 import {
 	cancelRecording,
 	toggleManualRecording,
 	toggleVadRecording,
 } from '$lib/operations/recording';
-import { pushToTalk } from '$lib/operations/push-to-talk';
 import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
 import type { Reach } from '$lib/utils/key-binding';
 

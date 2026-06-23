@@ -15,12 +15,16 @@
 </script>
 
 <script lang="ts">
+	import { bindAgentConversation } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
+	import {
+		type ConversationId,
+		generateMessageId,
+	} from '@epicenter/vocab';
 	import { InstantString } from '@epicenter/workspace';
-	import type { ConversationId } from '@epicenter/vocab';
+	import { createConversation as createAgentConversation } from '@epicenter/workspace/agent';
 	import { onDestroy } from 'svelte';
-	import { createConversation } from '$lib/conversation.svelte';
 	import { requireVocab } from '$lib/session';
 	import ChatInput from './ChatInput.svelte';
 	import ChatMessage from './ChatMessage.svelte';
@@ -35,11 +39,16 @@
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the message store and bind it to the inference engine.
 	// The controller owns streaming, persistence, and the render state; dispose
-	// on unmount.
+	// on unmount. Vocab is capability-free (ADR-0047), so the loop runs with no
+	// tools: a single text step per turn, answered over the metered inference
+	// stream and persisted as last-write-wins messages keyed by id (ADR-0046).
 	// svelte-ignore state_referenced_locally
-	const convo = createConversation(
-		vocab.tables.conversations.docs.messages.open(conversationId),
-		clientEngine,
+	const convo = bindAgentConversation(
+		createAgentConversation({
+			store: vocab.tables.conversations.docs.messages.open(conversationId),
+			engine: clientEngine,
+			generateId: generateMessageId,
+		}),
 	);
 
 	onDestroy(() => convo[Symbol.dispose]());

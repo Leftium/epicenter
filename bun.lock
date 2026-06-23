@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -641,6 +640,17 @@
         "vite": "catalog:",
       },
     },
+    "packages/agent-protocol": {
+      "name": "@epicenter/agent-protocol",
+      "version": "0.1.0",
+      "dependencies": {
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/app-shell": {
       "name": "@epicenter/app-shell",
       "version": "0.3.0",
@@ -709,6 +719,7 @@
       "name": "@epicenter/client",
       "version": "0.1.1",
       "dependencies": {
+        "@epicenter/agent-protocol": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
@@ -923,6 +934,7 @@
       "name": "@epicenter/workspace",
       "version": "0.3.0",
       "dependencies": {
+        "@epicenter/agent-protocol": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -1251,6 +1263,8 @@
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w=="],
 
     "@emoji-mart/data": ["@emoji-mart/data@1.2.1", "", {}, "sha512-no2pQMWiBy6gpBEiqGeU77/bFejDqUTRY7KX+0+iur13op3bqUsXdnwoZs6Xb1zbv0gAj5VvS1PWoUUckSr5Dw=="],
+
+    "@epicenter/agent-protocol": ["@epicenter/agent-protocol@workspace:packages/agent-protocol"],
 
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
 

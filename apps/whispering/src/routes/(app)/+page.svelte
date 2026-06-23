@@ -7,14 +7,12 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
 	import { commandRunners } from '$lib/commands';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
-	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
 		TranscriptionRuntimeConfig,
 		TranscriptionSelector,
@@ -37,7 +35,6 @@
 	import { importFiles } from '$lib/operations/import';
 	import { selectCaptureSurface } from '$lib/operations/recording';
 	import { report } from '$lib/report';
-	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
@@ -52,6 +49,7 @@
 	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
+	import RecordingResult from './_components/RecordingResult.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
@@ -96,11 +94,6 @@
 			reason,
 		}),
 	});
-
-	const audioPlaybackUrlQuery = createQuery(() => ({
-		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '').options,
-		enabled: !!latestRecording?.id,
-	}));
 
 	let unlistenDragDrop: UnlistenFn | undefined;
 
@@ -171,9 +164,6 @@
 
 	onDestroy(() => {
 		unlistenDragDrop?.();
-		if (latestRecording?.id) {
-			services.blobs.audio.revokeUrl(latestRecording.id);
-		}
 	});
 </script>
 
@@ -330,40 +320,26 @@
 		{/if}
 
 		{#if latestRecording}
-			<div class="flex w-full flex-col gap-2">
-				<TranscriptDialog
-					recordingId={latestRecording.id}
-					transcript={latestRecording.transcript}
-					rows={1}
-					disabled={!latestRecording.transcript.trim()}
-					onDelete={() => {
-						confirmationDialog.open({
-							title: 'Delete recording',
-							description: 'Are you sure you want to delete this recording?',
-							confirm: { text: 'Delete', variant: 'destructive' },
-							onConfirm: () => {
-								services.blobs.audio.revokeUrl(latestRecording.id);
-								recordings.delete(latestRecording.id);
-								report.success({
-									title: 'Deleted recording!',
-									description: 'Your recording has been deleted.',
-								});
-							},
-						});
-					}}
-				/>
-
-				{#if audioPlaybackUrlQuery.data}
-					<audio
-						style:view-transition-name={viewTransition.recording(
-							latestRecording.id,
-						).audio}
-						src={audioPlaybackUrlQuery.data}
-						controls
-						class="h-8 w-full"
-					></audio>
-				{/if}
-			</div>
+			<RecordingResult
+				recordingId={latestRecording.id}
+				transcript={latestRecording.transcript}
+				rows={1}
+				onDelete={() => {
+					confirmationDialog.open({
+						title: 'Delete recording',
+						description: 'Are you sure you want to delete this recording?',
+						confirm: { text: 'Delete', variant: 'destructive' },
+						onConfirm: () => {
+							services.blobs.audio.revokeUrl(latestRecording.id);
+							recordings.delete(latestRecording.id);
+							report.success({
+								title: 'Deleted recording!',
+								description: 'Your recording has been deleted.',
+							});
+						},
+					});
+				}}
+			/>
 		{/if}
 
 		<div class="flex flex-col items-center gap-3">

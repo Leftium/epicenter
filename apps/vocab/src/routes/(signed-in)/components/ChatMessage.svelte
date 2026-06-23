@@ -2,7 +2,7 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import type { VocabMessage } from '@epicenter/vocab';
 	import { agentMessageText } from '@epicenter/workspace/agent';
-	import AssistantMessagePart from './AssistantMessagePart.svelte';
+	import AssistantProse from './AssistantProse.svelte';
 
 	let {
 		message,
@@ -19,7 +19,7 @@
 		{#if isUser}
 			{text}
 		{:else}
-			<AssistantMessagePart content={text} {showPinyin} />
+			<AssistantProse content={text} {showPinyin} />
 		{/if}
 	</Chat.BubbleMessage>
 </Chat.Bubble>

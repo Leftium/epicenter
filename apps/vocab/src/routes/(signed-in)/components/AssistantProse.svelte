@@ -1,3 +1,8 @@
+<!--
+	Renders an assistant message's prose. Vocab is capability-free, so a message
+	is one run of text (not the tool-call/tool-result parts the tool-agent apps
+	render); this turns that text into sanitized markdown with optional pinyin.
+-->
 <script lang="ts">
 	import DOMPurify from 'dompurify';
 	import { marked } from 'marked';

@@ -91,6 +91,34 @@ describe('createConversation', () => {
 		await settle(handle);
 	});
 
+	test('streamingId names the in-flight message during a turn, null once settled', async () => {
+		// The render boundary: while a step fills a message, the loop names it so a
+		// view can render it cheaply (raw) and the rest richly; it clears once the
+		// message settles into the store.
+		const store = makeStore();
+		const engine: AgentEngine = () =>
+			streamOf([{ type: 'text-delta', delta: 'hi' }]);
+		const handle = createConversation({ store, engine, generateId: idMinter() });
+
+		expect(handle.snapshot().streamingId).toBeNull(); // between turns
+
+		const seen: (string | null)[] = [];
+		const unsubscribe = handle.subscribe(() =>
+			seen.push(handle.snapshot().streamingId),
+		);
+		handle.send('hello'); // user = m1, assistant = m2
+		await settle(handle);
+		unsubscribe();
+
+		// While streaming, the in-flight assistant's id is exposed; never the user's.
+		expect(seen).toContain('m2');
+		expect(seen).not.toContain('m1');
+		// Once the turn settles, nothing is streaming.
+		expect(handle.snapshot().streamingId).toBeNull();
+		// The streamed message did persist (the id was real, not a ghost).
+		expect(store.get('m2')).toBeDefined();
+	});
+
 	test('never prompts with the empty in-flight assistant message', async () => {
 		// Regression: the loop pushes the in-flight assistant onto `turn` before a
 		// step, so a naive prompt of `[...persisted, ...turn]` ends with an empty

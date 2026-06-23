@@ -27,6 +27,9 @@ export function bindAgentConversation(handle: ConversationHandle) {
 		get messages() {
 			return render.messages;
 		},
+		get streamingId() {
+			return render.streamingId;
+		},
 		get isThinking() {
 			return render.isThinking;
 		},

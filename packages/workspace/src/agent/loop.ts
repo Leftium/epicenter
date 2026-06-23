@@ -45,6 +45,12 @@ export type ConversationError = { message: string; code?: string };
 export type ConversationSnapshot = {
 	/** Persisted messages plus the in-flight turn once it has visible content. */
 	messages: AgentMessage[];
+	/**
+	 * The id of the message a step is streaming into right now, or null between
+	 * steps and turns. A renderer can show this one cheaply (raw text) and the
+	 * rest richly, since a settled message never changes again.
+	 */
+	streamingId: string | null;
 	/** A turn is claimed but nothing visible has streamed yet (typing bubble). */
 	isThinking: boolean;
 	/** A turn is in flight (disable input, offer stop). */
@@ -142,6 +148,8 @@ export function createConversation(
 	let turn: AgentMessage[] | null = null;
 	let error: ConversationError | null = null;
 	let controller: AbortController | null = null;
+	// The message a step is actively streaming into; null between steps and turns.
+	let streamingId: string | null = null;
 
 	function snapshot(): ConversationSnapshot {
 		// One predicate decides both what renders live and what persists: a
@@ -154,6 +162,7 @@ export function createConversation(
 		const live = (turn ?? []).filter(isPersistableMessage);
 		return {
 			messages: live.length > 0 ? [...persisted, ...live] : persisted,
+			streamingId,
 			isThinking: turn !== null && live.length === 0,
 			isGenerating: turn !== null,
 			error,
@@ -282,6 +291,7 @@ export function createConversation(
 				parts: [],
 			};
 			turn.push(assistant);
+			streamingId = assistant.id;
 			notify();
 
 			const { data: calls, error: stepError } = await runStep(
@@ -289,6 +299,9 @@ export function createConversation(
 				assistant,
 				signal,
 			);
+			// The step is done filling this message; it is no longer streaming, so a
+			// renderer can switch it to the rich path (during tools, or on finish).
+			streamingId = null;
 			if (signal.aborted) break;
 			if (stepError) {
 				failure = stepError;
@@ -312,6 +325,7 @@ export function createConversation(
 		// double-render: once `turn` is null, the store write refreshes
 		// `persisted` to include them.
 		turn = null;
+		streamingId = null;
 		controller = null;
 		error = failure ?? null;
 		for (const message of finished) store.set(message.id, message);

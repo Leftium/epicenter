@@ -7,6 +7,7 @@ import {
 	type AgentMessage,
 	agentMessageText,
 	isPersistableMessage,
+	type ModelMessage,
 } from './message.js';
 import {
 	type AgentToolCall,
@@ -72,6 +73,195 @@ describe('createConversation', () => {
 		expect(handle.snapshot().isGenerating).toBe(false);
 		// The finished messages are durable: a fresh read of the store sees them.
 		expect([...store.entries()]).toHaveLength(2);
+	});
+
+	test('send reports whether it started a turn', async () => {
+		// The contract a caller gates side-effects on: a title write fires only when
+		// send actually started a turn, so the loop owns the empty/mid-turn guard
+		// and no view re-derives it.
+		const store = makeStore();
+		const engine: AgentEngine = () =>
+			streamOf([{ type: 'text-delta', delta: 'ok' }]);
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
+
+		expect(handle.send('')).toBe(false); // empty
+		expect(handle.send('   ')).toBe(false); // whitespace only
+		expect(handle.send('hi')).toBe(true); // accepted, turn now in flight
+		expect(handle.send('again')).toBe(false); // mid-turn
+		await settle(handle);
+	});
+
+	test('streaming holds the in-flight message during a turn, null once settled', async () => {
+		// The render boundary: while a step fills a message it lives in `streaming`
+		// (rendered cheaply, raw) and stays out of settled `messages`; it moves into
+		// `messages` (rendered rich) once the turn persists.
+		const store = makeStore();
+		const engine: AgentEngine = () =>
+			streamOf([{ type: 'text-delta', delta: 'hi' }]);
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
+
+		expect(handle.snapshot().streaming).toBeNull(); // between turns
+
+		const streamedIds = new Set<string>();
+		const inMessagesWhileLive = new Set<string>();
+		const unsubscribe = handle.subscribe(() => {
+			const snap = handle.snapshot();
+			if (!snap.isGenerating) return; // only inspect mid-turn snapshots
+			if (snap.streaming) streamedIds.add(snap.streaming.id);
+			for (const message of snap.messages) inMessagesWhileLive.add(message.id);
+		});
+		handle.send('hello'); // user = m1, assistant = m2
+		await settle(handle);
+		unsubscribe();
+
+		// While streaming, the in-flight assistant is the `streaming` message, never
+		// the user's turn, and it was never also in settled `messages` mid-turn.
+		expect([...streamedIds]).toEqual(['m2']);
+		expect(inMessagesWhileLive.has('m2')).toBe(false); // stays out of settled list
+		expect(inMessagesWhileLive.has('m1')).toBe(true); // the user turn is settled
+		// Once the turn settles, nothing is streaming and the message persisted.
+		expect(handle.snapshot().streaming).toBeNull();
+		expect(handle.snapshot().messages.map((m) => m.id)).toContain('m2');
+		expect(store.get('m2')).toBeDefined();
+	});
+
+	test('the streaming message gets a fresh identity per delta so reactive views update', async () => {
+		// Regression: the loop mutates the in-flight message in place, so handing out
+		// a stable object reference across deltas makes a memoizing reactive consumer
+		// (Svelte's keyed each + $derived) freeze on the first token until reload.
+		// Each snapshot must materialize the streaming message as a new object whose
+		// text reflects the tokens so far.
+		const store = makeStore();
+		const engine: AgentEngine = () =>
+			streamOf([
+				{ type: 'text-delta', delta: 'Hey' },
+				{ type: 'text-delta', delta: ' there' },
+				{ type: 'text-delta', delta: ' friend' },
+			]);
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
+
+		const refs = new Set<AgentMessage>();
+		const texts: string[] = [];
+		const unsubscribe = handle.subscribe(() => {
+			const { streaming } = handle.snapshot();
+			if (streaming) {
+				refs.add(streaming);
+				texts.push(agentMessageText(streaming));
+			}
+		});
+		handle.send('hi');
+		await settle(handle);
+		unsubscribe();
+
+		// The text grows (the loop works) and the streaming message is a distinct
+		// object each delta (so a view keyed on it re-derives instead of freezing).
+		expect(texts).toContain('Hey');
+		expect(texts).toContain('Hey there friend');
+		expect(refs.size).toBeGreaterThan(1);
+	});
+
+	test('never prompts with the empty in-flight assistant message', async () => {
+		// Regression: the loop pushes the in-flight assistant onto `turn` before a
+		// step, so a naive prompt of `[...persisted, ...turn]` ends with an empty
+		// assistant. A trailing empty assistant makes ChatML backends (local
+		// Ollama/Qwen) emit a literal "assistant" role token and role-play the next
+		// turn. The prompt must be the transcript BEFORE the message being filled.
+		const store = makeStore();
+		const prompts: ModelMessage[][] = [];
+		const engine: AgentEngine = (request) => {
+			prompts.push(request.messages);
+			return streamOf([{ type: 'text-delta', delta: 'ok' }]);
+		};
+
+		const handle = createConversation({
+			store,
+			engine,
+			generateId: idMinter(),
+		});
+		handle.send('one');
+		await settle(handle);
+		handle.send('two');
+		await settle(handle);
+
+		expect(prompts).toHaveLength(2);
+		// No prompt ends with a trailing empty assistant (the message being filled).
+		for (const prompt of prompts) {
+			expect(prompt.at(-1)).toMatchObject({ role: 'user' });
+		}
+		// Turn two carries the full prior turn plus the new user message, no empties.
+		expect(prompts[1]!.map((m) => `${m.role}:${m.content}`)).toEqual([
+			'user:one',
+			'assistant:ok',
+			'user:two',
+		]);
+	});
+
+	test("a tool step's re-prompt keeps the completed step, drops the in-flight one", async () => {
+		// Guards the predicate collapse: in a tool loop, `turn` holds more than one
+		// assistant, so excluding the in-flight message cannot be "drop the last
+		// element". The completed first step (a tool call plus its result) is
+		// persistable and must re-enter the prompt; the freshly minted second step is
+		// empty and must not. `isPersistableMessage` is the one rule that does both.
+		const store = makeStore();
+		const prompts: ModelMessage[][] = [];
+		let stepCount = 0;
+		const engine: AgentEngine = (request) => {
+			prompts.push(request.messages);
+			stepCount += 1;
+			if (stepCount === 1) {
+				return streamOf([
+					{
+						type: 'tool-call',
+						toolCallId: 't1',
+						toolName: 'get_time',
+						input: {},
+					},
+				]);
+			}
+			return streamOf([{ type: 'text-delta', delta: 'It is noon.' }]);
+		};
+		const tools: ToolCatalog = {
+			definitions: () => [{ name: 'get_time', kind: 'query' }],
+			resolve: async () => ({ output: 'noon', isError: false }),
+		};
+
+		const handle = createConversation({
+			store,
+			engine,
+			tools,
+			generateId: idMinter(),
+		});
+		handle.send('what time is it');
+		await settle(handle);
+
+		expect(prompts).toHaveLength(2);
+		// Step one prompts with only the user turn (the empty in-flight assistant is
+		// excluded, so the prompt is not [user, assistant:""]).
+		expect(prompts[0]!.map((m) => m.role)).toEqual(['user']);
+		// Step two re-reads the completed tool step (assistant call + tool result) and
+		// ends on the tool message, never a trailing empty assistant.
+		expect(prompts[1]!.map((m) => m.role)).toEqual([
+			'user',
+			'assistant',
+			'tool',
+		]);
+		expect(prompts[1]!.at(-1)).toMatchObject({
+			role: 'tool',
+			toolCallId: 't1',
+			content: 'noon',
+		});
 	});
 
 	test('runs a query tool inline and re-prompts with its result', async () => {
@@ -245,11 +435,15 @@ describe('createConversation', () => {
 			generateId: idMinter(),
 		});
 
-		// Record every assistant id that ever appears in a live snapshot.
+		// Record every assistant id that ever renders live: in settled `messages`
+		// or as the `streaming` message. Both feed the same persist predicate.
 		const renderedLive = new Set<string>();
 		const unsubscribe = handle.subscribe(() => {
-			if (!handle.snapshot().isGenerating) return;
-			for (const message of handle.snapshot().messages) {
+			const snap = handle.snapshot();
+			if (!snap.isGenerating) return;
+			if (snap.streaming?.role === 'assistant')
+				renderedLive.add(snap.streaming.id);
+			for (const message of snap.messages) {
 				if (message.role === 'assistant') renderedLive.add(message.id);
 			}
 		});

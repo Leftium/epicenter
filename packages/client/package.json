@@ -11,6 +11,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/agent-protocol": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/identity": "workspace:*",

@@ -220,6 +220,12 @@ export function createAiChatState({
 				return convo.messages;
 			},
 
+			/** The in-flight message, rendered separately so the settled list above
+			 * stays referentially inert during a turn. Null between turns. */
+			get streaming() {
+				return convo.streaming;
+			},
+
 			get isLoading() {
 				return convo.isGenerating;
 			},
@@ -246,14 +252,16 @@ export function createAiChatState({
 			},
 
 			sendMessage(content: string) {
-				const text = content.trim();
-				if (!text || convo.isGenerating) return;
-
-				convo.send(text);
+				// The loop owns the empty/mid-turn guard; gate the title write on
+				// whether it actually started a turn rather than re-deriving it.
+				if (!convo.send(content)) return;
 
 				const currentTitle = metadata?.title ?? 'New Chat';
 				updateConversation(conversationId, {
-					title: currentTitle === 'New Chat' ? text.slice(0, 50) : currentTitle,
+					title:
+						currentTitle === 'New Chat'
+							? content.trim().slice(0, 50)
+							: currentTitle,
 				});
 			},
 

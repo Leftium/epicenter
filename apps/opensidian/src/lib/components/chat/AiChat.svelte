@@ -40,6 +40,7 @@
 	<div class="min-h-0 flex-1">
 		<MessageList
 			messages={active?.messages ?? []}
+			streaming={active?.streaming ?? null}
 			status={active?.status ?? 'ready'}
 			onReload={() => active?.reload()}
 			pendingApprovalCallId={active?.pendingApprovalCallId ?? null}

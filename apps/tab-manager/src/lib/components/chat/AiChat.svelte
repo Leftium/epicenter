@@ -21,6 +21,7 @@
 	<div class="min-h-0 flex-1">
 		<MessageList
 			messages={tabManager.state.aiChat.active?.messages ?? []}
+			streaming={tabManager.state.aiChat.active?.streaming ?? null}
 			status={tabManager.state.aiChat.active?.status ?? 'ready'}
 			onReload={() => tabManager.state.aiChat.active?.reload()}
 			pendingApprovalCallId={tabManager.state.aiChat.active

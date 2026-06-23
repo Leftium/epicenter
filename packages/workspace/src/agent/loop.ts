@@ -17,6 +17,7 @@
  */
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { JsonValue } from 'wellcrafted/json';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { RecordsHandle } from '../document/attach-records.js';
 import type { AgentEngine } from './engine.js';
 import {
@@ -155,25 +156,21 @@ export function createConversation(
 		};
 	}
 
-	/** Stream one model call into `assistant`, returning the calls it requested. */
+	/**
+	 * Stream one model call into `assistant`, resolving to the tool calls it asked
+	 * for (empty = final answer) or the failure that ended it. `history` is the
+	 * transcript the model sees: everything before this step, never the empty
+	 * `assistant` being filled. The caller snapshots it before pushing `assistant`,
+	 * so a trailing blank message can't reach the prompt (a ChatML backend like
+	 * local Ollama/Qwen would otherwise emit a literal "assistant" token and
+	 * role-play the next user turn; hosted Gemini tolerated it, so it stayed latent).
+	 */
 	async function runStep(
+		history: AgentMessage[],
 		assistant: AgentMessage,
 		signal: AbortSignal,
-	): Promise<{ calls: AgentToolCall[]; failure?: ConversationError }> {
-		// The prompt is the transcript BEFORE the message being generated. `turn`
-		// already holds the in-flight `assistant` (pushed before this step), but it
-		// is still empty (`parts: []`), so prompting with it would feed the model the
-		// blank message it is filling. A trailing empty assistant makes ChatML
-		// backends (local Ollama/Qwen) emit a literal "assistant" role token and
-		// role-play the next user turn; the hosted Gemini path tolerated it, so it
-		// stayed latent. `isPersistableMessage` excludes empty messages, so it drops
-		// the in-flight assistant while keeping earlier in-turn assistants (a prior
-		// tool step carries real text and tool results the next step must re-read).
-		// This is the same predicate that gates render and persist: one owner.
-		const prompt = toModelMessages([
-			...persisted,
-			...(turn ?? []).filter(isPersistableMessage),
-		]);
+	): Promise<Result<AgentToolCall[], ConversationError>> {
+		const prompt = toModelMessages(history);
 		const calls: AgentToolCall[] = [];
 		let failure: ConversationError | undefined;
 
@@ -206,14 +203,16 @@ export function createConversation(
 						};
 						break;
 					default:
-						break;
+						// EngineChunk is a closed protocol the loop reduces; a new
+						// variant must be handled here, not silently dropped.
+						chunk satisfies never;
 				}
 			}
 		} catch (cause) {
 			if (!signal.aborted) failure = { message: extractErrorMessage(cause) };
 		}
 
-		return { calls, failure };
+		return failure ? Err(failure) : Ok(calls);
 	}
 
 	/** Run a step's tool calls, gated by approval, appending each result. */
@@ -269,6 +268,9 @@ export function createConversation(
 				};
 				break;
 			}
+			// Snapshot the prompt before pushing the new assistant: the model sees
+			// the transcript up to here, never the empty message it is about to fill.
+			const history = [...persisted, ...turn];
 			const assistant: AgentMessage = {
 				id: generateId(),
 				role: 'assistant',
@@ -278,18 +280,22 @@ export function createConversation(
 			turn.push(assistant);
 			notify();
 
-			const step = await runStep(assistant, signal);
+			const { data: calls, error: stepError } = await runStep(
+				history,
+				assistant,
+				signal,
+			);
 			if (signal.aborted) break;
-			if (step.failure !== undefined) {
-				failure = step.failure;
+			if (stepError) {
+				failure = stepError;
 				break;
 			}
 
 			// No tool calls means the model gave its final answer; the turn is done.
-			const isFinalAnswer = step.calls.length === 0;
+			const isFinalAnswer = calls.length === 0;
 			if (isFinalAnswer) break;
 
-			await runTools(assistant, step.calls, signal);
+			await runTools(assistant, calls, signal);
 		}
 
 		const aborted = signal.aborted;

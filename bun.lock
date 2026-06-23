@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -416,8 +415,6 @@
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "clsx": "catalog:",
-        "dompurify": "^3.4.10",
-        "marked": "catalog:",
         "mode-watcher": "^1.1.0",
         "svelte-sonner": "^1.1.0",
         "tailwind-merge": "catalog:",
@@ -487,8 +484,6 @@
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "arktype": "catalog:",
-        "dompurify": "^3.4.10",
-        "marked": "^17.0.5",
         "mode-watcher": "^1.1.0",
         "pinyin-pro": "^3.28.0",
         "svelte-sonner": "catalog:",
@@ -906,6 +901,7 @@
         "bits-ui": "^2.16.5",
         "chrono-node": "2.9.0",
         "clsx": "^2.1.1",
+        "marked": "catalog:",
         "paneforge": "^1.0.2",
         "tailwind-merge": "^3.5.0",
         "tailwind-variants": "^3.2.2",

@@ -31,8 +31,6 @@
 		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"arktype": "catalog:",
-		"dompurify": "^3.4.10",
-		"marked": "^17.0.5",
 		"mode-watcher": "^1.1.0",
 		"pinyin-pro": "^3.28.0",
 		"svelte-sonner": "catalog:",

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import * as Chat from '@epicenter/ui/chat';
+	import { Markdown } from '@epicenter/ui/markdown';
 	import type { VocabMessage } from '@epicenter/vocab';
 	import { agentMessageText } from '@epicenter/workspace/agent';
-	import AssistantProse from './AssistantProse.svelte';
+	import { pinyinRomanizer } from '$lib/romanize/pinyin';
 
 	let {
 		message,
@@ -22,11 +23,12 @@
 			<!--
 				Raw text while the answer streams (and for the user's own turn): the
 				rich markdown + pinyin pass runs once the message settles, so the
-				per-token re-parse never happens. `AssistantProse` mounts on settle.
+				per-token re-parse never happens. The rich markdown tree mounts on
+				settle.
 			-->
 			<div class="whitespace-pre-wrap">{text}</div>
 		{:else}
-			<AssistantProse content={text} {showPinyin} />
+			<Markdown content={text} romanizer={pinyinRomanizer} showReadings={showPinyin} />
 		{/if}
 	</Chat.BubbleMessage>
 </Chat.Bubble>

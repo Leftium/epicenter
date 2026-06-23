@@ -253,9 +253,10 @@ export type ConversationSnapshot = {
 
 ## Open Questions
 
-1. **Snapshot shape: `streamingId` vs a separate `streaming` message field**
+1. **Snapshot shape: `streamingId` vs a separate `streaming` message field** — RESOLVED: (b), the split.
    - Options: (a) add `streamingId: string \| null`, keep `messages` whole; (b) split `messages` (settled) + `streaming` (the in-flight one).
-   - **Recommendation**: (a). Least invasive, leaves `messages` semantics intact, and the UI rule (`id === streamingId`) is trivial. Leave open if a consumer wants the in-flight message isolated.
+   - **Resolution**: (b). Grounded in Svelte's reactivity model (DeepWiki `sveltejs/svelte`): `$derived` and a keyed `{#each}` propagate on *referential* change. With (a), `messages` is rebuilt every token (to swap in the fresh-identity streaming clone), so the each re-runs `derived_safe_equal` reconciliation over the whole list per token. With (b), `messages` returns the stable `persisted` reference during a turn, so the settled each is referentially **inert** and only the one `streaming` bubble re-renders. (b) also deletes the `streamingId` marker, the clone-inside-`.map()`, and the UI's `id === streamingId` derivation: "which message is live" becomes a type distinction (a field + a render slot), not a runtime flag in a homogeneous array. It is the same separation the settle-render boundary already wants (`streaming` → raw, `messages` → rich). Cost: a one-time breaking change to `ConversationSnapshot` consumed by three apps, all updated in the same wave.
+   - **Shape**: `messages: AgentMessage[]` (settled: persisted + completed in-turn steps) and `streaming: AgentMessage | null` (the message a step is filling, materialized fresh each snapshot, null until it has content). `bindAgentConversation` exposes a `streaming` getter (replaces `streamingId`). Each app renders `{#each messages}` then a single `streaming` slot. Earlier sections of this spec that say `streamingId` are superseded by this resolution.
 
 2. **Where do `Segment`/`Romanizer` live?**
    - Options: (a) `@epicenter/vocab` package; (b) a small shared `@epicenter/...` module if other apps will romanize; (c) local to vocab for now.

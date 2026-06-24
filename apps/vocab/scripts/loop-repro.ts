@@ -105,7 +105,6 @@ async function main(): Promise<void> {
 		store: inMemoryStore(),
 		engine,
 		generateId: () => `m${nextId++}`,
-		now: () => nextId,
 	});
 
 	for (const userText of ['Hello!', 'Test', "What's your name?"]) {

@@ -24,6 +24,17 @@ export type {
 	ModelToolCall,
 } from './agent-engine.js';
 export {
+	CONNECTION_PRESETS,
+	type Connection,
+	type ConnectionPreset,
+	ListModelsError,
+	listModels,
+	type PresetId,
+	type ResolvedConnection,
+	resolveConnection,
+	resolveForModel,
+} from './connection.js';
+export {
 	type InferenceBackendConfig,
 	type ResolvedInferenceBackend,
 	resolveInferenceBackend,

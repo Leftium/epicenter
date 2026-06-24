@@ -48,7 +48,7 @@ export const billing = {
 
 	topUp: defineMutation({
 		mutationKey: billingKeys.topUp,
-		mutationFn: (successUrl?: string) =>
+		mutationFn: (successUrl: string) =>
 			billingApi.checkoutTopUp({ successUrl }),
 	}),
 

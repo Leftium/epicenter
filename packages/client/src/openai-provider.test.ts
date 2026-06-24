@@ -17,7 +17,7 @@ import type {
 	EngineChunk,
 	EngineFetch,
 } from './agent-engine.js';
-import { resolveInferenceBackend } from './inference-backend.js';
+import { resolveConnection } from './connection.js';
 import { createOpenAiAgentEngine } from './openai-provider.js';
 
 /** Build an OpenAI SSE response: one `data:` frame per chunk, then `[DONE]`. */
@@ -415,15 +415,15 @@ describe('createOpenAiAgentEngine', () => {
 		try {
 			const engine = createOpenAiAgentEngine({
 				data: () => ({
-					...resolveInferenceBackend(
+					...resolveConnection(
 						{
-							mode: 'custom',
+							kind: 'custom',
 							baseUrl: 'http://localhost:11434/v1',
-							model: 'qwen2.5:3b',
 							apiKey: 'sk-user',
 						},
-						{ fetch: hostedFetch, baseURL: GATEWAY, model: 'gateway-model' },
+						{ fetch: hostedFetch, baseURL: GATEWAY },
 					),
+					model: 'qwen2.5:3b',
 					systemPrompts: [],
 				}),
 			});

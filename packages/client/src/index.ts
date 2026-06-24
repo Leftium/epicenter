@@ -35,11 +35,6 @@ export {
 	resolveForModel,
 } from './connection.js';
 export {
-	type InferenceBackendConfig,
-	type ResolvedInferenceBackend,
-	resolveInferenceBackend,
-} from './inference-backend.js';
-export {
 	createOpenAiAgentEngine,
 	type OpenAiTurnContext,
 } from './openai-provider.js';

@@ -11,9 +11,6 @@
  * a custom connection mints a plain fetch carrying only the user's key, so a
  * custom turn can never reach its URL with the Epicenter bearer (and ADR-0053
  * audience-scopes the bearer anyway).
- *
- * This module is the additive new path; the legacy {@link InferenceBackendConfig}
- * in `./inference-backend.ts` stays until its consumers migrate, then is deleted.
  */
 
 import {

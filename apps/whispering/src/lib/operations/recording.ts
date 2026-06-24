@@ -13,10 +13,7 @@ import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { captureSurface } from '$lib/state/capture-surface.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
-import {
-	manualRecorder,
-	type RecordingSource,
-} from '$lib/state/manual-recorder.svelte';
+import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
@@ -66,7 +63,13 @@ function isVadRecordingActive() {
 	);
 }
 
-export async function startManualRecording(source: RecordingSource = 'manual') {
+/**
+ * Start a manual recording and return the id of the recording it started, or
+ * `null` when it did not start one (it failed, or a recording was already live so
+ * this call was a no-op). Push-to-talk remembers that id to later stop only the
+ * exact recording it owns; the button and toggle paths ignore the return.
+ */
+export async function startManualRecording(): Promise<string | null> {
 	settings.set('recording.trigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
 	// the pill follows this attempt, not the last one.
@@ -89,7 +92,6 @@ export async function startManualRecording(source: RecordingSource = 'manual') {
 	// its stream to drive this; on desktop the CPAL worker emits the level from
 	// Rust straight to the overlay, so this callback is never invoked there.
 	const { data: outcome, error } = await manualRecorder.startRecording({
-		source,
 		onLevel: (level) => recordingOverlay.reportLevel(level),
 	});
 
@@ -99,7 +101,7 @@ export async function startManualRecording(source: RecordingSource = 'manual') {
 		// loudest tier. The pill glances it and the notification fires when
 		// unfocused, so there is no toast.
 		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
-		return;
+		return null;
 	}
 
 	// The pill shows the live recording; only a device fallback needs a notice.
@@ -109,6 +111,7 @@ export async function startManualRecording(source: RecordingSource = 'manual') {
 
 	log.info('Recording started');
 	sound.playSoundIfEnabled('manual-start');
+	return manualRecorder.currentRecordingId;
 }
 
 export async function stopManualRecording() {
@@ -146,15 +149,15 @@ export async function stopManualRecording() {
 }
 
 /**
- * Stop the manual recording only if `source` started it and it is live. A no-op
- * otherwise, so a push-to-talk release that is stray, duplicated, or lands while a
- * toggle/button recording is live never stops the wrong recording. This is the
- * idempotent stop the push-to-talk controller routes every stop input through.
+ * Stop the manual recording only if `recordingId` names the one that is live. A
+ * no-op otherwise, so a push-to-talk release that is stray, duplicated, or lands
+ * after its recording was supplanted by a toggle/button recording never stops the
+ * wrong one. This is the idempotent stop push-to-talk routes every stop through.
  */
-export async function stopManualRecordingIfOwned(source: RecordingSource) {
+export async function stopManualRecordingById(recordingId: string) {
 	if (
 		manualRecorder.state !== 'RECORDING' ||
-		manualRecorder.currentSource !== source
+		manualRecorder.currentRecordingId !== recordingId
 	) {
 		return;
 	}

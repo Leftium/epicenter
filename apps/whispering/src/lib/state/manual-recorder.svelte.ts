@@ -11,14 +11,6 @@ import type {
 	RecordingSession,
 } from '$lib/services/recorder/types';
 
-/**
- * Who started the live recording: the record button or the toggle command
- * (`manual`), or a push-to-talk hold (`pushToTalk`). Lets a push-to-talk release
- * stop only the recording it started, so a stray or duplicated release never
- * stops a toggle/button recording.
- */
-export type RecordingSource = 'manual' | 'pushToTalk';
-
 const ManualRecorderError = defineErrors({
 	EnumerateDevicesFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to enumerate devices: ${extractErrorMessage(cause)}`,
@@ -62,9 +54,10 @@ const manualRecorderKeys = defineKeys({
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
 	let _current: RecordingSession | null = null;
-	// Who started the live recording. Only meaningful while `_current` is set; the
-	// push-to-talk stop path reads it to refuse stopping a recording it did not start.
-	let _currentSource: RecordingSource = 'manual';
+	// The live recording's id (the nanoid that names its artifact and FKs its row).
+	// Null when idle; set while recording. The push-to-talk stop path reads it to
+	// stop only the exact recording it started, never one a later press supplanted.
+	let _currentRecordingId: string | null = null;
 	let _unsubscribe: (() => void) | null = null;
 	// Synchronous in-flight guard for start. `_current` is not set until after
 	// two awaits (bootstrap + the service start), so without this a second
@@ -85,7 +78,7 @@ function createManualRecorder() {
 		_unsubscribe?.();
 		_unsubscribe = null;
 		_current = null;
-		_currentSource = 'manual';
+		_currentRecordingId = null;
 		_state = 'IDLE';
 	}
 
@@ -118,9 +111,9 @@ function createManualRecorder() {
 			return _state;
 		},
 
-		/** Who started the live recording (only meaningful while `state` is RECORDING). */
-		get currentSource(): RecordingSource {
-			return _currentSource;
+		/** The live recording's id (only set while `state` is RECORDING, else null). */
+		get currentRecordingId(): string | null {
+			return _currentRecordingId;
 		},
 
 		/** True between a start request and the recording attaching (or failing). */
@@ -138,13 +131,7 @@ function createManualRecorder() {
 			},
 		}),
 
-		async startRecording(
-			options: {
-				source?: RecordingSource;
-				onLevel?: (level: number) => void;
-			} = {},
-		) {
-			const { source = 'manual', onLevel } = options;
+		async startRecording({ onLevel }: { onLevel: (level: number) => void }) {
 			if (_starting) return ManualRecorderError.AlreadyRecording();
 			_starting = true;
 			try {
@@ -153,13 +140,14 @@ function createManualRecorder() {
 				const { error: bootstrapError } = await ensureBootstrapped();
 				if (bootstrapError) return Err(bootstrapError);
 				if (_current) return ManualRecorderError.AlreadyRecording();
-				const params = manualRecorderConfig.resolveStartParams(nanoid());
+				const recordingId = nanoid();
+				const params = manualRecorderConfig.resolveStartParams(recordingId);
 				const { data, error: startRecordingError } =
 					await ManualRecorderLive.startRecording({ ...params, onLevel });
 
 				if (startRecordingError) return Err(startRecordingError);
 
-				_currentSource = source;
+				_currentRecordingId = recordingId;
 				attach(data.session);
 				return Ok(data.deviceAcquisition);
 			} finally {

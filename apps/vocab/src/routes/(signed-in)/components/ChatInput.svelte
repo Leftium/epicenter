@@ -5,11 +5,13 @@
 	let {
 		value = $bindable(''),
 		isGenerating,
+		disabled = false,
 		onSend,
 		onStop,
 	}: {
 		value?: string;
 		isGenerating: boolean;
+		disabled?: boolean;
 		onSend: (content: string) => void;
 		onStop: () => void;
 	} = $props();
@@ -23,7 +25,7 @@
 
 	function submit() {
 		const content = value.trim();
-		if (!content) return;
+		if (!content || disabled) return;
 		onSend(content);
 		value = '';
 	}
@@ -42,12 +44,12 @@
 		aria-label="Message input"
 		bind:value
 		onkeydown={handleKeydown}
-		disabled={isGenerating}
+		disabled={isGenerating || disabled}
 	/>
 	{#if isGenerating}
 		<Button type="button" variant="outline" onclick={onStop}>Stop</Button>
 	{:else}
-		<Button type="submit" disabled={!value.trim()}>Send</Button>
+		<Button type="submit" disabled={!value.trim() || disabled}>Send</Button>
 	{/if}
 </form>
 <p class="px-4 pb-2 text-xs text-muted-foreground">

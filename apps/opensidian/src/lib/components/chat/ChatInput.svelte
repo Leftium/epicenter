@@ -1,24 +1,17 @@
 <script lang="ts">
-	import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
+	import { InferencePicker } from '@epicenter/app-shell/inference-picker';
 	import { Button } from '@epicenter/ui/button';
-	import * as Select from '@epicenter/ui/select';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SquareIcon from '@lucide/svelte/icons/square';
-	import { APP_MODELS } from '$lib/chat/models';
-
 	import { requireOpensidian } from '$lib/session';
-	import { inferenceBackend } from '$lib/state/inference-backend.svelte';
-	import InferenceSettings from './InferenceSettings.svelte';
+	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
+
+	// Sending is gated when the conversation's model is not served by any
+	// connection on this device (the cross-device banner case, owned by AiChat).
+	let { disabled = false }: { disabled?: boolean } = $props();
 
 	const opensidian = requireOpensidian();
-
-	const backend = $derived(inferenceBackend.current);
-
-	const currentModelLabel = $derived(
-		MODELS_BY_ID[opensidian.state.chat.model as keyof typeof MODELS_BY_ID]
-			?.label ?? opensidian.state.chat.model,
-	);
 
 	let inputValue = $state('');
 
@@ -31,43 +24,16 @@
 </script>
 
 <div class="flex flex-col gap-1.5 border-t bg-background px-2 py-1.5">
-	<!-- Model picker forks by backend: the curated catalog for the hosted gateway,
-	     the custom backend's own model for a custom URL. The gear edits the
-	     backend. -->
+	<!-- The shared model-first picker (ADR-0058): the conversation's model bound to
+	     this device's connection registry. Locked mid-turn so a transcript never
+	     spans backends. -->
 	<div class="flex items-center gap-2">
-		{#if backend.mode === 'custom'}
-			<div
-				class="flex-1 truncate text-sm text-muted-foreground"
-				title="Custom backend model"
-			>
-				{backend.model || 'No model set'}
-			</div>
-		{:else}
-			<Select.Root
-				type="single"
-				value={opensidian.state.chat.model}
-				onValueChange={(v) => {
-					if (v) opensidian.state.chat.model = v;
-				}}
-			>
-				<Select.Trigger size="sm" class="flex-1">
-					<span class="truncate">{currentModelLabel}</span>
-				</Select.Trigger>
-				<Select.Content>
-					{#each APP_MODELS as id (id)}
-						<Select.Item value={id} label={MODELS_BY_ID[id].label}>
-							<div class="flex w-full items-center justify-between gap-4">
-								<span>{MODELS_BY_ID[id].label}</span>
-								<span class="text-xs text-muted-foreground">
-									{MODELS_BY_ID[id].credits} cr
-								</span>
-							</div>
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		{/if}
-		<InferenceSettings />
+		<InferencePicker
+			model={opensidian.state.chat.model}
+			onSelectModel={(model) => (opensidian.state.chat.model = model)}
+			connections={inferenceConnections}
+			disabled={opensidian.state.chat.isLoading}
+		/>
 	</div>
 
 	<!-- Input + send/stop button -->
@@ -105,7 +71,7 @@
 				variant="default"
 				size="icon-lg"
 				type="submit"
-				disabled={!inputValue.trim()}
+				disabled={disabled || !inputValue.trim()}
 			>
 				<SendIcon />
 			</Button>

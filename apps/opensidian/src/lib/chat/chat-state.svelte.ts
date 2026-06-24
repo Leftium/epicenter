@@ -24,19 +24,13 @@
  * Components read this through `opensidian.state.chat`.
  */
 
-import type { AuthClient } from '@epicenter/auth';
 import {
 	asConversationId,
 	type Conversation,
 	type ConversationId,
 	generateConversationId,
 } from '@epicenter/chat';
-import {
-	createOpenAiAgentEngine,
-	resolveInferenceBackend,
-} from '@epicenter/client';
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { APP_URLS } from '@epicenter/constants/vite';
+import { createOpenAiAgentEngine } from '@epicenter/client';
 import { InstantString } from '@epicenter/field';
 import { bindAgentConversation, fromTable } from '@epicenter/svelte';
 import {
@@ -55,22 +49,16 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { searchParams } from '$lib/search-params.svelte';
-import { inferenceBackend } from '$lib/state/inference-backend.svelte';
+import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
 export function createAiChatState({
-	auth,
 	workspace,
 	skills,
 }: {
-	auth: AuthClient;
 	workspace: OpensidianBrowser;
 	skills: SkillState;
 }) {
-	// The inference server's base URL (the swap point, ADR-0049): default the
-	// Epicenter gateway; the engine appends `/chat/completions`.
-	const inferenceBaseUrl = API_ROUTES.ai.completions.baseUrl(APP_URLS.API);
-
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort((a, b) =>
@@ -162,17 +150,21 @@ export function createAiChatState({
 				store:
 					workspace.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
-					// The device backend is read per turn (so a switch lands next turn) and
-					// carries its own model; this conversation's catalog pick is the hosted
-					// default, used only when the backend is hosted.
-					data: () => ({
-						...resolveInferenceBackend(inferenceBackend.current, {
-							fetch: auth.fetch,
-							baseURL: inferenceBaseUrl,
-							model: metadata?.model ?? DEFAULT_MODEL,
-						}),
-						systemPrompts: buildSystemPrompts(),
-					}),
+					// The conversation's model (ADR-0055) is resolved per turn against this
+					// device's connection set (ADR-0058), so a header switch lands on the
+					// next turn. The hosted fallback is defensive: the UI gates sending when
+					// no connection serves the model, so this only fires to error loudly at
+					// the gateway rather than silently substituting a different model.
+					data: () => {
+						const m = metadata?.model ?? DEFAULT_MODEL;
+						const transport =
+							inferenceConnections.resolve(m) ?? inferenceConnections.hosted;
+						return {
+							...transport,
+							model: m,
+							systemPrompts: buildSystemPrompts(),
+						};
+					},
 				}),
 				tools: toolCatalog,
 				approval: {

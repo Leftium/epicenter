@@ -183,8 +183,8 @@ function createNavigatorRecorder() {
 	} satisfies RecorderService<NavigatorRecordingParams>;
 }
 
-export const ManualRecorderLive =
-	createNavigatorRecorder() satisfies RecorderService<NavigatorRecordingParams>;
+export const ManualRecorderLive: RecorderService<NavigatorRecordingParams> =
+	createNavigatorRecorder();
 
 /**
  * Tap a live MediaStream and report raw mic loudness (RMS) each animation frame,

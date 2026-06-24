@@ -125,6 +125,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) | Conversation storage is one canonical table in @epicenter/chat; every chat surface syncs | Accepted |
 | [0056](0056-local-inference-is-a-delegated-engine-behind-the-openai-compatible-seam.md) | Local inference is a delegated engine behind the OpenAI-compatible seam; the runtime is a swappable default | Accepted |
 | [0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md) | Assistant markdown renders as a shared component tree, not a sanitized HTML string | Accepted |
+| [0058](0058-push-to-talk-owns-the-recording-it-starts-keyed-by-its-id-not-a-lifecycle-layer.md) | Push-to-talk owns the recording it starts, keyed by the recording's id, not a general lifecycle layer | Accepted |
 | [0058](0058-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md) | An inference connection is a capability-orthogonal device endpoint; the model is per-conversation (amends 0054) | Accepted (auth axis amended by 0059) |
 | [0059](0059-an-inference-endpoint-is-one-primitive-distinguished-by-auth-strategy.md) | An inference endpoint is one OpenAI-compatible primitive distinguished only by its auth strategy (amends 0058) | Proposed |
 

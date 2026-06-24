@@ -6,13 +6,12 @@ import {
 } from '$lib/operations/recording';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+import type { RecordingActionController } from './recording-action-controller';
 
 /**
- * The shared manual-record button behavior: the start/stop mutations plus every
- * prop a `RecordingActionCard` needs, all derived from the one `manualRecorder`
- * state machine. The home recorder and the first-run "try it" step both call
- * this so the button looks and behaves identically, instead of each
- * re-implementing the wiring (and, in the wizard's case, faking the states).
+ * The manual-record button behavior as a `RecordingActionController`: the
+ * start/stop mutations plus every prop a `RecordingActionCard` needs, all
+ * derived from the one `manualRecorder` state machine.
  *
  * Start and stop are separate mutations on purpose: `stopManualRecording` awaits
  * the full transcription pipeline, so its pending window outlives the RECORDING
@@ -23,9 +22,11 @@ import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
  * Call from a component's init: it creates TanStack mutations, which need the
  * component query-client context.
  */
-export function createManualRecordingController() {
+export function createManualRecordingController(): RecordingActionController {
 	const startMutation = createMutation(() => ({
-		mutationFn: startManualRecording,
+		// The record button is the `manual` source (the default); wrap so the
+		// mutation takes no variables rather than inferring the optional `source`.
+		mutationFn: () => startManualRecording(),
 	}));
 	const stopMutation = createMutation(() => ({
 		mutationFn: stopManualRecording,
@@ -50,20 +51,11 @@ export function createManualRecordingController() {
 	});
 
 	return {
-		/** Recording right now: drives the card's destructive "filled" treatment. */
 		get active() {
 			return isRecording;
 		},
-		/** Mid start or mid stop: drives the card's spinner. */
 		get pending() {
 			return isStarting || isStopping;
-		},
-		get isRecording() {
-			return isRecording;
-		},
-		/** True once a stop has fully resolved, i.e. transcription is done. */
-		get justRecorded() {
-			return stopMutation.isSuccess;
 		},
 		get icon() {
 			return button.Icon;

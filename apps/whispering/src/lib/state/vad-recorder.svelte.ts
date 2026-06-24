@@ -125,12 +125,12 @@ function createVadRecorder() {
 		}: {
 			onSpeechStart: () => void;
 			onSpeechEnd: (blob: Blob) => void;
-			onVADMisfire?: () => void;
+			onVADMisfire: () => void;
 			/**
 			 * Called after each processed frame with the frame's RMS amplitude.
 			 * Drives the recording overlay's live level meter.
 			 */
-			onLevel?: (level: number) => void;
+			onLevel: (level: number) => void;
 		}) {
 			// `_session` is assigned after async setup, so `_starting` closes the
 			// duplicate-start window before a live session exists.
@@ -185,10 +185,10 @@ function createVadRecorder() {
 							},
 							onVADMisfire: () => {
 								if (_session) _session.state = 'LISTENING';
-								onVADMisfire?.();
+								onVADMisfire();
 							},
 							onFrameProcessed: (_probabilities, frame) => {
-								if (onLevel) onLevel(computeFrameRms(frame));
+								onLevel(computeFrameRms(frame));
 							},
 							model: 'v5',
 							baseAssetPath: VAD_ASSET_PATH,

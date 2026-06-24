@@ -76,9 +76,10 @@ impl Matcher {
     /// set but emits no triggers; the listener reads `held_binding` instead and
     /// forwards it to the settings recorder. The in-flight gesture is reset so
     /// nothing is left half-fired across the mode switch.
-    pub fn set_capturing(&mut self, capturing: bool) {
+    pub fn set_capturing(&mut self, capturing: bool) -> Option<ShortcutTriggerEvent> {
+        let released = self.abandon_active();
         self.capturing = capturing;
-        self.active = None;
+        released
     }
 
     pub fn is_capturing(&self) -> bool {
@@ -97,10 +98,11 @@ impl Matcher {
     /// (re)enters `rdev::listen`: a prior attempt that exited may have missed a
     /// key-up, and a stale held modifier would otherwise wedge a binding "down"
     /// or suppress the next press.
-    pub fn clear_held(&mut self) {
+    pub fn clear_held(&mut self) -> Option<ShortcutTriggerEvent> {
+        let released = self.abandon_active();
         self.held_modifiers.clear();
         self.held_keys.clear();
-        self.active = None;
+        released
     }
 
     /// Replace the full set of registered bindings. Empty bindings are dropped
@@ -121,7 +123,14 @@ impl Matcher {
     /// deterministic, not a panic: the shorter binding fires first and shadows the
     /// longer, which can never be reached. See the
     /// `an_overlapping_longer_binding_is_unreachable` test for that behavior.
-    pub fn set_bindings(&mut self, bindings: impl IntoIterator<Item = (String, KeyBinding)>) {
+    pub fn set_bindings(
+        &mut self,
+        bindings: impl IntoIterator<Item = (String, KeyBinding)>,
+    ) -> Option<ShortcutTriggerEvent> {
+        // Abandon the in-flight gesture BEFORE the swap, while its index still
+        // points into the old vec, synthesizing its Released so a hold that was
+        // active across a re-sync gets a stop instead of vanishing silently.
+        let released = self.abandon_active();
         self.bindings = bindings
             .into_iter()
             .filter(|(_, binding)| !binding.is_empty())
@@ -134,7 +143,7 @@ impl Matcher {
                 }
             })
             .collect();
-        self.active = None;
+        released
     }
 
     /// Feed one key event. Updates the held sets, then resolves the gesture and
@@ -217,6 +226,17 @@ impl Matcher {
             state: TriggerState::Released,
         }
     }
+
+    /// Drop the in-flight gesture, if any, returning a synthetic `Released` for it.
+    /// Called when held state is abandoned without a real key-up: a listener
+    /// restart (`clear_held`), a binding re-sync (`set_bindings`), or entering
+    /// capture (`set_capturing`). The matcher emitted the `Pressed`, so it must not
+    /// leave the pairing open, or a release-aware command like push-to-talk stays
+    /// "down" forever (recording stuck on). The caller emits the returned event.
+    fn abandon_active(&mut self) -> Option<ShortcutTriggerEvent> {
+        let index = self.active.take()?;
+        Some(self.release(index))
+    }
 }
 
 #[cfg(test)]
@@ -279,22 +299,56 @@ mod tests {
     }
 
     #[test]
-    fn clear_held_drops_stale_state_so_a_missed_release_cannot_wedge_a_binding() {
+    fn clear_held_synthesizes_a_release_and_cannot_wedge_a_binding() {
         let mut matcher = Matcher::new();
         matcher.set_bindings([("ptt".to_string(), binding(&[], &[Key::Space]))]);
 
         // Space goes down (binding fires), then the key-up is "missed" (the
-        // listener exited mid-hold). clear_held models the listener restart.
+        // listener exited mid-hold). clear_held models the listener restart: it
+        // abandons the active gesture and synthesizes its Released, so a hold like
+        // push-to-talk gets a stop instead of staying down forever.
         let pressed = run(&mut matcher, &[(Press, K(Key::Space))]);
         assert_eq!(pressed, vec![("ptt".to_string(), Pressed)]);
-        matcher.clear_held();
+        assert_eq!(
+            matcher.clear_held(),
+            Some(ShortcutTriggerEvent {
+                command_id: "ptt".to_string(),
+                state: Released,
+            })
+        );
 
-        // A later stray release must not emit, and a fresh press still works.
+        // The later stray release must not emit a second Released, and a fresh
+        // press still works: the old "cannot wedge" invariant still holds.
         let after = run(
             &mut matcher,
             &[(Release, K(Key::Space)), (Press, K(Key::Space))],
         );
         assert_eq!(after, vec![("ptt".to_string(), Pressed)]);
+    }
+
+    #[test]
+    fn clear_held_with_no_active_gesture_synthesizes_nothing() {
+        let mut matcher = Matcher::new();
+        matcher.set_bindings([("ptt".to_string(), binding(&[], &[Key::Space]))]);
+        // Nothing held, nothing active: clearing emits no synthetic release.
+        assert_eq!(matcher.clear_held(), None);
+    }
+
+    #[test]
+    fn set_capturing_abandons_an_active_gesture_with_a_release() {
+        let mut matcher = Matcher::new();
+        matcher.set_bindings([("ptt".to_string(), binding(&[Fn], &[]))]);
+        let pressed = run(&mut matcher, &[(Press, M(Fn))]);
+        assert_eq!(pressed, vec![("ptt".to_string(), Pressed)]);
+        // Entering capture while a hold is active abandons it, synthesizing Released
+        // so the held push-to-talk does not stay down across the mode switch.
+        assert_eq!(
+            matcher.set_capturing(true),
+            Some(ShortcutTriggerEvent {
+                command_id: "ptt".to_string(),
+                state: Released,
+            })
+        );
     }
 
     #[test]
@@ -494,7 +548,15 @@ mod tests {
         let first = run(&mut matcher, &[(Press, K(Key::Space))]);
         assert_eq!(first, vec![("a".to_string(), Pressed)]);
 
-        matcher.set_bindings([("a".to_string(), binding(&[], &[Key::Space]))]);
+        // The re-push abandons the in-flight gesture, synthesizing its Released so a
+        // hold active across a settings re-sync still gets a stop.
+        assert_eq!(
+            matcher.set_bindings([("a".to_string(), binding(&[], &[Key::Space]))]),
+            Some(ShortcutTriggerEvent {
+                command_id: "a".to_string(),
+                state: Released,
+            })
+        );
         let after = run(&mut matcher, &[(Release, K(Key::Space))]);
         assert!(after.is_empty());
     }

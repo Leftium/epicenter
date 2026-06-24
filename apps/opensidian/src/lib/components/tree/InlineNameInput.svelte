@@ -4,12 +4,12 @@
 
 	let {
 		defaultValue = '',
-		icon = 'file',
+		icon,
 		onConfirm,
 		onCancel,
 	}: {
 		defaultValue?: string;
-		icon?: 'file' | 'folder';
+		icon: 'file' | 'folder';
 		onConfirm: (name: string) => void;
 		onCancel: () => void;
 	} = $props();

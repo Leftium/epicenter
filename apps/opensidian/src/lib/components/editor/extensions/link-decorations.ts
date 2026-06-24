@@ -30,11 +30,11 @@ type LinkDecorationConfig = {
 	/** Called when a decorated epicenter link is clicked. */
 	onNavigate: (ref: EpicenterLink) => void;
 	/**
-	 * Optional title resolver for epicenter links.
+	 * Title resolver for epicenter links.
 	 *
-	 * When provided and it returns a non-null value, the widget displays the
-	 * resolved title instead of the stored markdown display text. This is useful
-	 * when the target entity can be renamed after the link was inserted.
+	 * When it returns a non-null value, the widget displays the resolved title
+	 * instead of the stored markdown display text. This is useful when the target
+	 * entity can be renamed after the link was inserted.
 	 *
 	 * @example
 	 * ```typescript
@@ -44,7 +44,7 @@ type LinkDecorationConfig = {
 	 * }
 	 * ```
 	 */
-	resolveTitle?: (ref: EpicenterLink) => string | null;
+	resolveTitle: (ref: EpicenterLink) => string | null;
 };
 
 /**
@@ -78,7 +78,7 @@ class EpicenterLinkWidget extends WidgetType {
 
 	override toDOM(): HTMLElement {
 		const span = document.createElement('span');
-		const resolvedTitle = this.config.resolveTitle?.(this.ref);
+		const resolvedTitle = this.config.resolveTitle(this.ref);
 		span.textContent = resolvedTitle ?? this.displayText;
 		span.className = 'cm-epicenter-link';
 		span.style.cssText =

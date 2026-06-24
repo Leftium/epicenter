@@ -11,10 +11,10 @@
 	const opensidian = requireOpensidian();
 	let {
 		group,
-		defaultOpen = true,
+		defaultOpen,
 	}: {
 		group: FileGroup;
-		defaultOpen?: boolean;
+		defaultOpen: boolean;
 	} = $props();
 
 	let open = $derived(defaultOpen);

@@ -80,7 +80,7 @@ beforeEach(() => {
 
 function withContext(app: Hono<Env>) {
 	app.use('*', async (c, next) => {
-		c.set('afterResponse', []);
+		c.set('afterResponseQueue', []);
 		c.set('user', {
 			id: 'user_1',
 			email: 'user@example.com',

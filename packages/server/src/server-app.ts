@@ -87,8 +87,8 @@ type CreateServerAppOptions = {
 	 * runtime-port lifetime concern: on Cloudflare this is
 	 * `c.executionCtx.waitUntil(work)` (keeps the isolate alive); a Bun host
 	 * just lets the promise run in the live process. The library owns the
-	 * after-response queue (`c.var.afterResponse`) and the pg-drain shape; this
-	 * only injects how the queue's drain is kept alive past the response.
+	 * after-response queue (`c.var.afterResponseQueue`) and the pg-drain shape;
+	 * this only injects how the queue's drain is kept alive past the response.
 	 */
 	afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
 	/**
@@ -139,7 +139,7 @@ export function createServerApp({
 		const queue: Promise<unknown>[] = [];
 		try {
 			c.set('db', db);
-			c.set('afterResponse', queue);
+			c.set('afterResponseQueue', queue);
 			await next();
 		} finally {
 			afterResponse(c, Promise.allSettled(queue).then(() => close()));

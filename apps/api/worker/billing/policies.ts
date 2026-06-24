@@ -86,7 +86,7 @@ export const chargeOpenAiCreditsWithAutumn = createMiddleware<Env>(
 
 		await next();
 
-		c.var.afterResponse.push(
+		c.var.afterResponseQueue.push(
 			c.res.status >= 400 ? reservation.release() : reservation.confirm(),
 		);
 	},
@@ -180,5 +180,5 @@ function enqueueStorageUsageSyncFromResponse(
 	const usageHeader = c.res.headers.get(ASSET_STORAGE_USAGE_TOTAL_HEADER);
 	const totalBytes = usageHeader ? Number.parseInt(usageHeader, 10) : null;
 	if (totalBytes == null || Number.isNaN(totalBytes)) return;
-	c.var.afterResponse.push(billing.syncAssetStorageUsageTotal(totalBytes));
+	c.var.afterResponseQueue.push(billing.syncAssetStorageUsageTotal(totalBytes));
 }

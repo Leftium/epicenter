@@ -91,14 +91,16 @@ export type Env = {
 		 */
 		ownerId: OwnerId;
 		/**
-		 * Per-request collection of fire-and-forget promises that must
-		 * outlive the HTTP response. Handlers push promises (typically DB
-		 * writes that use `c.var.db`); the server-app's lifecycle middleware
-		 * passes the whole array to `Promise.allSettled(...).then(close pg)`
-		 * inside `executionCtx.waitUntil`, so the worker isolate stays
-		 * alive AND the pg client outlives every queued write.
+		 * Per-request queue of fire-and-forget promises that must outlive the
+		 * HTTP response. Handlers push promises (typically DB writes that use
+		 * `c.var.db`); the server-app lifecycle middleware drains the whole
+		 * queue (`Promise.allSettled(...).then(close)`) through the injected
+		 * `afterResponse` hook, which keeps it alive past the response
+		 * (`executionCtx.waitUntil` on Workers, the live process on Bun). Named
+		 * distinctly from that `afterResponse` scheduler hook: this is the queue,
+		 * the hook is how the queue is drained.
 		 */
-		afterResponse: Promise<unknown>[];
+		afterResponseQueue: Promise<unknown>[];
 		rooms: Rooms;
 	};
 };

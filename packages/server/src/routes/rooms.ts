@@ -15,7 +15,7 @@
  * `(userId, nodeId)` pair stamped onto its WebSocket attachment.
  *
  * Each HTTP/WS access pushes a fire-and-forget upsert into
- * `c.var.afterResponse` so the platform-level `durableObjectInstance`
+ * `c.var.afterResponseQueue` so the platform-level `durableObjectInstance`
  * table tracks which owner's DO was touched and when. The row is keyed by
  * `do_name` and partitioned by `owner_id`; account-delete cleanup matches
  * `owner_id` (see auth `before(delete)` hook).
@@ -153,7 +153,7 @@ const roomsApp = new Hono<Env>()
 					return c.json(err, err.error.status);
 				}
 
-				c.var.afterResponse.push(
+				c.var.afterResponseQueue.push(
 					upsertDoInstance(c.var.db, {
 						ownerId: c.var.ownerId,
 						resourceName: roomId,
@@ -172,7 +172,7 @@ const roomsApp = new Hono<Env>()
 			}
 
 			const { data, storageBytes } = await room.getDoc();
-			c.var.afterResponse.push(
+			c.var.afterResponseQueue.push(
 				upsertDoInstance(c.var.db, {
 					ownerId: c.var.ownerId,
 					resourceName: roomId,
@@ -205,7 +205,7 @@ const roomsApp = new Hono<Env>()
 			}
 			const { diff, storageBytes } = synced;
 
-			c.var.afterResponse.push(
+			c.var.afterResponseQueue.push(
 				upsertDoInstance(c.var.db, {
 					ownerId: c.var.ownerId,
 					resourceName: roomId,

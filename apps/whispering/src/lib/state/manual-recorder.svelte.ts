@@ -143,7 +143,7 @@ function createManualRecorder() {
 				const recordingId = nanoid();
 				const params = manualRecorderConfig.resolveStartParams(recordingId);
 				const { data, error: startRecordingError } =
-					await ManualRecorderLive.startRecording({ ...params, onLevel });
+					await ManualRecorderLive.startRecording(params, { onLevel });
 
 				if (startRecordingError) return Err(startRecordingError);
 

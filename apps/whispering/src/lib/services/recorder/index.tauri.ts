@@ -229,6 +229,10 @@ function createCpalRecorder() {
 
 		enumerateDevices,
 
+		// Takes only params, no RecordingCallbacks: CPAL drives the pill meter
+		// from Rust straight to the overlay window, so it has no use for the
+		// caller's `onLevel` sink. A narrower function still satisfies the
+		// RecorderService contract.
 		startRecording: async ({
 			selectedDeviceId,
 			recordingId,

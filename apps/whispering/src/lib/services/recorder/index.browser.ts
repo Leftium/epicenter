@@ -12,6 +12,7 @@ import { categorizeBrowserStreamError } from './categorize-error';
 import type {
 	NavigatorRecordingParams,
 	RecorderService,
+	RecordingCallbacks,
 	RecordingSession,
 } from './types';
 import { RecorderError } from './types';
@@ -126,12 +127,10 @@ function createNavigatorRecorder() {
 			return Ok(devices);
 		},
 
-		startRecording: async ({
-			selectedDeviceId,
-			recordingId,
-			bitrateKbps,
-			onLevel,
-		}: NavigatorRecordingParams) => {
+		startRecording: async (
+			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
+			{ onLevel }: RecordingCallbacks,
+		) => {
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream({ selectedDeviceId });
 			if (acquireStreamError) {

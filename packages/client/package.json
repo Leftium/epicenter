@@ -3,12 +3,13 @@
 	"version": "0.1.1",
 	"private": true,
 	"type": "module",
-	"description": "Typed HTTP client for the Epicenter server (assets, session, AI chat). Composes on @epicenter/auth's AuthFetch.",
+	"description": "Typed HTTP client for the Epicenter server (assets, blobs, AI chat). Composes on @epicenter/auth's AuthFetch.",
 	"exports": {
 		".": "./src/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
 	},
 	"dependencies": {
 		"@epicenter/agent-protocol": "workspace:*",

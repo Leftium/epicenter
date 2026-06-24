@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { asOwnerId } from '@epicenter/identity';
 import type { AuthFetch } from './auth-contract.js';
+import { asUserId } from './index.js';
 import { createSameOriginCookieAuth } from './same-origin-cookie-auth.js';
 
 const baseURL = 'https://api.epicenter.so';
@@ -116,6 +117,45 @@ describe('createSameOriginCookieAuth', () => {
 		const signOut = calls.at(-1);
 		expect(signOut?.url).toBe(`${baseURL}/auth/sign-out`);
 		expect(signOut?.init?.method).toBe('POST');
+		expect(auth.state.status).toBe('signed-out');
+	});
+
+	test('getProfile reads the user from /api/session with the cookie', async () => {
+		const calls: Array<{ url: string; init?: RequestInit }> = [];
+		const fetch: AuthFetch = async (input, init) => {
+			calls.push({ url: String(input), init });
+			return json(sessionBody());
+		};
+		const auth = createSameOriginCookieAuth({ baseURL, fetch });
+		await flush();
+
+		const { data, error } = await auth.getProfile();
+		expect(error).toBeNull();
+		expect(data).toEqual({
+			id: asUserId('owner-1'),
+			email: 'owner-1@example.com',
+		});
+		const profileRead = calls.at(-1);
+		expect(profileRead?.url).toBe(`${baseURL}/api/session`);
+		expect(profileRead?.init?.credentials).toBe('include');
+	});
+
+	test('a 401 from getProfile moves a signed-in client to signed-out', async () => {
+		let sessionCalls = 0;
+		const fetch: AuthFetch = async (input) => {
+			if (!String(input).endsWith('/api/session')) return json({}, 404);
+			sessionCalls += 1;
+			// The construction check confirms; the later getProfile read is rejected,
+			// the same signal `fetch` reacts to.
+			return sessionCalls === 1 ? json(sessionBody()) : json({}, 401);
+		};
+		const auth = createSameOriginCookieAuth({ baseURL, fetch });
+		await flush();
+		expect(auth.state.status).toBe('signed-in');
+
+		const { data, error } = await auth.getProfile();
+		expect(data).toBeNull();
+		expect(error?.name).toBe('ProfileUnavailable');
 		expect(auth.state.status).toBe('signed-out');
 	});
 });

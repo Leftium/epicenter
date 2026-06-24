@@ -147,7 +147,7 @@ The note **body** references a local working-copy relative path (offline, plain 
 1. ✅ Provision config: `BLOBS_S3_*` secrets in `wrangler.jsonc`, generated types. (Bucket + token + CORS provisioned by operator.)
 2. ✅ `s3-blob-store.ts` portable S3 client (presign PUT/GET, signed head/list/delete) + `POST /owners/:ownerId/blobs` ticket endpoint.
 3. ✅ `GET` (302 presigned), `GET` list/usage, `DELETE`.
-4. SDK `client.blobs`.
-5. CLI `epicenter blobs add` + receipt writer.
-6. Retire `assets`: port opensidian/vocab/tab-manager, delete the route/table/bucket.
+4. ✅ SDK `client.blobs`.
+5. ✅ CLI `epicenter blobs add` + receipt writer.
+6. ✅ Retire `assets`: deleted the route, the `asset` table (baseline migration regenerated), the `ASSETS_BUCKET` R2 binding from both deployables, the `client.assets` SDK surface, and the `asset-errors`/`asset-headers` constants. No app or client consumed the assets route (the "port opensidian/vocab/tab-manager" consumers were never built), so it was deleted outright rather than migrated. The asset-table-coupled billing wiring (`syncAssetStorageWithAutumn` policy + `checkAssetStorageUpload`/`syncAssetStorageUsageTotal` service methods) was removed; the forward-looking storage *plan shape* (catalog `storage.includedBytes`, dashboard `getOverview().storage`, `FEATURE_IDS.storageBytes`) is kept for the billed era below. With assets gone, `@epicenter/server` names zero Cloudflare object types (ADR-0057).
 7. *(Deferred)* public second bucket; Autumn metering; desktop/local ticket; multipart; encryption.

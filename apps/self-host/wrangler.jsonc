@@ -57,13 +57,5 @@
 			"id": "<your-hyperdrive-id>",
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/self_host"
 		}
-	],
-
-	// --- R2: Asset storage ---
-	"r2_buckets": [
-		{
-			"binding": "ASSETS_BUCKET",
-			"bucket_name": "<your-r2-bucket>"
-		}
 	]
 }

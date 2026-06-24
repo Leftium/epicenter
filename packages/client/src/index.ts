@@ -1,7 +1,7 @@
 /**
  * `@epicenter/client`: typed HTTP client for the Epicenter server.
  *
- * Owner-scoped data surfaces (`assets`, `blobs`) over `AuthFetch` from
+ * Owner-scoped data surfaces (`blobs`) over `AuthFetch` from
  * `@epicenter/auth`, which handles OAuth bearer attach, refresh, and 401
  * propagation. This package owns neither auth state nor identity: the caller
  * passes the authed fetch handle and the `ownerId` (read from `auth.state`),
@@ -58,37 +58,6 @@ export type EpicenterClientOptions = {
 };
 
 // ---------------------------------------------------------------------------
-// Asset types (mirror the server response shapes)
-// ---------------------------------------------------------------------------
-
-export type AssetVisibility = 'private' | 'public';
-
-export type UploadAssetResponse = {
-	id: string;
-	/** Server-relative URL: `/api/owners/<ownerId>/assets/<assetId>`. */
-	url: string;
-	visibility: AssetVisibility;
-	contentType: string;
-	size: number;
-	originalName: string;
-};
-
-export type AssetRow = {
-	id: string;
-	ownerId: OwnerId;
-	contentType: string;
-	sizeBytes: number;
-	originalName: string;
-	visibility: AssetVisibility;
-	uploadedAt: string;
-};
-
-export type SetVisibilityResponse = {
-	id: string;
-	visibility: AssetVisibility;
-};
-
-// ---------------------------------------------------------------------------
 // Blob types (content-addressed store; mirror the server response shapes)
 // ---------------------------------------------------------------------------
 
@@ -125,11 +94,7 @@ type BlobTicket =
 			expiresInSeconds: number;
 	  };
 
-/**
- * Failure modes of the Result-returning client surfaces (`blobs.*`). The
- * retiring `assets.*` stays throw-native: it is slice-6 dead code that `blobs`
- * supersedes, not worth converting.
- */
+/** Failure modes of the Result-returning client surfaces (`blobs.*`). */
 export const ClientError = defineErrors({
 	/** The transport itself failed: network down, DNS, aborted, CORS. */
 	TransportFailed: ({
@@ -186,79 +151,6 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 export function createEpicenterClient(opts: EpicenterClientOptions) {
 	const base = opts.baseURL.replace(/\/+$/, '');
 	const { ownerId } = opts;
-
-	const assets = {
-		async upload(
-			file: File,
-			params: { visibility?: AssetVisibility } = {},
-		): Promise<UploadAssetResponse> {
-			const fd = new FormData();
-			fd.append('file', file);
-			fd.append('visibility', params.visibility ?? 'private');
-			const res = await opts.fetch(API_ROUTES.assets.list.url(base, ownerId), {
-				method: 'POST',
-				body: fd,
-			});
-			if (!res.ok) {
-				throw new Error(`epicenter.assets.upload: ${res.status}`);
-			}
-			return (await res.json()) as UploadAssetResponse;
-		},
-
-		async list(): Promise<AssetRow[]> {
-			const res = await opts.fetch(API_ROUTES.assets.list.url(base, ownerId));
-			if (!res.ok) {
-				throw new Error(`epicenter.assets.list: ${res.status}`);
-			}
-			return (await res.json()) as AssetRow[];
-		},
-
-		async usage(): Promise<{ totalBytes: number }> {
-			const res = await opts.fetch(API_ROUTES.assets.usage.url(base, ownerId));
-			if (!res.ok) {
-				throw new Error(`epicenter.assets.usage: ${res.status}`);
-			}
-			return (await res.json()) as { totalBytes: number };
-		},
-
-		async setVisibility(
-			id: string,
-			visibility: AssetVisibility,
-		): Promise<SetVisibilityResponse> {
-			const res = await opts.fetch(
-				API_ROUTES.assets.byId.url(base, ownerId, id),
-				{
-					method: 'PATCH',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ visibility }),
-				},
-			);
-			if (!res.ok) {
-				throw new Error(`epicenter.assets.setVisibility: ${res.status}`);
-			}
-			return (await res.json()) as SetVisibilityResponse;
-		},
-
-		async delete(id: string): Promise<void> {
-			const res = await opts.fetch(
-				API_ROUTES.assets.byId.url(base, ownerId, id),
-				{ method: 'DELETE' },
-			);
-			if (!res.ok) {
-				throw new Error(`epicenter.assets.delete: ${res.status}`);
-			}
-		},
-
-		/**
-		 * Build the full URL for an asset. Sync; the owner partition is the one the
-		 * client was constructed with.
-		 *
-		 * Useful for embedding in Yjs documents, `<img src>`, share buttons.
-		 */
-		url(id: string): string {
-			return API_ROUTES.assets.byId.url(base, ownerId, id);
-		},
-	};
 
 	// Run one authed request, folding transport failure and non-2xx into a typed
 	// Result so the blob methods never throw.
@@ -368,7 +260,8 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 
 		/**
 		 * Build the content-addressed read URL for a blob under the construction
-		 * owner. Sync, like `assets.url`.
+		 * owner. Synchronous; the owner partition is the one the client was
+		 * constructed with.
 		 *
 		 * Useful for embedding in a vault receipt, an `<img src>`, or a share link.
 		 */
@@ -422,7 +315,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 	};
 
 	return {
-		assets,
 		blobs,
 	};
 }

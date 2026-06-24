@@ -4,7 +4,6 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
-import { assetKey } from '../owner.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
 import { createCookieAdvancedConfig } from './cookie-config.js';
 import { authPlugins } from './plugins.js';
@@ -12,20 +11,11 @@ import { authPlugins } from './plugins.js';
 type Db = NodePgDatabase<typeof schema>;
 
 /**
- * The minimal R2-bucket surface the user-delete hook touches, or absent. A
- * Cloudflare `R2Bucket` satisfies it structurally; a Node host passes nothing,
- * so the R2 asset cleanup no-ops. Being retired as assets fold into the
- * content-addressed blob store.
- */
-type AssetBucket = { delete(keys: string[]): Promise<unknown> };
-
-/**
- * The secrets and bindings `createAuth` actually reads. Loosened from
- * `Cloudflare.Env` to exactly this (ADR-0057): every member is a portable
- * string the runtimes expose identically (`c.env` on Workers, `process.env`
- * on a Node host), except the optional R2 `ASSETS_BUCKET`. Auth construction
- * thus names no Cloudflare binding type. A deployment's `Cloudflare.Env`
- * satisfies this structurally.
+ * The secrets `createAuth` actually reads. Loosened from `Cloudflare.Env` to
+ * exactly this (ADR-0057): every member is a portable string the runtimes
+ * expose identically (`c.env` on Workers, `process.env` on a Node host). Auth
+ * construction thus names no Cloudflare binding type at all. A deployment's
+ * `Cloudflare.Env` satisfies this structurally.
  */
 type AuthEnv = {
 	BETTER_AUTH_SECRET: string;
@@ -33,7 +23,6 @@ type AuthEnv = {
 	GOOGLE_CLIENT_SECRET: string;
 	GITHUB_CLIENT_ID?: string;
 	GITHUB_CLIENT_SECRET?: string;
-	ASSETS_BUCKET?: AssetBucket;
 };
 
 /**
@@ -48,8 +37,7 @@ type AuthEnv = {
  * - Google OAuth, plus GitHub when its credentials are configured
  *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
- * - Cleanup hook for R2 assets when a user is deleted, guarded so it no-ops
- *   on a runtime with no R2 bucket
+ * - Cleanup hook that clears the deleted user's owner-partitioned rows
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -149,29 +137,13 @@ export function createAuth({
 				delete: {
 					before: async (user) => {
 						// Partition cleanup. In personal mode `owner_id === user.id`
-						// so this deletes the user's R2 blobs, asset rows, and
-						// DOI rows. In shared mode `owner_id === 'shared' !== user.id`
-						// so every query no-ops and shared data survives admission
-						// churn. Without an FK + cascade, the row deletes are
-						// explicit here.
+						// so this deletes the user's DOI rows. In shared mode
+						// `owner_id === 'shared' !== user.id` so the query no-ops and
+						// shared data survives admission churn. Without an FK + cascade,
+						// the row delete is explicit here. (Content-addressed blob bytes
+						// live owner-prefixed in object storage with no DB row; an
+						// occasional LIST sweep reclaims an orphaned owner prefix.)
 						const ownerId = asOwnerId(user.id);
-
-						const assets = await db.query.asset.findMany({
-							columns: { id: true },
-							where: eq(schema.asset.ownerId, ownerId),
-						});
-						if (assets.length > 0) {
-							// The R2 object delete only runs on a runtime that has an
-							// asset bucket; a Node host has none, so the rows still clear
-							// (the bytes, if any, live in the portable blob store).
-							if (env.ASSETS_BUCKET) {
-								const keys = assets.map((a) => assetKey(ownerId, a.id));
-								await env.ASSETS_BUCKET.delete(keys);
-							}
-							await db
-								.delete(schema.asset)
-								.where(eq(schema.asset.ownerId, ownerId));
-						}
 
 						await db
 							.delete(schema.durableObjectInstance)

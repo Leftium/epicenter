@@ -1,13 +1,3 @@
-CREATE TABLE "asset" (
-	"id" text PRIMARY KEY NOT NULL,
-	"owner_id" text NOT NULL,
-	"content_type" text NOT NULL,
-	"size_bytes" bigint NOT NULL,
-	"original_name" text NOT NULL,
-	"visibility" text DEFAULT 'private' NOT NULL,
-	"uploaded_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "durable_object_instance" (
 	"owner_id" text NOT NULL,
 	"resource_name" text NOT NULL,
@@ -157,8 +147,6 @@ ALTER TABLE "oauth_refresh_token" ADD CONSTRAINT "oauth_refresh_token_client_id_
 ALTER TABLE "oauth_refresh_token" ADD CONSTRAINT "oauth_refresh_token_session_id_session_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."session"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_refresh_token" ADD CONSTRAINT "oauth_refresh_token_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "asset_owner_id_idx" ON "asset" USING btree ("owner_id");--> statement-breakpoint
-CREATE INDEX "asset_visibility_idx" ON "asset" USING btree ("visibility");--> statement-breakpoint
 CREATE INDEX "doi_owner_id_idx" ON "durable_object_instance" USING btree ("owner_id");--> statement-breakpoint
 CREATE INDEX "account_userId_idx" ON "account" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "session_userId_idx" ON "session" USING btree ("user_id");--> statement-breakpoint

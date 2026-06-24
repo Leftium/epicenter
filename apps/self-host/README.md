@@ -27,7 +27,6 @@ wrangler.jsonc
   ALLOWED_MEMBER_EMAILS    comma-separated allowed emails
   GOOGLE_CLIENT_ID         your Google OAuth client id (public)
   HYPERDRIVE.id            your Hyperdrive id
-  ASSETS_BUCKET.bucket_name your R2 bucket name
 
 wrangler secret put ...
   BETTER_AUTH_SECRET       openssl rand -base64 32
@@ -62,11 +61,10 @@ createServerApp()
   .route('/', authApp)                                 // OAuth + sign-in pages
   // mountSessionApp(app, { ownership })              // GET /api/session
   // mountRoomsApp(app, { ownership })                // /api/owners/:ownerId/rooms/*
-  // mountAssetsApp(app, { ownership })               // /api/owners/:ownerId/assets/*
   // mountAiApp(app, { auth: requireBearerUser, ownership }) // POST /api/ai/chat
 ```
 
-Deliberately absent: `mountBillingApi`, `chargeAiCreditsWithAutumn`, `syncAssetStorageWithAutumn`, any `apps/api/ui` static-asset fallback. The composition shape is the contract.
+Deliberately absent: `mountBillingApi`, `chargeAiCreditsWithAutumn`, any `apps/api/ui` static-asset fallback. The composition shape is the contract.
 
 ## See also
 

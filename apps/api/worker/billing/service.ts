@@ -19,9 +19,11 @@
  * AI guard (`reserveAiChat`) instead wraps its Autumn calls in `tryAutumn` and
  * RETURNS `Result`, because it takes a reservation lock the policy must settle
  * (confirm or release) around the response via the after-response queue.
- * Storage also returns `Result` because upload admission must fail closed when
- * entitlement cannot be verified, but storage usage syncs the asset table's
- * absolute total instead of taking a lock.
+ *
+ * Storage is unmetered in v1: `getOverview` still reports the plan's storage
+ * allowance, but nothing writes usage to Autumn yet. The content-addressed blob
+ * store will drive `storage_bytes` from an R2 LIST-sum when storage is billed
+ * (spec 20260623T220000, decision 10); the old asset-table sync is retired.
  */
 
 import type { UserId } from '@epicenter/auth';
@@ -30,7 +32,6 @@ import {
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
-import { AssetError } from '@epicenter/constants/asset-errors';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { createAutumnClient, tryAutumn } from './autumn.js';
 import {
@@ -152,54 +153,6 @@ export function createBillingService(
 		}
 
 		return Ok(check.reservation);
-	}
-
-	// ----- Storage guard ------------------------------------------------
-
-	/**
-	 * Check that one upload is allowed against the currently synced Autumn
-	 * storage balance. The asset table owns actual storage bytes; this guard only
-	 * gates the write before the library uploads to R2.
-	 */
-	async function checkAssetStorageUpload(input: {
-		sizeBytes: number;
-	}): Promise<Result<void, AssetError | BillingError>> {
-		// Seed the customer so the storage balance materializes from the
-		// auto-enable free plan before we check against it. A provider outage
-		// fails closed.
-		const { data: check, error: checkError } = await tryAutumn(async () => {
-			await ensureCustomer();
-			return autumn.check({
-				customerId: identity.userId,
-				featureId: FEATURE_IDS.storageBytes,
-				requiredBalance: input.sizeBytes,
-			});
-		});
-		if (checkError) return Err(checkError);
-		if (!check.allowed) {
-			return AssetError.StorageLimitExceeded({
-				requestedBytes: input.sizeBytes,
-			});
-		}
-		return Ok(undefined);
-	}
-
-	/**
-	 * Sync Autumn to the asset table's authoritative storage total after a
-	 * successful asset mutation. Storage is a non-consumable feature, so we set
-	 * absolute usage rather than sending upload/delete deltas.
-	 */
-	function syncAssetStorageUsageTotal(
-		totalBytes: number,
-	): Promise<Result<void, BillingError>> {
-		return tryAutumn(async () => {
-			await ensureCustomer();
-			await autumn.balances.update({
-				customerId: identity.userId,
-				featureId: FEATURE_IDS.storageBytes,
-				usage: totalBytes,
-			});
-		});
 	}
 
 	// ----- Dashboard data plane -----------------------------------------
@@ -489,17 +442,8 @@ export function createBillingService(
 		});
 	}
 
-	function ensureCustomer() {
-		return autumn.customers.getOrCreate({
-			customerId: identity.userId,
-			email: identity.userEmail,
-		});
-	}
-
 	return {
 		reserveAiChat,
-		checkAssetStorageUpload,
-		syncAssetStorageUsageTotal,
 		getOverview,
 		listPlans,
 		listUsage,

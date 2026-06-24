@@ -19,7 +19,6 @@ import {
 	connectHyperdriveDb,
 	createDurableObjectRooms,
 	createServerApp,
-	mountAssetsApp,
 	mountBlobsApp,
 	mountInferenceApp,
 	mountRoomsApp,
@@ -31,10 +30,7 @@ import {
 	type ServerBindings,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
-import {
-	chargeOpenAiCreditsWithAutumn,
-	syncAssetStorageWithAutumn,
-} from './billing/policies.js';
+import { chargeOpenAiCreditsWithAutumn } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
@@ -87,14 +83,10 @@ app.route('/', authApp);
 // deployment policies.
 mountSessionApp(app, { ownership });
 mountRoomsApp(app, { ownership });
-mountAssetsApp(app, {
-	ownership,
-	policies: [syncAssetStorageWithAutumn],
-});
-// Content-addressed blob store. v1 is unmetered (no Autumn policy): Autumn's
-// check() denies by default with no plan attached, so deferred quota means not
-// calling it. A `syncBlobStorageWithAutumn` policy slots in here when storage
-// is billed.
+// Content-addressed blob store (supersedes the retired assets surface). v1 is
+// unmetered (no Autumn policy): Autumn's check() denies by default with no plan
+// attached, so deferred quota means not calling it. A `syncBlobStorageWithAutumn`
+// policy slots in here when storage is billed.
 mountBlobsApp(app, { ownership });
 mountInferenceApp(app, {
 	auth: requireBearerUser,

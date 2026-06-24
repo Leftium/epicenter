@@ -21,7 +21,6 @@ import {
 	connectHyperdriveDb,
 	createDurableObjectRooms,
 	createServerApp,
-	mountAssetsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -78,7 +77,6 @@ app.route('/', authApp);
 
 mountSessionApp(app, { ownership });
 mountRoomsApp(app, { ownership });
-mountAssetsApp(app, { ownership });
 mountInferenceApp(app, { auth: requireBearerUser, ownership });
 
 export default app;

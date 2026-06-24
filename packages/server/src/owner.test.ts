@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { asOwnerId, SHARED_OWNER_ID } from '@epicenter/identity';
-import { assetKey, doName } from './owner.js';
+import { doName } from './owner.js';
 
 const personal = asOwnerId('abc');
 const shared = SHARED_OWNER_ID;
@@ -23,14 +23,5 @@ describe('doName', () => {
 	});
 	test('shared partitions DO names under the literal shared owner', () => {
 		expect(doName(shared, 'r123')).toBe('owners/shared/rooms/r123');
-	});
-});
-
-describe('assetKey', () => {
-	test('personal puts assets under the user partition', () => {
-		expect(assetKey(personal, 'x1y2z3')).toBe('owners/abc/assets/x1y2z3');
-	});
-	test('shared puts assets under the shared partition', () => {
-		expect(assetKey(shared, 'x1y2z3')).toBe('owners/shared/assets/x1y2z3');
 	});
 });

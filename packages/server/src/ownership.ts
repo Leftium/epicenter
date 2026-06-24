@@ -3,7 +3,7 @@
  *
  * The deployment composes one of two variants and threads it into every
  * library surface that needs the partition (`createRequireOwnership`,
- * `mountRoomsApp`, `mountAssetsApp`, `mountSessionApp`). The variants are
+ * `mountRoomsApp`, `mountBlobsApp`, `mountSessionApp`). The variants are
  * constructed via {@link personal} / {@link shared} so call sites never type
  * the discriminator string. See
  * `docs/articles/use-functions-to-wrap-discriminated-unions.md`.
@@ -50,16 +50,14 @@ export const shared = (opts: { admit: Admit }): OwnershipRule => ({
 });
 
 /**
- * The single switch on `rule.kind` in the codebase. Both the
- * `requireOwnership` middleware and the conditional asset GET delegate
- * here, so the partition decision lives in one place.
+ * The single switch on `rule.kind` in the codebase. The `requireOwnership`
+ * middleware delegates here, so the partition decision lives in one place.
  *
  * Returns the owner partition the request maps to. In shared mode this
  * function also AUTHORIZES the request: rejected users get an `Err` arm
  * carrying `NotAdmitted` before any URL is read. The caller decides
  * whether to compare the partition to a URL `:ownerId` segment (the
- * `requireOwnership` middleware does; the conditional asset GET does
- * not).
+ * `requireOwnership` middleware does).
  *
  * Personal: always succeeds, returns the user's id branded as `OwnerId`.
  * Shared:   runs the predicate; admits with `SHARED_OWNER_ID` or rejects

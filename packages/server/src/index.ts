@@ -53,7 +53,6 @@ export {
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
 export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-export { mountAssetsApp } from './routes/assets.js';
 // Reusable surfaces. Each `mount*` bundles auth + ownership + the route
 // mount, accepting only the deployment-controlled knobs (ownership rule,
 // optional policies). The bare `authApp` is mounted directly because it

@@ -37,13 +37,6 @@ import type { OwnerId } from '@epicenter/identity';
 const stripTrailing = (s: string) => s.replace(/\/+$/, '');
 
 /**
- * 21-character alphanumeric asset id. Bumped from 15 chars after
- * grounding against Signal/Bitwarden precedent and the historical
- * Slack file-token brute-force incident.
- */
-export const ASSET_ID_REGEX = '[a-z0-9]{21}';
-
-/**
  * 64-character lowercase-hex sha256. A blob's id IS its content address, so
  * the route param is constrained to a well-formed digest; this also keeps the
  * `:sha256` pattern disjoint from the literal `/usage` subpath.
@@ -54,23 +47,6 @@ export const API_ROUTES = {
 	session: {
 		pattern: '/api/session',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session`,
-	},
-	assets: {
-		list: {
-			pattern: '/api/owners/:ownerId/assets',
-			url: (baseURL: string, ownerId: OwnerId) =>
-				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/assets`,
-		},
-		usage: {
-			pattern: '/api/owners/:ownerId/assets/usage',
-			url: (baseURL: string, ownerId: OwnerId) =>
-				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/assets/usage`,
-		},
-		byId: {
-			pattern: `/api/owners/:ownerId/assets/:assetId{${ASSET_ID_REGEX}}`,
-			url: (baseURL: string, ownerId: OwnerId, assetId: string) =>
-				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/assets/${encodeURIComponent(assetId)}`,
-		},
 	},
 	/**
 	 * Content-addressed blob store. POST mints an upload ticket (presigned R2

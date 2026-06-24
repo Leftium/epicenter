@@ -13,12 +13,13 @@
  * secret fails fast with a descriptive error instead of a downstream surprise.
  *
  * What is deliberately ABSENT, and why:
- * - Object / namespace bindings (`ASSETS_BUCKET` R2, `ROOM` Durable Object,
- *   `HYPERDRIVE`) are not strings and cannot be validated from `process.env`.
- *   They live on the deployment's own `Cloudflare.Env` and are read by
- *   deployment resolvers at the `apps/*` edge (`resolveRooms`, `connectDb`), or
- *   for the doomed assets route via a local `AssetsEnv` cast, never by library
- *   code reaching for a binding shape.
+ * - Object / namespace bindings (`ROOM` Durable Object, `HYPERDRIVE`) are not
+ *   strings and cannot be validated from `process.env`. They live on the
+ *   deployment's own `Cloudflare.Env` and are read by deployment resolvers at
+ *   the `apps/*` edge (`resolveRooms`, `connectDb`), never by library code
+ *   reaching for a binding shape. With the assets route retired into the
+ *   portable blob store, the library now names NO Cloudflare object binding,
+ *   by value or by type.
  * - The deployment's public origin and any cloud-only secrets (Autumn, admin
  *   IDs) are deployment config, supplied through `resolveOrigin` / policies.
  *

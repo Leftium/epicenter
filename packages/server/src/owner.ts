@@ -24,9 +24,6 @@ import type { OwnerId } from '@epicenter/identity';
 /** Durable Object name template, single form. */
 export type RoomDoName = `owners/${string}/rooms/${string}`;
 
-/** R2 object key template, single form. */
-export type AssetR2Key = `owners/${string}/assets/${string}`;
-
 /**
  * R2 object key template for a content-addressed blob, single form. The id
  * segment is a sha256 hex digest, so the key IS the content address: R2 is
@@ -41,11 +38,6 @@ export type BlobOwnerPrefix = `owners/${string}/blobs/`;
 /** Durable name of a room's Cloudflare Durable Object. */
 export function doName(ownerId: OwnerId, roomId: string): RoomDoName {
 	return `owners/${ownerId}/rooms/${roomId}`;
-}
-
-/** Durable key of an asset's R2 object. */
-export function assetKey(ownerId: OwnerId, assetId: string): AssetR2Key {
-	return `owners/${ownerId}/assets/${assetId}`;
 }
 
 /** Durable key of a content-addressed blob's R2 object (id = sha256 hex). */

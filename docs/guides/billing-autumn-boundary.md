@@ -7,11 +7,13 @@ first.
 
 ## The one sentence
 
-> Meter and gate paid usage against Autumn, while treating the local asset table
-> as the source of truth for stored bytes. Autumn can be slow, wrong, or down at
-> any moment, so it must deny work when entitlement cannot be verified, never
+> Meter and gate paid AI usage against Autumn. Autumn can be slow, wrong, or down
+> at any moment, so it must deny work when entitlement cannot be verified, never
 > permanently charge for work that did not happen, and never leak provider
 > internals to the user.
+>
+> (Storage is unmetered in v1: the content-addressed blob store makes no Autumn
+> call. The billed era is sketched at the end of this guide.)
 
 Every design choice below is a consequence of that second clause. If a piece of
 code does not serve "treat the provider as fallible and untrusted," it is
@@ -35,8 +37,8 @@ autumn.ts        the ONLY file that imports autumn-js. builds the client with
 Autumn (external, fallible)
 ```
 
-`policies.ts` sits to the side: it wraps the AI and asset routes (which live in
-`@epicenter/server`) with the same `service.ts`, to reserve quota around work
+`policies.ts` sits to the side: it wraps the AI inference route (which lives in
+`@epicenter/server`) with the same `service.ts`, to reserve credits around work
 the library does not know is billable.
 
 Be precise about the boundary. `autumn.ts` is not a full provider-swapping
@@ -53,7 +55,7 @@ Keep these separate:
 provider error     AutumnError or HTTPClientError. Provider failed or rejected
                    our provider-level request. Opaque BillingError, fixed 503.
 
-domain error       Credits, plan, model, or storage state denies the user.
+domain error       Credits, plan, or model state denies the user.
                    Typed surface error with an actionable status and payload.
 
 programmer error   Our code is wrong. TypeError, bad mapping, impossible branch.
@@ -65,7 +67,7 @@ inconsistent until you see why.
 
 ```
 DASHBOARD READS                        USAGE GUARDS
-getOverview, listPlans, listUsage…     reserveAiChat, checkAssetStorageUpload
+getOverview, listPlans, listUsage…     reserveAiChat
         │                                      │
  Autumn provider error throws           tryAutumn catches provider error
         │                                      │
@@ -133,42 +135,29 @@ work that failed or could not be settled. For AI streams, once the stream has
 started the HTTP status is already 200, so a later model/provider failure still
 confirms by design: provider tokens were consumed and cannot be refunded.
 
-## Storage accounting: stock sync, not event deltas
+## Storage accounting: unmetered in v1
 
-Storage is not an AI-style consumable event. It is a current stock:
+Storage is **not metered today**. The old assets surface (a Postgres `asset`
+table + an `ASSETS_BUCKET` R2 binding) was retired into the content-addressed
+blob store (`packages/server/src/routes/blobs.ts`), which makes **no Autumn
+call**: there is no upload guard and no usage sync. The asset-table-coupled
+wiring (`syncAssetStorageWithAutumn` policy, `checkAssetStorageUpload` /
+`syncAssetStorageUsageTotal` service methods) is gone.
 
-```
-asset table SUM(sizeBytes)  ──owns actual stored bytes──►  totalBytes
-        │
-        └── after successful POST/DELETE ──► autumn.balances.update({ usage: totalBytes })
-```
+What survives is the **plan shape**, kept for the billed era: `getOverview()`
+still reports `storage: { usedBytes, includedBytes }` (the dashboard's allowance
+card), the catalog still carries `storage.includedBytes` per plan, and
+`FEATURE_IDS.storageBytes` still names the Autumn feature. In v1 nothing writes
+usage, so `usedBytes` reads as the unwritten balance (effectively 0).
 
-That means the asset table is the accounting source of truth for storage.
-Autumn is still the entitlement and billing projection: uploads call
-`checkAssetStorageUpload` before the library writes to R2, and provider outages
-fail closed with the same opaque `BillingError`. But after a successful upload
-or delete, the library returns `x-storage-usage-total-bytes`, and the cloud
-policy syncs Autumn with `balances.update({ usage: totalBytes })`.
-
-This deliberately refuses two tempting shapes:
-
-1. **No upload lock for storage.** A storage lock creates a second ledger while
-   the real usage is already fully enumerable from the asset table. It also
-   made upload and delete asymmetric: upload reserved bytes, delete sent a
-   negative event.
-2. **No delete delta credit.** `track({ value: -bytes })` is fragile for stock
-   accounting. If one delta is missed, future reads stay wrong until a repair
-   job catches up. Absolute usage sync makes every successful mutation a small
-   reconciliation from the source of truth.
-
-The concurrency tradeoff is intentional. A pre-upload `check()` gates against
-Autumn's last synced usage, then the post-mutation sync overwrites Autumn with
-the actual total. Two concurrent uploads near a hard limit can both pass if the
-provider projection is stale between them. For the current paid storage plans,
-that becomes billable overage rather than data loss. The free tier has zero
-included storage and no overage price, so a correctly synced balance denies the
-first upload. If product later needs hard, no-overage storage ceilings, that
-limit belongs next to the asset table in the write path, not in Autumn locks.
+When storage is billed (blob spec `20260623T220000`, decision 10), the meter
+will be a **stock sync, not event deltas**: the content-addressed store is its
+own index, so an occasional `ListObjectsV2` SUM over `owners/<owner>/blobs/`
+drives one absolute `autumn.balances.update({ usage })`. That is self-correcting
+(a missed update is overwritten by the next sweep) and needs no second ledger,
+which is exactly why the retired asset path also synced an absolute total rather
+than upload/delete deltas. A `syncBlobStorageWithAutumn` policy is the slot for
+it (`apps/api/worker/index.ts`, beside `chargeOpenAiCreditsWithAutumn`).
 
 ## Errors: opaque on the wire, fat in the logs
 
@@ -230,13 +219,13 @@ delete with zero behavior change.
 
 ## The real caveat
 
-Storage sync is still post-response work. If `balances.update({ usage })` fails
-after a successful upload or delete, Autumn can temporarily disagree with the
-asset table. The important difference from delta tracking is that the next
-successful asset mutation rewrites the absolute total, so drift is not
-cumulative. A scheduled reconciliation sweep can still be useful operationally,
-but it should compute the same `SUM(sizeBytes)` and set absolute usage, not
-replay upload/delete events.
+Post-response billing work (the AI `confirm()`/`release()` settlement, and any
+future storage sync) is fire-and-forget on the after-response queue. If it
+cannot reach Autumn, the provider's projection can drift from reality. The AI
+lock self-heals at its TTL. The deferred storage meter is designed to be
+self-correcting the same way: an absolute LIST-SUM sync, where the next sweep
+overwrites any drift, rather than replayed upload/delete deltas that compound a
+missed event.
 
 ## If you are changing this folder
 
@@ -244,8 +233,9 @@ replay upload/delete events.
   Autumn only via `autumn.ts`. Do not import `autumn-js` anywhere else.
 - A new fallible-work guard: follow `reserveAiChat`: reserve a lock, return a
   reservation the policy settles around `next()`.
-- A new storage mutation: keep the asset table as source of truth, return the
-  post-mutation total, and sync Autumn with absolute `usage`.
+- Metering blob storage: drive one absolute `autumn.balances.update({ usage })`
+  from a blob-store LIST-SUM (the store is its own index); do not reintroduce a
+  Postgres table or upload/delete deltas.
 - A new dashboard read: let Autumn throw; `routes.ts` `onError` turns a provider
   failure into the opaque 503 and rethrows real bugs to a 500.
 - A new post-response billing operation without a lock needs an explicit

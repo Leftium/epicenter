@@ -12,13 +12,11 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * temporarily unavailable, try again," and surfacing the vendor's code
  * would leak provider internals into the wire format.
  *
- * The actionable billing states (out of credits, model needs a paid
- * plan, storage quota exceeded) are NOT `BillingError`. They are typed
- * domain variants on the surface that raises them
- * (`AiChatError.InsufficientCredits`, `AiChatError.ModelRequiresPaidPlan`,
- * `AssetError.StorageLimitExceeded`), each with its own HTTP status. The
- * dashboard/clients branch on those for conversion UX; a `BillingError`
- * is always rendered as a single opaque message.
+ * The actionable billing states (out of credits, model needs a paid plan) are
+ * NOT `BillingError`. They are typed domain variants on the surface that raises
+ * them (`AiChatError.InsufficientCredits`, `AiChatError.ModelRequiresPaidPlan`),
+ * each with its own HTTP status. The dashboard/clients branch on those for
+ * conversion UX; a `BillingError` is always rendered as a single opaque message.
  *
  * The `ProviderRequestFailed` name avoids leaking the vendor: a future
  * swap to direct Stripe integration would not force a client rename.

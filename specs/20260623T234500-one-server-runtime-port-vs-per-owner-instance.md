@@ -364,6 +364,36 @@ Capabilities never know which."** To keep it clean we must REFUSE:
 
 ## Execution status (this pass)
 
+- **Waves 1-4: LANDED (branch `wash-saddle`).** ADR-0057 is now `Accepted`.
+  - **Wave 1 (`refactor(server)`):** `createServerApp` injects `connectDb` +
+    `afterResponse` per concern; `createDb(client)` + the Cloudflare
+    `connectHyperdriveDb(env.HYPERDRIVE)` backend are exported and wired at both
+    Worker edges. The library no longer reads `c.env.HYPERDRIVE` or calls
+    `c.executionCtx.waitUntil`. No Worker behavior change.
+  - **Wave 2 (`feat(server)`):** `resolveRooms` injected (last direct `c.env.ROOM`
+    read removed). New `room/backends/node` (`bun:sqlite` update log + in-process
+    `Map` registry). The `handleUpgrade(request) -> Response` impedance is resolved:
+    the contract now takes `{ request, userId, nodeId }`, the route stops
+    reconstructing the request, the Cloudflare backend stamps `userId` into the
+    forwarded DO request, and the Bun backend uses `server.upgrade(request, { data })`
+    + the top-level `websocket` handler. `RoomCore.handleMessage` widened to accept
+    `Uint8Array`. The same `RoomCore` passes one suite on both backends, no
+    `cloudflare:workers` mock on the Node path.
+  - **Wave 3 (`feat(api)`):** `apps/api/server.ts` (`Bun.serve` + `websocket`,
+    module-scope `pg.Pool`, in-process room registry over `DATA_DIR`, S3 blobs),
+    plus a `dev:node` script and `.env.example`. `createAuth`'s env loosened to a
+    portable secrets bag (R2 delete hook guarded); the `@epicenter/server/node`
+    subpath barrel keeps the `cloudflare:workers`-tainted `Room` export off the Bun
+    import graph. Also fixed: Bun auto-negotiates the WS subprotocol, so the manual
+    `Sec-WebSocket-Protocol` echo (which broke the handshake) is dropped.
+  - **Wave 4 (`docs`):** evidence captured. `bun server.ts` boots, connects its
+    pool, and serves `/` (`runtime: "bun"`); the auth pipeline gates unauthenticated
+    room/blob requests; a live-socket integration test syncs presence + a binary
+    Yjs update across two real WebSocket clients through `server.upgrade`. The
+    `apps/api` Worker still bundles via `wrangler deploy --dry-run` with every
+    binding resolved. Remaining manual deploy-time gates: a live Google OAuth
+    sign-in and a full MinIO/R2 blob round-trip (the blob store is one portable S3
+    module with no per-runtime backend, so it is portable by construction).
 - **Item 1 (drop `SESSION_KV`): DONE.** `create-auth.ts` removed `secondaryStorage`
   and the now-dead `storeSessionInDatabase` / `verification.storeInDatabase` flags,
   kept the JWE cookie cache, and set `rateLimit: { storage: 'memory' }` explicitly

@@ -1,6 +1,6 @@
 # 0057. Server runtime portability is per-concern injection chosen by whether an open standard exists, not a Runtime object
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-24
 - **Relates:** the in-flight spec `specs/20260623T234500-one-server-runtime-port-vs-per-owner-instance.md` (the grill and wave plan this harvests), [ADR-0054](0054-an-inference-backend-is-the-metered-gateway-or-a-custom-server.md) (the same config-not-code, deployment-chooses posture for inference backends), [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) (why identity/secrets stay a shared plane, not per-instance)
 

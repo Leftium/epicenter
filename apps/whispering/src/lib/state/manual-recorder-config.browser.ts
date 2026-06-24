@@ -28,8 +28,12 @@ export const manualRecorderConfig = {
 	 *
 	 * The recorder service stays params-in and does not read Svelte state; this
 	 * config boundary performs that app-level read immediately before starting.
+	 * `onLevel` is the caller's live-meter sink, merged in at the start call, not
+	 * a persisted setting this boundary resolves.
 	 */
-	resolveStartParams(recordingId: string): NavigatorRecordingParams {
+	resolveStartParams(
+		recordingId: string,
+	): Omit<NavigatorRecordingParams, 'onLevel'> {
 		const deviceId = this.deviceId;
 		return {
 			recordingId,

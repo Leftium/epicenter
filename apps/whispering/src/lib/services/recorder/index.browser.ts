@@ -32,7 +32,7 @@ function createNavigatorRecorder() {
 		mediaRecorder: MediaRecorder;
 		recordedChunks: Blob[];
 		startedAtMs: number;
-		stopLevelMeter: (() => void) | null;
+		stopLevelMeter: () => void;
 	}) {
 		const {
 			recordingId,
@@ -56,7 +56,7 @@ function createNavigatorRecorder() {
 		};
 
 		const teardown = () => {
-			stopLevelMeter?.();
+			stopLevelMeter();
 			cleanupRecordingStream(stream);
 			notify('IDLE');
 		};
@@ -168,9 +168,7 @@ function createNavigatorRecorder() {
 
 			// Tap the same stream for the pill's meter. Independent of the
 			// MediaRecorder (both can read one stream), torn down with the session.
-			const stopLevelMeter = onLevel
-				? startMicLevelMeter(stream, onLevel)
-				: null;
+			const stopLevelMeter = startMicLevelMeter(stream, onLevel);
 
 			const session = buildSession({
 				recordingId,

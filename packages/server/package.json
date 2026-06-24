@@ -6,7 +6,8 @@
 	"description": "Shared Hono server for Epicenter cloud and self-hosted shared-wiki deployments.",
 	"exports": {
 		".": "./src/index.ts",
-		"./schema": "./src/db/schema/index.ts"
+		"./schema": "./src/db/schema/index.ts",
+		"./node": "./src/node.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",

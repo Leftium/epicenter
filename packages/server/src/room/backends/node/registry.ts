@@ -37,7 +37,6 @@ import type { Server, ServerWebSocket, WebSocketHandler } from 'bun';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { UserId } from '@epicenter/auth';
-import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
 import type {
 	ResolvedRoom,
 	RoomUpgrade,
@@ -60,7 +59,7 @@ const EVICTION_GRACE_MS = 30_000;
  * resolves the right `RoomCore`, plus the resolved identity the
  * {@link Connection} attachment is built from.
  */
-type NodeRoomSocketData = {
+export type NodeRoomSocketData = {
 	roomName: string;
 	userId: UserId;
 	nodeId: string;
@@ -154,18 +153,14 @@ export function createNodeRooms({ dir }: { dir: string }): {
 					// Ensure the room exists so the `open` handler finds it.
 					getOrCreate(name);
 
-					// Echo the main subprotocol if offered, completing the handshake
-					// the client opened with `<MAIN_SUBPROTOCOL>, bearer.<token>`.
-					const headers = new Headers();
-					const offered = parseSubprotocols(
-						request.headers.get('sec-websocket-protocol'),
-					);
-					if (offered.includes(MAIN_SUBPROTOCOL)) {
-						headers.set('sec-websocket-protocol', MAIN_SUBPROTOCOL);
-					}
-
+					// Bun negotiates the subprotocol itself, echoing the client's
+					// first offer (the client sends `<MAIN_SUBPROTOCOL>, bearer.<token>`,
+					// so it selects the main subprotocol). Setting the
+					// `Sec-WebSocket-Protocol` header here instead breaks the
+					// handshake (double-negotiation), so identity is the only thing
+					// passed, as `ws.data`.
 					const data: NodeRoomSocketData = { roomName: name, userId, nodeId };
-					const upgraded = server.upgrade(request, { data, headers });
+					const upgraded = server.upgrade(request, { data });
 					if (!upgraded) {
 						return Promise.resolve(
 							new Response('expected a WebSocket upgrade', { status: 426 }),

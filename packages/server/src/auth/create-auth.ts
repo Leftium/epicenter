@@ -12,6 +12,31 @@ import { authPlugins } from './plugins.js';
 type Db = NodePgDatabase<typeof schema>;
 
 /**
+ * The minimal R2-bucket surface the user-delete hook touches, or absent. A
+ * Cloudflare `R2Bucket` satisfies it structurally; a Node host passes nothing,
+ * so the R2 asset cleanup no-ops. Being retired as assets fold into the
+ * content-addressed blob store.
+ */
+type AssetBucket = { delete(keys: string[]): Promise<unknown> };
+
+/**
+ * The secrets and bindings `createAuth` actually reads. Loosened from
+ * `Cloudflare.Env` to exactly this (ADR-0057): every member is a portable
+ * string the runtimes expose identically (`c.env` on Workers, `process.env`
+ * on a Node host), except the optional R2 `ASSETS_BUCKET`. Auth construction
+ * thus names no Cloudflare binding type. A deployment's `Cloudflare.Env`
+ * satisfies this structurally.
+ */
+type AuthEnv = {
+	BETTER_AUTH_SECRET: string;
+	GOOGLE_CLIENT_ID: string;
+	GOOGLE_CLIENT_SECRET: string;
+	GITHUB_CLIENT_ID?: string;
+	GITHUB_CLIENT_SECRET?: string;
+	ASSETS_BUCKET?: AssetBucket;
+};
+
+/**
  * Assemble and return a configured `betterAuth()` instance from runtime deps.
  *
  * Cloudflare Workers doesn't expose `env` or database connections at module scope,
@@ -19,11 +44,12 @@ type Db = NodePgDatabase<typeof schema>;
  * the raw Better Auth instance, with no wrapper or additional abstraction.
  *
  * Wires up:
- * - Drizzle adapter (Postgres via Hyperdrive)
+ * - Drizzle adapter (portable Postgres wire; Hyperdrive on Workers, a pool on Node)
  * - Google OAuth, plus GitHub when its credentials are configured
  *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
- * - Optional cleanup hook for R2 assets when a user is deleted
+ * - Cleanup hook for R2 assets when a user is deleted, guarded so it no-ops
+ *   on a runtime with no R2 bucket
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -36,7 +62,7 @@ export function createAuth({
 	cookieCrossSubDomain,
 }: {
 	db: Db;
-	env: Cloudflare.Env;
+	env: AuthEnv;
 	baseURL: string;
 	/** Deployment-supplied trusted origins (CORS, CSRF, redirect allow-list). */
 	trustedOrigins: string[];
@@ -135,8 +161,13 @@ export function createAuth({
 							where: eq(schema.asset.ownerId, ownerId),
 						});
 						if (assets.length > 0) {
-							const keys = assets.map((a) => assetKey(ownerId, a.id));
-							await env.ASSETS_BUCKET.delete(keys);
+							// The R2 object delete only runs on a runtime that has an
+							// asset bucket; a Node host has none, so the rows still clear
+							// (the bytes, if any, live in the portable blob store).
+							if (env.ASSETS_BUCKET) {
+								const keys = assets.map((a) => assetKey(ownerId, a.id));
+								await env.ASSETS_BUCKET.delete(keys);
+							}
 							await db
 								.delete(schema.asset)
 								.where(eq(schema.asset.ownerId, ownerId));

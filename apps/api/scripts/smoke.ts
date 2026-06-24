@@ -30,7 +30,8 @@
  *   - DATABASE_URL pointing at the SAME Postgres the server uses.
  *   - BETTER_AUTH_SECRET equal to the server's secret (the cookie signature and
  *     the server's verification must agree).
- *   - For a full green blob round-trip the server must have BLOBS_S3_* set;
+ *   - For a full green blob round-trip the server must have BLOBS_S3_* set
+ *     (run `docker compose up -d` in apps/api for a local versitygw store);
  *     without object storage the blob routes answer 503 and the script reports
  *     that as an expected, non-fatal outcome.
  *

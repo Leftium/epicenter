@@ -115,6 +115,29 @@ bun run typecheck    # Type check
 bun test             # Run tests
 ```
 
+### Local blob storage
+
+Blob storage is optional: omit `BLOBS_S3_*` and the blob routes answer `503
+StorageNotConfigured` while everything else runs. To exercise blobs locally, run
+a real S3-compatible store alongside the server. `compose.yaml` starts
+[versitygw](https://github.com/versity/versitygw) (an S3 API over a plain folder)
+and creates the `epicenter-blobs` bucket:
+
+```bash
+docker compose up -d
+```
+
+Then set the `BLOBS_S3_*` values from `.env.example` (endpoint
+`http://localhost:7070`). Your blobs land as ordinary files under
+`.data/blobs/epicenter-blobs/`.
+
+The server runs the same portable S3 client against versitygw, Garage, AWS S3, or
+R2; the store is endpoint-as-config, so swapping it is a config change, never a
+code change. There is no filesystem blob backend in the codebase by design: the
+self-host story is "run the server next to an S3-compatible service," exactly as
+the hosted Worker runs next to R2. `scripts/smoke.ts` exercises the full blob
+round-trip against whichever store the server points at.
+
 ### Database commands
 
 ```bash

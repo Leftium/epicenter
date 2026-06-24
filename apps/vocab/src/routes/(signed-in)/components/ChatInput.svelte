@@ -16,6 +16,11 @@
 		onStop: () => void;
 	} = $props();
 
+	// The whole send gate in one place: the conversation is sendable (`disabled` is
+	// the cross-device "model not served here" gate), no turn is in flight, and
+	// there is something to send. The button is just `disabled={!canSend}`.
+	const canSend = $derived(!disabled && !isGenerating && value.trim().length > 0);
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 			e.preventDefault();
@@ -24,9 +29,8 @@
 	}
 
 	function submit() {
-		const content = value.trim();
-		if (!content || disabled) return;
-		onSend(content);
+		if (!canSend) return;
+		onSend(value.trim());
 		value = '';
 	}
 </script>
@@ -49,7 +53,7 @@
 	{#if isGenerating}
 		<Button type="button" variant="outline" onclick={onStop}>Stop</Button>
 	{:else}
-		<Button type="submit" disabled={!value.trim() || disabled}>Send</Button>
+		<Button type="submit" disabled={!canSend}>Send</Button>
 	{/if}
 </form>
 <p class="px-4 pb-2 text-xs text-muted-foreground">

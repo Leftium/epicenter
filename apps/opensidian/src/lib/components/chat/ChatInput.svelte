@@ -9,18 +9,20 @@
 
 	const opensidian = requireOpensidian();
 
-	// Sending is gated when the conversation's model is not served by any
-	// connection on this device (the cross-device banner case). Derived here so the
-	// gate guards every send path (Enter and the button), not just the button.
-	const canSend = $derived(
-		inferenceConnections.canServe(opensidian.state.chat.model),
-	);
-
 	let inputValue = $state('');
 
+	// The whole send gate in one place: the model is served on this device, no turn
+	// is in flight, and there is something to send. Guards every send path (Enter
+	// and the button), so the button is just `disabled={!canSend}`.
+	const canSend = $derived(
+		inferenceConnections.canServe(opensidian.state.chat.model) &&
+			!opensidian.state.chat.isLoading &&
+			inputValue.trim().length > 0,
+	);
+
 	function send() {
+		if (!canSend) return;
 		const content = inputValue.trim();
-		if (!content || !canSend) return;
 		inputValue = '';
 		opensidian.state.chat.sendMessage(content);
 	}
@@ -70,12 +72,7 @@
 				<SquareIcon />
 			</Button>
 		{:else}
-			<Button
-				variant="default"
-				size="icon-lg"
-				type="submit"
-				disabled={!canSend || !inputValue.trim()}
-			>
+			<Button variant="default" size="icon-lg" type="submit" disabled={!canSend}>
 				<SendIcon />
 			</Button>
 		{/if}

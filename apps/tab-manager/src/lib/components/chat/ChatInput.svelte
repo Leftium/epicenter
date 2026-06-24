@@ -9,17 +9,20 @@
 
 	let { active }: { active: ConversationHandle | undefined } = $props();
 
-	// Sending is gated when the conversation's model is not served by any
-	// connection on this device (the cross-device banner case). Derived here so the
-	// gate guards every send path (Enter and the button), not just the button.
+	// The whole send gate in one place: there is an active conversation, its model
+	// is served on this device, no turn is in flight, and there is something to
+	// send. Guards every send path (Enter and the button), so the button is just
+	// `disabled={!canSend}`.
 	const canSend = $derived(
-		!active || inferenceConnections.canServe(active.model),
+		!!active &&
+			inferenceConnections.canServe(active.model) &&
+			!active.isLoading &&
+			active.inputValue.trim().length > 0,
 	);
 
 	function send() {
 		if (!active || !canSend) return;
 		const content = active.inputValue.trim();
-		if (!content) return;
 		active.inputValue = '';
 		active.sendMessage(content);
 	}
@@ -73,12 +76,7 @@
 				<SquareIcon />
 			</Button>
 		{:else}
-			<Button
-				variant="default"
-				size="icon-lg"
-				type="submit"
-				disabled={!canSend || !active?.inputValue.trim()}
-			>
+			<Button variant="default" size="icon-lg" type="submit" disabled={!canSend}>
 				<SendIcon />
 			</Button>
 		{/if}

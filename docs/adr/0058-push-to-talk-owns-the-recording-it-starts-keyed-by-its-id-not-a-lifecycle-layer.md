@@ -1,6 +1,6 @@
 # 0058. Push-to-talk owns the recording it starts, keyed by the recording's id, not a general lifecycle layer
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-23
 
 ## Context
@@ -34,4 +34,4 @@ We deliberately do not build a general recording-lifecycle layer, and we do not 
 
 ## Reference
 
-- Spec: `apps/whispering/specs/20260622T214212-push-to-talk-recording-lifecycle.md` (deep evidence; desktop smoke is the remaining verification).
+- Implemented in `apps/whispering/src/lib/operations/push-to-talk.ts`, `.../operations/recording.ts`, and `.../state/manual-recorder.svelte.ts`; the keyboard backend half lives in `apps/whispering/src-tauri/src/keyboard/`. PR #2175. The design spec was retired on acceptance (recoverable in git history); the remaining hands-on desktop smoke is tracked on the PR.

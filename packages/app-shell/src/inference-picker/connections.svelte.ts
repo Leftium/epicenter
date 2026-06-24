@@ -97,18 +97,22 @@ export function createInferenceConnections({
 		discovered.current = { ...discovered.current, [baseUrl]: models };
 	}
 
-	/** The list `resolveForModel` matches against: the hosted connection plus each
-	 * custom connection paired with the ids it was discovered to serve. */
+	/** The list `resolveForModel` matches against, in priority order: every custom
+	 * connection (the user's own key) BEFORE hosted. The hosted catalog sells real
+	 * upstream ids (e.g. `gpt-5.5`), so a user who adds their own OpenAI key serves a
+	 * colliding id; matching custom first resolves that turn to the user's key
+	 * instead of silently metering it against Epicenter credits. Hosted is the last
+	 * resort, serving only ids no custom connection on this device claims. */
 	function candidates(): {
 		connection: Connection;
 		models: readonly string[];
 	}[] {
 		return [
-			{ connection: { kind: 'hosted' }, models: hostedModels.map((m) => m.id) },
 			...custom.current.map((connection) => ({
 				connection,
 				models: discovered.current[connection.baseUrl] ?? [],
 			})),
+			{ connection: { kind: 'hosted' }, models: hostedModels.map((m) => m.id) },
 		];
 	}
 

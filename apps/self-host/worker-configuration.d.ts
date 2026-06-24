@@ -22,7 +22,7 @@ declare namespace Cloudflare {
 
 	interface Env extends ServerBindings {
 		// Runtime-only Cloudflare bindings the library no longer names in
-		// ServerBindings (ADR-0057): this deployment reads them in its own
+		// ServerBindings (ADR-0059): this deployment reads them in its own
 		// `connectDb`/`resolveRooms` resolvers, so it declares them here.
 		HYPERDRIVE: Hyperdrive;
 		ROOM: DurableObjectNamespace<import('@epicenter/server').Room>;

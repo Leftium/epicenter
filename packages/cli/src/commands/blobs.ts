@@ -135,7 +135,9 @@ const addCommand = cmd({
 				sha256: result.sha256,
 				url: result.url,
 				duplicate: result.duplicate,
-				receipt: wroteReceipt ? path.relative(process.cwd(), receiptPath) : null,
+				receipt: wroteReceipt
+					? path.relative(process.cwd(), receiptPath)
+					: null,
 				workingCopy: path.relative(process.cwd(), workingCopyPath),
 			},
 			{ format: argv.format },
@@ -200,7 +202,9 @@ async function resolveSource(
 	return Ok({
 		bytes,
 		contentType:
-			contentTypeOverride ?? mime.getType(localPath) ?? 'application/octet-stream',
+			contentTypeOverride ??
+			mime.getType(localPath) ??
+			'application/octet-stream',
 		localPath,
 	});
 }

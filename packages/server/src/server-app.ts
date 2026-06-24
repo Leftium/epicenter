@@ -11,7 +11,7 @@
  * of the per-concern runtime-port hooks (alongside `connectDb` and
  * `afterResponse`): each runtime concern is its own injected function the
  * deployment composes at the `apps/*` edge, never a single `Runtime`
- * god-object. See ADR-0057.
+ * god-object. See ADR-0059.
  */
 
 import { type Context, Hono } from 'hono';
@@ -39,7 +39,7 @@ import type { Env } from './types.js';
  *
  * The runtime-port hooks receive `c.env` typed as the library's own portable
  * {@link ServerBindings} contract; the library never names `Cloudflare.Env`
- * (ADR-0057), so a Bun host typechecks with no Cloudflare types in scope. A
+ * (ADR-0059), so a Bun host typechecks with no Cloudflare types in scope. A
  * Workers deployment whose resolver reads a Cloudflare binding (`env.ROOM`,
  * `env.HYPERDRIVE`) casts `env` to its own `Cloudflare.Env` at that edge, where
  * naming Cloudflare is honest; a Bun host's resolvers read nothing
@@ -72,7 +72,7 @@ type CreateServerAppOptions = {
 	cookieDomain?: string;
 	/**
 	 * Acquire a per-request database handle. The runtime-port db concern: the
-	 * library depends on the portable `pg`/drizzle Postgres wire (ADR-0057
+	 * library depends on the portable `pg`/drizzle Postgres wire (ADR-0059
 	 * Road 1) and never on a binding shape, so only connection acquisition is
 	 * injected. The Cloudflare deployments pass `connectHyperdriveDb(env.HYPERDRIVE)`
 	 * (a per-request `pg.Client`); a Bun host passes a module-scope `pg.Pool`.
@@ -94,7 +94,7 @@ type CreateServerAppOptions = {
 	/**
 	 * Resolve this deployment's room registry. The runtime-port room concern,
 	 * the one subsystem with no open standard (a hibernating single-writer
-	 * actor, ADR-0057 Road 2): the Cloudflare deployments pass
+	 * actor, ADR-0059 Road 2): the Cloudflare deployments pass
 	 * `createDurableObjectRooms(env.ROOM)`; a Bun host passes an in-process
 	 * registry (`createBunRooms`). Bound per request onto `c.var.rooms`.
 	 */
@@ -142,7 +142,10 @@ export function createServerApp({
 			c.set('afterResponseQueue', queue);
 			await next();
 		} finally {
-			afterResponse(c, Promise.allSettled(queue).then(() => close()));
+			afterResponse(
+				c,
+				Promise.allSettled(queue).then(() => close()),
+			);
 		}
 	});
 

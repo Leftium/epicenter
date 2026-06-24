@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
 import type { Keyring } from './keyring.ts';
-import { type OAuthDeps, OAuthError, refreshAccessToken } from './oauth.ts';
+import { OAuthError, refreshAccessToken } from './oauth.ts';
 import type { TokenGrantError } from './tokens.ts';
 import {
 	isAccessTokenExpired,
@@ -66,23 +66,23 @@ export function createTokenManager({
 	config,
 	keyring,
 	token,
-	deps,
+	now,
 }: {
 	config: AppConfig;
 	keyring: Keyring;
 	token: TokenSet;
-	deps: OAuthDeps;
+	now: () => number;
 }): TokenManager {
 	let current = token;
 
 	async function refresh(): Promise<Result<string, TokenError>> {
-		if (isRefreshTokenExpired(current, deps.now())) {
+		if (isRefreshTokenExpired(current, now())) {
 			return OAuthError.ReauthRequired({ reason: 'refresh token expired' });
 		}
 		const { data: refreshed, error } = await refreshAccessToken(
 			config,
 			current,
-			deps,
+			now,
 		);
 		if (error) return { data: null, error };
 		current = refreshed;
@@ -93,8 +93,7 @@ export function createTokenManager({
 	return {
 		current: () => current,
 		async getValidAccessToken() {
-			if (!isAccessTokenExpired(current, deps.now()))
-				return Ok(current.accessToken);
+			if (!isAccessTokenExpired(current, now())) return Ok(current.accessToken);
 			return refresh();
 		},
 		forceRefresh: refresh,

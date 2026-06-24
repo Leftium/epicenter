@@ -49,7 +49,7 @@ const ownership = personal();
 // resolvers read Cloudflare-only bindings (`HYPERDRIVE`, `ROOM`) and the
 // deployment-owned `API_PUBLIC_ORIGIN`, none of which `ServerBindings` names.
 // Casting to this deployment's own `Cloudflare.Env` is the honest edge where
-// naming Cloudflare belongs (ADR-0057); the library never does.
+// naming Cloudflare belongs (ADR-0059); the library never does.
 const app = createServerApp({
 	resolveOrigin: (env) =>
 		(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
@@ -64,7 +64,7 @@ const app = createServerApp({
 	connectDb: (env) => connectHyperdriveDb((env as Cloudflare.Env).HYPERDRIVE),
 	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
 	// Per-room Durable Object sharding stays the cloud's binding of the room
-	// actor forever (ADR-0057): hibernate-to-zero and single-writer-per-room
+	// actor forever (ADR-0059): hibernate-to-zero and single-writer-per-room
 	// at multi-tenant scale. A Bun host swaps in an in-process registry.
 	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 });

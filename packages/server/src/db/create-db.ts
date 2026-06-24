@@ -7,11 +7,11 @@
  * Both runtime db backends funnel through this: the Cloudflare backend (a
  * per-request `pg.Client` over Hyperdrive, see `db/backends/cloudflare.ts`)
  * and a Node host (a module-scope `pg.Pool`). `pg` + drizzle are the open
- * Postgres-wire standard both runtimes already speak (ADR-0057 Road 1); only
+ * Postgres-wire standard both runtimes already speak (ADR-0059 Road 1); only
  * connection acquisition differs, which is what `connectDb` injects.
  */
 
-import { type NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Client, Pool } from 'pg';
 import * as schema from './schema/index.js';
 

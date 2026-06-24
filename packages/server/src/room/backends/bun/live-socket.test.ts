@@ -7,7 +7,7 @@
  * impedance (Bun cannot return a 101 from `fetch`), the top-level `websocket`
  * handler delivering frames to `RoomCore`, and real binary/text frames flowing
  * back over the wire. It is the Bun half of the "a room syncs over WebSocket"
- * proof (ADR-0057 Wave 4); auth is omitted here on purpose, since this asserts
+ * proof (ADR-0059 Wave 4); auth is omitted here on purpose, since this asserts
  * the transport, not the gate (the gate is proven by the route's own tests).
  */
 
@@ -16,10 +16,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asUserId } from '@epicenter/auth';
-import { MAIN_SUBPROTOCOL, encodeSyncUpdate } from '@epicenter/sync';
+import { encodeSyncUpdate, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import type { Server } from 'bun';
 import * as Y from 'yjs';
-import { createBunRooms, type BunRoomSocketData } from './registry.js';
+import { type BunRoomSocketData, createBunRooms } from './registry.js';
 
 const ROOM = 'owners/u1/rooms/r1';
 
@@ -60,9 +60,10 @@ async function openClient(nodeId: string): Promise<{
 	ws: WebSocket;
 	frames: Frame[];
 }> {
-	const ws = new WebSocket(`ws://localhost:${server.port}/ws?nodeId=${nodeId}`, [
-		MAIN_SUBPROTOCOL,
-	]);
+	const ws = new WebSocket(
+		`ws://localhost:${server.port}/ws?nodeId=${nodeId}`,
+		[MAIN_SUBPROTOCOL],
+	);
 	ws.binaryType = 'arraybuffer';
 	const frames: Frame[] = [];
 	ws.onmessage = (e) => {
@@ -77,10 +78,7 @@ async function openClient(nodeId: string): Promise<{
 }
 
 /** Poll until `pred` holds or the deadline passes. */
-async function waitFor(
-	pred: () => boolean,
-	timeoutMs = 1500,
-): Promise<void> {
+async function waitFor(pred: () => boolean, timeoutMs = 1500): Promise<void> {
 	const start = Date.now();
 	while (!pred()) {
 		if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out');
@@ -93,9 +91,7 @@ function presenceNodeIds(frames: Frame[]): string[][] {
 		.filter((f) => f.text)
 		.map((f) => JSON.parse(f.text as string))
 		.filter((m) => m.type === 'presence')
-		.map((m: { peers: { nodeId: string }[] }) =>
-			m.peers.map((p) => p.nodeId),
-		);
+		.map((m: { peers: { nodeId: string }[] }) => m.peers.map((p) => p.nodeId));
 }
 
 test('a real WebSocket upgrade syncs presence and a binary update across clients', async () => {
@@ -117,9 +113,7 @@ test('a real WebSocket upgrade syncs presence and a binary update across clients
 	doc.getMap('data').set('hello', 'world');
 	a.ws.send(encodeSyncUpdate({ update: Y.encodeStateAsUpdateV2(doc) }));
 
-	await waitFor(
-		() => b.frames.filter((f) => f.binary).length > bBinaryBefore,
-	);
+	await waitFor(() => b.frames.filter((f) => f.binary).length > bBinaryBefore);
 	expect(a.frames.filter((f) => f.binary).length).toBe(aBinaryBefore);
 
 	a.ws.close();

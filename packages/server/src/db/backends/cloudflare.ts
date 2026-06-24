@@ -14,7 +14,7 @@
  */
 
 import pg from 'pg';
-import { type Db, createDb } from '../create-db.js';
+import { createDb, type Db } from '../create-db.js';
 
 /**
  * Open a per-request database handle over a Hyperdrive binding. The caller

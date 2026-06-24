@@ -33,7 +33,7 @@ const ownership = shared({
 	admit: (c) => {
 		// `ALLOWED_MEMBER_EMAILS` is operator config on this deployment's own
 		// `Cloudflare.Env`, not a library binding, so it is read with the same
-		// edge cast the resolvers use (ADR-0057).
+		// edge cast the resolvers use (ADR-0059).
 		const allowed = new Set(
 			(c.env as Cloudflare.Env).ALLOWED_MEMBER_EMAILS.split(',')
 				.map((s) => s.trim())
@@ -49,7 +49,7 @@ const ownership = shared({
 // The library types `env` as its portable `ServerBindings`; this Worker reads
 // Cloudflare-only bindings (`HYPERDRIVE`, `ROOM`) and the operator-set
 // `API_PUBLIC_ORIGIN`, none of which `ServerBindings` names. Casting to this
-// deployment's own `Cloudflare.Env` is the honest edge (ADR-0057).
+// deployment's own `Cloudflare.Env` is the honest edge (ADR-0059).
 const app = createServerApp({
 	resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
 	// A self-host trusts its OWN origin and the Tauri desktop client, never

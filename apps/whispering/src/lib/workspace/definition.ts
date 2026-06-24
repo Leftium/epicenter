@@ -390,12 +390,12 @@ const shortcuts = {
 } as const;
 
 type CreateWhisperingOptions = {
-	defaultTranscriptionService?: TranscriptionServiceId;
+	defaultTranscriptionService: TranscriptionServiceId;
 };
 
 export function createWhispering({
-	defaultTranscriptionService = 'parakeet',
-}: CreateWhisperingOptions = {}) {
+	defaultTranscriptionService,
+}: CreateWhisperingOptions) {
 	/**
 	 * Whispering KV schemas: ~40 entries for synced preferences. Defined locally
 	 * so the raw schema map is not a module-level export. Callers reach the

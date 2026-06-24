@@ -74,7 +74,9 @@ class StubSocket implements RoomSocket {
 	presence(): string[][] {
 		return this.sent
 			.filter((f): f is string => typeof f === 'string')
-			.map((t) => JSON.parse(t) as { type: string; peers?: { nodeId: string }[] })
+			.map(
+				(t) => JSON.parse(t) as { type: string; peers?: { nodeId: string }[] },
+			)
 			.filter((m) => m.type === 'presence')
 			.map((m) => (m.peers ?? []).map((p) => p.nodeId));
 	}
@@ -184,7 +186,13 @@ describe('RoomCore: presence', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 function request(to: string, id = 'd1') {
-	return JSON.stringify({ type: 'dispatch_request', id, to, action: 'noop', input: {} });
+	return JSON.stringify({
+		type: 'dispatch_request',
+		id,
+		to,
+		action: 'noop',
+		input: {},
+	});
 }
 
 describe('RoomCore: dispatch', () => {
@@ -201,7 +209,11 @@ describe('RoomCore: dispatch', () => {
 
 		core.handleMessage(
 			recipient,
-			JSON.stringify({ type: 'dispatch_response', id: 'd1', result: { data: 'ok', error: null } }),
+			JSON.stringify({
+				type: 'dispatch_response',
+				id: 'd1',
+				result: { data: 'ok', error: null },
+			}),
 		);
 		expect(caller.json('dispatch_result').at(0)).toMatchObject({
 			id: 'd1',
@@ -237,7 +249,11 @@ describe('RoomCore: dispatch', () => {
 		core.handleMessage(caller, request('recipient'));
 		core.handleMessage(
 			intruder,
-			JSON.stringify({ type: 'dispatch_response', id: 'd1', result: { data: 'forged', error: null } }),
+			JSON.stringify({
+				type: 'dispatch_response',
+				id: 'd1',
+				result: { data: 'forged', error: null },
+			}),
 		);
 		expect(caller.json('dispatch_result')).toHaveLength(0);
 	});
@@ -273,7 +289,10 @@ describe('RoomCore: sync', () => {
 		const beforeB = b.binary().length;
 		const src = new Y.Doc();
 		src.getMap('d').set('k', 'v');
-		core.handleMessage(a, encodeSyncUpdate({ update: Y.encodeStateAsUpdateV2(src) }));
+		core.handleMessage(
+			a,
+			encodeSyncUpdate({ update: Y.encodeStateAsUpdateV2(src) }),
+		);
 		expect(b.binary().length).toBe(beforeB + 1);
 		expect(a.binary().length).toBe(beforeA);
 	});
@@ -283,10 +302,15 @@ describe('RoomCore: sync', () => {
 		const ws = connect(core, 'A');
 		const src = new Y.Doc();
 		src.getMap('d').set('k', 'v');
-		core.handleMessage(ws, encodeSyncUpdate({ update: Y.encodeStateAsUpdateV2(src) }));
+		core.handleMessage(
+			ws,
+			encodeSyncUpdate({ update: Y.encodeStateAsUpdateV2(src) }),
+		);
 
 		const client = new Y.Doc();
-		const { data, error } = core.sync(encodeSyncRequest(Y.encodeStateVector(client)));
+		const { data, error } = core.sync(
+			encodeSyncRequest(Y.encodeStateVector(client)),
+		);
 		expect(error).toBeNull();
 		expect(data?.diff).not.toBeNull();
 	});
@@ -310,7 +334,10 @@ describe('RoomCore: compaction', () => {
 		for (const v of ['a', 'b', 'c']) {
 			const d = new Y.Doc();
 			d.getMap('m').set('k', v);
-			core.handleMessage(ws, encodeSyncUpdate({ update: Y.encodeStateAsUpdateV2(d) }));
+			core.handleMessage(
+				ws,
+				encodeSyncUpdate({ update: Y.encodeStateAsUpdateV2(d) }),
+			);
 		}
 		expect(updateLog.entryCount()).toBeGreaterThan(1);
 		core.compact();
@@ -334,7 +361,10 @@ describe('RoomCore: connection lifetime', () => {
 	test('an inbound frame on an over-age socket closes it 4408 and is dropped', () => {
 		const core = newRoom();
 		const ws = new StubSocket();
-		core.addConnection(ws, conn('A', { connectedAt: Date.now() - (LIFETIME_MS + MINUTE_MS) }));
+		core.addConnection(
+			ws,
+			conn('A', { connectedAt: Date.now() - (LIFETIME_MS + MINUTE_MS) }),
+		);
 		const beforeBinary = ws.binary().length;
 		// A STEP1 would normally get a STEP2 reply; instead the socket is closed.
 		core.handleMessage(ws, encodeSyncStep1({ doc: new Y.Doc() }));
@@ -345,7 +375,10 @@ describe('RoomCore: connection lifetime', () => {
 	test('sweepExpiredConnections closes idle over-age sockets and spares fresh ones', () => {
 		const core = newRoom();
 		const old = new StubSocket();
-		core.addConnection(old, conn('old', { connectedAt: Date.now() - (LIFETIME_MS + MINUTE_MS) }));
+		core.addConnection(
+			old,
+			conn('old', { connectedAt: Date.now() - (LIFETIME_MS + MINUTE_MS) }),
+		);
 		const fresh = connect(core, 'fresh');
 		core.sweepExpiredConnections(Date.now());
 		expect(old.codes).toEqual([4408]);

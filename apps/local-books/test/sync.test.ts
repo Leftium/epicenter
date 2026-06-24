@@ -38,13 +38,8 @@ function setup(configOver: Partial<AppConfig> = {}) {
 		environment: 'sandbox',
 		now: clock,
 	}).data as TokenSet;
-	const tokens = createTokenManager({ config, keyring, token, deps: { now } });
-	const client = createQbClient({
-		config,
-		realmId: server.realmId,
-		tokens,
-		sleep: async () => {},
-	});
+	const tokens = createTokenManager({ config, keyring, token, now });
+	const client = createQbClient({ config, realmId: server.realmId, tokens });
 	const tmp = tempDir();
 	const db = openBooksDb(join(tmp.dir, 'books.db'));
 
@@ -216,18 +211,8 @@ test('a 401 triggers a transparent refresh, retries, and persists the new token'
 	await storeToken(keyring, stale);
 	server.rejectAccessToken('stale-access');
 
-	const tokens = createTokenManager({
-		config,
-		keyring,
-		token: stale,
-		deps: { now },
-	});
-	const client = createQbClient({
-		config,
-		realmId: server.realmId,
-		tokens,
-		sleep: async () => {},
-	});
+	const tokens = createTokenManager({ config, keyring, token: stale, now });
+	const client = createQbClient({ config, realmId: server.realmId, tokens });
 	server.put('Invoice', makeInvoice('1'));
 
 	const { data, error } = await client.queryAll('Invoice');

@@ -234,7 +234,7 @@
 		onContentChange,
 	}: {
 		yxmlfragment: Y.XmlFragment;
-		onContentChange?: (content: {
+		onContentChange: (content: {
 			title: string;
 			preview: string;
 			wordCount: number;
@@ -354,7 +354,7 @@
 				const newState = currentView.state.apply(tr);
 				currentView.updateState(newState);
 				updateActiveFormats(newState);
-				if (tr.docChanged && onContentChange) {
+				if (tr.docChanged) {
 					onContentChange(extractTitleAndPreview(newState.doc));
 				}
 			},
@@ -364,9 +364,7 @@
 		updateActiveFormats(currentView.state);
 
 		// Fire initial content extraction
-		if (onContentChange) {
-			onContentChange(extractTitleAndPreview(currentView.state.doc));
-		}
+		onContentChange(extractTitleAndPreview(currentView.state.doc));
 
 		return () => {
 			currentView.destroy();

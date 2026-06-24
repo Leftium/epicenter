@@ -6,7 +6,7 @@
  * propagation. This package owns neither auth state nor identity: the caller
  * passes the authed fetch handle and the `ownerId` (read from `auth.state`),
  * so the client never fetches `/api/session` itself. Profile reads live on the
- * auth client (`auth.getProfile()`); see ADR-0058.
+ * auth client (`auth.getProfile()`); see ADR-0060.
  *
  * Works against any Epicenter deployment (cloud at `epicenter.so` or a
  * self-hosted shared-wiki server).
@@ -166,7 +166,11 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		if (error !== null) return Err(error);
 		if (!res.ok) {
 			const detail = (await res.text().catch(() => '')).slice(0, 200);
-			return ClientError.RequestFailed({ operation, status: res.status, detail });
+			return ClientError.RequestFailed({
+				operation,
+				status: res.status,
+				detail,
+			});
 		}
 		return Ok(res);
 	}
@@ -194,7 +198,10 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 				const { data: source, error } = await tryAsync({
 					try: () => fetch(fileOrUrl),
 					catch: (cause) =>
-						ClientError.TransportFailed({ operation: `GET ${fileOrUrl}`, cause }),
+						ClientError.TransportFailed({
+							operation: `GET ${fileOrUrl}`,
+							cause,
+						}),
 				});
 				if (error !== null) return Err(error);
 				if (!source.ok) {

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { asUserId, type AuthState, type SyncAuthClient } from '@epicenter/auth';
+import { type AuthState, asUserId, type SyncAuthClient } from '@epicenter/auth';
 import { asOwnerId } from '@epicenter/identity';
 import { Ok } from 'wellcrafted/result';
 import { createSession } from './session.svelte.js';

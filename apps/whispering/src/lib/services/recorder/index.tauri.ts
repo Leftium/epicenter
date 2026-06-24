@@ -229,6 +229,12 @@ function createCpalRecorder() {
 
 		enumerateDevices,
 
+		// Takes only `params`, no callbacks: CPAL drives the pill meter from Rust
+		// straight to the overlay window, so it never reads the caller's
+		// `onLevel` sink. A params-only function still satisfies the
+		// RecorderService contract (a narrower function is assignable to a wider
+		// one), and callers reach it through the `RecorderService` contract type
+		// the export below publishes, so they still pass both arguments.
 		startRecording: async ({
 			selectedDeviceId,
 			recordingId,
@@ -308,5 +314,5 @@ function createCpalRecorder() {
 	} satisfies RecorderService<CpalRecordingParams>;
 }
 
-export const ManualRecorderLive =
-	createCpalRecorder() satisfies RecorderService<CpalRecordingParams>;
+export const ManualRecorderLive: RecorderService<CpalRecordingParams> =
+	createCpalRecorder();

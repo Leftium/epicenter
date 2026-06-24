@@ -5,7 +5,7 @@
  * backend that runs behind the Cloudflare Durable Object: presence, binary
  * sync fan-out, and dispatch relay all behave identically, and the
  * `bun:sqlite` update log persists and reloads a room's history. There is no
- * `cloudflare:workers` mock here, by design (ADR-0057): the core is exercised
+ * `cloudflare:workers` mock here, by design (ADR-0059): the core is exercised
  * through the Node backend's own surface.
  *
  * Like the Durable Object test, sockets are driven directly: the `websocket`
@@ -14,8 +14,8 @@
  * test bypasses the real hibernation accept.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,8 +25,8 @@ import {
 	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
 import * as Y from 'yjs';
-import { createBunSqliteUpdateLog } from './update-log.js';
 import { createBunRooms } from './registry.js';
+import { createBunSqliteUpdateLog } from './update-log.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // STUB SOCKET (the ServerWebSocket surface RoomCore actually touches)

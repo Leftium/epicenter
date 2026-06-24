@@ -1,12 +1,12 @@
 /**
  * @epicenter/server/bun — the Bun host surface.
  *
- * Same library, second runtime (ADR-0057). A Bun entry imports `createServerApp`
+ * Same library, second runtime (ADR-0059). A Bun entry imports `createServerApp`
  * and the `mount*` surface from here and binds the runtime concerns to plain
  * primitives: a `pg.Pool` for `connectDb`, a fire-and-forget `afterResponse`,
  * and {@link createBunRooms} for `resolveRooms` (an in-process registry over
  * `bun:sqlite`, not a Durable Object). Bun is the one non-Cloudflare runtime
- * (ADR-0057): `bun:sqlite` is the built-in synchronous engine the room update
+ * (ADR-0059): `bun:sqlite` is the built-in synchronous engine the room update
  * log needs, and `bun build --compile` is what ships the self-host binary and
  * the Tauri sidecar. There is no Node backend; this code imports `bun:sqlite`
  * and `Bun.serve` directly.
@@ -18,11 +18,11 @@
  * on a Bun host, which supplies its own room and db concerns.
  */
 
+export { createDb, type Db } from './db/create-db.js';
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
-export { type Db, createDb } from './db/create-db.js';
 export { doName } from './owner.js';
 export {
 	type Admit,
@@ -30,15 +30,15 @@ export {
 	personal,
 	shared,
 } from './ownership.js';
+// The Bun room backend: an in-process Rooms map + bun:sqlite update log,
+// plus the Bun `websocket` handler and `bindServer` the entry wires.
+export { createBunRooms } from './room/backends/bun/registry.js';
 export { authApp } from './routes/auth.js';
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { createServerApp } from './server-app.js';
-// The Bun room backend: an in-process Rooms map + bun:sqlite update log,
-// plus the Bun `websocket` handler and `bindServer` the entry wires.
-export { createBunRooms } from './room/backends/bun/registry.js';
 // The portable env contract as both arktype schema (value) and inferred type;
 // the Bun entry validates `process.env` against it at boot.
 export { ServerBindings } from './server-bindings.js';

@@ -65,14 +65,13 @@ export type QbClientDeps = {
 	config: AppConfig;
 	realmId: string;
 	tokens: TokenManager;
-	fetchImpl?: typeof fetch;
-	sleep?: (ms: number) => Promise<void>;
 	log?: (message: string) => void;
-	/** Retry budget for 429 / 5xx / transient network errors. */
-	maxRetries?: number;
-	/** Wait applied on 429 when the response has no Retry-After. */
-	throttleWaitMs?: number;
 };
+
+/** Retry budget for 429 / 5xx / transient network errors. */
+const MAX_RETRIES = 5;
+/** Wait applied on 429 when the response has no Retry-After. QuickBooks asks ~60s. */
+const THROTTLE_WAIT_MS = 60_000;
 
 function retryAfterMs(response: Response): number | null {
 	const header = response.headers.get('retry-after');
@@ -81,18 +80,15 @@ function retryAfterMs(response: Response): number | null {
 	return Number.isFinite(seconds) ? seconds * 1000 : null;
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export function createQbClient(deps: QbClientDeps): QbClient {
 	const { config, realmId, tokens } = deps;
-	const fetchImpl = deps.fetchImpl ?? fetch;
-	const sleep =
-		deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 	const log = deps.log ?? (() => {});
-	const maxRetries = deps.maxRetries ?? 5;
-	const throttleWaitMs = deps.throttleWaitMs ?? 60_000;
 	const pageSize = config.pageSize;
 
 	const backoffMs = (attempt: number) =>
-		Math.min(throttleWaitMs, 500 * 2 ** attempt);
+		Math.min(THROTTLE_WAIT_MS, 500 * 2 ** attempt);
 
 	async function request(
 		path: string,
@@ -112,14 +108,14 @@ export function createQbClient(deps: QbClientDeps): QbClient {
 
 			let response: Response;
 			try {
-				response = await fetchImpl(url.toString(), {
+				response = await fetch(url.toString(), {
 					headers: {
 						Authorization: `Bearer ${token.data}`,
 						Accept: 'application/json',
 					},
 				});
 			} catch (cause) {
-				if (attempt < maxRetries) {
+				if (attempt < MAX_RETRIES) {
 					attempt += 1;
 					await sleep(backoffMs(attempt));
 					continue;
@@ -145,19 +141,19 @@ export function createQbClient(deps: QbClientDeps): QbClient {
 			}
 
 			if (response.status === 429) {
-				if (attempt >= maxRetries)
+				if (attempt >= MAX_RETRIES)
 					return QbApiError.Throttled({ retries: attempt });
 				attempt += 1;
-				const wait = retryAfterMs(response) ?? throttleWaitMs;
+				const wait = retryAfterMs(response) ?? THROTTLE_WAIT_MS;
 				log(
-					`QuickBooks throttled (429); waiting ${wait}ms before retry ${attempt}/${maxRetries}.`,
+					`QuickBooks throttled (429); waiting ${wait}ms before retry ${attempt}/${MAX_RETRIES}.`,
 				);
 				await sleep(wait);
 				continue;
 			}
 
 			if (response.status >= 500) {
-				if (attempt >= maxRetries) {
+				if (attempt >= MAX_RETRIES) {
 					const body = await response.text().catch(() => '');
 					return QbApiError.Http({ status: response.status, body });
 				}

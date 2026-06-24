@@ -113,7 +113,7 @@ type SyncSupervisorConfig = {
 	 * text frames itself; downstream code (e.g. dispatch_inbound
 	 * handlers) receives the raw string.
 	 */
-	onTextFrame?: (text: string) => void;
+	onTextFrame: (text: string) => void;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -348,7 +348,7 @@ export function createSyncSupervisor(
 		ws.onmessage = (event: MessageEvent) => {
 			liveness.touch();
 			if (typeof event.data === 'string') {
-				config.onTextFrame?.(event.data);
+				config.onTextFrame(event.data);
 				return;
 			}
 

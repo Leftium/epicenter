@@ -14,6 +14,12 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
+export { connectHyperdriveDb } from './db/backends/cloudflare.js';
+// Database concern. `createDb(client)` wraps a connected pg client/pool in
+// drizzle with the internal schema (the portable core); `connectHyperdriveDb`
+// is the Cloudflare backend a deployment passes to `createServerApp`'s
+// `connectDb`. A Node host injects its own `pg.Pool`-backed `connectDb`.
+export { createDb, type Db } from './db/create-db.js';
 // Deploy-time admin operations (OAuth client seeding) live in each
 // deployment's own scripts (`apps/api` `oauth:seed:*`), not in this barrel, so
 // `pg` and the drizzle query-builder graph stay out of the worker's module and
@@ -28,12 +34,6 @@ export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
-// Database concern. `createDb(client)` wraps a connected pg client/pool in
-// drizzle with the internal schema (the portable core); `connectHyperdriveDb`
-// is the Cloudflare backend a deployment passes to `createServerApp`'s
-// `connectDb`. A Node host injects its own `pg.Pool`-backed `connectDb`.
-export { type Db, createDb } from './db/create-db.js';
-export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // Room-resolution helpers, deployment-agnostic and exported for composing apps:
 //   createDurableObjectRooms  resolve a room stub from its opaque name with no
 //                          request context.

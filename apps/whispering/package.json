@@ -76,7 +76,8 @@
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"bindings:tauri": "cargo test --manifest-path src-tauri/Cargo.toml export_types",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json",
+		"typecheck:tauri": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.tauri.json",
 		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"tauri": "tauri",
 		"deploy": "wrangler deploy"

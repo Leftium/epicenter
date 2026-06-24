@@ -3,6 +3,7 @@ import { VAD_RECORDING_BUTTON } from '$lib/constants/audio';
 import { toggleVadRecording } from '$lib/operations/recording';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+import type { RecordingActionController } from './recording-action-controller';
 
 /**
  * The voice-activated record button behavior, in the same shape as
@@ -13,7 +14,7 @@ import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
  *
  * Call from a component's init: it creates a TanStack mutation.
  */
-export function createVadRecordingController() {
+export function createVadRecordingController(): RecordingActionController {
 	const toggleMutation = createMutation(() => ({
 		mutationFn: toggleVadRecording,
 	}));

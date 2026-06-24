@@ -3,8 +3,12 @@
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
+	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
+	import LevelMeter from '$lib/components/LevelMeter.svelte';
+	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { tauri } from '#platform/tauri';
 	import type { RecordingActionController } from './recording-action-controller';
 
 	// The controller owns the state machine and every derived label/icon. The card
@@ -32,6 +36,16 @@
 			? `${controller.label} (${controller.shortcutLabel})`
 			: controller.label,
 	);
+
+	// Exactly one live meter shows at a time, on the surface holding your
+	// attention. On desktop the always-on-top overlay is that meter: it floats over
+	// even the focused app for the whole recording, so the card defers to it with a
+	// static glyph and a second meter here would only double the overlay's. On web
+	// there is no floating overlay, so the in-window surface carries the meter: this
+	// card on the home route (where the in-page pill stands down), the pill on the
+	// other routes. The smoothed level is already in this window on web
+	// (`webPillLevel`); on desktop it is emitted straight to the overlay, not here.
+	const showsLiveMeter = !tauri;
 </script>
 
 <div
@@ -64,6 +78,16 @@
 		>
 			{#if controller.pending}
 				<Spinner class="size-7" />
+			{:else if controller.active && showsLiveMeter}
+				<!-- Live capture: the glyph slot becomes the meter, the same bars the
+				floating pill draws, scaled to fit the box. -->
+				<LevelMeter
+					level={webPillLevel.level}
+					class="gap-[2px]"
+					barClass="w-[2px] bg-destructive"
+					minPx={3}
+					maxPx={28}
+				/>
 			{:else}
 				{@const Icon = controller.icon}
 				<span
@@ -105,7 +129,28 @@
 		{/if}
 	</Button>
 
-	{#if footer && !controller.active}
+	<!-- The footer slot is the card's secondary zone: at rest it configures the
+	pipeline; while live it discards the take. Keeping the slot filled in both
+	states keeps the discard control tethered to the card (not orphaned below it)
+	and holds the card's height steady across start/stop. VAD has no discard, so
+	its live footer is empty and the slot collapses. -->
+	{#if controller.active}
+		{#if controller.cancel}
+			<div
+				class="flex justify-center border-t border-border/60 bg-background/20 px-3 py-2"
+			>
+				<Button
+					tooltip="Cancel recording and discard audio"
+					onclick={() => controller.cancel?.()}
+					variant="ghost-destructive"
+					size="sm"
+				>
+					<XIcon class="size-4" />
+					Cancel recording
+				</Button>
+			</div>
+		{/if}
+	{:else if footer}
 		<div class="border-t border-border/60 bg-background/20 px-3 py-2">
 			{@render footer()}
 		</div>

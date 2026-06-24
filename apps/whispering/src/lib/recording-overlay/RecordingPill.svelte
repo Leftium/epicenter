@@ -7,6 +7,7 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
+	import LevelMeter from '$lib/components/LevelMeter.svelte';
 	import type { DeliveryReach } from '$lib/operations/delivery';
 	import {
 		FAILURE_LABEL,
@@ -100,18 +101,6 @@
 		}
 	});
 
-	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
-	// the same amplitude through a fixed shape reads as a meter, not a flat block.
-	const BAR_ENVELOPE = [
-		0.35, 0.5, 0.68, 0.84, 0.95, 1, 0.95, 0.84, 0.68, 0.5, 0.35,
-	];
-	const MIN_BAR_PX = 3;
-	const MAX_BAR_PX = 18;
-
-	function barHeight(envelope: number): number {
-		return MIN_BAR_PX + envelope * level * (MAX_BAR_PX - MIN_BAR_PX);
-	}
-
 	// Resting state is a filled chip, not a bare icon, so the controls read as
 	// buttons at a glance in the small pill. Each control composes its own tone over
 	// this shared base, which carries the hover/press feedback: background and
@@ -176,22 +165,13 @@
 				{/if}
 			</div>
 
-			<div class="flex h-5 items-center gap-[3px]" aria-hidden="true">
-				{#each BAR_ENVELOPE as envelope, i (i)}
-					<!-- Height is set inline from the live mic level; the transition glides
-					     between samples (~20-30 Hz) so the meter looks continuous, and is
-					     dropped under reduced motion. Speech detected (VAD) tints the bar so
-					     the user sees it cross the threshold, on top of the height already
-					     reacting to loudness. -->
-					<span
-						class={cn(
-							'w-[3px] rounded-full bg-white/80 transition-[height] duration-[80ms] ease-linear motion-reduce:transition-none',
-							isSpeaking && 'bg-[#ffe5ee]',
-						)}
-						style="height: {barHeight(envelope)}px"
-					></span>
-				{/each}
-			</div>
+			<!-- Speech detected (VAD) tints the bars so the user sees capture cross the
+			     threshold, on top of the height already reacting to loudness. -->
+			<LevelMeter
+				{level}
+				class="h-5"
+				barClass={isSpeaking ? 'bg-[#ffe5ee]' : undefined}
+			/>
 
 			<!-- Trailing cluster: a contextual slot, then stop as the constant right
 			     anchor. Manual and VAD share this skeleton (slot then stop), so the

@@ -1,17 +1,14 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
-	import XIcon from '@lucide/svelte/icons/x';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
-	import { commandRunners } from '$lib/commands';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import {
 		TranscriptionRuntimeConfig,
@@ -39,7 +36,6 @@
 	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
-	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import {
@@ -335,17 +331,6 @@
 						</CapturePipeline>
 					{/snippet}
 				</ManualRecordingAction>
-				{#if manualRecorder.state === 'RECORDING'}
-					<Button
-						tooltip="Cancel recording and discard audio"
-						onclick={() => commandRunners.cancelRecording()}
-						variant="ghost-destructive"
-						size="sm"
-					>
-						<XIcon class="size-4" />
-						Cancel
-					</Button>
-				{/if}
 			</div>
 		{:else if captureSurface.current === 'vad'}
 			<div class="flex w-full flex-col items-center gap-3">

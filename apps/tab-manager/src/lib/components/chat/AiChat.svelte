@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { CrossDeviceModelGap } from '@epicenter/app-shell/inference-picker';
 	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import { DEFAULT_MODEL } from '$lib/chat/models';
@@ -11,19 +12,6 @@
 
 	const tabManager = requireTabManager();
 	const active = $derived(tabManager.state.aiChat.active);
-
-	// The conversation's model (ADR-0055) resolves against this device's
-	// connections. When no connection here serves it (a custom model set on another
-	// device), the banner shows and sending is blocked; the synced model column is
-	// never rewritten on detection, only by an explicit pick (ADR-0059).
-	const isModelAvailable = $derived(
-		!active || inferenceConnections.canServe(active.model),
-	);
-
-	/** Fall back to tab-manager's always-available hosted default for this chat. */
-	function useHostedDefault() {
-		if (active) active.model = DEFAULT_MODEL;
-	}
 </script>
 
 <div class="flex h-full flex-col">
@@ -103,27 +91,12 @@
 		/>
 	{/if}
 
-	<!-- Cross-device model gap: this conversation's model is not served by any
-	     connection on this device. Offer the hosted default; never rewrite the
-	     synced model column on detection (ADR-0059). -->
-	{#if active && !isModelAvailable}
-		<div
-			class="flex items-center justify-between gap-2 border-t bg-muted/50 px-3 py-2 text-xs"
-		>
-			<span class="min-w-0 flex-1">
-				This conversation uses
-				<span class="font-mono">{active.model}</span>, set up on another device
-				and not reachable here.
-			</span>
-			<Button
-				variant="outline"
-				size="sm"
-				class="h-6 px-2 text-xs"
-				onclick={useHostedDefault}
-			>
-				Use the default
-			</Button>
-		</div>
+	{#if active}
+		<CrossDeviceModelGap
+			model={active.model}
+			connections={inferenceConnections}
+			onUseDefault={() => (active.model = DEFAULT_MODEL)}
+		/>
 	{/if}
 
 	<ChatInput active={tabManager.state.aiChat.active} />

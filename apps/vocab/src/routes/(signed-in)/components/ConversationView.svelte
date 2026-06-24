@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { CrossDeviceModelGap } from '@epicenter/app-shell/inference-picker';
 	import type { ConversationId } from '@epicenter/chat';
 	import { bindAgentConversation } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
@@ -80,20 +81,11 @@
 	}
 </script>
 
-{#if !isModelAvailable}
-	<div
-		class="m-4 flex items-center gap-3 rounded-md border bg-muted/50 p-3 text-sm"
-	>
-		<span class="flex-1">
-			This conversation uses
-			<span class="font-mono">{model}</span>, set up on another device and not
-			reachable here.
-		</span>
-		<Button size="sm" variant="outline" onclick={useHostedDefault}>
-			Use Vocab's default
-		</Button>
-	</div>
-{/if}
+<CrossDeviceModelGap
+	{model}
+	connections={inferenceConnections}
+	onUseDefault={useHostedDefault}
+/>
 
 <Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
 	{#if convo.messages.length === 0 && !convo.streaming}

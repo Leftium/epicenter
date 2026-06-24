@@ -150,12 +150,12 @@ run: (state?: ShortcutEventState) => {
 - [x] **1.2** `mod.rs` emits those events after dropping the matcher lock: `spawn_listener` (clear_held) and `TapController::set_bindings` / `set_capturing` (which gained an `app` handle), through an `emit_trigger` helper.
 - [x] **1.3** Rewrote the blessing test and added two: clear-with-no-active emits nothing, set_capturing abandons an active gesture. `cargo test keyboard::matcher` = 16 pass.
 
-### Phase 2: The push-to-talk controller + source-scoped stop — DONE
+### Phase 2: The push-to-talk controller + id-scoped stop — DONE
 
-- [x] **2.1** The manual recorder tags its live session with `source: 'manual' | 'pushToTalk'` (`currentSource`/`isStarting` getters); `recording.ts` adds `stopManualRecordingIfOwned(source)`, the idempotent owned-stop. The session id + `stopRequested` live in the controller, not the recorder.
-- [x] **2.2** `operations/push-to-talk.ts`: `start()` (mint session, start tagged, arm 5-min cap, honor a startup-phase release), `stop()` (owned-stop, latch during startup, clear a stale session). The startup latch is safe because `manualRecorder.startRecording` sets `_starting` synchronously before any await.
-- [x] **2.3** `pushToTalk.run` routes to `pushToTalk.start()/.stop()` (`commands.ts`); the toggle/button path stays `manual` and unowned.
-- [x] **2.4** Harvested the ownership decision into [ADR-0058](../../../docs/adr/0058-push-to-talk-owns-its-recording-by-source-and-id-not-a-lifecycle-layer.md) (`Proposed`; flips to `Accepted` when desktop smoke lands and this spec is retired).
+- [x] **2.1** The manual recorder exposes the live recording's own id (`currentRecordingId`/`isStarting` getters) instead of inventing a source tag; `startManualRecording()` returns that id (or `null` when it started nothing it owns) and `recording.ts` adds `stopManualRecordingById(recordingId)`, the idempotent owned-stop. The session id + `recordingId` + `stopRequested` live in the controller, not the recorder. (The earlier shape tagged the recorder with `source: 'manual' | 'pushToTalk'`; collapsed into the recording's real id per the "reuse `recordingId`" note above, deleting `RecordingSource`.)
+- [x] **2.2** `operations/push-to-talk.ts`: a `createPushToTalk()` factory (matching `createManualRecorder`/`createVadRecorder`) with `start()` (mint session, start, remember the returned `recordingId`, arm 5-min cap, honor a startup-phase release) and `stop()` (owned-stop by id, latch during startup, clear a stale session). The startup latch is safe because `manualRecorder.startRecording` sets `_starting` synchronously before any await.
+- [x] **2.3** `pushToTalk.run` routes to `pushToTalk.start()/.stop()` (`commands.ts`); the toggle/button path stops the live recording directly and unconditionally.
+- [x] **2.4** Harvested the ownership decision into [ADR-0058](../../../docs/adr/0058-push-to-talk-owns-the-recording-it-starts-keyed-by-its-id-not-a-lifecycle-layer.md) (`Proposed`; flips to `Accepted` when desktop smoke lands and this spec is retired).
 
 ### Phase 3: Precise reconcile hooks + tests — IN PROGRESS
 
@@ -178,9 +178,9 @@ The correctness floor is already met by Phase 1+2: the synthetic release covers 
 
 ### Stray push-to-talk release during a toggle recording
 
-1. A toggle recording is live (source `manual`, unowned by `ptt`).
+1. A toggle recording is live; the push-to-talk press that collided with it got `null` back from `startManualRecording()`, so it cleared its session and owns nothing.
 2. A push-to-talk `Released` fires.
-3. `stopManualRecordingIfOwned({ source:'pushToTalk', id })` finds a source mismatch → no-op. The toggle recording continues.
+3. `stop()` finds no session (or, in the supplant-then-stale case, `stopManualRecordingById(recordingId)` finds the live recording's id does not match) → no-op. The toggle recording continues.
 
 ### Synthetic and real release both arrive
 

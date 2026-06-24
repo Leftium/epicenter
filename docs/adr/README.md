@@ -125,6 +125,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) | Conversation storage is one canonical table in @epicenter/chat; every chat surface syncs | Accepted |
 | [0056](0056-local-inference-is-a-delegated-engine-behind-the-openai-compatible-seam.md) | Local inference is a delegated engine behind the OpenAI-compatible seam; the runtime is a swappable default | Accepted |
 | [0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md) | Assistant markdown renders as a shared component tree, not a sanitized HTML string | Accepted |
-| [0058](0058-push-to-talk-owns-its-recording-by-source-and-id-not-a-lifecycle-layer.md) | Push-to-talk owns the recording it starts, scoped by source and id, not a general lifecycle layer | Proposed |
+| [0058](0058-push-to-talk-owns-the-recording-it-starts-keyed-by-its-id-not-a-lifecycle-layer.md) | Push-to-talk owns the recording it starts, keyed by the recording's id, not a general lifecycle layer | Proposed |
 
 When you add an ADR, add its row here.

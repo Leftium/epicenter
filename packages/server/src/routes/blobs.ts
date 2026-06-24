@@ -28,7 +28,7 @@
  * `specs/20260623T220000-content-addressed-blob-store.md`.
  */
 
-import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { API_ROUTES, SHA256_HEX_REGEX } from '@epicenter/constants/api-routes';
 import { BlobError } from '@epicenter/constants/blob-errors';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -47,9 +47,11 @@ import {
 } from '../s3-blob-store.js';
 import type { Env } from '../types.js';
 
-/** Lowercase-hex sha256: 64 chars. The route param is already constrained to
- * this; the POST body is validated against it here. */
-const SHA256_HEX = /^[a-f0-9]{64}$/;
+/** Anchored lowercase-hex sha256, built from the SAME {@link SHA256_HEX_REGEX}
+ * the `:sha256` route param is constrained to. The route param is constrained by
+ * Hono; the POST body's `sha256` is a plain field, so it is validated against
+ * this here. One source of truth for the digest shape. */
+const SHA256_HEX = new RegExp(`^${SHA256_HEX_REGEX}$`);
 
 /** Presigned-URL lifetimes. Short: a presigned URL is a bearer token. */
 const PUT_TTL_SECONDS = 300;

@@ -83,5 +83,6 @@ export {
 // apps/api); a Bun host validates `process.env` with the schema at boot.
 export { ServerBindings } from './server-bindings.js';
 // Public Hono context type the deployment composes around library
-// middleware.
-export type { Env } from './types.js';
+// middleware, plus the user-resolution seam a dev entry injects on
+// `createServerApp` (default: the real OAuth bearer resolver).
+export type { Env, ResolveUser } from './types.js';

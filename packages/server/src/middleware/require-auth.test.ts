@@ -30,7 +30,7 @@ import {
 	randomOAuthTestPort,
 } from '../test-helpers/oauth.js';
 import type { Env } from '../types.js';
-import { requireBearerUser } from './require-auth.js';
+import { requireBearerUser, resolveRequestOAuthUser } from './require-auth.js';
 
 test('requireBearerUser resolves a valid API-audience token to c.var.user', async () => {
 	const setup = createMiddlewareTestServer();
@@ -173,6 +173,7 @@ test('requireBearerUser returns 503 ServerError when the signing keys cannot be 
 						},
 					},
 				} as unknown as Env['Variables']['auth']);
+				c.set('resolveUser', resolveRequestOAuthUser);
 				await next();
 			})
 			.get('/protected', requireBearerUser, (c) => c.json(c.var.user));
@@ -206,6 +207,7 @@ test('requireBearerUser does not read signing keys for a non-JWT bearer', async 
 					},
 				},
 			} as unknown as Env['Variables']['auth']);
+			c.set('resolveUser', resolveRequestOAuthUser);
 			await next();
 		})
 		.get('/protected', requireBearerUser, (c) => c.json(c.var.user));
@@ -256,6 +258,7 @@ function createMiddlewareTestServer() {
 					c.set('db', createFakeDb(db));
 					c.set('auth', auth as unknown as Env['Variables']['auth']);
 					c.set('authBaseURL', baseURL);
+					c.set('resolveUser', resolveRequestOAuthUser);
 					await next();
 				})
 				.get('/protected', requireBearerUser, (c) => c.json(c.var.user));

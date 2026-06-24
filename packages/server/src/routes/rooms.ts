@@ -34,7 +34,6 @@ import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
-import { resolveRequestOAuthUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { normalizeWebSocketAuth } from '../middleware/websocket-auth.js';
 import { doName } from '../owner.js';
@@ -232,7 +231,7 @@ const roomsApp = new Hono<Env>()
  * `error.name`.
  */
 const requireRoomBearer = createMiddleware<Env>(async (c, next) => {
-	const { data: user, error } = await resolveRequestOAuthUser(c);
+	const { data: user, error } = await c.var.resolveUser(c);
 	if (error) {
 		if (isWebSocketUpgrade(c)) {
 			return c.var.rooms.rejectUpgrade({

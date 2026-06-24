@@ -49,4 +49,6 @@ export {
 // The portable env contract as both arktype schema (value) and inferred type;
 // the Bun entry validates `process.env` against it at boot.
 export { ServerBindings } from './server-bindings.js';
-export type { Env } from './types.js';
+// `ResolveUser` is the user-resolution seam the dev Bun entry injects on
+// `createServerApp` to drive the parity smoke without an interactive login.
+export type { Env, ResolveUser } from './types.js';

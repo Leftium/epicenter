@@ -8,13 +8,40 @@
  */
 
 import type { AuthUser, UserId } from '@epicenter/auth';
+import type { OAuthError } from '@epicenter/constants/oauth-errors';
 import type { OwnerId } from '@epicenter/identity';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { Context } from 'hono';
+import type { Result } from 'wellcrafted/result';
 import type { createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
+
+/**
+ * How a request resolves to the calling user: the one injected auth seam.
+ *
+ * The surface wrappers (`requireCookieOrBearerUser`, the rooms bearer with its
+ * WebSocket-reject path, `requireBearerUser`) differ only in whether they
+ * consult the cookie and how they surface a failure; the user resolution itself
+ * is this single function. The deployment injects it once on `createServerApp`,
+ * which stamps it onto `c.var.resolveUser`; every wrapper reads it from there
+ * rather than calling a hardcoded resolver, so all three honor the injection.
+ *
+ * Production passes nothing and gets the real resolver (`resolveRequestOAuthUser`:
+ * an OAuth bearer verified against JWKS). A dev-only entrypoint injects a trivial
+ * `Bearer dev:<userId>` resolver so the runtime-parity smoke needs no interactive
+ * login; that bypass lives in a dev entry production never imports, never an
+ * env-gated branch in this library.
+ *
+ * Returns the same `Result<AuthUser, OAuthError>` the real resolver returns, so
+ * an injected resolver slots in without touching the wrappers' error handling
+ * (HTTP 401, the OAuth `WWW-Authenticate` challenge, or the rooms 4401 close).
+ */
+export type ResolveUser = (
+	c: Context<Env>,
+) => Promise<Result<AuthUser, OAuthError>>;
 
 /**
  * Per-connection identity and runtime state, stamped onto the Cloudflare
@@ -102,5 +129,13 @@ export type Env = {
 		 */
 		afterResponseQueue: Promise<unknown>[];
 		rooms: Rooms;
+		/**
+		 * How this deployment resolves a request to its calling user, stamped by
+		 * `createServerApp` (default: the real OAuth bearer resolver). The auth
+		 * wrappers read it here instead of hardcoding a resolver, so a dev entry
+		 * can inject a trivial bearer resolver without the wrappers changing. See
+		 * {@link ResolveUser}.
+		 */
+		resolveUser: ResolveUser;
 	};
 };

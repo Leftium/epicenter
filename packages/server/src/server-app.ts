@@ -30,10 +30,11 @@ import { type Context, Hono } from 'hono';
 import { createAuth } from './auth/create-auth.js';
 import type { Db } from './db/create-db.js';
 import { corsMiddleware } from './middleware/cors.js';
+import { resolveRequestOAuthUser } from './middleware/require-auth.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
-import type { Env } from './types.js';
+import type { Env, ResolveUser } from './types.js';
 
 /**
  * How one runtime does the three non-portable jobs, as one value (ADR-0059,
@@ -141,11 +142,26 @@ type CreateServerAppOptions = {
 	runtime: RuntimeAdapter;
 	/** Who this deployment is on the web. {@link Identity}. */
 	identity: Identity;
+	/**
+	 * How a request resolves to the calling user, injected once for the whole
+	 * deployment and stamped onto `c.var.resolveUser`. Defaults to the real
+	 * resolver ({@link resolveRequestOAuthUser}: an OAuth bearer verified against
+	 * JWKS); the surface wrappers read it from the context, so injecting here
+	 * redirects all of them at once and leaves their cookie / WS-reject / 401
+	 * behavior untouched. Production passes nothing and keeps the real resolver.
+	 *
+	 * A dev-only entrypoint injects a trivial `Bearer dev:<userId>` resolver so
+	 * the runtime-parity smoke needs no interactive login. That bypass must live
+	 * in a dev entry production never imports, NEVER an env-gated branch in this
+	 * library. See {@link ResolveUser}.
+	 */
+	resolveUser?: ResolveUser;
 };
 
 export function createServerApp({
 	runtime: { connectDb, afterResponse, resolveRooms },
 	identity: { resolveOrigin, resolveTrustedOrigins, cookieDomain },
+	resolveUser = resolveRequestOAuthUser,
 }: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
@@ -205,6 +221,11 @@ export function createServerApp({
 				cookieCrossSubDomain: cookieDomain,
 			}),
 		);
+		// The deployment's user-resolution seam. Bound here, beside the auth
+		// instance the default resolver reads, so every downstream wrapper reads
+		// one resolver off the context instead of hardcoding it. Production keeps
+		// the real OAuth resolver; a dev entry injects a bearer resolver.
+		c.set('resolveUser', resolveUser);
 		await next();
 	});
 

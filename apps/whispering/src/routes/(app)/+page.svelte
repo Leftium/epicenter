@@ -42,7 +42,10 @@
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+	import {
+		getRecordingShortcutLabels,
+		type RecordingShortcutMode,
+	} from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
@@ -63,18 +66,97 @@
 			settings.get('transformation.selectedId') ?? null,
 		),
 	);
-	// The recording shortcut that actually fires on this platform, via the
-	// recording-shortcut label helper: desktop binds push-to-talk (Fn) globally
-	// and ships the toggle unbound, so prefer it; the browser shows the local
-	// toggle. `''` means nothing is bound (hide the hint, fall back to "click").
-	const manualShortcutLabel = $derived(getRecordingShortcutLabel('manual'));
-	const vadShortcutLabel = $derived(getRecordingShortcutLabel('vad'));
-	// On desktop the taught gesture is the global rdev tap, so it only fires when
-	// the capability is `active`. When it can't (macOS Accessibility ungranted or
-	// stale, or Linux Wayland), we still show the key so the user learns it, but dim
-	// it; the `DictationCapabilityNotice` above carries the fix. This reads the same
-	// capability fact the notice does, so the two always agree. Always false on the
-	// browser, where the in-app shortcut needs no grant.
+	// The verb fragments the hint drops around each key, per mode. `here` and
+	// `anywhere` annotate the in-app and global keys with their reach; `fresh` is the
+	// bare prompt shown when nothing is bound at all.
+	type RecordingHintWords = { here: string; anywhere: string; fresh: string };
+	const MANUAL_HINT_WORDS: RecordingHintWords = {
+		here: 'record here',
+		anywhere: 'record from anywhere',
+		fresh: 'start recording',
+	};
+	const VAD_HINT_WORDS: RecordingHintWords = {
+		here: 'listen here',
+		anywhere: 'listen from anywhere',
+		fresh: 'start a voice-activated session',
+	};
+	// A shortcut option in the hint: a bound key (a `Kbd` chip) or a call to set one
+	// up. Both link into /settings/shortcuts, so the hint doubles as the way to
+	// configure each key. `dimmable` is the global key, which dims when its backend
+	// is unavailable; the in-app key needs no grant and never dims.
+	type HintLink =
+		| { kind: 'key'; label: string; tooltip: string; dimmable: boolean }
+		| { kind: 'cta'; label: string; tooltip: string };
+	// One way to start a recording, as a "{lead}{link}{tail}" run. Spaces live inside
+	// `lead`/`tail` so the parts concatenate verbatim when the hint joins them; `link`
+	// is null for the mic, which names the on-screen button rather than a setting.
+	type RecordingWay = { lead: string; link: HintLink | null; tail: string };
+	// The ordered ways to start `mode`. The mic always works and leads; the in-app key
+	// reaches "here" and the global key "from anywhere" when bound. The mic states its
+	// own verb only when it is the only way.
+	function recordingWays(
+		mode: RecordingShortcutMode,
+		words: RecordingHintWords,
+	): RecordingWay[] {
+		const { focused, global } = getRecordingShortcutLabels(mode);
+		const ways: RecordingWay[] = [];
+		if (focused) {
+			ways.push({
+				lead: 'press ',
+				link: {
+					kind: 'key',
+					label: focused,
+					tooltip: 'Configure the in-app shortcut',
+					dimmable: false,
+				},
+				tail: ` to ${words.here}`,
+			});
+		}
+		// The from-anywhere tier exists only where there is a system backend, which
+		// `global` reports as non-null (`''` there means the slot is just unbound).
+		if (global !== null) {
+			ways.push(
+				global
+					? {
+							lead: 'press ',
+							link: {
+								kind: 'key',
+								label: global,
+								tooltip: 'Configure the global shortcut',
+								dimmable: true,
+							},
+							tail: ` to ${words.anywhere}`,
+						}
+					: {
+							lead: '',
+							link: {
+								kind: 'cta',
+								label: 'set a global shortcut',
+								tooltip: 'Set a global shortcut',
+							},
+							tail: ` to ${words.anywhere}`,
+						},
+			);
+		}
+		ways.unshift({
+			lead: 'Click the microphone',
+			link: null,
+			tail: ways.length ? '' : ` to ${words.fresh}`,
+		});
+		return ways;
+	}
+	// Join the ways as an or-list: "a", "a, or b", "a, b, or c".
+	const orPrefix = (index: number, count: number) =>
+		index === 0 ? '' : index === count - 1 ? ', or ' : ', ';
+	const manualWays = $derived(recordingWays('manual', MANUAL_HINT_WORDS));
+	const vadWays = $derived(recordingWays('vad', VAD_HINT_WORDS));
+	// On desktop the global rdev gesture only fires when the capability is `active`.
+	// When it can't (macOS Accessibility ungranted or stale, or Linux Wayland), we
+	// still show the key so the user learns it, but dim it; the
+	// `DictationCapabilityNotice` above carries the fix. This reads the same
+	// capability fact the notice does, so the two always agree. It dims only the
+	// global key: the in-app key runs on the webview keydown matcher, which needs no
+	// grant. Always false on the browser, where there is no global key at all.
 	const shortcutUnavailable = $derived(dictationCapability.isUnavailable);
 
 	const PageError = defineErrors({
@@ -345,45 +427,11 @@
 		<div class="flex flex-col items-center gap-3">
 			{#if captureSurface.current === 'manual'}
 				<p class="text-foreground/75 text-center text-sm">
-					{#if manualShortcutLabel}
-						Click the microphone to record{tauri ? ' here' : ''}, or press
-						<Link
-							tooltip="Configure the recording shortcut"
-							href="/settings/shortcuts"
-						>
-							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
-								>{manualShortcutLabel}</Kbd.Root>
-						</Link>
-						{tauri ? 'to record from anywhere.' : 'to record.'}
-					{:else if tauri}
-						Click the microphone to record, or
-						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
-							>set a global shortcut</Link>
-						to record from anywhere.
-					{:else}
-						Click the microphone to start recording.
-					{/if}
+					{@render recordingHint(manualWays)}
 				</p>
 			{:else if captureSurface.current === 'vad'}
 				<p class="text-foreground/75 text-center text-sm">
-					{#if vadShortcutLabel}
-						Click the microphone to listen{tauri ? ' here' : ''}, or press
-						<Link
-							tooltip="Configure the voice activation shortcut"
-							href="/settings/shortcuts"
-						>
-							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
-								>{vadShortcutLabel}</Kbd.Root>
-						</Link>
-						{tauri ? 'to listen from anywhere.' : 'to listen.'}
-					{:else if tauri}
-						Click the microphone to start a voice activated session, or
-						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
-							>set a global shortcut</Link>
-						to listen from anywhere.
-					{:else}
-						Click the microphone to start a voice activated session.
-					{/if}
+					{@render recordingHint(vadWays)}
 				</p>
 			{/if}
 			<p class="text-muted-foreground text-center text-sm font-light">
@@ -402,3 +450,25 @@
 		</div>
 	{/if}
 </div>
+
+<!-- A shortcut option as a link into settings: a key chip, or the "set one up" call
+to action. The global key dims when its backend is unavailable; nothing else does. -->
+{#snippet shortcutLink(link: HintLink)}
+	<Link tooltip={link.tooltip} href="/settings/shortcuts">
+		{#if link.kind === 'key'}
+			<Kbd.Root
+				class={link.dimmable && shortcutUnavailable ? 'opacity-50' : undefined}
+				>{link.label}</Kbd.Root>
+		{:else}{link.label}{/if}
+	</Link>
+{/snippet}
+
+<!-- One way rendered as its "{lead}{link}{tail}" run. Kept on one line so no template
+whitespace creeps between the parts; every needed space lives in the strings. -->
+{#snippet hintWay(way: RecordingWay)}{way.lead}{#if way.link}{@render shortcutLink(way.link)}{/if}{way.tail}{/snippet}
+
+<!-- The home recording hint: every way to start a recording, joined as an or-list.
+`recordingWays` decides which ways exist; this only joins and punctuates them. -->
+{#snippet recordingHint(ways: RecordingWay[])}
+	{#each ways as way, i}{orPrefix(i, ways.length)}{@render hintWay(way)}{/each}.
+{/snippet}

@@ -1,32 +1,15 @@
-<script module lang="ts">
-	import { API_ROUTES } from '@epicenter/constants/api-routes';
-	import { APP_URLS } from '@epicenter/constants/vite';
-
-	// The hosted Epicenter gateway base URL (static); the engine appends
-	// `/chat/completions`.
-	const hostedBaseURL = API_ROUTES.ai.completions.baseUrl(APP_URLS.API);
-</script>
-
 <script lang="ts">
 	import type { ConversationId } from '@epicenter/chat';
-	import { resolveForModel } from '@epicenter/client';
 	import { bindAgentConversation } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import { generateMessageId, VOCAB_MODEL } from '@epicenter/vocab';
-	import {
-		buildVocabCandidates,
-		createVocabEngine,
-	} from '@epicenter/vocab/engine';
+	import { createVocabEngine } from '@epicenter/vocab/engine';
 	import { InstantString } from '@epicenter/workspace';
 	import { createConversation as createAgentConversation } from '@epicenter/workspace/agent';
 	import { onDestroy } from 'svelte';
 	import { requireVocab } from '$lib/session';
-	import {
-		discoveredModels,
-		inferenceConnections,
-	} from '$lib/state/inference-connections.svelte';
-	import { auth } from '$platform/auth';
+	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import ChatMessage from './ChatMessage.svelte';
 
@@ -40,18 +23,10 @@
 	const vocab = requireVocab();
 
 	// The conversation's model (ADR-0055) resolves against this device's
-	// connections per turn. When no connection here serves it (a custom model set
-	// on another device), the banner shows and sending is blocked; the synced model
-	// column is never rewritten on detection, only by an explicit pick (ADR-0058).
-	const isModelAvailable = $derived(
-		resolveForModel(
-			model,
-			buildVocabCandidates(
-				inferenceConnections.current,
-				discoveredModels.current,
-			),
-		) !== null,
-	);
+	// connections. When no connection here serves it (a custom model set on another
+	// device), the banner shows and sending is blocked; the synced model column is
+	// never rewritten on detection, only by an explicit pick (ADR-0058).
+	const isModelAvailable = $derived(inferenceConnections.resolve(model) !== null);
 
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the message store and bind it to the inference engine. The
@@ -63,10 +38,8 @@
 		createAgentConversation({
 			store: vocab.tables.conversations.docs.messages.open(conversationId),
 			engine: createVocabEngine({
-				hosted: { fetch: auth.fetch, baseURL: hostedBaseURL },
 				model: () => model,
-				connections: () => inferenceConnections.current,
-				discoveredModels: () => discoveredModels.current,
+				connections: inferenceConnections,
 			}),
 			generateId: generateMessageId,
 		}),

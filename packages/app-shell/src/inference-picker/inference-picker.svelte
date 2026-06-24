@@ -1,13 +1,3 @@
-<script module lang="ts">
-	/**
-	 * One hosted catalog entry the app sells. Injected, never imported: the hosted
-	 * catalog is app-specific (Vocab offers a model the others do not), so the
-	 * shared picker never reaches into `@epicenter/constants`. The app maps its
-	 * `AI_MODELS` subset to this shape.
-	 */
-	export type HostedModel = { id: string; label: string; credits: number };
-</script>
-
 <script lang="ts">
 	/**
 	 * The shared, model-first inference picker (ADR-0058). One flat searchable list
@@ -16,20 +6,12 @@
 	 * provider..." as the footer escape hatch. The model is the only leaf; the
 	 * connection (billing / location) is a group facet, never a level.
 	 *
-	 * Capability-orthogonal and persistence-free: the picker reads the device's
-	 * connection set and discovered-model cache as props and reports changes
-	 * through callbacks, so the app owns the device-local store (and chat-state can
-	 * resolve a turn against the same cache). Mounted like `<AccountPopover />`:
-	 * once per chat surface, bound to that app's `inferenceBackend` store.
+	 * The device's connections, discovery, and resolution all live in the injected
+	 * {@link InferenceConnections} registry, so this component is just UI: it reads
+	 * the registry and calls its methods. Mounted like `<AccountPopover />`: once per
+	 * chat surface, bound to that app's registry.
 	 */
-	import {
-		type Connection,
-		CONNECTION_PRESETS,
-		listModels,
-		type PresetId,
-		resolveConnection,
-		type ResolvedConnection,
-	} from '@epicenter/client';
+	import { CONNECTION_PRESETS, type PresetId } from '@epicenter/client';
 	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
 	import { Input } from '@epicenter/ui/input';
@@ -45,42 +27,23 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-
-	/** A custom (non-hosted) connection: the device store holds a set of these. */
-	type CustomConnection = Extract<Connection, { kind: 'custom' }>;
+	import type {
+		CustomConnection,
+		InferenceConnections,
+	} from './connections.svelte.js';
 
 	type Props = {
 		/** The conversation's current model id (synced, ADR-0055). */
 		model: string;
 		/** Commit a model pick. Writes the synced conversation model column. */
 		onSelectModel: (model: string) => void;
-		/** The hosted catalog this app sells. Empty hides the Epicenter group. */
-		hostedModels: HostedModel[];
-		/** The hosted transport (auth.fetch + gateway base URL), for discovery. */
-		hosted: ResolvedConnection;
-		/** Device-local custom connections (from the app's persisted store). */
-		connections: CustomConnection[];
-		/** Persist a change to the device's custom connections. */
-		onConnectionsChange: (connections: CustomConnection[]) => void;
-		/** Discovered model ids per connection, keyed by base URL (device cache). */
-		discoveredModels?: Record<string, readonly string[]>;
-		/** Report a fresh discovery so the app can cache it across reopens. */
-		onModelsDiscovered?: (baseUrl: string, models: string[]) => void;
+		/** The device's inference connection registry (hosted catalog + custom set). */
+		connections: InferenceConnections;
 		/** Disable while a turn generates, so a transcript never spans backends. */
 		disabled?: boolean;
 	};
 
-	let {
-		model,
-		onSelectModel,
-		hostedModels,
-		hosted,
-		connections,
-		onConnectionsChange,
-		discoveredModels = {},
-		onModelsDiscovered,
-		disabled = false,
-	}: Props = $props();
+	let { model, onSelectModel, connections, disabled = false }: Props = $props();
 
 	let open = $state(false);
 	let view = $state<'list' | 'connect'>('list');
@@ -98,14 +61,16 @@
 	let discovered = $state<string[] | null>(null);
 	let discoveryFailed = $state(false);
 
-	const presets = CONNECTION_PRESETS;
-
-	function presetLabel(id: PresetId): string {
-		return presets.find((p) => p.id === id)?.label ?? id;
+	function isLocal(baseUrl: string): boolean {
+		return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(baseUrl);
 	}
 
 	function connectionLabel(connection: CustomConnection): string {
-		if (connection.preset) return presetLabel(connection.preset);
+		if (connection.preset)
+			return (
+				CONNECTION_PRESETS.find((p) => p.id === connection.preset)?.label ??
+				connection.preset
+			);
 		try {
 			return new URL(connection.baseUrl).host;
 		} catch {
@@ -113,39 +78,24 @@
 		}
 	}
 
-	function isLocal(baseUrl: string): boolean {
-		return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(baseUrl);
-	}
-
 	const requiresKey = $derived(
 		formPreset === 'custom' ||
 			(formPreset !== null &&
-				(presets.find((p) => p.id === formPreset)?.requiresKey ?? false)),
+				(CONNECTION_PRESETS.find((p) => p.id === formPreset)?.requiresKey ??
+					false)),
 	);
 
 	// The label on the closed trigger: a hosted model shows its product role
 	// (Fast, Best); a custom model shows its raw id (Ollama ids have no nice name).
 	const triggerLabel = $derived(
-		hostedModels.find((m) => m.id === model)?.label ?? model ?? 'Select model',
+		connections.hostedModels.find((m) => m.id === model)?.label ??
+			model ??
+			'Select model',
 	);
 
 	function selectModel(id: string) {
 		onSelectModel(id);
 		open = false;
-	}
-
-	function removeConnection(baseUrl: string) {
-		onConnectionsChange(connections.filter((c) => c.baseUrl !== baseUrl));
-	}
-
-	function openConnect() {
-		view = 'connect';
-		formPreset = null;
-		formBaseUrl = '';
-		formApiKey = '';
-		formModel = '';
-		discovered = null;
-		discoveryFailed = false;
 	}
 
 	function choosePreset(id: PresetId | 'custom') {
@@ -155,26 +105,26 @@
 		discovered = null;
 		discoveryFailed = false;
 		formBaseUrl =
-			id === 'custom' ? '' : (presets.find((p) => p.id === id)?.baseUrl ?? '');
+			id === 'custom'
+				? ''
+				: (CONNECTION_PRESETS.find((p) => p.id === id)?.baseUrl ?? '');
 	}
 
-	// Save the connection being configured, cache its discovered models, select the
-	// chosen model, and close: one commit for the whole "connect and use" path.
+	// Save the connection being configured (caching its discovered models), select
+	// the chosen model, and close: one commit for the whole "connect and use" path.
 	function commitConnection(chosenModel: string) {
 		const baseUrl = formBaseUrl.trim();
 		const trimmedModel = chosenModel.trim();
 		if (!baseUrl || !trimmedModel) return;
-		const next: CustomConnection = {
-			kind: 'custom',
-			preset: formPreset && formPreset !== 'custom' ? formPreset : undefined,
-			baseUrl,
-			apiKey: formApiKey.trim() || undefined,
-		};
-		onConnectionsChange([
-			...connections.filter((c) => c.baseUrl !== baseUrl),
-			next,
-		]);
-		if (discovered) onModelsDiscovered?.(baseUrl, discovered);
+		connections.add(
+			{
+				kind: 'custom',
+				preset: formPreset && formPreset !== 'custom' ? formPreset : undefined,
+				baseUrl,
+				apiKey: formApiKey.trim() || undefined,
+			},
+			discovered ?? undefined,
+		);
 		onSelectModel(trimmedModel);
 		open = false;
 	}
@@ -200,14 +150,7 @@
 		discovering = true;
 		discoveryFailed = false;
 		const handle = setTimeout(async () => {
-			const connection: Connection = {
-				kind: 'custom',
-				baseUrl: url,
-				apiKey: key || undefined,
-			};
-			const { data, error } = await listModels(
-				resolveConnection(connection, hosted),
-			);
+			const { data, error } = await connections.discover(url, key || undefined);
 			if (cancelled) return;
 			discovering = false;
 			if (error) {
@@ -248,9 +191,9 @@
 				<Command.List class="max-h-80">
 					<Command.Empty>No models found.</Command.Empty>
 
-					{#if hostedModels.length > 0}
+					{#if connections.hostedModels.length > 0}
 						<Command.Group heading="Epicenter · metered">
-							{#each hostedModels as hostedModel (hostedModel.id)}
+							{#each connections.hostedModels as hostedModel (hostedModel.id)}
 								<Command.Item
 									value={`${hostedModel.label} ${hostedModel.id}`}
 									keywords={[hostedModel.id, hostedModel.label]}
@@ -270,8 +213,8 @@
 						</Command.Group>
 					{/if}
 
-					{#each connections as connection (connection.baseUrl)}
-						{@const ids = discoveredModels[connection.baseUrl] ?? []}
+					{#each connections.custom as connection (connection.baseUrl)}
+						{@const ids = connections.discoveredModels[connection.baseUrl] ?? []}
 						<Command.Group
 							heading="{connectionLabel(connection)} · {isLocal(
 								connection.baseUrl,
@@ -306,7 +249,7 @@
 							{/each}
 							<Command.Item
 								value="remove {connection.baseUrl}"
-								onSelect={() => removeConnection(connection.baseUrl)}
+								onSelect={() => connections.remove(connection.baseUrl)}
 							>
 								<Trash2 class="size-4" />
 								<span class="text-xs">Remove {connectionLabel(connection)}</span>
@@ -315,7 +258,10 @@
 					{/each}
 
 					<Command.Separator />
-					<Command.Item value="connect a provider" onSelect={openConnect}>
+					<Command.Item
+						value="connect a provider"
+						onSelect={() => (view = 'connect')}
+					>
 						<Plus class="size-4" />
 						<span>Connect a provider...</span>
 					</Command.Item>
@@ -337,7 +283,7 @@
 
 				{#if formPreset === null}
 					<div class="space-y-1">
-						{#each presets as preset (preset.id)}
+						{#each CONNECTION_PRESETS as preset (preset.id)}
 							<Button
 								variant="outline"
 								size="sm"
@@ -346,7 +292,7 @@
 							>
 								<span>{preset.label}</span>
 								<span class="text-xs text-muted-foreground">
-									{preset.location}
+									{isLocal(preset.baseUrl) ? 'local' : 'cloud'}
 								</span>
 							</Button>
 						{/each}
@@ -400,9 +346,7 @@
 					<div class="space-y-1">
 						<Label class="text-xs">Model</Label>
 						{#if discovering}
-							<p
-								class="flex items-center gap-2 text-xs text-muted-foreground"
-							>
+							<p class="flex items-center gap-2 text-xs text-muted-foreground">
 								<LoaderCircle class="size-3.5 animate-spin" /> Loading models...
 							</p>
 						{:else if discovered && discovered.length > 0}

@@ -1,38 +1,31 @@
 /**
- * The device-local inference connections (ADR-0058).
+ * Vocab's device-local inference connection registry (ADR-0058).
  *
- * The device holds a set of custom OpenAI-compatible connections (the built-in
- * hosted Epicenter gateway is implicit) plus a cache of the model ids each one
- * was discovered to serve. Both live in localStorage, never the synced workspace:
- * a `localhost` URL means nothing on another device and an API key must not ride
- * the relay (ADR-0004). The engine and the picker read them per use, so a change
- * takes effect on the next turn.
+ * One shared registry (built once here) that the header picker, the engine, and
+ * the cross-device banner all read. Hosted is Vocab's one curated model
+ * (`VOCAB_MODEL`); custom connections and their discovered models live in
+ * localStorage, never synced (a key is a secret and a `localhost` URL is
+ * meaningless elsewhere, ADR-0004).
  */
 
-import { createPersistedState } from '@epicenter/svelte';
-import { type } from 'arktype';
+import { createInferenceConnections } from '@epicenter/app-shell/inference-picker';
+import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { APP_URLS } from '@epicenter/constants/vite';
+import { VOCAB_MODEL } from '@epicenter/vocab';
+import { auth } from '$platform/auth';
 
-const customConnectionSchema = type({
-	kind: "'custom'",
-	'preset?': "'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'groq'",
-	baseUrl: 'string',
-	'apiKey?': 'string',
-});
-
-/** The device's custom connections, in display order. */
-export const inferenceConnections = createPersistedState({
-	key: 'vocab.inference-connections',
-	schema: customConnectionSchema.array(),
-	defaultValue: [],
-});
-
-/**
- * Model ids discovered per connection, keyed by base URL. Survives a reopen and
- * feeds `resolveForModel`, so a synced conversation's custom model resolves to the
- * connection that serves it without a re-fetch.
- */
-export const discoveredModels = createPersistedState({
-	key: 'vocab.discovered-models',
-	schema: type({ '[string]': 'string[]' }),
-	defaultValue: {},
+export const inferenceConnections = createInferenceConnections({
+	storageKey: 'vocab',
+	hostedModels: [
+		{
+			id: VOCAB_MODEL,
+			label: MODELS_BY_ID[VOCAB_MODEL].label,
+			credits: MODELS_BY_ID[VOCAB_MODEL].credits,
+		},
+	],
+	hosted: {
+		fetch: auth.fetch,
+		baseURL: API_ROUTES.ai.completions.baseUrl(APP_URLS.API),
+	},
 });

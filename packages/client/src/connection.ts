@@ -30,8 +30,10 @@ export type PresetId = 'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'groq';
 /**
  * The data that distinguishes one OpenAI-compatible provider from another. The
  * key is always `Authorization: Bearer`, so a preset is pure data with no
- * matching code path: only the base URL, whether a key is needed, and the
- * location facet differ.
+ * matching code path: only the base URL and whether a key is needed differ. The
+ * local-vs-cloud facet is derived from the base URL (is it `localhost`?), not
+ * stored, so it cannot drift from the URL and a user-entered custom URL gets the
+ * same treatment as a preset.
  */
 export type ConnectionPreset = {
 	id: PresetId;
@@ -40,8 +42,6 @@ export type ConnectionPreset = {
 	baseUrl: string;
 	/** Whether the endpoint needs a Bearer key; local servers do not. */
 	requiresKey: boolean;
-	/** A privacy/cost facet for the picker, not a structural axis. */
-	location: 'local' | 'cloud';
 };
 
 /**
@@ -57,35 +57,30 @@ export const CONNECTION_PRESETS = [
 		label: 'Ollama',
 		baseUrl: 'http://localhost:11434/v1',
 		requiresKey: false,
-		location: 'local',
 	},
 	{
 		id: 'lmstudio',
 		label: 'LM Studio',
 		baseUrl: 'http://localhost:1234/v1',
 		requiresKey: false,
-		location: 'local',
 	},
 	{
 		id: 'openai',
 		label: 'OpenAI',
 		baseUrl: 'https://api.openai.com/v1',
 		requiresKey: true,
-		location: 'cloud',
 	},
 	{
 		id: 'openrouter',
 		label: 'OpenRouter',
 		baseUrl: 'https://openrouter.ai/api/v1',
 		requiresKey: true,
-		location: 'cloud',
 	},
 	{
 		id: 'groq',
 		label: 'Groq',
 		baseUrl: 'https://api.groq.com/openai/v1',
 		requiresKey: true,
-		location: 'cloud',
 	},
 ] as const satisfies readonly ConnectionPreset[];
 

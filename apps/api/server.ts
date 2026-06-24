@@ -85,9 +85,11 @@ const app = createServerApp({
 	resolveOrigin: () => origin,
 	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 	connectDb: async () => ({ db, close: async () => {} }),
-	afterResponse: (_c, work) => {
-		void work;
-	},
+	// No-op: the drain promise (server-app.ts awaits the after-response queue,
+	// then closes the per-request handle) is already running when it reaches
+	// here, and a long-lived Bun process needs no `waitUntil` to outlive the
+	// response. Cloudflare's hook instead hands it to `executionCtx.waitUntil`.
+	afterResponse: () => {},
 	resolveRooms: () => bunRooms.rooms,
 });
 

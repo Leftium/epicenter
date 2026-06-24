@@ -8,7 +8,7 @@
  * adapter.
  *
  * Imports no `cloudflare:workers` symbols. Both Cloudflare's Durable
- * Object and the Node/Bun backend (`room/backends/node/`) drive the same
+ * Object and the Bun backend (`room/backends/bun/`) drive the same
  * {@link createRoomCore} instance through the methods listed on its return
  * object. Connection-lifetime enforcement and liveness ping/pong are
  * room-core invariants here, so neither backend can forget them.

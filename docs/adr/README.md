@@ -124,5 +124,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0054](0054-an-inference-backend-is-the-metered-gateway-or-a-custom-server.md) | An inference backend is either the metered Epicenter gateway or a custom OpenAI-compatible server | Accepted |
 | [0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) | Conversation storage is one canonical table in @epicenter/chat; every chat surface syncs | Accepted |
 | [0056](0056-local-inference-is-a-delegated-engine-behind-the-openai-compatible-seam.md) | Local inference is a delegated engine behind the OpenAI-compatible seam; the runtime is a swappable default | Accepted |
+| [0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md) | Assistant markdown renders as a shared component tree, not a sanitized HTML string | Accepted |
+| [0058](0058-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md) | An inference connection is a capability-orthogonal device endpoint; the model is per-conversation (amends 0054) | Proposed |
 
 When you add an ADR, add its row here.

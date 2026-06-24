@@ -85,10 +85,7 @@ function sendAndWait(
 }
 
 async function main(): Promise<void> {
-	const { fetch, baseURL } = resolveConnection(
-		{ kind: 'custom', baseUrl },
-		{ fetch: globalThis.fetch, baseURL: 'unused' },
-	);
+	const { fetch, baseURL } = resolveConnection({ baseUrl });
 	const engine = loggingEngine(
 		createOpenAiAgentEngine({
 			data: () => ({

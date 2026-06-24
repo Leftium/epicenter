@@ -12,11 +12,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type {
-	AgentEngineRequest,
-	EngineChunk,
-	EngineFetch,
-} from './agent-engine.js';
+import type { AgentEngineRequest, EngineChunk } from './agent-engine.js';
 import { resolveConnection } from './connection.js';
 import { createOpenAiAgentEngine } from './openai-provider.js';
 
@@ -389,10 +385,12 @@ describe('createOpenAiAgentEngine', () => {
 	});
 
 	// End-to-end custom backend: the resolver + engine reach a custom URL with the
-	// user's key and never the hosted (Epicenter) fetch. This is the non-interactive
-	// stand-in for "switch tab-manager to a local Ollama"; the live extension test
-	// is the remaining manual check.
-	test('drives a custom backend through the resolver: custom URL, user key, never the hosted bearer', async () => {
+	// user's key. The hosted (Epicenter) bearer is structurally unreachable here:
+	// `resolveConnection` takes only the connection data and never an Epicenter fetch,
+	// so a custom turn cannot carry the session (ADR-0053/0060). This is the
+	// non-interactive stand-in for "switch tab-manager to a local Ollama"; the live
+	// extension test is the remaining manual check.
+	test('drives a custom backend through the resolver: custom URL, user key as Bearer', async () => {
 		const realFetch = globalThis.fetch;
 		const calls: Array<{ url: string; authorization: string | null }> = [];
 		globalThis.fetch = (async (
@@ -407,22 +405,13 @@ describe('createOpenAiAgentEngine', () => {
 				{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] },
 			]);
 		}) as typeof globalThis.fetch;
-		let hostedRan = false;
-		const hostedFetch: EngineFetch = async () => {
-			hostedRan = true;
-			return new Response();
-		};
 		try {
 			const engine = createOpenAiAgentEngine({
 				data: () => ({
-					...resolveConnection(
-						{
-							kind: 'custom',
-							baseUrl: 'http://localhost:11434/v1',
-							apiKey: 'sk-user',
-						},
-						{ fetch: hostedFetch, baseURL: GATEWAY },
-					),
+					...resolveConnection({
+						baseUrl: 'http://localhost:11434/v1',
+						apiKey: 'sk-user',
+					}),
 					model: 'qwen2.5:3b',
 					systemPrompts: [],
 				}),
@@ -439,7 +428,6 @@ describe('createOpenAiAgentEngine', () => {
 					authorization: 'Bearer sk-user',
 				},
 			]);
-			expect(hostedRan).toBe(false);
 		} finally {
 			globalThis.fetch = realFetch;
 		}

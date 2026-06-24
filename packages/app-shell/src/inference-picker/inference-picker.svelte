@@ -11,7 +11,11 @@
 	 * the registry and calls its methods. Mounted like `<AccountPopover />`: once per
 	 * chat surface, bound to that app's registry.
 	 */
-	import { CONNECTION_PRESETS, type PresetId } from '@epicenter/client';
+	import {
+		CONNECTION_PRESETS,
+		type Connection,
+		type PresetId,
+	} from '@epicenter/client';
 	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
 	import { Input } from '@epicenter/ui/input';
@@ -27,10 +31,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import type {
-		CustomConnection,
-		InferenceConnections,
-	} from './connections.svelte.js';
+	import type { InferenceConnections } from './connections.svelte.js';
 
 	type Props = {
 		/** The conversation's current model id (synced, ADR-0055). */
@@ -65,12 +66,17 @@
 		return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(baseUrl);
 	}
 
-	function connectionLabel(connection: CustomConnection): string {
-		if (connection.preset)
-			return (
-				CONNECTION_PRESETS.find((p) => p.id === connection.preset)?.label ??
-				connection.preset
-			);
+	// Derive the group label from the stored base URL: match a preset by its full
+	// normalized base URL (so a self-hosted proxy that merely shares a host won't
+	// false-match, and Ollama's :11434 stays distinct from LM Studio's :1234), else
+	// fall back to the URL host. Derived, not stored, so it cannot drift when the
+	// user edits the URL (ADR-0060).
+	function connectionLabel(connection: Connection): string {
+		const normalized = connection.baseUrl.replace(/\/+$/, '');
+		const preset = CONNECTION_PRESETS.find(
+			(p) => p.baseUrl.replace(/\/+$/, '') === normalized,
+		);
+		if (preset) return preset.label;
 		try {
 			return new URL(connection.baseUrl).host;
 		} catch {
@@ -118,8 +124,6 @@
 		if (!baseUrl || !trimmedModel) return;
 		connections.add(
 			{
-				kind: 'custom',
-				preset: formPreset && formPreset !== 'custom' ? formPreset : undefined,
 				baseUrl,
 				apiKey: formApiKey.trim() || undefined,
 			},

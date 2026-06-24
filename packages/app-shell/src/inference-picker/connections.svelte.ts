@@ -8,7 +8,8 @@
  *
  * Device-local, never synced: a key is a secret on the plaintext relay and a
  * `localhost` URL is meaningless elsewhere (ADR-0004). The arktype schema here is
- * the single runtime shape; `CustomConnection` is the matching compile-time type.
+ * the single runtime shape; `Connection` (from `@epicenter/client`) is the
+ * matching compile-time type.
  */
 
 import {
@@ -17,14 +18,10 @@ import {
 	listModels,
 	type ResolvedConnection,
 	resolveConnection,
-	resolveForModel,
 } from '@epicenter/client';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import type { Result } from 'wellcrafted/result';
-
-/** A custom (non-hosted) connection: the registry holds a set of these. */
-export type CustomConnection = Extract<Connection, { kind: 'custom' }>;
 
 /**
  * A reactive persisted-state handle: localStorage (web) or chrome.storage
@@ -52,9 +49,7 @@ export type PersistFactory = <S extends StandardSchemaV1>(
  */
 export type HostedModel = { id: string; label: string; credits: number };
 
-const customConnectionSchema = type({
-	kind: "'custom'",
-	'preset?': "'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'groq'",
+const connectionSchema = type({
 	baseUrl: 'string',
 	'apiKey?': 'string',
 });
@@ -84,7 +79,7 @@ export function createInferenceConnections({
 }) {
 	const custom = persist(
 		`${storageKey}.inference-connections`,
-		customConnectionSchema.array(),
+		connectionSchema.array(),
 		[],
 	);
 	const discovered = persist(
@@ -97,22 +92,27 @@ export function createInferenceConnections({
 		discovered.current = { ...discovered.current, [baseUrl]: models };
 	}
 
-	/** The list `resolveForModel` matches against, in priority order: every custom
+	/** The candidates a model resolves against, in priority order: every custom
 	 * connection (the user's own key) BEFORE hosted. The hosted catalog sells real
 	 * upstream ids (e.g. `gpt-5.5`), so a user who adds their own OpenAI key serves a
 	 * colliding id; matching custom first resolves that turn to the user's key
 	 * instead of silently metering it against Epicenter credits. Hosted is the last
-	 * resort, serving only ids no custom connection on this device claims. */
+	 * resort, serving only ids no custom connection on this device claims.
+	 *
+	 * Each candidate carries its own `resolve` thunk, so matching never branches on
+	 * what a candidate is: a custom connection closes over `resolveConnection`
+	 * (static data -> transport); hosted closes over the injected transport. The
+	 * `kind` discriminant is gone (ADR-0060). */
 	function candidates(): {
-		connection: Connection;
+		resolve: () => ResolvedConnection;
 		models: readonly string[];
 	}[] {
 		return [
 			...custom.current.map((connection) => ({
-				connection,
+				resolve: () => resolveConnection(connection),
 				models: discovered.current[connection.baseUrl] ?? [],
 			})),
-			{ connection: { kind: 'hosted' }, models: hostedModels.map((m) => m.id) },
+			{ resolve: () => hosted, models: hostedModels.map((m) => m.id) },
 		];
 	}
 
@@ -121,8 +121,11 @@ export function createInferenceConnections({
 	 * has one definition here, exposed as `resolveOrHosted` (transport) and
 	 * `canServe` (boolean) so neither the engine nor the UI re-derives it. */
 	function resolve(model: string): ResolvedConnection | null {
-		const connection = resolveForModel(model, candidates());
-		return connection ? resolveConnection(connection, hosted) : null;
+		return (
+			candidates()
+				.find((c) => c.models.includes(model))
+				?.resolve() ?? null
+		);
 	}
 
 	return {
@@ -138,7 +141,7 @@ export function createInferenceConnections({
 		},
 
 		/** Add (or replace by base URL) a connection, optionally caching its models. */
-		add(connection: CustomConnection, models?: string[]) {
+		add(connection: Connection, models?: string[]) {
 			custom.current = [
 				...custom.current.filter((c) => c.baseUrl !== connection.baseUrl),
 				connection,
@@ -155,12 +158,9 @@ export function createInferenceConnections({
 			baseUrl: string,
 			apiKey?: string,
 		): Promise<Result<string[], ListModelsError>> {
-			const connection: Connection = {
-				kind: 'custom',
-				baseUrl,
-				apiKey: apiKey || undefined,
-			};
-			return listModels(resolveConnection(connection, hosted));
+			return listModels(
+				resolveConnection({ baseUrl, apiKey: apiKey || undefined }),
+			);
 		},
 
 		/**

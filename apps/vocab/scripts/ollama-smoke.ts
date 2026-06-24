@@ -4,8 +4,8 @@
  *
  * It drives the exact production seam: it builds the same {@link AgentEngine} the
  * Vocab chat uses (`createOpenAiAgentEngine`) and resolves the transport through
- * the same `resolveConnection` the header picker stores (ADR-0059), with a
- * `custom` connection pointed at Ollama. So a green run here means the engine, the
+ * the same `resolveConnection` the header picker stores (ADR-0060), with a
+ * connection pointed at Ollama. So a green run here means the engine, the
  * system prompts, and the SSE tool-call/text reducer all work end to end against
  * a real OpenAI-compatible server, before any of the auth-gated app is involved.
  *
@@ -86,13 +86,11 @@ async function preflight(): Promise<void> {
 async function main(): Promise<void> {
 	await preflight();
 
-	// The exact device-custom path the header picker stores (ADR-0059): a custom
-	// connection carries no Epicenter bearer, so `hosted` is never reached here. The
-	// model is paired separately below (a connection carries no model).
-	const { fetch, baseURL } = resolveConnection(
-		{ kind: 'custom', baseUrl, apiKey },
-		{ fetch: globalThis.fetch, baseURL: 'unused-hosted-base-url' },
-	);
+	// The exact device-connection path the header picker stores (ADR-0060): a
+	// connection carries no Epicenter bearer (the resolver never sees one), so this
+	// turn reaches only the user's URL with the user's key. The model is paired
+	// separately below (a connection carries no model).
+	const { fetch, baseURL } = resolveConnection({ baseUrl, apiKey });
 
 	const engine = createOpenAiAgentEngine({
 		data: () => ({

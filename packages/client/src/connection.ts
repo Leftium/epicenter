@@ -1,16 +1,26 @@
 /**
  * The inference connection: a device-local, capability-orthogonal endpoint
- * (ADR-0059, amending ADR-0054). A connection is an OpenAI-compatible server plus
- * an optional key; it carries no model and no capability, so one connection can
- * drive chat, transcription, or embeddings alike. The model is the conversation's
- * (ADR-0055), paired with the transport by the caller per turn.
+ * (ADR-0060, amending ADR-0059). A connection is just where + how to authenticate
+ * to one OpenAI-compatible server; it carries no model and no capability, so one
+ * connection can drive chat, transcription, or embeddings alike. The model is the
+ * conversation's (ADR-0055), paired with the transport by the caller per turn.
  *
- * The leak guard is structural and identical to ADR-0054's resolver: the app
- * passes its Epicenter transport (the authed fetch carrying the bearer) every
- * turn, but {@link resolveConnection} returns it only on the `hosted` connection;
- * a custom connection mints a plain fetch carrying only the user's key, so a
- * custom turn can never reach its URL with the Epicenter bearer (and ADR-0053
- * audience-scopes the bearer anyway).
+ * There is no `kind` discriminant and no auth-strategy union. A connection is the
+ * static data a human types into a form: a base URL and an optional bearer key.
+ * `resolveConnection` turns that into a transport with a single, branchless rule
+ * (`apiKey` -> `Authorization: Bearer`). Anything that is NOT static data, the
+ * hosted Epicenter gateway (an injected session fetch) and any future
+ * signing/refresh auth (Bedrock SigV4, Vertex OAuth), never enters this shape: the
+ * caller composes it into a {@link ResolvedConnection} and injects it. Hosted is
+ * therefore not a member of this type; it is the registry's injected fallback
+ * transport (see `@epicenter/app-shell` `createInferenceConnections`).
+ *
+ * The leak guard is structural (ADR-0053): the Epicenter bearer is attached only by
+ * `auth.fetch`, and only to the origin it signed into. A connection here is always
+ * a third-party URL reached with a plain fetch carrying only the user's own key and
+ * headers, so a custom turn can never reach its URL with the Epicenter bearer. The
+ * single origin check lives on the credential in `fetchWithAuth`, not in this
+ * resolver, so this resolver needs no hosted argument to stay safe.
  */
 
 import {
@@ -21,7 +31,7 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { EngineFetch } from './agent-engine.js';
 
-/** A canonical OpenAI-compatible provider we pre-fill as a preset (ADR-0059). */
+/** A canonical OpenAI-compatible provider we pre-fill as a preset (ADR-0060). */
 export type PresetId = 'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'groq';
 
 /**
@@ -42,7 +52,7 @@ export type ConnectionPreset = {
 };
 
 /**
- * The shipped presets (ADR-0059). Anthropic (its compat layer is "for testing"
+ * The shipped presets (ADR-0060). Anthropic (its compat layer is "for testing"
  * and loses prompt caching and thinking) and a bring-your-own Gemini (its compat
  * layer 400s on tools and JSON together, which the agent loops use) are
  * deliberately absent; both are reachable as a raw custom URL. Self-hosted
@@ -82,15 +92,25 @@ export const CONNECTION_PRESETS = [
 ] as const satisfies readonly ConnectionPreset[];
 
 /**
- * A device-local inference connection (ADR-0059). `hosted` is the built-in
- * metered Epicenter connection; `custom` is any OpenAI-compatible URL, optionally
- * seeded from a preset, with an optional Bearer key. The device holds a set of
- * these (the built-in hosted plus zero or more custom); the conversation's model
- * selects which one serves a turn (see {@link resolveForModel}).
+ * A device-local inference connection (ADR-0060): one OpenAI-compatible server
+ * plus the optional bearer key to reach it. The device holds a set of these (see
+ * `createInferenceConnections`); the conversation's model selects which one serves
+ * a turn. `apiKey` is sent as `Authorization: Bearer <key>`; absent means a keyless
+ * local server (Ollama, LM Studio).
+ *
+ * This is the whole shape on purpose. Two widenings are deliberately deferred until
+ * a real consumer exists, and both are non-breaking to add then:
+ * - additive static `headers` (AI-gateway auth like Helicone's `Helicone-Auth` or
+ *   Cloudflare's `cf-aig-authorization`; Azure's `api-key`; OpenRouter attribution),
+ *   for the few static non-Bearer cases; and
+ * - more than one injected transport, for non-static auth (Bedrock SigV4, Vertex
+ *   OAuth refresh), which the caller composes as a {@link ResolvedConnection} and
+ *   never becomes connection data.
  */
-export type Connection =
-	| { kind: 'hosted' }
-	| { kind: 'custom'; preset?: PresetId; baseUrl: string; apiKey?: string };
+export type Connection = {
+	baseUrl: string;
+	apiKey?: string;
+};
 
 /** What one turn drives: the transport only. The model is paired by the caller. */
 export type ResolvedConnection = {
@@ -99,41 +119,25 @@ export type ResolvedConnection = {
 };
 
 /**
- * Resolve a connection to its transport. Hosted returns the supplied Epicenter
- * transport unchanged. Custom builds a plain fetch (never the Epicenter bearer)
- * that attaches the user's key as a Bearer when present; a keyless local server
- * gets a bare fetch.
+ * Resolve a connection to its transport. One branchless rule: attach the user's
+ * key as `Authorization: Bearer` when present; a keyless local server gets a bare
+ * fetch. It is never the Epicenter bearer (this resolver only ever sees a
+ * third-party connection; the hosted transport is injected elsewhere, never built
+ * here), so a custom turn cannot leak the Epicenter session (ADR-0053).
  */
-export function resolveConnection(
-	connection: Connection,
-	hosted: ResolvedConnection,
-): ResolvedConnection {
-	if (connection.kind === 'hosted') return hosted;
+export function resolveConnection(connection: Connection): ResolvedConnection {
 	const apiKey = connection.apiKey?.trim();
-	const fetch: EngineFetch = apiKey
-		? (input, init) => {
-				const headers = new Headers(init?.headers);
-				headers.set('Authorization', `Bearer ${apiKey}`);
-				return globalThis.fetch(input, { ...init, headers });
-			}
-		: globalThis.fetch.bind(globalThis);
+	if (!apiKey)
+		return {
+			fetch: globalThis.fetch.bind(globalThis),
+			baseURL: connection.baseUrl,
+		};
+	const fetch: EngineFetch = (input, init) => {
+		const headers = new Headers(init?.headers);
+		headers.set('Authorization', `Bearer ${apiKey}`);
+		return globalThis.fetch(input, { ...init, headers });
+	};
 	return { fetch, baseURL: connection.baseUrl };
-}
-
-/**
- * Select the connection that serves a conversation's model from the device's set.
- * Pure: the caller assembles `candidates` from the hosted catalog ids and each
- * custom connection's discovered/cached model ids. Returns the first connection
- * whose list contains the model, or `null` when no connection on this device can
- * serve it (the caller then shows the non-destructive banner rather than sending
- * an id the backend will reject). The synced model column is never rewritten here.
- */
-export function resolveForModel(
-	model: string,
-	candidates: readonly { connection: Connection; models: readonly string[] }[],
-): Connection | null {
-	const match = candidates.find((c) => c.models.includes(model));
-	return match?.connection ?? null;
 }
 
 export const ListModelsError = defineErrors({
@@ -152,7 +156,7 @@ export const ListModelsError = defineErrors({
 export type ListModelsError = InferErrors<typeof ListModelsError>;
 
 /**
- * List the model ids an OpenAI-compatible endpoint serves (ADR-0059). Best
+ * List the model ids an OpenAI-compatible endpoint serves (ADR-0060). Best
  * effort: the caller degrades to the free-text model floor on any error. Reads
  * the OpenAI `{ data: [{ id }] }` shape, which Ollama, LM Studio, OpenRouter, and
  * OpenAI all return, so there is no per-provider branch and no `/api/tags`

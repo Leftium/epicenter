@@ -1,5 +1,4 @@
 export {
-	type CustomConnection,
 	createInferenceConnections,
 	type HostedModel,
 	type InferenceConnections,

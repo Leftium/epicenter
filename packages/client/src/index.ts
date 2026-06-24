@@ -32,7 +32,6 @@ export {
 	type PresetId,
 	type ResolvedConnection,
 	resolveConnection,
-	resolveForModel,
 } from './connection.js';
 export {
 	createOpenAiAgentEngine,

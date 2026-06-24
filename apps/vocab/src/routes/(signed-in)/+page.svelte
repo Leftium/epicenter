@@ -38,7 +38,7 @@
 
 	let activeConversationId = $state<ConversationId | undefined>();
 
-	// The shared inference picker (ADR-0058) binds to the active conversation's
+	// The shared inference picker (ADR-0059) binds to the active conversation's
 	// model and this device's connection registry (built in the store module).
 	const activeModel = $derived.by(() => {
 		if (!activeConversationId) return VOCAB_MODEL;
@@ -58,7 +58,7 @@
 	 * Write only the cheap list row. The transcript child doc is opened lazily by
 	 * `ConversationView`, keyed by the row id. A new conversation defaults to the
 	 * hosted `VOCAB_MODEL`; the header picker rewrites this row's `model` per pick
-	 * (ADR-0058), and the engine resolves it against the device's connections.
+	 * (ADR-0059), and the engine resolves it against the device's connections.
 	 */
 	function createConversationRow(): ConversationId {
 		const id = generateConversationId();

@@ -1,5 +1,5 @@
 /**
- * Vocab's device-local inference connection registry (ADR-0058).
+ * Vocab's device-local inference connection registry (ADR-0059).
  *
  * One shared registry (built once here) that the header picker, the engine, and
  * the cross-device banner all read. Hosted is Vocab's one curated model

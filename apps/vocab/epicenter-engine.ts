@@ -2,7 +2,7 @@
  * The Vocab inference engine: an {@link AgentEngine} the client agent loop
  * (ADR-0047) drives over the OpenAI-compatible wire (ADR-0049/0050). The
  * connection is chosen per turn by resolving the conversation's model
- * (ADR-0055/0058) against the device's connection registry: the model column
+ * (ADR-0055/0059) against the device's connection registry: the model column
  * drives the hosted Epicenter gateway or a custom OpenAI-compatible server (a
  * local Ollama, your own gateway) alike. Hosted serves the Chinese-tuned
  * `VOCAB_MODEL`.

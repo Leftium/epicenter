@@ -154,7 +154,7 @@ export function createAiChatState({
 					workspace.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
 					// The conversation's model (ADR-0055) is resolved per turn against this
-					// device's connection set (ADR-0058), so a header switch lands on the
+					// device's connection set (ADR-0059), so a header switch lands on the
 					// next turn. `resolveOrHosted` falls back to the hosted gateway for a model
 					// no device connection serves; the UI gates sending in that case, so the
 					// fallback only errors loudly rather than silently substituting a model.

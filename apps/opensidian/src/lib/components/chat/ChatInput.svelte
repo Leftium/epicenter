@@ -27,7 +27,7 @@
 </script>
 
 <div class="flex flex-col gap-1.5 border-t bg-background px-2 py-1.5">
-	<!-- The shared model-first picker (ADR-0058): the conversation's model bound to
+	<!-- The shared model-first picker (ADR-0059): the conversation's model bound to
 	     this device's connection registry. Locked mid-turn so a transcript never
 	     spans backends. -->
 	<div class="flex items-center gap-2">

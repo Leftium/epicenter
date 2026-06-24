@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * The shared, model-first inference picker (ADR-0058). One flat searchable list
+	 * The shared, model-first inference picker (ADR-0059). One flat searchable list
 	 * of models grouped by connection: the hosted Epicenter catalog plus each
 	 * device-local custom connection's discovered models, with "Connect a
 	 * provider..." as the footer escape hatch. The model is the only leaf; the

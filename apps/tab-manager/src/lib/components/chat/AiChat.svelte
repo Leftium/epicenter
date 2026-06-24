@@ -15,7 +15,7 @@
 	// The conversation's model (ADR-0055) resolves against this device's
 	// connections. When no connection here serves it (a custom model set on another
 	// device), the banner shows and sending is blocked; the synced model column is
-	// never rewritten on detection, only by an explicit pick (ADR-0058).
+	// never rewritten on detection, only by an explicit pick (ADR-0059).
 	const isModelAvailable = $derived(
 		!active || inferenceConnections.canServe(active.model),
 	);
@@ -105,7 +105,7 @@
 
 	<!-- Cross-device model gap: this conversation's model is not served by any
 	     connection on this device. Offer the hosted default; never rewrite the
-	     synced model column on detection (ADR-0058). -->
+	     synced model column on detection (ADR-0059). -->
 	{#if active && !isModelAvailable}
 		<div
 			class="flex items-center justify-between gap-2 border-t bg-muted/50 px-3 py-2 text-xs"

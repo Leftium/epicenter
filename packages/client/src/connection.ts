@@ -1,6 +1,6 @@
 /**
  * The inference connection: a device-local, capability-orthogonal endpoint
- * (ADR-0058, amending ADR-0054). A connection is an OpenAI-compatible server plus
+ * (ADR-0059, amending ADR-0054). A connection is an OpenAI-compatible server plus
  * an optional key; it carries no model and no capability, so one connection can
  * drive chat, transcription, or embeddings alike. The model is the conversation's
  * (ADR-0055), paired with the transport by the caller per turn.
@@ -21,7 +21,7 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { EngineFetch } from './agent-engine.js';
 
-/** A canonical OpenAI-compatible provider we pre-fill as a preset (ADR-0058). */
+/** A canonical OpenAI-compatible provider we pre-fill as a preset (ADR-0059). */
 export type PresetId = 'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'groq';
 
 /**
@@ -42,7 +42,7 @@ export type ConnectionPreset = {
 };
 
 /**
- * The shipped presets (ADR-0058). Anthropic (its compat layer is "for testing"
+ * The shipped presets (ADR-0059). Anthropic (its compat layer is "for testing"
  * and loses prompt caching and thinking) and a bring-your-own Gemini (its compat
  * layer 400s on tools and JSON together, which the agent loops use) are
  * deliberately absent; both are reachable as a raw custom URL. Self-hosted
@@ -82,7 +82,7 @@ export const CONNECTION_PRESETS = [
 ] as const satisfies readonly ConnectionPreset[];
 
 /**
- * A device-local inference connection (ADR-0058). `hosted` is the built-in
+ * A device-local inference connection (ADR-0059). `hosted` is the built-in
  * metered Epicenter connection; `custom` is any OpenAI-compatible URL, optionally
  * seeded from a preset, with an optional Bearer key. The device holds a set of
  * these (the built-in hosted plus zero or more custom); the conversation's model
@@ -152,7 +152,7 @@ export const ListModelsError = defineErrors({
 export type ListModelsError = InferErrors<typeof ListModelsError>;
 
 /**
- * List the model ids an OpenAI-compatible endpoint serves (ADR-0058). Best
+ * List the model ids an OpenAI-compatible endpoint serves (ADR-0059). Best
  * effort: the caller degrades to the free-text model floor on any error. Reads
  * the OpenAI `{ data: [{ id }] }` shape, which Ollama, LM Studio, OpenRouter, and
  * OpenAI all return, so there is no per-provider branch and no `/api/tags`

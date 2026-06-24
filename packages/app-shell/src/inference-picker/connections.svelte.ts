@@ -1,5 +1,5 @@
 /**
- * The device-local inference connection registry (ADR-0058): one cohesive object
+ * The device-local inference connection registry (ADR-0059): one cohesive object
  * that owns the device's set of custom OpenAI-compatible connections plus the
  * model ids each was discovered to serve, and resolves a conversation's model to a
  * transport. Every chat app instantiates this once instead of re-deriving the same

@@ -1,4 +1,4 @@
-# 0058. An inference connection is a capability-orthogonal device endpoint; the model is per-conversation
+# 0059. An inference connection is a capability-orthogonal device endpoint; the model is per-conversation
 
 - **Status:** Accepted
 - **Date:** 2026-06-23

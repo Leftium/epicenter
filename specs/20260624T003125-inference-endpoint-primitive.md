@@ -4,8 +4,8 @@
 **Status**: Draft (adversarial review complete 2026-06-24: GO-WITH-CHANGES; see "Review Outcome" at the end, which corrects the stale Current State below)
 **Owner**: Braden
 **Branch**: gila-gap
-**Supersedes if adopted**: the hosted/custom `kind` shape recorded in ADR-0058 (its spec, 20260623T120000-inference-connections-and-presets, was completed and deleted; see git history)
-**Amends**: ADR-0058 (Accepted, already built) via a NEW Proposed ADR-0059. Do not edit 0058 in place.
+**Supersedes if adopted**: the hosted/custom `kind` shape recorded in ADR-0059 (its spec, 20260623T120000-inference-connections-and-presets, was completed and deleted; see git history)
+**Amends**: ADR-0059 (Accepted, already built) via a NEW Proposed ADR-0060. Do not edit 0059 in place.
 
 ## One Sentence
 
@@ -68,7 +68,7 @@ Endpoint OWNS:
 
 Endpoint COMPOSES WITH (does NOT absorb):
   1. the per-capability operation engine   (chat / transcription / embeddings: path + body shape differ)
-  2. the downloaded in-process engine       (ADR-0058 second kind; Whisper / Parakeet / Moonshine; not HTTP)
+  2. the downloaded in-process engine       (ADR-0059 second kind; Whisper / Parakeet / Moonshine; not HTTP)
   3. signing / refresh auth                 (Bedrock sigv4, Vertex OAuth) -> deferred, out of the data union
 ```
 
@@ -127,13 +127,13 @@ If any scenario forces one of those three back inside `Endpoint`, the collapse i
 
 1. A conversation references `qwen3` (local Ollama on device A).
 2. Device B has no endpoint serving `qwen3`.
-3. Resolve to `unavailable`; gate sending (unchanged from ADR-0058).
+3. Resolve to `unavailable`; gate sending (unchanged from ADR-0059).
 
 ## Open Questions
 
 1. **Gateway `GET /v1/models` (KEYSTONE)**: feasible to return the curated per-app list from `packages/server/src/routes/inference.ts`? If the curated set is per-conversation rather than per-app, or metering needs the model named up front, hosted may keep some specialness.
    - **Recommendation**: implement it; it is the single thing that erases hosted-specific client code.
-2. **Model identity across endpoints**: deterministic documented tie-break, vs sync a portable hint `{ model, preset? }` on the conversation (without leaking device-local `baseUrl`/keys onto the relay, per ADR-0058)?
+2. **Model identity across endpoints**: deterministic documented tie-break, vs sync a portable hint `{ model, preset? }` on the conversation (without leaking device-local `baseUrl`/keys onto the relay, per ADR-0059)?
    - **Recommendation**: document a tie-break now (e.g. prefer the user's own endpoint over hosted, then first-configured); add a portable hint only if collisions bite.
 3. **Capability role**: does capability ever GATE (hide non-tool models) or only DECORATE? Pressure-test against the Whispering transcription picker, which must split one endpoint's mixed `/v1/models` list into chat vs transcription vs embedding.
    - **Recommendation**: decorate-only; source modality from endpoint-returned metadata + naming heuristics; reach for a build-time-vendored, preset-pruned models.dev snapshot only if those prove insufficient.
@@ -164,7 +164,7 @@ If any scenario forces one of those three back inside `Endpoint`, the collapse i
 ### Phase 4: Remove
 
 - [ ] **4.1** Delete the `Connection` union and `resolveConnection`.
-- [ ] **4.2** Revise ADR-0058 (or write a new Proposed ADR) to the single-primitive shape.
+- [ ] **4.2** Revise ADR-0059 (or write a new Proposed ADR) to the single-primitive shape.
 
 ## Success Criteria
 
@@ -182,8 +182,8 @@ If any scenario forces one of those three back inside `Endpoint`, the collapse i
 - `apps/vocab/epicenter-engine.ts` (buildVocabCandidates, createVocabEngine)
 - `apps/vocab/src/lib/state/inference-connections.svelte.ts` (device-local stores)
 - `packages/server/src/routes/inference.ts` (house-key passthrough gateway)
-- `docs/adr/0053-*.md`, `docs/adr/0054-*.md`, `docs/adr/0058-*.md`
-- `docs/adr/0058-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md` (the shipped current direction; its spec 20260623T120000 was completed and deleted)
+- `docs/adr/0053-*.md`, `docs/adr/0054-*.md`, `docs/adr/0059-*.md`
+- `docs/adr/0059-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md` (the shipped current direction; its spec 20260623T120000 was completed and deleted)
 
 ---
 
@@ -195,7 +195,7 @@ If any scenario forces one of those three back inside `Endpoint`, the collapse i
 - `apps/vocab/epicenter-engine.ts` does NOT contain `buildVocabCandidates` and does NOT hardcode a model list. It calls `createOpenAiAgentEngine` and resolves per turn: `connections.resolve(currentModel) ?? connections.hosted` (epicenter-engine.ts:44).
 - The shared registry `createInferenceConnections` ALREADY exists (`packages/app-shell/src/inference-picker/connections.svelte.ts`) and ALREADY owns discovery, `candidates`, `resolve`, `discoveredModels`, and `hosted`. It is ALREADY shared across `apps/vocab`, `apps/tab-manager`, and `apps/opensidian`.
 - So the "collapse 3 InferenceSettings into 1" win is done. The ONLY remaining target is the `{ kind: 'hosted' | 'custom' }` union and the `kind` branch in `resolveConnection` (`packages/client/src/connection.ts:107`), plus the `header` auth slot and the `/v1/models` keystone.
-- A repo smoke script already exists: `apps/vocab/scripts/ollama-smoke.ts` (uses `resolveConnection`, ADR-0058).
+- A repo smoke script already exists: `apps/vocab/scripts/ollama-smoke.ts` (uses `resolveConnection`, ADR-0059).
 
 ### Correction 1: hosted metadata is `ModelInfo` decoration, not a `kind`
 The hosted catalog pins product metadata to each id: `packages/constants/src/ai-providers.ts:63-65` =
@@ -226,12 +226,12 @@ Hosted ids are real upstream ids, so `gpt-5.5` collides between hosted (metered)
 
 ### Open Questions, resolved
 - **OQ1 (keystone)**: feasible. No `/v1/models` route exists today; the catalog is a static per-deployment `AI_MODELS`, so the per-conversation hedge does not fire. ~10 lines reusing the `/v1/*` mount. Residual hosted specialness = `credits`/`label`, absorbed by `ModelInfo`.
-- **OQ2 (identity)**: deterministic tie-break NOW, custom-before-hosted (billing-safe). No portable `{model, preset?}` hint yet (ADR-0058 forbids leaking device-local baseUrl/keys onto the relay).
+- **OQ2 (identity)**: deterministic tie-break NOW, custom-before-hosted (billing-safe). No portable `{model, preset?}` hint yet (ADR-0059 forbids leaking device-local baseUrl/keys onto the relay).
 - **OQ3 (capability)**: decorate-only, confirmed. Never gate.
 - **OQ4 (auth union)**: complete for shipped presets; `header.name` required; signing deferred is correct.
 - **OQ5 (browser CORS)**: Ollama blocks an HTTPS web app against `http://localhost:11434` UNLESS `OLLAMA_ORIGINS` is set. (Edit: the earlier "localhost is a secure context" note conflated mixed-content with CORS; the blocker is Ollama's origin policy.) Tauri bypasses it. Surface an `OLLAMA_ORIGINS` hint in browser mode; treat full local discovery as Tauri-first. ADR-0054 already accepts this constraint.
 
 ### ADR posture
-Write a NEW Proposed **ADR-0059**; do not revise Accepted ADR-0058 in place. One-sentence decision to record:
+Write a NEW Proposed **ADR-0060**; do not revise Accepted ADR-0059 in place. One-sentence decision to record:
 
 > An inference endpoint is one device-local OpenAI-compatible primitive `{ baseUrl, auth: epicenter-session | bearer | header | none, models }` with a single origin-scoped resolver; hosted is the endpoint that authenticates with the Epicenter session and serves its curated catalog (with `credits`/`label` as read-side `ModelInfo` decoration) over `GET /v1/models`, collapsing the hosted/custom `kind` discriminant while keeping the operation engine, the downloaded in-process engine, and signing auth as separate composed neighbors.

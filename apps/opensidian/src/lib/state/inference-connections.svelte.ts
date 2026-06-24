@@ -1,5 +1,5 @@
 /**
- * opensidian's device-local inference connection registry (ADR-0058).
+ * opensidian's device-local inference connection registry (ADR-0059).
  *
  * One shared registry (built once here) that the chat input picker, the engine,
  * and the cross-device banner all read. Hosted is opensidian's curated catalog

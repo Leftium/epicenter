@@ -56,7 +56,6 @@ export type OAuthError = InferErrors<typeof OAuthError>;
 
 export type OAuthDeps = {
 	now: () => number;
-	fetchImpl?: typeof fetch;
 	openBrowser?: (url: string) => void;
 	log?: (message: string) => void;
 	/** Callback wait budget; defaults to 5 minutes. */
@@ -74,12 +73,11 @@ function authServer(config: AppConfig): oauth.AuthorizationServer {
 	};
 }
 
-/** Allow http for the mock token endpoint in tests; inject a fetch when given. */
-function httpOptions(config: AppConfig, deps: OAuthDeps) {
+/** Allow http for the mock token endpoint in tests. */
+function httpOptions(config: AppConfig) {
 	return {
 		[oauth.allowInsecureRequests]:
 			new URL(config.tokenUrl).protocol === 'http:',
-		...(deps.fetchImpl ? { [oauth.customFetch]: deps.fetchImpl } : {}),
 	};
 }
 
@@ -99,7 +97,7 @@ export async function refreshAccessToken(
 			client,
 			oauth.ClientSecretBasic(config.clientSecret),
 			token.refreshToken,
-			httpOptions(config, deps),
+			httpOptions(config),
 		);
 		const grant = await oauth.processRefreshTokenResponse(as, client, response);
 		// Rotation: QuickBooks may omit refresh_token when the old one stays valid.
@@ -151,7 +149,7 @@ export async function completeAuthorization(
 			params,
 			config.redirectUri,
 			codeVerifier ?? oauth.nopkce,
-			httpOptions(config, deps),
+			httpOptions(config),
 		);
 		const grant = await oauth.processAuthorizationCodeResponse(
 			as,

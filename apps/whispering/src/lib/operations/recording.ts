@@ -63,7 +63,13 @@ function isVadRecordingActive() {
 	);
 }
 
-export async function startManualRecording() {
+/**
+ * Start a manual recording and return the id of the recording it started, or
+ * `null` when it did not start one (it failed, or a recording was already live so
+ * this call was a no-op). Push-to-talk remembers that id to later stop only the
+ * exact recording it owns; the button and toggle paths ignore the return.
+ */
+export async function startManualRecording(): Promise<string | null> {
 	settings.set('recording.trigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
 	// the pill follows this attempt, not the last one.
@@ -85,9 +91,9 @@ export async function startManualRecording() {
 	// Feed the pill's meter the live mic level. On web the navigator recorder taps
 	// its stream to drive this; on desktop the CPAL worker emits the level from
 	// Rust straight to the overlay, so this callback is never invoked there.
-	const { data: outcome, error } = await manualRecorder.startRecording(
-		(level) => recordingOverlay.reportLevel(level),
-	);
+	const { data: outcome, error } = await manualRecorder.startRecording({
+		onLevel: (level) => recordingOverlay.reportLevel(level),
+	});
 
 	if (error) {
 		void recordingMedia.resume();
@@ -95,7 +101,7 @@ export async function startManualRecording() {
 		// loudest tier. The pill glances it and the notification fires when
 		// unfocused, so there is no toast.
 		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
-		return;
+		return null;
 	}
 
 	// The pill shows the live recording; only a device fallback needs a notice.
@@ -105,6 +111,7 @@ export async function startManualRecording() {
 
 	log.info('Recording started');
 	sound.playSoundIfEnabled('manual-start');
+	return manualRecorder.currentRecordingId;
 }
 
 export async function stopManualRecording() {
@@ -139,6 +146,22 @@ export async function stopManualRecording() {
 		source,
 		durationMs,
 	});
+}
+
+/**
+ * Stop the manual recording only if `recordingId` names the one that is live. A
+ * no-op otherwise, so a push-to-talk release that is stray, duplicated, or lands
+ * after its recording was supplanted by a toggle/button recording never stops the
+ * wrong one. This is the idempotent stop push-to-talk routes every stop through.
+ */
+export async function stopManualRecordingById(recordingId: string) {
+	if (
+		manualRecorder.state !== 'RECORDING' ||
+		manualRecorder.currentRecordingId !== recordingId
+	) {
+		return;
+	}
+	await stopManualRecording();
 }
 
 export function toggleManualRecording() {

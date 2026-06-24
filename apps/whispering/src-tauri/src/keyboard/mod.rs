@@ -59,6 +59,10 @@ use supervisor::{Control, Effect, Supervisor};
 /// see shortcut events, which keeps the dispatch single even if they subscribe.
 const MAIN_WINDOW: &str = "main";
 
+/// The command id whose `Released` means "stop the held recording." It is the only
+/// command a SYNTHETIC abandon release is delivered for (see `emit_trigger`).
+const PUSH_TO_TALK_COMMAND_ID: &str = "pushToTalk";
+
 /// rdev's listener is X11-only; on Wayland the tap never receives events.
 #[cfg(target_os = "linux")]
 fn is_wayland() -> bool {
@@ -96,6 +100,10 @@ fn is_trusted() -> bool {
 /// (see `run_supervisor`); this struct is constructed in `setup` and managed via
 /// `app.manage(...)` so commands reach it with `app.state::<...>()`.
 pub struct TapController {
+    /// Held so a synthetic `Released` (produced when a binding re-sync or capture
+    /// switch abandons an in-flight gesture) can be emitted to the main webview,
+    /// the same path `handle_event` uses for real triggers.
+    app: AppHandle,
     matcher: Arc<Mutex<Matcher>>,
     capability: Arc<Mutex<DictationCapability>>,
     /// Wakes the supervisor when the bound set changes, so it can start the tap
@@ -109,13 +117,14 @@ impl TapController {
         let capability = Arc::new(Mutex::new(DictationCapability::Unknown));
         let (control_tx, control_rx) = mpsc::channel();
         spawn_supervisor(
-            app,
+            app.clone(),
             matcher.clone(),
             capability.clone(),
             control_tx.clone(),
             control_rx,
         );
         Self {
+            app,
             matcher,
             capability,
             control_tx,
@@ -130,9 +139,14 @@ impl TapController {
     /// lock is swallowed: a panicked matcher thread should not take the app down.
     pub fn set_bindings(&self, bindings: Vec<(String, KeyBinding)>) {
         let needs_tap = bindings.iter().any(|(_, binding)| !binding.is_empty());
-        if let Ok(mut matcher) = self.matcher.lock() {
-            matcher.set_bindings(bindings);
-        }
+        // A re-sync while a hold is physically down abandons the in-flight gesture;
+        // the matcher hands back its synthetic Released so the held command (e.g.
+        // push-to-talk) gets a stop instead of vanishing. Emit after the lock drops.
+        let released = match self.matcher.lock() {
+            Ok(mut matcher) => matcher.set_bindings(bindings),
+            Err(_) => None,
+        };
+        emit_trigger(&self.app, released);
         let _ = self.control_tx.send(Control::Bindings(needs_tap));
     }
 
@@ -156,9 +170,13 @@ impl TapController {
     /// first Fn binding is ever recordable. The matcher flag is set first so the
     /// freshly-spawned tap is already in capture mode when its events arrive.
     pub fn set_capturing(&self, capturing: bool) {
-        if let Ok(mut matcher) = self.matcher.lock() {
-            matcher.set_capturing(capturing);
-        }
+        // Entering capture while a hold is active abandons it; emit the matcher's
+        // synthetic Released so the held command stops across the mode switch.
+        let released = match self.matcher.lock() {
+            Ok(mut matcher) => matcher.set_capturing(capturing),
+            Err(_) => None,
+        };
+        emit_trigger(&self.app, released);
         let _ = self.control_tx.send(Control::Capturing(capturing));
     }
 
@@ -217,6 +235,27 @@ fn handle_event(app: &AppHandle, matcher: &Arc<Mutex<Matcher>>, edge: Edge, inpu
     }
 }
 
+/// Deliver a synthetic `Released` (from a matcher abandonment in `clear_held`,
+/// `set_bindings`, or `set_capturing`) to the main webview, but only for
+/// push-to-talk (see the body). A no-op when nothing was active or the abandoned
+/// command is not push-to-talk.
+fn emit_trigger(app: &AppHandle, trigger: Option<ShortcutTriggerEvent>) {
+    let Some(trigger) = trigger else {
+        return;
+    };
+    // Deliver a SYNTHETIC abandon release only for push-to-talk. Its `Released`
+    // means "stop the held recording," which must fire when a held gesture is
+    // abandoned (a tap restart, a binding re-sync, a capture switch) so recording
+    // never stays stuck on. A release-to-act command (the transformation picker)
+    // also subscribes to `Released` but must NOT fire on an abandoned gesture, so
+    // its synthetic release is dropped here. Real releases (`handle_event`) are
+    // unaffected. Generalize when commands declare a hold-vs-tap interaction kind.
+    if trigger.command_id != PUSH_TO_TALK_COMMAND_ID {
+        return;
+    }
+    let _ = trigger.emit_to(app, MAIN_WINDOW);
+}
+
 /// Run the platform tap on the calling thread until it stops, feeding every
 /// transition to `handle_event`. Returns the debug-formatted stop reason (log
 /// only), or `None` on a clean stop. This is the one platform fork: macOS uses
@@ -263,10 +302,14 @@ fn spawn_listener(app: &AppHandle, matcher: &Arc<Mutex<Matcher>>, control_tx: &S
         .spawn(move || {
             // A previous tap that exited may have left a key in the held set with
             // no matching release; start clean so a stale modifier cannot wedge a
-            // binding "down" under exact-set matching.
-            if let Ok(mut matcher) = matcher.lock() {
-                matcher.clear_held();
-            }
+            // binding "down" under exact-set matching. clear_held also synthesizes a
+            // Released for any gesture that was active when the prior tap died, so a
+            // held push-to-talk gets a stop instead of staying down across restart.
+            let released = match matcher.lock() {
+                Ok(mut matcher) => matcher.clear_held(),
+                Err(_) => None,
+            };
+            emit_trigger(&app, released);
 
             if let Some(reason) = run_listen(&app, &matcher) {
                 log::error!("keyboard listener stopped: {reason}");

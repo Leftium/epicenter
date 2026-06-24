@@ -145,7 +145,6 @@ export function createInferenceConnections({
 		remove(baseUrl: string) {
 			custom.current = custom.current.filter((c) => c.baseUrl !== baseUrl);
 		},
-		cacheModels,
 
 		/** Discover the models a candidate endpoint serves (best effort, never throws). */
 		discover(

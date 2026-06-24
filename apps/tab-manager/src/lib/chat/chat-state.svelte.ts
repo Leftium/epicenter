@@ -109,6 +109,9 @@ export function createAiChatState({
 		let dismissedError = $state<string | null>(null);
 
 		const metadata = $derived(conversationsMap.get(conversationId));
+		/** The conversation's model (ADR-0055), defaulted once for both the engine
+		 * turn and the picker's `model` getter. */
+		const currentModel = $derived(metadata?.model ?? DEFAULT_MODEL);
 
 		// The tool call the loop is waiting on a decision for, or null. A mutation
 		// pauses the loop here (the present human is the gate, ADR-0047); a query,
@@ -136,11 +139,11 @@ export function createAiChatState({
 					// device connection serves; the UI gates sending in that case, so the
 					// fallback only errors loudly rather than silently substituting a model.
 					data: () => {
-						const m = metadata?.model ?? DEFAULT_MODEL;
-						const transport = inferenceConnections.resolveOrHosted(m);
+						const transport =
+							inferenceConnections.resolveOrHosted(currentModel);
 						return {
 							...transport,
-							model: m,
+							model: currentModel,
 							systemPrompts: [
 								buildDeviceConstraints(tabManager.nodeId),
 								TAB_MANAGER_SYSTEM_PROMPT,
@@ -205,7 +208,7 @@ export function createAiChatState({
 			// ── Model choice (a row column) ──
 
 			get model() {
-				return metadata?.model ?? DEFAULT_MODEL;
+				return currentModel;
 			},
 			set model(value: string) {
 				updateConversation(conversationId, { model: value });

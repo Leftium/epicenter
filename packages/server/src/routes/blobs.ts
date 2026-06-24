@@ -289,33 +289,19 @@ export function mountBlobsApp(
 ): void {
 	// Every blob route runs the same chain: authenticate, resolve + assert the
 	// owner partition, ensure object storage is configured, then any deployment
-	// policies. Hono's variadic mounts can't take a spread middleware array
-	// (the dynamic `policies` defeats overload resolution), so the chain is
-	// repeated per pattern, as in the assets surface.
+	// policies. The chain is typed as a non-empty tuple so its leading fixed
+	// handler satisfies `app.on`'s overload (a bare `MiddlewareHandler[]` spread
+	// would be read as the path argument).
 	const requireOwnership = createRequireOwnership(opts.ownership);
-	const policies = opts.policies ?? [];
+	const chain: [MiddlewareHandler, ...MiddlewareHandler[]] = [
+		requireCookieOrBearerUser,
+		requireOwnership,
+		requireBlobStore,
+		...(opts.policies ?? []),
+	];
 
-	app.use(
-		API_ROUTES.blobs.list.pattern,
-		requireCookieOrBearerUser,
-		requireOwnership,
-		requireBlobStore,
-		...policies,
-	);
-	app.use(
-		API_ROUTES.blobs.usage.pattern,
-		requireCookieOrBearerUser,
-		requireOwnership,
-		requireBlobStore,
-		...policies,
-	);
-	app.on(
-		['GET', 'DELETE'],
-		API_ROUTES.blobs.byHash.pattern,
-		requireCookieOrBearerUser,
-		requireOwnership,
-		requireBlobStore,
-		...policies,
-	);
+	app.use(API_ROUTES.blobs.list.pattern, ...chain);
+	app.use(API_ROUTES.blobs.usage.pattern, ...chain);
+	app.on(['GET', 'DELETE'], API_ROUTES.blobs.byHash.pattern, ...chain);
 	app.route('/', blobsApp);
 }

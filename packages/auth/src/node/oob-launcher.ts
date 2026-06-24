@@ -101,10 +101,6 @@ type CreateOobOAuthLauncherConfig = {
 	 */
 	fetch?: AuthFetch;
 	/**
-	 * Crypto implementation used for PKCE verifier and challenge generation.
-	 */
-	crypto?: Crypto;
-	/**
 	 * Clock used to convert `expires_in` into the persisted grant refresh hint.
 	 */
 	now?: () => number;
@@ -128,16 +124,15 @@ export function createOobOAuthLauncher({
 	readCode = defaultReadCode,
 	print = (line) => process.stdout.write(`${line}\n`),
 	fetch = globalThis.fetch.bind(globalThis),
-	crypto = globalThis.crypto,
 	now = Date.now,
 }: CreateOobOAuthLauncherConfig) {
 	return {
 		async startSignIn(): Promise<Result<OAuthLaunchResult, OobLauncherError>> {
 			const verifierBytes = new Uint8Array(32);
-			crypto.getRandomValues(verifierBytes);
+			globalThis.crypto.getRandomValues(verifierBytes);
 			const codeVerifier = base64UrlEncode(verifierBytes);
 			const challengeBytes = new Uint8Array(
-				await crypto.subtle.digest(
+				await globalThis.crypto.subtle.digest(
 					'SHA-256',
 					new TextEncoder().encode(codeVerifier),
 				),

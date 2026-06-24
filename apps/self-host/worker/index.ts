@@ -49,10 +49,14 @@ const ownership = shared({
 const app = createServerApp({
 	// The Cloudflare runtime adapter: a per-request pg client over Hyperdrive,
 	// `waitUntil` to drain the after-response queue past the response, and the
-	// Durable Object room registry — with the one `Cloudflare.Env` cast they
-	// need (ADR-0059). Identical to the hosted deployable's runtime; the
-	// ownership rule and identity are what differ.
-	runtime: cloudflare(),
+	// Durable Object room registry. This edge points it at its OWN two bindings
+	// (the `Cloudflare.Env` cast and binding names stay here, type-checked
+	// against this Worker's generated bindings, ADR-0059). Identical wiring to
+	// the hosted deployable; the ownership rule and identity are what differ.
+	runtime: cloudflare({
+		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
+		room: (env) => (env as Cloudflare.Env).ROOM,
+	}),
 	identity: {
 		// Self-hosters set their own public origin in wrangler.jsonc
 		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's. It is

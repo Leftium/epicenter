@@ -54,10 +54,11 @@ import type { Env } from './types.js';
  *
  * Each leg receives `env` typed as the library's portable `ServerBindings`, so
  * the library names no `Cloudflare.Env` and a Bun host typechecks with no
- * Cloudflare types in scope. The Cloudflare adapter casts `env` to its Workers
- * binding shape at that one honest edge (`runtime/cloudflare.ts`); the Bun
- * adapter reads nothing Cloudflare-shaped (it closes over module-scope
- * primitives).
+ * Cloudflare types in scope. The Cloudflare adapter takes binding extractors
+ * from the app edge, where the `Cloudflare.Env` cast is honest and type-checked
+ * against the deployment's generated bindings, and never names a binding
+ * itself; the Bun adapter reads nothing Cloudflare-shaped (it closes over
+ * module-scope primitives).
  */
 export type RuntimeAdapter = {
 	/**

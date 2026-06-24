@@ -1,15 +1,19 @@
 /**
  * The Cloudflare runtime adapter: the three runtime-port concerns (ADR-0059)
- * bound to Workers bindings, as one {@link RuntimeAdapter} a Workers deployment
- * passes to `createServerApp`. Both Cloudflare deployables (`apps/api`,
- * `apps/self-host`) build the identical triple, so it lives here once instead of
- * being restated at each edge.
+ * wired to Workers bindings, as one {@link RuntimeAdapter} a Workers deployment
+ * passes to `createServerApp`. The wiring (a per-request pg client over
+ * Hyperdrive, `waitUntil`, and the Durable Object room registry) is identical
+ * across both Cloudflare deployables, so it lives here once.
  *
- * This is the honest edge where naming Cloudflare belongs: the adapter casts the
- * portable `ServerBindings` to the Workers binding shape it knows is really
- * there (`HYPERDRIVE`, `ROOM`), reading the binding objects the library's env
- * contract deliberately does not name. A Bun host builds its own adapter inline
- * over a `pg.Pool`, a no-op, and an in-process room registry instead.
+ * The deployment supplies its OWN two binding handles through the `hyperdrive`
+ * and `room` extractors. That keeps the binding NAMES (`HYPERDRIVE`, `ROOM`,
+ * which each app chooses in its own `wrangler.jsonc`) and the `Cloudflare.Env`
+ * cast at the app edge, where naming Cloudflare is honest and the access is
+ * type-checked against the deployment's generated bindings (ADR-0059). This
+ * library file names no binding name and casts no env; it only knows the
+ * binding TYPES, through what `connectHyperdriveDb` and
+ * `createDurableObjectRooms` already accept. A Bun host builds its own adapter
+ * inline over a `pg.Pool`, a no-op, and an in-process room registry.
  */
 
 import { connectHyperdriveDb } from '../db/backends/cloudflare.js';
@@ -18,30 +22,21 @@ import type { RuntimeAdapter } from '../server-app.js';
 import type { ServerBindings } from '../server-bindings.js';
 
 /**
- * The portable `ServerBindings` plus the two Workers object bindings the adapter
- * reads, derived from exactly what `connectHyperdriveDb` and
- * `createDurableObjectRooms` consume. `ServerBindings` holds only strings and
- * cannot name these, so the adapter narrows `env` to this superset at the one
- * honest edge — a single downcast, no `unknown` laundering.
+ * Build the Cloudflare {@link RuntimeAdapter} for `createServerApp`. The
+ * deployment passes one extractor per binding, reading it off its own
+ * `Cloudflare.Env`; per-room DO sharding stays the cloud's binding of the room
+ * actor (ADR-0059): hibernate-to-zero and single-writer-per-room at
+ * multi-tenant scale.
  */
-type CloudflareRuntimeBindings = ServerBindings & {
-	HYPERDRIVE: Parameters<typeof connectHyperdriveDb>[0];
-	ROOM: Parameters<typeof createDurableObjectRooms>[0];
-};
-
-/**
- * Build the Cloudflare {@link RuntimeAdapter} for `createServerApp`: a
- * per-request `pg.Client` over Hyperdrive, `waitUntil` to outlive the response,
- * and a Durable Object room registry. Per-room DO sharding stays the cloud's
- * binding of the room actor (ADR-0059): hibernate-to-zero and
- * single-writer-per-room at multi-tenant scale.
- */
-export function cloudflare(): RuntimeAdapter {
+export function cloudflare(bindings: {
+	/** Read this deployment's Hyperdrive binding off its env (`env.HYPERDRIVE`). */
+	hyperdrive: (env: ServerBindings) => Parameters<typeof connectHyperdriveDb>[0];
+	/** Read this deployment's Durable Object room namespace off its env (`env.ROOM`). */
+	room: (env: ServerBindings) => Parameters<typeof createDurableObjectRooms>[0];
+}): RuntimeAdapter {
 	return {
-		connectDb: (env) =>
-			connectHyperdriveDb((env as CloudflareRuntimeBindings).HYPERDRIVE),
+		connectDb: (env) => connectHyperdriveDb(bindings.hyperdrive(env)),
 		afterResponse: (c, work) => c.executionCtx.waitUntil(work),
-		resolveRooms: (env) =>
-			createDurableObjectRooms((env as CloudflareRuntimeBindings).ROOM),
+		resolveRooms: (env) => createDurableObjectRooms(bindings.room(env)),
 	};
 }

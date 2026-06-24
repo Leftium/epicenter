@@ -42,12 +42,17 @@ const ownership = personal();
 
 const app = createServerApp({
 	// The Cloudflare runtime adapter owns the per-request pg client over
-	// Hyperdrive, `waitUntil`, and the Durable Object room registry — and the one
-	// `Cloudflare.Env` cast they need (ADR-0059). Per-room DO sharding stays the
-	// cloud's binding of the room actor forever: hibernate-to-zero and
+	// Hyperdrive, `waitUntil`, and the Durable Object room registry. This edge
+	// points it at its OWN two bindings: the `Cloudflare.Env` cast and the
+	// binding names live here, where they are type-checked against this Worker's
+	// generated bindings (ADR-0059). Per-room DO sharding stays the cloud's
+	// binding of the room actor forever: hibernate-to-zero and
 	// single-writer-per-room at multi-tenant scale. A Bun host builds its own
 	// adapter inline.
-	runtime: cloudflare(),
+	runtime: cloudflare({
+		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
+		room: (env) => (env as Cloudflare.Env).ROOM,
+	}),
 	identity: {
 		// The hosted cloud's public origin never changes per deploy, so it is
 		// baked from the constants source of truth rather than duplicated into

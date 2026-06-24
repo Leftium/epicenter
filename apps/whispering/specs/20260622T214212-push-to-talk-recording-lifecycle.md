@@ -155,7 +155,7 @@ run: (state?: ShortcutEventState) => {
 - [x] **2.1** The manual recorder tags its live session with `source: 'manual' | 'pushToTalk'` (`currentSource`/`isStarting` getters); `recording.ts` adds `stopManualRecordingIfOwned(source)`, the idempotent owned-stop. The session id + `stopRequested` live in the controller, not the recorder.
 - [x] **2.2** `operations/push-to-talk.ts`: `start()` (mint session, start tagged, arm 5-min cap, honor a startup-phase release), `stop()` (owned-stop, latch during startup, clear a stale session). The startup latch is safe because `manualRecorder.startRecording` sets `_starting` synchronously before any await.
 - [x] **2.3** `pushToTalk.run` routes to `pushToTalk.start()/.stop()` (`commands.ts`); the toggle/button path stays `manual` and unowned.
-- [ ] **2.4** Harvest the ownership decision into a `Proposed` ADR. Deferred until Phase 3 / the design fully settles.
+- [x] **2.4** Harvested the ownership decision into [ADR-0058](../../../docs/adr/0058-push-to-talk-owns-its-recording-by-source-and-id-not-a-lifecycle-layer.md) (`Proposed`; flips to `Accepted` when desktop smoke lands and this spec is retired).
 
 ### Phase 3: Precise reconcile hooks + tests — IN PROGRESS
 

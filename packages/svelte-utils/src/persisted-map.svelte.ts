@@ -97,12 +97,7 @@ export function defineEntry<TSchema extends StandardSchemaV1>(
  */
 export function createPersistedMap<
 	TDefs extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
->({
-	prefix,
-	definitions,
-	onError,
-	onUpdateError,
-}: PersistedMapOptions<TDefs>) {
+>({ prefix, definitions, onError, onUpdateError }: PersistedMapOptions<TDefs>) {
 	// Object.keys() returns string[] by design; safe here because we define the object ourselves.
 	const definitionKeys = Object.keys(definitions) as (string & keyof TDefs)[];
 

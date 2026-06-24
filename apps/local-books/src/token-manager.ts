@@ -93,8 +93,7 @@ export function createTokenManager({
 	return {
 		current: () => current,
 		async getValidAccessToken() {
-			if (!isAccessTokenExpired(current, now()))
-				return Ok(current.accessToken);
+			if (!isAccessTokenExpired(current, now())) return Ok(current.accessToken);
 			return refresh();
 		},
 		forceRefresh: refresh,

@@ -2,7 +2,6 @@
 	import { asFileId } from '@epicenter/filesystem';
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Collapsible from '@epicenter/ui/collapsible';
-	import { cn } from '@epicenter/ui/utils';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import { requireOpensidian } from '$lib/session';
@@ -17,8 +16,11 @@
 		defaultOpen: boolean;
 	} = $props();
 
-	// svelte-ignore state_referenced_locally - `defaultOpen` is an uncontrolled default: seed the open state once, then let the user own it via the trigger (a later re-search changing matchCount must not clobber their toggle).
-	let open = $state(defaultOpen);
+	// svelte-ignore state_referenced_locally - snapshot the matchCount heuristic once as the
+	// collapsible's initial open state. `loadMore` raises matchCount on persisted groups (keyed
+	// by fileId), so a reactive `open={defaultOpen}` would collapse a group the user had expanded.
+	// bits-ui owns the live open/closed state from here; the chevron rotates off its data-state.
+	const initialOpen = defaultOpen;
 
 	/**
 	 * Strip all HTML tags except <mark> for safe snippet rendering.
@@ -38,15 +40,12 @@
 	);
 </script>
 
-<Collapsible.Root bind:open>
+<Collapsible.Root open={initialOpen}>
 	<Collapsible.Trigger
 		class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent/50"
 	>
 		<ChevronRightIcon
-			class={cn(
-				'size-4 shrink-0 text-muted-foreground transition-transform',
-				open && 'rotate-90',
-			)}
+			class="size-4 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90"
 		/>
 		<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium">{group.fileName}</span>

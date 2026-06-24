@@ -22,4 +22,11 @@ export type RecordingActionController = {
 	readonly shortcutLabel: string;
 	/** Start when idle, stop when active. */
 	toggle(): void;
+	/**
+	 * Discard the in-progress capture without keeping its audio. Present only
+	 * when the recorder has a discard-vs-finalize split (manual). Absent for VAD,
+	 * where stopping the session is the only way to abort it, so a separate cancel
+	 * would just duplicate the toggle.
+	 */
+	cancel?(): void;
 };

@@ -23,16 +23,6 @@ type PersistedMapOptions<
 	/** Per-key schema and default value definitions. */
 	definitions: TDefs;
 	/**
-	 * The Web Storage instance to use.
-	 * @default window.localStorage
-	 */
-	storage?: Storage;
-	/**
-	 * Whether to sync state across tabs via the `storage` event.
-	 * @default true
-	 */
-	syncTabs?: boolean;
-	/**
 	 * Called when a value read from storage fails to parse or validate.
 	 * Fire-and-forget. `defaultValue` is used as the fallback regardless.
 	 */
@@ -110,8 +100,6 @@ export function createPersistedMap<
 >({
 	prefix,
 	definitions,
-	storage: storageApi = window.localStorage,
-	syncTabs = true,
 	onError,
 	onUpdateError,
 }: PersistedMapOptions<TDefs>) {
@@ -180,7 +168,7 @@ export function createPersistedMap<
 	}
 
 	function readKey(key: string & keyof TDefs) {
-		return parseRawValue(key, storageApi.getItem(storageKey(key)));
+		return parseRawValue(key, window.localStorage.getItem(storageKey(key)));
 	}
 
 	// Typed as `unknown` because a single map holds heterogeneous values for all key types.
@@ -192,14 +180,12 @@ export function createPersistedMap<
 
 	// Cross-tab sync: ONE listener for all keys, filtered by prefix.
 	// Listeners are never removed: this function assumes singleton/module-scope usage.
-	if (syncTabs) {
-		window.addEventListener('storage', (e) => {
-			if (!e.key?.startsWith(prefix)) return;
-			const key = e.key.slice(prefix.length);
-			if (!isDefinitionKey(key)) return;
-			map.set(key, parseRawValue(key, e.newValue));
-		});
-	}
+	window.addEventListener('storage', (e) => {
+		if (!e.key?.startsWith(prefix)) return;
+		const key = e.key.slice(prefix.length);
+		if (!isDefinitionKey(key)) return;
+		map.set(key, parseRawValue(key, e.newValue));
+	});
 
 	// Same-tab sync: ONE listener for all keys.
 	window.addEventListener('focus', () => {
@@ -219,7 +205,7 @@ export function createPersistedMap<
 			value: InferDefinitionValue<TDefs[TKey]>,
 		) {
 			try {
-				storageApi.setItem(storageKey(key), JSON.stringify(value));
+				window.localStorage.setItem(storageKey(key), JSON.stringify(value));
 			} catch (error) {
 				onUpdateError?.(key, error);
 			}

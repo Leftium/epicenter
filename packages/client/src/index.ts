@@ -51,9 +51,8 @@ export type EpicenterClientOptions = {
 	fetch: AuthFetch;
 	/**
 	 * The signed-in owner partition, read from `auth.state.ownerId`. The client
-	 * is owner-scoped and addresses every route under it; it never resolves
-	 * identity itself. (`blobs.url` stays owner-explicit so a vault receipt can
-	 * address any owner's blob.)
+	 * is owner-scoped and addresses every route under it, `blobs.url` included; it
+	 * never resolves identity itself.
 	 */
 	ownerId: OwnerId;
 };
@@ -368,12 +367,12 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		/**
-		 * Build the content-addressed read URL for a blob. Sync and owner-explicit
-		 * (unlike `assets.url`, which is bound to the construction owner): a blob is
-		 * referenced from a vault receipt that already records its owner, so this
-		 * can address any owner partition, not just the signed-in one.
+		 * Build the content-addressed read URL for a blob under the construction
+		 * owner. Sync, like `assets.url`.
+		 *
+		 * Useful for embedding in a vault receipt, an `<img src>`, or a share link.
 		 */
-		url(ownerId: OwnerId, sha256: string): string {
+		url(sha256: string): string {
 			return API_ROUTES.blobs.byHash.url(base, ownerId, sha256);
 		},
 

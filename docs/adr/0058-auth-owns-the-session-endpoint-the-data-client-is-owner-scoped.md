@@ -34,6 +34,15 @@ profile is fetched where it is displayed, not carried in capability/boot state.
   account popover reads the email via `auth.getProfile()`, bridged into TanStack
   Query's throw-on-error contract with `queryOptions`. `app-shell` no longer
   depends on `@epicenter/client`.
+- The client now builds URLs from the persisted (not-yet-verified) `ownerId`
+  rather than the server's answer to a lazy `/api/session` read. The first authed
+  request verifies it: on an owner mismatch the auth client wipes the persisted
+  cell and withholds the bearer, so an upload fails closed (a 401 before any bytes
+  are written) and the user re-authenticates, rather than silently auto-correcting
+  to the server's owner as the old lazy read did. Both `assets.url` and
+  `blobs.url` are now bound to that construction owner; `blobs.url` dropped its
+  explicit-owner parameter, which had no caller (cross-owner blob reads are a
+  shared-mode feature that does not exist yet).
 - A profile read is now an explicit `getProfile()` call rather than a field on
   `state`. The displayed email can be momentarily stale until the next read,
   which is acceptable for a label and self-heals on the auth client's own
@@ -42,10 +51,16 @@ profile is fetched where it is displayed, not carried in capability/boot state.
 
 ## Considered alternatives
 
-- **Put `user` on `AuthState`.** Rejected: crosses the MIT/AGPL license firewall
-  (`AuthState` lives in `@epicenter/identity`, `AuthUser` in `@epicenter/auth`)
-  and contradicts the deliberate "capability state, not credential state" and
-  "profile fetched on demand" design recorded on `AuthState`/`PersistedAuth`.
+- **Put the email on `AuthState`.** Rejected primarily because it contradicts the
+  deliberate "capability state, not credential state" and "profile fetched on
+  demand" rules recorded on `AuthState`/`PersistedAuth`: the email would have to
+  thread through the `install*` verbs (and `installUnverified`, post-refresh, has
+  no fresh email to carry), and presentational data does not belong in
+  capability/boot state. The realistic shape is `email: string`, a primitive that
+  crosses no license boundary; the MIT/AGPL firewall (`AuthState` lives in MIT
+  `@epicenter/identity`, `AuthUser` in AGPL `@epicenter/auth`) is a secondary
+  reason that only forecloses putting the `AuthUser` *type* on state, not the
+  email value.
 - **Keep `client.session.*` Result-native and bridge it in the popover.**
   Rejected: preserves a redundant `/api/session` read and leaves the data client
   owning an identity surface it should not have.

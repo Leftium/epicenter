@@ -23,6 +23,7 @@
  * @see `room/backends/cloudflare/` for the Cloudflare backend.
  */
 
+import type { UserId } from '@epicenter/auth';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -132,10 +133,34 @@ export type ResolvedRoom = {
 	 */
 	getDoc(): Promise<{ data: Uint8Array; storageBytes: number }>;
 	/**
-	 * Handle a WebSocket upgrade request. Returns a 101 response on
-	 * success, or an HTTP error response if the upgrade is malformed.
+	 * Accept a WebSocket upgrade for this room. The route resolves identity
+	 * out-of-band ({@link RoomUpgrade}: `userId` from auth, `nodeId` from the
+	 * client query) and the backend performs its runtime-specific accept,
+	 * returning the HTTP response the route returns verbatim.
+	 *
+	 * Identity is passed as data, never round-tripped through a reconstructed
+	 * request URL, because the two runtimes accept sockets differently: the
+	 * Cloudflare backend forwards the request to its Durable Object (which
+	 * returns a 101) and stamps `userId` into the forwarded URL itself; the
+	 * Bun backend hands the ORIGINAL request to `server.upgrade(request,
+	 * { data })` (a reconstructed request cannot be upgraded) and carries the
+	 * identity on the socket's `ws.data`. Both land the same {@link Connection}
+	 * on `RoomCore.addConnection`.
 	 */
-	handleUpgrade(request: Request): Promise<Response>;
+	handleUpgrade(upgrade: RoomUpgrade): Promise<Response>;
+};
+
+/**
+ * The identity and request a backend needs to accept one WebSocket upgrade.
+ * `request` is the untouched inbound request (the Bun backend upgrades it in
+ * place; the Cloudflare backend forwards a userId-stamped copy to its DO).
+ * `userId` is the authenticated principal stamped server-side; `nodeId` is
+ * the client's own dispatch address, validated present at the route boundary.
+ */
+export type RoomUpgrade = {
+	request: Request;
+	userId: UserId;
+	nodeId: string;
 };
 
 /**

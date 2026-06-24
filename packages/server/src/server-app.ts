@@ -19,7 +19,7 @@ import { createAuth } from './auth/create-auth.js';
 import type { Db } from './db/create-db.js';
 import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
-import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
+import type { Rooms } from './room/contracts.js';
 import type { Env } from './types.js';
 
 /**
@@ -82,6 +82,14 @@ type CreateServerAppOptions = {
 	 * only injects how the queue's drain is kept alive past the response.
 	 */
 	afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
+	/**
+	 * Resolve this deployment's room registry. The runtime-port room concern,
+	 * the one subsystem with no open standard (a hibernating single-writer
+	 * actor, ADR-0057 Road 2): the Cloudflare deployments pass
+	 * `createDurableObjectRooms(env.ROOM)`; a Node host passes an in-process
+	 * registry (`createNodeRooms`). Bound per request onto `c.var.rooms`.
+	 */
+	resolveRooms: (env: Cloudflare.Env) => Rooms;
 };
 
 export function createServerApp({
@@ -90,6 +98,7 @@ export function createServerApp({
 	cookieDomain,
 	connectDb,
 	afterResponse,
+	resolveRooms,
 }: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
@@ -154,10 +163,10 @@ export function createServerApp({
 	app.use('/api/*', requireOriginForCookieMutations);
 
 	// Rooms registry: bound for any sub-app that reads `c.var.rooms`.
-	// The Cloudflare backend wraps `env.ROOM`; a future Bun backend wires
-	// its own in-process Rooms here instead.
+	// `resolveRooms` is the injected runtime concern: the Cloudflare backend
+	// wraps `env.ROOM`, a Node host returns its in-process registry.
 	app.use('/api/*', async (c, next) => {
-		c.set('rooms', createDurableObjectRooms(c.env.ROOM));
+		c.set('rooms', resolveRooms(c.env));
 		await next();
 	});
 

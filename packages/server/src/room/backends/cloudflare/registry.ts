@@ -40,7 +40,17 @@ export function createDurableObjectRooms(
 			return {
 				sync: (body) => stub.sync(body),
 				getDoc: () => stub.getDoc(),
-				handleUpgrade: (request) => stub.fetch(request),
+				// The DO reads `userId`/`nodeId` from the forwarded request URL.
+				// `nodeId` already rides the client's URL; stamp the server-resolved
+				// `userId` over any client-supplied value, then forward to the stub
+				// (a 101-returning `fetch`). Reconstructing the request is fine here
+				// because Cloudflare matches the socket by the DO it routes to, not
+				// by request-object identity the way Bun's `server.upgrade` does.
+				handleUpgrade: ({ request, userId }) => {
+					const url = new URL(request.url);
+					url.searchParams.set('userId', userId);
+					return stub.fetch(new Request(url.toString(), request));
+				},
 			} satisfies ResolvedRoom;
 		},
 	} satisfies Rooms;

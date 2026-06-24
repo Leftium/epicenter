@@ -138,22 +138,16 @@ const roomsApp = new Hono<Env>()
 			const room = c.var.rooms.get(name);
 
 			if (isWebSocketUpgrade(c)) {
-				// Validate nodeId presence at the route boundary so the DO
-				// can trust the URL has it. nodeId is the dispatch address
+				// Validate nodeId presence at the route boundary so the backend
+				// can trust it is set. nodeId is the dispatch address
 				// `dispatch({ to })` resolves against; a missing one would
 				// produce a presence-ghost connection (visible in presence
 				// frames but unreachable by dispatch).
-				if (!c.req.query('nodeId')) {
+				const nodeId = c.req.query('nodeId');
+				if (!nodeId) {
 					const err = RequestGuardError.MissingNodeId();
 					return c.json(err, err.error.status);
 				}
-
-				// Stamp userId from auth, overwriting any client-supplied
-				// value for safety. nodeId is the client's own identifier
-				// so it rides through unchanged from c.req.url.
-				const url = new URL(c.req.url);
-				url.searchParams.set('userId', c.var.user.id);
-				const stamped = new Request(url.toString(), c.req.raw);
 
 				c.var.afterResponse.push(
 					upsertDoInstance(c.var.db, {
@@ -162,7 +156,15 @@ const roomsApp = new Hono<Env>()
 						doName: name,
 					}),
 				);
-				return room.handleUpgrade(stamped);
+				// Identity goes to the backend as data, not stamped into a
+				// reconstructed request URL: userId from auth (authoritative,
+				// never the client's), nodeId the client's own. The backend
+				// performs its runtime-specific accept (see ResolvedRoom).
+				return room.handleUpgrade({
+					request: c.req.raw,
+					userId: c.var.user.id,
+					nodeId,
+				});
 			}
 
 			const { data, storageBytes } = await room.getDoc();

@@ -17,6 +17,7 @@ import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
 	authApp,
 	connectHyperdriveDb,
+	createDurableObjectRooms,
 	createServerApp,
 	mountAssetsApp,
 	mountBlobsApp,
@@ -60,6 +61,10 @@ const app = createServerApp({
 	// the after-response queue drains.
 	connectDb: (env) => connectHyperdriveDb(env.HYPERDRIVE),
 	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
+	// Per-room Durable Object sharding stays the cloud's binding of the room
+	// actor forever (ADR-0057): hibernate-to-zero and single-writer-per-room
+	// at multi-tenant scale. A Node host swaps in an in-process registry.
+	resolveRooms: (env) => createDurableObjectRooms(env.ROOM),
 });
 
 // Public health endpoint at root.

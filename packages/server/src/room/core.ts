@@ -599,13 +599,20 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * Oversized messages close the socket with `1009 Message too
 		 * large`. A `MessageDecode` failure is logged and dropped without
 		 * closing the socket.
+		 *
+		 * Binary frames arrive as an `ArrayBuffer` on the Cloudflare backend
+		 * and a `Uint8Array` on the Bun backend (`binaryType: 'uint8array'`);
+		 * both are handled here so the backends never have to convert.
 		 */
-		handleMessage(socket: RoomSocket, message: ArrayBuffer | string): void {
+		handleMessage(
+			socket: RoomSocket,
+			message: ArrayBuffer | Uint8Array | string,
+		): void {
 			const data = connections.get(socket);
 			if (!data) return;
 
 			const byteLength =
-				message instanceof ArrayBuffer ? message.byteLength : message.length;
+				typeof message === 'string' ? message.length : message.byteLength;
 			if (byteLength > MAX_PAYLOAD_BYTES) {
 				socket.close(1009, 'Message too large');
 				return;

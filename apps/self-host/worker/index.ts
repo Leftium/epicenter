@@ -19,6 +19,7 @@
 import {
 	authApp,
 	connectHyperdriveDb,
+	createDurableObjectRooms,
 	createServerApp,
 	mountAssetsApp,
 	mountInferenceApp,
@@ -59,6 +60,7 @@ const app = createServerApp({
 	// `waitUntil` to drain the after-response queue past the response.
 	connectDb: (env) => connectHyperdriveDb(env.HYPERDRIVE),
 	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
+	resolveRooms: (env) => createDurableObjectRooms(env.ROOM),
 });
 
 app.get('/', (c) =>

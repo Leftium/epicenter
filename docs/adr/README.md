@@ -127,6 +127,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md) | Assistant markdown renders as a shared component tree, not a sanitized HTML string | Accepted |
 | [0058](0058-push-to-talk-owns-the-recording-it-starts-keyed-by-its-id-not-a-lifecycle-layer.md) | Push-to-talk owns the recording it starts, keyed by the recording's id, not a general lifecycle layer | Accepted |
 | [0059](0059-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md) | An inference connection is a capability-orthogonal device endpoint; the model is per-conversation (amends 0054) | Accepted (auth axis amended by 0060) |
-| [0060](0060-an-inference-endpoint-is-one-primitive-distinguished-by-auth-strategy.md) | An inference endpoint is one OpenAI-compatible primitive distinguished only by its auth strategy (amends 0059) | Proposed |
+| [0060](0060-an-inference-connection-is-a-base-url-and-an-optional-bearer-key.md) | An inference connection is a base URL and an optional bearer key; everything non-static is an injected transport (amends 0059) | Accepted |
 
 When you add an ADR, add its row here.

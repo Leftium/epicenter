@@ -25,8 +25,8 @@ import { VOCAB_SYSTEM_PROMPT } from './vocab.js';
  *
  * @param model reads the conversation's model per turn (ADR-0055), so a switch in
  *   the header picker takes effect on the next turn.
- * @param connections the device's connection registry; `resolve` turns the model
- *   into a transport (or the hosted fallback when no device connection serves it).
+ * @param connections the device's connection registry; `resolveOrHosted` turns the
+ *   model into a transport (the hosted fallback when no device connection serves it).
  */
 export function createVocabEngine({
 	model,
@@ -38,10 +38,10 @@ export function createVocabEngine({
 	return createOpenAiAgentEngine({
 		data: () => {
 			const currentModel = model();
-			// The UI gates sending when a model is unavailable on this device, so the
-			// hosted fallback is defensive: it errors loudly at the gateway rather than
-			// silently substituting a different model.
-			const transport = connections.resolve(currentModel) ?? connections.hosted;
+			// `resolveOrHosted` falls back to the hosted gateway for a model no device
+			// connection serves; the UI gates sending in that case, so the fallback only
+			// errors loudly rather than silently substituting a different model.
+			const transport = connections.resolveOrHosted(currentModel);
 			return {
 				...transport,
 				model: currentModel,

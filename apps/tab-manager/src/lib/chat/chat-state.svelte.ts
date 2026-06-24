@@ -132,13 +132,12 @@ export function createAiChatState({
 				engine: createOpenAiAgentEngine({
 					// The conversation's model (ADR-0055) is resolved per turn against this
 					// device's connection set (ADR-0058), so a switch lands on the next
-					// turn. The hosted fallback is defensive: the UI gates sending when no
-					// connection serves the model, so this only fires to error loudly at the
-					// gateway rather than silently substituting a different model.
+					// turn. `resolveOrHosted` falls back to the hosted gateway for a model no
+					// device connection serves; the UI gates sending in that case, so the
+					// fallback only errors loudly rather than silently substituting a model.
 					data: () => {
 						const m = metadata?.model ?? DEFAULT_MODEL;
-						const transport =
-							inferenceConnections.resolve(m) ?? inferenceConnections.hosted;
+						const transport = inferenceConnections.resolveOrHosted(m);
 						return {
 							...transport,
 							model: m,

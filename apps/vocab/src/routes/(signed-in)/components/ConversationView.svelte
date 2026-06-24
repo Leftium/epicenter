@@ -26,7 +26,7 @@
 	// connections. When no connection here serves it (a custom model set on another
 	// device), the banner shows and sending is blocked; the synced model column is
 	// never rewritten on detection, only by an explicit pick (ADR-0058).
-	const isModelAvailable = $derived(inferenceConnections.resolve(model) !== null);
+	const isModelAvailable = $derived(inferenceConnections.canServe(model));
 
 	// The component is keyed on conversationId, so it mounts fresh per
 	// conversation: open the message store and bind it to the inference engine. The

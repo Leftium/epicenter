@@ -25,7 +25,7 @@
 	// device), the banner shows and sending is blocked; the synced model column is
 	// never rewritten on detection, only by an explicit pick (ADR-0058).
 	const isModelAvailable = $derived(
-		!active || inferenceConnections.resolve(active.model) !== null,
+		!active || inferenceConnections.canServe(active.model),
 	);
 
 	/** Fall back to opensidian's always-available hosted default for this chat. */
@@ -158,5 +158,5 @@
 	{/if}
 
 	<!-- Chat input -->
-	<ChatInput disabled={!isModelAvailable} />
+	<ChatInput />
 </div>

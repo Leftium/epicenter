@@ -7,18 +7,17 @@
 	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 
+	let { active }: { active: ConversationHandle | undefined } = $props();
+
 	// Sending is gated when the conversation's model is not served by any
-	// connection on this device (the cross-device banner case, owned by AiChat).
-	let {
-		active,
-		disabled = false,
-	}: {
-		active: ConversationHandle | undefined;
-		disabled?: boolean;
-	} = $props();
+	// connection on this device (the cross-device banner case). Derived here so the
+	// gate guards every send path (Enter and the button), not just the button.
+	const canSend = $derived(
+		!active || inferenceConnections.canServe(active.model),
+	);
 
 	function send() {
-		if (!active) return;
+		if (!active || !canSend) return;
 		const content = active.inputValue.trim();
 		if (!content) return;
 		active.inputValue = '';
@@ -78,7 +77,7 @@
 				variant="default"
 				size="icon-lg"
 				type="submit"
-				disabled={disabled || !active?.inputValue.trim()}
+				disabled={!canSend || !active?.inputValue.trim()}
 			>
 				<SendIcon />
 			</Button>

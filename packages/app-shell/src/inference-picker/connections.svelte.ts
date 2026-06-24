@@ -112,11 +112,18 @@ export function createInferenceConnections({
 		];
 	}
 
+	/** Resolve a conversation's model (ADR-0055) to its transport, or `null` when no
+	 * connection on this device serves it. Internal: the served/unserved predicate
+	 * has one definition here, exposed as `resolveOrHosted` (transport) and
+	 * `canServe` (boolean) so neither the engine nor the UI re-derives it. */
+	function resolve(model: string): ResolvedConnection | null {
+		const connection = resolveForModel(model, candidates());
+		return connection ? resolveConnection(connection, hosted) : null;
+	}
+
 	return {
 		/** The hosted catalog this app sells (for the picker's Epicenter group). */
 		hostedModels,
-		/** The hosted transport, for an engine's defensive fallback. */
-		hosted,
 		/** The device's custom connections, in display order. */
 		get custom() {
 			return custom.current;
@@ -154,13 +161,22 @@ export function createInferenceConnections({
 		},
 
 		/**
-		 * Resolve a conversation's model (ADR-0055) to its transport, or `null` when
-		 * no connection on this device serves it (the banner trigger). Never rewrites
-		 * the synced model column.
+		 * The transport for a conversation's model, falling back to the hosted
+		 * connection when no device connection serves it. The fallback ships the
+		 * unservable model id to the gateway, which errors loudly; callers gate
+		 * sending via {@link canServe}, so this fires only on a path the UI blocks and
+		 * never silently substitutes a different model.
 		 */
-		resolve(model: string): ResolvedConnection | null {
-			const connection = resolveForModel(model, candidates());
-			return connection ? resolveConnection(connection, hosted) : null;
+		resolveOrHosted(model: string): ResolvedConnection {
+			return resolve(model) ?? hosted;
+		},
+		/**
+		 * Whether a connection on this device serves the model. The single predicate
+		 * behind both the cross-device banner and the send gate; never rewrites the
+		 * synced model column.
+		 */
+		canServe(model: string): boolean {
+			return resolve(model) !== null;
 		},
 	};
 }

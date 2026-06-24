@@ -17,7 +17,7 @@
 	// device), the banner shows and sending is blocked; the synced model column is
 	// never rewritten on detection, only by an explicit pick (ADR-0058).
 	const isModelAvailable = $derived(
-		!active || inferenceConnections.resolve(active.model) !== null,
+		!active || inferenceConnections.canServe(active.model),
 	);
 
 	/** Fall back to tab-manager's always-available hosted default for this chat. */
@@ -126,5 +126,5 @@
 		</div>
 	{/if}
 
-	<ChatInput active={tabManager.state.aiChat.active} disabled={!isModelAvailable} />
+	<ChatInput active={tabManager.state.aiChat.active} />
 </div>

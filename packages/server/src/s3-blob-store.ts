@@ -11,8 +11,9 @@
  *
  * Blob bytes never pass through the server. PUT and GET are presigned and the
  * client talks to the store directly; only the cheap control-plane operations
- * (head for dedup, list for the index, delete) are signed and made server-side
- * here. Grounded against the aws4fetch source and Cloudflare R2 docs; see
+ * (exists for dedup, list for the index, delete) are signed and made
+ * server-side here. Grounded against the aws4fetch source and Cloudflare R2
+ * docs; see
  * `specs/20260623T220000-content-addressed-blob-store.md`.
  *
  * ── The two sha256 headers, which are easy to conflate ──────────────────────
@@ -260,38 +261,4 @@ function parseListObjectsV2(xml: string): {
 		? xmlTag(xml, 'NextContinuationToken')
 		: undefined;
 	return { objects, nextToken };
-}
-
-/**
- * Read the S3 blob-store config from `c.env`, returning `null` when blob
- * storage is not configured (a deployment without object storage). The blob
- * route turns a `null` into a 503. `bucket` and `region` fall back to the R2
- * conventions so a hosted deploy only sets the endpoint + credentials.
- */
-export function resolveS3BlobStoreConfig(env: {
-	BLOBS_S3_ENDPOINT?: string;
-	BLOBS_S3_ACCESS_KEY_ID?: string;
-	BLOBS_S3_SECRET_ACCESS_KEY?: string;
-	BLOBS_S3_BUCKET?: string;
-	BLOBS_S3_REGION?: string;
-}): S3BlobStoreConfig | null {
-	const {
-		BLOBS_S3_ENDPOINT,
-		BLOBS_S3_ACCESS_KEY_ID,
-		BLOBS_S3_SECRET_ACCESS_KEY,
-	} = env;
-	if (
-		!BLOBS_S3_ENDPOINT ||
-		!BLOBS_S3_ACCESS_KEY_ID ||
-		!BLOBS_S3_SECRET_ACCESS_KEY
-	) {
-		return null;
-	}
-	return {
-		endpoint: BLOBS_S3_ENDPOINT.replace(/\/+$/, ''),
-		region: env.BLOBS_S3_REGION ?? 'auto',
-		accessKeyId: BLOBS_S3_ACCESS_KEY_ID,
-		secretAccessKey: BLOBS_S3_SECRET_ACCESS_KEY,
-		bucket: env.BLOBS_S3_BUCKET ?? 'epicenter-blobs',
-	};
 }

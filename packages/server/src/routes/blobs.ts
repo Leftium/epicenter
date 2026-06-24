@@ -10,7 +10,7 @@
  *
  * There is NO database row, NO queue, and NO event notification. The blob's
  * key IS its sha256 content address, so the store itself answers "does it
- * exist" (head), "what do I have" (list), and "how much" (sum of list sizes).
+ * exist" (exists), "what do I have" (list), and "how much" (sum of list sizes).
  * Rich metadata (source URL, references) lives in the vault receipt, not here.
  *
  * The store is a PORTABLE S3 client (`s3-blob-store.ts`): plain S3-over-HTTPS
@@ -42,8 +42,8 @@ import { blobKey, blobOwnerPrefix } from '../owner.js';
 import type { OwnershipRule } from '../ownership.js';
 import {
 	createS3BlobStore,
-	resolveS3BlobStoreConfig,
 	type S3BlobStore,
+	type S3BlobStoreConfig,
 } from '../s3-blob-store.js';
 import type { Env } from '../types.js';
 
@@ -76,16 +76,48 @@ type BlobEnv = {
 };
 
 /**
- * Resolve the per-request S3 blob store from `c.env` onto `c.var.blobStore`, or
- * answer 503 when the deployment configured no object storage. One owner for the
- * "store is configured" invariant, the way `requireOwnership` owns
- * `c.var.ownerId`, so every handler can assume the store is present. Typed as a
- * bare `MiddlewareHandler` so it slots into the `Hono<Env>` parent mount beside
- * auth + ownership; it sets a `BlobEnv` variable the sub-app reads.
+ * Map a deployment's `BLOBS_S3_*` env to a portable store config, or `null`
+ * when object storage is not configured. The parameter is structural and
+ * all-optional on purpose: it accepts any deployment's `c.env` regardless of
+ * which optional vars that deployment's generated `Cloudflare.Env` actually
+ * declares (apps/api's `wrangler types` lists only the required secrets).
+ * `bucket` and `region` fall back to the R2 conventions so a hosted deploy
+ * only sets the endpoint + credentials.
+ */
+function resolveBlobStoreConfig(env: {
+	BLOBS_S3_ENDPOINT?: string;
+	BLOBS_S3_ACCESS_KEY_ID?: string;
+	BLOBS_S3_SECRET_ACCESS_KEY?: string;
+	BLOBS_S3_BUCKET?: string;
+	BLOBS_S3_REGION?: string;
+}): S3BlobStoreConfig | null {
+	if (
+		!env.BLOBS_S3_ENDPOINT ||
+		!env.BLOBS_S3_ACCESS_KEY_ID ||
+		!env.BLOBS_S3_SECRET_ACCESS_KEY
+	) {
+		return null;
+	}
+	return {
+		endpoint: env.BLOBS_S3_ENDPOINT.replace(/\/+$/, ''),
+		region: env.BLOBS_S3_REGION ?? 'auto',
+		accessKeyId: env.BLOBS_S3_ACCESS_KEY_ID,
+		secretAccessKey: env.BLOBS_S3_SECRET_ACCESS_KEY,
+		bucket: env.BLOBS_S3_BUCKET ?? 'epicenter-blobs',
+	};
+}
+
+/**
+ * Build this deployment's S3 blob store onto `c.var.blobStore`, or answer 503
+ * when object storage is not configured. One owner for the "store is configured"
+ * invariant, the way `requireOwnership` owns `c.var.ownerId`, so every handler
+ * can assume the store is present. Typed as a bare `MiddlewareHandler` so it
+ * slots into the `Hono<Env>` parent mount beside auth + ownership; it sets a
+ * `BlobEnv` variable the sub-app reads.
  */
 const requireBlobStore: MiddlewareHandler = createMiddleware<BlobEnv>(
 	async (c, next) => {
-		const config = resolveS3BlobStoreConfig(c.env);
+		const config = resolveBlobStoreConfig(c.env);
 		if (!config) {
 			const err = BlobError.StorageNotConfigured();
 			return c.json(err, err.error.status);
@@ -253,6 +285,11 @@ export function mountBlobsApp(
 		policies?: MiddlewareHandler[];
 	},
 ): void {
+	// Every blob route runs the same chain: authenticate, resolve + assert the
+	// owner partition, ensure object storage is configured, then any deployment
+	// policies. Hono's variadic mounts can't take a spread middleware array
+	// (the dynamic `policies` defeats overload resolution), so the chain is
+	// repeated per pattern, as in the assets surface.
 	const requireOwnership = createRequireOwnership(opts.ownership);
 	const policies = opts.policies ?? [];
 

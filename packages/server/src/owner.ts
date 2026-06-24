@@ -35,7 +35,7 @@ export type AssetR2Key = `owners/${string}/assets/${string}`;
  */
 export type BlobR2Key = `owners/${string}/blobs/${string}`;
 
-/** Common prefix for one owner's blobs, used by `R2Bucket.list` enumeration. */
+/** Common prefix for one owner's blobs, used by the S3 client's list enumeration. */
 export type BlobOwnerPrefix = `owners/${string}/blobs/`;
 
 /** Durable name of a room's Cloudflare Durable Object. */

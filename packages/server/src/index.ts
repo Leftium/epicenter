@@ -48,12 +48,12 @@ export {
 export { Room } from './room/backends/cloudflare/durable-object.js';
 export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
 export { mountAssetsApp } from './routes/assets.js';
-export { mountBlobsApp } from './routes/blobs.js';
 // Reusable surfaces. Each `mount*` bundles auth + ownership + the route
 // mount, accepting only the deployment-controlled knobs (ownership rule,
 // optional policies). The bare `authApp` is mounted directly because it
 // has no deployment knobs.
 export { authApp } from './routes/auth.js';
+export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';

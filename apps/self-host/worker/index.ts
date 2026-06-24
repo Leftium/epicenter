@@ -32,8 +32,11 @@ import {
 
 const ownership = shared({
 	admit: (c) => {
+		// `ALLOWED_MEMBER_EMAILS` is operator config on this deployment's own
+		// `Cloudflare.Env`, not a library binding, so it is read with the same
+		// edge cast the resolvers use (ADR-0057).
 		const allowed = new Set(
-			c.env.ALLOWED_MEMBER_EMAILS.split(',')
+			(c.env as Cloudflare.Env).ALLOWED_MEMBER_EMAILS.split(',')
 				.map((s) => s.trim())
 				.filter(Boolean),
 		);
@@ -44,8 +47,12 @@ const ownership = shared({
 // Self-hosters set their own public origin in wrangler.jsonc (`API_PUBLIC_ORIGIN`):
 // their domain, not Epicenter Cloud's. It is operator config, not a baked
 // constant, so it is read straight from `c.env`.
+// The library types `env` as its portable `ServerBindings`; this Worker reads
+// Cloudflare-only bindings (`HYPERDRIVE`, `ROOM`) and the operator-set
+// `API_PUBLIC_ORIGIN`, none of which `ServerBindings` names. Casting to this
+// deployment's own `Cloudflare.Env` is the honest edge (ADR-0057).
 const app = createServerApp({
-	resolveOrigin: (env) => env.API_PUBLIC_ORIGIN,
+	resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
 	// A self-host trusts its OWN origin and the Tauri desktop client, never
 	// Epicenter cloud's. Add any browser app origins you serve (and the
 	// Epicenter browser-extension origin, if your users point it at this
@@ -58,9 +65,9 @@ const app = createServerApp({
 	// to its own host.
 	// Cloudflare runtime bindings: a per-request pg client over Hyperdrive, and
 	// `waitUntil` to drain the after-response queue past the response.
-	connectDb: (env) => connectHyperdriveDb(env.HYPERDRIVE),
+	connectDb: (env) => connectHyperdriveDb((env as Cloudflare.Env).HYPERDRIVE),
 	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
-	resolveRooms: (env) => createDurableObjectRooms(env.ROOM),
+	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 });
 
 app.get('/', (c) =>

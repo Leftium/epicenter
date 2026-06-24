@@ -53,7 +53,10 @@ billingRoutes.onError((err, c) => {
 });
 
 function svc(c: Context<Env>) {
-	return createBillingService(c.env, {
+	// Billing is cloud-only: `AUTUMN_SECRET_KEY` lives on this deployment's own
+	// `Cloudflare.Env`, not the library's portable `ServerBindings` (ADR-0057),
+	// so read it through the same edge cast the runtime-port resolvers use.
+	return createBillingService(c.env as Cloudflare.Env, {
 		userId: c.var.user.id,
 		userEmail: c.var.user.email,
 	});

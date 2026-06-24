@@ -20,6 +20,7 @@ import type { Db } from './db/create-db.js';
 import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import type { Rooms } from './room/contracts.js';
+import type { ServerBindings } from './server-bindings.js';
 import type { Env } from './types.js';
 
 /**
@@ -35,17 +36,25 @@ import type { Env } from './types.js';
  * and the rooms registry. The deployment is responsible for exposing a
  * health endpoint on `/`. WebSocket auth-transport normalization is not
  * global: it lives in {@link mountRoomsApp}, the only WebSocket surface.
+ *
+ * The runtime-port hooks receive `c.env` typed as the library's own portable
+ * {@link ServerBindings} contract; the library never names `Cloudflare.Env`
+ * (ADR-0057), so a Bun host typechecks with no Cloudflare types in scope. A
+ * Workers deployment whose resolver reads a Cloudflare binding (`env.ROOM`,
+ * `env.HYPERDRIVE`) casts `env` to its own `Cloudflare.Env` at that edge, where
+ * naming Cloudflare is honest; a Bun host's resolvers read nothing
+ * Cloudflare-shaped (they close over module-scope primitives).
  */
 type CreateServerAppOptions = {
 	/**
 	 * Resolve this deployment's canonical public origin from the per-request
-	 * `c.env`. Becomes the Better Auth `baseURL`, OAuth issuer, and token
+	 * `env`. Becomes the Better Auth `baseURL`, OAuth issuer, and token
 	 * audience, so it must be stable per deployment and never inferred from
 	 * `c.req.url`. `apps/api` returns `env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL`
 	 * (dev override, else the baked constant); `apps/self-host` returns the
 	 * operator-set `env.API_PUBLIC_ORIGIN`.
 	 */
-	resolveOrigin: (env: Cloudflare.Env) => string;
+	resolveOrigin: (env: ServerBindings) => string;
 	/**
 	 * The origins this deployment trusts for CORS, cookie-mutation CSRF, and
 	 * Better Auth's redirect allow-list. The library hardcodes none: `apps/api`
@@ -66,17 +75,17 @@ type CreateServerAppOptions = {
 	 * library depends on the portable `pg`/drizzle Postgres wire (ADR-0057
 	 * Road 1) and never on a binding shape, so only connection acquisition is
 	 * injected. The Cloudflare deployments pass `connectHyperdriveDb(env.HYPERDRIVE)`
-	 * (a per-request `pg.Client`); a Node host passes a module-scope `pg.Pool`.
+	 * (a per-request `pg.Client`); a Bun host passes a module-scope `pg.Pool`.
 	 * The returned `close` runs after the after-response queue drains.
 	 */
-	connectDb: (env: Cloudflare.Env) => Promise<{
+	connectDb: (env: ServerBindings) => Promise<{
 		db: Db;
 		close: () => Promise<void>;
 	}>;
 	/**
 	 * Schedule fire-and-forget work that must outlive the HTTP response. The
 	 * runtime-port lifetime concern: on Cloudflare this is
-	 * `c.executionCtx.waitUntil(work)` (keeps the isolate alive); a Node host
+	 * `c.executionCtx.waitUntil(work)` (keeps the isolate alive); a Bun host
 	 * just lets the promise run in the live process. The library owns the
 	 * after-response queue (`c.var.afterResponse`) and the pg-drain shape; this
 	 * only injects how the queue's drain is kept alive past the response.
@@ -86,10 +95,10 @@ type CreateServerAppOptions = {
 	 * Resolve this deployment's room registry. The runtime-port room concern,
 	 * the one subsystem with no open standard (a hibernating single-writer
 	 * actor, ADR-0057 Road 2): the Cloudflare deployments pass
-	 * `createDurableObjectRooms(env.ROOM)`; a Node host passes an in-process
-	 * registry (`createNodeRooms`). Bound per request onto `c.var.rooms`.
+	 * `createDurableObjectRooms(env.ROOM)`; a Bun host passes an in-process
+	 * registry (`createBunRooms`). Bound per request onto `c.var.rooms`.
 	 */
-	resolveRooms: (env: Cloudflare.Env) => Rooms;
+	resolveRooms: (env: ServerBindings) => Rooms;
 };
 
 export function createServerApp({

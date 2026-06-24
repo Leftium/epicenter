@@ -7,7 +7,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./schema": "./src/db/schema/index.ts",
-		"./node": "./src/node.ts"
+		"./bun": "./src/bun.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",

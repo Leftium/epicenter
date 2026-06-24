@@ -1,40 +1,28 @@
 import type { OAuthError } from '@epicenter/constants/oauth-errors';
 import type { Context } from 'hono';
-import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
-
-type CreateWebSocketPair = () => InstanceType<typeof WebSocketPair>;
 
 /**
- * Map an {@link OAuthError} to the protected-resource failure response for HTTP
- * and WebSocket-upgrade requests on the same route.
+ * Map an {@link OAuthError} to the protected-resource HTTP failure response.
  *
- * The serialized error object (`{ name, message, ...fields }`) is itself the
- * JSON body and the WS close-reason payload; clients reconstruct by branching
- * on `error.name`. The HTTP status (and the WS close code, `4000 + status`)
- * come from the error: `InvalidToken` is 401 with a `WWW-Authenticate`
- * challenge, while `ServerError` is a 503 the client should retry rather than
- * treat as a rejected token.
+ * The serialized error object (`{ name, message, ...fields }`) is the JSON
+ * body; clients reconstruct by branching on `error.name`. `InvalidToken` is a
+ * 401 with a `WWW-Authenticate` challenge; `ServerError` is a 503 the client
+ * should retry rather than treat as a rejected token.
+ *
+ * WebSocket-upgrade rejection is NOT handled here: a browser cannot read an
+ * HTTP body from a failed upgrade, only a close code, and minting a closing
+ * socket is runtime-specific. The rooms route (the only WebSocket surface) owns
+ * that, rejecting through `Rooms.rejectUpgrade` so both runtimes emit a real
+ * close frame; this helper stays runtime-neutral and serves the plain-HTTP
+ * rejections (rooms non-upgrade, inference, session, billing).
  */
 export function createOAuthUnauthorizedResourceResponse(
 	c: Context,
 	error: OAuthError,
-	createWebSocketPair: CreateWebSocketPair = () => new WebSocketPair(),
 ) {
-	const isUpgrade = isWebSocketUpgrade(c);
-
-	if (!isUpgrade) {
-		// A bearer challenge only belongs on an actual auth rejection, not a 503.
-		if (error.status === 401) {
-			c.header('WWW-Authenticate', 'Bearer error="invalid_token"');
-		}
-		return c.json(error, error.status);
+	// A bearer challenge only belongs on an actual auth rejection, not a 503.
+	if (error.status === 401) {
+		c.header('WWW-Authenticate', 'Bearer error="invalid_token"');
 	}
-	const pair = createWebSocketPair();
-	const [client, server] = [pair[0], pair[1]];
-	server.accept();
-	// WebSocket app-close codes are HTTP status + 4000 (401 -> 4401, 503 ->
-	// 4503). The client's sync supervisor treats only 4401 as permanent, so a
-	// 4503 reconnects with backoff.
-	server.close(4000 + error.status, JSON.stringify(error));
-	return new Response(null, { status: 101, webSocket: client });
+	return c.json(error, error.status);
 }

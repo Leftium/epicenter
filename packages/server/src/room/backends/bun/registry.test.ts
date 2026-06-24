@@ -26,7 +26,7 @@ import {
 } from '@epicenter/sync';
 import * as Y from 'yjs';
 import { createBunSqliteUpdateLog } from './update-log.js';
-import { createNodeRooms } from './registry.js';
+import { createBunRooms } from './registry.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // STUB SOCKET (the ServerWebSocket surface RoomCore actually touches)
@@ -94,14 +94,14 @@ afterAll(() => {
  * the core touches, not the full `ServerWebSocket`.
  */
 function makeRooms() {
-	const nodeRooms = createNodeRooms({ dir });
+	const bunRooms = createBunRooms({ dir });
 	return {
-		rooms: nodeRooms.rooms,
-		open: (ws: StubWs) => nodeRooms.websocket.open?.(ws as never),
+		rooms: bunRooms.rooms,
+		open: (ws: StubWs) => bunRooms.websocket.open?.(ws as never),
 		message: (ws: StubWs, m: string | Uint8Array) =>
-			nodeRooms.websocket.message?.(ws as never, m as never),
+			bunRooms.websocket.message?.(ws as never, m as never),
 		close: (ws: StubWs, code: number) =>
-			nodeRooms.websocket.close?.(ws as never, code, ''),
+			bunRooms.websocket.close?.(ws as never, code, ''),
 	};
 }
 

@@ -49,8 +49,14 @@ const ownership = personal();
 // from the constants source of truth rather than duplicated into wrangler.jsonc
 // vars. Local dev injects `API_PUBLIC_ORIGIN=http://localhost:8787` via
 // scripts/dev.ts; production falls through to PRODUCTION_API_URL.
+// The library types `env` as its portable `ServerBindings`; this Worker's
+// resolvers read Cloudflare-only bindings (`HYPERDRIVE`, `ROOM`) and the
+// deployment-owned `API_PUBLIC_ORIGIN`, none of which `ServerBindings` names.
+// Casting to this deployment's own `Cloudflare.Env` is the honest edge where
+// naming Cloudflare belongs (ADR-0057); the library never does.
 const app = createServerApp({
-	resolveOrigin: (env) => env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
+	resolveOrigin: (env) =>
+		(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
 	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 	// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
 	// a session via a cookie scoped to the registrable domain. cookie-config
@@ -59,12 +65,12 @@ const app = createServerApp({
 	// Cloudflare runtime bindings, composed at this edge: a per-request pg
 	// client over Hyperdrive, and `waitUntil` to keep the isolate alive while
 	// the after-response queue drains.
-	connectDb: (env) => connectHyperdriveDb(env.HYPERDRIVE),
+	connectDb: (env) => connectHyperdriveDb((env as Cloudflare.Env).HYPERDRIVE),
 	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
 	// Per-room Durable Object sharding stays the cloud's binding of the room
 	// actor forever (ADR-0057): hibernate-to-zero and single-writer-per-room
-	// at multi-tenant scale. A Node host swaps in an in-process registry.
-	resolveRooms: (env) => createDurableObjectRooms(env.ROOM),
+	// at multi-tenant scale. A Bun host swaps in an in-process registry.
+	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 });
 
 // Public health endpoint at root.

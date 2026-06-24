@@ -609,13 +609,13 @@ describe('Room connection lifetime', () => {
 		const { room } = await makeRoom();
 		const ws = await upgrade(room, 'A');
 		const before = ws.sent.length;
-		// Age the connection past MAX_CONNECTION_LIFETIME_MS (30 min) by
-		// rewriting connectedAt on the stored attachment.
+		// Age the connection past MAX_CONNECTION_LIFETIME_MS (30 min). The
+		// lifetime bound is now a RoomCore invariant that reads `connectedAt` from
+		// the core's connection set; the stub keeps the attachment by reference and
+		// the core holds the same object, so mutating it in place is exactly what
+		// the core sees (in production connectedAt is simply 31 min old).
 		const attachment = ws.deserializeAttachment() as { connectedAt: number };
-		ws.serializeAttachment({
-			...attachment,
-			connectedAt: Date.now() - 31 * 60_000,
-		});
+		attachment.connectedAt = Date.now() - 31 * 60_000;
 
 		await room.webSocketMessage(
 			ws,
@@ -644,13 +644,11 @@ describe('Room connection lifetime', () => {
 		const { room } = await makeRoom();
 		const wsOld = await upgrade(room, 'A');
 		const wsFresh = await upgrade(room, 'B');
-		// Age wsOld past the lifetime; it never sends a frame (the idle case the
-		// per-message check cannot catch).
+		// Age wsOld past the lifetime in place (the core holds the same object);
+		// it never sends a frame, the idle case the per-message check cannot catch
+		// and the alarm sweep exists to cover.
 		const attachment = wsOld.deserializeAttachment() as { connectedAt: number };
-		wsOld.serializeAttachment({
-			...attachment,
-			connectedAt: Date.now() - 31 * 60_000,
-		});
+		attachment.connectedAt = Date.now() - 31 * 60_000;
 
 		await room.alarm();
 

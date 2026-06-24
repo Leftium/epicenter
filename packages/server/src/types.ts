@@ -14,6 +14,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
+import type { ServerBindings } from './server-bindings.js';
 
 /**
  * Per-connection identity and runtime state, stamped onto the Cloudflare
@@ -54,11 +55,13 @@ export type Connection = {
 /**
  * Hono context type for every library sub-app.
  *
- * `Bindings` is `Cloudflare.Env`, declared by each deployment with the
- * exact set of bindings it provides. The library declares the bindings it
- * reads in the exported `ServerBindings` interface (see
- * server-bindings.ts); cloud-only bindings such as `AUTUMN_SECRET_KEY` are
- * declared in apps/api's generated types and never appear there.
+ * `Bindings` is the library's own {@link ServerBindings} contract, NOT
+ * `Cloudflare.Env`: the library reads only the portable secrets it declares
+ * there, so it never names a Cloudflare type (ADR-0057) and a Bun host
+ * typechecks with no Cloudflare types in scope. Each deployment's real env
+ * (`Cloudflare.Env` on the Workers edges, a parsed `process.env` on Bun) is a
+ * superset assignable to this; a Workers resolver that reads a Cloudflare-only
+ * binding casts `env` to its own `Cloudflare.Env` at the `apps/*` edge.
  *
  * `Variables` are populated by request-scoped middleware: database client,
  * auth instance, resolved user, after-response queue, and the runtime-
@@ -66,7 +69,7 @@ export type Connection = {
  * cloud-only variable owned by apps/api's billing middleware.
  */
 export type Env = {
-	Bindings: Cloudflare.Env;
+	Bindings: ServerBindings;
 	Variables: {
 		db: NodePgDatabase<typeof schema>;
 		auth: ReturnType<typeof createAuth>;

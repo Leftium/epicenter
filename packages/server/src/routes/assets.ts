@@ -56,7 +56,23 @@ import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { assetKey } from '../owner.js';
 import { type OwnershipRule, resolveOwnerPartition } from '../ownership.js';
+import type { ServerBindings } from '../server-bindings.js';
 import type { Env } from '../types.js';
+
+/**
+ * This deployment's env as the assets route sees it: the portable
+ * {@link ServerBindings} plus the Cloudflare R2 object binding it reads.
+ *
+ * Assets is the last surface that touches an R2 object binding directly; it is
+ * Cloudflare-only and is retiring into the portable content-addressed blob
+ * store, so the binding lives here as a local cast target (the
+ * `create-auth.ts` `AuthEnv` pattern) rather than in `ServerBindings`, which
+ * holds only string secrets a Bun host can validate from `process.env`
+ * (ADR-0057). `c.env` carries `ASSETS_BUCKET` at runtime on this deployment's
+ * `Cloudflare.Env`; intersecting with `ServerBindings` keeps the cast a clean
+ * narrowing instead of an `unknown` double-cast.
+ */
+type AssetsEnv = ServerBindings & { ASSETS_BUCKET: R2Bucket };
 
 /**
  * Authenticate and authorize a private-asset read.
@@ -200,7 +216,7 @@ function createAssetsApp({
 					const assetId = generateAssetId();
 					const r2Key = assetKey(c.var.ownerId, assetId);
 
-					await c.env.ASSETS_BUCKET.put(r2Key, file.stream(), {
+					await (c.env as AssetsEnv).ASSETS_BUCKET.put(r2Key, file.stream(), {
 						httpMetadata: {
 							contentType: file.type,
 							contentDisposition: `inline; filename="${sanitizedFilename}"`,
@@ -221,7 +237,7 @@ function createAssetsApp({
 						});
 					} catch (dbError) {
 						// Compensating delete - don't leave orphaned R2 objects
-						await c.env.ASSETS_BUCKET.delete(r2Key).catch(() => undefined);
+						await (c.env as AssetsEnv).ASSETS_BUCKET.delete(r2Key).catch(() => undefined);
 						throw dbError;
 					}
 
@@ -327,7 +343,7 @@ function createAssetsApp({
 						return c.json(err, err.error.status);
 					}
 
-					await c.env.ASSETS_BUCKET.delete(assetKey(c.var.ownerId, assetId));
+					await (c.env as AssetsEnv).ASSETS_BUCKET.delete(assetKey(c.var.ownerId, assetId));
 					const totalBytes = await selectOwnerAssetUsageBytes(c);
 					return c.body(null, 204, {
 						[ASSET_STORAGE_USAGE_TOTAL_HEADER]: String(totalBytes),
@@ -375,7 +391,7 @@ function createAssetsApp({
 						if (error) return c.json({ data: null, error }, error.status);
 					}
 
-					const object = await c.env.ASSETS_BUCKET.get(
+					const object = await (c.env as AssetsEnv).ASSETS_BUCKET.get(
 						assetKey(urlOwnerId, assetId),
 						{
 							onlyIf: c.req.raw.headers,

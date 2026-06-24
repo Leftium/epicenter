@@ -21,6 +21,11 @@ declare namespace Cloudflare {
 	type ServerBindings = import('@epicenter/server').ServerBindings;
 
 	interface Env extends ServerBindings {
+		// Runtime-only Cloudflare bindings the library no longer names in
+		// ServerBindings (ADR-0057): this deployment reads them in its own
+		// `connectDb`/`resolveRooms` resolvers, so it declares them here.
+		HYPERDRIVE: Hyperdrive;
+		ROOM: DurableObjectNamespace<import('@epicenter/server').Room>;
 		// Deployment-owned vars (wrangler.jsonc): this deployment's public
 		// origin and the shared() admission allowlist. The library never
 		// reads these by name; they flow through deployment callbacks.

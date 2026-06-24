@@ -1,7 +1,7 @@
 /**
- * Live-socket integration test for the Node room backend.
+ * Live-socket integration test for the Bun room backend.
  *
- * Boots a real `Bun.serve` wired to {@link createNodeRooms}, then drives it
+ * Boots a real `Bun.serve` wired to {@link createBunRooms}, then drives it
  * with real `WebSocket` clients. This exercises the exact path the stub test
  * cannot: `server.upgrade(request, { data })` resolving the WS-upgrade
  * impedance (Bun cannot return a 101 from `fetch`), the top-level `websocket`
@@ -19,23 +19,23 @@ import { asUserId } from '@epicenter/auth';
 import { MAIN_SUBPROTOCOL, encodeSyncUpdate } from '@epicenter/sync';
 import type { Server } from 'bun';
 import * as Y from 'yjs';
-import { createNodeRooms, type NodeRoomSocketData } from './registry.js';
+import { createBunRooms, type BunRoomSocketData } from './registry.js';
 
 const ROOM = 'owners/u1/rooms/r1';
 
 let dir: string;
-let server: Server<NodeRoomSocketData>;
+let server: Server<BunRoomSocketData>;
 
 beforeAll(() => {
 	dir = mkdtempSync(join(tmpdir(), 'node-rooms-live-'));
-	const nodeRooms = createNodeRooms({ dir });
+	const bunRooms = createBunRooms({ dir });
 	server = Bun.serve({
 		port: 0, // ephemeral
 		fetch(req) {
 			const url = new URL(req.url);
 			if (url.pathname === '/ws') {
 				const nodeId = url.searchParams.get('nodeId') ?? '';
-				return nodeRooms.rooms.get(ROOM).handleUpgrade({
+				return bunRooms.rooms.get(ROOM).handleUpgrade({
 					request: req,
 					userId: asUserId('u1'),
 					nodeId,
@@ -43,9 +43,9 @@ beforeAll(() => {
 			}
 			return new Response('ok');
 		},
-		websocket: nodeRooms.websocket,
+		websocket: bunRooms.websocket,
 	});
-	nodeRooms.bindServer(server);
+	bunRooms.bindServer(server);
 });
 
 afterAll(() => {

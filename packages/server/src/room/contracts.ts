@@ -48,9 +48,9 @@ import type { Result } from 'wellcrafted/result';
  * - `replaceAll(c)` is atomic with respect to readers.
  *
  * The contract is synchronous because the Yjs `updateV2` listener that
- * calls {@link RoomUpdateLog.append} cannot `await`. Choosing a sync
- * engine (`ctx.storage.sql`, `bun:sqlite`, `better-sqlite3`) keeps the
- * room logic identical across backends.
+ * calls {@link RoomUpdateLog.append} cannot `await`. Both backends choose a
+ * synchronous engine (`ctx.storage.sql` on Cloudflare, `bun:sqlite` on Bun),
+ * which keeps the room logic identical across them.
  */
 export type RoomUpdateLog = {
 	/** All update entries in insertion order. Called once at room load. */
@@ -138,14 +138,14 @@ export type ResolvedRoom = {
 	 * client query) and the backend performs its runtime-specific accept,
 	 * returning the HTTP response the route returns verbatim.
 	 *
-	 * Identity is passed as data, never round-tripped through a reconstructed
-	 * request URL, because the two runtimes accept sockets differently: the
-	 * Cloudflare backend forwards the request to its Durable Object (which
-	 * returns a 101) and stamps `userId` into the forwarded URL itself; the
-	 * Bun backend hands the ORIGINAL request to `server.upgrade(request,
-	 * { data })` (a reconstructed request cannot be upgraded) and carries the
-	 * identity on the socket's `ws.data`. Both land the same {@link Connection}
-	 * on `RoomCore.addConnection`.
+	 * Identity reaches the backend as data, not re-derived from auth, but each
+	 * runtime then accepts the socket differently: the Cloudflare backend
+	 * forwards the request to its Durable Object (which returns a 101), stamping
+	 * the server-resolved `userId` into the forwarded URL the DO reads; the Bun
+	 * backend hands the ORIGINAL request to `server.upgrade(request, { data })`
+	 * (a reconstructed request cannot be upgraded) and carries the identity on
+	 * the socket's `ws.data`. Both land the same {@link Connection} on
+	 * `RoomCore.addConnection`.
 	 */
 	handleUpgrade(upgrade: RoomUpgrade): Promise<Response>;
 };
@@ -164,7 +164,18 @@ export type RoomUpgrade = {
 };
 
 /**
- * Name-to-room routing. The Cloudflare backend wraps
+ * What a backend needs to reject one WebSocket upgrade with an application
+ * close code. `request` is the untouched inbound request; `code`/`reason` are
+ * the app close (4000-4999) and its serialized payload.
+ */
+export type RoomUpgradeRejection = {
+	request: Request;
+	code: number;
+	reason: string;
+};
+
+/**
+ * The runtime's room + WebSocket surface. The Cloudflare backend wraps
  * `DurableObjectNamespace`; a Bun backend wraps an in-process
  * `Map<string, RoomCore>` with lazy synchronous creation.
  *
@@ -177,6 +188,20 @@ export type RoomUpgrade = {
 export type Rooms = {
 	/** Resolve a room by its opaque host-owned name. */
 	get(name: string): ResolvedRoom;
+	/**
+	 * Reject a WebSocket upgrade with an application close code, on this runtime.
+	 *
+	 * The auth layer calls this when a room upgrade fails auth, before any room
+	 * name is resolved (hence it is not behind {@link Rooms.get}). The socket is
+	 * accepted and then immediately closed with `code`/`reason`, so the browser
+	 * receives a readable close code: a plain HTTP error on an upgrade surfaces
+	 * to a `WebSocket` only as an opaque failure, and the client's sync
+	 * supervisor parks permanently only on a close code (4401), not a failed
+	 * handshake. Runtime-specific, like {@link ResolvedRoom.handleUpgrade}: the
+	 * Cloudflare backend uses a `WebSocketPair`, the Bun backend uses
+	 * `server.upgrade` then `ws.close`.
+	 */
+	rejectUpgrade(rejection: RoomUpgradeRejection): Promise<Response>;
 };
 
 // ============================================================================

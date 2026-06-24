@@ -27,8 +27,8 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
 	authApp,
+	createBunRooms,
 	createDb,
-	createNodeRooms,
 	createServerApp,
 	mountBlobsApp,
 	mountInferenceApp,
@@ -36,43 +36,48 @@ import {
 	mountSessionApp,
 	personal,
 	requireBearerUser,
-} from '@epicenter/server/node';
+	ServerBindings,
+} from '@epicenter/server/bun';
+import { type } from 'arktype';
 import pg from 'pg';
 import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
 
-// Fail fast on the two secrets with no safe default, with a runnable hint.
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-	console.error(
-		'DATABASE_URL is required. Set a Postgres connection string (see .env.example).',
-	);
-	process.exit(1);
-}
-if (!process.env.BETTER_AUTH_SECRET) {
-	console.error('BETTER_AUTH_SECRET is required (see .env.example).');
+// Validate the whole environment once, at boot. The library's portable secrets
+// (the `ServerBindings` schema) and this Bun host's own config are checked
+// together, so a misconfigured self-host gets ONE descriptive error naming
+// every missing or malformed var instead of a downstream surprise. The
+// validated result IS the typed env handed to the Hono app: no `as`-cast over
+// `process.env`, no lie (ADR-0057). Unlike the Cloudflare edge (whose bindings
+// are deploy-gated and `wrangler types`-typed), `process.env` is unchecked, so
+// boot is the place to validate it.
+const env = ServerBindings.merge({
+	// This Bun host's own config (not library bindings): the Postgres URL is
+	// required; the rest have safe defaults applied below.
+	DATABASE_URL: 'string',
+	'PORT?': 'string',
+	'API_PUBLIC_ORIGIN?': 'string',
+	'DATA_DIR?': 'string',
+})(process.env);
+if (env instanceof type.errors) {
+	console.error(`Invalid environment for the Bun server:\n${env.summary}`);
 	process.exit(1);
 }
 
-const port = Number(process.env.PORT ?? 8788);
+const port = Number(env.PORT ?? 8788);
 // The auth origin must match where the process actually listens (cookies, the
 // OAuth issuer, the token audience all derive from it). Default to localhost on
 // the chosen port; an operator overrides it with their domain.
-const origin = process.env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
+const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
 
 // One room directory of `bun:sqlite` files for this host.
-const dataDir = resolve(process.env.DATA_DIR ?? './.data/rooms');
+const dataDir = resolve(env.DATA_DIR ?? './.data/rooms');
 mkdirSync(dataDir, { recursive: true });
-const nodeRooms = createNodeRooms({ dir: dataDir });
+const bunRooms = createBunRooms({ dir: dataDir });
 
 // One pool for the process; drizzle checks a client out per query and returns
 // it, so `connectDb` hands back the shared handle with a no-op close.
-const pool = new pg.Pool({ connectionString: DATABASE_URL });
+const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
 const db = createDb(pool);
-
-// `c.env` on this runtime is `process.env`: every secret the library reads
-// (auth, blobs, inference house keys) is a portable string there, so the cast
-// is the one honest edge between Bun's env and the Worker's binding type.
-const env = process.env as unknown as Cloudflare.Env;
 
 const ownership = personal();
 
@@ -83,7 +88,7 @@ const app = createServerApp({
 	afterResponse: (_c, work) => {
 		void work;
 	},
-	resolveRooms: () => nodeRooms.rooms,
+	resolveRooms: () => bunRooms.rooms,
 });
 
 app.get('/', (c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'bun' }));
@@ -97,13 +102,13 @@ const server = Bun.serve({
 	port,
 	// Bun calls `fetch(req, server)`; we route everything through the Hono app
 	// with `process.env` as `c.env`. WebSocket upgrades are performed inside the
-	// rooms route via the bound server (see createNodeRooms), after auth runs,
+	// rooms route via the bound server (see createBunRooms), after auth runs,
 	// so they are never intercepted ahead of the auth pipeline here.
 	fetch: (req) => app.fetch(req, env),
-	websocket: nodeRooms.websocket,
+	websocket: bunRooms.websocket,
 });
 // `server` only exists once `Bun.serve` returns; hand it to the room registry
 // so `handleUpgrade` can call `server.upgrade`.
-nodeRooms.bindServer(server);
+bunRooms.bindServer(server);
 
 console.log(`apps/api (Bun) listening on ${origin} — rooms in ${dataDir}`);

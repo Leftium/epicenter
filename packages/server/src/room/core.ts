@@ -8,8 +8,10 @@
  * adapter.
  *
  * Imports no `cloudflare:workers` symbols. Both Cloudflare's Durable
- * Object and a future Bun backend drive the same {@link createRoomCore}
- * instance through the methods listed on its return object.
+ * Object and the Node/Bun backend (`room/backends/node/`) drive the same
+ * {@link createRoomCore} instance through the methods listed on its return
+ * object. Connection-lifetime enforcement and liveness ping/pong are
+ * room-core invariants here, so neither backend can forget them.
  *
  * ## Wire surfaces
  *
@@ -127,6 +129,35 @@ const CLOSE_CODE_AUTH_FAILED = 4401;
 
 /** WebSocket-spec OPEN readyState. */
 const WS_READY_OPEN = 1;
+
+/**
+ * Maximum lifetime of a single WebSocket connection before the room forces a
+ * reconnect (30 minutes).
+ *
+ * Auth is verified once, at the HTTP upgrade. Without a bound, a socket opened
+ * with a valid bearer would keep operating indefinitely after the access token
+ * expires (10min TTL) or the session is revoked. Closing the socket past this
+ * age forces the client to reconnect and re-authenticate at a fresh upgrade: a
+ * signed-out or revoked client then fails closed, while a healthy client
+ * refreshes its token transparently. Coarser than the access-token TTL to limit
+ * reconnect and presence churn.
+ *
+ * This is a room-core invariant, not an adapter detail: every backend inherits
+ * it through {@link RoomCore.handleMessage} (active sockets) and
+ * {@link RoomCore.sweepExpiredConnections} (idle sockets), so no backend can
+ * silently let a socket outlive its credentials.
+ */
+const MAX_CONNECTION_LIFETIME_MS = 30 * 60_000;
+
+/**
+ * Close code emitted when a connection exceeds {@link MAX_CONNECTION_LIFETIME_MS}.
+ *
+ * App-defined (4000-4999) and deliberately NOT the permanent-auth code
+ * ({@link CLOSE_CODE_AUTH_FAILED}): the client's sync supervisor reconnects on
+ * every close except 4401, so this code recycles the socket through a fresh
+ * authenticated upgrade instead of making the client give up.
+ */
+const CLOSE_CODE_CONNECTION_LIFETIME = 4408;
 
 // ============================================================================
 // Internal types
@@ -471,6 +502,17 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * must not tear down sync and presence.
 	 */
 	function handleTextFrame(ws: RoomSocket, message: string): void {
+		// Liveness ping/pong. The client sends a literal `ping` text frame on an
+		// interval (and on tab focus); reply `pong` so a document-idle socket
+		// stays alive. The Cloudflare backend short-circuits this with
+		// `setWebSocketAutoResponse`, so the ping never reaches the core there;
+		// handling it here makes the reply a room-core invariant every other
+		// backend inherits, instead of an adapter detail a new runtime can forget.
+		if (message === 'ping') {
+			ws.send('pong');
+			return;
+		}
+
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(message);
@@ -600,9 +642,9 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * large`. A `MessageDecode` failure is logged and dropped without
 		 * closing the socket.
 		 *
-		 * Binary frames arrive as an `ArrayBuffer` on the Cloudflare backend
-		 * and a `Uint8Array` on the Bun backend (`binaryType: 'uint8array'`);
-		 * both are handled here so the backends never have to convert.
+		 * Binary frames arrive as an `ArrayBuffer` on the Cloudflare backend and
+		 * as a `Buffer` (a `Uint8Array` subclass) on the Bun backend; both
+		 * satisfy this `Uint8Array` decode path, so neither backend converts.
 		 */
 		handleMessage(
 			socket: RoomSocket,
@@ -610,6 +652,20 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		): void {
 			const data = connections.get(socket);
 			if (!data) return;
+
+			// Connection-lifetime bound, enforced on every inbound frame (the
+			// client's liveness ping counts, so an active socket is re-checked at
+			// least once per ping interval). A socket past its max age is closed
+			// instead of served, forcing a reconnect that re-authenticates; the
+			// transient close code recycles it rather than parking the client.
+			// Idle sockets are covered by `sweepExpiredConnections`.
+			if (Date.now() - data.connectedAt >= MAX_CONNECTION_LIFETIME_MS) {
+				socket.close(
+					CLOSE_CODE_CONNECTION_LIFETIME,
+					'connection lifetime exceeded',
+				);
+				return;
+			}
 
 			const byteLength =
 				typeof message === 'string' ? message.length : message.byteLength;
@@ -707,6 +763,30 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 */
 		compact(): void {
 			compactUpdateLog(doc, updateLog);
+		},
+
+		/**
+		 * Close every connection past {@link MAX_CONNECTION_LIFETIME_MS}.
+		 *
+		 * The per-message check in {@link RoomCore.handleMessage} already bounds
+		 * an active socket; a backend drives this on a timer to also bound a
+		 * silent one whose only traffic is an auto-responded `ping` the core
+		 * never sees (the Cloudflare DO) or which sends nothing at all. The close
+		 * fires the backend's normal close path (`webSocketClose` / the Bun
+		 * `close` handler), which runs `removeConnection`.
+		 *
+		 * `now` is supplied by the caller so a sweep over many rooms shares one
+		 * clock read.
+		 */
+		sweepExpiredConnections(now: number): void {
+			for (const [socket, connection] of connections) {
+				if (now - connection.connectedAt >= MAX_CONNECTION_LIFETIME_MS) {
+					socket.close(
+						CLOSE_CODE_CONNECTION_LIFETIME,
+						'connection lifetime exceeded',
+					);
+				}
+			}
 		},
 
 		/**

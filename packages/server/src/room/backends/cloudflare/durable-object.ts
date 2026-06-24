@@ -41,41 +41,18 @@ import { createDurableObjectUpdateLog } from './update-log.js';
 const COMPACTION_DELAY_MS = 30_000;
 
 /**
- * Maximum lifetime of a single WebSocket connection before the server forces
- * a reconnect (30 minutes).
- *
- * Auth is verified once, at the HTTP upgrade, by the rooms route. Without a
- * bound, a socket opened with a valid bearer would keep operating indefinitely
- * even after the access token expires (10min TTL) or the session is revoked.
- * Closing the socket past this age forces the client to reconnect and
- * re-authenticate at a fresh upgrade: a signed-out or revoked client then fails
- * closed, while a healthy client refreshes its token transparently. The bound
- * is intentionally coarser than the access-token TTL to limit reconnect and
- * presence churn; tighten it if a shorter post-revocation window is required.
- */
-const MAX_CONNECTION_LIFETIME_MS = 30 * 60_000;
-
-/**
  * Cadence of the alarm-driven lifetime sweep while the room has connections (5
  * minutes).
  *
- * The per-message check ({@link Room.webSocketMessage}) only fires on inbound
- * frames, so a document-idle socket (whose only traffic is the auto-responded
- * `ping`) would never be re-checked. The sweep closes over-age sockets
- * regardless of activity, bounding even a silent connection to at most
- * `MAX_CONNECTION_LIFETIME_MS + CONNECTION_SWEEP_INTERVAL_MS`.
+ * The connection-lifetime bound itself lives in {@link RoomCore} (the
+ * per-message check in `handleMessage` plus `sweepExpiredConnections`). The
+ * per-message check only fires on inbound frames, and on this backend the
+ * client's liveness `ping` is auto-responded by the runtime without ever
+ * reaching the core, so a document-idle socket would never be re-checked. This
+ * sweep drives `core.sweepExpiredConnections` on a timer to close over-age
+ * sockets regardless of activity.
  */
 const CONNECTION_SWEEP_INTERVAL_MS = 5 * 60_000;
-
-/**
- * Close code sent when a connection exceeds {@link MAX_CONNECTION_LIFETIME_MS}.
- *
- * App-defined (4000-4999) and deliberately not the client's permanent-auth
- * code (4401): the client's sync supervisor reconnects on every close except
- * 4401, so this code recycles the socket through a fresh authenticated upgrade
- * instead of making the client give up.
- */
-const CONNECTION_LIFETIME_CLOSE_CODE = 4408;
 
 /**
  * Yjs sync + dispatch room backed by a Cloudflare Durable Object.
@@ -231,42 +208,18 @@ export class Room extends DurableObject {
 	}
 
 	/**
-	 * Forward inbound messages to the core, after enforcing the connection
-	 * lifetime bound.
+	 * Forward inbound messages to the core.
 	 *
-	 * A socket past {@link MAX_CONNECTION_LIFETIME_MS} is closed instead of
-	 * served, which makes the client reconnect and re-authenticate at a fresh
-	 * upgrade (see {@link CONNECTION_LIFETIME_CLOSE_CODE}). The pending message
-	 * is dropped; Yjs reconciles it on the next SyncStep1 after reconnect, so no
-	 * update is lost. The runtime's `webSocketClose` callback then runs the
-	 * normal cleanup and compaction path.
+	 * The core enforces the connection-lifetime bound on every frame (see
+	 * {@link RoomCore.handleMessage}): a socket past its max age is closed
+	 * instead of served, the runtime's `webSocketClose` then runs the normal
+	 * cleanup and compaction path.
 	 */
 	override async webSocketMessage(
 		ws: WebSocket,
 		message: ArrayBuffer | string,
 	): Promise<void> {
-		if (this.closeIfExpired(ws, Date.now())) return;
 		this.core.handleMessage(ws, message);
-	}
-
-	/**
-	 * Close `ws` if it has outlived {@link MAX_CONNECTION_LIFETIME_MS}, returning
-	 * whether it did. Used by both the inbound-frame check (immediate, for active
-	 * sockets) and the alarm sweep (for idle sockets). The transient
-	 * {@link CONNECTION_LIFETIME_CLOSE_CODE} makes the client reconnect through a
-	 * fresh authenticated upgrade; the runtime's `webSocketClose` then runs the
-	 * normal cleanup and compaction path.
-	 */
-	private closeIfExpired(ws: WebSocket, now: number): boolean {
-		const connection = ws.deserializeAttachment() as Connection | null;
-		if (
-			connection &&
-			now - connection.connectedAt >= MAX_CONNECTION_LIFETIME_MS
-		) {
-			ws.close(CONNECTION_LIFETIME_CLOSE_CODE, 'connection lifetime exceeded');
-			return true;
-		}
-		return false;
 	}
 
 	/**
@@ -324,11 +277,12 @@ export class Room extends DurableObject {
 	/**
 	 * The room's single maintenance alarm, multiplexed two ways:
 	 *
-	 * - While clients are connected it is the periodic lifetime sweep: close
-	 *   every over-age socket (including idle ones the per-message check never
-	 *   sees), then re-arm for the next {@link CONNECTION_SWEEP_INTERVAL_MS}.
-	 *   The swept closes fire `webSocketClose`, which sets the compaction alarm
-	 *   once the room empties (overriding this re-arm).
+	 * - While clients are connected it is the periodic lifetime sweep: it asks
+	 *   the core to close every over-age socket (including idle ones the
+	 *   per-message check never sees), then re-arms for the next
+	 *   {@link CONNECTION_SWEEP_INTERVAL_MS}. The swept closes fire
+	 *   `webSocketClose`, which sets the compaction alarm once the room empties
+	 *   (overriding this re-arm).
 	 * - When the room is empty it compacts the update log (scheduled
 	 *   {@link COMPACTION_DELAY_MS} after the last close).
 	 *
@@ -336,7 +290,7 @@ export class Room extends DurableObject {
 	 */
 	override async alarm(): Promise<void> {
 		const now = Date.now();
-		for (const ws of this.ctx.getWebSockets()) this.closeIfExpired(ws, now);
+		this.core.sweepExpiredConnections(now);
 		if (this.core.connectionCount > 0) {
 			void this.ctx.storage.setAlarm(now + CONNECTION_SWEEP_INTERVAL_MS);
 			return;

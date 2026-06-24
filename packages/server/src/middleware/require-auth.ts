@@ -64,7 +64,7 @@ import type { Env } from '../types.js';
  * is needed once the token proves issuer, audience, signature, expiration,
  * and subject.
  */
-async function resolveRequestOAuthUser(
+export async function resolveRequestOAuthUser(
 	c: Context<Env>,
 ): Promise<Result<AuthUser, OAuthError>> {
 	const accessToken = parseBearer(c.req.header('authorization') ?? null);

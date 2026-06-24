@@ -53,5 +53,24 @@ export function createDurableObjectRooms(
 				},
 			} satisfies ResolvedRoom;
 		},
+		/**
+		 * Reject a WebSocket upgrade with an application close code. Mints a
+		 * detached socket pair, accepts the server half, and closes it with
+		 * `code`/`reason` so the browser receives a readable close code. This is
+		 * a Worker-level reject: no Durable Object is instantiated for an
+		 * unauthenticated upgrade, and `request` is unused (the pair needs no
+		 * inbound request). `WebSocketPair` is the Cloudflare-only global that
+		 * makes a detached pair; it lives here, in the Cloudflare backend, never
+		 * in shared auth code (ADR-0057).
+		 */
+		rejectUpgrade: ({ code, reason }) => {
+			const pair = new WebSocketPair();
+			const [client, server] = [pair[0], pair[1]];
+			server.accept();
+			server.close(code, reason);
+			return Promise.resolve(
+				new Response(null, { status: 101, webSocket: client }),
+			);
+		},
 	} satisfies Rooms;
 }

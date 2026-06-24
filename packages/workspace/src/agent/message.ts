@@ -15,36 +15,13 @@
  * idempotent writes and to share one substrate with the table layer, not for
  * its last-write-wins semantics.
  */
+import type { ModelMessage, ModelToolCall } from '@epicenter/agent-protocol';
 import type { JsonValue } from 'wellcrafted/json';
 
-/**
- * One tool call inside a prompt transcript, in the OpenAI/TanStack
- * function-call shape: a stable id, the `function` discriminant, and the
- * arguments as a JSON string. The OpenAI-compatible engine maps this to a
- * `tool_calls[]` entry; the legacy engine sends it verbatim.
- */
-export type ModelToolCall = {
-	id: string;
-	type: 'function';
-	function: { name: string; arguments: string };
-};
-
-/**
- * A frozen transcript message: the structural twin of the wire prompt shape the
- * inference engine consumes (ADR-0050). It mirrors the fields the loop produces
- * from an {@link AgentMessage} (a TanStack `ModelMessage` minus the multimodal
- * and reasoning fields we never emit), so the request body stays byte-identical
- * across the engine swap. A `user`/`assistant` message carries prose `content`;
- * an `assistant` message may carry `toolCalls`; a `tool` message carries one
- * tool result keyed by `toolCallId`.
- */
-export type ModelMessage = {
-	role: 'user' | 'assistant' | 'tool';
-	content: string;
-	name?: string;
-	toolCalls?: ModelToolCall[];
-	toolCallId?: string;
-};
+// The prompt-message shapes the loop freezes a transcript into are the shared
+// wire contract (`@epicenter/agent-protocol`); re-exported here so the loop's
+// surface and its consumers keep importing them from `@epicenter/workspace/agent`.
+export type { ModelMessage, ModelToolCall };
 
 /** A run of prose. */
 export type AgentTextPart = { type: 'text'; text: string };

@@ -17,6 +17,7 @@
  */
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { JsonValue } from 'wellcrafted/json';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { RecordsHandle } from '../document/attach-records.js';
 import type { AgentEngine } from './engine.js';
 import {
@@ -42,8 +43,21 @@ export type ConversationError = { message: string; code?: string };
 
 /** The render state of one conversation: durable transcript plus the live turn. */
 export type ConversationSnapshot = {
-	/** Persisted messages plus the in-flight turn once it has visible content. */
+	/**
+	 * Settled messages: persisted history plus any completed in-turn step (a prior
+	 * tool step). These never change again, so they keep a stable identity and a
+	 * keyed `{#each}` over them is referentially inert during a turn. Render rich.
+	 */
 	messages: AgentMessage[];
+	/**
+	 * The one message a step is streaming into right now, or null between steps and
+	 * turns and until it has content (an empty in-flight message shows as the
+	 * thinking bubble, not here). It is mutated in place as tokens arrive, so it is
+	 * handed out as a fresh object each snapshot: a reactive view keys on identity,
+	 * and a stable reference would freeze it on the first token until a reload.
+	 * Render this one cheaply (raw); it settles into `messages` when the turn ends.
+	 */
+	streaming: AgentMessage | null;
 	/** A turn is claimed but nothing visible has streamed yet (typing bubble). */
 	isThinking: boolean;
 	/** A turn is in flight (disable input, offer stop). */
@@ -57,8 +71,12 @@ export type ConversationHandle = {
 	snapshot(): ConversationSnapshot;
 	/** Register a change listener; returns the remover. Fires on every change. */
 	subscribe(listener: () => void): () => void;
-	/** Persist the user turn and answer it. No-op on empty input or mid-turn. */
-	send(content: string): void;
+	/**
+	 * Persist the user turn and answer it. Returns whether a turn started: `false`
+	 * on empty input or mid-turn, so a caller can gate its own side-effects (a
+	 * title write, say) on the loop's decision instead of re-deriving the guard.
+	 */
+	send(content: string): boolean;
 	/** Abort the in-flight turn; its partial messages are dropped. */
 	stop(): void;
 	/** Re-answer the latest user turn after a failure. */
@@ -152,30 +170,57 @@ export function createConversation(
 	let turn: AgentMessage[] | null = null;
 	let error: ConversationError | null = null;
 	let controller: AbortController | null = null;
+	// The message a step is actively streaming into; null between steps and turns.
+	let streamingId: string | null = null;
 
 	function snapshot(): ConversationSnapshot {
-		// One predicate decides both what renders live and what persists: a
-		// message the UI shows mid-turn is exactly a message a clean finish
-		// keeps. They must not drift, or a message would render then vanish on
-		// finish. `parts.length > 0` happens to agree today only because
-		// `appendText` never opens an empty text part; a future non-persistable
-		// part type (a reasoning marker, say) would break that. Sharing
-		// `isPersistableMessage` keeps the two in lockstep by construction.
-		const live = (turn ?? []).filter(isPersistableMessage);
+		// `isPersistableMessage` is the single predicate behind all three views:
+		// what streams, what renders settled, and what persists. A message worth
+		// showing mid-turn is exactly one a clean finish keeps, so they cannot
+		// drift (a message that rendered then vanished on finish).
+		const turnMessages = turn ?? [];
+		// The message a step is filling now, handed out as a fresh object so a
+		// reactive view re-reads its growing text instead of freezing on a stable
+		// reference. Null until it has content, so the empty in-flight message is
+		// the thinking bubble, not an empty streaming bubble.
+		const filling = turnMessages.find((message) => message.id === streamingId);
+		const streaming =
+			filling && isPersistableMessage(filling)
+				? { ...filling, parts: [...filling.parts] }
+				: null;
+		// Settled messages keep a stable identity: persisted history, plus any
+		// completed in-turn step (a tool step that is no longer the one filling).
+		// During a single-step turn this is just `persisted`, so the reference is
+		// stable and a keyed `{#each}` over it does not reconcile per token.
+		const completed = turnMessages.filter(
+			(message) => message.id !== streamingId && isPersistableMessage(message),
+		);
+		const messages =
+			completed.length > 0 ? [...persisted, ...completed] : persisted;
 		return {
-			messages: live.length > 0 ? [...persisted, ...live] : persisted,
-			isThinking: turn !== null && live.length === 0,
+			messages,
+			streaming,
+			isThinking: turn !== null && streaming === null && completed.length === 0,
 			isGenerating: turn !== null,
 			error,
 		};
 	}
 
-	/** Stream one model call into `assistant`, returning the calls it requested. */
+	/**
+	 * Stream one model call into `assistant`, resolving to the tool calls it asked
+	 * for (empty = final answer) or the failure that ended it. `history` is the
+	 * transcript the model sees: everything before this step, never the empty
+	 * `assistant` being filled. The caller snapshots it before pushing `assistant`,
+	 * so a trailing blank message can't reach the prompt (a ChatML backend like
+	 * local Ollama/Qwen would otherwise emit a literal "assistant" token and
+	 * role-play the next user turn; hosted Gemini tolerated it, so it stayed latent).
+	 */
 	async function runStep(
+		history: AgentMessage[],
 		assistant: AgentMessage,
 		signal: AbortSignal,
-	): Promise<{ calls: AgentToolCall[]; failure?: ConversationError }> {
-		const prompt = toModelMessages([...persisted, ...(turn ?? [])]);
+	): Promise<Result<AgentToolCall[], ConversationError>> {
+		const prompt = toModelMessages(history);
 		const calls: AgentToolCall[] = [];
 		let failure: ConversationError | undefined;
 
@@ -208,14 +253,16 @@ export function createConversation(
 						};
 						break;
 					default:
-						break;
+						// EngineChunk is a closed protocol the loop reduces; a new
+						// variant must be handled here, not silently dropped.
+						chunk satisfies never;
 				}
 			}
 		} catch (cause) {
 			if (!signal.aborted) failure = { message: extractErrorMessage(cause) };
 		}
 
-		return { calls, failure };
+		return failure ? Err(failure) : Ok(calls);
 	}
 
 	/** Run a step's tool calls, gated by approval, appending each result. */
@@ -271,6 +318,9 @@ export function createConversation(
 				};
 				break;
 			}
+			// Snapshot the prompt before pushing the new assistant: the model sees
+			// the transcript up to here, never the empty message it is about to fill.
+			const history = [...persisted, ...turn];
 			const assistant: AgentMessage = {
 				id: generateId(),
 				role: 'assistant',
@@ -278,20 +328,28 @@ export function createConversation(
 				parts: [],
 			};
 			turn.push(assistant);
+			streamingId = assistant.id;
 			notify();
 
-			const step = await runStep(assistant, signal);
+			const { data: calls, error: stepError } = await runStep(
+				history,
+				assistant,
+				signal,
+			);
+			// The step is done filling this message; it is no longer streaming, so a
+			// renderer can switch it to the rich path (during tools, or on finish).
+			streamingId = null;
 			if (signal.aborted) break;
-			if (step.failure !== undefined) {
-				failure = step.failure;
+			if (stepError) {
+				failure = stepError;
 				break;
 			}
 
 			// No tool calls means the model gave its final answer; the turn is done.
-			const isFinalAnswer = step.calls.length === 0;
+			const isFinalAnswer = calls.length === 0;
 			if (isFinalAnswer) break;
 
-			await runTools(assistant, step.calls, signal);
+			await runTools(assistant, calls, signal);
 		}
 
 		const aborted = signal.aborted;
@@ -304,6 +362,7 @@ export function createConversation(
 		// double-render: once `turn` is null, the store write refreshes
 		// `persisted` to include them.
 		turn = null;
+		streamingId = null;
 		controller = null;
 		error = failure ?? null;
 		for (const message of finished) store.set(message.id, message);
@@ -318,7 +377,7 @@ export function createConversation(
 		},
 		send(content) {
 			const text = content.trim();
-			if (!text || turn !== null) return;
+			if (!text || turn !== null) return false;
 			const id = generateId();
 			store.set(id, {
 				id,
@@ -327,6 +386,7 @@ export function createConversation(
 				parts: [{ type: 'text', text }],
 			});
 			void runTurn();
+			return true;
 		},
 		stop() {
 			controller?.abort();

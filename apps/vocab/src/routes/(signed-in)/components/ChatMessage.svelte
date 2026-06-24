@@ -1,13 +1,16 @@
 <script lang="ts">
 	import * as Chat from '@epicenter/ui/chat';
+	import { Markdown } from '@epicenter/ui/markdown';
 	import type { VocabMessage } from '@epicenter/vocab';
 	import { agentMessageText } from '@epicenter/workspace/agent';
-	import AssistantMessagePart from './AssistantMessagePart.svelte';
+	import { pinyinRomanizer } from '$lib/romanize/pinyin';
 
 	let {
 		message,
 		showPinyin,
-	}: { message: VocabMessage; showPinyin: boolean } = $props();
+		streaming = false,
+	}: { message: VocabMessage; showPinyin: boolean; streaming?: boolean } =
+		$props();
 
 	const isUser = $derived(message.role === 'user');
 	// Vocab is capability-free, so a message is plain prose: its text parts.
@@ -16,10 +19,16 @@
 
 <Chat.Bubble variant={isUser ? 'sent' : 'received'}>
 	<Chat.BubbleMessage>
-		{#if isUser}
-			{text}
+		{#if isUser || streaming}
+			<!--
+				Raw text while the answer streams (and for the user's own turn): the
+				rich markdown + pinyin pass runs once the message settles, so the
+				per-token re-parse never happens. The rich markdown tree mounts on
+				settle.
+			-->
+			<div class="whitespace-pre-wrap">{text}</div>
 		{:else}
-			<AssistantMessagePart content={text} {showPinyin} />
+			<Markdown content={text} romanizer={pinyinRomanizer} showReadings={showPinyin} />
 		{/if}
 	</Chat.BubbleMessage>
 </Chat.Bubble>

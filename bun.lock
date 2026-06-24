@@ -416,8 +416,6 @@
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "clsx": "catalog:",
-        "dompurify": "^3.4.10",
-        "marked": "catalog:",
         "mode-watcher": "^1.1.0",
         "svelte-sonner": "^1.1.0",
         "tailwind-merge": "catalog:",
@@ -487,8 +485,6 @@
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "arktype": "catalog:",
-        "dompurify": "^3.4.10",
-        "marked": "^17.0.5",
         "mode-watcher": "^1.1.0",
         "pinyin-pro": "^3.28.0",
         "svelte-sonner": "catalog:",
@@ -644,6 +640,17 @@
         "vite": "catalog:",
       },
     },
+    "packages/agent-protocol": {
+      "name": "@epicenter/agent-protocol",
+      "version": "0.1.0",
+      "dependencies": {
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/app-shell": {
       "name": "@epicenter/app-shell",
       "version": "0.3.0",
@@ -725,6 +732,7 @@
       "name": "@epicenter/client",
       "version": "0.1.1",
       "dependencies": {
+        "@epicenter/agent-protocol": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
@@ -894,6 +902,7 @@
         "bits-ui": "^2.16.5",
         "chrono-node": "2.9.0",
         "clsx": "^2.1.1",
+        "marked": "catalog:",
         "paneforge": "^1.0.2",
         "tailwind-merge": "^3.5.0",
         "tailwind-variants": "^3.2.2",
@@ -939,6 +948,7 @@
       "name": "@epicenter/workspace",
       "version": "0.3.0",
       "dependencies": {
+        "@epicenter/agent-protocol": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -1267,6 +1277,8 @@
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w=="],
 
     "@emoji-mart/data": ["@emoji-mart/data@1.2.1", "", {}, "sha512-no2pQMWiBy6gpBEiqGeU77/bFejDqUTRY7KX+0+iur13op3bqUsXdnwoZs6Xb1zbv0gAj5VvS1PWoUUckSr5Dw=="],
+
+    "@epicenter/agent-protocol": ["@epicenter/agent-protocol@workspace:packages/agent-protocol"],
 
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
 

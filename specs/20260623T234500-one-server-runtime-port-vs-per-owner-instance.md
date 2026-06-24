@@ -377,20 +377,61 @@ Capabilities never know which."** To keep it clean we must REFUSE:
   smoke test, still pending.
 - **Item 2, 3, 4: not started** (see sequence above; 3 and 4 are trigger-gated).
 
-## Trigger for the remaining work
+## The Bun dev server is the keystone (the trigger is now real)
 
-Honor the standing decision in `20260528T130000` ("do not build the rest of the
-port until a second runtime is real"). The db-handle injection (item 3) and the
-Node room backend (item 4) are cheap and well-understood, but building them now
-moves `pg` into both Cloudflare deployables for zero functional payoff and with no
-second implementation to validate the seam against. The trigger is a self-hoster
-who refuses Cloudflare, or the Tauri-local instance becoming a priority. Item 2
-(assets -> blobs) is independent of that trigger and is the next real win, because
-it removes the final R2 binding from the auth path.
+The standing decision in `20260528T130000` was "do not build the rest of the port
+until a second runtime is real," because building the seam with no second
+implementation risks designing it blind. **A Bun/Node dev entry for `apps/api`
+*is* that second runtime**, so it removes the objection and justifies the build.
+It earns its keep three ways at once, which is why it is the keystone rather than
+speculative churn:
 
-## ADR candidate
+1. **Dev speed.** `bun --watch server.ts` boots instantly with real stack traces
+   and a debugger; `wrangler dev` emulates workerd and is slower. A fast inner loop.
+2. **It validates the port by construction.** A contract only reveals it is
+   secretly Cloudflare-shaped when a second impl consumes it. The clearest example:
+   `ResolvedRoom.handleUpgrade(req) -> Response` fits CF's `Response(101,{webSocket})`
+   but not Bun's `server.upgrade(req,{data})` + top-level `websocket` handler, so
+   building the Bun room backend is what surfaces and fixes that leak.
+3. **It is the self-host artifact.** `bun server.ts` against a plain Postgres + any
+   S3 is the "one binary, no Cloudflare account" self-host, and the same entry is
+   what a Tauri shell embeds locally.
 
-Harvest this into an ADR when the `Runtime`-object refactor lands:
+**Best-practice shape: one Hono app, two entries, keep both.** `worker/index.ts`
+(Cloudflare, `wrangler dev`/`deploy`) and `server.ts` (Bun, `bun --watch`) both
+build the same `createServerApp(...)`. Additive, never a replacement: portable
+means it *also* runs on Bun, never that it *stops* running on Cloudflare. The
+server runtimes are Workers / Bun / Node; the browser and Tauri are clients of
+whichever server (there is no in-browser server here: the room needs `bun:sqlite`
+and `pg`).
+
+**The one honest caveat: dev-prod runtime skew.** A bug that only manifests in the
+DO (hibernation restore, alarm timing, edge placement) will not show in Bun dev.
+So the discipline is Bun dev for speed, `wrangler dev` / staging for fidelity
+before any deploy touching room/DO behavior. Both entries stay for exactly this
+reason.
+
+### Wave plan (each wave builds, typechecks, and commits on its own)
+
+| Wave | Scope | Road | Removes |
+|---|---|---|---|
+| 1 | inject `connectDb` + `afterResponse`/`waitUntil` per concern into `createServerApp`; Cloudflare wiring moves to the `apps/*` edge | 1 + tiny | direct `HYPERDRIVE` + `executionCtx.waitUntil` reads in the library |
+| 2 | inject `resolveRooms`; write `room/backends/node` (`bun:sqlite`/`better-sqlite3` `RoomUpdateLog` + in-process `Map` `Rooms`); resolve the WS-upgrade impedance | 2 (real) | the last direct `ROOM` read; the `cloudflare:workers` mock in room tests |
+| 3 | loosen `createAuth`'s `env: Cloudflare.Env` to a secrets bag; guard the `ASSETS_BUCKET` user-delete hook (or finish assets->blobs); add `apps/api/server.ts` (`Bun.serve` + `websocket`) and a `dev:node` script | 1 + glue | the last Cloudflare-binding read on the auth construction path |
+| 4 | prove: `bun server.ts` against local Postgres + R2/MinIO signs in, syncs a room, reads a blob, AND `wrangler dev` still serves everything | n/a | nothing; this is the Class-1 evidence gate |
+
+Item 2 (assets -> blobs) is independent and still the cleanest standalone win,
+because it removes the final R2 binding from auth (folded into Wave 3's auth-env
+work, or done first).
+
+After Waves 1-3 the library reads zero Cloudflare bindings directly: `db`,
+`afterResponse`, `rooms`, and `blobs` are all injected per concern; only the
+deployment edge (`apps/api/worker/index.ts` vs `apps/api/server.ts`) names a
+runtime. That is the collapse, made real and exercised by Wave 4.
+
+## ADR
+
+Recorded as **[ADR-0057](../docs/adr/0057-runtime-portability-is-per-concern-injection-not-a-runtime-object.md)** (Proposed; flip to Accepted when the wave plan lands). The decision in one paragraph:
 
 > **Runtime portability is decided per subsystem by one rule (is there an open
 > standard both runtimes speak?): Road 1 collapses to that standard, Road 2 injects

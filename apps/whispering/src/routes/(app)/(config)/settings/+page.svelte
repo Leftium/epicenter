@@ -45,7 +45,6 @@
 	<Field.Description>
 		Configure your general Whispering preferences.
 	</Field.Description>
-	<Field.Separator />
 	<Field.Group>
 		<Field.Set>
 			<Field.Legend variant="label">Transcription output</Field.Legend>
@@ -57,8 +56,6 @@
 			</Field.Group>
 		</Field.Set>
 
-		<Field.Separator />
-
 		<Field.Set>
 			<Field.Legend variant="label">Transformation output</Field.Legend>
 			<Field.Description>
@@ -68,8 +65,6 @@
 				<OutputDeliveryControls scope="transformation" />
 			</Field.Group>
 		</Field.Set>
-
-		<Field.Separator />
 
 		<SettingSelect
 			store={settings}

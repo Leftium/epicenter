@@ -7,11 +7,12 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
+	type AuthUser,
 	type OAuthTokenGrant,
 	type PersistedAuth,
 } from './auth-types.js';
@@ -406,6 +407,46 @@ export function createOAuthAppAuth({
 		});
 	}
 
+	/**
+	 * Fetch an Epicenter resource through the bearer boundary, with the API's own
+	 * 401 dance: one forced refresh, one retry, and a pause if it still rejects. A
+	 * non-Epicenter 401 is not ours to react to. This is the client's `fetch`;
+	 * `getProfile` reuses it so a profile read refreshes a stale token too.
+	 */
+	async function authedFetch(input: AuthFetchInput, init?: RequestInit) {
+		const response = await fetchWithAuth(input, init, false);
+		if (response.status !== 401 || !targetsEpicenter(input)) return response;
+		const refreshed = await refreshGrant(true);
+		if (!refreshed) return response;
+		const retryResponse = await fetchWithAuth(input, init, false);
+		if (retryResponse.status === 401) {
+			authSession.pauseNetworkAuth();
+		}
+		return retryResponse;
+	}
+
+	async function getProfile(): Promise<Result<AuthUser, AuthError>> {
+		const { data: response, error } = await tryAsync({
+			try: () => authedFetch(API_ROUTES.session.url(baseURL)),
+			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
+		});
+		if (error) return Err(error);
+		if (!response.ok) {
+			return AuthError.ProfileUnavailable({
+				cause: {
+					message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
+					status: response.status,
+				},
+			});
+		}
+		const { data: user, error: parseError } = await tryAsync({
+			try: async () => ApiSessionResponse.assert(await response.json()).user,
+			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
+		});
+		if (parseError) return Err(parseError);
+		return Ok(user);
+	}
+
 	async function completeSignInWithGrant(
 		grant: OAuthTokenGrant,
 		generation: number,
@@ -492,19 +533,8 @@ export function createOAuthAppAuth({
 				return AuthError.SignOutFailed({ cause });
 			}
 		},
-		async fetch(input, init?: RequestInit) {
-			const response = await fetchWithAuth(input, init, false);
-			// The 401 refresh/retry/pause dance is for our own API. A non-Epicenter
-			// target never carried our bearer, so its 401 is not ours to react to.
-			if (response.status !== 401 || !targetsEpicenter(input)) return response;
-			const refreshed = await refreshGrant(true);
-			if (!refreshed) return response;
-			const retryResponse = await fetchWithAuth(input, init, false);
-			if (retryResponse.status === 401) {
-				authSession.pauseNetworkAuth();
-			}
-			return retryResponse;
-		},
+		fetch: authedFetch,
+		getProfile,
 		async openWebSocket(url, protocols = []) {
 			const accessToken = await bearerForNetwork(false);
 			const authProtocols = accessToken

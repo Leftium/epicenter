@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { AuthState, SyncAuthClient } from '@epicenter/auth';
+import { asUserId, type AuthState, type SyncAuthClient } from '@epicenter/auth';
 import { asOwnerId } from '@epicenter/identity';
 import { Ok } from 'wellcrafted/result';
 import { createSession } from './session.svelte.js';
@@ -80,6 +80,8 @@ function createAuthHarness(initial: AuthState) {
 		},
 		startSignIn: async () => Ok(undefined),
 		signOut: async () => Ok(undefined),
+		getProfile: async () =>
+			Ok({ id: asUserId('test-user'), email: 'test@example.com' }),
 		fetch: async () => new Response(null, { status: 204 }),
 		openWebSocket: async () => {
 			throw new Error('openWebSocket is not used by this test.');

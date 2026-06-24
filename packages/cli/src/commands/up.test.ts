@@ -29,7 +29,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import type { SyncAuthClient } from '@epicenter/auth';
+import { asUserId, type SyncAuthClient } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
 import { asOwnerId } from '@epicenter/identity';
 import {
@@ -53,6 +53,7 @@ const STUB_AUTH = {
 	onStateChange: () => () => {},
 	startSignIn: async () => Ok(undefined),
 	signOut: async () => Ok(undefined),
+	getProfile: async () => Ok({ id: asUserId('user-1'), email: 'user-1@example.com' }),
 	fetch: async () => new Response(null, { status: 404 }),
 	openWebSocket: async () => {
 		throw new Error('STUB_AUTH: openWebSocket not implemented');

@@ -183,6 +183,35 @@ export function createSameOriginCookieAuth({
 			}
 			return response;
 		},
+		async getProfile() {
+			const { data: response, error } = await tryAsync({
+				try: () =>
+					fetchImpl(API_ROUTES.session.url(baseURL), {
+						credentials: 'include',
+					}),
+				catch: (cause) => AuthError.ProfileUnavailable({ cause }),
+			});
+			if (error) return Err(error);
+			if (!response.ok) {
+				// A 401 means the cookie is gone or expired: reflect signed-out, the
+				// same reaction `fetch` has, then report the read as unavailable.
+				if (response.status === 401 && state.status === 'signed-in') {
+					setState({ status: 'signed-out' });
+				}
+				return AuthError.ProfileUnavailable({
+					cause: {
+						message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
+						status: response.status,
+					},
+				});
+			}
+			const { data: user, error: parseError } = await tryAsync({
+				try: async () => ApiSessionResponse.assert(await response.json()).user,
+				catch: (cause) => AuthError.ProfileUnavailable({ cause }),
+			});
+			if (parseError) return Err(parseError);
+			return Ok(user);
+		},
 		[Symbol.dispose]() {
 			listeners.clear();
 		},

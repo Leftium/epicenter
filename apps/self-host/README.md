@@ -26,7 +26,6 @@ The deployer operates the infrastructure. Epicenter never holds or sees the data
 wrangler.jsonc
   ALLOWED_MEMBER_EMAILS    comma-separated allowed emails
   GOOGLE_CLIENT_ID         your Google OAuth client id (public)
-  SESSION_KV.id            your KV namespace id
   HYPERDRIVE.id            your Hyperdrive id
   ASSETS_BUCKET.bucket_name your R2 bucket name
 

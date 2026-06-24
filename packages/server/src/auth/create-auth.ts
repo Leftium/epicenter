@@ -24,7 +24,6 @@ type Db = NodePgDatabase<typeof schema>;
  *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
  * - Optional cleanup hook for R2 assets when a user is deleted
- * - Cloudflare KV secondary storage for session caching
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -92,9 +91,9 @@ export function createAuth({
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,
 			updateAge: 60 * 60 * 24,
-			// Write sessions to Postgres (source of truth), not just KV.
-			// Required when secondaryStorage is configured. See comment below.
-			storeSessionInDatabase: true,
+			// Postgres is the session store. A 5-minute encrypted (JWE) cookie
+			// cache absorbs repeat reads, so most authed requests skip the DB
+			// entirely; a cache miss falls back to Postgres.
 			cookieCache: {
 				enabled: true,
 				maxAge: 60 * 5,
@@ -151,37 +150,22 @@ export function createAuth({
 			},
 		},
 		trustedOrigins,
-		// secondaryStorage = Cloudflare KV as a read-through cache.
-		// Postgres (Germany) is always the source of truth. KV avoids the
-		// ~150ms round-trip on repeated session reads from distant edges.
+		// Postgres is the only auth store: sessions and OAuth verification
+		// records persist to the DB adapter by default (no secondaryStorage), and
+		// the JWE cookie cache above handles read performance. This makes auth
+		// construction byte-identical on Workers and a Node host (Road 1: depend
+		// on the portable Postgres path, delete the KV-cache divergence).
 		//
-		// Staleness: KV is eventually consistent, so cached entries may
-		// briefly outlive their Postgres counterparts after deletion.
-		//   - Sessions: a revoked session stays valid in KV for up to
-		//     cookieCache.maxAge (5 min). Standard Redis/KV cache tradeoff.
-		//   - Verification: a consumed OAuth state may linger in KV, but
-		//     replaying it requires a valid Google authorization code that
-		//     was already consumed, which is harmless.
-		//
-		// IMPORTANT: When secondaryStorage is configured, Better Auth
-		// defaults to KV-only writes unless you opt back into Postgres
-		// with storeSessionInDatabase / storeInDatabase. Missing either
-		// flag causes silent data loss. If you remove secondaryStorage,
-		// remove both flags too.
-		secondaryStorage: {
-			get: (key: string) => env.SESSION_KV.get(key),
-			set: (key: string, value: string, ttl?: number) =>
-				env.SESSION_KV.put(key, value, {
-					expirationTtl: ttl ?? 60 * 5,
-				}),
-			delete: (key: string) => env.SESSION_KV.delete(key),
-		},
-		// Write verification records to Postgres, not just KV. Required
-		// for OAuth state. KV eventual consistency means the callback edge
-		// may not see a record written moments earlier at a different edge.
-		verification: {
-			storeInDatabase: true,
-		},
+		// Rate limiting consequently runs in-process, not in a shared store:
+		// dropping KV flips Better Auth's default from "secondary-storage" to
+		// "memory", so on the Worker each isolate keeps its own counters.
+		// Acceptable here because email/password is disabled and Google is the
+		// only sign-in (see BASE_AUTH_CONFIG), so there is no password
+		// brute-force surface a shared counter would protect; a single self-host
+		// process gets exact in-memory limiting for free. Upgrade trigger: add a
+		// `rateLimit` table to the schema and set `storage: 'database'` if
+		// durable, shared limiting is ever needed.
+		rateLimit: { storage: 'memory' },
 		plugins: authPlugins(baseURL),
 	} satisfies BetterAuthOptions);
 }

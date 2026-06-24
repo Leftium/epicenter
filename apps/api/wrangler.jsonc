@@ -37,14 +37,6 @@
 	"vars": {
 		"ADMIN_USER_IDS": ""
 	},
-	// --- KV: Session cache (Better Auth SecondaryStorage) ---
-	// Create with: bunx wrangler kv namespace create "epicenter-sessions"
-	"kv_namespaces": [
-		{
-			"binding": "SESSION_KV",
-			"id": "a67bda23b98441bfa9f56c2ca2e8e1de"
-		}
-	],
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [

@@ -24,7 +24,6 @@ export interface ServerBindings {
 	HYPERDRIVE: Hyperdrive;
 	ROOM: DurableObjectNamespace<Room>;
 	ASSETS_BUCKET: R2Bucket;
-	SESSION_KV: KVNamespace;
 	// Content-addressed blob store (routes/blobs.ts). A PORTABLE S3 client:
 	// the whole module talks plain S3-over-HTTPS via aws4fetch with NO Workers
 	// R2 binding, so the identical code runs on this Worker (against R2) and in

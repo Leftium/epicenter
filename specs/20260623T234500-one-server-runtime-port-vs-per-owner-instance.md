@@ -388,7 +388,9 @@ Capabilities never know which."** To keep it clean we must REFUSE:
     `Sec-WebSocket-Protocol` echo (which broke the handshake) is dropped.
   - **Wave 4 (`docs`):** evidence captured. `bun server.ts` boots, connects its
     pool, and serves `/` (`runtime: "bun"`); the auth pipeline gates unauthenticated
-    room/blob requests; a live-socket integration test syncs presence + a binary
+    room/blob requests **over HTTP** (the WS-upgrade rejection had an untested Bun
+    gap that the grill caught and fixed; see the post-grill section);
+    a live-socket integration test syncs presence + a binary
     Yjs update across two real WebSocket clients through `server.upgrade`. The
     `apps/api` Worker still bundles via `wrangler deploy --dry-run` with every
     binding resolved. Remaining manual deploy-time gates: a live Google OAuth
@@ -406,6 +408,26 @@ Capabilities never know which."** To keep it clean we must REFUSE:
   library and both deployables. Real proof (a live OAuth sign-in) is a deploy-time
   smoke test, still pending.
 - **Item 2, 3, 4: not started** (see sequence above; 3 and 4 are trigger-gated).
+
+## Post-grill refinements (2026-06-24)
+
+An adversarial grill of the landed waves returned a **working-but-flawed** verdict: the load-bearing decisions held (per-concern injection with no `Runtime` god-object; `RoomCore` imports nothing Cloudflare and never branches on runtime; room and blob stayed honestly asymmetric; the DO stayed a binding), but the flaws were concentrated. ADR-0057's Consequences now carry the durable corrections; this logs the execution split.
+
+**Landed (env + naming + the crash floor):**
+
+- **WebSocketPair crash fixed.** `oauth-resource.ts`'s auth-reject-over-WS called `new WebSocketPair()` (a Cloudflare-only ambient global), which threw `ReferenceError` on Bun, reachable on any bad/expired-bearer room upgrade and masked by a test that injected a fake pair. Now capability-detected (`typeof WebSocketPair`, else HTTP) as the floor. The false `createWebSocketPair` test seam is deleted; both branches are tested against the real global.
+- **Committed to Bun.** `room/backends/node` → `bun`, `createNodeRooms` → `createBunRooms`, `@epicenter/server/node` → `/bun`; the `Node` / `better-sqlite3` hedge is dropped. The second runtime is Bun (`bun:sqlite`, `Bun.serve`, `bun build --compile`).
+- **Env honesty + validation.** `Env.Bindings` and the `createServerApp` hooks now name the library's own `ServerBindings`, never `Cloudflare.Env`; the ambient `cloudflare-bindings.d.ts` shim is deleted, and the dead `HYPERDRIVE` / `ROOM` members left the contract. `ServerBindings` became an **arktype schema** (value + inferred type); the Bun entry validates `process.env` against it at boot (`ServerBindings.merge({ DATABASE_URL, … })(process.env)` + an aggregated error + `process.exit`), retiring the `as unknown as` cast. `ASSETS_BUCKET` left the contract into a local `AssetsEnv` cast in the doomed assets route; the Worker, self-host, and billing read their runtime-only bindings via an `env as Cloudflare.Env` edge cast. Typechecks green: `@epicenter/server`, `apps/api`, `apps/self-host`.
+
+**In flight on the parallel track (not this pass):**
+
+- **Faithful `Rooms.rejectUpgrade`** — the room-backend path that lets Bun emit a real `4401` close instead of the HTTP floor (Bun cannot mint a detached socket from middleware). Contract + Bun implementation exist; **not yet wired** into the auth-reject path (`require-auth.ts` still calls the capability-detect helper). This supersedes the floor when wired.
+- **Lifetime + ping/pong moved into `RoomCore`** (`sweepExpiredConnections`, the per-message bound, the literal `ping`/`pong`); the DO delegates. **Currently 2 failing** `durable-object.test.ts` lifetime tests (over-age sockets are not being closed with `4408`) — to resolve.
+
+**Deferred (no collision, do after the parallel track settles):**
+
+- A **shared `RoomCore` conformance suite** exercising the debounce, 4401, dispatch `RecipientOffline`, and compaction-cap behaviors once against the core (today they are partially re-tested per backend).
+- Renaming the `c.var.afterResponse` queue var to disambiguate it from the `afterResponse` scheduler hook.
 
 ## The Bun dev server is the keystone (the trigger is now real)
 

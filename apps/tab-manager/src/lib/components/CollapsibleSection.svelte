@@ -13,7 +13,7 @@
 		label: string;
 		icon?: Snippet;
 		children: Snippet;
-		contentClass?: string;
+		contentClass: string;
 	} = $props();
 </script>
 
@@ -31,10 +31,7 @@
 	</Collapsible.Trigger>
 	<Collapsible.Content>
 		<div
-			class={cn(
-				'mt-1 rounded-md p-2 text-xs',
-				contentClass ?? 'bg-muted/30 text-muted-foreground',
-			)}
+			class={cn('mt-1 rounded-md p-2 text-xs', contentClass)}
 		>
 			{@render children()}
 		</div>

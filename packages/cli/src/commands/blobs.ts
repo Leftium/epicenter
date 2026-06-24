@@ -13,32 +13,19 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as machineAuth from '@epicenter/auth/node';
 import { createEpicenterClient } from '@epicenter/client';
+import mime from 'mime';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { cmd } from '../util/cmd.js';
 import { fail, formatOptions, output } from '../util/format-output.js';
+import {
+	type BlobReceipt,
+	toReceiptMarkdown,
+	workingCopyName,
+} from './blobs-receipt.js';
 
 /** A source is fetched when it looks like an http(s) URL, else read from disk. */
 const HTTP_URL = /^https?:\/\//i;
-
-/** Minimal extension -> MIME map for inferring a local file's content type. */
-const MIME_BY_EXT: Record<string, string> = {
-	'.mp4': 'video/mp4',
-	'.mov': 'video/quicktime',
-	'.webm': 'video/webm',
-	'.mp3': 'audio/mpeg',
-	'.wav': 'audio/wav',
-	'.m4a': 'audio/mp4',
-	'.png': 'image/png',
-	'.jpg': 'image/jpeg',
-	'.jpeg': 'image/jpeg',
-	'.gif': 'image/gif',
-	'.webp': 'image/webp',
-	'.pdf': 'application/pdf',
-	'.txt': 'text/plain',
-	'.md': 'text/markdown',
-	'.json': 'application/json',
-};
 
 const addCommand = cmd({
 	command: 'add <source>',
@@ -75,8 +62,8 @@ const addCommand = cmd({
 			fetch: (input, init) => auth.fetch(input, init),
 		});
 
-		// Resolve bytes, content type, and a base filename up front, so we hold the
-		// bytes for the working copy and hand the SDK a Blob (no second fetch).
+		// Hold the bytes locally so we can write the working copy and hand the SDK
+		// a Blob (no second fetch of a URL we already downloaded).
 		const { data: resolved, error: resolveError } = await resolveSource(
 			argv.source,
 			argv.contentType,
@@ -85,7 +72,7 @@ const addCommand = cmd({
 			fail(resolveError);
 			return;
 		}
-		const { bytes, contentType, sourceUrl, basename, localPath } = resolved;
+		const { bytes, contentType, sourceUrl, localPath } = resolved;
 
 		const { data: result, error: uploadError } = await epicenter.blobs.add(
 			new Blob([new Uint8Array(bytes)], { type: contentType }),
@@ -110,14 +97,19 @@ const addCommand = cmd({
 		}
 		const { ownerId } = session;
 
+		const name = workingCopyName({
+			localPath,
+			sha256: result.sha256,
+			contentType,
+		});
 		const dir = argv.dir
 			? path.resolve(argv.dir)
 			: localPath
 				? path.dirname(localPath)
 				: process.cwd();
 		await fs.mkdir(dir, { recursive: true });
-		const workingCopyPath = path.join(dir, basename);
-		const receiptPath = path.join(dir, `${basename}.md`);
+		const workingCopyPath = path.join(dir, name);
+		const receiptPath = path.join(dir, `${name}.md`);
 
 		// A local file added in place is already its own working copy; a URL
 		// download (or a copy into a different --dir) is written out.
@@ -128,21 +120,20 @@ const addCommand = cmd({
 		// the note body.
 		const wroteReceipt = !(await pathExists(receiptPath));
 		if (wroteReceipt) {
-			await fs.writeFile(
-				receiptPath,
-				toReceiptMarkdown(
-					{
-						sha256: result.sha256,
-						sourceUrl,
-						sizeBytes: bytes.byteLength,
-						contentType,
-						ownerId,
-						key: `owners/${ownerId}/blobs/${result.sha256}`,
-						archivedAt: new Date().toISOString(),
-					},
-					basename,
-				),
-			);
+			const receipt: BlobReceipt = {
+				sha256: result.sha256,
+				source_url: sourceUrl,
+				size_bytes: bytes.byteLength,
+				content_type: contentType,
+				location: {
+					provider: 'epicenter',
+					owner: ownerId,
+					key: `owners/${ownerId}/blobs/${result.sha256}`,
+				},
+				encryption: 'none',
+				archived_at: new Date().toISOString(),
+			};
+			await fs.writeFile(receiptPath, toReceiptMarkdown(receipt, name));
 		}
 
 		output(
@@ -172,16 +163,15 @@ type ResolvedSource = {
 	contentType: string;
 	/** Set only when the source was an http(s) URL. */
 	sourceUrl?: string;
-	basename: string;
 	/** Absolute path when the source was a local file. */
 	localPath?: string;
 };
 
 /**
  * Read a source into bytes. An http(s) URL is downloaded (content type from the
- * response); a local path is read (content type inferred from the extension).
- * The error channel is a ready-to-print message so the handler has one failure
- * path.
+ * response); a local path is read (content type inferred from the extension via
+ * `mime`). The error channel is a ready-to-print message so the handler has one
+ * failure path.
  */
 async function resolveSource(
 	source: string,
@@ -190,7 +180,8 @@ async function resolveSource(
 	if (HTTP_URL.test(source)) {
 		const { data: res, error } = await tryAsync({
 			try: () => fetch(source),
-			catch: (cause) => Err(`could not fetch ${source}: ${extractErrorMessage(cause)}`),
+			catch: (cause) =>
+				Err(`could not fetch ${source}: ${extractErrorMessage(cause)}`),
 		});
 		if (error !== null) return Err(error);
 		if (!res.ok) return Err(`could not fetch ${source}: ${res.status}`);
@@ -202,49 +193,22 @@ async function resolveSource(
 				res.headers.get('content-type') ??
 				'application/octet-stream',
 			sourceUrl: source,
-			basename: basenameFromUrl(source),
 		});
 	}
 
 	const localPath = path.resolve(source);
 	const { data: bytes, error } = await tryAsync({
 		try: () => fs.readFile(localPath),
-		catch: (cause) => Err(`could not read ${source}: ${extractErrorMessage(cause)}`),
+		catch: (cause) =>
+			Err(`could not read ${source}: ${extractErrorMessage(cause)}`),
 	});
 	if (error !== null) return Err(error);
 	return Ok({
 		bytes,
 		contentType:
-			contentTypeOverride ??
-			MIME_BY_EXT[path.extname(localPath).toLowerCase()] ??
-			'application/octet-stream',
-		basename: path.basename(localPath),
+			contentTypeOverride ?? mime.getType(localPath) ?? 'application/octet-stream',
 		localPath,
 	});
-}
-
-/**
- * Derive a safe filename from a URL's last path segment, or `blob`. One
- * try/catch wraps both the URL parse and `decodeURIComponent` (which throws on a
- * malformed `%`), so any failure falls back to `blob`.
- */
-function basenameFromUrl(url: string): string {
-	try {
-		const last = new URL(url).pathname.split('/').filter(Boolean).pop();
-		if (!last) return 'blob';
-		// Drop control chars, DEL, and path separators (codes 0x2f and 0x5c),
-		// keeping the extension's dot. Mirrors assets.ts sanitizeFilename.
-		const cleaned = Array.from(decodeURIComponent(last))
-			.filter((ch) => {
-				const code = ch.charCodeAt(0);
-				return code > 0x1f && code !== 0x7f && code !== 0x2f && code !== 0x5c;
-			})
-			.join('')
-			.trim();
-		return cleaned || 'blob';
-	} catch {
-		return 'blob';
-	}
 }
 
 async function pathExists(p: string): Promise<boolean> {
@@ -254,47 +218,4 @@ async function pathExists(p: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * Render the vault receipt: markdown frontmatter (matter's source of truth)
- * plus a body that links the local working copy. Mirrors the receipt shape in
- * `specs/20260623T220000-content-addressed-blob-store.md`. The `location.key`
- * mirrors `@epicenter/server`'s `blobKey`; the server package is too heavy to
- * import into the CLI just for one durable string.
- */
-function toReceiptMarkdown(
-	r: {
-		sha256: string;
-		sourceUrl?: string;
-		sizeBytes: number;
-		contentType: string;
-		ownerId: string;
-		key: string;
-		archivedAt: string;
-	},
-	workingCopy: string,
-): string {
-	const lines = ['---', `sha256: ${r.sha256}`];
-	if (r.sourceUrl) lines.push(`source_url: ${yamlString(r.sourceUrl)}`);
-	lines.push(
-		`size_bytes: ${r.sizeBytes}`,
-		`content_type: ${yamlString(r.contentType)}`,
-		'location:',
-		'  provider: epicenter',
-		`  owner: ${yamlString(r.ownerId)}`,
-		`  key: ${yamlString(r.key)}`,
-		'encryption: none',
-		`archived_at: ${yamlString(r.archivedAt)}`,
-		'---',
-		'',
-		`[${workingCopy}](${encodeURI(workingCopy)})`,
-		'',
-	);
-	return lines.join('\n');
-}
-
-/** A double-quoted YAML scalar: always valid regardless of `:`/`#`/quotes. */
-function yamlString(value: string): string {
-	return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }

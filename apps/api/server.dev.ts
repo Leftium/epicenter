@@ -1,0 +1,25 @@
+/**
+ * Dev-only Bun entrypoint: the apps/api server with the `Bearer dev:<userId>`
+ * resolver injected, so the runtime-parity smoke (and CI) can drive the authed
+ * surfaces without Google OAuth or a forged session.
+ *
+ * It boots the SAME {@link startBunApiServer} production uses, passing only the
+ * dev `resolveUser`. This is the ONLY file that imports the credential bypass
+ * ({@link resolveDevUser}); the production entrypoints (`worker/index.ts`,
+ * `server.ts`) never do, so the bypass cannot ship. Run it explicitly
+ * (`bun server.dev.ts`, or `bun run dev:bun:devauth`); never wire it into a
+ * production process.
+ *
+ * Migration trigger: when the first shipped headless consumer needs a real
+ * machine credential (a better-auth apiKey or a PAT), the smoke moves to that
+ * revocable token and this entry plus `dev-auth.ts` are deleted.
+ */
+
+import { startBunApiServer } from './server.js';
+import { resolveDevUser } from './dev-auth.js';
+
+console.warn(
+	'apps/api (Bun) DEV AUTH: Bearer dev:<userId> resolves a synthetic user on localhost. Never run this in production.',
+);
+
+startBunApiServer({ resolveUser: resolveDevUser });

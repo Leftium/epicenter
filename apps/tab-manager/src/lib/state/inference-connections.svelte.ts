@@ -9,7 +9,7 @@
  */
 
 import { createInferenceConnections } from '@epicenter/app-shell/inference-picker';
-import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
+import { toHostedCatalog } from '@epicenter/constants/ai-providers';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import type { StorageItemKey } from '@wxt-dev/storage';
@@ -19,11 +19,7 @@ import { createStorageState } from './storage-state.svelte';
 
 export const inferenceConnections = createInferenceConnections({
 	storageKey: 'tab-manager',
-	hostedModels: APP_MODELS.map((id) => ({
-		id,
-		label: MODELS_BY_ID[id].label,
-		credits: MODELS_BY_ID[id].credits,
-	})),
+	hostedModels: toHostedCatalog(APP_MODELS),
 	hosted: {
 		// The extension's auth client is deferred-init (it throws before storage
 		// readiness), so read it at turn time inside this closure, never at module

@@ -9,7 +9,7 @@
  */
 
 import { createInferenceConnections } from '@epicenter/app-shell/inference-picker';
-import { MODELS_BY_ID } from '@epicenter/constants/ai-providers';
+import { toHostedCatalog } from '@epicenter/constants/ai-providers';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
@@ -18,11 +18,7 @@ import { auth } from '$platform/auth';
 
 export const inferenceConnections = createInferenceConnections({
 	storageKey: 'opensidian',
-	hostedModels: APP_MODELS.map((id) => ({
-		id,
-		label: MODELS_BY_ID[id].label,
-		credits: MODELS_BY_ID[id].credits,
-	})),
+	hostedModels: toHostedCatalog(APP_MODELS),
 	hosted: {
 		fetch: auth.fetch,
 		baseURL: API_ROUTES.ai.completions.baseUrl(APP_URLS.API),

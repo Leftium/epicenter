@@ -109,8 +109,10 @@ export function createAiChatState({
 		let dismissedError = $state<string | null>(null);
 
 		const metadata = $derived(conversationsMap.get(conversationId));
-		/** The conversation's model (ADR-0055), defaulted once for both the engine
-		 * turn and the picker's `model` getter. */
+		/** The conversation's model (ADR-0055), read once for both the engine turn
+		 * and the picker's `model` getter. `model` is a required column, so this only
+		 * falls back when the row was deleted out from under a still-live handle (a
+		 * teardown microtask); it is not an "unset model" default. */
 		const currentModel = $derived(metadata?.model ?? DEFAULT_MODEL);
 
 		// The tool call the loop is waiting on a decision for, or null. A mutation

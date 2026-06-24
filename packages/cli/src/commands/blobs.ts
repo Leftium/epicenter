@@ -87,21 +87,28 @@ const addCommand = cmd({
 		}
 		const { bytes, contentType, sourceUrl, basename, localPath } = resolved;
 
-		const { data: result, error: uploadError } = await tryAsync({
-			try: () =>
-				epicenter.blobs.add(new Blob([new Uint8Array(bytes)], { type: contentType }), {
-					contentType,
-				}),
-			catch: (cause) => Err(`upload failed: ${extractErrorMessage(cause)}`),
-		});
+		const { data: result, error: uploadError } = await epicenter.blobs.add(
+			new Blob([new Uint8Array(bytes)], { type: contentType }),
+			{ contentType },
+		);
 		if (uploadError !== null) {
-			fail(uploadError, { code: 2 });
+			fail(uploadError.message, { code: 2 });
 			return;
 		}
 
 		// The receipt records the owner partition; reuse the session the upload
-		// already resolved and cached.
-		const { ownerId } = await epicenter.session.current();
+		// already resolved and cached. `session.*` is throw-native (a TanStack
+		// query function), so bridge it into a Result here.
+		const { data: session, error: sessionError } = await tryAsync({
+			try: () => epicenter.session.current(),
+			catch: (cause) =>
+				Err(`could not resolve session: ${extractErrorMessage(cause)}`),
+		});
+		if (sessionError !== null) {
+			fail(sessionError);
+			return;
+		}
+		const { ownerId } = session;
 
 		const dir = argv.dir
 			? path.resolve(argv.dir)

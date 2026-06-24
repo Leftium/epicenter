@@ -13,6 +13,12 @@
 import type { ApiSessionResponse, AuthFetch } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { OwnerId } from '@epicenter/identity';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export type {
 	AgentEngine,
@@ -110,6 +116,43 @@ type BlobTicket =
 			requiredHeaders: Record<string, string>;
 			expiresInSeconds: number;
 	  };
+
+/**
+ * Failure modes of the Result-returning client surfaces (currently `blobs.*`).
+ * `session.*` and the retiring `assets.*` stay throw-native on purpose: the
+ * former is shaped as a TanStack Query function (which wants throws), the latter
+ * is slice-6 dead code not worth converting.
+ */
+export const ClientError = defineErrors({
+	/** The transport itself failed: network down, DNS, aborted, CORS. */
+	TransportFailed: ({
+		operation,
+		cause,
+	}: {
+		operation: string;
+		cause: unknown;
+	}) => ({
+		message: `${operation}: ${extractErrorMessage(cause)}`,
+		operation,
+		cause,
+	}),
+	/** A request reached the server/store but returned a non-2xx status. */
+	RequestFailed: ({
+		operation,
+		status,
+		detail,
+	}: {
+		operation: string;
+		status: number;
+		detail?: string;
+	}) => ({
+		message: `${operation} failed (${status})${detail ? `: ${detail}` : ''}`,
+		operation,
+		status,
+		detail,
+	}),
+});
+export type ClientError = InferErrors<typeof ClientError>;
 
 /**
  * Hex sha256 of a byte buffer via the platform WebCrypto (`crypto.subtle`),
@@ -250,6 +293,37 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 	};
 
+	// Bridge the throwing session resolver into a Result for the blob surface,
+	// which is consumed programmatically (CLI, scripts), not through TanStack
+	// Query. `session.*` stays throw-native because it is shaped as a query
+	// function.
+	async function resolveOwner(): Promise<Result<OwnerId, ClientError>> {
+		return tryAsync({
+			try: () => getOwnerId(),
+			catch: (cause) =>
+				ClientError.TransportFailed({ operation: 'GET /api/session', cause }),
+		});
+	}
+
+	// Run one authed request, folding transport failure and non-2xx into a typed
+	// Result so the blob methods never throw.
+	async function request(
+		input: string,
+		init: RequestInit | undefined,
+		operation: string,
+	): Promise<Result<Response, ClientError>> {
+		const { data: res, error } = await tryAsync({
+			try: () => opts.fetch(input, init),
+			catch: (cause) => ClientError.TransportFailed({ operation, cause }),
+		});
+		if (error !== null) return Err(error);
+		if (!res.ok) {
+			const detail = (await res.text().catch(() => '')).slice(0, 200);
+			return ClientError.RequestFailed({ operation, status: res.status, detail });
+		}
+		return Ok(res);
+	}
+
 	const blobs = {
 		/**
 		 * Archive bytes in the content-addressed store: hash the bytes, mint an
@@ -266,17 +340,24 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		async add(
 			fileOrUrl: File | Blob | string,
 			params: { contentType?: string } = {},
-		): Promise<AddBlobResult> {
-			const ownerId = await getOwnerId();
+		): Promise<Result<AddBlobResult, ClientError>> {
+			const { data: ownerId, error: ownerError } = await resolveOwner();
+			if (ownerError !== null) return Err(ownerError);
 
 			let bytes: ArrayBuffer;
 			let contentType: string;
 			if (typeof fileOrUrl === 'string') {
-				const source = await fetch(fileOrUrl);
+				const { data: source, error } = await tryAsync({
+					try: () => fetch(fileOrUrl),
+					catch: (cause) =>
+						ClientError.TransportFailed({ operation: `GET ${fileOrUrl}`, cause }),
+				});
+				if (error !== null) return Err(error);
 				if (!source.ok) {
-					throw new Error(
-						`epicenter.blobs.add: fetch ${fileOrUrl} -> ${source.status}`,
-					);
+					return ClientError.RequestFailed({
+						operation: `GET ${fileOrUrl}`,
+						status: source.status,
+					});
 				}
 				bytes = await source.arrayBuffer();
 				contentType =
@@ -291,7 +372,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 
 			const sha256 = await sha256Hex(bytes);
 
-			const ticketRes = await opts.fetch(
+			const { data: ticketRes, error: ticketError } = await request(
 				API_ROUTES.blobs.list.url(base, ownerId),
 				{
 					method: 'POST',
@@ -302,28 +383,35 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 						contentType,
 					}),
 				},
+				'POST /blobs',
 			);
-			if (!ticketRes.ok) {
-				throw new Error(`epicenter.blobs.add: ticket -> ${ticketRes.status}`);
-			}
+			if (ticketError !== null) return Err(ticketError);
 			const ticket = (await ticketRes.json()) as BlobTicket;
 
 			if (ticket.status === 'duplicate') {
-				return { sha256, url: ticket.url, duplicate: true };
+				return Ok({ sha256, url: ticket.url, duplicate: true });
 			}
 
-			const put = await fetch(ticket.uploadUrl, {
-				method: 'PUT',
-				headers: ticket.requiredHeaders,
-				body: bytes,
+			const { data: put, error: putError } = await tryAsync({
+				try: () =>
+					fetch(ticket.uploadUrl, {
+						method: 'PUT',
+						headers: ticket.requiredHeaders,
+						body: bytes,
+					}),
+				catch: (cause) =>
+					ClientError.TransportFailed({ operation: 'store PUT', cause }),
 			});
+			if (putError !== null) return Err(putError);
 			if (!put.ok) {
-				const detail = await put.text().catch(() => '');
-				throw new Error(
-					`epicenter.blobs.add: store PUT -> ${put.status}${detail ? ` ${detail}` : ''}`,
-				);
+				const detail = (await put.text().catch(() => '')).slice(0, 200);
+				return ClientError.RequestFailed({
+					operation: 'store PUT',
+					status: put.status,
+					detail,
+				});
 			}
-			return { sha256, url: ticket.url, duplicate: false };
+			return Ok({ sha256, url: ticket.url, duplicate: false });
 		},
 
 		/**
@@ -339,40 +427,53 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		/**
 		 * Read a blob's bytes. The server answers 302 to a short-lived presigned
 		 * GET; `fetch` follows it, and the cross-origin redirect drops the bearer
-		 * so the presigned URL is hit clean. The caller reads the `Response`.
+		 * so the presigned URL is hit clean. On success `data` is the bytes
+		 * `Response`.
 		 */
-		async get(sha256: string): Promise<Response> {
-			const ownerId = await getOwnerId();
-			return opts.fetch(API_ROUTES.blobs.byHash.url(base, ownerId, sha256));
+		async get(sha256: string): Promise<Result<Response, ClientError>> {
+			const { data: ownerId, error } = await resolveOwner();
+			if (error !== null) return Err(error);
+			return request(
+				API_ROUTES.blobs.byHash.url(base, ownerId, sha256),
+				undefined,
+				'GET /blobs/:sha256',
+			);
 		},
 
-		async list(): Promise<BlobRow[]> {
-			const ownerId = await getOwnerId();
-			const res = await opts.fetch(API_ROUTES.blobs.list.url(base, ownerId));
-			if (!res.ok) {
-				throw new Error(`epicenter.blobs.list: ${res.status}`);
-			}
-			return (await res.json()) as BlobRow[];
+		async list(): Promise<Result<BlobRow[], ClientError>> {
+			const { data: ownerId, error } = await resolveOwner();
+			if (error !== null) return Err(error);
+			const { data: res, error: reqError } = await request(
+				API_ROUTES.blobs.list.url(base, ownerId),
+				undefined,
+				'GET /blobs',
+			);
+			if (reqError !== null) return Err(reqError);
+			return Ok((await res.json()) as BlobRow[]);
 		},
 
-		async usage(): Promise<BlobUsage> {
-			const ownerId = await getOwnerId();
-			const res = await opts.fetch(API_ROUTES.blobs.usage.url(base, ownerId));
-			if (!res.ok) {
-				throw new Error(`epicenter.blobs.usage: ${res.status}`);
-			}
-			return (await res.json()) as BlobUsage;
+		async usage(): Promise<Result<BlobUsage, ClientError>> {
+			const { data: ownerId, error } = await resolveOwner();
+			if (error !== null) return Err(error);
+			const { data: res, error: reqError } = await request(
+				API_ROUTES.blobs.usage.url(base, ownerId),
+				undefined,
+				'GET /blobs/usage',
+			);
+			if (reqError !== null) return Err(reqError);
+			return Ok((await res.json()) as BlobUsage);
 		},
 
-		async delete(sha256: string): Promise<void> {
-			const ownerId = await getOwnerId();
-			const res = await opts.fetch(
+		async delete(sha256: string): Promise<Result<void, ClientError>> {
+			const { data: ownerId, error } = await resolveOwner();
+			if (error !== null) return Err(error);
+			const { error: reqError } = await request(
 				API_ROUTES.blobs.byHash.url(base, ownerId, sha256),
 				{ method: 'DELETE' },
+				'DELETE /blobs/:sha256',
 			);
-			if (!res.ok) {
-				throw new Error(`epicenter.blobs.delete: ${res.status}`);
-			}
+			if (reqError !== null) return Err(reqError);
+			return Ok(undefined);
 		},
 	};
 

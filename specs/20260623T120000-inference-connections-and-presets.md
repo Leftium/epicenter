@@ -366,13 +366,66 @@ model,
 ### Phase 3: adopt in one app, prove, then the rest
 
 - [x] **3.1** Wired into **vocab**. The device store became a `CustomConnection[]` set plus a discovered-model cache (new localStorage keys; the old single-backend setting is dropped). The engine now reads the conversation's model (ADR-0055) and resolves it against the connection set via `resolveForModel`/`resolveConnection`, instead of ignoring the model column. The header picker writes the active conversation's model; a non-destructive banner blocks sending and offers the hosted default when the synced model is unreachable here. `InferenceSettings.svelte` deleted.
-- [ ] **3.2** Verify: svelte-check clean for the slice (the only error is a pre-existing vite-config triple-vite clash in node_modules, unrelated). **Still pending (needs a human): web build, and live smoke against a local Ollama + one cloud key** (model list populates; chat completes; failure degrades to free text).
-- [ ] **3.3** Wire opensidian and tab-manager (both have a real per-conversation model in `chat-state.svelte.ts`; the extension uses `chrome.storage.local`). Extract the per-app candidate-building (`buildVocabCandidates` analog) into a shared helper once the second consumer exists.
+- [x] **3.2** Verified: svelte-check clean for the vocab slice (the only error is a pre-existing vite-config triple-vite clash in node_modules, unrelated), vocab production build green, and a live smoke against the running dev server (picker opens; connect + discovery works; chat completes; failure degrades to free text). The registry collapse (Decisions Log) landed and re-verified afterward.
+- [ ] **3.3** Wire **opensidian** and **tab-manager** onto the shared registry. Mirror the vocab migration (commits `042e80002d` then the collapse `7bf0e9232b` are the reference implementation); the only per-app differences are the storage backend, the hosted catalog, the auth singleton, and the picker mount point. Execution detail below.
+
+#### Phase 3.3 execution detail (externalized for autonomous execution)
+
+**Step 3.3.0 — make the registry storage-agnostic (one change; unblocks the extension).** The registry hardcodes `createPersistedState` (localStorage), but tab-manager persists device settings in `chrome.storage.local` via `createStorageState` (`apps/tab-manager/src/lib/state/storage-state.svelte.ts`). Both expose the identical reactive interface `{ get current(): T; set current(v: T) }`, so inject the persist mechanism instead of importing it. In `packages/app-shell/src/inference-picker/connections.svelte.ts`:
+
+```ts
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+
+/** A reactive persisted-state handle: localStorage (web) or chrome.storage (extension). */
+export type PersistedState<T> = { current: T };
+
+/** Builds a persisted slice from key + schema + default; the app supplies the mechanism. */
+export type PersistFactory = <S extends StandardSchemaV1>(
+	key: string,
+	schema: S,
+	defaultValue: StandardSchemaV1.InferOutput<S>,
+) => PersistedState<StandardSchemaV1.InferOutput<S>>;
+
+// add `persist: PersistFactory` to the factory params, then:
+const custom = persist(`${storageKey}.inference-connections`, customConnectionSchema.array(), []);
+const discovered = persist(`${storageKey}.discovered-models`, discoveredModelsSchema, {});
+```
+
+Hoist the discovered schema to a named `const discoveredModelsSchema = type({ '[string]': 'string[]' })`. Remove the `createPersistedState` import from app-shell and **drop `@epicenter/svelte` from app-shell's `dependencies`** (verify nothing else in app-shell imports it; arktype stays). Each app injects its adapter:
+
+```ts
+// web apps (vocab, opensidian):
+import { createPersistedState } from '@epicenter/svelte';
+persist: (key, schema, defaultValue) => createPersistedState({ key, schema, defaultValue })
+
+// extension (tab-manager):
+import { createStorageState } from '$lib/state/storage-state.svelte';
+import type { StorageItemKey } from '@wxt-dev/storage';
+persist: (key, schema, fallback) => createStorageState(`local:${key}` as StorageItemKey, { schema, fallback })
+```
+
+Update vocab's `inference-connections.svelte.ts` to pass the localStorage adapter; svelte-check + build vocab; re-smoke.
+
+**Step 3.3.1 — opensidian** (localStorage). Rename `apps/opensidian/src/lib/state/inference-backend.svelte.ts` → `inference-connections.svelte.ts`, exporting an `inferenceConnections` registry (localStorage adapter; hosted catalog mapped from `APP_MODELS` via `MODELS_BY_ID`; `hosted` = opensidian's auth singleton `$lib/platform/auth` + `API_ROUTES.ai.completions.baseUrl(APP_URLS.API)`). In `apps/opensidian/src/lib/chat/chat-state.svelte.ts`, replace the engine `data()` body with `const m = metadata?.model ?? DEFAULT_MODEL; const transport = inferenceConnections.resolve(m) ?? inferenceConnections.hosted; return { ...transport, model: m, systemPrompts: buildSystemPrompts() }` and drop the `resolveInferenceBackend`/`inferenceBaseUrl` plumbing. Mount `<InferencePicker model onSelectModel connections={inferenceConnections} />` where `InferenceSettings` sits (`apps/opensidian/src/lib/components/chat/ChatInput.svelte:70`), wiring `model`/`onSelectModel` to the active conversation (chat-state already has `model` get/set). Add the cross-device banner near the chat surface (mirror vocab's `ConversationView`). Delete `apps/opensidian/.../chat/InferenceSettings.svelte`. svelte-check + build.
+
+**Step 3.3.2 — tab-manager** (chrome.storage). Identical to 3.3.1 with the `createStorageState` adapter and tab-manager's auth singleton (`$lib/session.svelte`). Its engine thunk currently calls `inferenceBackend.get()`; just use `inferenceConnections.resolve(...)` (the registry reads `.current` internally). Mount in `apps/tab-manager/src/lib/components/chat/ChatInput.svelte:74`; delete its `InferenceSettings.svelte`. svelte-check + `wxt` build.
+
+**Step 3.3.3 — smoke (human).** Each app: picker opens, Ollama connect + discovery, chat completes, degradation to free-text. tab-manager additionally: the connection persists across extension contexts (chrome.storage).
+
+#### Per-app reference
+
+| App | Storage adapter | Hosted catalog | Auth singleton | Picker mount |
+| --- | --- | --- | --- | --- |
+| vocab (done) | `createPersistedState` | `[VOCAB_MODEL]` | `$platform/auth` | header (`+page.svelte`) |
+| opensidian | `createPersistedState` | `APP_MODELS` (`gpt-5.4-mini`, `gpt-5.5`) via `MODELS_BY_ID` | `$lib/platform/auth` | `components/chat/ChatInput.svelte` |
+| tab-manager | `createStorageState` (`chrome.storage`) | `APP_MODELS` (`gpt-5.4-mini`, `gpt-5.5`) via `MODELS_BY_ID` | `$lib/session.svelte` | `components/chat/ChatInput.svelte` |
 
 ### Phase 4: remove the old path
 
-- [ ] **4.1** Delete the three `InferenceSettings.svelte` copies and the old `InferenceBackendConfig` / `resolveInferenceBackend` once no importer remains.
-- [ ] **4.2** Record `Proposed` ADR-0058 (capability-orthogonal connection; model per-capability) amending ADR-0054, if Open Q1 lands as recommended.
+- [ ] **4.1** Migrate the two dev scripts off the legacy resolver: `apps/vocab/scripts/ollama-smoke.ts` and `apps/vocab/scripts/loop-repro.ts` call `resolveInferenceBackend` + `InferenceBackendConfig` directly. They hand-construct a custom backend, so replace with `resolveConnection({ kind: 'custom', baseUrl, apiKey }, hosted)` (or an inline plain fetch).
+- [ ] **4.2** Delete the legacy path once nothing imports it: `packages/client/src/inference-backend.ts`, `packages/client/src/inference-backend.test.ts`, and the `InferenceBackendConfig` / `ResolvedInferenceBackend` / `resolveInferenceBackend` exports from `packages/client/src/index.ts`. Update `packages/client/src/openai-provider.test.ts` if it references the resolver. Gate: `grep -rn "resolveInferenceBackend\|InferenceBackendConfig"` returns only doc/JSDoc mentions.
+- [ ] **4.3** Flip ADR-0058 status `Proposed` → `Accepted` (all consumers migrated, legacy gone), then **delete this spec** (two-state lifecycle: "done" is deletion; `scripts/check-doc-hygiene.ts` flags a spent spec left in the tree).
+- [ ] **4.4** Final gate: each app's svelte-check + build; `bun run check:doc-hygiene && bun run check:doc-paths && bun run check:ui-boundary`.
 
 ## Edge Cases
 

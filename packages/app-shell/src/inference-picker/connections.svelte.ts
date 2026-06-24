@@ -19,12 +19,31 @@ import {
 	resolveConnection,
 	resolveForModel,
 } from '@epicenter/client';
-import { createPersistedState } from '@epicenter/svelte';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import type { Result } from 'wellcrafted/result';
 
 /** A custom (non-hosted) connection: the registry holds a set of these. */
 export type CustomConnection = Extract<Connection, { kind: 'custom' }>;
+
+/**
+ * A reactive persisted-state handle: localStorage (web) or chrome.storage
+ * (extension). Both backends expose this identical `{ current }` interface, so
+ * the registry binds against the shape and the app injects the mechanism.
+ */
+export type PersistedState<T> = { current: T };
+
+/**
+ * Builds one persisted slice from a key + schema + default value. The app
+ * supplies the mechanism (web: `createPersistedState`; extension:
+ * `createStorageState`), so `@epicenter/app-shell` depends on neither storage
+ * backend.
+ */
+export type PersistFactory = <S extends StandardSchemaV1>(
+	key: string,
+	schema: S,
+	defaultValue: StandardSchemaV1.InferOutput<S>,
+) => PersistedState<StandardSchemaV1.InferOutput<S>>;
 
 /**
  * One hosted catalog entry the app sells. Injected, not imported: the hosted
@@ -40,6 +59,9 @@ const customConnectionSchema = type({
 	'apiKey?': 'string',
 });
 
+/** Discovered model ids per connection, keyed by base URL. */
+const discoveredModelsSchema = type({ '[string]': 'string[]' });
+
 /** The reactive registry object returned by {@link createInferenceConnections}. */
 export type InferenceConnections = ReturnType<
 	typeof createInferenceConnections
@@ -49,24 +71,27 @@ export function createInferenceConnections({
 	storageKey,
 	hostedModels,
 	hosted,
+	persist,
 }: {
-	/** Namespace for the localStorage keys, e.g. the app name. */
+	/** Namespace for the persisted-state keys, e.g. the app name. */
 	storageKey: string;
 	/** The hosted catalog this app sells (app-specific subset). */
 	hostedModels: HostedModel[];
 	/** The hosted transport (`auth.fetch` + gateway base URL). */
 	hosted: ResolvedConnection;
+	/** The persistence mechanism (web: localStorage; extension: chrome.storage). */
+	persist: PersistFactory;
 }) {
-	const custom = createPersistedState({
-		key: `${storageKey}.inference-connections`,
-		schema: customConnectionSchema.array(),
-		defaultValue: [],
-	});
-	const discovered = createPersistedState({
-		key: `${storageKey}.discovered-models`,
-		schema: type({ '[string]': 'string[]' }),
-		defaultValue: {},
-	});
+	const custom = persist(
+		`${storageKey}.inference-connections`,
+		customConnectionSchema.array(),
+		[],
+	);
+	const discovered = persist(
+		`${storageKey}.discovered-models`,
+		discoveredModelsSchema,
+		{},
+	);
 
 	function cacheModels(baseUrl: string, models: string[]) {
 		discovered.current = { ...discovered.current, [baseUrl]: models };

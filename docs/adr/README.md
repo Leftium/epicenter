@@ -124,5 +124,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0054](0054-an-inference-backend-is-the-metered-gateway-or-a-custom-server.md) | An inference backend is either the metered Epicenter gateway or a custom OpenAI-compatible server | Accepted |
 | [0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) | Conversation storage is one canonical table in @epicenter/chat; every chat surface syncs | Accepted |
 | [0056](0056-local-inference-is-a-delegated-engine-behind-the-openai-compatible-seam.md) | Local inference is a delegated engine behind the OpenAI-compatible seam; the runtime is a swappable default | Accepted |
+| [0057](0057-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) | Runtime portability is per-concern injection, not a runtime object | Accepted |
+| [0058](0058-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) | Auth owns the `/api/session` endpoint; the data client is owner-scoped and receives `ownerId` at construction | Accepted |
 
 When you add an ADR, add its row here.

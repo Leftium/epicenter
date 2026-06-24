@@ -18,6 +18,7 @@
 
 import {
 	authApp,
+	connectHyperdriveDb,
 	createServerApp,
 	mountAssetsApp,
 	mountInferenceApp,
@@ -54,6 +55,10 @@ const app = createServerApp({
 	],
 	// No cookieDomain: a single-origin deployment uses host-only cookies scoped
 	// to its own host.
+	// Cloudflare runtime bindings: a per-request pg client over Hyperdrive, and
+	// `waitUntil` to drain the after-response queue past the response.
+	connectDb: (env) => connectHyperdriveDb(env.HYPERDRIVE),
+	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
 });
 
 app.get('/', (c) =>

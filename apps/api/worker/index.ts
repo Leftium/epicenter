@@ -16,6 +16,7 @@
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
 	authApp,
+	connectHyperdriveDb,
 	createServerApp,
 	mountAssetsApp,
 	mountBlobsApp,
@@ -54,6 +55,11 @@ const app = createServerApp({
 	// a session via a cookie scoped to the registrable domain. cookie-config
 	// falls back to host-only on localhost regardless.
 	cookieDomain: '.epicenter.so',
+	// Cloudflare runtime bindings, composed at this edge: a per-request pg
+	// client over Hyperdrive, and `waitUntil` to keep the isolate alive while
+	// the after-response queue drains.
+	connectDb: (env) => connectHyperdriveDb(env.HYPERDRIVE),
+	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
 });
 
 // Public health endpoint at root.

@@ -28,6 +28,12 @@ export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
+// Database concern. `createDb(client)` wraps a connected pg client/pool in
+// drizzle with the internal schema (the portable core); `connectHyperdriveDb`
+// is the Cloudflare backend a deployment passes to `createServerApp`'s
+// `connectDb`. A Node host injects its own `pg.Pool`-backed `connectDb`.
+export { type Db, createDb } from './db/create-db.js';
+export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // Room-resolution helpers, deployment-agnostic and exported for composing apps:
 //   createDurableObjectRooms  resolve a room stub from its opaque name with no
 //                          request context.

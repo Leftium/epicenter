@@ -7,17 +7,16 @@
  * {@link CreateServerAppOptions.resolveOrigin}: the hosted cloud bakes a
  * constant (`apps/api`), a self-host reads operator config (`apps/self-host`).
  * The library never reaches for a shared `c.env` var name, so the origin is
- * always explicit and never inferred from the request. This `resolveOrigin`
- * hook is the first slice of the future runtime port (db, sessionStore,
- * assets, rooms, afterResponse); see
- * `specs/20260528T130000-runtime-port-and-public-origin.md`.
+ * always explicit and never inferred from the request. `resolveOrigin` is one
+ * of the per-concern runtime-port hooks (alongside `connectDb` and
+ * `afterResponse`): each runtime concern is its own injected function the
+ * deployment composes at the `apps/*` edge, never a single `Runtime`
+ * god-object. See ADR-0057.
  */
 
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Hono } from 'hono';
-import pg from 'pg';
+import { type Context, Hono } from 'hono';
 import { createAuth } from './auth/create-auth.js';
-import * as schema from './db/schema/index.js';
+import type { Db } from './db/create-db.js';
 import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
@@ -62,12 +61,35 @@ type CreateServerAppOptions = {
 	 * host-only cookies scoped to its own host.
 	 */
 	cookieDomain?: string;
+	/**
+	 * Acquire a per-request database handle. The runtime-port db concern: the
+	 * library depends on the portable `pg`/drizzle Postgres wire (ADR-0057
+	 * Road 1) and never on a binding shape, so only connection acquisition is
+	 * injected. The Cloudflare deployments pass `connectHyperdriveDb(env.HYPERDRIVE)`
+	 * (a per-request `pg.Client`); a Node host passes a module-scope `pg.Pool`.
+	 * The returned `close` runs after the after-response queue drains.
+	 */
+	connectDb: (env: Cloudflare.Env) => Promise<{
+		db: Db;
+		close: () => Promise<void>;
+	}>;
+	/**
+	 * Schedule fire-and-forget work that must outlive the HTTP response. The
+	 * runtime-port lifetime concern: on Cloudflare this is
+	 * `c.executionCtx.waitUntil(work)` (keeps the isolate alive); a Node host
+	 * just lets the promise run in the live process. The library owns the
+	 * after-response queue (`c.var.afterResponse`) and the pg-drain shape; this
+	 * only injects how the queue's drain is kept alive past the response.
+	 */
+	afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
 };
 
 export function createServerApp({
 	resolveOrigin,
 	resolveTrustedOrigins,
 	cookieDomain,
+	connectDb,
+	afterResponse,
 }: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
@@ -86,26 +108,23 @@ export function createServerApp({
 	// 1. CORS
 	app.use('*', corsMiddleware);
 
-	// 2. Per-request pg client + after-response promise list.
-	// Uses Client (not Pool) because Hyperdrive IS the connection pool.
-	// Handlers push fire-and-forget promises (typically DB writes) onto
-	// `afterResponse`; the finally block waits for all of them to settle
-	// before closing pg, so writes that outlive the response don't hit a
-	// closed client.
+	// 2. Per-request db handle + after-response promise list.
+	// `connectDb` is the injected runtime concern: it acquires the handle and
+	// returns how to close it (a per-request `pg.Client` on Cloudflare, a
+	// shared `pg.Pool` checkout on Node). Handlers push fire-and-forget
+	// promises (typically DB writes) onto the queue; the finally block schedules
+	// a drain (await all queued work, then close) via the injected
+	// `afterResponse`, so writes that outlive the response don't hit a closed
+	// handle and the response is never blocked on them.
 	app.use('*', async (c, next) => {
-		const client = new pg.Client({
-			connectionString: c.env.HYPERDRIVE.connectionString,
-		});
-		const afterResponse: Promise<unknown>[] = [];
+		const { db, close } = await connectDb(c.env);
+		const queue: Promise<unknown>[] = [];
 		try {
-			await client.connect();
-			c.set('db', drizzle(client, { schema }));
-			c.set('afterResponse', afterResponse);
+			c.set('db', db);
+			c.set('afterResponse', queue);
 			await next();
 		} finally {
-			c.executionCtx.waitUntil(
-				Promise.allSettled(afterResponse).then(() => client.end()),
-			);
+			afterResponse(c, Promise.allSettled(queue).then(() => close()));
 		}
 	});
 

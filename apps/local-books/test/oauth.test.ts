@@ -34,7 +34,7 @@ test('authorization-code exchange yields a token set', async () => {
 	const { data, error } = await completeAuthorization(
 		config,
 		{ callbackUrl: callback('s1'), state: 's1' },
-		{ now: () => NOW },
+		() => NOW,
 	);
 	expect(error).toBeNull();
 	expect(data?.realmId).toBe(server.realmId);
@@ -52,7 +52,7 @@ test('a forged callback (state mismatch) is rejected, not exchanged', async () =
 	const { error } = await completeAuthorization(
 		config,
 		{ callbackUrl: callback('attacker-state'), state: 'expected-state' },
-		{ now: () => NOW },
+		() => NOW,
 	);
 	expect(error).not.toBeNull();
 	expect(server.hits.token).toBe(before); // never reached the token endpoint
@@ -73,9 +73,7 @@ test('refresh exchange mints a new token set', async () => {
 		refreshTokenExpiresAt: new Date(NOW + 8726400 * 1000).toISOString(),
 		obtainedAt: new Date(NOW).toISOString(),
 	};
-	const { data, error } = await refreshAccessToken(config, token, {
-		now: () => NOW,
-	});
+	const { data, error } = await refreshAccessToken(config, token, () => NOW);
 	expect(error).toBeNull();
 	expect(data?.accessToken).not.toBe('old-access');
 	expect(server.hits.token).toBe(before + 1);
@@ -117,7 +115,7 @@ test('a missing client secret is reported, not thrown', async () => {
 	const { error } = await completeAuthorization(
 		config,
 		{ callbackUrl: callback('s2'), state: 's2' },
-		{ now: () => NOW },
+		() => NOW,
 	);
 	expect(error?.name).toBe('MissingCredentials');
 });

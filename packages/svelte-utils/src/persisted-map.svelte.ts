@@ -180,6 +180,9 @@ export function createPersistedMap<
 
 	// Cross-tab sync: ONE listener for all keys, filtered by prefix.
 	// Listeners are never removed: this function assumes singleton/module-scope usage.
+	// localStorage is hardcoded (not a `storage` option) because this `storage`
+	// event is a localStorage-only mechanism; sessionStorage would silently lose
+	// cross-tab sync. See createPersistedState for the full rationale.
 	window.addEventListener('storage', (e) => {
 		if (!e.key?.startsWith(prefix)) return;
 		const key = e.key.slice(prefix.length);

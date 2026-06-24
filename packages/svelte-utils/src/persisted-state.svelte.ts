@@ -167,7 +167,12 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		}
 	}
 
-	// Cross-tab sync: `storage` event fires when ANOTHER tab writes to localStorage.
+	// Cross-tab sync: the `storage` event fires when ANOTHER tab writes to
+	// localStorage. This is why the backend is hardcoded to localStorage and not a
+	// `storage: Storage` option: sessionStorage is per-tab and never fires this
+	// event, so a sessionStorage-backed instance's headline feature (cross-tab
+	// sync) would silently no-op. Per-tab ephemeral state wants a separate
+	// primitive, not a swapped backend on this one.
 	const handleStorage = (e: StorageEvent) => {
 		if (disposed) return;
 		if (e.key !== key) return;

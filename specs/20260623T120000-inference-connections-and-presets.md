@@ -1,7 +1,7 @@
 # Inference connections and canonical provider presets
 
 **Date**: 2026-06-23
-**Status**: Draft
+**Status**: In Progress
 **Owner**: Braden
 **Branch**: gila-gap
 **Relates**: ADR-0058 (the connection primitive; **Proposed, records this spec's core decisions**), ADR-0050 (OpenAI-compatible contract), ADR-0053 (audience-scoped bearer), ADR-0054 (metered-or-custom backend; **amended by 0058**), ADR-0055 (one synced conversations table), ADR-0056 (local inference behind the OpenAI seam), ADR-0022 (Rust owns the downloaded-model folder; the in-process engine kind), spec `20260620T173000` (Whispering transcription model-selector collapse, the picker philosophy this rhymes with)
@@ -182,7 +182,7 @@ But compat *completeness* varies, and two providers lose enough to matter for th
 | Presets pre-fill, key never moves | 1 evidence | preset = `{ id, label, baseUrl, requiresKey, location }`; key is always `Authorization: Bearer` | verified: every OpenAI-compatible provider takes the key as Bearer; only base URL / key-required / model-list differ. Self-host is a Custom URL, not a preset. |
 | Model discovery via `/v1/models` | 1 evidence | GET `${baseURL}/models` with the same resolved fetch; combobox not select; degrade to free text on failure | rides the exact chat seam (same fetch, same CORS reach); the smoke-test already proves the call; ADR-0054 deferred this as a future affordance |
 | Discovery is automatic, not a button | 3 taste | fetch on debounced baseUrl/key change; a manual "refresh" is secondary | "no compromises": the app does the work; a Test button makes the user trigger what the app can trigger. Constraint: debounce to avoid per-keystroke fetches. |
-| One shared component | 2 coherence | build once in `@epicenter/client` (or a ui package), parameterized by the device-local store binding | the type and resolver already live in `@epicenter/client`; the three copies collapse onto it (precedent: the shared markdown renderer, ADR-0057) |
+| One shared component | 2 coherence | **DECIDED**: build once in `@epicenter/app-shell` (`/inference-picker`), parameterized by the device-local store binding and an injected hosted catalog | app-shell already depends on `@epicenter/client` + `@epicenter/ui` and houses shared domain-aware Svelte (`account-popover`); `@epicenter/client` is pure TS and `@epicenter/ui` is a dep-free kit (precedent: the romanizer is injected into the shared markdown renderer, ADR-0057), so neither is the home. See Open Q2. |
 | Cross-device model gap is non-destructive | 2 coherence | inline banner; never silently rewrite the synced model column | the synced column is another device's record; match by model id against this device's connections; an explicit pick is the only thing that rewrites it |
 | Whispering convergence is deferred | 3 taste | design the Connection capability-orthogonal now; do not build the transcription consumer | extracting a shared primitive from two working consumers is sound; building it for one is premature. Constraint: keep `model` off the connection so the future extraction needs no reshape. |
 | Which presets ship | 1 evidence | **DECIDED**: ship Ollama, LM Studio, OpenAI, OpenRouter, Groq, Custom URL; defer Anthropic and Gemini-BYO | verified: only Anthropic and Gemini have lossy compat layers (Gemini 400s on tools+JSON, which these agent loops use); the core five are first-class. Hosted Gemini is unaffected (gateway-controlled). Deferred providers reachable via Custom URL. |
@@ -358,10 +358,10 @@ model,
 
 ### Phase 2: the shared picker (build the new path)
 
-- [ ] **2.1** Build the shared model-first picker (Popover + Command/combobox; mirror `packages/ui/src/timezone-combobox`). Flat list grouped by connection; hosted catalog (label + credits) plus each connection's discovered models.
-- [ ] **2.2** Build "Connect a provider" (preset chooser -> divergent sub-form: local / cloud / raw). Auto-discover on debounced baseUrl/key change; refresh affordance; degrade to free-text on failure. Use `InputGroup` for the show/hide key.
-- [ ] **2.3** Device-local model-list cache per connection (so discovered ids survive a reopen and feed `resolveForModel`).
-- [ ] **2.4** The non-destructive cross-device banner (Edge Cases below).
+- [x] **2.1** Built the shared model-first picker in `@epicenter/app-shell/inference-picker` (Popover + Command; the `account-popover` precedent). Flat list grouped by connection: injected hosted catalog (label + credits) plus each connection's discovered models. svelte-check green.
+- [x] **2.2** Built "Connect a provider" (preset chooser -> divergent sub-form) inside the same popover as a `view` state. Auto-discover on debounced (500ms) baseUrl/key change, with an in-flight cancel guard; degrades to the free-text floor on failure. (Key field is a plain password Input + toggle for now, not `InputGroup`; promote if the polish is wanted.)
+- [x] **2.3** Modeled as injected props, not picker-internal state: the picker reads `discoveredModels` (keyed by base URL) and reports fresh lists via `onModelsDiscovered`, so the app owns persistence and chat-state resolves a turn against the *same* cache. Wiring the per-app persisted cache is Phase 3.
+- [ ] **2.4** The non-destructive cross-device banner is a chat-surface concern (it fires where an unavailable synced model is detected, not inside the picker), so it lands with the chat-state migration in **Phase 3**, not here.
 
 ### Phase 3: adopt in one app, prove, then the rest
 
@@ -411,9 +411,9 @@ model,
 
 1. **Drop `model` from the connection, or keep ADR-0054 as-is?** — **RESOLVED: drop it (a).** Model is per-conversation (ADR-0055), resolved against connections, with the non-destructive cross-device banner. Records as Proposed ADR-0058 amending ADR-0054 (Phase 4.2).
 
-2. **Where does the shared component live: `@epicenter/client` or a ui package?**
-   - Context: the type and resolver are in `@epicenter/client`; the component pulls in `@epicenter/ui`.
-   - **Recommendation**: co-locate the component with the primitive in `@epicenter/client` (or a thin `@epicenter/client-ui` if a Svelte dependency in `@epicenter/client` is unwanted). Decide during Phase 2.
+2. **Where does the shared component live: `@epicenter/client` or a ui package?** — **RESOLVED: `@epicenter/app-shell`.**
+   - The earlier recommendation (co-locate in `@epicenter/client`, or a new `@epicenter/client-ui`) missed an existing home. `@epicenter/client` is pure TypeScript (a Svelte component there forces a UI dependency into the HTTP client), and `@epicenter/ui` is a generic kit with zero `@epicenter/*` runtime deps (the markdown renderer, ADR-0057, stayed pure by *injecting* its romanizer), so a picker that imports `@epicenter/client` would break that purity.
+   - `@epicenter/app-shell` already depends on `@epicenter/client` + `@epicenter/ui` + `@epicenter/auth` + `@epicenter/workspace` and already houses shared, domain-aware Svelte (`account-popover`, `workspace-gate`). The picker is `@epicenter/app-shell/inference-picker`, mounted per chat surface exactly like `<AccountPopover />`. The hosted catalog is *injected* as a `HostedModel[]` prop (it is app-specific: Vocab sells a model the others do not), so app-shell needs no `@epicenter/constants` dep, honoring the romanizer-injection precedent.
 
 3. **Which presets ship?** — **RESOLVED: ship Ollama, LM Studio, OpenAI, OpenRouter, Groq, Custom URL.** Defer Anthropic (compat "for testing") and Gemini-BYO (compat 400s on tools+JSON, which these agent loops use); both reachable via Custom URL. Hosted Gemini is untouched. Revisit Gemini-BYO if Google's compat layer fixes the tools+JSON conflict.
 

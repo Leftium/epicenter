@@ -708,6 +708,7 @@
       },
       "dependencies": {
         "@epicenter/auth": "workspace:*",
+        "@epicenter/client": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",

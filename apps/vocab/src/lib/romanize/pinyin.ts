@@ -1,5 +1,5 @@
+import type { Romanizer, Segment } from '@epicenter/ui/markdown';
 import { pinyin } from 'pinyin-pro';
-import type { Romanizer, Segment } from './romanizer.js';
 
 /** CJK Unified Ideographs (simplified + traditional Chinese). */
 const CJK_REGEX = /[一-鿿㐀-䶿豈-﫿]+/g;

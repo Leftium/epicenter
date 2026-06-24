@@ -35,8 +35,6 @@
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"clsx": "catalog:",
-		"dompurify": "^3.4.10",
-		"marked": "catalog:",
 		"mode-watcher": "^1.1.0",
 		"svelte-sonner": "^1.1.0",
 		"tailwind-merge": "catalog:",

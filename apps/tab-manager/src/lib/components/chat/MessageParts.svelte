@@ -1,7 +1,6 @@
 <script lang="ts">
+	import { Markdown } from '@epicenter/ui/markdown';
 	import type { AgentMessagePart } from '@epicenter/workspace/agent';
-	import DOMPurify from 'dompurify';
-	import { marked } from 'marked';
 	import ToolCallPart from './ToolCallPart.svelte';
 	import ToolResultPart from './ToolResultPart.svelte';
 
@@ -36,9 +35,7 @@
 
 {#each parts as part, i (`${part.type}-${i}`)}
 	{#if part.type === 'text'}
-		<div class="prose prose-sm">
-			{@html DOMPurify.sanitize(marked.parse(part.text, { breaks: true, gfm: true }) as string)}
-		</div>
+		<Markdown content={part.text} />
 	{:else if part.type === 'tool-call'}
 		<ToolCallPart
 			{part}

@@ -43,6 +43,13 @@ const stripTrailing = (s: string) => s.replace(/\/+$/, '');
  */
 export const ASSET_ID_REGEX = '[a-z0-9]{21}';
 
+/**
+ * 64-character lowercase-hex sha256. A blob's id IS its content address, so
+ * the route param is constrained to a well-formed digest; this also keeps the
+ * `:sha256` pattern disjoint from the literal `/usage` subpath.
+ */
+export const SHA256_HEX_REGEX = '[a-f0-9]{64}';
+
 export const API_ROUTES = {
 	session: {
 		pattern: '/api/session',
@@ -63,6 +70,29 @@ export const API_ROUTES = {
 			pattern: `/api/owners/:ownerId/assets/:assetId{${ASSET_ID_REGEX}}`,
 			url: (baseURL: string, ownerId: OwnerId, assetId: string) =>
 				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/assets/${encodeURIComponent(assetId)}`,
+		},
+	},
+	/**
+	 * Content-addressed blob store. POST mints an upload ticket (presigned R2
+	 * PUT); GET on the collection lists; GET/DELETE by `:sha256` read/remove a
+	 * blob. R2 is the only index — there is no database row. See
+	 * `specs/20260623T220000-content-addressed-blob-store.md`.
+	 */
+	blobs: {
+		list: {
+			pattern: '/api/owners/:ownerId/blobs',
+			url: (baseURL: string, ownerId: OwnerId) =>
+				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/blobs`,
+		},
+		usage: {
+			pattern: '/api/owners/:ownerId/blobs/usage',
+			url: (baseURL: string, ownerId: OwnerId) =>
+				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/blobs/usage`,
+		},
+		byHash: {
+			pattern: `/api/owners/:ownerId/blobs/:sha256{${SHA256_HEX_REGEX}}`,
+			url: (baseURL: string, ownerId: OwnerId, sha256: string) =>
+				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/blobs/${encodeURIComponent(sha256)}`,
 		},
 	},
 	ai: {

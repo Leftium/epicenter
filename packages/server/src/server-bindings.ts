@@ -25,6 +25,21 @@ export interface ServerBindings {
 	ROOM: DurableObjectNamespace<Room>;
 	ASSETS_BUCKET: R2Bucket;
 	SESSION_KV: KVNamespace;
+	// Content-addressed blob store (routes/blobs.ts). A PORTABLE S3 client:
+	// the whole module talks plain S3-over-HTTPS via aws4fetch with NO Workers
+	// R2 binding, so the identical code runs on this Worker (against R2) and in
+	// a self-hosted Node binary (against MinIO/Garage/S3). All members are
+	// optional: a deployment without object storage simply does not mount
+	// `mountBlobsApp`, and the route 503s if reached without an endpoint +
+	// credentials. `BLOBS_S3_ENDPOINT` is the S3 origin (for R2:
+	// `https://<accountId>.r2.cloudflarestorage.com`); `BLOBS_S3_BUCKET`
+	// defaults to `epicenter-blobs` and `BLOBS_S3_REGION` to `auto` (R2's
+	// region) when unset.
+	BLOBS_S3_ENDPOINT?: string;
+	BLOBS_S3_ACCESS_KEY_ID?: string;
+	BLOBS_S3_SECRET_ACCESS_KEY?: string;
+	BLOBS_S3_BUCKET?: string;
+	BLOBS_S3_REGION?: string;
 	BETTER_AUTH_SECRET: string;
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;

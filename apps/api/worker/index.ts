@@ -18,6 +18,7 @@ import {
 	authApp,
 	createServerApp,
 	mountAssetsApp,
+	mountBlobsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -73,6 +74,11 @@ mountAssetsApp(app, {
 	ownership,
 	policies: [syncAssetStorageWithAutumn],
 });
+// Content-addressed blob store. v1 is unmetered (no Autumn policy): Autumn's
+// check() denies by default with no plan attached, so deferred quota means not
+// calling it. A `syncBlobStorageWithAutumn` policy slots in here when storage
+// is billed.
+mountBlobsApp(app, { ownership });
 mountInferenceApp(app, {
 	auth: requireBearerUser,
 	ownership,

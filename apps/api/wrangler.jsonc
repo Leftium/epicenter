@@ -75,12 +75,31 @@
 			// dev and production cannot accidentally share a checked-in client id.
 			"GOOGLE_CLIENT_ID",
 			"GOOGLE_CLIENT_SECRET",
+			// GitHub OAuth is optional at the library level (ServerBindings types
+			// it `?`), but it MUST be listed here so `wrangler types` reproduces
+			// it: defining `secrets.required` replaces wrangler's .dev.vars/.env
+			// inference, so any secret the worker reads (create-auth.ts,
+			// routes/auth.ts gate GitHub sign-in on these) that is NOT listed gets
+			// dropped from the generated Cloudflare.Env. A required `string` here
+			// still satisfies the library's optional binding.
+			"GITHUB_CLIENT_ID",
+			"GITHUB_CLIENT_SECRET",
 			// House AI keys are required here even though the library types them
 			// as optional bindings: hosted credits are billed against house-key
 			// usage, so a deploy without them would 503 paying users.
 			"OPENAI_API_KEY",
 			"AUTUMN_SECRET_KEY",
-			"GEMINI_API_KEY"
+			"GEMINI_API_KEY",
+			// S3 credentials for the content-addressed blob store. The store is
+			// a portable S3 client (no R2 binding): it presigns PUT/GET and signs
+			// head/list/delete against BLOBS_S3_ENDPOINT. For hosted cloud that
+			// endpoint is `https://<accountId>.r2.cloudflarestorage.com` with a
+			// bucket-scoped Object Read & Write token. The endpoint is grouped as
+			// a secret so the account id stays out of committed config; bucket
+			// (`epicenter-blobs`) and region (`auto`) default in code.
+			"BLOBS_S3_ENDPOINT",
+			"BLOBS_S3_ACCESS_KEY_ID",
+			"BLOBS_S3_SECRET_ACCESS_KEY"
 		]
 	},
 	// --- Hyperdrive: Postgres connection pool ---
@@ -93,6 +112,15 @@
 		}
 	],
 	// --- R2: Asset storage (images, PDFs) ---
+	// Create with: bunx wrangler r2 bucket create epicenter-assets
+	//
+	// The content-addressed blob store (large media: video archive, files
+	// routinely >100 MB, sometimes multi-GB) deliberately has NO R2 binding
+	// here. It talks plain S3-over-HTTPS via aws4fetch (BLOBS_S3_* secrets
+	// below), so the same code runs on this Worker against R2 and in a
+	// self-hosted Node binary against MinIO/Garage/S3. Create its bucket with:
+	//   bunx wrangler r2 bucket create epicenter-blobs
+	// See packages/server/src/s3-blob-store.ts.
 	"r2_buckets": [
 		{
 			"binding": "ASSETS_BUCKET",

@@ -4,7 +4,7 @@
 **Status**: Draft (adversarial review complete 2026-06-24: GO-WITH-CHANGES; see "Review Outcome" at the end, which corrects the stale Current State below)
 **Owner**: Braden
 **Branch**: gila-gap
-**Supersedes if adopted**: the hosted/custom shape in `specs/20260623T120000-inference-connections-and-presets.md`
+**Supersedes if adopted**: the hosted/custom `kind` shape recorded in ADR-0058 (its spec, 20260623T120000-inference-connections-and-presets, was completed and deleted; see git history)
 **Amends**: ADR-0058 (Accepted, already built) via a NEW Proposed ADR-0059. Do not edit 0058 in place.
 
 ## One Sentence
@@ -183,7 +183,7 @@ If any scenario forces one of those three back inside `Endpoint`, the collapse i
 - `apps/vocab/src/lib/state/inference-connections.svelte.ts` (device-local stores)
 - `packages/server/src/routes/inference.ts` (house-key passthrough gateway)
 - `docs/adr/0053-*.md`, `docs/adr/0054-*.md`, `docs/adr/0058-*.md`
-- `specs/20260623T120000-inference-connections-and-presets.md` (current direction)
+- `docs/adr/0058-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md` (the shipped current direction; its spec 20260623T120000 was completed and deleted)
 
 ---
 

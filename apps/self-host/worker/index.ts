@@ -31,11 +31,15 @@ import {
 
 const ownership = shared({
 	admit: (c) => {
-		// `ALLOWED_MEMBER_EMAILS` is operator config on this deployment's own
-		// `Cloudflare.Env`, not a library binding, so it is read with the same
-		// edge cast the resolvers use (ADR-0059).
+		// `ALLOWED_MEMBER_EMAILS` is this deployment's operator config, read off
+		// its own `Cloudflare.Env` (the honest-edge cast, ADR-0059; the resolver
+		// note below carries the full rationale). `?? ''` keeps a deployment that
+		// never set the var fail-closed (admits nobody) instead of throwing a
+		// TypeError on every request: wrangler types it `string`, but a declared
+		// var is not guaranteed present at runtime and self-host has no boot check.
 		const allowed = new Set(
-			(c.env as Cloudflare.Env).ALLOWED_MEMBER_EMAILS.split(',')
+			((c.env as Cloudflare.Env).ALLOWED_MEMBER_EMAILS ?? '')
+				.split(',')
 				.map((s) => s.trim())
 				.filter(Boolean),
 		);

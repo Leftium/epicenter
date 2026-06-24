@@ -365,9 +365,9 @@ model,
 
 ### Phase 3: adopt in one app, prove, then the rest
 
-- [ ] **3.1** Wire the shared component into **vocab** first (capability-free, simplest). Keep the device-local store; bind it.
-- [ ] **3.2** Verify: typecheck, web build, live smoke against a local Ollama and one cloud key (model list populates; chat completes; failure degrades to free text).
-- [ ] **3.3** Wire opensidian and tab-manager (the extension uses `chrome.storage.local`).
+- [x] **3.1** Wired into **vocab**. The device store became a `CustomConnection[]` set plus a discovered-model cache (new localStorage keys; the old single-backend setting is dropped). The engine now reads the conversation's model (ADR-0055) and resolves it against the connection set via `resolveForModel`/`resolveConnection`, instead of ignoring the model column. The header picker writes the active conversation's model; a non-destructive banner blocks sending and offers the hosted default when the synced model is unreachable here. `InferenceSettings.svelte` deleted.
+- [ ] **3.2** Verify: svelte-check clean for the slice (the only error is a pre-existing vite-config triple-vite clash in node_modules, unrelated). **Still pending (needs a human): web build, and live smoke against a local Ollama + one cloud key** (model list populates; chat completes; failure degrades to free text).
+- [ ] **3.3** Wire opensidian and tab-manager (both have a real per-conversation model in `chat-state.svelte.ts`; the extension uses `chrome.storage.local`). Extract the per-app candidate-building (`buildVocabCandidates` analog) into a shared helper once the second consumer exists.
 
 ### Phase 4: remove the old path
 

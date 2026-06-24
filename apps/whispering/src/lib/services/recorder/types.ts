@@ -154,18 +154,35 @@ export const RecorderError = defineErrors({
 export type RecorderError = InferErrors<typeof RecorderError>;
 
 /**
- * Base parameters shared across manual recorder implementations.
+ * Settings-derived parameters shared across manual recorder implementations.
+ *
+ * This is config resolved from persisted settings (device, encoding). Live
+ * caller callbacks are not config and travel separately in
+ * {@link RecordingCallbacks}.
  */
 type BaseRecordingParams = {
 	selectedDeviceId: DeviceIdentifier | null;
 	recordingId: string;
+};
+
+/**
+ * Live callbacks supplied by the caller at the moment of starting, kept
+ * separate from the settings-derived {@link CpalRecordingParams} /
+ * {@link NavigatorRecordingParams} config because a callback is not a persisted
+ * setting. They are passed alongside the resolved params, never merged into
+ * them.
+ */
+export type RecordingCallbacks = {
 	/**
-	 * Optional sink for live mic loudness (raw RMS, ~0 silent to ~0.3 loud
-	 * speech), called continuously while recording so the pill can draw a meter.
-	 * The navigator recorder taps its MediaStream to drive this; the CPAL recorder
-	 * ignores it because Rust emits the level straight to the overlay window.
+	 * Sink for live mic loudness (raw RMS, ~0 silent to ~0.3 loud speech),
+	 * called continuously while recording so the pill can draw a meter.
+	 *
+	 * The navigator recorder taps its MediaStream to drive this. The CPAL
+	 * recorder reaches the same meter another way (Rust emits the level straight
+	 * to the overlay window), so its `startRecording` simply does not accept
+	 * callbacks.
 	 */
-	onLevel?: (level: number) => void;
+	onLevel: (level: number) => void;
 };
 
 /**
@@ -266,8 +283,15 @@ export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	 * Start a new recording session, returning the RecordingSession handle along
 	 * with the device acquisition outcome. The caller holds the RecordingSession
 	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
+	 *
+	 * `params` is settings-derived config; `callbacks` are the caller's live
+	 * sinks. An implementation that satisfies the meter another way (CPAL via the
+	 * overlay) may take only `params` and ignore the callbacks.
 	 */
-	startRecording(params: RecordingParams): Promise<
+	startRecording(
+		params: RecordingParams,
+		callbacks: RecordingCallbacks,
+	): Promise<
 		Result<
 			{
 				session: RecordingSession;

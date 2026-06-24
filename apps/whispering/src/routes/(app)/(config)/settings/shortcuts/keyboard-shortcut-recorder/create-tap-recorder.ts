@@ -30,7 +30,7 @@ export function createTapRecorder({
 }: {
 	keyboard: CaptureKeyboard;
 	onCapture: (binding: KeyBinding) => void;
-	onProgress?: (binding: KeyBinding) => void;
+	onProgress: (binding: KeyBinding) => void;
 }) {
 	// Accumulated across the gesture: every modifier and key ever held, so a combo
 	// built up over several presses commits whole when the last key releases.
@@ -63,7 +63,7 @@ export function createTapRecorder({
 					reset();
 					onCapture(accumulated);
 				} else {
-					onProgress?.(accumulated);
+					onProgress(accumulated);
 				}
 			})
 			.then((fn) => {

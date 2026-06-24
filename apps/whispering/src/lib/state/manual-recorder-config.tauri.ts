@@ -28,6 +28,8 @@ export const manualRecorderConfig = {
 	 *
 	 * The recorder service stays params-in and does not read Svelte state; this
 	 * config boundary performs that app-level read immediately before starting.
+	 * Only settings-derived config lives here; live callbacks (the meter sink)
+	 * are passed separately to `startRecording`.
 	 */
 	resolveStartParams(recordingId: string): CpalRecordingParams {
 		const deviceId = this.deviceId;

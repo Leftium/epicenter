@@ -2,7 +2,6 @@ import ms from 'ms';
 import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
-import type { OAuthDeps } from '../oauth.ts';
 import { dbPath } from '../paths.ts';
 import { createQbClient } from '../qb-client.ts';
 import {
@@ -59,13 +58,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 
 	const now = () => Date.now();
 	const log = (m: string) => console.error(m);
-	const oauthDeps: OAuthDeps = { now, log };
-	const tokens = createTokenManager({
-		config,
-		keyring,
-		token,
-		deps: oauthDeps,
-	});
+	const tokens = createTokenManager({ config, keyring, token, now });
 	const client = createQbClient({ config, realmId, tokens, log });
 	const db = openBooksDb(dbPath(config.dataDir, realmId));
 	const deps: SyncDeps = { db, client, config, now, log };

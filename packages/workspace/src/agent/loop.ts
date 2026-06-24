@@ -110,8 +110,6 @@ export type ConversationOptions = {
 	approval?: Approval;
 	/** Mint a message id. */
 	generateId: () => string;
-	/** Clock, injectable for tests. */
-	now?: () => number;
 };
 
 /** When no approval is wired, a gated mutation is denied rather than run. */
@@ -139,7 +137,6 @@ export function createConversation(
 		tools = NO_TOOLS,
 		approval = DENY_GATED_MUTATIONS,
 		generateId,
-		now = Date.now,
 	} = options;
 
 	const listeners = new Set<() => void>();
@@ -324,7 +321,7 @@ export function createConversation(
 			const assistant: AgentMessage = {
 				id: generateId(),
 				role: 'assistant',
-				createdAt: now(),
+				createdAt: Date.now(),
 				parts: [],
 			};
 			turn.push(assistant);
@@ -382,7 +379,7 @@ export function createConversation(
 			store.set(id, {
 				id,
 				role: 'user',
-				createdAt: now(),
+				createdAt: Date.now(),
 				parts: [{ type: 'text', text }],
 			});
 			void runTurn();

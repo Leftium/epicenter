@@ -54,9 +54,14 @@ export const OAuthError = defineErrors({
 });
 export type OAuthError = InferErrors<typeof OAuthError>;
 
-export type OAuthDeps = {
+/**
+ * Boundaries the interactive {@link runAuthorizationFlow} needs beyond the
+ * clock: a browser opener and a callback-wait budget. The non-interactive grant
+ * exchanges ({@link refreshAccessToken}, {@link completeAuthorization}) need only
+ * the clock, so they take a bare `now` rather than this bag.
+ */
+export type AuthorizationFlowOptions = {
 	now: () => number;
-	fetchImpl?: typeof fetch;
 	openBrowser?: (url: string) => void;
 	log?: (message: string) => void;
 	/** Callback wait budget; defaults to 5 minutes. */
@@ -74,19 +79,18 @@ function authServer(config: AppConfig): oauth.AuthorizationServer {
 	};
 }
 
-/** Allow http for the mock token endpoint in tests; inject a fetch when given. */
-function httpOptions(config: AppConfig, deps: OAuthDeps) {
+/** Allow http for the mock token endpoint in tests. */
+function httpOptions(config: AppConfig) {
 	return {
 		[oauth.allowInsecureRequests]:
 			new URL(config.tokenUrl).protocol === 'http:',
-		...(deps.fetchImpl ? { [oauth.customFetch]: deps.fetchImpl } : {}),
 	};
 }
 
 export async function refreshAccessToken(
 	config: AppConfig,
 	token: TokenSet,
-	deps: OAuthDeps,
+	now: () => number,
 ): GrantResult {
 	if (!config.clientId || !config.clientSecret) {
 		return OAuthError.MissingCredentials();
@@ -99,14 +103,14 @@ export async function refreshAccessToken(
 			client,
 			oauth.ClientSecretBasic(config.clientSecret),
 			token.refreshToken,
-			httpOptions(config, deps),
+			httpOptions(config),
 		);
 		const grant = await oauth.processRefreshTokenResponse(as, client, response);
 		// Rotation: QuickBooks may omit refresh_token when the old one stays valid.
 		return tokenSetFromGrant(grant, {
 			realmId: token.realmId,
 			environment: config.environment,
-			now: deps.now(),
+			now: now(),
 			fallbackRefreshToken: token.refreshToken,
 		});
 	} catch (cause) {
@@ -128,7 +132,7 @@ export async function completeAuthorization(
 		state,
 		codeVerifier,
 	}: { callbackUrl: URL; state: string; codeVerifier?: string },
-	deps: OAuthDeps,
+	now: () => number,
 ): GrantResult {
 	if (!config.clientId || !config.clientSecret) {
 		return OAuthError.MissingCredentials();
@@ -151,7 +155,7 @@ export async function completeAuthorization(
 			params,
 			config.redirectUri,
 			codeVerifier ?? oauth.nopkce,
-			httpOptions(config, deps),
+			httpOptions(config),
 		);
 		const grant = await oauth.processAuthorizationCodeResponse(
 			as,
@@ -161,7 +165,7 @@ export async function completeAuthorization(
 		return tokenSetFromGrant(grant, {
 			realmId,
 			environment: config.environment,
-			now: deps.now(),
+			now: now(),
 		});
 	} catch (cause) {
 		if (cause instanceof oauth.AuthorizationResponseError) {
@@ -210,7 +214,7 @@ function defaultOpenBrowser(url: string): void {
  */
 export async function runAuthorizationFlow(
 	config: AppConfig,
-	deps: OAuthDeps,
+	options: AuthorizationFlowOptions,
 ): GrantResult {
 	if (!config.clientId || !config.clientSecret) {
 		return OAuthError.MissingCredentials();
@@ -224,8 +228,8 @@ export async function runAuthorizationFlow(
 	// HTTPS tunnel (Intuit production requires one, since it rejects localhost)
 	// forwards to `callbackPort` here, which has no port of its own in the URL.
 	const port = config.callbackPort ?? Number(redirect.port || '80');
-	const timeoutMs = deps.timeoutMs ?? 5 * 60 * 1000;
-	const log = deps.log ?? (() => {});
+	const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
+	const log = options.log ?? (() => {});
 
 	const { promise: callback, resolve } = Promise.withResolvers<URL | null>();
 	const server = Bun.serve({
@@ -246,7 +250,7 @@ export async function runAuthorizationFlow(
 	const authorizeUrl = buildAuthorizeUrl(config, { state, codeChallenge });
 	log('Opening your browser to authorize QuickBooks access...');
 	log(`If it does not open, visit:\n  ${authorizeUrl}`);
-	(deps.openBrowser ?? defaultOpenBrowser)(authorizeUrl);
+	(options.openBrowser ?? defaultOpenBrowser)(authorizeUrl);
 
 	const timeout = new Promise<URL | null>((resolveTimeout) => {
 		setTimeout(() => resolveTimeout(null), timeoutMs);
@@ -258,6 +262,6 @@ export async function runAuthorizationFlow(
 	return completeAuthorization(
 		config,
 		{ callbackUrl, state, codeVerifier },
-		deps,
+		options.now,
 	);
 }

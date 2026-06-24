@@ -208,7 +208,7 @@ export type SyncLoopOptions = {
 	/** Aborting the signal stops the loop after the current pass or sleep. */
 	signal: AbortSignal;
 	/** Called after each pass with its outcome and 1-based pass number. */
-	onPass?: (outcome: SyncAllOutcome, pass: number) => void;
+	onPass: (outcome: SyncAllOutcome, pass: number) => void;
 };
 
 /**
@@ -246,7 +246,7 @@ export async function runSyncLoop(
 			entities: opts.entities,
 		});
 		pass += 1;
-		opts.onPass?.(outcome, pass);
+		opts.onPass(outcome, pass);
 		if (opts.signal.aborted) break;
 		await interruptibleSleep(opts.intervalMs, opts.signal);
 	}

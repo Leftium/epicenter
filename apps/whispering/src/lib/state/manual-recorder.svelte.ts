@@ -8,6 +8,7 @@ import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
 import type {
 	RecorderError,
+	RecordingCallbacks,
 	RecordingSession,
 } from '$lib/services/recorder/types';
 
@@ -131,7 +132,7 @@ function createManualRecorder() {
 			},
 		}),
 
-		async startRecording({ onLevel }: { onLevel: (level: number) => void }) {
+		async startRecording(callbacks: RecordingCallbacks) {
 			if (_starting) return ManualRecorderError.AlreadyRecording();
 			_starting = true;
 			try {
@@ -143,7 +144,7 @@ function createManualRecorder() {
 				const recordingId = nanoid();
 				const params = manualRecorderConfig.resolveStartParams(recordingId);
 				const { data, error: startRecordingError } =
-					await ManualRecorderLive.startRecording({ ...params, onLevel });
+					await ManualRecorderLive.startRecording(params, callbacks);
 
 				if (startRecordingError) return Err(startRecordingError);
 

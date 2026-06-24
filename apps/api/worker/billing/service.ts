@@ -443,7 +443,7 @@ export function createBillingService(
 	 */
 	function reserveAiCreditsWithLock(input: {
 		credits: number;
-		properties?: Record<string, unknown>;
+		properties: Record<string, unknown>;
 	}): Promise<Result<LockedCheck, BillingError>> {
 		const lockId = crypto.randomUUID();
 		return tryAutumn(async () => {
@@ -456,7 +456,7 @@ export function createBillingService(
 					enabled: true,
 					expiresAt: Date.now() + LOCK_TTL_MS,
 				},
-				...(input.properties ? { properties: input.properties } : {}),
+				properties: input.properties,
 			});
 
 			return {

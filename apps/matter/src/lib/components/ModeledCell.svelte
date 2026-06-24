@@ -10,7 +10,7 @@
 		cell,
 		save,
 		clear,
-		mode = 'grid',
+		mode,
 	}: {
 		cell: Cell;
 		save: SaveField;
@@ -21,9 +21,8 @@
 		 * first, so the clear affordance stays quiet (dimmed) at rest and brightens on
 		 * hover or keyboard focus. `detail` is the editing row in the row dialog:
 		 * editing comes first, so the clear affordance is shown at full strength.
-		 * Defaults to the quieter `grid`.
 		 */
-		mode?: 'grid' | 'detail';
+		mode: 'grid' | 'detail';
 	} = $props();
 
 	// Kind dispatch is gated behind VALIDITY: an INVALID value is out of every

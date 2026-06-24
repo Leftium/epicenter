@@ -15,12 +15,12 @@
 
 	let {
 		ytext,
-		filename = 'untitled.md',
-		extensions: extraExtensions = [],
+		filename,
+		extensions: extraExtensions,
 	}: {
 		ytext: Y.Text;
-		filename?: string;
-		extensions?: Extension[];
+		filename: string;
+		extensions: Extension[];
 	} = $props();
 
 	const opensidian = requireOpensidian();

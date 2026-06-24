@@ -12,6 +12,7 @@ import { categorizeBrowserStreamError } from './categorize-error';
 import type {
 	NavigatorRecordingParams,
 	RecorderService,
+	RecordingCallbacks,
 	RecordingSession,
 } from './types';
 import { RecorderError } from './types';
@@ -32,7 +33,7 @@ function createNavigatorRecorder() {
 		mediaRecorder: MediaRecorder;
 		recordedChunks: Blob[];
 		startedAtMs: number;
-		stopLevelMeter: (() => void) | null;
+		stopLevelMeter: () => void;
 	}) {
 		const {
 			recordingId,
@@ -56,7 +57,7 @@ function createNavigatorRecorder() {
 		};
 
 		const teardown = () => {
-			stopLevelMeter?.();
+			stopLevelMeter();
 			cleanupRecordingStream(stream);
 			notify('IDLE');
 		};
@@ -126,12 +127,10 @@ function createNavigatorRecorder() {
 			return Ok(devices);
 		},
 
-		startRecording: async ({
-			selectedDeviceId,
-			recordingId,
-			bitrateKbps,
-			onLevel,
-		}: NavigatorRecordingParams) => {
+		startRecording: async (
+			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
+			{ onLevel }: RecordingCallbacks,
+		) => {
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream({ selectedDeviceId });
 			if (acquireStreamError) {
@@ -168,9 +167,7 @@ function createNavigatorRecorder() {
 
 			// Tap the same stream for the pill's meter. Independent of the
 			// MediaRecorder (both can read one stream), torn down with the session.
-			const stopLevelMeter = onLevel
-				? startMicLevelMeter(stream, onLevel)
-				: null;
+			const stopLevelMeter = startMicLevelMeter(stream, onLevel);
 
 			const session = buildSession({
 				recordingId,
@@ -186,8 +183,8 @@ function createNavigatorRecorder() {
 	} satisfies RecorderService<NavigatorRecordingParams>;
 }
 
-export const ManualRecorderLive =
-	createNavigatorRecorder() satisfies RecorderService<NavigatorRecordingParams>;
+export const ManualRecorderLive: RecorderService<NavigatorRecordingParams> =
+	createNavigatorRecorder();
 
 /**
  * Tap a live MediaStream and report raw mic loudness (RMS) each animation frame,

@@ -30,7 +30,7 @@
 		onWordCountChange,
 	}: {
 		entryId: EntryId;
-		onWordCountChange?: (count: number) => void;
+		onWordCountChange: (count: number) => void;
 	} = $props();
 
 	const fuji = requireFuji();
@@ -48,7 +48,7 @@
 			if (nextCount === previousCount) return;
 
 			previousCount = nextCount;
-			onChange?.(nextCount);
+			onChange(nextCount);
 		}
 
 		return new Plugin({

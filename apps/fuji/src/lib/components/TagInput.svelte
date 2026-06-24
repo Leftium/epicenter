@@ -9,7 +9,7 @@
 		onRemove,
 	}: {
 		values: string[];
-		placeholder?: string;
+		placeholder: string;
 		onAdd: (value: string) => void;
 		onRemove: (value: string) => void;
 	} = $props();

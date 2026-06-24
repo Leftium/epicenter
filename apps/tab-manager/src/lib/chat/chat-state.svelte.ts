@@ -22,19 +22,13 @@
  * Components read this through `workspace.state.aiChat`.
  */
 
-import type { AuthClient } from '@epicenter/auth';
 import {
 	asConversationId,
 	type Conversation,
 	type ConversationId,
 	generateConversationId,
 } from '@epicenter/chat';
-import {
-	createOpenAiAgentEngine,
-	resolveInferenceBackend,
-} from '@epicenter/client';
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { APP_URLS } from '@epicenter/constants/vite';
+import { createOpenAiAgentEngine } from '@epicenter/client';
 import { InstantString } from '@epicenter/field';
 import { bindAgentConversation, fromTable } from '@epicenter/svelte';
 import { type Collaboration, generateId } from '@epicenter/workspace';
@@ -51,25 +45,19 @@ import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
-import { inferenceBackend } from '$lib/state/inference-backend.svelte';
+import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 import type { ToolTrustState } from '$lib/state/tool-trust.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 
 export function createAiChatState({
-	auth,
 	tabManager,
 	collaboration,
 	toolTrust,
 }: {
-	auth: AuthClient;
 	tabManager: TabManagerBrowser;
 	collaboration: Collaboration;
 	toolTrust: ToolTrustState;
 }) {
-	// The inference server's base URL (the swap point, ADR-0049): default the
-	// Epicenter gateway; the engine appends `/chat/completions`.
-	const inferenceBaseUrl = API_ROUTES.ai.completions.baseUrl(APP_URLS.API);
-
 	// The conversation list is the synced `conversations` table; a row's turns
 	// live in its `messages` child doc. This reactive map drives the registry.
 	const conversationsMap = fromTable(tabManager.tables.conversations);
@@ -142,20 +130,24 @@ export function createAiChatState({
 				store:
 					tabManager.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
-					// The device backend is read per turn (so a switch lands next turn) and
-					// carries its own model; the conversation's catalog pick is the hosted
-					// default, used only when the backend is hosted.
-					data: () => ({
-						...resolveInferenceBackend(inferenceBackend.get(), {
-							fetch: auth.fetch,
-							baseURL: inferenceBaseUrl,
-							model: metadata?.model ?? DEFAULT_MODEL,
-						}),
-						systemPrompts: [
-							buildDeviceConstraints(tabManager.nodeId),
-							TAB_MANAGER_SYSTEM_PROMPT,
-						],
-					}),
+					// The conversation's model (ADR-0055) is resolved per turn against this
+					// device's connection set (ADR-0058), so a switch lands on the next
+					// turn. The hosted fallback is defensive: the UI gates sending when no
+					// connection serves the model, so this only fires to error loudly at the
+					// gateway rather than silently substituting a different model.
+					data: () => {
+						const m = metadata?.model ?? DEFAULT_MODEL;
+						const transport =
+							inferenceConnections.resolve(m) ?? inferenceConnections.hosted;
+						return {
+							...transport,
+							model: m,
+							systemPrompts: [
+								buildDeviceConstraints(tabManager.nodeId),
+								TAB_MANAGER_SYSTEM_PROMPT,
+							],
+						};
+					},
 				}),
 				tools: toolCatalog,
 				approval: {

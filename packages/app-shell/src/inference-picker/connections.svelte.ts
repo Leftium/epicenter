@@ -88,10 +88,6 @@ export function createInferenceConnections({
 		{},
 	);
 
-	function cacheModels(baseUrl: string, models: string[]) {
-		discovered.current = { ...discovered.current, [baseUrl]: models };
-	}
-
 	/** The candidates a model resolves against, in priority order: every custom
 	 * connection (the user's own key) BEFORE hosted. The hosted catalog sells real
 	 * upstream ids (e.g. `gpt-5.5`), so a user who adds their own OpenAI key serves a
@@ -146,7 +142,11 @@ export function createInferenceConnections({
 				...custom.current.filter((c) => c.baseUrl !== connection.baseUrl),
 				connection,
 			];
-			if (models) cacheModels(connection.baseUrl, models);
+			if (models)
+				discovered.current = {
+					...discovered.current,
+					[connection.baseUrl]: models,
+				};
 		},
 		/** Forget a connection by base URL. */
 		remove(baseUrl: string) {

@@ -3,15 +3,27 @@
  * after-response queue, auth instance, CORS, CSRF) and returns a `Hono`
  * instance the deployment mounts every other sub-app on.
  *
- * The deployment supplies its own canonical API origin through
- * {@link CreateServerAppOptions.resolveOrigin}: the hosted cloud bakes a
- * constant (`apps/api`), a self-host reads operator config (`apps/self-host`).
- * The library never reaches for a shared `c.env` var name, so the origin is
- * always explicit and never inferred from the request. `resolveOrigin` is one
- * of the per-concern runtime-port hooks (alongside `connectDb` and
- * `afterResponse`): each runtime concern is its own injected function the
- * deployment composes at the `apps/*` edge, never a single `Runtime`
- * god-object. See ADR-0059.
+ * It takes exactly two things, the two axes a deployment varies on:
+ *
+ *   - a {@link RuntimeAdapter}: how THIS runtime does the three non-portable
+ *     jobs (acquire a db connection, keep work alive past the response, bind
+ *     the room registry). These are co-selected by which runtime you are on, so
+ *     they travel together as one value built at the edge: `cloudflare()` on
+ *     Workers, an inline literal on Bun. Never restated as loose hooks per edge.
+ *   - an {@link Identity}: who THIS deployment is on the web (its canonical
+ *     origin, the origins it trusts, its cookie scope). These vary per
+ *     deployment, NOT per runtime: `apps/api` passes the same identity whether
+ *     it runs on Workers or Bun.
+ *
+ * Per-concern injection at the deployment edge, refining ADR-0059. The ADR
+ * rejected a single `Runtime` god-object, but that object carried PORTABLE
+ * concerns (db driver, session store, assets) as co-equal legs and overstated
+ * the port fivefold; those collapsed to open standards (Road 1). What survives
+ * is the genuinely co-selected runtime triple, grouped here as a
+ * `RuntimeAdapter`, plus a separate identity axis. The portable concerns (db
+ * driver, blob store, auth) stay library code reading `ServerBindings`, never
+ * injected at all. The library never reaches for a shared `c.env` var name, so
+ * the auth origin is always explicit and never inferred from the request.
  */
 
 import { type Context, Hono } from 'hono';
@@ -24,35 +36,72 @@ import type { ServerBindings } from './server-bindings.js';
 import type { Env } from './types.js';
 
 /**
- * Construct the parent `Hono` app every deployment mounts sub-apps onto.
+ * How one runtime does the three non-portable jobs, as one value (ADR-0059,
+ * refined). A deployment never mixes these legs: a per-request `pg.Client` over
+ * Hyperdrive, `waitUntil`, and a Durable Object are ALL the Cloudflare runtime;
+ * a `pg.Pool` checkout, a no-op, and an in-process registry are ALL the Bun
+ * runtime. They are co-selected by which runtime you are on, so they travel
+ * together as a `RuntimeAdapter` the deployment builds once (`cloudflare()` on
+ * Workers, an inline literal on Bun) instead of three loose hooks restated per
+ * edge.
  *
- * Installs three ordered request-scoped middlewares:
+ * This is NOT the `Runtime` god-object ADR-0059 rejected: that one carried
+ * portable concerns (db driver, session store, assets) as co-equal legs. Those
+ * collapsed to open standards (Road 1). What remains here is exactly the set
+ * that needs a runtime-specific handle (`HYPERDRIVE`, `ROOM`) or primitive
+ * (`waitUntil`); the blob store and auth, being portable, are library code
+ * reading {@link ServerBindings}, never members.
  *
- *   1. CORS (skips WS upgrades).
- *   2. Per-request pg connection + after-response queue.
- *   3. Better Auth context (baseURL, auth instance).
- *
- * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
- * and the rooms registry. The deployment is responsible for exposing a
- * health endpoint on `/`. WebSocket auth-transport normalization is not
- * global: it lives in {@link mountRoomsApp}, the only WebSocket surface.
- *
- * The runtime-port hooks receive `c.env` typed as the library's own portable
- * {@link ServerBindings} contract; the library never names `Cloudflare.Env`
- * (ADR-0059), so a Bun host typechecks with no Cloudflare types in scope. A
- * Workers deployment whose resolver reads a Cloudflare binding (`env.ROOM`,
- * `env.HYPERDRIVE`) casts `env` to its own `Cloudflare.Env` at that edge, where
- * naming Cloudflare is honest; a Bun host's resolvers read nothing
- * Cloudflare-shaped (they close over module-scope primitives).
+ * Each leg receives `env` typed as the library's portable `ServerBindings`, so
+ * the library names no `Cloudflare.Env` and a Bun host typechecks with no
+ * Cloudflare types in scope. The Cloudflare adapter casts `env` to its Workers
+ * binding shape at that one honest edge (`runtime/cloudflare.ts`); the Bun
+ * adapter reads nothing Cloudflare-shaped (it closes over module-scope
+ * primitives).
  */
-type CreateServerAppOptions = {
+export type RuntimeAdapter = {
 	/**
-	 * Resolve this deployment's canonical public origin from the per-request
-	 * `env`. Becomes the Better Auth `baseURL`, OAuth issuer, and token
-	 * audience, so it must be stable per deployment and never inferred from
-	 * `c.req.url`. `apps/api` returns `env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL`
-	 * (dev override, else the baked constant); `apps/self-host` returns the
-	 * operator-set `env.API_PUBLIC_ORIGIN`.
+	 * Acquire a per-request database handle, and how to close it. Only
+	 * acquisition is injected: the library depends on the portable `pg`/drizzle
+	 * Postgres wire (ADR-0059 Road 1), never a binding shape. Cloudflare passes a
+	 * per-request `pg.Client` over Hyperdrive; a Bun host hands back a module-scope
+	 * `pg.Pool` checkout. The returned `close` runs after the after-response queue
+	 * drains.
+	 */
+	connectDb: (env: ServerBindings) => Promise<{
+		db: Db;
+		close: () => Promise<void>;
+	}>;
+	/**
+	 * Keep fire-and-forget work alive past the HTTP response. On Cloudflare this
+	 * is `c.executionCtx.waitUntil(work)` (holds the isolate open); a Bun host
+	 * lets the promise run in the live process and does nothing. The library owns
+	 * the after-response queue (`c.var.afterResponseQueue`) and the pg-drain
+	 * shape; this injects only how the drain is kept alive.
+	 */
+	afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
+	/**
+	 * Resolve this deployment's room registry, the one subsystem with no open
+	 * standard (a hibernating single-writer actor, ADR-0059 Road 2): Cloudflare
+	 * wraps `env.ROOM` (`createDurableObjectRooms`); a Bun host returns an
+	 * in-process registry (`createBunRooms`). Bound per request onto `c.var.rooms`.
+	 */
+	resolveRooms: (env: ServerBindings) => Rooms;
+};
+
+/**
+ * Who this deployment IS on the web. Orthogonal to {@link RuntimeAdapter}:
+ * these vary per deployment, not per runtime, so they are supplied explicitly
+ * and the auth origin is never inferred from the request.
+ */
+export type Identity = {
+	/**
+	 * This deployment's canonical public origin, resolved from the per-request
+	 * `env`. Becomes the Better Auth `baseURL`, OAuth issuer, and token audience,
+	 * so it must be stable per deployment and never inferred from `c.req.url`.
+	 * `apps/api` returns `env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL` (dev
+	 * override, else the baked constant); `apps/self-host` returns the operator-set
+	 * `env.API_PUBLIC_ORIGIN`.
 	 */
 	resolveOrigin: (env: ServerBindings) => string;
 	/**
@@ -70,44 +119,32 @@ type CreateServerAppOptions = {
 	 * host-only cookies scoped to its own host.
 	 */
 	cookieDomain?: string;
-	/**
-	 * Acquire a per-request database handle. The runtime-port db concern: the
-	 * library depends on the portable `pg`/drizzle Postgres wire (ADR-0059
-	 * Road 1) and never on a binding shape, so only connection acquisition is
-	 * injected. The Cloudflare deployments pass `connectHyperdriveDb(env.HYPERDRIVE)`
-	 * (a per-request `pg.Client`); a Bun host passes a module-scope `pg.Pool`.
-	 * The returned `close` runs after the after-response queue drains.
-	 */
-	connectDb: (env: ServerBindings) => Promise<{
-		db: Db;
-		close: () => Promise<void>;
-	}>;
-	/**
-	 * Schedule fire-and-forget work that must outlive the HTTP response. The
-	 * runtime-port lifetime concern: on Cloudflare this is
-	 * `c.executionCtx.waitUntil(work)` (keeps the isolate alive); a Bun host
-	 * just lets the promise run in the live process. The library owns the
-	 * after-response queue (`c.var.afterResponseQueue`) and the pg-drain shape;
-	 * this only injects how the queue's drain is kept alive past the response.
-	 */
-	afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
-	/**
-	 * Resolve this deployment's room registry. The runtime-port room concern,
-	 * the one subsystem with no open standard (a hibernating single-writer
-	 * actor, ADR-0059 Road 2): the Cloudflare deployments pass
-	 * `createDurableObjectRooms(env.ROOM)`; a Bun host passes an in-process
-	 * registry (`createBunRooms`). Bound per request onto `c.var.rooms`.
-	 */
-	resolveRooms: (env: ServerBindings) => Rooms;
+};
+
+/**
+ * Construct the parent `Hono` app every deployment mounts sub-apps onto.
+ *
+ * Installs three ordered request-scoped middlewares:
+ *
+ *   1. CORS (skips WS upgrades).
+ *   2. Per-request pg connection + after-response queue.
+ *   3. Better Auth context (baseURL, auth instance).
+ *
+ * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
+ * and the rooms registry. The deployment is responsible for exposing a
+ * health endpoint on `/`. WebSocket auth-transport normalization is not
+ * global: it lives in {@link mountRoomsApp}, the only WebSocket surface.
+ */
+type CreateServerAppOptions = {
+	/** How this runtime does the three non-portable jobs. {@link RuntimeAdapter}. */
+	runtime: RuntimeAdapter;
+	/** Who this deployment is on the web. {@link Identity}. */
+	identity: Identity;
 };
 
 export function createServerApp({
-	resolveOrigin,
-	resolveTrustedOrigins,
-	cookieDomain,
-	connectDb,
-	afterResponse,
-	resolveRooms,
+	runtime: { connectDb, afterResponse, resolveRooms },
+	identity: { resolveOrigin, resolveTrustedOrigins, cookieDomain },
 }: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 

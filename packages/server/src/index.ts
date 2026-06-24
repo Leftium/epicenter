@@ -14,11 +14,11 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
-export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // Database concern. `createDb(client)` wraps a connected pg client/pool in
-// drizzle with the internal schema (the portable core); `connectHyperdriveDb`
-// is the Cloudflare backend a deployment passes to `createServerApp`'s
-// `connectDb`. A Node host injects its own `pg.Pool`-backed `connectDb`.
+// drizzle with the internal schema (the portable core). The Cloudflare
+// per-request `pg.Client` over Hyperdrive is now internal to the `cloudflare()`
+// runtime adapter (runtime/cloudflare.ts); a Bun host builds its own
+// `pg.Pool`-backed adapter inline.
 export { createDb, type Db } from './db/create-db.js';
 // Deploy-time admin operations (OAuth client seeding) live in each
 // deployment's own scripts (`apps/api` `oauth:seed:*`), not in this barrel, so
@@ -34,10 +34,10 @@ export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
-// Room-resolution helpers, deployment-agnostic and exported for composing apps:
-//   createDurableObjectRooms  resolve a room stub from its opaque name with no
-//                          request context.
-//   doName                 build a room's owner-scoped DO name.
+// `doName` builds a room's owner-scoped DO name, deployment-agnostic and
+// exported for composing apps. The Cloudflare room registry
+// (`createDurableObjectRooms`) is now internal to the `cloudflare()` runtime
+// adapter (runtime/cloudflare.ts).
 export { doName } from './owner.js';
 // Ownership composition: the deployment constructs the rule once via
 // `personal()` or `shared({ admit })` and threads it into every mount
@@ -52,7 +52,11 @@ export {
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
-export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
+// The Cloudflare runtime adapter: the per-runtime triple (db over Hyperdrive,
+// `waitUntil`, the Durable Object room registry) as one `RuntimeAdapter` both
+// Cloudflare deployables pass to `createServerApp`'s `runtime`. A Bun host
+// builds its own adapter inline (see `@epicenter/server/bun`).
+export { cloudflare } from './runtime/cloudflare.js';
 // Reusable surfaces. Each `mount*` bundles auth + ownership + the route
 // mount, accepting only the deployment-controlled knobs (ownership rule,
 // optional policies). The bare `authApp` is mounted directly because it
@@ -64,8 +68,14 @@ export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 // Parent app. Wires per-request lifecycle (pg, after-response queue,
 // auth context, CORS, CSRF, rooms registry). Mount every surface on this
-// app via the `mount*` primitives.
-export { createServerApp } from './server-app.js';
+// app via the `mount*` primitives. It takes two axes: a `RuntimeAdapter` (how
+// this runtime does the three non-portable jobs) and an `Identity` (who this
+// deployment is on the web).
+export {
+	createServerApp,
+	type Identity,
+	type RuntimeAdapter,
+} from './server-app.js';
 
 // Binding contract: the portable env the library reads from `c.env`, as both
 // the arktype schema (value) and its inferred type (same name). Each deployment

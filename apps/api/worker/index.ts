@@ -16,8 +16,7 @@
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
 	authApp,
-	connectHyperdriveDb,
-	createDurableObjectRooms,
+	cloudflare,
 	createServerApp,
 	mountBlobsApp,
 	mountInferenceApp,
@@ -41,32 +40,30 @@ import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 const ownership = personal();
 
-// The hosted cloud's public origin never changes per deploy, so it is baked
-// from the constants source of truth rather than duplicated into wrangler.jsonc
-// vars. Local dev injects `API_PUBLIC_ORIGIN=http://localhost:8787` via
-// scripts/dev.ts; production falls through to PRODUCTION_API_URL.
-// The library types `env` as its portable `ServerBindings`; this Worker's
-// resolvers read Cloudflare-only bindings (`HYPERDRIVE`, `ROOM`) and the
-// deployment-owned `API_PUBLIC_ORIGIN`, none of which `ServerBindings` names.
-// Casting to this deployment's own `Cloudflare.Env` is the honest edge where
-// naming Cloudflare belongs (ADR-0059); the library never does.
 const app = createServerApp({
-	resolveOrigin: (env) =>
-		(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
-	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
-	// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
-	// a session via a cookie scoped to the registrable domain. cookie-config
-	// falls back to host-only on localhost regardless.
-	cookieDomain: '.epicenter.so',
-	// Cloudflare runtime bindings, composed at this edge: a per-request pg
-	// client over Hyperdrive, and `waitUntil` to keep the isolate alive while
-	// the after-response queue drains.
-	connectDb: (env) => connectHyperdriveDb((env as Cloudflare.Env).HYPERDRIVE),
-	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
-	// Per-room Durable Object sharding stays the cloud's binding of the room
-	// actor forever (ADR-0059): hibernate-to-zero and single-writer-per-room
-	// at multi-tenant scale. A Bun host swaps in an in-process registry.
-	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
+	// The Cloudflare runtime adapter owns the per-request pg client over
+	// Hyperdrive, `waitUntil`, and the Durable Object room registry — and the one
+	// `Cloudflare.Env` cast they need (ADR-0059). Per-room DO sharding stays the
+	// cloud's binding of the room actor forever: hibernate-to-zero and
+	// single-writer-per-room at multi-tenant scale. A Bun host builds its own
+	// adapter inline.
+	runtime: cloudflare(),
+	identity: {
+		// The hosted cloud's public origin never changes per deploy, so it is
+		// baked from the constants source of truth rather than duplicated into
+		// wrangler.jsonc vars. Local dev injects
+		// `API_PUBLIC_ORIGIN=http://localhost:8787` via scripts/dev.ts; production
+		// falls through to PRODUCTION_API_URL. `API_PUBLIC_ORIGIN` is
+		// deployment-owned config, not a binding `ServerBindings` names, so casting
+		// to this deployment's own `Cloudflare.Env` is the honest edge (ADR-0059).
+		resolveOrigin: (env) =>
+			(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
+		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
+		// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
+		// a session via a cookie scoped to the registrable domain. cookie-config
+		// falls back to host-only on localhost regardless.
+		cookieDomain: '.epicenter.so',
+	},
 });
 
 // Public health endpoint at root.

@@ -82,15 +82,24 @@ const db = createDb(pool);
 const ownership = personal();
 
 const app = createServerApp({
-	resolveOrigin: () => origin,
-	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
-	connectDb: async () => ({ db, close: async () => {} }),
-	// No-op: the drain promise (server-app.ts awaits the after-response queue,
-	// then closes the per-request handle) is already running when it reaches
-	// here, and a long-lived Bun process needs no `waitUntil` to outlive the
-	// response. Cloudflare's hook instead hands it to `executionCtx.waitUntil`.
-	afterResponse: () => {},
-	resolveRooms: () => bunRooms.rooms,
+	// The Bun runtime adapter, built inline: a shared `pg.Pool` checkout with a
+	// no-op close, a no-op `afterResponse`, and the in-process room registry.
+	// There is no `bun()` factory mirroring `cloudflare()` — that triple is
+	// verbatim across the two Cloudflare deployables, but this one has a single
+	// producer, so it stays inline where the entry can read it.
+	runtime: {
+		connectDb: async () => ({ db, close: async () => {} }),
+		// No-op: the drain promise (server-app.ts awaits the after-response queue,
+		// then closes the per-request handle) is already running when it reaches
+		// here, and a long-lived Bun process needs no `waitUntil` to outlive the
+		// response. Cloudflare's adapter instead hands it to `executionCtx.waitUntil`.
+		afterResponse: () => {},
+		resolveRooms: () => bunRooms.rooms,
+	},
+	identity: {
+		resolveOrigin: () => origin,
+		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
+	},
 });
 
 app.get('/', (c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'bun' }));

@@ -18,8 +18,7 @@
 
 import {
 	authApp,
-	connectHyperdriveDb,
-	createDurableObjectRooms,
+	cloudflare,
 	createServerApp,
 	mountInferenceApp,
 	mountRoomsApp,
@@ -47,30 +46,30 @@ const ownership = shared({
 	},
 });
 
-// Self-hosters set their own public origin in wrangler.jsonc (`API_PUBLIC_ORIGIN`):
-// their domain, not Epicenter Cloud's. It is operator config, not a baked
-// constant, so it is read straight from `c.env`.
-// The library types `env` as its portable `ServerBindings`; this Worker reads
-// Cloudflare-only bindings (`HYPERDRIVE`, `ROOM`) and the operator-set
-// `API_PUBLIC_ORIGIN`, none of which `ServerBindings` names. Casting to this
-// deployment's own `Cloudflare.Env` is the honest edge (ADR-0059).
 const app = createServerApp({
-	resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
-	// A self-host trusts its OWN origin and the Tauri desktop client, never
-	// Epicenter cloud's. Add any browser app origins you serve (and the
-	// Epicenter browser-extension origin, if your users point it at this
-	// deployment) here.
-	resolveTrustedOrigins: (baseURL) => [
-		new URL(baseURL).origin,
-		'tauri://localhost',
-	],
-	// No cookieDomain: a single-origin deployment uses host-only cookies scoped
-	// to its own host.
-	// Cloudflare runtime bindings: a per-request pg client over Hyperdrive, and
-	// `waitUntil` to drain the after-response queue past the response.
-	connectDb: (env) => connectHyperdriveDb((env as Cloudflare.Env).HYPERDRIVE),
-	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
-	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
+	// The Cloudflare runtime adapter: a per-request pg client over Hyperdrive,
+	// `waitUntil` to drain the after-response queue past the response, and the
+	// Durable Object room registry — with the one `Cloudflare.Env` cast they
+	// need (ADR-0059). Identical to the hosted deployable's runtime; the
+	// ownership rule and identity are what differ.
+	runtime: cloudflare(),
+	identity: {
+		// Self-hosters set their own public origin in wrangler.jsonc
+		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's. It is
+		// operator config, not a binding `ServerBindings` names, so it is read off
+		// this deployment's own `Cloudflare.Env` at the honest edge (ADR-0059).
+		resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
+		// A self-host trusts its OWN origin and the Tauri desktop client, never
+		// Epicenter cloud's. Add any browser app origins you serve (and the
+		// Epicenter browser-extension origin, if your users point it at this
+		// deployment) here.
+		resolveTrustedOrigins: (baseURL) => [
+			new URL(baseURL).origin,
+			'tauri://localhost',
+		],
+		// No cookieDomain: a single-origin deployment uses host-only cookies
+		// scoped to its own host.
+	},
 });
 
 app.get('/', (c) =>

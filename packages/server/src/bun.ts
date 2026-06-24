@@ -2,10 +2,13 @@
  * @epicenter/server/bun — the Bun host surface.
  *
  * Same library, second runtime (ADR-0059). A Bun entry imports `createServerApp`
- * and the `mount*` surface from here and binds the runtime concerns to plain
- * primitives: a `pg.Pool` for `connectDb`, a fire-and-forget `afterResponse`,
- * and {@link createBunRooms} for `resolveRooms` (an in-process registry over
- * `bun:sqlite`, not a Durable Object). Bun is the one non-Cloudflare runtime
+ * and the `mount*` surface from here and builds an inline `RuntimeAdapter` from
+ * plain primitives: a `pg.Pool` for `connectDb`, a fire-and-forget
+ * `afterResponse`, and {@link createBunRooms} for `resolveRooms` (an in-process
+ * registry over `bun:sqlite`, not a Durable Object). There is no `bun()` factory
+ * mirroring `cloudflare()`: that triple is verbatim-duplicated across the two
+ * Cloudflare deployables, but the Bun adapter has a single producer, so it stays
+ * inline where the entry can read it. Bun is the one non-Cloudflare runtime
  * (ADR-0059): `bun:sqlite` is the built-in synchronous engine the room update
  * log needs, and `bun build --compile` is what ships the self-host binary and
  * the Tauri sidecar. There is no Node backend; this code imports `bun:sqlite`
@@ -38,7 +41,11 @@ export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
-export { createServerApp } from './server-app.js';
+export {
+	createServerApp,
+	type Identity,
+	type RuntimeAdapter,
+} from './server-app.js';
 // The portable env contract as both arktype schema (value) and inferred type;
 // the Bun entry validates `process.env` against it at boot.
 export { ServerBindings } from './server-bindings.js';

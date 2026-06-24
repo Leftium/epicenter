@@ -9,9 +9,10 @@
 > push-to-talk controller + source-scoped stop + startup latch + 5-minute cap) are
 > done and the correctness floor is met: no permanent stuck-on. Verified by
 > `cargo test keyboard::matcher` (16 pass), `bun test` (green), and `svelte-check`
-> (clean on touched files). Phase 3's explicit reconcile hooks are deferred (the
-> synthetic release already covers tap restart / re-sync / capture, and the cap
-> covers the rest); desktop smoke (3.3) is the remaining verification.
+> (clean on touched files). Phase 3.1's capability-loss reconcile is now wired
+> (`attachPushToTalkReconcile`); the other reconcile signals were graded and left
+> to the cap / self-heal (see 3.1). Desktop smoke (3.3) is the remaining
+> verification.
 
 ## One Sentence
 
@@ -156,11 +157,14 @@ run: (state?: ShortcutEventState) => {
 - [x] **2.3** `pushToTalk.run` routes to `pushToTalk.start()/.stop()` (`commands.ts`); the toggle/button path stays `manual` and unowned.
 - [ ] **2.4** Harvest the ownership decision into a `Proposed` ADR. Deferred until Phase 3 / the design fully settles.
 
-### Phase 3: Precise reconcile hooks + tests — DEFERRED
+### Phase 3: Precise reconcile hooks + tests — IN PROGRESS
 
-The correctness floor is already met by Phase 1+2: the synthetic release covers tap restart / re-sync / capture (it routes to `pushToTalk.stop()`), and the 5-minute cap covers the rest (OS-eaten key-up, capability loss). A stale session self-heals on the next press or release. So these are latency polish, not correctness.
+The correctness floor is already met by Phase 1+2: the synthetic release covers tap restart / re-sync / capture (it routes to `pushToTalk.stop()`), and the 5-minute cap covers the rest (OS-eaten key-up, capability loss). A stale session self-heals on the next press or release. So 3.1 is latency polish, not correctness.
 
-- [ ] **3.1** (deferred) Explicit owned-stop reconcile on capability loss, app resume/unlock, JS reload, and manual stop/cancel clearing the session sooner than the cap.
+- [x] **3.1** Owned-stop reconcile on **capability loss**: `attachPushToTalkReconcile` (a runtime owner) calls `pushToTalk.stop()` when `dictationCapability` leaves `active`, so a revoked-grant mid-hold stops at the revocation instead of the 5-minute cap. The other three candidate signals were graded and deliberately not wired:
+  - **App resume / unlock**: no clean signal. Focus-regain is already rejected (global push-to-talk fires unfocused), and there is no other reliable resume event, so the cap stays the floor for the OS-eaten-key-up-while-tap-alive path.
+  - **Manual stop / cancel**: left to self-heal. The lingering cap timer is a safe no-op and the stale session clears on the next press (`sessionIsStale()`); reacting to `manualRecorder.state` is unsafe because startup sits at `IDLE` while `isStarting`, so a `state === 'IDLE' → stop()` reconcile would latch `stopRequested` and kill a just-started recording.
+  - **JS reload**: moot. A webview reload re-evaluates the module, resetting `session`/`generation`/`capTimer`; recorder state is page-bound, so no stuck session survives a reload.
 - [ ] **3.2** (partial) Rust matcher tests done. Frontend controller unit tests deferred (the async controller needs a recorder harness; covered for now by review + svelte-check).
 - [ ] **3.3** (pending) Desktop smoke: bind Fn push-to-talk, hold, then (a) sleep/wake, (b) lock/unlock, (c) settings re-sync mid-hold; confirm recording stops every time.
 

@@ -16,7 +16,7 @@
  * {#each honeycrisp.state.notes.all as note (note.id)}
  *   <p>{note.title}</p>
  * {/each}
- * <button onclick={() => honeycrisp.state.notes.create()}>New Note</button>
+ * <button onclick={() => honeycrisp.state.notes.create(null)}>New Note</button>
  * ```
  */
 
@@ -101,11 +101,11 @@ export function createNotes({
 		 * app.state.view.selectNote(id);
 		 * ```
 		 */
-		create(folderId?: FolderId | null) {
+		create(folderId: FolderId | null) {
 			const id = generateNoteId();
 			honeycrisp.tables.notes.set({
 				id,
-				folderId: folderId ?? null,
+				folderId,
 				title: '',
 				preview: '',
 				pinned: false,

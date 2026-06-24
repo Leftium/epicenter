@@ -1,16 +1,18 @@
 /**
  * `@epicenter/client`: typed HTTP client for the Epicenter server.
  *
- * Wraps `assets`, `blobs`, and `session` surfaces. Composes on
- * `AuthFetch` from `@epicenter/auth`, which handles OAuth bearer attach,
- * refresh, and 401 propagation. This package does not own auth state;
- * it consumes the authed fetch handle.
+ * Owner-scoped data surfaces (`assets`, `blobs`) over `AuthFetch` from
+ * `@epicenter/auth`, which handles OAuth bearer attach, refresh, and 401
+ * propagation. This package owns neither auth state nor identity: the caller
+ * passes the authed fetch handle and the `ownerId` (read from `auth.state`),
+ * so the client never fetches `/api/session` itself. Profile reads live on the
+ * auth client (`auth.getProfile()`); see ADR-0058.
  *
  * Works against any Epicenter deployment (cloud at `epicenter.so` or a
  * self-hosted shared-wiki server).
  */
 
-import type { ApiSessionResponse, AuthFetch } from '@epicenter/auth';
+import type { AuthFetch } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { OwnerId } from '@epicenter/identity';
 import {
@@ -47,6 +49,13 @@ export type EpicenterClientOptions = {
 	 * from `@epicenter/auth`. The client does not own auth lifecycle.
 	 */
 	fetch: AuthFetch;
+	/**
+	 * The signed-in owner partition, read from `auth.state.ownerId`. The client
+	 * is owner-scoped and addresses every route under it; it never resolves
+	 * identity itself. (`blobs.url` stays owner-explicit so a vault receipt can
+	 * address any owner's blob.)
+	 */
+	ownerId: OwnerId;
 };
 
 // ---------------------------------------------------------------------------
@@ -118,10 +127,9 @@ type BlobTicket =
 	  };
 
 /**
- * Failure modes of the Result-returning client surfaces (currently `blobs.*`).
- * `session.*` and the retiring `assets.*` stay throw-native on purpose: the
- * former is shaped as a TanStack Query function (which wants throws), the latter
- * is slice-6 dead code not worth converting.
+ * Failure modes of the Result-returning client surfaces (`blobs.*`). The
+ * retiring `assets.*` stays throw-native: it is slice-6 dead code that `blobs`
+ * supersedes, not worth converting.
  */
 export const ClientError = defineErrors({
 	/** The transport itself failed: network down, DNS, aborted, CORS. */
@@ -172,47 +180,19 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a typed Epicenter client bound to a base URL and an authed fetch.
- *
- * Lazy-fetches `/api/session` on first call to resolve `ownerId`, then
- * caches it so subsequent URL builds are synchronous. Apps that need a
- * URL before the first async call should `await epicenter.ready()` at
- * boot.
+ * Build a typed Epicenter client bound to a base URL, an authed fetch, and the
+ * signed-in `ownerId`. Every surface is synchronous to construct and addresses
+ * routes under that owner; nothing here touches `/api/session`.
  */
 export function createEpicenterClient(opts: EpicenterClientOptions) {
 	const base = opts.baseURL.replace(/\/+$/, '');
-	let cachedSession: ApiSessionResponse | null = null;
-
-	async function getSession(): Promise<ApiSessionResponse> {
-		if (cachedSession) return cachedSession;
-		const res = await opts.fetch(API_ROUTES.session.url(base));
-		if (!res.ok) {
-			throw new Error(`epicenter: /api/session returned ${res.status}`);
-		}
-		cachedSession = (await res.json()) as ApiSessionResponse;
-		return cachedSession;
-	}
-
-	async function getOwnerId(): Promise<OwnerId> {
-		return (await getSession()).ownerId;
-	}
-
-	const session = {
-		/** Read the cached session, fetching once if needed. */
-		current: getSession,
-		/** Force a re-fetch of `/api/session` and update the cache. */
-		async refresh(): Promise<ApiSessionResponse> {
-			cachedSession = null;
-			return getSession();
-		},
-	};
+	const { ownerId } = opts;
 
 	const assets = {
 		async upload(
 			file: File,
 			params: { visibility?: AssetVisibility } = {},
 		): Promise<UploadAssetResponse> {
-			const ownerId = await getOwnerId();
 			const fd = new FormData();
 			fd.append('file', file);
 			fd.append('visibility', params.visibility ?? 'private');
@@ -227,7 +207,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		async list(): Promise<AssetRow[]> {
-			const ownerId = await getOwnerId();
 			const res = await opts.fetch(API_ROUTES.assets.list.url(base, ownerId));
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.list: ${res.status}`);
@@ -236,7 +215,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		async usage(): Promise<{ totalBytes: number }> {
-			const ownerId = await getOwnerId();
 			const res = await opts.fetch(API_ROUTES.assets.usage.url(base, ownerId));
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.usage: ${res.status}`);
@@ -248,7 +226,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 			id: string,
 			visibility: AssetVisibility,
 		): Promise<SetVisibilityResponse> {
-			const ownerId = await getOwnerId();
 			const res = await opts.fetch(
 				API_ROUTES.assets.byId.url(base, ownerId, id),
 				{
@@ -264,7 +241,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		async delete(id: string): Promise<void> {
-			const ownerId = await getOwnerId();
 			const res = await opts.fetch(
 				API_ROUTES.assets.byId.url(base, ownerId, id),
 				{ method: 'DELETE' },
@@ -275,35 +251,15 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		/**
-		 * Build the full URL for an asset. Sync; requires the cached session
-		 * (call `epicenter.ready()` once at boot if you need to build URLs
-		 * before any other async call resolves).
+		 * Build the full URL for an asset. Sync; the owner partition is the one the
+		 * client was constructed with.
 		 *
 		 * Useful for embedding in Yjs documents, `<img src>`, share buttons.
 		 */
 		url(id: string): string {
-			if (!cachedSession) {
-				throw new Error(
-					'epicenter.assets.url: session not yet resolved. ' +
-						'Call `await epicenter.ready()` once at app boot, or ' +
-						'await any other assets.* method first.',
-				);
-			}
-			return API_ROUTES.assets.byId.url(base, cachedSession.ownerId, id);
+			return API_ROUTES.assets.byId.url(base, ownerId, id);
 		},
 	};
-
-	// Bridge the throwing session resolver into a Result for the blob surface,
-	// which is consumed programmatically (CLI, scripts), not through TanStack
-	// Query. `session.*` stays throw-native because it is shaped as a query
-	// function.
-	async function resolveOwner(): Promise<Result<OwnerId, ClientError>> {
-		return tryAsync({
-			try: () => getOwnerId(),
-			catch: (cause) =>
-				ClientError.TransportFailed({ operation: 'GET /api/session', cause }),
-		});
-	}
 
 	// Run one authed request, folding transport failure and non-2xx into a typed
 	// Result so the blob methods never throw.
@@ -341,9 +297,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 			fileOrUrl: File | Blob | string,
 			params: { contentType?: string } = {},
 		): Promise<Result<AddBlobResult, ClientError>> {
-			const { data: ownerId, error: ownerError } = await resolveOwner();
-			if (ownerError !== null) return Err(ownerError);
-
 			let bytes: ArrayBuffer;
 			let contentType: string;
 			if (typeof fileOrUrl === 'string') {
@@ -416,9 +369,9 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 
 		/**
 		 * Build the content-addressed read URL for a blob. Sync and owner-explicit
-		 * (unlike `assets.url`): a blob is referenced from a vault receipt that
-		 * already records its owner, so the URL needs no cached session and can
-		 * address any owner partition.
+		 * (unlike `assets.url`, which is bound to the construction owner): a blob is
+		 * referenced from a vault receipt that already records its owner, so this
+		 * can address any owner partition, not just the signed-in one.
 		 */
 		url(ownerId: OwnerId, sha256: string): string {
 			return API_ROUTES.blobs.byHash.url(base, ownerId, sha256);
@@ -431,8 +384,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		 * `Response`.
 		 */
 		async get(sha256: string): Promise<Result<Response, ClientError>> {
-			const { data: ownerId, error } = await resolveOwner();
-			if (error !== null) return Err(error);
 			return request(
 				API_ROUTES.blobs.byHash.url(base, ownerId, sha256),
 				undefined,
@@ -441,8 +392,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		async list(): Promise<Result<BlobRow[], ClientError>> {
-			const { data: ownerId, error } = await resolveOwner();
-			if (error !== null) return Err(error);
 			const { data: res, error: reqError } = await request(
 				API_ROUTES.blobs.list.url(base, ownerId),
 				undefined,
@@ -453,8 +402,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		async usage(): Promise<Result<BlobUsage, ClientError>> {
-			const { data: ownerId, error } = await resolveOwner();
-			if (error !== null) return Err(error);
 			const { data: res, error: reqError } = await request(
 				API_ROUTES.blobs.usage.url(base, ownerId),
 				undefined,
@@ -465,8 +412,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		},
 
 		async delete(sha256: string): Promise<Result<void, ClientError>> {
-			const { data: ownerId, error } = await resolveOwner();
-			if (error !== null) return Err(error);
 			const { error: reqError } = await request(
 				API_ROUTES.blobs.byHash.url(base, ownerId, sha256),
 				{ method: 'DELETE' },
@@ -478,17 +423,8 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 	};
 
 	return {
-		/**
-		 * Resolve and cache the session. Call once at app boot if any code
-		 * path uses synchronous URL builders like `assets.url(id)` before
-		 * an awaited async call.
-		 */
-		async ready(): Promise<void> {
-			await getSession();
-		},
 		assets,
 		blobs,
-		session,
 	};
 }
 

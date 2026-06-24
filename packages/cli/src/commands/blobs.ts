@@ -57,9 +57,17 @@ const addCommand = cmd({
 			fail(authError.message);
 			return;
 		}
+		if (auth.state.status === 'signed-out') {
+			fail('not signed in: run `epicenter auth login` first');
+			return;
+		}
+		// Identity comes off auth.state; the client is owner-scoped and never
+		// resolves `/api/session` itself.
+		const { ownerId } = auth.state;
 		const epicenter = createEpicenterClient({
 			baseURL: auth.baseURL,
 			fetch: (input, init) => auth.fetch(input, init),
+			ownerId,
 		});
 
 		// Hold the bytes locally so we can write the working copy and hand the SDK
@@ -82,20 +90,6 @@ const addCommand = cmd({
 			fail(uploadError.message, { code: 2 });
 			return;
 		}
-
-		// The receipt records the owner partition; reuse the session the upload
-		// already resolved and cached. `session.*` is throw-native (a TanStack
-		// query function), so bridge it into a Result here.
-		const { data: session, error: sessionError } = await tryAsync({
-			try: () => epicenter.session.current(),
-			catch: (cause) =>
-				Err(`could not resolve session: ${extractErrorMessage(cause)}`),
-		});
-		if (sessionError !== null) {
-			fail(sessionError);
-			return;
-		}
-		const { ownerId } = session;
 
 		const name = workingCopyName({
 			localPath,

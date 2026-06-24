@@ -17,7 +17,8 @@
 		defaultOpen: boolean;
 	} = $props();
 
-	let open = $derived(defaultOpen);
+	// svelte-ignore state_referenced_locally - `defaultOpen` is an uncontrolled default: seed the open state once, then let the user own it via the trigger (a later re-search changing matchCount must not clobber their toggle).
+	let open = $state(defaultOpen);
 
 	/**
 	 * Strip all HTML tags except <mark> for safe snippet rendering.

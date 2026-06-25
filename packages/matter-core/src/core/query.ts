@@ -7,7 +7,7 @@
  * quoting implementation.
  */
 
-import { quoteIdent } from './sqlite';
+import { ftsTableName, quoteIdent, quoteString } from './sqlite';
 
 /**
  * Build a safe FTS5 MATCH literal from user search text: wrap it as ONE quoted phrase so FTS5 reads it
@@ -18,7 +18,7 @@ import { quoteIdent } from './sqlite';
  */
 function ftsMatchLiteral(term: string): string {
 	const phrase = `"${term.replace(/"/g, '""')}"`;
-	return `'${phrase.replace(/'/g, "''")}'`;
+	return quoteString(phrase);
 }
 
 /** The grid's query controls: a SQL `WHERE` fragment, full-text search text, and a SQL `ORDER BY`
@@ -48,7 +48,7 @@ export function buildStemQuery(
 ): string {
 	const table = quoteIdent(tableName);
 	if (match) {
-		const fts = quoteIdent(`${tableName}_fts`);
+		const fts = quoteIdent(ftsTableName(tableName));
 		// The match subquery projects only rowid + rank, so its alias contributes no column that could
 		// collide with a base column in the user's where/order by. `_fts_match` is a synthetic alias.
 		const matched = `(SELECT rowid, rank FROM ${fts} WHERE ${fts} MATCH ${ftsMatchLiteral(match)})`;

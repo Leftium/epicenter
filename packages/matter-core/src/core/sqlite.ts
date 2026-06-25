@@ -66,9 +66,10 @@ export function quoteIdent(name: string): string {
 	return `"${name.replace(/"/g, '""')}"`;
 }
 
-/** Quote a value as a SQL string literal (single quotes, doubled inside). Used only for the FTS5
- *  `content=` option, which names the base table as a string, not an identifier. */
-function quoteString(value: string): string {
+/** Quote a value as a SQL string literal (single quotes, doubled inside): the projector's FTS5
+ *  `content=` option (the base table named as a string, not an identifier) and the query builder's
+ *  FTS5 MATCH literal both quote through this one implementation, beside {@link quoteIdent}. */
+export function quoteString(value: string): string {
 	return `'${value.replace(/'/g, "''")}'`;
 }
 
@@ -133,9 +134,10 @@ function buildDdl(tableName: string, fields: readonly Field[]): string {
 /**
  * The name of a folder's FTS5 index table. The `_fts` suffix is a reserved namespace in the shared
  * per-vault db (two sibling folders `x` and `x_fts` would collide, an accepted edge for a name that
- * pathological).
+ * pathological). Shared with the query builder so the projector and the reader name the index by one
+ * convention, not two.
  */
-function ftsTableName(tableName: string): string {
+export function ftsTableName(tableName: string): string {
 	return `${tableName}_fts`;
 }
 

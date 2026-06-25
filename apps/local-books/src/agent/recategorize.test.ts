@@ -23,7 +23,7 @@ import { entityDef } from '../entities.ts';
 import { createFileTokenStore } from '../token-store.ts';
 import type { TokenSet } from '../tokens.ts';
 import { createBooksAgentActions } from './books-actions.ts';
-import { makeQbAccess } from './qb-access.ts';
+import { createQbAccess } from './qb-access.ts';
 
 /** No peers: a books action resolves in-process; dispatch is never reached. */
 const LOCAL_ONLY: DispatchSurface = {
@@ -82,7 +82,7 @@ async function setup(
 	);
 	db.close();
 
-	const openQb = makeQbAccess({ config, realmId: mock.realmId, store, now });
+	const openQb = createQbAccess({ config, realmId: mock.realmId, store, now });
 	const catalog = createDispatchToolCatalog(LOCAL_ONLY, {
 		localActions: createBooksAgentActions({ dbPath: path, openQb }),
 	});

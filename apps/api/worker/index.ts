@@ -45,7 +45,7 @@ const app = createServerApp({
 	// Hyperdrive, `waitUntil`, and the Durable Object room registry. This edge
 	// points it at its OWN two bindings: the `Cloudflare.Env` cast and the
 	// binding names live here, where they are type-checked against this Worker's
-	// generated bindings (ADR-0065). Per-room DO sharding stays the cloud's
+	// generated bindings (ADR-0066). Per-room DO sharding stays the cloud's
 	// binding of the room actor forever: hibernate-to-zero and
 	// single-writer-per-room at multi-tenant scale. A Bun host builds its own
 	// adapter inline.
@@ -60,7 +60,7 @@ const app = createServerApp({
 		// `API_PUBLIC_ORIGIN=http://localhost:8787` via scripts/dev.ts; production
 		// falls through to PRODUCTION_API_URL. `API_PUBLIC_ORIGIN` is
 		// deployment-owned config, not a binding `ServerBindings` names, so casting
-		// to this deployment's own `Cloudflare.Env` is the honest edge (ADR-0065).
+		// to this deployment's own `Cloudflare.Env` is the honest edge (ADR-0066).
 		resolveOrigin: (env) =>
 			(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
 		resolveTrustedOrigins: buildEpicenterTrustedOrigins,

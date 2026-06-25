@@ -16,7 +16,7 @@ The hub handles auth, sync relay, and AI. Local servers handle filesystem access
 
 ## Stack and priorities
 
-Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda, so when the sync room moved to a second runtime (ADR-0065), the route layer came along for free.
+Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda, so when the sync room moved to a second runtime (ADR-0066), the route layer came along for free.
 
 Cloudflare Durable Objects are the hosted deployment target. Three things make them a natural fit for Yjs sync rooms:
 
@@ -26,7 +26,7 @@ Cloudflare Durable Objects are the hosted deployment target. Three things make t
 
 Durable Objects are the hosted backend, not the only one. The sync logic is the runtime-agnostic `RoomCore` (`room/core.ts`), and each runtime supplies a backend that satisfies one contract (`room/contracts.ts`): `room/backends/cloudflare/` wraps a Durable Object, `room/backends/bun/` keeps the update log in `bun:sqlite`. Routes, auth, AI, and validation are plain runtime-portable Hono.
 
-That extraction already happened (ADR-0065), so self-hosting no longer waits on a runtime rewrite. The Bun host, `apps/api/server.ts`, boots the same server against plain Postgres, local `bun:sqlite` room logs, and any S3 endpoint, with no Cloudflare account. What is missing is packaging: no compiled binary and no migration guide yet, so it runs but is not turnkey. To deploy today, fork the repo and run the existing `wrangler.jsonc` on Cloudflare.
+That extraction already happened (ADR-0066), so self-hosting no longer waits on a runtime rewrite. The Bun host, `apps/api/server.ts`, boots the same server against plain Postgres, local `bun:sqlite` room logs, and any S3 endpoint, with no Cloudflare account. What is missing is packaging: no compiled binary and no migration guide yet, so it runs but is not turnkey. To deploy today, fork the repo and run the existing `wrangler.jsonc` on Cloudflare.
 
 Better Auth handles identity. Google OAuth is the only wired sign-in (email/password is disabled in `base-config.ts`; GitHub turns on only when a deployment configures its credentials), plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 
@@ -49,7 +49,7 @@ Blobs land wherever `BLOBS_S3_ENDPOINT` points, so renting Epicenter's blob
 service puts your media in Epicenter's R2 even on a self-hosted star; point the
 store at your own S3 to keep media local. And logging in still leans on Google
 OAuth (email/password is disabled in `base-config.ts`), until the first-boot
-local bearer token that removes that dependency lands (ADR-0069). The full
+local bearer token that removes that dependency lands (ADR-0070). The full
 ledger, with the reasoning, is in [docs/trust-model.md](/docs/trust-model.md).
 
 ### Why not zero-knowledge?

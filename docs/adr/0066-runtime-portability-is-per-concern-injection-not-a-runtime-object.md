@@ -1,4 +1,4 @@
-# 0065. Server runtime portability is per-concern injection chosen by whether an open standard exists, not a Runtime object
+# 0066. Server runtime portability is per-concern injection chosen by whether an open standard exists, not a Runtime object
 
 - **Status:** Accepted
 - **Date:** 2026-06-24

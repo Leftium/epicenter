@@ -364,7 +364,7 @@ Capabilities never know which."** To keep it clean we must REFUSE:
 
 ## Execution status (this pass)
 
-- **Waves 1-4: LANDED (branch `wash-saddle`).** ADR-0065 is now `Accepted`.
+- **Waves 1-4: LANDED (branch `wash-saddle`).** ADR-0066 is now `Accepted`.
   - **Wave 1 (`refactor(server)`):** `createServerApp` injects `connectDb` +
     `afterResponse` per concern; `createDb(client)` + the Cloudflare
     `connectHyperdriveDb(env.HYPERDRIVE)` backend are exported and wired at both
@@ -411,7 +411,7 @@ Capabilities never know which."** To keep it clean we must REFUSE:
 
 ## Post-grill refinements (2026-06-24)
 
-An adversarial grill of the landed waves returned a **working-but-flawed** verdict: the load-bearing decisions held (per-concern injection with no `Runtime` god-object; `RoomCore` imports nothing Cloudflare and never branches on runtime; room and blob stayed honestly asymmetric; the DO stayed a binding), but the flaws were concentrated. ADR-0065's Consequences now carry the durable corrections; this logs the execution split.
+An adversarial grill of the landed waves returned a **working-but-flawed** verdict: the load-bearing decisions held (per-concern injection with no `Runtime` god-object; `RoomCore` imports nothing Cloudflare and never branches on runtime; room and blob stayed honestly asymmetric; the DO stayed a binding), but the flaws were concentrated. ADR-0066's Consequences now carry the durable corrections; this logs the execution split.
 
 **Landed (env + naming + the crash floor):**
 
@@ -483,7 +483,7 @@ runtime. That is the collapse, made real and exercised by Wave 4.
 
 ## ADR
 
-Recorded as **[ADR-0065](../docs/adr/0065-runtime-portability-is-per-concern-injection-not-a-runtime-object.md)** (Proposed; flip to Accepted when the wave plan lands). The decision in one paragraph:
+Recorded as **[ADR-0066](../docs/adr/0066-runtime-portability-is-per-concern-injection-not-a-runtime-object.md)** (Proposed; flip to Accepted when the wave plan lands). The decision in one paragraph:
 
 > **Runtime portability is decided per subsystem by one rule (is there an open
 > standard both runtimes speak?): Road 1 collapses to that standard, Road 2 injects

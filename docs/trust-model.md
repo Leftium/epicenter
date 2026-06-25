@@ -41,7 +41,7 @@ Self-hosting is functionally zero-knowledge against Epicenter, because Epicenter
 
 Self-host moves the data to your box, but the login does not move with it yet. The only wired sign-in is Google OAuth: `packages/server/src/auth/base-config.ts` disables email/password on purpose, because better-auth 1.5.6 has no local-email-verification gate and no mail sender is wired up, so a local account would open an account-takeover path. The cost is real: today a self-hoster registers a Google OAuth app to log into their own machine, a cloud dependency that cuts against the point of running your own box.
 
-The fix is a local credential source, not a removed login gate. The planned self-host default is a single-user bearer token printed at first boot: a real authenticated user with no third-party issuer behind it. Multi-user homelabs reach the same gate through a reverse-proxy header in front of their own identity provider, or through better-auth's API keys. The gate never goes away; only where the credential comes from changes. That decision is `docs/adr/0069-self-host-adds-no-new-ownership-or-auth-mode.md`, and it is in flight, not yet shipped.
+The fix is a local credential source, not a removed login gate. The planned self-host default is a single-user bearer token printed at first boot: a real authenticated user with no third-party issuer behind it. Multi-user homelabs reach the same gate through a reverse-proxy header in front of their own identity provider, or through better-auth's API keys. The gate never goes away; only where the credential comes from changes. That decision is `docs/adr/0070-self-host-adds-no-new-ownership-or-auth-mode.md`, and it is in flight, not yet shipped.
 
 ## Where this is heading: the anchor
 

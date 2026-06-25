@@ -1,5 +1,5 @@
 /**
- * `startBunServer` — the shared Bun process bootstrap (ADR-0065).
+ * `startBunServer` — the shared Bun process bootstrap (ADR-0066).
  *
  * The two Bun deployables (`apps/api/server.ts`, `apps/self-host/server.ts`)
  * differ only in their ownership rule, trusted origins, default port, health

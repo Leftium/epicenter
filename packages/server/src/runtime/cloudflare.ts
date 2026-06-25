@@ -1,5 +1,5 @@
 /**
- * The Cloudflare runtime adapter: the three runtime-port concerns (ADR-0065)
+ * The Cloudflare runtime adapter: the three runtime-port concerns (ADR-0066)
  * wired to Workers bindings, as one {@link RuntimeAdapter} a Workers deployment
  * passes to `createServerApp`. The wiring (a per-request pg client over
  * Hyperdrive, `waitUntil`, and the Durable Object room registry) is identical
@@ -9,7 +9,7 @@
  * and `room` extractors. That keeps the binding NAMES (`HYPERDRIVE`, `ROOM`,
  * which each app chooses in its own `wrangler.jsonc`) and the `Cloudflare.Env`
  * cast at the app edge, where naming Cloudflare is honest and the access is
- * type-checked against the deployment's generated bindings (ADR-0065). This
+ * type-checked against the deployment's generated bindings (ADR-0066). This
  * library file names no binding name and casts no env; it only knows the
  * binding TYPES, through what `connectHyperdriveDb` and
  * `createDurableObjectRooms` already accept. A Bun host builds its own adapter
@@ -25,7 +25,7 @@ import type { ServerBindings } from '../server-bindings.js';
  * Build the Cloudflare {@link RuntimeAdapter} for `createServerApp`. The
  * deployment passes one extractor per binding, reading it off its own
  * `Cloudflare.Env`; per-room DO sharding stays the cloud's binding of the room
- * actor (ADR-0065): hibernate-to-zero and single-writer-per-room at
+ * actor (ADR-0066): hibernate-to-zero and single-writer-per-room at
  * multi-tenant scale.
  */
 export function cloudflare(bindings: {

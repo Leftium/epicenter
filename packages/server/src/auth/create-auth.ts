@@ -12,7 +12,7 @@ type Db = NodePgDatabase<typeof schema>;
 
 /**
  * The secrets `createAuth` actually reads. Loosened from `Cloudflare.Env` to
- * exactly this (ADR-0065): every member is a portable string the runtimes
+ * exactly this (ADR-0066): every member is a portable string the runtimes
  * expose identically (`c.env` on Workers, `process.env` on a Node host). Auth
  * construction thus names no Cloudflare binding type at all. A deployment's
  * `Cloudflare.Env` satisfies this structurally.

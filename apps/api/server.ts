@@ -3,7 +3,7 @@
  *
  * Builds the SAME `createServerApp(...)` the Cloudflare Worker builds
  * (`worker/index.ts`), but binds the per-concern runtime hooks to plain
- * primitives instead of Cloudflare bindings (ADR-0065):
+ * primitives instead of Cloudflare bindings (ADR-0066):
  *
  *   - `connectDb`     a module-scope `pg.Pool` over `DATABASE_URL`
  *   - `afterResponse` fire-and-forget in the live process (no `waitUntil`)
@@ -58,7 +58,7 @@ export function startBunApiServer(
 	// config, so a misconfiguration gets ONE descriptive error naming every
 	// missing or malformed var instead of a downstream surprise. The validated
 	// result IS the typed env handed to the Hono app: no `as`-cast over
-	// `process.env`, no lie (ADR-0065). Unlike the Cloudflare edge (whose bindings
+	// `process.env`, no lie (ADR-0066). Unlike the Cloudflare edge (whose bindings
 	// are deploy-gated and `wrangler types`-typed), `process.env` is unchecked, so
 	// boot is the place to validate it.
 	const env = BunHostBindings(process.env);

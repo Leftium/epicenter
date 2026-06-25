@@ -2,7 +2,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 /**
- * A client's choice of which Epicenter star to talk to (ADR-0068: privacy is
+ * A client's choice of which Epicenter star to talk to (ADR-0069: privacy is
  * which deployment runs the program). The default is the hosted cloud with no
  * token (normal OAuth); a self-hoster sets `baseURL` to their origin and a
  * `token` minted by their box.

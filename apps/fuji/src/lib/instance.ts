@@ -1,6 +1,6 @@
 /**
  * The persisted choice of which Epicenter star this Fuji install talks to
- * (ADR-0068: privacy is which deployment runs the program). Default is the
+ * (ADR-0069: privacy is which deployment runs the program). Default is the
  * hosted cloud with no token (normal OAuth); a self-hoster overrides the base
  * URL and pastes a token their box minted.
  *

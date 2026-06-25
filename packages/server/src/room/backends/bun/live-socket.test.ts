@@ -7,7 +7,7 @@
  * impedance (Bun cannot return a 101 from `fetch`), the top-level `websocket`
  * handler delivering frames to `RoomCore`, and real binary/text frames flowing
  * back over the wire. It is the Bun half of the "a room syncs over WebSocket"
- * proof (ADR-0065 Wave 4); auth is omitted here on purpose, since this asserts
+ * proof (ADR-0066 Wave 4); auth is omitted here on purpose, since this asserts
  * the transport, not the gate (the gate is proven by the route's own tests).
  */
 

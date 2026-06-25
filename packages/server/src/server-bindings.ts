@@ -5,7 +5,7 @@
  * (see types.ts) and the SSOT a Bun host validates `process.env` against at
  * boot (see apps/api/server.ts).
  *
- * Deliberately NOT `Cloudflare.Env` (ADR-0065): it lists only the portable
+ * Deliberately NOT `Cloudflare.Env` (ADR-0066): it lists only the portable
  * STRING secrets library code reads, so library code names no Cloudflare type
  * and a Bun host typechecks AND validates with no Cloudflare types in scope.
  * Because every member is a string, a Bun entry runs the schema over

@@ -7,7 +7,7 @@
   - [ADR-0061](../docs/adr/0061-privacy-is-a-deployment-not-a-product-feature.md): privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface.
   - [ADR-0062](../docs/adr/0062-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md): Epicenter is one runnable program (the star) plus a la carte services addressed by `{baseUrl, token?}`.
   - [ADR-0063](../docs/adr/0063-self-host-adds-no-new-ownership-or-auth-mode.md): self-host adds no new ownership or auth mode; single-user is a preset, only the credential source varies.
-- **Builds on:** [ADR-0004](../docs/adr/0004-trust-the-relay-reject-zero-knowledge.md) (trust the relay; privacy is topology), [ADR-0035](../docs/adr/0035-durable-storage-is-one-per-person-coordination-box.md) (the star roles), [ADR-0065](../docs/adr/0065-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the Bun star binary), and the article [`docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md`](../docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md).
+- **Builds on:** [ADR-0004](../docs/adr/0004-trust-the-relay-reject-zero-knowledge.md) (trust the relay; privacy is topology), [ADR-0035](../docs/adr/0035-durable-storage-is-one-per-person-coordination-box.md) (the star roles), [ADR-0066](../docs/adr/0066-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the Bun star binary), and the article [`docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md`](../docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md).
 
 ## One sentence
 

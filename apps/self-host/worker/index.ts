@@ -31,7 +31,7 @@ import {
 const ownership = shared({
 	admit: (c) => {
 		// `ALLOWED_MEMBER_EMAILS` is this deployment's operator config, read off
-		// its own `Cloudflare.Env` (the honest-edge cast, ADR-0065; the resolver
+		// its own `Cloudflare.Env` (the honest-edge cast, ADR-0066; the resolver
 		// note below carries the full rationale). `?? ''` keeps a deployment that
 		// never set the var fail-closed (admits nobody) instead of throwing a
 		// TypeError on every request: wrangler types it `string`, but a declared
@@ -51,7 +51,7 @@ const app = createServerApp({
 	// `waitUntil` to drain the after-response queue past the response, and the
 	// Durable Object room registry. This edge points it at its OWN two bindings
 	// (the `Cloudflare.Env` cast and binding names stay here, type-checked
-	// against this Worker's generated bindings, ADR-0065). Identical wiring to
+	// against this Worker's generated bindings, ADR-0066). Identical wiring to
 	// the hosted deployable; the ownership rule and identity are what differ.
 	runtime: cloudflare({
 		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
@@ -61,7 +61,7 @@ const app = createServerApp({
 		// Self-hosters set their own public origin in wrangler.jsonc
 		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's. It is
 		// operator config, not a binding `ServerBindings` names, so it is read off
-		// this deployment's own `Cloudflare.Env` at the honest edge (ADR-0065).
+		// this deployment's own `Cloudflare.Env` at the honest edge (ADR-0066).
 		resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
 		// A self-host trusts its OWN origin and the Tauri desktop client, never
 		// Epicenter cloud's. Add any browser app origins you serve (and the

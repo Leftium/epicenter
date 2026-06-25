@@ -25,7 +25,7 @@ const OAUTH_CALLBACK_TIMEOUT_MS = 10 * 60 * 1000;
 const instance = readInstance();
 
 // A configured instance token means a self-hosted star: authenticate with the
-// static bearer (ADR-0069) instead of OAuth. Otherwise the deep-link OAuth flow
+// static bearer (ADR-0070) instead of OAuth. Otherwise the deep-link OAuth flow
 // runs against the instance origin, which is the hosted cloud by default.
 export const auth: PlatformAuth = instance.token
 	? createInstanceTokenAuth({ baseURL: instance.baseURL, token: instance.token })

@@ -1,4 +1,4 @@
-# 0066. Auth owns the `/api/session` endpoint; the data client is owner-scoped
+# 0067. Auth owns the `/api/session` endpoint; the data client is owner-scoped
 
 - **Status:** Accepted
 - **Date:** 2026-06-24

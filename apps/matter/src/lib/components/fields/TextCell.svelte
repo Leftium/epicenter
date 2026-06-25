@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { isMissing } from '$lib/core/conformance';
+	import { isMissing } from '@epicenter/matter-core';
 	import { createCellEdit, type CellEditParse } from './create-cell-edit.svelte';
 	import FieldMissing from './FieldMissing.svelte';
 	import type { RenderableCell, SaveField } from './field-props';

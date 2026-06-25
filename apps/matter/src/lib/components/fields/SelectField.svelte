@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Select from '@epicenter/ui/select';
 	import type { FieldOf } from '@epicenter/field';
-	import { isMissing } from '$lib/core/conformance';
+	import { isMissing } from '@epicenter/matter-core';
 	import FieldMissing from './FieldMissing.svelte';
 	import type { FieldProps } from './field-props';
 

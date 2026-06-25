@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import EraserIcon from '@lucide/svelte/icons/eraser';
-	import { isMissing, type Cell } from '$lib/core/conformance';
+	import { isMissing, type Cell } from '@epicenter/matter-core';
 	import { FIELD_COMPONENTS } from './fields/registry';
 	import JsonEditor from './fields/JsonEditor.svelte';
 	import type { SaveField } from './fields/field-props';

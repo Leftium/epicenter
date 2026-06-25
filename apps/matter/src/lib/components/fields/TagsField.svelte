@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { isMissing } from '$lib/core/conformance';
+	import { isMissing } from '@epicenter/matter-core';
 	import FieldMissing from './FieldMissing.svelte';
 	import type { FieldProps } from './field-props';
 

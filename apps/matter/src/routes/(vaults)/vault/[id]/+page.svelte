@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { basename } from '$lib/core/path';
+	import { basename } from '@epicenter/matter-core';
 	import type { PageData } from './$types';
 	import VaultShell from './VaultShell.svelte';
 

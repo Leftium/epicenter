@@ -13,12 +13,12 @@
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
-	import type { Cell } from '$lib/core/conformance';
-	import { stemOf } from '$lib/core/parse';
-	import type {
-		ReferenceVerdict,
-		TableAssessment,
-	} from '$lib/core/integrity';
+	import {
+		type Cell,
+		type ReferenceVerdict,
+		stemOf,
+		type TableAssessment,
+	} from '@epicenter/matter-core';
 	import type { TableView } from '$lib/table.svelte';
 	import type { WhereFilter } from '$lib/where-filter.svelte';
 	import ModeledCell from './ModeledCell.svelte';

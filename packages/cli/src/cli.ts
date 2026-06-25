@@ -3,6 +3,7 @@ import { authCommand } from './commands/auth.js';
 import { daemonCommand } from './commands/daemon.js';
 import { initCommand } from './commands/init.js';
 import { listCommand } from './commands/list.js';
+import { matterCommand } from './commands/matter.js';
 import { peersCommand } from './commands/peers.js';
 import { runCommand } from './commands/run.js';
 
@@ -16,6 +17,7 @@ import { runCommand } from './commands/run.js';
  *   - `init`:  scaffold epicenter.config.ts (explicit root creation)
  *   - `daemon`: operate daemon lifecycle commands
  *   - `list`:  runnable actions for the mounted runtime (local schema is authoritative)
+ *   - `matter`: lint a folder of typed markdown (disk is the source; SQLite is a projection)
  *   - `run`:   invoke one by action key; `--peer` dispatches over RPC
  *   - `peers`: enumerate other clients currently online via the workspace presence row
  *
@@ -36,6 +38,7 @@ export function createCLI() {
 				.command(initCommand)
 				.command(daemonCommand)
 				.command(listCommand)
+				.command(matterCommand)
 				.command(peersCommand)
 				.command(runCommand)
 				.demandCommand(1)

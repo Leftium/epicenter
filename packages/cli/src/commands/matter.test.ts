@@ -1,11 +1,12 @@
 /**
- * `matter check` command tests against fixtures and the bundled example vault. These pin the
- * command contract, not the UI: the marker-based scope (ADR-0029), exit codes, the
- * un-evaluable-reference note for a lone table, the `--json` shape, and the fatal tiers.
+ * `epicenter matter check` command tests, spawning the real binary against fixtures and the bundled
+ * example vault. These pin the command contract, not the engine internals (`@epicenter/matter-core`
+ * has its own unit tests): the marker-based scope (ADR-0029), exit codes, the un-evaluable-reference
+ * note for a lone table, the `--json` shape, and the fatal tiers.
  *
- *   - exit 0  every loaded row is healthy (an untyped `{}` folder counts; a path that is not a
- *             table and has no marked children is "no tables", not a failure; references
- *             un-evaluable in isolation are a note, not a failure)
+ *   - exit 0  every loaded row is healthy (an untyped `{}` folder counts; a path that is not a table
+ *             and has no marked children is "no tables", not a failure; references un-evaluable in
+ *             isolation are a note, not a failure)
  *   - exit 1  a loaded row needs attention, or a cross-table reference does not resolve
  *   - exit 2  a folder is unreadable or a matter.json is a corrupt contract
  */
@@ -15,15 +16,17 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const appRoot = resolve(import.meta.dir, '../..');
-const fixtureRoot = 'fixtures/check';
+// The CLI package root: `bun src/bin.ts` runs from here, fixture paths resolve against it, and the
+// example vault sits two levels up at the repo's `examples/` (same depth the old app test used).
+const cliRoot = resolve(import.meta.dir, '../..');
+const fixtureRoot = 'fixtures/matter-check';
 const exampleVault = '../../examples/matter/content-vault';
 
 type CommandResult = { exitCode: number; stdout: string; stderr: string };
 
 async function runCheck(args: string[]): Promise<CommandResult> {
-	const proc = Bun.spawn(['bun', 'run', '--silent', 'check', ...args], {
-		cwd: appRoot,
+	const proc = Bun.spawn(['bun', 'src/bin.ts', 'matter', 'check', ...args], {
+		cwd: cliRoot,
 		stdout: 'pipe',
 		stderr: 'pipe',
 	});
@@ -142,9 +145,11 @@ describe('matter check: fatal tiers', () => {
 		expect(result.stdout).toContain("can't read");
 	});
 
-	test('exit 2 with a usage error on an unknown option', async () => {
+	test('a usage error on an unknown option is rejected by yargs', async () => {
+		// Usage errors are now yargs' domain (the command parses with `.strict()`), not the engine's
+		// exit ladder: an unknown flag fails the parse, bin.ts catches it and exits 1.
 		const result = await runCheck(['--bogus']);
-		expect(result.exitCode).toBe(2);
-		expect(result.stderr).toContain('unknown option --bogus');
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain('Unknown argument: bogus');
 	});
 });

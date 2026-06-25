@@ -17,11 +17,14 @@
  * {@link createVault} / {@link createTable}.
  */
 
+import {
+	projectToSqlite,
+	quoteIdent,
+	type TableRead,
+} from '@epicenter/matter-core';
 import { invoke } from '@tauri-apps/api/core';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
-import { projectToSqlite, quoteIdent } from './core/sqlite';
-import type { TableRead } from './core/table';
 
 /** Open the mirror for vault `root` (the db lives at `<root>/.matter/matter.sqlite`; Rust owns that
  *  layout, this side passes only the root). Synchronous: the reset is dispatched now and becomes the

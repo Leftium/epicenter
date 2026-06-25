@@ -1,11 +1,26 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { loadPath } from '../load/fs';
 import { classifyRows } from './conformance';
 import { validateContract } from './contract';
 import type { Row } from './parse';
 import { projectToSqlite } from './sqlite';
+
+/** Resolve the bundled example vault by walking up from this file until it appears, so the path holds
+ *  wherever in the repo this test lives, not at a fixed offset from `import.meta.dir`. */
+function findExampleVault(): string {
+	let dir = import.meta.dir;
+	for (;;) {
+		const candidate = resolve(dir, 'examples/matter/content-vault');
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(dir);
+		if (parent === dir)
+			throw new Error('examples/matter/content-vault not found');
+		dir = parent;
+	}
+}
 
 function contract(
 	fields: Record<string, Record<string, unknown>>,
@@ -179,8 +194,7 @@ describe('projects a vault into one db whose tables JOIN', () => {
 	// JOIN falls out of real table names with no new code. This drives the real projector over the
 	// bundled content-vault and runs its SQL through bun:sqlite (the same engine the Tauri command
 	// uses), so the success criterion is proven end to end, not asserted on the SQL strings alone.
-	const appRoot = resolve(import.meta.dir, '../../..');
-	const exampleVault = resolve(appRoot, '../../examples/matter/content-vault');
+	const exampleVault = findExampleVault();
 
 	test('adaptations JOIN pages on the reference column returns the resolved rows', async () => {
 		// Load the fixture and project every typed table into one in-memory db, exactly as the Vault

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Checkbox } from '@epicenter/ui/checkbox';
-	import { isMissing } from '$lib/core/conformance';
+	import { isMissing } from '@epicenter/matter-core';
 	import type { FieldProps } from './field-props';
 
 	// A checkbox, not a Select: a boolean is exactly true or false, plus the missing

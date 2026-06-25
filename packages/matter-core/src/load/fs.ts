@@ -4,8 +4,8 @@
  * the one place that does, so the whole pipeline is testable without a filesystem and the listing
  * is not duplicated per surface.
  *
- * This is the single home for the disk listing the CLI (`src/cli/check.ts`) and the app surfaces
- * share, instead of each writing their own copy: list a folder's
+ * This is the single home for the Node disk listing behind the `epicenter matter check` command,
+ * instead of the command writing its own copy: list a folder's
  * `.md` files, read each (a read failure becomes an unreadable entry, never a dropped file), and
  * read its `matter.json`. {@link loadTable} loads one folder; {@link loadPath} is the entry point
  * that classifies a path as a marked table or a container of marked children.

@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -241,6 +240,7 @@
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.41.0",
         "@epicenter/field": "workspace:*",
+        "@epicenter/matter-core": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@lezer/common": "^1.5.1",
         "@lezer/highlight": "^1.2.3",
@@ -250,7 +250,6 @@
         "arktype": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
-        "yaml": "^2.8.0",
       },
       "devDependencies": {
         "@epicenter/ui": "workspace:*",
@@ -710,6 +709,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/identity": "workspace:*",
+        "@epicenter/matter-core": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "arktype": "catalog:",
@@ -799,6 +799,19 @@
       "dependencies": {
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/matter-core": {
+      "name": "@epicenter/matter-core",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/field": "workspace:*",
+        "wellcrafted": "catalog:",
+        "yaml": "^2.8.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1311,6 +1324,8 @@
     "@epicenter/local-books": ["@epicenter/local-books@workspace:apps/local-books"],
 
     "@epicenter/matter": ["@epicenter/matter@workspace:apps/matter"],
+
+    "@epicenter/matter-core": ["@epicenter/matter-core@workspace:packages/matter-core"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 

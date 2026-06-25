@@ -5,7 +5,7 @@
 **Owner**: Braden
 **Branch**: none yet (execute on a fresh branch off `main` after `feat/client-instance-setting` merges)
 **Parent map**: [`specs/20260624T223835-privacy-is-a-deployment-self-host-and-relay-anchor-gradations.md`](20260624T223835-privacy-is-a-deployment-self-host-and-relay-anchor-gradations.md) (this is Wave 3, expanded)
-**Records**: [ADR-0063](../docs/adr/0063-self-host-adds-no-new-ownership-or-auth-mode.md) (the locked decision; this spec only pins the default it delegated)
+**Records**: [ADR-0070](../docs/adr/0070-self-host-adds-no-new-ownership-or-auth-mode.md) (the locked decision; this spec only pins the default it delegated)
 
 ## One Sentence
 
@@ -16,7 +16,7 @@ A self-hoster logs into their own box with a bearer token the star prints once a
 ```
 Read first:        One Sentence · Current State · The locked design · Implementation Plan · Success Criteria
 Read to decide:    Design Decisions · Open Questions
-Historical/context: Parent map Wave 3, ADR-0063
+Historical/context: Parent map Wave 3, ADR-0070
 ```
 
 ## Overview
@@ -62,7 +62,7 @@ This creates problems:
 
 ## The locked design (what this spec pins)
 
-ADR-0063 decided self-host adds **no new ownership mode and no new auth gate**; it delegated the *specific default credential* to this spec. The parent map already drew it (config A): solo self-host is `personal` + a local bearer. This spec pins that and nothing more.
+ADR-0070 decided self-host adds **no new ownership mode and no new auth gate**; it delegated the *specific default credential* to this spec. The parent map already drew it (config A): solo self-host is `personal` + a local bearer. This spec pins that and nothing more.
 
 ```
   AXIS 1 · PARTITION (OwnershipRule)        AXIS 2 · CREDENTIAL SOURCE (resolveUser)
@@ -86,13 +86,13 @@ Why `personal` and not `shared(admit: always)` (both yield one partition for one
 
 | Decision | Class | Choice | Rationale |
 |---|---|---|---|
-| Solo partition | 2 coherence | `personal`, keyed by the bootstrapped user id | ADR-0063 + hosted symmetry + isolation-by-default (above). Pins the default the ADR delegated. |
-| Credential mechanism | 2 coherence | A bearer token validated against a boot secret, on `resolveUser` | One total gate; the productionized sibling of `resolveDevUser`. No new gate, no no-auth branch (ADR-0063). |
-| Resolver home | 3 taste | A validating factory in `packages/server` (NOT duplicated per-deployable like the dev bypass) | The dev bypass is duplicated + quarantined *because* it is a bypass (ADR-0059). A real secret-checked credential has no bypass risk, so it earns a shared home. |
+| Solo partition | 2 coherence | `personal`, keyed by the bootstrapped user id | ADR-0070 + hosted symmetry + isolation-by-default (above). Pins the default the ADR delegated. |
+| Credential mechanism | 2 coherence | A bearer token validated against a boot secret, on `resolveUser` | One total gate; the productionized sibling of `resolveDevUser`. No new gate, no no-auth branch (ADR-0070). |
+| Resolver home | 3 taste | A validating factory in `packages/server` (NOT duplicated per-deployable like the dev bypass) | The dev bypass is duplicated + quarantined *because* it is a bypass (ADR-0066). A real secret-checked credential has no bypass risk, so it earns a shared home. |
 | Bootstrap identity | 3 taste | Generate a stable user id at first boot, persist it separately from the secret | Partition `owners/<id>/` must survive a token rotation; a guessable constant id is worse than a generated one. |
-| `solo()` / `sovereign()` preset factory | Deferred | Compose `personal()` + bearer inline in the entry | ADR-0063: factory "only if ergonomics warrant". Earn it when the composition repeats in 2+ entries, not before. |
+| `solo()` / `sovereign()` preset factory | Deferred | Compose `personal()` + bearer inline in the entry | ADR-0070: factory "only if ergonomics warrant". Earn it when the composition repeats in 2+ entries, not before. |
 | Reverse-proxy header resolver | Deferred | Named escape hatch, not built now | Solo bearer covers the flagship case; multi-user homelab is config C, a later want. |
-| Re-enable email/password | Deferred | Escape hatch only, never the default | Needs a mail sender for reset + carries takeover risk (ADR-0063). |
+| Re-enable email/password | Deferred | Escape hatch only, never the default | Needs a mail sender for reset + carries takeover risk (ADR-0070). |
 
 ## Architecture
 
@@ -170,7 +170,7 @@ resolveProxyHeaderUser(header)     X-Webauth-User       -> user from trusted pro
    - **Recommendation**: generate + persist, so the partition is stable and not a guessable constant. Email like `owner@localhost.invalid`. Leave the exact shape open.
 
 3. **Resolver in `packages/server` or duplicated per entry?**
-   - The dev bypass is duplicated + quarantined on purpose (ADR-0059, keep bypasses out of the shared lib). The bearer is a real secret-checked credential, not a bypass.
+   - The dev bypass is duplicated + quarantined on purpose (ADR-0066, keep bypasses out of the shared lib). The bearer is a real secret-checked credential, not a bypass.
    - **Recommendation**: shared in `packages/server`. Re-confirm at implementation that nothing about it wants quarantine.
 
 4. **Does solo self-host run `apps/api` (personal) or a new entry?**
@@ -183,7 +183,7 @@ resolveProxyHeaderUser(header)     X-Webauth-User       -> user from trusted pro
 - [ ] A request bearing the token resolves to the bootstrap user and opens a room under `owners/<bootstrapId>/`.
 - [ ] A request without / with a wrong token gets 401.
 - [ ] A solo self-host completes with no Google OAuth app registered.
-- [ ] ADR-0063 is untouched (no new mode, no no-auth fork); this spec only pinned solo = `personal` + bearer.
+- [ ] ADR-0070 is untouched (no new mode, no no-auth fork); this spec only pinned solo = `personal` + bearer.
 - [ ] Parent map Wave 3 row checked; this spec deleted on landing.
 
 ## References
@@ -194,4 +194,4 @@ resolveProxyHeaderUser(header)     X-Webauth-User       -> user from trusted pro
 - `apps/api/server.ts`, `apps/api/dev-auth.ts` - the personal star's Bun entry and the dev resolver this productionizes.
 - `apps/self-host/dev-auth.ts`, `apps/self-host/scripts/smoke.ts` - the quarantined dev-resolver pattern and the shared-mode smoke to mirror.
 - `packages/server/src/auth/base-config.ts` - where email/password is disabled.
-- `docs/adr/0063-self-host-adds-no-new-ownership-or-auth-mode.md` - the locked decision.
+- `docs/adr/0070-self-host-adds-no-new-ownership-or-auth-mode.md` - the locked decision.

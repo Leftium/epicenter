@@ -15,8 +15,8 @@
 import { realpathSync } from 'node:fs';
 import type { SyncAuthClient } from '@epicenter/auth';
 import {
-	createMachineAuthClient,
 	type MachineAuthStorageError,
+	resolveMachineAuthClient,
 } from '@epicenter/auth/node';
 import type { StartedMount } from '@epicenter/workspace/daemon';
 import {
@@ -60,9 +60,11 @@ type UpOptions = {
 	cliVersion?: string;
 	/**
 	 * Factory that constructs the daemon's auth client. Production uses the
-	 * default (`createMachineAuthClient`, which reads the persisted cell from
-	 * disk). Tests pass a stub or a deliberately-failing factory to exercise
-	 * the auth-construction seam without seeding files or mutating env vars.
+	 * default (`resolveMachineAuthClient`, which picks the instance-token client
+	 * when a static token is configured via `EPICENTER_TOKEN` /
+	 * `EPICENTER_TOKEN_FILE`, else reads the persisted OAuth cell from disk).
+	 * Tests pass a stub or a deliberately-failing factory to exercise the
+	 * auth-construction seam without seeding files or mutating env vars.
 	 */
 	createAuthClient?: () => Promise<
 		Result<SyncAuthClient, MachineAuthStorageError>
@@ -140,7 +142,7 @@ export async function runUp(
 	// session") is a valid state: the daemon still serves local mounts and
 	// reports session-only mounts as inactive, so it maps to a `null` session.
 	// Any other storage error is fatal.
-	const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
+	const createAuthClient = options.createAuthClient ?? resolveMachineAuthClient;
 	const authResult = await createAuthClient();
 	let auth: SyncAuthClient | null = null;
 	if (authResult.error) {

@@ -16,17 +16,17 @@ The hub handles auth, sync relay, and AI. Local servers handle filesystem access
 
 ## Stack and priorities
 
-Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda. When we build self-hosting adapters, the route layer comes along for free.
+Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda, so when the sync room moved to a second runtime (ADR-0059), the route layer came along for free.
 
-Cloudflare Durable Objects are the current deployment target. Three things make them a natural fit for Yjs sync rooms:
+Cloudflare Durable Objects are the hosted deployment target. Three things make them a natural fit for Yjs sync rooms:
 
 - **Single-threaded per object.** Each Room runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
 - **Built-in SQLite.** The update log lives inside the Durable Object's storage. No external database for sync state, no connection pooling, no cold-start latency from network hops.
 - **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the DO sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count.
 
-We're focused on Durable Objects to keep the maintenance surface small and iterate fast. The Cloudflare-specific sync code lives in `room.ts`. Everything else, routes, auth, AI, and validation, is runtime-portable Hono code.
+Durable Objects are the hosted backend, not the only one. The sync logic is the runtime-agnostic `RoomCore` (`room/core.ts`), and each runtime supplies a backend that satisfies one contract (`room/contracts.ts`): `room/backends/cloudflare/` wraps a Durable Object, `room/backends/bun/` keeps the update log in `bun:sqlite`. Routes, auth, AI, and validation are plain runtime-portable Hono.
 
-We want self-hosting adapters. The plan is to stabilize the API surface on Durable Objects first, then extract the sync room logic into a runtime-agnostic layer backed by Node.js WebSockets + SQLite. If you want to deploy today, fork the repo and use the existing `wrangler.jsonc`. Everything you need is in there.
+That extraction already happened (ADR-0059), so self-hosting no longer waits on a runtime rewrite. The Bun host, `apps/api/server.ts`, boots the same server against plain Postgres, local `bun:sqlite` room logs, and any S3 endpoint, with no Cloudflare account. What is missing is packaging: no compiled binary and no migration guide yet, so it runs but is not turnkey. To deploy today, fork the repo and run the existing `wrangler.jsonc` on Cloudflare.
 
 Better Auth handles identity. Google OAuth is the only wired sign-in (email/password is disabled in `base-config.ts`; GitHub turns on only when a deployment configures its credentials), plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 
@@ -54,9 +54,9 @@ ledger, with the reasoning, is in [docs/trust-model.md](/docs/trust-model.md).
 
 ### Why not zero-knowledge?
 
-Zero-knowledge means the server can't read your data. The cost: password recovery doesn't work (the server can't re-derive your key), search doesn't work (the server can't index ciphertext), AI doesn't work (the server can't read your notes to summarize them), and device migration requires a key transfer ceremony.
+Zero-knowledge means the server can't read your data. The cost: account recovery doesn't work (the server can't re-derive your key, so a lost key is lost data), search doesn't work (the server can't index ciphertext), AI doesn't work (the server can't read your notes to summarize them), and moving to a new device means transferring the key by hand.
 
-PGP has been trying to make key management practical for thirty years. Signal works because messaging is one-dimensional. The server is a relay that never processes content. Most apps aren't relays. Epicenter needs to search documents, run AI against notes, and let users reset passwords without losing everything. The relay reads plaintext, which is what makes those features possible; if you want a server that can't read your data, self-host it.
+PGP has been trying to make key management practical for thirty years. Signal works because messaging is one-dimensional. The server is a relay that never processes content. Most apps aren't relays. Epicenter needs to search documents, run AI against notes, and let users recover a lost account without losing everything. The relay reads plaintext, which is what makes those features possible; if you want a server that can't read your data, self-host it.
 
 For the full argument:
 

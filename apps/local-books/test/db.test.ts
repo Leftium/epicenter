@@ -53,17 +53,20 @@ function stored(db: BooksDb): { category: string; updatedAt: string | null } {
 	};
 }
 
+/** Fold one Purchase through the write door (the single-entity, no-cursor case). */
+function ingPurchase(
+	db: BooksDb,
+	obj: QbObject,
+	syncedAt: string,
+): void {
+	db.ingest([{ def: PURCHASE, objects: [obj] }], { syncedAt });
+}
+
 describe('ingest is monotonic', () => {
 	test('a newer object overwrites an older row', () => {
 		const { db, cleanup } = openTmp();
-		db.ingest(PURCHASE, {
-			objects: [purchase('60', '2026-02-01T00:00:00.000Z')],
-			syncedAt: 's1',
-		});
-		db.ingest(PURCHASE, {
-			objects: [purchase('77', '2026-02-02T00:00:00.000Z')],
-			syncedAt: 's2',
-		});
+		ingPurchase(db, purchase('60', '2026-02-01T00:00:00.000Z'), 's1');
+		ingPurchase(db, purchase('77', '2026-02-02T00:00:00.000Z'), 's2');
 		expect(stored(db).category).toBe('77');
 		cleanup();
 	});
@@ -71,15 +74,9 @@ describe('ingest is monotonic', () => {
 	test('an older object does NOT regress a newer row (the Sequence B guard)', () => {
 		const { db, cleanup } = openTmp();
 		// A concurrent sync ingested the newer edit (category 77, T2)...
-		db.ingest(PURCHASE, {
-			objects: [purchase('77', '2026-02-02T00:00:00.000Z')],
-			syncedAt: 's-sync',
-		});
+		ingPurchase(db, purchase('77', '2026-02-02T00:00:00.000Z'), 's-sync');
 		// ...then a stale write-back folds its older response (category 55, T1).
-		db.ingest(PURCHASE, {
-			objects: [purchase('55', '2026-02-01T00:00:00.000Z')],
-			syncedAt: 's-recat',
-		});
+		ingPurchase(db, purchase('55', '2026-02-01T00:00:00.000Z'), 's-recat');
 		// The mirror keeps the newer object; the stale write is dropped.
 		expect(stored(db).category).toBe('77');
 		expect(stored(db).updatedAt).toBe('2026-02-02T00:00:00.000Z');
@@ -89,8 +86,8 @@ describe('ingest is monotonic', () => {
 	test('equal timestamps apply, so a re-confirm refreshes the blob', () => {
 		const { db, cleanup } = openTmp();
 		const t = '2026-02-01T00:00:00.000Z';
-		db.ingest(PURCHASE, { objects: [purchase('60', t)], syncedAt: 's1' });
-		db.ingest(PURCHASE, { objects: [purchase('77', t)], syncedAt: 's2' });
+		ingPurchase(db, purchase('60', t), 's1');
+		ingPurchase(db, purchase('77', t), 's2');
 		expect(stored(db).category).toBe('77');
 		cleanup();
 	});
@@ -99,30 +96,67 @@ describe('ingest is monotonic', () => {
 		const { db, cleanup } = openTmp();
 		// Neither object carries MetaData (as a freshly seeded mirror + a mock QB
 		// response often do not), so there is nothing to order on: apply the latest.
-		db.ingest(PURCHASE, { objects: [purchase('60')], syncedAt: 's1' });
-		db.ingest(PURCHASE, { objects: [purchase('77')], syncedAt: 's2' });
+		ingPurchase(db, purchase('60'), 's1');
+		ingPurchase(db, purchase('77'), 's2');
 		expect(stored(db).category).toBe('77');
 		cleanup();
 	});
+});
 
-	test('only a passed cursor advances _sync_state', () => {
+describe('the realm cursor', () => {
+	test('a passed realmState advances the one cursor; rows alone do not', () => {
 		const { db, cleanup } = openTmp();
-		db.ingest(PURCHASE, { objects: [purchase('60')], syncedAt: 's1' });
-		expect(db.readSyncState('Purchase')).toBeNull();
+		// Rows without a realmState leave the cursor untouched (the full-pull and
+		// recategorize write-back path).
+		ingPurchase(db, purchase('60'), 's1');
+		expect(db.readRealmState().cdcCursor).toBeNull();
 
-		db.ingest(PURCHASE, {
-			objects: [purchase('60')],
+		// A batch that carries a realmState advances the realm cursor in the same
+		// transaction as its rows (the incremental path).
+		db.ingest([{ def: PURCHASE, objects: [purchase('60')] }], {
 			syncedAt: 's2',
-			cursor: {
-				entity: 'Purchase',
+			realmState: {
 				cdcCursor: '2026-02-01T00:00:00.000Z',
 				lastFullPullAt: null,
 				lastSyncedAt: '2026-02-01T00:00:00.000Z',
 			},
 		});
-		expect(db.readSyncState('Purchase')?.cdcCursor).toBe(
-			'2026-02-01T00:00:00.000Z',
-		);
+		expect(db.readRealmState().cdcCursor).toBe('2026-02-01T00:00:00.000Z');
 		cleanup();
+	});
+
+	test('a schema-version mismatch drops the data tables and clears the cursor', () => {
+		const tmp = tempDir();
+		const path = join(tmp.dir, 'books.db');
+		// Seed a mirror, then forge an older schema version + a legacy _sync_state
+		// table to simulate a v1 db opened by this engine.
+		let db = openBooksDb(path);
+		ingPurchase(db, purchase('60'), 's1');
+		db.ingest([], {
+			syncedAt: 's1',
+			realmState: {
+				cdcCursor: '2026-02-01T00:00:00.000Z',
+				lastFullPullAt: '2026-02-01T00:00:00.000Z',
+				lastSyncedAt: '2026-02-01T00:00:00.000Z',
+			},
+		});
+		db.raw.exec(`UPDATE _meta SET value = '1' WHERE key = 'schema_version'`);
+		db.raw.exec(`CREATE TABLE _sync_state (entity TEXT PRIMARY KEY)`);
+		db.close();
+
+		// Reopening drops the derived tables (purchases, the legacy _sync_state) and
+		// clears the realm cursor, so the next sync is a clean FULL.
+		db = openBooksDb(path);
+		expect(db.getMeta('schema_version')).toBe('2');
+		expect(db.readRealmState().cdcCursor).toBeNull();
+		expect(db.isInitialized(PURCHASE)).toBe(false);
+		const legacy = db.raw
+			.query<{ n: number }, []>(
+				`SELECT count(*) AS n FROM sqlite_master WHERE name='_sync_state'`,
+			)
+			.get();
+		expect(legacy?.n).toBe(0);
+		db.close();
+		tmp.cleanup();
 	});
 });

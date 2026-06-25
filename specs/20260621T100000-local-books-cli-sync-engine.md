@@ -141,47 +141,20 @@ A greenfield pass (compatibility pressure released; the mirror is box-local and 
 
 **Why it was nearly free:** raw is canonical and columns are `GENERATED` projections, so an entity costs one registry entry and zero migration. When adding is free, curating below the full set only manufactures silent holes.
 
-### Move 2 — one realm cursor, one batched CDC call (next)
+### Move 2 — one realm cursor, one batched CDC call (landed; see ADR-0063)
 
-**Drift:** §"Sync state" keys `_sync_state` by entity, each with its own `cdc_cursor`, and §"Sync algorithm" loops entities, issuing one `/cdc?entities=<entity>` call apiece. But CDC's `changedSince` is a *single timestamp for a multi-entity call*, and the API returns a per-entity `changes` map from one request. So a per-entity cursor is N owners for what CDC treats as one value — and with the set now at 16, an incremental pass fires 16 sequential CDC calls where one would do.
+**Drift it fixed:** §"Sync state" keyed `_sync_state` by entity, each with its own `cdc_cursor`, and §"Sync algorithm" looped entities, issuing one `/cdc?entities=<entity>` call apiece. But CDC's `changedSince` is a *single timestamp for a multi-entity call* that returns a per-entity `changes` map from one request. So a per-entity cursor was N owners for what CDC treats as one value, and with the set at 16 an incremental pass fired 16 sequential CDC calls where one would do.
 
-**Value owners (after the break):**
+**As built** (the durable decision is [ADR-0063](../docs/adr/0063-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md)):
 
-- The **realm** owns one incremental cursor and one full-pull backstop timestamp (move them to `_meta`: `cdc_cursor`, `last_full_pull_at`, `last_synced_at`).
-- Each **entity** owns only a one-way "initialized" latch (has it had its first full pull). `_sync_state` shrinks to `(entity, initialized_at)`.
-- Each **entity table** still owns its own rows and soft-delete flags (unchanged).
+- The **realm** owns one cursor in `_meta` (`cdc_cursor`, `last_full_pull_at`, `last_synced_at`). `_sync_state` is **deleted**.
+- "Has this entity been full-pulled?" is derived from **whether its table exists** (`isInitialized = tableExists`), so there is no per-entity sync-state at all: the tables are the latch. This is simpler than the per-entity `initialized_at` latch this section originally sketched, and it keeps incremental set-extension cheap (add an entity → only it backfills) instead of trading it away.
+- An INCREMENTAL pass backfills any configured entity with no table (a full query of its history) first, then fires ONE batched `/cdc?entities=<all>` and advances the single cursor in the same transaction as the rows. A realm FULL (`--full` / cursor past the CDC window / staleness backstop) full-pulls every entity (each its own query endpoint — an honest asymmetry) and resets the cursor. The cursor advances only on a clean pass, so any failure (and a partial FULL) re-pulls / re-backfills next time rather than skipping.
+- `--entity <name>...` is a targeted FULL repair of those tables that does **not** move the realm cursor.
 
-**The algorithm becomes:**
+**Durable-format change, made free by re-pullability:** `SCHEMA_VERSION` is bumped to `2`; on a mismatch the engine drops the derived tables and clears the cursor, forcing one `sync --full` rather than carrying a migration reader for a re-derivable cache.
 
-```
-INCREMENTAL pass (the common case):
-  one GET /cdc?entities=<all initialized entities>&changedSince=<realm cdc_cursor>
-  apply every entity's upserts + soft-deletes AND advance the single realm
-  cursor in ONE transaction (whole-batch atomic; a crash re-pulls the batch,
-  which is idempotent)
-
-A newly-added entity (no initialized latch) needs a one-time FULL first:
-  paginate its query endpoint, upsert, set its initialized_at.
-  It then joins the next batched CDC from the realm cursor; the overlap window
-  is re-pulled once, harmlessly (idempotent upserts).
-
-Realm-level FULL (forced by --full, a cursor older than CDC_WINDOW, or the
-staleness backstop): FULL every entity (per-entity, each still its own query
-endpoint), then reset the realm cursor to now.
-```
-
-So FULL stays per-entity (each entity is its own query endpoint — an honest asymmetry, not a flaw); only INCREMENTAL collapses to one call. Atomicity moves from per-entity to whole-batch for the incremental path; the per-entity FULL of a new or resynced entity stays its own transaction. Both remain idempotent, so every crash boundary re-pulls rather than skips.
-
-**Durable-format change, made free by re-pullability:** this reshapes `_sync_state` and moves the cursor to `_meta`, so bump `SCHEMA_VERSION`. No migration *reader* is written: the mirror is a cache QuickBooks is the source of truth for, so on a schema-version mismatch the engine drops the entity tables + sync state and forces a full resync. That is the asymmetric win that lets the schema change cost nothing — we refuse to carry a migration path for a re-derivable cache.
-
-**`status` surface:** per-entity row counts and the initialized flag stay per-entity; the cursor, last-full-pull, and last-synced are shown once at the realm level (they are shared now, and saying so is more honest than printing the same timestamp on 16 lines).
-
-**User loss:**
-
-- Failure isolation moves from per-entity to per-batch on the incremental path. Acceptable: CDC is capped at 1000 objects/entity and the batch is one HTTP call, so re-pulling the whole batch on failure is cheap and idempotent.
-- A schema bump forces one full resync per existing mirror. Acceptable: re-pullable by definition; it is one `sync --full`.
-
-**Decision:** take it. The product sentence holds, the explanation shrinks (one cursor, one call), and the only losses are a free resync and coarser-but-cheap failure isolation.
+**`status` surface:** the cursor, last full pull, and last synced are shown once at the realm level; per entity it shows row counts and flags only the uninitialized case (a marker for the one informative state, not a `yes` on 16 lines).
 
 **Trigger to revisit chunking:** if the §spike item finds `/cdc` caps entities-per-call below the mirror set size, split into the fewest covering calls; the realm cursor and whole-batch atomicity are unaffected (apply all chunks under one cursor advance).
 

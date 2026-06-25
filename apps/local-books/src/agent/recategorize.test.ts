@@ -71,10 +71,15 @@ async function setup(
 
 	const path = join(dir, mock.realmId, 'books.db');
 	const db = openBooksDb(path);
-	db.ingest(entityDef('Purchase'), {
-		objects: [makePurchase('p1', { SyncToken: opts.mirrorSyncToken ?? '0' })],
-		syncedAt: '2026-01-20T00:00:00.000Z',
-	});
+	db.ingest(
+		[
+			{
+				def: entityDef('Purchase'),
+				objects: [makePurchase('p1', { SyncToken: opts.mirrorSyncToken ?? '0' })],
+			},
+		],
+		{ syncedAt: '2026-01-20T00:00:00.000Z' },
+	);
 	db.close();
 
 	const openQb = makeQbAccess({ config, realmId: mock.realmId, keyring, now });

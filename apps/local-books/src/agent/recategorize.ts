@@ -174,8 +174,7 @@ export function createRecategorizeAction({
 				// would invite a retry that hits a 409 on the now-bumped token.
 				trySync({
 					try: () =>
-						db.ingest(def, {
-							objects: [updated],
+						db.ingest([{ def, objects: [updated] }], {
 							syncedAt: new Date().toISOString(),
 						}),
 					catch: (cause) => Err(cause),

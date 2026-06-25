@@ -1,7 +1,6 @@
-import { Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
-import type { BooksDb, SyncStateRow } from './db.ts';
-import { type EntityDef, entityDef, type QbObject } from './entities.ts';
+import type { BooksDb, RealmState } from './db.ts';
+import { entityDef, type QbObject } from './entities.ts';
 import type { QbClient, QbClientError } from './qb-client.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -12,28 +11,30 @@ export type ModeDecision = { mode: SyncMode; reason: string };
 
 export type ModeInputs = {
 	forceFull: boolean;
-	syncState: SyncStateRow | null;
+	realmState: RealmState;
 	now: number;
 	cdcSafeWindowDays: number;
 	fullBackstopDays: number;
 };
 
 /**
- * Choose FULL vs INCREMENTAL from stored state alone (pure, so it is unit
- * testable without a network). FULL wins whenever incremental cannot be trusted:
- * an explicit `--full`, no cursor yet, a cursor older than the CDC lookback
- * window (the gap is unrecoverable), or a stale last-full-pull backstop.
+ * Choose FULL vs INCREMENTAL from the realm's stored state alone (pure, so it is
+ * unit testable without a network). The mirror has one high-water mark for the
+ * whole company, so this is one decision per pass, not per entity. FULL wins
+ * whenever incremental cannot be trusted: an explicit `--full`, no cursor yet, a
+ * cursor older than the CDC lookback window (the gap is unrecoverable), or a
+ * stale last-full-pull backstop.
  */
 export function decideMode({
 	forceFull,
-	syncState,
+	realmState,
 	now,
 	cdcSafeWindowDays,
 	fullBackstopDays,
 }: ModeInputs): ModeDecision {
 	if (forceFull) return { mode: 'FULL', reason: 'forced (--full)' };
 
-	const cursor = syncState?.cdcCursor;
+	const cursor = realmState.cdcCursor;
 	if (!cursor) return { mode: 'FULL', reason: 'no cursor (first run)' };
 
 	const cursorAgeDays = (now - Date.parse(cursor)) / DAY_MS;
@@ -44,7 +45,7 @@ export function decideMode({
 		};
 	}
 
-	const lastFull = syncState?.lastFullPullAt;
+	const lastFull = realmState.lastFullPullAt;
 	if (!lastFull) return { mode: 'FULL', reason: 'no recorded full pull' };
 
 	const fullAgeDays = (now - Date.parse(lastFull)) / DAY_MS;
@@ -61,14 +62,25 @@ export function decideMode({
 	};
 }
 
-export type SyncEntityResult = {
+export type EntitySyncResult = {
 	entity: string;
-	mode: SyncMode;
-	reason: string;
 	upserted: number;
 	deleted: number;
+	/**
+	 * This entity was full-pulled this pass (a realm FULL, a new-entity backfill,
+	 * or a `--entity` repair) rather than refreshed by CDC.
+	 */
+	backfilled: boolean;
+};
+
+export type SyncOutcome = {
+	mode: SyncMode;
+	reason: string;
 	cursorBefore: string | null;
-	cursorAfter: string;
+	/** The realm cursor after the pass; equals `cursorBefore` when it did not advance. */
+	cursorAfter: string | null;
+	entities: EntitySyncResult[];
+	failures: { entity: string; error: QbClientError }[];
 };
 
 export type SyncDeps = {
@@ -79,106 +91,202 @@ export type SyncDeps = {
 	log?: (message: string) => void;
 };
 
-export async function syncEntity(
+/**
+ * Full-pull each named entity through its query endpoint into the mirror (one
+ * transaction per entity, no cursor advance). The shared work behind a realm
+ * FULL, a new-entity backfill, and a `--entity` repair; who advances the realm
+ * cursor afterward (and whether) is the caller's call.
+ */
+async function fullPullEach(
 	deps: SyncDeps,
-	def: EntityDef,
+	names: string[],
+	syncedAt: string,
+	{ backfilled }: { backfilled: boolean },
+): Promise<{ entities: EntitySyncResult[]; failures: SyncOutcome['failures'] }> {
+	const { db, client } = deps;
+	const log = deps.log ?? (() => {});
+	const entities: EntitySyncResult[] = [];
+	const failures: SyncOutcome['failures'] = [];
+
+	for (const name of names) {
+		const def = entityDef(name);
+		if (backfilled) log(`${name}: backfill`);
+		const pulled = await client.queryAll(name);
+		if (pulled.error) {
+			failures.push({ entity: name, error: pulled.error });
+			continue;
+		}
+		const counts = db.ingest([{ def, objects: pulled.data }], { syncedAt });
+		const { upserted, deleted } = counts[name] ?? { upserted: 0, deleted: 0 };
+		entities.push({ entity: name, upserted, deleted, backfilled });
+	}
+
+	return { entities, failures };
+}
+
+/**
+ * Refresh the whole company in one pass. FULL re-pulls every configured entity
+ * through its query endpoint (an honest asymmetry: each entity is its own query
+ * endpoint), then advances the single realm cursor. INCREMENTAL fires ONE
+ * batched `/cdc` call for all entities since that cursor and advances it, after
+ * first backfilling any entity that has never been full-pulled (a missing table
+ * is the only signal we need: CDC carries only changes since the cursor, so a
+ * fresh entity must full-pull its history once before it can ride the batch).
+ * The cursor advances only on a clean pass, so any failure re-pulls its window
+ * next time (idempotent) instead of skipping it.
+ */
+export async function syncRealm(
+	deps: SyncDeps,
 	{ forceFull }: { forceFull: boolean },
-): Promise<Result<SyncEntityResult, QbClientError>> {
+): Promise<SyncOutcome> {
 	const { db, client, config, now } = deps;
 	const log = deps.log ?? (() => {});
+	const names = config.entities;
 
-	const state = db.readSyncState(def.name);
+	const realmState = db.readRealmState();
 	const nowMs = now();
 	const { mode, reason } = decideMode({
 		forceFull,
-		syncState: state,
+		realmState,
 		now: nowMs,
 		cdcSafeWindowDays: config.cdcSafeWindowDays,
 		fullBackstopDays: config.fullBackstopDays,
 	});
-	const cursorBefore = state?.cdcCursor ?? null;
-	// Next run's cursor is the moment THIS run started: any object changed while
+	const cursorBefore = realmState.cdcCursor;
+	// Next pass's cursor is the moment THIS pass started: any object changed while
 	// the pull runs is re-fetched next time. Idempotent upserts make the overlap
 	// harmless; the alternative (server time at end of pull) risks a lost edit.
 	const cursorAfter = new Date(nowMs).toISOString();
 
-	log(`${def.name}: ${mode} (${reason})`);
+	log(`realm: ${mode} (${reason})`);
 
-	let objects: QbObject[];
 	if (mode === 'FULL') {
-		const pulled = await client.queryAll(def.name);
-		if (pulled.error) return pulled;
-		objects = pulled.data;
-	} else {
-		// cursorBefore is non-null here: a null cursor forces FULL above.
-		const changed = await client.cdc([def.name], cursorBefore as string);
-		if (changed.error) return changed;
-		objects = changed.data.changes[def.name] ?? [];
+		const { entities, failures } = await fullPullEach(deps, names, cursorAfter, {
+			backfilled: false,
+		});
+		// Advance the realm cursor only when every entity was pulled: a partial
+		// failure leaves the missing entity uninitialized (no table), so the next
+		// pass backfills it rather than skipping its history.
+		const advanced = failures.length === 0;
+		if (advanced) {
+			db.ingest([], {
+				syncedAt: cursorAfter,
+				realmState: {
+					cdcCursor: cursorAfter,
+					lastFullPullAt: cursorAfter,
+					lastSyncedAt: cursorAfter,
+				},
+			});
+		}
+		return {
+			mode,
+			reason,
+			cursorBefore,
+			cursorAfter: advanced ? cursorAfter : cursorBefore,
+			entities,
+			failures,
+		};
 	}
 
-	const newState: SyncStateRow = {
-		entity: def.name,
-		cdcCursor: cursorAfter,
-		lastFullPullAt:
-			mode === 'FULL' ? cursorAfter : (state?.lastFullPullAt ?? null),
-		lastSyncedAt: cursorAfter,
-	};
+	// INCREMENTAL. Snapshot which entities were already initialized BEFORE
+	// backfilling: a freshly-added entity (no table) is backfilled in full and
+	// excluded from this pass's CDC (it is already current), while the rest ride
+	// one batched CDC call. cursorBefore is non-null here (a null cursor forces
+	// FULL above).
+	const wasInitialized = new Map(
+		names.map((name) => [name, db.isInitialized(entityDef(name))]),
+	);
+	const newNames = names.filter((name) => !wasInitialized.get(name));
+	const cdcNames = names.filter((name) => wasInitialized.get(name));
 
-	const { upserted, deleted } = db.ingest(def, {
-		objects,
-		syncedAt: cursorAfter,
-		cursor: newState,
+	const backfill = await fullPullEach(deps, newNames, cursorAfter, {
+		backfilled: true,
 	});
+	const entities = backfill.entities;
+	const failures = backfill.failures;
 
-	return Ok({
-		entity: def.name,
-		mode,
-		reason,
-		upserted,
-		deleted,
-		cursorBefore,
-		cursorAfter,
-	});
-}
-
-export type SyncAllOutcome = {
-	results: SyncEntityResult[];
-	failures: { entity: string; error: QbClientError }[];
-};
-
-/**
- * Sync each configured entity in turn. Entities run sequentially to stay well
- * under the 500 req/min + 10-concurrent QuickBooks limits; one entity's failure
- * is recorded but does not abort the rest.
- */
-export async function syncAll(
-	deps: SyncDeps,
-	{ forceFull, entities }: { forceFull: boolean; entities: string[] },
-): Promise<SyncAllOutcome> {
-	const results: SyncEntityResult[] = [];
-	const failures: { entity: string; error: QbClientError }[] = [];
-
-	for (const name of entities) {
-		const def = entityDef(name);
-		const { data, error } = await syncEntity(deps, def, { forceFull });
-		if (error) {
-			failures.push({ entity: name, error });
+	let changes: Record<string, QbObject[]> = {};
+	if (cdcNames.length > 0) {
+		const changed = await client.cdc(cdcNames, cursorBefore as string);
+		if (changed.error) {
+			failures.push({ entity: '(cdc)', error: changed.error });
 		} else {
-			results.push(data);
+			changes = changed.data.changes;
 		}
 	}
 
-	return { results, failures };
+	// Apply every entity's changes AND advance the one realm cursor in ONE
+	// transaction (whole-batch atomic). Advance only on a clean pass, so a backfill
+	// or CDC failure keeps the cursor put and the next pass re-pulls the window.
+	const advanced = failures.length === 0;
+	const cdcEntries = cdcNames.map((name) => ({
+		def: entityDef(name),
+		objects: changes[name] ?? [],
+	}));
+	const counts = db.ingest(cdcEntries, {
+		syncedAt: cursorAfter,
+		realmState: advanced
+			? {
+					cdcCursor: cursorAfter,
+					lastFullPullAt: realmState.lastFullPullAt,
+					lastSyncedAt: cursorAfter,
+				}
+			: undefined,
+	});
+	for (const name of cdcNames) {
+		entities.push({
+			entity: name,
+			...(counts[name] ?? { upserted: 0, deleted: 0 }),
+			backfilled: false,
+		});
+	}
+
+	return {
+		mode,
+		reason,
+		cursorBefore,
+		cursorAfter: advanced ? cursorAfter : cursorBefore,
+		entities,
+		failures,
+	};
+}
+
+/**
+ * Re-pull specific entity tables from scratch (`sync --entity <name>...`). A
+ * targeted repair: it FULL-pulls just the named entities and deliberately does
+ * NOT move the realm's high-water mark (advancing it would skip the entities the
+ * repair did not touch). Use it to rebuild a single table or force a fresh pull
+ * of one entity; the steady-state freshness job is the cursor-advancing realm
+ * pass (`syncRealm`).
+ */
+export async function repairEntities(
+	deps: SyncDeps,
+	names: string[],
+): Promise<SyncOutcome> {
+	const log = deps.log ?? (() => {});
+	const cursor = deps.db.readRealmState().cdcCursor;
+	const syncedAt = new Date(deps.now()).toISOString();
+	log(`repair: FULL pull of ${names.join(', ')} (realm cursor untouched)`);
+	const { entities, failures } = await fullPullEach(deps, names, syncedAt, {
+		backfilled: true,
+	});
+	return {
+		mode: 'FULL',
+		reason: 'repair (--entity)',
+		cursorBefore: cursor,
+		cursorAfter: cursor,
+		entities,
+		failures,
+	};
 }
 
 export type SyncLoopOptions = {
 	forceFull: boolean;
-	entities: string[];
 	intervalMs: number;
 	/** Aborting the signal stops the loop after the current pass or sleep. */
 	signal: AbortSignal;
 	/** Called after each pass with its outcome and 1-based pass number. */
-	onPass: (outcome: SyncAllOutcome, pass: number) => void;
+	onPass: (outcome: SyncOutcome, pass: number) => void;
 };
 
 /**
@@ -201,7 +309,7 @@ function interruptibleSleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Run `syncAll` on a loop until the signal aborts. The first pass honors
+ * Run `syncRealm` on a loop until the signal aborts. The first pass honors
  * `forceFull`; every later pass is incremental (the cursor has advanced), so
  * `--full --interval` means "one full pull, then keep up with CDC".
  */
@@ -211,9 +319,8 @@ export async function runSyncLoop(
 ): Promise<void> {
 	let pass = 0;
 	while (!opts.signal.aborted) {
-		const outcome = await syncAll(deps, {
+		const outcome = await syncRealm(deps, {
 			forceFull: opts.forceFull && pass === 0,
-			entities: opts.entities,
 		});
 		pass += 1;
 		opts.onPass(outcome, pass);

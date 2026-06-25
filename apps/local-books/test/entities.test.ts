@@ -23,7 +23,9 @@ function project(entity: string, raw: QbObject): Record<string, unknown> {
 	try {
 		db = openBooksDb(join(tmp.dir, 'books.db'));
 		const id = String(raw.Id);
-		db.ingest(def, { objects: [raw], syncedAt: '2026-06-21T00:00:00.000Z' });
+		db.ingest([{ def, objects: [raw] }], {
+			syncedAt: '2026-06-21T00:00:00.000Z',
+		});
 		const cols = def.columns.map((c) => c.name).join(', ');
 		return db.raw
 			.query(`SELECT ${cols} FROM ${def.table} WHERE id = ?`)

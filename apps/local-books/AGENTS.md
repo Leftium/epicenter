@@ -7,7 +7,7 @@ Design authority: `specs/20260621T100000-local-books-cli-sync-engine.md` (top-le
 ## Shape
 
 - Runtime: Bun. `bun:sqlite` for storage, built-in `fetch` for the QB API, `oauth4webapi` for the OAuth2 grants (the same client `@epicenter/auth` uses; we own only the localhost callback and the QuickBooks-specific `realmId`). Runtime deps are pure-TS and dependency-free so `bun build --compile` yields one binary: `wellcrafted` (Result/error idioms), `typebox` (validating untrusted token grants and `config.json`), and `oauth4webapi`. All three are cataloged and used elsewhere in the monorepo.
-- One SQLite file per company: `<data-dir>/<realmId>/books.db`. Tokens live in a `0600` `credentials.json` at the data-dir root, never inside a company's mirror db, so the agent's read-only SQL surface can never read them. See ADR-0061. Sync state lives in the db (`_sync_state`), not a sidecar, so ingest-and-advance is one transaction.
+- One SQLite file per company: `<data-dir>/<realmId>/books.db`. Tokens live in a `0600` `credentials.json` at the data-dir root, never inside a company's mirror db, so the agent's read-only SQL surface can never read them. See ADR-0061. The realm's one CDC cursor lives in the db (`_meta`), not a sidecar, so ingest-and-advance is one transaction; whether an entity has been full-pulled is derived from table existence, so there is no per-entity sync-state table. See ADR-0063.
 - One table per QB entity (`invoices`, `customers`, ...): `id`, `raw` (verbatim QB JSON), `updated_at`, `synced_at`, `deleted`, plus a few extracted scalar columns for indexing/joins. New QB fields land in `raw` with no migration.
 
 ## Grounded QB constants (verified against developer.intuit.com, 2026-06-21)

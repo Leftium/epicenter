@@ -270,7 +270,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		 * owner. Synchronous; the owner partition is the one the client was
 		 * constructed with.
 		 *
-		 * Useful for embedding in a vault receipt, an `<img src>`, or a share link.
+		 * Useful for resolving a manifest entry, an `<img src>`, or a share link.
 		 */
 		url(sha256: string): string {
 			return API_ROUTES.blobs.byHash.url(base, ownerId, sha256);

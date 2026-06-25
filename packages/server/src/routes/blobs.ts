@@ -16,7 +16,7 @@
  * The store is a PORTABLE S3 client (`s3-blob-store.ts`): plain S3-over-HTTPS
  * via aws4fetch, no Cloudflare Workers R2 binding, so the identical route runs
  * on the hosted Worker (against R2) and in a self-hosted Node binary (against
- * MinIO/Garage/S3). Uploads never pass through the server: POST mints a
+ * Garage/S3). Uploads never pass through the server: POST mints a
  * presigned PUT and the client streams bytes straight to the store, which
  * enforces the sha256 checksum and rejects a mismatch. That removes the ~100 MB
  * Worker request-body ceiling and the in-server hashing cost. The object

@@ -108,7 +108,7 @@
 	// (large media: video archive, files routinely >100 MB, sometimes multi-GB)
 	// talks plain S3-over-HTTPS via aws4fetch (BLOBS_S3_* secrets above), so the
 	// same code runs on this Worker against R2 and in a self-hosted Node binary
-	// against MinIO/Garage/S3 with no Workers-only R2 binding. Create its bucket
+	// against Garage/S3 with no Workers-only R2 binding. Create its bucket
 	// with: bunx wrangler r2 bucket create epicenter-blobs
 	// See packages/server/src/s3-blob-store.ts. (The legacy asset route and its
 	// `epicenter-assets` bucket binding were retired into this store.)

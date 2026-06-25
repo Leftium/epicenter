@@ -42,7 +42,7 @@ export const ServerBindings = type({
 	'GITHUB_CLIENT_SECRET?': 'string',
 	// Content-addressed blob store (routes/blobs.ts): a portable S3 client over
 	// aws4fetch with NO Workers R2 binding, so the identical code runs on the
-	// Worker (against R2) and on a Bun host (against MinIO/Garage/S3). All
+	// Worker (against R2) and on a Bun host (against Garage/S3). All
 	// optional: a deployment without object storage does not mount
 	// `mountBlobsApp`, and the route 503s if reached unconfigured.
 	// `BLOBS_S3_BUCKET` defaults to `epicenter-blobs` and `BLOBS_S3_REGION` to

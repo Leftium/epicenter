@@ -128,7 +128,7 @@ Every claim we make publicly should be provable by inspecting the repo:
 | "Readable Markdown and queryable SQLite" | Markdown materializers write `.md` files with YAML frontmatter. SQLite materializers keep rebuildable query mirrors. |
 | "A workspace you own" | The local project layout separates user-owned folders from generated app projections and hidden machine state. |
 | "CRDT-powered sync" | App-owned live state uses Yjs documents; sync uses the Yjs protocol over WebSocket. |
-| "Trusted relay, not an encryption layer" | The relay runs Yjs and reads plaintext. Privacy comes from who holds the data, not from a key we ship. See `docs/encryption.md`. |
+| "Trusted relay, not an encryption layer" | The relay runs Yjs and reads plaintext. Privacy comes from who holds the data, not from a key we ship. See `docs/trust-model.md`. |
 | "Self-hostable" | Sync server is open source under AGPL. Run it on your infrastructure, so Epicenter never holds your data. |
 | "Bring your own model" | AI features use user-provided API keys. No middleman, no proxy required. |
 

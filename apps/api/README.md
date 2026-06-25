@@ -4,7 +4,7 @@ Epicenter Cloud Worker. Handles authentication, real-time sync, AI inference, an
 
 This folder is a single Cloudflare Worker deployment: `worker/` (Hono code) and `ui/` (SvelteKit dashboard SPA) ship together. Self-hosted shared-wiki deployments live in the sibling `apps/self-host`; they compose the same `@epicenter/server` library with `shared({ admit })` and no billing surface.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. See `apps/self-host` for the self-hosted reference and the encryption/trust model below.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. See `apps/self-host` for the self-hosted reference and the trust model below.
 
 Runs on Cloudflare Workers with Durable Objects. Cloud sync opens documents through `/api/owners/:ownerId/rooms/:room` (the same path in both personal and shared mode): a cloud doc is owned by the authenticated `ownerId` and addressed by its `ydoc.guid`, and the route resolves the DO name `owners/${ownerId}/rooms/${room}` from the auth token. In personal mode `ownerId === user.id`; in shared mode `ownerId === 'shared'`. Browser apps and the workspace daemon both use this route. The Hono route's auth middleware authorizes the caller before it builds the internal room name.
 
@@ -28,7 +28,7 @@ We're focused on Durable Objects to keep the maintenance surface small and itera
 
 We want self-hosting adapters. The plan is to stabilize the API surface on Durable Objects first, then extract the sync room logic into a runtime-agnostic layer backed by Node.js WebSockets + SQLite. If you want to deploy today, fork the repo and use the existing `wrangler.jsonc`. Everything you need is in there.
 
-Better Auth handles identity: email/password and Google OAuth for sign-in, plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
+Better Auth handles identity. Google OAuth is the only wired sign-in (email/password is disabled in `base-config.ts`; GitHub turns on only when a deployment configures its credentials), plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 
 ## Trust model
 
@@ -40,6 +40,18 @@ Self-hosted deployments move the trust boundary to infrastructure the deployer
 operates. Epicenter never holds or sees data stored in a self-hosted deployment,
 so self-hosting is functionally zero-knowledge against Epicenter.
 
+That confidentiality covers content, not the wire, and it does not erase three
+things a self-hoster should weigh. The relay operator still sees the metadata
+around the bytes (user id, node id, per-room co-presence, dispatched action
+names, message timing, size, and IP); that operator is Epicenter when hosted and
+you when self-hosted, and even a future blind relay keeps seeing this envelope.
+Blobs land wherever `BLOBS_S3_ENDPOINT` points, so renting Epicenter's blob
+service puts your media in Epicenter's R2 even on a self-hosted star; point the
+store at your own S3 to keep media local. And logging in still leans on Google
+OAuth (email/password is disabled in `base-config.ts`), until the first-boot
+local bearer token that removes that dependency lands (ADR-0063). The full
+ledger, with the reasoning, is in [docs/trust-model.md](/docs/trust-model.md).
+
 ### Why not zero-knowledge?
 
 Zero-knowledge means the server can't read your data. The cost: password recovery doesn't work (the server can't re-derive your key), search doesn't work (the server can't index ciphertext), AI doesn't work (the server can't read your notes to summarize them), and device migration requires a key transfer ceremony.
@@ -48,7 +60,7 @@ PGP has been trying to make key management practical for thirty years. Signal wo
 
 For the full argument:
 
-- [Trust model](/docs/encryption.md): what the relay sees and the two tiers
+- [Trust model](/docs/trust-model.md): what the relay sees, the metadata it still sees, and the two deployments
 - [Don't Encrypt the Data, Don't Hold It](/docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md): why the encryption layer was removed and the anchor direction
 - [Why E2E Encryption Keeps Failing](/docs/articles/why-e2e-encryption-keeps-failing.md): PGP, Signal, and the structural problem
 - [Let the Server Handle Encryption](/docs/articles/let-the-server-handle-encryption.md): the pragmatic alternative
@@ -59,12 +71,11 @@ For the full argument:
 ```
 Cloudflare Workers
 ├── Hono app (src/app.ts)
-│   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
+│   ├── /auth/*          Better Auth (Google OAuth, OAuth provider)
 │   ├── /ai/chat         AI streaming (OpenAI and Gemini via @tanstack/ai)
-│   ├── /api/owners/:ownerId/rooms/:room
-│   │                    Cloud doc sync (WebSocket upgrade or HTTP)
-│   └── /api/owners/:ownerId/rooms/:room/dispatch
-│                        Cross-device dispatch (HTTP POST)
+│   └── /api/owners/:ownerId/rooms/:room
+│                        Cloud doc sync (WebSocket upgrade or HTTP);
+│                        cross-device dispatch rides the room socket as text frames
 │
 └── Room (Durable Object, SQLite-backed)
     └── One Yjs document for one authorized sync room

@@ -6,7 +6,7 @@
  * and `SubtleCrypto`, both present on the Workers runtime AND on Node 18+, and
  * SigV4 is identical against any S3-compatible endpoint. So this exact module
  * runs unchanged on the hosted Cloudflare Worker (against R2) and in a
- * self-hosted Node binary (against MinIO, Garage, AWS S3, ...). The endpoint is
+ * self-hosted Node binary (against Garage, AWS S3, ...). The endpoint is
  * configuration, not code: that is the blob store's answer to vendor lock-in.
  *
  * Blob bytes never pass through the server. PUT and GET are presigned and the

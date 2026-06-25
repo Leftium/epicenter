@@ -35,6 +35,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
 	authApp,
+	bun,
 	createBunRooms,
 	createDb,
 	createServerApp,
@@ -103,21 +104,11 @@ export function startBunApiServer(
 	const ownership = personal();
 
 	const app = createServerApp({
-		// The Bun runtime adapter, built inline: a shared `pg.Pool` checkout with a
-		// no-op close, a no-op `afterResponse`, and the in-process room registry.
-		// There is no `bun()` factory mirroring `cloudflare()`: that triple is
-		// verbatim across the two Cloudflare deployables, but this one has a single
-		// producer, so it stays inline where the entry can read it.
-		runtime: {
-			connectDb: async () => ({ db, close: async () => {} }),
-			// No-op: the drain promise (server-app.ts awaits the after-response
-			// queue, then closes the per-request handle) is already running when it
-			// reaches here, and a long-lived Bun process needs no `waitUntil` to
-			// outlive the response. Cloudflare's adapter instead hands it to
-			// `executionCtx.waitUntil`.
-			afterResponse: () => {},
-			resolveRooms: () => bunRooms.rooms,
-		},
+		// The Bun runtime adapter (the honest peer of `cloudflare()`): a shared
+		// `pg.Pool` checkout with a no-op close, a no-op `afterResponse` (a
+		// long-lived process needs no `waitUntil` to outlive the response), and the
+		// in-process room registry.
+		runtime: bun({ db, rooms: bunRooms.rooms }),
 		identity: {
 			resolveOrigin: () => origin,
 			resolveTrustedOrigins: buildEpicenterTrustedOrigins,

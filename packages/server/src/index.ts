@@ -54,9 +54,12 @@ export {
 export { Room } from './room/backends/cloudflare/durable-object.js';
 // The Cloudflare runtime adapter: the per-runtime triple (db over Hyperdrive,
 // `waitUntil`, the Durable Object room registry) as one `RuntimeAdapter` both
-// Cloudflare deployables pass to `createServerApp`'s `runtime`. A Bun host
-// builds its own adapter inline (see `@epicenter/server/bun`).
+// Cloudflare deployables pass to `createServerApp`'s `runtime`. `bun()` is its
+// honest peer for a Bun host (same return type; wraps boot-built primitives
+// instead of extracting per request). Bun entries usually reach it through the
+// `@epicenter/server/bun` barrel.
 export { cloudflare } from './runtime/cloudflare.js';
+export { bun } from './runtime/bun.js';
 // Reusable surfaces. Each `mount*` bundles auth + ownership + the route
 // mount, accepting only the deployment-controlled knobs (ownership rule,
 // optional policies). The bare `authApp` is mounted directly because it

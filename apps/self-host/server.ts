@@ -40,6 +40,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
 	authApp,
+	bun,
 	createBunRooms,
 	createDb,
 	createServerApp,
@@ -124,14 +125,11 @@ export function startSelfHostServer(
 	});
 
 	const app = createServerApp({
-		// The Bun runtime adapter, built inline: a shared `pg.Pool` checkout with a
-		// no-op close, a no-op `afterResponse` (a long-lived process needs no
-		// `waitUntil` to outlive the response), and the in-process room registry.
-		runtime: {
-			connectDb: async () => ({ db, close: async () => {} }),
-			afterResponse: () => {},
-			resolveRooms: () => bunRooms.rooms,
-		},
+		// The Bun runtime adapter (the honest peer of `cloudflare()`): a shared
+		// `pg.Pool` checkout with a no-op close, a no-op `afterResponse` (a
+		// long-lived process needs no `waitUntil` to outlive the response), and the
+		// in-process room registry.
+		runtime: bun({ db, rooms: bunRooms.rooms }),
 		identity: {
 			resolveOrigin: () => origin,
 			// A self-host trusts its OWN origin and the Tauri desktop client, never

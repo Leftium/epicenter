@@ -146,8 +146,8 @@ The server runs the same portable S3 client against versitygw, Garage, AWS S3, o
 R2; the store is endpoint-as-config, so swapping it is a config change, never a
 code change. There is no filesystem blob backend in the codebase by design: the
 self-host story is "run the server next to an S3-compatible service," exactly as
-the hosted Worker runs next to R2. `scripts/smoke.ts` exercises the full blob
-round-trip against whichever store the server points at.
+the hosted Worker runs next to R2. `apps/api/scripts/smoke.ts` exercises the full
+blob round-trip against whichever store the server points at.
 
 ### Database commands
 

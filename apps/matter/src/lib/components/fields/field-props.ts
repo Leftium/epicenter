@@ -22,7 +22,7 @@
  */
 
 import type { Field } from '@epicenter/field';
-import type { MissingCell, OkCell } from '$lib/core/conformance';
+import type { MissingCell, OkCell } from '@epicenter/matter-core';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds

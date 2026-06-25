@@ -12,7 +12,6 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"check": "bun src/cli/check.ts",
 		"tauri": "tauri",
 		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
@@ -36,11 +35,13 @@
 	"dependencies": {
 		"@codemirror/commands": "^6.10.3",
 		"@codemirror/lang-markdown": "^6.5.0",
+		"@codemirror/lang-sql": "^6.8.0",
 		"@codemirror/language": "^6.12.3",
 		"@codemirror/search": "^6.6.0",
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.41.0",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/matter-core": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@lezer/common": "^1.5.1",
 		"@lezer/highlight": "^1.2.3",
@@ -49,8 +50,7 @@
 		"@tauri-apps/plugin-dialog": "^2.3.2",
 		"arktype": "catalog:",
 		"typebox": "catalog:",
-		"wellcrafted": "catalog:",
-		"yaml": "^2.8.0"
+		"wellcrafted": "catalog:"
 	},
 	"license": "AGPL-3.0-or-later"
 }

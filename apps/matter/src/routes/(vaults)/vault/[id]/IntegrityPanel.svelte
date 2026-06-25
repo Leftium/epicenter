@@ -1,13 +1,14 @@
 <script lang="ts">
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import type { VaultIntegrity } from '$lib/core/integrity';
-	import { describeExpected, formatExpected } from '$lib/core/expected';
 	import {
+		describeExpected,
+		formatExpected,
 		summarize,
 		toViolations,
+		type VaultIntegrity,
 		type Violation,
-	} from '$lib/core/violations';
+	} from '@epicenter/matter-core';
 
 	// The one "what is wrong" surface for the whole vault, a pure selector over the live
 	// VaultIntegrity. It re-decides nothing: `toViolations` and `summarize` read the same assessed

@@ -4,7 +4,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { basename } from '$lib/core/path';
+	import { basename } from '@epicenter/matter-core';
 	import { openVaults } from '$lib/open-vaults.svelte';
 	import { routes } from '$lib/routes';
 

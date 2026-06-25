@@ -57,7 +57,6 @@
 		"arktype": "catalog:",
 		"chokidar": "^5.0.0",
 		"diff": "^8.0.3",
-		"elysia": "^1.2.25",
 		"env-paths": "^3.0.0",
 		"fflate": "catalog:",
 		"hono": "catalog:",

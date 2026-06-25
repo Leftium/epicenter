@@ -2,13 +2,17 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import LayersIcon from '@lucide/svelte/icons/layers';
+	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { routes, TABLE_PARAM } from '$lib/routes';
+	import { routes, TABLE_PARAM, type VaultView, VIEW_PARAM } from '$lib/routes';
 	import { createVault } from '$lib/vault.svelte';
+	import DatabaseTab from './DatabaseTab.svelte';
 	import IntegrityPanel from './IntegrityPanel.svelte';
+	import SqlConsole from './SqlConsole.svelte';
 	import TablePane from './TablePane.svelte';
 
 	let { root }: { root: string } = $props();
@@ -32,6 +36,32 @@
 		vault.tables.find((table) => table.folderName === activeName) ??
 			vault.tables[0],
 	);
+
+	// The vault-wide view (`?view=`): the SQL console or the Database panel. Absent means the table
+	// grid. `?view` and `?table` are orthogonal (see `viewHref`): a view keeps the table around as its
+	// default folder, and picking a table clears `?view` to return to the grid.
+	const activeView = $derived.by(() => {
+		const view = page.url.searchParams.get(VIEW_PARAM);
+		return view === 'sql' || view === 'db' ? view : undefined;
+	});
+
+	// A table or view switch is a render selection, not navigation: replaceState so each click does not
+	// stack a history entry, keepFocus/noScroll so the switcher stays put and the pane does not jump.
+	const switchNav = {
+		replaceState: true,
+		keepFocus: true,
+		noScroll: true,
+	} as const;
+
+	// Opening a view keeps `?table` so the console defaults to the table you were on (the Database
+	// panel is table-agnostic, so it just ignores it). The two params are orthogonal: `?view` picks
+	// the surface, `?table` the grid's (and the console's default) folder.
+	function viewHref(view: VaultView): string {
+		const table = activeTable?.folderName;
+		return table
+			? `${routes.view(view)}&${TABLE_PARAM}=${encodeURIComponent(table)}`
+			: routes.view(view);
+	}
 
 	// Adopt the root as a table (writes the `{}` marker). The watcher re-scans on the new marker and
 	// surfaces the table live, so success needs no manual refresh; only a write failure shows here.
@@ -77,32 +107,61 @@
 				</Empty.Content>
 			</Empty.Root>
 		{:else}
-			<div class="flex min-h-10 items-center gap-1 overflow-x-auto border-b px-2 py-1">
-				{#each vault.tables as table (table.folderName)}
-					{@const active = activeTable?.folderName === table.folderName}
+			<div class="flex min-h-10 items-center gap-1 border-b px-2 py-1">
+				<div class="flex flex-1 items-center gap-1 overflow-x-auto">
+					{#each vault.tables as table (table.folderName)}
+						{@const active =
+							!activeView && activeTable?.folderName === table.folderName}
+						<button
+							type="button"
+							onclick={() => goto(routes.table(table.folderName), switchNav)}
+							class={[
+								'shrink-0 rounded-md px-2.5 py-1 text-sm transition',
+								active
+									? 'bg-muted font-medium text-foreground'
+									: 'text-muted-foreground hover:bg-muted/50',
+							]}
+						>
+							{table.folderName}
+						</button>
+					{/each}
+				</div>
+				<!-- The two vault-wide views, set off from the per-table tabs: SQL is the query face, the
+				     Database panel is the "this is a SQLite database" face. -->
+				<div class="flex shrink-0 items-center gap-1 border-l pl-1">
 					<button
 						type="button"
-						onclick={() =>
-							goto(routes.table(table.folderName), {
-								// A table switch is a render selection, not navigation: replaceState so
-								// each click doesn't stack a history entry, keepFocus/noScroll so the
-								// switcher stays put and the grid doesn't jump.
-								replaceState: true,
-								keepFocus: true,
-								noScroll: true,
-							})}
+						onclick={() => goto(viewHref('sql'), switchNav)}
 						class={[
-							'shrink-0 rounded-md px-2.5 py-1 text-sm transition',
-							active
+							'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition',
+							activeView === 'sql'
 								? 'bg-muted font-medium text-foreground'
 								: 'text-muted-foreground hover:bg-muted/50',
 						]}
 					>
-						{table.folderName}
+						<TerminalIcon class="size-4" />
+						SQL
 					</button>
-				{/each}
+					<button
+						type="button"
+						onclick={() => goto(viewHref('db'), switchNav)}
+						class={[
+							'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition',
+							activeView === 'db'
+								? 'bg-muted font-medium text-foreground'
+								: 'text-muted-foreground hover:bg-muted/50',
+						]}
+					>
+						<DatabaseIcon class="size-4" />
+						Database
+					</button>
+				</div>
 			</div>
-			{#if activeTable}
+			{#if activeView === 'sql'}
+				<SqlConsole {vault} defaultTable={activeTable?.folderName} />
+			{:else if activeView === 'db'}
+				<DatabaseTab {vault} />
+			{:else if activeTable}
 				{#key activeTable}
 					<TablePane {vault} table={activeTable} />
 				{/key}

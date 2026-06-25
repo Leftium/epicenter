@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { MissingCell } from '$lib/core/conformance';
+	import type { MissingCell } from '@epicenter/matter-core';
 
 	let { cell }: { cell: MissingCell } = $props();
 

@@ -4,7 +4,7 @@
 	import { Label } from '@epicenter/ui/label';
 	import * as Separator from '@epicenter/ui/separator';
 	import { Switch } from '@epicenter/ui/switch';
-	import type { RowConformance } from '$lib/core/conformance';
+	import type { RowConformance } from '@epicenter/matter-core';
 	import { editorPreferences } from '$lib/editor/editor-preferences.svelte';
 	import MarkdownBodyEditor from './MarkdownBodyEditor.svelte';
 	import ModeledCell from './ModeledCell.svelte';

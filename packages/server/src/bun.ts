@@ -33,14 +33,14 @@ export {
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
 // plus the Bun `websocket` handler and `bindServer` the entry wires.
 export { createBunRooms } from './room/backends/bun/registry.js';
-// The Bun RuntimeAdapter factory: wraps a boot-built db handle + room registry,
-// the honest peer of `cloudflare()`.
-export { bun } from './runtime/bun.js';
 export { authApp } from './routes/auth.js';
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
+// The Bun RuntimeAdapter factory: wraps a boot-built db handle + room registry,
+// the honest peer of `cloudflare()`.
+export { bun } from './runtime/bun.js';
 export {
 	createServerApp,
 	type Identity,
@@ -49,6 +49,15 @@ export {
 // The portable env contract as both arktype schema (value) and inferred type;
 // the Bun entry validates `process.env` against it at boot.
 export { ServerBindings } from './server-bindings.js';
+// The shared Bun process bootstrap: an entry validates `process.env` against
+// `BunHostBindings` (merging its own extras), builds its ownership rule, then
+// hands both to `startBunServer`, which owns everything mechanical (pool, rooms,
+// the `bun()` adapter, the shared mounts, and `Bun.serve`).
+export {
+	BunHostBindings,
+	type StartBunServerOptions,
+	startBunServer,
+} from './start-bun-server.js';
 // `ResolveUser` is the user-resolution seam the dev Bun entry injects on
 // `createServerApp` to drive the parity smoke without an interactive login.
 export type { Env, ResolveUser } from './types.js';

@@ -18,9 +18,9 @@
 import { defineMutation } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, Ok } from 'wellcrafted/result';
+import { Err, Ok, trySync } from 'wellcrafted/result';
 import { openBooksDb } from '../db.ts';
-import { entityDef, lastUpdatedTime } from '../entities.ts';
+import { entityDef } from '../entities.ts';
 import type { OpenQbClient } from './qb-access.ts';
 
 /** The line shape that carries an account-based expense category. */
@@ -87,11 +87,9 @@ type ExpenseLine = Record<string, unknown> & {
 export function createRecategorizeAction({
 	openQb,
 	dbPath,
-	now,
 }: {
 	openQb: OpenQbClient;
 	dbPath: string;
-	now: () => number;
 }) {
 	return defineMutation({
 		title: 'Recategorize an expense',
@@ -106,28 +104,15 @@ export function createRecategorizeAction({
 			const def = entityDef(input.entity);
 			const db = openBooksDb(dbPath);
 			try {
-				const tableExists = db.raw
-					.query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?`)
-					.get(def.table);
-				if (!tableExists) {
-					return RecategorizeError.NotInMirror({
-						entity: input.entity,
-						id: input.id,
-					});
-				}
-				const row = db.raw
-					.query<{ raw: string }, [string]>(
-						`SELECT raw FROM ${def.table} WHERE id = ? AND deleted = 0`,
-					)
-					.get(input.id);
-				if (!row) {
+				const raw = db.getLiveRaw(def, input.id);
+				if (raw === null) {
 					return RecategorizeError.NotInMirror({
 						entity: input.entity,
 						id: input.id,
 					});
 				}
 
-				const obj = JSON.parse(row.raw) as Record<string, unknown>;
+				const obj = JSON.parse(raw) as Record<string, unknown>;
 				const lines: ExpenseLine[] = Array.isArray(obj.Line)
 					? (obj.Line as ExpenseLine[])
 					: [];
@@ -180,17 +165,21 @@ export function createRecategorizeAction({
 				// invokeAction and read as success. A stale SyncToken (409) lands here.
 				if (error) return Err(error);
 
-				db.upsertObjects(
-					def,
-					[
-						{
-							id: String(updated.Id),
-							raw: JSON.stringify(updated),
-							updatedAt: lastUpdatedTime(updated),
-						},
-					],
-					new Date(now()).toISOString(),
-				);
+				// QuickBooks has committed the change, so the operation has succeeded.
+				// Fold the authoritative response into the mirror through the shared
+				// monotonic ingest so a read sees it immediately. This is best-effort: if
+				// it cannot write (a concurrent sync holding the lock past busy_timeout, a
+				// disk error), the next monotonic CDC sync reconciles the row, and the
+				// successful QuickBooks write must not be reported as a failure, which
+				// would invite a retry that hits a 409 on the now-bumped token.
+				trySync({
+					try: () =>
+						db.ingest(def, {
+							objects: [updated],
+							syncedAt: new Date().toISOString(),
+						}),
+					catch: (cause) => Err(cause),
+				});
 
 				return Ok({
 					entity: input.entity,

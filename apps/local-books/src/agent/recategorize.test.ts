@@ -71,24 +71,15 @@ async function setup(
 
 	const path = join(dir, mock.realmId, 'books.db');
 	const db = openBooksDb(path);
-	db.upsertObjects(
-		entityDef('Purchase'),
-		[
-			{
-				id: 'p1',
-				raw: JSON.stringify(
-					makePurchase('p1', { SyncToken: opts.mirrorSyncToken ?? '0' }),
-				),
-				updatedAt: '2026-01-15T00:00:00.000Z',
-			},
-		],
-		'2026-01-20T00:00:00.000Z',
-	);
+	db.ingest(entityDef('Purchase'), {
+		objects: [makePurchase('p1', { SyncToken: opts.mirrorSyncToken ?? '0' })],
+		syncedAt: '2026-01-20T00:00:00.000Z',
+	});
 	db.close();
 
 	const openQb = makeQbAccess({ config, realmId: mock.realmId, keyring, now });
 	const catalog = createDispatchToolCatalog(LOCAL_ONLY, {
-		localActions: createBooksAgentActions({ dbPath: path, openQb, now }),
+		localActions: createBooksAgentActions({ dbPath: path, openQb }),
 	});
 	return {
 		mock,

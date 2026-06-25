@@ -56,7 +56,6 @@ async function setup() {
 		localActions: createBooksAgentActions({
 			dbPath: join(dir, mock.realmId, 'books.db'),
 			openQb,
-			now,
 		}),
 	});
 	return {

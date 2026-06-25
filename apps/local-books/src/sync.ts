@@ -1,13 +1,7 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
-import type { BooksDb, MirrorRow, SyncStateRow } from './db.ts';
-import {
-	type EntityDef,
-	entityDef,
-	isDeleted,
-	lastUpdatedTime,
-	type QbObject,
-} from './entities.ts';
+import type { BooksDb, SyncStateRow } from './db.ts';
+import { type EntityDef, entityDef, type QbObject } from './entities.ts';
 import type { QbClient, QbClientError } from './qb-client.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -85,27 +79,6 @@ export type SyncDeps = {
 	log?: (message: string) => void;
 };
 
-/** Split a batch of QB objects into live upserts and soft-deletes. */
-function partition(objects: QbObject[]): {
-	upserts: MirrorRow[];
-	deletes: MirrorRow[];
-} {
-	const upserts: MirrorRow[] = [];
-	const deletes: MirrorRow[] = [];
-	for (const obj of objects) {
-		const id = obj.Id != null ? String(obj.Id) : null;
-		if (!id) continue; // skip malformed objects with no Id
-		const raw = JSON.stringify(obj);
-		const updatedAt = lastUpdatedTime(obj);
-		if (isDeleted(obj)) {
-			deletes.push({ id, raw, updatedAt });
-		} else {
-			upserts.push({ id, raw, updatedAt });
-		}
-	}
-	return { upserts, deletes };
-}
-
 export async function syncEntity(
 	deps: SyncDeps,
 	def: EntityDef,
@@ -143,8 +116,6 @@ export async function syncEntity(
 		objects = changed.data.changes[def.name] ?? [];
 	}
 
-	const { upserts, deletes } = partition(objects);
-
 	const newState: SyncStateRow = {
 		entity: def.name,
 		cdcCursor: cursorAfter,
@@ -153,19 +124,18 @@ export async function syncEntity(
 		lastSyncedAt: cursorAfter,
 	};
 
-	db.applyEntitySync(def, {
-		upserts,
-		deletes,
-		syncState: newState,
+	const { upserted, deleted } = db.ingest(def, {
+		objects,
 		syncedAt: cursorAfter,
+		cursor: newState,
 	});
 
 	return Ok({
 		entity: def.name,
 		mode,
 		reason,
-		upserted: upserts.length,
-		deleted: deletes.length,
+		upserted,
+		deleted,
 		cursorBefore,
 		cursorAfter,
 	});

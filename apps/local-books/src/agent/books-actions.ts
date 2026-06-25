@@ -28,15 +28,12 @@ export function createBooksAgentActions({
 	dbPath,
 	openQb,
 	readOnly = false,
-	now = () => Date.now(),
 }: {
 	dbPath: string;
 	/** Opens a QuickBooks client; omit for a fully-offline, mirror-only daemon. */
 	openQb?: OpenQbClient;
 	/** Withhold the write tool while keeping both reads. */
 	readOnly?: boolean;
-	/** Clock for the mirror write-back timestamp; injectable for tests. */
-	now?: () => number;
 }) {
 	const books_sql_query = createBooksQueryAction({ dbPath });
 	if (!openQb) return defineActions({ books_sql_query });
@@ -47,6 +44,6 @@ export function createBooksAgentActions({
 	return defineActions({
 		books_sql_query,
 		books_report,
-		recategorize_expense: createRecategorizeAction({ openQb, dbPath, now }),
+		recategorize_expense: createRecategorizeAction({ openQb, dbPath }),
 	});
 }

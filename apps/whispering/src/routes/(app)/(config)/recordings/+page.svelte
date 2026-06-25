@@ -55,7 +55,7 @@
 	import RecordingTranscriptCell from './RecordingTranscriptCell.svelte';
 	import RenderAudioUrl from './RenderAudioUrl.svelte';
 	import TranscriptionStatusBadge from './TranscriptionStatusBadge.svelte';
-	import { RecordingRowActions } from './actions';
+	import RecordingRowActions from './actions/RecordingRowActions.svelte';
 
 	/**
 	 * Returns a cell renderer for an instant, optionally using a row-owned

@@ -3,7 +3,6 @@
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as InputGroup from '@epicenter/ui/input-group';
 	import * as Modal from '@epicenter/ui/modal';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 
@@ -24,17 +23,6 @@
 	 *   rows={1}
 	 * />
 	 * ```
-	 *
-	 * @example
-	 * ```svelte
-	 * <TextPreviewDialog
-	 *   id="loading-1"
-	 *   title="Transcript"
-	 *   text="..."
-	 *   label="transcript"
-	 *   loading={true}
-	 * />
-	 * ```
 	 */
 	let {
 		/** Unique identifier for view transitions */
@@ -49,8 +37,6 @@
 		rows = 2,
 		/** Whether the component is disabled */
 		disabled = false,
-		/** Whether to show a loading spinner instead of copy button */
-		loading = false,
 	}: {
 		id: string;
 		title: string;
@@ -58,15 +44,14 @@
 		label: string;
 		rows?: number;
 		disabled?: boolean;
-		loading?: boolean;
 	} = $props();
 
 	let isDialogOpen = $state(false);
 </script>
 
 <Modal.Root bind:open={isDialogOpen}>
-	<InputGroup.Root data-disabled={disabled || loading}>
-		<Modal.Trigger {id} disabled={disabled || loading} class="flex-1 min-w-0">
+	<InputGroup.Root data-disabled={disabled}>
+		<Modal.Trigger {id} {disabled} class="flex-1 min-w-0">
 			{#snippet child({ props })}
 				<textarea
 					{...props}
@@ -82,16 +67,12 @@
 			{/snippet}
 		</Modal.Trigger>
 		<InputGroup.Addon align="inline-end">
-			{#if loading}
-				<Spinner />
-			{:else}
-				<CopyButton
-					{text}
-					copyFn={createCopyFn(label)}
-					disabled={disabled || !text.trim()}
-					onclick={(e) => e.stopPropagation()}
-				></CopyButton>
-			{/if}
+			<CopyButton
+				{text}
+				copyFn={createCopyFn(label)}
+				disabled={disabled || !text.trim()}
+				onclick={(e) => e.stopPropagation()}
+			></CopyButton>
 		</InputGroup.Addon>
 	</InputGroup.Root>
 	<Modal.Content class="max-w-4xl">

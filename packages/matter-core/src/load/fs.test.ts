@@ -7,11 +7,26 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { assess } from '../core/integrity';
 import { loadPath, loadTable } from './fs';
+
+/** Resolve the bundled example vault by walking up from this file until it appears, so the path holds
+ *  wherever in the repo this test lives, not at a fixed offset from `import.meta.dir`. */
+function findExampleVault(): string {
+	let dir = import.meta.dir;
+	for (;;) {
+		const candidate = resolve(dir, 'examples/matter/content-vault');
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(dir);
+		if (parent === dir)
+			throw new Error('examples/matter/content-vault not found');
+		dir = parent;
+	}
+}
 
 /** A scratch directory, cleaned up after `body` runs. */
 async function withTempDir<T>(body: (dir: string) => Promise<T>): Promise<T> {
@@ -198,8 +213,7 @@ describe('loadPath: a folder is a table XOR a container of tables', () => {
 });
 
 describe('loadPath feeds the pipeline', () => {
-	const appRoot = resolve(import.meta.dir, '../../..');
-	const exampleVault = resolve(appRoot, '../../examples/matter/content-vault');
+	const exampleVault = findExampleVault();
 
 	test('the bundled content-vault loads three typed tables that assess', async () => {
 		const tables = await loadPath(exampleVault);

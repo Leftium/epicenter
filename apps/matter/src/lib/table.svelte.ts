@@ -24,6 +24,18 @@
  * `bun run tauri dev`.
  */
 
+import {
+	basename,
+	buildView,
+	editBody,
+	editField,
+	loadContract,
+	MatterReadError,
+	parseEntry,
+	type Row,
+	type TableRead,
+	type UnreadableFile,
+} from '@epicenter/matter-core';
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
@@ -32,16 +44,6 @@ import { Err, type Result, tryAsync } from 'wellcrafted/result';
 // unreadable). Generated from the Rust `FileDelta` enum by ts-rs, so the IPC payload
 // has one source of truth; regenerate with `cargo test` in `src-tauri`.
 import type { FileDelta } from './bindings/FileDelta';
-import { parseEntry, type Row } from './core/parse';
-import { basename } from './core/path';
-import { editBody, editField } from './core/serialize';
-import {
-	buildView,
-	loadContract,
-	MatterReadError,
-	type TableRead,
-	type UnreadableFile,
-} from './core/table';
 
 /**
  * Open `path` as a live table. Synchronous and IO-free: the store starts empty

@@ -3,8 +3,7 @@
 	import Link2Icon from '@lucide/svelte/icons/link-2';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import UnlinkIcon from '@lucide/svelte/icons/unlink';
-	import type { ReferenceVerdict } from '$lib/core/integrity';
-	import { stemOf } from '$lib/core/parse';
+	import { stemOf, type ReferenceVerdict } from '@epicenter/matter-core';
 
 	// The cross-table verdict for one reference cell, colored by state: a resolved pointer is a
 	// quiet link, a dangling one is a red break, a missing-target column an amber unlink. The

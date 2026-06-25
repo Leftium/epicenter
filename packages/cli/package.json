@@ -32,6 +32,7 @@
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/identity": "workspace:*",
+		"@epicenter/matter-core": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"arktype": "catalog:",

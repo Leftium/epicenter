@@ -35,7 +35,7 @@ A folder is a table **or** a container of tables, never both:
 Depth is reached by **re-opening the deeper folder**, never by loading two levels
 into one scope. The loader and watcher return exactly one of these two sets:
 `isMarked(path) ? [path] : [path's marked children]` (`loadPath` in
-`apps/matter/src/lib/load/fs.ts`, `scan_vault` in
+`packages/matter-core/src/load/fs.ts`, `scan_vault` in
 `apps/matter/src-tauri/src/watch.rs`).
 
 The vault view renders that scope as a **flat tab bar** of peer tables. There is

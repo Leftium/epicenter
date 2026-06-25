@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
-	import { isMissing } from '$lib/core/conformance';
+	import { isMissing } from '@epicenter/matter-core';
 	import { createCellEdit } from './create-cell-edit.svelte';
 	import FieldMissing from './FieldMissing.svelte';
 	import type { FieldProps } from './field-props';

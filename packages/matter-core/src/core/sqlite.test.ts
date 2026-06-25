@@ -1,11 +1,26 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { loadPath } from '../load/fs';
 import { classifyRows } from './conformance';
 import { validateContract } from './contract';
 import type { Row } from './parse';
 import { projectToSqlite } from './sqlite';
+
+/** Resolve the bundled example vault by walking up from this file until it appears, so the path holds
+ *  wherever in the repo this test lives, not at a fixed offset from `import.meta.dir`. */
+function findExampleVault(): string {
+	let dir = import.meta.dir;
+	for (;;) {
+		const candidate = resolve(dir, 'examples/matter/content-vault');
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(dir);
+		if (parent === dir)
+			throw new Error('examples/matter/content-vault not found');
+		dir = parent;
+	}
+}
 
 function contract(
 	fields: Record<string, Record<string, unknown>>,
@@ -62,11 +77,15 @@ const invalid: Row = {
 };
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
-	test('drops then recreates: stem PK, one nullable column per field by storage class, _extra JSON', () => {
+	test('drops then recreates: stem PK, one nullable column per field by storage class, _extra JSON, body', () => {
 		const { schema } = projectToSqlite('posts', m, []);
-		expect(schema).toBe(
-			'DROP TABLE IF EXISTS "posts";\n' +
-				'CREATE TABLE "posts" (' +
+		// Both tables are dropped first, always (the FTS drop runs even when not searchable, so losing
+		// searchability cannot leave a stale index).
+		expect(schema).toContain('DROP TABLE IF EXISTS "posts";\n');
+		expect(schema).toContain('DROP TABLE IF EXISTS "posts_fts";\n');
+		// `.toContain`, not `.toBe`: m is searchable (default), so the FTS5 block follows the base table.
+		expect(schema).toContain(
+			'CREATE TABLE "posts" (' +
 				'"stem" TEXT PRIMARY KEY, ' +
 				'"title" TEXT, ' +
 				'"status" TEXT, ' +
@@ -75,7 +94,8 @@ describe('schema script (DROP + CREATE, one execute_batch)', () => {
 				'"live" INTEGER, ' +
 				'"tags" TEXT, ' +
 				'"url" TEXT, ' +
-				'"_extra" TEXT NOT NULL)',
+				'"_extra" TEXT NOT NULL, ' +
+				'"body" TEXT)',
 		);
 	});
 
@@ -99,11 +119,11 @@ describe('insert template (one ? per column, bound positionally)', () => {
 		const { insert } = projectToSqlite('posts', m, []);
 		expect(insert).toBe(
 			'INSERT INTO "posts" (' +
-				'"stem", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
-				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+				'"stem", "title", "status", "count", "score", "live", "tags", "url", "_extra", "body"' +
+				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
-		// stem + 7 typed fields + _extra = 9 placeholders.
-		expect((insert.match(/\?/g) ?? []).length).toBe(9);
+		// stem + 7 typed fields + _extra + body = 10 placeholders.
+		expect((insert.match(/\?/g) ?? []).length).toBe(10);
 	});
 });
 
@@ -116,8 +136,8 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 		expect(proj.rows.map((r) => r[0])).toEqual(['post-1', 'post-2']);
 	});
 
-	test('an OK cell is serialized to its storage class', () => {
-		const [stem, title, status, count, score, live, tags, url, extra] =
+	test('an OK cell is serialized to its storage class, and the body rides along', () => {
+		const [stem, title, status, count, score, live, tags, url, extra, body] =
 			proj.rows[0]!;
 		expect(stem).toBe('post-1');
 		expect(title).toBe('Hello');
@@ -128,6 +148,7 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 		expect(tags).toBe('["a","b"]'); // array -> JSON TEXT
 		expect(url).toBe('https://x.com');
 		expect(extra).toBe('{"extraKey":"kept"}'); // untyped keys -> _extra JSON
+		expect(body).toBe(''); // the markdown body, projected verbatim (empty here)
 	});
 
 	test('a missing required cell binds NULL (the draft is still a row)', () => {
@@ -161,7 +182,7 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 			'MISSING_OPTIONAL',
 		]);
 		const p = projectToSqlite('posts', optionalContract, conformance);
-		expect(p.rows[0]).toEqual(['person', 'Alice', null, '{}']);
+		expect(p.rows[0]).toEqual(['person', 'Alice', null, '{}', '']);
 	});
 
 	test('an out-of-domain cell keeps its raw value so the draft stays filterable', () => {
@@ -174,13 +195,125 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 	});
 });
 
+describe('FTS5 block (emitted when the contract is searchable)', () => {
+	test('appends the virtual table and AFTER INSERT trigger over the searchable columns', () => {
+		// m's searchable defaults to body plus its TEXT fields (title, status, tags, url); the numeric
+		// and boolean fields (count, score, live) are not full-text.
+		const { schema } = projectToSqlite('posts', m, []);
+		expect(schema).toContain('DROP TABLE IF EXISTS "posts_fts"');
+		expect(schema).toContain(
+			'CREATE VIRTUAL TABLE "posts_fts" USING fts5(' +
+				'"body", "title", "status", "tags", "url", ' +
+				"content='posts', content_rowid=rowid)",
+		);
+		expect(schema).toContain(
+			'CREATE TRIGGER "posts_fts_ai" AFTER INSERT ON "posts" BEGIN',
+		);
+		expect(schema).toContain(
+			'INSERT INTO "posts_fts"(rowid, "body", "title", "status", "tags", "url") ' +
+				'VALUES (new.rowid, new."body", new."title", new."status", new."tags", new."url")',
+		);
+	});
+
+	test('no FTS create or trigger when searchable is empty, but the index drop still runs', () => {
+		const built = validateContract({
+			fields: { title: { type: 'string' } },
+			searchable: [],
+		});
+		if (built.error) throw new Error(built.error.message);
+		const { schema } = projectToSqlite('posts', built.data, []);
+		expect(schema).not.toContain('fts5');
+		expect(schema).not.toContain('CREATE TRIGGER');
+		// The DROP still runs, so a folder that just lost searchability sheds its stale index.
+		expect(schema).toContain('DROP TABLE IF EXISTS "posts_fts"');
+	});
+
+	test('losing searchability drops the stale index, so no old word matches a new row (bun:sqlite)', () => {
+		const db = new Database(':memory:');
+
+		// First projection: searchable, with a distinctive body word.
+		const searchable = projectToSqlite(
+			'posts',
+			m,
+			classifyRows(m.fields, [
+				{ ...valid, fileName: 'alpha.md', body: 'hunter2' },
+			]),
+		);
+		db.exec(searchable.schema);
+		for (const row of searchable.rows)
+			db.prepare(searchable.insert).run(...row);
+		expect(
+			db
+				.query(
+					`SELECT count(*) AS n FROM "posts_fts" WHERE "posts_fts" MATCH '"hunter2"'`,
+				)
+				.get(),
+		).toEqual({ n: 1 });
+
+		// Re-project the SAME folder as non-searchable, with a different row at the same rowid.
+		const bare = validateContract({
+			fields: { title: { type: 'string' } },
+			searchable: [],
+		});
+		if (bare.error) throw new Error(bare.error.message);
+		const nonSearchable = projectToSqlite(
+			'posts',
+			bare.data,
+			classifyRows(bare.data.fields, [
+				{
+					fileName: 'beta.md',
+					frontmatter: { title: 'Beta' },
+					body: 'something else',
+				},
+			]),
+		);
+		db.exec(nonSearchable.schema);
+		for (const row of nonSearchable.rows)
+			db.prepare(nonSearchable.insert).run(...row);
+
+		// The stale index is gone (not left mapping "hunter2" to whatever now sits at that rowid).
+		expect(
+			db.query(`SELECT name FROM sqlite_master WHERE name = 'posts_fts'`).all(),
+		).toEqual([]);
+	});
+
+	test('the trigger fills the index so a body word and a text-field word both match (bun:sqlite)', () => {
+		const withBody: Row = {
+			...valid,
+			fileName: 'note-1.md',
+			body: 'the quick brown fox',
+		};
+		const { schema, insert, rows } = projectToSqlite(
+			'posts',
+			m,
+			classifyRows(m.fields, [withBody]),
+		);
+		const db = new Database(':memory:');
+		db.exec(schema);
+		const stmt = db.prepare(insert);
+		for (const row of rows) stmt.run(...row);
+
+		const search = (term: string) =>
+			db
+				.query(
+					`SELECT p."stem" AS stem FROM "posts_fts"
+					 JOIN "posts" p ON p.rowid = "posts_fts".rowid
+					 WHERE "posts_fts" MATCH '"${term}"'`,
+				)
+				.all() as { stem: string }[];
+
+		expect(search('fox')).toEqual([{ stem: 'note-1' }]); // a body word
+		expect(search('Hello')).toEqual([{ stem: 'note-1' }]); // a title (text field) word
+		expect(search('absent')).toEqual([]); // no match
+	});
+});
+
 describe('projects a vault into one db whose tables JOIN', () => {
 	// W5's payoff: one db per vault, one SQL table per folder NAMED for the folder, so a cross-table
 	// JOIN falls out of real table names with no new code. This drives the real projector over the
 	// bundled content-vault and runs its SQL through bun:sqlite (the same engine the Tauri command
 	// uses), so the success criterion is proven end to end, not asserted on the SQL strings alone.
-	const appRoot = resolve(import.meta.dir, '../../..');
-	const exampleVault = resolve(appRoot, '../../examples/matter/content-vault');
+	const exampleVault = findExampleVault();
 
 	test('adaptations JOIN pages on the reference column returns the resolved rows', async () => {
 		// Load the fixture and project every typed table into one in-memory db, exactly as the Vault

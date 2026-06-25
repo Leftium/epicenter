@@ -4,7 +4,7 @@
  * This is the layer above {@link createTable}. A Table watches ONE folder's files; a Vault watches
  * the ROOT (`watch_vault`, depth-1) for its table set changing, and composes a `createTable` per
  * table the watcher resolves. `watch_vault` applies the same marker rule as the CLI loader
- * (`load/fs.ts` `loadPath`, ADR-0029/0032): a folder is a table XOR a container of tables. A marked
+ * (`@epicenter/matter-core/fs` `loadPath`, ADR-0029/0032): a folder is a table XOR a container of tables. A marked
  * root IS the single table (its subfolders are ignored); an unmarked root is a container whose
  * immediate marked child folders are the tables. An unmarked folder is not data and is skipped, so
  * opening a marked leaf and opening a container of marked folders both work; depth is reached by
@@ -29,10 +29,9 @@
  * Desktop-only: it talks to Tauri directly (no platform seam), mirroring {@link createTable}.
  */
 
+import { assess, basename, type VaultIntegrity } from '@epicenter/matter-core';
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
-import { assess, type VaultIntegrity } from './core/integrity';
-import { basename } from './core/path';
 import { createMirror } from './mirror.svelte';
 import { createTable, type TableHandle } from './table.svelte';
 

@@ -6,8 +6,8 @@
  * files (kept separate, never dropped), and EITHER a typed classification (a
  * valid `matter.json` was supplied) OR a raw untyped view (no contract, or junk
  * contract). The actual disk listing lives at the boundary (`table.svelte.ts` in
- * the app, `src/cli/check.ts` in the headless command), so this transform is
- * testable without any filesystem.
+ * the app, `loadPath` for the `epicenter matter check` command), so this transform
+ * is testable without any filesystem.
  *
  * The contract is the foundation, never inference: a usable `matter.json` classifies
  * the folder against a contract; without one, the folder is shown as RAW text

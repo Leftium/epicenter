@@ -27,9 +27,14 @@
  * Optionality is a Matter policy, not a field-palette kind. By default every typed
  * field is required; top-level `optional: ["name"]` names the exceptions. "Must have
  * content" is still a value constraint (e.g. `minLength`), not a requiredness flag.
+ *
+ * Searchability is the same shape of policy: top-level `searchable: ["body", "name"]` names the
+ * columns indexed for full-text search, defaulting to `body` plus every TEXT-storage field. It lives
+ * at the top level (not in a field's value schema) for the same reason `optional` does, and the key
+ * exists only because the SQLite projection's FTS5 index exists.
  */
 
-import { compile, type Field, recognize } from '@epicenter/field';
+import { compile, type Field, recognize, storageOf } from '@epicenter/field';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -42,6 +47,9 @@ export const ContractError = defineErrors({
 	NotAnObject: () => ({ message: 'matter.json must be a JSON object' }),
 	InvalidOptional: () => ({
 		message: 'matter.json optional must be an array of field names',
+	}),
+	InvalidSearchable: () => ({
+		message: 'matter.json searchable must be an array of column names',
 	}),
 	InvalidJson: ({ cause }: { cause: unknown }) => ({
 		message: `matter.json is not valid JSON: ${extractErrorMessage(cause)}`,
@@ -64,6 +72,12 @@ export type Contract = {
 	untyped: string[];
 	/** Optional entries that did not match a typed field, surfaced as contract diagnostics. */
 	unmatchedOptional: string[];
+	/**
+	 * The columns indexed for full-text search (FTS5). Defaults to `body` plus every TEXT-storage
+	 * field; a top-level `searchable` array in `matter.json` overrides it (and may drop `body`).
+	 * Always filtered to real columns. Empty means no FTS table is projected for the folder.
+	 */
+	searchable: string[];
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -123,7 +137,30 @@ export function validateContract(
 	const typed = new Set(fields.map((field) => field.name));
 	const unmatchedOptional = optional.filter((name) => !typed.has(name));
 
-	return Ok({ fields, untyped, unmatchedOptional });
+	// Searchable is another top-level policy (a sibling of `optional`), resolved to the FTS column
+	// list. The default is the body plus every TEXT-storage field; numbers and booleans are not
+	// full-text. A `searchable` array overrides it and may drop `body`. Either way, keep only real
+	// columns (the body or a typed field) so a stray name can never break the FTS5 `CREATE`.
+	const searchableRaw = raw.searchable;
+	if (
+		searchableRaw !== undefined &&
+		(!Array.isArray(searchableRaw) ||
+			searchableRaw.some((value) => typeof value !== 'string'))
+	) {
+		return ContractError.InvalidSearchable();
+	}
+	const columnNames = new Set(['body', ...fields.map((field) => field.name)]);
+	const defaultSearchable = [
+		'body',
+		...fields
+			.filter((field) => storageOf(field.kind) === 'TEXT')
+			.map((field) => field.name),
+	];
+	const searchable = (searchableRaw ?? defaultSearchable).filter((name) =>
+		columnNames.has(name),
+	);
+
+	return Ok({ fields, untyped, unmatchedOptional, searchable });
 }
 
 /**

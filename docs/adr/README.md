@@ -132,5 +132,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) | Local Books stores OAuth tokens in a single 0600 file | Accepted |
 | [0063](0063-the-local-books-mirror-is-a-multi-writer-cache-made-safe-by-one-monotonic-write-door.md) | The Local Books mirror is a multi-writer cache made safe by one monotonic write door, not single-writer discipline | Accepted |
 | [0064](0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md) | The Local Books mirror keeps one realm CDC cursor; table existence is the per-entity init latch | Accepted |
+| [0065](0065-matter-is-a-standalone-disk-as-truth-tool-its-sqlite-is-a-read-only-query-surface.md) | Matter is a standalone disk-as-truth tool; its SQLite mirror is a first-class read-only query surface under `epicenter matter` | Accepted |
 
 When you add an ADR, add its row here.

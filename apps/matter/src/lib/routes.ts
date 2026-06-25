@@ -9,6 +9,13 @@
 /** The query-param key the active table is addressed by. Read and write share it, so they agree. */
 export const TABLE_PARAM = 'table';
 
+/** The query-param key the in-vault view is addressed by. Absent means the table grid; `sql` and `db`
+ *  select the SQL console and the Database panel, which are vault-wide (not per-table). */
+export const VIEW_PARAM = 'view';
+
+/** An in-vault view that is not the table grid. The grid is the absence of this param. */
+export type VaultView = 'sql' | 'db';
+
 export const routes = {
 	/** The onboarding index, shown only when no vault is open. */
 	home: () => '/',
@@ -16,7 +23,10 @@ export const routes = {
 	vault: (id: string) => `/vault/${id}`,
 	/**
 	 * Select a table within the active vault. A relative query (no id), so switching tables stays
-	 * on the same vault route without rebuilding its id or remounting its watcher.
+	 * on the same vault route without rebuilding its id or remounting its watcher. Clears `?view`, so
+	 * picking a table returns from the console or Database panel to the grid.
 	 */
 	table: (name: string) => `?${TABLE_PARAM}=${encodeURIComponent(name)}`,
+	/** Select a vault-wide view (the SQL console or the Database panel). Clears `?table`. */
+	view: (view: VaultView) => `?${VIEW_PARAM}=${view}`,
 };

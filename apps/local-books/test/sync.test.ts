@@ -116,7 +116,9 @@ test('incremental upserts only changes, soft-deletes, advances the cursor, and n
 
 	// Cursor advanced, not reset.
 	expect(inc.cursorBefore).toBe(cursorBefore);
-	expect(Date.parse(inc.cursorAfter!)).toBeGreaterThan(Date.parse(cursorBefore));
+	expect(Date.parse(inc.cursorAfter!)).toBeGreaterThan(
+		Date.parse(cursorBefore),
+	);
 	expect(ctx.db.readRealmState().cdcCursor).toBe(inc.cursorAfter);
 
 	// No full re-pull: exactly one query (the full) and one cdc (the incremental).

@@ -122,7 +122,9 @@ describe('invokeAction', () => {
 		test('a wrapped error passes; a bare tagged error is a compile error', () => {
 			// A defineErrors variant returns Err(...) (a Result), so it passes the
 			// guard and reaches invokeAction as an error, not an Ok-wrapped success.
-			const wrapped = defineMutation({ handler: () => E.Boom({ detail: 'x' }) });
+			const wrapped = defineMutation({
+				handler: () => E.Boom({ detail: 'x' }),
+			});
 			expect(wrapped.type).toBe('mutation');
 
 			// The footgun: returning the destructured bare error. invokeAction would

@@ -106,7 +106,9 @@ async function main() {
 	console.log(
 		'\n$ sqlite3 books.db "SELECT key, value FROM _meta WHERE key=\'cdc_cursor\'"  (cursor AFTER)',
 	);
-	console.log(await sqlite("SELECT key, value FROM _meta WHERE key='cdc_cursor'"));
+	console.log(
+		await sqlite("SELECT key, value FROM _meta WHERE key='cdc_cursor'"),
+	);
 	console.log(
 		'\n$ sqlite3 books.db "SELECT count(*) total, sum(deleted) soft_deleted FROM invoices"',
 	);

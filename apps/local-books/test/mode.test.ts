@@ -61,7 +61,10 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			realmState: state({ cdcCursor: daysAgo(26), lastFullPullAt: daysAgo(26) }),
+			realmState: state({
+				cdcCursor: daysAgo(26),
+				lastFullPullAt: daysAgo(26),
+			}),
 		});
 		expect(decision.mode).toBe('FULL');
 		expect(decision.reason).toContain('CDC window');

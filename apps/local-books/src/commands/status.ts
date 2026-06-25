@@ -61,7 +61,9 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 		// "pulled, genuinely empty" and "never pulled". Annotate the latter (the
 		// only informative state) instead of printing a status on all 16 lines.
 		if (!s.initialized) {
-			console.log(`${name.padEnd(12)} ${'—'.padStart(7)} — not pulled (run sync)`);
+			console.log(
+				`${name.padEnd(12)} ${'—'.padStart(7)} — not pulled (run sync)`,
+			);
 			continue;
 		}
 		console.log(

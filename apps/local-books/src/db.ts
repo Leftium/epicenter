@@ -29,7 +29,11 @@ import {
 export const SCHEMA_VERSION = '2';
 
 /** The `_meta` keys that hold the realm's one sync cursor. */
-const CURSOR_KEYS = ['cdc_cursor', 'last_full_pull_at', 'last_synced_at'] as const;
+const CURSOR_KEYS = [
+	'cdc_cursor',
+	'last_full_pull_at',
+	'last_synced_at',
+] as const;
 
 /**
  * The whole company's CDC position, the single high-water mark. `cdcCursor` is
@@ -59,7 +63,10 @@ type MirrorRow = {
 export type IngestEntry = { def: EntityDef; objects: QbObject[] };
 
 /** The partition counts an ingest produced, keyed by QB entity name. */
-export type IngestCounts = Record<string, { upserted: number; deleted: number }>;
+export type IngestCounts = Record<
+	string,
+	{ upserted: number; deleted: number }
+>;
 
 export type EntityStatus = {
 	entity: string;
@@ -105,7 +112,9 @@ export function openBooksDb(path: string) {
 	db.exec('PRAGMA synchronous = NORMAL;');
 	db.exec('PRAGMA foreign_keys = ON;');
 
-	db.exec(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`);
+	db.exec(
+		`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`,
+	);
 
 	const setMetaStmt = db.query(
 		`INSERT INTO _meta (key, value) VALUES (?, ?)
@@ -258,10 +267,7 @@ export function openBooksDb(path: string) {
 		 */
 		ingest(
 			entries: IngestEntry[],
-			{
-				syncedAt,
-				realmState,
-			}: { syncedAt: string; realmState?: RealmState },
+			{ syncedAt, realmState }: { syncedAt: string; realmState?: RealmState },
 		): IngestCounts {
 			const prepared = entries.map(({ def, objects }) => {
 				ensureEntityTable(def);

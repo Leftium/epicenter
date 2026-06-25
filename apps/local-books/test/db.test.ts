@@ -54,11 +54,7 @@ function stored(db: BooksDb): { category: string; updatedAt: string | null } {
 }
 
 /** Fold one Purchase through the write door (the single-entity, no-cursor case). */
-function ingPurchase(
-	db: BooksDb,
-	obj: QbObject,
-	syncedAt: string,
-): void {
+function ingPurchase(db: BooksDb, obj: QbObject, syncedAt: string): void {
 	db.ingest([{ def: PURCHASE, objects: [obj] }], { syncedAt });
 }
 

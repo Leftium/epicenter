@@ -102,7 +102,10 @@ async function fullPullEach(
 	names: string[],
 	syncedAt: string,
 	{ backfilled }: { backfilled: boolean },
-): Promise<{ entities: EntitySyncResult[]; failures: SyncOutcome['failures'] }> {
+): Promise<{
+	entities: EntitySyncResult[];
+	failures: SyncOutcome['failures'];
+}> {
 	const { db, client } = deps;
 	const log = deps.log ?? (() => {});
 	const entities: EntitySyncResult[] = [];
@@ -161,9 +164,14 @@ export async function syncRealm(
 	log(`realm: ${mode} (${reason})`);
 
 	if (mode === 'FULL') {
-		const { entities, failures } = await fullPullEach(deps, names, cursorAfter, {
-			backfilled: false,
-		});
+		const { entities, failures } = await fullPullEach(
+			deps,
+			names,
+			cursorAfter,
+			{
+				backfilled: false,
+			},
+		);
 		// Advance the realm cursor only when every entity was pulled: a partial
 		// failure leaves the missing entity uninitialized (no table), so the next
 		// pass backfills it rather than skipping its history.

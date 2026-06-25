@@ -1,19 +1,17 @@
 <script lang="ts">
-	import { fromKv, fromTable } from '@epicenter/svelte';
-	import { InstantString } from '@epicenter/workspace';
-	import {
-		type Conversation,
-		type ConversationId,
-		generateConversationId,
-	} from '@epicenter/chat';
-	import { VOCAB_MODEL } from '@epicenter/vocab';
+	import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
+	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { toast } from '@epicenter/ui/sonner';
+	import {
+		generateMessageId,
+		VOCAB_MODEL,
+		VOCAB_SYSTEM_PROMPT,
+	} from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { InferencePicker } from '@epicenter/app-shell/inference-picker';
 	import { requireVocab } from '$lib/session';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import { auth } from '$platform/auth';
@@ -22,101 +20,21 @@
 
 	const vocab = requireVocab();
 	const showPinyin = fromKv(vocab.kv, 'showPinyin');
-	const conversationsMap = fromTable(vocab.tables.conversations);
 
-	/**
-	 * Read the current table map directly. Startup and delete paths call this
-	 * before Svelte necessarily re-materializes the derived `conversations` list.
-	 */
-	function readSortedConversations(): Conversation[] {
-		return [...conversationsMap.values()].sort((a, b) =>
-			a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
-		);
-	}
-
-	const conversations = $derived(readSortedConversations());
-
-	let activeConversationId = $state<ConversationId | undefined>();
-
-	// The shared inference picker (ADR-0059) binds to the active conversation's
-	// model and this device's connection registry (built in the store module).
-	const activeModel = $derived.by(() => {
-		if (!activeConversationId) return VOCAB_MODEL;
-		return conversationsMap.get(activeConversationId)?.model ?? VOCAB_MODEL;
+	// The shared chat registry (ADR-0047/0059) with Vocab's variation injected:
+	// capability-free (no tools, no approval), one Chinese-tuned system prompt, and
+	// the hosted VOCAB_MODEL as the default a new conversation starts on. The active
+	// conversation lives in internal state (Vocab has no URL seam).
+	const chat = createAgentChatState({
+		table: vocab.tables.conversations,
+		whenLoaded: vocab.idb.whenLoaded,
+		connections: inferenceConnections,
+		buildSystemPrompts: () => [VOCAB_SYSTEM_PROMPT],
+		generateId: generateMessageId,
+		defaultModel: VOCAB_MODEL,
 	});
 
-	/** An explicit model pick writes the active conversation's synced model. */
-	function selectModel(model: string) {
-		if (!activeConversationId) return;
-		vocab.tables.conversations.update(activeConversationId, {
-			model,
-			updatedAt: InstantString.now(),
-		});
-	}
-
-	/**
-	 * Write only the cheap list row. The transcript child doc is opened lazily by
-	 * `ConversationView`, keyed by the row id. A new conversation defaults to the
-	 * hosted `VOCAB_MODEL`; the header picker rewrites this row's `model` per pick
-	 * (ADR-0059), and the engine resolves it against the device's connections.
-	 */
-	function createConversationRow(): ConversationId {
-		const id = generateConversationId();
-		const timestamp = InstantString.now();
-		vocab.tables.conversations.set({
-			id,
-			title: 'New Chat',
-			model: VOCAB_MODEL,
-			createdAt: timestamp,
-			updatedAt: timestamp,
-		});
-		return id;
-	}
-
-	/**
-	 * Keep one row active after startup or deletion. `skip` avoids re-selecting a
-	 * row that was deleted in the same call stack before Svelte re-materializes
-	 * the derived list.
-	 */
-	function ensureDefaultConversation(skip?: ConversationId): ConversationId {
-		const first = readSortedConversations().find(
-			(conversation) => conversation.id !== skip,
-		);
-		return first?.id ?? createConversationRow();
-	}
-
-	function createConversation(): ConversationId {
-		const id = createConversationRow();
-		activeConversationId = id;
-		return id;
-	}
-
-	function deleteConversation(conversationId: ConversationId) {
-		const wasActive = activeConversationId === conversationId;
-		vocab.tables.conversations.delete(conversationId);
-		if (wasActive) {
-			activeConversationId = ensureDefaultConversation(conversationId);
-		}
-	}
-
-	const unobserveConversations = vocab.tables.conversations.observe(() => {
-		if (activeConversationId && !conversationsMap.has(activeConversationId)) {
-			activeConversationId = ensureDefaultConversation();
-		}
-	});
-
-	let isDestroyed = false;
-	void vocab.idb.whenLoaded.then(() => {
-		if (!isDestroyed) {
-			activeConversationId ??= ensureDefaultConversation();
-		}
-	});
-
-	onDestroy(() => {
-		isDestroyed = true;
-		unobserveConversations();
-		conversationsMap[Symbol.dispose]();
-	});
+	onDestroy(() => chat[Symbol.dispose]());
 
 	/**
 	 * Keep the destructive device-local wipe out of the template: the dialog owns
@@ -144,11 +62,10 @@
 
 <Sidebar.Provider>
 	<VocabSidebar
-		{conversations}
-		{activeConversationId}
-		onCreate={createConversation}
-		onSwitch={(conversationId) => (activeConversationId = conversationId)}
-		onDelete={deleteConversation}
+		conversations={chat.conversations}
+		activeConversationId={chat.activeConversationId}
+		onCreate={() => chat.createConversation()}
+		onSwitch={(conversationId) => chat.switchTo(conversationId)}
 	/>
 
 	<main class="flex h-dvh flex-1 flex-col">
@@ -172,23 +89,9 @@
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device
 				</Button>
-
-				<InferencePicker
-				model={activeModel}
-				onSelectModel={selectModel}
-				connections={inferenceConnections}
-			/>
 			</div>
 		</header>
 
-		{#if activeConversationId}
-			{#key activeConversationId}
-				<ConversationView
-					conversationId={activeConversationId}
-					model={activeModel}
-					showPinyin={showPinyin.current}
-				/>
-			{/key}
-		{/if}
+		<ConversationView active={chat.active} showPinyin={showPinyin.current} />
 	</main>
 </Sidebar.Provider>

@@ -10,7 +10,7 @@
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
+	import type { ConversationHandle } from '@epicenter/app-shell/agent-chat';
 	import type { ConversationId } from '@epicenter/chat';
 
 	let {

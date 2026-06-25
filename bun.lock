@@ -657,7 +657,9 @@
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
+        "@epicenter/chat": "workspace:*",
         "@epicenter/client": "workspace:*",
+        "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",

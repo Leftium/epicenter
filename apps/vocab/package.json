@@ -6,8 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./vocab.ts",
-		"./browser": "./vocab.browser.ts",
-		"./engine": "./epicenter-engine.ts"
+		"./browser": "./vocab.browser.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

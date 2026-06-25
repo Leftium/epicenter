@@ -5,26 +5,27 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import type { AgentMessage } from '@epicenter/workspace/agent';
-	import MessageParts from './MessageParts.svelte';
+	import type { Snippet } from 'svelte';
 
 	let {
 		messages,
 		streaming,
 		status,
 		onReload,
-		pendingApprovalCallId,
-		onApproveToolCall,
-		onDenyToolCall,
+		message,
+		emptyState,
 	}: {
 		messages: AgentMessage[];
 		/** The in-flight message, rendered after the settled list; null between turns. */
 		streaming: AgentMessage | null;
 		status: 'ready' | 'submitted' | 'streaming' | 'error';
 		onReload: () => void;
-		/** The tool call awaiting a decision, or null. */
-		pendingApprovalCallId: string | null;
-		onApproveToolCall: () => void;
-		onDenyToolCall: () => void;
+		/** Renders one message's content inside its bubble. The second argument is
+		 * true for the in-flight message, so a renderer can show raw text until the
+		 * message settles (the rich pass then runs once). */
+		message: Snippet<[AgentMessage, boolean]>;
+		/** Optional empty-state override; defaults to a generic chat prompt. */
+		emptyState?: Snippet;
 	} = $props();
 
 	/**
@@ -43,43 +44,37 @@
 				messages.at(-1)?.role !== 'assistant'),
 	);
 
-	/** Show regenerate button when idle and last message is from assistant. */
+	/** Show regenerate button when idle and the last message is from the assistant. */
 	const showRegenerate = $derived(
 		status === 'ready' && messages.at(-1)?.role === 'assistant',
 	);
 </script>
 
 {#if messages.length === 0 && !streaming}
-	<Empty.Root class="py-12">
-		<Empty.Media>
-			<SparklesIcon class="size-8 text-muted-foreground" />
-		</Empty.Media>
-		<Empty.Title>AI Chat</Empty.Title>
-		<Empty.Description>Send a message to start chatting</Empty.Description>
-	</Empty.Root>
+	{#if emptyState}
+		{@render emptyState()}
+	{:else}
+		<Empty.Root class="py-12">
+			<Empty.Media>
+				<SparklesIcon class="size-8 text-muted-foreground" />
+			</Empty.Media>
+			<Empty.Title>AI Chat</Empty.Title>
+			<Empty.Description>Send a message to start chatting</Empty.Description>
+		</Empty.Root>
+	{/if}
 {:else}
 	<Chat.List>
-		{#each messages as message (message.id)}
-			<Chat.Bubble variant={message.role === 'user' ? 'sent' : 'received'}>
+		{#each messages as msg (msg.id)}
+			<Chat.Bubble variant={msg.role === 'user' ? 'sent' : 'received'}>
 				<Chat.BubbleMessage>
-					<MessageParts
-						parts={message.parts}
-						{pendingApprovalCallId}
-						{onApproveToolCall}
-						{onDenyToolCall}
-					/>
+					{@render message(msg, false)}
 				</Chat.BubbleMessage>
 			</Chat.Bubble>
 		{/each}
 		{#if streaming}
 			<Chat.Bubble variant="received">
 				<Chat.BubbleMessage>
-					<MessageParts
-						parts={streaming.parts}
-						{pendingApprovalCallId}
-						{onApproveToolCall}
-						{onDenyToolCall}
-					/>
+					{@render message(streaming, true)}
 				</Chat.BubbleMessage>
 			</Chat.Bubble>
 		{/if}
@@ -90,11 +85,7 @@
 		{/if}
 		{#if showRegenerate}
 			<div class="flex justify-start px-2 py-1">
-				<Button
-					variant="ghost"
-					class="text-muted-foreground"
-					onclick={onReload}
-				>
+				<Button variant="ghost" class="text-muted-foreground" onclick={onReload}>
 					<RotateCcwIcon class="size-3" />
 					Regenerate
 				</Button>

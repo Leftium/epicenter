@@ -1,14 +1,27 @@
 /**
  * The QuickBooks entity registry: which QB types we mirror, the SQLite table
- * each lands in, and the handful of scalar columns worth lifting out of the raw
- * blob for indexing and joins. Everything else stays in `raw`, so a new QB
- * field needs no migration.
+ * each lands in, and (optionally) the scalar columns worth lifting out of the
+ * raw blob for indexing and joins.
  *
- * The raw blob is canonical; the extracted columns are pure projections of it.
- * Each column is declared as a SQLite GENERATED column over `json_extract(raw,
- * ...)` (see `db.ts`), so the registry is plain data: a JSON path and the column
- * type SQLite coerces it to. There is no write-path extraction and no delete-stub
- * special case: a missing field is `json_extract`'s `null` for free.
+ * What we mirror is a rule, not a list we happened to need: every *posting*
+ * QuickBooks entity (anything that moves money through the general ledger) plus
+ * the name lists those transactions reference by id. Non-posting documents
+ * (Estimate, PurchaseOrder) and config/attachment entities carry no money and
+ * stay out. The point is completeness. The mirror is the agent's relational,
+ * offline view of the books, so a *subset* would silently under-report against
+ * the live statements `books_report` runs: forget BillPayment and "what did I
+ * pay this vendor" is quietly wrong. Adding an entity is one entry here with no
+ * migration, so there is no reason to curate below the full posting set.
+ *
+ * The raw blob is canonical; extracted columns are pure projections of it, each
+ * a SQLite GENERATED column over `json_extract(raw, ...)` (see `db.ts`). So the
+ * registry is plain data: a JSON path and the type SQLite coerces it to, with no
+ * write-path extraction and no delete-stub case (a missing field is
+ * `json_extract`'s `null` for free). Columns are therefore an opt-in ergonomic
+ * layer, not an obligation: an entity may ship with `columns: []` and stay fully
+ * queryable through `json_extract`; lift a scalar out only where a query pays for
+ * the index or join. Date and amount are the ledger spine, so the money
+ * movements carry those.
  */
 
 export type ColumnType = 'TEXT' | 'INTEGER' | 'REAL';
@@ -52,18 +65,19 @@ function col(
 type EntitySource = Omit<EntityDef, 'name'>;
 
 /**
- * Default mirror set. Each is a CDC-supported QuickBooks transaction or
- * name-list entity. Extend or trim via `config.json` `entities`.
+ * The default mirror set: every posting entity plus the name lists they
+ * reference. Grouped by role for reading; the key order has no runtime meaning.
+ * Extend or trim via `config.json` `entities`.
  */
 export const ENTITY_DEFS: Record<string, EntitySource> = {
-	Invoice: {
-		table: 'invoices',
+	// ── Name lists: what transactions reference by id. ──
+	Account: {
+		table: 'accounts',
 		columns: [
-			col('doc_number', 'TEXT', 'DocNumber'),
-			col('doc_date', 'TEXT', 'TxnDate'),
-			col('total_amt', 'REAL', 'TotalAmt'),
-			col('balance', 'REAL', 'Balance'),
-			col('customer_ref', 'TEXT', 'CustomerRef', 'value'),
+			col('name', 'TEXT', 'Name'),
+			col('account_type', 'TEXT', 'AccountType'),
+			col('current_balance', 'REAL', 'CurrentBalance'),
+			col('active', 'INTEGER', 'Active'),
 		],
 	},
 	Customer: {
@@ -72,6 +86,15 @@ export const ENTITY_DEFS: Record<string, EntitySource> = {
 			col('display_name', 'TEXT', 'DisplayName'),
 			col('company_name', 'TEXT', 'CompanyName'),
 			col('email', 'TEXT', 'PrimaryEmailAddr', 'Address'),
+			col('active', 'INTEGER', 'Active'),
+			col('balance', 'REAL', 'Balance'),
+		],
+	},
+	Vendor: {
+		table: 'vendors',
+		columns: [
+			col('display_name', 'TEXT', 'DisplayName'),
+			col('company_name', 'TEXT', 'CompanyName'),
 			col('active', 'INTEGER', 'Active'),
 			col('balance', 'REAL', 'Balance'),
 		],
@@ -85,6 +108,18 @@ export const ENTITY_DEFS: Record<string, EntitySource> = {
 			col('active', 'INTEGER', 'Active'),
 		],
 	},
+
+	// ── Money in: accounts-receivable and cash sales. ──
+	Invoice: {
+		table: 'invoices',
+		columns: [
+			col('doc_number', 'TEXT', 'DocNumber'),
+			col('doc_date', 'TEXT', 'TxnDate'),
+			col('total_amt', 'REAL', 'TotalAmt'),
+			col('balance', 'REAL', 'Balance'),
+			col('customer_ref', 'TEXT', 'CustomerRef', 'value'),
+		],
+	},
 	Payment: {
 		table: 'payments',
 		columns: [
@@ -93,6 +128,52 @@ export const ENTITY_DEFS: Record<string, EntitySource> = {
 			col('customer_ref', 'TEXT', 'CustomerRef', 'value'),
 		],
 	},
+	// A cash / point-of-sale sale with no invoice: the money-in event an Invoice
+	// never becomes. Line items live in `raw`.
+	SalesReceipt: {
+		table: 'sales_receipts',
+		columns: [
+			col('doc_number', 'TEXT', 'DocNumber'),
+			col('txn_date', 'TEXT', 'TxnDate'),
+			col('total_amt', 'REAL', 'TotalAmt'),
+			col('customer_ref', 'TEXT', 'CustomerRef', 'value'),
+		],
+	},
+	// An A/R credit: reduces what a customer owes. `balance` is the credit not
+	// yet applied to an invoice.
+	CreditMemo: {
+		table: 'credit_memos',
+		columns: [
+			col('doc_number', 'TEXT', 'DocNumber'),
+			col('txn_date', 'TEXT', 'TxnDate'),
+			col('total_amt', 'REAL', 'TotalAmt'),
+			col('balance', 'REAL', 'Balance'),
+			col('customer_ref', 'TEXT', 'CustomerRef', 'value'),
+		],
+	},
+	// Money refunded to a customer (the money-out counterpart of a sale).
+	RefundReceipt: {
+		table: 'refund_receipts',
+		columns: [
+			col('doc_number', 'TEXT', 'DocNumber'),
+			col('txn_date', 'TEXT', 'TxnDate'),
+			col('total_amt', 'REAL', 'TotalAmt'),
+			col('customer_ref', 'TEXT', 'CustomerRef', 'value'),
+		],
+	},
+	// Money-in transactions (deposits, incl. posted bank-feed credits). The
+	// crediting category lives in Line[].DepositLineDetail.AccountRef (1:N) and
+	// stays in `raw`.
+	Deposit: {
+		table: 'deposits',
+		columns: [
+			col('txn_date', 'TEXT', 'TxnDate'),
+			col('total_amt', 'REAL', 'TotalAmt'),
+			col('deposit_to', 'TEXT', 'DepositToAccountRef', 'name'),
+		],
+	},
+
+	// ── Money out: accounts-payable and direct spend. ──
 	Bill: {
 		table: 'bills',
 		columns: [
@@ -103,22 +184,24 @@ export const ENTITY_DEFS: Record<string, EntitySource> = {
 			col('vendor_ref', 'TEXT', 'VendorRef', 'value'),
 		],
 	},
-	Vendor: {
-		table: 'vendors',
+	// Settles one or more Bills; the bills it pays live in Line[].LinkedTxn and
+	// stay in `raw`. This is the money-out event a Bill (an obligation) is not.
+	BillPayment: {
+		table: 'bill_payments',
 		columns: [
-			col('display_name', 'TEXT', 'DisplayName'),
-			col('company_name', 'TEXT', 'CompanyName'),
-			col('active', 'INTEGER', 'Active'),
-			col('balance', 'REAL', 'Balance'),
+			col('txn_date', 'TEXT', 'TxnDate'),
+			col('total_amt', 'REAL', 'TotalAmt'),
+			col('vendor_ref', 'TEXT', 'VendorRef', 'value'),
 		],
 	},
-	Account: {
-		table: 'accounts',
+	// An A/P credit: reduces what you owe a vendor.
+	VendorCredit: {
+		table: 'vendor_credits',
 		columns: [
-			col('name', 'TEXT', 'Name'),
-			col('account_type', 'TEXT', 'AccountType'),
-			col('current_balance', 'REAL', 'CurrentBalance'),
-			col('active', 'INTEGER', 'Active'),
+			col('doc_number', 'TEXT', 'DocNumber'),
+			col('txn_date', 'TEXT', 'TxnDate'),
+			col('total_amt', 'REAL', 'TotalAmt'),
+			col('vendor_ref', 'TEXT', 'VendorRef', 'value'),
 		],
 	},
 	// Money-out transactions (card/cash/check expenses, incl. posted bank-feed
@@ -135,15 +218,28 @@ export const ENTITY_DEFS: Record<string, EntitySource> = {
 			col('payee', 'TEXT', 'EntityRef', 'name'),
 		],
 	},
-	// Money-in transactions (deposits, incl. posted bank-feed credits). The
-	// crediting category lives in Line[].DepositLineDetail.AccountRef (1:N) and
-	// stays in `raw`.
-	Deposit: {
-		table: 'deposits',
+
+	// ── General ledger & banking. ──
+	// Manual GL posting (adjustments, accruals). A JE has no header amount: the
+	// debits and credits live per-line in Line[].JournalEntryLineDetail, so the
+	// money stays in `raw` and only the document scalars are lifted. The honest
+	// column-light case.
+	JournalEntry: {
+		table: 'journal_entries',
+		columns: [
+			col('doc_number', 'TEXT', 'DocNumber'),
+			col('txn_date', 'TEXT', 'TxnDate'),
+		],
+	},
+	// Bank-to-bank movement. The QB shape differs from the others: a single
+	// `Amount` (not `TotalAmt`) and a From/To account pair.
+	Transfer: {
+		table: 'transfers',
 		columns: [
 			col('txn_date', 'TEXT', 'TxnDate'),
-			col('total_amt', 'REAL', 'TotalAmt'),
-			col('deposit_to', 'TEXT', 'DepositToAccountRef', 'name'),
+			col('amount', 'REAL', 'Amount'),
+			col('from_account', 'TEXT', 'FromAccountRef', 'name'),
+			col('to_account', 'TEXT', 'ToAccountRef', 'name'),
 		],
 	},
 };

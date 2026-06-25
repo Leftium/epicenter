@@ -22,6 +22,7 @@
 	import DownloadRecordingButton from './actions/DownloadRecordingButton.svelte';
 	import TranscribeRecordingButton from './actions/TranscribeRecordingButton.svelte';
 	import TransformationPicker from './actions/TransformationPicker.svelte';
+	import ViewTransformationRunsDialog from './actions/ViewTransformationRunsDialog.svelte';
 
 	/**
 	 * The single detail surface for one recording: play it back, read and edit
@@ -201,6 +202,12 @@
 					showLabel
 				/>
 				<TransformationPicker
+					recordingId={recording.id}
+					variant="outline"
+					size="sm"
+					showLabel
+				/>
+				<ViewTransformationRunsDialog
 					recordingId={recording.id}
 					variant="outline"
 					size="sm"

@@ -9,36 +9,46 @@ import {
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
 } from '@epicenter/constants/oauth-clients';
-import { APP_URLS } from '@epicenter/constants/vite';
-import { createOAuthAppAuth } from '@epicenter/svelte/auth';
+import {
+	createInstanceTokenAuth,
+	createOAuthAppAuth,
+} from '@epicenter/svelte/auth';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Ok, type Result } from 'wellcrafted/result';
+import { readInstance } from '$lib/instance';
 import type { PlatformAuth } from './types';
 
 const OAUTH_CALLBACK_TIMEOUT_MS = 10 * 60 * 1000;
 
-export const auth: PlatformAuth = createOAuthAppAuth({
-	baseURL: APP_URLS.API,
-	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
-	persistedAuthStorage: createWebStoragePersistedAuthStorage({
-		key: 'fuji.auth.persisted',
-		storage: window.localStorage,
-	}),
-	launcher: createFujiOAuthLauncher(),
-});
+const instance = readInstance();
+
+// A configured instance token means a self-hosted star: authenticate with the
+// static bearer (ADR-0063) instead of OAuth. Otherwise the deep-link OAuth flow
+// runs against the instance origin, which is the hosted cloud by default.
+export const auth: PlatformAuth = instance.token
+	? createInstanceTokenAuth({ baseURL: instance.baseURL, token: instance.token })
+	: createOAuthAppAuth({
+			baseURL: instance.baseURL,
+			clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
+			persistedAuthStorage: createWebStoragePersistedAuthStorage({
+				key: 'fuji.auth.persisted',
+				storage: window.localStorage,
+			}),
+			launcher: createFujiOAuthLauncher(instance.baseURL),
+		});
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => auth[Symbol.dispose]());
 }
 
-function createFujiOAuthLauncher(): OAuthLauncher {
+function createFujiOAuthLauncher(baseURL: string): OAuthLauncher {
 	const redirectUri = EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI;
 	const client = createOAuthClient({
-		issuer: `${APP_URLS.API}/auth`,
+		issuer: `${baseURL}/auth`,
 		clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
-		resource: APP_URLS.API,
+		resource: baseURL,
 		// Deep-link callbacks can cold-start the app; sessionStorage would lose
 		// the PKCE transaction.
 		storage: window.localStorage,

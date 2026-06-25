@@ -664,7 +664,9 @@
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
+        "@standard-schema/spec": "catalog:",
         "@tanstack/svelte-query": "catalog:",
+        "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {

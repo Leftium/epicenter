@@ -11,6 +11,7 @@
 	],
 	"exports": {
 		"./account-popover": "./src/account-popover/index.ts",
+		"./inference-picker": "./src/inference-picker/index.ts",
 		"./workspace-gate": "./src/workspace-gate/index.ts"
 	},
 	"scripts": {
@@ -21,7 +22,9 @@
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
+		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",
+		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

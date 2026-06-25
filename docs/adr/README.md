@@ -126,6 +126,12 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0056](0056-local-inference-is-a-delegated-engine-behind-the-openai-compatible-seam.md) | Local inference is a delegated engine behind the OpenAI-compatible seam; the runtime is a swappable default | Accepted |
 | [0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md) | Assistant markdown renders as a shared component tree, not a sanitized HTML string | Accepted |
 | [0058](0058-push-to-talk-owns-the-recording-it-starts-keyed-by-its-id-not-a-lifecycle-layer.md) | Push-to-talk owns the recording it starts, keyed by the recording's id, not a general lifecycle layer | Accepted |
+| [0059](0059-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md) | An inference connection is a capability-orthogonal device endpoint; the model is per-conversation (amends 0054) | Accepted (auth axis amended by 0060) |
+| [0060](0060-an-inference-connection-is-a-base-url-and-an-optional-bearer-key.md) | An inference connection is a base URL and an optional bearer key; everything non-static is an injected transport (amends 0059) | Accepted |
+| [0061](0061-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md) | Local Books serves row-level facts from the mirror, computed reports live, and writes back through one approved verb | Accepted |
+| [0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) | Local Books stores OAuth tokens in a single 0600 file | Accepted |
+| [0063](0063-the-local-books-mirror-is-a-multi-writer-cache-made-safe-by-one-monotonic-write-door.md) | The Local Books mirror is a multi-writer cache made safe by one monotonic write door, not single-writer discipline | Accepted |
+| [0064](0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md) | The Local Books mirror keeps one realm CDC cursor; table existence is the per-entity init latch | Accepted |
 | [0065](0065-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) | Runtime portability is per-concern injection, not a runtime object | Accepted |
 | [0066](0066-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) | Auth owns the `/api/session` endpoint; the data client is owner-scoped and receives `ownerId` at construction | Accepted |
 | [0067](0067-privacy-is-a-deployment-not-a-product-feature.md) | Privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface | Accepted |

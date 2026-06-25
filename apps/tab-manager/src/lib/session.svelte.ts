@@ -59,7 +59,6 @@ function buildSession(
 			const toolTrust = createToolTrustState(tabManager);
 			const unifiedView = createUnifiedViewState({ bookmarks, savedTabs });
 			const aiChat = createAiChatState({
-				auth,
 				tabManager,
 				collaboration: tabManager.collaboration,
 				toolTrust,

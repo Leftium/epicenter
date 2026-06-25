@@ -32,10 +32,15 @@ export type {
 	ModelToolCall,
 } from './agent-engine.js';
 export {
-	type InferenceBackendConfig,
-	type ResolvedInferenceBackend,
-	resolveInferenceBackend,
-} from './inference-backend.js';
+	CONNECTION_PRESETS,
+	type Connection,
+	type ConnectionPreset,
+	ListModelsError,
+	listModels,
+	type PresetId,
+	type ResolvedConnection,
+	resolveConnection,
+} from './connection.js';
 export {
 	createOpenAiAgentEngine,
 	type OpenAiTurnContext,

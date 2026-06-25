@@ -2,10 +2,26 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Modal from '@epicenter/ui/modal';
 	import HistoryIcon from '@lucide/svelte/icons/history';
+	import type { ComponentProps } from 'svelte';
 	import { Runs } from '$lib/components/transformations-editor';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 
-	let { recordingId }: { recordingId: string } = $props();
+	/**
+	 * Opens the full transformation-run history for a recording. Lives in the
+	 * recording detail modal toolbar; the compact row no longer carries it.
+	 */
+	let {
+		recordingId,
+		variant = 'ghost',
+		size = 'icon',
+		showLabel = false,
+	}: {
+		recordingId: string;
+		variant?: ComponentProps<typeof Button>['variant'];
+		size?: ComponentProps<typeof Button>['size'];
+		/** Render the action's text beside the icon (detail modal toolbar). */
+		showLabel?: boolean;
+	} = $props();
 
 	const runs = $derived(transformationRuns.getByRecordingId(recordingId));
 
@@ -15,13 +31,9 @@
 <Modal.Root bind:open={isOpen}>
 	<Modal.Trigger>
 		{#snippet child({ props })}
-			<Button
-				{...props}
-				variant="ghost"
-				size="icon"
-				tooltip="View Transformation Runs"
-			>
+			<Button {...props} {variant} {size} tooltip="View transformation runs">
 				<HistoryIcon class="size-4" />
+				{#if showLabel}Runs{/if}
 			</Button>
 		{/snippet}
 	</Modal.Trigger>

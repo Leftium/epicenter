@@ -22,4 +22,24 @@ export type RecordingActionController = {
 	readonly shortcutLabel: string;
 	/** Start when idle, stop when active. */
 	toggle(): void;
+	/**
+	 * Discard the in-progress capture without keeping its audio. Present only
+	 * when the recorder has a discard-vs-finalize split (manual). Absent for VAD,
+	 * where stopping the session is the only way to abort it, so a separate cancel
+	 * would just duplicate the toggle.
+	 */
+	cancel?(): void;
+	/**
+	 * The live voice-activation signals, drawn as the small dim-dot -> lit-dot ->
+	 * spinner mark beside the meter. Present only for a voice-activated controller;
+	 * absent for manual, which has no listening/speech/transcribe states. So the
+	 * card shows the mark exactly when this is present, instead of asking a global
+	 * "is the current capture a VAD one". Like `cancel`, optional by mode.
+	 */
+	vad?: {
+		/** VAD has latched onto speech: light the mark past mere loudness. */
+		readonly speaking: boolean;
+		/** A previous phrase is still transcribing beside the live meter. */
+		readonly transcribing: boolean;
+	};
 };

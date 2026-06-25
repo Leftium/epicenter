@@ -24,19 +24,13 @@
  * Components read this through `opensidian.state.chat`.
  */
 
-import type { AuthClient } from '@epicenter/auth';
 import {
 	asConversationId,
 	type Conversation,
 	type ConversationId,
 	generateConversationId,
 } from '@epicenter/chat';
-import {
-	createOpenAiAgentEngine,
-	resolveInferenceBackend,
-} from '@epicenter/client';
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { APP_URLS } from '@epicenter/constants/vite';
+import { createOpenAiAgentEngine } from '@epicenter/client';
 import { InstantString } from '@epicenter/field';
 import { bindAgentConversation, fromTable } from '@epicenter/svelte';
 import {
@@ -55,22 +49,16 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { searchParams } from '$lib/search-params.svelte';
-import { inferenceBackend } from '$lib/state/inference-backend.svelte';
+import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
 export function createAiChatState({
-	auth,
 	workspace,
 	skills,
 }: {
-	auth: AuthClient;
 	workspace: OpensidianBrowser;
 	skills: SkillState;
 }) {
-	// The inference server's base URL (the swap point, ADR-0049): default the
-	// Epicenter gateway; the engine appends `/chat/completions`.
-	const inferenceBaseUrl = API_ROUTES.ai.completions.baseUrl(APP_URLS.API);
-
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort((a, b) =>
@@ -138,6 +126,11 @@ export function createAiChatState({
 
 	function createConversationHandle(conversationId: ConversationId) {
 		const metadata = $derived(conversationsMap.get(conversationId));
+		/** The conversation's model (ADR-0055), read once for both the engine turn
+		 * and the picker's `model` getter. `model` is a required column, so this only
+		 * falls back when the row was deleted out from under a still-live handle (a
+		 * teardown microtask); it is not an "unset model" default. */
+		const currentModel = $derived(metadata?.model ?? DEFAULT_MODEL);
 
 		// The tool call the loop is waiting on a decision for, or null. A mutation
 		// pauses the loop here (the present human is the gate, ADR-0047); a query
@@ -162,17 +155,20 @@ export function createAiChatState({
 				store:
 					workspace.tables.conversations.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
-					// The device backend is read per turn (so a switch lands next turn) and
-					// carries its own model; this conversation's catalog pick is the hosted
-					// default, used only when the backend is hosted.
-					data: () => ({
-						...resolveInferenceBackend(inferenceBackend.current, {
-							fetch: auth.fetch,
-							baseURL: inferenceBaseUrl,
-							model: metadata?.model ?? DEFAULT_MODEL,
-						}),
-						systemPrompts: buildSystemPrompts(),
-					}),
+					// The conversation's model (ADR-0055) is resolved per turn against this
+					// device's connection set (ADR-0059), so a header switch lands on the
+					// next turn. `resolveOrHosted` falls back to the hosted gateway for a model
+					// no device connection serves; the UI gates sending in that case, so the
+					// fallback only errors loudly rather than silently substituting a model.
+					data: () => {
+						const transport =
+							inferenceConnections.resolveOrHosted(currentModel);
+						return {
+							...transport,
+							model: currentModel,
+							systemPrompts: buildSystemPrompts(),
+						};
+					},
 				}),
 				tools: toolCatalog,
 				approval: {
@@ -210,7 +206,7 @@ export function createAiChatState({
 			},
 
 			get model() {
-				return metadata?.model ?? DEFAULT_MODEL;
+				return currentModel;
 			},
 			set model(value: string) {
 				updateConversation(conversationId, { model: value });

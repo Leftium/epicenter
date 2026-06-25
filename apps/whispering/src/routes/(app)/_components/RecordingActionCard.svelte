@@ -3,8 +3,13 @@
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
+	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
+	import LevelMeter from '$lib/components/LevelMeter.svelte';
+	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
+	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { tauri } from '#platform/tauri';
 	import type { RecordingActionController } from './recording-action-controller';
 
 	// The controller owns the state machine and every derived label/icon. The card
@@ -32,6 +37,16 @@
 			? `${controller.label} (${controller.shortcutLabel})`
 			: controller.label,
 	);
+
+	// Exactly one live meter shows at a time, on the surface holding your
+	// attention. On desktop the always-on-top overlay is that meter: it floats over
+	// even the focused app for the whole recording, so the card defers to it with a
+	// static glyph and a second meter here would only double the overlay's. On web
+	// there is no floating overlay, so the in-window surface carries the meter: this
+	// card on the home route (where the in-page pill stands down), the pill on the
+	// other routes. The smoothed level is already in this window on web
+	// (`webPillLevel`); on desktop it is emitted straight to the overlay, not here.
+	const showsLiveMeter = !tauri;
 </script>
 
 <div
@@ -57,13 +72,42 @@
 		<span
 			aria-hidden="true"
 			class={cn(
-				'flex size-14 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-foreground shadow-inner transition-colors duration-200 sm:size-16',
+				'relative flex size-14 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-foreground shadow-inner transition-colors duration-200 sm:size-16',
 				controller.active &&
 					'border-destructive/45 bg-destructive/10 text-destructive',
 			)}
 		>
 			{#if controller.pending}
 				<Spinner class="size-7" />
+			{:else if controller.active && showsLiveMeter}
+				<!-- Live capture: the glyph slot becomes the meter, the same bars the
+				floating pill draws, scaled to fit the box. -->
+				<LevelMeter
+					level={webPillLevel.level}
+					class="gap-[2px]"
+					barClass="w-[2px] bg-destructive"
+					minPx={3}
+					maxPx={28}
+				/>
+				{#if controller.vad}
+					<!-- VAD session: the same dim-dot -> lit-dot -> spinner indicator the
+					floating pill shows beside its meter, here in the glyph's corner. The
+					bars track loudness; this dot tracks whether VAD has latched onto speech
+					and becomes a spinner while a previous phrase is still transcribing. On
+					'/' the pill yields the recording phase to this card, so this is the
+					only place that last signal shows. The signals come from this card's own
+					controller (present only for VAD), not a global lookup. -->
+					<span
+						class="absolute top-0.5 right-0.5 flex size-4 items-center justify-center"
+					>
+						<VadIndicator
+							signals={controller.vad}
+							dimClass="bg-destructive/40"
+							litClass="bg-destructive"
+							spinnerClass="text-muted-foreground"
+						/>
+					</span>
+				{/if}
 			{:else}
 				{@const Icon = controller.icon}
 				<span
@@ -105,7 +149,28 @@
 		{/if}
 	</Button>
 
-	{#if footer && !controller.active}
+	<!-- The footer slot is the card's secondary zone: at rest it configures the
+	pipeline; while live it discards the take. Keeping the slot filled in both
+	states keeps the discard control tethered to the card (not orphaned below it)
+	and holds the card's height steady across start/stop. VAD has no discard, so
+	its live footer is empty and the slot collapses. -->
+	{#if controller.active}
+		{#if controller.cancel}
+			<div
+				class="flex justify-center border-t border-border/60 bg-background/20 px-3 py-2"
+			>
+				<Button
+					tooltip="Cancel recording and discard audio"
+					onclick={() => controller.cancel?.()}
+					variant="ghost-destructive"
+					size="sm"
+				>
+					<XIcon class="size-4" />
+					Cancel recording
+				</Button>
+			</div>
+		{/if}
+	{:else if footer}
 		<div class="border-t border-border/60 bg-background/20 px-3 py-2">
 			{@render footer()}
 		</div>

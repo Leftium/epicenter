@@ -33,7 +33,11 @@
 
 import Type, { type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	type AnyTaggedError,
+	defineErrors,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, isResult, Ok, type Result } from 'wellcrafted/result';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -68,6 +72,35 @@ type ActionConfig<TInput extends TSchema | undefined, R> = {
 	input?: TInput;
 	handler: ActionHandler<TInput, R>;
 };
+
+/**
+ * Compile-time error surfaced when a handler returns a bare wellcrafted tagged
+ * error instead of wrapping it. The trailing zero-width space, as with
+ * {@link InvalidActionKey}, keeps the message a clean sentence in tooltips.
+ */
+type BareTaggedErrorReturn =
+	"Return Err(...) or a defineErrors variant, not a bare tagged error: invokeAction Ok-wraps a non-Result return, so a bare '{ name, message }' would read as success.​";
+
+/**
+ * The footgun guard. `invokeAction` Ok-wraps any non-`Result` handler return, so
+ * returning a bare tagged error (`{ name, message }`, e.g. `return error` after
+ * destructuring a `Result`) would be read as a SUCCESS. This rejects that at the
+ * handler: it inspects the awaited return (so `async` handlers are covered) and,
+ * if any union member is a bare tagged error, collapses the return to a branded
+ * message the handler cannot satisfy. A `defineErrors` variant returns `Err<...>`
+ * (a `Result`, `{ data, error }`), which is NOT a bare tagged error, so it passes
+ * untouched; only an unwrapped error trips it. A genuine `{ name, message }`
+ * success is still expressible, explicitly, via `Ok(...)`.
+ */
+type RejectBareError<R> = [Extract<Awaited<R>, AnyTaggedError>] extends [never]
+	? R
+	: BareTaggedErrorReturn;
+
+/** {@link ActionConfig} with the bare-tagged-error return guard on `handler`. */
+type GuardedActionConfig<TInput extends TSchema | undefined, R> = ActionConfig<
+	TInput,
+	R
+> & { handler: ActionHandler<TInput, RejectBareError<R>> };
 
 type ActionType = 'query' | 'mutation';
 
@@ -269,11 +302,11 @@ export function defineActions<T extends ActionRegistry>(
  */
 /** No input. `TInput` is explicitly `undefined`. */
 export function defineQuery<R>(
-	config: ActionConfig<undefined, R>,
+	config: GuardedActionConfig<undefined, R>,
 ): Action<undefined, R, 'query'>;
 /** With input. `TInput` inferred from the schema. */
 export function defineQuery<TInput extends TSchema, R>(
-	config: ActionConfig<TInput, R>,
+	config: GuardedActionConfig<TInput, R>,
 ): Action<TInput, R, 'query'>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function defineQuery({ handler, ...rest }: any): Action {
@@ -289,11 +322,11 @@ export function defineQuery({ handler, ...rest }: any): Action {
  */
 /** No input. `TInput` is explicitly `undefined`. */
 export function defineMutation<R>(
-	config: ActionConfig<undefined, R>,
+	config: GuardedActionConfig<undefined, R>,
 ): Action<undefined, R, 'mutation'>;
 /** With input. `TInput` inferred from the schema. */
 export function defineMutation<TInput extends TSchema, R>(
-	config: ActionConfig<TInput, R>,
+	config: GuardedActionConfig<TInput, R>,
 ): Action<TInput, R, 'mutation'>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function defineMutation({ handler, ...rest }: any): Action {

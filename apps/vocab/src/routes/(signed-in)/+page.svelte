@@ -13,10 +13,11 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
+	import { InferencePicker } from '@epicenter/app-shell/inference-picker';
 	import { requireVocab } from '$lib/session';
+	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import { auth } from '$platform/auth';
 	import ConversationView from './components/ConversationView.svelte';
-	import InferenceSettings from './components/InferenceSettings.svelte';
 	import VocabSidebar from './components/VocabSidebar.svelte';
 
 	const vocab = requireVocab();
@@ -37,11 +38,27 @@
 
 	let activeConversationId = $state<ConversationId | undefined>();
 
+	// The shared inference picker (ADR-0059) binds to the active conversation's
+	// model and this device's connection registry (built in the store module).
+	const activeModel = $derived.by(() => {
+		if (!activeConversationId) return VOCAB_MODEL;
+		return conversationsMap.get(activeConversationId)?.model ?? VOCAB_MODEL;
+	});
+
+	/** An explicit model pick writes the active conversation's synced model. */
+	function selectModel(model: string) {
+		if (!activeConversationId) return;
+		vocab.tables.conversations.update(activeConversationId, {
+			model,
+			updatedAt: InstantString.now(),
+		});
+	}
+
 	/**
 	 * Write only the cheap list row. The transcript child doc is opened lazily by
-	 * `ConversationView`, keyed by the row id. The canonical table requires a
-	 * `model`, so the row carries the app constant (`VOCAB_MODEL`); Vocab offers no
-	 * per-conversation model pick.
+	 * `ConversationView`, keyed by the row id. A new conversation defaults to the
+	 * hosted `VOCAB_MODEL`; the header picker rewrites this row's `model` per pick
+	 * (ADR-0059), and the engine resolves it against the device's connections.
 	 */
 	function createConversationRow(): ConversationId {
 		const id = generateConversationId();
@@ -156,7 +173,11 @@
 					Forget device
 				</Button>
 
-				<InferenceSettings />
+				<InferencePicker
+				model={activeModel}
+				onSelectModel={selectModel}
+				connections={inferenceConnections}
+			/>
 			</div>
 		</header>
 
@@ -164,6 +185,7 @@
 			{#key activeConversationId}
 				<ConversationView
 					conversationId={activeConversationId}
+					model={activeModel}
 					showPinyin={showPinyin.current}
 				/>
 			{/key}

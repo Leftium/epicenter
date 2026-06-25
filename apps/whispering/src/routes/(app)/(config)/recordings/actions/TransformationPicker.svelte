@@ -4,6 +4,7 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { createMutation } from '@tanstack/svelte-query';
+	import type { ComponentProps } from 'svelte';
 	import { goto } from '$app/navigation';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
 	import { deliverTransformationResult } from '$lib/operations/delivery';
@@ -17,7 +18,18 @@
 		() => rpc.transformer.transformRecording.options,
 	);
 
-	let { recordingId }: { recordingId: string } = $props();
+	let {
+		recordingId,
+		variant = 'ghost',
+		size = 'icon',
+		showLabel = false,
+	}: {
+		recordingId: string;
+		variant?: ComponentProps<typeof Button>['variant'];
+		size?: ComponentProps<typeof Button>['size'];
+		/** Render the action's text beside the icon (detail modal toolbar). */
+		showLabel?: boolean;
+	} = $props();
 </script>
 
 <Popover.Root bind:open={combobox.open}>
@@ -28,10 +40,11 @@
 				tooltip="Run a post-processing transformation to run on your recording"
 				role="combobox"
 				aria-expanded={combobox.open}
-				variant="ghost"
-				size="icon"
+				{variant}
+				{size}
 			>
 				<LayersIcon class="size-4" />
+				{#if showLabel}Transform{/if}
 			</Button>
 		{/snippet}
 	</Popover.Trigger>

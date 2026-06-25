@@ -1,5 +1,5 @@
 import type { DictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
-import type { RecordingOverlayStatus, VadOutcomePip } from './events';
+import type { RecordingOverlayStatus } from './events';
 
 /**
  * Project the main window's dictation lifecycle into the serializable status the
@@ -19,20 +19,20 @@ export function projectLifecycleToStatus(
 ): RecordingOverlayStatus | null {
 	const { capture, outcome } = lifecycle;
 
-	// A live capture owns the pill: the recording meter is the primary content. A
-	// VAD session also carries the previous utterance's transcribe as a side pip
-	// spinner. Success and failure earn no pip: success is the landing text, and a
-	// failure goes to the notification and the recordings row, not the pill.
+	// A live capture owns the pill: the recording meter is the primary content. For
+	// a VAD session, resolve its two glanceable signals here, the one place that
+	// owns them, so every surface reads the same booleans: speech latched, and a
+	// previous phrase still transcribing alongside. Success and failure earn no
+	// signal: success is the landing text, and a failure goes to the notification
+	// and the recordings row, not the pill.
 	if (capture.kind === 'recording') {
 		if (capture.trigger === 'manual')
 			return { phase: 'recording', trigger: 'manual' };
-		const pip: VadOutcomePip | undefined =
-			outcome.kind === 'transcribing' ? 'transcribing' : undefined;
 		return {
 			phase: 'recording',
 			trigger: 'vad',
-			vadState: capture.vadState,
-			pip,
+			speaking: capture.vadState === 'SPEECH_DETECTED',
+			transcribing: outcome.kind === 'transcribing',
 		};
 	}
 

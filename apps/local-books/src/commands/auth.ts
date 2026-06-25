@@ -11,10 +11,11 @@ import { formatRelative } from './context.ts';
  * exchange the code, and store the token set in the keyring keyed by realmId.
  */
 export async function runAuth(args: ParsedArgs): Promise<number> {
+	// No `realm` override: `auth` connects whatever company the browser logs into
+	// and takes the realmId from the OAuth callback, so `--realm` does not apply.
 	const config = loadConfig({
 		dataDir: args.dataDir,
 		environment: args.environment,
-		realm: args.realm,
 	});
 
 	if (!config.clientId || !config.clientSecret) {
@@ -49,7 +50,7 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 	console.log(
 		`Refresh token valid ${formatRelative(token.refreshTokenExpiresAt, now)}.`,
 	);
-	console.log(`Tokens stored in the ${keyring.backend} keyring.`);
+	console.log(`Tokens stored in ${config.credentialsPath}.`);
 	console.log(`Next: "local-books sync --full" to seed the mirror.`);
 	return 0;
 }

@@ -2,21 +2,16 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /**
- * A minimal secret store keyed by `realmId`. The OAuth token set is serialized
- * to JSON and stored here, never inside a company's mirror db (the agent's
- * read-only SQL surface must never be able to read it).
- *
- * Backend failures throw: an unreachable store is fatal and rare, so it bubbles
- * to the top-level CLI handler (`bin.ts`) rather than threading a Result through
- * every caller. A throw means "store unreachable," never "no token stored"
- * (which is a clean `null`); conflating the two would read a transient failure
- * as "logged out" and silently trigger a re-auth. See ADR-0061.
+ * A minimal secret store keyed by `realmId`: the realm's OAuth token set is
+ * serialized to JSON and stored here, never inside a company's mirror db, so the
+ * agent's read-only SQL surface can never read it. `get` returns `null` when
+ * nothing is stored; `set` throws if the write fails (disk, permissions), which
+ * bubbles to the top-level CLI handler (`bin.ts`) rather than threading a Result
+ * through every caller. See ADR-0061.
  */
 export type Keyring = {
-	readonly backend: string;
 	get(account: string): Promise<string | null>;
 	set(account: string, secret: string): Promise<void>;
-	delete(account: string): Promise<void>;
 };
 
 /**
@@ -42,18 +37,12 @@ export function createFileKeyring(filePath: string): Keyring {
 		chmodSync(filePath, 0o600);
 	};
 	return {
-		backend: 'file',
 		async get(account) {
 			return load()[account] ?? null;
 		},
 		async set(account, secret) {
 			const map = load();
 			map[account] = secret;
-			save(map);
-		},
-		async delete(account) {
-			const map = load();
-			delete map[account];
 			save(map);
 		},
 	};
@@ -63,15 +52,11 @@ export function createFileKeyring(filePath: string): Keyring {
 export function createMemoryKeyring(): Keyring {
 	const map = new Map<string, string>();
 	return {
-		backend: 'memory',
 		async get(account) {
 			return map.get(account) ?? null;
 		},
 		async set(account, secret) {
 			map.set(account, secret);
-		},
-		async delete(account) {
-			map.delete(account);
 		},
 	};
 }

@@ -22,7 +22,7 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 	console.log(`Company:      ${realmId}`);
 	console.log(`Environment:  ${config.environment}`);
 	console.log(`Data dir:     ${config.dataDir}`);
-	console.log(`Keyring:      ${keyring.backend}`);
+	console.log(`Token file:   ${config.credentialsPath}`);
 
 	if (!token) {
 		console.log(`Token:        none — run "local-books auth"`);

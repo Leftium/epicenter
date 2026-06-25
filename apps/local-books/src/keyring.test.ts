@@ -17,16 +17,12 @@ describe('createFileKeyring', () => {
 		try {
 			const file = join(dir, 'credentials.json');
 			const keyring = createFileKeyring(file);
-			expect(keyring.backend).toBe('file');
 
 			expect(await keyring.get('realm-1')).toBeNull();
 			await keyring.set('realm-1', 'secret-1');
 			expect(readFileSync(file, 'utf8')).toContain('secret-1');
 			expect(statSync(file).mode & 0o777).toBe(0o600);
 			expect(await keyring.get('realm-1')).toBe('secret-1');
-
-			await keyring.delete('realm-1');
-			expect(await keyring.get('realm-1')).toBeNull();
 		} finally {
 			cleanup();
 		}

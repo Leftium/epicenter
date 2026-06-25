@@ -10,17 +10,17 @@
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import type { ConversationHandle } from '@epicenter/app-shell/agent-chat';
 	import type { ConversationId } from '@epicenter/chat';
+	import type { ConversationHandle } from './agent-chat.svelte.js';
 
 	let {
 		conversations,
-		activeId,
+		activeConversationId,
 		onSwitch,
 		onCreate,
 	}: {
 		conversations: ConversationHandle[];
-		activeId: ConversationId | null;
+		activeConversationId: ConversationId | null;
 		onSwitch: (id: ConversationId) => void;
 		onCreate: () => void;
 	} = $props();
@@ -41,7 +41,8 @@
 
 	/** Active conversation title for the header bar. */
 	const activeTitle = $derived(
-		conversations.find((c) => c.id === activeId)?.title ?? 'New Chat',
+		conversations.find((c) => c.id === activeConversationId)?.title ??
+			'New Chat',
 	);
 
 	/** Format an ISO instant (the row's `updatedAt`) as a short relative time. */
@@ -106,7 +107,8 @@
 									<span class="flex min-w-0 items-center gap-1.5">
 										<CheckIcon
 											class={cn('mr-0.5 size-3 shrink-0', {
-												'text-transparent': conv.id !== activeId,
+												'text-transparent':
+													conv.id !== activeConversationId,
 											})}
 										/>
 										<span class="min-w-0 truncate font-medium"

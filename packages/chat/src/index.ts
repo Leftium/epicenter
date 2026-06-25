@@ -19,6 +19,7 @@
 import { field } from '@epicenter/field';
 import {
 	attachRecords,
+	type ConnectedTables,
 	defineTable,
 	generateId,
 	type Id,
@@ -58,3 +59,14 @@ export const conversationsTable = defineTable({
 
 /** One conversation row. */
 export type Conversation = InferTableRow<typeof conversationsTable>;
+
+/**
+ * The connected runtime handle for the conversations table, as every chat app
+ * holds it at `workspace.tables.conversations`: the row reads/writes plus the
+ * `.docs.messages.open(id)` opener for a conversation's turn store. Exported so
+ * a shared chat-state module can name the table it drives without reaching into
+ * any one app's workspace type.
+ */
+export type ConversationsTable = ConnectedTables<{
+	conversations: typeof conversationsTable;
+}>['conversations'];

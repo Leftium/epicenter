@@ -1,6 +1,7 @@
 <script lang="ts">
+	import type { ConversationHandle } from '@epicenter/app-shell/agent-chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import type { Conversation, ConversationId } from '@epicenter/chat';
+	import type { ConversationId } from '@epicenter/chat';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import MessageSquareTextIcon from '@lucide/svelte/icons/message-square-text';
 	import TrashIcon from '@lucide/svelte/icons/trash';
@@ -10,13 +11,11 @@
 		activeConversationId,
 		onCreate,
 		onSwitch,
-		onDelete,
 	}: {
-		conversations: Conversation[];
-		activeConversationId: ConversationId | undefined;
+		conversations: ConversationHandle[];
+		activeConversationId: ConversationId | null;
 		onCreate: () => void;
 		onSwitch: (conversationId: ConversationId) => void;
-		onDelete: (conversationId: ConversationId) => void;
 	} = $props();
 </script>
 
@@ -55,7 +54,7 @@
 							<Sidebar.MenuAction
 								showOnHover
 								aria-label="Delete conversation"
-								onclick={() => onDelete(conv.id)}
+								onclick={() => conv.delete()}
 							>
 								<TrashIcon class="size-3.5" />
 							</Sidebar.MenuAction>

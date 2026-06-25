@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { CrossDeviceModelGap } from '@epicenter/app-shell/inference-picker';
+	import { ChatInput } from '@epicenter/app-shell/agent-chat';
+	import {
+		CrossDeviceModelGap,
+		InferencePicker,
+	} from '@epicenter/app-shell/inference-picker';
 	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
@@ -8,17 +12,13 @@
 	import { DEFAULT_MODEL } from '$lib/chat/models';
 	import { requireOpensidian } from '$lib/session';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import ChatInput from './ChatInput.svelte';
 	import MessageList from './MessageList.svelte';
 
 	const opensidian = requireOpensidian();
 	const active = $derived(opensidian.state.chat.active);
 
-	/** Tracks which error message was dismissed so it doesn't reappear. */
-	let dismissedError = $state<string | null>(null);
-
 	const errorVisible = $derived(
-		active?.error && active.error.message !== dismissedError,
+		active?.error && active.error.message !== active.dismissedError,
 	);
 </script>
 
@@ -29,10 +29,7 @@
 		<Button
 			variant="ghost"
 			size="sm"
-			onclick={() => {
-				opensidian.state.chat.newConversation();
-				dismissedError = null;
-			}}
+			onclick={() => opensidian.state.chat.createConversation()}
 		>
 			<SquarePenIcon class="size-3.5" />
 			New Chat
@@ -101,7 +98,7 @@
 					size="sm"
 					class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
 					onclick={() => {
-						dismissedError = null;
+						if (active) active.dismissedError = null;
 						active?.reload();
 					}}
 				>
@@ -113,7 +110,7 @@
 					size="icon-xs"
 					class="text-destructive hover:text-destructive"
 					onclick={() => {
-						dismissedError = active?.error?.message ?? null;
+						if (active) active.dismissedError = active.error?.message ?? null;
 					}}
 				>
 					<XIcon class="size-3" />
@@ -128,8 +125,27 @@
 			connections={inferenceConnections}
 			onUseDefault={() => (active.model = DEFAULT_MODEL)}
 		/>
-	{/if}
 
-	<!-- Chat input -->
-	<ChatInput />
+		<!-- The shared model-first picker (ADR-0059): the conversation's model bound
+		     to this device's connection registry. Locked mid-turn so a transcript
+		     never spans backends. -->
+		<div class="flex items-center gap-2 bg-background px-2 pt-1.5">
+			<InferencePicker
+				model={active.model}
+				onSelectModel={(model) => (active.model = model)}
+				connections={inferenceConnections}
+				disabled={active.isLoading}
+			/>
+		</div>
+
+		<ChatInput
+			bind:value={active.inputValue}
+			canSend={inferenceConnections.canServe(active.model) &&
+				!active.isLoading &&
+				active.inputValue.trim().length > 0}
+			isGenerating={active.isLoading}
+			onSend={(content) => active.sendMessage(content)}
+			onStop={() => active.stop()}
+		/>
+	{/if}
 </div>

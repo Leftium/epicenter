@@ -1,14 +1,25 @@
+import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
 import type { SyncAuthClient } from '@epicenter/auth';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createOAuthAppAuth, createSession } from '@epicenter/svelte/auth';
-import { createAiChatState } from './chat/chat-state.svelte';
+import { generateId } from '@epicenter/workspace';
+import {
+	createDispatchToolCatalog,
+	defaultApprovalDecision,
+} from '@epicenter/workspace/agent';
+import { DEFAULT_MODEL } from './chat/models';
+import {
+	buildDeviceConstraints,
+	TAB_MANAGER_SYSTEM_PROMPT,
+} from './chat/system-prompt';
 import { createDeviceProfile, registerDevice } from './device';
 import {
 	oauthLauncher,
 	persistedAuthStoragePromise,
 } from './platform/auth/auth';
 import { createBookmarkState } from './state/bookmark-state.svelte';
+import { inferenceConnections } from './state/inference-connections.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
@@ -58,10 +69,30 @@ function buildSession(
 			const bookmarks = createBookmarkState(tabManager);
 			const toolTrust = createToolTrustState(tabManager);
 			const unifiedView = createUnifiedViewState({ bookmarks, savedTabs });
-			const aiChat = createAiChatState({
-				tabManager,
-				collaboration: tabManager.collaboration,
-				toolTrust,
+			// The shared chat registry (ADR-0047/0059) with tab-manager's variation
+			// injected: device-constraint + base prompts read per turn, its in-process
+			// browser actions as the tool surface (peers excluded by `selfNodeId`), and
+			// the "Always Allow" trust set folded into the approval policy.
+			const aiChat = createAgentChatState({
+				table: tabManager.tables.conversations,
+				whenLoaded: tabManager.idb.whenLoaded,
+				connections: inferenceConnections,
+				buildSystemPrompts: () => [
+					buildDeviceConstraints(tabManager.nodeId),
+					TAB_MANAGER_SYSTEM_PROMPT,
+				],
+				generateId,
+				defaultModel: DEFAULT_MODEL,
+				toolCatalog: createDispatchToolCatalog(tabManager.collaboration, {
+					localActions: tabManager.actions,
+					selfNodeId: tabManager.nodeId,
+				}),
+				// A tool the user chose to "Always Allow" auto-approves; otherwise a
+				// query runs unattended and a mutation asks (ADR-0044).
+				decideApproval: (call, definition) =>
+					toolTrust.shouldAutoApprove(call.toolName)
+						? 'auto'
+						: defaultApprovalDecision(call, definition),
 			});
 			const state = { savedTabs, bookmarks, toolTrust, unifiedView, aiChat };
 

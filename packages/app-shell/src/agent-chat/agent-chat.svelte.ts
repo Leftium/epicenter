@@ -1,85 +1,136 @@
 /**
- * Reactive AI chat state with multi-conversation support.
+ * Reactive AI chat state shared by every chat app (opensidian, tab-manager,
+ * vocab): the conversation registry plus one client agent loop (ADR-0047) per
+ * conversation, with each app's differences injected rather than forked.
  *
  * The conversation list is the synced `conversations` table (@epicenter/chat);
- * each conversation's turns live in its `messages` child doc, written by the one
- * client agent loop (ADR-0047). The loop streams the live turn into component
- * state and writes each finished message into the doc; the live turn never
- * enters the CRDT, and everything syncs across the user's devices.
+ * each row's turns live in its `messages` child doc. A handle registry mirrors
+ * the table: {@link createAgentChatState} opens a handle for every row and
+ * disposes one whose row is gone. Each handle binds that row's `messages` store
+ * to the loop through `bindAgentConversation`; the loop streams the live turn
+ * into component state and writes each finished message into the doc the moment
+ * the turn ends. The live turn never enters the CRDT, and the loop dies with the
+ * tab.
  *
- * Inference rides the OpenAI-compatible gateway (ADR-0049/0050): the engine POSTs
- * `/v1/chat/completions`, reading the conversation's model and the device system
- * prompts per turn. Tools are tab-manager's own browser actions, surfaced through
- * `createDispatchToolCatalog` (a local action resolves through `invokeAction`
- * with no relay). A mutation is approval-gated by a synchronous pause; the
- * "Always Allow" trust set decides `auto` so a trusted tool never pauses again.
+ * Inference rides the OpenAI-compatible gateway (ADR-0049/0050). The engine is
+ * built here, once: per turn it resolves the conversation's model (ADR-0055)
+ * against this device's connection registry (ADR-0059, `resolveOrHosted`) and
+ * reads the app's system prompts. Everything an app varies is injected:
  *
- * A handle registry mirrors the table: `reconcileHandles` opens a handle for
- * every row and disposes one whose row is gone. Creating a conversation writes a
- * row (model carried forward from the active one); its title is set from the
- * first user message; deleting removes the row and its handle.
+ * - `buildSystemPrompts`  the layered prompts an answer is generated under.
+ * - `toolCatalog`         the live tool surface; omit for a capability-free app.
+ * - `decideApproval`      the per-call approval policy; defaults to query-runs,
+ *                         mutation-asks. The synchronous pause is owned here.
+ * - `activeConversation`  the active-conversation source; defaults to internal
+ *                         state. An app that keeps it in the URL injects its own.
+ * - `generateId` / `defaultModel`  the message-id minter and the model a brand
+ *                         new conversation starts on.
  *
- * Components read this through `workspace.state.aiChat`.
+ * A mutation is approval-gated by a synchronous pause: the loop waits on an
+ * in-client decision, recorded per handle in `pendingApproval`. The "Always
+ * Allow" trust action lives in the app, composed from the handle's exposed
+ * `pendingApprovalToolName` plus `approveToolCall`; this module never knows about
+ * a trust set.
+ *
+ * The draft a user is typing lives per conversation on the handle (`inputValue`),
+ * so switching conversations keeps each one's unsent text.
  */
 
 import {
 	asConversationId,
 	type Conversation,
 	type ConversationId,
+	type ConversationsTable,
 	generateConversationId,
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
-import { InstantString } from '@epicenter/field';
 import { bindAgentConversation, fromTable } from '@epicenter/svelte';
-import { type Collaboration, generateId } from '@epicenter/workspace';
+import { InstantString } from '@epicenter/workspace';
 import {
 	type AgentToolCall,
+	type Approval,
 	agentMessageText,
 	createConversation as createAgentConversation,
-	createDispatchToolCatalog,
 	defaultApprovalDecision,
+	type ToolCatalog,
 } from '@epicenter/workspace/agent';
 import { SvelteMap } from 'svelte/reactivity';
-import { DEFAULT_MODEL } from '$lib/chat/models';
-import {
-	buildDeviceConstraints,
-	TAB_MANAGER_SYSTEM_PROMPT,
-} from '$lib/chat/system-prompt';
-import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-import type { ToolTrustState } from '$lib/state/tool-trust.svelte';
-import type { TabManagerBrowser } from '$lib/tab-manager/extension';
+import type { InferenceConnections } from '../inference-picker/connections.svelte.js';
 
-export function createAiChatState({
-	tabManager,
-	collaboration,
-	toolTrust,
+/**
+ * Where the selected conversation lives, and how to change it. Injected so an
+ * app can keep the active id in the URL (opensidian's `?chat=`) instead of in
+ * module state; omit it and the registry owns an internal `$state`. The `current`
+ * getter must read a reactive source so the active handle recomputes on change.
+ */
+export type ActiveConversation = {
+	/** The selected conversation, or null when none is selected. */
+	readonly current: ConversationId | null;
+	/** Select a conversation (a URL write, or an internal-state assignment). */
+	select(id: ConversationId): void;
+};
+
+/** The reactive chat-state object returned by {@link createAgentChatState}. */
+export type AgentChatState = ReturnType<typeof createAgentChatState>;
+
+/** A reactive handle for a single conversation backed by the client loop. */
+export type ConversationHandle = NonNullable<AgentChatState['active']>;
+
+export function createAgentChatState({
+	table,
+	whenLoaded,
+	connections,
+	buildSystemPrompts,
+	generateId,
+	defaultModel,
+	toolCatalog,
+	decideApproval = defaultApprovalDecision,
+	activeConversation,
 }: {
-	tabManager: TabManagerBrowser;
-	collaboration: Collaboration;
-	toolTrust: ToolTrustState;
+	/** The conversations table handle (`workspace.tables.conversations`). */
+	table: ConversationsTable;
+	/** Resolves once the synced doc has loaded; guarantees one conversation. */
+	whenLoaded: Promise<unknown>;
+	/** The device connection registry (ADR-0059); resolves a model to a transport. */
+	connections: InferenceConnections;
+	/** The layered system prompts an answer is generated under, read per turn. */
+	buildSystemPrompts: () => string[];
+	/** Mint a message id. */
+	generateId: () => string;
+	/** The model a brand new conversation starts on when none is carried forward. */
+	defaultModel: string;
+	/** The live tool surface; omit for a capability-free app (Vocab). */
+	toolCatalog?: ToolCatalog;
+	/** The per-call approval policy; defaults to query-runs, mutation-asks. */
+	decideApproval?: Approval['decide'];
+	/** The active-conversation source; defaults to internal `$state`. */
+	activeConversation?: ActiveConversation;
 }) {
-	// The conversation list is the synced `conversations` table; a row's turns
-	// live in its `messages` child doc. This reactive map drives the registry.
-	const conversationsMap = fromTable(tabManager.tables.conversations);
+	const conversationsMap = fromTable(table);
 
-	// One catalog for every conversation: tab-manager's own browser actions,
-	// resolved in-process through `invokeAction` with no relay. Peers (other
-	// signed-in devices) advertise their actions too; a local action shadows a
-	// remote one of the same name.
-	const toolCatalog = createDispatchToolCatalog(collaboration, {
-		localActions: tabManager.actions,
-		selfNodeId: tabManager.nodeId,
-	});
+	// The selected conversation: an injected source (a URL, say) or internal
+	// state. Built unconditionally so the `$state` declaration is unconditional;
+	// the injected one shadows it when present.
+	const selection: ActiveConversation =
+		activeConversation ??
+		(() => {
+			let id = $state<ConversationId | null>(null);
+			return {
+				get current() {
+					return id;
+				},
+				select(next: ConversationId) {
+					id = next;
+				},
+			};
+		})();
 
 	/** Patch a conversation row and bump its recency in one write. */
 	function updateConversation(
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		tabManager.tables.conversations.update(conversationId, {
-			...patch,
-			updatedAt: InstantString.now(),
-		});
+		table.update(conversationId, { ...patch, updatedAt: InstantString.now() });
 	}
 
 	// ── Handle Registry (one handle per conversation row) ──────────────
@@ -89,21 +140,13 @@ export function createAiChatState({
 		ReturnType<typeof createConversationHandle>
 	>();
 
-	/** The conversation list for the picker: handles sorted most-recent first. */
+	/** The conversation list for a picker: handles sorted most-recent first. */
 	const conversationList = $derived(
 		[...handles.values()].sort((a, b) =>
 			b.updatedAt.localeCompare(a.updatedAt),
 		),
 	);
 
-	/**
-	 * Create a self-contained reactive handle for a single conversation.
-	 *
-	 * Binds the conversation's `messages` child doc to `createConversation` (the
-	 * one client agent loop) through `bindAgentConversation`. Title and model read
-	 * from the row; the engine reads the model and device prompts per turn, so a
-	 * mid-conversation model switch takes effect on the next answer.
-	 */
 	function createConversationHandle(conversationId: ConversationId) {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
@@ -113,11 +156,11 @@ export function createAiChatState({
 		 * and the picker's `model` getter. `model` is a required column, so this only
 		 * falls back when the row was deleted out from under a still-live handle (a
 		 * teardown microtask); it is not an "unset model" default. */
-		const currentModel = $derived(metadata?.model ?? DEFAULT_MODEL);
+		const currentModel = $derived(metadata?.model ?? defaultModel);
 
 		// The tool call the loop is waiting on a decision for, or null. A mutation
 		// pauses the loop here (the present human is the gate, ADR-0047); a query,
-		// or a tool the user trusted, runs unattended and never lands here.
+		// or a tool the app's policy auto-approved, never lands here.
 		let pendingApproval = $state<{
 			call: AgentToolCall;
 			resolve: (approved: boolean) => void;
@@ -130,10 +173,12 @@ export function createAiChatState({
 			decision.resolve(approved);
 		}
 
+		// Bind the conversation's child doc to the loop. The engine reads this
+		// conversation's model and the live system prompts per turn, so a
+		// mid-conversation model switch takes effect on the next answer.
 		const convo = bindAgentConversation(
 			createAgentConversation({
-				store:
-					tabManager.tables.conversations.docs.messages.open(conversationId),
+				store: table.docs.messages.open(conversationId),
 				engine: createOpenAiAgentEngine({
 					// The conversation's model (ADR-0055) is resolved per turn against this
 					// device's connection set (ADR-0059), so a switch lands on the next
@@ -141,26 +186,17 @@ export function createAiChatState({
 					// device connection serves; the UI gates sending in that case, so the
 					// fallback only errors loudly rather than silently substituting a model.
 					data: () => {
-						const transport =
-							inferenceConnections.resolveOrHosted(currentModel);
+						const transport = connections.resolveOrHosted(currentModel);
 						return {
 							...transport,
 							model: currentModel,
-							systemPrompts: [
-								buildDeviceConstraints(tabManager.nodeId),
-								TAB_MANAGER_SYSTEM_PROMPT,
-							],
+							systemPrompts: buildSystemPrompts(),
 						};
 					},
 				}),
 				tools: toolCatalog,
 				approval: {
-					// A tool the user chose to "Always Allow" auto-approves; otherwise a
-					// query runs unattended and a mutation asks (ADR-0044).
-					decide: (call, definition) =>
-						toolTrust.shouldAutoApprove(call.toolName)
-							? 'auto'
-							: defaultApprovalDecision(call, definition),
+					decide: decideApproval,
 					request: (call) =>
 						new Promise<boolean>((resolve) => {
 							pendingApproval = { call, resolve };
@@ -200,6 +236,11 @@ export function createAiChatState({
 				return metadata?.updatedAt ?? '';
 			},
 
+			/** A picker preview built from the last turn. Reads the open `messages`
+			 * doc, so any picker that shows this (tab-manager) requires every handle's
+			 * loop to be live; that coupling is why the registry opens loops eagerly.
+			 * Denormalizing this onto the conversation row would let the loop open
+			 * lazily (active + in-flight only) without losing the preview. */
 			get lastMessagePreview() {
 				const last = convo.messages.at(-1);
 				if (!last) return '';
@@ -232,12 +273,12 @@ export function createAiChatState({
 				return convo.isGenerating;
 			},
 
-			get error() {
-				return convo.error;
-			},
-
 			get status() {
 				return status;
+			},
+
+			get error() {
+				return convo.error;
 			},
 
 			/** Credits are exhausted (HTTP 402); UI should prompt an upgrade. */
@@ -256,6 +297,13 @@ export function createAiChatState({
 				return pendingApproval?.call.toolCallId ?? null;
 			},
 
+			/** The name of the tool awaiting a decision, or null. An app composes
+			 * its "Always Allow" from this plus {@link approveToolCall}, so the trust
+			 * set stays in the app. */
+			get pendingApprovalToolName() {
+				return pendingApproval?.call.toolName ?? null;
+			},
+
 			approveToolCall() {
 				settleApproval(true);
 			},
@@ -264,15 +312,9 @@ export function createAiChatState({
 				settleApproval(false);
 			},
 
-			/** Trust this tool from now on, then approve the pending call. */
-			alwaysAllowToolCall() {
-				const toolName = pendingApproval?.call.toolName;
-				if (toolName) toolTrust.allow(toolName);
-				settleApproval(true);
-			},
-
 			// ── Ephemeral UI state ──
 
+			/** The unsent draft, kept per conversation so switching preserves it. */
 			get inputValue() {
 				return inputValue;
 			},
@@ -291,9 +333,14 @@ export function createAiChatState({
 
 			sendMessage(content: string) {
 				const text = content.trim();
-				if (!text || convo.isGenerating) return;
+				// The loop owns the empty/mid-turn guard; gate the title write on
+				// whether it actually started a turn rather than re-deriving it.
+				if (!convo.send(text)) return;
 
-				convo.send(text);
+				// A new attempt supersedes the dismissed error: re-arm the banner so a
+				// repeat failure (even the identical message) is shown again rather than
+				// silently swallowed by the earlier dismissal.
+				dismissedError = null;
 
 				// First user message names the conversation; later sends just bump
 				// recency (updateConversation always writes updatedAt).
@@ -327,13 +374,9 @@ export function createAiChatState({
 		handles.delete(id);
 	}
 
-	// ── Active Conversation ──────────────────────────────────────────
-
-	let activeConversationId = $state<ConversationId | null>(null);
-
 	/**
 	 * Mirror the table into the handle registry: open a handle for every row,
-	 * dispose one whose row is gone, and keep an active conversation selected.
+	 * dispose one whose row is gone, and keep a live conversation selected.
 	 */
 	function reconcileHandles() {
 		for (const id of handles.keys()) {
@@ -346,21 +389,19 @@ export function createAiChatState({
 			}
 		}
 
-		// Keep an active conversation pointed at a live handle.
-		if (activeConversationId !== null && handles.has(activeConversationId)) {
-			return;
-		}
+		// Keep the selection pointed at a live handle.
+		if (selection.current !== null && handles.has(selection.current)) return;
 		const mostRecent = conversationList[0];
-		if (mostRecent) activeConversationId = mostRecent.id;
+		if (mostRecent) selection.select(mostRecent.id);
 	}
 
-	const _unobserve = tabManager.tables.conversations.observe(() => {
+	const _unobserve = table.observe(() => {
 		reconcileHandles();
 	});
 
 	// Once the synced doc has loaded, mirror it in and guarantee a conversation
 	// to land in (a fresh install has none).
-	void tabManager.idb.whenLoaded.then(() => {
+	void whenLoaded.then(() => {
 		reconcileHandles();
 		if (conversationList.length === 0) createConversation();
 	});
@@ -371,40 +412,35 @@ export function createAiChatState({
 
 	/**
 	 * Open a new conversation, carrying the active conversation's model choice
-	 * forward, and activate it. The handle is created synchronously so the UI
-	 * never sees a momentarily-missing active conversation.
+	 * forward, and select it. The handle is created synchronously so the UI never
+	 * sees a momentarily-missing active conversation.
 	 */
 	function createConversation(): ConversationId {
 		const id = generateConversationId();
 		const nowIso = InstantString.now();
 		const current =
-			activeConversationId === null
-				? undefined
-				: handles.get(activeConversationId);
+			selection.current === null ? undefined : handles.get(selection.current);
 
-		tabManager.tables.conversations.set({
+		table.set({
 			id,
 			title: 'New Chat',
-			model: current?.model ?? DEFAULT_MODEL,
+			model: current?.model ?? defaultModel,
 			createdAt: nowIso,
 			updatedAt: nowIso,
 		});
 		if (!handles.has(id)) handles.set(id, createConversationHandle(id));
-		activeConversationId = id;
+		selection.select(id);
 		return id;
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
-		tabManager.tables.conversations.delete(conversationId);
+		table.delete(conversationId);
 		destroyConversation(conversationId);
 
-		if (activeConversationId === conversationId) {
+		if (selection.current === conversationId) {
 			const next = conversationList[0];
-			if (next) {
-				activeConversationId = next.id;
-			} else {
-				createConversation();
-			}
+			if (next) selection.select(next.id);
+			else createConversation();
 		}
 	}
 
@@ -413,16 +449,14 @@ export function createAiChatState({
 	return {
 		[Symbol.dispose]() {
 			_unobserve();
-			for (const id of [...handles.keys()]) {
-				destroyConversation(id);
-			}
+			for (const id of [...handles.keys()]) destroyConversation(id);
 			conversationsMap[Symbol.dispose]();
 		},
 
 		get active() {
-			return activeConversationId === null
+			return selection.current === null
 				? undefined
-				: handles.get(activeConversationId);
+				: handles.get(selection.current);
 		},
 
 		get conversations() {
@@ -430,17 +464,13 @@ export function createAiChatState({
 		},
 
 		get activeConversationId() {
-			return activeConversationId;
+			return selection.current;
 		},
 
 		createConversation,
 
 		switchTo(conversationId: ConversationId) {
-			activeConversationId = conversationId;
+			selection.select(conversationId);
 		},
 	};
 }
-
-/** A reactive handle for a single conversation backed by the client loop. */
-type AiChatState = ReturnType<typeof createAiChatState>;
-export type ConversationHandle = NonNullable<AiChatState['active']>;

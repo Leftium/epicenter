@@ -6,6 +6,7 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import { ApiSessionResponse, type AuthUser } from './auth-types.js';
+import { getSession } from './instance.js';
 
 type AuthFetchInput = Request | string | URL;
 
@@ -65,10 +66,10 @@ const InstanceTokenAuthError = defineErrors({
  *   - resource calls attach `Authorization: Bearer <token>`, but ONLY to
  *     `baseURL`'s origin (ADR-0053 audience scoping), so handing this `fetch` to
  *     a custom inference backend or any third party can never leak the token.
- *   - identity is resolved by reading `/api/session` once at construction; a 200
- *     installs `signed-in` with the response's `ownerId`, a 401/403 (bad token)
- *     stays `signed-out`. `startSignIn` re-runs that probe so a UI can retry a
- *     connection that was offline at boot.
+ *   - identity is resolved by reading `/api/session` once at construction (via
+ *     the shared {@link getSession}); a 200 installs `signed-in` with the
+ *     response's `ownerId`, a rejected token stays `signed-out`. `startSignIn`
+ *     re-runs that check so a UI can retry a connection that was offline at boot.
  *   - `signOut` is local-only: it drops to `signed-out` without a server call,
  *     because there is no grant to revoke. Forgetting the instance itself
  *     (reverting to hosted) is an app-level concern.
@@ -114,37 +115,27 @@ export function createInstanceTokenAuth({
 	}
 
 	/**
-	 * Verify the configured token against `/api/session`. A 200 installs
-	 * `signed-in` with the response's `ownerId`; a 401/403 (rejected token) drops
-	 * to `signed-out`. A network or parse failure returns an error and leaves the
-	 * current state, so a transient outage does not look like a bad token.
+	 * Verify the configured token against `/api/session` and reflect the result
+	 * into state. A 200 installs `signed-in` with the response's `ownerId`; a
+	 * rejected token (`InvalidToken`) drops to `signed-out`. A network or parse
+	 * failure returns the error and leaves the current state, so a transient
+	 * outage does not look like a bad token.
+	 *
+	 * The actual `/api/session` read is {@link getSession}, shared with the
+	 * settings UI's connection test; this only maps its result onto state and the
+	 * `AuthClient` error contract. The token client always sends a token, so the
+	 * no-token `Unauthenticated` outcome never arises here.
 	 */
 	async function confirmSession(): Promise<Result<undefined, AuthError>> {
-		let response: Response;
-		try {
-			response = await fetchImpl(API_ROUTES.session.url(baseURL), {
-				headers: { Authorization: `Bearer ${token}` },
-				credentials: 'omit',
-			});
-		} catch (cause) {
-			return AuthError.StartSignInFailed({ cause });
-		}
-		if (!response.ok) {
-			if (response.status === 401 || response.status === 403) {
-				setState({ status: 'signed-out' });
-			}
-			return AuthError.StartSignInFailed({
-				cause: {
-					message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
-					status: response.status,
-				},
-			});
-		}
-		const { data: session, error } = await tryAsync({
-			try: async () => ApiSessionResponse.assert(await response.json()),
-			catch: (cause) => AuthError.StartSignInFailed({ cause }),
+		const { data: session, error } = await getSession({
+			baseURL,
+			token,
+			fetch: fetchImpl,
 		});
-		if (error) return Err(error);
+		if (error) {
+			if (error.name === 'InvalidToken') setState({ status: 'signed-out' });
+			return AuthError.StartSignInFailed({ cause: error });
+		}
 		setState({ status: 'signed-in', ownerId: session.ownerId });
 		return Ok(undefined);
 	}

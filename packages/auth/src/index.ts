@@ -16,10 +16,10 @@ export {
 	createOAuthAppAuth,
 } from './create-oauth-app-auth.js';
 export {
+	getSession,
 	type Instance,
 	InstanceError,
 	normalizeInstanceUrl,
-	probeInstance,
 } from './instance.js';
 export {
 	type CreateInstanceTokenAuthConfig,

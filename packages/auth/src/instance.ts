@@ -1,11 +1,10 @@
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import type { OwnerId } from '@epicenter/identity';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { AuthFetch } from './auth-contract.js';
 import { ApiSessionResponse } from './auth-types.js';
 
@@ -17,7 +16,7 @@ import { ApiSessionResponse } from './auth-types.js';
  *
  * This is the persisted, per-client setting. How it is stored (localStorage,
  * chrome.storage) is the app's concern; the shape, normalization, and the
- * connection probe live here so every client agrees on them.
+ * session check ({@link getSession}) live here so every client agrees on them.
  */
 export type Instance = {
 	/**
@@ -35,7 +34,7 @@ export type Instance = {
 };
 
 /**
- * Failures of {@link normalizeInstanceUrl} and {@link probeInstance}. Callers
+ * Failures of {@link normalizeInstanceUrl} and {@link getSession}. Callers
  * branch on `name` to render a clear connected/failed state.
  */
 export const InstanceError = defineErrors({
@@ -50,9 +49,19 @@ export const InstanceError = defineErrors({
 		baseURL,
 		cause,
 	}),
-	/** The instance answered, but rejected the token. */
+	/** A token was sent and the instance rejected it. */
 	InvalidToken: ({ status }: { status: 401 | 403 }) => ({
 		message: `The instance rejected the token (${status}). Check the token and try again.`,
+		status,
+	}),
+	/**
+	 * The instance is reachable but no credential was sent, and it requires one.
+	 * Not a failure of a token (none was given): the expected answer when the
+	 * user means to sign in with OAuth (or a reverse-proxy resolver is absent).
+	 */
+	Unauthenticated: ({ status }: { status: 401 | 403 }) => ({
+		message:
+			'The instance is reachable but needs a credential. Paste an instance token, or save and sign in with Epicenter.',
 		status,
 	}),
 	/** The instance answered with an unexpected status or an unreadable body. */
@@ -102,14 +111,21 @@ export function normalizeInstanceUrl(
 }
 
 /**
- * Test a connection to an instance by reading `/api/session`. With a `token` it
- * verifies that credential (the self-host case); without one it just confirms
- * the origin answers the session route. On success it returns the resolved
- * `ownerId` and the account email so a settings UI can show who it connected as.
+ * Read `/api/session` from an instance to learn who the caller is. With a
+ * `token` it verifies that credential (the self-host case); without one it
+ * reports whether the origin already authenticates the request (a reverse-proxy
+ * resolver returns a session) or is reachable-but-gated (`Unauthenticated`).
+ *
+ * Returns the validated session ({@link ApiSessionResponse}) so a settings UI
+ * can show who it connected as (`session.user.email`) and the token client can
+ * install state (`session.ownerId`). This is the one `/api/session` read both
+ * the pre-save connection test and the client's boot verification share; it is
+ * distinct from {@link AuthClient.getProfile}, which reads the same route
+ * through the live, audience-scoped client transport.
  *
  * `baseURL` should already be normalized ({@link normalizeInstanceUrl}).
  */
-export async function probeInstance({
+export async function getSession({
 	baseURL,
 	token,
 	fetch = globalThis.fetch.bind(globalThis),
@@ -117,7 +133,7 @@ export async function probeInstance({
 	baseURL: string;
 	token?: string;
 	fetch?: AuthFetch;
-}): Promise<Result<{ ownerId: OwnerId; email: string }, InstanceError>> {
+}): Promise<Result<ApiSessionResponse, InstanceError>> {
 	let response: Response;
 	try {
 		response = await fetch(API_ROUTES.session.url(baseURL), {
@@ -129,14 +145,16 @@ export async function probeInstance({
 	}
 	if (!response.ok) {
 		if (response.status === 401 || response.status === 403) {
-			return InstanceError.InvalidToken({ status: response.status });
+			// A token was sent and bounced means the token is bad; no token sent
+			// means the origin simply requires one (the expected OAuth answer).
+			return token
+				? InstanceError.InvalidToken({ status: response.status })
+				: InstanceError.Unauthenticated({ status: response.status });
 		}
 		return InstanceError.Unexpected({ status: response.status });
 	}
-	const { data: session, error } = await tryAsync({
+	return tryAsync({
 		try: async () => ApiSessionResponse.assert(await response.json()),
 		catch: (cause) => InstanceError.Unexpected({ cause }),
 	});
-	if (error) return Err(error);
-	return Ok({ ownerId: session.ownerId, email: session.user.email });
 }

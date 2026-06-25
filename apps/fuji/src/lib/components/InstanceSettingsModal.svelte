@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { normalizeInstanceUrl, probeInstance } from '@epicenter/auth';
+	import { getSession, normalizeInstanceUrl } from '@epicenter/auth';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
@@ -22,31 +22,42 @@
 	let urlInput = $state(hasOverride ? instance.baseURL : '');
 	let tokenInput = $state(instance.token ?? '');
 
-	type ProbeState =
+	type ConnectionState =
 		| { status: 'idle' }
 		| { status: 'testing' }
 		| { status: 'connected'; email: string }
+		| { status: 'reachable' }
 		| { status: 'failed'; message: string };
-	let probe = $state<ProbeState>({ status: 'idle' });
+	let connection = $state<ConnectionState>({ status: 'idle' });
 
 	async function testConnection() {
 		const { data: baseURL, error } = normalizeInstanceUrl(urlInput);
 		if (error) {
-			probe = { status: 'failed', message: error.message };
+			connection = { status: 'failed', message: error.message };
 			return;
 		}
-		probe = { status: 'testing' };
+		connection = { status: 'testing' };
 		const token = tokenInput.trim() || undefined;
-		const { data, error: probeError } = await probeInstance({ baseURL, token });
-		probe = probeError
-			? { status: 'failed', message: probeError.message }
-			: { status: 'connected', email: data.email };
+		const { data: session, error: sessionError } = await getSession({
+			baseURL,
+			token,
+		});
+		if (sessionError) {
+			// No token sent and the origin requires one is the expected OAuth
+			// answer, not a failure: report it as reachable, not red.
+			connection =
+				sessionError.name === 'Unauthenticated'
+					? { status: 'reachable' }
+					: { status: 'failed', message: sessionError.message };
+			return;
+		}
+		connection = { status: 'connected', email: session.user.email };
 	}
 
 	function save() {
 		const { data: baseURL, error } = normalizeInstanceUrl(urlInput);
 		if (error) {
-			probe = { status: 'failed', message: error.message };
+			connection = { status: 'failed', message: error.message };
 			return;
 		}
 		writeInstance({ baseURL, token: tokenInput.trim() || undefined });
@@ -94,12 +105,16 @@
 					instead.
 				</p>
 			</div>
-			{#if probe.status === 'connected'}
+			{#if connection.status === 'connected'}
 				<p class="text-xs text-green-600 dark:text-green-500">
-					Connected as {probe.email}.
+					Connected as {connection.email}.
 				</p>
-			{:else if probe.status === 'failed'}
-				<p class="text-xs text-destructive">{probe.message}</p>
+			{:else if connection.status === 'reachable'}
+				<p class="text-xs text-muted-foreground">
+					Reachable. Save and sign in with Epicenter.
+				</p>
+			{:else if connection.status === 'failed'}
+				<p class="text-xs text-destructive">{connection.message}</p>
 			{/if}
 		</div>
 		<Modal.Footer class="flex-col gap-2 sm:flex-row sm:justify-between">
@@ -112,10 +127,10 @@
 				<Button
 					variant="outline"
 					type="button"
-					disabled={probe.status === 'testing'}
+					disabled={connection.status === 'testing'}
 					onclick={testConnection}
 				>
-					{#if probe.status === 'testing'}
+					{#if connection.status === 'testing'}
 						<Spinner class="size-3.5" />
 						<span>Testing</span>
 					{:else}

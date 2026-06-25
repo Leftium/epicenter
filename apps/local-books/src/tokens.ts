@@ -2,7 +2,7 @@ import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { QbEnvironment } from './config.ts';
+import { type QbEnvironment, QbEnvironmentSchema } from './config.ts';
 
 /**
  * A persisted QuickBooks OAuth2 token set, stored verbatim in the token file
@@ -14,7 +14,7 @@ import type { QbEnvironment } from './config.ts';
  */
 export const TokenSetSchema = Type.Object({
 	realmId: Type.String({ minLength: 1 }),
-	environment: Type.Union([Type.Literal('sandbox'), Type.Literal('production')]),
+	environment: QbEnvironmentSchema,
 	accessToken: Type.String({ minLength: 1 }),
 	refreshToken: Type.String({ minLength: 1 }),
 	accessTokenExpiresAt: Type.String({ minLength: 1 }),

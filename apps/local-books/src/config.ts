@@ -5,8 +5,16 @@ import { Value } from 'typebox/value';
 import { DEFAULT_ENTITIES, isKnownEntity } from './entities.ts';
 import { credentialsFilePath, resolveDataDir } from './paths.ts';
 
-/** Which QuickBooks deployment a company lives in. */
-export type QbEnvironment = 'sandbox' | 'production';
+/**
+ * Which QuickBooks deployment a company lives in. This schema is the single
+ * source of truth: `QbEnvironment` derives from it, and both `ConfigFileSchema`
+ * and `TokenSetSchema` reference it rather than re-spelling the literal union.
+ */
+export const QbEnvironmentSchema = Type.Union([
+	Type.Literal('sandbox'),
+	Type.Literal('production'),
+]);
+export type QbEnvironment = Static<typeof QbEnvironmentSchema>;
 
 /**
  * Fully-resolved runtime configuration. Precedence is CLI flags > environment >
@@ -78,9 +86,7 @@ const DEFAULT_SCOPE = 'com.intuit.quickbooks.accounting';
 const DEFAULT_MINOR_VERSION = '70';
 
 const ConfigFileSchema = Type.Object({
-	environment: Type.Optional(
-		Type.Union([Type.Literal('sandbox'), Type.Literal('production')]),
-	),
+	environment: Type.Optional(QbEnvironmentSchema),
 	entities: Type.Optional(Type.Array(Type.String())),
 	redirectUri: Type.Optional(Type.String({ minLength: 1 })),
 	scopes: Type.Optional(Type.Array(Type.String())),

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
-	import { InferencePicker } from '@epicenter/app-shell/inference-picker';
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -36,15 +35,6 @@
 	});
 
 	onDestroy(() => chat[Symbol.dispose]());
-
-	// The shared inference picker (ADR-0059) binds to the active conversation's
-	// model and this device's connection registry.
-	const activeModel = $derived(chat.active?.model ?? VOCAB_MODEL);
-
-	/** An explicit model pick writes the active conversation's synced model. */
-	function selectModel(model: string) {
-		if (chat.active) chat.active.model = model;
-	}
 
 	/**
 	 * Keep the destructive device-local wipe out of the template: the dialog owns
@@ -99,12 +89,6 @@
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device
 				</Button>
-
-				<InferencePicker
-					model={activeModel}
-					onSelectModel={selectModel}
-					connections={inferenceConnections}
-				/>
 			</div>
 		</header>
 

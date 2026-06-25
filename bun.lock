@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -354,12 +353,18 @@
       "name": "@epicenter/self-host",
       "version": "0.0.2",
       "dependencies": {
+        "@epicenter/auth": "workspace:*",
+        "@epicenter/constants": "workspace:*",
         "@epicenter/server": "workspace:*",
+        "arktype": "catalog:",
         "hono": "catalog:",
+        "pg": "^8.20.0",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260405.1",
         "@types/bun": "catalog:",
+        "@types/pg": "^8.18.0",
         "typescript": "catalog:",
         "wrangler": "catalog:",
       },

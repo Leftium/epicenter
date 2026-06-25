@@ -16,7 +16,6 @@ export {
 	createOAuthAppAuth,
 } from './create-oauth-app-auth.js';
 export {
-	getSession,
 	type Instance,
 	InstanceError,
 	normalizeInstanceUrl,

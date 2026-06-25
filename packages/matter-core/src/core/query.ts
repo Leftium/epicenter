@@ -2,7 +2,7 @@
  * The read-only query builder for a folder's mirror table: the SQL behind the grid's filter, search,
  * and sort, and the home any headless query verb (a future `epicenter matter query`, an MCP
  * `matter_search`) will share. It returns each matching row's `stem` IN QUERY ORDER, so the caller can
- * render cells from its own in-memory rows in that order (ADR-0059: SQL drives the query; the in-memory
+ * render cells from its own in-memory rows in that order (ADR-0065: SQL drives the query; the in-memory
  * map drives the cells). This sits beside the projector because both build matter's SQL from one
  * quoting implementation.
  */

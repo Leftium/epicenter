@@ -2,7 +2,7 @@
  * The per-tab unified query over one table's slice of the vault mirror: a WHERE filter, a full-text
  * `match`, and a column `sort`, resolved through ONE read-only SQL query to an ordered list of stems.
  *
- * This is the app's read path made coherent (ADR-0059): SQL decides which rows, in what order,
+ * This is the app's read path made coherent (ADR-0065): SQL decides which rows, in what order,
  * matching what text; the grid renders cells from the in-memory map in that order. The default view
  * stays synchronous: when no control is active (`where`, `match`, and `sort` all empty) the query
  * issues no SQL and `orderedStems` is `undefined`, so the grid paints instantly from the in-memory

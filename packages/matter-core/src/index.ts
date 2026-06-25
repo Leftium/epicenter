@@ -4,7 +4,7 @@
  * It parses a folder of typed markdown (one `.md` file per row, YAML frontmatter typed by a per-folder
  * `matter.json`, the body as the rich field), classifies each row's conformance, resolves cross-table
  * references, and projects the whole vault into a read-only SQLite schema. Disk is the source of truth;
- * the SQLite projection is disposable and never written back to (ADR-0026, ADR-0059).
+ * the SQLite projection is disposable and never written back to (ADR-0026, ADR-0065).
  *
  * Two consumers share it: `apps/matter` renders from it, and `epicenter matter check` lints from it.
  * This entry is browser-pure. The filesystem boundary (`loadPath`, `loadTable`) uses `node:fs`, so it

@@ -14,7 +14,7 @@
 
 	// The vault-wide read-only SQL console: run arbitrary SELECT / JOIN / GROUP BY against the vault's
 	// hidden `.matter/matter.sqlite` and render the result verbatim. READ-ONLY by construction
-	// (ADR-0059): the mirror opens the db read-only, so a write is rejected, and a JOIN or aggregate row
+	// (ADR-0065): the mirror opens the db read-only, so a write is rejected, and a JOIN or aggregate row
 	// maps to no file, so nothing here edits a cell. Cmd/Ctrl+Enter or the Run button executes the
 	// editor's text.
 	let { vault, defaultTable }: { vault: VaultHandle; defaultTable?: string } =

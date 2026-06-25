@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import Type from 'typebox';
+import { defineErrors } from 'wellcrafted/error';
 import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
@@ -110,6 +111,47 @@ describe('invokeAction', () => {
 			});
 			const error = expectErr(await invokeAction(action, undefined));
 			expect(error).toBe('string-throw');
+		});
+	});
+
+	describe('bare tagged-error return guard (compile-time)', () => {
+		const E = defineErrors({
+			Boom: ({ detail }: { detail: string }) => ({ message: detail, detail }),
+		});
+
+		test('a wrapped error passes; a bare tagged error is a compile error', () => {
+			// A defineErrors variant returns Err(...) (a Result), so it passes the
+			// guard and reaches invokeAction as an error, not an Ok-wrapped success.
+			const wrapped = defineMutation({ handler: () => E.Boom({ detail: 'x' }) });
+			expect(wrapped.type).toBe('mutation');
+
+			// The footgun: returning the destructured bare error. invokeAction would
+			// Ok-wrap it as a false success, so the guard rejects it at the handler.
+			defineMutation({
+				// @ts-expect-error: bare tagged error return; wrap it in Err(...)
+				handler: () => E.Boom({ detail: 'x' }).error,
+			});
+
+			// The guard awaits the return, so an async bare error is rejected too.
+			defineMutation({
+				// @ts-expect-error: async bare tagged error return; wrap it in Err(...)
+				handler: async () => E.Boom({ detail: 'x' }).error,
+			});
+		});
+
+		test('a genuine { name, message } success is expressible via Ok(...)', () => {
+			// Wrapped, it passes: Ok(...) is a Result, not a bare tagged error.
+			const ok = defineMutation({
+				handler: () => Ok({ name: 'n', message: 'm' }),
+			});
+			expect(ok.type).toBe('mutation');
+
+			// Raw, it trips the guard: structurally indistinguishable from a tagged
+			// error. This benign false-positive is resolved by the explicit Ok(...).
+			defineMutation({
+				// @ts-expect-error: raw { name, message } is shaped like a tagged error
+				handler: () => ({ name: 'n', message: 'm' }),
+			});
 		});
 	});
 

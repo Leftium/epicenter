@@ -13,13 +13,14 @@
  *
  * The Vault is its sole owner: it composes one mirror per root, calls {@link syncTable} from each
  * Table's onChange, {@link dropTable} when a folder leaves, and exposes the handle so the per-tab
- * filter can {@link query} it. Desktop-only: it talks to Tauri directly (no platform seam), mirroring
+ * query state can {@link runQuery} it. Desktop-only: it talks to Tauri directly (no platform seam), mirroring
  * {@link createVault} / {@link createTable}.
  */
 
 import {
+	buildStemQuery,
 	projectToSqlite,
-	quoteIdent,
+	type StemQuery,
 	type TableRead,
 } from '@epicenter/matter-core';
 import { invoke } from '@tauri-apps/api/core';
@@ -79,16 +80,17 @@ export function createMirror(root: string) {
 	}
 
 	/**
-	 * Run a WHERE clause against one folder's SQL table and return the matching row stems (the table's
-	 * `stem` primary key, the row's reference identity). The clause is the user's own raw SQL against
-	 * their own read-only local db, so the worst a bad clause does is return an error. No limit: a
-	 * name-only filter returns every match, never a silent cap.
+	 * Run the grid's unified query against one folder's SQL table and return the matching stems IN
+	 * QUERY ORDER (an array, not a Set): SQL decides which rows, in what order, matching what text. The
+	 * grid renders cells from the in-memory map in this order. The clause is the user's own raw SQL
+	 * against their own read-only local db, so the worst a bad query does is return an error. No limit:
+	 * the grid shows every match, never a silent cap.
 	 */
-	function query(
+	function runQuery(
 		name: string,
-		where: string,
-	): Promise<Result<Set<string>, { message: string }>> {
-		const sql = `SELECT "stem" FROM ${quoteIdent(name)} WHERE ${where}`;
+		opts: StemQuery,
+	): Promise<Result<string[], { message: string }>> {
+		const sql = buildStemQuery(name, opts);
 		return tryAsync({
 			try: async () => {
 				const { rows } = await invoke<{ rows: unknown[][] }>('query_mirror', {
@@ -96,8 +98,30 @@ export function createMirror(root: string) {
 					sql,
 					limit: null,
 				});
-				return new Set(rows.map((row) => String(row[0])));
+				return rows.map((row) => String(row[0]));
 			},
+			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+		});
+	}
+
+	/**
+	 * Run arbitrary read-only SQL for the console and return the full result set verbatim. The console
+	 * renders `{ columns, rows }` directly: a JOIN or aggregate row has no file, so this never feeds an
+	 * editable cell (the boundary). Capped at {@link CONSOLE_LIMIT} rows so a `SELECT *` cannot hang the
+	 * UI.
+	 */
+	function runSql(
+		sql: string,
+	): Promise<
+		Result<{ columns: string[]; rows: unknown[][] }, { message: string }>
+	> {
+		return tryAsync({
+			try: () =>
+				invoke<{ columns: string[]; rows: unknown[][] }>('query_mirror', {
+					root,
+					sql,
+					limit: CONSOLE_LIMIT,
+				}),
 			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
 		});
 	}
@@ -105,7 +129,8 @@ export function createMirror(root: string) {
 	return {
 		syncTable,
 		dropTable,
-		query,
+		runQuery,
+		runSql,
 		/** Increments after each applied mirror write or drop. Read it (reactively) to re-query once the
 		 *  shared db is fresh, rather than the moment the in-memory rows change. */
 		get version(): number {
@@ -114,5 +139,10 @@ export function createMirror(root: string) {
 	};
 }
 
-/** A live vault mirror. The Vault composes one; the per-tab WHERE filter queries it. */
+/** The most rows the SQL console renders from one query, so a `SELECT *` over a large folder cannot
+ *  hang the UI. The grid query (`runQuery`) is uncapped: it returns only stems, and the grid shows
+ *  every match. */
+const CONSOLE_LIMIT = 1000;
+
+/** A live vault mirror. The Vault composes one; the per-tab query state drives it. */
 export type Mirror = ReturnType<typeof createMirror>;

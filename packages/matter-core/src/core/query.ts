@@ -1,0 +1,66 @@
+/**
+ * The read-only query builder for a folder's mirror table: the SQL behind the grid's filter, search,
+ * and sort, and the home any headless query verb (a future `epicenter matter query`, an MCP
+ * `matter_search`) will share. It returns each matching row's `stem` IN QUERY ORDER, so the caller can
+ * render cells from its own in-memory rows in that order (ADR-0059: SQL drives the query; the in-memory
+ * map drives the cells). This sits beside the projector because both build matter's SQL from one
+ * quoting implementation.
+ */
+
+import { quoteIdent } from './sqlite';
+
+/**
+ * Build a safe FTS5 MATCH literal from user search text: wrap it as ONE quoted phrase so FTS5 reads it
+ * as literal terms (not its query operators), doubling embedded double quotes, then wrap that as a SQL
+ * string literal, doubling embedded single quotes. The mirror's `query_mirror` runs raw SQL with no
+ * bound parameters, so the term is inlined here rather than parameterized, and this escaping is what
+ * keeps a search box from being an injection or a syntax error.
+ */
+function ftsMatchLiteral(term: string): string {
+	const phrase = `"${term.replace(/"/g, '""')}"`;
+	return `'${phrase.replace(/'/g, "''")}'`;
+}
+
+/** The grid's query controls: a SQL `WHERE` fragment, full-text search text, and a SQL `ORDER BY`
+ *  fragment. All optional; an all-empty query is just `SELECT "stem" FROM <table>`. */
+export type StemQuery = {
+	/** A raw SQL boolean expression for the `WHERE` clause (the user's own filter box). */
+	where?: string;
+	/** Plain search text, matched full-text against the folder's FTS5 index. */
+	match?: string;
+	/** A SQL `ORDER BY` fragment built from a clicked header (a known, quoted column plus direction). */
+	orderBy?: string;
+};
+
+/**
+ * Build the read-only `SELECT "stem"` the grid runs. Without a `match`, it is a plain filtered, ordered
+ * select over the base table. With a `match`, the full-text search runs in a derived subquery that
+ * exposes ONLY `rowid` and `rank`, joined back to the base table; that subquery is what keeps the FTS
+ * index's columns (`status`, `title`, ...) from shadowing the base table's columns of the same name, so
+ * the user's unqualified `where`/`orderBy` never hit an "ambiguous column" error. Relevance (`rank`)
+ * orders the results unless an explicit `ORDER BY` is given. `orderBy` is a SQL fragment the caller
+ * builds from a known column, so it is inlined; `where` is the user's own clause against their own
+ * read-only db, where the worst a bad clause does is return an error.
+ */
+export function buildStemQuery(
+	tableName: string,
+	{ where, match, orderBy }: StemQuery,
+): string {
+	const table = quoteIdent(tableName);
+	if (match) {
+		const fts = quoteIdent(`${tableName}_fts`);
+		// The match subquery projects only rowid + rank, so its alias contributes no column that could
+		// collide with a base column in the user's where/order by. `_fts_match` is a synthetic alias.
+		const matched = `(SELECT rowid, rank FROM ${fts} WHERE ${fts} MATCH ${ftsMatchLiteral(match)})`;
+		let sql =
+			`SELECT ${table}."stem" AS stem FROM ${table} ` +
+			`JOIN ${matched} "_fts_match" ON ${table}.rowid = "_fts_match".rowid`;
+		if (where) sql += ` WHERE ${where}`;
+		sql += ` ORDER BY ${orderBy ?? '"_fts_match".rank'}`;
+		return sql;
+	}
+	let sql = `SELECT "stem" FROM ${table}`;
+	if (where) sql += ` WHERE ${where}`;
+	if (orderBy) sql += ` ORDER BY ${orderBy}`;
+	return sql;
+}

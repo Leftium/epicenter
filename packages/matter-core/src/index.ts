@@ -60,6 +60,8 @@ export {
 } from './core/parse';
 // Path: the folder label.
 export { basename } from './core/path';
+// Query: build the read-only SELECT the grid (and headless query verbs) run over a folder's mirror.
+export { buildStemQuery, type StemQuery } from './core/query';
 // Serialize: write an edited frontmatter field or body back to a `.md` file's text.
 export { editBody, editField, serializeEntry } from './core/serialize';
 // SQLite: project a typed folder's classified rows into a read-only schema + insert.

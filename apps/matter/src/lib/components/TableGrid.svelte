@@ -6,11 +6,15 @@
 	import { Input } from '@epicenter/ui/input';
 	import * as Table from '@epicenter/ui/table';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
+	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
 	import CheckIcon from '@lucide/svelte/icons/check';
+	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import FileWarningIcon from '@lucide/svelte/icons/file-warning';
 	import ListIcon from '@lucide/svelte/icons/list';
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
+	import SearchIcon from '@lucide/svelte/icons/search';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
 	import {
@@ -20,7 +24,7 @@
 		type TableAssessment,
 	} from '@epicenter/matter-core';
 	import type { TableView } from '$lib/table.svelte';
-	import type { WhereFilter } from '$lib/where-filter.svelte';
+	import type { TableQuery } from '$lib/table-query.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 	import ReferenceVerdictIndicator from './ReferenceVerdict.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
@@ -29,18 +33,19 @@
 	// touch), injected by the active TablePane. The narrow getters are bound once here so the
 	// template reads `read` / `folder` / `onSave*` directly, and a table swap (switch tables in the
 	// vault) flows through these derivations.
-	// `filter` is the tab's WHERE filter. The grid renders its input in the header and narrows rows
-	// to the names it matched; `undefined` (no filter, or an empty clause) means show every row.
+	// `query` is the tab's unified query (WHERE filter, full-text match, column sort). The grid renders
+	// its controls in the header and orders rows by what the query matched; `undefined`, or no active
+	// control, means render every row in its natural order.
 	// `assessment` is THIS table's place in the vault's integrity: it carries the cross-table
 	// reference verdicts (resolved / dangling / missing-target) the conformance `Cell` cannot
 	// know on its own. Optional, so a table rendered outside a vault simply shows no chips.
 	let {
 		table,
-		filter,
+		query,
 		assessment,
 	}: {
 		table: TableView;
-		filter?: WhereFilter;
+		query?: TableQuery;
 		assessment?: TableAssessment;
 	} = $props();
 
@@ -73,8 +78,10 @@
 		return referenceVerdicts.get(fileName)?.get(fieldName);
 	}
 
-	// The row stems the WHERE clause matched, or undefined when no clause is active.
-	const matchedStems = $derived(filter?.matchedStems);
+	// The stems the query matched, in SQL order, or undefined when no control is active (then the grid
+	// renders the in-memory rows in their natural order). `isQuerying` is whether any control is set.
+	const orderedStems = $derived(query?.orderedStems);
+	const isQuerying = $derived(query?.isActive ?? false);
 
 	const read = $derived(table.read);
 	const folder = $derived(table.folderName);
@@ -89,12 +96,20 @@
 
 	const filteredRows = $derived.by(() => {
 		if (view.mode !== 'typed') return [];
-		// The WHERE filter (matched row stems from the mirror, computed by the page)
-		// narrows the visible set; no active filter leaves it undefined, nothing to do. The
-		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
-		const stems = matchedStems;
-		if (stems) return view.conformance.filter((c) => stems.has(stemOf(c.row.fileName)));
-		return view.conformance;
+		// No active query control: render the in-memory rows in their natural (insertion) order. The
+		// local alias is load-bearing: it narrows `string[] | undefined` to `string[]` in the closure.
+		const ordered = orderedStems;
+		if (!ordered) return view.conformance;
+		// SQL decided which rows and in what order; render in that order via a stem -> row map, skipping
+		// any stem the in-memory rows do not have yet (the mirror can briefly run ahead of memory after
+		// an edit). This preserves SQL order, where intersecting against insertion order would not.
+		const byStem = new Map(
+			view.conformance.map((c) => [stemOf(c.row.fileName), c]),
+		);
+		return ordered.flatMap((stem) => {
+			const conf = byStem.get(stem);
+			return conf ? [conf] : [];
+		});
 	});
 
 	const visibleRows = $derived.by(() => {
@@ -103,31 +118,31 @@
 		return filteredRows;
 	});
 
-	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
-	const isFiltered = $derived(rowFilter !== 'all' || matchedStems !== undefined);
+	// "X of Y rows" whenever a lens is narrowing the table (attention OR an active query control).
+	const isFiltered = $derived(rowFilter !== 'all' || isQuerying);
 
 	// The typed empty-state copy as ONE mutually exclusive decision, so the title and the
 	// description always describe the same case. Reads top-down like the question a person
 	// asks ("is a filter on? is attention on? otherwise it is just empty") instead of two
 	// nested ternaries in the markup that have to be kept in sync by hand.
 	const emptyState = $derived.by(() => {
-		if (matchedStems && filteredRows.length === 0)
+		if (isQuerying && filteredRows.length === 0)
 			return {
-				title: 'No rows match the filter',
-				description: 'No rows match this WHERE clause.',
+				title: 'No rows match',
+				description: 'No rows match the current filter, search, or sort.',
 			};
 		if (rowFilter === 'attention')
 			return {
-				title: matchedStems ? 'No matching rows need attention' : 'No rows need attention',
-				description: matchedStems
-					? 'Rows matched by this WHERE clause are valid.'
+				title: isQuerying ? 'No matching rows need attention' : 'No rows need attention',
+				description: isQuerying
+					? 'The rows the query matched are all valid.'
 					: 'Every readable row matches this contract.',
 			};
 		if (rowFilter === 'ready')
 			return {
-				title: matchedStems ? 'No matching ready rows' : 'No ready rows',
-				description: matchedStems
-					? 'Rows matched by this WHERE clause need attention.'
+				title: isQuerying ? 'No matching ready rows' : 'No ready rows',
+				description: isQuerying
+					? 'The rows the query matched all need attention.'
 					: 'Fix required or invalid fields to make rows ready.',
 			};
 		return {
@@ -268,6 +283,20 @@
 	</ToggleGroup.Item>
 {/snippet}
 
+<!-- The sort affordance on a column header: the active direction when this column is the sort key, or
+     a faint hint that the column is sortable. Rendered only inside a vault (when `query` is present). -->
+{#snippet sortIndicator(column: string)}
+	{#if query?.sort?.column === column}
+		{#if query.sort.dir === 'asc'}
+			<ArrowUpIcon class="size-3.5 shrink-0" />
+		{:else}
+			<ArrowDownIcon class="size-3.5 shrink-0" />
+		{/if}
+	{:else}
+		<ChevronsUpDownIcon class="size-3.5 shrink-0 text-muted-foreground/40" />
+	{/if}
+{/snippet}
+
 <div class="flex min-h-0 flex-1 flex-col">
 	{#if view.mode === 'untyped'}
 		<header
@@ -355,7 +384,17 @@
 				</div>
 			</div>
 			<div class="flex min-w-0 flex-wrap items-center justify-end gap-3">
-				{#if filter}
+				{#if query}
+					<div class="flex min-w-0 items-center gap-1.5">
+						<SearchIcon class="size-4 shrink-0 text-muted-foreground" />
+						<Input
+							bind:value={query.match}
+							placeholder="Search text"
+							spellcheck={false}
+							aria-label="Full-text search row bodies and text fields"
+							class="h-8 w-48 max-w-[min(12rem,50vw)] text-xs"
+						/>
+					</div>
 					<div class="flex min-w-0 items-center gap-1.5">
 						<span
 							class="font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
@@ -363,18 +402,18 @@
 							where
 						</span>
 						<Input
-							bind:value={filter.text}
+							bind:value={query.where}
 							placeholder="status = 'ready'"
 							spellcheck={false}
 							autocapitalize="off"
 							autocomplete="off"
 							autocorrect="off"
-							aria-invalid={Boolean(filter.error)}
+							aria-invalid={Boolean(query.error)}
 							aria-label="Filter rows with a SQL WHERE clause"
-							title={filter.error}
+							title={query.error}
 							class={[
 								'h-8 w-64 max-w-[min(16rem,60vw)] font-mono text-xs',
-								filter.error && 'border-destructive focus-visible:ring-destructive/30',
+								query.error && 'border-destructive focus-visible:ring-destructive/30',
 							]}
 						/>
 					</div>
@@ -441,23 +480,57 @@
 				<Table.Header>
 					<Table.Row>
 						<Table.Head class="sticky left-0 top-0 z-30 border-r bg-background align-bottom">
-							<span class="text-xs font-medium text-muted-foreground">file</span>
+							{#if query}
+								<button
+									type="button"
+									onclick={() => query.toggleSort('stem')}
+									title="Sort by file name"
+									class="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+								>
+									file
+									{@render sortIndicator('stem')}
+								</button>
+							{:else}
+								<span class="text-xs font-medium text-muted-foreground">file</span>
+							{/if}
 						</Table.Head>
 						{#each view.contract.fields as field (field.name)}
 							<Table.Head class="sticky top-0 z-20 bg-background align-bottom">
-								<div
-									class={['flex flex-col gap-0.5', columnAlign(field.kind).head]}
-									title="{field.name} ({field.kind})"
-								>
-									<span class="max-w-full truncate font-medium leading-tight">
-										{field.name}
-									</span>
-									<span
-										class="text-[11px] font-normal uppercase leading-none tracking-wide text-muted-foreground/80"
+								{#if query}
+									<button
+										type="button"
+										onclick={() => query.toggleSort(field.name)}
+										title="{field.name} ({field.kind}): click to sort"
+										class={[
+											'flex w-full flex-col gap-0.5 hover:text-foreground',
+											columnAlign(field.kind).head,
+										]}
 									>
-										{field.kind}
-									</span>
-								</div>
+										<span class="flex max-w-full items-center gap-1">
+											<span class="truncate font-medium leading-tight">{field.name}</span>
+											{@render sortIndicator(field.name)}
+										</span>
+										<span
+											class="text-[11px] font-normal uppercase leading-none tracking-wide text-muted-foreground/80"
+										>
+											{field.kind}
+										</span>
+									</button>
+								{:else}
+									<div
+										class={['flex flex-col gap-0.5', columnAlign(field.kind).head]}
+										title="{field.name} ({field.kind})"
+									>
+										<span class="max-w-full truncate font-medium leading-tight">
+											{field.name}
+										</span>
+										<span
+											class="text-[11px] font-normal uppercase leading-none tracking-wide text-muted-foreground/80"
+										>
+											{field.kind}
+										</span>
+									</div>
+								{/if}
 							</Table.Head>
 						{/each}
 					</Table.Row>

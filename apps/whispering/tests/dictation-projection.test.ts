@@ -6,9 +6,9 @@ import { projectLifecycleToStatus } from '../src/lib/recording-overlay/projectio
  * the one place capture and outcome are flattened into the serializable status
  * both pill mounts render, so a regression here silently changes desktop and web
  * at once. These cases pin the subtle rules: a live VAD meter is never replaced,
- * the previous utterance rides alongside it as a transcribing pip, and neither
- * success nor failure earns a pip (success is the landing text; failure goes to
- * the notification and the recordings row).
+ * a previous utterance still transcribing flags the `transcribing` signal beside
+ * it, and neither success nor failure flags it (success is the landing text;
+ * failure goes to the notification and the recordings row).
  *
  * The lifecycle types are structural, so the inputs are plain objects (the
  * `import type` in the projection erases at runtime, leaving a pure function).
@@ -35,43 +35,52 @@ describe('dictation pill projection', () => {
 		});
 	});
 
-	test('VAD listening at rest shows the meter with no pip', () => {
+	test('VAD listening at rest shows the meter, not speaking, not transcribing', () => {
 		expect(project(vad('LISTENING'), { kind: 'none' })).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
-			vadState: 'LISTENING',
-			pip: undefined,
+			speaking: false,
+			transcribing: false,
 		});
 	});
 
-	test('VAD keeps the meter and shows a transcribing pip while still listening', () => {
+	test('VAD keeps the meter and flags a previous phrase still transcribing', () => {
 		expect(project(vad('LISTENING'), { kind: 'transcribing' })).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
-			vadState: 'LISTENING',
-			pip: 'transcribing',
+			speaking: false,
+			transcribing: true,
 		});
 	});
 
-	test('a VAD failure does not show on the pill: meter only, no pip', () => {
+	test('VAD speech latches the speaking signal', () => {
+		expect(project(vad('SPEECH_DETECTED'), { kind: 'none' })).toEqual({
+			phase: 'recording',
+			trigger: 'vad',
+			speaking: true,
+			transcribing: false,
+		});
+	});
+
+	test('a VAD failure does not show on the pill: meter only, not transcribing', () => {
 		expect(
 			project(vad('SPEECH_DETECTED'), { kind: 'failed', ...failure }),
 		).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
-			vadState: 'SPEECH_DETECTED',
-			pip: undefined,
+			speaking: true,
+			transcribing: false,
 		});
 	});
 
-	test('a VAD success earns no pip', () => {
+	test('a VAD success earns no transcribing signal', () => {
 		expect(
 			project(vad('LISTENING'), { kind: 'delivered', reach: 'output' }),
 		).toEqual({
 			phase: 'recording',
 			trigger: 'vad',
-			vadState: 'LISTENING',
-			pip: undefined,
+			speaking: false,
+			transcribing: false,
 		});
 	});
 

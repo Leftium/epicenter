@@ -6,7 +6,6 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
 	import LevelMeter from '$lib/components/LevelMeter.svelte';
-	import { readLiveMeter } from '$lib/recording-overlay/live-meter';
 	import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
 	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
 	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
@@ -51,14 +50,14 @@
 	// (`webPillLevel`); on desktop it is emitted straight to the overlay, not here.
 	const showsLiveMeter = !tauri;
 
-	// The meter's secondary signals (speech-latched bars, the transcribe pip) come
-	// from the same projected status the floating pill reads, through the one shared
-	// `readLiveMeter`, so the card draws the same meter the pill does instead of a
-	// hand-built subset that silently drops signals on the home route. The level
-	// still rides its own high-frequency stream (`webPillLevel`); only these
-	// glanceable secondary signals come from the status.
-	const liveMeter = $derived(
-		readLiveMeter(projectLifecycleToStatus(dictationLifecycle.current)),
+	// The card draws the same VAD mark the floating pill does, from the same
+	// projected status, so the home route stops silently dropping the transcribe
+	// signal. Narrow to the live VAD variant: non-null only while a voice-activated
+	// session records (manual takes and every non-recording phase are null). The
+	// level still rides its own high-frequency stream (`webPillLevel`).
+	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
+	const vad = $derived(
+		status?.phase === 'recording' && status.trigger === 'vad' ? status : null,
 	);
 </script>
 
@@ -102,7 +101,7 @@
 					minPx={3}
 					maxPx={28}
 				/>
-				{#if !liveMeter.isManual}
+				{#if vad}
 					<!-- VAD session: the same dim-dot -> lit-dot -> spinner indicator the
 					floating pill shows beside its meter, here in the glyph's corner. The
 					bars track loudness; this dot tracks whether VAD has latched onto speech
@@ -113,8 +112,8 @@
 						class="absolute top-0.5 right-0.5 flex size-4 items-center justify-center"
 					>
 						<VadIndicator
-							speaking={liveMeter.isSpeaking}
-							pip={liveMeter.vadPip}
+							speaking={vad.speaking}
+							transcribing={vad.transcribing}
 							dimClass="bg-destructive/40"
 							litClass="bg-destructive"
 							spinnerClass="text-muted-foreground"

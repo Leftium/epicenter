@@ -13,7 +13,6 @@
 		FAILURE_LABEL,
 		type RecordingOverlayStatus,
 	} from '$lib/recording-overlay/events';
-	import { readLiveMeter } from '$lib/recording-overlay/live-meter';
 	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
 
 	// The floating dictation pill, presentational and platform-free. It renders
@@ -41,10 +40,15 @@
 		onReveal?: () => void;
 	} = $props();
 
-	// The live meter's secondary signals (mode, speech-latched, the transcribe
-	// pip), read through the one helper the home capture card also uses so both
-	// surfaces speak one visual language from one source.
-	const display = $derived(readLiveMeter(status));
+	// Narrow the status to its live-recording variants once, so the template reads
+	// the discriminated fields directly (manual vs vad, speech latched, a previous
+	// phrase transcribing) instead of a flattened bag of booleans. `null` for every
+	// non-recording phase, which the chip block below renders instead.
+	const recording = $derived(status?.phase === 'recording' ? status : null);
+
+	// Speech-latched tints the meter bars, but only in a VAD session (a manual take
+	// never latches), named here so the bar tint reads as one thought.
+	const isSpeaking = $derived(recording?.trigger === 'vad' && recording.speaking);
 
 	// Every non-recording phase is a "chip": one icon plus a short, fixed label,
 	// with a tone that tints the icon (and, when failed, the whole pill). They
@@ -130,7 +134,7 @@
 			// their content, capped wide enough for the longest label ("Transcription
 			// failed") to show in full. The 224px cap is mirrored by the desktop overlay
 			// window (OVERLAY_WIDTH in overlay.rs / index.tauri.ts), which must stay in sync.
-			status.phase === 'recording'
+			recording
 				? 'w-[208px] justify-between'
 				: 'w-fit max-w-[224px]',
 			// Failed: a red chip so the failure reads at a glance, with the terse reason
@@ -147,9 +151,9 @@
 		title={onReveal ? 'Open Whispering' : undefined}
 		onclick={onReveal}
 	>
-		{#if status.phase === 'recording'}
+		{#if recording}
 			<div class="flex items-center text-white/80">
-				{#if display.isManual}
+				{#if recording.trigger === 'manual'}
 					<MicIcon class="size-4" />
 				{:else}
 					<AudioLinesIcon class="size-4" />
@@ -161,7 +165,7 @@
 			<LevelMeter
 				{level}
 				class="h-5"
-				barClass={display.isSpeaking ? 'bg-[#ffe5ee]' : undefined}
+				barClass={isSpeaking ? 'bg-[#ffe5ee]' : undefined}
 			/>
 
 			<!-- Trailing cluster: a contextual slot, then stop as the constant right
@@ -171,7 +175,7 @@
 			     width, so the cluster reads as balanced and the pill keeps a steady
 			     width as the slot's content changes. -->
 			<div class="flex items-center gap-1">
-				{#if display.isManual}
+				{#if recording.trigger === 'manual'}
 					<!-- Manual can discard the take, so the slot is the cancel button. -->
 					<button
 						type="button"
@@ -191,8 +195,8 @@
 					     previous phrase's transcribe. -->
 					<div class="flex size-6 items-center justify-center">
 						<VadIndicator
-							speaking={display.isSpeaking}
-							pip={display.vadPip}
+							speaking={recording.speaking}
+							transcribing={recording.transcribing}
 							dimClass="bg-white/40"
 							litClass="bg-pink-300"
 							spinnerClass="text-white/50"
@@ -205,8 +209,12 @@
 				<button
 					type="button"
 					class={cn(actionBase, 'bg-red-500/60 text-white hover:bg-red-500/80')}
-					aria-label={display.isManual ? 'Stop recording' : 'Stop listening'}
-					title={display.isManual ? 'Stop recording' : 'Stop listening'}
+					aria-label={recording.trigger === 'manual'
+						? 'Stop recording'
+						: 'Stop listening'}
+					title={recording.trigger === 'manual'
+						? 'Stop recording'
+						: 'Stop listening'}
 					onclick={handleStop}
 				>
 					<SquareIcon class="size-3.5" />

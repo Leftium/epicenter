@@ -1,4 +1,4 @@
-# 0060. Local Books serves row-level facts from the mirror, computed reports live, and writes back through one approved verb
+# 0061. Local Books serves row-level facts from the mirror, computed reports live, and writes back through one approved verb
 
 - **Status:** Accepted
 - **Date:** 2026-06-24

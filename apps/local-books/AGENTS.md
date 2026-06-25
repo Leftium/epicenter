@@ -7,7 +7,7 @@ Design authority: `specs/20260621T100000-local-books-cli-sync-engine.md` (top-le
 ## Shape
 
 - Runtime: Bun. `bun:sqlite` for storage, built-in `fetch` for the QB API, `oauth4webapi` for the OAuth2 grants (the same client `@epicenter/auth` uses; we own only the localhost callback and the QuickBooks-specific `realmId`). Runtime deps are pure-TS and dependency-free so `bun build --compile` yields one binary: `wellcrafted` (Result/error idioms), `typebox` (validating untrusted token grants and `config.json`), and `oauth4webapi`. All three are cataloged and used elsewhere in the monorepo.
-- One SQLite file per company: `<data-dir>/<realmId>/books.db`. Tokens live in a `0600` `credentials.json` at the data-dir root, never inside a company's mirror db, so the agent's read-only SQL surface can never read them. See ADR-0061. The realm's one CDC cursor lives in the db (`_meta`), not a sidecar, so ingest-and-advance is one transaction; whether an entity has been full-pulled is derived from table existence, so there is no per-entity sync-state table. See ADR-0063.
+- One SQLite file per company: `<data-dir>/<realmId>/books.db`. Tokens live in a `0600` `credentials.json` at the data-dir root, never inside a company's mirror db, so the agent's read-only SQL surface can never read them. See ADR-0062. The realm's one CDC cursor lives in the db (`_meta`), not a sidecar, so ingest-and-advance is one transaction; whether an entity has been full-pulled is derived from table existence, so there is no per-entity sync-state table. See ADR-0064.
 - One table per QB entity (`invoices`, `customers`, ...): `id`, `raw` (verbatim QB JSON), `updated_at`, `synced_at`, `deleted`, plus a few extracted scalar columns for indexing/joins. New QB fields land in `raw` with no migration.
 
 ## Grounded QB constants (verified against developer.intuit.com, 2026-06-21)
@@ -32,13 +32,13 @@ Mode is chosen from stored state: `--full` / no cursor / cursor older than the C
 - `QB_CLIENT_ID` / `QB_CLIENT_SECRET` — your Intuit app keys (required for `auth`). This is what Infisical injects at `/apps/local-books`, so the usual invocation is `infisical run --path=/apps/local-books -- bun run src/bin.ts auth`.
 - `LOCAL_BOOKS_QB_ENV` — `sandbox` (default) or `production`.
 - `LOCAL_BOOKS_DIR` / `--data-dir` — data directory override.
-- `LOCAL_BOOKS_TOKEN_FILE` — override the token file path (default `<data-dir>/credentials.json`). Used by the test harness and any custom location. The `0600` file store works the same on a desktop, a headless server, an SSH session, and CI, which is what a headless-first tool needs. See ADR-0061.
+- `LOCAL_BOOKS_TOKEN_FILE` — override the token file path (default `<data-dir>/credentials.json`). Used by the test harness and any custom location. The `0600` file store works the same on a desktop, a headless server, an SSH session, and CI, which is what a headless-first tool needs. See ADR-0062.
 - `LOCAL_BOOKS_READ_ONLY` — serve the agent a read-only surface (both reads, no `recategorize_expense` write tool). See the agent-surface capability lattice below.
 - Base-URL overrides (`LOCAL_BOOKS_QB_API_BASE`, `_TOKEN_URL`, `_AUTHORIZE_URL`) point the client at a mock server for tests.
 
-## Agent surface (ADR-0047, ADR-0060)
+## Agent surface (ADR-0047, ADR-0061)
 
-`books.ts` + `mount.ts` wrap the mirror as an Epicenter **data daemon**: it holds the SQLite and serves it as dispatched actions, but never runs inference. A client agent loop (`@epicenter/workspace/agent`) opens the same synced room and dispatches the tools; the financial data leaves the machine only as a tool result. Sourcing rule (ADR-0060): mirror the *facts* (rows), ask QuickBooks for the *opinions* it computes (reports); the mirror is never the write target.
+`books.ts` + `mount.ts` wrap the mirror as an Epicenter **data daemon**: it holds the SQLite and serves it as dispatched actions, but never runs inference. A client agent loop (`@epicenter/workspace/agent`) opens the same synced room and dispatches the tools; the financial data leaves the machine only as a tool result. Sourcing rule (ADR-0061): mirror the *facts* (rows), ask QuickBooks for the *opinions* it computes (reports); the mirror is never the write target.
 
 - `src/agent/books-query.ts` — `books_sql_query`, open read-only SQL over the **local mirror** (`query`, auto-approved). Enforced read-only by a `new Database(path, { readonly: true })` connection, not a string check; results are row-capped. The high-volume, offline, row-level surface.
 - `src/agent/report.ts` — `books_report`, a **live** QuickBooks Reports API read (`query`, auto-approved): P&L, balance sheet, cash flow, A/R + A/P aging, trial balance. Never mirrored, never cached (reports have no CDC, so a cache would be a stale snapshot); one cheap call for whole-ledger aggregates.

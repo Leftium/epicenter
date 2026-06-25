@@ -1,11 +1,11 @@
-# 0062. The Local Books mirror is a multi-writer cache made safe by one monotonic write door, not single-writer discipline
+# 0063. The Local Books mirror is a multi-writer cache made safe by one monotonic write door, not single-writer discipline
 
 - **Status:** Accepted
 - **Date:** 2026-06-25
 
 ## Context
 
-ADR-0060 gave the Local Books mirror a write-back verb (`recategorize_expense`): it writes through to QuickBooks and folds the authoritative response into the mirror. That left the mirror with two writers on one SQLite file, in two separate OS processes: the data daemon (which runs `recategorize`) and `local-books sync` (the CDC refresh command, typically a cron job). The daemon is explicitly designed to serve reads while sync runs.
+ADR-0061 gave the Local Books mirror a write-back verb (`recategorize_expense`): it writes through to QuickBooks and folds the authoritative response into the mirror. That left the mirror with two writers on one SQLite file, in two separate OS processes: the data daemon (which runs `recategorize`) and `local-books sync` (the CDC refresh command, typically a cron job). The daemon is explicitly designed to serve reads while sync runs.
 
 The write path was written as if it were the only writer. Two failure modes followed, neither covered by the existing tests (which exercise the write-back single-process, single-connection, with no sync running):
 
@@ -43,4 +43,4 @@ The mirror is a multi-writer SQLite cache, and correctness comes from one write 
 
 ## Reference
 
-- Implemented in `apps/local-books/src/db.ts` (`ingest`, `getLiveRaw`, the monotonic upsert/delete, the connection pragmas), `src/sync.ts`, and `src/agent/recategorize.ts`. Builds on ADR-0060 (the write-back verb) and ADR-0047 (the mirror as a data daemon). Committed in `2d30c4d8fd`.
+- Implemented in `apps/local-books/src/db.ts` (`ingest`, `getLiveRaw`, the monotonic upsert/delete, the connection pragmas), `src/sync.ts`, and `src/agent/recategorize.ts`. Builds on ADR-0061 (the write-back verb) and ADR-0047 (the mirror as a data daemon). Committed in `7f577fb293`.

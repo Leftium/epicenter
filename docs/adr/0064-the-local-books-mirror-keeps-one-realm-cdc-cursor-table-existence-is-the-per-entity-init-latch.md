@@ -1,4 +1,4 @@
-# 0063. The Local Books mirror keeps one realm CDC cursor; table existence is the per-entity init latch
+# 0064. The Local Books mirror keeps one realm CDC cursor; table existence is the per-entity init latch
 
 - **Status:** Accepted
 - **Date:** 2026-06-25

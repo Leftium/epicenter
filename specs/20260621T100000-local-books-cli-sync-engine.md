@@ -3,7 +3,7 @@
 - Status: In Progress
 - Date: 2026-06-21 (revised 2026-06-24)
 - Supersedes the data-layer intent of `specs/20260620T180000-local-books-agent-over-sql.md` (the agent-over-SQL daemon, the conversation doc, and the tool-approval seam are dropped; see Context). That spec should be retired once this one is in progress.
-- The agent read/write surface over this mirror (the `books_sql_query`, `books_report`, and `recategorize_expense` tools, and the read-only capability lattice) is settled in [ADR-0060](../docs/adr/0060-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md). This spec covers only the sync engine beneath it.
+- The agent read/write surface over this mirror (the `books_sql_query`, `books_report`, and `recategorize_expense` tools, and the read-only capability lattice) is settled in [ADR-0061](../docs/adr/0061-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md). This spec covers only the sync engine beneath it.
 
 ## Context
 
@@ -141,11 +141,11 @@ A greenfield pass (compatibility pressure released; the mirror is box-local and 
 
 **Why it was nearly free:** raw is canonical and columns are `GENERATED` projections, so an entity costs one registry entry and zero migration. When adding is free, curating below the full set only manufactures silent holes.
 
-### Move 2 — one realm cursor, one batched CDC call (landed; see ADR-0063)
+### Move 2 — one realm cursor, one batched CDC call (landed; see ADR-0064)
 
 **Drift it fixed:** §"Sync state" keyed `_sync_state` by entity, each with its own `cdc_cursor`, and §"Sync algorithm" looped entities, issuing one `/cdc?entities=<entity>` call apiece. But CDC's `changedSince` is a *single timestamp for a multi-entity call* that returns a per-entity `changes` map from one request. So a per-entity cursor was N owners for what CDC treats as one value, and with the set at 16 an incremental pass fired 16 sequential CDC calls where one would do.
 
-**As built** (the durable decision is [ADR-0063](../docs/adr/0063-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md)):
+**As built** (the durable decision is [ADR-0064](../docs/adr/0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md)):
 
 - The **realm** owns one cursor in `_meta` (`cdc_cursor`, `last_full_pull_at`, `last_synced_at`). `_sync_state` is **deleted**.
 - "Has this entity been full-pulled?" is derived from **whether its table exists** (`isInitialized = tableExists`), so there is no per-entity sync-state at all: the tables are the latch. This is simpler than the per-entity `initialized_at` latch this section originally sketched, and it keeps incremental set-extension cheap (add an entity → only it backfills) instead of trading it away.
@@ -160,4 +160,4 @@ A greenfield pass (compatibility pressure released; the mirror is box-local and 
 
 ### Not in this revision (deferred, Move 3)
 
-A unified `transactions` view (and later a line-level `ledger_lines` view via `json_each` over `raw.Line[]`) so the agent sweeps one normalized ledger instead of UNION-ing the money-movement tables by hand. It is *additive* surface, not a clean break, and the line-level version brushes ADR-0060's "facts not opinions" line (it must explode lines as facts, never sum them into a statement — totals stay with `books_report`). **Trigger:** the first time an agent question needs "all activity hitting account X" or "every money-out line by category" and the per-entity tables force a hand-written multi-way UNION.
+A unified `transactions` view (and later a line-level `ledger_lines` view via `json_each` over `raw.Line[]`) so the agent sweeps one normalized ledger instead of UNION-ing the money-movement tables by hand. It is *additive* surface, not a clean break, and the line-level version brushes ADR-0061's "facts not opinions" line (it must explode lines as facts, never sum them into a statement — totals stay with `books_report`). **Trigger:** the first time an agent question needs "all activity hitting account X" or "every money-out line by category" and the per-entity tables force a hand-written multi-way UNION.

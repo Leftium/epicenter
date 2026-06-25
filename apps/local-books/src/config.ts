@@ -48,7 +48,7 @@ export type AppConfig = {
 	/**
 	 * Absolute path to the `0600` `credentials.json` holding the realm's OAuth
 	 * tokens. Defaults to the data-dir root; override with `LOCAL_BOOKS_TOKEN_FILE`
-	 * (used by the test harness and any custom location). See ADR-0061.
+	 * (used by the test harness and any custom location). See ADR-0062.
 	 */
 	credentialsPath: string;
 	realmOverride: string | null;

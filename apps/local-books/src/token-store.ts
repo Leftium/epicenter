@@ -9,7 +9,7 @@ import { type TokenSet, TokenSetSchema } from './tokens.ts';
  * mirror db, so the agent's read-only SQL surface can never read it. `get`
  * returns `null` when nothing is stored; `set` throws if the write fails (disk,
  * permissions), which bubbles to the top-level CLI handler (`bin.ts`) rather than
- * threading a Result through every caller. See ADR-0061.
+ * threading a Result through every caller. See ADR-0062.
  */
 export type TokenStore = {
 	get(realmId: string): Promise<TokenSet | null>;
@@ -23,7 +23,7 @@ export type TokenStore = {
  * make. Works identically on a desktop, a headless server, an SSH session, and
  * CI, which is the property a tool whose recurring mode is unattended sync needs
  * most. Disk bytes are untrusted, so a read validates against `TokenSetSchema`
- * and treats a malformed entry as absent. See ADR-0061.
+ * and treats a malformed entry as absent. See ADR-0062.
  */
 export function createFileTokenStore(filePath: string): TokenStore {
 	const load = (): Record<string, string> => {

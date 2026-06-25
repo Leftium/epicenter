@@ -33,15 +33,6 @@
 		"required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_SECRET"]
 	},
 
-	// --- KV: Session cache (Better Auth SecondaryStorage) ---
-	// Create with: bunx wrangler kv namespace create "<your-namespace>"
-	"kv_namespaces": [
-		{
-			"binding": "SESSION_KV",
-			"id": "<your-kv-namespace-id>"
-		}
-	],
-
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [
@@ -65,14 +56,6 @@
 			"binding": "HYPERDRIVE",
 			"id": "<your-hyperdrive-id>",
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/self_host"
-		}
-	],
-
-	// --- R2: Asset storage ---
-	"r2_buckets": [
-		{
-			"binding": "ASSETS_BUCKET",
-			"bucket_name": "<your-r2-bucket>"
 		}
 	]
 }

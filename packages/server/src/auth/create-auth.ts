@@ -4,12 +4,26 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
-import { assetKey } from '../owner.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
 import { createCookieAdvancedConfig } from './cookie-config.js';
 import { authPlugins } from './plugins.js';
 
 type Db = NodePgDatabase<typeof schema>;
+
+/**
+ * The secrets `createAuth` actually reads. Loosened from `Cloudflare.Env` to
+ * exactly this (ADR-0066): every member is a portable string the runtimes
+ * expose identically (`c.env` on Workers, `process.env` on a Node host). Auth
+ * construction thus names no Cloudflare binding type at all. A deployment's
+ * `Cloudflare.Env` satisfies this structurally.
+ */
+type AuthEnv = {
+	BETTER_AUTH_SECRET: string;
+	GOOGLE_CLIENT_ID: string;
+	GOOGLE_CLIENT_SECRET: string;
+	GITHUB_CLIENT_ID?: string;
+	GITHUB_CLIENT_SECRET?: string;
+};
 
 /**
  * Assemble and return a configured `betterAuth()` instance from runtime deps.
@@ -19,12 +33,11 @@ type Db = NodePgDatabase<typeof schema>;
  * the raw Better Auth instance, with no wrapper or additional abstraction.
  *
  * Wires up:
- * - Drizzle adapter (Postgres via Hyperdrive)
+ * - Drizzle adapter (portable Postgres wire; Hyperdrive on Workers, a pool on Node)
  * - Google OAuth, plus GitHub when its credentials are configured
  *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
- * - Optional cleanup hook for R2 assets when a user is deleted
- * - Cloudflare KV secondary storage for session caching
+ * - Cleanup hook that clears the deleted user's owner-partitioned rows
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -37,7 +50,7 @@ export function createAuth({
 	cookieCrossSubDomain,
 }: {
 	db: Db;
-	env: Cloudflare.Env;
+	env: AuthEnv;
 	baseURL: string;
 	/** Deployment-supplied trusted origins (CORS, CSRF, redirect allow-list). */
 	trustedOrigins: string[];
@@ -92,9 +105,9 @@ export function createAuth({
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,
 			updateAge: 60 * 60 * 24,
-			// Write sessions to Postgres (source of truth), not just KV.
-			// Required when secondaryStorage is configured. See comment below.
-			storeSessionInDatabase: true,
+			// Postgres is the session store. A 5-minute encrypted (JWE) cookie
+			// cache absorbs repeat reads, so most authed requests skip the DB
+			// entirely; a cache miss falls back to Postgres.
 			cookieCache: {
 				enabled: true,
 				maxAge: 60 * 5,
@@ -124,24 +137,13 @@ export function createAuth({
 				delete: {
 					before: async (user) => {
 						// Partition cleanup. In personal mode `owner_id === user.id`
-						// so this deletes the user's R2 blobs, asset rows, and
-						// DOI rows. In shared mode `owner_id === 'shared' !== user.id`
-						// so every query no-ops and shared data survives admission
-						// churn. Without an FK + cascade, the row deletes are
-						// explicit here.
+						// so this deletes the user's DOI rows. In shared mode
+						// `owner_id === 'shared' !== user.id` so the query no-ops and
+						// shared data survives admission churn. Without an FK + cascade,
+						// the row delete is explicit here. (Content-addressed blob bytes
+						// live owner-prefixed in object storage with no DB row; an
+						// occasional LIST sweep reclaims an orphaned owner prefix.)
 						const ownerId = asOwnerId(user.id);
-
-						const assets = await db.query.asset.findMany({
-							columns: { id: true },
-							where: eq(schema.asset.ownerId, ownerId),
-						});
-						if (assets.length > 0) {
-							const keys = assets.map((a) => assetKey(ownerId, a.id));
-							await env.ASSETS_BUCKET.delete(keys);
-							await db
-								.delete(schema.asset)
-								.where(eq(schema.asset.ownerId, ownerId));
-						}
 
 						await db
 							.delete(schema.durableObjectInstance)
@@ -151,37 +153,22 @@ export function createAuth({
 			},
 		},
 		trustedOrigins,
-		// secondaryStorage = Cloudflare KV as a read-through cache.
-		// Postgres (Germany) is always the source of truth. KV avoids the
-		// ~150ms round-trip on repeated session reads from distant edges.
+		// Postgres is the only auth store: sessions and OAuth verification
+		// records persist to the DB adapter by default (no secondaryStorage), and
+		// the JWE cookie cache above handles read performance. This makes auth
+		// construction byte-identical on Workers and a Node host (Road 1: depend
+		// on the portable Postgres path, delete the KV-cache divergence).
 		//
-		// Staleness: KV is eventually consistent, so cached entries may
-		// briefly outlive their Postgres counterparts after deletion.
-		//   - Sessions: a revoked session stays valid in KV for up to
-		//     cookieCache.maxAge (5 min). Standard Redis/KV cache tradeoff.
-		//   - Verification: a consumed OAuth state may linger in KV, but
-		//     replaying it requires a valid Google authorization code that
-		//     was already consumed, which is harmless.
-		//
-		// IMPORTANT: When secondaryStorage is configured, Better Auth
-		// defaults to KV-only writes unless you opt back into Postgres
-		// with storeSessionInDatabase / storeInDatabase. Missing either
-		// flag causes silent data loss. If you remove secondaryStorage,
-		// remove both flags too.
-		secondaryStorage: {
-			get: (key: string) => env.SESSION_KV.get(key),
-			set: (key: string, value: string, ttl?: number) =>
-				env.SESSION_KV.put(key, value, {
-					expirationTtl: ttl ?? 60 * 5,
-				}),
-			delete: (key: string) => env.SESSION_KV.delete(key),
-		},
-		// Write verification records to Postgres, not just KV. Required
-		// for OAuth state. KV eventual consistency means the callback edge
-		// may not see a record written moments earlier at a different edge.
-		verification: {
-			storeInDatabase: true,
-		},
+		// Rate limiting consequently runs in-process, not in a shared store:
+		// dropping KV flips Better Auth's default from "secondary-storage" to
+		// "memory", so on the Worker each isolate keeps its own counters.
+		// Acceptable here because email/password is disabled and Google is the
+		// only sign-in (see BASE_AUTH_CONFIG), so there is no password
+		// brute-force surface a shared counter would protect; a single self-host
+		// process gets exact in-memory limiting for free. Upgrade trigger: add a
+		// `rateLimit` table to the schema and set `storage: 'database'` if
+		// durable, shared limiting is ever needed.
+		rateLimit: { storage: 'memory' },
 		plugins: authPlugins(baseURL),
 	} satisfies BetterAuthOptions);
 }

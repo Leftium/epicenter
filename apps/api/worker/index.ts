@@ -16,8 +16,9 @@
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
 	authApp,
+	cloudflare,
 	createServerApp,
-	mountAssetsApp,
+	mountBlobsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -28,10 +29,7 @@ import {
 	type ServerBindings,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
-import {
-	chargeOpenAiCreditsWithAutumn,
-	syncAssetStorageWithAutumn,
-} from './billing/policies.js';
+import { chargeOpenAiCreditsWithAutumn } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
@@ -42,17 +40,35 @@ import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 const ownership = personal();
 
-// The hosted cloud's public origin never changes per deploy, so it is baked
-// from the constants source of truth rather than duplicated into wrangler.jsonc
-// vars. Local dev injects `API_PUBLIC_ORIGIN=http://localhost:8787` via
-// scripts/dev.ts; production falls through to PRODUCTION_API_URL.
 const app = createServerApp({
-	resolveOrigin: (env) => env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
-	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
-	// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
-	// a session via a cookie scoped to the registrable domain. cookie-config
-	// falls back to host-only on localhost regardless.
-	cookieDomain: '.epicenter.so',
+	// The Cloudflare runtime adapter owns the per-request pg client over
+	// Hyperdrive, `waitUntil`, and the Durable Object room registry. This edge
+	// points it at its OWN two bindings: the `Cloudflare.Env` cast and the
+	// binding names live here, where they are type-checked against this Worker's
+	// generated bindings (ADR-0066). Per-room DO sharding stays the cloud's
+	// binding of the room actor forever: hibernate-to-zero and
+	// single-writer-per-room at multi-tenant scale. A Bun host builds its own
+	// adapter inline.
+	runtime: cloudflare({
+		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
+		room: (env) => (env as Cloudflare.Env).ROOM,
+	}),
+	identity: {
+		// The hosted cloud's public origin never changes per deploy, so it is
+		// baked from the constants source of truth rather than duplicated into
+		// wrangler.jsonc vars. Local dev injects
+		// `API_PUBLIC_ORIGIN=http://localhost:8787` via scripts/dev.ts; production
+		// falls through to PRODUCTION_API_URL. `API_PUBLIC_ORIGIN` is
+		// deployment-owned config, not a binding `ServerBindings` names, so casting
+		// to this deployment's own `Cloudflare.Env` is the honest edge (ADR-0066).
+		resolveOrigin: (env) =>
+			(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
+		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
+		// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
+		// a session via a cookie scoped to the registrable domain. cookie-config
+		// falls back to host-only on localhost regardless.
+		cookieDomain: '.epicenter.so',
+	},
 });
 
 // Public health endpoint at root.
@@ -69,10 +85,11 @@ app.route('/', authApp);
 // deployment policies.
 mountSessionApp(app, { ownership });
 mountRoomsApp(app, { ownership });
-mountAssetsApp(app, {
-	ownership,
-	policies: [syncAssetStorageWithAutumn],
-});
+// Content-addressed blob store (supersedes the retired assets surface). v1 is
+// unmetered (no Autumn policy): Autumn's check() denies by default with no plan
+// attached, so deferred quota means not calling it. A `syncBlobStorageWithAutumn`
+// policy slots in here when storage is billed.
+mountBlobsApp(app, { ownership });
 mountInferenceApp(app, {
 	auth: requireBearerUser,
 	ownership,

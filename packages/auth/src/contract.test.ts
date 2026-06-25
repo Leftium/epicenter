@@ -584,6 +584,55 @@ test('same-owner guard wipes the cell when /api/session returns a different owne
 	auth[Symbol.dispose]();
 });
 
+test('getProfile reads the user through the bearer boundary', async () => {
+	const setup = createStorage(cell());
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => launched() },
+		fetch: async (input) =>
+			String(input).endsWith('/api/session')
+				? json(apiSessionBody('user-1'))
+				: new Response(null, { status: 404 }),
+	});
+
+	const { data, error } = await auth.getProfile();
+	expect(error).toBeNull();
+	expect(data).toEqual({
+		id: asUserId('user-1'),
+		email: 'user-1@example.com',
+	});
+	auth[Symbol.dispose]();
+});
+
+test('a 401 from getProfile pauses network auth and reports unavailable', async () => {
+	const setup = createStorage(cell());
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => launched() },
+		fetch: async (input) =>
+			String(input).endsWith('/api/session')
+				? new Response(null, { status: 401 })
+				: new Response(null, { status: 404 }),
+	});
+
+	const { data, error } = await auth.getProfile();
+	expect(data).toBeNull();
+	expect(error?.name).toBe('ProfileUnavailable');
+	expect(auth.state).toEqual({
+		status: 'reauth-required',
+		ownerId: asOwnerId('user-1'),
+	});
+	// A pause gates network access; the persisted cell survives for offline use.
+	expect(setup.current).toEqual(cell());
+	auth[Symbol.dispose]();
+});
+
 test('same-owner /api/session preserves state without rewriting identity', async () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({

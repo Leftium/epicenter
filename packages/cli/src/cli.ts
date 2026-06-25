@@ -1,5 +1,6 @@
 import yargs from 'yargs';
 import { authCommand } from './commands/auth.js';
+import { blobsCommand } from './commands/blobs.js';
 import { daemonCommand } from './commands/daemon.js';
 import { initCommand } from './commands/init.js';
 import { listCommand } from './commands/list.js';
@@ -14,6 +15,7 @@ import { runCommand } from './commands/run.js';
  * configured mount, either locally or on a peer that's online right now.
  *
  *   - `auth`:  manage the local machine auth session (pre-workspace)
+ *   - `blobs`: archive a file/URL into the content-addressed cloud blob store
  *   - `init`:  scaffold epicenter.config.ts (explicit root creation)
  *   - `daemon`: operate daemon lifecycle commands
  *   - `list`:  runnable actions for the mounted runtime (local schema is authoritative)
@@ -35,6 +37,7 @@ export function createCLI() {
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(authCommand)
+				.command(blobsCommand)
 				.command(initCommand)
 				.command(daemonCommand)
 				.command(listCommand)

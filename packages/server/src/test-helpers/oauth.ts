@@ -1,5 +1,6 @@
 import { expect } from 'bun:test';
 import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth-clients';
+import { projectTrustedOAuthClientToRow } from '@epicenter/constants/oauth-seed';
 import type { MemoryDB } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 
@@ -11,20 +12,6 @@ const verifier = 'test-verifier-test-verifier-test-verifier';
 
 type TestAuth = {
 	handler(request: Request): Response | Promise<Response>;
-	api: {
-		adminCreateOAuthClient(input: {
-			body: {
-				client_name: string;
-				redirect_uris: string[];
-				token_endpoint_auth_method: 'none';
-				grant_types: ['authorization_code'];
-				response_types: ['code'];
-				scope: string;
-				skip_consent: true;
-				require_pkce: true;
-			};
-		}): Promise<{ client_id: string }>;
-	};
 };
 
 /**
@@ -77,7 +64,7 @@ export function randomOAuthTestPort() {
  * case, not the protocol boundary.
  */
 export async function issueOAuthTokens(
-	{ auth, baseURL }: { auth: TestAuth; baseURL: string },
+	{ auth, baseURL, db }: { auth: TestAuth; baseURL: string; db: MemoryDB },
 	{
 		clientName,
 		email,
@@ -102,23 +89,20 @@ export async function issueOAuthTokens(
 	const cookie = signUpResponse.headers.get('set-cookie');
 	expect(cookie).toBeTruthy();
 
-	const client = await auth.api.adminCreateOAuthClient({
-		body: {
-			client_name: clientName,
-			redirect_uris: [OAUTH_TEST_REDIRECT_URI],
-			token_endpoint_auth_method: 'none',
-			grant_types: ['authorization_code'],
-			response_types: ['code'],
-			scope: OAUTH_TEST_SCOPE,
-			skip_consent: true,
-			require_pkce: true,
-		},
-	});
+	const clientId = `test-client-${crypto.randomUUID()}`;
+	db.oauthClient?.push(
+		projectTrustedOAuthClientToRow({
+			clientId,
+			name: clientName,
+			type: 'user-agent-based',
+			redirectUris: [OAUTH_TEST_REDIRECT_URI],
+		}),
+	);
 
 	const authorizeUrl = new URL(`${baseURL}/auth/oauth2/authorize`);
 	for (const [key, value] of Object.entries({
 		response_type: 'code',
-		client_id: client.client_id,
+		client_id: clientId,
 		redirect_uri: OAUTH_TEST_REDIRECT_URI,
 		scope,
 		state: 'state-1',
@@ -147,7 +131,7 @@ export async function issueOAuthTokens(
 			headers: { 'content-type': 'application/x-www-form-urlencoded' },
 			body: new URLSearchParams({
 				grant_type: 'authorization_code',
-				client_id: client.client_id,
+				client_id: clientId,
 				redirect_uri: OAUTH_TEST_REDIRECT_URI,
 				code: code ?? '',
 				code_verifier: verifier,

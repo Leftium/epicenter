@@ -1,0 +1,307 @@
+/**
+ * Blobs sub-app: a content-addressed object store where S3 IS the index.
+ *
+ * Uniform owner-partitioned URL shape:
+ *   POST   /api/owners/:ownerId/blobs              authed — request an upload ticket
+ *   GET    /api/owners/:ownerId/blobs              authed — list the owner's blobs
+ *   GET    /api/owners/:ownerId/blobs/usage        authed — total stored bytes
+ *   GET    /api/owners/:ownerId/blobs/:sha256      authed — read (302 → presigned GET)
+ *   DELETE /api/owners/:ownerId/blobs/:sha256      authed — delete
+ *
+ * There is NO database row, NO queue, and NO event notification. The blob's
+ * key IS its sha256 content address, so the store itself answers "does it
+ * exist" (exists), "what do I have" (list), and "how much" (sum of list sizes).
+ * Rich metadata (source URL, references) lives in the vault receipt, not here.
+ *
+ * The store is a PORTABLE S3 client (`s3-blob-store.ts`): plain S3-over-HTTPS
+ * via aws4fetch, no Cloudflare Workers R2 binding, so the identical route runs
+ * on the hosted Worker (against R2) and in a self-hosted Node binary (against
+ * Garage/S3). Uploads never pass through the server: POST mints a
+ * presigned PUT and the client streams bytes straight to the store, which
+ * enforces the sha256 checksum and rejects a mismatch. That removes the ~100 MB
+ * Worker request-body ceiling and the in-server hashing cost. The object
+ * appearing under its hash IS the record of a successful upload — no confirm
+ * step.
+ *
+ * v1 is all-private: every route is auth + ownership gated (R2 public access is
+ * bucket-level, so a public tier is a separate bucket, deferred). See
+ * `specs/20260623T220000-content-addressed-blob-store.md`.
+ */
+
+import { API_ROUTES, SHA256_HEX_REGEX } from '@epicenter/constants/api-routes';
+import { BlobError } from '@epicenter/constants/blob-errors';
+import { sValidator } from '@hono/standard-validator';
+import { type } from 'arktype';
+import { Hono, type MiddlewareHandler } from 'hono';
+import { createMiddleware } from 'hono/factory';
+import { describeRoute } from 'hono-openapi';
+import { MAX_BLOB_BYTES } from '../constants.js';
+import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
+import { createRequireOwnership } from '../middleware/require-ownership.js';
+import { blobKey, blobOwnerPrefix } from '../owner.js';
+import type { OwnershipRule } from '../ownership.js';
+import {
+	createS3BlobStore,
+	type S3BlobStore,
+	type S3BlobStoreConfig,
+} from '../s3-blob-store.js';
+import type { Env } from '../types.js';
+
+/** Anchored lowercase-hex sha256, built from the SAME {@link SHA256_HEX_REGEX}
+ * the `:sha256` route param is constrained to. The route param is constrained by
+ * Hono; the POST body's `sha256` is a plain field, so it is validated against
+ * this here. One source of truth for the digest shape. */
+const SHA256_HEX = new RegExp(`^${SHA256_HEX_REGEX}$`);
+
+/** Presigned-URL lifetimes. Short: a presigned URL is a bearer token. */
+const PUT_TTL_SECONDS = 300;
+const GET_TTL_SECONDS = 120;
+
+/**
+ * Body of an upload-ticket request. Shape is validated here; the domain
+ * checks (hex format, positive integer size, ceiling) run in the handler so
+ * they return structured `BlobError`s.
+ */
+const TicketBody = type({
+	sha256: 'string',
+	sizeBytes: 'number',
+	contentType: 'string',
+});
+
+/**
+ * Blob-local context: the resolved store, stamped by {@link requireBlobStore}.
+ * Kept off the shared library `Env` because only the blob routes use it.
+ */
+type BlobEnv = {
+	Bindings: Env['Bindings'];
+	Variables: Env['Variables'] & { blobStore: S3BlobStore };
+};
+
+/**
+ * Map a deployment's `BLOBS_S3_*` env to a portable store config, or `null`
+ * when object storage is not configured. The parameter is structural and
+ * all-optional on purpose: it accepts any deployment's `c.env` regardless of
+ * which optional vars that deployment's generated `Cloudflare.Env` actually
+ * declares (apps/api's `wrangler types` lists only the required secrets).
+ * `bucket` and `region` fall back to the R2 conventions so a hosted deploy
+ * only sets the endpoint + credentials.
+ */
+function resolveBlobStoreConfig(env: {
+	BLOBS_S3_ENDPOINT?: string;
+	BLOBS_S3_ACCESS_KEY_ID?: string;
+	BLOBS_S3_SECRET_ACCESS_KEY?: string;
+	BLOBS_S3_BUCKET?: string;
+	BLOBS_S3_REGION?: string;
+}): S3BlobStoreConfig | null {
+	if (
+		!env.BLOBS_S3_ENDPOINT ||
+		!env.BLOBS_S3_ACCESS_KEY_ID ||
+		!env.BLOBS_S3_SECRET_ACCESS_KEY
+	) {
+		return null;
+	}
+	return {
+		endpoint: env.BLOBS_S3_ENDPOINT.replace(/\/+$/, ''),
+		region: env.BLOBS_S3_REGION ?? 'auto',
+		accessKeyId: env.BLOBS_S3_ACCESS_KEY_ID,
+		secretAccessKey: env.BLOBS_S3_SECRET_ACCESS_KEY,
+		bucket: env.BLOBS_S3_BUCKET ?? 'epicenter-blobs',
+	};
+}
+
+/**
+ * Build this deployment's S3 blob store onto `c.var.blobStore`, or answer 503
+ * when object storage is not configured. One owner for the "store is configured"
+ * invariant, the way `requireOwnership` owns `c.var.ownerId`, so every handler
+ * can assume the store is present. Typed as a bare `MiddlewareHandler` so it
+ * slots into the `Hono<Env>` parent mount beside auth + ownership; it sets a
+ * `BlobEnv` variable the sub-app reads.
+ */
+const requireBlobStore: MiddlewareHandler = createMiddleware<BlobEnv>(
+	async (c, next) => {
+		const config = resolveBlobStoreConfig(c.env);
+		if (!config) {
+			const err = BlobError.StorageNotConfigured();
+			return c.json(err, err.error.status);
+		}
+		c.set('blobStore', createS3BlobStore(config));
+		await next();
+	},
+);
+
+const blobsApp = new Hono<BlobEnv>()
+	// POST — request an upload ticket (presigned PUT, or a duplicate hit).
+	.post(
+		API_ROUTES.blobs.list.pattern,
+		describeRoute({
+			description:
+				'Request an upload ticket for a content-addressed blob (presigned S3 PUT).',
+			tags: ['blobs'],
+		}),
+		sValidator('json', TicketBody),
+		async (c) => {
+			const { sha256, sizeBytes, contentType } = c.req.valid('json');
+
+			if (!SHA256_HEX.test(sha256)) {
+				const err = BlobError.InvalidSha256({ value: sha256 });
+				return c.json(err, err.error.status);
+			}
+			if (!Number.isInteger(sizeBytes) || sizeBytes <= 0) {
+				const err = BlobError.InvalidSize({ value: sizeBytes });
+				return c.json(err, err.error.status);
+			}
+			if (sizeBytes > MAX_BLOB_BYTES) {
+				const err = BlobError.BlobTooLarge({
+					size: sizeBytes,
+					maxBytes: MAX_BLOB_BYTES,
+				});
+				return c.json(err, err.error.status);
+			}
+
+			const key = blobKey(c.var.ownerId, sha256);
+			const url = API_ROUTES.blobs.byHash.url(
+				c.var.authBaseURL,
+				c.var.ownerId,
+				sha256,
+			);
+
+			// Dedup within the owner boundary: if the object already exists, the
+			// upload is a no-op. Content addressing makes this safe and cheap (one
+			// HEAD).
+			if (await c.var.blobStore.exists(key)) {
+				return c.json({ status: 'duplicate' as const, sha256, key, url });
+			}
+
+			const { url: uploadUrl, requiredHeaders } =
+				await c.var.blobStore.presignPut({
+					key,
+					contentType: contentType || 'application/octet-stream',
+					sha256Hex: sha256,
+					expiresInSeconds: PUT_TTL_SECONDS,
+				});
+
+			return c.json({
+				status: 'upload' as const,
+				sha256,
+				key,
+				url,
+				uploadUrl,
+				requiredHeaders,
+				expiresInSeconds: PUT_TTL_SECONDS,
+			});
+		},
+	)
+	// GET — list the owner's blobs (S3 is the index).
+	.get(
+		API_ROUTES.blobs.list.pattern,
+		describeRoute({
+			description: "List the current owner's blobs.",
+			tags: ['blobs'],
+		}),
+		async (c) => {
+			const blobs = await listOwnerBlobs(c.var.blobStore, c.var.ownerId);
+			return c.json(blobs);
+		},
+	)
+	// GET usage — total stored bytes (sum of the LIST).
+	.get(
+		API_ROUTES.blobs.usage.pattern,
+		describeRoute({
+			description: "Get the current owner's total stored bytes.",
+			tags: ['blobs'],
+		}),
+		async (c) => {
+			const blobs = await listOwnerBlobs(c.var.blobStore, c.var.ownerId);
+			const totalBytes = blobs.reduce((sum, b) => sum + b.size, 0);
+			return c.json({ totalBytes });
+		},
+	)
+	// GET by hash — read (302 → short-TTL presigned GET).
+	.get(
+		API_ROUTES.blobs.byHash.pattern,
+		describeRoute({
+			description:
+				'Read a blob: 302-redirect to a short-lived presigned GET URL.',
+			tags: ['blobs'],
+		}),
+		async (c) => {
+			const sha256 = c.req.param('sha256');
+			const key = blobKey(c.var.ownerId, sha256);
+			if (!(await c.var.blobStore.exists(key))) {
+				const err = BlobError.NotFound();
+				return c.json(err, err.error.status);
+			}
+			const presignedGet = await c.var.blobStore.presignGet({
+				key,
+				expiresInSeconds: GET_TTL_SECONDS,
+			});
+			return c.redirect(presignedGet, 302);
+		},
+	)
+	// DELETE by hash — owner-local, idempotent.
+	.delete(
+		API_ROUTES.blobs.byHash.pattern,
+		describeRoute({
+			description: 'Delete a blob (owner only).',
+			tags: ['blobs'],
+		}),
+		async (c) => {
+			const sha256 = c.req.param('sha256');
+			await c.var.blobStore.delete(blobKey(c.var.ownerId, sha256));
+			return c.body(null, 204);
+		},
+	);
+
+/**
+ * Enumerate one owner's blobs by listing the store prefix. The sha256 is the
+ * key minus the `owners/<ownerId>/blobs/` prefix.
+ */
+async function listOwnerBlobs(
+	store: S3BlobStore,
+	ownerId: Env['Variables']['ownerId'],
+): Promise<{ sha256: string; size: number; uploaded: string }[]> {
+	const prefix = blobOwnerPrefix(ownerId);
+	const objects = await store.list(prefix);
+	return objects.map((obj) => ({
+		sha256: obj.key.slice(prefix.length),
+		size: obj.size,
+		uploaded: obj.uploaded,
+	}));
+}
+
+/**
+ * Mount the blobs surface on a deployment's server app.
+ *
+ * There is no public-read bypass in v1, so every route is
+ * uniformly gated by the same chain: auth, then ownership, then
+ * {@link requireBlobStore} (which 503s a deployment with no object storage and
+ * otherwise stamps `c.var.blobStore`), then any deployment policies. Cloud
+ * passes no policies in v1 (storage is unmetered until Autumn is wired); a
+ * future `syncBlobStorageWithAutumn` would slot into `policies`.
+ */
+export function mountBlobsApp(
+	app: Hono<Env>,
+	opts: {
+		ownership: OwnershipRule;
+		/** Extra middleware after auth + ownership on every blob route. */
+		policies?: MiddlewareHandler[];
+	},
+): void {
+	// Every blob route runs the same chain: authenticate, resolve + assert the
+	// owner partition, ensure object storage is configured, then any deployment
+	// policies. The chain is typed as a non-empty tuple so its leading fixed
+	// handler satisfies `app.on`'s overload (a bare `MiddlewareHandler[]` spread
+	// would be read as the path argument).
+	const requireOwnership = createRequireOwnership(opts.ownership);
+	const chain: [MiddlewareHandler, ...MiddlewareHandler[]] = [
+		requireCookieOrBearerUser,
+		requireOwnership,
+		requireBlobStore,
+		...(opts.policies ?? []),
+	];
+
+	app.use(API_ROUTES.blobs.list.pattern, ...chain);
+	app.use(API_ROUTES.blobs.usage.pattern, ...chain);
+	app.on(['GET', 'DELETE'], API_ROUTES.blobs.byHash.pattern, ...chain);
+	app.route('/', blobsApp);
+}

@@ -16,6 +16,15 @@ export {
 	createOAuthAppAuth,
 } from './create-oauth-app-auth.js';
 export {
+	type Instance,
+	InstanceError,
+	normalizeInstanceUrl,
+} from './instance.js';
+export {
+	type CreateInstanceTokenAuthConfig,
+	createInstanceTokenAuth,
+} from './instance-token-auth.js';
+export {
 	createWebStoragePersistedAuthStorage,
 	loadPersistedAuthStorage,
 	type PersistedAuthStorage,

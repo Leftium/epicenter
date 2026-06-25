@@ -1,97 +1,9 @@
 {
-	"id": "276966a5-9b25-444b-b828-eb9a621f34b4",
+	"id": "a7791cfa-bc10-4962-9fd8-7cb4d64b8d6a",
 	"prevId": "00000000-0000-0000-0000-000000000000",
 	"version": "7",
 	"dialect": "postgresql",
 	"tables": {
-		"public.asset": {
-			"name": "asset",
-			"schema": "",
-			"columns": {
-				"id": {
-					"name": "id",
-					"type": "text",
-					"primaryKey": true,
-					"notNull": true
-				},
-				"owner_id": {
-					"name": "owner_id",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"content_type": {
-					"name": "content_type",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"size_bytes": {
-					"name": "size_bytes",
-					"type": "bigint",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"original_name": {
-					"name": "original_name",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"visibility": {
-					"name": "visibility",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "'private'"
-				},
-				"uploaded_at": {
-					"name": "uploaded_at",
-					"type": "timestamp",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "now()"
-				}
-			},
-			"indexes": {
-				"asset_owner_id_idx": {
-					"name": "asset_owner_id_idx",
-					"columns": [
-						{
-							"expression": "owner_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
-				},
-				"asset_visibility_idx": {
-					"name": "asset_visibility_idx",
-					"columns": [
-						{
-							"expression": "visibility",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
-				}
-			},
-			"foreignKeys": {},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
-			"policies": {},
-			"checkConstraints": {},
-			"isRLSEnabled": false
-		},
 		"public.durable_object_instance": {
 			"name": "durable_object_instance",
 			"schema": "",

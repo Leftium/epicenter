@@ -8,12 +8,40 @@
  */
 
 import type { AuthUser, UserId } from '@epicenter/auth';
+import type { OAuthError } from '@epicenter/constants/oauth-errors';
 import type { OwnerId } from '@epicenter/identity';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { Context } from 'hono';
+import type { Result } from 'wellcrafted/result';
 import type { createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
+import type { ServerBindings } from './server-bindings.js';
+
+/**
+ * How a request resolves to the calling user: the one injected auth seam.
+ *
+ * The surface wrappers (`requireCookieOrBearerUser`, the rooms bearer with its
+ * WebSocket-reject path, `requireBearerUser`) differ only in whether they
+ * consult the cookie and how they surface a failure; the user resolution itself
+ * is this single function. The deployment injects it once on `createServerApp`,
+ * which stamps it onto `c.var.resolveUser`; every wrapper reads it from there
+ * rather than calling a hardcoded resolver, so all three honor the injection.
+ *
+ * Production passes nothing and gets the real resolver (`resolveRequestOAuthUser`:
+ * an OAuth bearer verified against JWKS). A dev-only entrypoint injects a trivial
+ * `Bearer dev:<userId>` resolver so the runtime-parity smoke needs no interactive
+ * login; that bypass lives in a dev entry production never imports, never an
+ * env-gated branch in this library.
+ *
+ * Returns the same `Result<AuthUser, OAuthError>` the real resolver returns, so
+ * an injected resolver slots in without touching the wrappers' error handling
+ * (HTTP 401, the OAuth `WWW-Authenticate` challenge, or the rooms 4401 close).
+ */
+export type ResolveUser = (
+	c: Context<Env>,
+) => Promise<Result<AuthUser, OAuthError>>;
 
 /**
  * Per-connection identity and runtime state, stamped onto the Cloudflare
@@ -54,11 +82,13 @@ export type Connection = {
 /**
  * Hono context type for every library sub-app.
  *
- * `Bindings` is `Cloudflare.Env`, declared by each deployment with the
- * exact set of bindings it provides. The library declares the bindings it
- * reads in the exported `ServerBindings` interface (see
- * server-bindings.ts); cloud-only bindings such as `AUTUMN_SECRET_KEY` are
- * declared in apps/api's generated types and never appear there.
+ * `Bindings` is the library's own {@link ServerBindings} contract, NOT
+ * `Cloudflare.Env`: the library reads only the portable secrets it declares
+ * there, so it never names a Cloudflare type (ADR-0066) and a Bun host
+ * typechecks with no Cloudflare types in scope. Each deployment's real env
+ * (`Cloudflare.Env` on the Workers edges, a parsed `process.env` on Bun) is a
+ * superset assignable to this; a Workers resolver that reads a Cloudflare-only
+ * binding casts `env` to its own `Cloudflare.Env` at the `apps/*` edge.
  *
  * `Variables` are populated by request-scoped middleware: database client,
  * auth instance, resolved user, after-response queue, and the runtime-
@@ -66,7 +96,7 @@ export type Connection = {
  * cloud-only variable owned by apps/api's billing middleware.
  */
 export type Env = {
-	Bindings: Cloudflare.Env;
+	Bindings: ServerBindings;
 	Variables: {
 		db: NodePgDatabase<typeof schema>;
 		auth: ReturnType<typeof createAuth>;
@@ -88,14 +118,24 @@ export type Env = {
 		 */
 		ownerId: OwnerId;
 		/**
-		 * Per-request collection of fire-and-forget promises that must
-		 * outlive the HTTP response. Handlers push promises (typically DB
-		 * writes that use `c.var.db`); the server-app's lifecycle middleware
-		 * passes the whole array to `Promise.allSettled(...).then(close pg)`
-		 * inside `executionCtx.waitUntil`, so the worker isolate stays
-		 * alive AND the pg client outlives every queued write.
+		 * Per-request queue of fire-and-forget promises that must outlive the
+		 * HTTP response. Handlers push promises (typically DB writes that use
+		 * `c.var.db`); the server-app lifecycle middleware drains the whole
+		 * queue (`Promise.allSettled(...).then(close)`) through the injected
+		 * `afterResponse` hook, which keeps it alive past the response
+		 * (`executionCtx.waitUntil` on Workers, the live process on Bun). Named
+		 * distinctly from that `afterResponse` scheduler hook: this is the queue,
+		 * the hook is how the queue is drained.
 		 */
-		afterResponse: Promise<unknown>[];
+		afterResponseQueue: Promise<unknown>[];
 		rooms: Rooms;
+		/**
+		 * How this deployment resolves a request to its calling user, stamped by
+		 * `createServerApp` (default: the real OAuth bearer resolver). The auth
+		 * wrappers read it here instead of hardcoding a resolver, so a dev entry
+		 * can inject a trivial bearer resolver without the wrappers changing. See
+		 * {@link ResolveUser}.
+		 */
+		resolveUser: ResolveUser;
 	};
 };

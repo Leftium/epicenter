@@ -9,9 +9,12 @@
 export const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024;
 
 /**
- * Max asset upload size (25 MB).
+ * Max content-addressed blob size (5 GiB).
  *
- * Generous for images and PDFs in documents. Workers allow 100 MB+ but we
- * buffer the full body, so this keeps memory usage reasonable.
+ * Blob bytes never pass through the Worker: the upload is a presigned PUT
+ * straight to R2, so the ~100 MB Worker request-body cap does not apply. The
+ * ceiling here is R2's single-PUT limit (~5 GiB); larger
+ * objects need multipart (deferred) or the receipt's `external` location.
+ * See `specs/20260623T220000-content-addressed-blob-store.md`.
  */
-export const MAX_ASSET_BYTES = 25 * 1024 * 1024;
+export const MAX_BLOB_BYTES = 5 * 1024 * 1024 * 1024;

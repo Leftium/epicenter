@@ -1,12 +1,11 @@
 /**
- * OAuth Resource Response Tests
+ * OAuth resource response tests.
  *
- * Verifies protected app resource auth failures at the API boundary.
- *
- * Key behaviors:
- * - HTTP `InvalidToken` returns 401 with `WWW-Authenticate: Bearer error="invalid_token"`
- *   and serializes the error object as the JSON body.
- * - WebSocket `InvalidToken` upgrades and immediately closes with 4401.
+ * `createOAuthUnauthorizedResourceResponse` is HTTP-only: it maps an
+ * `OAuthError` to a JSON failure response with the right status and, on a 401,
+ * the `WWW-Authenticate` challenge. WebSocket-upgrade rejection lives on the
+ * rooms route (`Rooms.rejectUpgrade`), so there is no runtime global to
+ * exercise here.
  */
 
 import { expect, test } from 'bun:test';
@@ -14,7 +13,7 @@ import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { Hono } from 'hono';
 import { createOAuthUnauthorizedResourceResponse } from './oauth-resource.js';
 
-test('HTTP InvalidToken returns 401 with invalid_token challenge', async () => {
+test('InvalidToken returns 401 with the invalid_token challenge', async () => {
 	const app = new Hono();
 	app.get('/resource', (c) =>
 		createOAuthUnauthorizedResourceResponse(c, OAuthError.InvalidToken().error),
@@ -30,38 +29,16 @@ test('HTTP InvalidToken returns 401 with invalid_token challenge', async () => {
 	expect(body.name).toBe('InvalidToken');
 });
 
-test('WebSocket InvalidToken closes with 4401', async () => {
-	const closeCalls: Array<{ code?: number; reason?: string }> = [];
-	let accepted = false;
-	const server = {
-		accept() {
-			accepted = true;
-		},
-		close(code?: number, reason?: string) {
-			closeCalls.push({ code, reason });
-		},
-	} satisfies Pick<WebSocket, 'accept' | 'close'>;
+test('ServerError returns 503 with no bearer challenge', async () => {
 	const app = new Hono();
 	app.get('/resource', (c) =>
-		createOAuthUnauthorizedResourceResponse(
-			c,
-			OAuthError.InvalidToken().error,
-			() => ({
-				0: {} as WebSocket,
-				1: server as WebSocket,
-			}),
-		),
+		createOAuthUnauthorizedResourceResponse(c, OAuthError.ServerError().error),
 	);
 
-	const response = await app.request('/resource', {
-		headers: { upgrade: 'websocket' },
-	});
+	const response = await app.request('/resource');
 
-	expect(response.status).toBe(101);
-	expect(accepted).toBe(true);
-	expect(closeCalls).toHaveLength(1);
-	expect(closeCalls[0]?.code).toBe(4401);
-	expect(JSON.parse(closeCalls[0]?.reason ?? '{}')).toMatchObject({
-		name: 'InvalidToken',
-	});
+	expect(response.status).toBe(503);
+	expect(response.headers.get('WWW-Authenticate')).toBeNull();
+	const body = (await response.json()) as { name: string };
+	expect(body.name).toBe('ServerError');
 });

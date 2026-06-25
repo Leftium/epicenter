@@ -37,32 +37,38 @@ import type { OwnerId } from '@epicenter/identity';
 const stripTrailing = (s: string) => s.replace(/\/+$/, '');
 
 /**
- * 21-character alphanumeric asset id. Bumped from 15 chars after
- * grounding against Signal/Bitwarden precedent and the historical
- * Slack file-token brute-force incident.
+ * 64-character lowercase-hex sha256. A blob's id IS its content address, so
+ * the route param is constrained to a well-formed digest; this also keeps the
+ * `:sha256` pattern disjoint from the literal `/usage` subpath.
  */
-export const ASSET_ID_REGEX = '[a-z0-9]{21}';
+export const SHA256_HEX_REGEX = '[a-f0-9]{64}';
 
 export const API_ROUTES = {
 	session: {
 		pattern: '/api/session',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session`,
 	},
-	assets: {
+	/**
+	 * Content-addressed blob store. POST mints an upload ticket (presigned R2
+	 * PUT); GET on the collection lists; GET/DELETE by `:sha256` read/remove a
+	 * blob. R2 is the only index — there is no database row. See
+	 * `specs/20260623T220000-content-addressed-blob-store.md`.
+	 */
+	blobs: {
 		list: {
-			pattern: '/api/owners/:ownerId/assets',
+			pattern: '/api/owners/:ownerId/blobs',
 			url: (baseURL: string, ownerId: OwnerId) =>
-				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/assets`,
+				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/blobs`,
 		},
 		usage: {
-			pattern: '/api/owners/:ownerId/assets/usage',
+			pattern: '/api/owners/:ownerId/blobs/usage',
 			url: (baseURL: string, ownerId: OwnerId) =>
-				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/assets/usage`,
+				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/blobs/usage`,
 		},
-		byId: {
-			pattern: `/api/owners/:ownerId/assets/:assetId{${ASSET_ID_REGEX}}`,
-			url: (baseURL: string, ownerId: OwnerId, assetId: string) =>
-				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/assets/${encodeURIComponent(assetId)}`,
+		byHash: {
+			pattern: `/api/owners/:ownerId/blobs/:sha256{${SHA256_HEX_REGEX}}`,
+			url: (baseURL: string, ownerId: OwnerId, sha256: string) =>
+				`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/blobs/${encodeURIComponent(sha256)}`,
 		},
 	},
 	ai: {

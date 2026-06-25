@@ -11,11 +11,27 @@ shapes, see `docs/adr/`.
   unit apps compose; an app may compose several workspaces.
 - **Room**: the server side of a workspace. One Cloudflare Durable Object with an
   embedded SQLite `updates` table.
-- **Anchor**: the always-on node a workspace syncs through. Who runs the anchor is
-  the privacy question: user-run gives topology privacy, Epicenter-run is trusted
-  plaintext.
+- **Star**: the one runnable program that holds your data, composing anchor,
+  store, sync, and identity/auth into a deployment (ADR-0069). The star is the
+  unit of self-host and the entire privacy question: Epicenter runs it (hosted)
+  or you run it (self-host). Distinct from a **service you call** (inference,
+  blob URLs): a service is addressed by `{baseUrl, token?}`, sees only the one
+  payload you hand it, and is never part of the star's topology. "Single-user /
+  sovereign" is a preset over the star's two seams (partition + credential
+  source), not a mode (ADR-0070).
+- **Anchor**: the always-on node that *holds* a workspace's Y.Doc so a sleeping
+  device can catch up. Who runs the anchor is the whole privacy question (ADR-0068):
+  user-run gives topology privacy, Epicenter-run is trusted plaintext. Privacy moves
+  by relocating the anchor, never by a setting in the app.
+- **Relay**: moves bytes between a person's devices when they cannot reach each
+  other directly, then forgets. Blind to content in principle. *Fused with the anchor
+  today*: the hosted relay is one Cloudflare Durable Object that also holds and reads
+  your plaintext (ADR-0035); the Iroh split separates the blind relay from the anchor.
+- **Store**: the anchor's app-blind sibling for big binaries (audio, images),
+  `put` / `get` / `has` by reference; the doc carries the reference, never the bytes
+  (ADR-0035). Any S3-compatible endpoint (versitygw for dev, Garage for self-host).
 - **Trusted relay**: the server reads workspace plaintext. Zero-knowledge was
-  evaluated and rejected; the encryption layer was removed (see `docs/adr/`).
+  evaluated and rejected; the encryption layer was removed (ADR-0004).
 - **Node roles**: four distinct roles, separable even when one machine plays
   several (ADR-0049): *client* runs the agent loop and binds the others;
   *inference server* turns a prompt into tokens; *daemon* holds data and runs
@@ -90,8 +106,11 @@ shapes, see `docs/adr/`.
 - **`session`**: the singleton holding the signed-in workspace lifecycle.
 - **deviceConfig vs workspace KV**: per-device settings (global shortcuts, machine
   collisions) versus synced settings (local shortcuts). The asymmetry is deliberate.
-- **Vault**: an encrypted, shared workspace for secrets only. Blind relay;
-  passphrase derives the key via Argon2.
+- **Vault**: the designated, not-yet-built home for the one encryption that
+  survives ADR-0004: an explicitly encrypted, shared workspace for secrets only
+  (blind relay, Argon2-derived key). Its primitives were removed with the
+  encryption layer; it returns minimally if a secrets path is built. Distinct
+  from the Matter vault (a folder of Markdown).
 
 ## CLI and daemon
 

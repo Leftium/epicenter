@@ -155,7 +155,7 @@ Pick the trust model you want.
 | Hosted Epicenter API or sync | Workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
 | Self-hosted deployable | You control the server, secrets, deployment, and infrastructure boundary. |
 
-Signed-in workspace sync sends your Yjs updates to a trusted relay that reads them in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/encryption.md) for the details, including where this is heading with the anchor.
+Signed-in workspace sync sends your Yjs updates to a trusted relay that reads them in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/trust-model.md) for the details, including where this is heading with the anchor.
 
 The detailed privacy notes for Whispering live in [apps/whispering](apps/whispering).
 
@@ -205,7 +205,7 @@ apps/self-host
   no hosted billing surface
 ```
 
-[Full architecture walkthrough](docs/architecture.md) | [Trust model](docs/encryption.md)
+[Full architecture walkthrough](docs/architecture.md) | [Trust model](docs/trust-model.md)
 
 ## Development
 

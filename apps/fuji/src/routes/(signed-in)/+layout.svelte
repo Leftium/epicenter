@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import { Button } from '@epicenter/ui/button';
-	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { auth } from '#platform/auth';
+	import InstanceSettingsModal from '$lib/components/InstanceSettingsModal.svelte';
+	import { isDefaultInstance, readInstance } from '$lib/instance';
 	import { requireFuji, session } from '$lib/session';
 	import FujiAppShell from './components/FujiAppShell.svelte';
 
@@ -10,6 +12,11 @@
 
 	let signingIn = $state(false);
 	let signInError = $state<string | null>(null);
+	let instanceModalOpen = $state(false);
+
+	const instance = readInstance();
+	const usingToken = instance.token !== undefined;
+	const instanceHost = new URL(instance.baseURL).host;
 </script>
 
 {#if session.current}
@@ -25,9 +32,13 @@
 		class="flex h-dvh flex-col items-center justify-center gap-3 px-6 text-center"
 	>
 		<div class="space-y-1">
-			<p class="text-sm font-medium">Sign in to Fuji</p>
+			<p class="text-sm font-medium">
+				{usingToken ? `Connect to ${instanceHost}` : 'Sign in to Fuji'}
+			</p>
 			<p class="text-xs text-muted-foreground">
-				Sync your entries across devices.
+				{usingToken
+					? 'Sign in to your self-hosted instance.'
+					: 'Sync your entries across devices.'}
 			</p>
 		</div>
 		{#if signInError}
@@ -48,11 +59,23 @@
 			}}
 		>
 			{#if signingIn}
-				<LoaderCircle class="size-4 animate-spin" />
-				Signing in…
+				<Spinner class="size-4" />
+				{usingToken ? 'Connecting…' : 'Signing in…'}
 			{:else}
-				Sign in with Epicenter
+				{usingToken ? 'Retry connection' : 'Sign in with Epicenter'}
 			{/if}
+		</Button>
+		<Button
+			variant="link"
+			size="sm"
+			class="text-muted-foreground"
+			onclick={() => (instanceModalOpen = true)}
+		>
+			{isDefaultInstance(instance)
+				? 'Connect to a self-hosted instance'
+				: 'Change instance'}
 		</Button>
 	</div>
 {/if}
+
+<InstanceSettingsModal bind:open={instanceModalOpen} />

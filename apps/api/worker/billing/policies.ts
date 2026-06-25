@@ -18,19 +18,18 @@
  *                                  success or releases on a pre-stream failure.
  *                                  The gateway is house-key-only, so every call
  *                                  is metered (ADR-0054): no BYOK bypass.
- *   syncAssetStorageWithAutumn     Around `/api/.../assets`. Checks storage
- *                                  before POST uploads, then syncs Autumn to
- *                                  the authoritative asset-table total after
- *                                  successful POST/DELETE mutations.
  *
  * AI reservations use Autumn's lock + `balances.finalize` rather than
  * deduct-then-refund: if the worker dies before finalizing, Autumn
  * auto-releases the hold at its TTL, so a failed request can never silently
- * overcharge. Storage is different: the asset table owns actual stored bytes,
- * and Autumn receives absolute usage snapshots after successful writes. When
- * the provider is unreachable the guard returns a structured `BillingError`
- * (fail closed), so these surfaces answer with a billing envelope instead of a
- * naked 500.
+ * overcharge. When the provider is unreachable the guard returns a structured
+ * `BillingError` (fail closed), so the surface answers with a billing envelope
+ * instead of a naked 500.
+ *
+ * The content-addressed blob store is unmetered in v1 (no storage policy here):
+ * Autumn `check()` denies by default with no plan attached, so deferred quota
+ * means not calling it. A `syncBlobStorageWithAutumn` policy slots in when blob
+ * storage is billed (spec 20260623T220000, decision 10).
  *
  * The library remains billing-agnostic; everything here is cloud-only.
  */
@@ -39,8 +38,6 @@ import {
 	type AiChatError,
 	AiChatErrorStatus,
 } from '@epicenter/constants/ai-chat-errors';
-import type { AssetError } from '@epicenter/constants/asset-errors';
-import { ASSET_STORAGE_USAGE_TOTAL_HEADER } from '@epicenter/constants/asset-headers';
 import type { Env } from '@epicenter/server';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -49,7 +46,10 @@ import type { BillingError } from './errors.js';
 import { createBillingService } from './service.js';
 
 function billingFor(c: Context<Env>) {
-	return createBillingService(c.env, {
+	// Billing is cloud-only: `AUTUMN_SECRET_KEY` lives on this deployment's own
+	// `Cloudflare.Env`, not the library's portable `ServerBindings` (ADR-0066),
+	// so read it through the same edge cast the runtime-port resolvers use.
+	return createBillingService(c.env as Cloudflare.Env, {
 		userId: c.var.user.id,
 		userEmail: c.var.user.email,
 	});
@@ -83,7 +83,7 @@ export const chargeOpenAiCreditsWithAutumn = createMiddleware<Env>(
 
 		await next();
 
-		c.var.afterResponse.push(
+		c.var.afterResponseQueue.push(
 			c.res.status >= 400 ? reservation.release() : reservation.confirm(),
 		);
 	},
@@ -100,50 +100,6 @@ function toOpenAiError(error: AiChatError | BillingError): {
 	return { error: { message: error.message, code: error.name } };
 }
 
-export const syncAssetStorageWithAutumn = createMiddleware<Env>(
-	async (c, next) => {
-		const method = c.req.method;
-
-		if (method === 'POST') {
-			const parsed = await c.req.parseBody({ all: false }).catch(() => null);
-			const file = parsed?.file;
-			if (!(file instanceof File)) {
-				// Library will return 400 for missing-file; nothing to reserve.
-				return next();
-			}
-
-			const billing = billingFor(c);
-			const { error: guardError } = await billing.checkAssetStorageUpload({
-				sizeBytes: file.size,
-			});
-			if (guardError) {
-				return c.json(
-					{ data: null, error: guardError },
-					storageGuardStatus(guardError),
-				);
-			}
-
-			await next();
-
-			if (c.res.status === 201) {
-				enqueueStorageUsageSyncFromResponse(c, billing);
-			}
-			return;
-		}
-
-		if (method === 'DELETE') {
-			await next();
-			if (c.res.status !== 204) return;
-			const billing = billingFor(c);
-			enqueueStorageUsageSyncFromResponse(c, billing);
-			return;
-		}
-
-		// GET, OPTIONS, etc. pass through.
-		return next();
-	},
-);
-
 /**
  * Resolve the HTTP status for an AI guard failure. A `BillingError` means the
  * provider call failed and we fail closed, so it answers with a fixed 503
@@ -156,26 +112,4 @@ function aiGuardStatus(
 ): ContentfulStatusCode {
 	if (error.name === 'ProviderRequestFailed') return 503;
 	return AiChatErrorStatus[error.name];
-}
-
-/**
- * Resolve the HTTP status for a storage guard failure. A `BillingError` is a
- * fail-closed provider failure (fixed 503); every `AssetError` variant bakes in
- * its own `status`.
- */
-function storageGuardStatus(
-	error: AssetError | BillingError,
-): ContentfulStatusCode {
-	if (error.name === 'ProviderRequestFailed') return 503;
-	return error.status;
-}
-
-function enqueueStorageUsageSyncFromResponse(
-	c: Context<Env>,
-	billing: ReturnType<typeof createBillingService>,
-) {
-	const usageHeader = c.res.headers.get(ASSET_STORAGE_USAGE_TOTAL_HEADER);
-	const totalBytes = usageHeader ? Number.parseInt(usageHeader, 10) : null;
-	if (totalBytes == null || Number.isNaN(totalBytes)) return;
-	c.var.afterResponse.push(billing.syncAssetStorageUsageTotal(totalBytes));
 }

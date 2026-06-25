@@ -12,6 +12,8 @@
 		"test": "bun test",
 		"typecheck": "tsc --noEmit",
 		"dev": "bun scripts/dev.ts",
+		"dev:bun": "bun --watch server.ts",
+		"dev:bun:devauth": "bun server.dev.ts",
 		"dev:dashboard": "bun run --cwd ui build && bun scripts/dev.ts",
 		"deploy": "wrangler deploy",
 		"typegen": "wrangler types",

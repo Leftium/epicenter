@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { AuthClient } from '@epicenter/auth';
-	import { createEpicenterClient } from '@epicenter/client';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
@@ -19,7 +18,7 @@
 		QueryClient,
 	} from '@tanstack/svelte-query';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { mutationOptions } from 'wellcrafted/query';
+	import { mutationOptions, queryOptions } from 'wellcrafted/query';
 
 	const accountProfileQueryClient = new QueryClient({
 		defaultOptions: {
@@ -74,23 +73,22 @@
 	const accountCacheKey = $derived(
 		auth.state.status === 'signed-out' ? null : auth.state.ownerId,
 	);
-	// The typed client owns the `/api/session` route and `ApiSessionResponse`
-	// shape; TanStack Query owns reactive caching here, so `refresh()` skips the
-	// client's own one-shot cache and re-reads under the current owner key.
-	const client = $derived(
-		createEpicenterClient({ baseURL: auth.baseURL, fetch: auth.fetch }),
-	);
+	// Identity lives on the auth client: `state` carries the capability id
+	// (`ownerId`), and `getProfile()` reads presentational identity (the email)
+	// on demand. TanStack Query owns the reactive cache here, keyed by owner, and
+	// `queryOptions` bridges the Result into its throw-on-error contract.
 	const profile = createQuery(
-		() => ({
-			queryKey: ['account-profile', accountCacheKey],
-			queryFn: () => client.session.refresh(),
-			enabled: auth.state.status !== 'signed-out',
-			staleTime: Infinity,
-		}),
+		() =>
+			queryOptions({
+				queryKey: ['account-profile', accountCacheKey],
+				queryFn: () => auth.getProfile(),
+				enabled: auth.state.status !== 'signed-out',
+				staleTime: Infinity,
+			}),
 		() => accountProfileQueryClient,
 	);
 	const accountLabel = $derived(
-		profile.data?.user.email ?? (profile.error ? 'Offline' : 'Loading...'),
+		profile.data?.email ?? (profile.error ? 'Offline' : 'Loading...'),
 	);
 	const signOut = createMutation(
 		() =>

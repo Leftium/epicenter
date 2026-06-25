@@ -14,5 +14,5 @@ Not operated by Epicenter; framed as a community-supported starting point. Keep 
 ## When editing
 
 - Changes to composition primitives (`mount*`, `shared()`, `personal()`) live in `packages/server`, not here.
-- Updates to the deployment trust model live in `docs/encryption.md` and `apps/api/README.md`.
+- Updates to the deployment trust model live in `docs/trust-model.md` and `apps/api/README.md`.
 - For deployment configuration, treat the wrangler bindings as user-customized; do not commit a working set of bindings.

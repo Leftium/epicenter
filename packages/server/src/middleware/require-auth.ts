@@ -14,8 +14,10 @@
  * request carrying both uses the cookie session and never consults the
  * bearer. The two credentials are read by disjoint paths and never merge,
  * so there is nothing to police at the edge: `getSession` reads only the
- * cookie (Better Auth's `bearer()` plugin is not enabled), while the OAuth
- * bearer is a JWT verified against JWKS by {@link resolveRequestOAuthUser}.
+ * cookie (Better Auth's `bearer()` plugin is not enabled), while the bearer
+ * fallback runs the deployment's injected `c.var.resolveUser` (in production
+ * {@link resolveRequestOAuthUser}, which verifies the JWT against JWKS; a dev
+ * entry can inject a trivial bearer resolver instead).
  */
 
 import { AuthUser } from '@epicenter/auth';
@@ -64,7 +66,7 @@ import type { Env } from '../types.js';
  * is needed once the token proves issuer, audience, signature, expiration,
  * and subject.
  */
-async function resolveRequestOAuthUser(
+export async function resolveRequestOAuthUser(
 	c: Context<Env>,
 ): Promise<Result<AuthUser, OAuthError>> {
 	const accessToken = parseBearer(c.req.header('authorization') ?? null);
@@ -116,7 +118,7 @@ export const requireCookieOrBearerUser = createMiddleware<Env>(
 			c.set('user', AuthUser.assert(session.user));
 			return next();
 		}
-		const { data: user, error } = await resolveRequestOAuthUser(c);
+		const { data: user, error } = await c.var.resolveUser(c);
 		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 		c.set('user', user);
 		await next();
@@ -131,7 +133,7 @@ export const requireCookieOrBearerUser = createMiddleware<Env>(
  * cookie (rooms, AI chat).
  */
 export const requireBearerUser = createMiddleware<Env>(async (c, next) => {
-	const { data: user, error } = await resolveRequestOAuthUser(c);
+	const { data: user, error } = await c.var.resolveUser(c);
 	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 	c.set('user', user);
 	await next();

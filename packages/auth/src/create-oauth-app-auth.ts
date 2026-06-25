@@ -1,17 +1,14 @@
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
+	type AuthUser,
 	type OAuthTokenGrant,
 	type PersistedAuth,
 } from './auth-types.js';
@@ -21,6 +18,10 @@ import {
 	revokeOAuthRefreshTokenWithEndpoint,
 } from './oauth-token-endpoints.js';
 import type { PersistedAuthStorage } from './persisted-auth-storage.js';
+import {
+	type ApiSessionReadError,
+	readApiSession,
+} from './read-api-session.js';
 
 type AuthFetchInput = Request | string | URL;
 
@@ -80,18 +81,6 @@ const AuthStateChangeError = defineErrors({
 	}),
 });
 
-const ApiSessionRequestError = defineErrors({
-	AuthRejected: ({ status }: { status: 401 | 403 }) => ({
-		message: `API session rejected the current token with ${status}.`,
-		status,
-	}),
-	Unavailable: ({ cause }: { cause: unknown }) => ({
-		message: `Could not verify API session: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type ApiSessionRequestError = InferErrors<typeof ApiSessionRequestError>;
-
 type NetworkAccess = 'unverified' | 'verified' | 'paused';
 
 type RuntimeAuthState =
@@ -109,13 +98,10 @@ type RefreshFlight = {
 
 type IdentityVerificationFlight = {
 	persistedAuth: PersistedAuth;
-	promise: Promise<ApiSessionRequestResult>;
+	promise: Promise<ApiSessionReadResult>;
 };
 
-type ApiSessionRequestResult = Result<
-	ApiSessionResponse,
-	ApiSessionRequestError
->;
+type ApiSessionReadResult = Result<ApiSessionResponse, ApiSessionReadError>;
 
 /**
  * Create the app-side auth boundary for browser, extension, and machine clients.
@@ -223,36 +209,6 @@ export function createOAuthAppAuth({
 		return promise;
 	}
 
-	async function requestApiSession(
-		grant: OAuthTokenGrant,
-	): Promise<ApiSessionRequestResult> {
-		let response: Response;
-		try {
-			response = await fetchImpl(API_ROUTES.session.url(baseURL), {
-				headers: { Authorization: `Bearer ${grant.accessToken}` },
-				credentials: 'omit',
-			});
-		} catch (cause) {
-			return ApiSessionRequestError.Unavailable({ cause });
-		}
-		if (!response.ok) {
-			if (response.status === 401 || response.status === 403) {
-				return ApiSessionRequestError.AuthRejected({ status: response.status });
-			}
-			return ApiSessionRequestError.Unavailable({
-				cause: {
-					message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
-					status: response.status,
-				},
-			});
-		}
-		try {
-			return Ok(ApiSessionResponse.assert(await response.json()));
-		} catch (cause) {
-			return ApiSessionRequestError.Unavailable({ cause });
-		}
-	}
-
 	/**
 	 * Verify `/api/session` against the current persisted auth. Marks it
 	 * verified and wipes storage on same-owner-guard mismatch (different
@@ -261,17 +217,19 @@ export function createOAuthAppAuth({
 	 */
 	async function verifyPersistedAuthForNetwork(
 		startedFrom: PersistedAuth,
-	): Promise<ApiSessionRequestResult> {
+	): Promise<ApiSessionReadResult> {
 		if (identityVerificationFlight?.persistedAuth === startedFrom) {
 			return identityVerificationFlight.promise;
 		}
-		const promise = (async (): Promise<ApiSessionRequestResult> => {
-			const { data: session, error } = await requestApiSession(
-				startedFrom.grant,
-			);
+		const promise = (async (): Promise<ApiSessionReadResult> => {
+			const { data: session, error } = await readApiSession({
+				baseURL,
+				fetch: fetchImpl,
+				token: startedFrom.grant.accessToken,
+			});
 			if (error) {
 				if (
-					error.name === 'AuthRejected' &&
+					error.name === 'Rejected' &&
 					authSession.persistedAuth === startedFrom
 				) {
 					authSession.pauseNetworkAuth();
@@ -406,13 +364,57 @@ export function createOAuthAppAuth({
 		});
 	}
 
+	/**
+	 * Fetch an Epicenter resource through the bearer boundary, with the API's own
+	 * 401 dance: one forced refresh, one retry, and a pause if it still rejects. A
+	 * non-Epicenter 401 is not ours to react to. This is the client's `fetch`;
+	 * `getProfile` reuses it so a profile read refreshes a stale token too.
+	 */
+	async function authedFetch(input: AuthFetchInput, init?: RequestInit) {
+		const response = await fetchWithAuth(input, init, false);
+		if (response.status !== 401 || !targetsEpicenter(input)) return response;
+		const refreshed = await refreshGrant(true);
+		if (!refreshed) return response;
+		const retryResponse = await fetchWithAuth(input, init, false);
+		if (retryResponse.status === 401) {
+			authSession.pauseNetworkAuth();
+		}
+		return retryResponse;
+	}
+
+	async function getProfile(): Promise<Result<AuthUser, AuthError>> {
+		const { data: response, error } = await tryAsync({
+			try: () => authedFetch(API_ROUTES.session.url(baseURL)),
+			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
+		});
+		if (error) return Err(error);
+		if (!response.ok) {
+			return AuthError.ProfileUnavailable({
+				cause: {
+					message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
+					status: response.status,
+				},
+			});
+		}
+		const { data: user, error: parseError } = await tryAsync({
+			try: async () => ApiSessionResponse.assert(await response.json()).user,
+			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
+		});
+		if (parseError) return Err(parseError);
+		return Ok(user);
+	}
+
 	async function completeSignInWithGrant(
 		grant: OAuthTokenGrant,
 		generation: number,
 	): Promise<Result<undefined, AuthError>> {
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
 		const previous = authSession.persistedAuth;
-		const { data: session, error } = await requestApiSession(grant);
+		const { data: session, error } = await readApiSession({
+			baseURL,
+			fetch: fetchImpl,
+			token: grant.accessToken,
+		});
 		if (error) {
 			return AuthError.StartSignInFailed({ cause: error });
 		}
@@ -492,19 +494,8 @@ export function createOAuthAppAuth({
 				return AuthError.SignOutFailed({ cause });
 			}
 		},
-		async fetch(input, init?: RequestInit) {
-			const response = await fetchWithAuth(input, init, false);
-			// The 401 refresh/retry/pause dance is for our own API. A non-Epicenter
-			// target never carried our bearer, so its 401 is not ours to react to.
-			if (response.status !== 401 || !targetsEpicenter(input)) return response;
-			const refreshed = await refreshGrant(true);
-			if (!refreshed) return response;
-			const retryResponse = await fetchWithAuth(input, init, false);
-			if (retryResponse.status === 401) {
-				authSession.pauseNetworkAuth();
-			}
-			return retryResponse;
-		},
+		fetch: authedFetch,
+		getProfile,
 		async openWebSocket(url, protocols = []) {
 			const accessToken = await bearerForNetwork(false);
 			const authProtocols = accessToken

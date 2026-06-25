@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -354,12 +355,18 @@
       "name": "@epicenter/self-host",
       "version": "0.0.2",
       "dependencies": {
+        "@epicenter/auth": "workspace:*",
+        "@epicenter/constants": "workspace:*",
         "@epicenter/server": "workspace:*",
+        "arktype": "catalog:",
         "hono": "catalog:",
+        "pg": "^8.20.0",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260405.1",
         "@types/bun": "catalog:",
+        "@types/pg": "^8.18.0",
         "typescript": "catalog:",
         "wrangler": "catalog:",
       },
@@ -713,14 +720,17 @@
       },
       "dependencies": {
         "@epicenter/auth": "workspace:*",
+        "@epicenter/client": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "arktype": "catalog:",
         "hono": "catalog:",
+        "mime": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
+        "yaml": "^2.8.0",
         "yargs": "catalog:",
         "yjs": "catalog:",
       },
@@ -836,6 +846,7 @@
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "arktype": "catalog:",
+        "aws4fetch": "catalog:",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
@@ -1053,6 +1064,7 @@
     "@types/yargs": "^17.0.35",
     "arkregex": "^0.0.5",
     "arktype": "^2.1.29",
+    "aws4fetch": "^1.0.20",
     "better-auth": "^1.6.18",
     "bits-ui": "^2.14.4",
     "clsx": "^2.1.1",
@@ -2098,6 +2110,8 @@
     "autumn-js": ["autumn-js@1.2.5", "", { "dependencies": { "query-string": "^9.2.2", "rou3": "^0.6.1", "zod": "^4.0.0" }, "peerDependencies": { "better-auth": "^1.3.17", "better-call": "^1.0.12", "express": "^5.2.1", "hono": "^4.0.0", "next": "^14.0.0 || ^15.0.0", "react": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["better-auth", "better-call", "express", "hono", "next", "react"] }, "sha512-hgAW7lls4cGv/wK804Fhvf67+qF0cqebvkQfXw2//UcSDZkha1CGsUeRLNCTSQ9VjmPf+Wi0vDWzBmPJS9s/pw=="],
 
     "available-typed-arrays": ["available-typed-arrays@1.0.7", "", { "dependencies": { "possible-typed-array-names": "^1.0.0" } }, "sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ=="],
+
+    "aws4fetch": ["aws4fetch@1.0.20", "", {}, "sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g=="],
 
     "axios": ["axios@1.18.0", "", { "dependencies": { "follow-redirects": "^1.16.0", "form-data": "^4.0.5", "https-proxy-agent": "^5.0.1", "proxy-from-env": "^2.1.0" } }, "sha512-E32NzpYKp++W7XRe52rHiXV2ehxmh3wbdgO7MHeFM+vqxLBYHzt0ElkiImtOBxtOmyp0yoC8C6uESVV84Y2/hw=="],
 

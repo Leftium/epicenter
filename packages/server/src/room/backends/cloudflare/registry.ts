@@ -40,8 +40,37 @@ export function createDurableObjectRooms(
 			return {
 				sync: (body) => stub.sync(body),
 				getDoc: () => stub.getDoc(),
-				handleUpgrade: (request) => stub.fetch(request),
+				// The DO reads `userId`/`nodeId` from the forwarded request URL.
+				// `nodeId` already rides the client's URL; stamp the server-resolved
+				// `userId` over any client-supplied value, then forward to the stub
+				// (a 101-returning `fetch`). Reconstructing the request is fine here
+				// because Cloudflare matches the socket by the DO it routes to, not
+				// by request-object identity the way Bun's `server.upgrade` does.
+				handleUpgrade: ({ request, userId }) => {
+					const url = new URL(request.url);
+					url.searchParams.set('userId', userId);
+					return stub.fetch(new Request(url.toString(), request));
+				},
 			} satisfies ResolvedRoom;
+		},
+		/**
+		 * Reject a WebSocket upgrade with an application close code. Mints a
+		 * detached socket pair, accepts the server half, and closes it with
+		 * `code`/`reason` so the browser receives a readable close code. This is
+		 * a Worker-level reject: no Durable Object is instantiated for an
+		 * unauthenticated upgrade, and `request` is unused (the pair needs no
+		 * inbound request). `WebSocketPair` is the Cloudflare-only global that
+		 * makes a detached pair; it lives here, in the Cloudflare backend, never
+		 * in shared auth code (ADR-0066).
+		 */
+		rejectUpgrade: ({ code, reason }) => {
+			const pair = new WebSocketPair();
+			const [client, server] = [pair[0], pair[1]];
+			server.accept();
+			server.close(code, reason);
+			return Promise.resolve(
+				new Response(null, { status: 101, webSocket: client }),
+			);
 		},
 	} satisfies Rooms;
 }

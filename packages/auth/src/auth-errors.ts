@@ -23,6 +23,10 @@ export const AuthError = defineErrors({
 		message: `Failed to refresh OAuth grant: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	ProfileUnavailable: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to read profile: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 
 export type AuthError = InferErrors<typeof AuthError>;

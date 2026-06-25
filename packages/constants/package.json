@@ -19,8 +19,7 @@
 		"./ai-chat-errors": "./src/ai-chat-errors.ts",
 		"./ai-providers": "./src/ai-providers.ts",
 		"./api-routes": "./src/api-routes.ts",
-		"./asset-headers": "./src/asset-headers.ts",
-		"./asset-errors": "./src/asset-errors.ts",
+		"./blob-errors": "./src/blob-errors.ts",
 		"./oauth-errors": "./src/oauth-errors.ts",
 		"./oauth-routes": "./src/oauth-routes.ts",
 		"./request-guard-errors": "./src/request-guard-errors.ts"

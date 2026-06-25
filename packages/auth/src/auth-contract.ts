@@ -1,6 +1,7 @@
 import type { AuthState } from '@epicenter/identity';
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
+import type { AuthUser } from './auth-types.js';
 
 export type { AuthState };
 
@@ -60,6 +61,17 @@ export type AuthClient = {
 	 * cookie client sends the session cookie). See each factory for specifics.
 	 */
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	/**
+	 * Read the signed-in user's profile (`/api/session`) through the credential
+	 * boundary.
+	 *
+	 * Presentational identity (the email) is fetched on demand by the surface
+	 * that displays it, never persisted or carried on `state`: `state` holds only
+	 * the capability id (`ownerId`), which is offline-useful and license-clean
+	 * (see `@epicenter/identity` `AuthState` and `PersistedAuth`). Account UI calls
+	 * this when it renders the user; everything else reads `ownerId` off `state`.
+	 */
+	getProfile(): Promise<Result<AuthUser, AuthError>>;
 	[Symbol.dispose](): void;
 };
 

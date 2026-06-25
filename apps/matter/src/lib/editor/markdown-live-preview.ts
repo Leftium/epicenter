@@ -7,7 +7,7 @@ import type { EditorState, Extension } from '@codemirror/state';
 import {
 	Decoration,
 	type DecorationSet,
-	EditorView,
+	type EditorView,
 	ViewPlugin,
 	type ViewUpdate,
 } from '@codemirror/view';

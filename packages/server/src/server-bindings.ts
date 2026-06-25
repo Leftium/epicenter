@@ -1,45 +1,63 @@
 /**
- * Cloudflare bindings the `@epicenter/server` library reads from `c.env`.
+ * The portable env contract `@epicenter/server` reads, as BOTH an arktype
+ * schema (the runtime value) and its inferred type (the same name, the
+ * `AuthUser` convention). It is the `Env.Bindings` type the Hono context uses
+ * (see types.ts) and the SSOT a Bun host validates `process.env` against at
+ * boot (see apps/api/server.ts).
  *
- * Single source of truth for the library's binding contract. The library's
- * own program applies it to `Cloudflare.Env` through the ambient shim in
- * cloudflare-bindings.d.ts; each deployment proves its own Env declaration
- * against it (apps/self-host extends it in worker-configuration.d.ts,
- * apps/api asserts `satisfies` in its worker entry). Assignability lets a
- * deployment strengthen the contract (a required `string` satisfies an
- * optional member), never weaken it.
+ * Deliberately NOT `Cloudflare.Env` (ADR-0066): it lists only the portable
+ * STRING secrets library code reads, so library code names no Cloudflare type
+ * and a Bun host typechecks AND validates with no Cloudflare types in scope.
+ * Because every member is a string, a Bun entry runs the schema over
+ * `process.env` and gets a typed env with no cast; a missing or malformed
+ * secret fails fast with a descriptive error instead of a downstream surprise.
  *
- * Cloud-only bindings (Autumn, admin IDs, dashboard ASSETS fetcher) live in
- * apps/api's generated worker-configuration.d.ts and never appear here.
+ * What is deliberately ABSENT, and why:
+ * - Object / namespace bindings (`ROOM` Durable Object, `HYPERDRIVE`) are not
+ *   strings and cannot be validated from `process.env`. They live on the
+ *   deployment's own `Cloudflare.Env` and are read by deployment resolvers at
+ *   the `apps/*` edge (`resolveRooms`, `connectDb`), never by library code
+ *   reaching for a binding shape. With the assets route retired into the
+ *   portable blob store, the library now names NO Cloudflare object binding,
+ *   by value or by type.
+ * - The deployment's public origin and any cloud-only secrets (Autumn, admin
+ *   IDs) are deployment config, supplied through `resolveOrigin` / policies.
+ *
+ * Each deployment's real env is a superset assignable to this: apps/api asserts
+ * `satisfies ServerBindings` on its generated `Cloudflare.Env`, apps/self-host
+ * declares `extends ServerBindings`, and the Bun host's validated `process.env`
+ * is exactly this shape.
  */
 
-import type { Room } from './room/backends/cloudflare/durable-object.js';
+import { type } from 'arktype';
 
-export interface ServerBindings {
-	// The deployment's public origin is NOT read from `c.env` here. The
-	// hosted cloud bakes a constant while a self-host reads operator
-	// config, so each deployment hands `createServerApp` its own
-	// `resolveOrigin(env)` instead of the library reaching for a shared
-	// var name. See server-app.ts.
-	HYPERDRIVE: Hyperdrive;
-	ROOM: DurableObjectNamespace<Room>;
-	ASSETS_BUCKET: R2Bucket;
-	SESSION_KV: KVNamespace;
-	BETTER_AUTH_SECRET: string;
-	GOOGLE_CLIENT_ID: string;
-	GOOGLE_CLIENT_SECRET: string;
-	// GitHub is optional: a deployment that has not registered a GitHub
-	// OAuth app simply does not offer GitHub sign-in. The provider and its
-	// sign-in button are both gated on these being present (see
-	// create-auth.ts and the `/sign-in` route).
-	GITHUB_CLIENT_ID?: string;
-	GITHUB_CLIENT_SECRET?: string;
+export const ServerBindings = type({
+	BETTER_AUTH_SECRET: 'string',
+	GOOGLE_CLIENT_ID: 'string',
+	GOOGLE_CLIENT_SECRET: 'string',
+	// GitHub is optional: a deployment that has not registered a GitHub OAuth
+	// app simply does not offer GitHub sign-in. The provider and its sign-in
+	// button are both gated on these being present (create-auth.ts, /sign-in).
+	'GITHUB_CLIENT_ID?': 'string',
+	'GITHUB_CLIENT_SECRET?': 'string',
+	// Content-addressed blob store (routes/blobs.ts): a portable S3 client over
+	// aws4fetch with NO Workers R2 binding, so the identical code runs on the
+	// Worker (against R2) and on a Bun host (against Garage/S3). All
+	// optional: a deployment without object storage does not mount
+	// `mountBlobsApp`, and the route 503s if reached unconfigured.
+	// `BLOBS_S3_BUCKET` defaults to `epicenter-blobs` and `BLOBS_S3_REGION` to
+	// `auto` (R2's region) when unset.
+	'BLOBS_S3_ENDPOINT?': 'string',
+	'BLOBS_S3_ACCESS_KEY_ID?': 'string',
+	'BLOBS_S3_SECRET_ACCESS_KEY?': 'string',
+	'BLOBS_S3_BUCKET?': 'string',
+	'BLOBS_S3_REGION?': 'string',
 	// AI provider house keys are optional: set one to serve that provider
 	// through the gateway (routes/inference.ts), or omit it and a request for
-	// that provider gets 503 ProviderNotConfigured. The gateway is
-	// house-key-only (ADR-0054); a user's own key lives on a custom client
-	// backend, never here. Hosted requires both at deploy time; see
-	// apps/api/wrangler.jsonc for why.
-	OPENAI_API_KEY?: string;
-	GEMINI_API_KEY?: string;
-}
+	// that provider gets 503 ProviderNotConfigured. House-key-only (ADR-0054).
+	'OPENAI_API_KEY?': 'string',
+	'GEMINI_API_KEY?': 'string',
+});
+
+/** The portable env contract; also the Hono `Env.Bindings` type (types.ts). */
+export type ServerBindings = typeof ServerBindings.infer;

@@ -8,9 +8,11 @@
 	owned here: the blob store caches it per id, and it is revoked on teardown.
 -->
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
-	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
+	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { viewTransition } from '$lib/utils/viewTransitions';
@@ -25,7 +27,7 @@
 		transcript: string;
 		/** Visible rows of the transcript preview before it scrolls/expands. */
 		rows?: number;
-		/** When provided, the transcript dialog shows a delete action. */
+		/** When provided, a delete button is shown below the preview. */
 		onDelete?: () => void;
 	} = $props();
 
@@ -39,12 +41,13 @@
 </script>
 
 <div class="flex w-full flex-col gap-2">
-	<TranscriptDialog
-		{recordingId}
-		{transcript}
+	<TextPreviewDialog
+		id={viewTransition.recording(recordingId).transcript}
+		title="Transcript"
+		label="transcript"
+		text={transcript}
 		{rows}
 		disabled={!transcript.trim()}
-		{onDelete}
 	/>
 	{#if audioQuery.data}
 		<audio
@@ -53,5 +56,16 @@
 			controls
 			class="h-8 w-full"
 		></audio>
+	{/if}
+	{#if onDelete}
+		<Button
+			class="self-end"
+			variant="ghost-destructive"
+			size="sm"
+			onclick={onDelete}
+		>
+			<TrashIcon class="size-4" />
+			Delete
+		</Button>
 	{/if}
 </div>

@@ -5,7 +5,6 @@
 	import * as ButtonGroup from '@epicenter/ui/button-group';
 	import { Card } from '@epicenter/ui/card';
 	import { Checkbox } from '@epicenter/ui/checkbox';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
@@ -45,19 +44,18 @@
 	} from '@tanstack/table-core';
 	import { type } from 'arktype';
 	import { createRawSnippet } from 'svelte';
-	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import { PATHS } from '$lib/services/fs-paths';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { tauri } from '#platform/tauri';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
-	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
+	import RecordingTranscriptCell from './RecordingTranscriptCell.svelte';
 	import RenderAudioUrl from './RenderAudioUrl.svelte';
 	import TranscriptionStatusBadge from './TranscriptionStatusBadge.svelte';
-	import { RecordingRowActions } from './row-actions';
+	import { RecordingRowActions } from './actions';
 
 	/**
 	 * Returns a cell renderer for an instant, optionally using a row-owned
@@ -165,29 +163,8 @@
 					column,
 					headerText: 'Transcript',
 				}),
-			cell: ({ getValue, row }) => {
-				const transcript = getValue<string>();
-				if (!transcript) return;
-				return renderComponent(TranscriptDialog, {
-					recordingId: row.id,
-					transcript: transcript,
-					onDelete: () => {
-						confirmationDialog.open({
-							title: 'Delete recording',
-							description: 'Are you sure you want to delete this recording?',
-							confirm: { text: 'Delete', variant: 'destructive' },
-							onConfirm: () => {
-								services.blobs.audio.revokeUrl(row.original.id);
-								recordings.delete(row.original.id);
-								report.success({
-									title: 'Deleted recording!',
-									description: 'Your recording has been deleted.',
-								});
-							},
-						});
-					},
-				});
-			},
+			cell: ({ row }) =>
+				renderComponent(RecordingTranscriptCell, { recordingId: row.id }),
 		},
 		{
 			id: 'latestTransformationRunOutput',

@@ -1,0 +1,295 @@
+<script lang="ts">
+	import { InstantString } from '@epicenter/field';
+	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import { CopyButton } from '@epicenter/ui/copy-button';
+	import { Input } from '@epicenter/ui/input';
+	import { Label } from '@epicenter/ui/label';
+	import * as Modal from '@epicenter/ui/modal';
+	import { Separator } from '@epicenter/ui/separator';
+	import { Textarea } from '@epicenter/ui/textarea';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { createQuery } from '@tanstack/svelte-query';
+	import type { Snippet } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
+	import { report } from '$lib/report';
+	import { rpc } from '$lib/rpc';
+	import { services } from '$lib/services';
+	import { type Recording, recordings } from '$lib/state/recordings.svelte';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import DownloadRecordingButton from './actions/DownloadRecordingButton.svelte';
+	import TranscribeRecordingButton from './actions/TranscribeRecordingButton.svelte';
+	import TransformationPicker from './actions/TransformationPicker.svelte';
+
+	/**
+	 * The single detail surface for one recording: play it back, read and edit
+	 * its transcript and metadata, run transcription or a transformation,
+	 * download it, copy the transcript, or delete it.
+	 *
+	 * The opener is supplied by the caller via the `trigger` snippet, so the
+	 * same modal can be reached from the transcript cell (the textarea preview)
+	 * or any other affordance without this component owning a button shape.
+	 */
+	let {
+		recording,
+		trigger,
+	}: {
+		recording: Recording;
+		/** Renders the modal opener; spread the given props onto a single element. */
+		trigger: Snippet<[Record<string, unknown>]>;
+	} = $props();
+
+	/**
+	 * Capture the recording ID at setup time for use in cleanup.
+	 *
+	 * Reactive props ($props) can become undefined during Svelte's teardown
+	 * when the parent's data source is deleted (e.g. deleting a recording
+	 * causes the table row, and this component, to unmount). If onDestroy
+	 * reads the prop directly, it may see undefined and throw. Capturing
+	 * the ID here sidesteps the reactive teardown race entirely.
+	 */
+	// svelte-ignore state_referenced_locally -- intentional teardown handle; onDestroy must revoke the original row's URL.
+	const recordingIdForCleanup = recording.id;
+
+	let isDialogOpen = $state(false);
+
+	/**
+	 * A working copy of the recording that we can safely edit.
+	 *
+	 * It's like a photocopy of an important document. You don't want to
+	 * accidentally mess up the original. You edit the photocopy, submit it,
+	 * and the original is updated. Then you get a new photocopy.
+	 */
+	let workingCopy = $derived(
+		// Reset the working copy when new recording data comes in.
+		recording,
+	);
+
+	/**
+	 * Tracks whether the user has made changes to the working copy. Starts
+	 * false on fresh upstream data, flips true on the first edit, and resets
+	 * when new data arrives or the user saves. Drives the unsaved-changes
+	 * prompt and the disabled state of the save button.
+	 */
+	let isWorkingCopyDirty = $derived.by(() => {
+		// Reset dirty flag when new recording data comes in
+		recording;
+		return false;
+	});
+
+	/**
+	 * Audio playback URL via TanStack Query, fetched lazily once the modal
+	 * opens. Audio blobs are too large for Yjs CRDTs, so they're still served
+	 * from BlobStore; gating on `isDialogOpen` keeps closed rows from each
+	 * eagerly resolving a playback URL.
+	 */
+	const audioPlaybackUrlQuery = createQuery(() => ({
+		...rpc.audio.getPlaybackUrl(() => recording.id).options,
+		enabled: isDialogOpen,
+	}));
+
+	function promptUserConfirmLeave() {
+		if (!isWorkingCopyDirty) {
+			isDialogOpen = false;
+			return;
+		}
+
+		confirmationDialog.open({
+			title: 'Unsaved changes',
+			description: 'You have unsaved changes. Are you sure you want to leave?',
+			confirm: { text: 'Leave' },
+			onConfirm: () => {
+				// Reset working copy and dirty flag
+				workingCopy = recording;
+				isWorkingCopyDirty = false;
+
+				isDialogOpen = false;
+			},
+		});
+	}
+
+	function save() {
+		const snapshot = $state.snapshot(workingCopy);
+		if (!InstantString.is(snapshot.recordedAt)) {
+			report.info({
+				title: 'Recorded At is not a valid instant',
+				description: 'Use a UTC ISO timestamp like 2026-06-13T16:20:00.000Z.',
+			});
+			return;
+		}
+
+		const { error } = recordings.update(recording.id, {
+			title: snapshot.title,
+			recordedAt: snapshot.recordedAt,
+			recordedAtZone: snapshot.recordedAtZone,
+			transcript: snapshot.transcript,
+		});
+
+		if (error) {
+			report.error({ title: 'Could not update recording', cause: error });
+			return;
+		}
+
+		report.success({
+			title: 'Updated recording!',
+			description: 'Your recording has been updated successfully.',
+		});
+		isDialogOpen = false;
+	}
+
+	onDestroy(() => {
+		services.blobs.audio.revokeUrl(recordingIdForCleanup);
+	});
+</script>
+
+<Modal.Root bind:open={isDialogOpen}>
+	<Modal.Trigger>
+		{#snippet child({ props })}
+			{@render trigger(props)}
+		{/snippet}
+	</Modal.Trigger>
+	<Modal.Content
+		class="max-w-2xl"
+		onEscapeKeydown={(e) => {
+			e.preventDefault();
+			if (isDialogOpen) promptUserConfirmLeave();
+		}}
+		onInteractOutside={(e) => {
+			e.preventDefault();
+			if (isDialogOpen) promptUserConfirmLeave();
+		}}
+	>
+		<Modal.Header>
+			<Modal.Title>{recording.title || 'Untitled recording'}</Modal.Title>
+			<Modal.Description>
+				Play it back, edit the transcript, transcribe, transform, or download.
+			</Modal.Description>
+		</Modal.Header>
+
+		<div class="space-y-4 p-4">
+			{#if audioPlaybackUrlQuery.data}
+				<audio
+					src={audioPlaybackUrlQuery.data}
+					controls
+					class="h-9 w-full"
+				></audio>
+			{/if}
+
+			<div class="space-y-2">
+				<Label for="transcript">Transcript</Label>
+				<Textarea
+					id="transcript"
+					value={workingCopy.transcript}
+					oninput={(e) => {
+						workingCopy = {
+							...workingCopy,
+							transcript: e.currentTarget.value,
+						};
+						isWorkingCopyDirty = true;
+					}}
+					rows={12}
+				/>
+			</div>
+
+			<div class="flex flex-wrap gap-2">
+				<TranscribeRecordingButton
+					{recording}
+					variant="outline"
+					size="sm"
+					showLabel
+				/>
+				<TransformationPicker
+					recordingId={recording.id}
+					variant="outline"
+					size="sm"
+					showLabel
+				/>
+				<DownloadRecordingButton
+					{recording}
+					variant="outline"
+					size="sm"
+					showLabel
+				/>
+			</div>
+
+			<Separator />
+
+			<div class="space-y-4">
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label for="title" class="text-right">Title</Label>
+					<Input
+						id="title"
+						value={workingCopy.title}
+						oninput={(e) => {
+							workingCopy = { ...workingCopy, title: e.currentTarget.value };
+							isWorkingCopyDirty = true;
+						}}
+						class="col-span-3"
+					/>
+				</div>
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label for="recordedAt" class="text-right">Recorded At</Label>
+					<Input
+						id="recordedAt"
+						value={workingCopy.recordedAt}
+						oninput={(e) => {
+							workingCopy = {
+								...workingCopy,
+								recordedAt: e.currentTarget.value as Recording['recordedAt'],
+							};
+							isWorkingCopyDirty = true;
+						}}
+						class="col-span-3"
+					/>
+				</div>
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label class="text-right">Recorded Timezone</Label>
+					<div class="col-span-3">
+						<TimezoneCombobox
+							bind:value={() => workingCopy.recordedAtZone,
+								(recordedAtZone) => {
+									workingCopy = {
+										...workingCopy,
+										recordedAtZone:
+											recordedAtZone as Recording['recordedAtZone'],
+									};
+									isWorkingCopyDirty = true;
+								}}
+						/>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<Modal.Footer>
+			<Button
+				variant="destructive"
+				onclick={() =>
+					deleteRecordingsWithConfirmation($state.snapshot(recording), {
+						onSuccess: () => {
+							isDialogOpen = false;
+						},
+					})}
+			>
+				<TrashIcon class="size-4" />
+				Delete
+			</Button>
+			<div class="flex-1"></div>
+			<Button variant="outline" onclick={() => promptUserConfirmLeave()}>
+				Close
+			</Button>
+			<CopyButton
+				text={workingCopy.transcript}
+				copyFn={createCopyFn('transcript')}
+				variant="outline"
+				size="default"
+				disabled={!workingCopy.transcript.trim()}
+			>
+				Copy
+			</CopyButton>
+			<Button onclick={save} disabled={!isWorkingCopyDirty}>Save</Button>
+		</Modal.Footer>
+	</Modal.Content>
+</Modal.Root>

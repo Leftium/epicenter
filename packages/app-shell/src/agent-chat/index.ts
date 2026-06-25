@@ -1,6 +1,7 @@
 export {
 	type ActiveConversation,
 	type AgentChatState,
+	type AgentKit,
 	type ConversationHandle,
 	createAgentChatState,
 } from './agent-chat.svelte.js';

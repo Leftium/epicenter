@@ -45,27 +45,7 @@ export const session = createSession({
 			table: opensidian.tables.conversations,
 			whenLoaded: opensidian.idb.whenLoaded,
 			connections: inferenceConnections,
-			buildSystemPrompts: () =>
-				[
-					OPENSIDIAN_SYSTEM_PROMPT,
-					buildGlobalSkillsPrompt(
-						skills.globalSkills.map((skill) => ({
-							name: skill.name,
-							instructions: skill.instructions,
-						})),
-					),
-					buildVaultSkillsPrompt(
-						skills.vaultSkills.map((skill) => ({
-							name: skill.name,
-							content: skill.content,
-						})),
-					),
-				].filter(Boolean),
 			generateId: generateChatMessageId,
-			defaultModel: DEFAULT_MODEL,
-			toolCatalog: createDispatchToolCatalog(opensidian.collaboration, {
-				localActions: opensidian.actions,
-			}),
 			activeConversation: {
 				get current() {
 					return searchParams.chat;
@@ -73,6 +53,28 @@ export const session = createSession({
 				select(id) {
 					searchParams.update({ chat: id });
 				},
+			},
+			agent: {
+				buildSystemPrompts: () =>
+					[
+						OPENSIDIAN_SYSTEM_PROMPT,
+						buildGlobalSkillsPrompt(
+							skills.globalSkills.map((skill) => ({
+								name: skill.name,
+								instructions: skill.instructions,
+							})),
+						),
+						buildVaultSkillsPrompt(
+							skills.vaultSkills.map((skill) => ({
+								name: skill.name,
+								content: skill.content,
+							})),
+						),
+					].filter(Boolean),
+				defaultModel: DEFAULT_MODEL,
+				toolCatalog: createDispatchToolCatalog(opensidian.collaboration, {
+					localActions: opensidian.actions,
+				}),
 			},
 		});
 		const sampleData = createSampleDataLoader(opensidian);

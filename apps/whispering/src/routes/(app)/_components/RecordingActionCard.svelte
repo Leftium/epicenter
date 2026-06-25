@@ -6,11 +6,9 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
 	import LevelMeter from '$lib/components/LevelMeter.svelte';
-	import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
 	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
 	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
-	import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 	import { tauri } from '#platform/tauri';
 	import type { RecordingActionController } from './recording-action-controller';
 
@@ -49,16 +47,6 @@
 	// other routes. The smoothed level is already in this window on web
 	// (`webPillLevel`); on desktop it is emitted straight to the overlay, not here.
 	const showsLiveMeter = !tauri;
-
-	// The card draws the same VAD mark the floating pill does, from the same
-	// projected status, so the home route stops silently dropping the transcribe
-	// signal. Narrow to the live VAD variant: non-null only while a voice-activated
-	// session records (manual takes and every non-recording phase are null). The
-	// level still rides its own high-frequency stream (`webPillLevel`).
-	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
-	const vad = $derived(
-		status?.phase === 'recording' && status.trigger === 'vad' ? status : null,
-	);
 </script>
 
 <div
@@ -101,19 +89,20 @@
 					minPx={3}
 					maxPx={28}
 				/>
-				{#if vad}
+				{#if controller.vad}
 					<!-- VAD session: the same dim-dot -> lit-dot -> spinner indicator the
 					floating pill shows beside its meter, here in the glyph's corner. The
 					bars track loudness; this dot tracks whether VAD has latched onto speech
 					and becomes a spinner while a previous phrase is still transcribing. On
 					'/' the pill yields the recording phase to this card, so this is the
-					only place that last signal shows. -->
+					only place that last signal shows. The signals come from this card's own
+					controller (present only for VAD), not a global lookup. -->
 					<span
 						class="absolute top-0.5 right-0.5 flex size-4 items-center justify-center"
 					>
 						<VadIndicator
-							speaking={vad.speaking}
-							transcribing={vad.transcribing}
+							speaking={controller.vad.speaking}
+							transcribing={controller.vad.transcribing}
 							dimClass="bg-destructive/40"
 							litClass="bg-destructive"
 							spinnerClass="text-muted-foreground"

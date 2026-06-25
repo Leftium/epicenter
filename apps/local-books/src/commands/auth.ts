@@ -1,7 +1,7 @@
 import type { ParsedArgs } from '../cli.ts';
 import { recordCompany } from '../companies.ts';
 import { loadConfig } from '../config.ts';
-import { createKeyring } from '../keyring.ts';
+import { createFileKeyring } from '../keyring.ts';
 import { runAuthorizationFlow } from '../oauth.ts';
 import { storeToken } from '../token-manager.ts';
 import { formatRelative } from './context.ts';
@@ -26,7 +26,7 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const keyring = createKeyring(config.tokenStore);
+	const keyring = createFileKeyring(config.credentialsPath);
 
 	console.error(`Authenticating against QuickBooks (${config.environment})...`);
 	const { data: token, error } = await runAuthorizationFlow(config, {

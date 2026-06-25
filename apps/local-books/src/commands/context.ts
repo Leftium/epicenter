@@ -2,7 +2,7 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { ParsedArgs } from '../cli.ts';
 import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
-import { createKeyring, type Keyring } from '../keyring.ts';
+import { createFileKeyring, type Keyring } from '../keyring.ts';
 
 /** Human-friendly "in 42m" / "3m ago" for the auth and status commands. */
 export function formatRelative(targetIso: string, now: number): string {
@@ -40,5 +40,5 @@ export function resolveCompany(
 	});
 	const { data: realmId, error } = resolveRealm(config);
 	if (error !== null) return Err(error);
-	return Ok({ config, realmId, keyring: createKeyring(config.tokenStore) });
+	return Ok({ config, realmId, keyring: createFileKeyring(config.credentialsPath) });
 }

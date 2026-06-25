@@ -15,7 +15,7 @@ import { localBooksWorkspace } from './books.ts';
 import { createBooksAgentActions } from './src/agent/books-actions.ts';
 import { makeQbAccess } from './src/agent/qb-access.ts';
 import { loadConfig } from './src/config.ts';
-import { createKeyring } from './src/keyring.ts';
+import { createFileKeyring } from './src/keyring.ts';
 import { dbPath } from './src/paths.ts';
 
 export type LocalBooksMountOptions = {
@@ -40,7 +40,7 @@ export function localBooksMount({
 	const openQb = makeQbAccess({
 		config,
 		realmId,
-		keyring: createKeyring(config.tokenStore),
+		keyring: createFileKeyring(config.credentialsPath),
 		now: () => Date.now(),
 	});
 	return localBooksWorkspace.mount({

@@ -1,34 +1,16 @@
-import { secrets } from 'bun';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-
-/**
- * Where a realm's OAuth token set lives, resolved once in config (see
- * `resolveTokenStore`). One value whose own shape is the discriminant: having a
- * `path` means a file; the bare `'keychain'` token means the OS keychain. So
- * "the keychain, at a file path" cannot be expressed.
- *
- * - A `0600` JSON file (the default) at `<data-dir>/credentials.json`, or
- *   wherever `LOCAL_BOOKS_KEYRING_FILE` points. Works identically on a desktop,
- *   a headless server, an SSH session, and CI, which is the property a tool
- *   whose recurring mode is unattended sync needs most.
- * - `'keychain'` (opt-in, `LOCAL_BOOKS_KEYRING=keychain`): the OS credential
- *   store. It cannot be reached from a session without a graphic security
- *   context (SSH, herdr), which is exactly why it is not the default.
- */
-export type TokenStore = { readonly path: string } | 'keychain';
 
 /**
  * A minimal secret store keyed by `realmId`. The OAuth token set is serialized
  * to JSON and stored here, never inside a company's mirror db (the agent's
  * read-only SQL surface must never be able to read it).
  *
- * Backend failures throw: an unreachable or locked credential store is fatal and
- * rare, so it bubbles to the top-level CLI handler (`bin.ts`) rather than
- * threading a Result through every caller. A throw means "store unreachable,"
- * never "no token stored" (which is a clean `null`). The two must not be
- * conflated: a locked keychain returned as `null` reads as "logged out" and
- * silently triggers a re-auth. See ADR-0061.
+ * Backend failures throw: an unreachable store is fatal and rare, so it bubbles
+ * to the top-level CLI handler (`bin.ts`) rather than threading a Result through
+ * every caller. A throw means "store unreachable," never "no token stored"
+ * (which is a clean `null`); conflating the two would read a transient failure
+ * as "logged out" and silently trigger a re-auth. See ADR-0061.
  */
 export type Keyring = {
 	readonly backend: string;
@@ -37,33 +19,13 @@ export type Keyring = {
 	delete(account: string): Promise<void>;
 };
 
-const SERVICE = 'local-books';
-
 /**
- * OS credential store via `Bun.secrets` (macOS Keychain, Linux libsecret,
- * Windows Credential Manager). Native, no subprocess, still inside the single
- * `bun build --compile` binary. `get` returns `null` only when nothing is
- * stored; a locked or unavailable store throws, by Bun's contract.
- */
-export function createKeychainKeyring(): Keyring {
-	return {
-		backend: 'keychain',
-		async get(account) {
-			return secrets.get({ service: SERVICE, name: account });
-		},
-		async set(account, secret) {
-			await secrets.set({ service: SERVICE, name: account, value: secret });
-		},
-		async delete(account) {
-			await secrets.delete({ service: SERVICE, name: account });
-		},
-	};
-}
-
-/**
- * The default `0600` JSON-file store. The secret is not encrypted; the file mode
- * is the protection (the same tradeoff `git credential-store` and
- * `~/.aws/credentials` make). Kept out of any company's mirror db.
+ * The `0600` JSON-file token store at `<data-dir>/credentials.json` (or wherever
+ * `LOCAL_BOOKS_KEYRING_FILE` points). The secret is not encrypted; the file mode
+ * is the protection, the same tradeoff `git credential-store` and
+ * `~/.aws/credentials` make. Works identically on a desktop, a headless server,
+ * an SSH session, and CI, which is the property a tool whose recurring mode is
+ * unattended sync needs most. Kept out of any company's mirror db. See ADR-0061.
  */
 export function createFileKeyring(filePath: string): Keyring {
 	const load = (): Record<string, string> => {
@@ -112,11 +74,4 @@ export function createMemoryKeyring(): Keyring {
 			map.delete(account);
 		},
 	};
-}
-
-/** Open a resolved token store as a keyring. */
-export function createKeyring(store: TokenStore): Keyring {
-	return store === 'keychain'
-		? createKeychainKeyring()
-		: createFileKeyring(store.path);
 }

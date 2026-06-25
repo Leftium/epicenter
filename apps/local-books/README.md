@@ -61,7 +61,7 @@ bun run status:remote
 
 #### Production needs an HTTPS tunnel for the one-time `auth`
 
-Intuit production rejects `http://localhost` redirect URIs (only Development accepts them), so the interactive `auth` hop needs a public HTTPS URL. This is only for `auth`: once tokens are in the keyring, every `sync` refreshes them and never touches the redirect URI again.
+Intuit production rejects `http://localhost` redirect URIs (only Development accepts them), so the interactive `auth` hop needs a public HTTPS URL. This is only for `auth`: once tokens are in `credentials.json`, every `sync` refreshes them and never touches the redirect URI again.
 
 1. Start a tunnel to the local callback port (`cloudflared` needs no account):
    ```sh
@@ -75,7 +75,7 @@ Intuit production rejects `http://localhost` redirect URIs (only Development acc
    LOCAL_BOOKS_CALLBACK_PORT=8765 \
      bun run auth:remote
    ```
-   `LOCAL_BOOKS_CALLBACK_PORT` decouples the local listener from the portless tunnel host. After tokens land in the keyring, stop the tunnel; `sync:remote` and `status:remote` need nothing further.
+   `LOCAL_BOOKS_CALLBACK_PORT` decouples the local listener from the portless tunnel host. After tokens land in `credentials.json`, stop the tunnel; `sync:remote` and `status:remote` need nothing further.
 
 To avoid repeating `--env production` outside the scripts, set `LOCAL_BOOKS_QB_ENV=production` once, or write `{ "environment": "production" }` into `<data-dir>/config.json`.
 
@@ -89,7 +89,7 @@ To avoid repeating `--env production` outside the scripts, set `LOCAL_BOOKS_QB_E
 
 `<data-dir>` defaults to the OS app-data path (`~/Library/Application Support/local-books` on macOS), overridable with `--data-dir` or `LOCAL_BOOKS_DIR`. `--env sandbox|production` (default `sandbox`) selects the QuickBooks API.
 
-Tokens go in a `0600` `credentials.json` at the data-dir root, which works the same on a desktop, a headless box, and CI. Override the path with `LOCAL_BOOKS_KEYRING_FILE=<path>`. To store them in the OS keychain instead (desktop only, since it needs a graphic login session), set `LOCAL_BOOKS_KEYRING=keychain`.
+Tokens go in a `0600` `credentials.json` at the data-dir root, which works the same on a desktop, a headless box, and CI. Override the path with `LOCAL_BOOKS_KEYRING_FILE=<path>`.
 
 ## Build a single binary
 

@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { DEFAULT_ENTITIES, isKnownEntity } from './entities.ts';
-import type { TokenStore } from './keyring.ts';
 import { credentialsFilePath, resolveDataDir } from './paths.ts';
 
 /** Which QuickBooks deployment a company lives in. */
@@ -39,11 +38,11 @@ export type AppConfig = {
 	/** Query-API page size; QuickBooks caps results at 1000. */
 	pageSize: number;
 	/**
-	 * Where OAuth tokens live: a `0600` file (the default, works headless and in
-	 * CI) or the OS keychain (opt-in, desktop only). Resolved from
-	 * `LOCAL_BOOKS_KEYRING` / `LOCAL_BOOKS_KEYRING_FILE`. See `resolveTokenStore`.
+	 * Absolute path to the `0600` `credentials.json` holding the realm's OAuth
+	 * tokens. Defaults to the data-dir root; override with `LOCAL_BOOKS_KEYRING_FILE`
+	 * (used by the test harness and any custom location). See ADR-0061.
 	 */
-	tokenStore: TokenStore;
+	credentialsPath: string;
 	realmOverride: string | null;
 	/**
 	 * Port the localhost OAuth callback server binds to. Defaults to the port in
@@ -119,25 +118,6 @@ function envFlag(name: string): boolean | undefined {
 	return value !== '0' && value.toLowerCase() !== 'false';
 }
 
-/**
- * Resolve where tokens live. An explicit `LOCAL_BOOKS_KEYRING_FILE` wins (it
- * names a concrete file: CI, tests, a custom location); then the opt-in keychain
- * (`LOCAL_BOOKS_KEYRING=keychain`); else a `0600` file at the data-dir root.
- */
-function resolveTokenStore(dataDir: string): TokenStore {
-	const file = env('LOCAL_BOOKS_KEYRING_FILE');
-	if (file) return { path: file };
-
-	const backend = env('LOCAL_BOOKS_KEYRING');
-	if (backend === 'keychain') return 'keychain';
-	if (backend !== undefined && backend !== 'file') {
-		throw new Error(
-			`Unknown LOCAL_BOOKS_KEYRING value "${backend}". Use "file" (default) or "keychain".`,
-		);
-	}
-	return { path: credentialsFilePath(dataDir) };
-}
-
 function resolveEntities(file: ConfigFile): string[] {
 	const fromEnv = env('LOCAL_BOOKS_ENTITIES')
 		?.split(',')
@@ -186,7 +166,8 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 		cdcSafeWindowDays: file.cdcSafeWindowDays ?? 25,
 		fullBackstopDays: file.fullBackstopDays ?? 7,
 		pageSize: Math.min(file.pageSize ?? 1000, 1000),
-		tokenStore: resolveTokenStore(dataDir),
+		credentialsPath:
+			env('LOCAL_BOOKS_KEYRING_FILE') ?? credentialsFilePath(dataDir),
 		realmOverride: overrides.realm ?? env('LOCAL_BOOKS_QB_REALM') ?? null,
 		callbackPort: callbackPortEnv
 			? Number(callbackPortEnv)

@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { getSession, normalizeInstanceUrl } from '@epicenter/auth';
+	import { normalizeInstanceUrl } from '@epicenter/auth';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
 	import * as Modal from '@epicenter/ui/modal';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import {
 		clearInstance,
 		isDefaultInstance,
@@ -21,43 +20,15 @@
 
 	let urlInput = $state(hasOverride ? instance.baseURL : '');
 	let tokenInput = $state(instance.token ?? '');
+	let urlError = $state<string | null>(null);
 
-	type ConnectionState =
-		| { status: 'idle' }
-		| { status: 'testing' }
-		| { status: 'connected'; email: string }
-		| { status: 'reachable' }
-		| { status: 'failed'; message: string };
-	let connection = $state<ConnectionState>({ status: 'idle' });
-
-	async function testConnection() {
-		const { data: baseURL, error } = normalizeInstanceUrl(urlInput);
-		if (error) {
-			connection = { status: 'failed', message: error.message };
-			return;
-		}
-		connection = { status: 'testing' };
-		const token = tokenInput.trim() || undefined;
-		const { data: session, error: sessionError } = await getSession({
-			baseURL,
-			token,
-		});
-		if (sessionError) {
-			// No token sent and the origin requires one is the expected OAuth
-			// answer, not a failure: report it as reachable, not red.
-			connection =
-				sessionError.name === 'Unauthenticated'
-					? { status: 'reachable' }
-					: { status: 'failed', message: sessionError.message };
-			return;
-		}
-		connection = { status: 'connected', email: session.user.email };
-	}
-
+	// No pre-save connection test: saving reloads, and the signed-out gate then
+	// reports connected-or-failed (with a "Retry connection") from the auth
+	// client's own boot check. One surface verifies the credential, not two.
 	function save() {
 		const { data: baseURL, error } = normalizeInstanceUrl(urlInput);
 		if (error) {
-			connection = { status: 'failed', message: error.message };
+			urlError = error.message;
 			return;
 		}
 		writeInstance({ baseURL, token: tokenInput.trim() || undefined });
@@ -105,16 +76,8 @@
 					instead.
 				</p>
 			</div>
-			{#if connection.status === 'connected'}
-				<p class="text-xs text-green-600 dark:text-green-500">
-					Connected as {connection.email}.
-				</p>
-			{:else if connection.status === 'reachable'}
-				<p class="text-xs text-muted-foreground">
-					Reachable. Save and sign in with Epicenter.
-				</p>
-			{:else if connection.status === 'failed'}
-				<p class="text-xs text-destructive">{connection.message}</p>
+			{#if urlError}
+				<p class="text-xs text-destructive">{urlError}</p>
 			{/if}
 		</div>
 		<Modal.Footer class="flex-col gap-2 sm:flex-row sm:justify-between">
@@ -123,22 +86,9 @@
 					Use hosted Epicenter
 				</Button>
 			{/if}
-			<div class="flex gap-2 sm:ml-auto">
-				<Button
-					variant="outline"
-					type="button"
-					disabled={connection.status === 'testing'}
-					onclick={testConnection}
-				>
-					{#if connection.status === 'testing'}
-						<Spinner class="size-3.5" />
-						<span>Testing</span>
-					{:else}
-						Test connection
-					{/if}
-				</Button>
-				<Button type="button" onclick={save}>Save and reload</Button>
-			</div>
+			<Button class="sm:ml-auto" type="button" onclick={save}>
+				Save and reload
+			</Button>
 		</Modal.Footer>
 	</Modal.Content>
 </Modal.Root>

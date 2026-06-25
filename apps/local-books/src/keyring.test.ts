@@ -11,19 +11,15 @@ function tempDir(): { dir: string; cleanup: () => void } {
 	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-describe('createKeyring resolution', () => {
-	test('defaults to a 0600 file at <data-dir>/credentials.json', async () => {
+describe('createKeyring', () => {
+	test('a path opens a 0600 file store at that path', async () => {
 		const { dir, cleanup } = tempDir();
 		try {
-			const keyring = createKeyring({
-				keyringBackend: 'file',
-				keyringFile: null,
-				dataDir: dir,
-			});
+			const file = join(dir, 'credentials.json');
+			const keyring = createKeyring({ path: file });
 			expect(keyring.backend).toBe('file');
 
 			await keyring.set('realm-1', 'secret-1');
-			const file = credentialsFilePath(dir);
 			expect(readFileSync(file, 'utf8')).toContain('secret-1');
 			expect(statSync(file).mode & 0o777).toBe(0o600);
 			expect(await keyring.get('realm-1')).toBe('secret-1');
@@ -32,31 +28,8 @@ describe('createKeyring resolution', () => {
 		}
 	});
 
-	test('an explicit keyringFile wins over the keychain opt-in', async () => {
-		const { dir, cleanup } = tempDir();
-		try {
-			const file = join(dir, 'custom.json');
-			const keyring = createKeyring({
-				keyringBackend: 'keychain',
-				keyringFile: file,
-				dataDir: dir,
-			});
-			expect(keyring.backend).toBe('file');
-
-			await keyring.set('realm-1', 'secret-1');
-			expect(readFileSync(file, 'utf8')).toContain('secret-1');
-		} finally {
-			cleanup();
-		}
-	});
-
-	test('opts into the OS keychain only when asked and no file path is set', () => {
-		const keyring = createKeyring({
-			keyringBackend: 'keychain',
-			keyringFile: null,
-			dataDir: '/tmp/local-books-unused',
-		});
-		expect(keyring.backend).toBe('keychain');
+	test("'keychain' opens the OS keychain store", () => {
+		expect(createKeyring('keychain').backend).toBe('keychain');
 	});
 });
 
@@ -76,34 +49,53 @@ describe('createFileKeyring', () => {
 	});
 });
 
-describe('LOCAL_BOOKS_KEYRING resolution', () => {
-	const KEY = 'LOCAL_BOOKS_KEYRING';
-	function withEnv(value: string | undefined, fn: () => void): void {
-		const prev = process.env[KEY];
-		if (value === undefined) delete process.env[KEY];
-		else process.env[KEY] = value;
+describe('token store resolution', () => {
+	const FILE = 'LOCAL_BOOKS_KEYRING_FILE';
+	const BACKEND = 'LOCAL_BOOKS_KEYRING';
+
+	/** Run `fn` with the two keyring env vars set to the given values, restored after. */
+	function withEnv(
+		values: { file?: string; backend?: string },
+		fn: () => void,
+	): void {
+		const prev = { file: process.env[FILE], backend: process.env[BACKEND] };
+		set(FILE, values.file);
+		set(BACKEND, values.backend);
 		try {
 			fn();
 		} finally {
-			if (prev === undefined) delete process.env[KEY];
-			else process.env[KEY] = prev;
+			set(FILE, prev.file);
+			set(BACKEND, prev.backend);
 		}
 	}
+	function set(key: string, value: string | undefined): void {
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
 
-	test('defaults to the file backend', () => {
-		withEnv(undefined, () => {
-			expect(loadConfig().keyringBackend).toBe('file');
+	test('defaults to a file at <data-dir>/credentials.json', () => {
+		withEnv({}, () => {
+			const config = loadConfig({ dataDir: '/tmp/lb-resolve' });
+			expect(config.tokenStore).toEqual({
+				path: credentialsFilePath('/tmp/lb-resolve'),
+			});
 		});
 	});
 
-	test('opts into the keychain backend', () => {
-		withEnv('keychain', () => {
-			expect(loadConfig().keyringBackend).toBe('keychain');
+	test('opts into the keychain', () => {
+		withEnv({ backend: 'keychain' }, () => {
+			expect(loadConfig().tokenStore).toBe('keychain');
 		});
 	});
 
-	test('rejects an unknown value', () => {
-		withEnv('bogus', () => {
+	test('an explicit file path wins over the keychain opt-in', () => {
+		withEnv({ file: '/custom/creds.json', backend: 'keychain' }, () => {
+			expect(loadConfig().tokenStore).toEqual({ path: '/custom/creds.json' });
+		});
+	});
+
+	test('rejects an unknown backend value', () => {
+		withEnv({ backend: 'bogus' }, () => {
 			expect(() => loadConfig()).toThrow(/Unknown LOCAL_BOOKS_KEYRING/);
 		});
 	});

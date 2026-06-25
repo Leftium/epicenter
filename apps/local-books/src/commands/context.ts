@@ -40,5 +40,5 @@ export function resolveCompany(
 	});
 	const { data: realmId, error } = resolveRealm(config);
 	if (error !== null) return Err(error);
-	return Ok({ config, realmId, keyring: createKeyring(config) });
+	return Ok({ config, realmId, keyring: createKeyring(config.tokenStore) });
 }

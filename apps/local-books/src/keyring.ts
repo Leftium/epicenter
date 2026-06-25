@@ -1,26 +1,27 @@
 import { secrets } from 'bun';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { AppConfig } from './config.ts';
-import { credentialsFilePath } from './paths.ts';
+
+/**
+ * Where a realm's OAuth token set lives, resolved once in config (see
+ * `resolveTokenStore`). One value whose own shape is the discriminant: having a
+ * `path` means a file; the bare `'keychain'` token means the OS keychain. So
+ * "the keychain, at a file path" cannot be expressed.
+ *
+ * - A `0600` JSON file (the default) at `<data-dir>/credentials.json`, or
+ *   wherever `LOCAL_BOOKS_KEYRING_FILE` points. Works identically on a desktop,
+ *   a headless server, an SSH session, and CI, which is the property a tool
+ *   whose recurring mode is unattended sync needs most.
+ * - `'keychain'` (opt-in, `LOCAL_BOOKS_KEYRING=keychain`): the OS credential
+ *   store. It cannot be reached from a session without a graphic security
+ *   context (SSH, herdr), which is exactly why it is not the default.
+ */
+export type TokenStore = { readonly path: string } | 'keychain';
 
 /**
  * A minimal secret store keyed by `realmId`. The OAuth token set is serialized
  * to JSON and stored here, never inside a company's mirror db (the agent's
- * read-only SQL surface must never be able to read it). Backends:
- *
- * - **file** (the default): a `0600` JSON file at `<data-dir>/credentials.json`,
- *   or wherever `LOCAL_BOOKS_KEYRING_FILE` points. Works identically on a
- *   desktop, a headless server, an SSH session, and CI, which is the property a
- *   tool whose recurring mode is unattended sync needs most. Plaintext at rest;
- *   filesystem permissions are the protection, the same tradeoff `git
- *   credential-store` and `~/.aws/credentials` make.
- * - **keychain** (opt-in, `LOCAL_BOOKS_KEYRING=keychain`): the OS credential
- *   store via `Bun.secrets` (macOS Keychain, Linux libsecret, Windows Credential
- *   Manager). Native, no subprocess, still inside the single `bun build
- *   --compile` binary. It cannot be reached from a session without a graphic
- *   security context (SSH, herdr), which is exactly why it is not the default.
- * - **memory**: process-lifetime, for tests.
+ * read-only SQL surface must never be able to read it).
  *
  * Backend failures throw: an unreachable or locked credential store is fatal and
  * rare, so it bubbles to the top-level CLI handler (`bin.ts`) rather than
@@ -39,10 +40,10 @@ export type Keyring = {
 const SERVICE = 'local-books';
 
 /**
- * OS credential store via `Bun.secrets`. Opt-in (`LOCAL_BOOKS_KEYRING=keychain`)
- * because it needs a graphic security session: a headless, SSH, or herdr shell
- * cannot reach it. `get` returns `null` only when nothing is stored; a locked or
- * unavailable store throws, by Bun's contract.
+ * OS credential store via `Bun.secrets` (macOS Keychain, Linux libsecret,
+ * Windows Credential Manager). Native, no subprocess, still inside the single
+ * `bun build --compile` binary. `get` returns `null` only when nothing is
+ * stored; a locked or unavailable store throws, by Bun's contract.
  */
 export function createKeychainKeyring(): Keyring {
 	return {
@@ -61,8 +62,8 @@ export function createKeychainKeyring(): Keyring {
 
 /**
  * The default `0600` JSON-file store. The secret is not encrypted; the file mode
- * is the protection. Kept out of any company's mirror db so the agent's
- * read-only SQL surface never sees it.
+ * is the protection (the same tradeoff `git credential-store` and
+ * `~/.aws/credentials` make). Kept out of any company's mirror db.
  */
 export function createFileKeyring(filePath: string): Keyring {
 	const load = (): Record<string, string> => {
@@ -113,15 +114,9 @@ export function createMemoryKeyring(): Keyring {
 	};
 }
 
-/**
- * Resolve the token store. An explicit `LOCAL_BOOKS_KEYRING_FILE` wins (it names
- * a concrete file: CI, tests, a custom location); then the opt-in keychain; else
- * the default `0600` file at `<data-dir>/credentials.json`.
- */
-export function createKeyring(
-	config: Pick<AppConfig, 'keyringBackend' | 'keyringFile' | 'dataDir'>,
-): Keyring {
-	if (config.keyringFile) return createFileKeyring(config.keyringFile);
-	if (config.keyringBackend === 'keychain') return createKeychainKeyring();
-	return createFileKeyring(credentialsFilePath(config.dataDir));
+/** Open a resolved token store as a keyring. */
+export function createKeyring(store: TokenStore): Keyring {
+	return store === 'keychain'
+		? createKeychainKeyring()
+		: createFileKeyring(store.path);
 }

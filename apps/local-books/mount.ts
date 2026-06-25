@@ -40,7 +40,7 @@ export function localBooksMount({
 	const openQb = makeQbAccess({
 		config,
 		realmId,
-		keyring: createKeyring(config),
+		keyring: createKeyring(config.tokenStore),
 		now: () => Date.now(),
 	});
 	return localBooksWorkspace.mount({

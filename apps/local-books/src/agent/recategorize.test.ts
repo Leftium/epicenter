@@ -54,7 +54,7 @@ async function setup(
 		dataDir: dir,
 		apiBase: mock.apiBase,
 		tokenUrl: mock.tokenUrl,
-		keyringFile,
+		tokenStore: { path: keyringFile },
 		entities: ['Purchase'],
 	});
 	const keyring = createFileKeyring(keyringFile);

@@ -26,7 +26,7 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const keyring = createKeyring(config);
+	const keyring = createKeyring(config.tokenStore);
 
 	console.error(`Authenticating against QuickBooks (${config.environment})...`);
 	const { data: token, error } = await runAuthorizationFlow(config, {

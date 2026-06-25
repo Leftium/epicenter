@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { DEFAULT_ENTITIES, isKnownEntity } from './entities.ts';
-import { resolveDataDir } from './paths.ts';
+import type { TokenStore } from './keyring.ts';
+import { credentialsFilePath, resolveDataDir } from './paths.ts';
 
 /** Which QuickBooks deployment a company lives in. */
 export type QbEnvironment = 'sandbox' | 'production';
@@ -37,14 +38,12 @@ export type AppConfig = {
 	fullBackstopDays: number;
 	/** Query-API page size; QuickBooks caps results at 1000. */
 	pageSize: number;
-	keyringFile: string | null;
 	/**
-	 * Which token store to use: `file` (the default; a `0600` JSON file that works
-	 * headless and in CI) or `keychain` (opt-in OS credential store, desktop only,
-	 * via `Bun.secrets`). `LOCAL_BOOKS_KEYRING`. An explicit `LOCAL_BOOKS_KEYRING_FILE`
-	 * overrides this and forces the file store at that path.
+	 * Where OAuth tokens live: a `0600` file (the default, works headless and in
+	 * CI) or the OS keychain (opt-in, desktop only). Resolved from
+	 * `LOCAL_BOOKS_KEYRING` / `LOCAL_BOOKS_KEYRING_FILE`. See `resolveTokenStore`.
 	 */
-	keyringBackend: 'file' | 'keychain';
+	tokenStore: TokenStore;
 	realmOverride: string | null;
 	/**
 	 * Port the localhost OAuth callback server binds to. Defaults to the port in
@@ -120,14 +119,23 @@ function envFlag(name: string): boolean | undefined {
 	return value !== '0' && value.toLowerCase() !== 'false';
 }
 
-/** Token store backend: `file` (default) or the opt-in `keychain`. */
-function resolveKeyringBackend(): 'file' | 'keychain' {
-	const value = env('LOCAL_BOOKS_KEYRING');
-	if (value === undefined) return 'file';
-	if (value === 'file' || value === 'keychain') return value;
-	throw new Error(
-		`Unknown LOCAL_BOOKS_KEYRING value "${value}". Use "file" (default) or "keychain".`,
-	);
+/**
+ * Resolve where tokens live. An explicit `LOCAL_BOOKS_KEYRING_FILE` wins (it
+ * names a concrete file: CI, tests, a custom location); then the opt-in keychain
+ * (`LOCAL_BOOKS_KEYRING=keychain`); else a `0600` file at the data-dir root.
+ */
+function resolveTokenStore(dataDir: string): TokenStore {
+	const file = env('LOCAL_BOOKS_KEYRING_FILE');
+	if (file) return { path: file };
+
+	const backend = env('LOCAL_BOOKS_KEYRING');
+	if (backend === 'keychain') return 'keychain';
+	if (backend !== undefined && backend !== 'file') {
+		throw new Error(
+			`Unknown LOCAL_BOOKS_KEYRING value "${backend}". Use "file" (default) or "keychain".`,
+		);
+	}
+	return { path: credentialsFilePath(dataDir) };
 }
 
 function resolveEntities(file: ConfigFile): string[] {
@@ -178,8 +186,7 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 		cdcSafeWindowDays: file.cdcSafeWindowDays ?? 25,
 		fullBackstopDays: file.fullBackstopDays ?? 7,
 		pageSize: Math.min(file.pageSize ?? 1000, 1000),
-		keyringFile: env('LOCAL_BOOKS_KEYRING_FILE') ?? null,
-		keyringBackend: resolveKeyringBackend(),
+		tokenStore: resolveTokenStore(dataDir),
 		realmOverride: overrides.realm ?? env('LOCAL_BOOKS_QB_REALM') ?? null,
 		callbackPort: callbackPortEnv
 			? Number(callbackPortEnv)

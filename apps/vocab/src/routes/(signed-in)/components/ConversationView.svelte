@@ -5,7 +5,6 @@
 	} from '@epicenter/app-shell/agent-chat';
 	import { Markdown } from '@epicenter/ui/markdown';
 	import { agentMessageText } from '@epicenter/workspace/agent';
-	import { VOCAB_MODEL } from '@epicenter/vocab';
 	import { pinyinRomanizer } from '$lib/romanize/pinyin';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 
@@ -19,7 +18,6 @@
 	<AgentChatThread
 		conversation={active}
 		connections={inferenceConnections}
-		defaultModel={VOCAB_MODEL}
 		placeholder="Ask something in English..."
 		onSignIn={() => {
 			// Vocab has no dedicated sign-in surface yet.

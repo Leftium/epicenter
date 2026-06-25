@@ -7,6 +7,7 @@
 		InferencePicker,
 	} from '../inference-picker/index.js';
 	import type { ConversationHandle } from './agent-chat.svelte.js';
+	import AgentMessageParts from './agent-message-parts.svelte';
 	import ChatErrorBanner from './chat-error-banner.svelte';
 	import ChatInput from './chat-input.svelte';
 	import MessageList from './message-list.svelte';
@@ -14,10 +15,11 @@
 	let {
 		conversation,
 		connections,
-		defaultModel,
 		onSignIn,
 		onUpgrade,
 		message,
+		resolveToolTitle,
+		onAlwaysAllow,
 		emptyState,
 		placeholder,
 	}: {
@@ -25,21 +27,36 @@
 		conversation: ConversationHandle;
 		/** The device connection registry (ADR-0059), for the model picker and gap. */
 		connections: InferenceConnections;
-		/** The model "Use default" resets to when no device serves the current one. */
-		defaultModel: string;
 		/** Open the app's sign-in flow (the turn failed with HTTP 401). */
 		onSignIn: () => void;
 		/** Open the app's upgrade/billing flow (the turn failed with HTTP 402). */
 		onUpgrade: () => void;
-		/** Renders one message's content inside its bubble (tool parts, pinyin, …).
-		 * The second argument is true for the in-flight message. */
-		message: Snippet<[AgentMessage, boolean]>;
+		/** Override how one message's content renders (vocab's pinyin pass). Omit to
+		 * use the built-in renderer (text + tool calls), wired to this conversation's
+		 * approval state and the `resolveToolTitle` / `onAlwaysAllow` seams below. The
+		 * second argument is true for the in-flight message. */
+		message?: Snippet<[AgentMessage, boolean]>;
+		/** Map a tool name to a human title for the built-in renderer; ignored when a
+		 * `message` override is supplied. */
+		resolveToolTitle?: (toolName: string) => string | undefined;
+		/** "Always Allow" action for the built-in renderer; ignored when a `message`
+		 * override is supplied. The button shows only when set; trust stays in the app. */
+		onAlwaysAllow?: () => void;
 		/** Optional empty-state override; defaults to a generic chat prompt. */
 		emptyState?: Snippet;
 		/** Optional input placeholder. */
 		placeholder?: string;
 	} = $props();
 </script>
+
+{#snippet defaultMessage(msg: AgentMessage)}
+	<AgentMessageParts
+		message={msg}
+		{conversation}
+		{resolveToolTitle}
+		{onAlwaysAllow}
+	/>
+{/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
 	<div class="min-h-0 flex-1">
@@ -48,7 +65,7 @@
 			streaming={conversation.streaming}
 			status={conversation.status}
 			onReload={() => conversation.reload()}
-			{message}
+			message={message ?? defaultMessage}
 			{emptyState}
 		/>
 	</div>
@@ -58,7 +75,7 @@
 	<CrossDeviceModelGap
 		model={conversation.model}
 		{connections}
-		onUseDefault={() => (conversation.model = defaultModel)}
+		onUseDefault={() => conversation.useDefaultModel()}
 	/>
 
 	<!-- The shared model-first picker (ADR-0059): the conversation's model bound to

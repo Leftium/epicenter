@@ -256,6 +256,13 @@ export function createAgentChatState({
 				updateConversation(conversationId, { model: value });
 			},
 
+			/** Reset to the app's default model (the model-gap's "Use default"). The
+			 * default is the factory's `defaultModel`, owned here so a thread needn't be
+			 * told it a second time alongside the registry that already holds it. */
+			useDefaultModel() {
+				updateConversation(conversationId, { model: defaultModel });
+			},
+
 			// ── Chat state (from the loop) ──
 
 			get messages() {

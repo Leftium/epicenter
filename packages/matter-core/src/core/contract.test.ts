@@ -58,6 +58,56 @@ describe('validateContract (the matter.json gate)', () => {
 		);
 	});
 
+	test('searchable defaults to body plus every TEXT-storage field', () => {
+		const { data, error } = validateContract({
+			fields: {
+				title: { type: 'string' },
+				count: { type: 'integer' },
+				live: { type: 'boolean' },
+				tags: { type: 'array', items: { type: 'string' } },
+			},
+		});
+		if (error) throw new Error(error.message);
+		// body + the TEXT fields (title, tags); the integer and boolean fields are not full-text.
+		expect(data.searchable).toEqual(['body', 'title', 'tags']);
+	});
+
+	test('top-level searchable overrides the default and may drop body', () => {
+		const { data, error } = validateContract({
+			fields: { title: { type: 'string' }, note: { type: 'string' } },
+			searchable: ['note'],
+		});
+		if (error) throw new Error(error.message);
+		expect(data.searchable).toEqual(['note']);
+	});
+
+	test('searchable drops names that are not real columns', () => {
+		const { data, error } = validateContract({
+			fields: { title: { type: 'string' } },
+			searchable: ['body', 'title', 'nope'],
+		});
+		if (error) throw new Error(error.message);
+		expect(data.searchable).toEqual(['body', 'title']);
+	});
+
+	test('an empty searchable means no full-text index', () => {
+		const { data, error } = validateContract({
+			fields: { title: { type: 'string' } },
+			searchable: [],
+		});
+		if (error) throw new Error(error.message);
+		expect(data.searchable).toEqual([]);
+	});
+
+	test('rejects searchable when it is not an array of column names', () => {
+		expect(
+			validateContract({ fields: {}, searchable: 'body' }).error?.name,
+		).toBe('InvalidSearchable');
+		expect(validateContract({ fields: {}, searchable: [42] }).error?.name).toBe(
+			'InvalidSearchable',
+		);
+	});
+
 	test('reports optional entries that do not match typed fields', () => {
 		const { data, error } = validateContract({
 			fields: {

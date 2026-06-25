@@ -22,12 +22,16 @@ export function createVadRecordingController(): RecordingActionController {
 
 	const isListening = $derived(vadRecorder.state !== 'IDLE');
 	const isSpeechDetected = $derived(vadRecorder.state === 'SPEECH_DETECTED');
-	// A previous phrase still transcribing while this session keeps listening: the
-	// continuous-VAD overlap the card draws as a spinner. Gated on listening so it
-	// only reads as "ours" while this session is live.
-	const isTranscribingPrevious = $derived(
-		isListening && dictationLifecycle.current.outcome.kind === 'transcribing',
-	);
+	// The live VAD signals the card draws beside its meter, as one memoized object
+	// so `get vad()` returns a stable reference like every other member instead of
+	// building a fresh object per read. `transcribing` is a previous phrase still
+	// transcribing while this session keeps listening (the continuous-VAD overlap),
+	// gated on listening so it only reads as "ours" while this session is live.
+	const vad = $derived({
+		speaking: isSpeechDetected,
+		transcribing:
+			isListening && dictationLifecycle.current.outcome.kind === 'transcribing',
+	});
 	const button = $derived(VAD_RECORDING_BUTTON[vadRecorder.state]);
 	const shortcutLabel = $derived(getRecordingShortcutLabel('vad'));
 
@@ -66,10 +70,7 @@ export function createVadRecordingController(): RecordingActionController {
 			return shortcutLabel;
 		},
 		get vad() {
-			return {
-				speaking: isSpeechDetected,
-				transcribing: isTranscribingPrevious,
-			};
+			return vad;
 		},
 		toggle() {
 			toggleMutation.mutate();

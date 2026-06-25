@@ -2,6 +2,7 @@
 	import {
 		ChatErrorBanner,
 		ChatInput,
+		MessageList,
 	} from '@epicenter/app-shell/agent-chat';
 	import {
 		CrossDeviceModelGap,
@@ -12,7 +13,7 @@
 	import { DEFAULT_MODEL } from '$lib/chat/models';
 	import { requireOpensidian } from '$lib/session';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import MessageList from './MessageList.svelte';
+	import MessageParts from './MessageParts.svelte';
 
 	const opensidian = requireOpensidian();
 	const active = $derived(opensidian.state.chat.active);
@@ -39,10 +40,16 @@
 			streaming={active?.streaming ?? null}
 			status={active?.status ?? 'ready'}
 			onReload={() => active?.reload()}
-			pendingApprovalCallId={active?.pendingApprovalCallId ?? null}
-			onApproveToolCall={() => active?.approveToolCall()}
-			onDenyToolCall={() => active?.denyToolCall()}
-		/>
+		>
+			{#snippet message(msg)}
+				<MessageParts
+					parts={msg.parts}
+					pendingApprovalCallId={active?.pendingApprovalCallId ?? null}
+					onApproveToolCall={() => active?.approveToolCall()}
+					onDenyToolCall={() => active?.denyToolCall()}
+				/>
+			{/snippet}
+		</MessageList>
 	</div>
 
 	{#if active}

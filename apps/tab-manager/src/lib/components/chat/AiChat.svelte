@@ -2,6 +2,7 @@
 	import {
 		ChatErrorBanner,
 		ChatInput,
+		MessageList,
 	} from '@epicenter/app-shell/agent-chat';
 	import {
 		CrossDeviceModelGap,
@@ -11,7 +12,7 @@
 	import { requireTabManager } from '$lib/session.svelte';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import ConversationPicker from './ConversationPicker.svelte';
-	import MessageList from './MessageList.svelte';
+	import MessageParts from './MessageParts.svelte';
 
 	const tabManager = requireTabManager();
 	const aiChat = $derived(tabManager.state.aiChat);
@@ -41,11 +42,17 @@
 			streaming={active?.streaming ?? null}
 			status={active?.status ?? 'ready'}
 			onReload={() => active?.reload()}
-			pendingApprovalCallId={active?.pendingApprovalCallId ?? null}
-			onApproveToolCall={() => active?.approveToolCall()}
-			onDenyToolCall={() => active?.denyToolCall()}
-			onAlwaysAllowToolCall={alwaysAllowPendingToolCall}
-		/>
+		>
+			{#snippet message(msg)}
+				<MessageParts
+					parts={msg.parts}
+					pendingApprovalCallId={active?.pendingApprovalCallId ?? null}
+					onApproveToolCall={() => active?.approveToolCall()}
+					onDenyToolCall={() => active?.denyToolCall()}
+					onAlwaysAllowToolCall={alwaysAllowPendingToolCall}
+				/>
+			{/snippet}
+		</MessageList>
 	</div>
 
 	{#if active}

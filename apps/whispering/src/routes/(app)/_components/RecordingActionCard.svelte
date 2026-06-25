@@ -6,6 +6,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
 	import LevelMeter from '$lib/components/LevelMeter.svelte';
+	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
 	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { tauri } from '#platform/tauri';
@@ -71,7 +72,7 @@
 		<span
 			aria-hidden="true"
 			class={cn(
-				'flex size-14 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-foreground shadow-inner transition-colors duration-200 sm:size-16',
+				'relative flex size-14 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-foreground shadow-inner transition-colors duration-200 sm:size-16',
 				controller.active &&
 					'border-destructive/45 bg-destructive/10 text-destructive',
 			)}
@@ -88,6 +89,25 @@
 					minPx={3}
 					maxPx={28}
 				/>
+				{#if controller.vad}
+					<!-- VAD session: the same dim-dot -> lit-dot -> spinner indicator the
+					floating pill shows beside its meter, here in the glyph's corner. The
+					bars track loudness; this dot tracks whether VAD has latched onto speech
+					and becomes a spinner while a previous phrase is still transcribing. On
+					'/' the pill yields the recording phase to this card, so this is the
+					only place that last signal shows. The signals come from this card's own
+					controller (present only for VAD), not a global lookup. -->
+					<span
+						class="absolute top-0.5 right-0.5 flex size-4 items-center justify-center"
+					>
+						<VadIndicator
+							signals={controller.vad}
+							dimClass="bg-destructive/40"
+							litClass="bg-destructive"
+							spinnerClass="text-muted-foreground"
+						/>
+					</span>
+				{/if}
 			{:else}
 				{@const Icon = controller.icon}
 				<span

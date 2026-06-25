@@ -1,4 +1,3 @@
-import type { VadState } from '$lib/constants/audio';
 import type { DeliveryReach } from '$lib/operations/delivery';
 import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 
@@ -46,17 +45,6 @@ export const FAILURE_LABEL = {
 } as const satisfies Record<DictationFailureTier, string>;
 
 /**
- * The secondary pip riding alongside a live VAD meter, when there is one. In a
- * continuous session the meter (listening) and the previous utterance's work run
- * at once, so the work shows as a small spinner on the meter rather than
- * replacing it; an absent pip is the resting state. There is deliberately no
- * `delivered` pip (the landing text is the receipt) and no `failed` pip: a VAD
- * failure is not shown on the pill, it goes to the OS notification and the
- * recordings row (ADR-0039).
- */
-export type VadOutcomePip = 'transcribing';
-
-/**
  * What the pill should display, the serializable projection of the main
  * window's dictation lifecycle. Only the non-idle phases are representable: an
  * idle dictation hides the pill rather than emitting a status, so there is no
@@ -65,17 +53,24 @@ export type VadOutcomePip = 'transcribing';
  * overlay webview; the pill maps it to a terse label via `FAILURE_LABEL`, and the
  * full error detail lives on the recordings row and in the OS notification.
  *
- * The VAD `recording` variant may also carry `pip`: the live meter is the
- * primary content, and a concurrent utterance's work rides beside it. The pip is
- * absent (omitted) when nothing rides alongside.
+ * The VAD `recording` variant carries two glanceable, orthogonal signals beside
+ * the live meter: `speaking` (VAD has latched onto speech, past mere loudness)
+ * and `transcribing` (a previous phrase is still transcribing alongside the live
+ * session). They are independent: a new utterance can latch while the prior one
+ * still transcribes. Both are already-resolved booleans, not the raw VAD state,
+ * so every surface renders them identically without re-deriving. Success and
+ * failure earn no signal: success is the landing text, and a VAD failure goes to
+ * the OS notification and the recordings row, not the pill (ADR-0039).
  */
 export type RecordingOverlayStatus =
 	| { phase: 'recording'; trigger: 'manual' }
 	| {
 			phase: 'recording';
 			trigger: 'vad';
-			vadState: Exclude<VadState, 'IDLE'>;
-			pip?: VadOutcomePip;
+			/** VAD has latched onto speech: light the meter past mere loudness. */
+			speaking: boolean;
+			/** A previous phrase is still transcribing beside the live meter. */
+			transcribing: boolean;
 	  }
 	| { phase: 'transcribing' }
 	| { phase: 'delivered'; reach: DeliveryReach }

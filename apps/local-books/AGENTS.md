@@ -7,7 +7,7 @@ Design authority: `specs/20260621T100000-local-books-cli-sync-engine.md` (top-le
 ## Shape
 
 - Runtime: Bun. `bun:sqlite` for storage, built-in `fetch` for the QB API, `oauth4webapi` for the OAuth2 grants (the same client `@epicenter/auth` uses; we own only the localhost callback and the QuickBooks-specific `realmId`). Runtime deps are pure-TS and dependency-free so `bun build --compile` yields one binary: `wellcrafted` (Result/error idioms), `typebox` (validating untrusted token grants and `config.json`), and `oauth4webapi`. All three are cataloged and used elsewhere in the monorepo.
-- One SQLite file per company: `<data-dir>/<realmId>/books.db`. Tokens live in the OS keyring (never the data dir). Sync state lives in the db (`_sync_state`), not a sidecar, so ingest-and-advance is one transaction.
+- One SQLite file per company: `<data-dir>/<realmId>/books.db`. Tokens live in a `0600` `credentials.json` at the data-dir root by default (the OS keychain is opt-in, `LOCAL_BOOKS_KEYRING=keychain`), never inside a company's mirror db, so the agent's read-only SQL surface can never read them. See ADR-0061. Sync state lives in the db (`_sync_state`), not a sidecar, so ingest-and-advance is one transaction.
 - One table per QB entity (`invoices`, `customers`, ...): `id`, `raw` (verbatim QB JSON), `updated_at`, `synced_at`, `deleted`, plus a few extracted scalar columns for indexing/joins. New QB fields land in `raw` with no migration.
 
 ## Grounded QB constants (verified against developer.intuit.com, 2026-06-21)
@@ -32,7 +32,8 @@ Mode is chosen from stored state: `--full` / no cursor / cursor older than the C
 - `QB_CLIENT_ID` / `QB_CLIENT_SECRET` — your Intuit app keys (required for `auth`). This is what Infisical injects at `/apps/local-books`, so the usual invocation is `infisical run --path=/apps/local-books -- bun run src/bin.ts auth`.
 - `LOCAL_BOOKS_QB_ENV` — `sandbox` (default) or `production`.
 - `LOCAL_BOOKS_DIR` / `--data-dir` — data directory override.
-- `LOCAL_BOOKS_KEYRING_FILE` — opt-in plaintext file token store (CI / headless boxes without a keyring daemon, and the test harness). Default is the OS keyring.
+- `LOCAL_BOOKS_KEYRING` — token store: `file` (default) or `keychain` (opt-in OS credential store via `Bun.secrets`, desktop only). The default file store works headless and in CI; the keychain cannot be read from a session without a graphic security context (SSH, herdr). See ADR-0061.
+- `LOCAL_BOOKS_KEYRING_FILE` — override the file store's path (default `<data-dir>/credentials.json`). Used by the test harness and any custom location. An explicit path here forces the file store even if `LOCAL_BOOKS_KEYRING=keychain` is set.
 - `LOCAL_BOOKS_READ_ONLY` — serve the agent a read-only surface (both reads, no `recategorize_expense` write tool). See the agent-surface capability lattice below.
 - Base-URL overrides (`LOCAL_BOOKS_QB_API_BASE`, `_TOKEN_URL`, `_AUTHORIZE_URL`) point the client at a mock server for tests.
 

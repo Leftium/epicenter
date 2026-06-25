@@ -21,6 +21,7 @@ export function makeConfig(over: Partial<AppConfig> = {}): AppConfig {
 		fullBackstopDays: 7,
 		pageSize: 1000,
 		keyringFile: null,
+		keyringBackend: 'file',
 		realmOverride: null,
 		callbackPort: null,
 		readOnly: false,

@@ -38,6 +38,13 @@ export type AppConfig = {
 	/** Query-API page size; QuickBooks caps results at 1000. */
 	pageSize: number;
 	keyringFile: string | null;
+	/**
+	 * Which token store to use: `file` (the default; a `0600` JSON file that works
+	 * headless and in CI) or `keychain` (opt-in OS credential store, desktop only,
+	 * via `Bun.secrets`). `LOCAL_BOOKS_KEYRING`. An explicit `LOCAL_BOOKS_KEYRING_FILE`
+	 * overrides this and forces the file store at that path.
+	 */
+	keyringBackend: 'file' | 'keychain';
 	realmOverride: string | null;
 	/**
 	 * Port the localhost OAuth callback server binds to. Defaults to the port in
@@ -113,6 +120,16 @@ function envFlag(name: string): boolean | undefined {
 	return value !== '0' && value.toLowerCase() !== 'false';
 }
 
+/** Token store backend: `file` (default) or the opt-in `keychain`. */
+function resolveKeyringBackend(): 'file' | 'keychain' {
+	const value = env('LOCAL_BOOKS_KEYRING');
+	if (value === undefined) return 'file';
+	if (value === 'file' || value === 'keychain') return value;
+	throw new Error(
+		`Unknown LOCAL_BOOKS_KEYRING value "${value}". Use "file" (default) or "keychain".`,
+	);
+}
+
 function resolveEntities(file: ConfigFile): string[] {
 	const fromEnv = env('LOCAL_BOOKS_ENTITIES')
 		?.split(',')
@@ -162,6 +179,7 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 		fullBackstopDays: file.fullBackstopDays ?? 7,
 		pageSize: Math.min(file.pageSize ?? 1000, 1000),
 		keyringFile: env('LOCAL_BOOKS_KEYRING_FILE') ?? null,
+		keyringBackend: resolveKeyringBackend(),
 		realmOverride: overrides.realm ?? env('LOCAL_BOOKS_QB_REALM') ?? null,
 		callbackPort: callbackPortEnv
 			? Number(callbackPortEnv)

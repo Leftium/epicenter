@@ -34,3 +34,13 @@ export function dbPath(dataDir: string, realmId: string): string {
 export function companiesFilePath(dataDir: string): string {
 	return join(dataDir, 'companies.json');
 }
+
+/**
+ * The default file token store: `credentials.json` at the data-dir root, sibling
+ * to `companies.json`. Deliberately not inside a company's `<realmId>/` mirror
+ * dir, so the agent's read-only SQL surface over `books.db` can never read it
+ * (and one company's mirror can be shared without its refresh token).
+ */
+export function credentialsFilePath(dataDir: string): string {
+	return join(dataDir, 'credentials.json');
+}

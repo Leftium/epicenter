@@ -45,7 +45,8 @@ Options:
 Environment:
   QB_CLIENT_ID / QB_CLIENT_SECRET      Intuit app credentials (required for auth).
   LOCAL_BOOKS_DIR                       Data directory.
-  LOCAL_BOOKS_KEYRING_FILE              Plaintext file token store instead of the OS keyring.
+  LOCAL_BOOKS_KEYRING                    Token store: "file" (default) or "keychain" (opt-in OS keychain).
+  LOCAL_BOOKS_KEYRING_FILE              Override the token file path (default: <data-dir>/credentials.json).
 `;
 
 /** Parse a duration like "30s", "30m", "2h" into ms; a bare number means minutes. */

@@ -5,7 +5,7 @@ A headless CLI that mirrors a QuickBooks Online company into a local SQLite data
 ## Commands
 
 ```
-local-books auth                              # one-time OAuth2 (localhost callback), tokens -> OS keyring
+local-books auth                              # one-time OAuth2 (localhost callback), tokens -> credentials.json
 local-books sync [--full] [--entity <name>]   # refresh the mirror; mode is chosen from stored state
 local-books status                            # token state + per-entity cursor, row counts, last full pull
 ```
@@ -83,13 +83,13 @@ To avoid repeating `--env production` outside the scripts, set `LOCAL_BOOKS_QB_E
 
 ```
 <data-dir>/<realmId>/books.db   # entity tables + _sync_state + _meta
-OS keyring (keyed by realmId)    # OAuth tokens, never the data dir
+<data-dir>/credentials.json      # OAuth tokens (0600), never inside a company's db
 <data-dir>/config.json           # optional: entities, environment, schedule
 ```
 
 `<data-dir>` defaults to the OS app-data path (`~/Library/Application Support/local-books` on macOS), overridable with `--data-dir` or `LOCAL_BOOKS_DIR`. `--env sandbox|production` (default `sandbox`) selects the QuickBooks API.
 
-Tokens go in the OS keyring (macOS `security`, Linux `secret-tool`). On a headless box without a keyring daemon, or in CI, set `LOCAL_BOOKS_KEYRING_FILE=<path>` to use a plaintext file store instead.
+Tokens go in a `0600` `credentials.json` at the data-dir root, which works the same on a desktop, a headless box, and CI. Override the path with `LOCAL_BOOKS_KEYRING_FILE=<path>`. To store them in the OS keychain instead (desktop only, since it needs a graphic login session), set `LOCAL_BOOKS_KEYRING=keychain`.
 
 ## Build a single binary
 

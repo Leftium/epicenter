@@ -77,22 +77,24 @@ function buildSession(
 				table: tabManager.tables.conversations,
 				whenLoaded: tabManager.idb.whenLoaded,
 				connections: inferenceConnections,
-				buildSystemPrompts: () => [
-					buildDeviceConstraints(tabManager.nodeId),
-					TAB_MANAGER_SYSTEM_PROMPT,
-				],
 				generateId,
-				defaultModel: DEFAULT_MODEL,
-				toolCatalog: createDispatchToolCatalog(tabManager.collaboration, {
-					localActions: tabManager.actions,
-					selfNodeId: tabManager.nodeId,
-				}),
-				// A tool the user chose to "Always Allow" auto-approves; otherwise a
-				// query runs unattended and a mutation asks (ADR-0044).
-				decideApproval: (call, definition) =>
-					toolTrust.shouldAutoApprove(call.toolName)
-						? 'auto'
-						: defaultApprovalDecision(call, definition),
+				agent: {
+					buildSystemPrompts: () => [
+						buildDeviceConstraints(tabManager.nodeId),
+						TAB_MANAGER_SYSTEM_PROMPT,
+					],
+					defaultModel: DEFAULT_MODEL,
+					toolCatalog: createDispatchToolCatalog(tabManager.collaboration, {
+						localActions: tabManager.actions,
+						selfNodeId: tabManager.nodeId,
+					}),
+					// A tool the user chose to "Always Allow" auto-approves; otherwise a
+					// query runs unattended and a mutation asks (ADR-0044).
+					decideApproval: (call, definition) =>
+						toolTrust.shouldAutoApprove(call.toolName)
+							? 'auto'
+							: defaultApprovalDecision(call, definition),
+				},
 			});
 			const state = { savedTabs, bookmarks, toolTrust, unifiedView, aiChat };
 

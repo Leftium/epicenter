@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { AgentChatThread } from '@epicenter/app-shell/agent-chat';
+	import {
+		AgentChatThread,
+		ConversationSwitcher,
+	} from '@epicenter/app-shell/agent-chat';
 	import { requireTabManager } from '$lib/session.svelte';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import ConversationPicker from './ConversationPicker.svelte';
 
 	const tabManager = requireTabManager();
 	const aiChat = $derived(tabManager.state.aiChat);
@@ -25,9 +27,9 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<ConversationPicker
+	<ConversationSwitcher
 		conversations={aiChat.conversations}
-		activeId={aiChat.activeConversationId}
+		activeConversationId={aiChat.activeConversationId}
 		onSwitch={(id) => aiChat.switchTo(id)}
 		onCreate={() => aiChat.createConversation()}
 	/>

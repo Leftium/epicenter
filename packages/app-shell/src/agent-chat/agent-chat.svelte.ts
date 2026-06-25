@@ -15,16 +15,18 @@
  * Inference rides the OpenAI-compatible gateway (ADR-0049/0050). The engine is
  * built here, once: per turn it resolves the conversation's model (ADR-0055)
  * against this device's connection registry (ADR-0059, `resolveOrHosted`) and
- * reads the app's system prompts. Everything an app varies is injected:
+ * reads the app's system prompts. What the agent can do is grouped into one
+ * `agent` bundle ({@link AgentKit}), since every field of it varies with the
+ * app's persona; the loop's other collaborators are passed alongside:
  *
- * - `buildSystemPrompts`  the layered prompts an answer is generated under.
- * - `toolCatalog`         the live tool surface; omit for a capability-free app.
- * - `decideApproval`      the per-call approval policy; defaults to query-runs,
- *                         mutation-asks. The synchronous pause is owned here.
- * - `activeConversation`  the active-conversation source; defaults to internal
- *                         state. An app that keeps it in the URL injects its own.
- * - `generateId` / `defaultModel`  the message-id minter and the model a brand
- *                         new conversation starts on.
+ * - `agent.buildSystemPrompts`  the layered prompts an answer is generated under.
+ * - `agent.toolCatalog`         the live tool surface; omit for a capability-free app.
+ * - `agent.decideApproval`      the per-call approval policy; defaults to query-runs,
+ *                               mutation-asks. The synchronous pause is owned here.
+ * - `agent.defaultModel`        the model a brand new conversation starts on.
+ * - `activeConversation`        the active-conversation source; defaults to internal
+ *                               state. An app that keeps it in the URL injects its own.
+ * - `generateId`                the message-id minter.
  *
  * A mutation is approval-gated by a synchronous pause: the loop waits on an
  * in-client decision, recorded per handle in `pendingApproval`. The "Always
@@ -76,16 +78,35 @@ export type AgentChatState = ReturnType<typeof createAgentChatState>;
 /** A reactive handle for a single conversation backed by the client loop. */
 export type ConversationHandle = NonNullable<AgentChatState['active']>;
 
+/**
+ * What the agent can do: the persona and capabilities an app gives its chat
+ * loop. Grouped because every field varies with the app, not the device or the
+ * route. The workspace handles, connections, id minter, and active-conversation
+ * source the loop also needs are passed separately; they have different owners.
+ */
+export type AgentKit = {
+	/** The layered system prompts an answer is generated under, read per turn. */
+	buildSystemPrompts: () => string[];
+	/** The live tool surface; omit for a capability-free app (Vocab). */
+	toolCatalog?: ToolCatalog;
+	/** The model a brand new conversation starts on when none is carried forward. */
+	defaultModel: string;
+	/** The per-call approval policy; defaults to query-runs, mutation-asks. */
+	decideApproval?: Approval['decide'];
+};
+
 export function createAgentChatState({
 	table,
 	whenLoaded,
 	connections,
-	buildSystemPrompts,
 	generateId,
-	defaultModel,
-	toolCatalog,
-	decideApproval = defaultApprovalDecision,
 	activeConversation,
+	agent: {
+		buildSystemPrompts,
+		toolCatalog,
+		defaultModel,
+		decideApproval = defaultApprovalDecision,
+	},
 }: {
 	/** The conversations table handle (`workspace.tables.conversations`). */
 	table: ConversationsTable;
@@ -93,18 +114,12 @@ export function createAgentChatState({
 	whenLoaded: Promise<unknown>;
 	/** The device connection registry (ADR-0059); resolves a model to a transport. */
 	connections: InferenceConnections;
-	/** The layered system prompts an answer is generated under, read per turn. */
-	buildSystemPrompts: () => string[];
 	/** Mint a message id. */
 	generateId: () => string;
-	/** The model a brand new conversation starts on when none is carried forward. */
-	defaultModel: string;
-	/** The live tool surface; omit for a capability-free app (Vocab). */
-	toolCatalog?: ToolCatalog;
-	/** The per-call approval policy; defaults to query-runs, mutation-asks. */
-	decideApproval?: Approval['decide'];
 	/** The active-conversation source; defaults to internal `$state`. */
 	activeConversation?: ActiveConversation;
+	/** What the agent can do: the app's persona and capabilities. */
+	agent: AgentKit;
 }) {
 	const conversationsMap = fromTable(table);
 

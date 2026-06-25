@@ -29,9 +29,11 @@
 		table: vocab.tables.conversations,
 		whenLoaded: vocab.idb.whenLoaded,
 		connections: inferenceConnections,
-		buildSystemPrompts: () => [VOCAB_SYSTEM_PROMPT],
 		generateId: generateMessageId,
-		defaultModel: VOCAB_MODEL,
+		agent: {
+			buildSystemPrompts: () => [VOCAB_SYSTEM_PROMPT],
+			defaultModel: VOCAB_MODEL,
+		},
 	});
 
 	onDestroy(() => chat[Symbol.dispose]());

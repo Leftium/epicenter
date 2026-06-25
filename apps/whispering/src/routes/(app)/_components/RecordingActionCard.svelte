@@ -101,8 +101,7 @@
 						class="absolute top-0.5 right-0.5 flex size-4 items-center justify-center"
 					>
 						<VadIndicator
-							speaking={controller.vad.speaking}
-							transcribing={controller.vad.transcribing}
+							signals={controller.vad}
 							dimClass="bg-destructive/40"
 							litClass="bg-destructive"
 							spinnerClass="text-muted-foreground"

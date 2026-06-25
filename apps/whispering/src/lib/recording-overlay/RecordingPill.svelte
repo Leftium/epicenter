@@ -195,8 +195,7 @@
 					     previous phrase's transcribe. -->
 					<div class="flex size-6 items-center justify-center">
 						<VadIndicator
-							speaking={recording.speaking}
-							transcribing={recording.transcribing}
+							signals={recording}
 							dimClass="bg-white/40"
 							litClass="bg-pink-300"
 							spinnerClass="text-white/50"

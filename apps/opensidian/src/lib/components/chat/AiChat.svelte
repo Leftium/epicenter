@@ -16,10 +16,6 @@
 
 	const opensidian = requireOpensidian();
 	const active = $derived(opensidian.state.chat.active);
-
-	const errorVisible = $derived(
-		active?.error && active.error.message !== active.dismissedError,
-	);
 </script>
 
 <div class="flex h-full flex-col">
@@ -85,22 +81,19 @@
 				Upgrade
 			</Button>
 		</div>
-	{:else if errorVisible}
+	{:else if active?.visibleError}
 		<!-- Dismissable errors: model restriction, generic, etc. -->
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 		>
-			<span class="min-w-0 flex-1">{active?.error?.message}</span>
+			<span class="min-w-0 flex-1">{active.visibleError.message}</span>
 			<div class="flex shrink-0 items-center gap-1">
 				<Button
 					variant="ghost"
 					size="sm"
 					class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
-					onclick={() => {
-						if (active) active.dismissedError = null;
-						active?.reload();
-					}}
+					onclick={() => active?.reload()}
 				>
 					<RotateCcwIcon class="size-3" />
 					Retry
@@ -109,9 +102,7 @@
 					variant="ghost"
 					size="icon-xs"
 					class="text-destructive hover:text-destructive"
-					onclick={() => {
-						if (active) active.dismissedError = active.error?.message ?? null;
-					}}
+					onclick={() => active?.dismissError()}
 				>
 					<XIcon class="size-3" />
 				</Button>
@@ -140,9 +131,7 @@
 
 		<ChatInput
 			bind:value={active.inputValue}
-			canSend={inferenceConnections.canServe(active.model) &&
-				!active.isLoading &&
-				active.inputValue.trim().length > 0}
+			canSend={active.canSend}
 			isGenerating={active.isLoading}
 			onSend={(content) => active.sendMessage(content)}
 			onStop={() => active.stop()}

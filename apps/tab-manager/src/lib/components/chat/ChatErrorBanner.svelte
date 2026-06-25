@@ -5,27 +5,22 @@
 
 	let {
 		error,
-		dismissedError,
 		onRetry,
 		onDismiss,
 	}: {
-		/** The last turn's failure (the loop's `ConversationError`), or null. */
+		/** The error to show, already resolved against dismissal, or null. */
 		error: { message: string } | null | undefined;
-		dismissedError: string | null;
 		onRetry: () => void;
 		onDismiss: () => void;
 	} = $props();
-
-	const visible = $derived(error && error.message !== dismissedError);
-	const displayMessage = $derived(error?.message ?? '');
 </script>
 
-{#if visible}
+{#if error}
 	<div
 		role="alert"
 		class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 	>
-		<span class="min-w-0 flex-1">{displayMessage}</span>
+		<span class="min-w-0 flex-1">{error.message}</span>
 		<div class="flex shrink-0 items-center gap-1">
 			<Button variant="ghost-destructive" onclick={onRetry}>
 				<RotateCcwIcon class="size-3" />

@@ -86,15 +86,9 @@
 		</div>
 	{:else if active}
 		<ChatErrorBanner
-			error={active.error}
-			dismissedError={active.dismissedError}
-			onRetry={() => {
-				active.dismissedError = null;
-				active.reload();
-			}}
-			onDismiss={() => {
-				active.dismissedError = active.error?.message ?? null;
-			}}
+			error={active.visibleError}
+			onRetry={() => active.reload()}
+			onDismiss={() => active.dismissError()}
 		/>
 	{/if}
 
@@ -119,9 +113,7 @@
 
 		<ChatInput
 			bind:value={active.inputValue}
-			canSend={inferenceConnections.canServe(active.model) &&
-				!active.isLoading &&
-				active.inputValue.trim().length > 0}
+			canSend={active.canSend}
 			isGenerating={active.isLoading}
 			onSend={(content) => active.sendMessage(content)}
 			onStop={() => active.stop()}

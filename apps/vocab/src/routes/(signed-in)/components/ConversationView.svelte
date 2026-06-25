@@ -52,18 +52,18 @@
 			</Chat.Bubble>
 		{/if}
 
-		{#if active.error && active.error.message !== active.dismissedError}
+		{#if active.visibleError}
 			<div
 				class="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
 			>
-				<span class="flex-1">{active.error.message}</span>
+				<span class="flex-1">{active.visibleError.message}</span>
 				<Button size="sm" variant="outline" onclick={() => active.reload()}>
 					Retry
 				</Button>
 				<Button
 					size="sm"
 					variant="ghost"
-					onclick={() => (active.dismissedError = active.error?.message ?? null)}
+					onclick={() => active.dismissError()}
 				>
 					✕
 				</Button>
@@ -73,9 +73,7 @@
 
 	<ChatInput
 		bind:value={active.inputValue}
-		canSend={inferenceConnections.canServe(active.model) &&
-			!active.isLoading &&
-			active.inputValue.trim().length > 0}
+		canSend={active.canSend}
 		isGenerating={active.isLoading}
 		onSend={(content) => active.sendMessage(content)}
 		onStop={() => active.stop()}

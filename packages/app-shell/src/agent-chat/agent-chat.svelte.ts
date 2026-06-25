@@ -108,9 +108,8 @@ export function createAgentChatState({
 }) {
 	const conversationsMap = fromTable(table);
 
-	// The selected conversation: an injected source (a URL, say) or internal
-	// state. Built unconditionally so the `$state` declaration is unconditional;
-	// the injected one shadows it when present.
+	// The selected conversation: an injected source (a URL, say), or an internal
+	// `$state` default minted only when no source is given.
 	const selection: ActiveConversation =
 		activeConversation ??
 		(() => {
@@ -277,10 +276,6 @@ export function createAgentChatState({
 				return status;
 			},
 
-			get error() {
-				return convo.error;
-			},
-
 			/** Credits are exhausted (HTTP 402); UI should prompt an upgrade. */
 			get isCreditsExhausted() {
 				return convo.error?.code === 'InsufficientCredits';
@@ -322,11 +317,30 @@ export function createAgentChatState({
 				inputValue = value;
 			},
 
-			get dismissedError() {
-				return dismissedError;
+			/** The whole send gate: this device serves the model, no turn is in
+			 * flight, and the draft is non-empty. The one home for the rule every
+			 * chat surface used to recompute against the app's connection singleton. */
+			get canSend() {
+				return (
+					connections.canServe(currentModel) &&
+					!convo.isGenerating &&
+					inputValue.trim().length > 0
+				);
 			},
-			set dismissedError(value: string | null) {
-				dismissedError = value;
+
+			/** The last turn's error, unless the user dismissed that exact message;
+			 * a later, different error still surfaces. Centralizes the dismissal rule
+			 * the call sites used to reassemble. */
+			get visibleError() {
+				return convo.error && convo.error.message !== dismissedError
+					? convo.error
+					: null;
+			},
+
+			/** Dismiss the current error by its message. A new send or a retry
+			 * re-arms it (see {@link sendMessage} and {@link reload}). */
+			dismissError() {
+				dismissedError = convo.error?.message ?? null;
 			},
 
 			// ── Actions ──
@@ -351,6 +365,9 @@ export function createAgentChatState({
 			},
 
 			reload() {
+				// Retrying re-arms the error banner: a repeat failure shows again
+				// rather than staying hidden behind the earlier dismissal.
+				dismissedError = null;
 				convo.retry();
 			},
 

@@ -66,6 +66,7 @@ export { buildStemQuery, type StemQuery } from './core/query';
 export { editBody, editField, serializeEntry } from './core/serialize';
 // SQLite: project a typed folder's classified rows into a read-only schema + insert.
 export {
+	buildCreateTable,
 	projectToSqlite,
 	quoteIdent,
 	type SqliteProjection,

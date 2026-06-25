@@ -211,3 +211,15 @@ export function projectToSqlite(
 
 	return { schema, insert, rows };
 }
+
+/**
+ * The `CREATE TABLE` for a folder's base table (stem, the typed field columns, `_extra`, `body`), with
+ * no DROP and no FTS block. The Database panel shows this so a user can see the columns SQL can query;
+ * it is the same DDL {@link projectToSqlite} emits inside its schema script.
+ */
+export function buildCreateTable(
+	tableName: string,
+	contract: Contract,
+): string {
+	return buildDdl(tableName, contract.fields);
+}

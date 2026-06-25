@@ -10,7 +10,7 @@
 import {
 	type AgentEngine,
 	createOpenAiAgentEngine,
-	resolveInferenceBackend,
+	resolveConnection,
 } from '@epicenter/client';
 import type { RecordsHandle } from '@epicenter/workspace';
 import {
@@ -85,10 +85,7 @@ function sendAndWait(
 }
 
 async function main(): Promise<void> {
-	const { fetch, baseURL } = resolveInferenceBackend(
-		{ mode: 'custom', baseUrl, model },
-		{ fetch: globalThis.fetch, baseURL: 'unused' },
-	);
+	const { fetch, baseURL } = resolveConnection({ baseUrl });
 	const engine = loggingEngine(
 		createOpenAiAgentEngine({
 			data: () => ({

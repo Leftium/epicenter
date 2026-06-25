@@ -5,14 +5,21 @@
 	let {
 		value = $bindable(''),
 		isGenerating,
+		disabled = false,
 		onSend,
 		onStop,
 	}: {
 		value?: string;
 		isGenerating: boolean;
+		disabled?: boolean;
 		onSend: (content: string) => void;
 		onStop: () => void;
 	} = $props();
+
+	// The whole send gate in one place: the conversation is sendable (`disabled` is
+	// the cross-device "model not served here" gate), no turn is in flight, and
+	// there is something to send. The button is just `disabled={!canSend}`.
+	const canSend = $derived(!disabled && !isGenerating && value.trim().length > 0);
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -22,9 +29,8 @@
 	}
 
 	function submit() {
-		const content = value.trim();
-		if (!content) return;
-		onSend(content);
+		if (!canSend) return;
+		onSend(value.trim());
 		value = '';
 	}
 </script>
@@ -42,12 +48,12 @@
 		aria-label="Message input"
 		bind:value
 		onkeydown={handleKeydown}
-		disabled={isGenerating}
+		disabled={isGenerating || disabled}
 	/>
 	{#if isGenerating}
 		<Button type="button" variant="outline" onclick={onStop}>Stop</Button>
 	{:else}
-		<Button type="submit" disabled={!value.trim()}>Send</Button>
+		<Button type="submit" disabled={!canSend}>Send</Button>
 	{/if}
 </form>
 <p class="px-4 pb-2 text-xs text-muted-foreground">

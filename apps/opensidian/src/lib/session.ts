@@ -28,7 +28,6 @@ export const session = createSession({
 		const terminal = createTerminalState({ files, workspace: opensidian });
 		const skills = createSkillState({ workspace: opensidian });
 		const chat = createAiChatState({
-			auth,
 			workspace: opensidian,
 			skills,
 		});

@@ -1,9 +1,9 @@
 # Matter: the SQLite launch (query engine, FTS, and the `epicenter matter` CLI)
 
 **Date**: 2026-06-25
-**Status**: Draft
+**Status**: In Progress
 **Owner**: Braden
-**Branch**: `matter-sqlite-launch` (suggested; work not yet started)
+**Branch**: `matter-sqlite-launch` (all four phases implemented; live Tauri smoke pending)
 
 ## One Sentence
 
@@ -355,13 +355,15 @@ projectToSqlite(tableName, contract, conformance, searchable /* string[] | undef
 
 ## Success Criteria
 
-- [ ] A read-only SQL console runs arbitrary `SELECT`/`JOIN` against `matter.sqlite` and renders `{ columns, rows }`; writes are rejected.
-- [ ] Clicking a column header sorts the grid; a search box matches row bodies; both flow through the one query builder.
-- [ ] Per-folder FTS5 tables are built by the projector (no Rust change) and stay in sync across rebuilds.
-- [ ] A "Database" panel shows the db path, each `CREATE TABLE`, and a copyable `sqlite3` line.
-- [ ] `epicenter matter check <path>` ships in the binary, with `--json` and exit codes, backed by `@epicenter/matter-core`.
-- [ ] `bun run typecheck` and `bun test` pass; old `apps/matter/src/lib/{core,load,report}` paths are deleted, not aliased.
+- [x] A read-only SQL console runs arbitrary `SELECT`/`JOIN` against `matter.sqlite` and renders `{ columns, rows }`; writes are rejected (`SqlConsole.svelte` over `mirror.runSql`; `query_mirror` opens `SQLITE_OPEN_READ_ONLY`, write-rejection proven by `mirror.rs` test).
+- [x] Clicking a column header sorts the grid; a search box matches row bodies; both flow through the one query builder (`buildStemQuery` in `matter-core`, driven by `createTableQuery`).
+- [x] Per-folder FTS5 tables are built by the projector (no Rust change) and stay in sync across rebuilds; the index drop runs unconditionally so losing searchability cannot strand a stale one.
+- [x] A "Database" panel shows the db path, each `CREATE TABLE`, and a copyable `sqlite3` line (`DatabaseTab.svelte`, `buildCreateTable`).
+- [x] `epicenter matter check <path>` ships in the binary, with `--json` and exit codes, backed by `@epicenter/matter-core` (verified live against fixtures and the example vault).
+- [x] `bun run typecheck` and `bun test` pass; old `apps/matter/src/lib/{core,load,report}` paths are deleted, not aliased.
 - [x] A `Proposed` ADR records the standalone / disk-as-truth / `epicenter matter` decisions ([ADR-0059](../docs/adr/0059-matter-is-a-standalone-disk-as-truth-tool-its-sqlite-is-a-read-only-query-surface.md)).
+
+> Remaining before this spec is deleted and ADR-0059 flips to `Accepted`: the live Tauri smoke (Phase 4.2) was not runnable in the implementation environment (no GUI). The SQL the grid and console run is unit-tested against `bun:sqlite` and the app builds clean, but the live Svelte/Tauri `invoke` wiring (open the sample vault, JOIN in the console, sort a column, search a body word, open the db via the copied `sqlite3` line) still needs one manual pass. Deferred polish, not on the critical path: the grid's "Edit as SQL" seed-from-current-query button (the console ships with a sensible default seed instead).
 
 ## References
 

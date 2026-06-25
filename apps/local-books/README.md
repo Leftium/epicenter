@@ -89,7 +89,7 @@ To avoid repeating `--env production` outside the scripts, set `LOCAL_BOOKS_QB_E
 
 `<data-dir>` defaults to the OS app-data path (`~/Library/Application Support/local-books` on macOS), overridable with `--data-dir` or `LOCAL_BOOKS_DIR`. `--env sandbox|production` (default `sandbox`) selects the QuickBooks API.
 
-Tokens go in a `0600` `credentials.json` at the data-dir root, which works the same on a desktop, a headless box, and CI. Override the path with `LOCAL_BOOKS_KEYRING_FILE=<path>`.
+Tokens go in a `0600` `credentials.json` at the data-dir root, which works the same on a desktop, a headless box, and CI. Override the path with `LOCAL_BOOKS_TOKEN_FILE=<path>`.
 
 ## Build a single binary
 

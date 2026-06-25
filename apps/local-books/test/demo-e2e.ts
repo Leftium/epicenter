@@ -41,7 +41,7 @@ const dbFile = join(DATA_DIR, realmId, 'books.db');
 
 const env = {
 	LOCAL_BOOKS_DIR: DATA_DIR,
-	LOCAL_BOOKS_KEYRING_FILE: tokenFile,
+	LOCAL_BOOKS_TOKEN_FILE: tokenFile,
 	LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 	LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
 	LOCAL_BOOKS_QB_ENV: 'sandbox',

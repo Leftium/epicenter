@@ -63,9 +63,9 @@ describe('createFileTokenStore', () => {
 });
 
 describe('credentials path resolution', () => {
-	const FILE = 'LOCAL_BOOKS_KEYRING_FILE';
+	const FILE = 'LOCAL_BOOKS_TOKEN_FILE';
 
-	/** Run `fn` with `LOCAL_BOOKS_KEYRING_FILE` set to `file`, restored after. */
+	/** Run `fn` with `LOCAL_BOOKS_TOKEN_FILE` set to `file`, restored after. */
 	function withFileEnv(file: string | undefined, fn: () => void): void {
 		const prev = process.env[FILE];
 		if (file === undefined) delete process.env[FILE];
@@ -87,7 +87,7 @@ describe('credentials path resolution', () => {
 		});
 	});
 
-	test('an explicit LOCAL_BOOKS_KEYRING_FILE wins', () => {
+	test('an explicit LOCAL_BOOKS_TOKEN_FILE wins', () => {
 		withFileEnv('/custom/creds.json', () => {
 			expect(loadConfig().credentialsPath).toBe('/custom/creds.json');
 		});

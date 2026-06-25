@@ -46,7 +46,7 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 	seedTokenFile(tokenFile, server.realmId);
 	const env = {
 		LOCAL_BOOKS_DIR: tmp.dir,
-		LOCAL_BOOKS_KEYRING_FILE: tokenFile,
+		LOCAL_BOOKS_TOKEN_FILE: tokenFile,
 		LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 		LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
 		LOCAL_BOOKS_QB_ENV: 'sandbox',

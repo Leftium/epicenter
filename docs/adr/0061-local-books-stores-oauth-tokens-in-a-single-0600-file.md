@@ -13,7 +13,7 @@ An earlier revision of this ADR kept the keychain as an opt-in (`LOCAL_BOOKS_KEY
 
 ## Decision
 
-OAuth tokens live in a single `0600` `credentials.json` at the data-dir root, kept out of any company's mirror db so the agent's read-only SQL surface (`books_sql_query`) can never read them. There is no keychain backend and no store selection: `createFileTokenStore(config.credentialsPath)` is the only path. The location defaults to the data-dir root and is overridable with `LOCAL_BOOKS_KEYRING_FILE` (the test harness and any custom location). This file store works identically on a desktop, a headless server, an SSH session, and CI.
+OAuth tokens live in a single `0600` `credentials.json` at the data-dir root, kept out of any company's mirror db so the agent's read-only SQL surface (`books_sql_query`) can never read them. There is no keychain backend and no store selection: `createFileTokenStore(config.credentialsPath)` is the only path. The location defaults to the data-dir root and is overridable with `LOCAL_BOOKS_TOKEN_FILE` (the test harness and any custom location). This file store works identically on a desktop, a headless server, an SSH session, and CI.
 
 ## Consequences
 

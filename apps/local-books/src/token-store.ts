@@ -18,7 +18,7 @@ export type TokenStore = {
 
 /**
  * The `0600` JSON-file token store at `<data-dir>/credentials.json` (or wherever
- * `LOCAL_BOOKS_KEYRING_FILE` points). The set is not encrypted; the file mode is
+ * `LOCAL_BOOKS_TOKEN_FILE` points). The set is not encrypted; the file mode is
  * the protection, the same tradeoff `git credential-store` and `~/.aws/credentials`
  * make. Works identically on a desktop, a headless server, an SSH session, and
  * CI, which is the property a tool whose recurring mode is unattended sync needs

@@ -39,7 +39,7 @@ export type AppConfig = {
 	pageSize: number;
 	/**
 	 * Absolute path to the `0600` `credentials.json` holding the realm's OAuth
-	 * tokens. Defaults to the data-dir root; override with `LOCAL_BOOKS_KEYRING_FILE`
+	 * tokens. Defaults to the data-dir root; override with `LOCAL_BOOKS_TOKEN_FILE`
 	 * (used by the test harness and any custom location). See ADR-0061.
 	 */
 	credentialsPath: string;
@@ -167,7 +167,7 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 		fullBackstopDays: file.fullBackstopDays ?? 7,
 		pageSize: Math.min(file.pageSize ?? 1000, 1000),
 		credentialsPath:
-			env('LOCAL_BOOKS_KEYRING_FILE') ?? credentialsFilePath(dataDir),
+			env('LOCAL_BOOKS_TOKEN_FILE') ?? credentialsFilePath(dataDir),
 		realmOverride: overrides.realm ?? env('LOCAL_BOOKS_QB_REALM') ?? null,
 		callbackPort: callbackPortEnv
 			? Number(callbackPortEnv)

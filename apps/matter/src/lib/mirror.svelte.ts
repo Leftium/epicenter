@@ -140,9 +140,10 @@ export function createMirror(root: string) {
 }
 
 /** The most rows the SQL console renders from one query, so a `SELECT *` over a large folder cannot
- *  hang the UI. The grid query (`runQuery`) is uncapped: it returns only stems, and the grid shows
+ *  hang the UI. Exported so the console can say when a result was capped, rather than silently
+ *  truncating. The grid query (`runQuery`) is uncapped: it returns only stems, and the grid shows
  *  every match. */
-const CONSOLE_LIMIT = 1000;
+export const CONSOLE_LIMIT = 1000;
 
 /** A live vault mirror. The Vault composes one; the per-tab query state drives it. */
 export type Mirror = ReturnType<typeof createMirror>;

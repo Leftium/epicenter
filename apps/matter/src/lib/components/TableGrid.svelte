@@ -385,16 +385,20 @@
 			</div>
 			<div class="flex min-w-0 flex-wrap items-center justify-end gap-3">
 				{#if query}
-					<div class="flex min-w-0 items-center gap-1.5">
-						<SearchIcon class="size-4 shrink-0 text-muted-foreground" />
-						<Input
-							bind:value={query.match}
-							placeholder="Search text"
-							spellcheck={false}
-							aria-label="Full-text search row bodies and text fields"
-							class="h-8 w-48 max-w-[min(12rem,50vw)] text-xs"
-						/>
-					</div>
+					<!-- Search only exists for a searchable folder: an empty `searchable` projects no FTS
+					     table, so a MATCH would hit "no such table". -->
+					{#if view.contract.searchable.length}
+						<div class="flex min-w-0 items-center gap-1.5">
+							<SearchIcon class="size-4 shrink-0 text-muted-foreground" />
+							<Input
+								bind:value={query.match}
+								placeholder="Search text"
+								spellcheck={false}
+								aria-label="Full-text search row bodies and text fields"
+								class="h-8 w-48 max-w-[min(12rem,50vw)] text-xs"
+							/>
+						</div>
+					{/if}
 					<div class="flex min-w-0 items-center gap-1.5">
 						<span
 							class="font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground"

@@ -79,10 +79,13 @@ const invalid: Row = {
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
 	test('drops then recreates: stem PK, one nullable column per field by storage class, _extra JSON, body', () => {
 		const { schema } = projectToSqlite('posts', m, []);
+		// Both tables are dropped first, always (the FTS drop runs even when not searchable, so losing
+		// searchability cannot leave a stale index).
+		expect(schema).toContain('DROP TABLE IF EXISTS "posts";\n');
+		expect(schema).toContain('DROP TABLE IF EXISTS "posts_fts";\n');
 		// `.toContain`, not `.toBe`: m is searchable (default), so the FTS5 block follows the base table.
 		expect(schema).toContain(
-			'DROP TABLE IF EXISTS "posts";\n' +
-				'CREATE TABLE "posts" (' +
+			'CREATE TABLE "posts" (' +
 				'"stem" TEXT PRIMARY KEY, ' +
 				'"title" TEXT, ' +
 				'"status" TEXT, ' +
@@ -212,7 +215,7 @@ describe('FTS5 block (emitted when the contract is searchable)', () => {
 		);
 	});
 
-	test('no FTS block when searchable is empty', () => {
+	test('no FTS create or trigger when searchable is empty, but the index drop still runs', () => {
 		const built = validateContract({
 			fields: { title: { type: 'string' } },
 			searchable: [],
@@ -220,7 +223,58 @@ describe('FTS5 block (emitted when the contract is searchable)', () => {
 		if (built.error) throw new Error(built.error.message);
 		const { schema } = projectToSqlite('posts', built.data, []);
 		expect(schema).not.toContain('fts5');
-		expect(schema).not.toContain('_fts');
+		expect(schema).not.toContain('CREATE TRIGGER');
+		// The DROP still runs, so a folder that just lost searchability sheds its stale index.
+		expect(schema).toContain('DROP TABLE IF EXISTS "posts_fts"');
+	});
+
+	test('losing searchability drops the stale index, so no old word matches a new row (bun:sqlite)', () => {
+		const db = new Database(':memory:');
+
+		// First projection: searchable, with a distinctive body word.
+		const searchable = projectToSqlite(
+			'posts',
+			m,
+			classifyRows(m.fields, [
+				{ ...valid, fileName: 'alpha.md', body: 'hunter2' },
+			]),
+		);
+		db.exec(searchable.schema);
+		for (const row of searchable.rows)
+			db.prepare(searchable.insert).run(...row);
+		expect(
+			db
+				.query(
+					`SELECT count(*) AS n FROM "posts_fts" WHERE "posts_fts" MATCH '"hunter2"'`,
+				)
+				.get(),
+		).toEqual({ n: 1 });
+
+		// Re-project the SAME folder as non-searchable, with a different row at the same rowid.
+		const bare = validateContract({
+			fields: { title: { type: 'string' } },
+			searchable: [],
+		});
+		if (bare.error) throw new Error(bare.error.message);
+		const nonSearchable = projectToSqlite(
+			'posts',
+			bare.data,
+			classifyRows(bare.data.fields, [
+				{
+					fileName: 'beta.md',
+					frontmatter: { title: 'Beta' },
+					body: 'something else',
+				},
+			]),
+		);
+		db.exec(nonSearchable.schema);
+		for (const row of nonSearchable.rows)
+			db.prepare(nonSearchable.insert).run(...row);
+
+		// The stale index is gone (not left mapping "hunter2" to whatever now sits at that rowid).
+		expect(
+			db.query(`SELECT name FROM sqlite_master WHERE name = 'posts_fts'`).all(),
+		).toEqual([]);
 	});
 
 	test('the trigger fills the index so a body word and a text-field word both match (bun:sqlite)', () => {

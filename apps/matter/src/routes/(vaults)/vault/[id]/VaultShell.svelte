@@ -8,7 +8,7 @@
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { routes, TABLE_PARAM, VIEW_PARAM } from '$lib/routes';
+	import { routes, TABLE_PARAM, type VaultView, VIEW_PARAM } from '$lib/routes';
 	import { createVault } from '$lib/vault.svelte';
 	import DatabaseTab from './DatabaseTab.svelte';
 	import IntegrityPanel from './IntegrityPanel.svelte';
@@ -38,8 +38,8 @@
 	);
 
 	// The vault-wide view (`?view=`): the SQL console or the Database panel. Absent means the table
-	// grid. The two are mutually exclusive with the table selection (they read the whole db, not one
-	// folder), so picking a view clears `?table` and picking a table clears `?view`.
+	// grid. `?view` and `?table` are orthogonal (see `viewHref`): a view keeps the table around as its
+	// default folder, and picking a table clears `?view` to return to the grid.
 	const activeView = $derived.by(() => {
 		const view = page.url.searchParams.get(VIEW_PARAM);
 		return view === 'sql' || view === 'db' ? view : undefined;
@@ -52,6 +52,16 @@
 		keepFocus: true,
 		noScroll: true,
 	} as const;
+
+	// Opening a view keeps `?table` so the console defaults to the table you were on (the Database
+	// panel is table-agnostic, so it just ignores it). The two params are orthogonal: `?view` picks
+	// the surface, `?table` the grid's (and the console's default) folder.
+	function viewHref(view: VaultView): string {
+		const table = activeTable?.folderName;
+		return table
+			? `${routes.view(view)}&${TABLE_PARAM}=${encodeURIComponent(table)}`
+			: routes.view(view);
+	}
 
 	// Adopt the root as a table (writes the `{}` marker). The watcher re-scans on the new marker and
 	// surfaces the table live, so success needs no manual refresh; only a write failure shows here.
@@ -121,7 +131,7 @@
 				<div class="flex shrink-0 items-center gap-1 border-l pl-1">
 					<button
 						type="button"
-						onclick={() => goto(routes.view('sql'), switchNav)}
+						onclick={() => goto(viewHref('sql'), switchNav)}
 						class={[
 							'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition',
 							activeView === 'sql'
@@ -134,7 +144,7 @@
 					</button>
 					<button
 						type="button"
-						onclick={() => goto(routes.view('db'), switchNav)}
+						onclick={() => goto(viewHref('db'), switchNav)}
 						class={[
 							'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition',
 							activeView === 'db'

@@ -43,6 +43,9 @@
 			copied = undefined;
 		}, 1500);
 	}
+
+	// Clear the copied-state timer if the panel is torn down before it fires.
+	$effect(() => () => clearTimeout(copiedTimeout));
 </script>
 
 {#snippet copyButton(text: string, variant: 'outline' | 'ghost')}

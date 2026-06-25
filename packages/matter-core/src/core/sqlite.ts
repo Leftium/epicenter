@@ -57,10 +57,10 @@ export type SqliteProjection = {
 
 /**
  * Quote a SQL identifier, doubling embedded quotes, so any field name is safe. The single
- * quoter for every statement JS assembles: the vault reuses it for the WHERE filter's
- * `SELECT`, so a table name is never quoted by hand in JS-built SQL. The one place quoting
- * lives elsewhere is Rust's `drop_mirror_table`, which receives a bare folder name (not
- * built SQL) and applies the same doubling — trivial and identical, kept in sync by eye.
+ * quoter for every statement JS assembles: the query builder (`query.ts`) reuses it, so a table
+ * or column name is never quoted by hand in JS-built SQL. The one place quoting lives elsewhere is
+ * Rust's `drop_mirror_table`, which receives a bare folder name (not built SQL) and applies the same
+ * doubling, trivial and identical, kept in sync by eye.
  */
 export function quoteIdent(name: string): string {
 	return `"${name.replace(/"/g, '""')}"`;
@@ -131,22 +131,31 @@ function buildDdl(tableName: string, fields: readonly Field[]): string {
 }
 
 /**
- * The FTS5 block for a searchable folder: an external-content virtual table over the base table plus
- * the ONE `AFTER INSERT` trigger that the full-rebuild INSERT loop fires to fill it. The projector
- * never UPDATEs or DELETEs a base row (it drops and recreates the whole table), so the workspace
- * reference's `AFTER DELETE` / `AFTER UPDATE` triggers are not needed; add them only if incremental
- * sync ever lands. The base table keeps an implicit `rowid` (a TEXT primary key is not WITHOUT
- * ROWID), so `content_rowid=rowid` works, and dropping the base table drops this trigger with it.
+ * The name of a folder's FTS5 index table. The `_fts` suffix is a reserved namespace in the shared
+ * per-vault db (two sibling folders `x` and `x_fts` would collide, an accepted edge for a name that
+ * pathological).
+ */
+function ftsTableName(tableName: string): string {
+	return `${tableName}_fts`;
+}
+
+/**
+ * The FTS5 `CREATE` block for a searchable folder: an external-content virtual table over the base
+ * table plus the ONE `AFTER INSERT` trigger that the full-rebuild INSERT loop fires to fill it. The
+ * projector never UPDATEs or DELETEs a base row (it drops and recreates the whole table), so the
+ * workspace reference's `AFTER DELETE` / `AFTER UPDATE` triggers are not needed; add them only if
+ * incremental sync ever lands. The base table keeps an implicit `rowid` (a TEXT primary key is not
+ * WITHOUT ROWID), so `content_rowid=rowid` works. The matching `DROP` is emitted unconditionally by
+ * the caller (so losing searchability cannot leave a stale index), not here.
  */
 function buildFtsSchema(
 	tableName: string,
 	searchable: readonly string[],
 ): string {
-	const fts = `${tableName}_fts`;
+	const fts = ftsTableName(tableName);
 	const cols = searchable.map(quoteIdent).join(', ');
 	const newCols = searchable.map((c) => `new.${quoteIdent(c)}`).join(', ');
 	return [
-		`DROP TABLE IF EXISTS ${quoteIdent(fts)}`,
 		`CREATE VIRTUAL TABLE ${quoteIdent(fts)} USING fts5(${cols}, content=${quoteString(tableName)}, content_rowid=rowid)`,
 		`CREATE TRIGGER ${quoteIdent(`${tableName}_fts_ai`)} AFTER INSERT ON ${quoteIdent(tableName)} BEGIN\n` +
 			`  INSERT INTO ${quoteIdent(fts)}(rowid, ${cols}) VALUES (new.rowid, ${newCols});\n` +
@@ -200,14 +209,19 @@ export function projectToSqlite(
 		.join(', ')}) VALUES (${placeholders})`;
 
 	// DROP + CREATE as one param-less script; the command runs it via execute_batch, rusqlite's idiom
-	// for a multi-statement setup script. When the folder is searchable, the FTS5 virtual table and
-	// its AFTER INSERT trigger ride along so the INSERT loop below populates the index for free.
-	const drop = `DROP TABLE IF EXISTS ${quoteIdent(tableName)}`;
+	// for a multi-statement setup script. Both the base table and the FTS index are dropped first,
+	// ALWAYS: dropping the FTS index even when this rebuild is not searchable is what stops a folder
+	// that just lost its `searchable` columns from leaving a stale index that would match wrong rows.
+	// When the folder is searchable, the FTS5 virtual table and its AFTER INSERT trigger ride along so
+	// the INSERT loop below populates the index for free.
+	const drops =
+		`DROP TABLE IF EXISTS ${quoteIdent(tableName)};\n` +
+		`DROP TABLE IF EXISTS ${quoteIdent(ftsTableName(tableName))}`;
 	const create = buildDdl(tableName, contract.fields);
 	const fts = contract.searchable.length
 		? `;\n${buildFtsSchema(tableName, contract.searchable)}`
 		: '';
-	const schema = `${drop};\n${create}${fts}`;
+	const schema = `${drops};\n${create}${fts}`;
 
 	return { schema, insert, rows };
 }

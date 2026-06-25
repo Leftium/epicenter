@@ -9,6 +9,7 @@
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { untrack } from 'svelte';
+	import { CONSOLE_LIMIT } from '$lib/mirror.svelte';
 	import type { VaultHandle } from '$lib/vault.svelte';
 
 	// The vault-wide read-only SQL console: run arbitrary SELECT / JOIN / GROUP BY against the vault's
@@ -159,6 +160,13 @@
 					<Empty.Description>The query ran but returned no rows.</Empty.Description>
 				</Empty.Root>
 			{:else}
+				<div
+					class="border-b px-4 py-1.5 text-xs text-muted-foreground"
+					role="status"
+				>
+					{result.rows.length}
+					{result.rows.length === 1 ? 'row' : 'rows'}{#if result.rows.length === CONSOLE_LIMIT}, capped at the first {CONSOLE_LIMIT}{/if}
+				</div>
 				<Table.Root class="min-w-full">
 					<Table.Header>
 						<Table.Row>

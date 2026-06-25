@@ -28,7 +28,10 @@ const instance = readInstance();
 // static bearer (ADR-0070) instead of OAuth. Otherwise the deep-link OAuth flow
 // runs against the instance origin, which is the hosted cloud by default.
 export const auth: PlatformAuth = instance.token
-	? createInstanceTokenAuth({ baseURL: instance.baseURL, token: instance.token })
+	? createInstanceTokenAuth({
+			baseURL: instance.baseURL,
+			token: instance.token,
+		})
 	: createOAuthAppAuth({
 			baseURL: instance.baseURL,
 			clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,

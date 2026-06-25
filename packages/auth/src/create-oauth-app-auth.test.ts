@@ -6,8 +6,8 @@ import type { OAuthTokenGrant, PersistedAuth } from './auth-types.js';
 import { createOAuthAppAuth } from './create-oauth-app-auth.js';
 import { asUserId } from './index.js';
 import type {
-	OAuthLaunchResult,
 	OAuthLauncher,
+	OAuthLaunchResult,
 } from './oauth-launchers/contract.js';
 
 const baseURL = 'https://api.epicenter.so';
@@ -102,9 +102,9 @@ describe('createOAuthAppAuth /api/session verification', () => {
 			(call) => call.url === `${baseURL}/api/session`,
 		);
 		expect(sessionCall).toBeDefined();
-		expect(
-			new Headers(sessionCall?.init?.headers).get('authorization'),
-		).toBe('Bearer access-1');
+		expect(new Headers(sessionCall?.init?.headers).get('authorization')).toBe(
+			'Bearer access-1',
+		);
 		expect(sessionCall?.init?.credentials).toBe('omit');
 	});
 
@@ -168,9 +168,9 @@ describe('createOAuthAppAuth /api/session verification', () => {
 		const resourceCall = calls.find(
 			(call) => call.url === `${baseURL}/api/owners/owner-1/blobs`,
 		);
-		expect(
-			new Headers(resourceCall?.init?.headers).get('authorization'),
-		).toBe('Bearer access-1');
+		expect(new Headers(resourceCall?.init?.headers).get('authorization')).toBe(
+			'Bearer access-1',
+		);
 	});
 
 	test('the bearer is never attached to a foreign origin', async () => {
@@ -194,9 +194,9 @@ describe('createOAuthAppAuth /api/session verification', () => {
 		);
 		expect(new Headers(cross?.init?.headers).has('authorization')).toBe(false);
 		// A foreign target never triggers a session verification.
-		expect(
-			calls.some((call) => call.url === `${baseURL}/api/session`),
-		).toBe(false);
+		expect(calls.some((call) => call.url === `${baseURL}/api/session`)).toBe(
+			false,
+		);
 	});
 
 	test('a 401 from /api/session verification pauses network auth (reauth-required)', async () => {

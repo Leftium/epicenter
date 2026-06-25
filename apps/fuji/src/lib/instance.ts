@@ -38,7 +38,9 @@ export function readInstance(): Instance {
 	if (raw === null) return defaultInstance;
 	try {
 		const parsed = JSON.parse(raw) as Partial<Instance>;
-		const { data: baseURL } = normalizeInstanceUrl(String(parsed.baseURL ?? ''));
+		const { data: baseURL } = normalizeInstanceUrl(
+			String(parsed.baseURL ?? ''),
+		);
 		if (!baseURL) return defaultInstance;
 		const token =
 			typeof parsed.token === 'string' && parsed.token.trim() !== ''

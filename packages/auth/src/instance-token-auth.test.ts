@@ -84,7 +84,9 @@ describe('createInstanceTokenAuth', () => {
 
 		await auth.fetch('https://someone-elses-inference.example.com/v1/models');
 		const cross = calls.at(-1);
-		expect(cross?.url).toBe('https://someone-elses-inference.example.com/v1/models');
+		expect(cross?.url).toBe(
+			'https://someone-elses-inference.example.com/v1/models',
+		);
 		expect(new Headers(cross?.init?.headers).has('authorization')).toBe(false);
 	});
 

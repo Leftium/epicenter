@@ -18,7 +18,9 @@ describe('normalizeInstanceUrl', () => {
 	});
 
 	test('preserves a path prefix', () => {
-		const { data } = normalizeInstanceUrl('https://host.example.com/epicenter/');
+		const { data } = normalizeInstanceUrl(
+			'https://host.example.com/epicenter/',
+		);
 		expect(data).toBe('https://host.example.com/epicenter');
 	});
 

@@ -167,7 +167,11 @@ export function createInstanceTokenAuth({
 		});
 		// A 401 from the instance means the token is gone or revoked: go straight
 		// to signed-out. There is no refresh path for a static token.
-		if (response.status === 401 && onEpicenter && state.status === 'signed-in') {
+		if (
+			response.status === 401 &&
+			onEpicenter &&
+			state.status === 'signed-in'
+		) {
 			setState({ status: 'signed-out' });
 		}
 		return response;

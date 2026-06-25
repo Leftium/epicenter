@@ -18,7 +18,10 @@ import {
 	revokeOAuthRefreshTokenWithEndpoint,
 } from './oauth-token-endpoints.js';
 import type { PersistedAuthStorage } from './persisted-auth-storage.js';
-import { type ApiSessionReadError, readApiSession } from './read-api-session.js';
+import {
+	type ApiSessionReadError,
+	readApiSession,
+} from './read-api-session.js';
 
 type AuthFetchInput = Request | string | URL;
 

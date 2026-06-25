@@ -1,8 +1,9 @@
 # Local Books: QuickBooks to SQLite sync CLI
 
-- Status: Draft
-- Date: 2026-06-21
+- Status: In Progress
+- Date: 2026-06-21 (revised 2026-06-24)
 - Supersedes the data-layer intent of `specs/20260620T180000-local-books-agent-over-sql.md` (the agent-over-SQL daemon, the conversation doc, and the tool-approval seam are dropped; see Context). That spec should be retired once this one is in progress.
+- The agent read/write surface over this mirror (the `books_sql_query`, `books_report`, and `recategorize_expense` tools, and the read-only capability lattice) is settled in [ADR-0061](../docs/adr/0061-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md). This spec covers only the sync engine beneath it.
 
 ## Context
 
@@ -114,8 +115,9 @@ Schedule `sync` with cron / launchd / systemd on the box.
 - QuickBooks rate limits and throttling; add backoff and a concurrency cap to the full pull.
 - The actual CDC lookback window (commonly cited near 30 days) and per-call entity/result caps; these set `CDC_WINDOW` and the force-resync threshold.
 - `intuit-oauth` runs clean on Bun; fallback is a hand-rolled OAuth2 authorization-code + PKCE flow.
-- The QB entity list to mirror, and which scalar columns are worth extracting per entity.
+- ~~The QB entity list to mirror, and which scalar columns are worth extracting per entity.~~ Resolved 2026-06-24 (Move 1, below): the rule is "every posting entity plus the name lists they reference" (16 today), columns are an opt-in ergonomic layer. See `apps/local-books/src/entities.ts`.
 - Delete semantics in `/cdc` (confirm deletes are reported, and how).
+- **(Move 2)** The max entities accepted in one `/cdc?entities=` request. The batched-CDC pass below assumes the whole mirror set fits in one call; if QB caps it below our set size, chunk into the fewest calls that cover the set (still far fewer than one-per-entity).
 
 ## Slices (each ends green and demoable)
 
@@ -124,3 +126,38 @@ Schedule `sync` with cron / launchd / systemd on the box.
 3. Incremental: `/cdc` since cursor, upsert + soft-delete, atomic cursor advance; mode auto-selection and `--full`.
 4. All configured entities; backoff and rate-limit handling; force-resync backstops.
 5. `bun build --compile` single binary plus an example launchd/systemd unit.
+
+## Revision 2026-06-24: complete the mirror, then collapse the cursor
+
+A greenfield pass (compatibility pressure released; the mirror is box-local and re-pullable, so it has no durable contract to preserve) settled two changes. Move 1 is landed; Move 2 is specified here for the next implementation pass.
+
+### Move 1 — mirror the full posting closure (landed)
+
+**Product sentence:** the mirror holds every financial fact QuickBooks will hand us; the agent sweeps it relationally and drills into raw blobs; QuickBooks owns the computed opinions (`books_report`).
+
+**Drift it fixed:** the registry curated **9** entities. Because the mirror is the agent's relational, offline surface, a *subset* silently under-reports against the live reports: `Payment` was mirrored but `BillPayment` was not, so "what did I actually pay this vendor" had no row-level answer. Curation was the bug generator.
+
+**The break:** `ENTITY_DEFS` is now a *rule*, not a list — every posting entity (anything that moves money through the GL) plus the name lists those transactions reference. Added `SalesReceipt`, `BillPayment`, `JournalEntry`, `CreditMemo`, `VendorCredit`, `RefundReceipt`, `Transfer` (16 total). Non-posting documents (`Estimate`, `PurchaseOrder`) and config/attachment entities stay out: they carry no money. Extracted columns became an opt-in ergonomic layer — `JournalEntry` ships column-light (its amounts are per-line in `raw`), proving the default is "raw-only, still queryable via `json_extract`."
+
+**Why it was nearly free:** raw is canonical and columns are `GENERATED` projections, so an entity costs one registry entry and zero migration. When adding is free, curating below the full set only manufactures silent holes.
+
+### Move 2 — one realm cursor, one batched CDC call (landed; see ADR-0064)
+
+**Drift it fixed:** §"Sync state" keyed `_sync_state` by entity, each with its own `cdc_cursor`, and §"Sync algorithm" looped entities, issuing one `/cdc?entities=<entity>` call apiece. But CDC's `changedSince` is a *single timestamp for a multi-entity call* that returns a per-entity `changes` map from one request. So a per-entity cursor was N owners for what CDC treats as one value, and with the set at 16 an incremental pass fired 16 sequential CDC calls where one would do.
+
+**As built** (the durable decision is [ADR-0064](../docs/adr/0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md)):
+
+- The **realm** owns one cursor in `_meta` (`cdc_cursor`, `last_full_pull_at`, `last_synced_at`). `_sync_state` is **deleted**.
+- "Has this entity been full-pulled?" is derived from **whether its table exists** (`isInitialized = tableExists`), so there is no per-entity sync-state at all: the tables are the latch. This is simpler than the per-entity `initialized_at` latch this section originally sketched, and it keeps incremental set-extension cheap (add an entity → only it backfills) instead of trading it away.
+- An INCREMENTAL pass backfills any configured entity with no table (a full query of its history) first, then fires ONE batched `/cdc?entities=<all>` and advances the single cursor in the same transaction as the rows. A realm FULL (`--full` / cursor past the CDC window / staleness backstop) full-pulls every entity (each its own query endpoint — an honest asymmetry) and resets the cursor. The cursor advances only on a clean pass, so any failure (and a partial FULL) re-pulls / re-backfills next time rather than skipping.
+- `--entity <name>...` is a targeted FULL repair of those tables that does **not** move the realm cursor.
+
+**Durable-format change, made free by re-pullability:** `SCHEMA_VERSION` is bumped to `2`; on a mismatch the engine drops the derived tables and clears the cursor, forcing one `sync --full` rather than carrying a migration reader for a re-derivable cache.
+
+**`status` surface:** the cursor, last full pull, and last synced are shown once at the realm level; per entity it shows row counts and flags only the uninitialized case (a marker for the one informative state, not a `yes` on 16 lines).
+
+**Trigger to revisit chunking:** if the §spike item finds `/cdc` caps entities-per-call below the mirror set size, split into the fewest covering calls; the realm cursor and whole-batch atomicity are unaffected (apply all chunks under one cursor advance).
+
+### Not in this revision (deferred, Move 3)
+
+A unified `transactions` view (and later a line-level `ledger_lines` view via `json_each` over `raw.Line[]`) so the agent sweeps one normalized ledger instead of UNION-ing the money-movement tables by hand. It is *additive* surface, not a clean break, and the line-level version brushes ADR-0061's "facts not opinions" line (it must explode lines as facts, never sum them into a statement — totals stay with `books_report`). **Trigger:** the first time an agent question needs "all activity hitting account X" or "every money-out line by category" and the per-entity tables force a hand-written multi-way UNION.

@@ -5,31 +5,38 @@ import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
 import { dbPath } from '../paths.ts';
 import { createQbClient } from '../qb-client.ts';
 import {
+	repairEntities,
 	runSyncLoop,
-	type SyncAllOutcome,
 	type SyncDeps,
-	syncAll,
+	type SyncOutcome,
+	syncRealm,
 } from '../sync.ts';
-import { createTokenManager, loadToken } from '../token-manager.ts';
+import { createTokenManager } from '../token-manager.ts';
 import { resolveCompany } from './context.ts';
 
-/** Print one sync pass: results to stdout, failures to stderr. */
-function reportOutcome({ results, failures }: SyncAllOutcome): void {
-	for (const r of results) {
+/** Print one sync pass: the realm line + per-entity counts to stdout, failures to stderr. */
+function reportOutcome(o: SyncOutcome): void {
+	console.log(
+		`${o.mode.padEnd(11)} ${o.reason}` +
+			`  cursor ${o.cursorBefore ?? '(none)'} -> ${o.cursorAfter ?? '(none)'}`,
+	);
+	for (const e of o.entities) {
 		console.log(
-			`${r.entity.padEnd(12)} ${r.mode.padEnd(11)} ${r.upserted} upserted, ${r.deleted} deleted` +
-				`  cursor ${r.cursorBefore ?? '(none)'} -> ${r.cursorAfter}`,
+			`${e.entity.padEnd(12)} ${e.upserted} upserted, ${e.deleted} deleted` +
+				`${e.backfilled ? '  [full]' : ''}`,
 		);
 	}
-	for (const f of failures) {
+	for (const f of o.failures) {
 		console.error(`${f.entity}: FAILED — ${f.error.message}`);
 	}
 }
 
 /**
- * Refresh the local mirror. Mode (FULL vs INCREMENTAL) is chosen per entity from
- * stored `_sync_state`; `--full` forces FULL; `--entity` narrows the set.
- * `--interval` keeps syncing on a loop until Ctrl-C.
+ * Refresh the local mirror. The default is a realm pass: one mode decision for
+ * the whole company (FULL vs INCREMENTAL from the stored cursor; `--full`
+ * forces FULL), advancing the single realm cursor. `--entity <name>...` instead
+ * runs a targeted FULL repair of just those tables, leaving the cursor untouched.
+ * `--interval` keeps the realm pass running on a loop until Ctrl-C.
  */
 export async function runSync(args: ParsedArgs): Promise<number> {
 	const { data: company, error } = resolveCompany(args);
@@ -37,18 +44,24 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, keyring } = company;
+	const { config, realmId, store } = company;
 
-	const entities = args.entities.length > 0 ? args.entities : config.entities;
-	const unknown = entities.filter((name) => !isKnownEntity(name));
+	const repairTargets = args.entities;
+	const unknown = repairTargets.filter((name) => !isKnownEntity(name));
 	if (unknown.length > 0) {
 		console.error(
 			`Unknown entities: ${unknown.join(', ')}. Known: ${DEFAULT_ENTITIES.join(', ')}.`,
 		);
 		return 1;
 	}
+	if (repairTargets.length > 0 && args.intervalMs != null) {
+		console.error(
+			'`--entity` is a one-shot repair and cannot be combined with `--interval`.',
+		);
+		return 1;
+	}
 
-	const token = await loadToken(keyring, realmId);
+	const token = await store.get(realmId);
 	if (!token) {
 		console.error(
 			`No stored token for company ${realmId}. Run "local-books auth".`,
@@ -58,7 +71,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 
 	const now = () => Date.now();
 	const log = (m: string) => console.error(m);
-	const tokens = createTokenManager({ config, keyring, token, now });
+	const tokens = createTokenManager({ config, store, token, now });
 	const client = createQbClient({ config, realmId, tokens, log });
 	const db = openBooksDb(dbPath(config.dataDir, realmId));
 	const deps: SyncDeps = { db, client, config, now, log };
@@ -72,11 +85,10 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		};
 		process.on('SIGINT', stop);
 		console.error(
-			`Syncing ${entities.join(', ')} for company ${realmId} (${config.environment}) every ${ms(args.intervalMs)} — Ctrl-C to stop.`,
+			`Syncing ${config.entities.join(', ')} for company ${realmId} (${config.environment}) every ${ms(args.intervalMs)} — Ctrl-C to stop.`,
 		);
 		await runSyncLoop(deps, {
 			forceFull: args.full,
-			entities,
 			intervalMs: args.intervalMs,
 			signal: controller.signal,
 			onPass: reportOutcome,
@@ -86,11 +98,21 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		return 0;
 	}
 
-	// Single pass.
+	// Single pass: a targeted repair when `--entity` is given, else the realm pass.
+	if (repairTargets.length > 0) {
+		console.error(
+			`Repairing ${repairTargets.join(', ')} for company ${realmId} (${config.environment})...`,
+		);
+		const outcome = await repairEntities(deps, repairTargets);
+		db.close();
+		reportOutcome(outcome);
+		return outcome.failures.length > 0 ? 1 : 0;
+	}
+
 	console.error(
-		`Syncing ${entities.join(', ')} for company ${realmId} (${config.environment})${args.full ? ' [--full]' : ''}...`,
+		`Syncing ${config.entities.join(', ')} for company ${realmId} (${config.environment})${args.full ? ' [--full]' : ''}...`,
 	);
-	const outcome = await syncAll(deps, { forceFull: args.full, entities });
+	const outcome = await syncRealm(deps, { forceFull: args.full });
 	db.close();
 	reportOutcome(outcome);
 	return outcome.failures.length > 0 ? 1 : 0;

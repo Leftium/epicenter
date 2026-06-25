@@ -36,28 +36,30 @@ function banner(label: string): void {
 
 const server = startMockQbServer();
 const realmId = server.realmId;
-const keyringFile = join(DATA_DIR, 'keyring.json');
+const tokenFile = join(DATA_DIR, 'credentials.json');
 const dbFile = join(DATA_DIR, realmId, 'books.db');
 
 const env = {
 	LOCAL_BOOKS_DIR: DATA_DIR,
-	LOCAL_BOOKS_KEYRING_FILE: keyringFile,
+	LOCAL_BOOKS_TOKEN_FILE: tokenFile,
 	LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 	LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
 	LOCAL_BOOKS_QB_ENV: 'sandbox',
+	// Narrow the mirrored set to one entity so the transcript stays readable.
+	LOCAL_BOOKS_ENTITIES: 'Invoice',
 };
 const cli = (...args: string[]) =>
 	sh([process.execPath, BIN, ...args, '--realm', realmId], env);
 const sqlite = (sql: string) => sh(['sqlite3', dbFile, sql]);
 
-// Seed a keyring token (good for an hour) so we can run sync/status without the
-// interactive browser hop. The mock accepts any bearer token.
+// Seed a token-file entry (good for an hour) so we can run sync/status without
+// the interactive browser hop. The mock accepts any bearer token.
 async function main() {
 	const { mkdirSync } = await import('node:fs');
 	mkdirSync(DATA_DIR, { recursive: true });
 	const now = Date.now();
 	writeFileSync(
-		keyringFile,
+		tokenFile,
 		JSON.stringify({
 			[realmId]: JSON.stringify({
 				realmId,
@@ -77,8 +79,8 @@ async function main() {
 	banner('Checkpoint 1 — status shows a valid, non-expired token');
 	console.log(await cli('status'));
 
-	banner('Checkpoint 2 — local-books sync --entity Invoice --full');
-	console.log(await cli('sync', '--entity', 'Invoice', '--full'));
+	banner('Checkpoint 2 — local-books sync --full');
+	console.log(await cli('sync', '--full'));
 	console.log(
 		'\n$ sqlite3 books.db "SELECT count(*), min(json_valid(raw)) FROM invoices"',
 	);
@@ -86,10 +88,10 @@ async function main() {
 		await sqlite('SELECT count(*), min(json_valid(raw)) FROM invoices'),
 	);
 	console.log(
-		'\n$ sqlite3 books.db "SELECT entity, cdc_cursor FROM _sync_state"',
+		'\n$ sqlite3 books.db "SELECT key, value FROM _meta WHERE key=\'cdc_cursor\'"',
 	);
 	const cursorBefore = await sqlite(
-		'SELECT entity, cdc_cursor FROM _sync_state',
+		"SELECT key, value FROM _meta WHERE key='cdc_cursor'",
 	);
 	console.log(cursorBefore);
 
@@ -100,11 +102,13 @@ async function main() {
 	server.remove('Invoice', '1001'); // delete
 
 	banner('Checkpoint 3 — second local-books sync (no --full) runs INCREMENTAL');
-	console.log(await cli('sync', '--entity', 'Invoice'));
+	console.log(await cli('sync'));
 	console.log(
-		'\n$ sqlite3 books.db "SELECT entity, cdc_cursor FROM _sync_state"  (cursor AFTER)',
+		'\n$ sqlite3 books.db "SELECT key, value FROM _meta WHERE key=\'cdc_cursor\'"  (cursor AFTER)',
 	);
-	console.log(await sqlite('SELECT entity, cdc_cursor FROM _sync_state'));
+	console.log(
+		await sqlite("SELECT key, value FROM _meta WHERE key='cdc_cursor'"),
+	);
 	console.log(
 		'\n$ sqlite3 books.db "SELECT count(*) total, sum(deleted) soft_deleted FROM invoices"',
 	);

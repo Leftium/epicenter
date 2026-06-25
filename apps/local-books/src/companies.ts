@@ -8,7 +8,7 @@ import { companiesFilePath } from './paths.ts';
 /**
  * Tracks which QuickBooks companies (`realmId`s) have been authenticated, so
  * `sync` / `status` know which mirror to operate on without the user repeating
- * `--realm` every time. The keyring holds the tokens; this is just the index.
+ * `--realm` every time. The token store holds the tokens; this is just the index.
  */
 const CompaniesSchema = Type.Object({
 	realms: Type.Array(Type.String()),

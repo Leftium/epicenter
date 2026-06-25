@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { SyncStateRow } from '../src/db.ts';
+import type { RealmState } from '../src/db.ts';
 import { decideMode } from '../src/sync.ts';
 
 const NOW = Date.parse('2026-06-21T00:00:00.000Z');
@@ -12,9 +12,8 @@ const base = {
 	fullBackstopDays: 7,
 };
 
-function state(over: Partial<SyncStateRow>): SyncStateRow {
+function state(over: Partial<RealmState>): RealmState {
 	return {
-		entity: 'Invoice',
 		cdcCursor: null,
 		lastFullPullAt: null,
 		lastSyncedAt: null,
@@ -27,7 +26,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: true,
-			syncState: state({ cdcCursor: daysAgo(1), lastFullPullAt: daysAgo(1) }),
+			realmState: state({ cdcCursor: daysAgo(1), lastFullPullAt: daysAgo(1) }),
 		});
 		expect(decision.mode).toBe('FULL');
 		expect(decision.reason).toContain('forced');
@@ -35,7 +34,7 @@ describe('decideMode', () => {
 
 	test('first run (no state) is FULL', () => {
 		expect(
-			decideMode({ ...base, forceFull: false, syncState: null }).mode,
+			decideMode({ ...base, forceFull: false, realmState: state({}) }).mode,
 		).toBe('FULL');
 	});
 
@@ -44,7 +43,7 @@ describe('decideMode', () => {
 			decideMode({
 				...base,
 				forceFull: false,
-				syncState: state({ cdcCursor: null }),
+				realmState: state({ cdcCursor: null }),
 			}).mode,
 		).toBe('FULL');
 	});
@@ -53,7 +52,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			syncState: state({ cdcCursor: daysAgo(1), lastFullPullAt: daysAgo(2) }),
+			realmState: state({ cdcCursor: daysAgo(1), lastFullPullAt: daysAgo(2) }),
 		});
 		expect(decision.mode).toBe('INCREMENTAL');
 	});
@@ -62,7 +61,10 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			syncState: state({ cdcCursor: daysAgo(26), lastFullPullAt: daysAgo(26) }),
+			realmState: state({
+				cdcCursor: daysAgo(26),
+				lastFullPullAt: daysAgo(26),
+			}),
 		});
 		expect(decision.mode).toBe('FULL');
 		expect(decision.reason).toContain('CDC window');
@@ -72,7 +74,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			syncState: state({ cdcCursor: daysAgo(1), lastFullPullAt: daysAgo(10) }),
+			realmState: state({ cdcCursor: daysAgo(1), lastFullPullAt: daysAgo(10) }),
 		});
 		expect(decision.mode).toBe('FULL');
 		expect(decision.reason).toContain('backstop');
@@ -83,7 +85,7 @@ describe('decideMode', () => {
 			decideMode({
 				...base,
 				forceFull: false,
-				syncState: state({ cdcCursor: daysAgo(1), lastFullPullAt: null }),
+				realmState: state({ cdcCursor: daysAgo(1), lastFullPullAt: null }),
 			}).mode,
 		).toBe('FULL');
 	});

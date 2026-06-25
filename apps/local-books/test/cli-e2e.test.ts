@@ -7,8 +7,8 @@ import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
 
-/** Seed a file-keyring token good for an hour (mock accepts any bearer). */
-function seedKeyring(file: string, realmId: string): void {
+/** Seed a token-file entry good for an hour (mock accepts any bearer). */
+function seedTokenFile(file: string, realmId: string): void {
 	const now = Date.now();
 	const token = {
 		realmId,
@@ -42,25 +42,32 @@ async function runCli(args: string[], env: Record<string, string>) {
 test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no re-pull', async () => {
 	const server = startMockQbServer();
 	const tmp = tempDir();
-	const keyringFile = join(tmp.dir, 'keyring.json');
-	seedKeyring(keyringFile, server.realmId);
+	const tokenFile = join(tmp.dir, 'credentials.json');
+	seedTokenFile(tokenFile, server.realmId);
 	const env = {
 		LOCAL_BOOKS_DIR: tmp.dir,
-		LOCAL_BOOKS_KEYRING_FILE: keyringFile,
+		LOCAL_BOOKS_TOKEN_FILE: tokenFile,
 		LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 		LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
 		LOCAL_BOOKS_QB_ENV: 'sandbox',
+		// Narrow the realm set to one entity so the e2e stays a single query / cdc.
+		LOCAL_BOOKS_ENTITIES: 'Invoice',
 	};
 	const dbFile = join(tmp.dir, server.realmId, 'books.db');
+
+	// The realm cursor is one high-water mark for the company, stored in _meta.
+	const realmCursor = (db: Database): string =>
+		(
+			db.query("SELECT value FROM _meta WHERE key='cdc_cursor'").get() as {
+				value: string;
+			}
+		).value;
 
 	server.put('Invoice', makeInvoice('1'));
 	server.put('Invoice', makeInvoice('2'));
 
-	// Checkpoint 2: full pull.
-	const full = await runCli(
-		['sync', '--entity', 'Invoice', '--full', '--realm', server.realmId],
-		env,
-	);
+	// Checkpoint 2: full pull (the realm pass, forced FULL).
+	const full = await runCli(['sync', '--full', '--realm', server.realmId], env);
 	expect(full.exitCode).toBe(0);
 	expect(full.stdout).toContain('FULL');
 
@@ -68,13 +75,7 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 	const counts = read1
 		.query('SELECT count(*) AS n, min(json_valid(raw)) AS v FROM invoices')
 		.get() as { n: number; v: number };
-	const cursor1 = (
-		read1
-			.query("SELECT cdc_cursor FROM _sync_state WHERE entity='Invoice'")
-			.get() as {
-			cdc_cursor: string;
-		}
-	).cdc_cursor;
+	const cursor1 = realmCursor(read1);
 	read1.close();
 	expect(counts.n).toBe(2);
 	expect(counts.v).toBe(1);
@@ -85,11 +86,8 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 	server.put('Invoice', makeInvoice('2', { TotalAmt: 555 }));
 	server.put('Invoice', makeInvoice('3'));
 
-	// Checkpoint 3: incremental.
-	const inc = await runCli(
-		['sync', '--entity', 'Invoice', '--realm', server.realmId],
-		env,
-	);
+	// Checkpoint 3: incremental (the realm pass picks INCREMENTAL from the cursor).
+	const inc = await runCli(['sync', '--realm', server.realmId], env);
 	expect(inc.exitCode).toBe(0);
 	expect(inc.stdout).toContain('INCREMENTAL');
 
@@ -97,13 +95,7 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 	const after = read2.query('SELECT count(*) AS n FROM invoices').get() as {
 		n: number;
 	};
-	const cursor2 = (
-		read2
-			.query("SELECT cdc_cursor FROM _sync_state WHERE entity='Invoice'")
-			.get() as {
-			cdc_cursor: string;
-		}
-	).cdc_cursor;
+	const cursor2 = realmCursor(read2);
 	read2.close();
 	expect(after.n).toBe(3);
 	expect(Date.parse(cursor2)).toBeGreaterThan(Date.parse(cursor1));

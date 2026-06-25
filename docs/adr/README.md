@@ -128,5 +128,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0058](0058-push-to-talk-owns-the-recording-it-starts-keyed-by-its-id-not-a-lifecycle-layer.md) | Push-to-talk owns the recording it starts, keyed by the recording's id, not a general lifecycle layer | Accepted |
 | [0059](0059-an-inference-connection-is-a-capability-orthogonal-device-endpoint.md) | An inference connection is a capability-orthogonal device endpoint; the model is per-conversation (amends 0054) | Accepted (auth axis amended by 0060) |
 | [0060](0060-an-inference-connection-is-a-base-url-and-an-optional-bearer-key.md) | An inference connection is a base URL and an optional bearer key; everything non-static is an injected transport (amends 0059) | Accepted |
+| [0061](0061-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md) | Local Books serves row-level facts from the mirror, computed reports live, and writes back through one approved verb | Accepted |
+| [0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) | Local Books stores OAuth tokens in a single 0600 file | Accepted |
+| [0063](0063-the-local-books-mirror-is-a-multi-writer-cache-made-safe-by-one-monotonic-write-door.md) | The Local Books mirror is a multi-writer cache made safe by one monotonic write door, not single-writer discipline | Accepted |
+| [0064](0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md) | The Local Books mirror keeps one realm CDC cursor; table existence is the per-entity init latch | Accepted |
 
 When you add an ADR, add its row here.

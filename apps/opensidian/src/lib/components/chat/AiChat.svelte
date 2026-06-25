@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { ChatInput } from '@epicenter/app-shell/agent-chat';
+	import {
+		ChatErrorBanner,
+		ChatInput,
+	} from '@epicenter/app-shell/agent-chat';
 	import {
 		CrossDeviceModelGap,
 		InferencePicker,
 	} from '@epicenter/app-shell/inference-picker';
 	import { Button } from '@epicenter/ui/button';
-	import LogInIcon from '@lucide/svelte/icons/log-in';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SquarePenIcon from '@lucide/svelte/icons/square-pen';
-	import XIcon from '@lucide/svelte/icons/x';
 	import { DEFAULT_MODEL } from '$lib/chat/models';
 	import { requireOpensidian } from '$lib/session';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
@@ -45,72 +45,17 @@
 		/>
 	</div>
 
-	<!-- Error states: auth + credits are persistent (no dismiss), others are dismissable -->
-	{#if active?.isUnauthorized}
-		<div
-			role="alert"
-			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-		>
-			<span class="min-w-0 flex-1">Sign in to use AI Chat</span>
-			<Button
-				variant="ghost"
-				size="sm"
-				class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
-				onclick={() => {
-					// TODO: open auth popover or navigate to sign-in
-				}}
-			>
-				<LogInIcon class="size-3" />
-				Sign In
-			</Button>
-		</div>
-	{:else if active?.isCreditsExhausted}
-		<div
-			role="alert"
-			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-		>
-			<span class="min-w-0 flex-1">You're out of credits</span>
-			<Button
-				variant="ghost"
-				size="sm"
-				class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
-				onclick={() => {
-					// TODO: open billing / upgrade flow
-				}}
-			>
-				Upgrade
-			</Button>
-		</div>
-	{:else if active?.visibleError}
-		<!-- Dismissable errors: model restriction, generic, etc. -->
-		<div
-			role="alert"
-			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-		>
-			<span class="min-w-0 flex-1">{active.visibleError.message}</span>
-			<div class="flex shrink-0 items-center gap-1">
-				<Button
-					variant="ghost"
-					size="sm"
-					class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
-					onclick={() => active?.reload()}
-				>
-					<RotateCcwIcon class="size-3" />
-					Retry
-				</Button>
-				<Button
-					variant="ghost"
-					size="icon-xs"
-					class="text-destructive hover:text-destructive"
-					onclick={() => active?.dismissError()}
-				>
-					<XIcon class="size-3" />
-				</Button>
-			</div>
-		</div>
-	{/if}
-
 	{#if active}
+		<ChatErrorBanner
+			conversation={active}
+			onSignIn={() => {
+				// TODO: open auth popover or navigate to sign-in
+			}}
+			onUpgrade={() => {
+				// TODO: open billing / upgrade flow
+			}}
+		/>
+
 		<CrossDeviceModelGap
 			model={active.model}
 			connections={inferenceConnections}

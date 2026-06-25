@@ -1,6 +1,7 @@
 import { createMutation } from '@tanstack/svelte-query';
 import { VAD_RECORDING_BUTTON } from '$lib/constants/audio';
 import { toggleVadRecording } from '$lib/operations/recording';
+import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 import type { RecordingActionController } from './recording-action-controller';
@@ -21,6 +22,16 @@ export function createVadRecordingController(): RecordingActionController {
 
 	const isListening = $derived(vadRecorder.state !== 'IDLE');
 	const isSpeechDetected = $derived(vadRecorder.state === 'SPEECH_DETECTED');
+	// The live VAD signals the card draws beside its meter, as one memoized object
+	// so `get vad()` returns a stable reference like every other member instead of
+	// building a fresh object per read. `transcribing` is a previous phrase still
+	// transcribing while this session keeps listening (the continuous-VAD overlap),
+	// gated on listening so it only reads as "ours" while this session is live.
+	const vad = $derived({
+		speaking: isSpeechDetected,
+		transcribing:
+			isListening && dictationLifecycle.current.outcome.kind === 'transcribing',
+	});
 	const button = $derived(VAD_RECORDING_BUTTON[vadRecorder.state]);
 	const shortcutLabel = $derived(getRecordingShortcutLabel('vad'));
 
@@ -57,6 +68,9 @@ export function createVadRecordingController(): RecordingActionController {
 		},
 		get shortcutLabel() {
 			return shortcutLabel;
+		},
+		get vad() {
+			return vad;
 		},
 		toggle() {
 			toggleMutation.mutate();

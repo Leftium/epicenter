@@ -2,14 +2,12 @@ import { os } from '#platform/os';
 import { systemShortcuts } from '#platform/system-shortcuts';
 import type { Command } from '$lib/commands';
 import { focusedShortcuts } from '$lib/platform/focused-shortcuts';
+import type { Shortcuts } from '$lib/platform/types';
 import { keyBindingToLabel } from '$lib/utils/key-binding';
 
 /**
- * The single backend the recording-key hint reads. The hint shows one label, so
- * it cannot use the reach router (which exposes both slots). On desktop the
- * system (global) key is the one that fires from anywhere, so it leads; web has
- * only the focused backend. The flat settings list (a later phase) shows both
- * slots through the router; this single-label hint keeps the simple selection.
+ * The backend the one-label helper reads: the system (global) key leads on desktop
+ * because it fires from anywhere; web has only the focused backend.
  */
 const primaryShortcuts = systemShortcuts ?? focusedShortcuts;
 
@@ -31,19 +29,54 @@ const RECORDING_SHORTCUT_PREFERENCE = {
 export type RecordingShortcutMode = keyof typeof RECORDING_SHORTCUT_PREFERENCE;
 
 /**
- * The display label for the shortcut that actually starts this recording mode on
- * this platform, resolved through the primary shortcut backend.
- *
- * Reading a single command (`toggleManualRecording`) rendered an empty key on a
- * fresh desktop install, where the toggle ships unbound and push-to-talk (Fn) is
- * the gesture that works. Routing through the preference list shows the bound
- * gesture instead. Returns `''` when nothing in the list is bound; callers hide
- * the hint and fall back to "click".
+ * The label for the bound gesture this mode starts in one store, picked by walking
+ * the preference list (the first bound command wins). Reading a single command
+ * (`toggleManualRecording`) rendered an empty key where the toggle ships unbound
+ * and another gesture is the live one; the list shows the bound gesture instead.
+ * Returns `''` when nothing in the list is bound. `keyBindingToLabel` formats the
+ * physical binding.
  */
-export function getRecordingShortcutLabel(mode: RecordingShortcutMode): string {
+function shortcutLabelFor(
+	store: Shortcuts,
+	mode: RecordingShortcutMode,
+): string {
 	for (const commandId of RECORDING_SHORTCUT_PREFERENCE[mode]) {
-		const binding = primaryShortcuts.current(commandId);
+		const binding = store.current(commandId);
 		if (binding) return keyBindingToLabel(binding, os.isApple);
 	}
 	return '';
+}
+
+/**
+ * The single label that starts this recording mode on this platform, from the
+ * primary backend. Callers that only need to know whether *a* shortcut exists
+ * (the recording controllers) read this; the home hint reads both slots through
+ * {@link getRecordingShortcutLabels}.
+ */
+export function getRecordingShortcutLabel(mode: RecordingShortcutMode): string {
+	return shortcutLabelFor(primaryShortcuts, mode);
+}
+
+/**
+ * Both reach slots for this recording mode: the in-app (`focused`) key and the
+ * system-global (`global`) key. `focused` is `''` when unbound. `global` is `null`
+ * when this platform has no system backend (web), and `''` when it has one but the
+ * slot is unbound (desktop): one source of truth for "is there a from-anywhere tier
+ * at all" versus "there is, but it needs setting up". The home hint teaches both, so
+ * a desktop user learns the quick in-app tap *and* the from-anywhere gesture (and,
+ * for VAD, the in-app key the single-label hint never surfaced, since VAD ships no
+ * global default).
+ *
+ * This is the read-only badge philosophy of ADR-0052 applied to the home screen:
+ * the user still expresses reach only by choosing a key, and the hint reflects
+ * what each key's reach turned out to be. It is not a scope chooser.
+ */
+export function getRecordingShortcutLabels(mode: RecordingShortcutMode): {
+	focused: string;
+	global: string | null;
+} {
+	return {
+		focused: shortcutLabelFor(focusedShortcuts, mode),
+		global: systemShortcuts ? shortcutLabelFor(systemShortcuts, mode) : null,
+	};
 }

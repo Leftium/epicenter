@@ -2,24 +2,26 @@ import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { QbEnvironment } from './config.ts';
+import { type QbEnvironment, QbEnvironmentSchema } from './config.ts';
 
 /**
- * A persisted QuickBooks OAuth2 token, stored verbatim in the OS keyring keyed
- * by `realmId`. Expiries are absolute ISO timestamps (not the relative
+ * A persisted QuickBooks OAuth2 token set, stored verbatim in the token file
+ * keyed by `realmId`. Expiries are absolute ISO timestamps (not the relative
  * `expires_in` QuickBooks returns) so a process that starts hours later can
  * still decide whether the access token is live without knowing when it was
- * issued.
+ * issued. This schema is the single source of truth: `TokenSet` derives from it,
+ * and the file token store validates disk bytes against it on read.
  */
-export type TokenSet = {
-	realmId: string;
-	environment: QbEnvironment;
-	accessToken: string;
-	refreshToken: string;
-	accessTokenExpiresAt: string;
-	refreshTokenExpiresAt: string;
-	obtainedAt: string;
-};
+export const TokenSetSchema = Type.Object({
+	realmId: Type.String({ minLength: 1 }),
+	environment: QbEnvironmentSchema,
+	accessToken: Type.String({ minLength: 1 }),
+	refreshToken: Type.String({ minLength: 1 }),
+	accessTokenExpiresAt: Type.String({ minLength: 1 }),
+	refreshTokenExpiresAt: Type.String({ minLength: 1 }),
+	obtainedAt: Type.String({ minLength: 1 }),
+});
+export type TokenSet = Static<typeof TokenSetSchema>;
 
 /**
  * The fields we read off a raw QuickBooks bearer-token grant. Unknown fields are

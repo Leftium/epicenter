@@ -192,6 +192,7 @@ on a re-vendor:
 | `showOnHover` actions overlay | `item/item-actions.svelte` | structural (absolute overlay + gradient) | yes |
 | `tooltip` prop (wraps in `Tooltip`) | `button/button.svelte`, `link/link.svelte` | Epicenter feature; upstream Button and Link have none | yes |
 | Standard loading shell | `loading/loading.svelte` | Epicenter wrapper around `Empty.Root` + `Spinner` for generic pending panes | yes |
+| Orientation sizing `data-[orientation=horizontal]:h-px …` | `separator/separator.svelte` | byte-identical to upstream; the size is gated on a Tailwind variant, which only attaches to real utilities. Routing it through `cn-separator-horizontal` (a plain class, not an `@utility`) makes the variant emit nothing, so the divider collapses (a fat bar inside `field-separator`, 0px standalone). Do **not** cn-ify it. | yes |
 
 Correctness wiring (making Vega work, not Epicenter style): `switch` and
 `alert-dialog` carry a `size` prop that emits `data-size`; sidebar menu and

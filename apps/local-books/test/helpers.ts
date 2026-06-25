@@ -20,9 +20,10 @@ export function makeConfig(over: Partial<AppConfig> = {}): AppConfig {
 		cdcSafeWindowDays: 25,
 		fullBackstopDays: 7,
 		pageSize: 1000,
-		keyringFile: null,
+		credentialsPath: '/tmp/local-books-test/credentials.json',
 		realmOverride: null,
 		callbackPort: null,
+		readOnly: false,
 		...over,
 	};
 }

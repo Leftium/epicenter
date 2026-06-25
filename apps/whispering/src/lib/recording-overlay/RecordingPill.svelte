@@ -7,11 +7,13 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
+	import LevelMeter from '$lib/components/LevelMeter.svelte';
 	import type { DeliveryReach } from '$lib/operations/delivery';
 	import {
 		FAILURE_LABEL,
 		type RecordingOverlayStatus,
 	} from '$lib/recording-overlay/events';
+	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
 
 	// The floating dictation pill, presentational and platform-free. It renders
 	// whatever status it is handed and reports control gestures through callback
@@ -38,21 +40,15 @@
 		onReveal?: () => void;
 	} = $props();
 
-	const isManual = $derived(
-		status?.phase === 'recording' && status.trigger === 'manual',
-	);
-	const isSpeaking = $derived(
-		status?.phase === 'recording' &&
-			status.trigger === 'vad' &&
-			status.vadState === 'SPEECH_DETECTED',
-	);
-	// The secondary pip riding beside a live VAD meter, or undefined when none
-	// rides (manual recording, or a VAD session at rest).
-	const vadPip = $derived(
-		status?.phase === 'recording' && status.trigger === 'vad'
-			? status.pip
-			: undefined,
-	);
+	// Narrow the status to its live-recording variants once, so the template reads
+	// the discriminated fields directly (manual vs vad, speech latched, a previous
+	// phrase transcribing) instead of a flattened bag of booleans. `null` for every
+	// non-recording phase, which the chip block below renders instead.
+	const recording = $derived(status?.phase === 'recording' ? status : null);
+
+	// Speech-latched tints the meter bars, but only in a VAD session (a manual take
+	// never latches), named here so the bar tint reads as one thought.
+	const isSpeaking = $derived(recording?.trigger === 'vad' && recording.speaking);
 
 	// Every non-recording phase is a "chip": one icon plus a short, fixed label,
 	// with a tone that tints the icon (and, when failed, the whole pill). They
@@ -100,18 +96,6 @@
 		}
 	});
 
-	// Per-bar height envelope (taller in the middle) scaled by `level`. Reacting
-	// the same amplitude through a fixed shape reads as a meter, not a flat block.
-	const BAR_ENVELOPE = [
-		0.35, 0.5, 0.68, 0.84, 0.95, 1, 0.95, 0.84, 0.68, 0.5, 0.35,
-	];
-	const MIN_BAR_PX = 3;
-	const MAX_BAR_PX = 18;
-
-	function barHeight(envelope: number): number {
-		return MIN_BAR_PX + envelope * level * (MAX_BAR_PX - MIN_BAR_PX);
-	}
-
 	// Resting state is a filled chip, not a bare icon, so the controls read as
 	// buttons at a glance in the small pill. Each control composes its own tone over
 	// this shared base, which carries the hover/press feedback: background and
@@ -150,7 +134,7 @@
 			// their content, capped wide enough for the longest label ("Transcription
 			// failed") to show in full. The 224px cap is mirrored by the desktop overlay
 			// window (OVERLAY_WIDTH in overlay.rs / index.tauri.ts), which must stay in sync.
-			status.phase === 'recording'
+			recording
 				? 'w-[208px] justify-between'
 				: 'w-fit max-w-[224px]',
 			// Failed: a red chip so the failure reads at a glance, with the terse reason
@@ -167,31 +151,22 @@
 		title={onReveal ? 'Open Whispering' : undefined}
 		onclick={onReveal}
 	>
-		{#if status.phase === 'recording'}
+		{#if recording}
 			<div class="flex items-center text-white/80">
-				{#if isManual}
+				{#if recording.trigger === 'manual'}
 					<MicIcon class="size-4" />
 				{:else}
 					<AudioLinesIcon class="size-4" />
 				{/if}
 			</div>
 
-			<div class="flex h-5 items-center gap-[3px]" aria-hidden="true">
-				{#each BAR_ENVELOPE as envelope, i (i)}
-					<!-- Height is set inline from the live mic level; the transition glides
-					     between samples (~20-30 Hz) so the meter looks continuous, and is
-					     dropped under reduced motion. Speech detected (VAD) tints the bar so
-					     the user sees it cross the threshold, on top of the height already
-					     reacting to loudness. -->
-					<span
-						class={cn(
-							'w-[3px] rounded-full bg-white/80 transition-[height] duration-[80ms] ease-linear motion-reduce:transition-none',
-							isSpeaking && 'bg-[#ffe5ee]',
-						)}
-						style="height: {barHeight(envelope)}px"
-					></span>
-				{/each}
-			</div>
+			<!-- Speech detected (VAD) tints the bars so the user sees capture cross the
+			     threshold, on top of the height already reacting to loudness. -->
+			<LevelMeter
+				{level}
+				class="h-5"
+				barClass={isSpeaking ? 'bg-[#ffe5ee]' : undefined}
+			/>
 
 			<!-- Trailing cluster: a contextual slot, then stop as the constant right
 			     anchor. Manual and VAD share this skeleton (slot then stop), so the
@@ -200,7 +175,7 @@
 			     width, so the cluster reads as balanced and the pill keeps a steady
 			     width as the slot's content changes. -->
 			<div class="flex items-center gap-1">
-				{#if isManual}
+				{#if recording.trigger === 'manual'}
 					<!-- Manual can discard the take, so the slot is the cancel button. -->
 					<button
 						type="button"
@@ -212,31 +187,19 @@
 						<XIcon class="size-4" />
 					</button>
 				{:else}
-					<!-- VAD has no per-utterance cancel, so the slot holds an indicator the
-					     same size as the cancel button. While a previous phrase is still
-					     transcribing it is the spinner; otherwise it is the capture dot. The
-					     bars track raw mic level continuously, but whether VAD has actually
-					     latched onto speech is a separate fact (with a detection delay): the
-					     dot is dim while armed and lights up the instant capture begins, so
-					     the user can tell "being recorded now" from "just hearing sound". -->
-					<div
-						class="flex size-6 items-center justify-center text-white/50"
-						title={vadPip === 'transcribing'
-							? 'Transcribing previous phrase'
-							: isSpeaking
-								? 'Capturing speech'
-								: 'Listening'}
-					>
-						{#if vadPip === 'transcribing'}
-							<LoaderCircleIcon class="size-3.5 animate-spin" />
-						{:else}
-							<span
-								class={cn(
-									'size-2 rounded-full',
-									isSpeaking ? 'bg-pink-300' : 'bg-white/40',
-								)}
-							></span>
-						{/if}
+					<!-- VAD has no per-utterance cancel, so the slot holds the capture
+					     indicator at the cancel button's width, keeping the cluster
+					     balanced. The same dim-dot -> lit-dot -> spinner the home capture
+					     card shows: the bars track raw level, this mark tracks whether VAD
+					     has latched onto speech (with its detection delay) and then the
+					     previous phrase's transcribe. -->
+					<div class="flex size-6 items-center justify-center">
+						<VadIndicator
+							signals={recording}
+							dimClass="bg-white/40"
+							litClass="bg-pink-300"
+							spinnerClass="text-white/50"
+						/>
 					</div>
 				{/if}
 
@@ -245,8 +208,12 @@
 				<button
 					type="button"
 					class={cn(actionBase, 'bg-red-500/60 text-white hover:bg-red-500/80')}
-					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
-					title={isManual ? 'Stop recording' : 'Stop listening'}
+					aria-label={recording.trigger === 'manual'
+						? 'Stop recording'
+						: 'Stop listening'}
+					title={recording.trigger === 'manual'
+						? 'Stop recording'
+						: 'Stop listening'}
 					onclick={handleStop}
 				>
 					<SquareIcon class="size-3.5" />

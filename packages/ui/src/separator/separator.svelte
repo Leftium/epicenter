@@ -14,7 +14,9 @@
 	bind:ref
 	data-slot={dataSlot}
 	class={cn(
-		'cn-separator data-[orientation=horizontal]:cn-separator-horizontal data-[orientation=vertical]:cn-separator-vertical',
+		'bg-border shrink-0 data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:w-px',
+		// this is different in shadcn/ui but self-stretch breaks things for us
+		'data-[orientation=vertical]:h-full',
 		className,
 	)}
 	{...restProps}

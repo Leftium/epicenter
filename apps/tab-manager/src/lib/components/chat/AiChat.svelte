@@ -1,13 +1,17 @@
 <script lang="ts">
+	import { CrossDeviceModelGap } from '@epicenter/app-shell/inference-picker';
 	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
+	import { DEFAULT_MODEL } from '$lib/chat/models';
 	import { requireTabManager } from '$lib/session.svelte';
+	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import ChatErrorBanner from './ChatErrorBanner.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import ConversationPicker from './ConversationPicker.svelte';
 	import MessageList from './MessageList.svelte';
 
 	const tabManager = requireTabManager();
+	const active = $derived(tabManager.state.aiChat.active);
 </script>
 
 <div class="flex h-full flex-col">
@@ -84,6 +88,14 @@
 				tabManager.state.aiChat.active.dismissedError =
 					tabManager.state.aiChat.active.error?.message ?? null;
 			}}
+		/>
+	{/if}
+
+	{#if active}
+		<CrossDeviceModelGap
+			model={active.model}
+			connections={inferenceConnections}
+			onUseDefault={() => (active.model = DEFAULT_MODEL)}
 		/>
 	{/if}
 

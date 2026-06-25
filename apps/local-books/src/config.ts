@@ -3,10 +3,18 @@ import { join } from 'node:path';
 import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { DEFAULT_ENTITIES, isKnownEntity } from './entities.ts';
-import { resolveDataDir } from './paths.ts';
+import { credentialsFilePath, resolveDataDir } from './paths.ts';
 
-/** Which QuickBooks deployment a company lives in. */
-export type QbEnvironment = 'sandbox' | 'production';
+/**
+ * Which QuickBooks deployment a company lives in. This schema is the single
+ * source of truth: `QbEnvironment` derives from it, and both `ConfigFileSchema`
+ * and `TokenSetSchema` reference it rather than re-spelling the literal union.
+ */
+export const QbEnvironmentSchema = Type.Union([
+	Type.Literal('sandbox'),
+	Type.Literal('production'),
+]);
+export type QbEnvironment = Static<typeof QbEnvironmentSchema>;
 
 /**
  * Fully-resolved runtime configuration. Precedence is CLI flags > environment >
@@ -37,7 +45,12 @@ export type AppConfig = {
 	fullBackstopDays: number;
 	/** Query-API page size; QuickBooks caps results at 1000. */
 	pageSize: number;
-	keyringFile: string | null;
+	/**
+	 * Absolute path to the `0600` `credentials.json` holding the realm's OAuth
+	 * tokens. Defaults to the data-dir root; override with `LOCAL_BOOKS_TOKEN_FILE`
+	 * (used by the test harness and any custom location). See ADR-0062.
+	 */
+	credentialsPath: string;
 	realmOverride: string | null;
 	/**
 	 * Port the localhost OAuth callback server binds to. Defaults to the port in
@@ -45,6 +58,13 @@ export type AppConfig = {
 	 * as Intuit production requires: the tunnel forwards to this local port.
 	 */
 	callbackPort: number | null;
+	/**
+	 * Serve the agent a read-only surface: the daemon advertises the read tools
+	 * (`books_sql_query`, `books_report`) but withholds the QuickBooks write tool
+	 * (`recategorize_expense`). A safety posture for letting an agent analyze the
+	 * books without granting it the power to mutate QuickBooks. `LOCAL_BOOKS_READ_ONLY`.
+	 */
+	readOnly: boolean;
 };
 
 export type CliConfigOverrides = {
@@ -66,9 +86,7 @@ const DEFAULT_SCOPE = 'com.intuit.quickbooks.accounting';
 const DEFAULT_MINOR_VERSION = '70';
 
 const ConfigFileSchema = Type.Object({
-	environment: Type.Optional(
-		Type.Union([Type.Literal('sandbox'), Type.Literal('production')]),
-	),
+	environment: Type.Optional(QbEnvironmentSchema),
 	entities: Type.Optional(Type.Array(Type.String())),
 	redirectUri: Type.Optional(Type.String({ minLength: 1 })),
 	scopes: Type.Optional(Type.Array(Type.String())),
@@ -77,6 +95,7 @@ const ConfigFileSchema = Type.Object({
 	fullBackstopDays: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
 	pageSize: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
 	callbackPort: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+	readOnly: Type.Optional(Type.Boolean()),
 });
 type ConfigFile = Static<typeof ConfigFileSchema>;
 
@@ -96,6 +115,13 @@ function readConfigFile(dataDir: string): ConfigFile {
 function env(name: string): string | undefined {
 	const value = process.env[name];
 	return value && value.length > 0 ? value : undefined;
+}
+
+/** A boolean env flag: present and not `0`/`false` is true; absent is undefined. */
+function envFlag(name: string): boolean | undefined {
+	const value = env(name);
+	if (value === undefined) return undefined;
+	return value !== '0' && value.toLowerCase() !== 'false';
 }
 
 function resolveEntities(file: ConfigFile): string[] {
@@ -146,10 +172,12 @@ export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
 		cdcSafeWindowDays: file.cdcSafeWindowDays ?? 25,
 		fullBackstopDays: file.fullBackstopDays ?? 7,
 		pageSize: Math.min(file.pageSize ?? 1000, 1000),
-		keyringFile: env('LOCAL_BOOKS_KEYRING_FILE') ?? null,
+		credentialsPath:
+			env('LOCAL_BOOKS_TOKEN_FILE') ?? credentialsFilePath(dataDir),
 		realmOverride: overrides.realm ?? env('LOCAL_BOOKS_QB_REALM') ?? null,
 		callbackPort: callbackPortEnv
 			? Number(callbackPortEnv)
 			: (file.callbackPort ?? null),
+		readOnly: envFlag('LOCAL_BOOKS_READ_ONLY') ?? file.readOnly ?? false,
 	};
 }

@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { CrossDeviceModelGap } from '@epicenter/app-shell/inference-picker';
 	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SquarePenIcon from '@lucide/svelte/icons/square-pen';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { DEFAULT_MODEL } from '$lib/chat/models';
 	import { requireOpensidian } from '$lib/session';
+	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import MessageList from './MessageList.svelte';
 
@@ -117,6 +120,14 @@
 				</Button>
 			</div>
 		</div>
+	{/if}
+
+	{#if active}
+		<CrossDeviceModelGap
+			model={active.model}
+			connections={inferenceConnections}
+			onUseDefault={() => (active.model = DEFAULT_MODEL)}
+		/>
 	{/if}
 
 	<!-- Chat input -->

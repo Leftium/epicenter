@@ -28,7 +28,7 @@ Usage:
   local-books status [options]
 
 Commands:
-  auth      One-time OAuth2 against QuickBooks (localhost callback). Tokens -> OS keyring.
+  auth      One-time OAuth2 against QuickBooks (localhost callback). Tokens -> 0600 credentials.json.
   sync      Refresh the mirror. Mode (FULL / INCREMENTAL) is chosen from stored state.
   status    Show token state and the per-entity cursor, row counts, and last full pull.
 
@@ -45,7 +45,7 @@ Options:
 Environment:
   QB_CLIENT_ID / QB_CLIENT_SECRET      Intuit app credentials (required for auth).
   LOCAL_BOOKS_DIR                       Data directory.
-  LOCAL_BOOKS_KEYRING_FILE              Plaintext file token store instead of the OS keyring.
+  LOCAL_BOOKS_TOKEN_FILE                Override the token file path (default: <data-dir>/credentials.json).
 `;
 
 /** Parse a duration like "30s", "30m", "2h" into ms; a bare number means minutes. */

@@ -1,7 +1,9 @@
 import {
 	type AuthClient,
+	type CreateInstanceTokenAuthConfig,
 	type CreateOAuthAppAuthConfig,
 	type CreateSameOriginCookieAuthConfig,
+	createInstanceTokenAuth as createCoreInstanceTokenAuth,
 	createOAuthAppAuth as createCoreOAuthAppAuth,
 	createSameOriginCookieAuth as createCoreSameOriginCookieAuth,
 	type SyncAuthClient,
@@ -43,6 +45,17 @@ export function createOAuthAppAuth(
 	config: CreateOAuthAppAuthConfig,
 ): SyncAuthClient {
 	return reactiveAuthClient(createCoreOAuthAppAuth(config));
+}
+
+/**
+ * Svelte 5 wrapper around `createInstanceTokenAuth` (static-bearer client for a
+ * prebuilt app pointed at a self-hosted star). Returns a `SyncAuthClient`, so it
+ * is a drop-in for `createSession` wherever `createOAuthAppAuth` would be used.
+ */
+export function createInstanceTokenAuth(
+	config: CreateInstanceTokenAuthConfig,
+): SyncAuthClient {
+	return reactiveAuthClient(createCoreInstanceTokenAuth(config));
 }
 
 /**

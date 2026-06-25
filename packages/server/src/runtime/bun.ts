@@ -1,5 +1,5 @@
 /**
- * The Bun runtime adapter: the three runtime-port concerns (ADR-0059) wired to
+ * The Bun runtime adapter: the three runtime-port concerns (ADR-0065) wired to
  * plain process primitives, as one {@link RuntimeAdapter} a Bun host passes to
  * `createServerApp`. The honest peer of {@link cloudflare}: same return type,
  * different acquisition timing.

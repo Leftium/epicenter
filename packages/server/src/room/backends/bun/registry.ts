@@ -1,7 +1,7 @@
 /**
  * In-process {@link Rooms} for a single Bun host, the Road-2 backend a
  * self-host or Tauri shell binds instead of the Cloudflare Durable Object
- * (ADR-0059). One `RoomCore` per room lives in a `Map`; a `bun:sqlite` file
+ * (ADR-0065). One `RoomCore` per room lives in a `Map`; a `bun:sqlite` file
  * per room persists its update log. A single process is always the one writer
  * for every room it holds, so it needs neither the DO's single-writer
  * guarantee nor its hibernation restore (the connection set never gets wiped).

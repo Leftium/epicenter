@@ -61,7 +61,7 @@ export function createDurableObjectRooms(
 		 * unauthenticated upgrade, and `request` is unused (the pair needs no
 		 * inbound request). `WebSocketPair` is the Cloudflare-only global that
 		 * makes a detached pair; it lives here, in the Cloudflare backend, never
-		 * in shared auth code (ADR-0059).
+		 * in shared auth code (ADR-0065).
 		 */
 		rejectUpgrade: ({ code, reason }) => {
 			const pair = new WebSocketPair();

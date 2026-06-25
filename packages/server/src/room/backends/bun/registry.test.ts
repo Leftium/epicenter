@@ -5,7 +5,7 @@
  * backend that runs behind the Cloudflare Durable Object: presence, binary
  * sync fan-out, and dispatch relay all behave identically, and the
  * `bun:sqlite` update log persists and reloads a room's history. There is no
- * `cloudflare:workers` mock here, by design (ADR-0059): the core is exercised
+ * `cloudflare:workers` mock here, by design (ADR-0065): the core is exercised
  * through the Node backend's own surface.
  *
  * Like the Durable Object test, sockets are driven directly: the `websocket`

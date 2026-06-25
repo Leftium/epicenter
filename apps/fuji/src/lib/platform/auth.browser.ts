@@ -11,7 +11,7 @@ import type { PlatformAuth } from './types';
 const instance = readInstance();
 
 // A configured instance token means a self-hosted star: authenticate with the
-// static bearer (ADR-0063) instead of OAuth. Otherwise the OAuth flow runs
+// static bearer (ADR-0069) instead of OAuth. Otherwise the OAuth flow runs
 // against the instance origin, which is the hosted cloud by default.
 export const auth: PlatformAuth = instance.token
 	? createInstanceTokenAuth({ baseURL: instance.baseURL, token: instance.token })

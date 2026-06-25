@@ -3,7 +3,7 @@
  *
  * The off-Cloudflare twin of `worker/index.ts`. It builds the SAME
  * `createServerApp(...)` the Worker builds, but binds the per-concern runtime
- * hooks to plain primitives instead of Cloudflare bindings (ADR-0059):
+ * hooks to plain primitives instead of Cloudflare bindings (ADR-0065):
  *
  *   - `connectDb`     a module-scope `pg.Pool` over `DATABASE_URL`
  *   - `afterResponse` fire-and-forget in the live process (no `waitUntil`)
@@ -56,7 +56,7 @@ import { type } from 'arktype';
 export function startSelfHostServer(
 	opts: { resolveUser?: ResolveUser } = {},
 ): void {
-	// Validate this host's environment once, at boot (ADR-0059): the library's
+	// Validate this host's environment once, at boot (ADR-0065): the library's
 	// portable secrets (`BunHostBindings` extends `ServerBindings`), this host's
 	// own config, and the shared-wiki membership allowlist, so a misconfiguration
 	// gets ONE descriptive error naming every missing or malformed var instead of

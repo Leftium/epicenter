@@ -13,7 +13,7 @@
  * cannot ship. It is duplicated from `apps/api/dev-auth.ts` on purpose: each
  * deployable owns its own bypass so neither can leak the other's, and the bypass
  * stays OUT of the shared library where an env-gated branch would compile it into
- * production (ADR-0059). Belt-and-suspenders: it refuses unless the request
+ * production (ADR-0065). Belt-and-suspenders: it refuses unless the request
  * landed on localhost, so even a misconfigured deploy that somehow wired it would
  * admit nobody off-box.
  */

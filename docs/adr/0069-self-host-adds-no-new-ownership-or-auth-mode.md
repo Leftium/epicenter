@@ -1,8 +1,8 @@
-# 0063. Self-host adds no new ownership or auth mode: single-user is a preset, and only the credential source varies
+# 0069. Self-host adds no new ownership or auth mode: single-user is a preset, and only the credential source varies
 
 - **Status:** Accepted
 - **Date:** 2026-06-24
-- **Relates:** [ADR-0061](0061-privacy-is-a-deployment-not-a-product-feature.md) and [ADR-0062](0062-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md) (self-host runs the star; this says self-host needs no new mode to do it), [ADR-0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md)/[ADR-0059](0059-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the per-concern injection seams, of which `resolveUser` is one), [ADR-0060](0060-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) (auth owns the session endpoint); the recommended default credential source and the build waves live in `specs/20260624T223835-privacy-is-a-deployment-self-host-and-relay-anchor-gradations.md`.
+- **Relates:** [ADR-0067](0067-privacy-is-a-deployment-not-a-product-feature.md) and [ADR-0068](0068-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md) (self-host runs the star; this says self-host needs no new mode to do it), [ADR-0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md)/[ADR-0065](0065-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the per-concern injection seams, of which `resolveUser` is one), [ADR-0066](0066-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) (auth owns the session endpoint); the recommended default credential source and the build waves live in `specs/20260624T223835-privacy-is-a-deployment-self-host-and-relay-anchor-gradations.md`.
 
 ## Context
 

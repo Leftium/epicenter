@@ -84,7 +84,7 @@ export type Connection = {
  *
  * `Bindings` is the library's own {@link ServerBindings} contract, NOT
  * `Cloudflare.Env`: the library reads only the portable secrets it declares
- * there, so it never names a Cloudflare type (ADR-0059) and a Bun host
+ * there, so it never names a Cloudflare type (ADR-0065) and a Bun host
  * typechecks with no Cloudflare types in scope. Each deployment's real env
  * (`Cloudflare.Env` on the Workers edges, a parsed `process.env` on Bun) is a
  * superset assignable to this; a Workers resolver that reads a Cloudflare-only

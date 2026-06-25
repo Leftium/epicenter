@@ -1,8 +1,8 @@
-# 0061. Privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface
+# 0067. Privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface
 
 - **Status:** Accepted
 - **Date:** 2026-06-24
-- **Relates:** [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) (privacy is a property of topology; the relay is trusted), [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md) (the relay / anchor / store / worker roles; one coordination box per person), [ADR-0059](0059-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the runtime port that makes self-host one Bun binary plus Postgres plus any S3); the in-flight work and gap ledger live in `specs/20260624T223835-privacy-is-a-deployment-self-host-and-relay-anchor-gradations.md`; the user-facing copy is `docs/trust-model.md`; the vocabulary is `docs/CONTEXT.md`.
+- **Relates:** [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) (privacy is a property of topology; the relay is trusted), [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md) (the relay / anchor / store / worker roles; one coordination box per person), [ADR-0065](0065-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the runtime port that makes self-host one Bun binary plus Postgres plus any S3); the in-flight work and gap ledger live in `specs/20260624T223835-privacy-is-a-deployment-self-host-and-relay-anchor-gradations.md`; the user-facing copy is `docs/trust-model.md`; the vocabulary is `docs/CONTEXT.md`.
 
 ## Context
 
@@ -19,7 +19,7 @@ This holds the line that ADR-0004 and ADR-0035 already drew, restated as a produ
 ## Consequences
 
 - **The hosted app ships no privacy settings, on purpose.** There is nothing to configure, audit, or get subtly wrong. The product copy in `docs/trust-model.md` stays load-bearing: "we cannot read your data" is true on self-host, not on the default, and that two-tier honesty is the whole privacy claim.
-- **The only privacy roadmap is deployment reachability,** tracked in the spec as waves: package the Bun self-host binary (ADR-0059 makes it one binary plus Postgres plus any S3), and add a first-class instance-URL setting to the prebuilt clients so a self-hosted origin is reachable without a rebuild. Two real gaps remain until then: the browser clients bake `https://api.epicenter.so` in at build time, and the shipped `apps/self-host` is still a Cloudflare Worker rather than the Bun binary a homelabber wants. Self-host gives real data confidentiality against Epicenter today; the *reachability* of your own instance is the unfinished half.
+- **The only privacy roadmap is deployment reachability,** tracked in the spec as waves: package the Bun self-host binary (ADR-0065 makes it one binary plus Postgres plus any S3), and add a first-class instance-URL setting to the prebuilt clients so a self-hosted origin is reachable without a rebuild. Two real gaps remain until then: the browser clients bake `https://api.epicenter.so` in at build time, and the shipped `apps/self-host` is still a Cloudflare Worker rather than the Bun binary a homelabber wants. Self-host gives real data confidentiality against Epicenter today; the *reachability* of your own instance is the unfinished half.
 - **The relay's metadata exposure is documented, not denied.** Even a future blind relay sees who-talks-to-whom, timing, and sizes; it only stops seeing content. When you run the relay yourself that metadata is yours.
 - **What this forecloses:** the tier / custody / seal ladder, permanently. Re-introducing privacy as in-app configuration is re-litigating this ADR. Privacy moves by relocating the anchor, not by flipping a setting.
 

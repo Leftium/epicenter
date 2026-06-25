@@ -6,7 +6,7 @@
  * propagation. This package owns neither auth state nor identity: the caller
  * passes the authed fetch handle and the `ownerId` (read from `auth.state`),
  * so the client never fetches `/api/session` itself. Profile reads live on the
- * auth client (`auth.getProfile()`); see ADR-0060.
+ * auth client (`auth.getProfile()`); see ADR-0066.
  *
  * Works against any Epicenter deployment (cloud at `epicenter.so` or a
  * self-hosted shared-wiki server).

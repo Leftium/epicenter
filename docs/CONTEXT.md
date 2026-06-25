@@ -12,15 +12,15 @@ shapes, see `docs/adr/`.
 - **Room**: the server side of a workspace. One Cloudflare Durable Object with an
   embedded SQLite `updates` table.
 - **Star**: the one runnable program that holds your data, composing anchor,
-  store, sync, and identity/auth into a deployment (ADR-0062). The star is the
+  store, sync, and identity/auth into a deployment (ADR-0068). The star is the
   unit of self-host and the entire privacy question: Epicenter runs it (hosted)
   or you run it (self-host). Distinct from a **service you call** (inference,
   blob URLs): a service is addressed by `{baseUrl, token?}`, sees only the one
   payload you hand it, and is never part of the star's topology. "Single-user /
   sovereign" is a preset over the star's two seams (partition + credential
-  source), not a mode (ADR-0063).
+  source), not a mode (ADR-0069).
 - **Anchor**: the always-on node that *holds* a workspace's Y.Doc so a sleeping
-  device can catch up. Who runs the anchor is the whole privacy question (ADR-0061):
+  device can catch up. Who runs the anchor is the whole privacy question (ADR-0067):
   user-run gives topology privacy, Epicenter-run is trusted plaintext. Privacy moves
   by relocating the anchor, never by a setting in the app.
 - **Relay**: moves bytes between a person's devices when they cannot reach each

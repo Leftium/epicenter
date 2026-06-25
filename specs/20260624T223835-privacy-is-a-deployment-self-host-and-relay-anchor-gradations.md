@@ -4,10 +4,10 @@
 - **Date:** 2026-06-24
 - **Branch:** wash-saddle
 - **Records (durable decisions, the authoritative homes):**
-  - [ADR-0061](../docs/adr/0061-privacy-is-a-deployment-not-a-product-feature.md): privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface.
-  - [ADR-0062](../docs/adr/0062-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md): Epicenter is one runnable program (the star) plus a la carte services addressed by `{baseUrl, token?}`.
-  - [ADR-0063](../docs/adr/0063-self-host-adds-no-new-ownership-or-auth-mode.md): self-host adds no new ownership or auth mode; single-user is a preset, only the credential source varies.
-- **Builds on:** [ADR-0004](../docs/adr/0004-trust-the-relay-reject-zero-knowledge.md) (trust the relay; privacy is topology), [ADR-0035](../docs/adr/0035-durable-storage-is-one-per-person-coordination-box.md) (the star roles), [ADR-0059](../docs/adr/0059-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the Bun star binary), and the article [`docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md`](../docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md).
+  - [ADR-0067](../docs/adr/0067-privacy-is-a-deployment-not-a-product-feature.md): privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface.
+  - [ADR-0068](../docs/adr/0068-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md): Epicenter is one runnable program (the star) plus a la carte services addressed by `{baseUrl, token?}`.
+  - [ADR-0069](../docs/adr/0069-self-host-adds-no-new-ownership-or-auth-mode.md): self-host adds no new ownership or auth mode; single-user is a preset, only the credential source varies.
+- **Builds on:** [ADR-0004](../docs/adr/0004-trust-the-relay-reject-zero-knowledge.md) (trust the relay; privacy is topology), [ADR-0035](../docs/adr/0035-durable-storage-is-one-per-person-coordination-box.md) (the star roles), [ADR-0065](../docs/adr/0065-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the Bun star binary), and the article [`docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md`](../docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md).
 
 ## One sentence
 
@@ -20,7 +20,7 @@ orthogonal, already-config-driven service menu.
 
 ## What this spec is
 
-The durable decisions now live in ADR-0061/0062/0063 (above); the vocabulary (relay, anchor, store, worker) lives in [`docs/CONTEXT.md`](../docs/CONTEXT.md); the user-facing trust copy lives in [`docs/trust-model.md`](../docs/trust-model.md). If this spec disagrees with an ADR, the ADR wins.
+The durable decisions now live in ADR-0067/0062/0063 (above); the vocabulary (relay, anchor, store, worker) lives in [`docs/CONTEXT.md`](../docs/CONTEXT.md); the user-facing trust copy lives in [`docs/trust-model.md`](../docs/trust-model.md). If this spec disagrees with an ADR, the ADR wins.
 
 What stays here is the **in-flight map**: the model as a picture, the self-host configurations with their ASCII and honest pros/cons (today and after Iroh), the ledger of what self-host does and does not protect, and the work waves. When the waves land, this spec is deleted; the ADRs persist.
 
@@ -47,7 +47,7 @@ The collapse this records: the earlier "privacy rung ladder" (hosted / own-ancho
 
 ## The two axes inside the star (and why "sovereign" is not a third mode)
 
-Running the star composes from two orthogonal seams that already exist in `packages/server`. Self-host needs no new mode; it picks values on these axes (ADR-0063).
+Running the star composes from two orthogonal seams that already exist in `packages/server`. Self-host needs no new mode; it picks values on these axes (ADR-0069).
 
 ```
   AXIS 1 · PARTITION  (OwnershipRule)        "whose data is it"
@@ -173,7 +173,7 @@ Epicenter encrypts no content today (not docs, not blobs); see [`docs/trust-mode
 
 1. **Gating gap: prebuilt clients cannot point at a self-host origin without a rebuild.** Node/CLI honor `EPICENTER_API_URL`; the browser apps bake `https://api.epicenter.so` and the OAuth client id at build time (`packages/constants/src/apps.ts`). Privacy-via-topology is meaningless if the client cannot choose the topology. **The most important fix.**
 2. **The shipped self-host artifact is a Cloudflare Worker** (`apps/self-host`), which needs a Cloudflare account plus Hyperdrive. The "one Bun binary plus Postgres plus any S3" path exists (`apps/api/server.ts`) but is not packaged as the self-host artifact, has no migration docs, and ships no compiled binary.
-3. **Login depends on Google OAuth** (email/password disabled in `base-config.ts`), so a self-hoster must register a Google app to log into their own box. ADR-0063's local credential source removes this.
+3. **Login depends on Google OAuth** (email/password disabled in `base-config.ts`), so a self-hoster must register a Google app to log into their own box. ADR-0069's local credential source removes this.
 4. **The relay sees metadata** (user id, node id, per-room co-presence, dispatched action names, timing, sizes, client IP). Yours when you run it; a who-talks-to-whom graph when you use Epicenter's. Even the future blind relay sees this; it only stops seeing content. Document, do not paper over.
 
 So: self-host gives real **content** confidentiality against Epicenter today; the **reachability** of your own instance is the unfinished half (caveats 1 and 2), and the **no-cloud-login** half is caveat 3.
@@ -190,19 +190,19 @@ The work is making the deployment choice real and removing the self-host frictio
 |---|---|---|
 | 1 | **Package the Bun star binary.** Built on `apps/api/server.ts`, a `compose.yaml` bundling Postgres + Garage/versitygw + the binary, a documented migration step, a `bun build --compile` artifact. | configs A/C/F: "a homelabber runs it in an afternoon" |
 | 2 | **Client instance-URL setting** (browser + desktop), so a self-hosted origin is reachable from prebuilt apps without a rebuild, OAuth issuer/audience included. | caveat 1; privacy-via-topology actually deliverable |
-| 3 | **Local credential source for self-host** (ADR-0063): a single-user bearer token printed at first boot as the default; reverse-proxy header and opt-in email/password as escape hatches; the fixed-owner resolver stays quarantined to dev. Optionally a `sovereign()`/preset factory beside `personal()`/`shared()` if ergonomics warrant. | caveat 3: no Google app to reach your own box |
+| 3 | **Local credential source for self-host** (ADR-0069): a single-user bearer token printed at first boot as the default; reverse-proxy header and opt-in email/password as escape hatches; the fixed-owner resolver stays quarantined to dev. Optionally a `sovereign()`/preset factory beside `personal()`/`shared()` if ergonomics warrant. | caveat 3: no Google app to reach your own box |
 | 4 | **Document the trust model honestly:** relay metadata, the IdP dependency, the rented-blob-locality footgun (config E), the "we can read your data on hosted, not self-host" line. | the honesty bar |
 | 5 (later) | **The Iroh relay/anchor split:** a blind relay separated from the anchor, unlocking configuration G (own anchor + blind relay) and sealed transit on every config. | config G; sealed transit |
 | 6 (later) | **The one encryption envelope:** the vault for must-sync-and-stay-blind secrets, and a turnkey `seal()` for backup, both reusing one primitive. | secret confidentiality + backup recovery |
 
 ## Non-goals and deferred
 
-- **Privacy tiers / custody / seal as product features.** Rejected (ADR-0061). The hosted app has zero privacy surface.
-- **A third "sovereign" ownership mode.** Rejected (ADR-0063). Single-user is a preset over `personal`/`shared` plus a local credential source.
-- **A no-auth code path.** Rejected as a mode (ADR-0063). The same effect is the quarantined fixed-owner `resolveUser` provider behind a localhost guard.
+- **Privacy tiers / custody / seal as product features.** Rejected (ADR-0067). The hosted app has zero privacy surface.
+- **A third "sovereign" ownership mode.** Rejected (ADR-0069). Single-user is a preset over `personal`/`shared` plus a local credential source.
+- **A no-auth code path.** Rejected as a mode (ADR-0069). The same effect is the quarantined fixed-owner `resolveUser` provider behind a localhost guard.
 - **A "partial self-host" privacy rung before Iroh.** Refused: false privacy claim while the relay and anchor are fused. Becomes configuration G after wave 5.
 - **An encrypted hosted mode for the boxless-privacy user.** Deferred, additive-later per ADR-0004. Trigger: that user becomes a real, asked-for segment.
 
 ## ADRs recorded
 
-[ADR-0061](../docs/adr/0061-privacy-is-a-deployment-not-a-product-feature.md), [ADR-0062](../docs/adr/0062-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md), and [ADR-0063](../docs/adr/0063-self-host-adds-no-new-ownership-or-auth-mode.md), all Accepted 2026-06-24. The decisions are locked even though waves 1 to 3 are in flight, because the refusals (no privacy surface, no extra modes, no no-auth fork) are in force now; the waves are their consequences.
+[ADR-0067](../docs/adr/0067-privacy-is-a-deployment-not-a-product-feature.md), [ADR-0068](../docs/adr/0068-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md), and [ADR-0069](../docs/adr/0069-self-host-adds-no-new-ownership-or-auth-mode.md), all Accepted 2026-06-24. The decisions are locked even though waves 1 to 3 are in flight, because the refusals (no privacy surface, no extra modes, no no-auth fork) are in force now; the waves are their consequences.

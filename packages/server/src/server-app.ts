@@ -15,7 +15,7 @@
  *     deployment, NOT per runtime: `apps/api` passes the same identity whether
  *     it runs on Workers or Bun.
  *
- * Per-concern injection at the deployment edge, refining ADR-0059. The ADR
+ * Per-concern injection at the deployment edge, refining ADR-0065. The ADR
  * rejected a single `Runtime` god-object, but that object carried PORTABLE
  * concerns (db driver, session store, assets) as co-equal legs and overstated
  * the port fivefold; those collapsed to open standards (Road 1). What survives
@@ -37,7 +37,7 @@ import type { ServerBindings } from './server-bindings.js';
 import type { Env, ResolveUser } from './types.js';
 
 /**
- * How one runtime does the three non-portable jobs, as one value (ADR-0059,
+ * How one runtime does the three non-portable jobs, as one value (ADR-0065,
  * refined). A deployment never mixes these legs: a per-request `pg.Client` over
  * Hyperdrive, `waitUntil`, and a Durable Object are ALL the Cloudflare runtime;
  * a `pg.Pool` checkout, a no-op, and an in-process registry are ALL the Bun
@@ -46,7 +46,7 @@ import type { Env, ResolveUser } from './types.js';
  * Workers, an inline literal on Bun) instead of three loose hooks restated per
  * edge.
  *
- * This is NOT the `Runtime` god-object ADR-0059 rejected: that one carried
+ * This is NOT the `Runtime` god-object ADR-0065 rejected: that one carried
  * portable concerns (db driver, session store, assets) as co-equal legs. Those
  * collapsed to open standards (Road 1). What remains here is exactly the set
  * that needs a runtime-specific handle (`HYPERDRIVE`, `ROOM`) or primitive
@@ -65,7 +65,7 @@ export type RuntimeAdapter = {
 	/**
 	 * Acquire a per-request database handle, and how to close it. Only
 	 * acquisition is injected: the library depends on the portable `pg`/drizzle
-	 * Postgres wire (ADR-0059 Road 1), never a binding shape. Cloudflare passes a
+	 * Postgres wire (ADR-0065 Road 1), never a binding shape. Cloudflare passes a
 	 * per-request `pg.Client` over Hyperdrive; a Bun host hands back a module-scope
 	 * `pg.Pool` checkout. The returned `close` runs after the after-response queue
 	 * drains.
@@ -84,7 +84,7 @@ export type RuntimeAdapter = {
 	afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
 	/**
 	 * Resolve this deployment's room registry, the one subsystem with no open
-	 * standard (a hibernating single-writer actor, ADR-0059 Road 2): Cloudflare
+	 * standard (a hibernating single-writer actor, ADR-0065 Road 2): Cloudflare
 	 * wraps `env.ROOM` (`createDurableObjectRooms`); a Bun host returns an
 	 * in-process registry (`createBunRooms`). Bound per request onto `c.var.rooms`.
 	 */

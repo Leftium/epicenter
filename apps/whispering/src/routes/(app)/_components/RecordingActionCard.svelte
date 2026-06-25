@@ -6,8 +6,12 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
 	import LevelMeter from '$lib/components/LevelMeter.svelte';
+	import { readLiveMeter } from '$lib/recording-overlay/live-meter';
+	import { projectLifecycleToStatus } from '$lib/recording-overlay/projection';
+	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
 	import { webPillLevel } from '$lib/recording-overlay/web-pill.svelte';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 	import { tauri } from '#platform/tauri';
 	import type { RecordingActionController } from './recording-action-controller';
 
@@ -46,6 +50,16 @@
 	// other routes. The smoothed level is already in this window on web
 	// (`webPillLevel`); on desktop it is emitted straight to the overlay, not here.
 	const showsLiveMeter = !tauri;
+
+	// The meter's secondary signals (speech-latched bars, the transcribe pip) come
+	// from the same projected status the floating pill reads, through the one shared
+	// `readLiveMeter`, so the card draws the same meter the pill does instead of a
+	// hand-built subset that silently drops signals on the home route. The level
+	// still rides its own high-frequency stream (`webPillLevel`); only these
+	// glanceable secondary signals come from the status.
+	const liveMeter = $derived(
+		readLiveMeter(projectLifecycleToStatus(dictationLifecycle.current)),
+	);
 </script>
 
 <div
@@ -71,7 +85,7 @@
 		<span
 			aria-hidden="true"
 			class={cn(
-				'flex size-14 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-foreground shadow-inner transition-colors duration-200 sm:size-16',
+				'relative flex size-14 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-foreground shadow-inner transition-colors duration-200 sm:size-16',
 				controller.active &&
 					'border-destructive/45 bg-destructive/10 text-destructive',
 			)}
@@ -88,6 +102,25 @@
 					minPx={3}
 					maxPx={28}
 				/>
+				{#if !liveMeter.isManual}
+					<!-- VAD session: the same dim-dot -> lit-dot -> spinner indicator the
+					floating pill shows beside its meter, here in the glyph's corner. The
+					bars track loudness; this dot tracks whether VAD has latched onto speech
+					and becomes a spinner while a previous phrase is still transcribing. On
+					'/' the pill yields the recording phase to this card, so this is the
+					only place that last signal shows. -->
+					<span
+						class="absolute top-0.5 right-0.5 flex size-4 items-center justify-center"
+					>
+						<VadIndicator
+							speaking={liveMeter.isSpeaking}
+							pip={liveMeter.vadPip}
+							dimClass="bg-destructive/40"
+							litClass="bg-destructive"
+							spinnerClass="text-muted-foreground"
+						/>
+					</span>
+				{/if}
 			{:else}
 				{@const Icon = controller.icon}
 				<span

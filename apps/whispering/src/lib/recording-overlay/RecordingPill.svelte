@@ -13,6 +13,8 @@
 		FAILURE_LABEL,
 		type RecordingOverlayStatus,
 	} from '$lib/recording-overlay/events';
+	import { readLiveMeter } from '$lib/recording-overlay/live-meter';
+	import VadIndicator from '$lib/recording-overlay/VadIndicator.svelte';
 
 	// The floating dictation pill, presentational and platform-free. It renders
 	// whatever status it is handed and reports control gestures through callback
@@ -39,21 +41,10 @@
 		onReveal?: () => void;
 	} = $props();
 
-	const isManual = $derived(
-		status?.phase === 'recording' && status.trigger === 'manual',
-	);
-	const isSpeaking = $derived(
-		status?.phase === 'recording' &&
-			status.trigger === 'vad' &&
-			status.vadState === 'SPEECH_DETECTED',
-	);
-	// The secondary pip riding beside a live VAD meter, or undefined when none
-	// rides (manual recording, or a VAD session at rest).
-	const vadPip = $derived(
-		status?.phase === 'recording' && status.trigger === 'vad'
-			? status.pip
-			: undefined,
-	);
+	// The live meter's secondary signals (mode, speech-latched, the transcribe
+	// pip), read through the one helper the home capture card also uses so both
+	// surfaces speak one visual language from one source.
+	const display = $derived(readLiveMeter(status));
 
 	// Every non-recording phase is a "chip": one icon plus a short, fixed label,
 	// with a tone that tints the icon (and, when failed, the whole pill). They
@@ -158,7 +149,7 @@
 	>
 		{#if status.phase === 'recording'}
 			<div class="flex items-center text-white/80">
-				{#if isManual}
+				{#if display.isManual}
 					<MicIcon class="size-4" />
 				{:else}
 					<AudioLinesIcon class="size-4" />
@@ -170,7 +161,7 @@
 			<LevelMeter
 				{level}
 				class="h-5"
-				barClass={isSpeaking ? 'bg-[#ffe5ee]' : undefined}
+				barClass={display.isSpeaking ? 'bg-[#ffe5ee]' : undefined}
 			/>
 
 			<!-- Trailing cluster: a contextual slot, then stop as the constant right
@@ -180,7 +171,7 @@
 			     width, so the cluster reads as balanced and the pill keeps a steady
 			     width as the slot's content changes. -->
 			<div class="flex items-center gap-1">
-				{#if isManual}
+				{#if display.isManual}
 					<!-- Manual can discard the take, so the slot is the cancel button. -->
 					<button
 						type="button"
@@ -192,31 +183,20 @@
 						<XIcon class="size-4" />
 					</button>
 				{:else}
-					<!-- VAD has no per-utterance cancel, so the slot holds an indicator the
-					     same size as the cancel button. While a previous phrase is still
-					     transcribing it is the spinner; otherwise it is the capture dot. The
-					     bars track raw mic level continuously, but whether VAD has actually
-					     latched onto speech is a separate fact (with a detection delay): the
-					     dot is dim while armed and lights up the instant capture begins, so
-					     the user can tell "being recorded now" from "just hearing sound". -->
-					<div
-						class="flex size-6 items-center justify-center text-white/50"
-						title={vadPip === 'transcribing'
-							? 'Transcribing previous phrase'
-							: isSpeaking
-								? 'Capturing speech'
-								: 'Listening'}
-					>
-						{#if vadPip === 'transcribing'}
-							<LoaderCircleIcon class="size-3.5 animate-spin" />
-						{:else}
-							<span
-								class={cn(
-									'size-2 rounded-full',
-									isSpeaking ? 'bg-pink-300' : 'bg-white/40',
-								)}
-							></span>
-						{/if}
+					<!-- VAD has no per-utterance cancel, so the slot holds the capture
+					     indicator at the cancel button's width, keeping the cluster
+					     balanced. The same dim-dot -> lit-dot -> spinner the home capture
+					     card shows: the bars track raw level, this mark tracks whether VAD
+					     has latched onto speech (with its detection delay) and then the
+					     previous phrase's transcribe. -->
+					<div class="flex size-6 items-center justify-center">
+						<VadIndicator
+							speaking={display.isSpeaking}
+							pip={display.vadPip}
+							dimClass="bg-white/40"
+							litClass="bg-pink-300"
+							spinnerClass="text-white/50"
+						/>
 					</div>
 				{/if}
 
@@ -225,8 +205,8 @@
 				<button
 					type="button"
 					class={cn(actionBase, 'bg-red-500/60 text-white hover:bg-red-500/80')}
-					aria-label={isManual ? 'Stop recording' : 'Stop listening'}
-					title={isManual ? 'Stop recording' : 'Stop listening'}
+					aria-label={display.isManual ? 'Stop recording' : 'Stop listening'}
+					title={display.isManual ? 'Stop recording' : 'Stop listening'}
 					onclick={handleStop}
 				>
 					<SquareIcon class="size-3.5" />

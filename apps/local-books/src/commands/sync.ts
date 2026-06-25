@@ -11,7 +11,7 @@ import {
 	type SyncOutcome,
 	syncRealm,
 } from '../sync.ts';
-import { createTokenManager, loadToken } from '../token-manager.ts';
+import { createTokenManager } from '../token-manager.ts';
 import { resolveCompany } from './context.ts';
 
 /** Print one sync pass: the realm line + per-entity counts to stdout, failures to stderr. */
@@ -44,7 +44,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, keyring } = company;
+	const { config, realmId, store } = company;
 
 	const repairTargets = args.entities;
 	const unknown = repairTargets.filter((name) => !isKnownEntity(name));
@@ -61,7 +61,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const token = await loadToken(keyring, realmId);
+	const token = await store.get(realmId);
 	if (!token) {
 		console.error(
 			`No stored token for company ${realmId}. Run "local-books auth".`,
@@ -71,7 +71,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 
 	const now = () => Date.now();
 	const log = (m: string) => console.error(m);
-	const tokens = createTokenManager({ config, keyring, token, now });
+	const tokens = createTokenManager({ config, store, token, now });
 	const client = createQbClient({ config, realmId, tokens, log });
 	const db = openBooksDb(dbPath(config.dataDir, realmId));
 	const deps: SyncDeps = { db, client, config, now, log };

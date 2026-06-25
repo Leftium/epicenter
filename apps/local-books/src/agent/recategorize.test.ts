@@ -20,7 +20,7 @@ import { makeConfig } from '../../test/helpers.ts';
 import { makePurchase, startMockQbServer } from '../../test/mock-qb-server.ts';
 import { openBooksDb } from '../db.ts';
 import { entityDef } from '../entities.ts';
-import { createFileKeyring } from '../keyring.ts';
+import { createFileTokenStore } from '../token-store.ts';
 import type { TokenSet } from '../tokens.ts';
 import { createBooksAgentActions } from './books-actions.ts';
 import { makeQbAccess } from './qb-access.ts';
@@ -49,15 +49,15 @@ async function setup(
 		makePurchase('p1', { SyncToken: opts.mockSyncToken ?? '0' }),
 	);
 
-	const keyringFile = join(dir, 'keyring.json');
+	const tokenFile = join(dir, 'credentials.json');
 	const config = makeConfig({
 		dataDir: dir,
 		apiBase: mock.apiBase,
 		tokenUrl: mock.tokenUrl,
-		credentialsPath: keyringFile,
+		credentialsPath: tokenFile,
 		entities: ['Purchase'],
 	});
-	const keyring = createFileKeyring(keyringFile);
+	const store = createFileTokenStore(tokenFile);
 	const token: TokenSet = {
 		realmId: mock.realmId,
 		environment: 'sandbox',
@@ -67,7 +67,7 @@ async function setup(
 		refreshTokenExpiresAt: new Date(NOW + 8_726_400_000).toISOString(),
 		obtainedAt: new Date(NOW).toISOString(),
 	};
-	await keyring.set(mock.realmId, JSON.stringify(token));
+	await store.set(token);
 
 	const path = join(dir, mock.realmId, 'books.db');
 	const db = openBooksDb(path);
@@ -82,7 +82,7 @@ async function setup(
 	);
 	db.close();
 
-	const openQb = makeQbAccess({ config, realmId: mock.realmId, keyring, now });
+	const openQb = makeQbAccess({ config, realmId: mock.realmId, store, now });
 	const catalog = createDispatchToolCatalog(LOCAL_ONLY, {
 		localActions: createBooksAgentActions({ dbPath: path, openQb }),
 	});

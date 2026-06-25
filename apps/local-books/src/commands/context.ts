@@ -2,7 +2,7 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { ParsedArgs } from '../cli.ts';
 import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
-import { createFileKeyring, type Keyring } from '../keyring.ts';
+import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
 /** Human-friendly "in 42m" / "3m ago" for the auth and status commands. */
 export function formatRelative(targetIso: string, now: number): string {
@@ -17,17 +17,17 @@ export function formatRelative(targetIso: string, now: number): string {
 	return deltaMs >= 0 ? `in ${unit}` : `${unit} ago`;
 }
 
-/** The company that sync/status operate on: config, resolved realm, its keyring. */
+/** The company that sync/status operate on: config, resolved realm, its token store. */
 export type CompanyContext = {
 	config: AppConfig;
 	realmId: string;
-	keyring: Keyring;
+	store: TokenStore;
 };
 
 /**
  * Resolve the target company shared by `sync` and `status`: load config, pick
  * the realm (explicit flag, recorded default, or the sole authenticated one),
- * and open its keyring. Returns a user-facing error string when the realm is
+ * and open its token store. Returns a user-facing error string when the realm is
  * ambiguous or none is authenticated.
  */
 export function resolveCompany(
@@ -40,5 +40,9 @@ export function resolveCompany(
 	});
 	const { data: realmId, error } = resolveRealm(config);
 	if (error !== null) return Err(error);
-	return Ok({ config, realmId, keyring: createFileKeyring(config.credentialsPath) });
+	return Ok({
+		config,
+		realmId,
+		store: createFileTokenStore(config.credentialsPath),
+	});
 }

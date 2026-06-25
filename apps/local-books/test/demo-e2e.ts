@@ -36,12 +36,12 @@ function banner(label: string): void {
 
 const server = startMockQbServer();
 const realmId = server.realmId;
-const keyringFile = join(DATA_DIR, 'keyring.json');
+const tokenFile = join(DATA_DIR, 'credentials.json');
 const dbFile = join(DATA_DIR, realmId, 'books.db');
 
 const env = {
 	LOCAL_BOOKS_DIR: DATA_DIR,
-	LOCAL_BOOKS_KEYRING_FILE: keyringFile,
+	LOCAL_BOOKS_KEYRING_FILE: tokenFile,
 	LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 	LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
 	LOCAL_BOOKS_QB_ENV: 'sandbox',
@@ -52,14 +52,14 @@ const cli = (...args: string[]) =>
 	sh([process.execPath, BIN, ...args, '--realm', realmId], env);
 const sqlite = (sql: string) => sh(['sqlite3', dbFile, sql]);
 
-// Seed a keyring token (good for an hour) so we can run sync/status without the
-// interactive browser hop. The mock accepts any bearer token.
+// Seed a token-file entry (good for an hour) so we can run sync/status without
+// the interactive browser hop. The mock accepts any bearer token.
 async function main() {
 	const { mkdirSync } = await import('node:fs');
 	mkdirSync(DATA_DIR, { recursive: true });
 	const now = Date.now();
 	writeFileSync(
-		keyringFile,
+		tokenFile,
 		JSON.stringify({
 			[realmId]: JSON.stringify({
 				realmId,

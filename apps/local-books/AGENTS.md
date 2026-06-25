@@ -20,7 +20,7 @@ Design authority: `specs/20260621T100000-local-books-cli-sync-engine.md` (top-le
 ## CLI
 
 ```
-local-books auth                              # one-time OAuth2 (localhost callback), tokens -> keyring
+local-books auth                              # one-time OAuth2 (localhost callback), tokens -> credentials.json
 local-books sync [--full] [--entity <name>...]
 local-books status
 ```
@@ -42,11 +42,11 @@ Mode is chosen from stored state: `--full` / no cursor / cursor older than the C
 
 - `src/agent/books-query.ts` — `books_sql_query`, open read-only SQL over the **local mirror** (`query`, auto-approved). Enforced read-only by a `new Database(path, { readonly: true })` connection, not a string check; results are row-capped. The high-volume, offline, row-level surface.
 - `src/agent/report.ts` — `books_report`, a **live** QuickBooks Reports API read (`query`, auto-approved): P&L, balance sheet, cash flow, A/R + A/P aging, trial balance. Never mirrored, never cached (reports have no CDC, so a cache would be a stale snapshot); one cheap call for whole-ledger aggregates.
-- `src/agent/recategorize.ts` — `recategorize_expense`, the one QuickBooks write-back (`mutation`, so the loop pauses for approval). Write-THROUGH, never write-to-mirror: it reads the `SyncToken` from the mirror, sparse-updates the expense line `AccountRef` on a Purchase/Bill via `qb.update(...)`, then folds QuickBooks' authoritative response back into the mirror; the next CDC sync reconfirms it. A stale `SyncToken` is a 409, never a clobber. `src/agent/qb-access.ts` (`makeQbAccess`) lazily opens a QB client from the realm's keyring, so this layer holds no credentials directly.
+- `src/agent/recategorize.ts` — `recategorize_expense`, the one QuickBooks write-back (`mutation`, so the loop pauses for approval). Write-THROUGH, never write-to-mirror: it reads the `SyncToken` from the mirror, sparse-updates the expense line `AccountRef` on a Purchase/Bill via `qb.update(...)`, then folds QuickBooks' authoritative response back into the mirror; the next CDC sync reconfirms it. A stale `SyncToken` is a 409, never a clobber. `src/agent/qb-access.ts` (`makeQbAccess`) lazily opens a QB client from the realm's token store, so this layer holds no credentials directly.
 - `src/agent/books-actions.ts` — `createBooksAgentActions({ dbPath, openQb?, readOnly? })`, a **capability lattice** so the agent is only offered what the daemon can do: `books_sql_query` always; `books_report` when `openQb` is present; `recategorize_expense` when `openQb` is present and not `readOnly`. No `openQb` = fully-offline, mirror-only; `readOnly` (env `LOCAL_BOOKS_READ_ONLY`) = both reads, no write. Local annotation tools (`mark_reviewed`, `add_note`) remain parked in the spec.
 
 The CLI binary (`bin.ts` -> `cli.ts`) does not import this layer, so `bun build --compile` of the CLI stays lean.
 
 ## Testing
 
-`bun test` boots a mock QB server (`test/mock-qb-server.ts`) and drives the real command paths against it (seeded file keyring), so full pull, incremental CDC, cursor advance, and soft-delete are proven end-to-end without a live sandbox. The interactive browser hop of `auth` is the only piece a live sandbox is needed for. The agent surface (`src/agent/`) is tested through the real dispatch catalog against a seeded mirror.
+`bun test` boots a mock QB server (`test/mock-qb-server.ts`) and drives the real command paths against it (seeded token file), so full pull, incremental CDC, cursor advance, and soft-delete are proven end-to-end without a live sandbox. The interactive browser hop of `auth` is the only piece a live sandbox is needed for. The agent surface (`src/agent/`) is tested through the real dispatch catalog against a seeded mirror.

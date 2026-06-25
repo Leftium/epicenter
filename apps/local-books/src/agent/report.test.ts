@@ -16,7 +16,7 @@ import {
 import { Ok } from 'wellcrafted/result';
 import { makeConfig } from '../../test/helpers.ts';
 import { startMockQbServer } from '../../test/mock-qb-server.ts';
-import { createFileKeyring } from '../keyring.ts';
+import { createFileTokenStore } from '../token-store.ts';
 import type { TokenSet } from '../tokens.ts';
 import { createBooksAgentActions } from './books-actions.ts';
 import { makeQbAccess } from './qb-access.ts';
@@ -32,14 +32,14 @@ const now = () => NOW;
 async function setup() {
 	const dir = mkdtempSync(join(tmpdir(), 'local-books-'));
 	const mock = startMockQbServer({ now });
-	const keyringFile = join(dir, 'keyring.json');
+	const tokenFile = join(dir, 'credentials.json');
 	const config = makeConfig({
 		dataDir: dir,
 		apiBase: mock.apiBase,
 		tokenUrl: mock.tokenUrl,
-		credentialsPath: keyringFile,
+		credentialsPath: tokenFile,
 	});
-	const keyring = createFileKeyring(keyringFile);
+	const store = createFileTokenStore(tokenFile);
 	const token: TokenSet = {
 		realmId: mock.realmId,
 		environment: 'sandbox',
@@ -49,9 +49,9 @@ async function setup() {
 		refreshTokenExpiresAt: new Date(NOW + 8_726_400_000).toISOString(),
 		obtainedAt: new Date(NOW).toISOString(),
 	};
-	await keyring.set(mock.realmId, JSON.stringify(token));
+	await store.set(token);
 
-	const openQb = makeQbAccess({ config, realmId: mock.realmId, keyring, now });
+	const openQb = makeQbAccess({ config, realmId: mock.realmId, store, now });
 	const catalog = createDispatchToolCatalog(LOCAL_ONLY, {
 		localActions: createBooksAgentActions({
 			dbPath: join(dir, mock.realmId, 'books.db'),

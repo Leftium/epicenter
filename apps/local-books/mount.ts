@@ -15,8 +15,8 @@ import { localBooksWorkspace } from './books.ts';
 import { createBooksAgentActions } from './src/agent/books-actions.ts';
 import { makeQbAccess } from './src/agent/qb-access.ts';
 import { loadConfig } from './src/config.ts';
-import { createFileKeyring } from './src/keyring.ts';
 import { dbPath } from './src/paths.ts';
+import { createFileTokenStore } from './src/token-store.ts';
 
 export type LocalBooksMountOptions = {
 	/** Base URL of the Epicenter cloud API used for sync. */
@@ -33,14 +33,14 @@ export function localBooksMount({
 	realmId,
 }: LocalBooksMountOptions) {
 	// The write tool (`recategorize_expense`) needs a QuickBooks client; build the
-	// opener from the same config + keyring the CLI uses. The read tool needs only
-	// the mirror path. Token loading stays lazy (inside the opener), so `compose`
-	// itself does no async work.
+	// opener from the same config + token store the CLI uses. The read tool needs
+	// only the mirror path. Token loading stays lazy (inside the opener), so
+	// `compose` itself does no async work.
 	const config = loadConfig({ dataDir });
 	const openQb = makeQbAccess({
 		config,
 		realmId,
-		keyring: createFileKeyring(config.credentialsPath),
+		store: createFileTokenStore(config.credentialsPath),
 		now: () => Date.now(),
 	});
 	return localBooksWorkspace.mount({

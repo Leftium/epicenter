@@ -3,7 +3,6 @@ import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { entityDef } from '../entities.ts';
 import { dbPath } from '../paths.ts';
-import { loadToken } from '../token-manager.ts';
 import { isAccessTokenExpired, isRefreshTokenExpired } from '../tokens.ts';
 import { formatRelative, resolveCompany } from './context.ts';
 
@@ -14,9 +13,9 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, keyring } = company;
+	const { config, realmId, store } = company;
 
-	const token = await loadToken(keyring, realmId);
+	const token = await store.get(realmId);
 	const now = Date.now();
 
 	console.log(`Company:      ${realmId}`);

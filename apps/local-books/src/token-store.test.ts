@@ -1,28 +1,61 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from './config.ts';
-import { createFileKeyring } from './keyring.ts';
 import { credentialsFilePath } from './paths.ts';
+import { createFileTokenStore } from './token-store.ts';
+import type { TokenSet } from './tokens.ts';
 
 function tempDir(): { dir: string; cleanup: () => void } {
-	const dir = mkdtempSync(join(tmpdir(), 'local-books-keyring-'));
+	const dir = mkdtempSync(join(tmpdir(), 'local-books-token-store-'));
 	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-describe('createFileKeyring', () => {
-	test('writes a 0600 file and round-trips a secret', async () => {
+const token: TokenSet = {
+	realmId: 'realm-1',
+	environment: 'sandbox',
+	accessToken: 'access-1',
+	refreshToken: 'refresh-1',
+	accessTokenExpiresAt: '2026-02-01T01:00:00.000Z',
+	refreshTokenExpiresAt: '2026-05-12T00:00:00.000Z',
+	obtainedAt: '2026-02-01T00:00:00.000Z',
+};
+
+describe('createFileTokenStore', () => {
+	test('writes a 0600 file and round-trips a token set', async () => {
 		const { dir, cleanup } = tempDir();
 		try {
 			const file = join(dir, 'credentials.json');
-			const keyring = createFileKeyring(file);
+			const store = createFileTokenStore(file);
 
-			expect(await keyring.get('realm-1')).toBeNull();
-			await keyring.set('realm-1', 'secret-1');
-			expect(readFileSync(file, 'utf8')).toContain('secret-1');
+			expect(await store.get('realm-1')).toBeNull();
+			await store.set(token);
+			expect(readFileSync(file, 'utf8')).toContain('access-1');
 			expect(statSync(file).mode & 0o777).toBe(0o600);
-			expect(await keyring.get('realm-1')).toBe('secret-1');
+			expect(await store.get('realm-1')).toEqual(token);
+		} finally {
+			cleanup();
+		}
+	});
+
+	test('treats a malformed on-disk entry as absent', async () => {
+		const { dir, cleanup } = tempDir();
+		try {
+			// A token entry missing required fields must not deserialize to a partial
+			// TokenSet: the untrusted-disk boundary validates and reports "no token".
+			const file = join(dir, 'credentials.json');
+			writeFileSync(
+				file,
+				JSON.stringify({ 'realm-1': JSON.stringify({ realmId: 'realm-1' }) }),
+			);
+			expect(await createFileTokenStore(file).get('realm-1')).toBeNull();
 		} finally {
 			cleanup();
 		}

@@ -7,8 +7,8 @@ import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
 
-/** Seed a file-keyring token good for an hour (mock accepts any bearer). */
-function seedKeyring(file: string, realmId: string): void {
+/** Seed a token-file entry good for an hour (mock accepts any bearer). */
+function seedTokenFile(file: string, realmId: string): void {
 	const now = Date.now();
 	const token = {
 		realmId,
@@ -42,11 +42,11 @@ async function runCli(args: string[], env: Record<string, string>) {
 test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no re-pull', async () => {
 	const server = startMockQbServer();
 	const tmp = tempDir();
-	const keyringFile = join(tmp.dir, 'keyring.json');
-	seedKeyring(keyringFile, server.realmId);
+	const tokenFile = join(tmp.dir, 'credentials.json');
+	seedTokenFile(tokenFile, server.realmId);
 	const env = {
 		LOCAL_BOOKS_DIR: tmp.dir,
-		LOCAL_BOOKS_KEYRING_FILE: keyringFile,
+		LOCAL_BOOKS_KEYRING_FILE: tokenFile,
 		LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 		LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
 		LOCAL_BOOKS_QB_ENV: 'sandbox',

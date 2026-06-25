@@ -13,12 +13,12 @@ An earlier revision of this ADR kept the keychain as an opt-in (`LOCAL_BOOKS_KEY
 
 ## Decision
 
-OAuth tokens live in a single `0600` `credentials.json` at the data-dir root, kept out of any company's mirror db so the agent's read-only SQL surface (`books_sql_query`) can never read them. There is no keychain backend and no store selection: `createFileKeyring(config.credentialsPath)` is the only path. The location defaults to the data-dir root and is overridable with `LOCAL_BOOKS_KEYRING_FILE` (the test harness and any custom location). This file store works identically on a desktop, a headless server, an SSH session, and CI.
+OAuth tokens live in a single `0600` `credentials.json` at the data-dir root, kept out of any company's mirror db so the agent's read-only SQL surface (`books_sql_query`) can never read them. There is no keychain backend and no store selection: `createFileTokenStore(config.credentialsPath)` is the only path. The location defaults to the data-dir root and is overridable with `LOCAL_BOOKS_KEYRING_FILE` (the test harness and any custom location). This file store works identically on a desktop, a headless server, an SSH session, and CI.
 
 ## Consequences
 
 - The recurring mode (unattended sync over SSH / herdr / CI) works with zero configuration, which is the whole point of a headless-first tool.
-- The shape collapses: no `TokenStore` union, no `createKeyring` dispatcher, no `LOCAL_BOOKS_KEYRING` env var, no unknown-value validation, no second untested backend branch. `config.credentialsPath` is a plain string; the `Keyring` interface keeps only its file and in-memory (test) implementations.
+- The shape collapses: no store-selection union, no `createKeyring` dispatcher, no `LOCAL_BOOKS_KEYRING` env var, no unknown-value validation, no second untested backend branch. `config.credentialsPath` is a plain string; the token store keeps only its file and in-memory (test) implementations.
 - The token is plaintext at rest; the file mode is the protection, the same tradeoff `git credential-store` and `~/.aws/credentials` make.
 - The keychain's one real edge over a `0600` file (containment from a backup or cloud-sync sweep) is desktop-only and is not the right future anyway. If at-rest protection ever matters for QuickBooks' long-lived (~100-day) refresh tokens, the named deferred seam is **optional file encryption** (age or libsodium secretbox, with the passphrase suppliable via env so it stays headless), a non-breaking addition layered over the same file path. Build it when a producer exists, not before.
 
@@ -30,4 +30,4 @@ OAuth tokens live in a single `0600` `credentials.json` at the data-dir root, ke
 
 ## Reference
 
-- Implemented in `apps/local-books/src/keyring.ts` (`createFileKeyring`, `createMemoryKeyring`, `Keyring`), `src/config.ts` (`credentialsPath`), and `src/paths.ts` (`credentialsFilePath`). Builds on ADR-0047 (the mirror as a data daemon) and ADR-0060 (the agent surface whose SQL read this store stays clear of).
+- Implemented in `apps/local-books/src/token-store.ts` (`createFileTokenStore`, `createMemoryTokenStore`, and the typed `TokenStore` interface that stores a `TokenSet`), `src/config.ts` (`credentialsPath`), and `src/paths.ts` (`credentialsFilePath`). Builds on ADR-0047 (the mirror as a data daemon) and ADR-0060 (the agent surface whose SQL read this store stays clear of).

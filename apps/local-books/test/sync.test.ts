@@ -3,14 +3,10 @@ import { join } from 'node:path';
 import { parseInterval } from '../src/cli.ts';
 import type { AppConfig } from '../src/config.ts';
 import { openBooksDb } from '../src/db.ts';
-import { createMemoryKeyring } from '../src/keyring.ts';
 import { createQbClient } from '../src/qb-client.ts';
 import { repairEntities, runSyncLoop, syncRealm } from '../src/sync.ts';
-import {
-	createTokenManager,
-	loadToken,
-	storeToken,
-} from '../src/token-manager.ts';
+import { createTokenManager } from '../src/token-manager.ts';
+import { createMemoryTokenStore } from '../src/token-store.ts';
 import { type TokenSet, tokenSetFromGrant } from '../src/tokens.ts';
 import { makeConfig, sampleGrant, tempDir } from './helpers.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
@@ -40,13 +36,13 @@ function setup(configOver: Partial<AppConfig> = {}) {
 		entities: ['Invoice'],
 		...configOver,
 	});
-	const keyring = createMemoryKeyring();
+	const store = createMemoryTokenStore();
 	const token = tokenSetFromGrant(sampleGrant, {
 		realmId: server.realmId,
 		environment: 'sandbox',
 		now: clock,
 	}).data as TokenSet;
-	const tokens = createTokenManager({ config, keyring, token, now });
+	const tokens = createTokenManager({ config, store, token, now });
 	const client = createQbClient({ config, realmId: server.realmId, tokens });
 	const tmp = tempDir();
 	const db = openBooksDb(join(tmp.dir, 'books.db'));
@@ -287,7 +283,7 @@ test('a 401 triggers a transparent refresh, retries, and persists the new token'
 		tokenUrl: server.tokenUrl,
 		realmOverride: server.realmId,
 	});
-	const keyring = createMemoryKeyring();
+	const store = createMemoryTokenStore();
 	const stale: TokenSet = {
 		realmId: server.realmId,
 		environment: 'sandbox',
@@ -297,10 +293,10 @@ test('a 401 triggers a transparent refresh, retries, and persists the new token'
 		refreshTokenExpiresAt: new Date(clock + 8726400 * 1000).toISOString(),
 		obtainedAt: new Date(clock).toISOString(),
 	};
-	await storeToken(keyring, stale);
+	await store.set(stale);
 	server.rejectAccessToken('stale-access');
 
-	const tokens = createTokenManager({ config, keyring, token: stale, now });
+	const tokens = createTokenManager({ config, store, token: stale, now });
 	const client = createQbClient({ config, realmId: server.realmId, tokens });
 	server.put('Invoice', makeInvoice('1'));
 
@@ -310,7 +306,7 @@ test('a 401 triggers a transparent refresh, retries, and persists the new token'
 	expect(server.hits.token).toBe(1); // exactly one refresh
 	expect(tokens.current().accessToken).not.toBe('stale-access');
 
-	const persisted = await loadToken(keyring, server.realmId);
+	const persisted = await store.get(server.realmId);
 	expect(persisted?.accessToken).toBe(tokens.current().accessToken);
 
 	server.stop();

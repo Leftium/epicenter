@@ -141,15 +141,25 @@ export function resolveConnection(connection: Connection): ResolvedConnection {
 }
 
 /**
- * Join a resolved `baseURL` to a wire subpath (pass the path without a leading
- * slash). The one place a path is appended, so a trailing slash on the base (a
- * user can paste `https://host/v1/`) never produces a `//path` some servers 404,
- * whichever producer built the {@link ResolvedConnection}: this resolver, or the
- * injected hosted transport. Every wire client (`complete`, `transcribe`,
- * `listModels`, the agent engine) routes through here so none re-derives the rule.
+ * Join a resolved `baseURL` to a wire subpath. The one place a path is appended,
+ * so the seam is always exactly one slash: trailing slashes on the base and
+ * leading slashes on the path both collapse, whichever producer built the
+ * {@link ResolvedConnection} (this resolver, or the injected hosted transport)
+ * and whatever a user pasted. So neither `https://host/v1/` nor a `/`-prefixed
+ * path yields a `//path` some servers 404. Every wire client (`complete`,
+ * `transcribe`, `listModels`, the agent engine) routes through here so none
+ * re-derives the rule.
+ *
+ * Deliberately a string join, not `new URL(path, baseURL)`. WHATWG relative
+ * resolution treats a base with no trailing slash as a file and drops its last
+ * segment, so `new URL('chat/completions', 'https://api.openai.com/v1')` becomes
+ * `https://api.openai.com/chat/completions` and silently eats the `/v1` every
+ * preset carries (Groq's `/openai/v1` mangles worse). A query string or fragment
+ * on the base is a non-goal: inference bases never carry one, and a provider that
+ * needs query params (Azure's `?api-version`) is a different join altogether.
  */
 export function joinUrl(baseURL: string, path: string): string {
-	return `${baseURL.replace(/\/+$/, '')}/${path}`;
+	return `${baseURL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
 export const ListModelsError = defineErrors({

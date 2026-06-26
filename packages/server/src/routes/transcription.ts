@@ -46,18 +46,22 @@ import type { Env } from '../types.js';
  * the deployment env var holding the house key, and the id to send upstream
  * (which may differ from the public id). Kept local to the gateway, mirroring
  * `inference.ts`'s `PROVIDER_UPSTREAM`: the provider-routing fact lives here, not
- * in a shared catalog. v1 serves one cheap, fast Whisper over Groq; add a row to
- * serve another (a new house key, no new code).
+ * in a shared catalog. v1 serves OpenAI `whisper-1` (reuses the deployment's
+ * existing `OPENAI_API_KEY` house key, the chat gateway already provisions it).
+ * `whisper-1` returns `duration` under `verbose_json`, which the per-minute meter
+ * reads; the `gpt-4o-transcribe` models do not support `verbose_json`, so do not
+ * swap to them without giving the meter another duration source. Add a row to
+ * serve another model (a new house key, no new code).
  */
 const STT_UPSTREAM = {
-	'whisper-large-v3-turbo': {
-		baseURL: 'https://api.groq.com/openai/v1',
-		houseKeyEnv: 'GROQ_API_KEY',
-		upstreamModel: 'whisper-large-v3-turbo',
+	'whisper-1': {
+		baseURL: 'https://api.openai.com/v1',
+		houseKeyEnv: 'OPENAI_API_KEY',
+		upstreamModel: 'whisper-1',
 	},
 } as const satisfies Record<
 	string,
-	{ baseURL: string; houseKeyEnv: 'GROQ_API_KEY'; upstreamModel: string }
+	{ baseURL: string; houseKeyEnv: 'OPENAI_API_KEY'; upstreamModel: string }
 >;
 
 /** Build the OpenAI error envelope every gateway failure answers with. */

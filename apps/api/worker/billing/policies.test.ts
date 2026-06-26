@@ -164,7 +164,7 @@ function makeSttApp(downstream: { status: 200 | 429; duration?: number }) {
 function sttRequest(app: Hono<Env>) {
 	const form = new FormData();
 	form.append('file', new File([new Uint8Array([1, 2, 3])], 'audio.webm'));
-	form.append('model', 'whisper-large-v3-turbo');
+	form.append('model', 'whisper-1');
 	return app.request('/v1/audio/transcriptions', {
 		method: 'POST',
 		body: form,
@@ -187,7 +187,7 @@ test('a successful transcription (200) tracks the returned duration after the ca
 
 	expect(res.status).toBe(200);
 	expect(trackCalls).toEqual([
-		{ seconds: 125, model: 'whisper-large-v3-turbo', provider: 'groq' },
+		{ seconds: 125, model: 'whisper-1', provider: 'openai' },
 	]);
 });
 

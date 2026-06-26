@@ -74,7 +74,7 @@ describe('transcription gateway', () => {
 	test('answers ProviderNotConfigured in the OpenAI error shape when no key is available', async () => {
 		const res = await post(
 			createTestApp(),
-			audioForm({ model: 'whisper-large-v3-turbo' }),
+			audioForm({ model: 'whisper-1' }),
 			{}, // no house key
 		);
 		expect(res.status).toBe(503);
@@ -87,7 +87,7 @@ describe('transcription gateway', () => {
 			createTestApp(),
 			audioForm({ model: 'whisper-99' }),
 			{
-				GROQ_API_KEY: 'g-house',
+				OPENAI_API_KEY: 'sk-house',
 			},
 		);
 		expect(res.status).toBe(400);
@@ -98,15 +98,15 @@ describe('transcription gateway', () => {
 	test('rejects a body with no audio file with a 400 invalid_request', async () => {
 		const res = await post(
 			createTestApp(),
-			audioForm({ model: 'whisper-large-v3-turbo' }, false),
-			{ GROQ_API_KEY: 'g-house' },
+			audioForm({ model: 'whisper-1' }, false),
+			{ OPENAI_API_KEY: 'sk-house' },
 		);
 		expect(res.status).toBe(400);
 		const body = (await res.json()) as { error: { code: string } };
 		expect(body.error.code).toBe('invalid_request');
 	});
 
-	test('forwards multipart to Groq with the house key, forces verbose_json, returns the body verbatim', async () => {
+	test('forwards multipart to OpenAI with the house key, forces verbose_json, returns the body verbatim', async () => {
 		const calls = stubUpstream(
 			new Response(
 				JSON.stringify({
@@ -120,11 +120,11 @@ describe('transcription gateway', () => {
 		const res = await post(
 			createTestApp(),
 			audioForm({
-				model: 'whisper-large-v3-turbo',
+				model: 'whisper-1',
 				language: 'en',
 				prompt: 'Epicenter',
 			}),
-			{ GROQ_API_KEY: 'g-house' },
+			{ OPENAI_API_KEY: 'sk-house' },
 		);
 		expect(res.status).toBe(200);
 		// Verbatim verbose_json: text untrimmed, duration preserved for metering.
@@ -133,12 +133,12 @@ describe('transcription gateway', () => {
 		expect(body.duration).toBe(12.34);
 
 		expect(calls[0]?.url).toBe(
-			'https://api.groq.com/openai/v1/audio/transcriptions',
+			'https://api.openai.com/v1/audio/transcriptions',
 		);
-		expect(calls[0]?.headers.authorization).toBe('Bearer g-house');
+		expect(calls[0]?.headers.authorization).toBe('Bearer sk-house');
 		const forwarded = calls[0]?.form;
 		expect(forwarded?.get('response_format')).toBe('verbose_json');
-		expect(forwarded?.get('model')).toBe('whisper-large-v3-turbo');
+		expect(forwarded?.get('model')).toBe('whisper-1');
 		expect(forwarded?.get('language')).toBe('en');
 		expect(forwarded?.get('prompt')).toBe('Epicenter');
 		expect(forwarded?.get('file')).toBeInstanceOf(File);
@@ -155,8 +155,8 @@ describe('transcription gateway', () => {
 		);
 		const res = await post(
 			createTestApp(),
-			audioForm({ model: 'whisper-large-v3-turbo' }),
-			{ GROQ_API_KEY: 'g-house' },
+			audioForm({ model: 'whisper-1' }),
+			{ OPENAI_API_KEY: 'sk-house' },
 		);
 		expect(res.status).toBe(429);
 		const body = (await res.json()) as { error: { code: string } };

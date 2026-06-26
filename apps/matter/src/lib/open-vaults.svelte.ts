@@ -32,6 +32,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { LazyStore } from '@tauri-apps/plugin-store';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { once } from 'wellcrafted/function';
 import { Err, tryAsync } from 'wellcrafted/result';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -66,20 +67,17 @@ function createOpenVaults() {
 	const store = new LazyStore(STORE_FILE);
 	// The list IS the tabs, in order. Empty until `ensureHydrated` fills it from disk.
 	let vaults = $state<OpenVault[]>([]);
-	let hydration: Promise<void> | undefined;
 
 	// Read the persisted tabs from disk into the live list, once. The `(vaults)` layout `load`
 	// awaits this before the group paints, so it is the readiness gate and the strip needs no
-	// skeleton. Memoized on `hydration`: the read runs once and the SAME promise is cached, so
+	// skeleton. Memoized via `once`: the read runs once and the SAME promise is cached, so
 	// `read` MUST NOT reject, or every `(vaults)` load would await a permanently-rejected promise.
 	// That is why both failure modes are swallowed into "no tabs" rather than thrown: a malformed
 	// shape (rejected by `OpenVaultList`) and an unreadable or corrupt file (`get()` rejects,
 	// caught by `tryAsync`); either way the next `open`/`close` rewrites a clean file.
 	// `LazyStore.get()` loads the file on first access, so there is no separate `load()` step;
 	// SSR has no Tauri runtime, so skip the read.
-	function ensureHydrated(): Promise<void> {
-		return (hydration ??= read());
-	}
+	const ensureHydrated = once(read);
 	async function read(): Promise<void> {
 		if (!browser) return;
 		const { data: raw, error } = await tryAsync({

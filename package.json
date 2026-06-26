@@ -161,5 +161,8 @@
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
 		"tinyexec": "^1.0.4"
+	},
+	"patchedDependencies": {
+		"y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch"
 	}
 }

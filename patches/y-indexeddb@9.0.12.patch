@@ -1,0 +1,48 @@
+diff --git a/dist/y-indexeddb.cjs b/dist/y-indexeddb.cjs
+index f613233258d7be3d3d8fb08506aa7ca09e50a457..03d61a073caff8b321b6021fc22430ddb7936706 100644
+--- a/dist/y-indexeddb.cjs
++++ b/dist/y-indexeddb.cjs
+@@ -23,7 +23,18 @@ const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () => {}, aft
+     if (!idbPersistence._destroyed) {
+       beforeApplyUpdatesCallback(updatesStore);
+       Y.transact(idbPersistence.doc, () => {
+-        updates.forEach(val => Y.applyUpdate(idbPersistence.doc, val));
++        updates.forEach(val => {
++          // PATCHED (epicenter, patches/y-indexeddb@9.0.12.patch): skip an
++          // undecodable persisted update instead of letting it abort the load.
++          // An uncaught throw here skips the 'synced' emit below, wedging
++          // whenSynced forever, and floats an uncatchable rejection. Peer/server
++          // resync supplies anything the skipped update carried.
++          try {
++            Y.applyUpdate(idbPersistence.doc, val);
++          } catch (err) {
++            console.error('y-indexeddb: skipped a corrupt persisted update', err);
++          }
++        });
+       }, idbPersistence, false);
+       afterApplyUpdatesCallback(updatesStore);
+     }
+diff --git a/src/y-indexeddb.js b/src/y-indexeddb.js
+index 07f4fbb6da0b0b0621b5696370aabf230f7293a8..772b67cb0ef6fa49038dba6a0c351c42e0ccafc9 100644
+--- a/src/y-indexeddb.js
++++ b/src/y-indexeddb.js
+@@ -19,7 +19,18 @@ export const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () =>
+     if (!idbPersistence._destroyed) {
+       beforeApplyUpdatesCallback(updatesStore)
+       Y.transact(idbPersistence.doc, () => {
+-        updates.forEach(val => Y.applyUpdate(idbPersistence.doc, val))
++        updates.forEach(val => {
++          // PATCHED (epicenter, patches/y-indexeddb@9.0.12.patch): skip an
++          // undecodable persisted update instead of letting it abort the load.
++          // An uncaught throw here skips the 'synced' emit below, wedging
++          // whenSynced forever, and floats an uncatchable rejection. Peer/server
++          // resync supplies anything the skipped update carried.
++          try {
++            Y.applyUpdate(idbPersistence.doc, val)
++          } catch (err) {
++            console.error('y-indexeddb: skipped a corrupt persisted update', err)
++          }
++        })
+       }, idbPersistence, false)
+       afterApplyUpdatesCallback(updatesStore)
+     }

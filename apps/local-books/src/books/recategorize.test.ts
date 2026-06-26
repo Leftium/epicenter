@@ -1,44 +1,28 @@
 /**
- * `recategorize_expense` reached the way the client agent loop reaches it: as a
- * dispatched action resolved through `createDispatchToolCatalog`, driven against
- * a mock QuickBooks server and a seeded mirror. Proves the write-through path end
- * to end: read the SyncToken from the mirror -> sparse-update QuickBooks -> fold
- * the authoritative response back into the mirror. Also proves the safety
- * primitive: a stale SyncToken is rejected, never clobbered.
+ * `recategorizeExpense` driven against a mock QuickBooks server and a seeded
+ * mirror: the write-through path end to end (read the SyncToken from the mirror
+ * -> sparse-update QuickBooks -> fold the authoritative response back), and the
+ * safety primitive (a stale SyncToken is rejected, never clobbered). The CLI
+ * `recategorize` verb is a thin adapter over this.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	createDispatchToolCatalog,
-	type DispatchSurface,
-} from '@epicenter/workspace/agent';
-import { Ok } from 'wellcrafted/result';
 import { makeConfig } from '../../test/helpers.ts';
 import { makePurchase, startMockQbServer } from '../../test/mock-qb-server.ts';
 import { openBooksDb } from '../db.ts';
 import { entityDef } from '../entities.ts';
 import { createFileTokenStore } from '../token-store.ts';
 import type { TokenSet } from '../tokens.ts';
-import { createBooksAgentActions } from './books-actions.ts';
 import { createQbAccess } from './qb-access.ts';
-
-/** No peers: a books action resolves in-process; dispatch is never reached. */
-const LOCAL_ONLY: DispatchSurface = {
-	peers: { list: () => [] },
-	dispatch: () => Promise.resolve(Ok(null)),
-};
+import { recategorizeExpense } from './recategorize.ts';
 
 const NOW = Date.parse('2026-02-01T00:00:00.000Z');
 const now = () => NOW;
 
-/**
- * Boot a mock company with one Purchase, seed its token + mirror, and return a
- * catalog wired to the write tool. `mirrorSyncToken` lets a test seed the mirror
- * with a stale token to exercise the 409 path.
- */
+/** Boot a mock company with one Purchase, seed its token + mirror, return deps. */
 async function setup(
 	opts: { mockSyncToken?: string; mirrorSyncToken?: string } = {},
 ) {
@@ -85,28 +69,15 @@ async function setup(
 	db.close();
 
 	const openQb = createQbAccess({ config, realmId: mock.realmId, store, now });
-	const catalog = createDispatchToolCatalog(LOCAL_ONLY, {
-		localActions: createBooksAgentActions({ dbPath: path, openQb }),
-	});
 	return {
 		mock,
 		path,
-		catalog,
+		openQb,
 		cleanup: () => {
 			mock.stop();
 			rmSync(dir, { recursive: true, force: true });
 		},
 	};
-}
-
-function recategorize(
-	catalog: ReturnType<typeof createDispatchToolCatalog>,
-	input: Record<string, string>,
-) {
-	return catalog.resolve(
-		{ toolCallId: 't1', toolName: 'recategorize_expense', input },
-		new AbortController().signal,
-	);
 }
 
 function lineAccount(obj: Record<string, unknown>): string | undefined {
@@ -117,26 +88,22 @@ function lineAccount(obj: Record<string, unknown>): string | undefined {
 	return detail?.AccountRef?.value;
 }
 
-describe('recategorize_expense as a dispatched action', () => {
-	test('the catalog advertises it as a mutation (needs approval)', async () => {
-		const { catalog, cleanup } = await setup();
-		const def = catalog
-			.definitions()
-			.find((d) => d.name === 'recategorize_expense');
-		expect(def?.kind).toBe('mutation');
-		cleanup();
-	});
-
+describe('recategorizeExpense', () => {
 	test('moves the expense line in QuickBooks and folds it into the mirror', async () => {
-		const { mock, path, catalog, cleanup } = await setup();
+		const { mock, path, openQb, cleanup } = await setup();
 
-		const outcome = await recategorize(catalog, {
-			entity: 'Purchase',
-			id: 'p1',
-			account_id: '77',
-			account_name: 'Cloud Infrastructure',
+		const { data, error } = await recategorizeExpense({
+			openQb,
+			dbPath: path,
+			input: {
+				entity: 'Purchase',
+				id: 'p1',
+				account_id: '77',
+				account_name: 'Cloud Infrastructure',
+			},
 		});
-		expect(outcome.isError).toBe(false);
+		expect(error).toBeNull();
+		expect(data?.changed[0]?.toAccount).toBe('Cloud Infrastructure');
 		expect(mock.hits.update).toBe(1);
 
 		// QuickBooks (the source of truth) now has the new category + a bumped token.
@@ -159,17 +126,17 @@ describe('recategorize_expense as a dispatched action', () => {
 
 	test('a stale SyncToken is rejected, leaving QuickBooks untouched', async () => {
 		// Mirror thinks the token is '0'; QuickBooks has moved on to '5'.
-		const { mock, catalog, cleanup } = await setup({
+		const { mock, path, openQb, cleanup } = await setup({
 			mockSyncToken: '5',
 			mirrorSyncToken: '0',
 		});
 
-		const outcome = await recategorize(catalog, {
-			entity: 'Purchase',
-			id: 'p1',
-			account_id: '77',
+		const { error } = await recategorizeExpense({
+			openQb,
+			dbPath: path,
+			input: { entity: 'Purchase', id: 'p1', account_id: '77' },
 		});
-		expect(outcome.isError).toBe(true);
+		expect(error).not.toBeNull();
 
 		// QuickBooks kept the original category: no clobber on a stale write.
 		const remote = mock.get('Purchase', 'p1');
@@ -179,14 +146,13 @@ describe('recategorize_expense as a dispatched action', () => {
 	});
 
 	test('errors clearly when the transaction is not in the mirror', async () => {
-		const { catalog, cleanup } = await setup();
-		const outcome = await recategorize(catalog, {
-			entity: 'Purchase',
-			id: 'does-not-exist',
-			account_id: '77',
+		const { path, openQb, cleanup } = await setup();
+		const { error } = await recategorizeExpense({
+			openQb,
+			dbPath: path,
+			input: { entity: 'Purchase', id: 'does-not-exist', account_id: '77' },
 		});
-		expect(outcome.isError).toBe(true);
-		expect(String(outcome.output)).toContain('mirror');
+		expect(error?.message).toContain('mirror');
 		cleanup();
 	});
 });

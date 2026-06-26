@@ -218,8 +218,6 @@
         "local-books": "./src/bin.ts",
       },
       "dependencies": {
-        "@epicenter/chat": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "ms": "catalog:",
         "oauth4webapi": "catalog:",
         "typebox": "catalog:",

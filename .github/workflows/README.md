@@ -164,7 +164,8 @@ keep `changeset version` (it owns version math and changelogs) but replaced
 
 | Secret | Used by | Description |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare API token. Named `github-actions-cloudflare-deploy` in the CF dashboard (Account API Tokens). Use the "Edit Cloudflare Workers" template. |
+| `CLOUDFLARE_API_TOKEN` | `deploy.cloudflare` | Production Cloudflare API token. Named `github-actions-cloudflare-deploy` in the CF dashboard (Account API Tokens). Uses the "Edit Cloudflare Workers" template (`deploy` needs zone Workers Routes for custom domains, which previews do not). |
+| `CLOUDFLARE_PREVIEW_API_TOKEN` | `deploy.cloudflare-preview` | Least-privilege Cloudflare API token for PR previews. Custom token, **Account › Workers Scripts › Edit** only (covers Static Assets; no zone/routes/KV/R2/D1), scoped to the one account. Separate from the prod token so a leak from the PR-triggered preview path cannot reach production. |
 | `CLOUDFLARE_ACCOUNT_ID` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare account ID |
 | `DISCORD_WEBHOOK_URL` | `deploy.cloudflare` | Discord webhook for deployment notifications (optional) |
 | `TAURI_SIGNING_PRIVATE_KEY` | `release.whispering`, `pr-preview.whispering` | Tauri update signing key |

@@ -63,7 +63,11 @@ jobs:
       # upload failure is reported in the PR comment without sinking the others.
       - name: Upload previews
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # wrangler reads the env var named CLOUDFLARE_API_TOKEN; we source it
+          # from a dedicated least-privilege preview token (Workers Scripts:Edit
+          # only, no zone/routes) rather than the full-scope production deploy
+          # token, so a leak from this PR-triggered path can't touch prod.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           # Passed via env (not inlined into the script) so a crafted PR title

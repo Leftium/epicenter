@@ -1,0 +1,45 @@
+# 0073. Tools speak MCP natively; Epicenter owns only the transport MCP lacks
+
+- **Status:** Accepted (design; the wire reshape and the edge shim are deferred behind the wedge trigger)
+- **Date:** 2026-06-26
+- **Relates:** [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the only cross-process surface, the thing projected to MCP), [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the client loop dispatches actions advertised over presence, the mesh in question), [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md) (the blind coordination box and the Iroh blind-relay direction), [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) (the relay reads plaintext), [ADR-0050](0050-the-inference-contract-is-openai-compatible.md) (the model boundary is OpenAI-compatible, never MCP), [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) (Local Books stays standalone, off the mesh)
+
+## Context
+
+Epicenter already ships a working, tested cross-device tool mesh: each connected install advertises its full `defineActions` manifest over the server-owned presence channel, and a client dispatches an action to a peer by `nodeId` over the room WebSocket, resolving a `Result` (ADR-0021, ADR-0047). MCP, the industry-standard tool protocol, is absent from the repo. The recurring question was whether to converge the two. A greenfield pass separated MCP into two layers and found they converge differently: the data vocabulary fits Epicenter exactly, the session and transport protocol does not.
+
+## Decision
+
+**A tool speaks MCP natively. Epicenter owns only the transport MCP lacks.** Adopt MCP's two layers separately.
+
+- **The data vocabulary is MCP, everywhere.** `defineActions` stays the typed authoring surface, but its serialized projection is an MCP `Tool`: the action `input` schema already is the `Tool.inputSchema` (TypeBox is JSON Schema at runtime), and `title` / `description` map directly. A peer's manifest is an MCP `tools/list`; a dispatch is a `tools/call` request and its `Result` is the `tools/call` result. There is no second tool shape and no translation codec; the wire vocabulary is MCP.
+- **The transport is Epicenter's, because MCP has none for this shape.** MCP's session protocol (the `initialize` handshake and per-peer stateful sessions) does not fit a blind relay routed by `nodeId` over an always-reconnecting socket. Epicenter wraps MCP messages in exactly the three things MCP lacks: a `{ to: nodeId }` routing envelope, a presence broadcast that carries each online peer's `tools/list`, and statelessness (no handshake, so a reconnect re-publishes rather than re-initializes). These three are the multi-device blind-relay transport, and they are the moat.
+- **External MCP attaches through a thin per-device session shim**, point to point, where MCP's session protocol works fine. Because the internal vocabulary is already MCP, the shim is near-identity: it speaks real MCP sessions outward and resolves to in-process dispatch inward.
+
+Five invariants are non-negotiable, each one burned in by the grill:
+
+1. The read/write tier is a trusted, required Epicenter field carried on the `Tool` (an action's `query` or `mutation`), host-enforced (a mutation pauses for approval). It is never inferred from MCP's advisory, untrusted `readOnlyHint` / `destructiveHint`.
+2. A foreign MCP host receives read-only tools. A mutation is never exposed to an external host without a server-side approval gate.
+3. The relay stays blind: it forwards manifests and calls as bytes and never parses them. Aggregation is client-side (the agent loop is the MCP host aggregating N peers), matching both MCP's host-aggregates-N model and the ADR-0035 blind-relay direction.
+4. The model boundary stays OpenAI-compatible (ADR-0050). MCP is a host-to-server protocol, never host-to-LLM; it does not touch the inference seam.
+5. Transport is sensitivity-driven and honestly asymmetric: the synced room for convenience, a blind peer-to-peer link (Tailscale or Iroh) for sensitive data. Local Books stays standalone and off the mesh (ADR-0072), because its financial rows must not transit the plaintext-reading relay (ADR-0004).
+
+The wire reshape (manifest and dispatch payloads onto MCP shapes) and the edge shim are deferred behind the Whispering wedge; platform spend is earned, not assumed. The only code this records as landing now is making Local Books' read-only gate a core invariant so the ADR-0072 verb-core seam is safe to wrap.
+
+## Consequences
+
+- One tool vocabulary across the whole system: there is no Epicenter-private tool shape to keep in lockstep with MCP, and no translation codec. The egress and ingress shims become near-identity, so external MCP interop (Epicenter tools in Claude Desktop; an external MCP server's tools inside Epicenter) costs almost nothing once the vocabulary lands.
+- Epicenter keeps the one transport MCP cannot provide (NAT-free, authenticated, multi-device dispatch with a live tool directory) and reframes it honestly: not a bespoke protocol kept by inertia, but the routing, presence, and statelessness MCP omits, sitting under MCP-shaped payloads.
+- The convergence is honest, not total: one tool vocabulary (the collapse) but two transports (MCP point to point at the edge, the stateless mesh between your own devices), because the substrate demands it.
+- The cost is a presence and dispatch wire-format change (a coordinated client and relay deploy) and one extension field for the enforced tier. This is why it is incremental and wedge-gated, not a now-build: each time the presence or dispatch layer is touched, move its payload onto the MCP shape.
+
+## Considered alternatives
+
+- **Make MCP's session and transport protocol the native inter-device wire (carry MCP JSON-RPC sessions over the room WebSocket).** Rejected on substrate facts. The relay routes by `nodeId` and an MCP session frame carries no route, so it would force the relay to track session state (breaking its blindness, ADR-0035) or be re-wrapped in a `{ to }` envelope anyway. MCP's per-peer `initialize` plus `tools/list` handshake is 2N round trips repeated on every Yjs reconnect, where presence is a zero-round-trip broadcast. The MCP SDK has removed its WebSocket transport, so a custom one would be owned forever. The session protocol is the layer refused; the data vocabulary is the layer adopted.
+- **Keep an Epicenter-private tool vocabulary and translate to MCP only at the edge (the earlier "MCP is an edge adapter" framing).** Rejected as needless. Because TypeBox already is JSON Schema, the private `ActionMeta` and the MCP `Tool` are nearly the same shape, so maintaining both plus a translation codec buys nothing over making the manifest an MCP `tools/list` outright. Adopt the standard's vocabulary and delete the divergence.
+- **Replace `defineActions` with MCP tool definitions as the authoring surface.** Rejected: `defineActions` is a typed in-process callable with a trusted, required approval tier and a UI affordance; an MCP `Tool` is runtime-discovered JSON with advisory annotations. `defineActions` authors; MCP is the wire projection. ADR-0021 already names MCP a consumer of actions, not their replacement.
+- **Expose Local Books over MCP now (egress its three verbs).** Rejected for the write verb, deferred for the reads. Exposing `recategorize` to an external host launders away the approval gate, and read egress is redundant with the already-shipped off-the-shelf-agent-over-Tailscale path (ADR-0072) while reaching no consumer goal.
+
+## Trigger to revisit
+
+Move the manifest and dispatch payloads onto the MCP `Tool` and `tools/call` shapes the next time the presence or dispatch layer is touched for another reason, or when external MCP interop becomes a concrete product need AND the Whispering wedge has earned platform spend. Build the edge shim against the live mesh (tab-manager or opensidian), never the standalone Local Books CLI. Reopen the "MCP session protocol as the wire" question only if the room transport itself is redesigned (for example the ADR-0035 Iroh blind relay) such that per-peer sessions and `nodeId` routing change shape.

@@ -37,7 +37,9 @@
 	 * `Collaboration` value, so RPC, peers, and presence do not leak into the
 	 * account UI surface.
 	 *
-	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
+	 * Mount once in each app's root layout, alongside `<ConfirmationDialog />`
+	 * and inside a `<Tooltip.Provider>`: the trigger pill renders a tooltip,
+	 * which a `Tooltip.Root` needs as an ancestor.
 	 */
 	type AccountPopoverProps = {
 		/** The app's auth client (from `createAppAuthClient()` or the dashboard's `createSameOriginCookieAuth()`). */

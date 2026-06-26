@@ -8,8 +8,10 @@ import { Ok, type Result } from 'wellcrafted/result';
  * `token` minted by their box.
  *
  * This is the persisted, per-client setting. How it is stored (localStorage,
- * chrome.storage) is the app's concern; the shape and its normalization
- * ({@link normalizeInstanceUrl}) live here so every client agrees on them.
+ * chrome.storage) is the app's concern, behind the shared {@link InstanceSetting}
+ * handle; the shape, its normalization ({@link normalizeInstanceUrl}), and its
+ * one credential branch ({@link createAppAuthClient}) live here so every client
+ * agrees on them.
  */
 export type Instance = {
 	/**
@@ -20,8 +22,9 @@ export type Instance = {
 	baseURL: string;
 	/**
 	 * Instance bearer token. When present, the client authenticates with it
-	 * (self-host, via {@link createInstanceTokenAuth}) instead of the hosted
-	 * OAuth flow. Absent for the hosted default.
+	 * (self-host, via {@link createInstanceTokenAuth}); when absent, it uses the
+	 * hosted OAuth flow. OAuth is hosted-only, so a non-hosted `baseURL` requires
+	 * a token (ADR-0070/0071): the hosted default carries no token.
 	 */
 	token?: string;
 };

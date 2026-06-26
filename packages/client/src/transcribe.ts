@@ -2,12 +2,20 @@
  * `transcribe`: the one OpenAI-compatible speech-to-text client (ADR-0050/0056/0060).
  *
  * Transcription is a service: it holds nothing and sees only the audio blob you
- * hand it. So there is one wire (`POST {baseUrl}/audio/transcriptions`, multipart
- * `file`, where the connection's `baseUrl` already carries `/v1`) reached through
- * the same {@link Connection} floor that drives chat, and zero per-provider
- * adapters. OpenAI, Groq, and a self-hosted Speaches
- * box are not three code paths; they are three `Connection` values pointed at the
- * same function.
+ * hand it. So there is one wire (`POST {baseURL}/audio/transcriptions`, multipart
+ * `file`, where the connection's `baseURL` already carries `/v1`) reached through
+ * the same {@link ResolvedConnection} transport that drives chat, and zero
+ * per-provider adapters. OpenAI, Groq, and a self-hosted Speaches box are not three
+ * code paths; they are three connections, each `resolveConnection`d to a transport
+ * and handed to the same function.
+ *
+ * Like `listModels` and the chat engine, this consumes the *resolved* transport
+ * (`{ fetch, baseURL }`), not the static `Connection`.
+ * `resolveConnection` is the single boundary that turns connection data into a
+ * transport, and the caller crosses it: a third-party connection resolves its own
+ * key into a Bearer, and the hosted Epicenter path injects its audience-scoped
+ * session fetch (ADR-0053/0060), which is never connection data. So this client
+ * never re-resolves and never branches on what kind of transport it got.
  *
  * Deepgram and ElevenLabs stay bespoke in their own clients: they do not speak
  * this wire (Deepgram takes a raw body under `Authorization: Token`, ElevenLabs an
@@ -16,7 +24,7 @@
  * the Tauri FFI, a privileged non-wire sibling, not a `Connection`.
  *
  * This is `apps/whispering/.../self-hosted/speaches.ts` generalized: the name
- * dropped and the bespoke config replaced by a `Connection`. The error stays lean
+ * dropped and the bespoke config replaced by a transport. The error stays lean
  * and structured (it carries the HTTP `status`); an app maps a status to its own
  * user-facing copy at its toast/query layer, the library does not own that copy.
  */
@@ -27,7 +35,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { type Connection, resolveConnection } from './connection.js';
+import type { ResolvedConnection } from './connection.js';
 
 /**
  * The transcription request, minus the audio and the connection. `model` is
@@ -65,9 +73,10 @@ export const TranscribeError = defineErrors({
 export type TranscribeError = InferErrors<typeof TranscribeError>;
 
 /**
- * Transcribe an audio blob over the OpenAI wire. Resolves the {@link Connection}
- * to its transport (a keyed or bare fetch), POSTs a multipart form, and returns
- * the trimmed transcript text or a typed {@link TranscribeError}. Never throws.
+ * Transcribe an audio blob over the OpenAI wire. Takes the resolved transport
+ * (`{ fetch, baseURL }`, see {@link ResolvedConnection}), POSTs a multipart form,
+ * and returns the trimmed transcript text or a typed {@link TranscribeError}.
+ * Never throws.
  *
  * The blob is sent under a filename whose extension is derived from its MIME type,
  * because the wire detects the audio format from that extension; see
@@ -75,11 +84,9 @@ export type TranscribeError = InferErrors<typeof TranscribeError>;
  */
 export async function transcribe(
 	audio: Blob,
-	connection: Connection,
+	{ fetch, baseURL }: ResolvedConnection,
 	{ model, language, prompt }: TranscribeOptions,
 ): Promise<Result<string, TranscribeError>> {
-	const { fetch, baseURL } = resolveConnection(connection);
-
 	const form = new FormData();
 	form.append(
 		'file',

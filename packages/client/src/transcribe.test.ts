@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { resolveConnection } from './connection.js';
 import { transcribe } from './transcribe.js';
 
 describe('transcribe over the OpenAI wire', () => {
@@ -25,7 +26,7 @@ describe('transcribe over the OpenAI wire', () => {
 
 		const { data, error } = await transcribe(
 			new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
-			{ baseUrl: 'http://localhost:8000/v1' },
+			resolveConnection({ baseUrl: 'http://localhost:8000/v1' }),
 			{ model: 'whisper-1' },
 		);
 
@@ -44,14 +45,20 @@ describe('transcribe over the OpenAI wire', () => {
 		expect(file.name).toBe('audio.webm');
 	});
 
-	test('attaches the user key as a Bearer when the connection carries one', async () => {
+	test('forwards through the resolved transport: a keyed connection sends a Bearer', async () => {
 		const seen = captureRequest(
 			new Response(JSON.stringify({ text: 'ok' }), { status: 200 }),
 		);
 
+		// The Bearer is `resolveConnection`'s contract, not transcribe's: transcribe
+		// just POSTs through whatever transport it is handed. This proves the
+		// composition callers use (resolve a connection, then transcribe).
 		await transcribe(
 			new Blob([new Uint8Array([1])], { type: 'audio/mp4' }),
-			{ baseUrl: 'https://api.groq.com/openai/v1', apiKey: 'sk-test' },
+			resolveConnection({
+				baseUrl: 'https://api.groq.com/openai/v1',
+				apiKey: 'sk-test',
+			}),
 			{ model: 'whisper-large-v3', language: 'en', prompt: 'Epicenter' },
 		);
 
@@ -67,7 +74,7 @@ describe('transcribe over the OpenAI wire', () => {
 
 		const { data, error } = await transcribe(
 			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
-			{ baseUrl: 'https://api.openai.com/v1', apiKey: 'bad' },
+			resolveConnection({ baseUrl: 'https://api.openai.com/v1', apiKey: 'bad' }),
 			{ model: 'whisper-1' },
 		);
 
@@ -86,7 +93,7 @@ describe('transcribe over the OpenAI wire', () => {
 
 		const { data, error } = await transcribe(
 			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
-			{ baseUrl: 'http://localhost:8000/v1' },
+			resolveConnection({ baseUrl: 'http://localhost:8000/v1' }),
 			{ model: 'whisper-1' },
 		);
 

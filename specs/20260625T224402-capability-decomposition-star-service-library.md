@@ -288,6 +288,60 @@ transcribe(audio, { baseUrl: 'http://localhost:8000/v1' }, { model });          
 2. On web the `apiKey` is the user's own (their risk) or absent, in which case the baseUrl points at the gateway which signs server-side.
 3. The library stays pure; the privileged variant is injected at connection resolution, not in the library.
 
+## Greenfield direction (the shape to build toward, a hypothesis to grill)
+
+This section is the long-term, most-maintainable target, divorced from today's code. It is written to be **grilled**: a fresh agent should push on every seam and either confirm it or find the better break. The one-line thesis:
+
+> **A capability is a thin, stateless (or device-local) shared package. Apps are siblings that compose capabilities; they are never children that import each other.** Transcription provider selection collapses into Connection selection. vocab and Whispering share the *capability* packages, never a "Whispering library."
+
+### The composition, as siblings (answers "what does vocab import from Whispering?")
+
+Nothing app-shaped. There is no shared "Whispering library." There are thin capability packages both apps compose:
+
+```txt
+Capability packages (shared, each earns its place)        Apps (siblings that compose them)
+  @epicenter/client      transcribe(audio, conn)  [done]    Whispering  = recorder + registry + transcribe
+  @epicenter/recorder?   mic -> blob + VAD (EXTRACT)         vocab       = recorder + registry + transcribe
+  app-shell/inference-picker  Connection registry [shared]   writing-app = recorder + registry + transcribe + refine
+  refine-as-library      pure transform on the floor         (each owns ITS data, UI, pipeline)
+```
+
+The seam to hold: vocab must **not** drag in Whispering's recordings table, pipeline, transform, or delivery. It imports the capability, not the app. If vocab finds itself importing from `apps/whispering/**`, the boundary is wrong; the thing it wants is a package.
+
+### Provider selection IS Connection selection (the bigger collapse hiding behind Slice 2)
+
+Slice 2 as written deletes three files. The deeper win: once every wire provider is a `Connection`, Whispering's whole `transcribeViaUpload` config fan-out (`apiKeyConfigKey`, `endpointConfigKey`, `modelSettingKey`, `modelIdConfigKey`, the cloud-vs-self-hosted branch in `operations/transcribe.ts`) collapses into "resolve a Connection, pick a model, call `transcribe`." Transcription provider selection becomes the **same** Connection+model picker chat already uses (`createInferenceConnections`, ADR-0059/0060; see [[project_whispering_model_selector_collapse]]). Grill: can Whispering's transcription picker and vocab's dictation both ride that one registry? If yes, the dispatch table is not refactored, it is *deleted*.
+
+### Preferences taxonomy (answers "do we share Whispering's synced preferences?")
+
+Three different things wear the word "preferences"; they do not share a home:
+
+| Preference | Home | Synced? | Shared across apps? |
+| --- | --- | --- | --- |
+| Connection (which servers, which keys) | device-local registry | **No** (a key is a secret; a `localhost` URL is meaningless elsewhere, ADR-0004/0060) | **Mechanism yes, storage today per-app.** Greenfield: one device-local connection vault shared by every Epicenter app on the device, so you enter your OpenAI key once, not per app. |
+| Transcription (language, model, prompt) | app-local | No | **No** — vocab dictating Chinese and Whispering dictating English want different defaults. App picks its own (`VOCAB_MODEL` already does). |
+| Sync / star (how custody + sync happen) | the star (ADR-0069) | n/a | **Orthogonal to transcription.** Both apps sync to the user's one star; each app is its own workspace/room. Transcription is a *service*: it holds nothing and syncs nothing, so "Whispering's sync preferences" never flow into vocab's transcription. Conflating the two is a category error. |
+
+Key correction to bake in: **transcription is stateless and touches no sync.** Do not reach for Whispering's sync/preferences machinery to power vocab dictation; reach for the connection registry (device-local) and an app-local model choice.
+
+### The transports, restated for the greenfield
+
+`transcribe` must accept the **resolved** hosted transport (`{ fetch: auth.fetch, baseURL }`), not only a static `{ baseUrl, apiKey? }` Connection, because the hosted path injects an audience-scoped session fetch (exactly like the chat engine takes). This is a real gap in the shipped 1.1 signature and the first thing to close (the alternative shapes: an overload, or accept `Connection | ResolvedConnection`). The in-process Rust engine stays a Whispering-desktop privileged sibling reachable by the same contract; it is never extracted to web apps.
+
+### Grills for the collapse (is OpenAI/Groq/Speaches worth collapsing?)
+
+The user's rule: **if it speaks the OpenAI wire and has no real downside, collapse toward it.** Push on each:
+
+- **What is lost?** Only rich per-status error copy (`cloud/openai.ts` maps 8+ statuses to curated messages). Consumers present by `.message` and never branch on `.name` (`operations/transcribe.ts:43`), so the loss is copy, not behavior. Decide: enrich `TranscribeError`, map a few statuses at the boundary, or accept one good line. Likely the rich copy is defensive over-engineering nobody reads.
+- **What is gained?** Dropping the `openai` SDK + `dangerouslyAllowBrowser` from the browser bundle; deleting ~400 lines; one wire instead of three config shapes; the custom-endpoint key-skip special-case (`openai.ts:96`) dissolves into "no key = no header."
+- **Feature parity?** The bespoke clients only use `{ file, model, language, prompt } -> text`; no segments/timestamps/streaming, so nothing is lost. Confirm no caller reads verbose fields.
+- **The 25MB pre-flight** (`openai.ts:107`) disappears; a server 413 replaces it. Decide whether `transcribe` wants a client-side size guard.
+- **Scope of the collapse.** `cloud/mistral.ts` also speaks the wire but is *not* in the handoff's three; by the rule it should collapse too (-> four). `deepgram.ts`/`elevenlabs.ts` do not speak the wire; keep bespoke (ADR-0060 blesses the exception) or cut them as a product call.
+
+### What this greenfield refuses
+
+No `epicenter serve`, no in-house transcription server, no VoiceBox adapter, no per-server SDK adapter, and no "Whispering shared library" that exports app concerns. A second runtime/engine is earned by a real consumer, never shipped speculatively.
+
 ## Open Questions
 
 1. **Hosted STT backend: cloud provider now, or stand up a Parakeet/Speaches box?**

@@ -10,9 +10,12 @@ import type { PageLoad } from './$types';
  * reopens to a vault like any tabbed app. The redirect lands on `/vault/[id]`, keeping vault
  * identity in the URL; only the genuine zero-tab case falls through to `+page.svelte`.
  *
- * This runs client-only (the app is `ssr = false`), so the persisted list is already read.
+ * The persisted list hydrates async, so await `whenReady` first, exactly as
+ * `vault/[id]/+page.ts` does: a cold relaunch would otherwise read an empty list and fall
+ * through to onboarding even when tabs were saved.
  */
-export const load: PageLoad = () => {
+export const load: PageLoad = async () => {
+	await openVaults.whenReady;
 	const [first] = openVaults.list;
 	if (first) redirect(307, routes.vault(first.id));
 };

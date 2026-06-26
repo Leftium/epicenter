@@ -17,7 +17,7 @@
  * honest path is the registry's, not a hosted transport rebuilt here.
  */
 
-import { transcribe, type TranscribeError } from '@epicenter/client';
+import { type TranscribeError, transcribe } from '@epicenter/client';
 import { VOCAB_DICTATION_LANGUAGE, VOCAB_STT_MODEL } from '@epicenter/vocab';
 import { Err, type Result } from 'wellcrafted/result';
 import { inferenceConnections } from './inference-connections.svelte';

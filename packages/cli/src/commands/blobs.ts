@@ -16,8 +16,9 @@
  *   rm  <sha256>    delete one blob from the store (cloud only)
  *   pull            restore missing manifest files from their content address
  *
- * Every subcommand is a direct cloud round-trip built from the machine-auth
- * session; none route through the local daemon, unlike `run`. See
+ * Every subcommand is a direct cloud round-trip built from the resolved machine
+ * auth client (the persisted OAuth cell, or a configured instance token for a
+ * self-hosted star); none route through the local daemon, unlike `run`. See
  * `specs/20260623T220000-content-addressed-blob-store.md`.
  */
 
@@ -331,15 +332,16 @@ export const blobsCommand = cmd({
 });
 
 /**
- * Build the owner-scoped cloud client from the persisted machine-auth session,
- * or print a ready-to-read failure and return `null`. Every `blobs` subcommand
- * is a direct cloud round-trip (no daemon), so each one starts here. Identity
- * comes off `auth.state`; the client is owner-scoped and never resolves
- * `/api/session` itself.
+ * Build the owner-scoped cloud client from the resolved machine auth client, or
+ * print a ready-to-read failure and return `null`. Every `blobs` subcommand is a
+ * direct cloud round-trip (no daemon), so each one starts here.
+ * `resolveMachineAuthClient` settles the credential (OAuth cell or a configured
+ * instance token) before returning, so `auth.state` is readable synchronously
+ * here; the client is owner-scoped and never re-resolves `/api/session` itself.
  */
 async function connectCloud(): Promise<EpicenterClient | null> {
 	const { data: auth, error: authError } =
-		await machineAuth.createMachineAuthClient();
+		await machineAuth.resolveMachineAuthClient();
 	if (authError) {
 		fail(authError.message);
 		return null;

@@ -125,20 +125,40 @@ export async function transcribe(
 }
 
 /**
- * Derive an upload filename from a blob's MIME type. The OpenAI wire reads the
- * audio format from the filename extension, so recorder output (`audio/webm`,
- * `audio/mp4`, `audio/ogg`, a Tauri `audio/wav`) becomes an accepted extension by
- * taking the subtype and dropping any `x-` prefix or `;codecs=...` parameter.
- * `audio/wave` is normalized to the accepted `wav` (the wire's list is `wav`, not
- * `wave`). `mp3` is the fallback for a missing or odd type, the format every STT
- * wire can auto-detect from the bytes.
+ * The OpenAI transcription wire accepts a closed set of audio extensions
+ * (flac/mp3/mp4/mpeg/mpga/m4a/ogg/opus/wav/webm) and detects the format from the
+ * upload filename. So map a recorder blob's MIME to one of those explicitly. A
+ * closed allowlist can't manufacture an extension the wire rejects, which a
+ * subtype slice would: `audio/wave` slices to the unaccepted `wave`, `audio/mpeg`
+ * to `mpeg` rather than `mp3`. Deliberately a literal map, not the `mime` package:
+ * the set is tiny and closed, so a dependency that knows thousands of types (and
+ * returns `weba`/`oga` you would have to remap anyway) is the wrong primitive for
+ * the floor.
+ */
+const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
+	'audio/flac': 'flac',
+	'audio/mpeg': 'mp3',
+	'audio/mp3': 'mp3',
+	'audio/mp4': 'mp4',
+	'audio/m4a': 'm4a',
+	'audio/x-m4a': 'm4a',
+	'audio/ogg': 'ogg',
+	'audio/opus': 'opus',
+	'audio/wav': 'wav',
+	'audio/wave': 'wav',
+	'audio/x-wav': 'wav',
+	'audio/webm': 'webm',
+};
+
+/**
+ * Derive an upload filename from a blob's MIME type via the closed
+ * {@link AUDIO_EXTENSION_BY_MIME} allowlist (the `;codecs=...` parameter is
+ * stripped first). `mp3` is the fallback for an unknown or missing type, the
+ * format every STT wire auto-detects from the bytes.
  */
 function filenameForAudio(audio: Blob): string {
-	const subtype = audio.type.split(';')[0]?.split('/')[1]?.replace(/^x-/, '');
-	const normalized = subtype === 'wave' ? 'wav' : subtype;
-	const extension =
-		normalized && /^[a-z0-9]+$/.test(normalized) ? normalized : 'mp3';
-	return `audio.${extension}`;
+	const mime = audio.type.split(';')[0]?.trim().toLowerCase() ?? '';
+	return `audio.${AUDIO_EXTENSION_BY_MIME[mime] ?? 'mp3'}`;
 }
 
 /** Pull `text` out of an OpenAI `{ text: string }` body, or null if the shape is wrong. */

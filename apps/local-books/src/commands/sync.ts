@@ -22,12 +22,12 @@ function reportOutcome(o: SyncOutcome): void {
 	);
 	for (const e of o.entities) {
 		console.log(
-			`${e.entity.padEnd(12)} ${e.upserted} upserted, ${e.deleted} deleted` +
-				`${e.backfilled ? '  [full]' : ''}`,
+			`${e.entity.padEnd(13)} ${e.upserted} added or updated, ${e.deleted} removed` +
+				`${e.backfilled ? '  [full pull]' : ''}`,
 		);
 	}
 	for (const f of o.failures) {
-		console.error(`${f.entity}: FAILED — ${f.error.message}`);
+		console.error(`${f.entity}: sync failed: ${f.error.message}`);
 	}
 }
 
@@ -56,7 +56,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 	}
 	if (repairTargets.length > 0 && args.intervalMs != null) {
 		console.error(
-			'`--entity` is a one-shot repair and cannot be combined with `--interval`.',
+			'Cannot combine --entity with --interval. Run a one-time "sync --entity" pass, then start the "sync --interval" loop.',
 		);
 		return 1;
 	}
@@ -85,7 +85,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		};
 		process.on('SIGINT', stop);
 		console.error(
-			`Syncing ${config.entities.join(', ')} for company ${realmId} (${config.environment}) every ${ms(args.intervalMs)} — Ctrl-C to stop.`,
+			`Syncing ${config.entities.join(', ')} for company ${realmId} (${config.environment}) every ${ms(args.intervalMs)}; press Ctrl-C to stop.`,
 		);
 		await runSyncLoop(deps, {
 			forceFull: args.full,

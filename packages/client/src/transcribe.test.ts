@@ -103,4 +103,36 @@ describe('transcribe over the OpenAI wire', () => {
 		expect(data).toBeNull();
 		expect(error?.name).toBe('Malformed');
 	});
+
+	// The upload filename's extension is how the OpenAI wire detects the audio
+	// format, so the closed MIME->extension allowlist must map each recorder MIME
+	// to an extension the wire accepts, never a raw subtype slice (`audio/wave`
+	// would slice to the rejected `wave`, `audio/mpeg` to `mpeg` not `mp3`).
+	const filenameCases: [mime: string, expected: string][] = [
+		['audio/wave', 'audio.wav'], // not 'audio.wave'
+		['audio/x-wav', 'audio.wav'],
+		['audio/mpeg', 'audio.mp3'], // not 'audio.mpeg'
+		['audio/webm;codecs=opus', 'audio.webm'], // the codec parameter is stripped
+		['audio/x-m4a', 'audio.m4a'],
+		['audio/ogg', 'audio.ogg'],
+		['', 'audio.mp3'], // a missing type falls back to mp3
+		['application/octet-stream', 'audio.mp3'], // an unknown type falls back to mp3
+	];
+
+	for (const [mime, expected] of filenameCases) {
+		test(`maps blob MIME "${mime || '(none)'}" to upload filename ${expected}`, async () => {
+			const seen = captureRequest(
+				new Response(JSON.stringify({ text: 'x' }), { status: 200 }),
+			);
+
+			await transcribe(
+				new Blob([new Uint8Array([1])], { type: mime }),
+				resolveConnection({ baseUrl: 'http://localhost:8000/v1' }),
+				{ model: 'whisper-1' },
+			);
+
+			const form = seen[0]?.init?.body as FormData;
+			expect((form.get('file') as File).name).toBe(expected);
+		});
+	}
 });

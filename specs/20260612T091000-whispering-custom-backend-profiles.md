@@ -5,13 +5,20 @@
 **Owner**: Braden
 **Branch**: (future; builds on the providers clean break)
 
-> **Update (2026-06-12, transformation-engine collapse)**: superseded in part by
-> `20260612T210000-whispering-transformation-engine-collapse.md`. The arbitrary
+> **Update (2026-06-12, transformation-engine collapse)**: the engine collapse
+> (formerly `20260612T210000-whispering-transformation-engine-collapse.md`) has
+> since been **removed** from the tree (see `docs/spec-history.md`). The arbitrary
 > `transformationSteps` table is gone: a transformation is a fixed
 > `preReplacements[] + prompt? + postReplacements[]`. Everywhere this spec says a
 > "step" targets a backend and owns the model, read "the transformation's single
-> `prompt`." The co-location invariant is unchanged: `customBackends` lives in the
-> same workspace as `transformations`. Named step errors become named prompt errors.
+> `prompt`." Named step errors become named prompt errors.
+>
+> **Update (2026-06-25, Connection floor tension)**: this spec predates the shipped
+> Connection floor (ADR-0059/0060), which makes an inference connection
+> **device-local** (`{baseUrl, apiKey?}`). That conflicts with this spec's core
+> decision to put `customBackends` in the **workspace** so they sync. ADR-0059/0060
+> very likely **supersede** this design; confirm before building on it. See
+> `specs/20260625T224402-capability-decomposition-star-service-library.md`.
 
 ## One Sentence
 

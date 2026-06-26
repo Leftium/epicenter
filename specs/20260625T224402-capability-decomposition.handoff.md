@@ -25,13 +25,21 @@ DO NOT  hold a secret inside the refine library (inject the signing variant at c
 
 ## Progress (2026-06-26)
 
-Landed on `worktree/quiet-cloud-784d`, all green (typecheck + tests):
+Landed on `collapse-transcribe-wire` (branched off `worktree/quiet-cloud-784d`),
+all green (whole-monorepo typecheck 0 errors; client 12, server 135, api 20,
+whispering 61 tests pass):
 
 ```txt
-4bc9278  feat(client): shared transcribe() OpenAI-wire STT client      (Slice 1.1)
-9bd7e81  feat(server): OpenAI-compatible speech-to-text gateway          (Slice 1.2 library)
-917dd28  feat(api): meter the hosted STT gateway per audio minute        (Slice 1.2 metering)
-803a2fc  docs(trust): hosted STT/chat gateway audio handling + recipe    (Slice 1.4)
+Slice 1 (earlier, on worktree/quiet-cloud-784d):
+  4bc9278  feat(client): shared transcribe() OpenAI-wire STT client      (Slice 1.1)
+  9bd7e81  feat(server): OpenAI-compatible speech-to-text gateway          (Slice 1.2 library)
+  917dd28  feat(api): meter the hosted STT gateway per audio minute        (Slice 1.2 metering)
+  803a2fc  docs(trust): hosted STT/chat gateway audio handling + recipe    (Slice 1.4)
+
+Gap-close + Slice 2 (this branch):
+  3f1a440  refactor(client): transcribe consumes the resolved transport    (gap closed)
+  93157a9  feat(whispering): route the wire transcribers through the shared client
+  2d3d4f4  refactor(whispering): delete the collapsed wire transcribers
 ```
 
 Decisions taken (owner-confirmed): hosted backend = Groq `whisper-large-v3-turbo`
@@ -41,11 +49,26 @@ spec's `${baseURL}/v1/audio/transcriptions` skeleton double-prefixes `/v1`; the
 real path is `{baseUrl}/audio/transcriptions`. Chat middleware prefix narrowed
 `/v1/*` -> `/v1/chat/*` so STT does not inherit chat metering.
 
+Gap-close + Slice 2 grill outcomes (owner-confirmed): `transcribe` now takes a
+`ResolvedConnection` (not a `Connection` or a union), matching `listModels` and
+the chat engine; recorded as a consequence on ADR-0060. The collapse is **3
+files, not 4**: Mistral's wire uses `context_bias`, not the OpenAI `prompt`, so
+it stays bespoke (evidence in the SDK; spec Decisions Log). The greenfield's
+"dispatch table is deleted" was overstated and corrected to "split (wire vs
+bespoke)" in the spec; local in-process + bespoke + curated catalog do not
+collapse into a Connection registry.
+
 Ops follow-up: provision `GROQ_API_KEY` in the deploy (Infisical) before the
 hosted route serves; absent, it answers 503 ProviderNotConfigured.
 
-NEXT: **Slice 1.3** (wire vocab, below), then Slices 2 and 3. Slice 1.3 needs
-live OAuth + a mic to verify end to end.
+NOT done in Slice 2 (flagged, not headless-verifiable): a **live cloud smoke**
+(needs a real provider key) confirming a real OpenAI/Groq/Speaches transcription
+still works end to end through `transcribe()`. Typecheck + tests + desktop
+in-process-unchanged are proven.
+
+NEXT: **Slice 1.3** (wire vocab, below), then Slice 3. Slice 1.3 needs live
+OAuth + a mic + `GROQ_API_KEY` to verify end to end; build a minimal recorder in
+vocab (do not extract a package yet, grilled).
 
 ## Order of work
 

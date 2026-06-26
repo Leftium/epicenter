@@ -250,9 +250,9 @@ transcribe(audio, { baseUrl: 'http://localhost:8000/v1' }, { model });          
 
 ### Phase 2: collapse Whispering onto the shared client (Build, Prove, Remove)
 
-- [ ] **2.1** Build: route Whispering's OpenAI/Groq/Speaches transcription through `@epicenter/client`'s `transcribe`, selecting the Connection from existing settings.
-- [ ] **2.2** Prove: typecheck, run tests, smoke desktop transcription (in-process untouched) and a cloud provider.
-- [ ] **2.3** Remove: delete `cloud/openai.ts`, `cloud/groq.ts`, `self-hosted/speaches.ts`. Keep `deepgram.ts`, `elevenlabs.ts`, and the in-process path.
+- [x] **2.1** Build: route Whispering's OpenAI/Groq/Speaches transcription through `@epicenter/client`'s `transcribe`, selecting the Connection from existing settings. _Done: `operations/transcribe.ts` `WIRE_CONNECTIONS` (reads each wire provider's Connection + model from the existing config stores) routes through `resolveConnection` + `transcribe`; `BESPOKE_TRANSCRIBERS` (`Exclude<CloudProviderId, WireProviderId>`) keeps Deepgram/ElevenLabs/Mistral. The Speaches endpoint config is a bare host, so its `/v1` is appended; OpenAI/Groq overrides already carry `/v1`._
+- [x] **2.2** Prove: typecheck, run tests, smoke desktop transcription (in-process untouched) and a cloud provider. _Done headless: whole-monorepo typecheck 0 errors, whispering 61 tests + client 12 pass, `transcribeLocally` untouched. NOT done: live cloud smoke (needs a real provider key), flagged._
+- [x] **2.3** Remove: delete `cloud/openai.ts`, `cloud/groq.ts`, `self-hosted/speaches.ts`. Keep `deepgram.ts`, `elevenlabs.ts`, and the in-process path. _Done: 3 files deleted (~500 lines), the orphaned `groq-sdk` dep dropped. `openai` SDK stays until Slice 3 (refine completion still imports it)._
 
 ### Phase 3: refine as a library on the Connection floor (Build, Prove, Remove)
 
@@ -301,16 +301,23 @@ Nothing app-shaped. There is no shared "Whispering library." There are thin capa
 ```txt
 Capability packages (shared, each earns its place)        Apps (siblings that compose them)
   @epicenter/client      transcribe(audio, conn)  [done]    Whispering  = recorder + registry + transcribe
-  @epicenter/recorder?   mic -> blob + VAD (EXTRACT)         vocab       = recorder + registry + transcribe
+  recorder: BUILD MINIMAL IN VOCAB, don't extract yet        vocab       = recorder + registry + transcribe
   app-shell/inference-picker  Connection registry [shared]   writing-app = recorder + registry + transcribe + refine
   refine-as-library      pure transform on the floor         (each owns ITS data, UI, pipeline)
 ```
 
 The seam to hold: vocab must **not** drag in Whispering's recordings table, pipeline, transform, or delivery. It imports the capability, not the app. If vocab finds itself importing from `apps/whispering/**`, the boundary is wrong; the thing it wants is a package.
 
-### Provider selection IS Connection selection (the bigger collapse hiding behind Slice 2)
+### Provider selection partly collapses into Connection selection (grilled; the original claim was oversold)
 
-Slice 2 as written deletes three files. The deeper win: once every wire provider is a `Connection`, Whispering's whole `transcribeViaUpload` config fan-out (`apiKeyConfigKey`, `endpointConfigKey`, `modelSettingKey`, `modelIdConfigKey`, the cloud-vs-self-hosted branch in `operations/transcribe.ts`) collapses into "resolve a Connection, pick a model, call `transcribe`." Transcription provider selection becomes the **same** Connection+model picker chat already uses (`createInferenceConnections`, ADR-0059/0060; see [[project_whispering_model_selector_collapse]]). Grill: can Whispering's transcription picker and vocab's dictation both ride that one registry? If yes, the dispatch table is not refactored, it is *deleted*.
+Slice 2 deletes three files. The greenfield originally claimed the whole dispatch table is *deleted*, that transcription provider selection becomes the **same** Connection+model picker chat uses (`createInferenceConnections`, ADR-0059/0060). Grilled against the code, that is overstated. Two branches do **not** collapse into a Connection registry:
+
+- **Local in-process** (`whispercpp`/`parakeet`/`moonshine`): `invoke` over the Tauri FFI with model-folder selection, truncation checks, and prewarming. Not a `Connection` at all (ADR-0060/0022); stays a privileged sibling branch.
+- **Bespoke cloud** (`deepgram`/`elevenlabs`): do not speak the wire; keep their own clients.
+
+Plus Whispering's transcription picker shows curated, cost-aware model cards per provider, which the chat picker's bare `/v1/models` discovery does not replace. So what actually happened in Slice 2: the **wire rows** (OpenAI/Groq/Speaches) collapsed from three dispatch entries into one `transcribe()` call selected by a `WIRE_CONNECTIONS` Connection builder; the location branch in `transcribeViaUpload` and the local/bespoke rows **stayed**. The dispatch table was **split (wire vs bespoke), not deleted**.
+
+The honest sibling model: vocab (web-only, hosted-or-custom-wire) rides `createInferenceConnections` directly; Whispering keeps its richer transcription picker but routes its wire providers through the same shared `transcribe()`. They share the **capability**, not the **picker**. (See [[project_whispering_model_selector_collapse]] for the separate, app-local model-selector collapse.)
 
 ### Preferences taxonomy (answers "do we share Whispering's synced preferences?")
 
@@ -318,7 +325,7 @@ Three different things wear the word "preferences"; they do not share a home:
 
 | Preference | Home | Synced? | Shared across apps? |
 | --- | --- | --- | --- |
-| Connection (which servers, which keys) | device-local registry | **No** (a key is a secret; a `localhost` URL is meaningless elsewhere, ADR-0004/0060) | **Mechanism yes, storage today per-app.** Greenfield: one device-local connection vault shared by every Epicenter app on the device, so you enter your OpenAI key once, not per app. |
+| Connection (which servers, which keys) | device-local registry | **No** (a key is a secret; a `localhost` URL is meaningless elsewhere, ADR-0004/0060) | **Mechanism yes, storage per-app, and mostly stuck that way (grilled).** A "one vault, enter your key once everywhere" greenfield is blocked by the browser: `localStorage` is origin-scoped and keys must not sync (ADR-0004), so cross-app sharing only works for same-origin apps (the portable-SPA model) or on desktop. It is an origin-architecture decision, not a transcription one; defer it, do not bake it into this capability. |
 | Transcription (language, model, prompt) | app-local | No | **No** — vocab dictating Chinese and Whispering dictating English want different defaults. App picks its own (`VOCAB_MODEL` already does). |
 | Sync / star (how custody + sync happen) | the star (ADR-0069) | n/a | **Orthogonal to transcription.** Both apps sync to the user's one star; each app is its own workspace/room. Transcription is a *service*: it holds nothing and syncs nothing, so "Whispering's sync preferences" never flow into vocab's transcription. Conflating the two is a category error. |
 
@@ -326,7 +333,7 @@ Key correction to bake in: **transcription is stateless and touches no sync.** D
 
 ### The transports, restated for the greenfield
 
-`transcribe` must accept the **resolved** hosted transport (`{ fetch: auth.fetch, baseURL }`), not only a static `{ baseUrl, apiKey? }` Connection, because the hosted path injects an audience-scoped session fetch (exactly like the chat engine takes). This is a real gap in the shipped 1.1 signature and the first thing to close (the alternative shapes: an overload, or accept `Connection | ResolvedConnection`). The in-process Rust engine stays a Whispering-desktop privileged sibling reachable by the same contract; it is never extracted to web apps.
+`transcribe` must accept the **resolved** transport (`{ fetch, baseURL }`), not a static `{ baseUrl, apiKey? }` Connection, because the hosted path injects an audience-scoped session fetch (exactly like the chat engine takes). _Closed._ The grill rejected the spec's own suggestion (an overload, or `Connection | ResolvedConnection`): both re-introduce an internal "is this resolved?" branch, the mode discriminator ADR-0060 deleted. The chosen shape is **`ResolvedConnection` only**, matching the sibling `listModels(resolved)` and the chat engine: `resolveConnection` is the sole boundary, called by the caller (a third-party connection resolves its own key to a Bearer; the hosted registry hands in its injected transport via `resolveOrHosted`). Recorded as a consequence on ADR-0060. The in-process Rust engine stays a Whispering-desktop privileged sibling, never extracted to web apps.
 
 ### Grills for the collapse (is OpenAI/Groq/Speaches worth collapsing?)
 
@@ -336,7 +343,7 @@ The user's rule: **if it speaks the OpenAI wire and has no real downside, collap
 - **What is gained?** Dropping the `openai` SDK + `dangerouslyAllowBrowser` from the browser bundle; deleting ~400 lines; one wire instead of three config shapes; the custom-endpoint key-skip special-case (`openai.ts:96`) dissolves into "no key = no header."
 - **Feature parity?** The bespoke clients only use `{ file, model, language, prompt } -> text`; no segments/timestamps/streaming, so nothing is lost. Confirm no caller reads verbose fields.
 - **The 25MB pre-flight** (`openai.ts:107`) disappears; a server 413 replaces it. Decide whether `transcribe` wants a client-side size guard.
-- **Scope of the collapse.** `cloud/mistral.ts` also speaks the wire but is *not* in the handoff's three; by the rule it should collapse too (-> four). `deepgram.ts`/`elevenlabs.ts` do not speak the wire; keep bespoke (ADR-0060 blesses the exception) or cut them as a product call.
+- **Scope of the collapse: 3, not 4 (grilled).** `cloud/mistral.ts` posts to `/v1/audio/transcriptions`, so it looks like a fourth wire provider. But the installed SDK (`@mistralai/mistralai` `audioTranscriptionsComplete`) posts `model`, `file`, `language`, and `context_bias` for the vocabulary hint, **not** the OpenAI `prompt` field. So routing Mistral through the generic `transcribe()` and passing `prompt` would send a field its wire does not define (the current `mistral.ts` correctly never sends one). That is a real, if small, downside, so Mistral stays bespoke alongside Deepgram/ElevenLabs. `deepgram.ts`/`elevenlabs.ts` do not speak the wire at all; keep bespoke (ADR-0060 blesses the exception).
 
 ### What this greenfield refuses
 
@@ -373,6 +380,8 @@ These came out of an HN-style adversarial review. They are positioning and roadm
 
 ## Decisions Log
 
+- **`transcribe` consumes a `ResolvedConnection`, not a `Connection` or a union (Slice 2 gap-close, landed).** Matches `listModels` and the chat engine; `resolveConnection` stays the single boundary the caller crosses. Recorded as a consequence on ADR-0060. Rejected the spec's own overload / `Connection | ResolvedConnection` suggestion as a reintroduced mode discriminator.
+- **Mistral stays bespoke; the collapse is 3 files, not 4 (landed).** Its transcription wire uses `context_bias`, not the OpenAI `prompt` (installed `@mistralai/mistralai` SDK), so it is not a clean prompt-wire match. Revisit if Mistral ships a `prompt`-compatible endpoint.
 - Keep `deepgram.ts` and `elevenlabs.ts` bespoke: they do not speak the OpenAI wire (Deepgram `Authorization: Token` + raw body; ElevenLabs `xi-api-key` + `model_id`). Revisit when: either provider ships an OpenAI-compatible endpoint, at which point they collapse into the shared client.
 - Keep Whispering's in-process `transcribe-rs` engine: it is the offline, no-server, no-install desktop default and the wedge. Revisit when: the in-process engine becomes a maintenance burden the seam can absorb by delegating, which the seam already makes reversible.
 

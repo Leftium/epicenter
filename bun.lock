@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -13,6 +12,7 @@
         "@changesets/cli": "^2.31.0",
         "@types/bun": "catalog:",
         "jsrepo": "^3.6.2",
+        "wrangler": "catalog:",
       },
     },
     "apps/api": {

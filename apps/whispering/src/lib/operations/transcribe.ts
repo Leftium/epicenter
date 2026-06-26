@@ -87,43 +87,46 @@ type WireTarget = { connection: Connection; model: string };
 
 /**
  * The OpenAI-wire transcription providers, collapsed onto the one shared
- * `transcribe()` client (ADR-0050/0060). Each entry reads its Connection (base URL
- * plus optional key) and model from the existing config stores; the wire and the
- * multipart shaping belong to `@epicenter/client`, not here. A wire provider is not
- * a code path; it is a `Connection` value handed to the same function.
+ * `transcribe()` client (ADR-0050/0060). Each entry assembles a `Connection` (base
+ * URL plus optional key) and a model; the wire and the multipart shaping belong to
+ * `@epicenter/client`, not here. A wire provider is not a code path; it is a
+ * `Connection` value handed to the same function.
  *
- * `providers.ts` does not hold the canonical wire base URLs (they used to be each
- * SDK's default), so they live here next to the call that needs them. The endpoint
- * override, when set, already carries `/v1` by the OpenAI base-URL convention;
- * Speaches is the exception, storing a bare host, so its `/v1` is appended.
+ * The config KEYS come from `PROVIDERS` (the SSOT for which device-config/settings
+ * entry holds each fact), read through the typed `*ConfigKey` / `*SettingKey`
+ * pointers exactly as the old dispatcher did. The only fact `PROVIDERS` does not
+ * hold is the canonical wire base URL (it used to be each SDK's default), so that
+ * one literal lives here. The endpoint override, when set, already carries `/v1` by
+ * the OpenAI base-URL convention; Speaches is the exception, storing a bare host,
+ * so its `/v1` is appended.
  */
 const WIRE_CONNECTIONS = {
 	OpenAI: (): WireTarget => ({
 		connection: {
 			baseUrl:
-				deviceConfig.get('providers.openai.endpoint') ||
+				deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
 				'https://api.openai.com/v1',
-			apiKey: deviceConfig.get('providers.openai.apiKey') || undefined,
+			apiKey: deviceConfig.get(PROVIDERS.OpenAI.apiKeyConfigKey) || undefined,
 		},
-		model: settings.get('transcription.openai.model'),
+		model: settings.get(PROVIDERS.OpenAI.modelSettingKey),
 	}),
 	Groq: (): WireTarget => ({
 		connection: {
 			baseUrl:
-				deviceConfig.get('providers.groq.endpoint') ||
+				deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
 				'https://api.groq.com/openai/v1',
-			apiKey: deviceConfig.get('providers.groq.apiKey') || undefined,
+			apiKey: deviceConfig.get(PROVIDERS.Groq.apiKeyConfigKey) || undefined,
 		},
-		model: settings.get('transcription.groq.model'),
+		model: settings.get(PROVIDERS.Groq.modelSettingKey),
 	}),
 	speaches: (): WireTarget => ({
 		// The Speaches endpoint config holds a bare host (placeholder
 		// `http://localhost:8000`); the Connection base carries `/v1`, which the
 		// shared client appends the wire path to. No key: a local box is keyless.
 		connection: {
-			baseUrl: `${deviceConfig.get('providers.speaches.endpoint')}/v1`,
+			baseUrl: `${deviceConfig.get(PROVIDERS.speaches.endpointConfigKey)}/v1`,
 		},
-		model: deviceConfig.get('providers.speaches.modelId'),
+		model: deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
 	}),
 } satisfies Partial<Record<TranscriptionServiceId, () => WireTarget>>;
 

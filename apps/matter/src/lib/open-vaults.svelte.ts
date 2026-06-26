@@ -13,10 +13,13 @@
  * Persisted to `open-vaults.json` in the app data dir via `tauri-plugin-store`, a plain
  * inspectable file on disk rather than an opaque webview blob: the same disk-is-truth
  * principle as matter's per-vault `matter.json` / `.matter/matter.sqlite`, applied to the
- * app-level tab set. The store reads async, so the list hydrates: it starts empty, the file
- * loads in the background, and `whenReady` resolves once the persisted tabs land. `whenReady`
- * is the one readiness signal: the route `load` awaits it so an id resolves against the real
- * list (never a spurious 404), and the tab strip `{#await}`s it to show a skeleton meanwhile.
+ * app-level tab set. The home is the app data dir, not a vault, because the open SET spans
+ * vaults; it is session chrome, not any one vault's data. The store reads async, so the list
+ * hydrates once via {@link ensureHydrated}. The `(vaults)` layout `load` awaits that before
+ * any route in the group renders, so SvelteKit gates the paint on the real list: the strip
+ * shows tabs with no skeleton and no pre-hydration flash, and an id resolves against the real
+ * list, never a spurious 404. The framework's `load` IS the readiness primitive; there is no
+ * hand-rolled `whenReady`/`hydrated` signal beside it.
  *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
  * drove its lifetime, this holds only the list of tabs and the open/close actions.
@@ -66,15 +69,21 @@ function isOpenVaultList(value: unknown): value is OpenVault[] {
 
 function createOpenVaults() {
 	const store = new LazyStore(STORE_FILE);
-	// The list IS the tabs, in order. Empty until the async store hydrates it below.
+	// The list IS the tabs, in order. Empty until `ensureHydrated` fills it from disk.
 	let vaults = $state<OpenVault[]>([]);
+	let hydration: Promise<void> | undefined;
 
-	// Read the persisted tabs once at startup. `LazyStore.get()` loads the file on first
-	// access, so there is no separate `load()` step; a missing or malformed file degrades
-	// to no tabs. `whenReady` resolving IS the "loaded" signal: consumers await it (the route
-	// `load`) or branch on it (`{#await}` in the tab strip), so there is no separate `hydrated`
-	// flag to keep in sync. SSR/prerender has no Tauri runtime, so skip the read.
-	async function hydrate(): Promise<void> {
+	// Read the persisted tabs from disk into the live list, once. The `(vaults)` layout `load`
+	// awaits this before the group renders, so it is the readiness gate and the strip needs no
+	// skeleton. Memoized on `hydration`, so however many loads await it, the read runs once.
+	// `LazyStore.get()` loads the file on first access, so there is no separate `load()` step.
+	// Two failure modes both degrade to no tabs: a malformed shape (rejected by `isOpenVaultList`)
+	// and an unreadable or corrupt file (`get()` rejects, caught here); either way the next
+	// `open`/`close` rewrites a clean file. SSR has no Tauri runtime, so skip the read.
+	function ensureHydrated(): Promise<void> {
+		return (hydration ??= read());
+	}
+	async function read(): Promise<void> {
 		if (!browser) return;
 		try {
 			const raw = await store.get<OpenVault[]>(STORE_KEY);
@@ -83,7 +92,6 @@ function createOpenVaults() {
 			// A failed read is "no tabs", same as a fresh install.
 		}
 	}
-	const whenReady = hydrate();
 
 	// Persist the tabs. A fire-and-forget side effect: the store auto-saves 100ms after a
 	// `set` (the plugin default), so no caller awaits the disk write, and a dropped write
@@ -103,7 +111,7 @@ function createOpenVaults() {
 	async function open(): Promise<void> {
 		const root = await openFolderDialog();
 		if (root === null) return;
-		await whenReady;
+		await ensureHydrated();
 		const existing = vaults.find((vault) => vault.root === root);
 		if (existing) {
 			await goto(routes.vault(existing.id));
@@ -138,12 +146,12 @@ function createOpenVaults() {
 	}
 
 	return {
-		/** The open vaults, in tab order. Empty until {@link whenReady} resolves. */
+		/** The open vaults, in tab order. Empty until {@link ensureHydrated} resolves. */
 		get list(): OpenVault[] {
 			return vaults;
 		},
-		/** Resolves once the persisted list has loaded; route `load` awaits it, the tab strip `{#await}`s it. */
-		whenReady,
+		/** Hydrate the list from disk, once. The `(vaults)` layout `load` and child page `load`s await it. */
+		ensureHydrated,
 		open,
 		close,
 		get,

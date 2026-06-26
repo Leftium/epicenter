@@ -6,13 +6,13 @@ import type { PageLoad } from './$types';
  * Resolve the route's opaque id back to a vault root. The persisted list is the only
  * place `id -> root` lives, so a not-open id (a stale deep-link or a closed tab) is a
  * clean 404 rendered by `+error.svelte`, not a crash. The persisted list hydrates async,
- * so await `whenReady` first: resolving before the tabs land would 404 a valid id on a
+ * so `ensureHydrated` first: resolving before the tabs land would 404 a valid id on a
  * cold launch. Returns the root only (serializable); the LIVE vault is constructed in the
  * component, since a watcher cannot leave `load`, and the tab/title label is
  * `basename(root)`, derived at render.
  */
 export const load: PageLoad = async ({ params }) => {
-	await openVaults.whenReady;
+	await openVaults.ensureHydrated();
 	const vault = openVaults.get(params.id);
 	if (!vault) error(404, 'This vault is not open.');
 	return { root: vault.root };

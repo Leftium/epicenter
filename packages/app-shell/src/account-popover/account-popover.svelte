@@ -40,7 +40,7 @@
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
 	type AccountPopoverProps = {
-		/** The auth client from `createOAuthAppAuth()`. */
+		/** The app's auth client (from `createAppAuthClient()` or the dashboard's `createSameOriginCookieAuth()`). */
 		auth: AuthClient;
 		/**
 		 * Sync surface slice from the binding's optional `collaboration`.

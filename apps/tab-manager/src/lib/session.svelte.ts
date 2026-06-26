@@ -1,8 +1,7 @@
 import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
-import type { SyncAuthClient } from '@epicenter/auth';
+import type { InstanceSetting, SyncAuthClient } from '@epicenter/auth';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
-import { APP_URLS } from '@epicenter/constants/vite';
-import { createOAuthAppAuth, createSession } from '@epicenter/svelte/auth';
+import { createAppAuthClient, createSession } from '@epicenter/svelte/auth';
 import { generateId } from '@epicenter/workspace';
 import {
 	createDispatchToolCatalog,
@@ -15,6 +14,7 @@ import {
 } from './chat/system-prompt';
 import { createDeviceProfile, registerDevice } from './device';
 import {
+	instanceSettingPromise,
 	oauthLauncher,
 	persistedAuthStoragePromise,
 } from './platform/auth/auth';
@@ -37,19 +37,24 @@ import { openTabManagerBrowser } from './tab-manager/extension';
  * signed in.
  */
 let authClient: SyncAuthClient | undefined;
+let instanceSettingValue: InstanceSetting | undefined;
 let session: ReturnType<typeof buildSession> | undefined;
 
 const whenReady = Promise.all([
 	persistedAuthStoragePromise,
+	instanceSettingPromise,
 	createDeviceProfile(),
-]).then(([persistedAuthStorage, profile]) => {
-	const auth = createOAuthAppAuth({
-		baseURL: APP_URLS.API,
+]).then(([persistedAuthStorage, instanceSetting, profile]) => {
+	// One choke point: the persisted instance picks hosted OAuth vs a self-host
+	// token (ADR-0071). The launcher is the hosted-constant extension launcher,
+	// used only by the OAuth branch.
+	const auth = createAppAuthClient(instanceSetting.read(), {
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		persistedAuthStorage,
 		launcher: oauthLauncher,
 	});
 	authClient = auth;
+	instanceSettingValue = instanceSetting;
 	session = buildSession(auth, profile);
 });
 
@@ -123,6 +128,14 @@ export const tabManagerSession = {
 			throw new Error('[tab-manager] auth read before storage readiness.');
 		}
 		return authClient;
+	},
+	get instanceSetting(): InstanceSetting {
+		if (!instanceSettingValue) {
+			throw new Error(
+				'[tab-manager] instanceSetting read before storage readiness.',
+			);
+		}
+		return instanceSettingValue;
 	},
 	get current() {
 		if (!session) {

@@ -1,17 +1,16 @@
 import {
 	type AuthClient,
-	type CreateInstanceTokenAuthConfig,
-	type CreateOAuthAppAuthConfig,
+	type CreateAppAuthClientOptions,
 	type CreateSameOriginCookieAuthConfig,
-	createInstanceTokenAuth as createCoreInstanceTokenAuth,
-	createOAuthAppAuth as createCoreOAuthAppAuth,
+	createAppAuthClient as createCoreAppAuthClient,
 	createSameOriginCookieAuth as createCoreSameOriginCookieAuth,
+	type Instance,
 	type SyncAuthClient,
 } from '@epicenter/auth';
 import { createSubscriber } from 'svelte/reactivity';
 
 // `createSession`/`SignedIn` bind a `SyncAuthClient` (produced by the reactive
-// `createOAuthAppAuth` below) to a workspace lifecycle, so the whole reactive
+// `createAppAuthClient` below) to a workspace lifecycle, so the whole reactive
 // auth + session story is one subpath. Re-exported here rather than from the
 // package root, which stays pure workspace-data reactivity (`fromTable`, etc.).
 export { createSession, type SignedIn } from './session.svelte.js';
@@ -37,25 +36,16 @@ function reactiveAuthClient<T extends AuthClient>(auth: T): T {
 }
 
 /**
- * Svelte 5 wrapper around `createOAuthAppAuth` (PKCE/bearer client for
- * cross-origin and native runtimes). Returns a `SyncAuthClient`, so it can be
- * passed to `createSession` for cloud sync.
+ * Svelte 5 wrapper around `createAppAuthClient`: the one client-side choke point
+ * that turns a persisted `Instance` into a hosted-OAuth or self-host-token
+ * client (the branch is internal). Returns a Svelte-reactive `SyncAuthClient`,
+ * so it can be passed to `createSession` for cloud sync.
  */
-export function createOAuthAppAuth(
-	config: CreateOAuthAppAuthConfig,
+export function createAppAuthClient(
+	instance: Instance,
+	options: CreateAppAuthClientOptions,
 ): SyncAuthClient {
-	return reactiveAuthClient(createCoreOAuthAppAuth(config));
-}
-
-/**
- * Svelte 5 wrapper around `createInstanceTokenAuth` (static-bearer client for a
- * prebuilt app pointed at a self-hosted star). Returns a `SyncAuthClient`, so it
- * is a drop-in for `createSession` wherever `createOAuthAppAuth` would be used.
- */
-export function createInstanceTokenAuth(
-	config: CreateInstanceTokenAuthConfig,
-): SyncAuthClient {
-	return reactiveAuthClient(createCoreInstanceTokenAuth(config));
+	return reactiveAuthClient(createCoreAppAuthClient(instance, options));
 }
 
 /**

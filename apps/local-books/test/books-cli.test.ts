@@ -1,0 +1,84 @@
+/**
+ * The new verbs through the real CLI: `query` over a seeded mirror, the
+ * `recategorize` read-only refusal (the precondition that replaced the old
+ * capability lattice's read-only mode), and `demo` building a sample company.
+ * Driving the binary proves argv parsing, realm resolution, and exit codes, not
+ * just the cores (covered in src/books/*.test.ts).
+ */
+
+import { expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { openBooksDb } from '../src/db.ts';
+import { tempDir } from './helpers.ts';
+
+const BIN = join(import.meta.dir, '../src/bin.ts');
+
+async function runCli(args: string[], env: Record<string, string> = {}) {
+	const proc = Bun.spawn([process.execPath, BIN, ...args], {
+		env: { ...process.env, ...env },
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { stdout, stderr, exitCode };
+}
+
+/** Seed a mirror at <dir>/r1/books.db with one live invoice. */
+function seedMirror(dir: string): void {
+	const db = openBooksDb(join(dir, 'r1', 'books.db'));
+	db.raw.exec(`
+		CREATE TABLE invoices (
+			id TEXT PRIMARY KEY, raw TEXT NOT NULL, updated_at TEXT,
+			synced_at TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
+			doc_number TEXT, total_amt REAL
+		);
+		INSERT INTO invoices (id, raw, synced_at, deleted, doc_number, total_amt) VALUES
+			('1', '{"Id":"1"}', '2026-01-01', 0, 'INV-1', 8000.0);
+	`);
+	db.close();
+}
+
+test('CLI: `query` returns mirror rows as JSON', async () => {
+	const tmp = tempDir();
+	seedMirror(tmp.dir);
+	const res = await runCli(
+		[
+			'query',
+			'--realm',
+			'r1',
+			'--data-dir',
+			tmp.dir,
+			'SELECT doc_number, total_amt FROM invoices WHERE deleted = 0',
+		],
+	);
+	expect(res.exitCode).toBe(0);
+	const rows = JSON.parse(res.stdout);
+	expect(rows).toEqual([{ doc_number: 'INV-1', total_amt: 8000 }]);
+	tmp.cleanup();
+});
+
+test('CLI: `recategorize` is refused under LOCAL_BOOKS_READ_ONLY', async () => {
+	const tmp = tempDir();
+	const res = await runCli(
+		['recategorize', 'Purchase', 'p1', '--to', '61', '--realm', 'r1', '--data-dir', tmp.dir],
+		{ LOCAL_BOOKS_READ_ONLY: '1' },
+	);
+	expect(res.exitCode).toBe(1);
+	expect(res.stderr).toContain('Refusing to write');
+	tmp.cleanup();
+});
+
+test('CLI: `demo` builds a sample company and prints example answers', async () => {
+	const tmp = tempDir();
+	const res = await runCli(['demo', '--data-dir', tmp.dir]);
+	expect(res.exitCode).toBe(0);
+	expect(res.stdout).toContain('sample company');
+	expect(res.stdout).toContain('Who owes us money');
+	expect(existsSync(join(tmp.dir, 'demo', 'books.db'))).toBe(true);
+	tmp.cleanup();
+});

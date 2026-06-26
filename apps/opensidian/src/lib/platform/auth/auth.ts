@@ -1,25 +1,38 @@
 import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
-import { APP_URLS } from '@epicenter/constants/vite';
-import { createOAuthAppAuth } from '@epicenter/svelte/auth';
+import {
+	createInstanceTokenAuth,
+	createOAuthAppAuth,
+} from '@epicenter/svelte/auth';
 import { base } from '$app/paths';
+import { readInstance } from '$lib/instance';
 
-export const auth = createOAuthAppAuth({
-	baseURL: APP_URLS.API,
-	clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
-	persistedAuthStorage: createWebStoragePersistedAuthStorage({
-		key: 'opensidian.auth.persisted',
-		storage: window.localStorage,
-	}),
-	launcher: createBrowserOAuthLauncher({
-		issuer: `${APP_URLS.API}/auth`,
-		clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
-		redirectUri: `${window.location.origin}${base}/auth/callback`,
-		resource: APP_URLS.API,
-		storage: window.sessionStorage,
-	}),
-});
+const instance = readInstance();
+
+// A configured instance token means a self-hosted star: authenticate with the
+// static bearer (ADR-0070) instead of OAuth. Otherwise the OAuth flow runs
+// against the instance origin, which is the hosted cloud by default.
+export const auth = instance.token
+	? createInstanceTokenAuth({
+			baseURL: instance.baseURL,
+			token: instance.token,
+		})
+	: createOAuthAppAuth({
+			baseURL: instance.baseURL,
+			clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
+			persistedAuthStorage: createWebStoragePersistedAuthStorage({
+				key: 'opensidian.auth.persisted',
+				storage: window.localStorage,
+			}),
+			launcher: createBrowserOAuthLauncher({
+				issuer: `${instance.baseURL}/auth`,
+				clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
+				redirectUri: `${window.location.origin}${base}/auth/callback`,
+				resource: instance.baseURL,
+				storage: window.sessionStorage,
+			}),
+		});
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {

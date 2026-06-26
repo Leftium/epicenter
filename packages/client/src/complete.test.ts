@@ -72,11 +72,14 @@ describe('complete over the OpenAI chat wire', () => {
 			),
 		);
 
-		await complete(resolveConnection({ baseUrl: 'http://localhost:11434/v1/' }), {
-			model: 'llama3',
-			systemPrompt: '',
-			userPrompt: 'hi',
-		});
+		await complete(
+			resolveConnection({ baseUrl: 'http://localhost:11434/v1/' }),
+			{
+				model: 'llama3',
+				systemPrompt: '',
+				userPrompt: 'hi',
+			},
+		);
 
 		expect(seen[0]?.url).toBe('http://localhost:11434/v1/chat/completions');
 	});

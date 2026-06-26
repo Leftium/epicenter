@@ -179,7 +179,8 @@ export async function listModels(
 	resolved: ResolvedConnection,
 ): Promise<Result<string[], ListModelsError>> {
 	const { data: response, error: requestError } = await tryAsync({
-		try: () => resolved.fetch(joinUrl(resolved.baseURL, 'models'), { method: 'GET' }),
+		try: () =>
+			resolved.fetch(joinUrl(resolved.baseURL, 'models'), { method: 'GET' }),
 		catch: (cause) => ListModelsError.Unreachable({ cause }),
 	});
 	if (requestError) return Err(requestError);

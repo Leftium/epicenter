@@ -3,6 +3,7 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SquareIcon from '@lucide/svelte/icons/square';
+	import type { Snippet } from 'svelte';
 
 	let {
 		value = $bindable(''),
@@ -11,6 +12,7 @@
 		onSend,
 		onStop,
 		placeholder = 'Type a message…',
+		accessory,
 	}: {
 		/** The draft being typed. Bindable so the parent can own where it lives. */
 		value?: string;
@@ -23,6 +25,9 @@
 		onSend: (content: string) => void;
 		onStop: () => void;
 		placeholder?: string;
+		/** Optional control rendered at the left of the input row, before the
+		 * textarea (Vocab's dictation mic). Omit it and the row is text plus send. */
+		accessory?: Snippet;
 	} = $props();
 
 	function submit() {
@@ -40,6 +45,7 @@
 		submit();
 	}}
 >
+	{@render accessory?.()}
 	<Textarea
 		class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
 		rows={1}

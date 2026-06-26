@@ -66,41 +66,30 @@ const COMPLETION_CONFIG = {
 >;
 
 /**
- * The bespoke (non-wire) completion providers, keyed by id. These keep their own
- * SDK clients because they do not speak the OpenAI chat wire: Anthropic requires
- * `max_tokens` and returns content blocks, Google takes one combined prompt and
- * uses `generateContent`. The same wire-vs-bespoke split as the transcription
- * collapse; ADR-0060 blesses the exception.
+ * How a completion provider is reached. A `wire` provider builds a `Connection`
+ * (the endpoint override beats `defaultBaseUrl`; Custom has no default, its base IS
+ * the user's endpoint) and calls the shared `complete()`; a `bespoke` provider
+ * keeps its own SDK client. The `kind` discriminant carries the routing, so there
+ * is no wire-vs-bespoke id subset and no guard: one branch on `.kind`.
+ *
+ * The config keys stay in COMPLETION_CONFIG (the editor reads them too); the one
+ * fact it does not hold is the canonical wire base URL, so that lives here.
+ * Anthropic and Google stay bespoke because they do not speak the OpenAI chat wire
+ * (Anthropic needs `max_tokens` and returns content blocks; Google combines the
+ * prompt into `generateContent`); ADR-0060 blesses the exception.
  */
-const BESPOKE_COMPLETIONS = {
-	Anthropic: services.completions.anthropic,
-	Google: services.completions.google,
-} satisfies Partial<Record<InferenceProviderId, CompletionService>>;
+type CompletionDispatch =
+	| { kind: 'wire'; defaultBaseUrl: string | null }
+	| { kind: 'bespoke'; service: CompletionService };
 
-type BespokeCompletionProviderId = keyof typeof BESPOKE_COMPLETIONS;
-
-function isBespokeCompletionProvider(
-	provider: InferenceProviderId,
-): provider is BespokeCompletionProviderId {
-	return provider in BESPOKE_COMPLETIONS;
-}
-
-/**
- * The canonical OpenAI chat-wire base URL for each wire provider (OpenAI, Groq,
- * OpenRouter, Custom: everything that is not bespoke). The endpoint override, when
- * the provider has one, wins over this default. Custom has no default: its base IS
- * the user's endpoint, which is required. `satisfies Record<Exclude<...>, ...>`
- * ties this to the bespoke split, so a new wire provider must add a base here.
- */
-const WIRE_DEFAULT_BASE_URLS = {
-	OpenAI: 'https://api.openai.com/v1',
-	Groq: 'https://api.groq.com/openai/v1',
-	OpenRouter: 'https://openrouter.ai/api/v1',
-	Custom: null,
-} satisfies Record<
-	Exclude<InferenceProviderId, BespokeCompletionProviderId>,
-	string | null
->;
+const COMPLETION_DISPATCH = {
+	OpenAI: { kind: 'wire', defaultBaseUrl: 'https://api.openai.com/v1' },
+	Groq: { kind: 'wire', defaultBaseUrl: 'https://api.groq.com/openai/v1' },
+	OpenRouter: { kind: 'wire', defaultBaseUrl: 'https://openrouter.ai/api/v1' },
+	Custom: { kind: 'wire', defaultBaseUrl: null },
+	Anthropic: { kind: 'bespoke', service: services.completions.anthropic },
+	Google: { kind: 'bespoke', service: services.completions.google },
+} satisfies Record<InferenceProviderId, CompletionDispatch>;
 
 /**
  * The deviceConfig keys a provider reads. Exposed so the editor can warn when the
@@ -112,8 +101,7 @@ export function getProviderConfigKeys(provider: InferenceProviderId): {
 	apiKeyConfigKey: DeviceConfigKey;
 	endpointConfigKey: DeviceConfigKey | null;
 } {
-	const { apiKeyConfigKey, endpointConfigKey } = COMPLETION_CONFIG[provider];
-	return { apiKeyConfigKey, endpointConfigKey };
+	return COMPLETION_CONFIG[provider];
 }
 
 export const TransformError = defineErrors({
@@ -174,8 +162,9 @@ function runPrompt(
 	const { apiKeyConfigKey, endpointConfigKey } = COMPLETION_CONFIG[provider];
 	const apiKey = deviceConfig.get(apiKeyConfigKey).trim();
 
-	if (isBespokeCompletionProvider(provider)) {
-		return BESPOKE_COMPLETIONS[provider].complete({
+	const dispatch = COMPLETION_DISPATCH[provider];
+	if (dispatch.kind === 'bespoke') {
+		return dispatch.service.complete({
 			apiKey,
 			model,
 			systemPrompt,
@@ -189,7 +178,7 @@ function runPrompt(
 	const override = endpointConfigKey
 		? deviceConfig.get(endpointConfigKey).trim()
 		: '';
-	const baseUrl = override || WIRE_DEFAULT_BASE_URLS[provider];
+	const baseUrl = override || dispatch.defaultBaseUrl;
 	if (!baseUrl) {
 		return Promise.resolve(
 			TransformError.PromptFailed({

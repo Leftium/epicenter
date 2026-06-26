@@ -151,7 +151,6 @@
 		"marked": "catalog:",
 		"mime": "catalog:",
 		"nanoid": "catalog:",
-		"openai": "^5.7.0",
 		"tailwind-variants": "catalog:",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",

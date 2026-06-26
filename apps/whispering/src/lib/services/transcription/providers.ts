@@ -281,9 +281,10 @@ export const PROVIDERS = {
 export type TranscriptionServiceId = keyof typeof PROVIDERS;
 
 /**
- * The ids of cloud providers, derived from PROVIDERS. The dispatch table in
- * `operations/transcribe.ts` is `satisfies Record<CloudProviderId, ...>`, so
- * adding a cloud provider here without a transcriber there is a compile error.
+ * The ids of cloud providers, derived from PROVIDERS. Consumed by the settings UI
+ * to type provider config fields. (Transcription routing no longer keys off this:
+ * `operations/transcribe.ts` dispatches over a single `UPLOAD_DISPATCH` table that
+ * excludes only the local ids.)
  */
 export type CloudProviderId = {
 	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['location'] extends 'cloud'

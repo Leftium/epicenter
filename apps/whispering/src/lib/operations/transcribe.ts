@@ -77,97 +77,106 @@ const TranscriptionOperationError = defineErrors({
 	}),
 });
 
-type BespokeTranscribe = (
-	audio: Blob,
-	options: {
-		prompt: string;
-		spokenLanguage: SupportedLanguage;
-		apiKey: string;
-		modelName: string;
-	},
-) => Promise<Result<string, TranscriptionError>>;
-
-/** A wire provider's resolved target: the Connection to reach and the model to ask for. */
-type WireTarget = { connection: Connection; model: string };
+/**
+ * How an upload (non-local) provider is reached. A `wire` provider assembles a
+ * `Connection` and a model and hands them to the shared `transcribe()`; a
+ * `bespoke` provider keeps its own SDK client (a different wire). The `kind`
+ * discriminant carries the routing, so there is no wire-vs-bespoke id subset to
+ * derive and no `in`-guard: one exhaustive switch on `.kind`.
+ *
+ * A bespoke entry closes over its own key and model (from the literal `PROVIDERS.X`
+ * pointers, the SSOT) rather than letting the caller read `PROVIDERS[id]`, because
+ * switching on `.kind` does not narrow the id back to a CloudProvider. The wire
+ * entries read the same pointers; the one fact `PROVIDERS` does not hold is the
+ * canonical wire base URL (it used to be each SDK's default), so that literal lives
+ * here.
+ */
+type UploadDispatch =
+	| { kind: 'wire'; connection: () => Connection; model: () => string }
+	| {
+			kind: 'bespoke';
+			transcribe: (
+				audio: Blob,
+				options: { prompt: string; spokenLanguage: SupportedLanguage },
+			) => Promise<Result<string, TranscriptionError>>;
+	  };
 
 /**
- * The OpenAI-wire transcription providers, collapsed onto the one shared
- * `transcribe()` client (ADR-0050/0060). Each entry assembles a `Connection` (base
- * URL plus optional key) and a model; the wire and the multipart shaping belong to
- * `@epicenter/client`, not here. A wire provider is not a code path; it is a
- * `Connection` value handed to the same function.
+ * Every upload transcription provider, keyed by id. `satisfies Record<Exclude<
+ * TranscriptionServiceId, LocalProviderId>, UploadDispatch>` makes the table total
+ * over the non-local providers: a new cloud or self-hosted provider is a compile
+ * error until it has an entry, and a local provider cannot appear (it goes through
+ * the FFI path, branched in `transcribeAudio`). The single `Exclude` is the honest
+ * one: "upload" is "not local", and localness is the one facet PROVIDERS declares.
  *
- * The config KEYS come from `PROVIDERS` (the SSOT for which device-config/settings
- * entry holds each fact), read through the typed `*ConfigKey` / `*SettingKey`
- * pointers exactly as the old dispatcher did. The only fact `PROVIDERS` does not
- * hold is the canonical wire base URL (it used to be each SDK's default), so that
- * one literal lives here. The endpoint override, when set, already carries `/v1` by
- * the OpenAI base-URL convention; Speaches is the exception, storing a bare host,
- * so its `/v1` is appended.
+ * Wire entries (OpenAI, Groq, Speaches): the endpoint override beats the canonical
+ * default; Speaches stores a bare host, so its `/v1` is appended; a keyless local
+ * box sends no key. Bespoke entries (ElevenLabs, Deepgram, Mistral) keep their own
+ * clients because they do not speak the wire (Deepgram's raw body + `Authorization:
+ * Token`, ElevenLabs' `xi-api-key`, Mistral's `context_bias`); ADR-0060 blesses it.
  */
-const WIRE_CONNECTIONS = {
-	OpenAI: (): WireTarget => ({
-		connection: {
+const UPLOAD_DISPATCH = {
+	OpenAI: {
+		kind: 'wire',
+		connection: () => ({
 			baseUrl:
 				deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
 				'https://api.openai.com/v1',
 			apiKey: deviceConfig.get(PROVIDERS.OpenAI.apiKeyConfigKey) || undefined,
-		},
-		model: settings.get(PROVIDERS.OpenAI.modelSettingKey),
-	}),
-	Groq: (): WireTarget => ({
-		connection: {
+		}),
+		model: () => settings.get(PROVIDERS.OpenAI.modelSettingKey),
+	},
+	Groq: {
+		kind: 'wire',
+		connection: () => ({
 			baseUrl:
 				deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
 				'https://api.groq.com/openai/v1',
 			apiKey: deviceConfig.get(PROVIDERS.Groq.apiKeyConfigKey) || undefined,
-		},
-		model: settings.get(PROVIDERS.Groq.modelSettingKey),
-	}),
-	speaches: (): WireTarget => ({
-		// The Speaches endpoint config holds a bare host (placeholder
-		// `http://localhost:8000`); the Connection base carries `/v1`, which the
-		// shared client appends the wire path to. No key: a local box is keyless.
-		connection: {
+		}),
+		model: () => settings.get(PROVIDERS.Groq.modelSettingKey),
+	},
+	speaches: {
+		kind: 'wire',
+		connection: () => ({
 			baseUrl: `${deviceConfig.get(PROVIDERS.speaches.endpointConfigKey)}/v1`,
-		},
-		model: deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
-	}),
-} satisfies Partial<Record<TranscriptionServiceId, () => WireTarget>>;
-
-type WireProviderId = keyof typeof WIRE_CONNECTIONS;
-
-function isWireProviderId(id: TranscriptionServiceId): id is WireProviderId {
-	return id in WIRE_CONNECTIONS;
-}
-
-/**
- * The bespoke (non-wire) cloud transcribers, keyed by provider id. These keep
- * their own SDK clients because they do not speak the OpenAI transcription wire:
- * Deepgram takes a raw body under `Authorization: Token`, ElevenLabs an
- * `xi-api-key` with `model_id`, and Mistral's prompt field is `context_bias`, not
- * the OpenAI `prompt`. ADR-0060 blesses this exception.
- *
- * The `satisfies Record<Exclude<TranscriptionServiceId, LocalProviderId |
- * WireProviderId>, ...>` ties the table to PROVIDERS: every non-local provider
- * must be classified as wire (in `WIRE_CONNECTIONS`) or bespoke (here), or it is a
- * compile error. The remainder is all cloud today; a future self-hosted box that
- * does not speak the wire lands here too, so the guard cannot silently drop it.
- */
-const BESPOKE_TRANSCRIBERS = {
-	ElevenLabs: ElevenLabsTranscriptionServiceLive.transcribe,
-	Deepgram: DeepgramTranscriptionServiceLive.transcribe,
-	Mistral: MistralTranscriptionServiceLive.transcribe,
+		}),
+		model: () => deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
+	},
+	ElevenLabs: {
+		kind: 'bespoke',
+		transcribe: (audio, { prompt, spokenLanguage }) =>
+			ElevenLabsTranscriptionServiceLive.transcribe(audio, {
+				prompt,
+				spokenLanguage,
+				apiKey: deviceConfig.get(PROVIDERS.ElevenLabs.apiKeyConfigKey),
+				modelName: settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
+			}),
+	},
+	Deepgram: {
+		kind: 'bespoke',
+		transcribe: (audio, { prompt, spokenLanguage }) =>
+			DeepgramTranscriptionServiceLive.transcribe(audio, {
+				prompt,
+				spokenLanguage,
+				apiKey: deviceConfig.get(PROVIDERS.Deepgram.apiKeyConfigKey),
+				modelName: settings.get(PROVIDERS.Deepgram.modelSettingKey),
+			}),
+	},
+	Mistral: {
+		kind: 'bespoke',
+		transcribe: (audio, { prompt, spokenLanguage }) =>
+			MistralTranscriptionServiceLive.transcribe(audio, {
+				prompt,
+				spokenLanguage,
+				apiKey: deviceConfig.get(PROVIDERS.Mistral.apiKeyConfigKey),
+				modelName: settings.get(PROVIDERS.Mistral.modelSettingKey),
+			}),
+	},
 } satisfies Record<
-	Exclude<TranscriptionServiceId, LocalProviderId | WireProviderId>,
-	BespokeTranscribe
+	Exclude<TranscriptionServiceId, LocalProviderId>,
+	UploadDispatch
 >;
-
-function isBespokeProviderId(
-	id: TranscriptionServiceId,
-): id is Exclude<TranscriptionServiceId, LocalProviderId | WireProviderId> {
-	return id in BESPOKE_TRANSCRIBERS;
-}
 
 function getSpokenLanguage(): SupportedLanguage {
 	const language = settings.get('transcription.language');
@@ -399,39 +408,35 @@ async function transcribeViaUpload(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
+	// `transcribeAudio` routes local providers to `transcribeLocally`, so a local id
+	// is the impossible case here; this guard also narrows `selectedService` off the
+	// local ids so it indexes `UPLOAD_DISPATCH`.
+	if (isLocalProviderId(selectedService)) {
+		return TranscriptionOperationError.NoTranscriptionServiceSelected();
+	}
+
 	const { data: audio, error: loadError } =
 		await loadForCloudUpload(recordingId);
 	if (loadError) return Err(loadError);
 
+	// `auto` language and an empty prompt map to the wire's "unset" (omitted from
+	// the form). No per-provider key-format pre-check: no key just means no header,
+	// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 	const spokenLanguage = getSpokenLanguage();
 	const prompt = settings.get('transcription.prompt');
-
-	// The OpenAI-wire providers (OpenAI, Groq, Speaches) collapse onto the one
-	// shared client: resolve a Connection, call transcribe(). `auto` language and
-	// an empty prompt map to the wire's "unset" (omitted from the form). No more
-	// per-provider key-format pre-check: no key just means no header, and the
-	// server answers 401, surfaced as a RequestFailed carrying that detail.
-	if (isWireProviderId(selectedService)) {
-		const { connection, model } = WIRE_CONNECTIONS[selectedService]();
-		return transcribe(audio, resolveConnection(connection, customFetch), {
-			model,
-			language: spokenLanguage === 'auto' ? undefined : spokenLanguage,
-			prompt: prompt || undefined,
-		});
+	const entry = UPLOAD_DISPATCH[selectedService];
+	switch (entry.kind) {
+		case 'wire':
+			return transcribe(
+				audio,
+				resolveConnection(entry.connection(), customFetch),
+				{
+					model: entry.model(),
+					language: spokenLanguage === 'auto' ? undefined : spokenLanguage,
+					prompt: prompt || undefined,
+				},
+			);
+		case 'bespoke':
+			return entry.transcribe(audio, { prompt, spokenLanguage });
 	}
-
-	// The bespoke cloud providers keep their own SDK clients (different wires).
-	// None take an endpoint override (`endpointConfigKey` is null for all three),
-	// so there is no baseURL to thread; a custom endpoint is a wire provider.
-	if (isBespokeProviderId(selectedService)) {
-		const provider = PROVIDERS[selectedService];
-		return BESPOKE_TRANSCRIBERS[selectedService](audio, {
-			spokenLanguage,
-			prompt,
-			apiKey: deviceConfig.get(provider.apiKeyConfigKey),
-			modelName: settings.get(provider.modelSettingKey),
-		});
-	}
-
-	return TranscriptionOperationError.NoTranscriptionServiceSelected();
 }

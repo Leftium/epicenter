@@ -15,6 +15,11 @@
  *
  * Running the `recategorize` verb is the approval, the human gate ADR-0072 keeps
  * in place of the daemon loop's synchronous approval pause.
+ *
+ * Read-only is a CORE invariant, not an adapter check: the write is refused here
+ * (the single owner) when `readOnly` is set, so the verb-core seam ADR-0072
+ * promises is safe to wrap. A future daemon/MCP adapter over this core cannot
+ * forget the gate and move money, because `readOnly` is a required argument.
  */
 
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -32,6 +37,10 @@ export const RECATEGORIZE_ENTITIES = ['Purchase', 'Bill'] as const;
 export type RecategorizeEntity = (typeof RECATEGORIZE_ENTITIES)[number];
 
 export const RecategorizeError = defineErrors({
+	ReadOnly: () => ({
+		message:
+			'Refusing to write: read-only mode is set (LOCAL_BOOKS_READ_ONLY), so recategorize is disabled. query and report stay available.',
+	}),
 	UnknownEntity: ({ name }: { name: string }) => ({
 		message: `recategorize targets a Purchase (card/cash/check expense) or a Bill (vendor bill), not "${name}".`,
 	}),
@@ -102,11 +111,20 @@ export async function recategorizeExpense({
 	openQb,
 	dbPath,
 	input,
+	readOnly,
 }: {
 	openQb: OpenQbClient;
 	dbPath: string;
 	input: RecategorizeInput;
+	/**
+	 * Whether writes are forbidden. Required (no default) so every caller, the
+	 * CLI today and any future daemon/MCP adapter, must decide explicitly; a
+	 * wrapper cannot silently skip the gate. This core is the single owner of the
+	 * read-only invariant.
+	 */
+	readOnly: boolean;
 }): Promise<Result<RecategorizeResult, RecategorizeError | QbClientError>> {
+	if (readOnly) return RecategorizeError.ReadOnly();
 	const def = entityDef(input.entity);
 	const db = openBooksDb(dbPath);
 	try {

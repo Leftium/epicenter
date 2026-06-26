@@ -36,17 +36,11 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 	}
 	const { config, realmId, store } = company;
 
-	if (config.readOnly) {
-		console.error(
-			'Refusing to write: LOCAL_BOOKS_READ_ONLY is set, so recategorize is disabled (reads only).',
-		);
-		return 1;
-	}
-
 	const openQb = createQbAccess({ config, realmId, store, now: () => Date.now() });
 	const { data, error: writeError } = await recategorizeExpense({
 		openQb,
 		dbPath: dbPath(config.dataDir, realmId),
+		readOnly: config.readOnly,
 		input: {
 			entity,
 			id,

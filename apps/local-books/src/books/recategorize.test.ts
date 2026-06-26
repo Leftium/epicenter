@@ -93,6 +93,7 @@ describe('recategorizeExpense', () => {
 		const { data, error } = await recategorizeExpense({
 			openQb,
 			dbPath: path,
+			readOnly: false,
 			input: {
 				entity: 'Purchase',
 				id: 'p1',
@@ -132,6 +133,7 @@ describe('recategorizeExpense', () => {
 		const { error } = await recategorizeExpense({
 			openQb,
 			dbPath: path,
+			readOnly: false,
 			input: { entity: 'Purchase', id: 'p1', account_id: '77' },
 		});
 		expect(error).not.toBeNull();
@@ -148,9 +150,24 @@ describe('recategorizeExpense', () => {
 		const { error } = await recategorizeExpense({
 			openQb,
 			dbPath: path,
+			readOnly: false,
 			input: { entity: 'Purchase', id: 'does-not-exist', account_id: '77' },
 		});
 		expect(error?.message).toContain('mirror');
+		cleanup();
+	});
+
+	test('refuses the write in read-only mode, leaving QuickBooks untouched', async () => {
+		const { mock, path, openQb, cleanup } = await setup();
+		const { error } = await recategorizeExpense({
+			openQb,
+			dbPath: path,
+			readOnly: true,
+			input: { entity: 'Purchase', id: 'p1', account_id: '77' },
+		});
+		// The gate fires before any QuickBooks call: refused, nothing moved.
+		expect(error?.message).toContain('read-only');
+		expect(mock.hits.update).toBe(0);
 		cleanup();
 	});
 });

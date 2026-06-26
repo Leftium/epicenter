@@ -107,6 +107,12 @@ export type Plan = SubscriptionPlan | OneOffTopUpPlan;
  *  Compared against the model's catalog `credits` at request time. */
 export const FREE_TIER_MAX_CREDITS_PER_CALL = 2;
 
+/** Credits charged per minute of transcribed audio, rounded up per call with a
+ *  floor of one credit, so a two-second clip costs 1 and a 5m30s clip costs 6.
+ *  A convenience rate with wide margin over the cloud STT cost; the free tier's
+ *  monthly grant covers roughly this many minutes before a top-up is needed. */
+export const TRANSCRIPTION_CREDITS_PER_MINUTE = 1;
+
 export const PLANS = {
 	[PLAN_IDS.free]: {
 		id: PLAN_IDS.free,

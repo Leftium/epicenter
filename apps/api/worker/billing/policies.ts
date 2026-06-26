@@ -19,6 +19,13 @@
  *                                  The gateway is house-key-only, so every call
  *                                  is metered (ADR-0054): no BYOK bypass.
  *
+ *   chargeOpenAiTranscriptionCredits  Around `/v1/audio/transcriptions` (the STT
+ *                                  gateway). Meters by audio duration: a cheap
+ *                                  pre-gate denies an empty wallet, then on a 200
+ *                                  the per-minute charge is tracked from the
+ *                                  returned `duration`. Settle-after, so the cost
+ *                                  is known (no reservation lock). House-key-only.
+ *
  * AI reservations use Autumn's lock + `balances.finalize` rather than
  * deduct-then-refund: if the worker dies before finalizing, Autumn
  * auto-releases the hold at its TTL, so a failed request can never silently
@@ -35,7 +42,7 @@
  */
 
 import {
-	type AiChatError,
+	AiChatError,
 	AiChatErrorStatus,
 } from '@epicenter/constants/ai-chat-errors';
 import type { Env } from '@epicenter/server';
@@ -88,6 +95,69 @@ export const chargeOpenAiCreditsWithAutumn = createMiddleware<Env>(
 		);
 	},
 );
+
+// The hosted STT gateway pins one backend (mirrors `STT_UPSTREAM` in the
+// library's transcription route), so the usage event's model and provider are
+// fixed here rather than read from the request.
+const HOSTED_STT_MODEL = 'whisper-large-v3-turbo';
+const HOSTED_STT_PROVIDER = 'groq';
+
+/**
+ * Around `/v1/audio/transcriptions` (the OpenAI-compatible STT gateway). Meters
+ * by audio duration, settled after the call: a cheap pre-gate denies the request
+ * when the wallet is empty (fail closed, answered in the OpenAI error shape so
+ * the client keeps a branchable `error.code`), then on a 200 the actual
+ * per-minute charge is tracked off the after-response queue from the `duration`
+ * the gateway returns. No reservation lock, because the cost is unknown until the
+ * call returns; the pre-gate keeps the settle-after overspend to a single call.
+ * House-key-only (ADR-0054): every call is metered, no BYOK bypass.
+ */
+export const chargeOpenAiTranscriptionCredits = createMiddleware<Env>(
+	async (c, next) => {
+		const billing = billingFor(c);
+
+		const { data: gate, error: gateError } = await billing.checkAiCredits();
+		if (gateError) {
+			return c.json(toOpenAiError(gateError), aiGuardStatus(gateError));
+		}
+		if (!gate.allowed) {
+			const { error: denial } = AiChatError.InsufficientCredits({
+				balance: gate.balance,
+			});
+			return c.json(toOpenAiError(denial), aiGuardStatus(denial));
+		}
+
+		await next();
+
+		if (c.res.status !== 200) return;
+		const seconds = await readTranscriptionSeconds(c.res);
+		c.var.afterResponseQueue.push(
+			billing.trackAiTranscription({
+				seconds,
+				model: HOSTED_STT_MODEL,
+				provider: HOSTED_STT_PROVIDER,
+			}),
+		);
+	},
+);
+
+/**
+ * Read the audio `duration` (seconds) off the gateway's verbose_json response
+ * without disturbing the body streamed to the client (clone + parse, best
+ * effort). Missing or malformed duration yields 0, which the service floors to a
+ * one-credit charge for the otherwise successful call.
+ */
+async function readTranscriptionSeconds(res: Response): Promise<number> {
+	const body = await res
+		.clone()
+		.json()
+		.catch(() => null);
+	if (body && typeof body === 'object' && 'duration' in body) {
+		const { duration } = body as { duration: unknown };
+		if (typeof duration === 'number') return duration;
+	}
+	return 0;
+}
 
 /**
  * Render a guard failure as the OpenAI error envelope. The variant `name`

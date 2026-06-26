@@ -93,7 +93,10 @@ describe('complete over the OpenAI chat wire', () => {
 		}) as unknown as typeof fetch;
 
 		const seen: { url: string; auth: string | null }[] = [];
-		const baseFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+		const baseFetch = (async (
+			url: string | URL | Request,
+			init?: RequestInit,
+		) => {
 			seen.push({
 				url: String(url),
 				auth: new Headers(init?.headers).get('Authorization'),

@@ -25,9 +25,9 @@ import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import {
 	isLocalProviderId,
-	type LocalProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
+	type UploadProviderId,
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
@@ -102,12 +102,10 @@ type UploadDispatch =
 	  };
 
 /**
- * Every upload transcription provider, keyed by id. `satisfies Record<Exclude<
- * TranscriptionServiceId, LocalProviderId>, UploadDispatch>` makes the table total
- * over the non-local providers: a new cloud or self-hosted provider is a compile
- * error until it has an entry, and a local provider cannot appear (it goes through
- * the FFI path, branched in `transcribeAudio`). The single `Exclude` is the honest
- * one: "upload" is "not local", and localness is the one facet PROVIDERS declares.
+ * Every upload transcription provider, keyed by id. `satisfies Record<UploadProviderId,
+ * UploadDispatch>` makes the table total over the non-local providers: a new cloud or
+ * self-hosted provider is a compile error until it has an entry, and a local provider
+ * cannot appear (it goes through the FFI path, branched in `transcribeAudio`).
  *
  * Wire entries (OpenAI, Groq, Speaches): the endpoint override beats the canonical
  * default; Speaches stores a bare host, so its `/v1` is appended; a keyless local
@@ -173,10 +171,7 @@ const UPLOAD_DISPATCH = {
 				modelName: settings.get(PROVIDERS.Mistral.modelSettingKey),
 			}),
 	},
-} satisfies Record<
-	Exclude<TranscriptionServiceId, LocalProviderId>,
-	UploadDispatch
->;
+} satisfies Record<UploadProviderId, UploadDispatch>;
 
 function getSpokenLanguage(): SupportedLanguage {
 	const language = settings.get('transcription.language');

@@ -309,6 +309,14 @@ export function isLocalProviderId(
 	return PROVIDERS[id].location === 'local';
 }
 
+/**
+ * The upload providers: every non-local id, reached by uploading audio over the
+ * wire (cloud and self-hosted) rather than the on-device FFI path. "Upload" is
+ * "not local", and localness is the one facet PROVIDERS declares, so the
+ * subtraction reads as English. `UPLOAD_DISPATCH` is keyed by exactly this set.
+ */
+export type UploadProviderId = Exclude<TranscriptionServiceId, LocalProviderId>;
+
 /** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(
 	PROVIDERS,

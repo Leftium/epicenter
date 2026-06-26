@@ -36,10 +36,16 @@ Slice 1 (earlier, on worktree/quiet-cloud-784d):
   917dd28  feat(api): meter the hosted STT gateway per audio minute        (Slice 1.2 metering)
   803a2fc  docs(trust): hosted STT/chat gateway audio handling + recipe    (Slice 1.4)
 
-Gap-close + Slice 2 (this branch):
+Gap-close + Slice 2 + greenfield fix (this branch):
   3f1a440  refactor(client): transcribe consumes the resolved transport    (gap closed)
   93157a9  feat(whispering): route the wire transcribers through the shared client
   2d3d4f4  refactor(whispering): delete the collapsed wire transcribers
+  8460e6e  refactor(whispering): read wire config through the PROVIDERS pointers (review fix)
+
+Slice 3 (this branch):
+  d9d19f5  feat(client): complete() non-streaming chat completion on the Connection floor
+  86cdccb  feat(whispering): route the wire refine providers through complete()
+  eeb7d59  refactor(whispering): delete the collapsed wire completion services
 ```
 
 Decisions taken (owner-confirmed): hosted backend = Groq `whisper-large-v3-turbo`
@@ -61,14 +67,23 @@ collapse into a Connection registry.
 Ops follow-up: provision `GROQ_API_KEY` in the deploy (Infisical) before the
 hosted route serves; absent, it answers 503 ProviderNotConfigured.
 
-NOT done in Slice 2 (flagged, not headless-verifiable): a **live cloud smoke**
-(needs a real provider key) confirming a real OpenAI/Groq/Speaches transcription
-still works end to end through `transcribe()`. Typecheck + tests + desktop
-in-process-unchanged are proven.
+Slice 3 outcome (owner-confirmed): refine's 4 wire providers (OpenAI/Groq/
+OpenRouter/Custom) route through the new `complete()` on the Connection floor;
+Anthropic/Google stay **bespoke** (non-wire, same call as Deepgram/ElevenLabs).
+`COMPLETION_PROVIDERS` deleted; `openai` SDK dropped from Whispering. The shared
+`@epicenter/refine` **package** extraction is deferred (no 2nd consumer yet).
 
-NEXT: **Slice 1.3** (wire vocab, below), then Slice 3. Slice 1.3 needs live
-OAuth + a mic + `GROQ_API_KEY` to verify end to end; build a minimal recorder in
-vocab (do not extract a package yet, grilled).
+NOT done (flagged, not headless-verifiable):
+- Slice 2 **live cloud smoke** (a real OpenAI/Groq/Speaches transcription through
+  `transcribe()`); needs a provider key.
+- Slice 3 **live refine smoke** + a browser-tab smoke (refine is now plain
+  `fetch`, no `dangerouslyAllowBrowser`); needs a provider key.
+Typecheck + every package's tests + desktop in-process-unchanged are proven.
+
+NEXT: **Slice 1.3** (wire vocab, below) is the only remaining slice. It needs
+live OAuth + a mic + `GROQ_API_KEY` to verify end to end; build a minimal
+recorder in vocab (do not extract a package yet, grilled). After it lands and the
+live smokes pass, delete this handoff + the spec (two-state lifecycle).
 
 ## Order of work
 

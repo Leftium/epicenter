@@ -256,10 +256,12 @@ transcribe(audio, { baseUrl: 'http://localhost:8000/v1' }, { model });          
 
 ### Phase 3: refine as a library on the Connection floor (Build, Prove, Remove)
 
-- [ ] **3.1** Build: extract the refine engine (`runTransformation` / `executeTransformation`) into a pure library that consumes `resolveConnection`; the signing/privileged variant is injected at connection resolution, never held by the library.
-- [ ] **3.2** Prove: refine runs unchanged in Whispering; a browser-tab smoke proves it runs with no native shell.
-- [ ] **3.3** Remove: delete `transform.ts`'s `COMPLETION_PROVIDERS` map; provider knowledge lives only in the Connection floor.
-- [ ] **3.4** Keep the UI embedded in Whispering. Spin out a standalone surface only when a second app wants the selected-text picker (composition-map open question 1).
+The collapse mirrored Slice 2 exactly. The owner confirmed Anthropic/Google stay **bespoke** (they do not speak the wire: Anthropic requires `max_tokens` + returns content blocks, Google takes one combined prompt + `generateContent`), the same wire-vs-bespoke split as Deepgram/ElevenLabs for transcription.
+
+- [x] **3.1** Build: the refine prompt step consumes the Connection floor. _Done: added `complete(resolved, {model, systemPrompt, userPrompt})` to `@epicenter/client` (the non-streaming sibling of `transcribe` + the agent engine), and routed `transform.ts`'s 4 wire providers (OpenAI/Groq/OpenRouter/Custom) through it via `resolveConnection`. The full **package** extraction (a shared `@epicenter/refine` for vocab/writing-app) is deferred to 3.4: no second consumer yet, so extracting now is speculative (same call as the recorder)._
+- [x] **3.3** Remove: delete the provider->SDK dispatch. _Done: `COMPLETION_PROVIDERS` (provider->`service`) is gone, replaced by `COMPLETION_CONFIG` (the config-key SSOT the editor still reads) + `BESPOKE_COMPLETIONS` (Anthropic/Google) + `WIRE_DEFAULT_BASE_URLS`. Deleted `openai-compatible.ts` + `openai.ts`/`groq.ts`/`openrouter.ts`/`custom.ts`; dropped the orphaned `openai` dependency (refine was its last consumer after Slice 2); pruned the now-dead `MissingParam` error + `baseUrl` option. One deliberate, reversible loss: OpenRouter's `HTTP-Referer`/`X-Title` attribution headers (the ADR-0060 connection `headers` widening is the trigger to restore them)._
+- [x] **3.2** Prove: _Done headless: whole-monorepo typecheck 0 errors, client 16 + whispering 61 tests pass. The wire path is now a plain `fetch` (no `dangerouslyAllowBrowser`), so refine is **more** browser-friendly than before. NOT done: a live browser-tab smoke + a live cloud refine, flagged._
+- [x] **3.4** Keep the UI embedded in Whispering; defer the shared `@epicenter/refine` package until a second app wants the selected-text picker (composition-map open question 1). _Affirmed: package extraction deferred; `runTransformation`/`executeTransformation`/persistence stay in Whispering (≈10 callers, synced `Transformation` types)._
 
 ### Deferred
 

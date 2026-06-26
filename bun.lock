@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -218,8 +217,6 @@
         "local-books": "./src/bin.ts",
       },
       "dependencies": {
-        "@epicenter/chat": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "ms": "catalog:",
         "oauth4webapi": "catalog:",
         "typebox": "catalog:",

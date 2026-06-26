@@ -59,10 +59,10 @@ export type AppConfig = {
 	 */
 	callbackPort: number | null;
 	/**
-	 * Serve the agent a read-only surface: the daemon advertises the read tools
-	 * (`books_sql_query`, `books_report`) but withholds the QuickBooks write tool
-	 * (`recategorize_expense`). A safety posture for letting an agent analyze the
-	 * books without granting it the power to mutate QuickBooks. `LOCAL_BOOKS_READ_ONLY`.
+	 * Reads only: the `query` and `report` verbs stay available, but `recategorize`
+	 * (the one QuickBooks write) is refused. The safety posture for "analyze my
+	 * books, do not mutate them", whether you run the verbs yourself or hand the
+	 * `books.db` to an agent. `LOCAL_BOOKS_READ_ONLY`.
 	 */
 	readOnly: boolean;
 };

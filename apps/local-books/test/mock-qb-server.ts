@@ -368,7 +368,7 @@ export function makeInvoice(
 
 /**
  * Minimal but realistic QuickBooks Purchase (an expense): one account-based
- * expense line whose `AccountRef` is the category recategorize_expense moves.
+ * expense line whose `AccountRef` is the category the `recategorize` verb moves.
  */
 export function makePurchase(
 	id: string,

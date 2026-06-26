@@ -1,30 +1,19 @@
 /**
- * `books_report` reached as a dispatched action, driven against the mock
- * QuickBooks Reports endpoint. Proves the live passthrough: a tool call hits the
- * QuickBooks Reports API (no mirror, no cache) and the report comes back with the
- * period params passed through.
+ * `fetchReport` driven against the mock QuickBooks Reports endpoint: the live
+ * passthrough (a call hits the Reports API, no mirror, no cache) with the period
+ * params passed through. The CLI `report` verb is a thin adapter over this.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	createDispatchToolCatalog,
-	type DispatchSurface,
-} from '@epicenter/workspace/agent';
-import { Ok } from 'wellcrafted/result';
 import { makeConfig } from '../../test/helpers.ts';
 import { startMockQbServer } from '../../test/mock-qb-server.ts';
 import { createFileTokenStore } from '../token-store.ts';
 import type { TokenSet } from '../tokens.ts';
-import { createBooksAgentActions } from './books-actions.ts';
 import { createQbAccess } from './qb-access.ts';
-
-const LOCAL_ONLY: DispatchSurface = {
-	peers: { list: () => [] },
-	dispatch: () => Promise.resolve(Ok(null)),
-};
+import { fetchReport } from './report.ts';
 
 const NOW = Date.parse('2026-02-01T00:00:00.000Z');
 const now = () => NOW;
@@ -52,15 +41,9 @@ async function setup() {
 	await store.set(token);
 
 	const openQb = createQbAccess({ config, realmId: mock.realmId, store, now });
-	const catalog = createDispatchToolCatalog(LOCAL_ONLY, {
-		localActions: createBooksAgentActions({
-			dbPath: join(dir, mock.realmId, 'books.db'),
-			openQb,
-		}),
-	});
 	return {
 		mock,
-		catalog,
+		openQb,
 		cleanup: () => {
 			mock.stop();
 			rmSync(dir, { recursive: true, force: true });
@@ -68,32 +51,29 @@ async function setup() {
 	};
 }
 
-describe('books_report as a dispatched action', () => {
+describe('fetchReport', () => {
 	test('runs a report live against QuickBooks and passes the period through', async () => {
-		const { mock, catalog, cleanup } = await setup();
+		const { mock, openQb, cleanup } = await setup();
 
-		const outcome = await catalog.resolve(
-			{
-				toolCallId: 't1',
-				toolName: 'books_report',
-				input: {
-					report: 'ProfitAndLoss',
-					start_date: '2026-01-01',
-					end_date: '2026-03-31',
-				},
+		const { data, error } = await fetchReport({
+			openQb,
+			input: {
+				report: 'ProfitAndLoss',
+				start_date: '2026-01-01',
+				end_date: '2026-03-31',
 			},
-			new AbortController().signal,
-		);
+		});
 
-		expect(outcome.isError).toBe(false);
+		expect(error).toBeNull();
 		expect(mock.hits.report).toBe(1);
-		const output = outcome.output as {
-			report: string;
-			data: { Header: { ReportName: string; StartPeriod: string } };
-		};
-		expect(output.report).toBe('ProfitAndLoss');
-		expect(output.data.Header.ReportName).toBe('ProfitAndLoss');
-		expect(output.data.Header.StartPeriod).toBe('2026-01-01');
+		expect(data?.report).toBe('ProfitAndLoss');
+		const header = (
+			data?.data as {
+				Header: { ReportName: string; StartPeriod: string };
+			}
+		).Header;
+		expect(header.ReportName).toBe('ProfitAndLoss');
+		expect(header.StartPeriod).toBe('2026-01-01');
 		cleanup();
 	});
 });

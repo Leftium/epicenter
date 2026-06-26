@@ -1,9 +1,12 @@
 /**
- * Lazily open a write-capable QuickBooks client for the daemon's realm. The
- * agent action layer never holds QB credentials directly; instead the mount
- * hands the write tools this thunk. It reloads the token from the token store on
- * each call, so it always starts from the newest persisted (possibly rotated)
- * credentials and stays out of the mount's synchronous `compose` path.
+ * Lazily open a write-capable QuickBooks client for a realm. The `report` and
+ * `recategorize` verbs (the live-QuickBooks capabilities) hold this thunk rather
+ * than credentials: it reloads the token from the store on each call, so it
+ * always starts from the newest persisted (possibly rotated) credentials.
+ *
+ * It is its own seam so the live capabilities never reach into the token store
+ * directly, and so a future daemon (ADR-0072) can hand the same opener to the
+ * action wrappers it builds over these cores.
  */
 
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -30,7 +33,7 @@ export function createQbAccess({
 		const token = await store.get(realmId);
 		if (!token) {
 			return Err(
-				`No stored token for company ${realmId}. Run "local-books auth" on the host that runs this daemon.`,
+				`No stored credentials for company ${realmId}. Run "local-books auth".`,
 			);
 		}
 		const tokens = createTokenManager({ config, store, token, now });

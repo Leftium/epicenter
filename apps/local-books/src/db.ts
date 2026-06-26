@@ -324,9 +324,9 @@ export function openBooksDb(path: string) {
 		 * Read one live row's verbatim QB blob by id, or `null` if the entity table
 		 * does not exist yet, the row is unknown, or it is soft-deleted. The read
 		 * counterpart to `ingest`: callers reach a mirror row without hand-writing SQL
-		 * against a table name. (`books_sql_query` keeps its own read-only connection
-		 * for arbitrary queries; this serves the write-capable handle the write-back
-		 * already holds.)
+		 * against a table name. (`queryBooks` keeps its own read-only connection for
+		 * arbitrary queries; this serves the write-capable handle the recategorize
+		 * write-back already holds.)
 		 */
 		getLiveRaw(def: EntityDef, id: string): string | null {
 			if (!tableExists(def.table)) return null;

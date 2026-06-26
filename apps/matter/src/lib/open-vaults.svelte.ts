@@ -29,13 +29,19 @@
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { LazyStore } from '@tauri-apps/plugin-store';
+import { type } from 'arktype';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { routes } from '$lib/routes';
 
 /** One open vault as persisted: an opaque id and the absolute vault-root path. The tab label is
  *  `basename(root)`, derived at render, not stored. */
-export type OpenVault = { id: string; root: string };
+const OpenVault = type({ id: 'string', root: 'string' });
+export type OpenVault = typeof OpenVault.infer;
+
+/** The persisted shape: the tab list, in order. Reading the store back through this is what
+ *  turns a stale or hand-edited file into "no tabs" rather than a crash. */
+const OpenVaultList = OpenVault.array();
 
 const STORE_FILE = 'open-vaults.json';
 const STORE_KEY = 'vaults';
@@ -53,20 +59,6 @@ async function openFolderDialog(): Promise<string | null> {
 	return path;
 }
 
-/** Is `value` a list we can trust? A corrupt or stale store degrades to no tabs. */
-function isOpenVaultList(value: unknown): value is OpenVault[] {
-	return (
-		Array.isArray(value) &&
-		value.every(
-			(entry): entry is OpenVault =>
-				typeof entry === 'object' &&
-				entry !== null &&
-				typeof (entry as OpenVault).id === 'string' &&
-				typeof (entry as OpenVault).root === 'string',
-		)
-	);
-}
-
 function createOpenVaults() {
 	const store = new LazyStore(STORE_FILE);
 	// The list IS the tabs, in order. Empty until `ensureHydrated` fills it from disk.
@@ -77,7 +69,7 @@ function createOpenVaults() {
 	// awaits this before the group renders, so it is the readiness gate and the strip needs no
 	// skeleton. Memoized on `hydration`, so however many loads await it, the read runs once.
 	// `LazyStore.get()` loads the file on first access, so there is no separate `load()` step.
-	// Two failure modes both degrade to no tabs: a malformed shape (rejected by `isOpenVaultList`)
+	// Two failure modes both degrade to no tabs: a malformed shape (rejected by `OpenVaultList`)
 	// and an unreadable or corrupt file (`get()` rejects, caught here); either way the next
 	// `open`/`close` rewrites a clean file. SSR has no Tauri runtime, so skip the read.
 	function ensureHydrated(): Promise<void> {
@@ -86,8 +78,8 @@ function createOpenVaults() {
 	async function read(): Promise<void> {
 		if (!browser) return;
 		try {
-			const raw = await store.get<OpenVault[]>(STORE_KEY);
-			if (isOpenVaultList(raw)) vaults = raw;
+			const restored = OpenVaultList(await store.get(STORE_KEY));
+			if (!(restored instanceof type.errors)) vaults = restored;
 		} catch {
 			// A failed read is "no tabs", same as a fresh install.
 		}

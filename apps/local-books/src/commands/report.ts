@@ -1,9 +1,5 @@
 import { createQbAccess } from '../books/qb-access.ts';
-import {
-	fetchReport,
-	parseReportName,
-	REPORT_NAMES,
-} from '../books/report.ts';
+import { fetchReport, parseReportName, REPORT_NAMES } from '../books/report.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { resolveCompany } from './context.ts';
 
@@ -44,10 +40,20 @@ export async function runReport(args: ParsedArgs): Promise<number> {
 	}
 	const { config, realmId, store } = company;
 
-	const openQb = createQbAccess({ config, realmId, store, now: () => Date.now() });
+	const openQb = createQbAccess({
+		config,
+		realmId,
+		store,
+		now: () => Date.now(),
+	});
 	const { data, error: reportError } = await fetchReport({
 		openQb,
-		input: { report, start_date: args.start, end_date: args.end, accounting_method },
+		input: {
+			report,
+			start_date: args.start,
+			end_date: args.end,
+			accounting_method,
+		},
 	});
 	if (reportError !== null) {
 		console.error(reportError.message);

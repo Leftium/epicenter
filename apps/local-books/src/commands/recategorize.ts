@@ -43,7 +43,12 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const openQb = createQbAccess({ config, realmId, store, now: () => Date.now() });
+	const openQb = createQbAccess({
+		config,
+		realmId,
+		store,
+		now: () => Date.now(),
+	});
 	const { data, error: writeError } = await recategorizeExpense({
 		openQb,
 		dbPath: dbPath(config.dataDir, realmId),

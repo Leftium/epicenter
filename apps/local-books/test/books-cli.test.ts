@@ -46,16 +46,14 @@ function seedMirror(dir: string): void {
 test('CLI: `query` returns mirror rows as JSON', async () => {
 	const tmp = tempDir();
 	seedMirror(tmp.dir);
-	const res = await runCli(
-		[
-			'query',
-			'--realm',
-			'r1',
-			'--data-dir',
-			tmp.dir,
-			'SELECT doc_number, total_amt FROM invoices WHERE deleted = 0',
-		],
-	);
+	const res = await runCli([
+		'query',
+		'--realm',
+		'r1',
+		'--data-dir',
+		tmp.dir,
+		'SELECT doc_number, total_amt FROM invoices WHERE deleted = 0',
+	]);
 	expect(res.exitCode).toBe(0);
 	const rows = JSON.parse(res.stdout);
 	expect(rows).toEqual([{ doc_number: 'INV-1', total_amt: 8000 }]);
@@ -65,7 +63,17 @@ test('CLI: `query` returns mirror rows as JSON', async () => {
 test('CLI: `recategorize` is refused under LOCAL_BOOKS_READ_ONLY', async () => {
 	const tmp = tempDir();
 	const res = await runCli(
-		['recategorize', 'Purchase', 'p1', '--to', '61', '--realm', 'r1', '--data-dir', tmp.dir],
+		[
+			'recategorize',
+			'Purchase',
+			'p1',
+			'--to',
+			'61',
+			'--realm',
+			'r1',
+			'--data-dir',
+			tmp.dir,
+		],
 		{ LOCAL_BOOKS_READ_ONLY: '1' },
 	);
 	expect(res.exitCode).toBe(1);

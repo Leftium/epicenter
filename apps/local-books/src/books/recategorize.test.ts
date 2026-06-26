@@ -59,7 +59,9 @@ async function setup(
 		[
 			{
 				def: entityDef('Purchase'),
-				objects: [makePurchase('p1', { SyncToken: opts.mirrorSyncToken ?? '0' })],
+				objects: [
+					makePurchase('p1', { SyncToken: opts.mirrorSyncToken ?? '0' }),
+				],
 			},
 		],
 		{ syncedAt: '2026-01-20T00:00:00.000Z' },

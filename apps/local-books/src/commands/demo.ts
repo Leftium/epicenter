@@ -105,7 +105,9 @@ function table(dbFile: string, sql: string): void {
 	const widths = cols.map((c) =>
 		Math.max(
 			c.length,
-			...data.rows.map((r) => String((r as Record<string, unknown>)[c] ?? '').length),
+			...data.rows.map(
+				(r) => String((r as Record<string, unknown>)[c] ?? '').length,
+			),
 		),
 	);
 	const line = (cells: string[]) =>
@@ -214,7 +216,9 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 	);
 	db.close();
 
-	console.log('Built a sample company (Northwind Consulting) in your local copy.');
+	console.log(
+		'Built a sample company (Northwind Consulting) in your local copy.',
+	);
 	console.log(`Stored at: ${dbFile}\n`);
 
 	console.log('Who owes us money? (open invoices)');
@@ -250,7 +254,9 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 	console.log(
 		'  local-books query --realm demo "SELECT doc_number, total_amt, balance FROM bills WHERE balance > 0"',
 	);
-	console.log('\nOr point an AI coding agent (Claude Code, Codex) at the file above and just ask.');
+	console.log(
+		'\nOr point an AI coding agent (Claude Code, Codex) at the file above and just ask.',
+	);
 	console.log(
 		'With a real company connected (local-books auth), `report` and `recategorize` work against live QuickBooks.',
 	);

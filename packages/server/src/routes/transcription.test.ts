@@ -153,11 +153,9 @@ describe('transcription gateway', () => {
 				{ status: 429, headers: { 'content-type': 'application/json' } },
 			),
 		);
-		const res = await post(
-			createTestApp(),
-			audioForm({ model: 'whisper-1' }),
-			{ OPENAI_API_KEY: 'sk-house' },
-		);
+		const res = await post(createTestApp(), audioForm({ model: 'whisper-1' }), {
+			OPENAI_API_KEY: 'sk-house',
+		});
 		expect(res.status).toBe(429);
 		const body = (await res.json()) as { error: { code: string } };
 		expect(body.error.code).toBe('rate_limit_exceeded');

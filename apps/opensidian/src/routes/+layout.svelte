@@ -10,7 +10,7 @@
 
 <ConfirmationDialog />
 <Toaster />
-<ModeWatcher />
+<ModeWatcher defaultMode="dark" track={false} />
 
 <Tooltip.Provider>
 	{@render children()}

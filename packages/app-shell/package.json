@@ -3,7 +3,7 @@
 	"version": "0.3.0",
 	"private": true,
 	"type": "module",
-	"description": "Shared Epicenter app chrome: account popover and workspace gate. Branded, full-stack-aware UI mounted in each app's layout. Private (not published).",
+	"description": "Shared Epicenter app chrome: account popover, workspace gate, and the instance settings surface. Branded, full-stack-aware UI mounted in each app's layout. Private (not published).",
 	"keywords": [
 		"svelte",
 		"epicenter",
@@ -13,6 +13,7 @@
 		"./account-popover": "./src/account-popover/index.ts",
 		"./agent-chat": "./src/agent-chat/index.ts",
 		"./inference-picker": "./src/inference-picker/index.ts",
+		"./instance-settings": "./src/instance-settings/index.ts",
 		"./workspace-gate": "./src/workspace-gate/index.ts"
 	},
 	"scripts": {

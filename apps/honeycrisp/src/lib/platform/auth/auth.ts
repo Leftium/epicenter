@@ -2,10 +2,13 @@ import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createOAuthAppAuth } from '@epicenter/svelte/auth';
+import { createAppAuthClient } from '@epicenter/svelte/auth';
+import { instanceSetting } from '$lib/instance';
 
-export const auth = createOAuthAppAuth({
-	baseURL: APP_URLS.API,
+// One choke point: the persisted instance picks hosted OAuth vs a self-host
+// token (ADR-0071). The launcher is built once from the hosted constants, never
+// the instance base URL, because OAuth runs only against the hosted star.
+export const auth = createAppAuthClient(instanceSetting.read(), {
 	clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	persistedAuthStorage: createWebStoragePersistedAuthStorage({
 		key: 'honeycrisp.auth.persisted',

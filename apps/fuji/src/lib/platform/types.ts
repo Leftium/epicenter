@@ -10,13 +10,14 @@
  * the web (default) resolution.
  */
 
-import type { createOAuthAppAuth } from '@epicenter/svelte/auth';
+import type { createAppAuthClient } from '@epicenter/svelte/auth';
 
 /**
- * Contract for `#platform/auth`. Identical on web and Tauri: both build the
- * same auth client, differing only in OAuth launcher (redirect vs deep-link).
+ * Contract for `#platform/auth`. Identical on web and Tauri: both resolve the
+ * persisted instance to the same auth client, differing only in OAuth launcher
+ * (redirect vs deep-link).
  */
-export type PlatformAuth = ReturnType<typeof createOAuthAppAuth>;
+export type PlatformAuth = ReturnType<typeof createAppAuthClient>;
 
 export type MarkdownFile = {
 	filename: string;

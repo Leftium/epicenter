@@ -42,6 +42,7 @@ import {
 	PLAN_IDS,
 	PLANS,
 	type PlanId,
+	TRANSCRIPTION_CREDITS_PER_MINUTE,
 	VISIBLE_SUBSCRIPTION_PLAN_IDS,
 } from './catalog.js';
 import type {
@@ -153,6 +154,61 @@ export function createBillingService(
 		}
 
 		return Ok(check.reservation);
+	}
+
+	/**
+	 * Cheap entitlement gate for one transcription: does the customer have at
+	 * least one AI credit available? Returns the allow decision plus the current
+	 * balance (for the denial payload). No lock and no reservation, because the
+	 * real cost is audio duration, known only after the call: this only fails
+	 * closed on an empty wallet (or a provider outage hiding the balance), and
+	 * {@link trackAiTranscription} settles the actual per-minute charge after.
+	 */
+	async function checkAiCredits(): Promise<
+		Result<{ allowed: boolean; balance: unknown }, BillingError>
+	> {
+		return tryAutumn(async () => {
+			const check = await autumn.check({
+				customerId: identity.userId,
+				featureId: FEATURE_IDS.aiUsage,
+				requiredBalance: 1,
+			});
+			return { allowed: check.allowed, balance: check.balance };
+		});
+	}
+
+	/**
+	 * Settle one finished transcription: charge credits for the audio duration
+	 * (per minute, rounded up, floor of one credit per successful call) and record
+	 * the usage event with `model` and `provider` so the dashboard groups STT
+	 * spend alongside chat (`listUsage` / `listEvents` already group by those
+	 * properties). Called after the gateway answered 200, off the after-response
+	 * queue. A small overspend is possible: the one call that tips a near-empty
+	 * wallet negative. The pre-call `checkAiCredits` gate keeps it to that call.
+	 */
+	async function trackAiTranscription(input: {
+		seconds: number;
+		model: string;
+		provider: string;
+	}): Promise<Result<void, BillingError>> {
+		const seconds =
+			Number.isFinite(input.seconds) && input.seconds > 0 ? input.seconds : 0;
+		const credits = Math.max(
+			1,
+			Math.ceil(seconds / 60) * TRANSCRIPTION_CREDITS_PER_MINUTE,
+		);
+		return tryAutumn(async () => {
+			await autumn.track({
+				customerId: identity.userId,
+				featureId: FEATURE_IDS.aiUsage,
+				value: credits,
+				properties: {
+					model: input.model,
+					provider: input.provider,
+					seconds,
+				},
+			});
+		});
 	}
 
 	// ----- Dashboard data plane -----------------------------------------
@@ -444,6 +500,8 @@ export function createBillingService(
 
 	return {
 		reserveAiChat,
+		checkAiCredits,
+		trackAiTranscription,
 		getOverview,
 		listPlans,
 		listUsage,

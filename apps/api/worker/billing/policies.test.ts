@@ -20,6 +20,7 @@ import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import type { Env } from '@epicenter/server';
 import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
+import { BillingError } from './errors.js';
 
 type AiReserveOutcome = Result<
 	Record<never, never>,
@@ -29,6 +30,14 @@ type AiReserveOutcome = Result<
 
 const finalizeCalls: Array<'confirm' | 'release'> = [];
 let aiReserveOutcome: AiReserveOutcome = Ok({});
+
+type CreditGateOutcome = Result<
+	{ allowed: boolean; balance: unknown },
+	ReturnType<typeof BillingError.ProviderRequestFailed>['error']
+>;
+let creditGateOutcome: CreditGateOutcome = Ok({ allowed: true, balance: 100 });
+const trackCalls: Array<{ seconds: number; model: string; provider: string }> =
+	[];
 
 /** A reservation whose confirm/release record the action and resolve Ok. */
 function recordingReservation() {
@@ -48,14 +57,26 @@ mock.module('./service.js', () => ({
 	createBillingService: () => ({
 		reserveAiChat: async (_input: { model: string }) =>
 			aiReserveOutcome.error ? aiReserveOutcome : Ok(recordingReservation()),
+		checkAiCredits: async () => creditGateOutcome,
+		trackAiTranscription: async (input: {
+			seconds: number;
+			model: string;
+			provider: string;
+		}) => {
+			trackCalls.push(input);
+			return Ok(undefined);
+		},
 	}),
 }));
 
-const { chargeOpenAiCreditsWithAutumn } = await import('./policies.js');
+const { chargeOpenAiCreditsWithAutumn, chargeOpenAiTranscriptionCredits } =
+	await import('./policies.js');
 
 beforeEach(() => {
 	finalizeCalls.length = 0;
 	aiReserveOutcome = Ok({});
+	creditGateOutcome = Ok({ allowed: true, balance: 100 });
+	trackCalls.length = 0;
 });
 
 function withContext(app: Hono<Env>) {
@@ -114,4 +135,74 @@ test('a guard rejection answers in the OpenAI error shape and reserves nothing',
 	expect(body.error.code).toBe('InsufficientCredits');
 	expect(body.error.message).toBeString();
 	expect(finalizeCalls).toHaveLength(0);
+});
+
+// ----- AI transcription policy (the OpenAI-compatible STT gateway) ------
+
+/**
+ * Mount the transcription policy around a stub STT handler. On 200 the handler
+ * returns a verbose_json body carrying `duration`, the field the policy reads to
+ * settle the per-minute charge after the call.
+ */
+function makeSttApp(downstream: { status: 200 | 429; duration?: number }) {
+	const app = withContext(new Hono<Env>());
+	app.use('/v1/audio/transcriptions', chargeOpenAiTranscriptionCredits);
+	app.post('/v1/audio/transcriptions', (c) =>
+		c.body(
+			JSON.stringify(
+				downstream.status === 200
+					? { text: 'hi', duration: downstream.duration }
+					: { error: { message: 'rate limited', code: 'rate_limit_exceeded' } },
+			),
+			downstream.status,
+			{ 'content-type': 'application/json' },
+		),
+	);
+	return app;
+}
+
+function sttRequest(app: Hono<Env>) {
+	const form = new FormData();
+	form.append('file', new File([new Uint8Array([1, 2, 3])], 'audio.webm'));
+	form.append('model', 'whisper-1');
+	return app.request('/v1/audio/transcriptions', {
+		method: 'POST',
+		body: form,
+	});
+}
+
+test('an empty wallet is denied (402) before transcribing and nothing is tracked', async () => {
+	creditGateOutcome = Ok({ allowed: false, balance: 0 });
+
+	const res = await sttRequest(makeSttApp({ status: 200, duration: 125 }));
+
+	expect(res.status).toBe(402);
+	const body = (await res.json()) as { error: { code: string } };
+	expect(body.error.code).toBe('InsufficientCredits');
+	expect(trackCalls).toHaveLength(0);
+});
+
+test('a successful transcription (200) tracks the returned duration after the call', async () => {
+	const res = await sttRequest(makeSttApp({ status: 200, duration: 125 }));
+
+	expect(res.status).toBe(200);
+	expect(trackCalls).toEqual([
+		{ seconds: 125, model: 'whisper-1', provider: 'openai' },
+	]);
+});
+
+test('a non-200 transcription tracks nothing (no charge on failure)', async () => {
+	const res = await sttRequest(makeSttApp({ status: 429 }));
+
+	expect(res.status).toBe(429);
+	expect(trackCalls).toHaveLength(0);
+});
+
+test('a billing-provider outage on the gate fails closed (503) and tracks nothing', async () => {
+	creditGateOutcome = BillingError.ProviderRequestFailed();
+
+	const res = await sttRequest(makeSttApp({ status: 200, duration: 60 }));
+
+	expect(res.status).toBe(503);
+	expect(trackCalls).toHaveLength(0);
 });

@@ -18,7 +18,6 @@
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
 	} from '$lib/constants/inference';
-	import { getProviderConfigKeys } from '$lib/operations/transform';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { createDefaultPrompt } from '$lib/state/transformations.svelte';
 	import type {
@@ -261,7 +260,7 @@
 		{#if transformation.prompt}
 			{@const prompt = transformation.prompt}
 			{@const provider = prompt.inferenceProvider}
-			{@const keys = getProviderConfigKeys(provider)}
+			{@const keys = INFERENCE[provider]}
 			{@const isCustom = provider === 'Custom'}
 			{@const requiredKey = isCustom ? keys.endpointConfigKey : keys.apiKeyConfigKey}
 			{@const hasCredential =

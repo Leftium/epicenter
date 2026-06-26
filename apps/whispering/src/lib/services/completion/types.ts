@@ -22,21 +22,20 @@ export const CompletionError = defineErrors({
 		message: `${providerLabel} API returned an empty response`,
 		providerLabel,
 	}),
-	/** Required parameter was not provided */
-	MissingParam: ({ param }: { param: string }) => ({
-		message: `${param} is required`,
-		param,
-	}),
 });
 export type CompletionError = InferErrors<typeof CompletionError>;
 
+/**
+ * A bespoke (non-wire) completion provider. The OpenAI-wire providers route
+ * through `@epicenter/client`'s `complete()` and a `Connection`; this shape is for
+ * the two that keep their own SDK clients (Anthropic, Google), so it carries no
+ * `baseUrl`: a custom endpoint is a wire `Connection`, not a bespoke provider.
+ */
 export type CompletionService = {
 	complete: (opts: {
 		apiKey: string;
 		model: string;
 		systemPrompt: string;
 		userPrompt: string;
-		/** Optional base URL for custom/self-hosted endpoints (Ollama, LM Studio, etc.) */
-		baseUrl?: string;
 	}) => Promise<Result<string, CompletionError>>;
 };

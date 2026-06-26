@@ -5,12 +5,21 @@
 **Owner**: Braden
 **Branch**: none yet
 
-> **Update (2026-06-12, transformation-engine collapse)**: superseded in part by
-> `20260612T210000-whispering-transformation-engine-collapse.md`. Candidates live
-> in memory; only the accepted candidate becomes a run (no per-candidate rows).
-> There is no `steps` table to relocate: a transformation is
-> `preReplacements[] + prompt? + postReplacements[]`, so "definitions =
-> transformations + steps + backends" now reads "transformations + backends."
+> **Update (2026-06-12, transformation-engine collapse)**: the engine collapse
+> (formerly `20260612T210000-whispering-transformation-engine-collapse.md`) has
+> since been **removed** from the tree (folded into the shipped engine; see
+> `docs/spec-history.md`). Candidates live in memory; only the accepted candidate
+> becomes a run (no per-candidate rows). There is no `steps` table to relocate: a
+> transformation is `preReplacements[] + prompt? + postReplacements[]`, so
+> "definitions = transformations + steps + backends" now reads "transformations +
+> backends."
+>
+> **Update (2026-06-25, capability decomposition)**: the refine engine becomes a
+> **library** on the shipped Connection floor (its `COMPLETION_PROVIDERS` map is
+> deleted), and transcription becomes a **service** reached by a shared
+> `transcribe(audio, connection)` client. The selection picker (this spec's second
+> consumer) and the definitions-vs-runs split stand. See
+> `specs/20260625T224402-capability-decomposition-star-service-library.md`.
 
 ## One Sentence
 

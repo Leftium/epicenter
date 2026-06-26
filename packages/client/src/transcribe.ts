@@ -35,7 +35,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { ResolvedConnection } from './connection.js';
+import { joinUrl, type ResolvedConnection } from './connection.js';
 
 /**
  * The transcription request, minus the audio and the connection. `model` is
@@ -100,7 +100,7 @@ export async function transcribe(
 
 	const { data: response, error: transportError } = await tryAsync({
 		try: () =>
-			fetch(`${baseURL.replace(/\/+$/, '')}/audio/transcriptions`, {
+			fetch(joinUrl(baseURL, 'audio/transcriptions'), {
 				method: 'POST',
 				body: form,
 			}),

@@ -64,6 +64,23 @@ describe('complete over the OpenAI chat wire', () => {
 		expect(headers.get('content-type')).toBe('application/json');
 	});
 
+	test('tolerates a trailing slash on the base, never posting to a double slash', async () => {
+		const seen = captureRequest(
+			new Response(
+				JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+				{ status: 200 },
+			),
+		);
+
+		await complete(resolveConnection({ baseUrl: 'http://localhost:11434/v1/' }), {
+			model: 'llama3',
+			systemPrompt: '',
+			userPrompt: 'hi',
+		});
+
+		expect(seen[0]?.url).toBe('http://localhost:11434/v1/chat/completions');
+	});
+
 	test('a non-2xx becomes a RequestFailed carrying the status', async () => {
 		captureRequest(new Response('nope', { status: 401 }));
 

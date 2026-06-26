@@ -25,7 +25,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { ResolvedConnection } from './connection.js';
+import { joinUrl, type ResolvedConnection } from './connection.js';
 
 /**
  * One non-streaming completion: the model to ask, plus a system and a user
@@ -76,7 +76,7 @@ export async function complete(
 ): Promise<Result<string, CompleteError>> {
 	const { data: response, error: transportError } = await tryAsync({
 		try: () =>
-			fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
+			fetch(joinUrl(baseURL, 'chat/completions'), {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({

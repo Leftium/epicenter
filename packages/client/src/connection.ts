@@ -140,6 +140,18 @@ export function resolveConnection(connection: Connection): ResolvedConnection {
 	return { fetch, baseURL: connection.baseUrl };
 }
 
+/**
+ * Join a resolved `baseURL` to a wire subpath (pass the path without a leading
+ * slash). The one place a path is appended, so a trailing slash on the base (a
+ * user can paste `https://host/v1/`) never produces a `//path` some servers 404,
+ * whichever producer built the {@link ResolvedConnection}: this resolver, or the
+ * injected hosted transport. Every wire client (`complete`, `transcribe`,
+ * `listModels`, the agent engine) routes through here so none re-derives the rule.
+ */
+export function joinUrl(baseURL: string, path: string): string {
+	return `${baseURL.replace(/\/+$/, '')}/${path}`;
+}
+
 export const ListModelsError = defineErrors({
 	Unreachable: ({ cause }: { cause: unknown }) => ({
 		message: `Could not reach the endpoint to list models: ${extractErrorMessage(cause)}`,
@@ -167,7 +179,7 @@ export async function listModels(
 	resolved: ResolvedConnection,
 ): Promise<Result<string[], ListModelsError>> {
 	const { data: response, error: requestError } = await tryAsync({
-		try: () => resolved.fetch(`${resolved.baseURL}/models`, { method: 'GET' }),
+		try: () => resolved.fetch(joinUrl(resolved.baseURL, 'models'), { method: 'GET' }),
 		catch: (cause) => ListModelsError.Unreachable({ cause }),
 	});
 	if (requestError) return Err(requestError);

@@ -25,6 +25,7 @@
  */
 
 import { resolveMachineAuthClient } from '@epicenter/auth/node';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 
 const baseURL = (
 	process.argv[2] ??
@@ -71,7 +72,7 @@ async function main() {
 			auth.state.status === 'signed-in' && auth.state.ownerId === userId,
 			auth.state.status === 'signed-in' ? auth.state.ownerId : '(signed-out)',
 		);
-		const sessionRes = await auth.fetch('/api/session');
+		const sessionRes = await auth.fetch(API_ROUTES.session.url(baseURL));
 		check('token arg: auth.fetch /api/session 200', sessionRes.status === 200);
 	}
 

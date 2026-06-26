@@ -48,9 +48,11 @@ Slice 3 (this branch):
   eeb7d59  refactor(whispering): delete the collapsed wire completion services
 ```
 
-Decisions taken (owner-confirmed): hosted backend = Groq `whisper-large-v3-turbo`
-(`GROQ_API_KEY` house key); metering = per audio-minute, settled after the call
-(no reservation lock; a cheap pre-gate denies an empty wallet). Catch: the
+Decisions taken (owner-confirmed): hosted backend = OpenAI `whisper-1`
+(`OPENAI_API_KEY` house key, reusing the chat gateway's key; pinned because
+`gpt-4o-transcribe` drops the `verbose_json` `duration` the meter reads).
+Metering = per audio-minute, settled after the call (no reservation lock; a
+cheap pre-gate denies an empty wallet). Catch: the
 spec's `${baseURL}/v1/audio/transcriptions` skeleton double-prefixes `/v1`; the
 real path is `{baseUrl}/audio/transcriptions`. Chat middleware prefix narrowed
 `/v1/*` -> `/v1/chat/*` so STT does not inherit chat metering.
@@ -64,8 +66,8 @@ it stays bespoke (evidence in the SDK; spec Decisions Log). The greenfield's
 bespoke)" in the spec; local in-process + bespoke + curated catalog do not
 collapse into a Connection registry.
 
-Ops follow-up: provision `GROQ_API_KEY` in the deploy (Infisical) before the
-hosted route serves; absent, it answers 503 ProviderNotConfigured.
+Ops follow-up: provision `OPENAI_API_KEY` in the deploy (Infisical) before the
+hosted STT route serves; absent, it answers 503 ProviderNotConfigured.
 
 Slice 3 outcome (owner-confirmed): refine's 4 wire providers (OpenAI/Groq/
 OpenRouter/Custom) route through the new `complete()` on the Connection floor;
@@ -73,17 +75,30 @@ Anthropic/Google stay **bespoke** (non-wire, same call as Deepgram/ElevenLabs).
 `COMPLETION_PROVIDERS` deleted; `openai` SDK dropped from Whispering. The shared
 `@epicenter/refine` **package** extraction is deferred (no 2nd consumer yet).
 
+Slice 1.3 built (branch `vocab-web-dictation`, off post-#2208 main): minimal
+in-app `createRecorder` (MediaRecorder -> Blob) + a `dictation` singleton calling
+`transcribe(blob, inferenceConnections.resolveOrHosted('whisper-1'), { model:
+'whisper-1', language: 'en' })`; the mic rides an optional `accessory` snippet on
+the shared chat input, the transcript lands in the draft for review. No recorder
+package extracted (grilled, no 2nd consumer), no Whispering import, no `#platform`
+seam (vocab is web-only). Headless green: whole-monorepo typecheck 0, vocab build
++ tests pass. The model is `whisper-1` over the same hosted Connection that drives
+vocab chat (`<origin>/v1`), so the same `OPENAI_API_KEY` serves chat and STT.
+
 NOT done (flagged, not headless-verifiable):
+- Slice 1.3 **live web dictation smoke**: a real mic recording transcribed
+  through the hosted gateway. Needs a live OAuth + signed-in hosted session, a
+  mic, and `OPENAI_API_KEY` provisioned in the deploy (absent, the gateway 503s
+  `ProviderNotConfigured`).
 - Slice 2 **live cloud smoke** (a real OpenAI/Groq/Speaches transcription through
   `transcribe()`); needs a provider key.
 - Slice 3 **live refine smoke** + a browser-tab smoke (refine is now plain
   `fetch`, no `dangerouslyAllowBrowser`); needs a provider key.
 Typecheck + every package's tests + desktop in-process-unchanged are proven.
 
-NEXT: **Slice 1.3** (wire vocab, below) is the only remaining slice. It needs
-live OAuth + a mic + `GROQ_API_KEY` to verify end to end; build a minimal
-recorder in vocab (do not extract a package yet, grilled). After it lands and the
-live smokes pass, delete this handoff + the spec (two-state lifecycle).
+NEXT: nothing to build. When the live web dictation smoke passes, delete this
+handoff + the spec (two-state lifecycle: done is deletion) and mark
+`project_capability_decomposition_transcribe_service` complete in memory.
 
 ## Order of work
 

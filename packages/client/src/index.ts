@@ -42,6 +42,11 @@ export {
 	resolveConnection,
 } from './connection.js';
 export {
+	complete,
+	CompleteError,
+	type CompleteOptions,
+} from './complete.js';
+export {
 	createOpenAiAgentEngine,
 	type OpenAiTurnContext,
 } from './openai-provider.js';

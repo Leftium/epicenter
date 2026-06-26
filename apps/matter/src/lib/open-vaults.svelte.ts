@@ -18,8 +18,9 @@
  * hydrates once via {@link ensureHydrated}. The `(vaults)` layout `load` awaits that before
  * any route in the group renders, so SvelteKit gates the paint on the real list: the strip
  * shows tabs with no skeleton and no pre-hydration flash, and an id resolves against the real
- * list, never a spurious 404. The framework's `load` IS the readiness primitive; there is no
- * hand-rolled `whenReady`/`hydrated` signal beside it.
+ * list, never a spurious 404. The framework's `load` owns readiness (it gates the paint);
+ * `ensureHydrated` is just the memoized read it awaits, not a `whenReady`/`hydrated` signal
+ * the UI has to branch on.
  *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
  * drove its lifetime, this holds only the list of tabs and the open/close actions.
@@ -68,12 +69,14 @@ function createOpenVaults() {
 	let hydration: Promise<void> | undefined;
 
 	// Read the persisted tabs from disk into the live list, once. The `(vaults)` layout `load`
-	// awaits this before the group renders, so it is the readiness gate and the strip needs no
-	// skeleton. Memoized on `hydration`, so however many loads await it, the read runs once.
-	// `LazyStore.get()` loads the file on first access, so there is no separate `load()` step.
-	// Two failure modes both degrade to no tabs: a malformed shape (rejected by `OpenVaultList`)
-	// and an unreadable or corrupt file (`get()` rejects, caught here); either way the next
-	// `open`/`close` rewrites a clean file. SSR has no Tauri runtime, so skip the read.
+	// awaits this before the group paints, so it is the readiness gate and the strip needs no
+	// skeleton. Memoized on `hydration`: the read runs once and the SAME promise is cached, so
+	// `read` MUST NOT reject, or every `(vaults)` load would await a permanently-rejected promise.
+	// That is why both failure modes are swallowed into "no tabs" rather than thrown: a malformed
+	// shape (rejected by `OpenVaultList`) and an unreadable or corrupt file (`get()` rejects,
+	// caught by `tryAsync`); either way the next `open`/`close` rewrites a clean file.
+	// `LazyStore.get()` loads the file on first access, so there is no separate `load()` step;
+	// SSR has no Tauri runtime, so skip the read.
 	function ensureHydrated(): Promise<void> {
 		return (hydration ??= read());
 	}

@@ -22,7 +22,7 @@
 		if (!wasActive) return;
 		const remaining = openVaults.list;
 		const next = remaining[index] ?? remaining[index - 1];
-		await (next ? goto(routes.vault(next.id)) : goto(routes.home()));
+		await goto(next ? routes.vault(next.id) : routes.home());
 	}
 </script>
 

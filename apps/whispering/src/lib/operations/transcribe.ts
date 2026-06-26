@@ -10,6 +10,7 @@ import {
 	extractErrorMessage,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
 import {
 	SUPPORTED_LANGUAGES,
@@ -407,7 +408,7 @@ async function transcribeViaUpload(
 	// server answers 401, surfaced as a RequestFailed carrying that detail.
 	if (isWireProviderId(selectedService)) {
 		const { connection, model } = WIRE_CONNECTIONS[selectedService]();
-		return transcribe(audio, resolveConnection(connection), {
+		return transcribe(audio, resolveConnection(connection, customFetch), {
 			model,
 			language: spokenLanguage === 'auto' ? undefined : spokenLanguage,
 			prompt: prompt || undefined,

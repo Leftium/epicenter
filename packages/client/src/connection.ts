@@ -124,18 +124,24 @@ export type ResolvedConnection = {
  * fetch. It is never the Epicenter bearer (this resolver only ever sees a
  * third-party connection; the hosted transport is injected elsewhere, never built
  * here), so a custom turn cannot leak the Epicenter session (ADR-0053).
+ *
+ * `baseFetch` is the transport the Bearer wraps, defaulting to `globalThis.fetch`.
+ * A native app passes its platform fetch: Whispering hands in Tauri's
+ * `@tauri-apps/plugin-http` fetch so a desktop request reaches a third-party
+ * provider from the native side, not the webview, where the provider's absent CORS
+ * headers would block it. On the web the platform fetch is undefined, so the
+ * default applies and behavior is unchanged.
  */
-export function resolveConnection(connection: Connection): ResolvedConnection {
+export function resolveConnection(
+	connection: Connection,
+	baseFetch: EngineFetch = globalThis.fetch.bind(globalThis),
+): ResolvedConnection {
 	const apiKey = connection.apiKey?.trim();
-	if (!apiKey)
-		return {
-			fetch: globalThis.fetch.bind(globalThis),
-			baseURL: connection.baseUrl,
-		};
+	if (!apiKey) return { fetch: baseFetch, baseURL: connection.baseUrl };
 	const fetch: EngineFetch = (input, init) => {
 		const headers = new Headers(init?.headers);
 		headers.set('Authorization', `Bearer ${apiKey}`);
-		return globalThis.fetch(input, { ...init, headers });
+		return baseFetch(input, { ...init, headers });
 	};
 	return { fetch, baseURL: connection.baseUrl };
 }

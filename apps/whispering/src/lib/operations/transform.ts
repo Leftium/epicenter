@@ -7,6 +7,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
+import { customFetch } from '#platform/http';
 import type { InferenceProviderId } from '$lib/constants/inference';
 import { services } from '$lib/services';
 import type { CompletionService } from '$lib/services/completion';
@@ -196,11 +197,10 @@ function runPrompt(
 			}),
 		);
 	}
-	return complete(resolveConnection({ baseUrl, apiKey: apiKey || undefined }), {
-		model,
-		systemPrompt,
-		userPrompt,
-	});
+	return complete(
+		resolveConnection({ baseUrl, apiKey: apiKey || undefined }, customFetch),
+		{ model, systemPrompt, userPrompt },
+	);
 }
 
 /**

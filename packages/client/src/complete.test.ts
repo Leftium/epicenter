@@ -84,6 +84,41 @@ describe('complete over the OpenAI chat wire', () => {
 		expect(seen[0]?.url).toBe('http://localhost:11434/v1/chat/completions');
 	});
 
+	test('routes through an injected base fetch, not globalThis.fetch', async () => {
+		// A native app (Whispering on Tauri) injects its platform fetch so the
+		// request leaves from the native side, not the webview. Prove the resolved
+		// transport wraps the injected fetch and never touches globalThis.fetch.
+		globalThis.fetch = (async () => {
+			throw new Error('globalThis.fetch must not be called');
+		}) as unknown as typeof fetch;
+
+		const seen: { url: string; auth: string | null }[] = [];
+		const baseFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+			seen.push({
+				url: String(url),
+				auth: new Headers(init?.headers).get('Authorization'),
+			});
+			return new Response(
+				JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+				{ status: 200 },
+			);
+		}) as unknown as typeof fetch;
+
+		const { data, error } = await complete(
+			resolveConnection(
+				{ baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-test' },
+				baseFetch,
+			),
+			{ model: 'gpt-4o', systemPrompt: '', userPrompt: 'hi' },
+		);
+
+		expect(error).toBeNull();
+		expect(data).toBe('ok');
+		expect(seen[0]?.url).toBe('https://api.openai.com/v1/chat/completions');
+		// The Bearer still wraps the injected transport.
+		expect(seen[0]?.auth).toBe('Bearer sk-test');
+	});
+
 	test('a non-2xx becomes a RequestFailed carrying the status', async () => {
 		captureRequest(new Response('nope', { status: 401 }));
 

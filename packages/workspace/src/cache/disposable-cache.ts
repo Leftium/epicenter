@@ -148,8 +148,8 @@
  */
 
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import { once } from 'wellcrafted/function';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { once } from '../shared/once.js';
 
 /** Errors surfaced by the cache's background disposal machinery. */
 const DisposableCacheError = defineErrors({

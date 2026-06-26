@@ -1,14 +1,14 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Exports the persisted auth cell loader and the OAuth sign-in launcher. The
- * auth client itself is created after the cell has loaded, in
- * `../../session.svelte`.
+ * Exports the persisted auth cell loader, the instance setting loader, and the
+ * OAuth sign-in launcher. The auth client itself is created after both async
+ * cells have loaded, in `../../session.svelte`.
  *
  * @see {@link ../../session.svelte} auth, workspace, and identity wiring
  */
 
-import { loadPersistedAuthStorage } from '@epicenter/auth';
+import { loadInstanceSetting, loadPersistedAuthStorage } from '@epicenter/auth';
 import { createExtensionOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -34,6 +34,24 @@ export const persistedAuthStoragePromise = loadPersistedAuthStorage({
 		serialized === null
 			? authCell.removeValue()
 			: authCell.setValue(serialized),
+});
+
+/**
+ * Persisted instance setting in `chrome.storage.local`: which Epicenter star
+ * this install talks to (ADR-0069/0070). The hosted default uses OAuth; a
+ * self-hoster pastes the token their box minted (ADR-0071). `chrome.storage` is
+ * async, so the snapshot is pre-loaded here and awaited in `../../session.svelte`
+ * alongside the auth cell, mirroring `persistedAuthStoragePromise`.
+ */
+const instanceCell = storage.defineItem<string>('local:instance');
+
+export const instanceSettingPromise = loadInstanceSetting({
+	defaultBaseURL: APP_URLS.API,
+	read: () => instanceCell.getValue(),
+	write: (serialized) =>
+		serialized === null
+			? instanceCell.removeValue()
+			: instanceCell.setValue(serialized),
 });
 
 export const oauthLauncher = createExtensionOAuthLauncher({

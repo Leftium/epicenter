@@ -1,3 +1,7 @@
+export {
+	type CreateAppAuthClientOptions,
+	createAppAuthClient,
+} from './app-auth-client.js';
 export type {
 	AuthClient,
 	AuthFetch,
@@ -20,6 +24,11 @@ export {
 	InstanceError,
 	normalizeInstanceUrl,
 } from './instance.js';
+export {
+	createInstanceSetting,
+	type InstanceSetting,
+	loadInstanceSetting,
+} from './instance-setting.js';
 export {
 	type CreateInstanceTokenAuthConfig,
 	createInstanceTokenAuth,

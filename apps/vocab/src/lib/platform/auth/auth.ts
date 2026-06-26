@@ -1,37 +1,27 @@
 import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { EPICENTER_VOCAB_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
-import {
-	createInstanceTokenAuth,
-	createOAuthAppAuth,
-} from '@epicenter/svelte/auth';
-import { readInstance } from '$lib/instance';
+import { APP_URLS } from '@epicenter/constants/vite';
+import { createAppAuthClient } from '@epicenter/svelte/auth';
+import { instanceSetting } from '$lib/instance';
 
-const instance = readInstance();
-
-// A configured instance token means a self-hosted star: authenticate with the
-// static bearer (ADR-0070) instead of OAuth. Otherwise the OAuth flow runs
-// against the instance origin, which is the hosted cloud by default.
-export const auth = instance.token
-	? createInstanceTokenAuth({
-			baseURL: instance.baseURL,
-			token: instance.token,
-		})
-	: createOAuthAppAuth({
-			baseURL: instance.baseURL,
-			clientId: EPICENTER_VOCAB_OAUTH_CLIENT_ID,
-			persistedAuthStorage: createWebStoragePersistedAuthStorage({
-				key: 'vocab.auth.persisted',
-				storage: window.localStorage,
-			}),
-			launcher: createBrowserOAuthLauncher({
-				issuer: `${instance.baseURL}/auth`,
-				clientId: EPICENTER_VOCAB_OAUTH_CLIENT_ID,
-				redirectUri: `${window.location.origin}/auth/callback`,
-				resource: instance.baseURL,
-				storage: window.sessionStorage,
-			}),
-		});
+// One choke point: the persisted instance picks hosted OAuth vs a self-host
+// token (ADR-0071). The launcher is built once from the hosted constants, never
+// the instance base URL, because OAuth runs only against the hosted star.
+export const auth = createAppAuthClient(instanceSetting.read(), {
+	clientId: EPICENTER_VOCAB_OAUTH_CLIENT_ID,
+	persistedAuthStorage: createWebStoragePersistedAuthStorage({
+		key: 'vocab.auth.persisted',
+		storage: window.localStorage,
+	}),
+	launcher: createBrowserOAuthLauncher({
+		issuer: `${APP_URLS.API}/auth`,
+		clientId: EPICENTER_VOCAB_OAUTH_CLIENT_ID,
+		redirectUri: `${window.location.origin}/auth/callback`,
+		resource: APP_URLS.API,
+		storage: window.sessionStorage,
+	}),
+});
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => auth[Symbol.dispose]());

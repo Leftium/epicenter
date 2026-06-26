@@ -1,38 +1,28 @@
 import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
-import {
-	createInstanceTokenAuth,
-	createOAuthAppAuth,
-} from '@epicenter/svelte/auth';
+import { APP_URLS } from '@epicenter/constants/vite';
+import { createAppAuthClient } from '@epicenter/svelte/auth';
 import { base } from '$app/paths';
-import { readInstance } from '$lib/instance';
+import { instanceSetting } from '$lib/instance';
 
-const instance = readInstance();
-
-// A configured instance token means a self-hosted star: authenticate with the
-// static bearer (ADR-0070) instead of OAuth. Otherwise the OAuth flow runs
-// against the instance origin, which is the hosted cloud by default.
-export const auth = instance.token
-	? createInstanceTokenAuth({
-			baseURL: instance.baseURL,
-			token: instance.token,
-		})
-	: createOAuthAppAuth({
-			baseURL: instance.baseURL,
-			clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
-			persistedAuthStorage: createWebStoragePersistedAuthStorage({
-				key: 'opensidian.auth.persisted',
-				storage: window.localStorage,
-			}),
-			launcher: createBrowserOAuthLauncher({
-				issuer: `${instance.baseURL}/auth`,
-				clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
-				redirectUri: `${window.location.origin}${base}/auth/callback`,
-				resource: instance.baseURL,
-				storage: window.sessionStorage,
-			}),
-		});
+// One choke point: the persisted instance picks hosted OAuth vs a self-host
+// token (ADR-0071). The launcher is built once from the hosted constants, never
+// the instance base URL, because OAuth runs only against the hosted star.
+export const auth = createAppAuthClient(instanceSetting.read(), {
+	clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
+	persistedAuthStorage: createWebStoragePersistedAuthStorage({
+		key: 'opensidian.auth.persisted',
+		storage: window.localStorage,
+	}),
+	launcher: createBrowserOAuthLauncher({
+		issuer: `${APP_URLS.API}/auth`,
+		clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
+		redirectUri: `${window.location.origin}${base}/auth/callback`,
+		resource: APP_URLS.API,
+		storage: window.sessionStorage,
+	}),
+});
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {

@@ -43,7 +43,7 @@ import { joinUrl, type ResolvedConnection } from './connection.js';
  * `prompt` (a vocabulary/style hint) are optional, omitted from the form when
  * absent so a server's own defaults apply.
  */
-export type TranscribeOptions = {
+type TranscribeOptions = {
 	model: string;
 	language?: string;
 	prompt?: string;
@@ -129,12 +129,15 @@ export async function transcribe(
  * audio format from the filename extension, so recorder output (`audio/webm`,
  * `audio/mp4`, `audio/ogg`, a Tauri `audio/wav`) becomes an accepted extension by
  * taking the subtype and dropping any `x-` prefix or `;codecs=...` parameter.
- * `mp3` is the fallback for a missing or odd type, the format every STT wire can
- * auto-detect from the bytes.
+ * `audio/wave` is normalized to the accepted `wav` (the wire's list is `wav`, not
+ * `wave`). `mp3` is the fallback for a missing or odd type, the format every STT
+ * wire can auto-detect from the bytes.
  */
 function filenameForAudio(audio: Blob): string {
 	const subtype = audio.type.split(';')[0]?.split('/')[1]?.replace(/^x-/, '');
-	const extension = subtype && /^[a-z0-9]+$/.test(subtype) ? subtype : 'mp3';
+	const normalized = subtype === 'wave' ? 'wav' : subtype;
+	const extension =
+		normalized && /^[a-z0-9]+$/.test(normalized) ? normalized : 'mp3';
 	return `audio.${extension}`;
 }
 

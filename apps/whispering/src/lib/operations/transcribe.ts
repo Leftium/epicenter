@@ -24,8 +24,8 @@ import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cl
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import {
-	type CloudProviderId,
 	isLocalProviderId,
+	type LocalProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
@@ -148,19 +148,24 @@ function isWireProviderId(id: TranscriptionServiceId): id is WireProviderId {
  * `xi-api-key` with `model_id`, and Mistral's prompt field is `context_bias`, not
  * the OpenAI `prompt`. ADR-0060 blesses this exception.
  *
- * `satisfies Record<Exclude<CloudProviderId, WireProviderId>, ...>` ties the table
- * to PROVIDERS: a new cloud provider must be classified as wire (in
- * `WIRE_CONNECTIONS`) or bespoke (here), or it is a compile error.
+ * The `satisfies Record<Exclude<TranscriptionServiceId, LocalProviderId |
+ * WireProviderId>, ...>` ties the table to PROVIDERS: every non-local provider
+ * must be classified as wire (in `WIRE_CONNECTIONS`) or bespoke (here), or it is a
+ * compile error. The remainder is all cloud today; a future self-hosted box that
+ * does not speak the wire lands here too, so the guard cannot silently drop it.
  */
 const BESPOKE_TRANSCRIBERS = {
 	ElevenLabs: ElevenLabsTranscriptionServiceLive.transcribe,
 	Deepgram: DeepgramTranscriptionServiceLive.transcribe,
 	Mistral: MistralTranscriptionServiceLive.transcribe,
-} satisfies Record<Exclude<CloudProviderId, WireProviderId>, BespokeTranscribe>;
+} satisfies Record<
+	Exclude<TranscriptionServiceId, LocalProviderId | WireProviderId>,
+	BespokeTranscribe
+>;
 
-function isBespokeCloudProviderId(
+function isBespokeProviderId(
 	id: TranscriptionServiceId,
-): id is Exclude<CloudProviderId, WireProviderId> {
+): id is Exclude<TranscriptionServiceId, LocalProviderId | WireProviderId> {
 	return id in BESPOKE_TRANSCRIBERS;
 }
 
@@ -418,7 +423,7 @@ async function transcribeViaUpload(
 	// The bespoke cloud providers keep their own SDK clients (different wires).
 	// None take an endpoint override (`endpointConfigKey` is null for all three),
 	// so there is no baseURL to thread; a custom endpoint is a wire provider.
-	if (isBespokeCloudProviderId(selectedService)) {
+	if (isBespokeProviderId(selectedService)) {
 		const provider = PROVIDERS[selectedService];
 		return BESPOKE_TRANSCRIBERS[selectedService](audio, {
 			spokenLanguage,

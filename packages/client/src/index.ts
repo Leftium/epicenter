@@ -31,11 +31,7 @@ export type {
 	ModelMessage,
 	ModelToolCall,
 } from './agent-engine.js';
-export {
-	CompleteError,
-	type CompleteOptions,
-	complete,
-} from './complete.js';
+export { CompleteError, complete } from './complete.js';
 export {
 	CONNECTION_PRESETS,
 	type Connection,
@@ -50,11 +46,7 @@ export {
 	createOpenAiAgentEngine,
 	type OpenAiTurnContext,
 } from './openai-provider.js';
-export {
-	TranscribeError,
-	type TranscribeOptions,
-	transcribe,
-} from './transcribe.js';
+export { TranscribeError, transcribe } from './transcribe.js';
 
 export type EpicenterClientOptions = {
 	/** Base URL of the Epicenter server (no trailing slash required). */

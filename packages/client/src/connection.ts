@@ -148,13 +148,13 @@ export function resolveConnection(
 
 /**
  * Join a resolved `baseURL` to a wire subpath. The one place a path is appended,
- * so the seam is always exactly one slash: trailing slashes on the base and
- * leading slashes on the path both collapse, whichever producer built the
- * {@link ResolvedConnection} (this resolver, or the injected hosted transport)
- * and whatever a user pasted. So neither `https://host/v1/` nor a `/`-prefixed
- * path yields a `//path` some servers 404. Every wire client (`complete`,
- * `transcribe`, `listModels`, the agent engine) routes through here so none
- * re-derives the rule.
+ * so the seam is always exactly one slash, whichever producer built the
+ * {@link ResolvedConnection} (this resolver, or the injected hosted transport).
+ * The trailing-slash strip is the load-bearing case: a user pastes the base, so
+ * `https://host/v1/` is real input. The leading-slash strip on the path is
+ * defensive (every caller passes a bare literal like `'models'`); together they
+ * mean no `//path` some servers 404. Every wire client (`complete`, `transcribe`,
+ * `listModels`, the agent engine) routes through here so none re-derives the rule.
  *
  * Deliberately a string join, not `new URL(path, baseURL)`. WHATWG relative
  * resolution treats a base with no trailing slash as a file and drops its last

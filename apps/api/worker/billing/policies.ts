@@ -109,8 +109,11 @@ const HOSTED_STT_PROVIDER = 'groq';
  * the client keeps a branchable `error.code`), then on a 200 the actual
  * per-minute charge is tracked off the after-response queue from the `duration`
  * the gateway returns. No reservation lock, because the cost is unknown until the
- * call returns; the pre-gate keeps the settle-after overspend to a single call.
- * House-key-only (ADR-0054): every call is metered, no BYOK bypass.
+ * call returns; the charge settles after the call, so concurrent requests can each
+ * pass the gate before any usage posts, and steady-state overspend is bounded by
+ * in-flight concurrency rather than a single call. A reservation lock would tighten
+ * that and is deferred. House-key-only (ADR-0054): every call is metered, no BYOK
+ * bypass.
  */
 export const chargeOpenAiTranscriptionCredits = createMiddleware<Env>(
 	async (c, next) => {

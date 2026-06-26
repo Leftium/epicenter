@@ -1,4 +1,8 @@
-import { type Connection, resolveConnection, transcribe } from '@epicenter/client';
+import {
+	type Connection,
+	resolveConnection,
+	transcribe,
+} from '@epicenter/client';
 import { InstantString } from '@epicenter/field';
 import {
 	type AnyTaggedError,

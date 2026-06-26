@@ -17,7 +17,11 @@ afterEach(() => {
 	globalThis.fetch = realFetch;
 });
 
-type UpstreamCall = { url: string; headers: Record<string, string>; form: FormData };
+type UpstreamCall = {
+	url: string;
+	headers: Record<string, string>;
+	form: FormData;
+};
 
 /** Stub the upstream provider `fetch`, capturing the forwarded multipart form. */
 function stubUpstream(response: Response): UpstreamCall[] {
@@ -79,9 +83,13 @@ describe('transcription gateway', () => {
 	});
 
 	test('rejects an unknown model with a 400 UnknownModel', async () => {
-		const res = await post(createTestApp(), audioForm({ model: 'whisper-99' }), {
-			GROQ_API_KEY: 'g-house',
-		});
+		const res = await post(
+			createTestApp(),
+			audioForm({ model: 'whisper-99' }),
+			{
+				GROQ_API_KEY: 'g-house',
+			},
+		);
 		expect(res.status).toBe(400);
 		const body = (await res.json()) as { error: { code: string } };
 		expect(body.error.code).toBe('UnknownModel');
@@ -101,7 +109,11 @@ describe('transcription gateway', () => {
 	test('forwards multipart to Groq with the house key, forces verbose_json, returns the body verbatim', async () => {
 		const calls = stubUpstream(
 			new Response(
-				JSON.stringify({ text: '  hello world  ', duration: 12.34, language: 'en' }),
+				JSON.stringify({
+					text: '  hello world  ',
+					duration: 12.34,
+					language: 'en',
+				}),
 				{ status: 200, headers: { 'content-type': 'application/json' } },
 			),
 		);

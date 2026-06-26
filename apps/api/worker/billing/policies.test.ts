@@ -165,7 +165,10 @@ function sttRequest(app: Hono<Env>) {
 	const form = new FormData();
 	form.append('file', new File([new Uint8Array([1, 2, 3])], 'audio.webm'));
 	form.append('model', 'whisper-large-v3-turbo');
-	return app.request('/v1/audio/transcriptions', { method: 'POST', body: form });
+	return app.request('/v1/audio/transcriptions', {
+		method: 'POST',
+		body: form,
+	});
 }
 
 test('an empty wallet is denied (402) before transcribing and nothing is tracked', async () => {

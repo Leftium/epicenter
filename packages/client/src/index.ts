@@ -32,6 +32,11 @@ export type {
 	ModelToolCall,
 } from './agent-engine.js';
 export {
+	CompleteError,
+	type CompleteOptions,
+	complete,
+} from './complete.js';
+export {
 	CONNECTION_PRESETS,
 	type Connection,
 	type ConnectionPreset,
@@ -42,18 +47,13 @@ export {
 	resolveConnection,
 } from './connection.js';
 export {
-	complete,
-	CompleteError,
-	type CompleteOptions,
-} from './complete.js';
-export {
 	createOpenAiAgentEngine,
 	type OpenAiTurnContext,
 } from './openai-provider.js';
 export {
-	transcribe,
 	TranscribeError,
 	type TranscribeOptions,
+	transcribe,
 } from './transcribe.js';
 
 export type EpicenterClientOptions = {

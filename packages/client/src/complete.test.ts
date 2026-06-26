@@ -68,7 +68,10 @@ describe('complete over the OpenAI chat wire', () => {
 		captureRequest(new Response('nope', { status: 401 }));
 
 		const { data, error } = await complete(
-			resolveConnection({ baseUrl: 'https://api.openai.com/v1', apiKey: 'bad' }),
+			resolveConnection({
+				baseUrl: 'https://api.openai.com/v1',
+				apiKey: 'bad',
+			}),
 			{ model: 'gpt-4o', systemPrompt: '', userPrompt: 'hi' },
 		);
 
@@ -82,9 +85,12 @@ describe('complete over the OpenAI chat wire', () => {
 
 	test('a 2xx body with no content becomes Malformed', async () => {
 		captureRequest(
-			new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), {
-				status: 200,
-			}),
+			new Response(
+				JSON.stringify({ choices: [{ message: { content: '' } }] }),
+				{
+					status: 200,
+				},
+			),
 		);
 
 		const { data, error } = await complete(

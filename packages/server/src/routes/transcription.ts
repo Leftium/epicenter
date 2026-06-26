@@ -134,13 +134,16 @@ const transcriptionApp = new Hono<Env>().post(
 
 		let upstreamResponse: Response;
 		try {
-			upstreamResponse = await fetch(`${upstream.baseURL}/audio/transcriptions`, {
-				method: 'POST',
-				// No content-type: `fetch` sets the multipart boundary itself.
-				headers: { authorization: `Bearer ${apiKey}` },
-				body: upstreamForm,
-				signal: c.req.raw.signal,
-			});
+			upstreamResponse = await fetch(
+				`${upstream.baseURL}/audio/transcriptions`,
+				{
+					method: 'POST',
+					// No content-type: `fetch` sets the multipart boundary itself.
+					headers: { authorization: `Bearer ${apiKey}` },
+					body: upstreamForm,
+					signal: c.req.raw.signal,
+				},
+			);
 		} catch (error) {
 			return c.json(
 				openAiError(extractErrorMessage(error), 'upstream_unreachable'),

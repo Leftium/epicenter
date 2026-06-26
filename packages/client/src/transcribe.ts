@@ -133,10 +133,7 @@ export async function transcribe(
  * auto-detect from the bytes.
  */
 function filenameForAudio(audio: Blob): string {
-	const subtype = audio.type
-		.split(';')[0]
-		?.split('/')[1]
-		?.replace(/^x-/, '');
+	const subtype = audio.type.split(';')[0]?.split('/')[1]?.replace(/^x-/, '');
 	const extension = subtype && /^[a-z0-9]+$/.test(subtype) ? subtype : 'mp3';
 	return `audio.${extension}`;
 }

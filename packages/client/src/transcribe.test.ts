@@ -74,7 +74,10 @@ describe('transcribe over the OpenAI wire', () => {
 
 		const { data, error } = await transcribe(
 			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
-			resolveConnection({ baseUrl: 'https://api.openai.com/v1', apiKey: 'bad' }),
+			resolveConnection({
+				baseUrl: 'https://api.openai.com/v1',
+				apiKey: 'bad',
+			}),
 			{ model: 'whisper-1' },
 		);
 

@@ -119,7 +119,11 @@ function extractContent(body: unknown): string | null {
 	const { choices } = body as { choices: unknown };
 	if (!Array.isArray(choices)) return null;
 	const message = (choices[0] as { message?: unknown } | undefined)?.message;
-	if (typeof message !== 'object' || message === null || !('content' in message))
+	if (
+		typeof message !== 'object' ||
+		message === null ||
+		!('content' in message)
+	)
 		return null;
 	const { content } = message as { content: unknown };
 	return typeof content === 'string' && content.length > 0 ? content : null;

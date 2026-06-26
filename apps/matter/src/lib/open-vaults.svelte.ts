@@ -30,6 +30,8 @@
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { LazyStore } from '@tauri-apps/plugin-store';
 import { type } from 'arktype';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, tryAsync } from 'wellcrafted/result';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { routes } from '$lib/routes';
@@ -77,12 +79,14 @@ function createOpenVaults() {
 	}
 	async function read(): Promise<void> {
 		if (!browser) return;
-		try {
-			const restored = OpenVaultList(await store.get(STORE_KEY));
-			if (!(restored instanceof type.errors)) vaults = restored;
-		} catch {
-			// A failed read is "no tabs", same as a fresh install.
-		}
+		const { data: raw, error } = await tryAsync({
+			try: () => store.get(STORE_KEY),
+			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+		});
+		// An unreadable or corrupt file (`get()` rejects) is "no tabs", like a fresh install.
+		if (error) return;
+		const restored = OpenVaultList(raw);
+		if (!(restored instanceof type.errors)) vaults = restored;
 	}
 
 	// Persist the tabs. A fire-and-forget side effect: the store auto-saves 100ms after a

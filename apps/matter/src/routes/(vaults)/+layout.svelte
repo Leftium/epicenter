@@ -29,7 +29,11 @@
 
 <div class="flex h-screen flex-col">
 	<div class="flex min-h-12 items-center gap-1 border-b px-2 py-1.5">
-		{#if openVaults.hydrated}
+		{#await openVaults.whenReady}
+			<Skeleton class="h-7 w-24 rounded-md" />
+			<Skeleton class="h-7 w-24 rounded-md" />
+			<Skeleton class="h-7 w-24 rounded-md" />
+		{:then}
 			{#each openVaults.list as vault (vault.id)}
 				{@const active = page.params.id === vault.id}
 				<div
@@ -55,11 +59,7 @@
 					</button>
 				</div>
 			{/each}
-		{:else}
-			<Skeleton class="h-7 w-24 rounded-md" />
-			<Skeleton class="h-7 w-24 rounded-md" />
-			<Skeleton class="h-7 w-24 rounded-md" />
-		{/if}
+		{/await}
 		<Button
 			onclick={openVaults.open}
 			variant="ghost"

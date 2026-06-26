@@ -14,9 +14,9 @@
  * inspectable file on disk rather than an opaque webview blob: the same disk-is-truth
  * principle as matter's per-vault `matter.json` / `.matter/matter.sqlite`, applied to the
  * app-level tab set. The store reads async, so the list hydrates: it starts empty, the file
- * loads in the background, and `hydrated` flips true once the persisted tabs land. `whenReady`
- * is the promise the route `load` awaits so an id resolves against the real list, never a
- * spurious 404.
+ * loads in the background, and `whenReady` resolves once the persisted tabs land. `whenReady`
+ * is the one readiness signal: the route `load` awaits it so an id resolves against the real
+ * list (never a spurious 404), and the tab strip `{#await}`s it to show a skeleton meanwhile.
  *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
  * drove its lifetime, this holds only the list of tabs and the open/close actions.
@@ -68,23 +68,20 @@ function createOpenVaults() {
 	const store = new LazyStore(STORE_FILE);
 	// The list IS the tabs, in order. Empty until the async store hydrates it below.
 	let vaults = $state<OpenVault[]>([]);
-	let hydrated = $state(false);
 
 	// Read the persisted tabs once at startup. `LazyStore.get()` loads the file on first
 	// access, so there is no separate `load()` step; a missing or malformed file degrades
-	// to no tabs. SSR/prerender has no Tauri runtime, so skip the read and just mark ready.
+	// to no tabs. `whenReady` resolving IS the "loaded" signal: consumers await it (the route
+	// `load`) or branch on it (`{#await}` in the tab strip), so there is no separate `hydrated`
+	// flag to keep in sync. SSR/prerender has no Tauri runtime, so skip the read.
 	async function hydrate(): Promise<void> {
-		if (!browser) {
-			hydrated = true;
-			return;
-		}
+		if (!browser) return;
 		try {
 			const raw = await store.get<OpenVault[]>(STORE_KEY);
 			if (isOpenVaultList(raw)) vaults = raw;
 		} catch {
 			// A failed read is "no tabs", same as a fresh install.
 		}
-		hydrated = true;
 	}
 	const whenReady = hydrate();
 
@@ -141,15 +138,11 @@ function createOpenVaults() {
 	}
 
 	return {
-		/** The open vaults, in tab order. Empty until {@link hydrated}. */
+		/** The open vaults, in tab order. Empty until {@link whenReady} resolves. */
 		get list(): OpenVault[] {
 			return vaults;
 		},
-		/** True once the persisted list has loaded; gates the tab strip's skeleton. */
-		get hydrated(): boolean {
-			return hydrated;
-		},
-		/** Resolves once the persisted list has loaded; the route `load` awaits it. */
+		/** Resolves once the persisted list has loaded; route `load` awaits it, the tab strip `{#await}`s it. */
 		whenReady,
 		open,
 		close,

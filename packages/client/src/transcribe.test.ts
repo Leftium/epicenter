@@ -1,0 +1,96 @@
+import { afterEach, describe, expect, test } from 'bun:test';
+import { transcribe } from './transcribe.js';
+
+describe('transcribe over the OpenAI wire', () => {
+	const originalFetch = globalThis.fetch;
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	function captureRequest(response: Response) {
+		const seen: { url: string; init: RequestInit | undefined }[] = [];
+		globalThis.fetch = (async (url: string, init?: RequestInit) => {
+			seen.push({ url: String(url), init });
+			return response;
+		}) as unknown as typeof fetch;
+		return seen;
+	}
+
+	test('posts multipart to /v1/audio/transcriptions and returns trimmed text', async () => {
+		const seen = captureRequest(
+			new Response(JSON.stringify({ text: '  hello world  ' }), {
+				status: 200,
+			}),
+		);
+
+		const { data, error } = await transcribe(
+			new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+			{ baseUrl: 'http://localhost:8000/v1' },
+			{ model: 'whisper-1' },
+		);
+
+		expect(error).toBeNull();
+		expect(data).toBe('hello world');
+		expect(seen).toHaveLength(1);
+		// The connection's baseUrl already carries `/v1`; the client appends the
+		// rest of the wire path, like the sibling chat client does.
+		expect(seen[0]?.url).toBe('http://localhost:8000/v1/audio/transcriptions');
+		expect(seen[0]?.init?.method).toBe('POST');
+
+		const form = seen[0]?.init?.body as FormData;
+		expect(form.get('model')).toBe('whisper-1');
+		const file = form.get('file') as File;
+		// The extension is derived from the blob MIME so the wire detects the format.
+		expect(file.name).toBe('audio.webm');
+	});
+
+	test('attaches the user key as a Bearer when the connection carries one', async () => {
+		const seen = captureRequest(
+			new Response(JSON.stringify({ text: 'ok' }), { status: 200 }),
+		);
+
+		await transcribe(
+			new Blob([new Uint8Array([1])], { type: 'audio/mp4' }),
+			{ baseUrl: 'https://api.groq.com/openai/v1', apiKey: 'sk-test' },
+			{ model: 'whisper-large-v3', language: 'en', prompt: 'Epicenter' },
+		);
+
+		const headers = new Headers(seen[0]?.init?.headers);
+		expect(headers.get('Authorization')).toBe('Bearer sk-test');
+		const form = seen[0]?.init?.body as FormData;
+		expect(form.get('language')).toBe('en');
+		expect(form.get('prompt')).toBe('Epicenter');
+	});
+
+	test('a non-2xx becomes a RequestFailed carrying the status', async () => {
+		captureRequest(new Response('nope', { status: 401 }));
+
+		const { data, error } = await transcribe(
+			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
+			{ baseUrl: 'https://api.openai.com/v1', apiKey: 'bad' },
+			{ model: 'whisper-1' },
+		);
+
+		expect(data).toBeNull();
+		expect(error?.name).toBe('RequestFailed');
+		if (error?.name === 'RequestFailed') {
+			expect(error.status).toBe(401);
+			expect(error.detail).toBe('nope');
+		}
+	});
+
+	test('a 2xx body that is not { text } becomes Malformed', async () => {
+		captureRequest(
+			new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
+		);
+
+		const { data, error } = await transcribe(
+			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
+			{ baseUrl: 'http://localhost:8000/v1' },
+			{ model: 'whisper-1' },
+		);
+
+		expect(data).toBeNull();
+		expect(error?.name).toBe('Malformed');
+	});
+});

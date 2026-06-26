@@ -45,6 +45,11 @@ export {
 	createOpenAiAgentEngine,
 	type OpenAiTurnContext,
 } from './openai-provider.js';
+export {
+	transcribe,
+	TranscribeError,
+	type TranscribeOptions,
+} from './transcribe.js';
 
 export type EpicenterClientOptions = {
 	/** Base URL of the Epicenter server (no trailing slash required). */

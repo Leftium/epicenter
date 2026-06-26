@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { Skeleton } from '@epicenter/ui/skeleton';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
@@ -28,31 +29,37 @@
 
 <div class="flex h-screen flex-col">
 	<div class="flex min-h-12 items-center gap-1 border-b px-2 py-1.5">
-		{#each openVaults.list as vault (vault.id)}
-			{@const active = page.params.id === vault.id}
-			<div
-				class={[
-					'group flex items-center gap-0.5 rounded-md border text-sm',
-					active ? 'border-border bg-muted' : 'border-transparent hover:bg-muted/50',
-				]}
-			>
-				<a
-					href={routes.vault(vault.id)}
-					class="max-w-48 truncate py-1 pl-2.5 pr-1"
-					title={vault.root}
+		{#if openVaults.hydrated}
+			{#each openVaults.list as vault (vault.id)}
+				{@const active = page.params.id === vault.id}
+				<div
+					class={[
+						'group flex items-center gap-0.5 rounded-md border text-sm',
+						active ? 'border-border bg-muted' : 'border-transparent hover:bg-muted/50',
+					]}
 				>
-					{basename(vault.root)}
-				</a>
-				<button
-					type="button"
-					onclick={() => closeTab(vault.id)}
-					aria-label="Close {basename(vault.root)}"
-					class="mr-1 rounded-sm p-0.5 text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-				>
-					<XIcon class="size-3.5" />
-				</button>
-			</div>
-		{/each}
+					<a
+						href={routes.vault(vault.id)}
+						class="max-w-48 truncate py-1 pl-2.5 pr-1"
+						title={vault.root}
+					>
+						{basename(vault.root)}
+					</a>
+					<button
+						type="button"
+						onclick={() => closeTab(vault.id)}
+						aria-label="Close {basename(vault.root)}"
+						class="mr-1 rounded-sm p-0.5 text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+					>
+						<XIcon class="size-3.5" />
+					</button>
+				</div>
+			{/each}
+		{:else}
+			<Skeleton class="h-7 w-24 rounded-md" />
+			<Skeleton class="h-7 w-24 rounded-md" />
+			<Skeleton class="h-7 w-24 rounded-md" />
+		{/if}
 		<Button
 			onclick={openVaults.open}
 			variant="ghost"

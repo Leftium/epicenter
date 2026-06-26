@@ -53,10 +53,14 @@ export const ServerBindings = type({
 	'BLOBS_S3_BUCKET?': 'string',
 	'BLOBS_S3_REGION?': 'string',
 	// AI provider house keys are optional: set one to serve that provider
-	// through the gateway (routes/inference.ts), or omit it and a request for
-	// that provider gets 503 ProviderNotConfigured. House-key-only (ADR-0054).
+	// through the gateway (routes/inference.ts, routes/transcription.ts), or omit
+	// it and a request for that provider gets 503 ProviderNotConfigured.
+	// House-key-only (ADR-0054).
 	'OPENAI_API_KEY?': 'string',
 	'GEMINI_API_KEY?': 'string',
+	// Groq house key for the speech-to-text gateway (whisper-large-v3-turbo over
+	// the OpenAI wire). Omit it and `/v1/audio/transcriptions` answers 503.
+	'GROQ_API_KEY?': 'string',
 });
 
 /** The portable env contract; also the Hono `Env.Bindings` type (types.ts). */

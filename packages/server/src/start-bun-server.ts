@@ -31,6 +31,7 @@ import type { OwnershipRule } from './ownership.js';
 import { createBunRooms } from './room/backends/bun/registry.js';
 import { authApp } from './routes/auth.js';
 import { mountInferenceApp } from './routes/inference.js';
+import { mountTranscriptionApp } from './routes/transcription.js';
 import { mountRoomsApp } from './routes/rooms.js';
 import { mountSessionApp } from './routes/session.js';
 import { bun } from './runtime/bun.js';
@@ -135,6 +136,7 @@ export function startBunServer({
 	mountSessionApp(app, { ownership });
 	mountRoomsApp(app, { ownership });
 	mountInferenceApp(app, { auth: requireBearerUser, ownership });
+	mountTranscriptionApp(app, { auth: requireBearerUser, ownership });
 	mountExtras?.(app, ownership);
 
 	const server = Bun.serve({

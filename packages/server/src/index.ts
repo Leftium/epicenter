@@ -59,6 +59,7 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 export { authApp } from './routes/auth.js';
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
+export { mountTranscriptionApp } from './routes/transcription.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { bun } from './runtime/bun.js';

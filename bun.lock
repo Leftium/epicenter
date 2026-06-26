@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -520,6 +519,7 @@
         "@anthropic-ai/sdk": "^0.55.0",
         "@aptabase/tauri": "^0.4.1",
         "@aptabase/web": "^0.4.3",
+        "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",

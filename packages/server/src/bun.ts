@@ -38,6 +38,7 @@ export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
+export { mountTranscriptionApp } from './routes/transcription.js';
 // The Bun RuntimeAdapter factory: wraps a boot-built db handle + room registry,
 // the honest peer of `cloudflare()`.
 export { bun } from './runtime/bun.js';

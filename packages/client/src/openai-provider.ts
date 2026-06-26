@@ -30,6 +30,7 @@ import type {
 	EngineFetch,
 	ModelMessage,
 } from './agent-engine.js';
+import { joinUrl } from './connection.js';
 
 /**
  * Everything the engine needs for one turn, read per turn so a backend or model
@@ -318,7 +319,7 @@ export function createOpenAiAgentEngine({
 }): AgentEngine {
 	return async function* (request, signal) {
 		const { fetch, baseURL, model, systemPrompts } = data();
-		const endpoint = `${baseURL.replace(/\/+$/, '')}/chat/completions`;
+		const endpoint = joinUrl(baseURL, 'chat/completions');
 		const body = {
 			model,
 			messages: [

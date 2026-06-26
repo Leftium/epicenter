@@ -22,6 +22,7 @@ import {
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
+	mountTranscriptionApp,
 	personal,
 	Room,
 	requireBearerUser,
@@ -29,7 +30,10 @@ import {
 	type ServerBindings,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
-import { chargeOpenAiCreditsWithAutumn } from './billing/policies.js';
+import {
+	chargeOpenAiCreditsWithAutumn,
+	chargeOpenAiTranscriptionCredits,
+} from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
@@ -94,6 +98,13 @@ mountInferenceApp(app, {
 	auth: requireBearerUser,
 	ownership,
 	policies: [chargeOpenAiCreditsWithAutumn],
+});
+// OpenAI-compatible STT gateway (Groq Whisper, house key). Metered by audio
+// duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
+mountTranscriptionApp(app, {
+	auth: requireBearerUser,
+	ownership,
+	policies: [chargeOpenAiTranscriptionCredits],
 });
 
 // Cloud-only billing data plane. Auth is bundled into the mount so the

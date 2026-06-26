@@ -35,6 +35,8 @@ export async function runQuery(args: ParsedArgs): Promise<number> {
 
 	console.log(JSON.stringify(data.rows, null, 2));
 	const shown = data.truncated ? ` (showing first ${data.rows.length})` : '';
-	console.error(`${data.rowCount} row${data.rowCount === 1 ? '' : 's'}${shown}`);
+	console.error(
+		`${data.rowCount} row${data.rowCount === 1 ? '' : 's'}${shown}`,
+	);
 	return 0;
 }

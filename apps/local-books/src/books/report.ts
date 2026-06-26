@@ -76,7 +76,8 @@ export async function fetchReport({
 	const params: Record<string, string> = {};
 	if (input.start_date) params.start_date = input.start_date;
 	if (input.end_date) params.end_date = input.end_date;
-	if (input.accounting_method) params.accounting_method = input.accounting_method;
+	if (input.accounting_method)
+		params.accounting_method = input.accounting_method;
 
 	const { data, error } = await qb.report(input.report, params);
 	if (error) return Err(error);

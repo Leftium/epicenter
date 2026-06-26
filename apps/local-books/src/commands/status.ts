@@ -36,9 +36,7 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 
 	const path = dbPath(config.dataDir, realmId);
 	if (!existsSync(path)) {
-		console.log(
-			`Local copy:   not built yet. Run "local-books sync --full".`,
-		);
+		console.log(`Local copy:   not built yet. Run "local-books sync --full".`);
 		return 0;
 	}
 
@@ -47,7 +45,9 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 	// it is shown once at the realm level, not repeated per entity.
 	const realm = db.readRealmState();
 	console.log(`Schema:        v${db.getMeta('schema_version')}`);
-	console.log(`Synced through:${realm.cdcCursor ? ` ${realm.cdcCursor}` : ' -'}`);
+	console.log(
+		`Synced through:${realm.cdcCursor ? ` ${realm.cdcCursor}` : ' -'}`,
+	);
 	console.log(`Last full:     ${realm.lastFullPullAt ?? '-'}`);
 	console.log(`Last synced:   ${realm.lastSyncedAt ?? '-'}`);
 	console.log('');

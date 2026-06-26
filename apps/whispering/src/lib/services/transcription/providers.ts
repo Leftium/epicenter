@@ -281,9 +281,10 @@ export const PROVIDERS = {
 export type TranscriptionServiceId = keyof typeof PROVIDERS;
 
 /**
- * The ids of cloud providers, derived from PROVIDERS. The dispatch table in
- * `operations/transcribe.ts` is `satisfies Record<CloudProviderId, ...>`, so
- * adding a cloud provider here without a transcriber there is a compile error.
+ * The ids of cloud providers, derived from PROVIDERS. Consumed by the settings UI
+ * to type provider config fields. (Transcription routing no longer keys off this:
+ * `operations/transcribe.ts` dispatches over a single `UPLOAD_DISPATCH` table that
+ * excludes only the local ids.)
  */
 export type CloudProviderId = {
 	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['location'] extends 'cloud'
@@ -307,6 +308,14 @@ export function isLocalProviderId(
 ): id is LocalProviderId {
 	return PROVIDERS[id].location === 'local';
 }
+
+/**
+ * The upload providers: every non-local id, reached by uploading audio over the
+ * wire (cloud and self-hosted) rather than the on-device FFI path. "Upload" is
+ * "not local", and localness is the one facet PROVIDERS declares, so the
+ * subtraction reads as English. `UPLOAD_DISPATCH` is keyed by exactly this set.
+ */
+export type UploadProviderId = Exclude<TranscriptionServiceId, LocalProviderId>;
 
 /** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(

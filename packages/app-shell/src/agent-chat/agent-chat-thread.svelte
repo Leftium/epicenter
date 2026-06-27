@@ -22,6 +22,7 @@
 		onAlwaysAllow,
 		emptyState,
 		placeholder,
+		inputAccessory,
 	}: {
 		/** The active conversation this thread renders end to end. */
 		conversation: ConversationHandle;
@@ -46,6 +47,8 @@
 		emptyState?: Snippet;
 		/** Optional input placeholder. */
 		placeholder?: string;
+		/** Optional control rendered in the input row (Vocab's dictation mic). */
+		inputAccessory?: Snippet;
 	} = $props();
 </script>
 
@@ -97,5 +100,6 @@
 		onSend={(content) => conversation.sendMessage(content)}
 		onStop={() => conversation.stop()}
 		{placeholder}
+		accessory={inputAccessory}
 	/>
 </div>

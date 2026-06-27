@@ -29,8 +29,6 @@ export type ReadonlyTableView<TRow extends BaseRow> = {
 	readonly newerWriter: readonly TableNewerWriterError[];
 	/** A single conforming row by id, or `undefined` if absent or unreadable. */
 	byId(id: string): TRow | undefined;
-	/** Whether a stored entry exists under `id` (conforming or not). */
-	has(id: string): boolean;
 };
 
 /**
@@ -43,11 +41,11 @@ export type ReadonlyTableView<TRow extends BaseRow> = {
  * its object reference across scans and only changed rows are reparsed; the view
  * does not need a mirror of its own to stay incremental.
  *
- * `byId` and `has` read straight through the table per call. They are reactive
- * (each subscribes), but coarsely: any table change re-runs them, where a
- * per-key mirror would re-run only on a change to that id. At table sizes below
- * roughly ten thousand rows with human-speed edits this is not worth a per-key
- * subscription; add one keyed by id if profiling ever says otherwise.
+ * `byId` reads straight through the table per call. It is reactive (it
+ * subscribes), but coarsely: any table change re-runs it, where a per-key mirror
+ * would re-run only on a change to that id. At table sizes below roughly ten
+ * thousand rows with human-speed edits this is not worth a per-key subscription;
+ * add one keyed by id if profiling ever says otherwise.
  *
  * The view self-manages its lifetime: `observe()` attaches when the first effect
  * starts reading and detaches a microtask after the last one stops. There is no
@@ -90,10 +88,6 @@ export function fromTable<TRow extends BaseRow>(
 		byId(id: string): TRow | undefined {
 			subscribe();
 			return table.get(id).data ?? undefined;
-		},
-		has(id: string): boolean {
-			subscribe();
-			return table.has(id);
 		},
 	};
 }

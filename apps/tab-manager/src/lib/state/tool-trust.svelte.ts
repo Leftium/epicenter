@@ -28,9 +28,14 @@ export function createToolTrustState(tabManager: TabManagerBrowser) {
 		/**
 		 * Whether a tool auto-approves without showing the approval UI.
 		 * Query tools should not call this because they auto-execute always.
+		 *
+		 * Honors only a trust row this binary can read: a grant written by a newer
+		 * binary (a future toolTrust schema) is unreadable here, so it falls back
+		 * to the safe "ask" default rather than auto-approving a row whose fields
+		 * it cannot see.
 		 */
 		shouldAutoApprove(name: string): boolean {
-			return trustView.has(name);
+			return trustView.byId(name) !== undefined;
 		},
 
 		/** Auto-approve this tool from now on (the "Always Allow" action). */

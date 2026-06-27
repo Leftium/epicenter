@@ -58,9 +58,9 @@ const newerWriter = (id: string): StoredEntry => ({
 
 /**
  * A `ReadonlyTable` standing on a plain Map. `fromTable` only ever calls
- * `scan()`, `observe()`, `get()`, and `has()`, so the rest throws to fail loud
- * if the contract widens. The view reads live, so mutating `store` then reading
- * a surface plays the role of a write landing.
+ * `scan()`, `observe()`, and `get()`, so the rest throws to fail loud if the
+ * contract widens. The view reads live, so mutating `store` then reading a
+ * surface plays the role of a write landing.
  */
 function createMockTable() {
 	const store = new Map<string, StoredEntry>();
@@ -88,9 +88,6 @@ function createMockTable() {
 			if (!entry) return Ok(null);
 			return entry.kind === 'row' ? Ok(entry.row) : Err(entry.error);
 		},
-		has(id: string) {
-			return store.has(id);
-		},
 		observe() {
 			// Outside an effect `createSubscriber` never calls this; the lifecycle
 			// is Svelte's to drive. Return a no-op unobserve for completeness.
@@ -114,7 +111,7 @@ test('all + buckets: scan routes conforming rows and each issue bucket', () => {
 	expect(entries.newerWriter.map((e) => e.id)).toEqual(['ahead']);
 });
 
-test('byId + has: conforming id resolves, unreadable and absent ids do not', () => {
+test('byId: conforming id resolves; unreadable and absent ids do not', () => {
 	const { table, store } = createMockTable();
 	store.set('ok', row('ok', 'Ada'));
 	store.set('bad', nonconforming('bad'));
@@ -122,15 +119,14 @@ test('byId + has: conforming id resolves, unreadable and absent ids do not', () 
 	const entries = fromTable(table);
 
 	expect(entries.byId('ok')?.name).toBe('Ada');
-	expect(entries.has('ok')).toBe(true);
 
-	// A stored-but-unreadable id exists but does not resolve to a row.
+	// A stored-but-unreadable id does not resolve to a row; it surfaces in the
+	// issue bucket instead.
 	expect(entries.byId('bad')).toBeUndefined();
-	expect(entries.has('bad')).toBe(true);
+	expect(entries.nonconforming.map((e) => e.id)).toEqual(['bad']);
 
-	// An absent id resolves to undefined and is not present.
+	// An absent id resolves to undefined and is in no bucket.
 	expect(entries.byId('missing')).toBeUndefined();
-	expect(entries.has('missing')).toBe(false);
 });
 
 test('reads are live: surfaces reflect the current table state', () => {
@@ -153,7 +149,6 @@ test('reads are live across every classification transition', () => {
 
 	// row -> nonconforming -> newerWriter -> row, each visible on the next read.
 	store.set('a', row('a'));
-	expect(entries.has('a')).toBe(true);
 	expect(entries.byId('a')).toBeDefined();
 
 	store.set('a', nonconforming('a'));

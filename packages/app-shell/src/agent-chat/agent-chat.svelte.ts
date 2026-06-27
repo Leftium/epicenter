@@ -419,7 +419,7 @@ export function createAgentChatState({
 	 */
 	function reconcileHandles() {
 		for (const id of handles.keys()) {
-			if (!conversationsView.has(id)) destroyConversation(id);
+			if (!table.has(id)) destroyConversation(id);
 		}
 		for (const id of conversationsView.all.map((c) => c.id)) {
 			const conversationId = asConversationId(id);

@@ -30,6 +30,7 @@ import { requireBearerUser } from './middleware/require-auth.js';
 import type { OwnershipRule } from './ownership.js';
 import { createBunRooms } from './room/backends/bun/registry.js';
 import { authApp } from './routes/auth.js';
+import { mountHealth } from './routes/health.js';
 import { mountInferenceApp } from './routes/inference.js';
 import { mountRoomsApp } from './routes/rooms.js';
 import { mountSessionApp } from './routes/session.js';
@@ -131,7 +132,7 @@ export function startBunServer({
 		resolveUser,
 	});
 
-	app.get('/', (c) => c.json({ mode, version: '0.1.0', runtime: 'bun' }));
+	mountHealth(app, { mode, runtime: 'bun' });
 	app.route('/', authApp);
 	mountSessionApp(app, { ownership });
 	mountRoomsApp(app, { ownership });

@@ -20,6 +20,7 @@ import {
 	authApp,
 	cloudflare,
 	createServerApp,
+	mountHealth,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -27,6 +28,7 @@ import {
 	requireBearerUser,
 	shared,
 } from '@epicenter/server';
+import { resolveSelfHostTrustedOrigins } from '../trusted-origins.js';
 
 const ownership = shared({
 	admit: (c) => {
@@ -63,22 +65,13 @@ const app = createServerApp({
 		// operator config, not a binding `ServerBindings` names, so it is read off
 		// this deployment's own `Cloudflare.Env` at the honest edge (ADR-0066).
 		resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
-		// A self-host trusts its OWN origin and the Tauri desktop client, never
-		// Epicenter cloud's. Add any browser app origins you serve (and the
-		// Epicenter browser-extension origin, if your users point it at this
-		// deployment) here.
-		resolveTrustedOrigins: (baseURL) => [
-			new URL(baseURL).origin,
-			'tauri://localhost',
-		],
+		resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
 		// No cookieDomain: a single-origin deployment uses host-only cookies
 		// scoped to its own host.
 	},
 });
 
-app.get('/', (c) =>
-	c.json({ mode: 'shared', version: '0.1.0', runtime: 'cloudflare' }),
-);
+mountHealth(app, { mode: 'shared', runtime: 'cloudflare' });
 
 app.route('/', authApp);
 

@@ -58,6 +58,7 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // has no deployment knobs.
 export { authApp } from './routes/auth.js';
 export { mountBlobsApp } from './routes/blobs.js';
+export { mountHealth } from './routes/health.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';

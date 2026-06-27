@@ -1,11 +1,12 @@
 /**
  * Bun entry for apps/self-host: the single-partition instance (ADR-0073).
  *
- * The off-Cloudflare twin of `worker/index.ts`. It composes `@epicenter/server`
- * directly (it does NOT go through the hosted `startBunServer` bootstrap, which
- * bakes Better Auth and cookie sessions): the instance is a different product,
- * bearer-only with no relational-auth substrate, so it wires its own thin
- * composition. It composes no Postgres (no Better Auth, no telemetry), so its
+ * The off-Cloudflare twin of `worker/index.ts`, and the instance's peer to the
+ * hosted cloud's own Bun bootstrap (`apps/api/server.ts`). Each Bun entry owns
+ * its composition rather than sharing a launcher: this one is bearer-only with no
+ * relational-auth substrate (no Better Auth, no cookie sessions), so a shared
+ * factory would re-introduce the mode knob ADR-0073/0074 deleted. It composes no
+ * Postgres (no Better Auth, no telemetry), so its
  * runtime adapter (ADR-0066) provides only one leg:
  *
  *   - `resolveRooms`  an in-process registry over `bun:sqlite` files

@@ -1,8 +1,11 @@
 /**
  * @epicenter/server/bun — the Bun host surface.
  *
- * Same library, second runtime (ADR-0066). A Bun entry imports `startBunServer`
- * (or `createServerApp` + the `mount*` surface) from here. The `RuntimeAdapter`
+ * Same library, second runtime (ADR-0066). A Bun entry composes its server from
+ * here (`createServerApp` + the `mount*` surface) and serves it with `Bun.serve`.
+ * The hosted cloud's Bun bootstrap and the instance's Bun bootstrap each own
+ * their own composition (`apps/api/server.ts`, `apps/self-host/server.ts`); the
+ * library ships the parts, not a shared launcher (ADR-0073/0074). The `RuntimeAdapter`
  * is built by {@link bun}, the honest peer of `cloudflare()`: a `pg.Pool` and a
  * fire-and-forget drain as the `db` leg, and {@link createBunRooms} for
  * `resolveRooms` (an in-process registry over `bun:sqlite`, not a Durable
@@ -32,7 +35,12 @@ export { createDb, type Db } from './db/create-db.js';
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
+	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
+// The cloud-only relational-auth layer (Better Auth on `c.var.auth` + the auth
+// surface). A cloud-on-Bun entry calls it once after `createServerApp`; the
+// single-partition instance never does (ADR-0074).
+export { mountCloudAuth } from './mount-cloud-auth.js';
 export { doName } from './owner.js';
 export { instance, type OwnershipRule, personal } from './ownership.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
@@ -55,17 +63,9 @@ export {
 	type RuntimeAdapter,
 } from './server-app.js';
 // The portable env contract as both arktype schema (value) and inferred type;
-// the Bun entry validates `process.env` against it at boot.
+// the Bun entry validates `process.env` against it at boot (merging its own
+// process config and any secrets it re-requires).
 export { ServerBindings } from './server-bindings.js';
-// The shared Bun process bootstrap: an entry validates `process.env` against
-// `BunHostBindings` (merging its own extras), builds its ownership rule, then
-// hands both to `startBunServer`, which owns everything mechanical (pool, rooms,
-// the `bun()` adapter, the shared mounts, and `Bun.serve`).
-export {
-	BunHostBindings,
-	type StartBunServerOptions,
-	startBunServer,
-} from './start-bun-server.js';
 // `ResolveUser` is the user-resolution seam the dev Bun entry injects on
 // `createServerApp` to drive the parity smoke without an interactive login.
 export type { Env, ResolveUser } from './types.js';

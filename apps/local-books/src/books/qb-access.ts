@@ -23,11 +23,14 @@ export function createQbAccess({
 	realmId,
 	store,
 	now,
+	log,
 }: {
 	config: AppConfig;
 	realmId: string;
 	store: TokenStore;
 	now: () => number;
+	/** Optional client-level log sink; the CLI routes it to stderr, MCP omits it. */
+	log?: (message: string) => void;
 }): OpenQbClient {
 	return async () => {
 		const token = await store.get(realmId);
@@ -37,6 +40,6 @@ export function createQbAccess({
 			);
 		}
 		const tokens = createTokenManager({ config, store, token, now });
-		return Ok(createQbClient({ config, realmId, tokens }));
+		return Ok(createQbClient({ config, realmId, tokens, log }));
 	};
 }

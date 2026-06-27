@@ -48,6 +48,9 @@ export {
 	requireCookieOrBearerUser,
 	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
+// An opt-in burn-rate cap for the inference `policies` seam: caps requests per
+// owner partition so a shared house key cannot be run up unbounded (ADR-0074).
+export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
 // plus the `authApp` surface (sign-in, consent, OAuth metadata). The cloud calls
 // this once after `createServerApp`; the single-partition instance never does and

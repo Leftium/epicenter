@@ -1,0 +1,68 @@
+/**
+ * `rateLimit`: a fixed-window burn-rate cap for the inference policies seam.
+ *
+ * The OpenAI-compatible gateway (`mountInferenceApp`) proxies to a provider with
+ * the deployment's HOUSE key, so every accepted request spends the operator's
+ * money. `policies` is where a deployment gates that spend: the cloud passes its
+ * Autumn credit charge, and a self-hosted instance can pass this to cap the burn
+ * rate so a leaked or overused bearer cannot run the provider bill up unbounded.
+ * It is the in-process backstop; the real ceiling is the hard spend limit the
+ * operator sets on the provider key itself (see apps/self-host/README.md).
+ *
+ * One counter per owner partition, keyed off `c.var.ownerId` (set by the upstream
+ * `requireOwnership` that every `policies` middleware runs after). On the
+ * single-partition instance that is one global bucket; on a per-user deployment it
+ * is per user, with no config change, because the ownership rule already encodes
+ * the right granularity.
+ *
+ * The window lives in process memory: EXACT on the blessed single-node Bun
+ * instance, and per-isolate (so approximate) on Cloudflare, which is the same
+ * single-node accuracy tradeoff the instance accepts everywhere. It is sized for
+ * the small trusted group the instance targets, not multi-tenant scale; durable,
+ * shared limiting at scale is Cloud's concern (Autumn), not this primitive.
+ *
+ * A denied request answers `429` in the gateway's OpenAI error envelope
+ * (`{ error: { message, code } }`) with a `Retry-After` header, so the inference
+ * client's reducer keeps its branchable `error.code`.
+ */
+
+import type { MiddlewareHandler } from 'hono';
+import { createMiddleware } from 'hono/factory';
+import type { Env } from '../types.js';
+
+export function rateLimit(opts: {
+	/** Max requests allowed per owner partition within one window. */
+	requests: number;
+	/** Window length in seconds; the count resets when it elapses. */
+	windowSeconds: number;
+}): MiddlewareHandler<Env> {
+	const windowMs = opts.windowSeconds * 1000;
+	const windows = new Map<string, { count: number; resetAt: number }>();
+	return createMiddleware<Env>(async (c, next) => {
+		const key = c.var.ownerId;
+		const now = Date.now();
+		const window = windows.get(key);
+
+		// First request, or the previous window elapsed: start a fresh window.
+		if (!window || now >= window.resetAt) {
+			windows.set(key, { count: 1, resetAt: now + windowMs });
+			return next();
+		}
+
+		if (window.count >= opts.requests) {
+			c.header('retry-after', String(Math.ceil((window.resetAt - now) / 1000)));
+			return c.json(
+				{
+					error: {
+						message: 'Rate limit exceeded. Try again shortly.',
+						code: 'rate_limit_exceeded',
+					},
+				},
+				429,
+			);
+		}
+
+		window.count += 1;
+		return next();
+	});
+}

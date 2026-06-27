@@ -37,6 +37,8 @@ export {
 	requireCookieOrBearerUser,
 	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
+// An opt-in burn-rate cap for the inference `policies` seam (ADR-0074).
+export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer (Better Auth on `c.var.auth` + the auth
 // surface). A cloud-on-Bun entry calls it once after `createServerApp`; the
 // single-partition instance never does (ADR-0074).

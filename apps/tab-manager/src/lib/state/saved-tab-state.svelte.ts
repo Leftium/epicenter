@@ -18,11 +18,11 @@ import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import type { SavedTab, SavedTabId } from '$lib/workspace/definition';
 
 export function createSavedTabState(tabManager: TabManagerBrowser) {
-	const tabsMap = fromTable(tabManager.tables.savedTabs);
+	const tabsView = fromTable(tabManager.tables.savedTabs);
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
 	const tabs = $derived(
-		tabsMap.all.toSorted((a, b) => b.savedAt.localeCompare(a.savedAt)),
+		tabsView.all.toSorted((a, b) => b.savedAt.localeCompare(a.savedAt)),
 	);
 
 	return {

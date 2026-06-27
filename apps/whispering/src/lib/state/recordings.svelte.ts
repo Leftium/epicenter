@@ -1,9 +1,10 @@
 /**
  * Reactive recording state backed by Yjs workspace tables.
  *
- * Replaces TanStack Query + BlobStore for recording CRUD. SvelteMap provides
- * per-key reactivity. Updating one recording doesn't re-render the entire list.
- * The Yjs observer fires on local writes, remote CRDT sync, and migration.
+ * Reads go through a `fromTable` view, a coarse-grained `ReadonlyTableView`:
+ * any recording change re-runs every reader (not per-key). Writes delegate to
+ * the workspace table; the Yjs observer behind the view picks up local writes,
+ * remote CRDT sync, and migration.
  *
  * Audio blob access still goes through BlobStore (blobs are too large for CRDTs).
  *
@@ -11,11 +12,9 @@
  * ```typescript
  * import { recordings } from '$lib/state/recordings.svelte';
  *
- * // Read reactively (re-renders on change)
  * const recording = recordings.get(id);
  * const all = recordings.sorted; // newest first
  *
- * // Write (Yjs observer auto-updates SvelteMap → components re-render)
  * recordings.set(recording);
  * recordings.delete(id);
  * ```
@@ -28,7 +27,7 @@ import type { Recording } from '$lib/workspace';
 export type { Recording } from '$lib/workspace';
 
 function createRecordings() {
-	const map = fromTable(whispering.tables.recordings);
+	const view = fromTable(whispering.tables.recordings);
 
 	// Memoize sorted array with $derived so consumers get a stable reference.
 	// `toSorted` returns a fresh sorted array (the view's `all` is a shared,
@@ -37,7 +36,7 @@ function createRecordings() {
 	// stability TanStack Table's $derived sees "new data" every access → updates
 	// internal $state → re-triggers $derived → infinite loop.
 	const sorted = $derived(
-		map.all.toSorted(
+		view.all.toSorted(
 			(a, b) =>
 				new Date(b.recordedAt as string).getTime() -
 				new Date(a.recordedAt as string).getTime(),
@@ -46,42 +45,32 @@ function createRecordings() {
 
 	return {
 		/**
-		 * All recordings as a reactive readonly table view.
-		 *
-		 * Components reading this re-render when recordings change.
-		 * Use `.sorted` for a pre-sorted array, or iterate `.all` for
-		 * custom ordering.
-		 */
-		get all() {
-			return map;
-		},
-
-		/**
 		 * Get a recording by ID. Returns undefined if not found.
 		 *
-		 * Reads from the reactive table view. Triggers re-render if the
-		 * recording changes or is deleted.
+		 * Reads from the reactive table view. Triggers re-render if any
+		 * recording changes (the view is coarse-grained).
 		 */
 		get(id: string) {
-			return map.byId(id);
+			return view.byId(id);
 		},
 
 		/**
 		 * All recordings as a sorted array (newest first by recordedAt).
 		 *
-		 * Memoized via `$derived`. Returns a stable reference until the
-		 * SvelteMap actually changes. This is critical for TanStack Table,
-		 * which uses reference equality to detect data changes.
+		 * Memoized via `$derived`. Returns a stable reference until the table
+		 * actually changes. This is critical for TanStack Table, which uses
+		 * reference equality to detect data changes.
 		 */
 		get sorted(): Recording[] {
 			return sorted;
 		},
 
 		/**
-		 * Create or update a recording. Writes to Yjs → observer updates SvelteMap.
+		 * Create or update a recording. Writes to Yjs; the view re-reads on the
+		 * observer signal.
 		 *
 		 * Accepts a recording without `_v` (version tag is added automatically).
-		 * No manual cache invalidation needed. The observer handles UI updates.
+		 * No manual cache invalidation needed; reads are live through the table.
 		 */
 		set(recording: Omit<Recording, '_v'>) {
 			whispering.tables.recordings.set({ ...recording } as Recording);
@@ -100,7 +89,7 @@ function createRecordings() {
 		/**
 		 * Delete a recording by ID.
 		 *
-		 * Fire-and-forget. Yjs observer fires `map.delete(id)` automatically.
+		 * Fire-and-forget. The view re-reads on the observer signal automatically.
 		 * Callers should clean up audio URLs before calling this.
 		 */
 		delete(id: string) {
@@ -120,7 +109,7 @@ function createRecordings() {
 
 		/** Total number of recordings. */
 		get count() {
-			return map.all.length;
+			return view.all.length;
 		},
 	};
 }

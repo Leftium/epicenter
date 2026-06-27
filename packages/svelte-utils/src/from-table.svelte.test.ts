@@ -110,7 +110,6 @@ test('all + buckets: scan routes conforming rows and each issue bucket', () => {
 	const entries = fromTable(table);
 
 	expect(entries.all.map((r) => r.id)).toEqual(['ok']);
-	expect(entries.allIds()).toEqual(['ok']);
 	expect(entries.nonconforming.map((e) => e.id)).toEqual(['bad']);
 	expect(entries.newerWriter.map((e) => e.id)).toEqual(['ahead']);
 });
@@ -141,7 +140,7 @@ test('reads are live: surfaces reflect the current table state', () => {
 
 	store.set('a', row('a', 'Ada'));
 	expect(entries.byId('a')?.name).toBe('Ada');
-	expect(entries.allIds()).toEqual(['a']);
+	expect(entries.all.map((r) => r.id)).toEqual(['a']);
 
 	store.delete('a');
 	expect(entries.byId('a')).toBeUndefined();

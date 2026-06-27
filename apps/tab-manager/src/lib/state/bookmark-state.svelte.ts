@@ -19,11 +19,11 @@ import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import type { Bookmark, BookmarkId } from '$lib/workspace/definition';
 
 export function createBookmarkState(tabManager: TabManagerBrowser) {
-	const bookmarksMap = fromTable(tabManager.tables.bookmarks);
+	const bookmarksView = fromTable(tabManager.tables.bookmarks);
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
-		bookmarksMap.all.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt)),
+		bookmarksView.all.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt)),
 	);
 
 	/**
@@ -33,7 +33,7 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 	 * re-renders any component that calls `isUrlBookmarked` when the set changes.
 	 */
 	const bookmarkedUrls = $derived(
-		new SvelteSet(bookmarksMap.all.map((b) => b.url)),
+		new SvelteSet(bookmarksView.all.map((b) => b.url)),
 	);
 
 	return {

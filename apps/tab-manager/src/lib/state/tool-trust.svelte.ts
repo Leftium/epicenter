@@ -19,10 +19,10 @@ import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 export type ToolTrustState = ReturnType<typeof createToolTrustState>;
 
 export function createToolTrustState(tabManager: TabManagerBrowser) {
-	const trustMap = fromTable(tabManager.tables.toolTrust);
+	const trustView = fromTable(tabManager.tables.toolTrust);
 
 	/** Cached projection of trusted tool names: stable reference via $derived. */
-	const trustedNames = $derived(trustMap.allIds());
+	const trustedNames = $derived(trustView.all.map((row) => row.id));
 
 	return {
 		/**
@@ -30,7 +30,7 @@ export function createToolTrustState(tabManager: TabManagerBrowser) {
 		 * Query tools should not call this because they auto-execute always.
 		 */
 		shouldAutoApprove(name: string): boolean {
-			return trustMap.has(name);
+			return trustView.has(name);
 		},
 
 		/** Auto-approve this tool from now on (the "Always Allow" action). */

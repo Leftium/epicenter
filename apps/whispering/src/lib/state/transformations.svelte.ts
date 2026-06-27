@@ -40,42 +40,34 @@ export function createDefaultPrompt(): TransformationPrompt {
 }
 
 function createTransformations() {
-	const map = fromTable(whispering.tables.transformations);
+	const view = fromTable(whispering.tables.transformations);
 
-	// `toSorted` returns a fresh sorted array (`map.all` is a shared, readonly
+	// `toSorted` returns a fresh sorted array (`view.all` is a shared, readonly
 	// scan, never sorted in place). The `$derived` memoizes this copy for
 	// referential stability between changes.
 	const sorted = $derived(
-		map.all.toSorted((a, b) => a.title.localeCompare(b.title)),
+		view.all.toSorted((a, b) => a.title.localeCompare(b.title)),
 	);
 
 	return {
 		/**
-		 * All transformations as a reactive readonly table view.
-		 *
-		 * Components reading this re-render when transformations change.
-		 */
-		get all() {
-			return map;
-		},
-
-		/**
 		 * Get a transformation by ID. Returns undefined if not found.
 		 */
 		get(id: string) {
-			return map.byId(id);
+			return view.byId(id);
 		},
 
 		/**
 		 * All transformations as a sorted array (alphabetical by title).
-		 * Memoized via `$derived`. Stable reference until SvelteMap changes.
+		 * Memoized via `$derived`. Stable reference until the table changes.
 		 */
 		get sorted(): Transformation[] {
 			return sorted;
 		},
 
 		/**
-		 * Create or update a transformation. Writes to Yjs → observer updates SvelteMap.
+		 * Create or update a transformation. Writes to Yjs; the view re-reads on
+		 * the observer signal.
 		 */
 		set(transformation: Transformation) {
 			whispering.tables.transformations.set(transformation);
@@ -97,7 +89,7 @@ function createTransformations() {
 
 		/** Total number of transformations. */
 		get count() {
-			return map.all.length;
+			return view.all.length;
 		},
 	};
 }

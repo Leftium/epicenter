@@ -31,8 +31,6 @@ export type ReadonlyTableView<TRow extends BaseRow> = {
 	byId(id: string): TRow | undefined;
 	/** Whether a stored entry exists under `id` (conforming or not). */
 	has(id: string): boolean;
-	/** The ids of every conforming row, in `all` order. */
-	allIds(): readonly string[];
 };
 
 /**
@@ -96,9 +94,6 @@ export function fromTable<TRow extends BaseRow>(
 		has(id: string): boolean {
 			subscribe();
 			return table.has(id);
-		},
-		allIds(): readonly string[] {
-			return scanned.rows.map((row) => row.id);
 		},
 	};
 }

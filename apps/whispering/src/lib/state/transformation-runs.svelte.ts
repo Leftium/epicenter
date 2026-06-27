@@ -21,17 +21,12 @@ import { whispering } from '#platform/whispering';
 import type { TransformationRun } from '$lib/workspace';
 
 function createTransformationRuns() {
-	const map = fromTable(whispering.tables.transformationRuns);
+	const view = fromTable(whispering.tables.transformationRuns);
 
 	return {
-		/** All transformation runs as a reactive readonly table view. */
-		get all() {
-			return map;
-		},
-
 		/** Get a run by ID. */
 		get(id: string) {
-			return map.byId(id);
+			return view.byId(id);
 		},
 
 		/**
@@ -40,7 +35,7 @@ function createTransformationRuns() {
 		 * @param transformationId - FK to the parent transformation
 		 */
 		getByTransformationId(transformationId: string): TransformationRun[] {
-			return map.all
+			return view.all
 				.filter((run) => run.transformationId === transformationId)
 				.sort(
 					(a, b) =>
@@ -54,7 +49,7 @@ function createTransformationRuns() {
 		 * @param recordingId - FK to the recording
 		 */
 		getByRecordingId(recordingId: string): TransformationRun[] {
-			return map.all
+			return view.all
 				.filter((run) => run.recordingId === recordingId)
 				.sort(
 					(a, b) =>
@@ -87,7 +82,7 @@ function createTransformationRuns() {
 
 		/** Total number of runs. */
 		get count() {
-			return map.all.length;
+			return view.all.length;
 		},
 	};
 }

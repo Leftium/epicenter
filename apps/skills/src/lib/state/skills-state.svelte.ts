@@ -26,23 +26,23 @@ export type SkillMetadataUpdate = Partial<
  * ```
  */
 function createSkillsState() {
-	const skillsMap = fromTable(skillsDoc.tables.skills);
-	const referencesMap = fromTable(skillsDoc.tables.references);
+	const skillsView = fromTable(skillsDoc.tables.skills);
+	const referencesView = fromTable(skillsDoc.tables.references);
 
 	const skills = $derived(
-		skillsMap.all.toSorted((a, b) => a.name.localeCompare(b.name)),
+		skillsView.all.toSorted((a, b) => a.name.localeCompare(b.name)),
 	);
 
 	let selectedSkillId = $state<string | null>(null);
 
 	const selectedSkill = $derived.by(() => {
 		if (!selectedSkillId) return null;
-		return skillsMap.byId(selectedSkillId) ?? null;
+		return skillsView.byId(selectedSkillId) ?? null;
 	});
 
 	const selectedReferences = $derived.by(() => {
 		if (!selectedSkillId) return [];
-		return [...referencesMap.all]
+		return [...referencesView.all]
 			.filter((r) => r.skillId === selectedSkillId)
 			.sort((a, b) => a.path.localeCompare(b.path));
 	});
@@ -121,7 +121,7 @@ function createSkillsState() {
 		 */
 		deleteSkill(id: string) {
 			skillsDoc.ydoc.transact(() => {
-				for (const ref of referencesMap.all) {
+				for (const ref of referencesView.all) {
 					if (ref.skillId === id) {
 						skillsDoc.tables.references.delete(ref.id);
 					}

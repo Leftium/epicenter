@@ -45,7 +45,7 @@ export function createFilesState({
 	workspace: OpensidianBrowser;
 }) {
 	// ── Reactive source ──────────────────────────────────────────────
-	const filesMap = fromTable(workspace.tables.files);
+	const filesView = fromTable(workspace.tables.files);
 
 	// ── Reactive state ───────────────────────────────────────────────
 	const openFileIds = new SvelteSet<FileId>();
@@ -64,7 +64,7 @@ export function createFilesState({
 
 	// ── Derived tree structure ───────────────────────────────────────
 	//
-	// childrenOf iterates the full filesMap (creating an all-key dependency),
+	// childrenOf iterates the full filesView (creating an all-key dependency),
 	// so it recomputes on ANY row change: even non-structural edits like
 	// updatedAt bumps. At O(n) Map iteration for <5000 files this is <1ms,
 	// an intentional trade-off over the complexity of structural-only tracking.
@@ -72,7 +72,7 @@ export function createFilesState({
 	/** Parent→children mapping. Groups non-trashed file IDs by parentId. */
 	const childrenOf = $derived.by(() => {
 		const map = new Map<FileId | null, FileId[]>();
-		for (const row of filesMap.all) {
+		for (const row of filesView.all) {
 			if (row.trashedAt !== null) continue;
 			const siblings = map.get(row.parentId) ?? [];
 			siblings.push(row.id);
@@ -86,7 +86,7 @@ export function createFilesState({
 	/**
 	 * Build the full POSIX path for a file by walking up the ancestor chain.
 	 *
-	 * O(depth) per call: typically 3-5 `filesMap.byId()` lookups. The view is
+	 * O(depth) per call: typically 3-5 `filesView.byId()` lookups. The view is
 	 * coarse-grained, so in a reactive context (`$derived`) any table change
 	 * re-runs the derivation. In an imperative context (action methods), it's a
 	 * plain lookup with no reactive cost.
@@ -104,14 +104,14 @@ export function createFilesState({
 	 * ```
 	 */
 	function computePath(id: FileId): string | null {
-		const row = filesMap.byId(id);
+		const row = filesView.byId(id);
 		if (!row || row.trashedAt !== null) return null;
 
 		const parts: string[] = [row.name];
 		let parentId = row.parentId;
 
 		while (parentId !== null) {
-			const parent = filesMap.byId(parentId);
+			const parent = filesView.byId(parentId);
 			if (!parent || parent.trashedAt !== null) return null;
 			parts.unshift(parent.name);
 			parentId = parent.parentId;
@@ -126,12 +126,12 @@ export function createFilesState({
 	/**
 	 * Active file's row data.
 	 *
-	 * Looked up via `filesMap.byId()`. The view is coarse-grained, so any
+	 * Looked up via `filesView.byId()`. The view is coarse-grained, so any
 	 * table change re-runs this derivation.
 	 */
 	const selectedNode = $derived.by(() => {
 		const fileId = searchParams.file;
-		return fileId ? (filesMap.byId(fileId) ?? null) : null;
+		return fileId ? (filesView.byId(fileId) ?? null) : null;
 	});
 	/**
 	 * Active file's full POSIX path.
@@ -230,7 +230,7 @@ export function createFilesState({
 		 * Returns null if the row is deleted/invalid.
 		 */
 		getFile(id: FileId): FileRow | null {
-			return filesMap.byId(id) ?? null;
+			return filesView.byId(id) ?? null;
 		},
 
 		/**
@@ -275,7 +275,7 @@ export function createFilesState({
 			const results: T[] = [];
 			function walk(pid: FileId | null) {
 				for (const childId of childrenOf.get(pid) ?? []) {
-					const row = filesMap.byId(childId);
+					const row = filesView.byId(childId);
 					if (!row || row.trashedAt !== null) continue;
 					const { collect, descend } = visitor(childId, row);
 					if (collect !== undefined) results.push(collect);

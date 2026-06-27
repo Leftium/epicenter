@@ -1,11 +1,18 @@
-import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
+import type {
+	DeviceConfigKey,
+	SecretKey,
+} from '$lib/state/device-config.svelte';
 
 type InferenceProvider = {
 	label: string;
 	/** Fixed model list, or null when the model is typed free-form (OpenRouter, Custom). */
 	models: readonly string[] | null;
-	/** Device config key holding this provider's API key (device-local, never synced). */
-	apiKeyConfigKey: DeviceConfigKey;
+	/**
+	 * The provider's API key: a secret, so it routes through the credential facade
+	 * (`secrets.get`), not raw `deviceConfig`. `SecretKey` (not the wider
+	 * `DeviceConfigKey`) makes that structural, per ADR-0074.
+	 */
+	apiKeyConfigKey: SecretKey;
 	/** Device config key for the endpoint override; null when not configurable. */
 	endpointConfigKey: DeviceConfigKey | null;
 };

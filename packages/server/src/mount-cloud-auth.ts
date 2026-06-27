@@ -14,34 +14,50 @@
  * the root.
  */
 
-import type { Hono } from 'hono';
-import { createAuth } from './auth/create-auth.js';
+import type { Context, Hono } from 'hono';
+import { type CloudAuthBindings, createAuth } from './auth/create-auth.js';
 import { authApp } from './routes/auth.js';
 import type { Env } from './types.js';
+
+export { CloudAuthBindings } from './auth/create-auth.js';
 
 export function mountCloudAuth(
 	app: Hono<Env>,
 	opts: {
+		/**
+		 * Resolve this cloud deployment's relational-auth secrets
+		 * ({@link CloudAuthBindings}) from its own env. The secrets are NOT in the
+		 * portable `ServerBindings` (the relational-auth substrate is Cloud-only,
+		 * ADR-0075), so the cloud supplies them at its own edge: the Worker casts its
+		 * deploy-gated `c.env as Cloudflare.Env`, the Bun host closes over its
+		 * validated env. Read per request because a Worker has no module-scope env.
+		 */
+		resolveAuthSecrets: (c: Context<Env>) => CloudAuthBindings;
 		/**
 		 * Registrable domain for cross-subdomain session cookies (Epicenter cloud
 		 * passes `.epicenter.so`). Omit for a single-origin deployment, which then
 		 * uses host-only cookies scoped to its own host.
 		 */
 		cookieDomain?: string;
-	} = {},
+	},
 ): void {
 	// Better Auth context. Built per request (Workers expose no module-scope env
 	// or db connection), reading the db handle, auth origin, and trusted origins
 	// the `createServerApp` lifecycle already resolved. Installed before the
 	// cookie-or-bearer wrappers and the `authApp` routes mounted below read
-	// `c.var.auth`. First-party OAuth client rows are seeded at deploy time
-	// (apps/api `oauth:seed:*`), so this path only reads.
+	// `c.var.auth` and `c.var.authSecrets`. First-party OAuth client rows are
+	// seeded at deploy time (apps/api `oauth:seed:*`), so this path only reads.
 	app.use('*', async (c, next) => {
+		// Resolve the cloud-only secrets once and stamp them on the context, so both
+		// readers (this Better Auth construction and the `authApp` sign-in page) take
+		// them from one resolved value rather than the raw `c.env` bag (ADR-0075).
+		const authSecrets = opts.resolveAuthSecrets(c);
+		c.set('authSecrets', authSecrets);
 		c.set(
 			'auth',
 			createAuth({
 				db: c.var.db,
-				env: c.env,
+				env: authSecrets,
 				baseURL: c.var.authBaseURL,
 				trustedOrigins: c.var.trustedOrigins,
 				cookieCrossSubDomain: opts.cookieDomain,

@@ -73,7 +73,8 @@ export const authApp = new Hono<Env>()
 		return c.html(
 			renderSignInPage({
 				githubEnabled: Boolean(
-					c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET,
+					c.var.authSecrets.GITHUB_CLIENT_ID &&
+						c.var.authSecrets.GITHUB_CLIENT_SECRET,
 				),
 			}),
 		);

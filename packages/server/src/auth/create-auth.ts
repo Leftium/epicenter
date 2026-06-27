@@ -1,3 +1,4 @@
+import { type } from 'arktype';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -9,34 +10,32 @@ import { authPlugins } from './plugins.js';
 type Db = NodePgDatabase<typeof schema>;
 
 /**
- * The secrets `createAuth` actually reads. Loosened from `Cloudflare.Env` to
- * exactly this (ADR-0066): every member is a portable string the runtimes
- * expose identically (`c.env` on Workers, `process.env` on a Node host). Auth
- * construction thus names no Cloudflare binding type at all. A deployment's
- * `Cloudflare.Env` satisfies this structurally.
+ * The cloud-only auth env, as BOTH an arktype schema and its inferred type, and
+ * the single SSOT for the relational-auth layer's secrets. It lives beside its
+ * reader (cloud-only, reached only through `mountCloudAuth`), NOT in the portable
+ * {@link ServerBindings}: the relational-auth substrate is a Cloud-only layer, so
+ * its env contract is too, and the single-partition instance's env never inherits
+ * secrets it does not read (ADR-0075). The cloud threads it onto
+ * `c.var.authSecrets` (mount-cloud-auth.ts) from its own deploy-gated env, the
+ * same honest-edge move every Cloudflare-only binding already makes (ADR-0066),
+ * so both readers (this builder and the `authApp` sign-in page) take it from one
+ * resolved value rather than reaching into the raw `c.env` bag.
+ *
+ * `BETTER_AUTH_SECRET` is required: every deployment that reaches this composes
+ * Better Auth and must sign sessions with a real secret (the runtime gate below
+ * is defense-in-depth against an empty value). Each OAuth provider is optional
+ * and register-when-present (ADR-0071): a deployment configures the ones it has
+ * an app for, or none; an absent provider is simply not offered, never a button
+ * that 500s.
  */
-/**
- * Every OAuth provider is optional and register-when-present (ADR-0071): a
- * deployment configures the ones it has an app for, or none at all. The hosted
- * star runs Google (and re-requires it in its own boot, apps/api/server.ts); the
- * single-partition instance runs no provider and authenticates with one
- * operator-supplied bearer instead (ADR-0074). A provider with no app configured
- * is simply absent, never a button that 500s.
- */
-type AuthEnv = {
-	/**
-	 * Optional in the contract (it mirrors the portable `ServerBindings`, where
-	 * Better Auth is a cloud-only layer), but every deployment that actually calls
-	 * `createAuth` guarantees it: the hosted cloud re-requires it at boot
-	 * (apps/api/server.ts) and the Worker carries it as a deploy-gated secret. An
-	 * instance never reaches here (it composes no Better Auth, ADR-0074).
-	 */
-	BETTER_AUTH_SECRET?: string;
-	GOOGLE_CLIENT_ID?: string;
-	GOOGLE_CLIENT_SECRET?: string;
-	GITHUB_CLIENT_ID?: string;
-	GITHUB_CLIENT_SECRET?: string;
-};
+export const CloudAuthBindings = type({
+	BETTER_AUTH_SECRET: 'string',
+	'GOOGLE_CLIENT_ID?': 'string',
+	'GOOGLE_CLIENT_SECRET?': 'string',
+	'GITHUB_CLIENT_ID?': 'string',
+	'GITHUB_CLIENT_SECRET?': 'string',
+});
+export type CloudAuthBindings = typeof CloudAuthBindings.infer;
 
 /**
  * Assemble and return a configured `betterAuth()` instance from runtime deps.
@@ -50,7 +49,6 @@ type AuthEnv = {
  * - Google OAuth, plus GitHub when its credentials are configured
  *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
- * - Cleanup hook that clears the deleted user's owner-partitioned rows
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -63,7 +61,7 @@ export function createAuth({
 	cookieCrossSubDomain,
 }: {
 	db: Db;
-	env: AuthEnv;
+	env: CloudAuthBindings;
 	baseURL: string;
 	/** Deployment-supplied trusted origins (CORS, CSRF, redirect allow-list). */
 	trustedOrigins: string[];

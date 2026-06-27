@@ -54,8 +54,10 @@ export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
 // plus the `authApp` surface (sign-in, consent, OAuth metadata). The cloud calls
 // this once after `createServerApp`; the single-partition instance never does and
-// composes no Better Auth or Postgres (ADR-0074).
-export { mountCloudAuth } from './mount-cloud-auth.js';
+// composes no Better Auth or Postgres (ADR-0074). `CloudAuthBindings` is the
+// Cloud-only auth env contract the cloud merges into its own boot validation and
+// resolves through `mountCloudAuth`'s `resolveAuthSecrets` (ADR-0075).
+export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 // `doName` builds a room's owner-scoped DO name, deployment-agnostic and
 // exported for composing apps. The Cloudflare room registry
 // (`createDurableObjectRooms`) is now internal to the `cloudflare()` runtime

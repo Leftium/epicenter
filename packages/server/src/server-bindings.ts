@@ -20,8 +20,16 @@
  *   reaching for a binding shape. With the assets route retired into the
  *   portable blob store, the library now names NO Cloudflare object binding,
  *   by value or by type.
- * - The deployment's public origin and any cloud-only secrets (Autumn, admin
- *   IDs) are deployment config, supplied through `resolveOrigin` / policies.
+ * - The relational-auth secrets (`BETTER_AUTH_SECRET` and the OAuth provider
+ *   credentials) are NOT here: the relational-auth substrate is a Cloud-only
+ *   layer, so its env is `CloudAuthBindings` (beside `mountCloudAuth`), supplied
+ *   by the cloud at its own edge and threaded onto `c.var.authSecrets`. Keeping
+ *   them out of the portable contract is what makes it truly portable: the
+ *   single-partition instance's env never inherits a secret it does not read
+ *   (ADR-0075).
+ * - The deployment's public origin and any other cloud-only secrets (Autumn,
+ *   admin IDs) are deployment config, supplied through `resolveOrigin` /
+ *   policies.
  *
  * Each deployment's real env is a superset assignable to this: apps/api asserts
  * `satisfies ServerBindings` on its generated `Cloudflare.Env`, apps/self-host
@@ -32,25 +40,6 @@
 import { type } from 'arktype';
 
 export const ServerBindings = type({
-	// The Better Auth signing secret, optional because Better Auth is a cloud-only
-	// layer (`mountCloudAuth`): the hosted cloud sets it and re-requires it in its
-	// own boot validation (apps/api/server.ts), while the single-partition instance
-	// composes no Better Auth and never reads it (ADR-0074). Same register-when-
-	// present precedent as the OAuth secrets below: optional here, required by the
-	// deployment that actually uses it.
-	'BETTER_AUTH_SECRET?': 'string',
-	// Every OAuth provider is optional and register-when-present (ADR-0071): a
-	// deployment that has not registered an app for a provider simply does not
-	// offer that sign-in (create-auth.ts gates each one, /sign-in hides the
-	// button). The hosted star always offers Google and re-requires it in its OWN
-	// boot validation (apps/api/server.ts); the single-partition instance runs no
-	// OAuth at all and authenticates with one operator-supplied bearer instead
-	// (ADR-0074). Loosening Google here is what lets a bearer-only box boot without
-	// registering a Google app for its own origin (the ADR-0070 wart).
-	'GOOGLE_CLIENT_ID?': 'string',
-	'GOOGLE_CLIENT_SECRET?': 'string',
-	'GITHUB_CLIENT_ID?': 'string',
-	'GITHUB_CLIENT_SECRET?': 'string',
 	// Content-addressed blob store (routes/blobs.ts): a portable S3 client over
 	// aws4fetch with NO Workers R2 binding, so the identical code runs on the
 	// Worker (against R2) and on a Bun host (against Garage/S3). All

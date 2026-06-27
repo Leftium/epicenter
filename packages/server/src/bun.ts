@@ -41,8 +41,9 @@ export {
 export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer (Better Auth on `c.var.auth` + the auth
 // surface). A cloud-on-Bun entry calls it once after `createServerApp`; the
-// single-partition instance never does (ADR-0075).
-export { mountCloudAuth } from './mount-cloud-auth.js';
+// single-partition instance never does (ADR-0075). `CloudAuthBindings` is its
+// Cloud-only auth env contract, merged into the cloud Bun host's boot validation.
+export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { doName } from './owner.js';
 export { instance, type OwnershipRule, personal } from './ownership.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,

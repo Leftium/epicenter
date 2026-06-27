@@ -14,7 +14,7 @@ import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import type { Result } from 'wellcrafted/result';
-import type { createAuth } from './auth/create-auth.js';
+import type { CloudAuthBindings, createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
@@ -114,6 +114,16 @@ export type Env = {
 		 * installing middleware ran is a bug.
 		 */
 		auth: ReturnType<typeof createAuth>;
+		/**
+		 * The cloud-only relational-auth secrets ({@link CloudAuthBindings}),
+		 * resolved once per request by `mountCloudAuth` from the cloud's own
+		 * deploy-gated env and stamped here so the cloud-only readers (Better Auth
+		 * construction and the `authApp` sign-in page) take them from one resolved
+		 * value, never from the portable `c.env` bag. Like `auth` and `db`, this is
+		 * set only by the cloud layer and is never present on the single-partition
+		 * instance, which composes no Better Auth and reads no auth secret (ADR-0075).
+		 */
+		authSecrets: CloudAuthBindings;
 		authBaseURL: string;
 		/**
 		 * Origins this deployment trusts for CORS, cookie-mutation CSRF, and

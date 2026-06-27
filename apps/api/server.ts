@@ -52,6 +52,7 @@ import {
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
+	CloudAuthBindings,
 	personal,
 	requireBearerUser,
 	requireCookieOrBearerUser,
@@ -64,26 +65,27 @@ import pg from 'pg';
 import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
 
 /**
- * The apps/api Bun env contract: the portable {@link ServerBindings} plus this
- * host's process config (`DATABASE_URL`, port, origin, data dir) and the
- * cloud-only secrets the hosted star re-requires.
+ * The apps/api Bun env contract: the portable {@link ServerBindings}, the
+ * Cloud-only {@link CloudAuthBindings} (Better Auth + OAuth secrets, ADR-0075),
+ * and this host's process config (`DATABASE_URL`, port, origin, data dir).
  *
- * `ServerBindings` makes the Google credentials and `BETTER_AUTH_SECRET` optional
- * for the single-partition instance's sake (register-when-present, ADR-0071/0074);
- * the hub re-requires them here (its one sign-in method, plus the Better Auth
- * signing secret it composes), so a misconfiguration fails closed at boot instead
- * of as a downstream surprise. Unlike the Cloudflare edge (whose bindings are
- * deploy-gated and `wrangler types`-typed), `process.env` is unchecked, so boot is
- * the place to validate it.
+ * `CloudAuthBindings` already requires `BETTER_AUTH_SECRET` and leaves each OAuth
+ * provider optional (register-when-present, ADR-0071); this hub additionally
+ * mandates Google (its one sign-in method) by re-declaring it required. So a
+ * misconfiguration fails closed at boot instead of as a downstream surprise.
+ * Unlike the Cloudflare edge (whose bindings are deploy-gated and
+ * `wrangler types`-typed), `process.env` is unchecked, so boot is the place to
+ * validate it. The validated env is also what feeds `mountCloudAuth`'s
+ * `resolveAuthSecrets` below, so the Cloud-only secrets reach Better Auth without
+ * ever entering the portable `ServerBindings`.
  */
-const ApiBunBindings = ServerBindings.merge({
+const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
 	DATABASE_URL: 'string',
 	'PORT?': 'string',
 	'API_PUBLIC_ORIGIN?': 'string',
 	'DATA_DIR?': 'string',
 	GOOGLE_CLIENT_ID: 'string',
 	GOOGLE_CLIENT_SECRET: 'string',
-	BETTER_AUTH_SECRET: 'string',
 });
 
 /**
@@ -142,7 +144,9 @@ export function startBunApiServer(
 	// The cloud's relational-auth layer (Better Auth on `c.var.auth` + the auth
 	// surface), mounted before the owner-scoped surfaces read it. Host-only cookies
 	// on the Bun dev host (no cross-subdomain domain like the Worker's `.epicenter.so`).
-	mountCloudAuth(app);
+	// The Cloud-only auth secrets come from the validated `env` closure (ADR-0075),
+	// never the portable `ServerBindings`.
+	mountCloudAuth(app, { resolveAuthSecrets: () => env });
 	mountSessionApp(app, { ownership, auth: requireCookieOrBearerUser });
 	mountRoomsApp(app, { ownership });
 	mountInferenceApp(app, { auth: requireBearerUser, ownership });

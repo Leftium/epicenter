@@ -83,8 +83,13 @@ app.get('/', (c) =>
 // cookie scoped to the registrable domain (host-only on localhost regardless).
 // Mounted before the owner-scoped surfaces so `c.var.auth` is set when their
 // cookie-or-bearer wrappers run. The single-partition instance composes none of
-// this (ADR-0074).
-mountCloudAuth(app, { cookieDomain: '.epicenter.so' });
+// this (ADR-0074). The Cloud-only auth secrets are read at this Worker's own edge
+// from its deploy-gated bindings (`c.env as Cloudflare.Env`), never the portable
+// `ServerBindings` (ADR-0075/0066).
+mountCloudAuth(app, {
+	cookieDomain: '.epicenter.so',
+	resolveAuthSecrets: (c) => c.env as Cloudflare.Env,
+});
 
 // Owner-partitioned reusable surfaces. Each primitive owns its own
 // ownership wiring; the deployment passes its auth choice, the rule, and any

@@ -19,6 +19,7 @@ import {
 	cloudflare,
 	createServerApp,
 	mountBlobsApp,
+	mountHealth,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -76,9 +77,7 @@ const app = createServerApp({
 });
 
 // Public health endpoint at root.
-app.get('/', (c) =>
-	c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
-);
+mountHealth(app, { mode: 'hub', runtime: 'cloudflare' });
 
 // Auth surface (HTML pages + OAuth metadata; no /api prefix by design,
 // no deployment knobs).

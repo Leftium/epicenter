@@ -20,6 +20,7 @@ import {
 	authApp,
 	cloudflare,
 	createServerApp,
+	mountHealth,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -70,9 +71,7 @@ const app = createServerApp({
 	},
 });
 
-app.get('/', (c) =>
-	c.json({ mode: 'shared', version: '0.1.0', runtime: 'cloudflare' }),
-);
+mountHealth(app, { mode: 'shared', runtime: 'cloudflare' });
 
 app.route('/', authApp);
 

@@ -20,6 +20,7 @@
  * against Epicenter.
  */
 
+import { assertStrongToken } from '@epicenter/auth';
 import {
 	cloudflare,
 	createInstanceTokenResolver,
@@ -58,13 +59,17 @@ const app = createServerApp({
 	// The instance authenticates one operator-supplied bearer. On Cloudflare the
 	// secret lives on the per-request `c.env` (a Worker has no module-scope env),
 	// so the resolver reads `INSTANCE_TOKEN` at the honest edge each request
-	// (ADR-0066); an unset or rotated secret simply stops matching (fail closed).
-	// The Bun entry reads it once at boot and runs the entropy gate; on Cloudflare
-	// the operator supplies a strong secret via `wrangler secret put` (generated
-	// with `bun run gen-token`).
+	// (ADR-0066). `assertStrongToken` runs the SAME entropy gate the Bun entry runs
+	// at boot, so a missing or weak token fails closed on Cloudflare too (ADR-0073's
+	// entropy floor): a Worker has no boot phase, so the gate runs per request and a
+	// throw surfaces as a 500 instead of admitting a weak credential. It also
+	// returns the trimmed token, so there is no `?? ''` coalesce whose removal could
+	// silently let an unset secret reach the compare.
 	resolveUser: (c) =>
 		createInstanceTokenResolver(
-			verifyEnvToken((c.env as Cloudflare.Env).INSTANCE_TOKEN ?? ''),
+			verifyEnvToken(
+				assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
+			),
 		)(c),
 });
 

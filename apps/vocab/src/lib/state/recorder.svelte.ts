@@ -44,7 +44,9 @@ export function createRecorder() {
 
 	/** Release the mic and drop the in-flight handles. */
 	function teardown() {
-		stream?.getTracks().forEach((track) => track.stop());
+		stream?.getTracks().forEach((track) => {
+			track.stop();
+		});
 		stream = null;
 		recorder = null;
 		chunks = [];

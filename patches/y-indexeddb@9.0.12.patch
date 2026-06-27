@@ -1,8 +1,8 @@
 diff --git a/dist/y-indexeddb.cjs b/dist/y-indexeddb.cjs
-index f613233258d7be3d3d8fb08506aa7ca09e50a457..03d61a073caff8b321b6021fc22430ddb7936706 100644
+index f613233258d7be3d3d8fb08506aa7ca09e50a457..f86f6d28add33693c9e48b2e7dc3a770238dbc48 100644
 --- a/dist/y-indexeddb.cjs
 +++ b/dist/y-indexeddb.cjs
-@@ -23,7 +23,18 @@ const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () => {}, aft
+@@ -23,7 +23,22 @@ const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () => {}, aft
      if (!idbPersistence._destroyed) {
        beforeApplyUpdatesCallback(updatesStore);
        Y.transact(idbPersistence.doc, () => {
@@ -16,17 +16,51 @@ index f613233258d7be3d3d8fb08506aa7ca09e50a457..03d61a073caff8b321b6021fc22430dd
 +          try {
 +            Y.applyUpdate(idbPersistence.doc, val);
 +          } catch (err) {
++            // Flag the skip so the load path can compact the store once and drop
++            // these undecodable bytes, instead of re-reading and re-logging them
++            // on every future boot.
++            idbPersistence._corruptUpdateSkipped = true;
 +            console.error('y-indexeddb: skipped a corrupt persisted update', err);
 +          }
 +        });
        }, idbPersistence, false);
        afterApplyUpdatesCallback(updatesStore);
      }
+@@ -41,7 +56,10 @@ const storeState = (idbPersistence, forceStore = true) =>
+   fetchUpdates(idbPersistence)
+     .then(updatesStore => {
+       if (forceStore || idbPersistence._dbsize >= PREFERRED_TRIM_SIZE) {
+-        idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(idbPersistence.doc))
++        // PATCHED (epicenter): return the compaction chain so callers can await
++        // and catch it (the corrupt-skip self-heal below relies on this). The
++        // only other caller ignores the return, so this stays compatible.
++        return idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(idbPersistence.doc))
+           .then(() => idb.del(updatesStore, idb.createIDBKeyRangeUpperBound(idbPersistence._dbref, true)))
+           .then(() => idb.count(updatesStore).then(cnt => { idbPersistence._dbsize = cnt; }));
+       }
+@@ -93,6 +111,17 @@ class IndexeddbPersistence extends observable.Observable {
+         if (this._destroyed) return this
+         this.synced = true;
+         this.emit('synced', [this]);
++        // PATCHED (epicenter): if this load skipped a corrupt update, compact the
++        // store once so the undecodable bytes are dropped and stop re-logging on
++        // every boot. storeState() re-snapshots the healed doc and trims the old
++        // (corrupt) updates. It runs AFTER 'synced' so it can never wedge the
++        // load, and is fully guarded so a write failure just defers the heal to
++        // the next boot instead of floating a rejection.
++        if (this._corruptUpdateSkipped && !this._destroyed) {
++          Promise.resolve()
++            .then(() => storeState(this, true))
++            .catch(err => console.error('y-indexeddb: corrupt-skip compaction failed', err));
++        }
+       };
+       fetchUpdates(this, beforeApplyUpdatesCallback, afterApplyUpdatesCallback);
+     });
 diff --git a/src/y-indexeddb.js b/src/y-indexeddb.js
-index 07f4fbb6da0b0b0621b5696370aabf230f7293a8..772b67cb0ef6fa49038dba6a0c351c42e0ccafc9 100644
+index 07f4fbb6da0b0b0621b5696370aabf230f7293a8..a833208acd4031483e5a6cca6cf2bf9d79a754cc 100644
 --- a/src/y-indexeddb.js
 +++ b/src/y-indexeddb.js
-@@ -19,7 +19,18 @@ export const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () =>
+@@ -19,7 +19,22 @@ export const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () =>
      if (!idbPersistence._destroyed) {
        beforeApplyUpdatesCallback(updatesStore)
        Y.transact(idbPersistence.doc, () => {
@@ -40,9 +74,43 @@ index 07f4fbb6da0b0b0621b5696370aabf230f7293a8..772b67cb0ef6fa49038dba6a0c351c42
 +          try {
 +            Y.applyUpdate(idbPersistence.doc, val)
 +          } catch (err) {
++            // Flag the skip so the load path can compact the store once and drop
++            // these undecodable bytes, instead of re-reading and re-logging them
++            // on every future boot.
++            idbPersistence._corruptUpdateSkipped = true
 +            console.error('y-indexeddb: skipped a corrupt persisted update', err)
 +          }
 +        })
        }, idbPersistence, false)
        afterApplyUpdatesCallback(updatesStore)
      }
+@@ -37,7 +52,10 @@ export const storeState = (idbPersistence, forceStore = true) =>
+   fetchUpdates(idbPersistence)
+     .then(updatesStore => {
+       if (forceStore || idbPersistence._dbsize >= PREFERRED_TRIM_SIZE) {
+-        idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(idbPersistence.doc))
++        // PATCHED (epicenter): return the compaction chain so callers can await
++        // and catch it (the corrupt-skip self-heal below relies on this). The
++        // only other caller ignores the return, so this stays compatible.
++        return idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(idbPersistence.doc))
+           .then(() => idb.del(updatesStore, idb.createIDBKeyRangeUpperBound(idbPersistence._dbref, true)))
+           .then(() => idb.count(updatesStore).then(cnt => { idbPersistence._dbsize = cnt }))
+       }
+@@ -89,6 +107,17 @@ export class IndexeddbPersistence extends Observable {
+         if (this._destroyed) return this
+         this.synced = true
+         this.emit('synced', [this])
++        // PATCHED (epicenter): if this load skipped a corrupt update, compact the
++        // store once so the undecodable bytes are dropped and stop re-logging on
++        // every boot. storeState() re-snapshots the healed doc and trims the old
++        // (corrupt) updates. It runs AFTER 'synced' so it can never wedge the
++        // load, and is fully guarded so a write failure just defers the heal to
++        // the next boot instead of floating a rejection.
++        if (this._corruptUpdateSkipped && !this._destroyed) {
++          Promise.resolve()
++            .then(() => storeState(this, true))
++            .catch(err => console.error('y-indexeddb: corrupt-skip compaction failed', err))
++        }
+       }
+       fetchUpdates(this, beforeApplyUpdatesCallback, afterApplyUpdatesCallback)
+     })

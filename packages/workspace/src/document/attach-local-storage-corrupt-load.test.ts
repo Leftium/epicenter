@@ -71,6 +71,31 @@ async function corruptStoredUpdates(databaseName: string): Promise<void> {
 	}
 }
 
+/** Read every value currently in the `updates` object store. */
+async function readStoredUpdates(databaseName: string): Promise<Uint8Array[]> {
+	const db = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = indexedDB.open(databaseName);
+		request.onerror = () => reject(request.error);
+		request.onsuccess = () => resolve(request.result);
+	});
+	try {
+		const transaction = db.transaction(['updates'], 'readonly');
+		const store = transaction.objectStore('updates');
+		return await new Promise<Uint8Array[]>((resolve, reject) => {
+			const request = store.getAll();
+			request.onerror = () => reject(request.error);
+			request.onsuccess = () => resolve(request.result as Uint8Array[]);
+		});
+	} finally {
+		db.close();
+	}
+}
+
+/** The corruption marker `corruptStoredUpdates` writes: a lone `0x80` byte. */
+function hasCorruptUpdate(updates: Uint8Array[]): boolean {
+	return updates.some((update) => update.length === 1 && update[0] === 0x80);
+}
+
 // Capture any decode rejection that escapes to the process boundary. Pre-patch
 // the load floated an uncatchable one here (the only place it could be seen);
 // post-patch this array must stay empty, which is assertion 4b below. Scope the
@@ -128,6 +153,20 @@ test('a corrupt persisted update is skipped: whenLoaded resolves and no decode e
 			reason.message.includes('Unexpected end of array'),
 	);
 	expect(floatedDecodeError).toBe(false);
+
+	// 4c. The self-heal compacts the store ONCE after a skip. `storeState(this,
+	//     true)` (triggered after 'synced') snapshots the healed doc and trims the
+	//     old updates, so the undecodable bytes leave disk instead of re-decoding
+	//     and re-logging on every future boot. The compaction is async, so poll
+	//     until it lands; if it never does, this fails instead of hanging.
+	const corruptBytesTrimmed = await (async () => {
+		for (let waited = 0; waited <= 1000; waited += 20) {
+			if (!hasCorruptUpdate(await readStoredUpdates(databaseName))) return true;
+			await tick(20);
+		}
+		return false;
+	})();
+	expect(corruptBytesTrimmed).toBe(true);
 
 	// Best-effort cleanup; the assertions above are what matter.
 	secondDoc.destroy();

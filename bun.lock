@@ -248,6 +248,7 @@
         "@replit/codemirror-vim": "^6.3.0",
         "@tauri-apps/api": "catalog:",
         "@tauri-apps/plugin-dialog": "^2.3.2",
+        "@tauri-apps/plugin-store": "^2",
         "arktype": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
@@ -1094,7 +1095,7 @@
     "typescript": "^5.9.3",
     "virtua": "^0.48.5",
     "vite": "^7.3.5",
-    "wellcrafted": "^0.42.0",
+    "wellcrafted": "^0.43.0",
     "wrangler": "^4.71.0",
     "y-indexeddb": "^9.0.12",
     "y-protocols": "^1.0.7",
@@ -1935,6 +1936,8 @@
     "@tauri-apps/plugin-os": ["@tauri-apps/plugin-os@2.3.2", "", { "dependencies": { "@tauri-apps/api": "^2.8.0" } }, "sha512-n+nXWeuSeF9wcEsSPmRnBEGrRgOy6jjkSU+UVCOV8YUGKb2erhDOxis7IqRXiRVHhY8XMKks00BJ0OAdkpf6+A=="],
 
     "@tauri-apps/plugin-process": ["@tauri-apps/plugin-process@2.3.1", "", { "dependencies": { "@tauri-apps/api": "^2.8.0" } }, "sha512-nCa4fGVaDL/B9ai03VyPOjfAHRHSBz5v6F/ObsB73r/dA3MHHhZtldaDMIc0V/pnUw9ehzr2iEG+XkSEyC0JJA=="],
+
+    "@tauri-apps/plugin-store": ["@tauri-apps/plugin-store@2.4.3", "", { "dependencies": { "@tauri-apps/api": "^2.11.0" } }, "sha512-9LWPj9yMphRi9czEtUv87XHbl1b6xgd9EXpPrUnq6nG7+nbtoF84d4Kwz9xhAv/Hf30sr58pq7EOlyI936y8qw=="],
 
     "@tauri-apps/plugin-updater": ["@tauri-apps/plugin-updater@2.10.1", "", { "dependencies": { "@tauri-apps/api": "^2.10.1" } }, "sha512-NFYMg+tWOZPJdzE/PpFj2qfqwAWwNS3kXrb1tm1gnBJ9mYzZ4WDRrwy8udzWoAnfGCHLuePNLY1WVCNHnh3eRA=="],
 
@@ -3904,7 +3907,7 @@
 
     "webpack-virtual-modules": ["webpack-virtual-modules@0.6.2", "", {}, "sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ=="],
 
-    "wellcrafted": ["wellcrafted@0.42.0", "", {}, "sha512-bpSDxPYhuy1Z/xb3ReT2PIpNf36V7DczRlqjxw8hl8oQXxssvzj82PPI1PJ9hNg1gvEL+GXNHDlawafctlYwmw=="],
+    "wellcrafted": ["wellcrafted@0.43.0", "", {}, "sha512-nJmIF0yVf+vwYI8ayLoDrGIlLSidkF9GiyPVROnjp4HTaSGtSwLWfby2UlRq5cH1mLbl1CT41czX7v8ogQ20Tg=="],
 
     "whatwg-url": ["whatwg-url@5.0.0", "", { "dependencies": { "tr46": "~0.0.3", "webidl-conversions": "^3.0.0" } }, "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw=="],
 

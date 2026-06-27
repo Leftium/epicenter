@@ -29,6 +29,7 @@ import {
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
+	rateLimit,
 	Room,
 	requireBearerUser,
 	verifyEnvToken,
@@ -82,7 +83,14 @@ app.get('/', (c) =>
 // bearer-authenticated (ADR-0073).
 mountSessionApp(app, { ownership, auth: requireBearerUser });
 mountRoomsApp(app, { ownership });
-mountInferenceApp(app, { auth: requireBearerUser, ownership });
+// Cap the inference burn rate so a leaked or overused bearer cannot run the
+// operator's house key up unbounded. Per-isolate on Cloudflare (approximate);
+// the real ceiling is the hard spend limit on the provider key itself (README).
+mountInferenceApp(app, {
+	auth: requireBearerUser,
+	ownership,
+	policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
+});
 
 export default app;
 export { Room };

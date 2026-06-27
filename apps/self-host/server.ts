@@ -51,6 +51,7 @@ import {
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
+	rateLimit,
 	requireBearerUser,
 	ServerBindings,
 	verifyEnvToken,
@@ -148,7 +149,16 @@ export function startSelfHostServer(): void {
 	// is bearer-authenticated (ADR-0073).
 	mountSessionApp(app, { ownership, auth: requireBearerUser });
 	mountRoomsApp(app, { ownership });
-	mountInferenceApp(app, { auth: requireBearerUser, ownership });
+	// Inference spends the operator's house key on every request. Cap the burn
+	// rate so a leaked or overused bearer cannot run the provider bill up
+	// unbounded between invoices. This is the in-process backstop; the real
+	// ceiling is the hard spend limit you set on the provider key itself (README).
+	// Tune to your group's size, or drop the policy to leave it uncapped.
+	mountInferenceApp(app, {
+		auth: requireBearerUser,
+		ownership,
+		policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
+	});
 
 	const server = Bun.serve({
 		port,

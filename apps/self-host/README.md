@@ -51,6 +51,15 @@ This is not Epicenter Cloud. There are no Autumn billing routes, no dashboard SP
 
 Community-supported. Issues filed against this folder are accepted as community contributions.
 
+## Inference and your house key
+
+If you set `OPENAI_API_KEY` or `GEMINI_API_KEY`, the instance offers an OpenAI-compatible inference gateway at `/v1/chat/completions`. That is YOUR key, the "house key", shared by everyone holding `INSTANCE_TOKEN` and unmetered: there is no per-person billing on an instance (that is Cloud's job). Leave both unset and the gateway returns 503 until configured.
+
+Two things keep that from becoming a runaway bill:
+
+- **Set a hard spend cap on the provider key itself.** This is your real ceiling. In the OpenAI or Google AI dashboard, give the key a monthly hard limit. If `INSTANCE_TOKEN` ever leaks, that cap is what bounds the damage, regardless of anything in this box. Do this before you hand the token out.
+- **The box also rate-limits the gateway** (`rateLimit({ requests: 120, windowSeconds: 60 })` in `server.ts` / `worker/index.ts`) as an in-process burn-rate floor. It is exact on the single-node Bun box and per-isolate on Cloudflare. Tune it to your group's size, or drop the policy to leave it uncapped. It is a backstop, not a substitute for the provider cap above.
+
 ## Composition
 
 The whole instance is the same handful of lines on either runtime: build the app
@@ -67,7 +76,11 @@ const app = createServerApp({
 });
 mountSessionApp(app, { ownership: instance(), auth: requireBearerUser });
 mountRoomsApp(app, { ownership: instance() });           // no telemetry recorder
-mountInferenceApp(app, { ownership: instance(), auth: requireBearerUser });
+mountInferenceApp(app, {
+  ownership: instance(),
+  auth: requireBearerUser,
+  policies: [rateLimit({ requests: 120, windowSeconds: 60 })], // burn-rate floor
+});
 ```
 
 Cloudflare reads the per-request secret at the edge instead, running the same

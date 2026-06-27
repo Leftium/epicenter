@@ -10,6 +10,7 @@ use watch::{unwatch_folder, unwatch_vault, watch_folder, watch_vault, WatcherSto
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(WatcherStore::default())
         .invoke_handler(tauri::generate_handler![
             watch_folder,

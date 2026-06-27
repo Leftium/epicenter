@@ -7,7 +7,7 @@ import { deviceConfig, type SecretKey } from './device-config.svelte';
 export type { SecretKey };
 
 /**
- * The outcome of reading a secret (ADR-0072 invariant 5). `available` carries a
+ * The outcome of reading a secret (ADR-0074 invariant 5). `available` carries a
  * non-empty value; `missing` means no usable value is stored. An unset key reads
  * as `missing`, because an empty string is not a usable credential, so a caller
  * branches on status and never hands a provider SDK a blank key.
@@ -22,7 +22,7 @@ export type SecretRead =
 
 /**
  * The credential facade: the one place the app reads and writes provider secrets,
- * the values a user *brings* (ADR-0072). Every consumer reads through the
+ * the values a user *brings* (ADR-0074). Every consumer reads through the
  * `available | missing` contract instead of pulling a raw string off
  * `deviceConfig`, so a blank key can never reach a provider SDK.
  *

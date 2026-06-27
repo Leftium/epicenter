@@ -19,9 +19,11 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 
 	if (!config.clientId || !config.clientSecret) {
 		console.error(
-			'Missing QuickBooks credentials. Set QB_CLIENT_ID and QB_CLIENT_SECRET\n' +
-				'(or run via `infisical run --path=/apps/local-books`) from your Intuit\n' +
-				'app (https://developer.intuit.com → your app → Keys & credentials).',
+			'Missing QuickBooks app keys. Get them from your Intuit app at\n' +
+				'developer.intuit.com (your app, then "Keys & credentials"), then set:\n' +
+				'  export QB_CLIENT_ID=...\n' +
+				'  export QB_CLIENT_SECRET=...\n' +
+				'(Epicenter monorepo shortcut: infisical run --path=/apps/local-books -- ...)',
 		);
 		return 1;
 	}
@@ -34,7 +36,9 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 		log: (m) => console.error(m),
 	});
 	if (error) {
-		console.error(`auth failed: ${error.message}`);
+		console.error(
+			`Authentication failed: ${error.message}. Re-run "local-books auth" and approve access in the browser.`,
+		);
 		return 1;
 	}
 
@@ -50,6 +54,6 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 		`Refresh token valid ${formatRelative(token.refreshTokenExpiresAt, now)}.`,
 	);
 	console.log(`Tokens stored in ${config.credentialsPath}.`);
-	console.log(`Next: "local-books sync --full" to seed the mirror.`);
+	console.log(`Next: "local-books sync --full" to build your local copy.`);
 	return 0;
 }

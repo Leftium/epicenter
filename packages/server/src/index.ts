@@ -58,9 +58,11 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // has no deployment knobs.
 export { authApp } from './routes/auth.js';
 export { mountBlobsApp } from './routes/blobs.js';
+export { mountHealth } from './routes/health.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
+export { mountTranscriptionApp } from './routes/transcription.js';
 export { bun } from './runtime/bun.js';
 // The Cloudflare runtime adapter: the per-runtime triple (db over Hyperdrive,
 // `waitUntil`, the Durable Object room registry) as one `RuntimeAdapter` both

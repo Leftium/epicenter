@@ -53,10 +53,14 @@ export const ServerBindings = type({
 	'BLOBS_S3_BUCKET?': 'string',
 	'BLOBS_S3_REGION?': 'string',
 	// AI provider house keys are optional: set one to serve that provider
-	// through the gateway (routes/inference.ts), or omit it and a request for
-	// that provider gets 503 ProviderNotConfigured. House-key-only (ADR-0054).
+	// through the gateway (routes/inference.ts, routes/transcription.ts), or omit
+	// it and a request for that provider gets 503 ProviderNotConfigured.
+	// House-key-only (ADR-0054).
 	'OPENAI_API_KEY?': 'string',
 	'GEMINI_API_KEY?': 'string',
+	// Groq house key, available for an `STT_UPSTREAM` row served by Groq. The STT
+	// gateway ships on OpenAI `whisper-1` today, so this is currently unused.
+	'GROQ_API_KEY?': 'string',
 });
 
 /** The portable env contract; also the Hono `Env.Bindings` type (types.ts). */

@@ -139,6 +139,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0069](0069-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md) | Epicenter is one runnable program (the star) plus a la carte services addressed by base URL and token | Accepted |
 | [0070](0070-self-host-adds-no-new-ownership-or-auth-mode.md) | Self-host adds no new ownership or auth mode: single-user is a preset, and only the credential source varies | Accepted |
 | [0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md) | OAuth is hosted-only; a custom instance requires a token | Accepted |
-| [0072](0072-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) | The secret vault is an owner-scoped synced store encrypted under a server-derived keyring, not a passphrase vault | Accepted |
+| [0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) | Local Books ships as a standalone CLI; the ADR-0047 daemon surface is deferred behind a verb-core seam | Accepted |
+| [0073](0073-tools-speak-mcp-natively-epicenter-owns-only-the-transport-mcp-lacks.md) | Tools speak MCP natively; Epicenter owns only the transport MCP lacks | Accepted (design; wire reshape and edge shim deferred behind the wedge trigger) |
+| [0074](0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) | The secret vault is an owner-scoped synced store encrypted under a server-derived keyring, not a passphrase vault | Accepted |
 
 When you add an ADR, add its row here.

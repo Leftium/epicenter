@@ -4,6 +4,14 @@
 **Status**: Draft
 **Author**: Epicenter
 
+> **Update (2026-06-25, capability decomposition)**: the "Polish" / Refine app is
+> a **library** in the now-settled model, not a server: a pure in-process engine
+> whose only heavy step (the LLM) is a call to the shipped Connection floor
+> (ADR-0059/0060). Transcription is a **service** reached over one OpenAI-compatible
+> wire by a shared `transcribe(audio, connection)` client. See
+> `specs/20260625T224402-capability-decomposition-star-service-library.md`.
+> Direction 2 (typed IDs + `epicenter://`) and "defer the universal graph" stand.
+
 ## Overview
 
 This spec maps Epicenter onto the `Capture -> Refine -> Compose -> Publish` vision. The current direction is integration-first: apps own their native tables and workflows, code integrations pass typed IDs and payloads, and `epicenter://` links refer to app records.

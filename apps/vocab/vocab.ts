@@ -62,6 +62,25 @@ Guidelines:
 Example response style:
 "The phrase 你好 is the most common greeting. For something more casual with friends, you can say 嘿 or 哈喽. In a formal setting, try 您好. The 您 shows extra respect."`;
 
+/**
+ * The model Vocab dictates through. Pinned to OpenAI's `whisper-1`, the one
+ * model the hosted speech-to-text gateway serves: it returns the `duration` the
+ * per-minute meter reads, which the `gpt-4o-transcribe` models drop. An app
+ * constant like {@link VOCAB_MODEL}: transcription is a stateless service, so
+ * Vocab names its own model rather than borrow another app's. A user who points
+ * a device connection at their own OpenAI key serving `whisper-1` dictates
+ * through that instead (the connection registry resolves it first).
+ */
+export const VOCAB_STT_MODEL = 'whisper-1';
+
+/**
+ * The language Vocab dictates in, an ISO-639-1 hint handed to the transcriber.
+ * English, because Vocab's input is the English question a learner asks; the
+ * answer comes back bilingual. App-local and unsynced, like {@link VOCAB_MODEL}:
+ * an app that dictates another language sets its own.
+ */
+export const VOCAB_DICTATION_LANGUAGE = 'en';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Message Model
 // ─────────────────────────────────────────────────────────────────────────────

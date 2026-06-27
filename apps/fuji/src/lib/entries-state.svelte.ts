@@ -8,19 +8,15 @@ import type { FujiBrowser } from '$lib/workspace/browser';
  * Components read this through `requireFuji().entries`; the active and deleted
  * lists update reactively as entries change. The conformance getters expose the
  * rows those lists hide: entries that fail the current schema or were written
- * by a newer Fuji. One `fromTable` binding drives both the row map and the
- * issue buckets from a single subscription. Disposed alongside the session.
+ * by a newer Fuji. One `fromTable` binding drives both the row list and the
+ * issue buckets from a single subscription.
  */
 export function createEntriesState(fuji: FujiBrowser) {
-	const entriesMap = fromTable(fuji.tables.entries);
-	const active = $derived(
-		[...entriesMap.values()].filter((e) => e.deletedAt === null),
-	);
-	const deleted = $derived(
-		[...entriesMap.values()].filter((e) => e.deletedAt !== null),
-	);
+	const entriesView = fromTable(fuji.tables.entries);
+	const active = $derived(entriesView.all.filter((e) => e.deletedAt === null));
+	const deleted = $derived(entriesView.all.filter((e) => e.deletedAt !== null));
 	return {
-		get: (id: EntryId) => entriesMap.get(id),
+		get: (id: EntryId) => entriesView.byId(id),
 		get active() {
 			return active;
 		},
@@ -29,18 +25,15 @@ export function createEntriesState(fuji: FujiBrowser) {
 		},
 		/** Count of entries that parse and match the current schema. */
 		get conforming() {
-			return entriesMap.size;
+			return entriesView.all.length;
 		},
 		/** Entries this Fuji should understand but cannot parse. */
 		get nonconforming() {
-			return entriesMap.nonconforming;
+			return entriesView.nonconforming;
 		},
 		/** Entries written by a newer version of Fuji. */
 		get newerWriter() {
-			return entriesMap.newerWriter;
-		},
-		[Symbol.dispose]() {
-			entriesMap[Symbol.dispose]();
+			return entriesView.newerWriter;
 		},
 	};
 }

@@ -121,7 +121,7 @@ export function createAgentChatState({
 	/** What the agent can do: the app's persona and capabilities. */
 	agent: AgentKit;
 }) {
-	const conversationsMap = fromTable(table);
+	const conversationsView = fromTable(table);
 
 	// The selected conversation: an injected source (a URL, say), or an internal
 	// `$state` default minted only when no source is given.
@@ -165,7 +165,7 @@ export function createAgentChatState({
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
-		const metadata = $derived(conversationsMap.get(conversationId));
+		const metadata = $derived(conversationsView.byId(conversationId));
 		/** The conversation's model (ADR-0055), read once for both the engine turn
 		 * and the picker's `model` getter. `model` is a required column, so this only
 		 * falls back when the row was deleted out from under a still-live handle (a
@@ -419,9 +419,9 @@ export function createAgentChatState({
 	 */
 	function reconcileHandles() {
 		for (const id of handles.keys()) {
-			if (!conversationsMap.has(id)) destroyConversation(id);
+			if (!table.has(id)) destroyConversation(id);
 		}
-		for (const id of conversationsMap.keys()) {
+		for (const id of conversationsView.all.map((c) => c.id)) {
 			const conversationId = asConversationId(id);
 			if (!handles.has(conversationId)) {
 				handles.set(conversationId, createConversationHandle(conversationId));
@@ -489,7 +489,6 @@ export function createAgentChatState({
 		[Symbol.dispose]() {
 			_unobserve();
 			for (const id of [...handles.keys()]) destroyConversation(id);
-			conversationsMap[Symbol.dispose]();
 		},
 
 		get active() {

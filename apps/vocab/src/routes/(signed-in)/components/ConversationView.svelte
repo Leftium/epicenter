@@ -7,11 +7,25 @@
 	import { agentMessageText } from '@epicenter/workspace/agent';
 	import { pinyinRomanizer } from '$lib/romanize/pinyin';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
+	import DictationButton from './DictationButton.svelte';
 
 	let {
 		active,
 		showPinyin,
 	}: { active: ConversationHandle | undefined; showPinyin: boolean } = $props();
+
+	// `active` does not narrow inside a snippet closure (a snippet can outlive the
+	// `{#if active}` guard), so the input accessory reads these instead of the
+	// handle directly.
+	const isGenerating = $derived(active?.isLoading ?? false);
+
+	/** Land a dictated transcript in the draft for review, appended to whatever is
+	 * already typed. Guarded so it is a no-op if the conversation went away. */
+	function appendTranscript(text: string) {
+		if (!active) return;
+		const draft = active.inputValue.trim();
+		active.inputValue = draft ? `${draft} ${text}` : text;
+	}
 </script>
 
 {#if active}
@@ -26,6 +40,9 @@
 			// Vocab has no dedicated billing surface yet.
 		}}
 	>
+		{#snippet inputAccessory()}
+			<DictationButton disabled={isGenerating} onTranscript={appendTranscript} />
+		{/snippet}
 		{#snippet message(msg, streaming)}
 			{#if msg.role === 'user' || streaming}
 				<!-- Raw text while the answer streams (and for the user's own turn): the

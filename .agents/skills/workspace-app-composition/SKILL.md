@@ -1,6 +1,6 @@
 ---
 name: workspace-app-composition
-description: 'How a workspace-backed app under `apps/*` is composed: the isomorphic doc factory (`create<App>`), the environment factories (`open<App>Browser` / `open<App>Extension` / tauri), the `#platform/*` build-time platform DI for multi-platform (Tauri) apps, the `session` singleton, daemon/script placement under per-project `workspaces/<app>/`, and the file layout itself. Use when creating a new app, naming or placing the iso/browser/extension factory, wiring `#platform/*` subpath imports for a Tauri seam, choosing between auth-gated (Shape A) vs module-singleton (Shape B), placing the session singleton, or registering daemon/script bindings.'
+description: 'How a workspace-backed app under `apps/*` is composed: the isomorphic doc factory (`create<App>`), the environment factories (`open<App>Browser` / `open<App>Extension` / tauri), the `#platform/*` build-time platform DI for multi-platform (Tauri) apps, the `session` singleton, daemon/script placement under per-project `workspaces/<app>/`, and the file layout itself. Use when creating a new app, naming or placing the iso/browser/extension factory, wiring `#platform/*` subpath imports for a Tauri seam, choosing between auth-gated (Shape A) vs module-singleton (Shape B), placing the session singleton, registering daemon/script bindings, or gating first paint on IndexedDB hydration (load gate vs WorkspaceGate).'
 metadata:
   author: epicenter
   version: '5.0'
@@ -172,6 +172,33 @@ export const requireHoneycrisp = session.require;
 This is the only home for the singleton. Do not add a `client.ts` or a second
 singleton site.
 
+## Gating Readiness on Hydration
+
+A workspace-backed route reads empty tables until the workspace's readiness
+promise resolves (`idb.whenLoaded`, exposed as `whenReady`; matter's is the
+`once()`-memoized store read `ensureHydrated()`), so it flashes an empty state
+("No recordings yet", "All clear"). No useful partial UI exists here, so gate
+the first paint rather than skeleton it.
+
+One rule: **gate where the readiness promise is first reachable**, decided by
+where the workspace is built (NOT the Shape A/B handle label).
+
+| Workspace built | Reachable in | Gate |
+| --- | --- | --- |
+| Eager module singleton, no auth gate: todos, whispering, skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
+| Post-auth inside a `session` (only `session.current`): fuji, honeycrisp, vocab, opensidian | the signed-in component | `<WorkspaceGate pending={session.current.idb.whenLoaded}>` |
+| Extension entrypoint, no `load`: tab-manager | the component | `{#await idb.whenLoaded}` |
+
+- Correctness gates (404 / redirect / param) always go in `load`; only `load`
+  can `error()` / `redirect()` (matter `vault/[id]`).
+- The promise must be resolve-only or the gate blocks paint forever
+  (`whenLoaded = idb.whenSynced`, kept resolve-only by the y-indexeddb
+  corrupt-load patch). Fix the promise, never add a timeout.
+
+The blank-shell (load) vs `<Loading>` (`WorkspaceGate`) difference follows from
+the boundary, not a separate choice. For the `load`-blocks-render rule ground
+against `sveltejs/kit`; for the `{#await}` form see the `svelte` skill.
+
 ## Platform DI: the `#platform/*` seam
 
 Multi-platform apps (the two with `src-tauri/`: fuji, whispering) select
@@ -295,3 +322,7 @@ lifecycle command is `epicenter daemon up`, not `epicenter serve`.
 - Placing `daemon.ts` or `script.ts` inside the app package. They live under a
   project's `workspaces/<app>/` and are registered via `epicenter.config.ts`.
 - Restoring `serve` as the public lifecycle command (it is `epicenter daemon up`).
+- Load-gating a post-auth workspace (its `idb.whenLoaded` does not exist at
+  `load` time), or showing a `<Loading>` skeleton for a fast eager-workspace gate
+  (the spinner just flashes). Gate where the readiness promise is first
+  reachable; see Gating Readiness on Hydration.

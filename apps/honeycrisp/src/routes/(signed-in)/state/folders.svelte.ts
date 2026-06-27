@@ -28,22 +28,18 @@ import { searchParams } from './search-params.svelte';
 export function createFolders(honeycrisp: HoneycrispBrowser) {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	const foldersMap = fromTable(honeycrisp.tables.folders);
+	const foldersView = fromTable(honeycrisp.tables.folders);
 
-	const all = $derived([...foldersMap.values()]);
+	const all = $derived(foldersView.all);
 
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
-		[Symbol.dispose]() {
-			foldersMap[Symbol.dispose]();
-		},
-
 		/**
 		 * Look up a folder by ID. Returns `undefined` if not found.
 		 */
 		get(id: FolderId) {
-			return foldersMap.get(id);
+			return foldersView.byId(id);
 		},
 
 		get all() {
@@ -68,7 +64,7 @@ export function createFolders(honeycrisp: HoneycrispBrowser) {
 				id,
 				name: 'New Folder',
 				icon: null,
-				sortOrder: foldersMap.size,
+				sortOrder: foldersView.all.length,
 			});
 		},
 

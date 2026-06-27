@@ -30,9 +30,11 @@ import { requireBearerUser } from './middleware/require-auth.js';
 import type { OwnershipRule } from './ownership.js';
 import { createBunRooms } from './room/backends/bun/registry.js';
 import { authApp } from './routes/auth.js';
+import { mountHealth } from './routes/health.js';
 import { mountInferenceApp } from './routes/inference.js';
 import { mountRoomsApp } from './routes/rooms.js';
 import { mountSessionApp } from './routes/session.js';
+import { mountTranscriptionApp } from './routes/transcription.js';
 import { bun } from './runtime/bun.js';
 import { createServerApp, type Identity } from './server-app.js';
 import { ServerBindings } from './server-bindings.js';
@@ -130,11 +132,12 @@ export function startBunServer({
 		resolveUser,
 	});
 
-	app.get('/', (c) => c.json({ mode, version: '0.1.0', runtime: 'bun' }));
+	mountHealth(app, { mode, runtime: 'bun' });
 	app.route('/', authApp);
 	mountSessionApp(app, { ownership });
 	mountRoomsApp(app, { ownership });
 	mountInferenceApp(app, { auth: requireBearerUser, ownership });
+	mountTranscriptionApp(app, { auth: requireBearerUser, ownership });
 	mountExtras?.(app, ownership);
 
 	const server = Bun.serve({

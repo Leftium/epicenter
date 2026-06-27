@@ -97,24 +97,39 @@ function jsonExtractPath(segments: string[]): string {
 
 export type BooksDb = ReturnType<typeof openBooksDb>;
 
-export function openBooksDb(path: string) {
-	mkdirSync(dirname(path), { recursive: true });
-	const db = new Database(path, { create: true });
-	// The mirror's concurrency contract, set once for every connection. The
-	// daemon's recategorize write-back and `local-books sync` are separate
-	// processes on one file, so: WAL (readers never block the writer), a
-	// busy_timeout (a writer waits for a concurrent writer's lock instead of
-	// failing instantly with SQLITE_BUSY), and synchronous=NORMAL (the mirror is a
-	// re-pullable cache, so a lost last-commit on power loss just re-pulls; it
-	// cannot corrupt the ledger, which QuickBooks owns).
-	db.exec('PRAGMA journal_mode = WAL;');
-	db.exec('PRAGMA busy_timeout = 5000;');
-	db.exec('PRAGMA synchronous = NORMAL;');
-	db.exec('PRAGMA foreign_keys = ON;');
-
-	db.exec(
-		`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`,
+export function openBooksDb(
+	path: string,
+	{ readonly = false }: { readonly?: boolean } = {},
+) {
+	// A read-only handle (status, diagnostics) opens the existing file and touches
+	// nothing: no journal-mode change, no `_meta` creation, no schema-version
+	// write, and crucially no drop-migration. A reader must never mutate the mirror
+	// or, worse, drop its tables, and must not fail with SQLITE_BUSY just to bump a
+	// bookkeeping row while a sync holds the write lock. The connection rejects any
+	// write statement, so `ingest` on a read-only handle throws by construction.
+	if (!readonly) mkdirSync(dirname(path), { recursive: true });
+	const db = new Database(
+		path,
+		readonly ? { readonly: true } : { create: true },
 	);
+	if (readonly) {
+		db.exec('PRAGMA busy_timeout = 5000;');
+	} else {
+		// The mirror's concurrency contract, set once for every writer connection.
+		// The daemon's recategorize write-back and `local-books sync` are separate
+		// processes on one file, so: WAL (readers never block the writer), a
+		// busy_timeout (a writer waits for a concurrent writer's lock instead of
+		// failing instantly with SQLITE_BUSY), and synchronous=NORMAL (the mirror is
+		// a re-pullable cache, so a lost last-commit on power loss just re-pulls; it
+		// cannot corrupt the ledger, which QuickBooks owns).
+		db.exec('PRAGMA journal_mode = WAL;');
+		db.exec('PRAGMA busy_timeout = 5000;');
+		db.exec('PRAGMA synchronous = NORMAL;');
+		db.exec('PRAGMA foreign_keys = ON;');
+		db.exec(
+			`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`,
+		);
+	}
 
 	const setMetaStmt = db.query(
 		`INSERT INTO _meta (key, value) VALUES (?, ?)
@@ -124,27 +139,31 @@ export function openBooksDb(path: string) {
 		`SELECT value FROM _meta WHERE key = ?`,
 	);
 
-	// Schema-version gate. The mirror is a re-pullable cache QuickBooks owns the
-	// truth for, so a format change carries no migration reader: on a mismatch we
-	// drop the derived tables and clear the cursor, and the next sync rebuilds with
-	// one `sync --full`. That asymmetric win is what lets the schema change for free.
-	const storedVersion = getMetaStmt.get('schema_version')?.value ?? null;
-	if (storedVersion !== null && storedVersion !== SCHEMA_VERSION) {
-		for (const { name } of db
-			.query<{ name: string }, []>(
-				`SELECT name FROM sqlite_master
-				 WHERE type='table' AND name != '_meta' AND name NOT LIKE 'sqlite_%'`,
-			)
-			.all()) {
-			db.exec(`DROP TABLE IF EXISTS ${assertIdent(name)};`);
+	// Schema-version gate (writers only). The mirror is a re-pullable cache
+	// QuickBooks owns the truth for, so a format change carries no migration
+	// reader: on a mismatch we drop the derived tables and clear the cursor, and
+	// the next sync rebuilds with one `sync --full`. That asymmetric win is what
+	// lets the schema change for free. A read-only handle never runs this: it
+	// cannot write, and a reader has no business dropping tables.
+	if (!readonly) {
+		const storedVersion = getMetaStmt.get('schema_version')?.value ?? null;
+		if (storedVersion !== null && storedVersion !== SCHEMA_VERSION) {
+			for (const { name } of db
+				.query<{ name: string }, []>(
+					`SELECT name FROM sqlite_master
+					 WHERE type='table' AND name != '_meta' AND name NOT LIKE 'sqlite_%'`,
+				)
+				.all()) {
+				db.exec(`DROP TABLE IF EXISTS ${assertIdent(name)};`);
+			}
+			// CURSOR_KEYS are compile-time constants, so interpolating them as quoted
+			// literals is safe (no user input reaches this string).
+			db.exec(
+				`DELETE FROM _meta WHERE key IN (${CURSOR_KEYS.map((k) => `'${k}'`).join(', ')});`,
+			);
 		}
-		// CURSOR_KEYS are compile-time constants, so interpolating them as quoted
-		// literals is safe (no user input reaches this string).
-		db.exec(
-			`DELETE FROM _meta WHERE key IN (${CURSOR_KEYS.map((k) => `'${k}'`).join(', ')});`,
-		);
+		setMetaStmt.run('schema_version', SCHEMA_VERSION);
 	}
-	setMetaStmt.run('schema_version', SCHEMA_VERSION);
 
 	// Prepared-statement caches, keyed by table.
 	const upsertStmts = new Map<string, ReturnType<typeof db.query>>();
@@ -324,9 +343,9 @@ export function openBooksDb(path: string) {
 		 * Read one live row's verbatim QB blob by id, or `null` if the entity table
 		 * does not exist yet, the row is unknown, or it is soft-deleted. The read
 		 * counterpart to `ingest`: callers reach a mirror row without hand-writing SQL
-		 * against a table name. (`books_sql_query` keeps its own read-only connection
-		 * for arbitrary queries; this serves the write-capable handle the write-back
-		 * already holds.)
+		 * against a table name. (`queryBooks` keeps its own read-only connection for
+		 * arbitrary queries; this serves the write-capable handle the recategorize
+		 * write-back already holds.)
 		 */
 		getLiveRaw(def: EntityDef, id: string): string | null {
 			if (!tableExists(def.table)) return null;

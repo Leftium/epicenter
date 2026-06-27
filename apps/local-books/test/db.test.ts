@@ -156,3 +156,41 @@ describe('the realm cursor', () => {
 		tmp.cleanup();
 	});
 });
+
+describe('a read-only handle', () => {
+	test('reads, refuses writes, and never runs the drop-migration', () => {
+		const tmp = tempDir();
+		const path = join(tmp.dir, 'books.db');
+		// Writer seeds a mirror, then we forge an OLD schema version: the next WRITER
+		// open would drop everything; the next READER open must not.
+		let db = openBooksDb(path);
+		ingPurchase(db, purchase('60'), 's1');
+		db.ingest([], {
+			syncedAt: 's1',
+			realmState: { cdcCursor: 'c1', lastFullPullAt: 'c1', lastSyncedAt: 'c1' },
+		});
+		db.raw.exec(`UPDATE _meta SET value = '1' WHERE key = 'schema_version'`);
+		db.close();
+
+		// A read-only handle reads the forged-v1 db untouched: the row survives, the
+		// version is NOT bumped, the migration does NOT fire, and a write is refused.
+		const ro = openBooksDb(path, { readonly: true });
+		expect(ro.entityStatus(PURCHASE).rows).toBe(1);
+		expect(ro.readRealmState().cdcCursor).toBe('c1');
+		expect(ro.getMeta('schema_version')).toBe('1');
+		expect(() =>
+			ro.ingest([{ def: PURCHASE, objects: [purchase('61')] }], {
+				syncedAt: 's2',
+			}),
+		).toThrow();
+		expect(ro.entityStatus(PURCHASE).rows).toBe(1); // the refused write changed nothing
+		ro.close();
+
+		// A WRITER open, by contrast, fires the migration (v1 -> v2): tables dropped.
+		db = openBooksDb(path);
+		expect(db.getMeta('schema_version')).toBe('2');
+		expect(db.isInitialized(PURCHASE)).toBe(false);
+		db.close();
+		tmp.cleanup();
+	});
+});

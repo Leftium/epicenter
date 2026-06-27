@@ -5,9 +5,8 @@
  * into a resolved owner partition on `c.var.ownerId`:
  *
  *   1. Resolve the owner partition from `(rule, c.var.user)` via
- *      {@link resolveOwnerPartition}. In shared mode this also runs the
- *      deployment's admit predicate; rejected users get 403
- *      NotAdmitted before any URL is read.
+ *      {@link resolveOwnerPartition}. This cannot fail: a personal request
+ *      owns its user's partition, an instance request its pinned constant.
  *   2. If the route declares `:ownerId`, assert the URL segment equals
  *      the resolved partition. Mismatch is 403 OwnerMismatch in both
  *      modes.
@@ -26,11 +25,7 @@ import type { Env } from '../types.js';
 
 export function createRequireOwnership(rule: OwnershipRule) {
 	return createMiddleware<Env>(async (c, next) => {
-		const { data: ownerPartition, error } = await resolveOwnerPartition(
-			rule,
-			c,
-		);
-		if (error) return c.json({ data: null, error }, error.status);
+		const ownerPartition = resolveOwnerPartition(rule, c);
 		const urlOwnerId = c.req.param('ownerId');
 		if (urlOwnerId !== undefined && urlOwnerId !== ownerPartition) {
 			const err = RequestGuardError.OwnerMismatch();

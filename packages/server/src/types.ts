@@ -112,8 +112,8 @@ export type Env = {
 		/**
 		 * Resolved owner partition for this request. Populated by the
 		 * `requireOwnership` middleware after auth runs. In personal mode
-		 * equals the authenticated user's id; in shared mode equals
-		 * `SHARED_OWNER_ID`. Handlers read this instead of branching on
+		 * equals the authenticated user's id; on an instance equals
+		 * `INSTANCE_OWNER_ID`. Handlers read this instead of branching on
 		 * mode or re-deriving from the URL `:ownerId` param.
 		 */
 		ownerId: OwnerId;

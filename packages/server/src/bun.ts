@@ -37,13 +37,7 @@ export {
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
 export { doName } from './owner.js';
-export {
-	type Admit,
-	instance,
-	type OwnershipRule,
-	personal,
-	shared,
-} from './ownership.js';
+export { instance, type OwnershipRule, personal } from './ownership.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
 // plus the Bun `websocket` handler and `bindServer` the entry wires.
 export { createBunRooms } from './room/backends/bun/registry.js';

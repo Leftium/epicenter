@@ -53,16 +53,10 @@ export {
 // adapter (runtime/cloudflare.ts).
 export { doName } from './owner.js';
 // Ownership composition: the deployment constructs the rule once via
-// `personal()`, `shared({ admit })`, or `instance()` and threads it into every
-// mount primitive that needs the partition. See ./ownership.ts for the design
-// note.
-export {
-	type Admit,
-	instance,
-	type OwnershipRule,
-	personal,
-	shared,
-} from './ownership.js';
+// `personal()` (Cloud, multi-tenant) or `instance()` (self-host, one pinned
+// partition) and threads it into every mount primitive that needs the
+// partition. See ./ownership.ts for the design note.
+export { instance, type OwnershipRule, personal } from './ownership.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';

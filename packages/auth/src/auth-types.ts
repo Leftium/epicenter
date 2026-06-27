@@ -70,9 +70,9 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
  * let the app select this user's local workspace data.
  *
  * `userId` is stored explicitly (rather than synthesised from `ownerId`) so
- * the daemon can read it directly in shared mode, where `ownerId` is the
- * literal `SHARED_OWNER_ID` and is structurally not a `UserId`. Deployment
- * shape (personal vs shared) is not stored here; it is a property of the
+ * the daemon can read it directly on an instance, where `ownerId` is the
+ * literal `INSTANCE_OWNER_ID` and is structurally not a `UserId`. Deployment
+ * shape (personal vs instance) is not stored here; it is a property of the
  * server. See {@link OwnerId} for the rare derivation a consumer might need.
  */
 export const PersistedAuth = type({

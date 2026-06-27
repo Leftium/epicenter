@@ -3,9 +3,9 @@
  *
  * Composes `@epicenter/server` with the `personal` ownership rule and
  * layers cloud-only billing, admin, and dashboard surfaces on top.
- * Self-hosted shared-wiki deployments live in a sibling apps/* folder and
- * compose the same library with `shared({ admit })` and no Autumn
- * policies.
+ * The self-hosted single-partition instance lives in a sibling apps/* folder
+ * and composes the same library with `instance()` and no Autumn policies
+ * (ADR-0073).
  *
  * Read top to bottom for the full URL surface of cloud. Each `mount*`
  * call bundles the auth + ownership + policies + route mount for one

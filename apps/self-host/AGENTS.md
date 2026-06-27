@@ -1,15 +1,18 @@
 # apps/self-host
 
-Reference Cloudflare Worker for self-hosting Epicenter as a shared wiki. Composes `@epicenter/server` with `shared({ admit })`.
+Reference single-partition **instance** (ADR-0073): one operator-supplied bearer (`INSTANCE_TOKEN`), one pinned `owners/instance` partition. Composes `@epicenter/server` with `instance()` + `createInstanceTokenResolver(verifyEnvToken(token))`. Two runtimes off one composition: an off-Cloudflare Bun entry (`server.ts`, blessed) and a Cloudflare Worker (`worker/index.ts`); they run identically because the operator supplies the secret. "Solo" vs "shared" is only how many people hold the token, never a mode.
 
 Not operated by Epicenter; framed as a community-supported starting point. Keep the worker entry small (~30 lines) so it stays readable as a reference.
+
+Multi-tenancy (per-user partitions, OAuth, billing) is Epicenter Cloud's only (`apps/api`); an instance never grows a mode, an allowlist, OAuth, sessions, or first-boot minting. Named per-person tokens are a deliberately-unbuilt seam (a hashed registry behind the same verifier + the same constant partition); build it only on real offboarding pain, never speculatively.
 
 ## Hard constraints
 
 - Do not import `@epicenter/billing` (it no longer exists; billing lives inside `apps/api/worker/billing/` and is hosted-only).
 - Do not add `autumn-js`, `AUTUMN_SECRET_KEY`, or `/api/billing/*` routes.
 - Do not add a dashboard SPA or Workers Static Assets binding.
-- Do not collapse `SHARED_OWNER_ID` into env config: it is byte-pinned durable data (R2 prefix, DO name prefix, IDB prefix).
+- Do not add OAuth, sessions, an allowlist, a launch-time mode selector, or first-boot token minting back: the instance is bearer-only by design (ADR-0073).
+- Do not collapse `INSTANCE_OWNER_ID` into env config: like `SHARED_OWNER_ID`, it is byte-pinned durable data (R2 prefix, DO name prefix, IDB prefix). The partition is pinned to the constant, decoupled from caller identity, so named tokens never re-partition.
 
 ## When editing
 

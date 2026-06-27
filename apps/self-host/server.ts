@@ -43,6 +43,7 @@ import {
 	startBunServer,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
+import { resolveSelfHostTrustedOrigins } from './trusted-origins.js';
 
 /**
  * Boot the apps/self-host Bun server, optionally with an injected user resolver.
@@ -99,10 +100,7 @@ export function startSelfHostServer(
 		ownership: shared({
 			admit: (c) => allowedMembers.has(c.var.user.email),
 		}),
-		resolveTrustedOrigins: (baseURL) => [
-			new URL(baseURL).origin,
-			'tauri://localhost',
-		],
+		resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
 		// Undefined in production; `server.dev.ts` passes a dev bearer resolver.
 		resolveUser: opts.resolveUser,
 	});

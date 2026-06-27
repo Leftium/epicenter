@@ -14,7 +14,7 @@ The relational-auth substrate is a Cloud-only layer; the instance composes neith
 
 1. **Better Auth moves out of the shared core into `mountCloudAuth`,** which the hosted cloud calls once after `createServerApp`. It installs the per-request `c.var.auth` instance and the `authApp` surface (sign-in, consent, OAuth metadata). `createServerApp` wires only the portable core (the auth origin and trust set, CORS, the cookie-CSRF gate, the rooms registry, and the injected `resolveUser`), and `resolveUser` is required: the OAuth bearer resolver reads `c.var.auth`, which only the cloud has.
 2. **The db lifecycle middleware installs only when the runtime provides `connectDb`.** The `RuntimeAdapter` db legs (`connectDb` and `afterResponse`) are optional; `bun()` and `cloudflare()` omit them when no db handle or Hyperdrive binding is passed. `resolveRooms` is the one leg every deployment provides.
-3. **Room telemetry is an injected recorder.** The `durableObjectInstance` upsert is a `RoomAccessRecorder` the cloud passes to `mountRoomsApp`; the instance passes none, so its rooms route reads neither `c.var.db` nor `c.var.afterResponseQueue`.
+3. **Room telemetry is removed, not injected.** The branch first made the `durableObjectInstance` upsert an injected `RoomAccessRecorder` the cloud passed to `mountRoomsApp` and the instance omitted. That seam then proved to exist only to feed a write-only table, so the table and the seam were both deleted: the rooms route now records nothing and reads neither `c.var.db` nor `c.var.afterResponseQueue` on any deployment (see Consequences).
 
 The instance therefore composes only the rooms registry and the bearer surfaces (session, rooms, inference). It runs identically on Bun and Cloudflare with no database.
 

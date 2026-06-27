@@ -41,7 +41,7 @@ bun run --cwd apps/self-host typecheck
 bun run --cwd apps/self-host deploy
 ```
 
-`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0073). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain, and provision the one Durable Object binding the file documents. On Cloudflare the entropy gate cannot run at boot (a Worker has no module-scope env), so use `gen-token` for the secret; a weak or unset `INSTANCE_TOKEN` simply fails all auth (fail closed) rather than refusing to boot.
+`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0073). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain, and provision the one Durable Object binding the file documents. A Worker has no boot phase, so the entropy gate (`assertStrongToken`) runs per request at the edge: a weak or unset `INSTANCE_TOKEN` fails every request closed. Use `gen-token` for the secret.
 
 `worker-configuration.d.ts` is hand-written: it inherits the library's binding contract (`ServerBindings`) and declares only the deployment-owned `API_PUBLIC_ORIGIN` and `INSTANCE_TOKEN`. If you add bindings of your own, declare them there (or regenerate with `bun run typegen` and re-add the `extends` clause).
 
@@ -53,23 +53,31 @@ Community-supported. Issues filed against this folder are accepted as community 
 
 ## Composition
 
-The whole instance is the same handful of lines on either runtime. Bun:
+The whole instance is the same handful of lines on either runtime: build the app
+with `createServerApp`, then mount session + rooms + inference. No billing, no
+SPA, no `mountCloudAuth`. Bun reads the token once at boot and runs the entropy
+gate there:
 
 ```ts
-startBunServer({
-  ownership: instance(),                                  // pin owners/instance
+const token = assertStrongToken(env.INSTANCE_TOKEN);     // fail closed if weak
+const app = createServerApp({
+  runtime: bun({ rooms }),                               // no db leg, no Postgres
+  identity: { resolveOrigin, resolveTrustedOrigins },
   resolveUser: createInstanceTokenResolver(verifyEnvToken(token)), // one bearer
-  // ...session + rooms + inference, no billing, no SPA
 });
+mountSessionApp(app, { ownership: instance(), auth: requireBearerUser });
+mountRoomsApp(app, { ownership: instance() });           // no telemetry recorder
+mountInferenceApp(app, { ownership: instance(), auth: requireBearerUser });
 ```
 
-Cloudflare reads the per-request secret at the edge instead:
+Cloudflare reads the per-request secret at the edge instead, running the same
+entropy gate per request (a Worker has no boot phase):
 
 ```ts
 createServerApp({
   resolveUser: (c) =>
     createInstanceTokenResolver(
-      verifyEnvToken((c.env as Cloudflare.Env).INSTANCE_TOKEN ?? ''),
+      verifyEnvToken(assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN)),
     )(c),
   // ...instance() ownership, same session + rooms + inference mounts
 });

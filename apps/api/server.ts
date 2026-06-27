@@ -61,7 +61,15 @@ export function startBunApiServer(
 	// `process.env`, no lie (ADR-0066). Unlike the Cloudflare edge (whose bindings
 	// are deploy-gated and `wrangler types`-typed), `process.env` is unchecked, so
 	// boot is the place to validate it.
-	const env = BunHostBindings(process.env);
+	//
+	// The hosted star always offers Google, so it re-requires the Google secrets
+	// the shared `ServerBindings` made optional (register-when-present, ADR-0071):
+	// loosening them there is what lets a no-OAuth instance boot (ADR-0073), but
+	// the hub must still fail closed if its one sign-in method is unconfigured.
+	const env = BunHostBindings.merge({
+		GOOGLE_CLIENT_ID: 'string',
+		GOOGLE_CLIENT_SECRET: 'string',
+	})(process.env);
 	if (env instanceof type.errors) {
 		console.error(`Invalid environment for the Bun server:\n${env.summary}`);
 		process.exit(1);

@@ -33,11 +33,16 @@ import { type } from 'arktype';
 
 export const ServerBindings = type({
 	BETTER_AUTH_SECRET: 'string',
-	GOOGLE_CLIENT_ID: 'string',
-	GOOGLE_CLIENT_SECRET: 'string',
-	// GitHub is optional: a deployment that has not registered a GitHub OAuth
-	// app simply does not offer GitHub sign-in. The provider and its sign-in
-	// button are both gated on these being present (create-auth.ts, /sign-in).
+	// Every OAuth provider is optional and register-when-present (ADR-0071): a
+	// deployment that has not registered an app for a provider simply does not
+	// offer that sign-in (create-auth.ts gates each one, /sign-in hides the
+	// button). The hosted star always offers Google and re-requires it in its OWN
+	// boot validation (apps/api/server.ts); the single-partition instance runs no
+	// OAuth at all and authenticates with one operator-supplied bearer instead
+	// (ADR-0073). Loosening Google here is what lets a bearer-only box boot without
+	// registering a Google app for its own origin (the ADR-0070 wart).
+	'GOOGLE_CLIENT_ID?': 'string',
+	'GOOGLE_CLIENT_SECRET?': 'string',
 	'GITHUB_CLIENT_ID?': 'string',
 	'GITHUB_CLIENT_SECRET?': 'string',
 	// Content-addressed blob store (routes/blobs.ts): a portable S3 client over

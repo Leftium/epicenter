@@ -17,10 +17,18 @@ type Db = NodePgDatabase<typeof schema>;
  * construction thus names no Cloudflare binding type at all. A deployment's
  * `Cloudflare.Env` satisfies this structurally.
  */
+/**
+ * Every OAuth provider is optional and register-when-present (ADR-0071): a
+ * deployment configures the ones it has an app for, or none at all. The hosted
+ * star runs Google (and re-requires it in its own boot, apps/api/server.ts); the
+ * single-partition instance runs no provider and authenticates with one
+ * operator-supplied bearer instead (ADR-0073). A provider with no app configured
+ * is simply absent, never a button that 500s.
+ */
 type AuthEnv = {
 	BETTER_AUTH_SECRET: string;
-	GOOGLE_CLIENT_ID: string;
-	GOOGLE_CLIENT_SECRET: string;
+	GOOGLE_CLIENT_ID?: string;
+	GOOGLE_CLIENT_SECRET?: string;
 	GITHUB_CLIENT_ID?: string;
 	GITHUB_CLIENT_SECRET?: string;
 };
@@ -80,19 +88,25 @@ export function createAuth({
 		// Google callback navigation. The cookie binds the callback to the
 		// initiating browser (the DB record alone does not), so keeping the check
 		// on restores that login-CSRF / session-fixation defense.
+		//
+		// Each provider is registered only when its credentials are configured,
+		// so the hosted star is Google-by-default, a custom shared wiki adds
+		// whichever providers its operator set, and the single-partition instance
+		// offers none (it has no OAuth; the operator bearer is the gate, ADR-0073)
+		// instead of a button that 500s. better-auth requests `read:user` +
+		// `user:email` for GitHub by default, so it reads the primary email and
+		// GitHub's verification flag. GitHub is deliberately NOT a trusted linking
+		// provider (see BASE_AUTH_CONFIG): an unverified GitHub email must not link
+		// into an existing account.
 		socialProviders: {
-			google: {
-				clientId: env.GOOGLE_CLIENT_ID,
-				clientSecret: env.GOOGLE_CLIENT_SECRET,
-			},
-			// GitHub is registered only when a deployment has configured its
-			// credentials, so the shared-wiki reference deployment (and any self-host)
-			// stays Google-only by default instead of offering a button that
-			// 500s. better-auth requests the `read:user` + `user:email` scopes by
-			// default, so it reads the primary email and GitHub's verification
-			// flag. GitHub is deliberately NOT a trusted linking provider (see
-			// BASE_AUTH_CONFIG): an unverified GitHub email must not link into an
-			// existing account.
+			...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+				? {
+						google: {
+							clientId: env.GOOGLE_CLIENT_ID,
+							clientSecret: env.GOOGLE_CLIENT_SECRET,
+						},
+					}
+				: {}),
 			...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
 				? {
 						github: {

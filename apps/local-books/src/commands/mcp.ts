@@ -87,16 +87,16 @@ type ToolDescriptor = {
 	description: string;
 	/** TypeBox object schema: serialized as the MCP `inputSchema` AND the validator. */
 	input: TObject;
-	/** Published read/write classification, carried as `_meta["epicenter/tier"]`. */
-	tier: 'read' | 'write';
 	/**
-	 * Whether read-only mode drops this tool. True only for the one QuickBooks
-	 * write (`recategorize`): the mirror-refreshing `sync` is a `write` tier but
-	 * stays available, mirroring `recategorizeExpense`'s own `readOnly` refusal
-	 * (the core is the single owner of the invariant; this is the belt to its
-	 * suspenders).
+	 * The tool's effect class, and the whole read-only gate:
+	 *  - `read`  pure read of the mirror or a live QB report;
+	 *  - `write` side-effecting but safe (sync refreshes the local cache);
+	 *  - `mutation` mutates QuickBooks itself, and is the one class read-only
+	 *    mode withholds from the catalog.
+	 * The host sees only `read`/`write` via `_meta["epicenter/tier"]` (a mutation
+	 * publishes as `write`); `mutation` is our internal gate marker.
 	 */
-	gatedByReadOnly: boolean;
+	tier: 'read' | 'write' | 'mutation';
 	run: (
 		ctx: ToolContext,
 		args: Record<string, unknown>,
@@ -115,7 +115,6 @@ const TOOLS: ToolDescriptor[] = [
 			}),
 		}),
 		tier: 'read',
-		gatedByReadOnly: false,
 		async run(ctx, args) {
 			const { sql } = args as { sql: string };
 			return queryBooks({
@@ -131,7 +130,6 @@ const TOOLS: ToolDescriptor[] = [
 			'Report the connection state and how fresh the local mirror is (cursor, last sync, per-record-type row counts). Cheap; good for "are you connected and synced?".',
 		input: Type.Object({}),
 		tier: 'read',
-		gatedByReadOnly: false,
 		async run(ctx) {
 			return Ok(
 				await readBooksStatus({
@@ -165,7 +163,6 @@ const TOOLS: ToolDescriptor[] = [
 			),
 		}),
 		tier: 'read',
-		gatedByReadOnly: false,
 		async run(ctx, args) {
 			const input = args as {
 				report: (typeof REPORT_NAMES)[number];
@@ -195,7 +192,6 @@ const TOOLS: ToolDescriptor[] = [
 			),
 		}),
 		tier: 'write',
-		gatedByReadOnly: false,
 		async run(ctx, args) {
 			const { full } = args as { full?: boolean };
 			const token = await ctx.store.get(ctx.realmId);
@@ -255,8 +251,7 @@ const TOOLS: ToolDescriptor[] = [
 				}),
 			),
 		}),
-		tier: 'write',
-		gatedByReadOnly: true,
+		tier: 'mutation',
 		async run(ctx, args) {
 			const input = args as {
 				entity: (typeof RECATEGORIZE_ENTITIES)[number];
@@ -274,8 +269,10 @@ const TOOLS: ToolDescriptor[] = [
 			return recategorizeExpense({
 				openQb,
 				dbPath: dbPath(ctx.config.dataDir, ctx.realmId),
-				// Belt and suspenders: the tool is dropped from the list under
-				// read-only, and the core refuses anyway (the single owner of the gate).
+				// The catalog filter is the live gate: under read-only this tool is
+				// unlisted, so this run only executes when readOnly is false. Passing
+				// the real flag keeps the core as the invariant's single owner, so
+				// removing the filter later cannot silently enable the write.
 				readOnly: ctx.config.readOnly,
 				input,
 			});
@@ -308,9 +305,10 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 		realm: args.realm,
 	});
 
-	// Read-only mode drops the QuickBooks write from the catalog entirely, so a
-	// foreign host never even sees it (the core refuses too).
-	const tools = TOOLS.filter((t) => !(t.gatedByReadOnly && config.readOnly));
+	// Read-only mode drops the QuickBooks mutation from the catalog entirely, so a
+	// foreign host never even sees it. This filter is the live gate (the cores stay
+	// the invariant's owner for the CLI path).
+	const tools = TOOLS.filter((t) => t.tier !== 'mutation' || !config.readOnly);
 
 	// The low-level `Server` is deliberate (its `@deprecated` tag nudges casual
 	// users to the high-level `McpServer`, but explicitly keeps `Server` for
@@ -327,7 +325,8 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 			title: t.title,
 			description: t.description,
 			inputSchema: t.input,
-			_meta: { [TIER_META]: t.tier },
+			// The host sees read/write; `mutation` is our internal gate marker.
+			_meta: { [TIER_META]: t.tier === 'read' ? 'read' : 'write' },
 		})),
 	}));
 

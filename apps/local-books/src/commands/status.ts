@@ -19,7 +19,7 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 	console.log(`Data dir:     ${status.dataDir}`);
 	console.log(`Token file:   ${status.tokenFile}`);
 
-	if (!status.connected || !status.accessToken || !status.refreshToken) {
+	if (!status.accessToken || !status.refreshToken) {
 		console.log(`Connection:   not connected. Run "local-books auth".`);
 	} else {
 		const access = status.accessToken.valid ? 'valid' : 'expired';

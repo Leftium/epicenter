@@ -41,3 +41,19 @@ export const asOwnerId = (value: string): OwnerId => value as OwnerId;
  * signed-in user's id.
  */
 export const SHARED_OWNER_ID = asOwnerId('shared');
+
+/**
+ * Owner partition for the single-partition instance (self-host; ADR-0073).
+ *
+ * Byte-pinned, like {@link SHARED_OWNER_ID}: this string IS the `:ownerId` path
+ * segment, the R2 key prefix, the Durable Object name prefix, and the local
+ * IndexedDB key prefix for every instance deployment. Changing the bytes breaks
+ * every existing instance's data. Do not edit.
+ *
+ * Pinned to a CONSTANT independent of caller identity (the `shared()` topology,
+ * not `personal()` keyed by user id): every operator-supplied bearer resolves to
+ * the same partition, so a future per-person named token adds identity without
+ * re-partitioning the box's data. The hosted cloud never reads this; its owner
+ * partition is the signed-in user's id (`personal()`).
+ */
+export const INSTANCE_OWNER_ID = asOwnerId('instance');

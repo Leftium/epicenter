@@ -14,6 +14,19 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
+// The single-partition instance's bearer credential (self-host; ADR-0073). The
+// deployment injects `createInstanceTokenResolver(verifyEnvToken(secret))` as its
+// `ResolveUser` (paired with `instance()`); `assertStrongToken` is the boot
+// entropy gate and `generateInstanceToken` backs `epicenter gen-token`.
+export {
+	assertStrongToken,
+	createInstanceTokenResolver,
+	generateInstanceToken,
+	INSTANCE_PRINCIPAL,
+	MIN_INSTANCE_TOKEN_CHARS,
+	type VerifyToken,
+	verifyEnvToken,
+} from './auth/instance-token.js';
 // Database concern. `createDb(client)` wraps a connected pg client/pool in
 // drizzle with the internal schema (the portable core). The Cloudflare
 // per-request `pg.Client` over Hyperdrive is now internal to the `cloudflare()`
@@ -40,11 +53,12 @@ export {
 // adapter (runtime/cloudflare.ts).
 export { doName } from './owner.js';
 // Ownership composition: the deployment constructs the rule once via
-// `personal()` or `shared({ admit })` and threads it into every mount
-// primitive that needs the partition. See ./ownership.ts for the design
+// `personal()`, `shared({ admit })`, or `instance()` and threads it into every
+// mount primitive that needs the partition. See ./ownership.ts for the design
 // note.
 export {
 	type Admit,
+	instance,
 	type OwnershipRule,
 	personal,
 	shared,

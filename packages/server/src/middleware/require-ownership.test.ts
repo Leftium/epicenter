@@ -17,9 +17,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type AuthUser, asUserId } from '@epicenter/auth';
-import { SHARED_OWNER_ID } from '@epicenter/identity';
+import { INSTANCE_OWNER_ID, SHARED_OWNER_ID } from '@epicenter/identity';
 import { Hono } from 'hono';
-import { type OwnershipRule, personal, shared } from '../ownership.js';
+import {
+	instance,
+	type OwnershipRule,
+	personal,
+	shared,
+} from '../ownership.js';
 import type { Env } from '../types.js';
 import { createRequireOwnership } from './require-ownership.js';
 
@@ -166,5 +171,46 @@ describe('shared({ admit })', () => {
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as { error: { name: string } };
 		expect(body.error.name).toBe('NotAdmitted');
+	});
+});
+
+describe('instance()', () => {
+	test('attaches INSTANCE_OWNER_ID under owners/instance', async () => {
+		const res = await createTestApp(instance(), 'owner').request(
+			'/api/owners/instance/rooms/r1',
+		);
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe(INSTANCE_OWNER_ID);
+	});
+
+	test('pins the SAME partition regardless of caller identity', async () => {
+		// The load-bearing invariant (ADR-0073): the partition is decoupled from
+		// the principal, so two different principals resolve to one `owners/instance`
+		// and a future per-person named token never re-partitions the box's data.
+		// This is exactly what `personal()` + a fixed owner id would NOT give.
+		for (const id of ['alice', 'bob', 'instance']) {
+			const res = await createTestApp(instance(), id).request(
+				'/api/owners/instance/rooms/r1',
+			);
+			expect(res.status).toBe(200);
+			expect(await res.text()).toBe(INSTANCE_OWNER_ID);
+		}
+	});
+
+	test('REJECTS URL :ownerId set to a user id (silent-bypass guard)', async () => {
+		const res = await createTestApp(instance(), 'owner').request(
+			'/api/owners/owner/rooms/r1',
+		);
+		expect(res.status).toBe(403);
+		const body = (await res.json()) as { error: { name: string } };
+		expect(body.error.name).toBe('OwnerMismatch');
+	});
+
+	test('routes without :ownerId attach INSTANCE_OWNER_ID', async () => {
+		const res = await createTestApp(instance(), 'owner').request(
+			'/api/session',
+		);
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe(INSTANCE_OWNER_ID);
 	});
 });

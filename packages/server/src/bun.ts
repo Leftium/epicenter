@@ -18,6 +18,19 @@
  * on a Bun host, which supplies its own room and db concerns.
  */
 
+// The single-partition instance's bearer credential (self-host; ADR-0073): the
+// `ResolveUser` a Bun instance injects (`createInstanceTokenResolver(verifyEnvToken(token))`,
+// paired with `instance()`), the boot entropy gate (`assertStrongToken`), and the
+// token generator behind `bun run gen-token`.
+export {
+	assertStrongToken,
+	createInstanceTokenResolver,
+	generateInstanceToken,
+	INSTANCE_PRINCIPAL,
+	MIN_INSTANCE_TOKEN_CHARS,
+	type VerifyToken,
+	verifyEnvToken,
+} from './auth/instance-token.js';
 export { createDb, type Db } from './db/create-db.js';
 export {
 	requireBearerUser,
@@ -26,6 +39,7 @@ export {
 export { doName } from './owner.js';
 export {
 	type Admit,
+	instance,
 	type OwnershipRule,
 	personal,
 	shared,

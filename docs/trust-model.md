@@ -37,11 +37,11 @@ Epicenter Cloud, the default, is operated by Epicenter, so hosted data sits insi
 
 Self-hosting is functionally zero-knowledge against Epicenter, because Epicenter never holds or sees the data: you operate the deployment. The strength comes from topology, not from a held secret. So the marketing has to stay honest about which deployment it describes. "We cannot read your data" is true when you self-host, not on the default.
 
-## Logging in still leans on Google
+## Logging in: Google for hosted, one bearer for an instance
 
-Self-host moves the data to your box, but the login does not move with it yet. The only wired sign-in is Google OAuth: `packages/server/src/auth/base-config.ts` disables email/password on purpose, because better-auth 1.5.6 has no local-email-verification gate and no mail sender is wired up, so a local account would open an account-takeover path. The cost is real: today a self-hoster registers a Google OAuth app to log into their own machine, a cloud dependency that cuts against the point of running your own box.
+The hosted star signs in with Google OAuth: `packages/server/src/auth/base-config.ts` disables email/password on purpose, because better-auth 1.5.6 has no local-email-verification gate and no mail sender is wired up, so a local account would open an account-takeover path. OAuth is the hosted star's only (ADR-0071).
 
-The fix is a local credential source, not a removed login gate. The planned self-host default is a single-user bearer token printed at first boot: a real authenticated user with no third-party issuer behind it. Multi-user homelabs reach the same gate through a reverse-proxy header in front of their own identity provider, or through better-auth's API keys. The gate never goes away; only where the credential comes from changes. That decision is `docs/adr/0070-self-host-adds-no-new-ownership-or-auth-mode.md`, and it is in flight, not yet shipped.
+A self-hosted instance does not use OAuth at all, so there is no Google app to register for your own box. It authenticates with one operator-supplied static bearer (`INSTANCE_TOKEN`): you generate it once (`bun run gen-token`), supply it through the environment, and paste it into the client; every request is constant-time compared against it and resolves the one `owners/instance` partition. No sign-in flow, no first-boot minting, no mode to pick. That is `docs/adr/0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md`, which supersedes the earlier first-boot-minting direction (ADR-0070, ADR-0072). The cost, named honestly: removing one person from a multi-person instance means rotating the token and redistributing it, because per-person revocation is a deliberately unbuilt seam rather than a shipped feature.
 
 ## Where this is heading: the anchor
 

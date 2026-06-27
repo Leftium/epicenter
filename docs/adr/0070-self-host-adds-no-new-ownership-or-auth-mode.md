@@ -1,8 +1,11 @@
 # 0070. Self-host adds no new ownership or auth mode: single-user is a preset, and only the credential source varies
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0073](0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md)
 - **Date:** 2026-06-24
 - **Relates:** [ADR-0068](0068-privacy-is-a-deployment-not-a-product-feature.md) and [ADR-0069](0069-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md) (self-host runs the star; this says self-host needs no new mode to do it), [ADR-0057](0057-assistant-markdown-renders-as-a-shared-component-tree-not-a-sanitized-html-string.md)/[ADR-0066](0066-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) (the per-concern injection seams, of which `resolveUser` is one), [ADR-0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) (auth owns the session endpoint); the recommended default credential source and the build waves live in `specs/20260624T223835-privacy-is-a-deployment-self-host-and-relay-anchor-gradations.md`.
+
+> **Superseded by [ADR-0073](0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md).** Its load-bearing finding carries forward: single-user-ness is not a third `OwnershipRule.kind`, and the pin-to-constant `shared` topology covers it (ADR-0073's `instance()` is exactly that preset). What 0073 supersedes is this ADR's framing of self-host as the hosted star minus billing, selecting `solo`/`shared` presets that feed `personal()` and a first-boot bearer: 0073 collapses self-host to ONE single-partition instance behind one operator-supplied bearer, with no mode, no minting, and no OAuth.
 
 ## Context
 

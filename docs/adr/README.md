@@ -137,6 +137,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) | Auth owns the `/api/session` endpoint; the data client is owner-scoped and receives `ownerId` at construction | Accepted |
 | [0068](0068-privacy-is-a-deployment-not-a-product-feature.md) | Privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface | Accepted |
 | [0069](0069-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md) | Epicenter is one runnable program (the star) plus a la carte services addressed by base URL and token | Accepted |
-| [0070](0070-self-host-adds-no-new-ownership-or-auth-mode.md) | Self-host adds no new ownership or auth mode: single-user is a preset, and only the credential source varies | Accepted |
+| [0070](0070-self-host-adds-no-new-ownership-or-auth-mode.md) | Self-host adds no new ownership or auth mode: single-user is a preset, and only the credential source varies | Superseded by [0073](0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) |
+| [0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md) | OAuth is hosted-only; a custom instance requires a token | Accepted |
+| [0072](0072-the-self-host-star-mints-and-persists-its-own-first-boot-bearer.md) | The self-host star mints and persists its own first-boot bearer | Superseded by [0073](0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) |
+| [0073](0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) | Self-host is a single-partition instance behind one operator-supplied bearer; multi-tenancy is Cloud-only | Accepted |
 
 When you add an ADR, add its row here.

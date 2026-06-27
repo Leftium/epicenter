@@ -50,9 +50,13 @@ shapes, see `docs/adr/`.
   daemon (ADR-0054).
 - **Deployable vs library**: one library, `packages/server`, consumed by two
   deployables: `apps/api` (hosted personal cloud) and `apps/self-host` (the
-  community shared-wiki reference, not Epicenter-operated).
-- **`personal()` / `shared({ admit })`**: the `packages/server` seam that splits
-  the two deployables. Billing is hosted-only and lives in `apps/api/worker/billing/`.
+  community single-partition instance reference, not Epicenter-operated; ADR-0073).
+- **`personal()` / `instance()` / `shared({ admit })`**: the `packages/server`
+  ownership seam. `apps/api` uses `personal()` (N partitions keyed per user);
+  `apps/self-host` uses `instance()` (one partition pinned to `owners/instance`
+  behind one operator bearer, the `shared` topology as a preset). `shared({ admit })`
+  is the third preset a custom multi-account wiki could compose. Billing is
+  hosted-only and lives in `apps/api/worker/billing/`.
 
 ## Workspace API
 

@@ -34,9 +34,7 @@ export async function runQuery(args: ParsedArgs): Promise<number> {
 	}
 
 	console.log(JSON.stringify(data.rows, null, 2));
-	const shown = data.truncated ? ` (showing first ${data.rows.length})` : '';
-	console.error(
-		`${data.rowCount} row${data.rowCount === 1 ? '' : 's'}${shown}`,
-	);
+	const note = data.truncated ? ' (capped; more rows matched)' : '';
+	console.error(`${data.rowCount} row${data.rowCount === 1 ? '' : 's'}${note}`);
 	return 0;
 }

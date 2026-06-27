@@ -38,7 +38,7 @@ const MAX_ROWS = 1000;
 
 export type BooksQueryResult = {
 	rows: Record<string, unknown>[];
-	/** Rows the query matched, which may exceed the returned (capped) count. */
+	/** Rows returned (at most MAX_ROWS); `truncated` flags that more matched. */
 	rowCount: number;
 	truncated: boolean;
 };
@@ -47,6 +47,14 @@ export type BooksQueryResult = {
  * Run a read-only SQL query against the mirror at `dbPath`. The handle is opened
  * read-only per call (cheap, and it sidesteps holding a lock while a sync
  * writes), so a query can run while `local-books sync` runs.
+ *
+ * Rows are pulled lazily and the read STOPS at the cap: a query reads at most
+ * `MAX_ROWS + 1` rows, never the full result set. This is what makes the cap a
+ * real bound rather than cosmetic, since the caller is often an untrusted model:
+ * a recursive CTE, a cartesian product, or any huge result set cannot
+ * materialize an unbounded array and exhaust memory. The read-only connection
+ * still rejects every write statement (the integrity boundary). A single
+ * enormous value or a pure-CPU query is out of scope of the row cap.
  */
 export function queryBooks({
 	dbPath,
@@ -56,18 +64,25 @@ export function queryBooks({
 	sql: string;
 }): Result<BooksQueryResult, BooksQueryError> {
 	if (!existsSync(dbPath)) return BooksQueryError.NoMirror({ path: dbPath });
-	const db = new Database(dbPath, { readonly: true });
+	// The open is inside the try so a corrupt or unreadable db surfaces as a
+	// Result error, not an uncaught throw.
 	try {
-		const rows = db.query(sql).all() as Record<string, unknown>[];
-		const truncated = rows.length > MAX_ROWS;
-		return Ok({
-			rows: truncated ? rows.slice(0, MAX_ROWS) : rows,
-			rowCount: rows.length,
-			truncated,
-		});
+		const db = new Database(dbPath, { readonly: true });
+		try {
+			const rows: Record<string, unknown>[] = [];
+			let truncated = false;
+			for (const row of db.query(sql).iterate()) {
+				if (rows.length === MAX_ROWS) {
+					truncated = true;
+					break;
+				}
+				rows.push(row as Record<string, unknown>);
+			}
+			return Ok({ rows, rowCount: rows.length, truncated });
+		} finally {
+			db.close();
+		}
 	} catch (cause) {
 		return BooksQueryError.QueryFailed({ cause });
-	} finally {
-		db.close();
 	}
 }

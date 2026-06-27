@@ -36,6 +36,7 @@ import {
 	mountBlobsApp,
 	personal,
 	type ResolveUser,
+	recordRoomAccessOnDb,
 	startBunServer,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
@@ -84,6 +85,8 @@ export function startBunApiServer(
 		ownership: personal(),
 		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 		mountExtras: (app, ownership) => mountBlobsApp(app, { ownership }),
+		// The hosted cloud records each room access into `durableObjectInstance`.
+		roomsRecordAccess: recordRoomAccessOnDb,
 		// Undefined in production; `server.dev.ts` passes a dev bearer resolver.
 		resolveUser: opts.resolveUser,
 	});

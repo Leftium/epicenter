@@ -64,7 +64,14 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 export { authApp } from './routes/auth.js';
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
-export { mountRoomsApp } from './routes/rooms.js';
+// `mountRoomsApp` takes the deployment's telemetry seam: the hosted cloud passes
+// `recordRoomAccessOnDb` (a `durableObjectInstance` upsert on `c.var.db`); the
+// single-partition instance omits it so its rooms route reads no Postgres (ADR-0073).
+export {
+	mountRoomsApp,
+	type RoomAccessRecorder,
+	recordRoomAccessOnDb,
+} from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { bun } from './runtime/bun.js';
 // The Cloudflare runtime adapter: the per-runtime triple (db over Hyperdrive,

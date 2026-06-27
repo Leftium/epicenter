@@ -31,7 +31,7 @@ import type { OwnershipRule } from './ownership.js';
 import { createBunRooms } from './room/backends/bun/registry.js';
 import { authApp } from './routes/auth.js';
 import { mountInferenceApp } from './routes/inference.js';
-import { mountRoomsApp } from './routes/rooms.js';
+import { mountRoomsApp, type RoomAccessRecorder } from './routes/rooms.js';
 import { mountSessionApp } from './routes/session.js';
 import { bun } from './runtime/bun.js';
 import { createServerApp, type Identity } from './server-app.js';
@@ -79,6 +79,12 @@ export type StartBunServerOptions = {
 	 */
 	mountExtras?: (app: Hono<Env>, ownership: OwnershipRule) => void;
 	/**
+	 * The deployment's rooms telemetry seam (apps/api passes `recordRoomAccessOnDb`;
+	 * the single-partition instance omits it so its rooms route reads no Postgres,
+	 * ADR-0073).
+	 */
+	roomsRecordAccess?: RoomAccessRecorder;
+	/**
 	 * Dev-only user resolver the dev entry injects to drive the parity smoke
 	 * without an interactive login. Production omits it and keeps the real OAuth
 	 * resolver.
@@ -100,6 +106,7 @@ export function startBunServer({
 	resolveTrustedOrigins,
 	cookieDomain,
 	mountExtras,
+	roomsRecordAccess,
 	resolveUser,
 }: StartBunServerOptions): { origin: string; dataDir: string } {
 	const port = Number(env.PORT ?? defaultPort);
@@ -133,7 +140,7 @@ export function startBunServer({
 	app.get('/', (c) => c.json({ mode, version: '0.1.0', runtime: 'bun' }));
 	app.route('/', authApp);
 	mountSessionApp(app, { ownership });
-	mountRoomsApp(app, { ownership });
+	mountRoomsApp(app, { ownership, recordAccess: roomsRecordAccess });
 	mountInferenceApp(app, { auth: requireBearerUser, ownership });
 	mountExtras?.(app, ownership);
 

@@ -24,6 +24,7 @@ import {
 	mountSessionApp,
 	personal,
 	Room,
+	recordRoomAccessOnDb,
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	type ServerBindings,
@@ -84,7 +85,9 @@ app.route('/', authApp);
 // auth + ownership wiring; the deployment passes only the rule and any
 // deployment policies.
 mountSessionApp(app, { ownership });
-mountRoomsApp(app, { ownership });
+// The hosted cloud records each room access into `durableObjectInstance`
+// (`recordRoomAccessOnDb`); the single-partition instance passes no recorder.
+mountRoomsApp(app, { ownership, recordAccess: recordRoomAccessOnDb });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
 // attached, so deferred quota means not calling it. A `syncBlobStorageWithAutumn`

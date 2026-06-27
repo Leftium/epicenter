@@ -66,7 +66,7 @@ export type RuntimeAdapter = {
 	 * cloud: Better Auth + room telemetry); OMITTED entirely by the
 	 * single-partition instance, which composes no Postgres, so `createServerApp`
 	 * installs no db lifecycle middleware at all and `c.var.db` is never set
-	 * (ADR-0073).
+	 * (ADR-0074).
 	 *
 	 * The two halves are bundled rather than offered as independent optional
 	 * siblings because either alone is a bug: a `connect` with no `afterResponse`
@@ -138,7 +138,7 @@ export type Identity = {
  *   1. CORS (skips WS upgrades).
  *   2. Per-request pg connection + after-response queue, ONLY when the runtime
  *      provides a `db` leg (the cloud does; the Postgres-free instance omits
- *      it, so `c.var.db` is never set, ADR-0073).
+ *      it, so `c.var.db` is never set, ADR-0074).
  *   3. The deployment's user-resolution seam (`c.var.resolveUser`).
  *
  * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
@@ -146,7 +146,7 @@ export type Identity = {
  * health endpoint on `/`. The Better Auth context (`c.var.auth`) is NOT
  * global: the cloud adds it via {@link mountCloudAuth} (Postgres-backed
  * sessions + OAuth), so the single-partition instance composes no Better Auth
- * (ADR-0073). WebSocket auth-transport normalization is likewise not global: it
+ * (ADR-0074). WebSocket auth-transport normalization is likewise not global: it
  * lives in {@link mountRoomsApp}, the only WebSocket surface.
  */
 type CreateServerAppOptions = {
@@ -159,7 +159,7 @@ type CreateServerAppOptions = {
 	 * deployment and stamped onto `c.var.resolveUser`. REQUIRED: there is no
 	 * default, because the OAuth bearer resolver (`resolveRequestOAuthUser`) reads
 	 * `c.var.auth`, which only the cloud composes (via {@link mountCloudAuth}); an
-	 * instance has no Better Auth and passes its bearer resolver instead (ADR-0073).
+	 * instance has no Better Auth and passes its bearer resolver instead (ADR-0074).
 	 * The cloud passes `resolveRequestOAuthUser` explicitly; the surface wrappers
 	 * read it from the context, so injecting here redirects all of them at once and
 	 * leaves their cookie / WS-reject / 401 behavior untouched.
@@ -203,7 +203,7 @@ export function createServerApp({
 	// outlive the response don't hit a closed handle and the response is never
 	// blocked on them. The single-partition instance provides no `db` leg
 	// (it composes no Better Auth and records no telemetry), so this middleware is
-	// never installed and the instance touches no Postgres (ADR-0073).
+	// never installed and the instance touches no Postgres (ADR-0074).
 	if (db) {
 		app.use('*', async (c, next) => {
 			const { db: handle, close } = await db.connect(c.env);
@@ -224,7 +224,7 @@ export function createServerApp({
 	// 3. The deployment's user-resolution seam, stamped onto `c.var.resolveUser`
 	// so every auth wrapper reads one resolver off the context instead of
 	// hardcoding it: the cloud passes the OAuth bearer resolver, an instance its
-	// token resolver (ADR-0073), a dev entry a trivial bearer resolver. The Better
+	// token resolver (ADR-0074), a dev entry a trivial bearer resolver. The Better
 	// Auth instance (`c.var.auth`) is NOT built here; it is a cloud-only layer the
 	// cloud adds via `mountCloudAuth`, so an instance composes no Better Auth.
 	app.use('*', async (c, next) => {

@@ -102,7 +102,7 @@ export type Env = {
 		 * The per-request Postgres handle. Populated by `createServerApp`'s db
 		 * lifecycle middleware, installed ONLY when the runtime provides a `db` leg
 		 * (the cloud does; the single-partition instance composes no Postgres, so this
-		 * is never set on an instance, ADR-0073). Read by Better Auth and the room
+		 * is never set on an instance, ADR-0074). Read by Better Auth and the room
 		 * telemetry recorder, both cloud-only.
 		 */
 		db: NodePgDatabase<typeof schema>;
@@ -110,7 +110,7 @@ export type Env = {
 		 * The per-request Better Auth instance. Populated by `mountCloudAuth`, the
 		 * cloud-only relational-auth layer; the single-partition instance composes
 		 * no Better Auth, so this is never set on an instance and no instance-mounted
-		 * route reads it (ADR-0073). Like every variable here, reading it before its
+		 * route reads it (ADR-0074). Like every variable here, reading it before its
 		 * installing middleware ran is a bug.
 		 */
 		auth: ReturnType<typeof createAuth>;
@@ -141,14 +141,14 @@ export type Env = {
 		 * distinctly from that `afterResponse` scheduler hook: this is the queue,
 		 * the hook is how the queue is drained. Installed alongside `c.var.db` by the
 		 * cloud-only db lifecycle middleware, so it is never set on a Postgres-free
-		 * instance (ADR-0073).
+		 * instance (ADR-0074).
 		 */
 		afterResponseQueue: Promise<unknown>[];
 		rooms: Rooms;
 		/**
 		 * How this deployment resolves a request to its calling user, stamped by
 		 * `createServerApp` (the cloud passes the OAuth bearer resolver, an instance
-		 * its token resolver, ADR-0073). The auth wrappers read it here instead of
+		 * its token resolver, ADR-0074). The auth wrappers read it here instead of
 		 * hardcoding a resolver, so a dev entry can inject a trivial bearer resolver
 		 * without the wrappers changing. See {@link ResolveUser}.
 		 */

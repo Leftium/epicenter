@@ -1,5 +1,5 @@
 /**
- * Instance-token verifier unit tests (ADR-0073).
+ * Instance-token verifier unit tests (ADR-0074).
  *
  * Pins the verifier side of the instance bearer path: the resolver maps an exact,
  * constant-time bearer match to the named principal and everything else to

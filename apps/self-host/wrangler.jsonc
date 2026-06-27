@@ -20,12 +20,12 @@
 	// against Epicenter.
 	//
 	// INSTANCE_TOKEN: the one operator-supplied bearer that authenticates every
-	// request (ADR-0073). Generate it with `bun run gen-token` and set it with
+	// request (ADR-0074). Generate it with `bun run gen-token` and set it with
 	// `wrangler secret put INSTANCE_TOKEN`; hand the same value to whoever should
 	// have access and paste it into their client instance setting. There is no
 	// OAuth and no allowlist: "solo" vs "shared" is only how many people hold it.
 	// It is the ONLY required secret: the instance composes no Better Auth, so
-	// there is no `BETTER_AUTH_SECRET` (ADR-0073).
+	// there is no `BETTER_AUTH_SECRET` (ADR-0074).
 	//
 	// AI provider house keys (OPENAI_API_KEY, GEMINI_API_KEY) are optional:
 	// `wrangler secret put` one to serve that provider through this gateway, or
@@ -53,5 +53,5 @@
 	]
 
 	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth, no
-	// telemetry), so its only binding is the Durable Object above (ADR-0073).
+	// telemetry), so its only binding is the Durable Object above (ADR-0074).
 }

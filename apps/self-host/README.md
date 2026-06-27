@@ -23,7 +23,7 @@ Then paste the same token into the client's instance setting (`{ baseURL, token 
 
 Boot fails closed if `INSTANCE_TOKEN` is missing or too weak, and the error names `gen-token`. The box never mints or stores a token: you own the secret, which is exactly what lets the same instance run on Cloudflare too. To rotate, generate a new token, restart with it, and redistribute it; there is no per-person revocation (see [Offboarding](#offboarding-and-rotation)).
 
-`INSTANCE_TOKEN` is the only required variable. The instance needs no database and no auth secret: it composes no Better Auth and stores rooms as `bun:sqlite` files on local disk (ADR-0073). `DATA_DIR` holds that room data; persist it.
+`INSTANCE_TOKEN` is the only required variable. The instance needs no database and no auth secret: it composes no Better Auth and stores rooms as `bun:sqlite` files on local disk (ADR-0074). `DATA_DIR` holds that room data; persist it.
 
 ### Use TLS
 
@@ -41,7 +41,7 @@ bun run --cwd apps/self-host typecheck
 bun run --cwd apps/self-host deploy
 ```
 
-`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0073). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain, and provision the one Durable Object binding the file documents. A Worker has no boot phase, so the entropy gate (`assertStrongToken`) runs per request at the edge: a weak or unset `INSTANCE_TOKEN` fails every request closed. Use `gen-token` for the secret.
+`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0074). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain, and provision the one Durable Object binding the file documents. A Worker has no boot phase, so the entropy gate (`assertStrongToken`) runs per request at the edge: a weak or unset `INSTANCE_TOKEN` fails every request closed. Use `gen-token` for the secret.
 
 `worker-configuration.d.ts` is hand-written: it inherits the library's binding contract (`ServerBindings`) and declares only the deployment-owned `API_PUBLIC_ORIGIN` and `INSTANCE_TOKEN`. If you add bindings of your own, declare them there (or regenerate with `bun run typegen` and re-add the `extends` clause).
 
@@ -102,11 +102,11 @@ Deliberately absent: `mountBillingApi`, any OAuth provider, a launch-time mode s
 
 A multi-person instance has one honest cost: removing someone means rotating the token and redistributing it to everyone who stays. There is no per-member revocation and no authenticated attribution; whoever holds the token is the instance owner, and attribution in collaborative presence is self-declared. This is fine for the trusted small group an instance targets (a family, a club, a lab, a small team) and gets painful past roughly six to eight people with involuntary churn.
 
-The escape, when that pain is real, is named per-person tokens: a hashed token registry behind the same verifier and the same constant partition, so each person gets their own revocable token and a server-stamped identity, with zero data migration. It is a deliberately unbuilt seam (ADR-0073). If you are hitting the offboarding cliff, that is the signal to build it, or to move to Epicenter Cloud, which is multi-tenant by design.
+The escape, when that pain is real, is named per-person tokens: a hashed token registry behind the same verifier and the same constant partition, so each person gets their own revocable token and a server-stamped identity, with zero data migration. It is a deliberately unbuilt seam (ADR-0074). If you are hitting the offboarding cliff, that is the signal to build it, or to move to Epicenter Cloud, which is multi-tenant by design.
 
 ## See also
 
-- [ADR-0073](../../docs/adr/0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) for why an instance is one partition behind one bearer
-- [ADR-0074](../../docs/adr/0074-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md) for why the instance composes no Better Auth and no Postgres
+- [ADR-0074](../../docs/adr/0074-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) for why an instance is one partition behind one bearer
+- [ADR-0075](../../docs/adr/0075-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md) for why the instance composes no Better Auth and no Postgres
 - `apps/api` for the hosted personal cloud variant (OAuth, per-user partitions, billing)
 - `packages/server` for the shared library both deployables compose

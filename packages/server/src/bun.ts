@@ -5,7 +5,7 @@
  * here (`createServerApp` + the `mount*` surface) and serves it with `Bun.serve`.
  * The hosted cloud's Bun bootstrap and the instance's Bun bootstrap each own
  * their own composition (`apps/api/server.ts`, `apps/self-host/server.ts`); the
- * library ships the parts, not a shared launcher (ADR-0073/0074). The `RuntimeAdapter`
+ * library ships the parts, not a shared launcher (ADR-0074/0075). The `RuntimeAdapter`
  * is built by {@link bun}, the honest peer of `cloudflare()`: a `pg.Pool` and a
  * fire-and-forget drain as the `db` leg, and {@link createBunRooms} for
  * `resolveRooms` (an in-process registry over `bun:sqlite`, not a Durable
@@ -21,7 +21,7 @@
  * on a Bun host, which supplies its own room and db concerns.
  */
 
-// The single-partition instance's bearer VERIFIER (self-host; ADR-0073): the
+// The single-partition instance's bearer VERIFIER (self-host; ADR-0074): the
 // `ResolveUser` a Bun instance injects (`createInstanceTokenResolver(verifyEnvToken(token))`,
 // paired with `instance()`). The pure generator + boot entropy gate
 // (`generateInstanceToken` / `assertStrongToken`) live in `@epicenter/auth`.
@@ -37,11 +37,11 @@ export {
 	requireCookieOrBearerUser,
 	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
-// An opt-in burn-rate cap for the inference `policies` seam (ADR-0074).
+// An opt-in burn-rate cap for the inference `policies` seam (ADR-0075).
 export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer (Better Auth on `c.var.auth` + the auth
 // surface). A cloud-on-Bun entry calls it once after `createServerApp`; the
-// single-partition instance never does (ADR-0074).
+// single-partition instance never does (ADR-0075).
 export { mountCloudAuth } from './mount-cloud-auth.js';
 export { doName } from './owner.js';
 export { instance, type OwnershipRule, personal } from './ownership.js';

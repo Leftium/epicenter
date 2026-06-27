@@ -23,7 +23,7 @@ declare namespace Cloudflare {
 		// Runtime-only Cloudflare binding the library no longer names in
 		// ServerBindings (ADR-0066): this deployment reads it in its own
 		// `resolveRooms` resolver, so it declares it here. There is no Hyperdrive
-		// binding: the instance composes no Postgres (ADR-0073).
+		// binding: the instance composes no Postgres (ADR-0074).
 		ROOM: DurableObjectNamespace<import('@epicenter/server').Room>;
 		// Deployment-owned config the library never reads by name; this
 		// deployment reads them in its own resolvers (ADR-0066). `API_PUBLIC_ORIGIN`

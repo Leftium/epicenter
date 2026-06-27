@@ -1,5 +1,5 @@
 /**
- * Epicenter self-hosted instance Worker (Cloudflare; ADR-0073).
+ * Epicenter self-hosted instance Worker (Cloudflare; ADR-0074).
  *
  * The instance on Cloudflare: the SAME `@epicenter/server` composition the Bun
  * entry (`server.ts`) builds, wired to Cloudflare bindings instead of plain
@@ -13,7 +13,7 @@
  * `INSTANCE_TOKEN` (`wrangler secret put INSTANCE_TOKEN`, generated with
  * `bun run gen-token`), provision your Durable Object binding, and deploy. The
  * instance composes no Better Auth and no Postgres, so there is no Hyperdrive
- * binding and no `BETTER_AUTH_SECRET` (ADR-0073). Community-supported.
+ * binding and no `BETTER_AUTH_SECRET` (ADR-0074). Community-supported.
  *
  * Trust boundary: the deployer operates the infrastructure. Epicenter never holds
  * or sees the data stored here, so self-hosting is functionally zero-knowledge
@@ -40,7 +40,7 @@ const ownership = instance();
 const app = createServerApp({
 	// The Cloudflare runtime adapter: the Durable Object room registry only. The
 	// instance composes no Postgres (no Better Auth, no telemetry), so it passes no
-	// Hyperdrive binding and `createServerApp` installs no db lifecycle (ADR-0073).
+	// Hyperdrive binding and `createServerApp` installs no db lifecycle (ADR-0074).
 	// This edge points it at its OWN binding (the `Cloudflare.Env` cast stays here,
 	// type-checked against this Worker's generated bindings, ADR-0066).
 	runtime: cloudflare({
@@ -61,7 +61,7 @@ const app = createServerApp({
 	// secret lives on the per-request `c.env` (a Worker has no module-scope env),
 	// so the resolver reads `INSTANCE_TOKEN` at the honest edge each request
 	// (ADR-0066). `assertStrongToken` runs the SAME entropy gate the Bun entry runs
-	// at boot, so a missing or weak token fails closed on Cloudflare too (ADR-0073's
+	// at boot, so a missing or weak token fails closed on Cloudflare too (ADR-0074's
 	// entropy floor): a Worker has no boot phase, so the gate runs per request and a
 	// throw surfaces as a 500 instead of admitting a weak credential. It also
 	// returns the trimmed token, so there is no `?? ''` coalesce whose removal could
@@ -80,7 +80,7 @@ app.get('/', (c) =>
 
 // No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The
 // operator bearer (the `resolveUser` above) is the only gate, so every surface is
-// bearer-authenticated (ADR-0073).
+// bearer-authenticated (ADR-0074).
 mountSessionApp(app, { ownership, auth: requireBearerUser });
 mountRoomsApp(app, { ownership });
 // Cap the inference burn rate so a leaked or overused bearer cannot run the

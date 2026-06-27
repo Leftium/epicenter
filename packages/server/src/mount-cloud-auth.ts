@@ -4,7 +4,7 @@
  * The hosted cloud composes Better Auth: a per-request `c.var.auth` instance
  * (sessions, OAuth, JWKS) over Postgres, plus the `authApp` surface (sign-in,
  * consent, OAuth metadata, and the Better Auth catch-all). The single-partition
- * instance composes NEITHER (ADR-0073): it authenticates one operator-supplied
+ * instance composes NEITHER (ADR-0074): it authenticates one operator-supplied
  * bearer and has no sessions, so it never calls this and never constructs Better
  * Auth. That is the seam that lets an instance drop Postgres entirely.
  *

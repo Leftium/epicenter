@@ -5,7 +5,7 @@
  * layers cloud-only billing, admin, and dashboard surfaces on top.
  * The self-hosted single-partition instance lives in a sibling apps/* folder
  * and composes the same library with `instance()` and no Autumn policies
- * (ADR-0073).
+ * (ADR-0074).
  *
  * Read top to bottom for the full URL surface of cloud. Each `mount*`
  * call bundles the auth + ownership + policies + route mount for one
@@ -68,7 +68,7 @@ const app = createServerApp({
 	},
 	// The cloud resolves a request to its user by verifying an OAuth bearer
 	// against JWKS (it reads `c.var.auth` + `c.var.db`, both present below). An
-	// instance passes its bearer resolver instead (ADR-0073).
+	// instance passes its bearer resolver instead (ADR-0074).
 	resolveUser: resolveRequestOAuthUser,
 });
 
@@ -83,7 +83,7 @@ app.get('/', (c) =>
 // cookie scoped to the registrable domain (host-only on localhost regardless).
 // Mounted before the owner-scoped surfaces so `c.var.auth` is set when their
 // cookie-or-bearer wrappers run. The single-partition instance composes none of
-// this (ADR-0073).
+// this (ADR-0074).
 mountCloudAuth(app, { cookieDomain: '.epicenter.so' });
 
 // Owner-partitioned reusable surfaces. Each primitive owns its own

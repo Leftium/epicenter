@@ -16,7 +16,7 @@
  *
  * `hyperdrive` is OPTIONAL: only the hosted cloud composes Postgres (Better Auth +
  * room telemetry), so the cloud Worker passes it; the single-partition instance
- * Worker omits it and composes no db lifecycle (ADR-0073).
+ * Worker omits it and composes no db lifecycle (ADR-0074).
  */
 
 import { connectHyperdriveDb } from '../db/backends/cloudflare.js';

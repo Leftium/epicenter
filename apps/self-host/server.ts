@@ -1,11 +1,11 @@
 /**
- * Bun entry for apps/self-host: the single-partition instance (ADR-0073).
+ * Bun entry for apps/self-host: the single-partition instance (ADR-0074).
  *
  * The off-Cloudflare twin of `worker/index.ts`, and the instance's peer to the
  * hosted cloud's own Bun bootstrap (`apps/api/server.ts`). Each Bun entry owns
  * its composition rather than sharing a launcher: this one is bearer-only with no
  * relational-auth substrate (no Better Auth, no cookie sessions), so a shared
- * factory would re-introduce the mode knob ADR-0073/0074 deleted. It composes no
+ * factory would re-introduce the mode knob ADR-0074/0075 deleted. It composes no
  * Postgres (no Better Auth, no telemetry), so its
  * runtime adapter (ADR-0066) provides only one leg:
  *
@@ -18,7 +18,7 @@
  * Durable Object edge does, which is exactly right for one homelab, one family, or
  * one small team and the price of owning your own data on your own machine.
  *
- * There is ONE shape, not a mode (ADR-0073). Ownership is `instance()`: every
+ * There is ONE shape, not a mode (ADR-0074). Ownership is `instance()`: every
  * request resolves to the pinned `owners/instance` partition, independent of who
  * presents the bearer. Authentication is one operator-supplied static bearer
  * (`INSTANCE_TOKEN`), constant-time compared. "Solo" and "shared" are not
@@ -63,7 +63,7 @@ import { type } from 'arktype';
  * cloud-only secrets stay optional and unused here) plus this host's process
  * config and its one bearer. There is deliberately NO `DATABASE_URL` and no
  * `BETTER_AUTH_SECRET`: the instance composes no Postgres and no Better Auth
- * (ADR-0073). `INSTANCE_TOKEN` is optional in the schema (so the arktype pass
+ * (ADR-0074). `INSTANCE_TOKEN` is optional in the schema (so the arktype pass
  * never duplicates the entropy gate's message) and asserted strong below.
  */
 const InstanceBindings = ServerBindings.merge({
@@ -110,7 +110,7 @@ export function startSelfHostServer(): void {
 	// resolver (constant-time compare -> the named instance principal); a missing
 	// or weak token fails boot above. The resolver is the deployment's injected
 	// `ResolveUser`, feeding the one total gate exactly like the cloud's OAuth
-	// resolver (ADR-0073).
+	// resolver (ADR-0074).
 	const token = requireStrongInstanceToken(env.INSTANCE_TOKEN);
 	const resolveUser = createInstanceTokenResolver(verifyEnvToken(token));
 
@@ -127,7 +127,7 @@ export function startSelfHostServer(): void {
 	const ownership = instance();
 	const app = createServerApp({
 		// No db leg: the instance composes no Postgres, so `createServerApp`
-		// installs no db lifecycle and `c.var.db` is never set (ADR-0073).
+		// installs no db lifecycle and `c.var.db` is never set (ADR-0074).
 		runtime: bun({ rooms: bunRooms.rooms }),
 		identity: {
 			resolveOrigin: () => origin,
@@ -146,7 +146,7 @@ export function startSelfHostServer(): void {
 	);
 	// No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The
 	// operator bearer (the `resolveUser` above) is the only gate, so every surface
-	// is bearer-authenticated (ADR-0073).
+	// is bearer-authenticated (ADR-0074).
 	mountSessionApp(app, { ownership, auth: requireBearerUser });
 	mountRoomsApp(app, { ownership });
 	// Inference spends the operator's house key on every request. Cap the burn

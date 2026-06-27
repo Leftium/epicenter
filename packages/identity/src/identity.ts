@@ -30,7 +30,7 @@ export type OwnerId = typeof OwnerId.infer;
 export const asOwnerId = (value: string): OwnerId => value as OwnerId;
 
 /**
- * Owner partition for the single-partition instance (self-host; ADR-0073).
+ * Owner partition for the single-partition instance (self-host; ADR-0074).
  *
  * Byte-pinned: this string IS the HKDF derivation label, the `:ownerId` path
  * segment, the R2 key prefix, the Durable Object name prefix, and the local

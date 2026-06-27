@@ -2,7 +2,7 @@
 
 Epicenter Cloud Worker. Handles authentication, real-time sync, AI inference, and billing for the hosted personal cloud product. Composes `@epicenter/server` with the `personal()` ownership rule.
 
-This folder is a single Cloudflare Worker deployment: `worker/` (Hono code) and `ui/` (SvelteKit dashboard SPA) ship together. The self-hosted single-partition instance lives in the sibling `apps/self-host`; it composes the same `@epicenter/server` library with `instance()` and no billing surface, and (because it composes no Better Auth) no Postgres either (ADR-0073, ADR-0074).
+This folder is a single Cloudflare Worker deployment: `worker/` (Hono code) and `ui/` (SvelteKit dashboard SPA) ship together. The self-hosted single-partition instance lives in the sibling `apps/self-host`; it composes the same `@epicenter/server` library with `instance()` and no billing surface, and (because it composes no Better Auth) no Postgres either (ADR-0074, ADR-0075).
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. See `apps/self-host` for the self-hosted reference and the trust model below.
 
@@ -26,7 +26,7 @@ Cloudflare Durable Objects are the hosted deployment target. Three things make t
 
 Durable Objects are the hosted backend, not the only one. The sync logic is the runtime-agnostic `RoomCore` (`room/core.ts`), and each runtime supplies a backend that satisfies one contract (`room/contracts.ts`): `room/backends/cloudflare/` wraps a Durable Object, `room/backends/bun/` keeps the update log in `bun:sqlite`. Routes, auth, AI, and validation are plain runtime-portable Hono.
 
-That extraction already happened (ADR-0066), and the self-host story landed on top of it as its own deployable: `apps/self-host` is the single-partition instance, a Bun binary or a Cloudflare Worker that composes no Better Auth and no Postgres (ADR-0073, ADR-0074), so the whole box is one bearer token and a room directory. `apps/api/server.ts` here is this hosted cloud on Bun (local dev and the runtime-parity smoke), booting the same Worker composition against plain Postgres, local `bun:sqlite` room logs, and any S3 endpoint with no Cloudflare account.
+That extraction already happened (ADR-0066), and the self-host story landed on top of it as its own deployable: `apps/self-host` is the single-partition instance, a Bun binary or a Cloudflare Worker that composes no Better Auth and no Postgres (ADR-0074, ADR-0075), so the whole box is one bearer token and a room directory. `apps/api/server.ts` here is this hosted cloud on Bun (local dev and the runtime-parity smoke), booting the same Worker composition against plain Postgres, local `bun:sqlite` room logs, and any S3 endpoint with no Cloudflare account.
 
 Better Auth handles identity. Google OAuth is the only wired sign-in (email/password is disabled in `base-config.ts`; GitHub turns on only when a deployment configures its credentials), plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 

@@ -1,6 +1,6 @@
 /**
  * The single-partition instance bearer secret: generate one, and gate one at
- * boot (self-host; ADR-0073).
+ * boot (self-host; ADR-0074).
  *
  * A self-hosted instance authenticates one operator-supplied static bearer
  * (`INSTANCE_TOKEN`). These are the two PURE pieces of that credential, the ones
@@ -24,10 +24,10 @@
 /**
  * The entropy floor for an operator-supplied `INSTANCE_TOKEN`: at least this many
  * URL-safe characters. 32 base64url chars carry ~192 bits; {@link generateInstanceToken}
- * emits 43 chars (256 bits), comfortably above the floor. Minting used to
- * guarantee 256 bits implicitly (ADR-0072); with the operator supplying the secret
+ * emits 43 chars (256 bits), comfortably above the floor. An earlier minting
+ * design guaranteed 256 bits implicitly; with the operator supplying the secret
  * instead, this gate keeps a fat-fingered `letmein` from silently becoming the
- * box's only credential (ADR-0073).
+ * box's only credential (ADR-0074).
  */
 export const MIN_INSTANCE_TOKEN_CHARS = 32;
 

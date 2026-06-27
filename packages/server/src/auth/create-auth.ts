@@ -20,7 +20,7 @@ type Db = NodePgDatabase<typeof schema>;
  * deployment configures the ones it has an app for, or none at all. The hosted
  * star runs Google (and re-requires it in its own boot, apps/api/server.ts); the
  * single-partition instance runs no provider and authenticates with one
- * operator-supplied bearer instead (ADR-0073). A provider with no app configured
+ * operator-supplied bearer instead (ADR-0074). A provider with no app configured
  * is simply absent, never a button that 500s.
  */
 type AuthEnv = {
@@ -29,7 +29,7 @@ type AuthEnv = {
 	 * Better Auth is a cloud-only layer), but every deployment that actually calls
 	 * `createAuth` guarantees it: the hosted cloud re-requires it at boot
 	 * (apps/api/server.ts) and the Worker carries it as a deploy-gated secret. An
-	 * instance never reaches here (it composes no Better Auth, ADR-0073).
+	 * instance never reaches here (it composes no Better Auth, ADR-0074).
 	 */
 	BETTER_AUTH_SECRET?: string;
 	GOOGLE_CLIENT_ID?: string;
@@ -82,7 +82,7 @@ export function createAuth({
 	// guarantee runtime, not deploy-time only (the wrangler `secrets.required` gate
 	// blocks a missing secret at deploy, but not a later dashboard deletion or a
 	// preview path), and it covers both cloud entries since both reach `betterAuth`
-	// only through here (ADR-0074).
+	// only through here (ADR-0075).
 	const secret = env.BETTER_AUTH_SECRET?.trim();
 	if (!secret) {
 		throw new Error(
@@ -115,7 +115,7 @@ export function createAuth({
 		// instead of a button that 500s. The single-partition instance offers none:
 		// it composes no Better Auth at all (this builder is cloud-only, reached
 		// only through `mountCloudAuth`), and the operator bearer is its only gate
-		// (ADR-0073). better-auth requests `read:user` +
+		// (ADR-0074). better-auth requests `read:user` +
 		// `user:email` for GitHub by default, so it reads the primary email and
 		// GitHub's verification flag. GitHub is deliberately NOT a trusted linking
 		// provider (see BASE_AUTH_CONFIG): an unverified GitHub email must not link

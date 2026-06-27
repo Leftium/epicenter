@@ -1,5 +1,5 @@
 /**
- * Print a strong instance bearer token, persisting nothing (ADR-0073).
+ * Print a strong instance bearer token, persisting nothing (ADR-0074).
  *
  * The instance authenticates one operator-supplied static bearer. Run this once,
  * capture the printed value, and supply it as `INSTANCE_TOKEN` (an env var on Bun,

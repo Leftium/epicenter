@@ -14,14 +14,14 @@
  * `bun --watch server.ts` boots instantly with real stack traces. It is the
  * hosted cloud on Bun (local dev and the runtime-parity smoke), NOT the self-host
  * artifact: the single-partition instance has its own entry
- * (`apps/self-host/server.ts`), composing no Better Auth and no Postgres (ADR-0073).
+ * (`apps/self-host/server.ts`), composing no Better Auth and no Postgres (ADR-0074).
  *
  * The whole hosted-cloud-on-Bun bootstrap lives here, in the app, not behind a
  * shared `@epicenter/server` factory: everything mechanical (the `pg.Pool`, the
  * `bun:sqlite` rooms, the cloud auth layer, the session/rooms/inference/blobs
  * mounts, `Bun.serve`) is this app's composition to own. The instance does NOT
  * share it (it diverges on the substrate that matters: no Better Auth, no
- * Postgres), so a shared launcher would re-introduce the mode knob ADR-0073/0074
+ * Postgres), so a shared launcher would re-introduce the mode knob ADR-0074/0075
  * deleted. The library ships the parts; each Bun entry composes its own product.
  *
  * The wiring lives in {@link startBunApiServer} so `server.dev.ts` can boot the
@@ -69,7 +69,7 @@ import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
  * cloud-only secrets the hosted star re-requires.
  *
  * `ServerBindings` makes the Google credentials and `BETTER_AUTH_SECRET` optional
- * for the single-partition instance's sake (register-when-present, ADR-0071/0073);
+ * for the single-partition instance's sake (register-when-present, ADR-0071/0074);
  * the hub re-requires them here (its one sign-in method, plus the Better Auth
  * signing secret it composes), so a misconfiguration fails closed at boot instead
  * of as a downstream surprise. Unlike the Cloudflare edge (whose bindings are

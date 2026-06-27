@@ -1,5 +1,5 @@
 /**
- * One-scenario smoke for the single-partition instance (ADR-0073). Same backend,
+ * One-scenario smoke for the single-partition instance (ADR-0074). Same backend,
  * either runtime (the Bun entry or the wrangler Worker).
  *
  * This needs no dev credential bypass: an instance's credential is trivially

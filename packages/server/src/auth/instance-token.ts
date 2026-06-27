@@ -1,5 +1,5 @@
 /**
- * The single-partition instance's bearer credential (self-host; ADR-0073).
+ * The single-partition instance's bearer credential (self-host; ADR-0074).
  *
  * A self-hosted instance authenticates one operator-supplied static bearer
  * (`INSTANCE_TOKEN`). The operator generates it once (`gen-token`, backed by
@@ -28,7 +28,7 @@
  * NAMED principal (alice, bob) against the SAME constant partition, so per-token
  * identity and authenticated attribution become a body-swap, never a rewrite or a
  * data migration. That registry is a documented, deliberately-unbuilt seam
- * (ADR-0073): v1 ships the shape, not the feature.
+ * (ADR-0074): v1 ships the shape, not the feature.
  *
  * Portable (ADR-0066): nothing here names `node:` or touches disk. The constant-
  * time compare and the token generator both use the Web Crypto `crypto` global,
@@ -61,7 +61,7 @@ export const INSTANCE_PRINCIPAL: AuthUser = AuthUser.assert({
  * authenticates as, or `null` if it authenticates nobody. v1's body is a single
  * constant-time compare ({@link verifyEnvToken}); the named-token registry swaps
  * it for a hashed lookup without touching {@link createInstanceTokenResolver} or
- * the constant partition (ADR-0073). Async because the constant-time compare is
+ * the constant partition (ADR-0074). Async because the constant-time compare is
  * (it awaits a Web Crypto digest), and a registry lookup would be too.
  */
 export type VerifyToken = (presented: string) => Promise<AuthUser | null>;

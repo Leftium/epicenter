@@ -35,7 +35,7 @@ export const ServerBindings = type({
 	// The Better Auth signing secret, optional because Better Auth is a cloud-only
 	// layer (`mountCloudAuth`): the hosted cloud sets it and re-requires it in its
 	// own boot validation (apps/api/server.ts), while the single-partition instance
-	// composes no Better Auth and never reads it (ADR-0073). Same register-when-
+	// composes no Better Auth and never reads it (ADR-0074). Same register-when-
 	// present precedent as the OAuth secrets below: optional here, required by the
 	// deployment that actually uses it.
 	'BETTER_AUTH_SECRET?': 'string',
@@ -45,7 +45,7 @@ export const ServerBindings = type({
 	// button). The hosted star always offers Google and re-requires it in its OWN
 	// boot validation (apps/api/server.ts); the single-partition instance runs no
 	// OAuth at all and authenticates with one operator-supplied bearer instead
-	// (ADR-0073). Loosening Google here is what lets a bearer-only box boot without
+	// (ADR-0074). Loosening Google here is what lets a bearer-only box boot without
 	// registering a Google app for its own origin (the ADR-0070 wart).
 	'GOOGLE_CLIENT_ID?': 'string',
 	'GOOGLE_CLIENT_SECRET?': 'string',

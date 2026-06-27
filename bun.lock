@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -775,6 +774,20 @@
         "vite": "catalog:",
       },
     },
+    "packages/encryption": {
+      "name": "@epicenter/encryption",
+      "version": "0.3.0",
+      "dependencies": {
+        "@noble/ciphers": "^2.1.1",
+        "@noble/hashes": "^2.0.1",
+        "arktype": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/field": {
       "name": "@epicenter/field",
       "version": "0.3.0",
@@ -979,6 +992,7 @@
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/agent-protocol": "workspace:*",
+        "@epicenter/encryption": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -1327,6 +1341,8 @@
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
+
+    "@epicenter/encryption": ["@epicenter/encryption@workspace:packages/encryption"],
 
     "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
 

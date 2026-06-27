@@ -23,7 +23,9 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
-		bookmarksView.all.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt)),
+		bookmarksView.all.toSorted((a, b) =>
+			b.createdAt.localeCompare(a.createdAt),
+		),
 	);
 
 	/**

@@ -16,7 +16,7 @@
  * - Object / namespace bindings (`ROOM` Durable Object, `HYPERDRIVE`) are not
  *   strings and cannot be validated from `process.env`. They live on the
  *   deployment's own `Cloudflare.Env` and are read by deployment resolvers at
- *   the `apps/*` edge (`resolveRooms`, `connectDb`), never by library code
+ *   the `apps/*` edge (`resolveRooms`, `db.connect`), never by library code
  *   reaching for a binding shape. With the assets route retired into the
  *   portable blob store, the library now names NO Cloudflare object binding,
  *   by value or by type.

@@ -46,10 +46,13 @@ export function cloudflare(bindings: {
 	return {
 		resolveRooms: (env) => createDurableObjectRooms(room(env)),
 		// The hosted cloud passes a Hyperdrive binding (Better Auth + telemetry over
-		// Postgres); the instance omits it, so no db lifecycle is installed.
+		// Postgres); the instance omits it, so no db lifecycle is installed. `connect`
+		// and `afterResponse` travel together as one leg so neither can be supplied alone.
 		...(hyperdrive && {
-			connectDb: (env) => connectHyperdriveDb(hyperdrive(env)),
-			afterResponse: (c, work) => c.executionCtx.waitUntil(work),
+			db: {
+				connect: (env) => connectHyperdriveDb(hyperdrive(env)),
+				afterResponse: (c, work) => c.executionCtx.waitUntil(work),
+			},
 		}),
 	};
 }

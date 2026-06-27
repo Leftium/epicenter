@@ -100,7 +100,7 @@ export type Env = {
 	Variables: {
 		/**
 		 * The per-request Postgres handle. Populated by `createServerApp`'s db
-		 * lifecycle middleware, installed ONLY when the runtime provides a `connectDb`
+		 * lifecycle middleware, installed ONLY when the runtime provides a `db` leg
 		 * (the cloud does; the single-partition instance composes no Postgres, so this
 		 * is never set on an instance, ADR-0073). Read by Better Auth and the room
 		 * telemetry recorder, both cloud-only.

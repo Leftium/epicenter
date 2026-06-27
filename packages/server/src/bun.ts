@@ -3,8 +3,8 @@
  *
  * Same library, second runtime (ADR-0066). A Bun entry imports `startBunServer`
  * (or `createServerApp` + the `mount*` surface) from here. The `RuntimeAdapter`
- * is built by {@link bun}, the honest peer of `cloudflare()`: a `pg.Pool` for
- * `connectDb`, a fire-and-forget `afterResponse`, and {@link createBunRooms} for
+ * is built by {@link bun}, the honest peer of `cloudflare()`: a `pg.Pool` and a
+ * fire-and-forget drain as the `db` leg, and {@link createBunRooms} for
  * `resolveRooms` (an in-process registry over `bun:sqlite`, not a Durable
  * Object). Bun is the one non-Cloudflare runtime (ADR-0066): `bun:sqlite` is the
  * built-in synchronous engine the room update log needs, and `bun build

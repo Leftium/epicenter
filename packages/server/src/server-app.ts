@@ -61,29 +61,40 @@ import type { Env, ResolveUser } from './types.js';
  */
 export type RuntimeAdapter = {
 	/**
-	 * Acquire a per-request database handle, and how to close it. Only
-	 * acquisition is injected: the library depends on the portable `pg`/drizzle
-	 * Postgres wire (ADR-0066 Road 1), never a binding shape. Cloudflare passes a
-	 * per-request `pg.Client` over Hyperdrive; a Bun host hands back a module-scope
-	 * `pg.Pool` checkout. The returned `close` runs after the after-response queue
-	 * drains. OMITTED by a deployment that composes no Postgres (the
-	 * single-partition instance): `createServerApp` then installs no db lifecycle
-	 * middleware at all, so `c.var.db` is never set (ADR-0073).
+	 * The Postgres lifecycle, as ONE optional leg whose two halves are
+	 * inseparable. PRESENT only when the deployment composes Postgres (the hosted
+	 * cloud: Better Auth + room telemetry); OMITTED entirely by the
+	 * single-partition instance, which composes no Postgres, so `createServerApp`
+	 * installs no db lifecycle middleware at all and `c.var.db` is never set
+	 * (ADR-0073).
+	 *
+	 * The two halves are bundled rather than offered as independent optional
+	 * siblings because either alone is a bug: a `connect` with no `afterResponse`
+	 * would acquire a handle the drain never closes. Bundling makes "db, or no db"
+	 * the only representable choice.
+	 *
+	 *   - `connect`       acquire a per-request database handle and how to close
+	 *                     it. Only acquisition is injected: the library depends on
+	 *                     the portable `pg`/drizzle Postgres wire (ADR-0066 Road
+	 *                     1), never a binding shape. Cloudflare passes a per-request
+	 *                     `pg.Client` over Hyperdrive; a Bun host hands back a
+	 *                     module-scope `pg.Pool` checkout. The returned `close` runs
+	 *                     after the after-response queue drains.
+	 *   - `afterResponse` keep fire-and-forget work alive past the HTTP response.
+	 *                     On Cloudflare this is `c.executionCtx.waitUntil(work)`
+	 *                     (holds the isolate open); a Bun host lets the promise run
+	 *                     in the live process and does nothing. The library owns the
+	 *                     after-response queue (`c.var.afterResponseQueue`) and the
+	 *                     pg-drain shape; this injects only how the drain is kept
+	 *                     alive.
 	 */
-	connectDb?: (env: ServerBindings) => Promise<{
-		db: Db;
-		close: () => Promise<void>;
-	}>;
-	/**
-	 * Keep fire-and-forget work alive past the HTTP response. On Cloudflare this
-	 * is `c.executionCtx.waitUntil(work)` (holds the isolate open); a Bun host
-	 * lets the promise run in the live process and does nothing. The library owns
-	 * the after-response queue (`c.var.afterResponseQueue`) and the pg-drain
-	 * shape; this injects only how the drain is kept alive. Travels with
-	 * {@link RuntimeAdapter.connectDb}: a deployment that omits the db handle omits
-	 * this too.
-	 */
-	afterResponse?: (c: Context<Env>, work: Promise<unknown>) => void;
+	db?: {
+		connect: (env: ServerBindings) => Promise<{
+			db: Db;
+			close: () => Promise<void>;
+		}>;
+		afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
+	};
 	/**
 	 * Resolve this deployment's room registry, the one subsystem with no open
 	 * standard (a hibernating single-writer actor, ADR-0066 Road 2): Cloudflare
@@ -126,7 +137,7 @@ export type Identity = {
  *
  *   1. CORS (skips WS upgrades).
  *   2. Per-request pg connection + after-response queue, ONLY when the runtime
- *      provides a `connectDb` (the cloud does; the Postgres-free instance omits
+ *      provides a `db` leg (the cloud does; the Postgres-free instance omits
  *      it, so `c.var.db` is never set, ADR-0073).
  *   3. The deployment's user-resolution seam (`c.var.resolveUser`).
  *
@@ -162,7 +173,7 @@ type CreateServerAppOptions = {
 };
 
 export function createServerApp({
-	runtime: { connectDb, afterResponse, resolveRooms },
+	runtime: { db, resolveRooms },
 	identity: { resolveOrigin, resolveTrustedOrigins },
 	resolveUser,
 }: CreateServerAppOptions): Hono<Env> {
@@ -184,25 +195,25 @@ export function createServerApp({
 	app.use('*', corsMiddleware);
 
 	// 2. Per-request db handle + after-response promise list, installed ONLY when
-	// the runtime composes Postgres. `connectDb` acquires the handle and returns
+	// the runtime composes Postgres. `db.connect` acquires the handle and returns
 	// how to close it (a per-request `pg.Client` on Cloudflare, a shared `pg.Pool`
 	// checkout on a Bun host); handlers push fire-and-forget promises (typically DB
 	// writes) onto the queue, and the finally block schedules a drain (await all
-	// queued work, then close) via the injected `afterResponse`, so writes that
+	// queued work, then close) via the runtime's `db.afterResponse`, so writes that
 	// outlive the response don't hit a closed handle and the response is never
-	// blocked on them. The single-partition instance provides no `connectDb`
+	// blocked on them. The single-partition instance provides no `db` leg
 	// (it composes no Better Auth and records no telemetry), so this middleware is
 	// never installed and the instance touches no Postgres (ADR-0073).
-	if (connectDb) {
+	if (db) {
 		app.use('*', async (c, next) => {
-			const { db, close } = await connectDb(c.env);
+			const { db: handle, close } = await db.connect(c.env);
 			const queue: Promise<unknown>[] = [];
 			try {
-				c.set('db', db);
+				c.set('db', handle);
 				c.set('afterResponseQueue', queue);
 				await next();
 			} finally {
-				afterResponse?.(
+				db.afterResponse(
 					c,
 					Promise.allSettled(queue).then(() => close()),
 				);

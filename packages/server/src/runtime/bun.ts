@@ -11,15 +11,16 @@
  * factory wraps the already-built instances rather than extracting them per
  * request:
  *
- *   - `connectDb`     hands back the shared `pg.Pool`-backed handle with a no-op
+ *   - `db.connect`    hands back the shared `pg.Pool`-backed handle with a no-op
  *                     close (drizzle checks a client out per query and returns
- *                     it, so there is nothing per-request to tear down). OMITTED
- *                     when no `db` is passed: the single-partition instance
- *                     composes no Postgres, so it builds no pool (ADR-0073).
- *   - `afterResponse` is a no-op: a long-lived Bun process needs no `waitUntil`
+ *                     it, so there is nothing per-request to tear down). The whole
+ *                     `db` leg is OMITTED when no `db` is passed: the single-
+ *                     partition instance composes no Postgres, so it builds no
+ *                     pool (ADR-0073).
+ *   - `db.afterResponse` is a no-op: a long-lived Bun process needs no `waitUntil`
  *                     to outlive the response, where Cloudflare hands the work
- *                     to `executionCtx.waitUntil` to hold the isolate open.
- *                     Travels with `connectDb`: omitted when no `db` is passed.
+ *                     to `executionCtx.waitUntil` to hold the isolate open. It is
+ *                     part of the same `db` leg, so it travels with `db.connect`.
  *   - `resolveRooms`  returns the boot-built in-process registry, the one leg
  *                     every Bun deployment provides.
  *
@@ -45,10 +46,13 @@ export function bun({ db, rooms }: { db?: Db; rooms: Rooms }): RuntimeAdapter {
 	return {
 		resolveRooms: () => rooms,
 		// The hosted cloud passes a db handle (Better Auth + room telemetry); the
-		// single-partition instance omits it and composes no Postgres.
+		// single-partition instance omits it and composes no Postgres. `connect` and
+		// `afterResponse` travel together as one leg so neither can be supplied alone.
 		...(db && {
-			connectDb: async () => ({ db, close: async () => {} }),
-			afterResponse: () => {},
+			db: {
+				connect: async () => ({ db, close: async () => {} }),
+				afterResponse: () => {},
+			},
 		}),
 	};
 }

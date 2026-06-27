@@ -76,11 +76,26 @@ export function createAuth({
 	 */
 	cookieCrossSubDomain?: string;
 }) {
+	// Better Auth signs sessions and the JWE cookie cache with this secret. Handed
+	// an empty or missing one, the library silently falls back to its PUBLIC default
+	// (`better-auth-secret-...`) and only throws when `NODE_ENV === 'production'`,
+	// which is never set on a Worker. That is forgeable session signing, so fail
+	// closed at the one place the secret reaches Better Auth. This makes the
+	// guarantee runtime, not deploy-time only (the wrangler `secrets.required` gate
+	// blocks a missing secret at deploy, but not a later dashboard deletion or a
+	// preview path), and it covers both cloud entries since both reach `betterAuth`
+	// only through here (ADR-0074).
+	const secret = env.BETTER_AUTH_SECRET?.trim();
+	if (!secret) {
+		throw new Error(
+			'BETTER_AUTH_SECRET is not set: refusing to construct Better Auth with an empty signing secret, which would fall back to a public default and sign forgeable sessions.',
+		);
+	}
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg', schema }),
 		baseURL,
-		secret: env.BETTER_AUTH_SECRET,
+		secret,
 		// `account` (accountLinking) comes from BASE_AUTH_CONFIG via the spread.
 		//
 		// The Better Auth state-cookie check stays ENABLED (its default). The

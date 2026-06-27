@@ -46,8 +46,8 @@
  * `BLOBS_S3_*` set to offer a content-addressed media store against any S3.
  */
 
+import { assertStrongToken } from '@epicenter/auth';
 import {
-	assertStrongToken,
 	BunHostBindings,
 	createInstanceTokenResolver,
 	instance,

@@ -2,13 +2,19 @@
  * The single-partition instance's bearer credential (self-host; ADR-0073).
  *
  * A self-hosted instance authenticates one operator-supplied static bearer
- * (`INSTANCE_TOKEN`). The operator generates it once ({@link generateInstanceToken},
- * surfaced as `epicenter gen-token` / `bun run gen-token`), supplies it through
- * the environment, and pastes it into the client's instance setting
+ * (`INSTANCE_TOKEN`). The operator generates it once (`gen-token`, backed by
+ * `generateInstanceToken` in `@epicenter/auth`), supplies it through the
+ * environment, and pastes it into the client's instance setting
  * (`{ baseURL, token }`, ADR-0071). Every request then arrives as
  * `Authorization: Bearer <token>`, and {@link createInstanceTokenResolver} is the
  * `ResolveUser` the deployment injects on `createServerApp` to turn that bearer
  * into the instance's principal.
+ *
+ * This is the VERIFIER side of that credential: it needs `AuthUser`/`ResolveUser`,
+ * so it lives in `@epicenter/server`. The pure pieces that need neither (the token
+ * generator and the boot entropy gate, `generateInstanceToken` /
+ * `assertStrongToken`) live in `@epicenter/auth` so a token can be minted and
+ * validated without the server graph.
  *
  * It is a credential SOURCE, not a new auth mode: it feeds the one total gate
  * exactly like `resolveRequestOAuthUser`, and it pairs with `instance()` (the
@@ -111,60 +117,4 @@ export function createInstanceTokenResolver(verify: VerifyToken): ResolveUser {
 		const principal = await verify(presented);
 		return principal ? Ok(principal) : OAuthError.InvalidToken();
 	};
-}
-
-/**
- * The entropy floor for an operator-supplied `INSTANCE_TOKEN`: at least this many
- * URL-safe characters. 32 base64url chars carry ~192 bits; {@link generateInstanceToken}
- * emits 43 chars (256 bits), comfortably above the floor. Minting used to
- * guarantee 256 bits implicitly (ADR-0072); with the operator supplying the secret
- * instead, this gate keeps a fat-fingered `letmein` from silently becoming the
- * box's only credential (ADR-0073).
- */
-export const MIN_INSTANCE_TOKEN_CHARS = 32;
-
-/** A high-entropy token is URL-safe characters only (what {@link generateInstanceToken} emits). */
-const TOKEN_CHARSET = /^[A-Za-z0-9._~+/=-]+$/;
-
-/**
- * Generate a strong instance token: 32 random bytes (256 bits) as base64url, no
- * padding. Portable Web Crypto (`crypto.getRandomValues`, `btoa`), so the same
- * helper runs in `epicenter gen-token` and in any runtime. Persists nothing; the
- * operator captures the printed value and supplies it as `INSTANCE_TOKEN`.
- */
-export function generateInstanceToken(): string {
-	const bytes = crypto.getRandomValues(new Uint8Array(32));
-	let binary = '';
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replaceAll('=', '');
-}
-
-/**
- * Validate an operator-supplied `INSTANCE_TOKEN` meets the entropy floor, or throw
- * a descriptive `Error` naming why it is too weak. Returns the trimmed token on
- * success. This is a portable length + charset gate (no `node:`, no disk), not a
- * true entropy estimate: it catches the missing, the short, and the obviously
- * hand-typed, which is the regression deleting minting would otherwise open. The
- * caller (a boot entry) catches the throw, fails closed, and points the operator
- * at the `gen-token` helper.
- */
-export function assertStrongToken(token: string | undefined): string {
-	if (!token?.trim()) {
-		throw new Error('INSTANCE_TOKEN is not set.');
-	}
-	const trimmed = token.trim();
-	if (trimmed.length < MIN_INSTANCE_TOKEN_CHARS) {
-		throw new Error(
-			`INSTANCE_TOKEN is too weak: ${trimmed.length} characters, need at least ${MIN_INSTANCE_TOKEN_CHARS}.`,
-		);
-	}
-	if (!TOKEN_CHARSET.test(trimmed)) {
-		throw new Error(
-			'INSTANCE_TOKEN has unexpected characters (spaces or control characters); use a high-entropy URL-safe token, not a passphrase.',
-		);
-	}
-	return trimmed;
 }

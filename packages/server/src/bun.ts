@@ -18,16 +18,13 @@
  * on a Bun host, which supplies its own room and db concerns.
  */
 
-// The single-partition instance's bearer credential (self-host; ADR-0073): the
+// The single-partition instance's bearer VERIFIER (self-host; ADR-0073): the
 // `ResolveUser` a Bun instance injects (`createInstanceTokenResolver(verifyEnvToken(token))`,
-// paired with `instance()`), the boot entropy gate (`assertStrongToken`), and the
-// token generator behind `bun run gen-token`.
+// paired with `instance()`). The pure generator + boot entropy gate
+// (`generateInstanceToken` / `assertStrongToken`) live in `@epicenter/auth`.
 export {
-	assertStrongToken,
 	createInstanceTokenResolver,
-	generateInstanceToken,
 	INSTANCE_PRINCIPAL,
-	MIN_INSTANCE_TOKEN_CHARS,
 	type VerifyToken,
 	verifyEnvToken,
 } from './auth/instance-token.js';

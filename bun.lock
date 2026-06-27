@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -362,7 +361,6 @@
         "arktype": "catalog:",
         "hono": "catalog:",
         "pg": "^8.20.0",
-        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260405.1",

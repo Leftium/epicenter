@@ -14,6 +14,6 @@
  * gate, so a generated token always clears `assertStrongToken`.
  */
 
-import { generateInstanceToken } from '@epicenter/server/bun';
+import { generateInstanceToken } from '@epicenter/auth';
 
 console.log(generateInstanceToken());

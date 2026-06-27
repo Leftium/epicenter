@@ -14,16 +14,13 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
-// The single-partition instance's bearer credential (self-host; ADR-0073). The
+// The single-partition instance's bearer VERIFIER (self-host; ADR-0073). The
 // deployment injects `createInstanceTokenResolver(verifyEnvToken(secret))` as its
-// `ResolveUser` (paired with `instance()`); `assertStrongToken` is the boot
-// entropy gate and `generateInstanceToken` backs `epicenter gen-token`.
+// `ResolveUser` (paired with `instance()`). The pure generator + boot entropy gate
+// (`generateInstanceToken` / `assertStrongToken`) live in `@epicenter/auth`.
 export {
-	assertStrongToken,
 	createInstanceTokenResolver,
-	generateInstanceToken,
 	INSTANCE_PRINCIPAL,
-	MIN_INSTANCE_TOKEN_CHARS,
 	type VerifyToken,
 	verifyEnvToken,
 } from './auth/instance-token.js';

@@ -829,6 +829,40 @@ export function createReadonlyTable<
 		}
 	}
 
+	/**
+	 * Memoize {@link parseRow} by the stored value's object identity.
+	 *
+	 * `YKeyValueLww` keeps one value object per key and swaps in a new one only
+	 * when that key changes (see `y-keyvalue-lww.ts`), so an unchanged row hands
+	 * the same `val` reference to every read. Keying the cache on that reference
+	 * gives two properties at once:
+	 *
+	 * - **Incremental parse.** `scan()` reparses only the rows that changed since
+	 *   the last read; unchanged rows are a `WeakMap` hit, not a fresh
+	 *   `Value.Check` + `migrate`.
+	 * - **Stable row identity.** An unchanged row returns the *same* `TRow`
+	 *   object across calls, so identity-keyed consumers (Svelte's `fromTable`
+	 *   view, keyed `{#each}`, `$derived` over rows) do not churn on unrelated
+	 *   changes.
+	 *
+	 * No invalidation is needed: a changed row arrives as a new value object,
+	 * which is simply a cache miss, and the old object becomes unreachable and is
+	 * collected with its entry. Non-object values (never produced by a real row,
+	 * which is always `{ _v, ...cols }`) fall through to an uncached parse.
+	 */
+	const parseCache = new WeakMap<object, Result<TRow, TableReadError>>();
+	function parseRowCached(
+		id: string,
+		val: unknown,
+	): Result<TRow, TableReadError> {
+		if (val === null || typeof val !== 'object') return parseRow(id, val);
+		const cached = parseCache.get(val);
+		if (cached) return cached;
+		const result = parseRow(id, val);
+		parseCache.set(val, result);
+		return result;
+	}
+
 	return {
 		name,
 		definition,
@@ -836,7 +870,7 @@ export function createReadonlyTable<
 
 		get(id: string): Result<TRow | null, TableReadError> {
 			const val = ykv.get(id);
-			return val === undefined ? Ok(null) : parseRow(id, val);
+			return val === undefined ? Ok(null) : parseRowCached(id, val);
 		},
 
 		scan(): TableScan<TRow> {
@@ -846,7 +880,7 @@ export function createReadonlyTable<
 			// One pass over the stored entries. Each entry lands in exactly one of
 			// the three buckets, so the bucket sum equals storedCount().
 			for (const { key, val } of ykv.entries()) {
-				const { data, error } = parseRow(key, val);
+				const { data, error } = parseRowCached(key, val);
 				if (!error) {
 					rows.push(data);
 					continue;
@@ -870,7 +904,7 @@ export function createReadonlyTable<
 
 		findValid(predicate: (row: TRow) => boolean): TRow | undefined {
 			for (const { key, val } of ykv.entries()) {
-				const { data, error } = parseRow(key, val);
+				const { data, error } = parseRowCached(key, val);
 				if (!error && predicate(data)) return data;
 			}
 			return undefined;

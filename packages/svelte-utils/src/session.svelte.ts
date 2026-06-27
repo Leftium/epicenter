@@ -25,8 +25,8 @@ import type { OwnerId } from '@epicenter/identity';
 export type SignedIn = {
 	/**
 	 * API origin host (e.g. `api.epicenter.so`). Threads into
-	 * `attachLocalStorage` and `wipeLocalStorage` so two shared-wiki
-	 * deployments on the same machine partition local storage separately.
+	 * `attachLocalStorage` and `wipeLocalStorage` so two self-hosted
+	 * instances on the same machine partition local storage separately.
 	 */
 	server: string;
 	/**

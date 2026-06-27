@@ -14,9 +14,9 @@ type AuthFetchInput = Request | string | URL;
  * Construction inputs for the instance-token auth client.
  *
  * `baseURL` is the self-hosted star's origin (optionally with a path prefix);
- * `token` is the bearer the deployment minted (the self-host first-boot token,
- * or the quarantined dev `dev:<userId>` resolver's token). `fetch`, `WebSocket`,
- * and `log` exist so tests can drive the client without a DOM.
+ * `token` is the operator-supplied bearer (the self-host `INSTANCE_TOKEN`, or the
+ * quarantined dev `dev:<userId>` resolver's token). `fetch`, `WebSocket`, and
+ * `log` exist so tests can drive the client without a DOM.
  */
 export type CreateInstanceTokenAuthConfig = {
 	/**

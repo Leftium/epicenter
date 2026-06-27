@@ -9,7 +9,7 @@
  * auth client (`auth.getProfile()`); see ADR-0067.
  *
  * Works against any Epicenter deployment (cloud at `epicenter.so` or a
- * self-hosted shared-wiki server).
+ * self-hosted single-partition instance).
  */
 
 import type { AuthFetch } from '@epicenter/auth';

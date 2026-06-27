@@ -4,7 +4,7 @@ import type { Brand } from 'wellcrafted/brand';
 
 /**
  * A signed-in account identifier. Issued by Better Auth, opaque to clients.
- * In personal mode, the bytes happen to equal the owner id; in shared mode
+ * In personal mode, the bytes happen to equal the owner id; on an instance
  * they do not. The brand prevents accidental cross-assignment.
  *
  * The validator is declared first; the type is derived from it via `.infer`

@@ -13,14 +13,19 @@
  *
  *   - `connectDb`     hands back the shared `pg.Pool`-backed handle with a no-op
  *                     close (drizzle checks a client out per query and returns
- *                     it, so there is nothing per-request to tear down).
+ *                     it, so there is nothing per-request to tear down). OMITTED
+ *                     when no `db` is passed: the single-partition instance
+ *                     composes no Postgres, so it builds no pool (ADR-0073).
  *   - `afterResponse` is a no-op: a long-lived Bun process needs no `waitUntil`
  *                     to outlive the response, where Cloudflare hands the work
  *                     to `executionCtx.waitUntil` to hold the isolate open.
- *   - `resolveRooms`  returns the boot-built in-process registry.
+ *                     Travels with `connectDb`: omitted when no `db` is passed.
+ *   - `resolveRooms`  returns the boot-built in-process registry, the one leg
+ *                     every Bun deployment provides.
  *
  * This file names nothing Cloudflare-shaped; the Bun host's own
- * `createBunRooms` and `pg.Pool` are supplied by the entry that calls this.
+ * `createBunRooms` and (when used) `pg.Pool` are supplied by the entry that
+ * calls this.
  *
  * @see `runtime/cloudflare.ts` for the per-request Cloudflare peer.
  */
@@ -31,12 +36,19 @@ import type { RuntimeAdapter } from '../server-app.js';
 
 /**
  * Build the Bun {@link RuntimeAdapter} for `createServerApp` from a process's
- * boot-built db handle and room registry.
+ * boot-built room registry and, for a Postgres-backed deployment, its db handle.
+ * Omit `db` for the single-partition instance: it composes no Postgres, so the
+ * adapter provides only `resolveRooms` and `createServerApp` installs no db
+ * lifecycle (ADR-0073).
  */
-export function bun({ db, rooms }: { db: Db; rooms: Rooms }): RuntimeAdapter {
+export function bun({ db, rooms }: { db?: Db; rooms: Rooms }): RuntimeAdapter {
 	return {
-		connectDb: async () => ({ db, close: async () => {} }),
-		afterResponse: () => {},
 		resolveRooms: () => rooms,
+		// The hosted cloud passes a db handle (Better Auth + room telemetry); the
+		// single-partition instance omits it and composes no Postgres.
+		...(db && {
+			connectDb: async () => ({ db, close: async () => {} }),
+			afterResponse: () => {},
+		}),
 	};
 }

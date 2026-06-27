@@ -98,6 +98,13 @@ export type Connection = {
 export type Env = {
 	Bindings: ServerBindings;
 	Variables: {
+		/**
+		 * The per-request Postgres handle. Populated by `createServerApp`'s db
+		 * lifecycle middleware, installed ONLY when the runtime provides a `connectDb`
+		 * (the cloud does; the single-partition instance composes no Postgres, so this
+		 * is never set on an instance, ADR-0073). Read by Better Auth and the room
+		 * telemetry recorder, both cloud-only.
+		 */
 		db: NodePgDatabase<typeof schema>;
 		/**
 		 * The per-request Better Auth instance. Populated by `mountCloudAuth`, the
@@ -132,16 +139,18 @@ export type Env = {
 		 * `afterResponse` hook, which keeps it alive past the response
 		 * (`executionCtx.waitUntil` on Workers, the live process on Bun). Named
 		 * distinctly from that `afterResponse` scheduler hook: this is the queue,
-		 * the hook is how the queue is drained.
+		 * the hook is how the queue is drained. Installed alongside `c.var.db` by the
+		 * cloud-only db lifecycle middleware, so it is never set on a Postgres-free
+		 * instance (ADR-0073).
 		 */
 		afterResponseQueue: Promise<unknown>[];
 		rooms: Rooms;
 		/**
 		 * How this deployment resolves a request to its calling user, stamped by
-		 * `createServerApp` (default: the real OAuth bearer resolver). The auth
-		 * wrappers read it here instead of hardcoding a resolver, so a dev entry
-		 * can inject a trivial bearer resolver without the wrappers changing. See
-		 * {@link ResolveUser}.
+		 * `createServerApp` (the cloud passes the OAuth bearer resolver, an instance
+		 * its token resolver, ADR-0073). The auth wrappers read it here instead of
+		 * hardcoding a resolver, so a dev entry can inject a trivial bearer resolver
+		 * without the wrappers changing. See {@link ResolveUser}.
 		 */
 		resolveUser: ResolveUser;
 	};

@@ -26,7 +26,14 @@ type Db = NodePgDatabase<typeof schema>;
  * is simply absent, never a button that 500s.
  */
 type AuthEnv = {
-	BETTER_AUTH_SECRET: string;
+	/**
+	 * Optional in the contract (it mirrors the portable `ServerBindings`, where
+	 * Better Auth is a cloud-only layer), but every deployment that actually calls
+	 * `createAuth` guarantees it: the hosted cloud re-requires it at boot
+	 * (apps/api/server.ts) and the Worker carries it as a deploy-gated secret. An
+	 * instance never reaches here (it composes no Better Auth, ADR-0073).
+	 */
+	BETTER_AUTH_SECRET?: string;
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
 	GITHUB_CLIENT_ID?: string;

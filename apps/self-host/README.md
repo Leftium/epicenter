@@ -6,7 +6,7 @@ A self-hosted Epicenter is one instance: a single workspace partition behind one
 
 ## Quick start (Bun, the blessed path)
 
-The whole box is `bun server.ts` against your own Postgres, no Cloudflare account required. Generate a token, supply it as `INSTANCE_TOKEN`, and boot:
+The whole box is `bun server.ts`: no database, no Cloudflare account, nothing to provision. Generate a token, supply it as `INSTANCE_TOKEN`, and boot:
 
 ```bash
 # 1. Generate a strong token (256 bits, base64url). Persists nothing.
@@ -15,8 +15,6 @@ bun run --cwd apps/self-host gen-token
 
 # 2. Boot the instance with that token.
 INSTANCE_TOKEN=Hq9...kQ \
-DATABASE_URL=postgres://user:pass@host:5432/epicenter \
-BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
 DATA_DIR=/var/lib/epicenter \
 bun apps/self-host/server.ts
 ```
@@ -25,7 +23,7 @@ Then paste the same token into the client's instance setting (`{ baseURL, token 
 
 Boot fails closed if `INSTANCE_TOKEN` is missing or too weak, and the error names `gen-token`. The box never mints or stores a token: you own the secret, which is exactly what lets the same instance run on Cloudflare too. To rotate, generate a new token, restart with it, and redistribute it; there is no per-person revocation (see [Offboarding](#offboarding-and-rotation)).
 
-`DATABASE_URL` and `BETTER_AUTH_SECRET` are still required. `createServerApp` constructs Better Auth and the session route reads it, even though the instance authenticates by bearer and issues no sessions, so set any random `BETTER_AUTH_SECRET` and point `DATABASE_URL` at a Postgres the box can reach. `DATA_DIR` holds the room data (`bun:sqlite` files); persist it.
+`INSTANCE_TOKEN` is the only required variable. The instance needs no database and no auth secret: it composes no Better Auth and stores rooms as `bun:sqlite` files on local disk (ADR-0073). `DATA_DIR` holds that room data; persist it.
 
 ### Use TLS
 
@@ -33,18 +31,17 @@ A static bearer over plaintext HTTP is total compromise: anyone who sees one req
 
 ## Running on Cloudflare
 
-The same `@epicenter/server` composition runs as a Worker (`worker/index.ts`). It works because you supply the secret; there is no first-boot minting that would tie the instance to a single Bun process. Set the token and the auth secret, then deploy:
+The same `@epicenter/server` composition runs as a Worker (`worker/index.ts`). It works because you supply the secret; there is no first-boot minting that would tie the instance to a single Bun process. Set the token, then deploy:
 
 ```bash
 bun run --cwd apps/self-host gen-token | tr -d '\n' | \
   bunx wrangler secret put INSTANCE_TOKEN --cwd apps/self-host
-bunx wrangler secret put BETTER_AUTH_SECRET --cwd apps/self-host
 
 bun run --cwd apps/self-host typecheck
 bun run --cwd apps/self-host deploy
 ```
 
-Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain, and provision the Hyperdrive and Durable Object bindings the file documents. On Cloudflare the entropy gate cannot run at boot (a Worker has no module-scope env), so use `gen-token` for the secret; a weak or unset `INSTANCE_TOKEN` simply fails all auth (fail closed) rather than refusing to boot.
+`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0073). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain, and provision the one Durable Object binding the file documents. On Cloudflare the entropy gate cannot run at boot (a Worker has no module-scope env), so use `gen-token` for the secret; a weak or unset `INSTANCE_TOKEN` simply fails all auth (fail closed) rather than refusing to boot.
 
 `worker-configuration.d.ts` is hand-written: it inherits the library's binding contract (`ServerBindings`) and declares only the deployment-owned `API_PUBLIC_ORIGIN` and `INSTANCE_TOKEN`. If you add bindings of your own, declare them there (or regenerate with `bun run typegen` and re-add the `extends` clause).
 

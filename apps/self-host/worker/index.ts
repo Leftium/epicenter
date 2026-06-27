@@ -11,8 +11,9 @@
  *
  * This is a reference, not an Epicenter-operated product. Copy this folder, set
  * `INSTANCE_TOKEN` (`wrangler secret put INSTANCE_TOKEN`, generated with
- * `bun run gen-token`) and `BETTER_AUTH_SECRET`, provision your Cloudflare
- * bindings (Hyperdrive, Durable Objects), and deploy. Community-supported.
+ * `bun run gen-token`), provision your Durable Object binding, and deploy. The
+ * instance composes no Better Auth and no Postgres, so there is no Hyperdrive
+ * binding and no `BETTER_AUTH_SECRET` (ADR-0073). Community-supported.
  *
  * Trust boundary: the deployer operates the infrastructure. Epicenter never holds
  * or sees the data stored here, so self-hosting is functionally zero-knowledge
@@ -35,13 +36,12 @@ import {
 const ownership = instance();
 
 const app = createServerApp({
-	// The Cloudflare runtime adapter: a per-request pg client over Hyperdrive,
-	// `waitUntil` to drain the after-response queue, and the Durable Object room
-	// registry. This edge points it at its OWN two bindings (the `Cloudflare.Env`
-	// cast stays here, type-checked against this Worker's generated bindings,
-	// ADR-0066). Identical wiring to the Bun entry; the runtime is all that differs.
+	// The Cloudflare runtime adapter: the Durable Object room registry only. The
+	// instance composes no Postgres (no Better Auth, no telemetry), so it passes no
+	// Hyperdrive binding and `createServerApp` installs no db lifecycle (ADR-0073).
+	// This edge points it at its OWN binding (the `Cloudflare.Env` cast stays here,
+	// type-checked against this Worker's generated bindings, ADR-0066).
 	runtime: cloudflare({
-		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
 		room: (env) => (env as Cloudflare.Env).ROOM,
 	}),
 	identity: {

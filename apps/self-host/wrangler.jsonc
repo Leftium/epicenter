@@ -24,10 +24,8 @@
 	// `wrangler secret put INSTANCE_TOKEN`; hand the same value to whoever should
 	// have access and paste it into their client instance setting. There is no
 	// OAuth and no allowlist: "solo" vs "shared" is only how many people hold it.
-	//
-	// BETTER_AUTH_SECRET: still required. `createServerApp` constructs Better Auth
-	// (the session route reads it) even though the instance authenticates by bearer
-	// and issues no sessions; set any random value (`openssl rand -base64 32`).
+	// It is the ONLY required secret: the instance composes no Better Auth, so
+	// there is no `BETTER_AUTH_SECRET` (ADR-0073).
 	//
 	// AI provider house keys (OPENAI_API_KEY, GEMINI_API_KEY) are optional:
 	// `wrangler secret put` one to serve that provider through this gateway, or
@@ -35,7 +33,7 @@
 	// (ADR-0054): a member who wants their own key points their client at a custom
 	// backend instead.
 	"secrets": {
-		"required": ["INSTANCE_TOKEN", "BETTER_AUTH_SECRET"]
+		"required": ["INSTANCE_TOKEN"]
 	},
 
 	// --- Durable Objects ---
@@ -52,15 +50,8 @@
 			"tag": "v1",
 			"new_sqlite_classes": ["Room"]
 		}
-	],
-
-	// --- Hyperdrive: Postgres connection pool ---
-	// Create with: bunx wrangler hyperdrive create <name> --connection-string="postgres://..."
-	"hyperdrive": [
-		{
-			"binding": "HYPERDRIVE",
-			"id": "<your-hyperdrive-id>",
-			"localConnectionString": "postgres://postgres:postgres@localhost:5432/self_host"
-		}
 	]
+
+	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth, no
+	// telemetry), so its only binding is the Durable Object above (ADR-0073).
 }

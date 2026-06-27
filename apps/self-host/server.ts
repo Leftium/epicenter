@@ -5,15 +5,14 @@
  * directly (it does NOT go through the hosted `startBunServer` bootstrap, which
  * bakes Better Auth and cookie sessions): the instance is a different product,
  * bearer-only with no relational-auth substrate, so it wires its own thin
- * composition. The per-concern runtime hooks bind to plain primitives instead of
- * Cloudflare bindings (ADR-0066):
+ * composition. It composes no Postgres (no Better Auth, no telemetry), so its
+ * runtime adapter (ADR-0066) provides only one leg:
  *
- *   - `afterResponse` fire-and-forget in the live process (no `waitUntil`)
  *   - `resolveRooms`  an in-process registry over `bun:sqlite` files
  *
- * This is the "one binary, no Cloudflare account" instance artifact: `bun
- * server.ts` (or a `bun build --compile` binary) is a complete box on a single
- * node. Rooms are `bun:sqlite` files on local disk, so this is a single-node
+ * This is the "one binary, no Cloudflare account, no database" instance artifact:
+ * `bun server.ts` (or a `bun build --compile` binary) is a complete box on a
+ * single node. Rooms are `bun:sqlite` files on local disk, so this is a single-node
  * deployment by design: it does not shard or hibernate per room the way the
  * Durable Object edge does, which is exactly right for one homelab, one family, or
  * one small team and the price of owning your own data on your own machine.
@@ -43,10 +42,8 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
-	BunHostBindings,
 	bun,
 	createBunRooms,
-	createDb,
 	createInstanceTokenResolver,
 	createServerApp,
 	instance,
@@ -54,10 +51,25 @@ import {
 	mountRoomsApp,
 	mountSessionApp,
 	requireBearerUser,
+	ServerBindings,
 	verifyEnvToken,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
-import pg from 'pg';
+
+/**
+ * The instance's Bun env contract: the portable {@link ServerBindings} (the
+ * cloud-only secrets stay optional and unused here) plus this host's process
+ * config and its one bearer. There is deliberately NO `DATABASE_URL` and no
+ * `BETTER_AUTH_SECRET`: the instance composes no Postgres and no Better Auth
+ * (ADR-0073). `INSTANCE_TOKEN` is optional in the schema (so the arktype pass
+ * never duplicates the entropy gate's message) and asserted strong below.
+ */
+const InstanceBindings = ServerBindings.merge({
+	'PORT?': 'string',
+	'API_PUBLIC_ORIGIN?': 'string',
+	'DATA_DIR?': 'string',
+	'INSTANCE_TOKEN?': 'string',
+});
 
 /**
  * Resolve the operator-supplied `INSTANCE_TOKEN` or fail closed, naming the
@@ -80,16 +92,11 @@ function requireStrongInstanceToken(value: string | undefined): string {
 
 /** Boot the apps/self-host instance: validate env, build the bearer gate, listen. */
 export function startSelfHostServer(): void {
-	// Validate this host's environment once, at boot (ADR-0066): the portable
-	// secrets (`BunHostBindings`) plus this host's own `INSTANCE_TOKEN`. A
-	// misconfiguration gets ONE descriptive error naming every missing or malformed
-	// var. The validated result IS the typed env handed to the Hono app: no
-	// `as`-cast over `process.env`, no lie. `INSTANCE_TOKEN` is optional in the
-	// schema (so the arktype pass never duplicates the entropy gate's message) and
-	// asserted strong below.
-	const env = BunHostBindings.merge({
-		'INSTANCE_TOKEN?': 'string',
-	})(process.env);
+	// Validate this host's environment once, at boot (ADR-0066) against
+	// {@link InstanceBindings}. A misconfiguration gets ONE descriptive error
+	// naming every missing or malformed var. The validated result IS the typed env
+	// handed to the Hono app: no `as`-cast over `process.env`, no lie.
+	const env = InstanceBindings(process.env);
 	if (env instanceof type.errors) {
 		console.error(
 			`Invalid environment for the self-host instance:\n${env.summary}`,
@@ -115,15 +122,11 @@ export function startSelfHostServer(): void {
 	mkdirSync(dataDir, { recursive: true });
 	const bunRooms = createBunRooms({ dir: dataDir });
 
-	// One pool for the process. The instance composes no Better Auth and records
-	// no telemetry, so the db lifecycle connects this but no instance route reads
-	// it; the pg-drop removes it entirely.
-	const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
-	const db = createDb(pool);
-
 	const ownership = instance();
 	const app = createServerApp({
-		runtime: bun({ db, rooms: bunRooms.rooms }),
+		// No db leg: the instance composes no Postgres, so `createServerApp`
+		// installs no db lifecycle and `c.var.db` is never set (ADR-0073).
+		runtime: bun({ rooms: bunRooms.rooms }),
 		identity: {
 			resolveOrigin: () => origin,
 			// A self-host trusts its OWN origin and the Tauri desktop client, never

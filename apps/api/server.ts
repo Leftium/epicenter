@@ -63,13 +63,15 @@ export function startBunApiServer(
 	// are deploy-gated and `wrangler types`-typed), `process.env` is unchecked, so
 	// boot is the place to validate it.
 	//
-	// The hosted star always offers Google, so it re-requires the Google secrets
-	// the shared `ServerBindings` made optional (register-when-present, ADR-0071):
-	// loosening them there is what lets a no-OAuth instance boot (ADR-0073), but
-	// the hub must still fail closed if its one sign-in method is unconfigured.
+	// The hosted star re-requires the secrets `ServerBindings` made optional for the
+	// instance's sake (register-when-present, ADR-0071/0073): the Google OAuth
+	// credentials (its one sign-in method) and `BETTER_AUTH_SECRET` (it composes
+	// Better Auth, the instance does not). Loosening them in the shared contract is
+	// what lets a no-auth instance boot; the hub still fails closed if any is unset.
 	const env = BunHostBindings.merge({
 		GOOGLE_CLIENT_ID: 'string',
 		GOOGLE_CLIENT_SECRET: 'string',
+		BETTER_AUTH_SECRET: 'string',
 	})(process.env);
 	if (env instanceof type.errors) {
 		console.error(`Invalid environment for the Bun server:\n${env.summary}`);

@@ -13,8 +13,7 @@
  * the box booted with, since there is no shared registry to look it up):
  *
  *   TOKEN=$(bun run --cwd apps/self-host gen-token)
- *   INSTANCE_TOKEN=$TOKEN DATABASE_URL=... BETTER_AUTH_SECRET=... \
- *     bun apps/self-host/server.ts &
+ *   INSTANCE_TOKEN=$TOKEN bun apps/self-host/server.ts &
  *   INSTANCE_TOKEN=$TOKEN bun apps/self-host/scripts/smoke.ts http://localhost:8787
  */
 

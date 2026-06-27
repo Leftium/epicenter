@@ -66,9 +66,11 @@ export type RuntimeAdapter = {
 	 * Postgres wire (ADR-0066 Road 1), never a binding shape. Cloudflare passes a
 	 * per-request `pg.Client` over Hyperdrive; a Bun host hands back a module-scope
 	 * `pg.Pool` checkout. The returned `close` runs after the after-response queue
-	 * drains.
+	 * drains. OMITTED by a deployment that composes no Postgres (the
+	 * single-partition instance): `createServerApp` then installs no db lifecycle
+	 * middleware at all, so `c.var.db` is never set (ADR-0073).
 	 */
-	connectDb: (env: ServerBindings) => Promise<{
+	connectDb?: (env: ServerBindings) => Promise<{
 		db: Db;
 		close: () => Promise<void>;
 	}>;
@@ -77,14 +79,17 @@ export type RuntimeAdapter = {
 	 * is `c.executionCtx.waitUntil(work)` (holds the isolate open); a Bun host
 	 * lets the promise run in the live process and does nothing. The library owns
 	 * the after-response queue (`c.var.afterResponseQueue`) and the pg-drain
-	 * shape; this injects only how the drain is kept alive.
+	 * shape; this injects only how the drain is kept alive. Travels with
+	 * {@link RuntimeAdapter.connectDb}: a deployment that omits the db handle omits
+	 * this too.
 	 */
-	afterResponse: (c: Context<Env>, work: Promise<unknown>) => void;
+	afterResponse?: (c: Context<Env>, work: Promise<unknown>) => void;
 	/**
 	 * Resolve this deployment's room registry, the one subsystem with no open
 	 * standard (a hibernating single-writer actor, ADR-0066 Road 2): Cloudflare
 	 * wraps `env.ROOM` (`createDurableObjectRooms`); a Bun host returns an
 	 * in-process registry (`createBunRooms`). Bound per request onto `c.var.rooms`.
+	 * The one leg every deployment provides, including the Postgres-free instance.
 	 */
 	resolveRooms: (env: ServerBindings) => Rooms;
 };
@@ -117,10 +122,12 @@ export type Identity = {
 /**
  * Construct the parent `Hono` app every deployment mounts sub-apps onto.
  *
- * Installs three ordered request-scoped middlewares:
+ * Installs the ordered request-scoped middlewares:
  *
  *   1. CORS (skips WS upgrades).
- *   2. Per-request pg connection + after-response queue.
+ *   2. Per-request pg connection + after-response queue, ONLY when the runtime
+ *      provides a `connectDb` (the cloud does; the Postgres-free instance omits
+ *      it, so `c.var.db` is never set, ADR-0073).
  *   3. The deployment's user-resolution seam (`c.var.resolveUser`).
  *
  * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
@@ -176,28 +183,32 @@ export function createServerApp({
 	// 1. CORS
 	app.use('*', corsMiddleware);
 
-	// 2. Per-request db handle + after-response promise list.
-	// `connectDb` is the injected runtime concern: it acquires the handle and
-	// returns how to close it (a per-request `pg.Client` on Cloudflare, a
-	// shared `pg.Pool` checkout on Node). Handlers push fire-and-forget
-	// promises (typically DB writes) onto the queue; the finally block schedules
-	// a drain (await all queued work, then close) via the injected
-	// `afterResponse`, so writes that outlive the response don't hit a closed
-	// handle and the response is never blocked on them.
-	app.use('*', async (c, next) => {
-		const { db, close } = await connectDb(c.env);
-		const queue: Promise<unknown>[] = [];
-		try {
-			c.set('db', db);
-			c.set('afterResponseQueue', queue);
-			await next();
-		} finally {
-			afterResponse(
-				c,
-				Promise.allSettled(queue).then(() => close()),
-			);
-		}
-	});
+	// 2. Per-request db handle + after-response promise list, installed ONLY when
+	// the runtime composes Postgres. `connectDb` acquires the handle and returns
+	// how to close it (a per-request `pg.Client` on Cloudflare, a shared `pg.Pool`
+	// checkout on a Bun host); handlers push fire-and-forget promises (typically DB
+	// writes) onto the queue, and the finally block schedules a drain (await all
+	// queued work, then close) via the injected `afterResponse`, so writes that
+	// outlive the response don't hit a closed handle and the response is never
+	// blocked on them. The single-partition instance provides no `connectDb`
+	// (it composes no Better Auth and records no telemetry), so this middleware is
+	// never installed and the instance touches no Postgres (ADR-0073).
+	if (connectDb) {
+		app.use('*', async (c, next) => {
+			const { db, close } = await connectDb(c.env);
+			const queue: Promise<unknown>[] = [];
+			try {
+				c.set('db', db);
+				c.set('afterResponseQueue', queue);
+				await next();
+			} finally {
+				afterResponse?.(
+					c,
+					Promise.allSettled(queue).then(() => close()),
+				);
+			}
+		});
+	}
 
 	// 3. The deployment's user-resolution seam, stamped onto `c.var.resolveUser`
 	// so every auth wrapper reads one resolver off the context instead of

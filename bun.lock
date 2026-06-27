@@ -360,12 +360,10 @@
         "@epicenter/server": "workspace:*",
         "arktype": "catalog:",
         "hono": "catalog:",
-        "pg": "^8.20.0",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260405.1",
         "@types/bun": "catalog:",
-        "@types/pg": "^8.18.0",
         "typescript": "catalog:",
         "wrangler": "catalog:",
       },

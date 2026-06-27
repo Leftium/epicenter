@@ -32,7 +32,13 @@
 import { type } from 'arktype';
 
 export const ServerBindings = type({
-	BETTER_AUTH_SECRET: 'string',
+	// The Better Auth signing secret, optional because Better Auth is a cloud-only
+	// layer (`mountCloudAuth`): the hosted cloud sets it and re-requires it in its
+	// own boot validation (apps/api/server.ts), while the single-partition instance
+	// composes no Better Auth and never reads it (ADR-0073). Same register-when-
+	// present precedent as the OAuth secrets below: optional here, required by the
+	// deployment that actually uses it.
+	'BETTER_AUTH_SECRET?': 'string',
 	// Every OAuth provider is optional and register-when-present (ADR-0071): a
 	// deployment that has not registered an app for a provider simply does not
 	// offer that sign-in (create-auth.ts gates each one, /sign-in hides the

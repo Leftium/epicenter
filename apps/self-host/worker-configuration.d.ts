@@ -20,10 +20,10 @@ declare namespace Cloudflare {
 	type ServerBindings = import('@epicenter/server').ServerBindings;
 
 	interface Env extends ServerBindings {
-		// Runtime-only Cloudflare bindings the library no longer names in
-		// ServerBindings (ADR-0066): this deployment reads them in its own
-		// `connectDb`/`resolveRooms` resolvers, so it declares them here.
-		HYPERDRIVE: Hyperdrive;
+		// Runtime-only Cloudflare binding the library no longer names in
+		// ServerBindings (ADR-0066): this deployment reads it in its own
+		// `resolveRooms` resolver, so it declares it here. There is no Hyperdrive
+		// binding: the instance composes no Postgres (ADR-0073).
 		ROOM: DurableObjectNamespace<import('@epicenter/server').Room>;
 		// Deployment-owned config the library never reads by name; this
 		// deployment reads them in its own resolvers (ADR-0066). `API_PUBLIC_ORIGIN`

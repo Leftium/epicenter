@@ -99,6 +99,13 @@ export type Env = {
 	Bindings: ServerBindings;
 	Variables: {
 		db: NodePgDatabase<typeof schema>;
+		/**
+		 * The per-request Better Auth instance. Populated by `mountCloudAuth`, the
+		 * cloud-only relational-auth layer; the single-partition instance composes
+		 * no Better Auth, so this is never set on an instance and no instance-mounted
+		 * route reads it (ADR-0073). Like every variable here, reading it before its
+		 * installing middleware ran is a bug.
+		 */
 		auth: ReturnType<typeof createAuth>;
 		authBaseURL: string;
 		/**

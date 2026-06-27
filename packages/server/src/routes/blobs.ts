@@ -36,7 +36,6 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import { MAX_BLOB_BYTES } from '../constants.js';
-import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { blobKey, blobOwnerPrefix } from '../owner.js';
 import type { OwnershipRule } from '../ownership.js';
@@ -273,15 +272,17 @@ async function listOwnerBlobs(
  * Mount the blobs surface on a deployment's server app.
  *
  * There is no public-read bypass in v1, so every route is
- * uniformly gated by the same chain: auth, then ownership, then
- * {@link requireBlobStore} (which 503s a deployment with no object storage and
- * otherwise stamps `c.var.blobStore`), then any deployment policies. Cloud
- * passes no policies in v1 (storage is unmetered until Autumn is wired); a
- * future `syncBlobStorageWithAutumn` would slot into `policies`.
+ * uniformly gated by the same chain: the deployment's auth (the cloud passes
+ * `requireCookieOrBearerUser`), then ownership, then {@link requireBlobStore}
+ * (which 503s a deployment with no object storage and otherwise stamps
+ * `c.var.blobStore`), then any deployment policies. Cloud passes no policies in v1
+ * (storage is unmetered until Autumn is wired); a future `syncBlobStorageWithAutumn`
+ * would slot into `policies`.
  */
 export function mountBlobsApp(
 	app: Hono<Env>,
 	opts: {
+		auth: MiddlewareHandler;
 		ownership: OwnershipRule;
 		/** Extra middleware after auth + ownership on every blob route. */
 		policies?: MiddlewareHandler[];
@@ -294,7 +295,7 @@ export function mountBlobsApp(
 	// would be read as the path argument).
 	const requireOwnership = createRequireOwnership(opts.ownership);
 	const chain: [MiddlewareHandler, ...MiddlewareHandler[]] = [
-		requireCookieOrBearerUser,
+		opts.auth,
 		requireOwnership,
 		requireBlobStore,
 		...(opts.policies ?? []),

@@ -15,10 +15,10 @@
 
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
-	authApp,
 	cloudflare,
 	createServerApp,
 	mountBlobsApp,
+	mountCloudAuth,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -27,6 +27,7 @@ import {
 	recordRoomAccessOnDb,
 	requireBearerUser,
 	requireCookieOrBearerUser,
+	resolveRequestOAuthUser,
 	type ServerBindings,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
@@ -65,11 +66,11 @@ const app = createServerApp({
 		resolveOrigin: (env) =>
 			(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
 		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
-		// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
-		// a session via a cookie scoped to the registrable domain. cookie-config
-		// falls back to host-only on localhost regardless.
-		cookieDomain: '.epicenter.so',
 	},
+	// The cloud resolves a request to its user by verifying an OAuth bearer
+	// against JWKS (it reads `c.var.auth` + `c.var.db`, both present below). An
+	// instance passes its bearer resolver instead (ADR-0073).
+	resolveUser: resolveRequestOAuthUser,
 });
 
 // Public health endpoint at root.
@@ -77,14 +78,19 @@ app.get('/', (c) =>
 	c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-// Auth surface (HTML pages + OAuth metadata; no /api prefix by design,
-// no deployment knobs).
-app.route('/', authApp);
+// Cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
+// plus the auth surface (sign-in, consent, OAuth metadata). Epicenter cloud
+// serves app.epicenter.so and api.epicenter.so, which share a session via a
+// cookie scoped to the registrable domain (host-only on localhost regardless).
+// Mounted before the owner-scoped surfaces so `c.var.auth` is set when their
+// cookie-or-bearer wrappers run. The single-partition instance composes none of
+// this (ADR-0073).
+mountCloudAuth(app, { cookieDomain: '.epicenter.so' });
 
 // Owner-partitioned reusable surfaces. Each primitive owns its own
-// auth + ownership wiring; the deployment passes only the rule and any
+// ownership wiring; the deployment passes its auth choice, the rule, and any
 // deployment policies.
-mountSessionApp(app, { ownership });
+mountSessionApp(app, { ownership, auth: requireCookieOrBearerUser });
 // The hosted cloud records each room access into `durableObjectInstance`
 // (`recordRoomAccessOnDb`); the single-partition instance passes no recorder.
 mountRoomsApp(app, { ownership, recordAccess: recordRoomAccessOnDb });
@@ -92,7 +98,7 @@ mountRoomsApp(app, { ownership, recordAccess: recordRoomAccessOnDb });
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
 // attached, so deferred quota means not calling it. A `syncBlobStorageWithAutumn`
 // policy slots in here when storage is billed.
-mountBlobsApp(app, { ownership });
+mountBlobsApp(app, { ownership, auth: requireCookieOrBearerUser });
 mountInferenceApp(app, {
 	auth: requireBearerUser,
 	ownership,

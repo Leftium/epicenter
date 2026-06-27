@@ -27,10 +27,8 @@
  */
 
 import { type Context, Hono } from 'hono';
-import { createAuth } from './auth/create-auth.js';
 import type { Db } from './db/create-db.js';
 import { corsMiddleware } from './middleware/cors.js';
-import { resolveRequestOAuthUser } from './middleware/require-auth.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
@@ -114,13 +112,6 @@ export type Identity = {
 	 * restating it.
 	 */
 	resolveTrustedOrigins: (baseURL: string) => string[];
-	/**
-	 * Registrable domain for cross-subdomain session cookies, when the
-	 * deployment shares sessions across subdomains (Epicenter cloud passes
-	 * `.epicenter.so`). Omit for a single-origin deployment, which then uses
-	 * host-only cookies scoped to its own host.
-	 */
-	cookieDomain?: string;
 };
 
 /**
@@ -130,12 +121,15 @@ export type Identity = {
  *
  *   1. CORS (skips WS upgrades).
  *   2. Per-request pg connection + after-response queue.
- *   3. Better Auth context (baseURL, auth instance).
+ *   3. The deployment's user-resolution seam (`c.var.resolveUser`).
  *
  * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
  * and the rooms registry. The deployment is responsible for exposing a
- * health endpoint on `/`. WebSocket auth-transport normalization is not
- * global: it lives in {@link mountRoomsApp}, the only WebSocket surface.
+ * health endpoint on `/`. The Better Auth context (`c.var.auth`) is NOT
+ * global: the cloud adds it via {@link mountCloudAuth} (Postgres-backed
+ * sessions + OAuth), so the single-partition instance composes no Better Auth
+ * (ADR-0073). WebSocket auth-transport normalization is likewise not global: it
+ * lives in {@link mountRoomsApp}, the only WebSocket surface.
  */
 type CreateServerAppOptions = {
 	/** How this runtime does the three non-portable jobs. {@link RuntimeAdapter}. */
@@ -144,24 +138,26 @@ type CreateServerAppOptions = {
 	identity: Identity;
 	/**
 	 * How a request resolves to the calling user, injected once for the whole
-	 * deployment and stamped onto `c.var.resolveUser`. Defaults to the real
-	 * resolver ({@link resolveRequestOAuthUser}: an OAuth bearer verified against
-	 * JWKS); the surface wrappers read it from the context, so injecting here
-	 * redirects all of them at once and leaves their cookie / WS-reject / 401
-	 * behavior untouched. Production passes nothing and keeps the real resolver.
+	 * deployment and stamped onto `c.var.resolveUser`. REQUIRED: there is no
+	 * default, because the OAuth bearer resolver (`resolveRequestOAuthUser`) reads
+	 * `c.var.auth`, which only the cloud composes (via {@link mountCloudAuth}); an
+	 * instance has no Better Auth and passes its bearer resolver instead (ADR-0073).
+	 * The cloud passes `resolveRequestOAuthUser` explicitly; the surface wrappers
+	 * read it from the context, so injecting here redirects all of them at once and
+	 * leaves their cookie / WS-reject / 401 behavior untouched.
 	 *
 	 * A dev-only entrypoint injects a trivial `Bearer dev:<userId>` resolver so
 	 * the runtime-parity smoke needs no interactive login. That bypass must live
 	 * in a dev entry production never imports, NEVER an env-gated branch in this
 	 * library. See {@link ResolveUser}.
 	 */
-	resolveUser?: ResolveUser;
+	resolveUser: ResolveUser;
 };
 
 export function createServerApp({
 	runtime: { connectDb, afterResponse, resolveRooms },
-	identity: { resolveOrigin, resolveTrustedOrigins, cookieDomain },
-	resolveUser = resolveRequestOAuthUser,
+	identity: { resolveOrigin, resolveTrustedOrigins },
+	resolveUser,
 }: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
@@ -203,28 +199,13 @@ export function createServerApp({
 		}
 	});
 
-	// 3. Auth context. `resolveOrigin` yields the deployment's canonical auth
-	// origin: the Better Auth baseURL, OAuth issuer, and token audience. It
-	// must be stable per deployment (a self-host gets its own domain, not
-	// Epicenter Cloud's), so the deployment supplies it explicitly, never
-	// inferred from the request. Dev injects localhost via scripts/dev.ts.
-	// First-party OAuth client rows are seeded at deploy time (apps/api
-	// `oauth:seed:*`), so this path only reads.
+	// 3. The deployment's user-resolution seam, stamped onto `c.var.resolveUser`
+	// so every auth wrapper reads one resolver off the context instead of
+	// hardcoding it: the cloud passes the OAuth bearer resolver, an instance its
+	// token resolver (ADR-0073), a dev entry a trivial bearer resolver. The Better
+	// Auth instance (`c.var.auth`) is NOT built here; it is a cloud-only layer the
+	// cloud adds via `mountCloudAuth`, so an instance composes no Better Auth.
 	app.use('*', async (c, next) => {
-		c.set(
-			'auth',
-			createAuth({
-				db: c.var.db,
-				env: c.env,
-				baseURL: c.var.authBaseURL,
-				trustedOrigins: c.var.trustedOrigins,
-				cookieCrossSubDomain: cookieDomain,
-			}),
-		);
-		// The deployment's user-resolution seam. Bound here, beside the auth
-		// instance the default resolver reads, so every downstream wrapper reads
-		// one resolver off the context instead of hardcoding it. Production keeps
-		// the real OAuth resolver; a dev entry injects a bearer resolver.
 		c.set('resolveUser', resolveUser);
 		await next();
 	});

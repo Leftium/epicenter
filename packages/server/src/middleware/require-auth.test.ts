@@ -17,12 +17,15 @@
 
 import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
+import { AuthUser } from '@epicenter/auth';
 import { JWT_SIGNING_ALG } from '@epicenter/constants/auth';
 import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth-clients';
+import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { jwt } from 'better-auth/plugins';
 import { Hono } from 'hono';
+import { Ok } from 'wellcrafted/result';
 import {
 	createOAuthTestDb,
 	isAddressInUse,
@@ -30,7 +33,11 @@ import {
 	randomOAuthTestPort,
 } from '../test-helpers/oauth.js';
 import type { Env } from '../types.js';
-import { requireBearerUser, resolveRequestOAuthUser } from './require-auth.js';
+import {
+	requireBearerUser,
+	requireCookieOrBearerUser,
+	resolveRequestOAuthUser,
+} from './require-auth.js';
 
 test('requireBearerUser resolves a valid API-audience token to c.var.user', async () => {
 	const setup = createMiddlewareTestServer();
@@ -189,6 +196,60 @@ test('requireBearerUser returns 503 ServerError when the signing keys cannot be 
 	} finally {
 		setup.server.stop(true);
 	}
+});
+
+test('requireCookieOrBearerUser resolves the user from a session cookie and skips the bearer path', async () => {
+	// The cloud-only cookie path: a present Better Auth session resolves the user
+	// and the injected bearer resolver is never consulted (cookie-first). Stubs
+	// `c.var.auth.api.getSession` (the only auth read) and asserts the bearer
+	// resolver stays untouched.
+	let resolveUserCalls = 0;
+	const sessionUser = { id: 'cookie-user-id', email: 'cookie@example.com' };
+	const app = new Hono<Env>()
+		.use('*', async (c, next) => {
+			c.set('auth', {
+				api: { getSession: async () => ({ user: sessionUser }) },
+			} as unknown as Env['Variables']['auth']);
+			c.set('resolveUser', async () => {
+				resolveUserCalls += 1;
+				return OAuthError.InvalidToken();
+			});
+			await next();
+		})
+		.get('/protected', requireCookieOrBearerUser, (c) => c.json(c.var.user));
+
+	const response = await app.request('/protected');
+
+	expect(response.status).toBe(200);
+	const body = (await response.json()) as { id: string; email: string };
+	expect(body).toEqual(sessionUser);
+	expect(resolveUserCalls).toBe(0);
+});
+
+test('requireCookieOrBearerUser falls back to the bearer resolver when there is no session', async () => {
+	// No cookie session -> the injected `c.var.resolveUser` decides, exactly the
+	// bearer path the cloud and an instance share.
+	const bearerUser = AuthUser.assert({
+		id: 'bearer-user-id',
+		email: 'bearer@example.com',
+	});
+	const app = new Hono<Env>()
+		.use('*', async (c, next) => {
+			c.set('auth', {
+				api: { getSession: async () => null },
+			} as unknown as Env['Variables']['auth']);
+			c.set('resolveUser', async () => Ok(bearerUser));
+			await next();
+		})
+		.get('/protected', requireCookieOrBearerUser, (c) => c.json(c.var.user));
+
+	const response = await app.request('/protected', {
+		headers: { authorization: 'Bearer whatever' },
+	});
+
+	expect(response.status).toBe(200);
+	const body = (await response.json()) as { id: string; email: string };
+	expect(body).toEqual({ id: 'bearer-user-id', email: 'bearer@example.com' });
 });
 
 test('requireBearerUser does not read signing keys for a non-JWT bearer', async () => {

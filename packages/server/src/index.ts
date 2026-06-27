@@ -37,13 +37,21 @@ export { createDb, type Db } from './db/create-db.js';
 // `@epicenter/constants/oauth` (beside `buildTrustedOAuthClients`, its input),
 // so it never imports this request-path auth barrel.
 //
-// Auth middleware. `authApp` is mounted directly; the inference surface accepts
-// `requireBearerUser` via `mountInferenceApp({ auth })`. Most owner-partitioned
-// surfaces wire auth inside their mount primitive and never need these.
+// Auth middleware + the cloud's OAuth bearer resolver. A deployment passes one of
+// these as the `auth` for each owner-scoped mount (the cloud passes
+// `requireCookieOrBearerUser`, an instance `requireBearerUser`) and passes
+// `resolveRequestOAuthUser` as `createServerApp`'s `resolveUser` (the cloud's user
+// resolution; an instance passes its bearer resolver instead, ADR-0073).
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
+	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
+// The cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
+// plus the `authApp` surface (sign-in, consent, OAuth metadata). The cloud calls
+// this once after `createServerApp`; the single-partition instance never does and
+// composes no Better Auth or Postgres (ADR-0073).
+export { mountCloudAuth } from './mount-cloud-auth.js';
 // `doName` builds a room's owner-scoped DO name, deployment-agnostic and
 // exported for composing apps. The Cloudflare room registry
 // (`createDurableObjectRooms`) is now internal to the `cloudflare()` runtime
@@ -59,9 +67,9 @@ export { instance, type OwnershipRule, personal } from './ownership.js';
 export { Room } from './room/backends/cloudflare/durable-object.js';
 // Reusable surfaces. Each `mount*` bundles auth + ownership + the route
 // mount, accepting only the deployment-controlled knobs (ownership rule,
-// optional policies). The bare `authApp` is mounted directly because it
-// has no deployment knobs.
-export { authApp } from './routes/auth.js';
+// auth choice, optional policies). The cloud's Better Auth surface (sessions,
+// OAuth, `c.var.auth`) is bundled into `mountCloudAuth`; an instance composes
+// none of it (ADR-0073).
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 // `mountRoomsApp` takes the deployment's telemetry seam: the hosted cloud passes

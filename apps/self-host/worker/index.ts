@@ -20,7 +20,6 @@
  */
 
 import {
-	authApp,
 	cloudflare,
 	createInstanceTokenResolver,
 	createServerApp,
@@ -73,12 +72,10 @@ app.get('/', (c) =>
 	c.json({ mode: 'instance', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-// `authApp` is mounted for parity with the Bun bootstrap but is inert: the
-// instance configures no OAuth provider, so there is nothing to sign in with and
-// no session can be minted. The bearer resolver above is the only gate.
-app.route('/', authApp);
-
-mountSessionApp(app, { ownership });
+// No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The
+// operator bearer (the `resolveUser` above) is the only gate, so every surface is
+// bearer-authenticated (ADR-0073).
+mountSessionApp(app, { ownership, auth: requireBearerUser });
 mountRoomsApp(app, { ownership });
 mountInferenceApp(app, { auth: requireBearerUser, ownership });
 

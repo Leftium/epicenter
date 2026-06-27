@@ -38,7 +38,6 @@ export { instance, type OwnershipRule, personal } from './ownership.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
 // plus the Bun `websocket` handler and `bindServer` the entry wires.
 export { createBunRooms } from './room/backends/bun/registry.js';
-export { authApp } from './routes/auth.js';
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export {

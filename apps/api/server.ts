@@ -53,7 +53,6 @@ import {
 	mountRoomsApp,
 	mountSessionApp,
 	personal,
-	recordRoomAccessOnDb,
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	type ResolveUser,
@@ -145,7 +144,7 @@ export function startBunApiServer(
 	// on the Bun dev host (no cross-subdomain domain like the Worker's `.epicenter.so`).
 	mountCloudAuth(app);
 	mountSessionApp(app, { ownership, auth: requireCookieOrBearerUser });
-	mountRoomsApp(app, { ownership, recordAccess: recordRoomAccessOnDb });
+	mountRoomsApp(app, { ownership });
 	mountInferenceApp(app, { auth: requireBearerUser, ownership });
 	mountBlobsApp(app, { ownership, auth: requireCookieOrBearerUser });
 

@@ -24,7 +24,6 @@ import {
 	mountSessionApp,
 	personal,
 	Room,
-	recordRoomAccessOnDb,
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	resolveRequestOAuthUser,
@@ -91,9 +90,7 @@ mountCloudAuth(app, { cookieDomain: '.epicenter.so' });
 // ownership wiring; the deployment passes its auth choice, the rule, and any
 // deployment policies.
 mountSessionApp(app, { ownership, auth: requireCookieOrBearerUser });
-// The hosted cloud records each room access into `durableObjectInstance`
-// (`recordRoomAccessOnDb`); the single-partition instance passes no recorder.
-mountRoomsApp(app, { ownership, recordAccess: recordRoomAccessOnDb });
+mountRoomsApp(app, { ownership });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
 // attached, so deferred quota means not calling it. A `syncBlobStorageWithAutumn`

@@ -1,7 +1,5 @@
-import { asOwnerId } from '@epicenter/identity';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
@@ -170,27 +168,6 @@ export function createAuth({
 		// Google to API callback), so the cookie becomes invisible at the
 		// callback step. Partitioned is for iframes, not redirect OAuth.
 		advanced: createCookieAdvancedConfig(baseURL, cookieCrossSubDomain),
-		databaseHooks: {
-			user: {
-				delete: {
-					before: async (user) => {
-						// Partition cleanup. This hook is cloud-only: Better Auth is a
-						// cloud-only layer (`mountCloudAuth`), and the single-partition
-						// instance composes none, so it never runs there (ADR-0073). On
-						// the cloud (personal mode) `owner_id === user.id`, so this deletes
-						// the deleting user's `durableObjectInstance` rows. Without an FK +
-						// cascade, the row delete is explicit here. (Content-addressed blob
-						// bytes live owner-prefixed in object storage with no DB row; an
-						// occasional LIST sweep reclaims an orphaned owner prefix.)
-						const ownerId = asOwnerId(user.id);
-
-						await db
-							.delete(schema.durableObjectInstance)
-							.where(eq(schema.durableObjectInstance.ownerId, ownerId));
-					},
-				},
-			},
-		},
 		trustedOrigins,
 		// Postgres is the only auth store: sessions and OAuth verification
 		// records persist to the DB adapter by default (no secondaryStorage), and

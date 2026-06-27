@@ -14,75 +14,23 @@
  * is owner-blind: every connection is identified by the
  * `(userId, nodeId)` pair stamped onto its WebSocket attachment.
  *
- * Telemetry is an INJECTED seam, not a hardcoded write. Each HTTP/WS access
- * calls the deployment's {@link RoomAccessRecorder}: the hosted cloud passes
- * {@link recordRoomAccessOnDb} (a fire-and-forget `durableObjectInstance` upsert
- * on `c.var.db`); the single-partition instance passes none, so the rooms route
- * touches neither `c.var.db` nor `c.var.afterResponseQueue` and composes no
- * Postgres at all (ADR-0073).
+ * The route reads neither `c.var.db` nor `c.var.afterResponseQueue`: it records
+ * no telemetry, so it composes no Postgres dependency on any deployment.
  */
 
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
-import type { OwnerId } from '@epicenter/identity';
 import { ROOM_ROUTE } from '@epicenter/sync';
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { type Context, Hono } from 'hono';
+import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
-import { defineErrors } from 'wellcrafted/error';
-import { createLogger } from 'wellcrafted/logger';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
-import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { normalizeWebSocketAuth } from '../middleware/websocket-auth.js';
 import { doName } from '../owner.js';
 import type { OwnershipRule } from '../ownership.js';
 import type { Env } from '../types.js';
-
-type Db = NodePgDatabase<typeof schema>;
-
-const log = createLogger('server/rooms');
-
-/**
- * One room access, as the deployment's {@link RoomAccessRecorder} sees it: the
- * owner partition that touched the DO, the room id, its owner-scoped DO name, and
- * (on a read/sync) the post-access storage size. The same shape the cloud's
- * `durableObjectInstance` upsert persists.
- */
-export type RoomAccess = {
-	ownerId: OwnerId;
-	resourceName: string;
-	doName: string;
-	storageBytes?: number;
-};
-
-/**
- * How a deployment records a room access, injected into {@link mountRoomsApp}. The
- * hosted cloud passes {@link recordRoomAccessOnDb}; the single-partition instance
- * passes none and the rooms route stays Postgres-free (ADR-0073). The recorder is
- * synchronous and fire-and-forget: it schedules its own durability (the cloud
- * pushes onto `c.var.afterResponseQueue`) and never blocks the response.
- */
-export type RoomAccessRecorder = (c: Context<Env>, access: RoomAccess) => void;
-
-const RoomsTelemetryError = defineErrors({
-	DoInstanceUpsertFailed: ({
-		cause,
-		ownerId,
-		doName,
-	}: {
-		cause: unknown;
-		ownerId: OwnerId;
-		doName: string;
-	}) => ({
-		message: 'durableObjectInstance telemetry upsert failed; row dropped',
-		cause,
-		ownerId,
-		doName,
-	}),
-});
 
 /**
  * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy. Yjs
@@ -98,65 +46,11 @@ function binaryResponse(data: Uint8Array): Response {
 }
 
 /**
- * Fire-and-forget upsert into the platform DO instance table. Records that
- * the owner partition touched the DO and, when available, the post-access
- * storage size. Errors are logged and dropped: this is telemetry, not
- * billing authority. The failure is observable via the `server/rooms`
- * logger so silent telemetry loss surfaces in deployment logs.
+ * Build the rooms sub-app. URL shape is uniform across deployments; the resolved
+ * owner partition arrives on `c.var.ownerId` via the deployment-mounted
+ * `requireOwnership` middleware, so handlers stay partition-blind.
  */
-async function upsertDoInstance(db: Db, params: RoomAccess): Promise<void> {
-	const now = new Date();
-	try {
-		await db
-			.insert(schema.durableObjectInstance)
-			.values({
-				ownerId: params.ownerId,
-				resourceName: params.resourceName,
-				doName: params.doName,
-				storageBytes: params.storageBytes ?? null,
-				lastAccessedAt: now,
-				storageMeasuredAt: params.storageBytes != null ? now : null,
-			})
-			.onConflictDoUpdate({
-				target: schema.durableObjectInstance.doName,
-				set: {
-					lastAccessedAt: now,
-					...(params.storageBytes != null && {
-						storageBytes: params.storageBytes,
-						storageMeasuredAt: now,
-					}),
-				},
-			});
-	} catch (cause) {
-		log.warn(
-			RoomsTelemetryError.DoInstanceUpsertFailed({
-				cause,
-				ownerId: params.ownerId,
-				doName: params.doName,
-			}),
-		);
-	}
-}
-
-/**
- * The hosted cloud's {@link RoomAccessRecorder}: schedule a fire-and-forget
- * `durableObjectInstance` upsert on the per-request Postgres handle by pushing it
- * onto the after-response queue (drained after the response). The single-partition
- * instance never passes this, so its rooms route reads no `c.var.db` (ADR-0073).
- */
-export const recordRoomAccessOnDb: RoomAccessRecorder = (c, access) => {
-	c.var.afterResponseQueue.push(upsertDoInstance(c.var.db, access));
-};
-
-/**
- * Build the rooms sub-app around a deployment's {@link RoomAccessRecorder}. URL
- * shape is uniform across deployments; the resolved owner partition arrives on
- * `c.var.ownerId` via the deployment-mounted `requireOwnership` middleware, so
- * handlers stay partition-blind. `recordAccess` is closed over here rather than
- * read off the context, so the instance's no-op recorder erases the telemetry
- * path (and its `c.var.db` read) entirely.
- */
-function createRoomsApp(recordAccess: RoomAccessRecorder): Hono<Env> {
+function createRoomsApp(): Hono<Env> {
 	return new Hono<Env>()
 		.get(
 			ROOM_ROUTE.pattern,
@@ -181,11 +75,6 @@ function createRoomsApp(recordAccess: RoomAccessRecorder): Hono<Env> {
 						return c.json(err, err.error.status);
 					}
 
-					recordAccess(c, {
-						ownerId: c.var.ownerId,
-						resourceName: roomId,
-						doName: name,
-					});
 					// Identity goes to the backend as data, not stamped into a
 					// reconstructed request URL: userId from auth (authoritative,
 					// never the client's), nodeId the client's own. The backend
@@ -197,13 +86,7 @@ function createRoomsApp(recordAccess: RoomAccessRecorder): Hono<Env> {
 					});
 				}
 
-				const { data, storageBytes } = await room.getDoc();
-				recordAccess(c, {
-					ownerId: c.var.ownerId,
-					resourceName: roomId,
-					doName: name,
-					storageBytes,
-				});
+				const { data } = await room.getDoc();
 				return binaryResponse(data);
 			},
 		)
@@ -227,14 +110,7 @@ function createRoomsApp(recordAccess: RoomAccessRecorder): Hono<Env> {
 				if (error) {
 					return new Response('Malformed sync body', { status: 400 });
 				}
-				const { diff, storageBytes } = synced;
-
-				recordAccess(c, {
-					ownerId: c.var.ownerId,
-					resourceName: roomId,
-					doName: name,
-					storageBytes,
-				});
+				const { diff } = synced;
 
 				return diff
 					? binaryResponse(diff)
@@ -284,14 +160,10 @@ const requireRoomBearer = createMiddleware<Env>(async (c, next) => {
  * `bearer.<token>` subprotocol is lifted into `Authorization` before
  * {@link requireRoomBearer} (bearer-only: rooms is for external clients,
  * never cookie-bearing browsers) reads it.
- *
- * `recordAccess` is the deployment's telemetry seam: the hosted cloud passes
- * {@link recordRoomAccessOnDb}, the single-partition instance omits it (a no-op),
- * so an instance's rooms route reads no `c.var.db` (ADR-0073).
  */
 export function mountRoomsApp(
 	app: Hono<Env>,
-	opts: { ownership: OwnershipRule; recordAccess?: RoomAccessRecorder },
+	opts: { ownership: OwnershipRule },
 ): void {
 	app.use(
 		ROOM_ROUTE.prefixPattern,
@@ -299,5 +171,5 @@ export function mountRoomsApp(
 		requireRoomBearer,
 		createRequireOwnership(opts.ownership),
 	);
-	app.route('/', createRoomsApp(opts.recordAccess ?? (() => {})));
+	app.route('/', createRoomsApp());
 }

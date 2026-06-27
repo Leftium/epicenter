@@ -167,7 +167,9 @@ Three layers, cheapest first:
 
 ---
 
-# Part B: the Super Chat (design exploration, not this slice)
+# Part B: the Super Chat (design settled; build gated behind the wedge)
+
+Status: the design is resolved against the code (see [Resolved design](#resolved-design-d1--o1-o4) and [Verdict](#verdict) below). D1, the one new primitive, is prototyped and green on branch `proto/super-chat-d1`. No product code lands in the apps yet; the build is gated behind the same wedge trigger ADR-0073 sets.
 
 ## The goal, in the user's words
 
@@ -187,12 +189,13 @@ This needs **no new transport and no relay change**. A presence-only / overlay j
 
 ```ts
 // Alongside the app's existing data-doc collaboration:
-const hubDoc = new Y.Doc({ guid: 'hub' });          // per-user via the ownerId URL segment
+const hubDoc = new Y.Doc({ guid: HUB_ROOM_GUID });  // 'hub'; per-user via the ownerId URL segment
 const hub = openCollaboration(hubDoc, {
-  url: roomWsUrl({ baseURL, ownerId: user.id, guid: 'hub', nodeId }),
+  url: roomWsUrl({ baseURL, ownerId: user.id, guid: HUB_ROOM_GUID, nodeId }),
   openWebSocket: auth.openWebSocket,
   onReconnectSignal: auth.onStateChange,
-  actions: app.actions,   // publish THIS app's REAL tools: discoverable AND dispatchable
+  actions: app.hubActions,   // a CURATED subset, not app.actions (O2): names, schemas,
+                             // and dispatched I/O all hit the plaintext relay (ADR-0004)
 });
 // The app now (a) appears in the hub directory and (b) answers inbound dispatch
 // on the hub room with its real handlers, exactly as it does on its data room.
@@ -210,9 +213,12 @@ const hub = openCollaboration(hubDoc, {
 });
 
 // Every online app's tools across all this user's devices, live:
-const meshCatalog = createDispatchToolCatalog(hub, { selfNodeId: nodeId });
-//   definitions() -> union of every hub peer's tools
-//   resolve(call) -> dispatch to the owning peer by nodeId (existing path)
+const meshCatalog = createDispatchToolCatalog(hub, {
+  selfNodeId: nodeId,
+  labelForNode,   // hub Y.Map nodeId -> label; omit to qualify by nodeId fragment (D1)
+});
+//   definitions() -> union of every hub peer's tools, device-qualified on collision
+//   resolve(call) -> dispatch the BARE action to the named device's nodeId (D1)
 
 // Off-mesh / sensitive tools (Local Books) come in via MCP, NOT the hub room:
 const localBooks = await connectMcpStdio('local-books', ['mcp']); // thin MCP-client -> ToolCatalog
@@ -229,13 +235,74 @@ The catalog -> chat wiring already exists: `createDispatchToolCatalog(collaborat
 
 Local Books is off the mesh, so it is **not** in the hub room. The Super Chat reaches it as a **local MCP client** of the very same `local-books mcp` server built in Part A. So Part A's server has two consumers: Claude Code (foreign host) and your own Super Chat (local host). Build the airlock once; both walk through it. This is the clean consistency: mesh apps -> hub room; sensitive/standalone apps -> local MCP; the Super Chat merges all sources into one catalog.
 
-## Design decisions and open questions for Part B
+## Resolved design (D1 + O1-O4)
 
-- **D1 (cross-device disambiguation):** Two devices each running tab-manager both publish `close_tabs`. `createDispatchToolCatalog` currently dedupes by name, first peer wins (`dispatch-catalog.ts`), which silently drops one device and removes the ability to target a device. The Super Chat needs device-qualified tools (for example `close_tabs@laptop`) or a catalog variant that exposes per-peer tools. **This is a required change to the catalog for multi-device.**
-- **O1 (hub room guid + opt-in):** pick the reserved guid and a convention for which apps publish to the hub (a flag in the app's collaboration setup). Decide whether the hub doc needs any persistence (probably not; a fresh empty Y.Doc per session).
-- **O2 (privacy):** the hub room publishes tool names + input schemas to the plaintext-reading relay (ADR-0004). Fine for tab-manager; **never** for Local Books (financial), which is why it stays off the mesh and is reached via local MCP. Audit which apps' tool *names* are sensitive before they join the hub.
-- **O3 (lifecycle):** the hub collaboration lives for the app's lifetime; reuse the existing reconnect/auth signal wiring. No new lifecycle machinery.
-- **O4 (identity for hosted Super Chat):** if the Super Chat is a web app rather than one of your installed apps, it still joins `/api/owners/<userId>/rooms/hub` with the user's bearer; "which URL is the client connected from" is answered by the standard room URL + auth, not a new mechanism. A *remote/hosted* MCP server (as opposed to local stdio) would reintroduce the "which user" auth problem; defer it.
+A 2026-06-26 grill against the code (transport, presence, dispatch, the catalog, two real `session.ts` wirings, and the server ownership middleware) found no blocker, and four corrections to the sketch above. The one genuinely new primitive, the device-qualified catalog (D1), is prototyped and green on branch `proto/super-chat-d1`.
+
+### Drift the grill found (the sketch is right in shape, wrong in four details)
+
+1. `close_tabs@laptop` is not a legal tool name. The catalog's tool name is sent verbatim to the model as an OpenAI `function.name` (`packages/client/src/openai-provider.ts:124`), and that field must match `[a-zA-Z0-9_-]{1,64}`. An `@` is rejected, and one bad name 400s the whole tool list. The separator is `__` and the qualifier is sanitized to `[a-z0-9_-]`, the whole clamped to 64 (D1).
+2. `actions: app.actions` publishes too much. The relay reads plaintext (ADR-0004); the hub publishes every tool's name and input schema, and every dispatched call's input and result transit the relay too. An app publishes a curated `hubActions` subset, not its whole registry (O2: opensidian's `bash_exec` must not be on the hub).
+3. Presence carries no device label. A `Peer` is `{ nodeId, connectedAt, actions, agentId }` (`presence-protocol.ts:49-54`), with no human device name. Friendly qualifiers (`close_tabs__macbook`) need a label source, and adding one to presence is a coordinated relay deploy, which Part B forbids. D1 ships with a nodeId-fragment qualifier and a `labelForNode` seam (O1).
+4. D1 is the headline new primitive, not the only new code. The Super Chat also needs an MCP stdio client adapter (ingress) and a `mergeCatalogs` combinator. ADR-0073's spike already classified ingress as cheap, standalone, and relay-free, so it is mechanical, but it is real new modules, not zero.
+
+### D1: device-qualified dispatch catalog (the crux, prototyped)
+
+Decision: extend `createDispatchToolCatalog`, do not fork a variant. The change is a strict, backward-compatible superset. A single-provider name is unchanged, and a local action still owns the bare name and shadows a remote of the same name (a chat on a device defaults to that device). Only when two or more remote devices advertise the same action does the catalog qualify per device. This also fixes a latent bug in today's single-app rooms: two of your devices in one app's room already collide, and first-peer-wins silently drops one.
+
+One function, `buildRoutes`, builds the emitted-name to route table that both `definitions()` and `resolve()` read, so names and routes never drift:
+
+- Local actions: emitted bare, shadowing any remote of the same name. (unchanged)
+- A remote action only one device offers: emitted bare, routed to that nodeId. (unchanged)
+- A remote action two or more devices offer: emitted `<action>__<qualifier>` per device, each routed to its nodeId.
+
+The qualified name is a catalog-only display key. The model calls `close_tabs__phone`; `resolve` looks it up in the route table and dispatches the bare action `close_tabs` to the phone's nodeId. There is no string parsing on the call path, so a `__` inside an action key can never misroute.
+
+Qualifier: `labelForNode(nodeId)` if the caller supplies one (sanitized, clamped), else the last 6 chars of the nodeId. A nodeId is already `[a-z0-9]{16}` (`shared/id.ts:41`), so the fragment is model-name-safe and unique among a person's handful of devices; on a name clash the builder falls back to the full nodeId, which distinguishes any two devices.
+
+Where the label comes from is a seam, and either source avoids a relay change. The recommended one is a tiny `Y.Map` on the hub doc, `nodeId -> { label, appId }`, written by each app on join and read by the Super Chat. It rides the doc the relay already syncs as opaque binary, so it needs no presence or relay change. A presence field would be cleaner but is a coordinated relay deploy, so it is out of scope here. Until a label source exists, the nodeId fragment is the qualifier, which still lets the model target a specific device and never drops a tool.
+
+Prototype: branch `proto/super-chat-d1` (off main, not on PR #2214). `packages/workspace/src/agent/dispatch-catalog.ts` plus four tests. The device-targeting test proves two simulated devices both surface their `close_tabs` and that `resolve('close_tabs__phone')` dispatches `{ to: phoneNodeId, action: 'close_tabs' }`. 11/11 catalog tests and 23/23 agent tests pass; `bun run --filter '@epicenter/workspace' typecheck` is green.
+
+### O1: hub guid, opt-in, persistence
+
+- Guid: a reserved constant `HUB_ROOM_GUID = 'hub'`, exported from one home so the apps and the Super Chat import the same symbol. It cannot collide: real doc guids are 16-char nanoids (`shared/id.ts:41`), and the `ownerId` URL segment makes the room per-user.
+- Opt-in: an app opts in by calling a small `attachHubPresence(connection, { actions: hubActions })` helper alongside its data-room wiring, never by default. The "flag" is whether the app calls it, so a new app is off the hub until its tools are audited (O2). The helper uses `openCollaboration` directly against `HUB_ROOM_GUID` with no `attachLocalStorage`.
+- Persistence: none. Presence and dispatch ride the socket, not the doc, so the hub Y.Doc is empty and needs no IndexedDB and no server durability. (The optional label `Y.Map` is tiny ephemeral data re-published on connect, still no IndexedDB.)
+
+### O2: privacy audit (which tools may reach the plaintext relay)
+
+The hub does not just publish tool names. It publishes names plus input schemas, and every dispatched call's input and result transit the relay as plaintext (ADR-0004). So the gate is per tool, not per app: a tool may join the hub only when its name, its schema, and its dispatched input and output are no more sensitive than the data the app already syncs through the relay.
+
+- Safe (their data already lives on the relay): tab-manager (`tabs_*`, `saved_tabs_*`, `bookmarks_*`), fuji (`entries_*`), todos (`todos_*`), wiki (`pages_*`, `types_*`), whispering (`recordings_export_markdown`). These leak nothing beyond their synced workspace.
+- Curated subset only: opensidian. `files_*` operate inside the vault that already syncs, so they are defensible, but `bash_exec` runs arbitrary shell and pipes its output back, reaching the whole machine (env, secrets, files outside the vault) through the relay. Exclude `bash_exec` from `hubActions`. Today local-shadows-remote keeps bash in-process, so it has never transited the relay; joining the hub would be the first time, a real new exposure to refuse.
+- Never on the hub: Local Books (financial; ADR-0004/0072/0073) and any future app touching secrets, credentials, financial, or health data. They reach the Super Chat through local MCP, exactly as Part A built.
+
+The rule, which is ADR-0073 invariant 5 applied per tool: a tool whose call reaches beyond the app's own synced workspace (arbitrary shell, filesystem outside the workspace, network egress, secrets) does not go on the hub. It goes through a blind transport like MCP.
+
+### O3: lifecycle
+
+The hub collaboration reuses the existing wiring with no new machinery. It takes the same `auth.openWebSocket` and `auth.onStateChange` the data room already uses (`connect-doc.ts:73-77`), so token refresh and reconnect are handled by the same supervisor. Teardown is `hubDoc.destroy()` cascading through `openCollaboration`'s `[Symbol.dispose]`, wired into the app's session dispose next to the data doc. The only addition is one disposable handle the session owns. The cost is one extra socket and relay DO per hub-participating app instance, small for a single user.
+
+### O4: identity for a hosted Super Chat
+
+No new auth mechanism. A hosted Super Chat joins `/api/owners/<userId>/rooms/hub` with the user's bearer through the standard `auth.openWebSocket`. The server enforces the scoping: `require-ownership.ts:35-37` rejects any request whose URL `:ownerId` is not the authenticated user's id (403 OwnerMismatch), so a bearer for user A can never reach user B's hub. The Super Chat is just another mesh client with `actions: {}`.
+
+Keep deferred: a remote or hosted MCP server (as opposed to local stdio) would reintroduce a "which user" problem, because a stdio subprocess inherits the user's local credentials and env with no auth question, while a remote server needs its own per-user auth. Local Books stays local stdio (Part A already is), so this stays deferred.
+
+## New code inventory (the honest scope of Part B)
+
+1. `dispatch-catalog.ts` device qualification (D1). Prototyped, green.
+2. `attachHubPresence(connection, { actions })` helper. Mechanical: `openCollaboration` against `HUB_ROOM_GUID`, no IDB.
+3. An MCP stdio client `ToolCatalog` adapter (ingress): spawn `local-books mcp`, map `tools/list` to definitions and `tools/call` to `AgentToolOutcome`, set `kind` from `_meta["epicenter/tier"]` so a write tool gates. ADR-0073 spike finding 3 blessed this as standalone and relay-free.
+4. `mergeCatalogs(catalogs): ToolCatalog`: union definitions, route `resolve` by source. Namespace MCP tools (`local_books__query`) so a books tool never collides with a mesh tool.
+5. The Super Chat app shell: one `createAgentChatState({ agent: { toolCatalog: mergeCatalogs([hubCatalog, localBooks]) } })`, the same wiring as `apps/opensidian/src/lib/session.ts:44-79` pointed at the hub room with `actions: {}`.
+
+None of these touch the transport, the relay, or the model boundary.
+
+## Verdict
+
+Part B is a clean assembly of existing pieces, not a blocker. Every load-bearing claim in the sketch holds against the code: the hub room is the data-room mechanism at a reserved per-user guid, presence and dispatch already do what the Super Chat needs, the catalog-to-chat wiring is unchanged, and the per-user scoping is enforced server-side. The one real new primitive, D1, is built and green. The four corrections are refinements, not redesigns: a legal tool-name scheme, a curated hub manifest, a label seam, and an honest accounting of the MCP-ingress glue. Build it when a single cross-device chat is something you will use, behind the same wedge trigger ADR-0073 sets. When it lands, graduate the hub-room and device-qualified-catalog decisions into an ADR (or an amendment to ADR-0073).
 
 ---
 
@@ -262,13 +329,13 @@ MCP appears at exactly two airlocks (expose yours out; pull theirs in). Everythi
 ## Sequencing
 
 1. **Part A, now.** Build `local-books mcp`, verify end-to-end against Claude Code. It has a real consumer today and proves the airlock pattern. This is the entire executable scope of this spec.
-2. **Part B, when wanted.** The hub room + Super Chat is a product assembly of existing mesh pieces; the one real new primitive is the device-qualified catalog (D1). Start it only when a single chat across devices is a thing you will use, and reuse Part A's MCP server to fold Local Books in.
+2. **Part B, when wanted.** The hub room + Super Chat is a product assembly of existing mesh pieces; the one real new primitive is the device-qualified catalog (D1), now prototyped (`proto/super-chat-d1`). The design is settled (see [Verdict](#verdict)). Start the build only when a single chat across devices is a thing you will use, behind the ADR-0073 wedge trigger, and reuse Part A's MCP server to fold Local Books in.
 
 ## Risks / watch-items
 
 - MCP SDK version churn: pin `@modelcontextprotocol/sdk@^1.29`; re-confirm the low-level `Server` import paths against the installed `package.json` `exports` (the high-level docs only cover `McpServer`).
 - stdout contamination is the most common stdio-MCP failure; the automated test must assert a clean stream.
-- D1 (multi-device name collisions) is the one non-mechanical piece of Part B; do not let the first Super Chat ship with first-wins dedup.
+- D1 (multi-device name collisions) is the one non-mechanical piece of Part B; do not let the first Super Chat ship with first-wins dedup. Resolved and prototyped (`proto/super-chat-d1`): collision-qualified tool names routed by nodeId, with `__` (not `@`, which the model API rejects) as the separator.
 
 ## Definition of done (Part A)
 

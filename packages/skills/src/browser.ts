@@ -116,6 +116,7 @@ export function openSkillsBrowser() {
 	return {
 		...doc,
 		idb,
+		whenReady: idb.whenLoaded,
 		instructionsDocs,
 		referenceDocs,
 		actions,

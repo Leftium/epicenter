@@ -90,7 +90,9 @@ export async function readBooksStatus({
 		};
 	}
 
-	const db = openBooksDb(path);
+	// Read-only: a status read must not bump schema_version or block on a
+	// concurrent sync's write lock (and a reader must never drop tables).
+	const db = openBooksDb(path, { readonly: true });
 	try {
 		const realm = db.readRealmState();
 		return {

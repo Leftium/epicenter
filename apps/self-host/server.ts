@@ -33,10 +33,14 @@
  * keeping the instance Bun-or-Cloudflare (the operator supplies the secret either
  * way).
  *
- * Surface: session + rooms + inference behind one bearer, zero billing, no
- * dashboard SPA, no auth surface. Blobs are intentionally not mounted; add
- * `mountBlobsApp` with `BLOBS_S3_*` set to offer a content-addressed media store
- * against any S3.
+ * Surface: session + rooms + inference + blobs behind one bearer, zero billing,
+ * no dashboard SPA, no auth surface. The blob store is a portable
+ * content-addressed media store over any S3 (your own MinIO/Garage/R2); it is
+ * mounted by default and answers 503 until `BLOBS_S3_*` is set, exactly as the
+ * inference gateway answers 503 until a provider house key is set. Owning your
+ * own media on your own bucket is squarely the instance's purpose; configure
+ * `BLOBS_S3_*` to turn it on, or leave it unconfigured to run without object
+ * storage.
  */
 
 import { mkdirSync } from 'node:fs';
@@ -48,6 +52,7 @@ import {
 	createInstanceTokenResolver,
 	createServerApp,
 	instance,
+	mountBlobsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -159,6 +164,11 @@ export function startSelfHostServer(): void {
 		ownership,
 		policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
 	});
+	// Content-addressed media store over any S3, mounted by default; it answers 503
+	// until `BLOBS_S3_*` is set (the same honest opt-out as inference's house key).
+	// Storage is the operator's own bucket, so there is no house key to burn and no
+	// rate-limit policy here.
+	mountBlobsApp(app, { ownership, auth: requireBearerUser });
 
 	const server = Bun.serve({
 		port,

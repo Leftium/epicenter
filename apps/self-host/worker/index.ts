@@ -26,6 +26,7 @@ import {
 	createInstanceTokenResolver,
 	createServerApp,
 	instance,
+	mountBlobsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -91,6 +92,10 @@ mountInferenceApp(app, {
 	ownership,
 	policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
 });
+// Content-addressed media store over any S3, mounted by default; it answers 503
+// until the operator sets `BLOBS_S3_*` (the same honest opt-out as inference's
+// house key). Storage is the operator's own bucket, so no house key to burn.
+mountBlobsApp(app, { ownership, auth: requireBearerUser });
 
 export default app;
 export { Room };

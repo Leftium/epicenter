@@ -204,32 +204,48 @@ const hub = openCollaboration(hubDoc, {
 ### Pseudocode: chat side (the collapsed shape after the dual review)
 
 ```ts
-const hubDoc = new Y.Doc({ guid: TOOL_HUB_GUID });
-const hub = openCollaboration(hubDoc, {
-  url: roomWsUrl({ baseURL, ownerId: user.id, guid: TOOL_HUB_GUID, nodeId }),
-  openWebSocket: auth.openWebSocket,
-  onReconnectSignal: auth.onStateChange,
-  actions: {},            // the chat owns no tools; it only consumes peers'
-});
+// One interface for every source: DispatchSurface = { peers.list(), dispatch(req) }.
+// Sources MUST be disjoint (no node reachable two ways), which fixes the layering:
+//   hub       = the cross-device tool layer (CURATED publishedActions)
+//   MCP       = standalone / off-mesh tools (Local Books), one synthetic peer
+//   data room = DATA ONLY (no longer a tool surface; see note below)
+//   local     = in-process, a SEPARATE input (the bare default; in-process != remote)
 
-// Off-mesh / sensitive tools (Local Books) are a LOCAL MCP source, not on the
-// hub. Cache its tools/list as a synthetic peer; route a call to it as tools/call.
-const books = await openMcpSource('local-books', ['mcp']);   // -> { peer, dispatch }
+// The whole composition concept, one combinator (only needed for 2+ sources):
+function composeSurfaces(...sources: DispatchSurface[]): DispatchSurface {
+  return {
+    peers: { list: () => sources.flatMap((s) => s.peers.list()) },
+    dispatch: (req) => {
+      const owner = sources.find((s) =>
+        s.peers.list().some((p) => p.nodeId === req.to),
+      );
+      return owner
+        ? owner.dispatch(req)
+        : Promise.resolve(Err(DispatchError.NoPeer(req.to)));
+    },
+  };
+}
 
-// One catalog, one address space: the MCP source is just another peer the
-// existing union handles. No mergeCatalogs, no per-source name scheme.
-const surface = {
-  peers: { list: () => [...hub.peers.list(), books.peer] },
-  dispatch: (req) =>
-    req.to === books.peer.nodeId ? books.dispatch(req) : hub.dispatch(req),
-};
-const catalog = createDispatchToolCatalog(surface, { selfNodeId: nodeId });
-//   definitions() -> union of every hub peer's tools + Local Books, qualified on collision
-//   resolve(call) -> dispatch the BARE action to the owning nodeId (relay or MCP)
+// Epicenter master chat (B): hub + standalone MCP; ~no local of its own.
+const hub = openToolHub(connection, { actions: {} });        // a DispatchSurface
+const books = await openMcpSource('local-books', ['mcp']);   // a DispatchSurface (one synthetic peer)
+const catalog = createDispatchToolCatalog(
+  composeSurfaces(hub, books),
+  { localActions: epicenter.actions, selfNodeId: nodeId },
+);
 
-createAgentChatState({ agent: { toolCatalog: catalog, /* engine, approval */ } });
+// Per-app opted-in chat (A): ONE source -> pass it directly, no composeSurfaces.
+//   createDispatchToolCatalog(hub, { localActions: app.actions, selfNodeId })
+// Local-only app (default): no remote source at all -> just localActions.
+
+createAgentChatState({ agent: { toolCatalog: catalog /* engine, approval */ } });
 // Model boundary stays OpenAI-compatible: tools go to the model as OpenAI tool
 // defs (ADR-0050); MCP never touches the model.
+
+// Why data-room-as-tool-surface is dropped: under R2 (surface-both), sourcing
+// remote tools from the data room would surface a peer's FULL uncurated actions
+// (incl. bash_exec) cross-device over the relay, reopening the O2 hole. The hub
+// (curated) is the sole remote-tool layer; the data room goes back to data-only.
 ```
 
 The catalog -> chat wiring already exists: `createDispatchToolCatalog(surface, { localActions })` is handed to `createAgentChatState({ agent: { toolCatalog } })` (real example: `apps/opensidian/src/lib/session.ts:75-77`, `packages/app-shell/src/agent-chat/agent-chat.svelte.ts:98-109`, loop at `packages/workspace/src/agent/loop.ts:131-140`). The chat is that same wiring pointed at the hub room (plus the MCP source) instead of one app's data room.
@@ -251,13 +267,13 @@ A 2026-06-26 grill against the code (transport, presence, dispatch, the catalog,
 
 ### D1: device-qualified dispatch catalog (the crux, prototyped)
 
-Decision: extend `createDispatchToolCatalog`, do not fork a variant. The change is a strict, backward-compatible superset. A single-provider name is unchanged, and a local action still owns the bare name and shadows a remote of the same name (a chat on a device defaults to that device). Only when two or more remote devices advertise the same action does the catalog qualify per device. This also fixes a latent bug in today's single-app rooms: two of your devices in one app's room already collide, and first-peer-wins silently drops one.
+Decision: extend `createDispatchToolCatalog`, do not fork a variant. The change is a backward-compatible superset (existing bare-name behavior is preserved; it only adds qualified names). A single-provider name is unchanged. A local action takes the bare name (the device the chat runs on is the default), but a remote of the same name is no longer shadowed: it is surfaced under a per-device qualified name so other devices stay reachable (R2, resolved 2026-06-27, reversing the prototype's shadow rule). This also closes the latent collision in today's single-app rooms, where two of your devices offer the same action and first-peer-wins silently drops one; now each is reachable.
 
-One function, `buildRoutes`, builds the emitted-name to route table that both `definitions()` and `resolve()` read, so names and routes never drift:
+One function, `buildRoutes`, builds the emitted-name to route table that both `definitions()` and `resolve()` read, so names and routes never drift. The bare name goes to the default owner; every other owner of that name is qualified (R2):
 
-- Local actions: emitted bare, shadowing any remote of the same name. (unchanged)
-- A remote action only one device offers: emitted bare, routed to that nodeId. (unchanged)
-- A remote action two or more devices offer: emitted `<action>__<qualifier>` per device, each routed to its nodeId.
+- A local action: emitted bare, routed in-process. The device the chat runs on is the default.
+- A remote that collides with a local action, or with another remote, of the same name: emitted `<action>__<qualifier>` per device, each routed to its nodeId. Other devices are reachable, not shadowed.
+- A remote action with no local and only one offering device: emitted bare, routed to that nodeId.
 
 The qualified name is a catalog-only display key. The model calls `close_tabs__<fragment>`; `resolve` looks it up in the route table and dispatches the bare action `close_tabs` to that device's nodeId. There is no string parsing on the call path, so a `__` inside an action key can never misroute. Recommended hardening: now that `__` is the catalog's qualification separator, tighten `ACTION_KEY_PATTERN` to forbid `__` in authored action keys (nothing in the repo uses it today), so the human and the model never confuse `foo__bar` the authored tool with `foo` qualified by device `bar`.
 
@@ -276,7 +292,7 @@ Prototype: branch `proto/super-chat-d1` (off main, not on PR #2214), two commits
 The hub does not just publish tool names. It publishes names plus input schemas, and every dispatched call's input and result transit the relay as plaintext (ADR-0004). So the gate is per tool, not per app: a tool may join the hub only when its name, its schema, and its dispatched input and output are no more sensitive than the data the app already syncs through the relay.
 
 - Safe (their data already lives on the relay): tab-manager (`tabs_*`, `saved_tabs_*`, `bookmarks_*`), fuji (`entries_*`), todos (`todos_*`), wiki (`pages_*`, `types_*`), whispering (`recordings_export_markdown`). These leak nothing beyond their synced workspace.
-- Curated subset only: opensidian. `files_*` operate inside the vault that already syncs, so they are defensible, but `bash_exec` runs arbitrary shell and pipes its output back, reaching the whole machine (env, secrets, files outside the vault) through the relay. Exclude `bash_exec` from `publishedActions`. Today local-shadows-remote keeps bash in-process, so it has never transited the relay; joining the hub would be the first time, a real new exposure to refuse.
+- Curated subset only: opensidian. Read-only `files_*` (`files_read`, `files_list`) are defensible: they ship only vault data that already syncs through the relay, so they add no new exposure, and reading your own vault from another device is the genuinely useful cross-device capability. Withhold the mutating `files_write` / `files_delete` to start, not for relay-leak (the written content would sync anyway) but for blast radius: a cross-device file mutation is a higher-stakes write you are not present for; add it later behind explicit approval if a real need appears. Exclude `bash_exec` outright: it runs arbitrary shell and pipes output back, reaching the whole machine (env, secrets, files outside the vault). Under R2 (surface-both) there is no longer a shadow keeping a remote tool in-process, so `publishedActions` curation is the sole gate: an unaudited app stays off the hub entirely (O1 opt-in), and a sensitive tool is simply never published.
 - Never on the hub: Local Books (financial; ADR-0004/0072/0073) and any future app touching secrets, credentials, financial, or health data. They reach the chat through local MCP, exactly as Part A built.
 
 The rule, which is ADR-0073 invariant 5 applied per tool: a tool whose call reaches beyond the app's own synced workspace (arbitrary shell, filesystem outside the workspace, network egress, secrets) does not go on the hub. It goes through a blind transport like MCP.
@@ -298,8 +314,10 @@ A two-reviewer pass (see [Dual-review adjudication](#dual-review-adjudication-20
 1. `dispatch-catalog.ts` device qualification (D1). Prototyped, green.
 2. `openToolHub(connection, { actions })` helper. Mechanical: `openCollaboration` against `TOOL_HUB_GUID`, no IDB; returns the Disposable collaboration the session owns. (`open*`, not `attach*`: it opens a resource.)
 3. An MCP stdio source: spawn `local-books mcp`, cache its `tools/list` as a synthetic `Peer` (mapping each tool to `query`/`mutation` for `Peer.actions[*].type`: a *trusted* source like our own server reads `annotations.destructiveHint`; a foreign/untrusted source defaults every tool to `mutation`), and route a dispatch addressed to it to a `tools/call`. It is presented to D1 as one more entry in `peers.list()` and one more branch in `dispatch`, NOT a second catalog. ADR-0073 spike finding 3 blessed the ingress adapter as standalone and relay-free.
-4. The chat surface: compose the hub collaboration and the MCP source into one `DispatchSurface` (`peers` = hub peers plus the MCP peer; `dispatch` routes the MCP nodeId to the stdio client, everything else to the relay), then `createDispatchToolCatalog(composedSurface)`. ~10 lines at the call site, no new primitive. Collision-qualification then handles an MCP-vs-mesh name clash with the same tool-first `__` rule (`query__<booksFragment>`), so no `mcp__`-prefix scheme is needed.
-5. There is no "Super Chat app." It is the existing `createAgentChatState` (`apps/opensidian/src/lib/session.ts:44-79`) handed the composed catalog, with `actions: {}`.
+4. `composeSurfaces(...sources)`: a ~6-line combinator (the one genuinely new primitive besides D1) that unions the sources' peers and routes a dispatch to the source owning the target nodeId. It replaces the inline per-call-site merge, and is only reached for at 2+ sources (a one-source chat passes the surface directly). Sources MUST be disjoint, which settles the layering: the hub is the curated cross-device tool layer, MCP is standalone, and the **data room stops being a tool surface (data-only)** — required under R2, since surfacing a data-room peer's full uncurated actions (incl. `bash_exec`) cross-device would reopen the O2 hole. Collision-qualification then handles any cross-source name clash with the same tool-first `__` rule (`query__<booksFragment>`), so no `mcp__`-prefix scheme is needed.
+5. There is no standalone "Super Chat" engine: it is the existing `createAgentChatState` (`apps/opensidian/src/lib/session.ts:44-79`) handed a composed catalog. Two homes, one primitive (Decision 4, resolved 2026-06-27): **Epicenter** is a hub-first master app (B) whose chat composes `composeSurfaces(hub, books, ...)`; any other app opts in (A) by composing the hub into its own catalog, and defaults local-only until it does. `localActions` stays a separate input in every case (the in-process bare default); an app-hosted chat is what gives R2 its bare default, so a free-floating `actions: {}` chat is not the shape.
+
+Deliberately out of scope (no consumer yet, so not designed in, only noted as additive): a tool-list **scoping / progressive-disclosure** layer (curation plus opting in only the sources you want keeps the live count to dozens; build router/search tools only if it ever reaches the hundreds), and the dispatch **async-job tier** (results-over-time for a long job dispatched to a device that may sleep before it finishes; every current tool answers inline in seconds). Both are additive the day a real consumer appears; neither is part of this build.
 
 None of these touch the transport, the relay, or the model boundary.
 

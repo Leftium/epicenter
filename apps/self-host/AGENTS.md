@@ -12,7 +12,7 @@ Multi-tenancy (per-user partitions, OAuth, billing) is Epicenter Cloud's only (`
 - Do not add `autumn-js`, `AUTUMN_SECRET_KEY`, or `/api/billing/*` routes.
 - Do not add a dashboard SPA or Workers Static Assets binding.
 - Do not add OAuth, sessions, an allowlist, a launch-time mode selector, or first-boot token minting back: the instance is bearer-only by design (ADR-0073).
-- Do not re-add Better Auth, Postgres, a `pg` pool, `DATABASE_URL`, `BETTER_AUTH_SECRET`, or a Hyperdrive binding: the relational-auth substrate is Cloud-only (`mountCloudAuth`), and the instance composes neither (ADR-0074). It uses `requireBearerUser` (never `requireCookieOrBearerUser`) and passes no rooms telemetry recorder.
+- Do not re-add Better Auth, Postgres, a `pg` pool, `DATABASE_URL`, `BETTER_AUTH_SECRET`, or a Hyperdrive binding: the relational-auth substrate is Cloud-only (`mountCloudAuth`), and the instance composes neither (ADR-0074). It uses `requireBearerUser` (never `requireCookieOrBearerUser`). The rooms route records no telemetry on any deployment (the write-only `durableObjectInstance` table and its recorder seam were deleted, ADR-0074), so there is no telemetry knob to set here.
 - Do not collapse `INSTANCE_OWNER_ID` into env config: it is byte-pinned durable data (R2 prefix, DO name prefix, IDB prefix). The partition is pinned to the constant, decoupled from caller identity, so named tokens never re-partition.
 
 ## When editing

@@ -1,9 +1,10 @@
 /**
  * @epicenter/server
  *
- * Shared Hono server for Epicenter cloud and self-hosted shared wiki
- * deployments. Personal mode partitions data by user; shared mode uses
- * one shared owner partition. The full design lives in
+ * One shared Hono library, two deployables (ADR-0073): the hosted Epicenter
+ * Cloud (`personal`, multi-tenant, partition keyed per user) and the self-hosted
+ * single-partition instance (`instance`, one pinned `owners/instance` partition
+ * behind one operator bearer). The full design lives in
  * `specs/20260522T230000-server-package-split.md`.
  *
  * Deployments construct the server app, choose an `OwnershipRule`, then

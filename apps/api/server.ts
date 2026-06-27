@@ -11,9 +11,10 @@
  *   - blobs           any S3 endpoint via the existing `BLOBS_S3_*` env
  *
  * This is additive: `wrangler dev`/`deploy` still serve the Worker unchanged.
- * `bun --watch server.ts` boots instantly with real stack traces, and the same
- * entry is the "one binary + Postgres + S3, no Cloudflare account" self-host
- * artifact (and what a Tauri shell embeds locally).
+ * `bun --watch server.ts` boots instantly with real stack traces. It is the
+ * hosted cloud on Bun (local dev and the runtime-parity smoke), NOT the self-host
+ * artifact: the single-partition instance has its own entry
+ * (`apps/self-host/server.ts`), composing no Better Auth and no Postgres (ADR-0073).
  *
  * The wiring lives in {@link startBunApiServer} so `server.dev.ts` can boot the
  * SAME server with a dev `resolveUser` injected (the parity smoke's credential)
@@ -83,7 +84,7 @@ export function startBunApiServer(
 	const { origin, dataDir } = startBunServer({
 		env,
 		defaultPort: 8788,
-		mode: 'hub',
+		product: 'hub',
 		ownership: personal(),
 		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 		mountExtras: (app, ownership) =>

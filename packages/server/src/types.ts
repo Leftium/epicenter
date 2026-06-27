@@ -61,9 +61,9 @@ export type ResolveUser = (
  * Relay treats the value as opaque (it forwards JSON to peers, never inspects).
  *
  * In personal mode every connection to a given DO shares the same `userId`
- * (the DO name partitions by user). In shared mode connections can carry
- * different `userId` values because admitted users share the DO. The DO never
- * branches on which mode it is in.
+ * (the DO name partitions by user). On an instance every connection resolves to
+ * the one pinned partition; the DO is owner-blind and never branches on which
+ * deployment it is.
  */
 export type Connection = {
 	userId: UserId;

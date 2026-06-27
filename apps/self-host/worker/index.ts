@@ -69,7 +69,7 @@ const app = createServerApp({
 });
 
 app.get('/', (c) =>
-	c.json({ mode: 'instance', version: '0.1.0', runtime: 'cloudflare' }),
+	c.json({ product: 'instance', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
 // No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The

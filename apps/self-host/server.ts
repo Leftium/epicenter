@@ -140,7 +140,7 @@ export function startSelfHostServer(): void {
 	});
 
 	app.get('/', (c) =>
-		c.json({ mode: 'instance', version: '0.1.0', runtime: 'bun' }),
+		c.json({ product: 'instance', version: '0.1.0', runtime: 'bun' }),
 	);
 	// No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The
 	// operator bearer (the `resolveUser` above) is the only gate, so every surface

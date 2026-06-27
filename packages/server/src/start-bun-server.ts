@@ -1,5 +1,5 @@
 /**
- * `startBunServer` — the hosted (apps/api) Bun process bootstrap (ADR-0066).
+ * `startBunServer`: the hosted (apps/api) Bun process bootstrap (ADR-0066).
  *
  * Everything mechanical for the hosted cloud on Bun (the `pg.Pool`, the
  * `bun:sqlite` room registry, the `bun()` adapter, `createServerApp`, the cloud
@@ -70,8 +70,8 @@ export type StartBunServerOptions = {
 	env: BunHostBindings;
 	/** Port to listen on when `env.PORT` is unset (apps/api 8788). */
 	defaultPort: number;
-	/** The `mode` string the health endpoint returns at `/` (`hub`). */
-	mode: string;
+	/** The `product` string the health endpoint returns at `/` (the cloud passes `hub`). */
+	product: string;
 	/** This deployment's partition rule (apps/api passes `personal()`). */
 	ownership: OwnershipRule;
 	/** The origins this deployment trusts (CORS, cookie-CSRF, Better Auth redirects). */
@@ -100,7 +100,7 @@ export type StartBunServerOptions = {
 export function startBunServer({
 	env,
 	defaultPort,
-	mode,
+	product,
 	ownership,
 	resolveTrustedOrigins,
 	cookieDomain,
@@ -134,7 +134,7 @@ export function startBunServer({
 		resolveUser: resolveUser ?? resolveRequestOAuthUser,
 	});
 
-	app.get('/', (c) => c.json({ mode, version: '0.1.0', runtime: 'bun' }));
+	app.get('/', (c) => c.json({ product, version: '0.1.0', runtime: 'bun' }));
 	// The cloud's relational-auth layer (Better Auth on `c.var.auth` + the auth
 	// surface), mounted before the owner-scoped surfaces read it.
 	mountCloudAuth(app, { cookieDomain });

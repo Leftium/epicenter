@@ -97,10 +97,12 @@ export function createAuth({
 		// on restores that login-CSRF / session-fixation defense.
 		//
 		// Each provider is registered only when its credentials are configured,
-		// so the hosted star is Google-by-default, a custom shared wiki adds
-		// whichever providers its operator set, and the single-partition instance
-		// offers none (it has no OAuth; the operator bearer is the gate, ADR-0073)
-		// instead of a button that 500s. better-auth requests `read:user` +
+		// so the hosted star is Google-by-default and a custom self-hosted
+		// deployment that configures an OAuth app adds whichever providers it set,
+		// instead of a button that 500s. The single-partition instance offers none:
+		// it composes no Better Auth at all (this builder is cloud-only, reached
+		// only through `mountCloudAuth`), and the operator bearer is its only gate
+		// (ADR-0073). better-auth requests `read:user` +
 		// `user:email` for GitHub by default, so it reads the primary email and
 		// GitHub's verification flag. GitHub is deliberately NOT a trusted linking
 		// provider (see BASE_AUTH_CONFIG): an unverified GitHub email must not link
@@ -157,12 +159,13 @@ export function createAuth({
 			user: {
 				delete: {
 					before: async (user) => {
-						// Partition cleanup. In personal mode `owner_id === user.id`
-						// so this deletes the user's DOI rows. In shared mode
-						// `owner_id === 'shared' !== user.id` so the query no-ops and
-						// shared data survives admission churn. Without an FK + cascade,
-						// the row delete is explicit here. (Content-addressed blob bytes
-						// live owner-prefixed in object storage with no DB row; an
+						// Partition cleanup. This hook is cloud-only: Better Auth is a
+						// cloud-only layer (`mountCloudAuth`), and the single-partition
+						// instance composes none, so it never runs there (ADR-0073). On
+						// the cloud (personal mode) `owner_id === user.id`, so this deletes
+						// the deleting user's `durableObjectInstance` rows. Without an FK +
+						// cascade, the row delete is explicit here. (Content-addressed blob
+						// bytes live owner-prefixed in object storage with no DB row; an
 						// occasional LIST sweep reclaims an orphaned owner prefix.)
 						const ownerId = asOwnerId(user.id);
 

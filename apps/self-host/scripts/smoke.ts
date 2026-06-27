@@ -2,9 +2,9 @@
  * One-scenario smoke for the single-partition instance (ADR-0073). Same backend,
  * either runtime (the Bun entry or the wrangler Worker).
  *
- * Unlike the old shared-wiki smoke, this needs no dev credential bypass: an
- * instance's credential is trivially supplied, so the smoke drives the REAL bearer
- * path end to end. It proves both outcomes:
+ * This needs no dev credential bypass: an instance's credential is trivially
+ * supplied, so the smoke drives the REAL bearer path end to end. It proves both
+ * outcomes:
  *   - the operator-supplied bearer resolves the `owners/instance` partition and
  *     opens a room (200)
  *   - a wrong bearer is rejected (401), before any partition is resolved
@@ -70,11 +70,11 @@ async function main() {
 	// 1. Health (no auth). Reports the mode + runtime that answered.
 	try {
 		const res = await fetch(`${BASE_URL}/`);
-		const body = (await res.json()) as { mode?: string; runtime?: string };
+		const body = (await res.json()) as { product?: string; runtime?: string };
 		record(
 			res.ok ? 'PASS' : 'FAIL',
 			'health',
-			`${res.status} mode=${body.mode ?? '?'} runtime=${body.runtime ?? '?'}`,
+			`${res.status} product=${body.product ?? '?'} runtime=${body.runtime ?? '?'}`,
 		);
 	} catch (err) {
 		record('FAIL', 'health', `unreachable: ${(err as Error).message}`);

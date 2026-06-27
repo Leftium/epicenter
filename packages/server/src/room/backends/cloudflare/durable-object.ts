@@ -76,8 +76,8 @@ const CONNECTION_SWEEP_INTERVAL_MS = 5 * 60_000;
  * internal DO name before calling RPC methods or forwarding `fetch`. The
  * DO itself does not re-validate. DO names are host-owned opaque strings
  * built by `doName(ownerId, roomId)`, producing `owners/<ownerId>/rooms/<roomId>`
- * in both modes (in personal mode `ownerId === user.id`, in shared mode
- * `ownerId === 'shared'`).
+ * for either deployment (in personal mode `ownerId === user.id`, on an instance
+ * `ownerId` is the pinned `INSTANCE_OWNER_ID`).
  */
 export class Room extends DurableObject {
 	/**

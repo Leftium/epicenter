@@ -1,5 +1,5 @@
 /**
- * `mountCloudAuth` — the cloud-only relational-auth layer (Better Auth + Postgres).
+ * `mountCloudAuth`: the cloud-only relational-auth layer (Better Auth + Postgres).
  *
  * The hosted cloud composes Better Auth: a per-request `c.var.auth` instance
  * (sessions, OAuth, JWKS) over Postgres, plus the `authApp` surface (sign-in,

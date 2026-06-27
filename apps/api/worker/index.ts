@@ -75,7 +75,7 @@ const app = createServerApp({
 
 // Public health endpoint at root.
 app.get('/', (c) =>
-	c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
+	c.json({ product: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
 // Cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`

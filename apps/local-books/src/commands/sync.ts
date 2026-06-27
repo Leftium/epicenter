@@ -1,9 +1,9 @@
 import ms from 'ms';
+import { createQbAccess } from '../books/qb-access.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
 import { dbPath } from '../paths.ts';
-import { createQbClient } from '../qb-client.ts';
 import {
 	repairEntities,
 	runSyncLoop,
@@ -11,7 +11,6 @@ import {
 	type SyncOutcome,
 	syncRealm,
 } from '../sync.ts';
-import { createTokenManager } from '../token-manager.ts';
 import { resolveCompany } from './context.ts';
 
 /** Print one sync pass: the realm line + per-entity counts to stdout, failures to stderr. */
@@ -61,18 +60,21 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const token = await store.get(realmId);
-	if (!token) {
-		console.error(
-			`No stored token for company ${realmId}. Run "local-books auth".`,
-		);
-		return 1;
-	}
-
 	const now = () => Date.now();
 	const log = (m: string) => console.error(m);
-	const tokens = createTokenManager({ config, store, token, now });
-	const client = createQbClient({ config, realmId, tokens, log });
+	// The same opener report/recategorize/MCP use: it reloads the token and
+	// builds the client, or returns a "run auth" reason. One way to open a client.
+	const { data: client, error: openError } = await createQbAccess({
+		config,
+		realmId,
+		store,
+		now,
+		log,
+	})();
+	if (openError !== null) {
+		console.error(openError);
+		return 1;
+	}
 	const db = openBooksDb(dbPath(config.dataDir, realmId));
 	const deps: SyncDeps = { db, client, config, now, log };
 

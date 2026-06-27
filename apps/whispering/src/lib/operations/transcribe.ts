@@ -103,6 +103,17 @@ type UploadDispatch =
 	  };
 
 /**
+ * Read a provider API key through the credential facade (ADR-0074): the key when
+ * set, undefined when missing. A provider key is a secret, so it routes through
+ * `secrets`, never raw `deviceConfig`, which is what makes the user-global vault
+ * cover transcription once auth lands. Device-local plaintext today.
+ */
+function secretApiKey(key: SecretKey): string | undefined {
+	const read = secrets.get(key);
+	return read.status === 'available' ? read.value : undefined;
+}
+
+/**
  * Every upload transcription provider, keyed by id. `satisfies Record<UploadProviderId,
  * UploadDispatch>` makes the table total over the non-local providers: a new cloud or
  * self-hosted provider is a compile error until it has an entry, and a local provider
@@ -114,17 +125,6 @@ type UploadDispatch =
  * clients because they do not speak the wire (Deepgram's raw body + `Authorization:
  * Token`, ElevenLabs' `xi-api-key`, Mistral's `context_bias`); ADR-0060 blesses it.
  */
-/**
- * Read a provider API key through the credential facade (ADR-0074): the key when
- * set, undefined when missing. A provider key is a secret, so it routes through
- * `secrets`, never raw `deviceConfig`, which is what makes the user-global vault
- * cover transcription once auth lands. Device-local plaintext today.
- */
-function secretApiKey(key: SecretKey): string | undefined {
-	const read = secrets.get(key);
-	return read.status === 'available' ? read.value : undefined;
-}
-
 const UPLOAD_DISPATCH = {
 	OpenAI: {
 		kind: 'wire',

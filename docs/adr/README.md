@@ -141,5 +141,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md) | OAuth is hosted-only; a custom instance requires a token | Accepted |
 | [0072](0072-the-self-host-star-mints-and-persists-its-own-first-boot-bearer.md) | The self-host star mints and persists its own first-boot bearer | Superseded by [0073](0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) |
 | [0073](0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) | Self-host is a single-partition instance behind one operator-supplied bearer; multi-tenancy is Cloud-only | Accepted |
+| [0074](0074-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md) | The relational-auth substrate (Better Auth + Postgres) is a Cloud-only layer; the instance composes neither | Accepted |
 
 When you add an ADR, add its row here.

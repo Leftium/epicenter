@@ -86,5 +86,6 @@ The escape, when that pain is real, is named per-person tokens: a hashed token r
 ## See also
 
 - [ADR-0073](../../docs/adr/0073-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) for why an instance is one partition behind one bearer
+- [ADR-0074](../../docs/adr/0074-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md) for why the instance composes no Better Auth and no Postgres
 - `apps/api` for the hosted personal cloud variant (OAuth, per-user partitions, billing)
 - `packages/server` for the shared library both deployables compose

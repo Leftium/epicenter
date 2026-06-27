@@ -165,7 +165,7 @@ export function createAgentChatState({
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
-		const metadata = $derived(conversationsMap.get(conversationId));
+		const metadata = $derived(conversationsMap.byId(conversationId));
 		/** The conversation's model (ADR-0055), read once for both the engine turn
 		 * and the picker's `model` getter. `model` is a required column, so this only
 		 * falls back when the row was deleted out from under a still-live handle (a
@@ -421,7 +421,7 @@ export function createAgentChatState({
 		for (const id of handles.keys()) {
 			if (!conversationsMap.has(id)) destroyConversation(id);
 		}
-		for (const id of conversationsMap.keys()) {
+		for (const id of conversationsMap.allIds()) {
 			const conversationId = asConversationId(id);
 			if (!handles.has(conversationId)) {
 				handles.set(conversationId, createConversationHandle(conversationId));
@@ -489,7 +489,6 @@ export function createAgentChatState({
 		[Symbol.dispose]() {
 			_unobserve();
 			for (const id of [...handles.keys()]) destroyConversation(id);
-			conversationsMap[Symbol.dispose]();
 		},
 
 		get active() {

@@ -1,4 +1,4 @@
-import { asFileId, type FileId, type FileRow } from '@epicenter/filesystem';
+import type { FileId, FileRow } from '@epicenter/filesystem';
 import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import type { OpensidianBrowser } from 'opensidian/browser';
@@ -24,11 +24,12 @@ type InteractionMode =
  * The session creates one instance and exposes it at
  * `opensidian.state.files`.
  *
- * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
- * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
- * iteration on any row change: acceptable for <5000 files). Paths are
- * computed lazily via `computePath()`: only the accessed file's ancestor
- * chain is tracked, so `selected` and `PathBreadcrumb` stay fine-grained.
+ * Reactivity: `fromTable()` provides a coarse-grained `ReadonlyTableView`.
+ * It is NOT per-key reactive: any change to the table re-runs every reader.
+ * `childrenOf` derives tree structure eagerly (O(n) iteration on any row
+ * change: acceptable for <5000 files). Paths are computed lazily via
+ * `computePath()`, but because the view is coarse-grained, any table change
+ * re-runs path-dependent derivations too.
  *
  * @example
  * ```svelte
@@ -71,10 +72,10 @@ export function createFilesState({
 	/** Parent→children mapping. Groups non-trashed file IDs by parentId. */
 	const childrenOf = $derived.by(() => {
 		const map = new Map<FileId | null, FileId[]>();
-		for (const [id, row] of filesMap) {
+		for (const row of filesMap.all) {
 			if (row.trashedAt !== null) continue;
 			const siblings = map.get(row.parentId) ?? [];
-			siblings.push(asFileId(id));
+			siblings.push(row.id);
 			map.set(row.parentId, siblings);
 		}
 		return map;
@@ -85,10 +86,10 @@ export function createFilesState({
 	/**
 	 * Build the full POSIX path for a file by walking up the ancestor chain.
 	 *
-	 * O(depth) per call: typically 3-5 `filesMap.get()` lookups. In a reactive
-	 * context (`$derived`), this creates fine-grained dependencies on only the
-	 * accessed file's ancestors, not every row in the tree. In an imperative
-	 * context (action methods), it's a plain lookup with no reactive cost.
+	 * O(depth) per call: typically 3-5 `filesMap.byId()` lookups. The view is
+	 * coarse-grained, so in a reactive context (`$derived`) any table change
+	 * re-runs the derivation. In an imperative context (action methods), it's a
+	 * plain lookup with no reactive cost.
 	 *
 	 * Replaces the previous eager `pathIndex` derived which rebuilt all paths
 	 * (O(n) string concatenation) on any row change.
@@ -103,14 +104,14 @@ export function createFilesState({
 	 * ```
 	 */
 	function computePath(id: FileId): string | null {
-		const row = filesMap.get(id);
+		const row = filesMap.byId(id);
 		if (!row || row.trashedAt !== null) return null;
 
 		const parts: string[] = [row.name];
 		let parentId = row.parentId;
 
 		while (parentId !== null) {
-			const parent = filesMap.get(parentId);
+			const parent = filesMap.byId(parentId);
 			if (!parent || parent.trashedAt !== null) return null;
 			parts.unshift(parent.name);
 			parentId = parent.parentId;
@@ -125,19 +126,18 @@ export function createFilesState({
 	/**
 	 * Active file's row data.
 	 *
-	 * Fine-grained: only tracks the active file's row via `filesMap.get()`.
-	 * Unrelated row changes don't trigger recomputation.
+	 * Looked up via `filesMap.byId()`. The view is coarse-grained, so any
+	 * table change re-runs this derivation.
 	 */
 	const selectedNode = $derived.by(() => {
 		const fileId = searchParams.file;
-		return fileId ? (filesMap.get(fileId) ?? null) : null;
+		return fileId ? (filesMap.byId(fileId) ?? null) : null;
 	});
 	/**
 	 * Active file's full POSIX path.
 	 *
-	 * Fine-grained: only tracks the active file's name and ancestor chain
-	 * (via `computePath`). A `size` or `updatedAt` change on a sibling file
-	 * won't trigger recomputation: only name/ancestry changes matter.
+	 * Computed via `computePath`. The view is coarse-grained, so any table
+	 * change (including unrelated rows) re-runs this derivation.
 	 */
 	const selectedPath = $derived.by(() => {
 		const fileId = searchParams.file;
@@ -230,14 +230,14 @@ export function createFilesState({
 		 * Returns null if the row is deleted/invalid.
 		 */
 		getFile(id: FileId): FileRow | null {
-			return filesMap.get(id) ?? null;
+			return filesMap.byId(id) ?? null;
 		},
 
 		/**
 		 * Build the full POSIX path for a file by walking up its ancestor chain.
 		 *
-		 * In reactive contexts (e.g., inside `$derived`), creates fine-grained
-		 * dependencies on only the accessed file's ancestors. In imperative
+		 * In reactive contexts (e.g., inside `$derived`), the coarse-grained
+		 * view means any table change re-runs the derivation. In imperative
 		 * contexts (action methods), it's a plain O(depth) lookup.
 		 *
 		 * @returns The full path (e.g., `/docs/api/reference.md`) or null if trashed/deleted.
@@ -275,7 +275,7 @@ export function createFilesState({
 			const results: T[] = [];
 			function walk(pid: FileId | null) {
 				for (const childId of childrenOf.get(pid) ?? []) {
-					const row = filesMap.get(childId);
+					const row = filesMap.byId(childId);
 					if (!row || row.trashedAt !== null) continue;
 					const { collect, descend } = visitor(childId, row);
 					if (collect !== undefined) results.push(collect);
@@ -415,10 +415,6 @@ export function createFilesState({
 				await workspace.fs.mv(oldPath, newPath);
 				toast.success(`Renamed to ${newName}`);
 			}, 'Failed to rename');
-		},
-
-		[Symbol.dispose]() {
-			filesMap[Symbol.dispose]();
 		},
 	};
 

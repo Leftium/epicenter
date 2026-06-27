@@ -24,18 +24,14 @@ function createTransformationRuns() {
 	const map = fromTable(whispering.tables.transformationRuns);
 
 	return {
-		[Symbol.dispose]() {
-			map[Symbol.dispose]();
-		},
-
-		/** All transformation runs as a reactive SvelteMap. */
+		/** All transformation runs as a reactive readonly table view. */
 		get all() {
 			return map;
 		},
 
 		/** Get a run by ID. */
 		get(id: string) {
-			return map.get(id);
+			return map.byId(id);
 		},
 
 		/**
@@ -44,7 +40,7 @@ function createTransformationRuns() {
 		 * @param transformationId - FK to the parent transformation
 		 */
 		getByTransformationId(transformationId: string): TransformationRun[] {
-			return Array.from(map.values())
+			return map.all
 				.filter((run) => run.transformationId === transformationId)
 				.sort(
 					(a, b) =>
@@ -58,7 +54,7 @@ function createTransformationRuns() {
 		 * @param recordingId - FK to the recording
 		 */
 		getByRecordingId(recordingId: string): TransformationRun[] {
-			return Array.from(map.values())
+			return map.all
 				.filter((run) => run.recordingId === recordingId)
 				.sort(
 					(a, b) =>
@@ -91,13 +87,9 @@ function createTransformationRuns() {
 
 		/** Total number of runs. */
 		get count() {
-			return map.size;
+			return map.all.length;
 		},
 	};
 }
 
 export const transformationRuns = createTransformationRuns();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => transformationRuns[Symbol.dispose]());
-}

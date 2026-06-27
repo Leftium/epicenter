@@ -14,8 +14,6 @@ export function createHoneycrispState(honeycrisp: HoneycrispBrowser) {
 		view,
 		[Symbol.dispose]() {
 			view[Symbol.dispose]();
-			notes[Symbol.dispose]();
-			folders[Symbol.dispose]();
 		},
 	};
 }

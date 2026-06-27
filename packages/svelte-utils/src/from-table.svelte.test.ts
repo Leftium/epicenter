@@ -9,19 +9,25 @@ import { Err, Ok } from 'wellcrafted/result';
 import { fromTable } from './from-table.svelte.js';
 
 // `bun test` runs `.svelte.ts` modules without the Svelte compiler, so the runes
-// the source uses are plain globals here. `$derived` is stubbed as identity,
-// which means the memoized bucket array getters (`nonconforming`, `newerWriter`)
-// capture their value once at construction and never recompute.
-// Consequence: seed-time bucket contents are observable, but the bucket maps the
-// `observe()` callback mutates are NOT visible through the frozen getters.
-//
-// What stays fully testable is the live `rows` SvelteMap (a real Map returned by
-// reference) and dispose. The `observe()` switch's bucket *destination* per error
-// variant is guarded instead by its compile-time `error satisfies never`
-// exhaustiveness; what the tests below pin is the rows-side decision the switch
-// makes for every variant, plus seed classification and teardown.
-(globalThis as unknown as { $derived: <T>(v: T) => T }).$derived = (v) => v;
-(globalThis as unknown as { $state: <T>(v: T) => T }).$state = (v) => v;
+// the source uses are plain globals here. `$derived.by` is stubbed as a proxy
+// that re-invokes the compute function on every property read, which models the
+// pull-based recompute a live `$derived` does and lets the list surfaces reflect
+// the current table state. `createSubscriber` is the real import; outside an
+// effect its `subscribe()` is a no-op (it never attaches an observer), so the
+// observe-driven lifecycle is not exercised here. That lifecycle belongs to
+// Svelte and is covered by Svelte's own tests; what these tests pin is the
+// stateless read-through: that every surface reads live through the table and
+// classifies each id into rows or the right issue bucket.
+(globalThis as unknown as { $derived: unknown }).$derived = Object.assign(
+	<T>(v: T) => v,
+	{
+		by: (fn: () => Record<PropertyKey, unknown>) =>
+			new Proxy(
+				{},
+				{ get: (_target, prop) => fn()[prop] },
+			),
+	},
+);
 
 type Row = BaseRow & { name: string };
 
@@ -55,12 +61,12 @@ const newerWriter = (id: string): StoredEntry => ({
 
 /**
  * A `ReadonlyTable` standing on a plain Map. `fromTable` only ever calls
- * `scan()`, `observe()`, and `get()`, so the rest throws to fail loud if the
- * contract widens. `fire(ids)` plays the role of a CRDT/local write landing.
+ * `scan()`, `observe()`, `get()`, and `has()`, so the rest throws to fail loud
+ * if the contract widens. The view reads live, so mutating `store` then reading
+ * a surface plays the role of a write landing.
  */
 function createMockTable() {
 	const store = new Map<string, StoredEntry>();
-	let observer: ((changedIds: ReadonlySet<string>) => void) | undefined;
 
 	const table = {
 		scan() {
@@ -85,26 +91,20 @@ function createMockTable() {
 			if (!entry) return Ok(null);
 			return entry.kind === 'row' ? Ok(entry.row) : Err(entry.error);
 		},
-		observe(callback: (changedIds: ReadonlySet<string>) => void) {
-			observer = callback;
-			return () => {
-				observer = undefined;
-			};
+		has(id: string) {
+			return store.has(id);
+		},
+		observe() {
+			// Outside an effect `createSubscriber` never calls this; the lifecycle
+			// is Svelte's to drive. Return a no-op unobserve for completeness.
+			return () => {};
 		},
 	} as unknown as ReadonlyTable<Row>;
 
-	return {
-		table,
-		store,
-		fire(...ids: string[]) {
-			if (!observer) throw new Error('no active observer');
-			observer(new Set(ids));
-		},
-		isObserved: () => observer !== undefined,
-	};
+	return { table, store };
 }
 
-test('seed: scan routes conforming rows and each issue bucket', () => {
+test('all + buckets: scan routes conforming rows and each issue bucket', () => {
 	const { table, store } = createMockTable();
 	store.set('ok', row('ok'));
 	store.set('bad', nonconforming('bad'));
@@ -112,84 +112,63 @@ test('seed: scan routes conforming rows and each issue bucket', () => {
 
 	const entries = fromTable(table);
 
-	expect(entries.size).toBe(1);
-	expect(entries.has('ok')).toBe(true);
-	expect(entries.has('bad')).toBe(false);
-	expect(entries.has('ahead')).toBe(false);
-
+	expect(entries.all.map((r) => r.id)).toEqual(['ok']);
+	expect(entries.allIds()).toEqual(['ok']);
 	expect(entries.nonconforming.map((e) => e.id)).toEqual(['bad']);
 	expect(entries.newerWriter.map((e) => e.id)).toEqual(['ahead']);
-
-	entries[Symbol.dispose]();
 });
 
-test('observe: a newly conforming id enters the row map', () => {
-	const { table, store, fire } = createMockTable();
+test('byId + has: conforming id resolves, unreadable and absent ids do not', () => {
+	const { table, store } = createMockTable();
+	store.set('ok', row('ok', 'Ada'));
+	store.set('bad', nonconforming('bad'));
+
 	const entries = fromTable(table);
-	expect(entries.size).toBe(0);
+
+	expect(entries.byId('ok')?.name).toBe('Ada');
+	expect(entries.has('ok')).toBe(true);
+
+	// A stored-but-unreadable id exists but does not resolve to a row.
+	expect(entries.byId('bad')).toBeUndefined();
+	expect(entries.has('bad')).toBe(true);
+
+	// An absent id resolves to undefined and is not present.
+	expect(entries.byId('missing')).toBeUndefined();
+	expect(entries.has('missing')).toBe(false);
+});
+
+test('reads are live: surfaces reflect the current table state', () => {
+	const { table, store } = createMockTable();
+	const entries = fromTable(table);
+	expect(entries.all).toEqual([]);
 
 	store.set('a', row('a', 'Ada'));
-	fire('a');
-
-	expect(entries.has('a')).toBe(true);
-	expect(entries.get('a')?.name).toBe('Ada');
-
-	entries[Symbol.dispose]();
-});
-
-test('observe: a deleted id leaves the row map', () => {
-	const { table, store, fire } = createMockTable();
-	store.set('a', row('a'));
-	const entries = fromTable(table);
-	expect(entries.has('a')).toBe(true);
+	expect(entries.byId('a')?.name).toBe('Ada');
+	expect(entries.allIds()).toEqual(['a']);
 
 	store.delete('a');
-	fire('a');
-
-	expect(entries.has('a')).toBe(false);
-
-	entries[Symbol.dispose]();
+	expect(entries.byId('a')).toBeUndefined();
+	expect(entries.all).toEqual([]);
 });
 
-test('observe: every error variant drops a previously conforming id from the row map', () => {
-	for (const toError of [nonconforming, newerWriter]) {
-		const { table, store, fire } = createMockTable();
-		store.set('a', row('a'));
-		const entries = fromTable(table);
-		expect(entries.has('a')).toBe(true);
-
-		store.set('a', toError('a'));
-		fire('a');
-
-		expect(entries.has('a')).toBe(false);
-
-		entries[Symbol.dispose]();
-	}
-});
-
-test('observe: a previously failing id re-enters the row map once it conforms', () => {
-	const { table, store, fire } = createMockTable();
-	store.set('a', nonconforming('a'));
+test('reads are live across every classification transition', () => {
+	const { table, store } = createMockTable();
 	const entries = fromTable(table);
-	expect(entries.has('a')).toBe(false);
+
+	// row -> nonconforming -> newerWriter -> row, each visible on the next read.
+	store.set('a', row('a'));
+	expect(entries.has('a')).toBe(true);
+	expect(entries.byId('a')).toBeDefined();
+
+	store.set('a', nonconforming('a'));
+	expect(entries.byId('a')).toBeUndefined();
+	expect(entries.nonconforming.map((e) => e.id)).toEqual(['a']);
+
+	store.set('a', newerWriter('a'));
+	expect(entries.byId('a')).toBeUndefined();
+	expect(entries.newerWriter.map((e) => e.id)).toEqual(['a']);
 
 	store.set('a', row('a', 'fixed'));
-	fire('a');
-
-	expect(entries.has('a')).toBe(true);
-	expect(entries.get('a')?.name).toBe('fixed');
-
-	entries[Symbol.dispose]();
-});
-
-test('dispose stops observation and is idempotent', () => {
-	const { table, fire, isObserved } = createMockTable();
-	const entries = fromTable(table);
-	expect(isObserved()).toBe(true);
-
-	entries[Symbol.dispose]();
-	expect(isObserved()).toBe(false);
-	expect(() => fire('a')).toThrow('no active observer');
-
-	expect(() => entries[Symbol.dispose]()).not.toThrow();
+	expect(entries.byId('a')?.name).toBe('fixed');
+	expect(entries.newerWriter).toEqual([]);
 });

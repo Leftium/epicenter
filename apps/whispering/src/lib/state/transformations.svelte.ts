@@ -42,20 +42,18 @@ export function createDefaultPrompt(): TransformationPrompt {
 function createTransformations() {
 	const map = fromTable(whispering.tables.transformations);
 
-	// Memoize sorted array with $derived for referential stability.
+	// `toSorted` returns a fresh sorted array (`map.all` is a shared, readonly
+	// scan, never sorted in place). The `$derived` memoizes this copy for
+	// referential stability between changes.
 	const sorted = $derived(
-		[...map.values()].sort((a, b) => a.title.localeCompare(b.title)),
+		map.all.toSorted((a, b) => a.title.localeCompare(b.title)),
 	);
 
 	return {
-		[Symbol.dispose]() {
-			map[Symbol.dispose]();
-		},
-
 		/**
-		 * All transformations as a reactive SvelteMap.
+		 * All transformations as a reactive readonly table view.
 		 *
-		 * Components reading this re-render per-key when transformations change.
+		 * Components reading this re-render when transformations change.
 		 */
 		get all() {
 			return map;
@@ -65,7 +63,7 @@ function createTransformations() {
 		 * Get a transformation by ID. Returns undefined if not found.
 		 */
 		get(id: string) {
-			return map.get(id);
+			return map.byId(id);
 		},
 
 		/**
@@ -99,16 +97,12 @@ function createTransformations() {
 
 		/** Total number of transformations. */
 		get count() {
-			return map.size;
+			return map.all.length;
 		},
 	};
 }
 
 export const transformations = createTransformations();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => transformations[Symbol.dispose]());
-}
 
 /**
  * Generate a default transformation: empty title and description, both

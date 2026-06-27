@@ -31,10 +31,13 @@ function createRecordings() {
 	const map = fromTable(whispering.tables.recordings);
 
 	// Memoize sorted array with $derived so consumers get a stable reference.
-	// Without this, every access creates a new array → TanStack Table's $derived
-	// sees "new data" → updates internal $state → re-triggers $derived → infinite loop.
+	// `toSorted` returns a fresh sorted array (the view's `all` is a shared,
+	// readonly scan, so it must not be sorted in place). The `$derived` memoizes
+	// this copy, handing out a stable reference between changes. Without that
+	// stability TanStack Table's $derived sees "new data" every access → updates
+	// internal $state → re-triggers $derived → infinite loop.
 	const sorted = $derived(
-		[...map.values()].sort(
+		map.all.toSorted(
 			(a, b) =>
 				new Date(b.recordedAt as string).getTime() -
 				new Date(a.recordedAt as string).getTime(),
@@ -42,15 +45,11 @@ function createRecordings() {
 	);
 
 	return {
-		[Symbol.dispose]() {
-			map[Symbol.dispose]();
-		},
-
 		/**
-		 * All recordings as a reactive SvelteMap.
+		 * All recordings as a reactive readonly table view.
 		 *
-		 * Components reading this re-render per-key when recordings change.
-		 * Use `.sorted` for a pre-sorted array, or iterate directly for
+		 * Components reading this re-render when recordings change.
+		 * Use `.sorted` for a pre-sorted array, or iterate `.all` for
 		 * custom ordering.
 		 */
 		get all() {
@@ -60,11 +59,11 @@ function createRecordings() {
 		/**
 		 * Get a recording by ID. Returns undefined if not found.
 		 *
-		 * Reads from the reactive SvelteMap. Triggers re-render if the
+		 * Reads from the reactive table view. Triggers re-render if the
 		 * recording changes or is deleted.
 		 */
 		get(id: string) {
-			return map.get(id);
+			return map.byId(id);
 		},
 
 		/**
@@ -121,13 +120,9 @@ function createRecordings() {
 
 		/** Total number of recordings. */
 		get count() {
-			return map.size;
+			return map.all.length;
 		},
 	};
 }
 
 export const recordings = createRecordings();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => recordings[Symbol.dispose]());
-}

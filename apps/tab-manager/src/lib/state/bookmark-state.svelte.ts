@@ -1,9 +1,9 @@
 /**
  * Reactive bookmark state for the side panel.
  *
- * Read-only reactive layer backed by `fromTable()`: provides granular
- * per-row reactivity via `SvelteMap`. All write operations are delegated
- * to workspace actions owned by the signed-in session.
+ * Read-only reactive layer backed by `fromTable()`: a stateless
+ * `ReadonlyTableView` whose reads track the underlying CRDT table. All write
+ * operations are delegated to workspace actions owned by the signed-in session.
  *
  * The public API exposes a `$derived` sorted array (access pattern is
  * always "render the full sorted list") plus a URL lookup set for O(1)
@@ -23,9 +23,7 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
-		[...bookmarksMap.values()].sort((a, b) =>
-			b.createdAt.localeCompare(a.createdAt),
-		),
+		bookmarksMap.all.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt)),
 	);
 
 	/**
@@ -35,14 +33,10 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 	 * re-renders any component that calls `isUrlBookmarked` when the set changes.
 	 */
 	const bookmarkedUrls = $derived(
-		new SvelteSet(bookmarksMap.values().map((b) => b.url)),
+		new SvelteSet(bookmarksMap.all.map((b) => b.url)),
 	);
 
 	return {
-		[Symbol.dispose]() {
-			bookmarksMap[Symbol.dispose]();
-		},
-
 		get bookmarks() {
 			return bookmarks;
 		},

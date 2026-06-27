@@ -22,13 +22,9 @@ export function createToolTrustState(tabManager: TabManagerBrowser) {
 	const trustMap = fromTable(tabManager.tables.toolTrust);
 
 	/** Cached projection of trusted tool names: stable reference via $derived. */
-	const trustedNames = $derived([...trustMap.keys()]);
+	const trustedNames = $derived(trustMap.allIds());
 
 	return {
-		[Symbol.dispose]() {
-			trustMap[Symbol.dispose]();
-		},
-
 		/**
 		 * Whether a tool auto-approves without showing the approval UI.
 		 * Query tools should not call this because they auto-execute always.
@@ -48,7 +44,7 @@ export function createToolTrustState(tabManager: TabManagerBrowser) {
 		},
 
 		/** Names of all auto-approved tools, as a cached reactive array. */
-		get trustedToolNames(): string[] {
+		get trustedToolNames(): readonly string[] {
 			return trustedNames;
 		},
 	};

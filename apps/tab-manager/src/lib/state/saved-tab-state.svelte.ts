@@ -1,9 +1,9 @@
 /**
  * Reactive saved tab state for the side panel.
  *
- * Read-only reactive layer backed by `fromTable()`: provides granular
- * per-row reactivity via `SvelteMap`. All write operations are delegated
- * to workspace actions owned by the signed-in session.
+ * Read-only reactive layer backed by `fromTable()`: a stateless
+ * `ReadonlyTableView` whose reads track the underlying CRDT table. All write
+ * operations are delegated to workspace actions owned by the signed-in session.
  *
  * The public API exposes a `$derived` sorted array since the access
  * pattern is always "render the full sorted list."
@@ -22,14 +22,10 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
 	const tabs = $derived(
-		[...tabsMap.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt)),
+		tabsMap.all.toSorted((a, b) => b.savedAt.localeCompare(a.savedAt)),
 	);
 
 	return {
-		[Symbol.dispose]() {
-			tabsMap[Symbol.dispose]();
-		},
-
 		get tabs() {
 			return tabs;
 		},

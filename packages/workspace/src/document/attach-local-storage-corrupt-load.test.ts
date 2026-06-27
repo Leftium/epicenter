@@ -23,7 +23,7 @@
  * y-indexeddb bump), which is the whole reason to keep it.
  */
 
-import { expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { asOwnerId } from '@epicenter/identity';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import * as Y from 'yjs';
@@ -73,11 +73,15 @@ async function corruptStoredUpdates(databaseName: string): Promise<void> {
 
 // Capture any decode rejection that escapes to the process boundary. Pre-patch
 // the load floated an uncatchable one here (the only place it could be seen);
-// post-patch this array must stay empty, which is assertion 4b below.
+// post-patch this array must stay empty, which is assertion 4b below. Scope the
+// listener to this test so it can't swallow another test file's genuine
+// unhandled rejection in the shared bun process.
 const rejections: unknown[] = [];
-process.on('unhandledRejection', (reason) => {
+const collectRejection = (reason: unknown): void => {
 	rejections.push(reason);
-});
+};
+beforeAll(() => process.on('unhandledRejection', collectRejection));
+afterAll(() => process.off('unhandledRejection', collectRejection));
 
 test('a corrupt persisted update is skipped: whenLoaded resolves and no decode error floats', async () => {
 	const userId = `user-${crypto.randomUUID()}`;

@@ -31,6 +31,7 @@
  * serves the dashboard in dev, and billing is the hosted Worker's concern.
  */
 
+import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	BunHostBindings,
 	mountBlobsApp,
@@ -71,7 +72,7 @@ export function startBunApiServer(
 	// blob store; everything else is the shared Bun bootstrap.
 	const { origin, dataDir } = startBunServer({
 		env,
-		defaultPort: 8788,
+		defaultPort: API_BUN_DEV_PORT,
 		mode: 'hub',
 		ownership: personal(),
 		resolveTrustedOrigins: buildEpicenterTrustedOrigins,

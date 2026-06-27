@@ -28,6 +28,7 @@ import {
 import { SpeachesTranscriptionServiceLive } from '$lib/services/transcription/self-hosted/speaches';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
+import { secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 
@@ -71,6 +72,10 @@ const TranscriptionOperationError = defineErrors({
 		message: `The model file is ${actualSizeMb}MB but should be ~${expectedSizeMb}MB. This usually happens when a download was interrupted. Please delete and re-download the model.`,
 		actualSizeMb,
 		expectedSizeMb,
+	}),
+	ApiKeyMissing: ({ providerLabel }: { providerLabel: string }) => ({
+		message: `Add your ${providerLabel} API key in settings.`,
+		providerLabel,
 	}),
 });
 
@@ -355,10 +360,19 @@ async function transcribeViaUpload(
 	}
 
 	if (provider.location === 'cloud' && isCloudProviderId(selectedService)) {
+		// The API key is a secret: read it from the credential facade. A missing key
+		// is a user-actionable error raised here, before the provider SDK runs with a
+		// blank key.
+		const apiKey = secrets.get(provider.apiKeyConfigKey);
+		if (apiKey.status === 'missing') {
+			return TranscriptionOperationError.ApiKeyMissing({
+				providerLabel: provider.label,
+			});
+		}
 		return CLOUD_TRANSCRIBERS[selectedService](audio, {
 			spokenLanguage,
 			prompt,
-			apiKey: deviceConfig.get(provider.apiKeyConfigKey),
+			apiKey: apiKey.value,
 			modelName: settings.get(provider.modelSettingKey),
 			baseURL: provider.endpointConfigKey
 				? deviceConfig.get(provider.endpointConfigKey) || undefined

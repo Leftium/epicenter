@@ -190,10 +190,6 @@ export function attachYjsLog(
 	});
 
 	return {
-		/** `DELETE FROM updates`. Drops the durable log without destroying the Y.Doc. */
-		clearLocal: () => {
-			deleteUpdates.run();
-		},
 		/** Resolves after final compaction runs and the SQLite handle closes. */
 		whenDisposed,
 	};

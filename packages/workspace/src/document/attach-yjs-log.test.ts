@@ -201,21 +201,4 @@ describe('attachYjsLog', () => {
 			Y.applyUpdateV2(new Y.Doc(), firstRowData(filePath)),
 		).not.toThrow();
 	});
-
-	test('clearLocal drops all updates from the file', async () => {
-		const filePath = join(workdir, 'clear.sqlite');
-		const writerDoc = new Y.Doc();
-		const writer = attachYjsLog(writerDoc, { filePath });
-		writerDoc.getMap<number>('m').set('k', 1);
-		writer.clearLocal();
-		writerDoc.destroy();
-		await writer.whenDisposed;
-
-		// Reopening should see no rehydrated state.
-		const reopenDoc = new Y.Doc();
-		const reopen = attachYjsLog(reopenDoc, { filePath });
-		expect(reopenDoc.getMap<number>('m').size).toBe(0);
-		reopenDoc.destroy();
-		await reopen.whenDisposed;
-	});
 });

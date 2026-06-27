@@ -16,7 +16,6 @@ export const session = createSession({
 			...fuji,
 			entries,
 			[Symbol.dispose]() {
-				entries[Symbol.dispose]();
 				fuji[Symbol.dispose]();
 			},
 		};

@@ -40,10 +40,10 @@ export function createNotes({
 }) {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	const allNotesMap = fromTable(honeycrisp.tables.notes);
+	const notesView = fromTable(honeycrisp.tables.notes);
 
 	/** All valid notes (including deleted). Cached, only recomputes when table changes. */
-	const allNotes = $derived([...allNotesMap.values()]);
+	const allNotes = $derived(notesView.all);
 
 	// ─── Derived State ───────────────────────────────────────────────────
 
@@ -67,15 +67,11 @@ export function createNotes({
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
-		[Symbol.dispose]() {
-			allNotesMap[Symbol.dispose]();
-		},
-
 		/**
 		 * Look up a note by ID. Returns `undefined` if not found.
 		 */
 		get(id: NoteId) {
-			return allNotesMap.get(id);
+			return notesView.byId(id);
 		},
 
 		get all() {
@@ -152,7 +148,7 @@ export function createNotes({
 		 * ```
 		 */
 		restore(noteId: NoteId) {
-			const note = allNotesMap.get(noteId);
+			const note = notesView.byId(noteId);
 			if (!note) return;
 			const folderExists = note.folderId
 				? folders.all.some((f) => f.id === note.folderId)
@@ -195,7 +191,7 @@ export function createNotes({
 		 * ```
 		 */
 		togglePin(noteId: NoteId) {
-			const note = allNotesMap.get(noteId);
+			const note = notesView.byId(noteId);
 			if (!note) return;
 			honeycrisp.tables.notes.update(noteId, {
 				pinned: !note.pinned,

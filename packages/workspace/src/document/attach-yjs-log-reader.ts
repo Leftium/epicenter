@@ -22,6 +22,7 @@
 
 import { Database } from 'bun:sqlite';
 import { existsSync } from 'node:fs';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 
 /**
@@ -29,7 +30,7 @@ import * as Y from 'yjs';
  * the Y.Doc. Returns the open db handle so the caller can close it on
  * destroy. File-doesn't-exist is the cold path: caller short-circuits.
  */
-function openAndReplay(filePath: string, ydoc: Y.Doc): Database {
+function openAndReplay(filePath: string, ydoc: Y.Doc, log: Logger): Database {
 	const db = new Database(filePath, { readonly: true });
 	// File is owned by the writer. No CREATE TABLE, no journal_mode pragma
 	// (the writer set WAL), no updateV2 listener, no compaction: pure
@@ -42,17 +43,34 @@ function openAndReplay(filePath: string, ydoc: Y.Doc): Database {
 		data: Uint8Array;
 	}[];
 	for (const row of rows) {
-		Y.applyUpdateV2(ydoc, row.data);
+		// Match the writer's replay guard: a corrupt BLOB makes applyUpdateV2
+		// throw, which would otherwise abort this synchronous hydrate. Skip it
+		// and log; the reader is read-only, so it cannot compact the bad row
+		// away, but the writer heals the file on its next open and resync fills
+		// the gap.
+		try {
+			Y.applyUpdateV2(ydoc, row.data);
+		} catch (cause) {
+			log.error(
+				new Error(
+					'Skipped a corrupt update row during replay; resync supplies it',
+					{ cause },
+				),
+			);
+		}
 	}
 	return db;
 }
 
 export function attachYjsLogReader(
 	ydoc: Y.Doc,
-	{ filePath }: { filePath: string },
+	{
+		filePath,
+		log = createLogger('workspace/attach-yjs-log-reader'),
+	}: { filePath: string; log?: Logger },
 ) {
 	const fileExisted = existsSync(filePath);
-	const db = fileExisted ? openAndReplay(filePath, ydoc) : undefined;
+	const db = fileExisted ? openAndReplay(filePath, ydoc, log) : undefined;
 
 	ydoc.once('destroy', () => {
 		db?.close();

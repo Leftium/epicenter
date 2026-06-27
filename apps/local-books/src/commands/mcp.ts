@@ -41,34 +41,30 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { type TObject, Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { defineErrors } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { createQbAccess } from '../books/qb-access.ts';
 import { queryBooks } from '../books/query.ts';
 import {
 	RECATEGORIZE_ENTITIES,
+	type RecategorizeInput,
 	recategorizeExpense,
 } from '../books/recategorize.ts';
-import { fetchReport, REPORT_NAMES } from '../books/report.ts';
+import {
+	fetchReport,
+	REPORT_NAMES,
+	type ReportInput,
+} from '../books/report.ts';
 import { readBooksStatus } from '../books/status.ts';
 import { type ParsedArgs, VERSION } from '../cli.ts';
 import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
 import { openBooksDb } from '../db.ts';
 import { dbPath } from '../paths.ts';
-import { createQbClient } from '../qb-client.ts';
 import { syncRealm } from '../sync.ts';
-import { createTokenManager } from '../token-manager.ts';
 import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
 /** The `_meta` key carrying a tool's read/write classification for a host. */
 const TIER_META = 'epicenter/tier';
-
-const McpToolError = defineErrors({
-	NotConnected: ({ realmId }: { realmId: string }) => ({
-		message: `No stored credentials for company ${realmId}. Run "local-books auth".`,
-	}),
-});
 
 /** What every tool `run` is handed: the resolved company plus a clock. */
 type ToolContext = {
@@ -164,12 +160,8 @@ const TOOLS: ToolDescriptor[] = [
 		}),
 		tier: 'read',
 		async run(ctx, args) {
-			const input = args as {
-				report: (typeof REPORT_NAMES)[number];
-				start_date?: string;
-				end_date?: string;
-				accounting_method?: 'Cash' | 'Accrual';
-			};
+			// Cast to the core's own input type (Value.Check ran in the handler).
+			const input = args as ReportInput;
 			const openQb = createQbAccess({
 				config: ctx.config,
 				realmId: ctx.realmId,
@@ -194,19 +186,16 @@ const TOOLS: ToolDescriptor[] = [
 		tier: 'write',
 		async run(ctx, args) {
 			const { full } = args as { full?: boolean };
-			const token = await ctx.store.get(ctx.realmId);
-			if (!token) return McpToolError.NotConnected({ realmId: ctx.realmId });
-			const tokens = createTokenManager({
-				config: ctx.config,
-				store: ctx.store,
-				token,
-				now: ctx.now,
-			});
-			const client = createQbClient({
+			// Same opener as report/recategorize: it loads the token and returns a
+			// ready QB client, or a "run auth" reason. No bespoke not-connected error.
+			const openQb = createQbAccess({
 				config: ctx.config,
 				realmId: ctx.realmId,
-				tokens,
+				store: ctx.store,
+				now: ctx.now,
 			});
+			const { data: client, error } = await openQb();
+			if (error !== null) return Err({ message: error });
 			const db = openBooksDb(dbPath(ctx.config.dataDir, ctx.realmId));
 			try {
 				const outcome = await syncRealm(
@@ -253,13 +242,7 @@ const TOOLS: ToolDescriptor[] = [
 		}),
 		tier: 'mutation',
 		async run(ctx, args) {
-			const input = args as {
-				entity: (typeof RECATEGORIZE_ENTITIES)[number];
-				id: string;
-				account_id: string;
-				account_name?: string;
-				line_id?: string;
-			};
+			const input = args as RecategorizeInput;
 			const openQb = createQbAccess({
 				config: ctx.config,
 				realmId: ctx.realmId,
@@ -325,7 +308,16 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 			title: t.title,
 			description: t.description,
 			inputSchema: t.input,
-			// The host sees read/write; `mutation` is our internal gate marker.
+			// Emit the standard hints a host reads for its approval UX. (ADR-0073's
+			// "never read readOnlyHint" is about not TRUSTING a foreign tool's
+			// inbound hint, not about publishing our own honest one.) `mutation` is
+			// the destructive QuickBooks write; `write` (sync) is a safe refresh.
+			annotations: {
+				readOnlyHint: t.tier === 'read',
+				destructiveHint: t.tier === 'mutation',
+				idempotentHint: t.tier !== 'mutation',
+			},
+			// Our own richer marker, for the Super Chat catalog (read/write).
 			_meta: { [TIER_META]: t.tier === 'read' ? 'read' : 'write' },
 		})),
 	}));

@@ -31,7 +31,7 @@ import {
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
-import { secrets, type SecretKey } from '$lib/state/secrets.svelte';
+import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 

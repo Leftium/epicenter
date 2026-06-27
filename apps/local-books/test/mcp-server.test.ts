@@ -145,26 +145,24 @@ test('mcp: tools/list, query rows, the two error channels, and a clean stream', 
 		LOCAL_BOOKS_QB_REALM: REALM,
 	});
 
-	// tools/list: all five verbs, the gated write present, tiers carried, and the
-	// TypeBox input passed straight through as a JSON-Schema object.
+	// tools/list: all five verbs, the gated write present, the standard safety
+	// hints carried, and the TypeBox input passed straight through as a
+	// JSON-Schema object.
 	const list = await mcp.request('tools/list');
 	const tools = (list.result?.tools ?? []) as Array<{
 		name: string;
 		inputSchema: { type: string; properties?: Record<string, unknown> };
 		annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
-		_meta?: Record<string, unknown>;
 	}>;
 	const names = tools.map((t) => t.name).sort();
 	expect(names).toEqual(['query', 'recategorize', 'report', 'status', 'sync']);
 	const query = tools.find((t) => t.name === 'query');
 	expect(query?.inputSchema.type).toBe('object');
 	expect(query?.inputSchema.properties).toHaveProperty('sql');
-	expect(query?._meta?.['epicenter/tier']).toBe('read');
 	// Standard host-facing safety hints: reads are read-only, the QB write is
 	// destructive.
 	expect(query?.annotations?.readOnlyHint).toBe(true);
 	const recategorize = tools.find((t) => t.name === 'recategorize');
-	expect(recategorize?._meta?.['epicenter/tier']).toBe('write');
 	expect(recategorize?.annotations?.readOnlyHint).toBe(false);
 	expect(recategorize?.annotations?.destructiveHint).toBe(true);
 

@@ -13,6 +13,7 @@
  * it with `defineQuery` over the same function (ADR-0072).
  */
 
+import Type, { type Static } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { QbClientError } from '../qb-client.ts';
@@ -40,15 +41,29 @@ export const ReportError = defineErrors({
 });
 export type ReportError = InferErrors<typeof ReportError>;
 
-export type ReportInput = {
-	report: ReportName;
-	/** Report period start, YYYY-MM-DD (QuickBooks `start_date`). */
-	start_date?: string;
-	/** Report period end, YYYY-MM-DD (QuickBooks `end_date`). */
-	end_date?: string;
-	/** Cash or Accrual basis; QuickBooks defaults to the company setting. */
-	accounting_method?: 'Cash' | 'Accrual';
-};
+/**
+ * The validated input to {@link fetchReport}. This TypeBox object is the single
+ * source of truth: it IS the MCP `inputSchema` (TypeBox is JSON Schema at
+ * runtime) and `Static` derives the in-process type, so the shape is authored
+ * once. Field descriptions are the prose the model and `--help` both read.
+ */
+export const ReportInput = Type.Object({
+	report: Type.Enum(REPORT_NAMES, {
+		description: 'The statement to compute.',
+	}),
+	start_date: Type.Optional(
+		Type.String({ description: 'Report period start, YYYY-MM-DD.' }),
+	),
+	end_date: Type.Optional(
+		Type.String({ description: 'Report period end, YYYY-MM-DD.' }),
+	),
+	accounting_method: Type.Optional(
+		Type.Enum(['Cash', 'Accrual'] as const, {
+			description: 'Cash or Accrual basis; defaults to the company setting.',
+		}),
+	),
+});
+export type ReportInput = Static<typeof ReportInput>;
 
 /** Validate a raw report name against the closed set, the verb's parse step. */
 export function parseReportName(name: string): Result<ReportName, ReportError> {

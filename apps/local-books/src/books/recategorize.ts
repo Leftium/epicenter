@@ -22,6 +22,7 @@
  * forget the gate and move money, because `readOnly` is a required argument.
  */
 
+import Type, { type Static } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import { openBooksDb } from '../db.ts';
@@ -67,17 +68,37 @@ export const RecategorizeError = defineErrors({
 });
 export type RecategorizeError = InferErrors<typeof RecategorizeError>;
 
-export type RecategorizeInput = {
-	entity: RecategorizeEntity;
-	/** The QuickBooks Id of the transaction (the mirror row `id`). */
-	id: string;
-	/** The target expense account Id, set as the line AccountRef.value. */
-	account_id: string;
-	/** The target account display name, set as AccountRef.name (readable books). */
-	account_name?: string;
-	/** Recategorize only this line (its `Id`); omit for every expense line. */
-	line_id?: string;
-};
+/**
+ * The validated input to {@link recategorizeExpense}. This TypeBox object is the
+ * single source of truth: it IS the MCP `inputSchema` and `Static` derives the
+ * in-process type, so the shape is authored once. Field descriptions are the
+ * prose the model and `--help` both read.
+ */
+export const RecategorizeInput = Type.Object({
+	entity: Type.Enum(RECATEGORIZE_ENTITIES, {
+		description:
+			'The expense kind: Purchase (card/cash/check) or Bill (vendor bill).',
+	}),
+	id: Type.String({
+		description: 'The QuickBooks Id of the transaction (the mirror row id).',
+	}),
+	account_id: Type.String({
+		description: 'The target expense account id (an accounts row id).',
+	}),
+	account_name: Type.Optional(
+		Type.String({
+			description:
+				'The target account display name (optional, readable books).',
+		}),
+	),
+	line_id: Type.Optional(
+		Type.String({
+			description:
+				'Recategorize only this expense line; omit for every expense line.',
+		}),
+	),
+});
+export type RecategorizeInput = Static<typeof RecategorizeInput>;
 
 export type RecategorizeChange = {
 	lineId: string | null;

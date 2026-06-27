@@ -39,21 +39,16 @@ import {
 	ListToolsRequestSchema,
 	McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { type TObject, Type } from 'typebox';
+import { type Static, type TObject, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { createQbAccess } from '../books/qb-access.ts';
+import { createQbAccess, type OpenQbClient } from '../books/qb-access.ts';
 import { queryBooks } from '../books/query.ts';
 import {
-	RECATEGORIZE_ENTITIES,
-	type RecategorizeInput,
+	RecategorizeInput,
 	recategorizeExpense,
 } from '../books/recategorize.ts';
-import {
-	fetchReport,
-	REPORT_NAMES,
-	type ReportInput,
-} from '../books/report.ts';
+import { fetchReport, ReportInput } from '../books/report.ts';
 import { readBooksStatus } from '../books/status.ts';
 import { type ParsedArgs, VERSION } from '../cli.ts';
 import { resolveRealm } from '../companies.ts';
@@ -63,13 +58,15 @@ import { dbPath } from '../paths.ts';
 import { syncRealm } from '../sync.ts';
 import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
-/** The `_meta` key carrying a tool's read/write classification for a host. */
-const TIER_META = 'epicenter/tier';
-
-/** What every tool `run` is handed: the resolved company plus a clock. */
+/** What every tool `run` is handed: the resolved company plus its opened deps. */
 type ToolContext = {
 	config: AppConfig;
 	realmId: string;
+	/** The mirror db path for the resolved company. */
+	dbPath: string;
+	/** A QB client opener for the resolved company; the token loads when called. */
+	openQb: OpenQbClient;
+	/** The realm's token store (built once per server, reloaded on each `get`). */
 	store: TokenStore;
 	now: () => number;
 };
@@ -84,13 +81,13 @@ type ToolDescriptor = {
 	/** TypeBox object schema: serialized as the MCP `inputSchema` AND the validator. */
 	input: TObject;
 	/**
-	 * The tool's effect class, and the whole read-only gate:
+	 * The tool's effect class:
 	 *  - `read`  pure read of the mirror or a live QB report;
 	 *  - `write` side-effecting but safe (sync refreshes the local cache);
 	 *  - `mutation` mutates QuickBooks itself, and is the one class read-only
 	 *    mode withholds from the catalog.
-	 * The host sees only `read`/`write` via `_meta["epicenter/tier"]` (a mutation
-	 * publishes as `write`); `mutation` is our internal gate marker.
+	 * It drives the read-only filter and the published `annotations`
+	 * (`destructiveHint` is true only for `mutation`).
 	 */
 	tier: 'read' | 'write' | 'mutation';
 	run: (
@@ -99,8 +96,26 @@ type ToolDescriptor = {
 	) => Promise<ToolOutcome>;
 };
 
+/**
+ * One typed tool entry. The generic ties `run`'s `args` to `Static<input>`, so
+ * each handler is checked against its own schema and no `run` body re-asserts
+ * the input shape. The erased descriptor takes `Record<string, unknown>`; the
+ * one `args as Static<S>` narrowing is sound because the dispatcher runs
+ * `Value.Check(input, args)` before calling, so it stays the runtime boundary.
+ */
+function defineMcpTool<S extends TObject>(tool: {
+	name: string;
+	title: string;
+	description: string;
+	input: S;
+	tier: 'read' | 'write' | 'mutation';
+	run: (ctx: ToolContext, args: Static<S>) => Promise<ToolOutcome>;
+}): ToolDescriptor {
+	return { ...tool, run: (ctx, args) => tool.run(ctx, args as Static<S>) };
+}
+
 const TOOLS: ToolDescriptor[] = [
-	{
+	defineMcpTool({
 		name: 'query',
 		title: 'Query the books',
 		description:
@@ -112,14 +127,10 @@ const TOOLS: ToolDescriptor[] = [
 		}),
 		tier: 'read',
 		async run(ctx, args) {
-			const { sql } = args as { sql: string };
-			return queryBooks({
-				dbPath: dbPath(ctx.config.dataDir, ctx.realmId),
-				sql,
-			});
+			return queryBooks({ dbPath: ctx.dbPath, sql: args.sql });
 		},
-	},
-	{
+	}),
+	defineMcpTool({
 		name: 'status',
 		title: 'Books status',
 		description:
@@ -135,43 +146,19 @@ const TOOLS: ToolDescriptor[] = [
 				}),
 			);
 		},
-	},
-	{
+	}),
+	defineMcpTool({
 		name: 'report',
 		title: 'Run a QuickBooks report',
 		description:
 			'Run a computed financial statement live from QuickBooks (never mirrored). Choose ProfitAndLoss, BalanceSheet, CashFlow, AgedReceivables, AgedPayables, or TrialBalance.',
-		input: Type.Object({
-			report: Type.Union(
-				REPORT_NAMES.map((name) => Type.Literal(name)),
-				{ description: 'The statement to compute.' },
-			),
-			start_date: Type.Optional(
-				Type.String({ description: 'Period start, YYYY-MM-DD.' }),
-			),
-			end_date: Type.Optional(
-				Type.String({ description: 'Period end, YYYY-MM-DD.' }),
-			),
-			accounting_method: Type.Optional(
-				Type.Union([Type.Literal('Cash'), Type.Literal('Accrual')], {
-					description: 'Basis; defaults to the company setting.',
-				}),
-			),
-		}),
+		input: ReportInput,
 		tier: 'read',
 		async run(ctx, args) {
-			// Cast to the core's own input type (Value.Check ran in the handler).
-			const input = args as ReportInput;
-			const openQb = createQbAccess({
-				config: ctx.config,
-				realmId: ctx.realmId,
-				store: ctx.store,
-				now: ctx.now,
-			});
-			return fetchReport({ openQb, input });
+			return fetchReport({ openQb: ctx.openQb, input: args });
 		},
-	},
-	{
+	}),
+	defineMcpTool({
 		name: 'sync',
 		title: 'Refresh the books',
 		description:
@@ -185,82 +172,42 @@ const TOOLS: ToolDescriptor[] = [
 		}),
 		tier: 'write',
 		async run(ctx, args) {
-			const { full } = args as { full?: boolean };
-			// Same opener as report/recategorize: it loads the token and returns a
-			// ready QB client, or a "run auth" reason. No bespoke not-connected error.
-			const openQb = createQbAccess({
-				config: ctx.config,
-				realmId: ctx.realmId,
-				store: ctx.store,
-				now: ctx.now,
-			});
-			const { data: client, error } = await openQb();
+			// The opener loads the token and returns a ready QB client, or a "run
+			// auth" reason. No bespoke not-connected error.
+			const { data: client, error } = await ctx.openQb();
 			if (error !== null) return Err({ message: error });
-			const db = openBooksDb(dbPath(ctx.config.dataDir, ctx.realmId));
+			const db = openBooksDb(ctx.dbPath);
 			try {
 				const outcome = await syncRealm(
 					{ db, client, config: ctx.config, now: ctx.now },
-					{ forceFull: full ?? false },
+					{ forceFull: args.full ?? false },
 				);
 				return Ok(outcome);
 			} finally {
 				db.close();
 			}
 		},
-	},
-	{
+	}),
+	defineMcpTool({
 		name: 'recategorize',
 		title: 'Recategorize an expense',
 		description:
 			'Move an expense transaction (a Purchase or Bill) to a different account in QuickBooks, then fold the authoritative response back into the mirror. The one write-back. Unavailable when LOCAL_BOOKS_READ_ONLY is set.',
-		input: Type.Object({
-			entity: Type.Union(
-				RECATEGORIZE_ENTITIES.map((name) => Type.Literal(name)),
-				{
-					description:
-						'The expense kind: Purchase (card/cash/check) or Bill (vendor bill).',
-				},
-			),
-			id: Type.String({
-				description: 'The transaction id (the mirror row id).',
-			}),
-			account_id: Type.String({
-				description: 'The target expense account id (an accounts row id).',
-			}),
-			account_name: Type.Optional(
-				Type.String({
-					description:
-						'The target account display name (optional, readable books).',
-				}),
-			),
-			line_id: Type.Optional(
-				Type.String({
-					description:
-						'Recategorize only this expense line; omit for every expense line.',
-				}),
-			),
-		}),
+		input: RecategorizeInput,
 		tier: 'mutation',
 		async run(ctx, args) {
-			const input = args as RecategorizeInput;
-			const openQb = createQbAccess({
-				config: ctx.config,
-				realmId: ctx.realmId,
-				store: ctx.store,
-				now: ctx.now,
-			});
+			// The catalog filter is the live gate: under read-only this tool is
+			// unlisted, so this run only executes when readOnly is false. Passing
+			// the real flag keeps the core as the invariant's single owner, so
+			// removing the filter later cannot silently enable the write.
 			return recategorizeExpense({
-				openQb,
-				dbPath: dbPath(ctx.config.dataDir, ctx.realmId),
-				// The catalog filter is the live gate: under read-only this tool is
-				// unlisted, so this run only executes when readOnly is false. Passing
-				// the real flag keeps the core as the invariant's single owner, so
-				// removing the filter later cannot silently enable the write.
+				openQb: ctx.openQb,
+				dbPath: ctx.dbPath,
 				readOnly: ctx.config.readOnly,
-				input,
+				input: args,
 			});
 		},
-	},
+	}),
 ];
 
 /** Map a core's `Result` onto MCP's `CallToolResult` (the `isError` channel). */
@@ -268,13 +215,11 @@ function toCallResult({ data, error }: ToolOutcome): CallToolResult {
 	if (error) {
 		return { content: [{ type: 'text', text: error.message }], isError: true };
 	}
-	// Every core here returns an object; `structuredContent` must be one. Guard so
-	// a future scalar/array-returning tool degrades to text-only rather than crash.
-	const isObject =
-		typeof data === 'object' && data !== null && !Array.isArray(data);
+	// Every core returns an object, which is what MCP requires of
+	// `structuredContent`. Re-add an object guard if a scalar/array tool lands.
 	return {
 		content: [{ type: 'text', text: JSON.stringify(data) }],
-		...(isObject ? { structuredContent: data as Record<string, unknown> } : {}),
+		structuredContent: data as Record<string, unknown>,
 	};
 }
 
@@ -293,6 +238,12 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 	// the invariant's owner for the CLI path).
 	const tools = TOOLS.filter((t) => t.tier !== 'mutation' || !config.readOnly);
 
+	// Built once per server: the token store reloads from disk on each `get`, and
+	// `now` is a shared clock. Per-call context only resolves the realm and opens
+	// its deps from these.
+	const store = createFileTokenStore(config.credentialsPath);
+	const now = () => Date.now();
+
 	// The low-level `Server` is deliberate (its `@deprecated` tag nudges casual
 	// users to the high-level `McpServer`, but explicitly keeps `Server` for
 	// advanced use): only this path lets each tool's `inputSchema` be the TypeBox
@@ -308,17 +259,15 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 			title: t.title,
 			description: t.description,
 			inputSchema: t.input,
-			// Emit the standard hints a host reads for its approval UX. (ADR-0073's
-			// "never read readOnlyHint" is about not TRUSTING a foreign tool's
-			// inbound hint, not about publishing our own honest one.) `mutation` is
-			// the destructive QuickBooks write; `write` (sync) is a safe refresh.
+			// Standard host-facing safety hints. `destructiveHint` is the honest
+			// query-vs-mutation bit a host (and, later, our own chat) reads for its
+			// approval UX: only the QuickBooks write-back is destructive; sync is a
+			// safe local refresh. (ADR-0073's "never trust readOnlyHint" is about a
+			// FOREIGN tool's inbound hint, not publishing our own honest one.)
 			annotations: {
 				readOnlyHint: t.tier === 'read',
 				destructiveHint: t.tier === 'mutation',
-				idempotentHint: t.tier !== 'mutation',
 			},
-			// Our own richer marker, for the Super Chat catalog (read/write).
-			_meta: { [TIER_META]: t.tier === 'read' ? 'read' : 'write' },
 		})),
 	}));
 
@@ -330,7 +279,7 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 				`Unknown tool: ${req.params.name}`,
 			);
 		}
-		const callArgs = req.params.arguments ?? {};
+		const callArgs: Record<string, unknown> = req.params.arguments ?? {};
 		if (!Value.Check(tool.input, callArgs)) {
 			const detail = Value.Errors(tool.input, callArgs)
 				.map((e) => `${e.instancePath || '/'}: ${e.message}`)
@@ -350,12 +299,12 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 		const ctx: ToolContext = {
 			config,
 			realmId,
-			store: createFileTokenStore(config.credentialsPath),
-			now: () => Date.now(),
+			dbPath: dbPath(config.dataDir, realmId),
+			openQb: createQbAccess({ config, realmId, store, now }),
+			store,
+			now,
 		};
-		return toCallResult(
-			await tool.run(ctx, callArgs as Record<string, unknown>),
-		);
+		return toCallResult(await tool.run(ctx, callArgs));
 	});
 
 	// stdout carries JSON-RPC frames from here on. Block until the host

@@ -68,6 +68,27 @@ local-books status                # shows the data dir; the file is <data-dir>/<
 
 Then open Claude Code or Codex in that folder and ask in plain English. To reach it from your phone or another machine, expose your box over a private mesh like [Tailscale](https://tailscale.com) and drive the agent there; the books still never leave the box. Set `LOCAL_BOOKS_READ_ONLY=1` to disable `recategorize` while you let an agent explore (both reads stay available).
 
+### Hand it to an agent over MCP
+
+`local-books mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio, so a coding agent drives the books through real tools instead of hand-written SQL: it gets `query`, `status`, `report`, `sync`, and, unless `LOCAL_BOOKS_READ_ONLY` is set, `recategorize`. The agent spawns the server as a local subprocess that reads the same SQLite file, so the data still never leaves the machine, and the financial data never touches a network (this is why the exposure is local stdio, not a hosted server).
+
+Register it with Claude Code, passing the data dir and company through the environment:
+
+```sh
+claude mcp add local-books \
+  --env LOCAL_BOOKS_DIR=<your-data-dir> \
+  --env LOCAL_BOOKS_QB_REALM=<company-id> \
+  -- local-books mcp
+```
+
+Add `--env LOCAL_BOOKS_READ_ONLY=1` to hand over the reads without the one write. Then ask in plain English: "what were my three biggest expenses last month?" runs a `query`, and "re-sync my books" runs `sync`. From the monorepo (no installed binary), the launch command is `bun run /abs/path/apps/local-books/src/bin.ts mcp`.
+
+Inspect the server without an agent using the MCP Inspector:
+
+```sh
+npx @modelcontextprotocol/inspector local-books mcp
+```
+
 ## Keep it fresh
 
 ```sh

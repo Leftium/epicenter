@@ -13,12 +13,8 @@ import type { FujiBrowser } from '$lib/workspace/browser';
  */
 export function createEntriesState(fuji: FujiBrowser) {
 	const entriesMap = fromTable(fuji.tables.entries);
-	const active = $derived(
-		entriesMap.all.filter((e) => e.deletedAt === null),
-	);
-	const deleted = $derived(
-		entriesMap.all.filter((e) => e.deletedAt !== null),
-	);
+	const active = $derived(entriesMap.all.filter((e) => e.deletedAt === null));
+	const deleted = $derived(entriesMap.all.filter((e) => e.deletedAt !== null));
 	return {
 		get: (id: EntryId) => entriesMap.byId(id),
 		get active() {

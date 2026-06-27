@@ -22,10 +22,7 @@ import { fromTable } from './from-table.svelte.js';
 	<T>(v: T) => v,
 	{
 		by: (fn: () => Record<PropertyKey, unknown>) =>
-			new Proxy(
-				{},
-				{ get: (_target, prop) => fn()[prop] },
-			),
+			new Proxy({}, { get: (_target, prop) => fn()[prop] }),
 	},
 );
 

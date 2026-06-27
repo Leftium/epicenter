@@ -1013,6 +1013,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch",
+  },
   "overrides": {
     "@protobufjs/utf8": "^1.1.1",
     "axios": "^1.18.0",

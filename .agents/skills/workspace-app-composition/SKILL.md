@@ -182,13 +182,15 @@ surface is genuinely empty, so the gate shows nothing half-ready, it just delays
 the paint until the truth is in memory.
 
 One rule decides WHERE the gate goes: **gate at the outermost boundary that can
-reach the readiness promise.** The promise is always `idb.whenLoaded`; the only
-question is when it first exists, which is decided by where the workspace is
-built (NOT by the Shape A/B label, which describes the module-level handle):
+reach the readiness promise.** The promise is the workspace's readiness gate
+(`idb.whenLoaded`, exposed as `whenReady`; matter's is a `once()`-memoized store
+read, `ensureHydrated()`); the only question is when it first exists, which is
+decided by where the workspace is built (NOT by the Shape A/B label, which
+describes the module-level handle):
 
 | Where the workspace is built | Promise first reachable in | Gate with |
 | --- | --- | --- |
-| Eager module singleton (`export const x = open<App>Browser()`, no auth gate): todos, whispering, skills, matter | a route `load` (runs before paint) | `load`: `await x.whenReady` (blank shell, no skeleton) |
+| Eager module singleton (`export const x = open<App>Browser()`, no auth gate): todos, whispering, skills, matter | a route `load` (runs before paint) | `load`: `await x.whenReady` (matter: `ensureHydrated()`); blank shell, no skeleton |
 | Inside the `session`, post-auth (reachable only as `session.current`): fuji, honeycrisp, vocab, opensidian | the signed-in component | `<WorkspaceGate pending={session.current.idb.whenLoaded}>` (visible `<Loading>`) |
 | A Chrome extension entrypoint (no `load` boundary): tab-manager | the component | a nested `{#await idb.whenLoaded}` |
 

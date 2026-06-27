@@ -1,6 +1,7 @@
 import ms from 'ms';
 import { runAuth } from './commands/auth.ts';
 import { runDemo } from './commands/demo.ts';
+import { runMcpServer } from './commands/mcp.ts';
 import { runQuery } from './commands/query.ts';
 import { runRecategorize } from './commands/recategorize.ts';
 import { runReport } from './commands/report.ts';
@@ -44,6 +45,7 @@ Usage:
   local-books report <Name> [--start <date>] [--end <date>] [--method <basis>]
   local-books recategorize <Purchase|Bill> <id> --to <accountId> [options]
   local-books demo [options]
+  local-books mcp [options]
 
 First run:
   local-books demo                          See it work on a sample company, no QuickBooks needed.
@@ -58,6 +60,7 @@ Commands:
   report        Run a live QuickBooks statement: ProfitAndLoss, BalanceSheet, CashFlow, AgedReceivables, AgedPayables, TrialBalance.
   recategorize  Move an expense to a different account in QuickBooks (then update the local copy).
   demo          Build a sample company you can query right now, with example questions.
+  mcp           Serve the read/refresh/write verbs to a coding agent over MCP (stdio). See the README.
 
 Options:
   --full                          Force a full pull (sync only).
@@ -216,6 +219,8 @@ export async function runCli(argv: string[]): Promise<number> {
 			return runRecategorize(args);
 		case 'demo':
 			return runDemo(args);
+		case 'mcp':
+			return runMcpServer(args);
 		default:
 			console.error(`Unknown command: ${args.command}\n`);
 			console.log(HELP);

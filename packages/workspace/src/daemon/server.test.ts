@@ -90,6 +90,47 @@ describe('startDaemonServer', () => {
 		}
 	});
 
+	test('devices serves the account-room roster, empty without one', async () => {
+		// Without an account room, /devices is a valid empty list.
+		const leaseA = claimTestLease();
+		const withoutRoom = await startDaemonServer({
+			lease: leaseA,
+			mount: { mount: 'demo', runtime: makeRuntime() },
+		});
+		try {
+			const server = expectOk(withoutRoom);
+			expect(
+				expectOk(await daemonClient(server.socketPath).devices()),
+			).toEqual([]);
+		} finally {
+			if (withoutRoom.error === null) await withoutRoom.data.close();
+			leaseA.release();
+		}
+
+		// With a roster, /devices maps each entry to a { peerId, label } row.
+		const leaseB = claimTestLease();
+		const roster = new Map([
+			['aa'.repeat(32), { label: 'Laptop' }],
+			['bb'.repeat(32), { label: 'Phone' }],
+		]);
+		const withRoom = await startDaemonServer({
+			lease: leaseB,
+			mount: { mount: 'demo', runtime: makeRuntime() },
+			accountRoom: { roster: () => roster as never },
+		});
+		try {
+			const server = expectOk(withRoom);
+			const rows = expectOk(await daemonClient(server.socketPath).devices());
+			expect(rows).toEqual([
+				{ peerId: 'aa'.repeat(32), label: 'Laptop' },
+				{ peerId: 'bb'.repeat(32), label: 'Phone' },
+			]);
+		} finally {
+			if (withRoom.error === null) await withRoom.data.close();
+			leaseB.release();
+		}
+	});
+
 	test('close stops the listener, removes the socket, and is idempotent', async () => {
 		const lease = claimTestLease();
 		const serverResult = await startDaemonServer({

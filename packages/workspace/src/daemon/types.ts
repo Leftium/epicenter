@@ -12,12 +12,23 @@
  */
 
 import type { Result } from 'wellcrafted/result';
+import type { Roster } from '../account/reducer.js';
 import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
 import type { Peer } from '../document/presence-protocol.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise } from '../shared/types.js';
+
+/**
+ * What the daemon socket app reads to serve `/devices`: the current device
+ * roster (the account doc's reducer projection). A live account room satisfies
+ * this structurally; the daemon serves an empty list when there is none (signed
+ * out, or the account room failed to open).
+ */
+export type DaemonServedAccountRoom = {
+	roster(): Roster;
+};
 
 /**
  * Collaboration fields the daemon socket app reads while serving `/peers` and

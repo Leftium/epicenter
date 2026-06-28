@@ -22,7 +22,7 @@ import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './action-handler.js';
-import type { DaemonServedMount } from './types.js';
+import type { DaemonServedAccountRoom, DaemonServedMount } from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -74,6 +74,21 @@ export type DaemonListSnapshot = {
 };
 
 /**
+ * Row shape returned by `/devices`. One row per peer in this account's roster.
+ *
+ * Distinct from {@link PeerSnapshot}: `/peers` is who is connected to THIS
+ * workspace room right now (live presence), while `/devices` is the per-person
+ * roster from the account doc (every dialable device the account has listed,
+ * online or not). `peerId` is the device's iroh public key (64-hex), the dial
+ * target; `label` is its human-facing name (hostname by default).
+ */
+export const DeviceSnapshot = type({
+	peerId: 'string',
+	label: 'string',
+});
+export type DeviceSnapshot = typeof DeviceSnapshot.infer;
+
+/**
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
@@ -81,7 +96,10 @@ export type DaemonListSnapshot = {
  * name is a label for CLI display, never an internal dispatch key. Actions are
  * addressed by their bare key on the wire and in the CLI alike.
  */
-export function buildDaemonApp(mount: DaemonServedMount) {
+export function buildDaemonApp(
+	mount: DaemonServedMount,
+	accountRoom?: DaemonServedAccountRoom,
+) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', (c) => {
@@ -90,6 +108,14 @@ export function buildDaemonApp(mount: DaemonServedMount) {
 			if (!collaboration) return c.json(Ok(rows));
 			for (const peer of collaboration.peers.list()) {
 				rows.push({ nodeId: peer.nodeId });
+			}
+			return c.json(Ok(rows));
+		})
+		.post('/devices', (c) => {
+			const rows: DeviceSnapshot[] = [];
+			if (!accountRoom) return c.json(Ok(rows));
+			for (const [peerId, entry] of accountRoom.roster()) {
+				rows.push({ peerId, label: entry.label });
 			}
 			return c.json(Ok(rows));
 		})

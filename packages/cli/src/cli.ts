@@ -2,6 +2,7 @@ import yargs from 'yargs';
 import { authCommand } from './commands/auth.js';
 import { blobsCommand } from './commands/blobs.js';
 import { daemonCommand } from './commands/daemon.js';
+import { devicesCommand } from './commands/devices.js';
 import { initCommand } from './commands/init.js';
 import { listCommand } from './commands/list.js';
 import { matterCommand } from './commands/matter.js';
@@ -22,6 +23,7 @@ import { runCommand } from './commands/run.js';
  *   - `matter`: lint a folder of typed markdown (disk is the source; SQLite is a projection)
  *   - `run`:   invoke one by action key; `--peer` dispatches over RPC
  *   - `peers`: enumerate other clients currently online via the workspace presence row
+ *   - `devices`: list this account's devices from the per-person account-doc roster
  *
  * Every mount action is invoked through `run`, e.g.
  * `epicenter run markdown_rebuild '{}'` to re-materialize the read-only
@@ -40,6 +42,7 @@ export function createCLI() {
 				.command(blobsCommand)
 				.command(initCommand)
 				.command(daemonCommand)
+				.command(devicesCommand)
 				.command(listCommand)
 				.command(matterCommand)
 				.command(peersCommand)

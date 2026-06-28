@@ -23,7 +23,7 @@ export {
 	RunError,
 } from './daemon/action-errors.js';
 export type { DaemonListSnapshot } from './daemon/app.js';
-export { PeerSnapshot, RunRequest } from './daemon/app.js';
+export { DeviceSnapshot, PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type AttachMountInfrastructureOptions,
 	attachMountInfrastructure,

@@ -26,7 +26,12 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { RunError } from './action-errors.js';
-import type { DaemonListSnapshot, PeerSnapshot, RunRequest } from './app.js';
+import type {
+	DaemonListSnapshot,
+	DeviceSnapshot,
+	PeerSnapshot,
+	RunRequest,
+} from './app.js';
 import { socketPathFor } from './paths.js';
 
 /**
@@ -162,6 +167,8 @@ export function daemonClient(
 ) {
 	return {
 		peers: () => call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers'),
+		devices: () =>
+			call<DeviceSnapshot[], never>(socketPath, timeoutMs, '/devices'),
 		list: () => call<DaemonListSnapshot, never>(socketPath, timeoutMs, '/list'),
 		run: (request: RunRequest) =>
 			call<unknown, RunError>(socketPath, timeoutMs, '/run', request),

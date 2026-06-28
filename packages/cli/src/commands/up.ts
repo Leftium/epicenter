@@ -160,31 +160,12 @@ export async function runUp(
 	if (startResult.error) return startResult;
 	const opened = startResult.data;
 
-	if (opened.status === 'started') {
-		const started = opened.entry;
-		stack.defer(async () => {
-			await started.runtime[Symbol.asyncDispose]();
-		});
-
-		const serverResult = await startDaemonServer({ lease, mount: started });
-		if (serverResult.error) return serverResult;
-		const daemonServer = serverResult.data;
-		stack.defer(() => daemonServer.close());
-	}
-
-	if (opened.status === 'started') {
-		const metadataResult = trySync({
-			try: () => writeMetadata(epicenterRoot, metadata),
-			catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
-		});
-		if (metadataResult.error) return metadataResult;
-		stack.defer(() => unlinkMetadata(epicenterRoot));
-	}
-
 	// Open the per-person account room alongside the mount: the device roster
 	// lives here (Wave 3), not on per-room workspace presence. It is best-effort
 	// and independent of the mount: a signed-out daemon has none (null), and a
 	// failure to open it never aborts the mount that is the daemon's real job.
+	// Opened before the socket binds so its roster can back the `/devices` route.
+	// Deferred first, so on teardown it disposes LAST (after the socket closes).
 	const { data: accountRoom, error: accountRoomError } = await tryAsync({
 		try: () => openAccountRoom({ epicenterRoot, auth }),
 		catch: (cause) => Err(extractErrorMessage(cause)),
@@ -198,6 +179,31 @@ export async function runUp(
 		logSyncStatus(
 			`account room: online as ${accountRoom.peerId} (${accountRoom.roster().size} device(s))`,
 		);
+	}
+
+	if (opened.status === 'started') {
+		const started = opened.entry;
+		stack.defer(async () => {
+			await started.runtime[Symbol.asyncDispose]();
+		});
+
+		const serverResult = await startDaemonServer({
+			lease,
+			mount: started,
+			accountRoom: accountRoom ?? undefined,
+		});
+		if (serverResult.error) return serverResult;
+		const daemonServer = serverResult.data;
+		stack.defer(() => daemonServer.close());
+	}
+
+	if (opened.status === 'started') {
+		const metadataResult = trySync({
+			try: () => writeMetadata(epicenterRoot, metadata),
+			catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
+		});
+		if (metadataResult.error) return metadataResult;
+		stack.defer(() => unlinkMetadata(epicenterRoot));
 	}
 
 	const teardownStack = stack.move();

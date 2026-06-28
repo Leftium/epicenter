@@ -25,6 +25,7 @@ import {
 	type EpicenterConfigError,
 	type InactiveMount,
 	openAccountRoom,
+	openDeviceGateway,
 	openEpicenterRoot,
 	StartupError,
 	startDaemonServer,
@@ -183,6 +184,34 @@ export async function runUp(
 		);
 	}
 
+	// Open the device gateway alongside the account room: this is the site that
+	// turns the gateway primitive into a live endpoint. It needs the account
+	// room's trust fold to gate Ring 0, so it is gated on a present account room
+	// and is equally best-effort. Deferred AFTER the account room so LIFO teardown
+	// closes the gateway (and its route children) BEFORE the trust source it reads
+	// goes away. The handle is threaded into the daemon socket app so `tools` and
+	// `call` can dial through it.
+	let deviceGateway: Awaited<ReturnType<typeof openDeviceGateway>> | undefined;
+	if (accountRoom !== null) {
+		const { data: gateway, error: gatewayError } = await tryAsync({
+			try: () => openDeviceGateway({ epicenterRoot, trust: accountRoom }),
+			catch: (cause) => Err(extractErrorMessage(cause)),
+		});
+		if (gatewayError !== null) {
+			logSyncStatus(
+				`device gateway: failed to open (${gatewayError}); cross-device tools disabled`,
+			);
+		} else {
+			deviceGateway = gateway;
+			stack.defer(() => gateway[Symbol.asyncDispose]());
+			logSyncStatus(
+				`device gateway: listening as ${gateway.peerId} on ${
+					gateway.boundSockets().join(', ') || '(no direct address)'
+				} [routes: ${gateway.routeNames().join(', ')}]`,
+			);
+		}
+	}
+
 	if (opened.status === 'started') {
 		const started = opened.entry;
 		stack.defer(async () => {
@@ -193,6 +222,7 @@ export async function runUp(
 			lease,
 			mount: started,
 			accountRoom: accountRoom ?? undefined,
+			deviceGateway,
 		});
 		if (serverResult.error) return serverResult;
 		const daemonServer = serverResult.data;

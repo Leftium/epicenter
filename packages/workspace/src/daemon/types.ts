@@ -14,7 +14,7 @@
 import type { Result } from 'wellcrafted/result';
 import type { AppendVerdictResult } from '../account/account-doc.js';
 import type { Roster } from '../account/reducer.js';
-import type { PeerId } from '../gateway/transport.js';
+import type { PeerId, PeerTransport } from '../gateway/transport.js';
 import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
@@ -36,6 +36,15 @@ export type DaemonServedAccountRoom = {
 	revoke(subject: PeerId): AppendVerdictResult;
 	/** The 6-digit SAS for the (this device, `subject`) pair, for out-of-band compare. */
 	sas(subject: PeerId): string;
+};
+
+/**
+ * What the daemon socket app reads to serve `/tools` and `/call`: the dial-side
+ * transport of the live device gateway. Absent (signed out, or the gateway
+ * failed to open) means cross-device tool routes answer a typed Unavailable.
+ */
+export type DaemonServedDeviceGateway = {
+	transport: PeerTransport;
 };
 
 /**

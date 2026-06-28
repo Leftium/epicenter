@@ -18,7 +18,11 @@ import { buildDaemonApp } from './app.js';
 import type { DaemonLease } from './lease.js';
 import { unlinkSocketFile } from './runtime-files.js';
 import { StartupError } from './startup-errors.js';
-import type { DaemonServedAccountRoom, DaemonServedMount } from './types.js';
+import type {
+	DaemonServedAccountRoom,
+	DaemonServedDeviceGateway,
+	DaemonServedMount,
+} from './types.js';
 import { bindUnixSocket } from './unix-socket.js';
 
 export type DaemonServerOptions = {
@@ -32,6 +36,12 @@ export type DaemonServerOptions = {
 	 * list. The daemon socket still binds either way.
 	 */
 	accountRoom?: DaemonServedAccountRoom;
+	/**
+	 * The live device gateway, when one is open. Its transport backs `/tools` and
+	 * `/call`; omit it and those routes answer a typed Unavailable. The daemon
+	 * socket still binds either way.
+	 */
+	deviceGateway?: DaemonServedDeviceGateway;
 };
 
 function createDaemonServer({
@@ -78,9 +88,10 @@ export async function startDaemonServer({
 	lease,
 	mount,
 	accountRoom,
+	deviceGateway,
 }: DaemonServerOptions): Promise<Result<DaemonServer, StartupError>> {
 	const { socketPath } = lease;
-	const app = buildDaemonApp(mount, accountRoom);
+	const app = buildDaemonApp(mount, accountRoom, deviceGateway);
 	const bindResult = trySync({
 		try: () => bindUnixSocket({ socketPath, fetch: app.fetch }),
 		catch: (cause) => StartupError.BindFailed({ cause }),

@@ -19,12 +19,26 @@
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Ok } from 'wellcrafted/result';
-import { asPeerId } from '../gateway/transport.js';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, tryAsync } from 'wellcrafted/result';
+import type { JsonValue } from 'wellcrafted/json';
+import type {
+	AgentToolDefinition,
+	AgentToolOutcome,
+} from '../agent/tools.js';
+import { createMcpGatewayCatalog } from '../gateway/index.js';
+import { asPeerId, asRouteName } from '../gateway/transport.js';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './action-handler.js';
-import type { DaemonServedAccountRoom, DaemonServedMount } from './types.js';
+import type {
+	DaemonServedAccountRoom,
+	DaemonServedDeviceGateway,
+	DaemonServedMount,
+} from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -130,6 +144,60 @@ export const AccountRoomError = defineErrors({
 export type AccountRoomError = InferErrors<typeof AccountRoomError>;
 
 /**
+ * Wire body for `/tools`: list the catalog of one route on one target device.
+ * `device` is the target's peerId (the dial target); `route` is the named route
+ * on its gateway (e.g. `books`). `hintAddrs` are direct dial hints supplied by
+ * the caller for an off-host peer until the synced roster carries them.
+ */
+export const ToolsRequest = type({
+	device: 'string',
+	route: 'string',
+	'hintAddrs?': 'string[]',
+});
+export type ToolsRequest = typeof ToolsRequest.infer;
+
+/**
+ * Wire body for `/call`: invoke one tool on one route of one target device.
+ * `input` is the tool's JSON argument object (validated against the remote tool's
+ * own schema downstream, MCP-side).
+ */
+export const CallRequest = type({
+	device: 'string',
+	route: 'string',
+	tool: 'string',
+	input: 'unknown',
+	'hintAddrs?': 'string[]',
+});
+export type CallRequest = typeof CallRequest.infer;
+
+/**
+ * Tagged error for the cross-device tool routes. `Unavailable` means this daemon
+ * has no live gateway to dial through (signed out, or it failed to open).
+ * `DialFailed` means the channel to the target route could not be opened: the
+ * route refused this device (below its trust threshold), the peer is unreachable,
+ * or the MCP handshake timed out. The refusal and the unreachable case are
+ * indistinguishable to the dialer by design (a refused peer is closed after the
+ * QUIC handshake), so both surface here.
+ */
+export const DeviceGatewayError = defineErrors({
+	Unavailable: () => ({
+		message:
+			'no device gateway: the daemon has no signed-in session or the gateway failed to open. Sign in, then restart `epicenter daemon up`.',
+	}),
+	DialFailed: ({ device, route, cause }: {
+		device: string;
+		route: string;
+		cause: unknown;
+	}) => ({
+		message: `could not reach route "${route}" on ${device}: ${extractErrorMessage(cause)}. The device may be offline, or it has not verified this one.`,
+		device,
+		route,
+		cause,
+	}),
+});
+export type DeviceGatewayError = InferErrors<typeof DeviceGatewayError>;
+
+/**
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
@@ -140,6 +208,7 @@ export type AccountRoomError = InferErrors<typeof AccountRoomError>;
 export function buildDaemonApp(
 	mount: DaemonServedMount,
 	accountRoom?: DaemonServedAccountRoom,
+	deviceGateway?: DaemonServedDeviceGateway,
 ) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
@@ -178,6 +247,51 @@ export function buildDaemonApp(
 			return c.json(
 				Ok<SasSnapshot>({ peerId, sas: accountRoom.sas(asPeerId(peerId)) }),
 			);
+		})
+		.post('/tools', sValidator('json', ToolsRequest), async (c) => {
+			if (!deviceGateway) return c.json(DeviceGatewayError.Unavailable());
+			const { device, route, hintAddrs } = c.req.valid('json');
+			const { data, error } = await tryAsync({
+				try: async () => {
+					await using catalog = await createMcpGatewayCatalog({
+						transport: deviceGateway.transport,
+						target: asPeerId(device),
+						route: asRouteName(route),
+						hintAddrs,
+					});
+					return catalog.definitions();
+				},
+				catch: (cause) => DeviceGatewayError.DialFailed({ device, route, cause }),
+			});
+			if (error !== null) return c.json(error);
+			return c.json(Ok<AgentToolDefinition[]>(data));
+		})
+		.post('/call', sValidator('json', CallRequest), async (c) => {
+			if (!deviceGateway) return c.json(DeviceGatewayError.Unavailable());
+			const { device, route, tool, input, hintAddrs } = c.req.valid('json');
+			const { data, error } = await tryAsync({
+				try: async () => {
+					await using catalog = await createMcpGatewayCatalog({
+						transport: deviceGateway.transport,
+						target: asPeerId(device),
+						route: asRouteName(route),
+						hintAddrs,
+					});
+					// Await before the scope's `await using` disposes the catalog, or the
+					// MCP client closes while the call is still in flight.
+					return await catalog.resolve(
+						{
+							toolCallId: '1',
+							toolName: tool,
+							input: (input ?? null) as JsonValue,
+						},
+						c.req.raw.signal,
+					);
+				},
+				catch: (cause) => DeviceGatewayError.DialFailed({ device, route, cause }),
+			});
+			if (error !== null) return c.json(error);
+			return c.json(Ok<AgentToolOutcome>(data));
 		})
 		.post('/list', (c) => {
 			const actions: ActionManifest = {};

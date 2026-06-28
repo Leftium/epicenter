@@ -25,10 +25,13 @@ export {
 export type { DaemonListSnapshot } from './daemon/app.js';
 export {
 	AccountRoomError,
+	CallRequest,
+	DeviceGatewayError,
 	DeviceSnapshot,
 	PeerSnapshot,
 	RunRequest,
 	SasSnapshot,
+	ToolsRequest,
 	VerdictRequest,
 	VerdictSnapshot,
 } from './daemon/app.js';
@@ -41,6 +44,13 @@ export {
 	openAccountRoom,
 	type OpenAccountRoomOptions,
 } from './daemon/open-account-room.js';
+export {
+	DEFAULT_DEVICE_ROUTES,
+	type DeviceGatewayHandle,
+	type DeviceGatewayTrustSource,
+	openDeviceGateway,
+	type OpenDeviceGatewayOptions,
+} from './daemon/open-device-gateway.js';
 export {
 	type DaemonClient,
 	DaemonError,

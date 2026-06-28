@@ -25,14 +25,21 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+import type {
+	AgentToolDefinition,
+	AgentToolOutcome,
+} from '../agent/tools.js';
 import type { RunError } from './action-errors.js';
 import type {
 	AccountRoomError,
+	CallRequest,
 	DaemonListSnapshot,
+	DeviceGatewayError,
 	DeviceSnapshot,
 	PeerSnapshot,
 	RunRequest,
 	SasSnapshot,
+	ToolsRequest,
 	VerdictRequest,
 	VerdictSnapshot,
 } from './app.js';
@@ -192,6 +199,20 @@ export function daemonClient(
 				socketPath,
 				timeoutMs,
 				'/sas',
+				request,
+			),
+		tools: (request: ToolsRequest) =>
+			call<AgentToolDefinition[], DeviceGatewayError>(
+				socketPath,
+				timeoutMs,
+				'/tools',
+				request,
+			),
+		call: (request: CallRequest) =>
+			call<AgentToolOutcome, DeviceGatewayError>(
+				socketPath,
+				timeoutMs,
+				'/call',
 				request,
 			),
 		list: () => call<DaemonListSnapshot, never>(socketPath, timeoutMs, '/list'),

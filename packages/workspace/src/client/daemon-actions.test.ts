@@ -21,6 +21,8 @@ function makeStubClient() {
 		verify: unreachable as DaemonClient['verify'],
 		revoke: unreachable as DaemonClient['revoke'],
 		sas: unreachable as DaemonClient['sas'],
+		tools: unreachable as DaemonClient['tools'],
+		call: unreachable as DaemonClient['call'],
 		list: unreachable as DaemonClient['list'],
 		run: (input: RunRequest) => {
 			calls.push({ method: 'run', arg: input });

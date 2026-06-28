@@ -67,10 +67,13 @@ const identifierMatches = identifierLine === expectedIdentifier;
 console.log('\nverdict:');
 if (isAdhoc) {
 	console.log(
-		'  ✗ ad-hoc signature — the grant will NOT survive rebuilds. Install a',
+		'  ✗ ad-hoc signature — the grant will NOT survive rebuilds. The runner',
 	);
 	console.log(
-		'    codesigning cert or set WHISPERING_DEV_SIGNING_IDENTITY, then rebuild.',
+		'    normally mints a self-signed cert instead; re-run `bun run dev:local`',
+	);
+	console.log(
+		'    (or set WHISPERING_DEV_SIGNING_IDENTITY) and rebuild.',
 	);
 } else if (!identifierMatches) {
 	console.log(
@@ -91,10 +94,11 @@ console.log(
 );
 
 console.log(
-	'\nreset the dev grant (after the app has launched at least once):',
+	'\nreset the dev grants (after the app has launched at least once):',
 );
+console.log(`  tccutil reset Microphone ${expectedIdentifier}`);
 console.log(`  tccutil reset Accessibility ${expectedIdentifier}`);
-console.log('  then relaunch dev and grant the new Accessibility entry.');
+console.log('  then relaunch dev and grant the new Microphone/Accessibility entries.');
 
 console.log('\nlive trust / capability / listener health:');
 console.log(

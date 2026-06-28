@@ -19,11 +19,14 @@
 # requirement across relinks, so the TCC grant sticks), then `exec`s the binary
 # so Tauri's monitored PID is the app itself.
 #
-# The signing identity is the only stable code-signing cert on the machine; a
-# DISTINCT identifier (so.epicenter.whispering.dev, not the production
-# so.epicenter.whispering) keeps dev and production as separate TCC entries, so
-# granting one never touches the other. Override the cert with
-# WHISPERING_DEV_SIGNING_IDENTITY if you have a dedicated one.
+# Any STABLE code-signing cert works: a DISTINCT identifier
+# (so.epicenter.whispering.dev, not the production so.epicenter.whispering) keeps
+# dev and production as separate TCC entries, so granting one never touches the
+# other. If the machine has no real cert, the runner mints a persistent
+# self-signed one (see provision_self_signed_identity) rather than falling back
+# to ad-hoc, whose cdhash identity changes every relink and breaks the grant.
+# Override the cert with WHISPERING_DEV_SIGNING_IDENTITY if you have a dedicated
+# one.
 #
 # This runner is wired in only on macOS (see scripts/launch-dev.ts); other
 # platforms run plain `tauri dev`.
@@ -76,19 +79,90 @@ while [ "$index" -lt "${#cargo_flags[@]}" ]; do
 done
 binary="$target_dir/${triple:+$triple/}$profile/whispering"
 
-# Pick the signing identity: an explicit override, else the first real cert
-# (Developer ID or Apple Development). A stable cert is what makes the grant
-# survive rebuilds; ad-hoc ("-") cannot, so say so loudly rather than pretend.
+# A self-signed code-signing cert minted once and reused forever. The common
+# name doubles as the codesign identity string and as the lookup key for "did we
+# already mint it". Distinct from the bundle identifier: this names the signer,
+# DEV_IDENTIFIER names the signed app.
+readonly SELF_SIGNED_CN="Whispering Dev Local Codesign"
+
+# Mint (or reuse) a persistent self-signed code-signing identity in the login
+# keychain and echo its name. A self-signed cert gives the binary a STABLE
+# designated requirement across relinks (unlike ad-hoc), so the TCC grant
+# sticks, with no Apple account and no manual setup. Idempotent: the first run
+# mints, every later run reuses.
+provision_self_signed_identity() {
+	if security find-certificate -c "$SELF_SIGNED_CN" >/dev/null 2>&1; then
+		printf '%s' "$SELF_SIGNED_CN"
+		return 0
+	fi
+
+	echo "dev-codesign-runner: no stable cert found; minting a self-signed one (\"$SELF_SIGNED_CN\")." >&2
+	echo "dev-codesign-runner: macOS will ask once to let codesign use the key. Click \"Always Allow\"." >&2
+
+	local workdir key crt p12 login_kc import_err
+	workdir="$(mktemp -d)"
+	key="$workdir/key.pem"
+	crt="$workdir/cert.pem"
+	p12="$workdir/cert.p12"
+	login_kc="$HOME/Library/Keychains/login.keychain-db"
+
+	# A 10-year self-signed cert carrying the codeSigning extended key usage:
+	# the one property codesign requires of an identity.
+	openssl req -x509 -newkey rsa:2048 -nodes \
+		-keyout "$key" -out "$crt" -days 3650 \
+		-subj "/CN=$SELF_SIGNED_CN" \
+		-addext "basicConstraints=critical,CA:FALSE" \
+		-addext "keyUsage=critical,digitalSignature" \
+		-addext "extendedKeyUsage=codeSigning" >/dev/null 2>&1
+
+	# Bundle to PKCS#12 with a NON-EMPTY passphrase and the legacy SHA1-3DES PBE:
+	# Apple's Security framework fails MAC verification on empty-password p12s and
+	# is happiest with the legacy algorithms, so an empty pass or modern PBE makes
+	# `security import` reject the bundle ("MAC verification failed"). The
+	# passphrase is a throwaway that never leaves this function.
+	openssl pkcs12 -export -out "$p12" -inkey "$key" -in "$crt" \
+		-passout pass:"$SELF_SIGNED_CN" \
+		-certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 >/dev/null 2>&1
+
+	# Import into the login keychain. -T names codesign on the key's access list
+	# and -A widens that to local tooling, so the first build surfaces a GUI
+	# "Always Allow" dialog (click it once) rather than a denial. These flags do
+	# NOT by themselves suppress the prompt on modern macOS; the one-time Always
+	# Allow is what persists it. For a fully headless flow (CI), grant zero-prompt
+	# access with the login password instead:
+	#   security set-key-partition-list -S apple-tool:,apple: -s \
+	#     -k "$LOGIN_PW" "$login_kc"
+	# or skip self-signing entirely and set WHISPERING_DEV_SIGNING_IDENTITY.
+	import_err="$(security import "$p12" -k "$login_kc" \
+		-P "$SELF_SIGNED_CN" -A -T /usr/bin/codesign 2>&1)"
+	if [ -n "$import_err" ] && ! security find-certificate -c "$SELF_SIGNED_CN" >/dev/null 2>&1; then
+		# Fail loudly with the real reason rather than handing back a name whose
+		# cert isn't in the keychain (which surfaces later as a baffling codesign
+		# "item could not be found"). The usual culprit is a locked keychain in a
+		# non-GUI session: run `bun run dev` from a real Terminal/iTerm window.
+		echo "dev-codesign-runner: could not import the signing cert: $import_err" >&2
+		echo "dev-codesign-runner: is the login keychain unlocked / is this a GUI session?" >&2
+		rm -rf "$workdir"
+		return 1
+	fi
+
+	rm -rf "$workdir"
+	printf '%s' "$SELF_SIGNED_CN"
+}
+
+# Pick the signing identity, in preference order:
+#   1. an explicit override (WHISPERING_DEV_SIGNING_IDENTITY)
+#   2. a real Apple cert already on the machine (Developer ID / Apple Development)
+#   3. a persistent self-signed cert this runner mints itself
+# Every tier yields a STABLE identity, so the TCC grant survives rebuilds; the
+# old ad-hoc fallback could not, which is why it is gone.
 identity="${WHISPERING_DEV_SIGNING_IDENTITY:-}"
 if [ -z "$identity" ]; then
 	identity="$(security find-identity -v -p codesigning \
 		| awk -F'"' '/Developer ID Application|Apple Development/ { print $2; exit }')"
 fi
 if [ -z "$identity" ]; then
-	echo "dev-codesign-runner: no stable signing identity found; falling back to ad-hoc." >&2
-	echo "dev-codesign-runner: the Accessibility grant will NOT persist across rebuilds." >&2
-	echo "dev-codesign-runner: set WHISPERING_DEV_SIGNING_IDENTITY or install a codesigning cert." >&2
-	identity="-"
+	identity="$(provision_self_signed_identity)" || exit 1
 fi
 
 codesign --force \

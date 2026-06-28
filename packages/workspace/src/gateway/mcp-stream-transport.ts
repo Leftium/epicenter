@@ -58,6 +58,11 @@ export class StreamTransport implements Transport {
 			}
 		});
 		this.channel.source.on('error', (error) => this.onerror?.(error));
+		// The sink is a Writable too: a failed `writeAll`/`finish` on the iroh send
+		// half surfaces as an 'error' event. `send` writes without a per-write error
+		// callback, so without this listener that event is unhandled and crashes the
+		// process; route it through the same `onerror` hook as the source.
+		this.channel.sink.on('error', (error) => this.onerror?.(error));
 		this.channel.source.on('close', () => this.onclose?.());
 	}
 

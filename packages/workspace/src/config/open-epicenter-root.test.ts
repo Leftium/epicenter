@@ -32,12 +32,25 @@ import {
 } from './open-epicenter-root.js';
 
 let epicenterRoot: string;
+let originalRuntimeDir: string | undefined;
+let runtimeRoot: string;
 
 beforeEach(() => {
+	// Point the runtime dir at a fresh `/tmp` dir so the daemon's iroh keyfile
+	// (written by `resolveDaemonNodeId` under `runtimeDir()`) never leaks into
+	// the user's real data dir.
+	originalRuntimeDir = process.env.EPICENTER_RUNTIME_DIR;
+	runtimeRoot = mkdtempSync('/tmp/open-epicenter-root-run-');
+	process.env.EPICENTER_RUNTIME_DIR = runtimeRoot;
+
 	epicenterRoot = mkdtempSync(join(tmpdir(), 'open-epicenter-root-'));
 });
 
 afterEach(() => {
+	if (originalRuntimeDir === undefined)
+		delete process.env.EPICENTER_RUNTIME_DIR;
+	else process.env.EPICENTER_RUNTIME_DIR = originalRuntimeDir;
+	rmSync(runtimeRoot, { recursive: true, force: true });
 	rmSync(epicenterRoot, { recursive: true, force: true });
 });
 
@@ -200,7 +213,6 @@ describe('openEpicenterRoot', () => {
 			(await openEpicenterRoot({ epicenterRoot, auth: null })).data?.status,
 		).toBe('started');
 		const first = readCapturedNodeId(epicenterRoot);
-		expect(first).toMatch(/^[a-z0-9]{16}$/);
 
 		// A second open (a daemon restart) reuses the persisted id.
 		expect(

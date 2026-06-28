@@ -105,3 +105,19 @@ export function logPathFor(dir: string): string {
 		`${dirHash(dir)}.log`,
 	);
 }
+
+/**
+ * Path for the daemon's durable iroh `SecretKey` file for the root at `dir`.
+ *
+ * Lives under `runtimeDir()` (machine-local, OUTSIDE the repo tree) so it
+ * survives `git clean` and is never accidentally committed. The hash-keying
+ * follows the same convention as {@link metadataPathFor} and
+ * {@link leasePathFor}: two daemons on the same machine get distinct key files
+ * because their `dir` hashes are distinct, but the same daemon always loads
+ * the same file on restart.
+ *
+ * The file itself is written by `loadOrCreateDeviceSecret` with mode `0600`.
+ */
+export function irohKeyPathFor(dir: string): string {
+	return join(runtimeDir(), `${dirHash(dir)}.iroh.key.json`);
+}

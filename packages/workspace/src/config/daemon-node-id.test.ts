@@ -1,45 +1,52 @@
 /**
  * Tests for `resolveDaemonNodeId`, the daemon's durable per-install identity.
  *
- * The invariants that matter for the trusted-relay identity model:
- * - generated once and persisted under `.epicenter/node.json`
- * - stable across reopen (a restart keeps the same node)
+ * The daemon's identity is now its iroh device key, so the invariants that
+ * matter for the trusted-relay identity model are:
+ * - the id is the iroh public key (64-char lowercase hex)
+ * - the secret is persisted under `irohKeyPathFor(root)` (machine-local, under
+ *   `runtimeDir()`, never inside the Epicenter root)
+ * - stable across calls (a restart keeps the same node, same keyfile)
  * - distinct per Epicenter root (two folders of the same app are two nodes)
- * - never derived from the path or the mount name (so two machines never collide)
- * - a corrupt state file self-heals into a fresh id
+ * - a corrupt key file fails loud rather than rotating the device's identity
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 
+import { irohKeyPathFor } from '../daemon/paths.js';
 import { resolveDaemonNodeId } from './daemon-node-id.js';
 
+let originalRuntimeDir: string | undefined;
+let runtimeRoot: string;
 let root: string;
 
 beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), 'daemon-node-id-'));
+	// Point the runtime dir at a fresh `/tmp` dir so the iroh keyfile never
+	// leaks into the user's real data dir. `/tmp/...` is short on every POSIX
+	// platform, which the socket-path guard in `paths.ts` relies on.
+	originalRuntimeDir = process.env.EPICENTER_RUNTIME_DIR;
+	runtimeRoot = mkdtempSync('/tmp/daemon-node-id-run-');
+	process.env.EPICENTER_RUNTIME_DIR = runtimeRoot;
+
+	root = mkdtempSync('/tmp/daemon-node-id-');
 });
 
 afterEach(() => {
+	if (originalRuntimeDir === undefined)
+		delete process.env.EPICENTER_RUNTIME_DIR;
+	else process.env.EPICENTER_RUNTIME_DIR = originalRuntimeDir;
+	rmSync(runtimeRoot, { recursive: true, force: true });
 	rmSync(root, { recursive: true, force: true });
 });
 
 describe('resolveDaemonNodeId', () => {
-	test('generates a 16-char id and persists it to .epicenter/node.json', () => {
+	test('returns the iroh pubkey and persists the key under irohKeyPathFor', () => {
 		const id = resolveDaemonNodeId(root);
-		expect(id).toMatch(/^[a-z0-9]{16}$/);
-		const persisted = JSON.parse(
-			readFileSync(join(root, '.epicenter', 'node.json'), 'utf8'),
-		);
-		expect(persisted['epicenter.node.id']).toBe(id);
+		expect(id).toMatch(/^[0-9a-f]{64}$/);
+		expect(existsSync(irohKeyPathFor(root))).toBe(true);
+		// A second call reuses the same keyfile, so the identity is durable.
+		expect(resolveDaemonNodeId(root)).toBe(id);
 	});
 
 	test('is idempotent across calls (a restart keeps the same node)', () => {
@@ -49,7 +56,7 @@ describe('resolveDaemonNodeId', () => {
 	});
 
 	test('gives two roots distinct ids', () => {
-		const other = mkdtempSync(join(tmpdir(), 'daemon-node-id-'));
+		const other = mkdtempSync('/tmp/daemon-node-id-');
 		try {
 			expect(resolveDaemonNodeId(root)).not.toBe(resolveDaemonNodeId(other));
 		} finally {
@@ -57,12 +64,10 @@ describe('resolveDaemonNodeId', () => {
 		}
 	});
 
-	test('self-heals a corrupt state file into a fresh id', () => {
-		const file = join(root, '.epicenter', 'node.json');
-		mkdirSync(join(root, '.epicenter'), { recursive: true });
-		writeFileSync(file, 'not json', { mode: 0o600 });
-		const id = resolveDaemonNodeId(root);
-		expect(id).toMatch(/^[a-z0-9]{16}$/);
-		expect(resolveDaemonNodeId(root)).toBe(id);
+	test('fails loud on a corrupt key file rather than rotating identity', () => {
+		// Silently regenerating a device's iroh key on corruption would rotate
+		// its identity and de-enroll it, so corruption is surfaced, not healed.
+		writeFileSync(irohKeyPathFor(root), 'not json', { mode: 0o600 });
+		expect(() => resolveDaemonNodeId(root)).toThrow();
 	});
 });

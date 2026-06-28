@@ -1,4 +1,4 @@
-# 0075. Whispering authenticates with an OAuth bearer on every surface; the web build keeps its own origin
+# 0078. Whispering authenticates with an OAuth bearer on every surface; the web build keeps its own origin
 
 - **Status:** Proposed
 - **Date:** 2026-06-27

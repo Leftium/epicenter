@@ -4,7 +4,7 @@
 **Status**: Draft
 **Owner**: Whispering / platform auth
 **Branch**: (to start) feat/whispering-optional-auth, off `origin/main` (the #2220 merge that landed the vault)
-**Relates**: [ADR-0075](../docs/adr/0075-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md) (the transport decision this spec executes), [ADR-0074](../docs/adr/0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) (the vault that consumes the session keyring)
+**Relates**: [ADR-0078](../docs/adr/0078-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md) (the transport decision this spec executes), [ADR-0074](../docs/adr/0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) (the vault that consumes the session keyring)
 
 ## One Sentence
 
@@ -104,12 +104,12 @@ Surveyed `packages/auth`, `apps/api/ui`, `apps/tab-manager`, and `packages/cli`.
 
 ### The cookie-vs-bearer resolution (consulted Codex)
 
-The honest split is whether the web build should re-host under the api origin to get an XSS-safe httpOnly cookie. Resolved to OAuth bearer everywhere (ADR-0075). Two findings, independently confirmed by Codex, make this more than a convenience choice:
+The honest split is whether the web build should re-host under the api origin to get an XSS-safe httpOnly cookie. Resolved to OAuth bearer everywhere (ADR-0078). Two findings, independently confirmed by Codex, make this more than a convenience choice:
 
 1. **`createSession` rejects a cookie client.** It requires a `SyncAuthClient`; its own JSDoc says "A same-origin cookie client is a plain `AuthClient` and cannot be passed here." Cookie auth for Whispering would mean inventing a cookie-authenticated sync path: a third pattern.
 2. **A cookie does not protect a JS-decrypted vault.** The keys and keyring are decrypted in JS regardless of login transport; an XSS hole reads them out of the running app whether the credential is a cookie or a bearer. So the cookie's main benefit is largely moot for this app.
 
-Hardening lives inside the bearer choice (sessionStorage/memory grant on web, short-lived tokens, CSP), not a transport switch. See ADR-0075 for the full rationale and rejected alternatives.
+Hardening lives inside the bearer choice (sessionStorage/memory grant on web, short-lived tokens, CSP), not a transport switch. See ADR-0078 for the full rationale and rejected alternatives.
 
 ### Where the session singleton lives
 
@@ -119,14 +119,14 @@ Per `workspace-app-composition`: Whispering is a Shape B app with a `src-tauri/`
 
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
-| Auth transport for all surfaces | 2 coherence | OAuth bearer (`SyncAuthClient`) everywhere; web stays own origin | ADR-0075. Cookie cannot sync and does not protect a JS-decrypted vault. |
+| Auth transport for all surfaces | 2 coherence | OAuth bearer (`SyncAuthClient`) everywhere; web stays own origin | ADR-0078. Cookie cannot sync and does not protect a JS-decrypted vault. |
 | Auth client | 1 evidence | `createAppAuthClient(instance, { clientId, launcher, persistedAuthStorage })` | Verified: same client tab-manager/CLI use; returns `SyncAuthClient`. No new type. |
 | Platform selection | 2 coherence | `#platform/auth` provides `{ launcher, persistedAuthStorage }`; Tauri = deep-link + keychain, web = redirect + sessionStorage/memory | Matches the existing `#platform/*` seam; only launcher + storage differ per build. |
 | Session shape | 2 coherence | Additive, non-gating singleton in `src/lib/session.ts`; owns the vault doc + keyring only | Whispering stays Shape B; auth never gates the device-local workspace (ADR-0074 safe degenerate). |
 | Keyring delivery | 2 coherence | New authenticated server endpoint derives + returns the per-owner `Keyring`; client never sees `rootKeyring` | ADR-0074 invariant 1: keyring lives in the auth service, delivered over the session. |
 | Session keyring seam | 3 taste | Extend `SignedIn` with `fetch: AuthFetch`; Whispering's `build` fetches the keyring | Minimal additive seam; Whispering is the first/only consumer, so keyring logic stays app-side, not forced on every app. |
 | Self-host keyring | 2 coherence | Self-host derives with the operator's own `ENCRYPTION_SECRETS` root | ADR-0070: self-host runs the star with its own root; Epicenter is never in the loop. |
-| Web grant storage | 3 taste | `sessionStorage` or memory, never `localStorage`; Tauri keychain | ADR-0075 hardening. Trade repeat sign-in for a smaller XSS blast radius. |
+| Web grant storage | 3 taste | `sessionStorage` or memory, never `localStorage`; Tauri keychain | ADR-0078 hardening. Trade repeat sign-in for a smaller XSS blast radius. |
 | Vault doc attach + activation | Deferred | Deferred to the next wave | This spec stops at `session.current.keyring`; the vault wiring is "Wire the vault to the session". |
 
 ## Architecture
@@ -282,7 +282,7 @@ Attaching the `epicenter:secret-vault` doc, `createEncryptedYkvLww` + `activateE
 - [ ] `session.current.keyring` is non-null after a successful fetch and `null` (session still usable) on failure.
 - [ ] Sign-out disposes the payload (`session.current === null`).
 - [ ] Typecheck and the auth/encryption test suites pass.
-- [ ] ADR-0075 flips from Proposed to Accepted when the work lands.
+- [ ] ADR-0078 flips from Proposed to Accepted when the work lands.
 
 ## References
 
@@ -293,4 +293,4 @@ Attaching the `epicenter:secret-vault` doc, `createEncryptedYkvLww` + `activateE
 - `apps/tab-manager/src/lib/platform/auth/` - the Shape B + OAuth launcher precedent.
 - `packages/encryption/src/derivation.ts` - `deriveKeyring({ rootKeyring, label })`.
 - `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` - `createEncryptedYkvLww` + `activateEncryption`.
-- `docs/adr/0074-...md`, `docs/adr/0075-...md` - the vault and the transport decision.
+- `docs/adr/0074-...md`, `docs/adr/0078-...md` - the vault and the transport decision.

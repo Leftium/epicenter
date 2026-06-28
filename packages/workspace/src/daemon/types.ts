@@ -12,7 +12,9 @@
  */
 
 import type { Result } from 'wellcrafted/result';
+import type { AppendVerdictResult } from '../account/account-doc.js';
 import type { Roster } from '../account/reducer.js';
+import type { PeerId } from '../gateway/transport.js';
 import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
@@ -28,6 +30,12 @@ import type { MaybePromise } from '../shared/types.js';
  */
 export type DaemonServedAccountRoom = {
 	roster(): Roster;
+	/** Append this device's self-signed `verify` of `subject`. */
+	verify(subject: PeerId): AppendVerdictResult;
+	/** Append this device's self-signed `revoke` of `subject`. */
+	revoke(subject: PeerId): AppendVerdictResult;
+	/** The 6-digit SAS for the (this device, `subject`) pair, for out-of-band compare. */
+	sas(subject: PeerId): string;
 };
 
 /**

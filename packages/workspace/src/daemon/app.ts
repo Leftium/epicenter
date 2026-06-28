@@ -19,7 +19,9 @@
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
+import { asPeerId } from '../gateway/transport.js';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './action-handler.js';
 import type { DaemonServedAccountRoom, DaemonServedMount } from './types.js';
@@ -89,6 +91,45 @@ export const DeviceSnapshot = type({
 export type DeviceSnapshot = typeof DeviceSnapshot.infer;
 
 /**
+ * Wire body for `/verify`, `/revoke`, and `/sas`. `peerId` is the subject device
+ * (the dial target the operator names). The daemon signs with its own device key,
+ * so the asserter is never on the wire.
+ */
+export const VerdictRequest = type({
+	peerId: 'string',
+});
+export type VerdictRequest = typeof VerdictRequest.infer;
+
+/** Body returned by a successful `/verify` or `/revoke`: the appended verdict. */
+export const VerdictSnapshot = type({
+	/** The subject the verdict was stated about. */
+	peerId: 'string',
+	/** The per-asserter `seq` the verdict carries. */
+	seq: 'number',
+});
+export type VerdictSnapshot = typeof VerdictSnapshot.infer;
+
+/** Body returned by `/sas`: the 6-digit code for the (this device, subject) pair. */
+export const SasSnapshot = type({
+	peerId: 'string',
+	sas: 'string',
+});
+export type SasSnapshot = typeof SasSnapshot.infer;
+
+/**
+ * Tagged error for the account-doc write routes. They need a live account room
+ * (a signed-in session); without one the daemon cannot sign a verdict or derive
+ * a SAS, so it answers with this rather than silently no-opping.
+ */
+export const AccountRoomError = defineErrors({
+	Unavailable: () => ({
+		message:
+			'no account room: the daemon has no signed-in session. Sign in, then restart `epicenter daemon up`.',
+	}),
+});
+export type AccountRoomError = InferErrors<typeof AccountRoomError>;
+
+/**
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
@@ -118,6 +159,25 @@ export function buildDaemonApp(
 				rows.push({ peerId, label: entry.label });
 			}
 			return c.json(Ok(rows));
+		})
+		.post('/verify', sValidator('json', VerdictRequest), (c) => {
+			if (!accountRoom) return c.json(AccountRoomError.Unavailable());
+			const { peerId } = c.req.valid('json');
+			const { seq } = accountRoom.verify(asPeerId(peerId));
+			return c.json(Ok<VerdictSnapshot>({ peerId, seq }));
+		})
+		.post('/revoke', sValidator('json', VerdictRequest), (c) => {
+			if (!accountRoom) return c.json(AccountRoomError.Unavailable());
+			const { peerId } = c.req.valid('json');
+			const { seq } = accountRoom.revoke(asPeerId(peerId));
+			return c.json(Ok<VerdictSnapshot>({ peerId, seq }));
+		})
+		.post('/sas', sValidator('json', VerdictRequest), (c) => {
+			if (!accountRoom) return c.json(AccountRoomError.Unavailable());
+			const { peerId } = c.req.valid('json');
+			return c.json(
+				Ok<SasSnapshot>({ peerId, sas: accountRoom.sas(asPeerId(peerId)) }),
+			);
 		})
 		.post('/list', (c) => {
 			const actions: ActionManifest = {};

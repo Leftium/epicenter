@@ -27,10 +27,14 @@ import * as Y from 'yjs';
 
 import {
 	appendIdentityClaim,
+	appendRevoke,
+	appendVerify,
+	type AppendVerdictResult,
 	readAssertions,
 	readRoster,
 	RESERVED_ACCOUNT_ROOM_GUID,
 	type Roster,
+	shortAuthString,
 	type TrustState,
 	trustFromAssertions,
 } from '../account/index.js';
@@ -87,6 +91,19 @@ export type AccountRoomHandle = {
 	 * takes effect with no restart.
 	 */
 	trustState(): ReadonlyMap<PeerId, TrustState>;
+	/**
+	 * Append this device's self-signed `verify` of `subject` (existing-device
+	 * approval): writes a verdict into the held account doc, which syncs and, on
+	 * the next inbound connection, lifts `subject` to `verified` at the gateway.
+	 */
+	verify(subject: PeerId): AppendVerdictResult;
+	/** Append this device's self-signed `revoke` of `subject`. See {@link verify}. */
+	revoke(subject: PeerId): AppendVerdictResult;
+	/**
+	 * The 6-digit short authentication string for the (this device, `subject`)
+	 * pair: the human compares it across both screens before approving a `verify`.
+	 */
+	sas(subject: PeerId): string;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -176,6 +193,11 @@ export async function openAccountRoom(
 			roster: () => readRoster(ydoc, ownerId),
 			trustState: () =>
 				trustFromAssertions(readAssertions(ydoc), ownerId, peerId),
+			verify: (subject) =>
+				appendVerify({ ydoc, account: ownerId, secretKeyBytes, subject }),
+			revoke: (subject) =>
+				appendRevoke({ ydoc, account: ownerId, secretKeyBytes, subject }),
+			sas: (subject) => shortAuthString(peerId, subject),
 			async [Symbol.asyncDispose]() {
 				unsubscribe();
 				ydoc.destroy();

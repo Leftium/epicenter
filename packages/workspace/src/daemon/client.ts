@@ -27,10 +27,14 @@ import {
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { RunError } from './action-errors.js';
 import type {
+	AccountRoomError,
 	DaemonListSnapshot,
 	DeviceSnapshot,
 	PeerSnapshot,
 	RunRequest,
+	SasSnapshot,
+	VerdictRequest,
+	VerdictSnapshot,
 } from './app.js';
 import { socketPathFor } from './paths.js';
 
@@ -169,6 +173,27 @@ export function daemonClient(
 		peers: () => call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers'),
 		devices: () =>
 			call<DeviceSnapshot[], never>(socketPath, timeoutMs, '/devices'),
+		verify: (request: VerdictRequest) =>
+			call<VerdictSnapshot, AccountRoomError>(
+				socketPath,
+				timeoutMs,
+				'/verify',
+				request,
+			),
+		revoke: (request: VerdictRequest) =>
+			call<VerdictSnapshot, AccountRoomError>(
+				socketPath,
+				timeoutMs,
+				'/revoke',
+				request,
+			),
+		sas: (request: VerdictRequest) =>
+			call<SasSnapshot, AccountRoomError>(
+				socketPath,
+				timeoutMs,
+				'/sas',
+				request,
+			),
 		list: () => call<DaemonListSnapshot, never>(socketPath, timeoutMs, '/list'),
 		run: (request: RunRequest) =>
 			call<unknown, RunError>(socketPath, timeoutMs, '/run', request),

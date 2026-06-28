@@ -8,6 +8,11 @@ import { listCommand } from './commands/list.js';
 import { matterCommand } from './commands/matter.js';
 import { peersCommand } from './commands/peers.js';
 import { runCommand } from './commands/run.js';
+import {
+	revokeCommand,
+	sasCommand,
+	verifyCommand,
+} from './commands/trust.js';
 
 /**
  * Create the Epicenter CLI instance.
@@ -47,6 +52,9 @@ export function createCLI() {
 				.command(matterCommand)
 				.command(peersCommand)
 				.command(runCommand)
+				.command(verifyCommand)
+				.command(revokeCommand)
+				.command(sasCommand)
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

@@ -8,6 +8,11 @@
  * the {@link PeerTransport} seam, never by importing iroh.
  */
 
+export {
+	createMcpGatewayCatalog,
+	type McpGatewayCatalog,
+	type McpGatewayCatalogOptions,
+} from '../agent/mcp-gateway-catalog.js';
 export { createPeerGateway } from './gateway.js';
 export type {
 	DialOptions,

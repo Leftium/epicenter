@@ -53,6 +53,7 @@
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@hono/standard-validator": "catalog:",
+		"@modelcontextprotocol/sdk": "catalog:",
 		"@noble/ed25519": "^3.1.0",
 		"@sindresorhus/slugify": "catalog:",
 		"@types/bun": "catalog:",

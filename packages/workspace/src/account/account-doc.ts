@@ -171,8 +171,10 @@ export type AppendVerdictResult = {
  * appends a fresh assertion at a strictly higher `seq` than any this device has
  * made. The reducer keeps only the highest-seq verdict per (asserter, subject),
  * so re-verifying or flipping verify↔revoke is just appending the next one. The
- * caller decides whether to write (the daemon checks the current trust state
- * first to avoid churn); this helper always writes when called.
+ * caller decides whether to write; this helper always writes when called, so a
+ * caller that does not first check the current trust state grows the append-only
+ * log on every call. No caller gates this today: a churn guard belongs in the
+ * daemon, which can read `trustState()` before writing.
  *
  * `seq` spans all of the device's verbs (identity and cross-claims share one
  * per-asserter counter, see {@link Assertion}), counting only entries that verify

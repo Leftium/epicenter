@@ -25,6 +25,7 @@
 	"homepage": "https://epicenter.so",
 	"exports": {
 		".": "./src/index.ts",
+		"./account": "./src/account/index.ts",
 		"./agent": "./src/agent/index.ts",
 		"./markdown": "./src/markdown/index.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
@@ -50,8 +51,9 @@
 		"@epicenter/agent-protocol": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/identity": "workspace:*",
-		"@hono/standard-validator": "catalog:",
 		"@epicenter/sync": "workspace:*",
+		"@hono/standard-validator": "catalog:",
+		"@noble/ed25519": "^3.1.0",
 		"@sindresorhus/slugify": "catalog:",
 		"@types/bun": "catalog:",
 		"arkregex": "catalog:",

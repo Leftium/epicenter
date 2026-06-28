@@ -24,6 +24,7 @@ import {
 	type DaemonMetadata,
 	type EpicenterConfigError,
 	type InactiveMount,
+	openAccountRoom,
 	openEpicenterRoot,
 	StartupError,
 	startDaemonServer,
@@ -31,7 +32,8 @@ import {
 	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
 import { epicenterRootOption } from '../util/common-options.js';
@@ -177,6 +179,25 @@ export async function runUp(
 		});
 		if (metadataResult.error) return metadataResult;
 		stack.defer(() => unlinkMetadata(epicenterRoot));
+	}
+
+	// Open the per-person account room alongside the mount: the device roster
+	// lives here (Wave 3), not on per-room workspace presence. It is best-effort
+	// and independent of the mount: a signed-out daemon has none (null), and a
+	// failure to open it never aborts the mount that is the daemon's real job.
+	const { data: accountRoom, error: accountRoomError } = await tryAsync({
+		try: () => openAccountRoom({ epicenterRoot, auth }),
+		catch: (cause) => Err(extractErrorMessage(cause)),
+	});
+	if (accountRoomError !== null) {
+		logSyncStatus(
+			`account room: failed to open (${accountRoomError}); continuing`,
+		);
+	} else if (accountRoom !== null) {
+		stack.defer(() => accountRoom[Symbol.asyncDispose]());
+		logSyncStatus(
+			`account room: online as ${accountRoom.peerId} (${accountRoom.roster().size} device(s))`,
+		);
 	}
 
 	const teardownStack = stack.move();

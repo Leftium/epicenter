@@ -29,6 +29,11 @@ export {
 	attachMountInfrastructure,
 } from './daemon/attach-mount-infrastructure.js';
 export {
+	type AccountRoomHandle,
+	openAccountRoom,
+	type OpenAccountRoomOptions,
+} from './daemon/open-account-room.js';
+export {
 	type DaemonClient,
 	DaemonError,
 	daemonClient,

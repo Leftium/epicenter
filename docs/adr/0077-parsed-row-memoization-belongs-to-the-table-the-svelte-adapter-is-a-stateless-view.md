@@ -1,4 +1,4 @@
-# 0072. Parsed-row memoization belongs to the table; the Svelte adapter is a stateless view
+# 0077. Parsed-row memoization belongs to the table; the Svelte adapter is a stateless view
 
 - **Status:** Accepted
 - **Date:** 2026-06-27

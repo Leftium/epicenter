@@ -192,19 +192,19 @@ const transcriptionApp = new Hono<Env>().post(
  * run after auth and ownership and may short-circuit (e.g. 402) before the
  * gateway proxies.
  */
-export function mountTranscriptionApp(
-	app: Hono<Env>,
+export function mountTranscriptionApp<E extends Env = Env>(
+	app: Hono<E>,
 	opts: {
-		auth: MiddlewareHandler;
+		auth: MiddlewareHandler<E>;
 		ownership: OwnershipRule;
-		policies?: MiddlewareHandler[];
+		policies?: MiddlewareHandler<E>[];
 	},
 ): void {
 	const policies = opts.policies ?? [];
 	app.use(
 		API_ROUTES.ai.transcriptions.prefixPattern,
 		opts.auth,
-		createRequireOwnership(opts.ownership),
+		createRequireOwnership<E>(opts.ownership),
 		...policies,
 	);
 	app.route('/', transcriptionApp);

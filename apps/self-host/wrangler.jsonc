@@ -7,30 +7,33 @@
 	"send_metrics": false,
 
 	// --- Deployment-owned vars ---
-	// ALLOWED_MEMBER_EMAILS: comma-separated list of emails admitted by the
-	// shared() ownership rule. Anyone outside this set gets 403 NotAdmitted
-	// at the boundary, regardless of whether they can sign in.
 	"vars": {
-		// API_PUBLIC_ORIGIN: this deployment's public origin. Self-hosters set
-		// their own domain here; it is the Better Auth issuer + token audience.
-		"API_PUBLIC_ORIGIN": "https://self-host.example.com",
-		"ALLOWED_MEMBER_EMAILS": "",
-		"GOOGLE_CLIENT_ID": ""
+		// API_PUBLIC_ORIGIN: this instance's public origin. Self-hosters set
+		// their own domain here; it is the token audience and Better Auth baseURL.
+		"API_PUBLIC_ORIGIN": "https://instance.example.com"
 	},
 
 	// --- Deployment-owned secrets ---
 	// Set via `wrangler secret put`. Self-hosting is the trust boundary: this
-	// deployment runs on infrastructure you operate, so Epicenter never holds or
+	// instance runs on infrastructure you operate, so Epicenter never holds or
 	// sees the data stored here. Self-hosted = functionally zero-knowledge
 	// against Epicenter.
 	//
+	// INSTANCE_TOKEN: the one operator-supplied bearer that authenticates every
+	// request (ADR-0075). Generate it with `bun run gen-token` and set it with
+	// `wrangler secret put INSTANCE_TOKEN`; hand the same value to whoever should
+	// have access and paste it into their client instance setting. There is no
+	// OAuth and no allowlist: "solo" vs "shared" is only how many people hold it.
+	// It is the ONLY required secret: the instance composes no Better Auth, so
+	// there is no `BETTER_AUTH_SECRET` (ADR-0075).
+	//
 	// AI provider house keys (OPENAI_API_KEY, GEMINI_API_KEY) are optional:
-	// `wrangler secret put` one to serve that provider to all members through
-	// this gateway, or omit it and that provider returns 503
-	// ProviderNotConfigured. The gateway is house-key-only (ADR-0054): members
-	// who want their own key point their client at a custom backend instead.
+	// `wrangler secret put` one to serve that provider through this gateway, or
+	// omit it and that provider returns 503 ProviderNotConfigured. House-key-only
+	// (ADR-0054): a member who wants their own key points their client at a custom
+	// backend instead.
 	"secrets": {
-		"required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_SECRET"]
+		"required": ["INSTANCE_TOKEN"]
 	},
 
 	// --- Durable Objects ---
@@ -47,15 +50,8 @@
 			"tag": "v1",
 			"new_sqlite_classes": ["Room"]
 		}
-	],
-
-	// --- Hyperdrive: Postgres connection pool ---
-	// Create with: bunx wrangler hyperdrive create <name> --connection-string="postgres://..."
-	"hyperdrive": [
-		{
-			"binding": "HYPERDRIVE",
-			"id": "<your-hyperdrive-id>",
-			"localConnectionString": "postgres://postgres:postgres@localhost:5432/self_host"
-		}
 	]
+
+	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth, no
+	// telemetry), so its only binding is the Durable Object above (ADR-0075).
 }

@@ -1,7 +1,6 @@
-import { asOwnerId } from '@epicenter/identity';
+import { type } from 'arktype';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
@@ -11,19 +10,32 @@ import { authPlugins } from './plugins.js';
 type Db = NodePgDatabase<typeof schema>;
 
 /**
- * The secrets `createAuth` actually reads. Loosened from `Cloudflare.Env` to
- * exactly this (ADR-0066): every member is a portable string the runtimes
- * expose identically (`c.env` on Workers, `process.env` on a Node host). Auth
- * construction thus names no Cloudflare binding type at all. A deployment's
- * `Cloudflare.Env` satisfies this structurally.
+ * The cloud-only auth env, as BOTH an arktype schema and its inferred type, and
+ * the single SSOT for the relational-auth layer's secrets. It lives beside its
+ * reader (cloud-only, reached only through `mountCloudAuth`), NOT in the portable
+ * {@link ServerBindings}: the relational-auth substrate is a Cloud-only layer, so
+ * its env contract is too, and the single-partition instance's env never inherits
+ * secrets it does not read (ADR-0076). The cloud threads it onto
+ * `c.var.authSecrets` (mount-cloud-auth.ts) from its own deploy-gated env, the
+ * same honest-edge move every Cloudflare-only binding already makes (ADR-0066),
+ * so both readers (this builder and the `authApp` sign-in page) take it from one
+ * resolved value rather than reaching into the raw `c.env` bag.
+ *
+ * `BETTER_AUTH_SECRET` is required: every deployment that reaches this composes
+ * Better Auth and must sign sessions with a real secret (the runtime gate below
+ * is defense-in-depth against an empty value). Each OAuth provider is optional
+ * and register-when-present (ADR-0071): a deployment configures the ones it has
+ * an app for, or none; an absent provider is simply not offered, never a button
+ * that 500s.
  */
-type AuthEnv = {
-	BETTER_AUTH_SECRET: string;
-	GOOGLE_CLIENT_ID: string;
-	GOOGLE_CLIENT_SECRET: string;
-	GITHUB_CLIENT_ID?: string;
-	GITHUB_CLIENT_SECRET?: string;
-};
+export const CloudAuthBindings = type({
+	BETTER_AUTH_SECRET: 'string',
+	'GOOGLE_CLIENT_ID?': 'string',
+	'GOOGLE_CLIENT_SECRET?': 'string',
+	'GITHUB_CLIENT_ID?': 'string',
+	'GITHUB_CLIENT_SECRET?': 'string',
+});
+export type CloudAuthBindings = typeof CloudAuthBindings.infer;
 
 /**
  * Assemble and return a configured `betterAuth()` instance from runtime deps.
@@ -37,7 +49,6 @@ type AuthEnv = {
  * - Google OAuth, plus GitHub when its credentials are configured
  *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
- * - Cleanup hook that clears the deleted user's owner-partitioned rows
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -50,7 +61,7 @@ export function createAuth({
 	cookieCrossSubDomain,
 }: {
 	db: Db;
-	env: AuthEnv;
+	env: CloudAuthBindings;
 	baseURL: string;
 	/** Deployment-supplied trusted origins (CORS, CSRF, redirect allow-list). */
 	trustedOrigins: string[];
@@ -61,11 +72,26 @@ export function createAuth({
 	 */
 	cookieCrossSubDomain?: string;
 }) {
+	// Better Auth signs sessions and the JWE cookie cache with this secret. Handed
+	// an empty or missing one, the library silently falls back to its PUBLIC default
+	// (`better-auth-secret-...`) and only throws when `NODE_ENV === 'production'`,
+	// which is never set on a Worker. That is forgeable session signing, so fail
+	// closed at the one place the secret reaches Better Auth. This makes the
+	// guarantee runtime, not deploy-time only (the wrangler `secrets.required` gate
+	// blocks a missing secret at deploy, but not a later dashboard deletion or a
+	// preview path), and it covers both cloud entries since both reach `betterAuth`
+	// only through here (ADR-0076).
+	const secret = env.BETTER_AUTH_SECRET?.trim();
+	if (!secret) {
+		throw new Error(
+			'BETTER_AUTH_SECRET is not set: refusing to construct Better Auth with an empty signing secret, which would fall back to a public default and sign forgeable sessions.',
+		);
+	}
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg', schema }),
 		baseURL,
-		secret: env.BETTER_AUTH_SECRET,
+		secret,
 		// `account` (accountLinking) comes from BASE_AUTH_CONFIG via the spread.
 		//
 		// The Better Auth state-cookie check stays ENABLED (its default). The
@@ -80,19 +106,27 @@ export function createAuth({
 		// Google callback navigation. The cookie binds the callback to the
 		// initiating browser (the DB record alone does not), so keeping the check
 		// on restores that login-CSRF / session-fixation defense.
+		//
+		// Each provider is registered only when its credentials are configured,
+		// so the hosted star is Google-by-default and a custom self-hosted
+		// deployment that configures an OAuth app adds whichever providers it set,
+		// instead of a button that 500s. The single-partition instance offers none:
+		// it composes no Better Auth at all (this builder is cloud-only, reached
+		// only through `mountCloudAuth`), and the operator bearer is its only gate
+		// (ADR-0075). better-auth requests `read:user` +
+		// `user:email` for GitHub by default, so it reads the primary email and
+		// GitHub's verification flag. GitHub is deliberately NOT a trusted linking
+		// provider (see BASE_AUTH_CONFIG): an unverified GitHub email must not link
+		// into an existing account.
 		socialProviders: {
-			google: {
-				clientId: env.GOOGLE_CLIENT_ID,
-				clientSecret: env.GOOGLE_CLIENT_SECRET,
-			},
-			// GitHub is registered only when a deployment has configured its
-			// credentials, so the shared-wiki reference deployment (and any self-host)
-			// stays Google-only by default instead of offering a button that
-			// 500s. better-auth requests the `read:user` + `user:email` scopes by
-			// default, so it reads the primary email and GitHub's verification
-			// flag. GitHub is deliberately NOT a trusted linking provider (see
-			// BASE_AUTH_CONFIG): an unverified GitHub email must not link into an
-			// existing account.
+			...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+				? {
+						google: {
+							clientId: env.GOOGLE_CLIENT_ID,
+							clientSecret: env.GOOGLE_CLIENT_SECRET,
+						},
+					}
+				: {}),
 			...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
 				? {
 						github: {
@@ -132,26 +166,6 @@ export function createAuth({
 		// Google to API callback), so the cookie becomes invisible at the
 		// callback step. Partitioned is for iframes, not redirect OAuth.
 		advanced: createCookieAdvancedConfig(baseURL, cookieCrossSubDomain),
-		databaseHooks: {
-			user: {
-				delete: {
-					before: async (user) => {
-						// Partition cleanup. In personal mode `owner_id === user.id`
-						// so this deletes the user's DOI rows. In shared mode
-						// `owner_id === 'shared' !== user.id` so the query no-ops and
-						// shared data survives admission churn. Without an FK + cascade,
-						// the row delete is explicit here. (Content-addressed blob bytes
-						// live owner-prefixed in object storage with no DB row; an
-						// occasional LIST sweep reclaims an orphaned owner prefix.)
-						const ownerId = asOwnerId(user.id);
-
-						await db
-							.delete(schema.durableObjectInstance)
-							.where(eq(schema.durableObjectInstance.ownerId, ownerId));
-					},
-				},
-			},
-		},
 		trustedOrigins,
 		// Postgres is the only auth store: sessions and OAuth verification
 		// records persist to the DB adapter by default (no secondaryStorage), and

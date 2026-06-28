@@ -45,14 +45,14 @@ import {
 	AiChatError,
 	AiChatErrorStatus,
 } from '@epicenter/constants/ai-chat-errors';
-import type { Env } from '@epicenter/server';
+import type { CloudEnv } from '@epicenter/server';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { BillingError } from './errors.js';
 import { createBillingService } from './service.js';
 
-function billingFor(c: Context<Env>) {
+function billingFor(c: Context<CloudEnv>) {
 	// Billing is cloud-only: `AUTUMN_SECRET_KEY` lives on this deployment's own
 	// `Cloudflare.Env`, not the library's portable `ServerBindings` (ADR-0066),
 	// so read it through the same edge cast the runtime-port resolvers use.
@@ -75,7 +75,7 @@ function billingFor(c: Context<Env>) {
  * `error.code`. The gateway is house-key-only (ADR-0054), so every call is
  * metered; there is no BYOK bypass.
  */
-export const chargeOpenAiCreditsWithAutumn = createMiddleware<Env>(
+export const chargeOpenAiCreditsWithAutumn = createMiddleware<CloudEnv>(
 	async (c, next) => {
 		const body = (await c.req.json().catch(() => ({}))) as {
 			model?: string;
@@ -115,7 +115,7 @@ const HOSTED_STT_PROVIDER = 'openai';
  * that and is deferred. House-key-only (ADR-0054): every call is metered, no BYOK
  * bypass.
  */
-export const chargeOpenAiTranscriptionCredits = createMiddleware<Env>(
+export const chargeOpenAiTranscriptionCredits = createMiddleware<CloudEnv>(
 	async (c, next) => {
 		const billing = billingFor(c);
 

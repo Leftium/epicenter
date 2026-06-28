@@ -16,12 +16,20 @@
  * - Object / namespace bindings (`ROOM` Durable Object, `HYPERDRIVE`) are not
  *   strings and cannot be validated from `process.env`. They live on the
  *   deployment's own `Cloudflare.Env` and are read by deployment resolvers at
- *   the `apps/*` edge (`resolveRooms`, `connectDb`), never by library code
+ *   the `apps/*` edge (`resolveRooms`, `db.connect`), never by library code
  *   reaching for a binding shape. With the assets route retired into the
  *   portable blob store, the library now names NO Cloudflare object binding,
  *   by value or by type.
- * - The deployment's public origin and any cloud-only secrets (Autumn, admin
- *   IDs) are deployment config, supplied through `resolveOrigin` / policies.
+ * - The relational-auth secrets (`BETTER_AUTH_SECRET` and the OAuth provider
+ *   credentials) are NOT here: the relational-auth substrate is a Cloud-only
+ *   layer, so its env is `CloudAuthBindings` (beside `mountCloudAuth`), supplied
+ *   by the cloud at its own edge and threaded onto `c.var.authSecrets`. Keeping
+ *   them out of the portable contract is what makes it truly portable: the
+ *   single-partition instance's env never inherits a secret it does not read
+ *   (ADR-0076).
+ * - The deployment's public origin and any other cloud-only secrets (Autumn,
+ *   admin IDs) are deployment config, supplied through `resolveOrigin` /
+ *   policies.
  *
  * Each deployment's real env is a superset assignable to this: apps/api asserts
  * `satisfies ServerBindings` on its generated `Cloudflare.Env`, apps/self-host
@@ -32,14 +40,6 @@
 import { type } from 'arktype';
 
 export const ServerBindings = type({
-	BETTER_AUTH_SECRET: 'string',
-	GOOGLE_CLIENT_ID: 'string',
-	GOOGLE_CLIENT_SECRET: 'string',
-	// GitHub is optional: a deployment that has not registered a GitHub OAuth
-	// app simply does not offer GitHub sign-in. The provider and its sign-in
-	// button are both gated on these being present (create-auth.ts, /sign-in).
-	'GITHUB_CLIENT_ID?': 'string',
-	'GITHUB_CLIENT_SECRET?': 'string',
 	// Content-addressed blob store (routes/blobs.ts): a portable S3 client over
 	// aws4fetch with NO Workers R2 binding, so the identical code runs on the
 	// Worker (against R2) and on a Bun host (against Garage/S3). All

@@ -17,20 +17,27 @@
 
 import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
+import { AuthUser } from '@epicenter/auth';
 import { JWT_SIGNING_ALG } from '@epicenter/constants/auth';
 import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth-clients';
+import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { jwt } from 'better-auth/plugins';
 import { Hono } from 'hono';
+import { Ok } from 'wellcrafted/result';
 import {
 	createOAuthTestDb,
 	isAddressInUse,
 	issueOAuthTokens,
 	randomOAuthTestPort,
 } from '../test-helpers/oauth.js';
-import type { Env } from '../types.js';
-import { requireBearerUser, resolveRequestOAuthUser } from './require-auth.js';
+import type { CloudEnv } from '../types.js';
+import {
+	requireBearerUser,
+	requireCookieOrBearerUser,
+	resolveRequestOAuthUser,
+} from './require-auth.js';
 
 test('requireBearerUser resolves a valid API-audience token to c.var.user', async () => {
 	const setup = createMiddlewareTestServer();
@@ -162,7 +169,7 @@ test('requireBearerUser returns 503 ServerError when the signing keys cannot be 
 		// means the token was never checked, so the client must retry (503), not
 		// discard and refresh a token that may be fine (401). No
 		// `WWW-Authenticate` challenge belongs on an infrastructure fault.
-		const app = new Hono<Env>()
+		const app = new Hono<CloudEnv>()
 			.use('*', async (c, next) => {
 				c.set('db', createFakeDb(setup.db));
 				c.set('authBaseURL', setup.baseURL);
@@ -172,11 +179,12 @@ test('requireBearerUser returns 503 ServerError when the signing keys cannot be 
 							throw new Error('signing keys unreadable');
 						},
 					},
-				} as unknown as Env['Variables']['auth']);
-				c.set('resolveUser', resolveRequestOAuthUser);
+				} as unknown as CloudEnv['Variables']['auth']);
 				await next();
 			})
-			.get('/protected', requireBearerUser, (c) => c.json(c.var.user));
+			.get('/protected', requireBearerUser(resolveRequestOAuthUser), (c) =>
+				c.json(c.var.user),
+			);
 
 		const response = await app.request('/protected', {
 			headers: { authorization: `Bearer ${accessToken}` },
@@ -191,12 +199,66 @@ test('requireBearerUser returns 503 ServerError when the signing keys cannot be 
 	}
 });
 
+test('requireCookieOrBearerUser resolves the user from a session cookie and skips the bearer path', async () => {
+	// The cloud-only cookie path: a present Better Auth session resolves the user
+	// and the injected bearer resolver is never consulted (cookie-first). Stubs
+	// `c.var.auth.api.getSession` (the only auth read) and asserts the bearer
+	// resolver stays untouched.
+	let resolveUserCalls = 0;
+	const sessionUser = { id: 'cookie-user-id', email: 'cookie@example.com' };
+	const cookieOrBearer = requireCookieOrBearerUser(async () => {
+		resolveUserCalls += 1;
+		return OAuthError.InvalidToken();
+	});
+	const app = new Hono<CloudEnv>()
+		.use('*', async (c, next) => {
+			c.set('auth', {
+				api: { getSession: async () => ({ user: sessionUser }) },
+			} as unknown as CloudEnv['Variables']['auth']);
+			await next();
+		})
+		.get('/protected', cookieOrBearer, (c) => c.json(c.var.user));
+
+	const response = await app.request('/protected');
+
+	expect(response.status).toBe(200);
+	const body = (await response.json()) as { id: string; email: string };
+	expect(body).toEqual(sessionUser);
+	expect(resolveUserCalls).toBe(0);
+});
+
+test('requireCookieOrBearerUser falls back to the bearer resolver when there is no session', async () => {
+	// No cookie session -> the resolver the wrapper closed over decides, exactly
+	// the bearer path the cloud and an instance share.
+	const bearerUser = AuthUser.assert({
+		id: 'bearer-user-id',
+		email: 'bearer@example.com',
+	});
+	const cookieOrBearer = requireCookieOrBearerUser(async () => Ok(bearerUser));
+	const app = new Hono<CloudEnv>()
+		.use('*', async (c, next) => {
+			c.set('auth', {
+				api: { getSession: async () => null },
+			} as unknown as CloudEnv['Variables']['auth']);
+			await next();
+		})
+		.get('/protected', cookieOrBearer, (c) => c.json(c.var.user));
+
+	const response = await app.request('/protected', {
+		headers: { authorization: 'Bearer whatever' },
+	});
+
+	expect(response.status).toBe(200);
+	const body = (await response.json()) as { id: string; email: string };
+	expect(body).toEqual({ id: 'bearer-user-id', email: 'bearer@example.com' });
+});
+
 test('requireBearerUser does not read signing keys for a non-JWT bearer', async () => {
 	// A non-JWT never decodes far enough to need a key, so verification fails
 	// before `jwksFetch` runs: a garbage bearer costs no database read, and the
 	// failure is a 401, not an infrastructure 503.
 	let getJwksCalls = 0;
-	const app = new Hono<Env>()
+	const app = new Hono<CloudEnv>()
 		.use('*', async (c, next) => {
 			c.set('authBaseURL', 'http://localhost');
 			c.set('auth', {
@@ -206,11 +268,12 @@ test('requireBearerUser does not read signing keys for a non-JWT bearer', async 
 						return { keys: [] };
 					},
 				},
-			} as unknown as Env['Variables']['auth']);
-			c.set('resolveUser', resolveRequestOAuthUser);
+			} as unknown as CloudEnv['Variables']['auth']);
 			await next();
 		})
-		.get('/protected', requireBearerUser, (c) => c.json(c.var.user));
+		.get('/protected', requireBearerUser(resolveRequestOAuthUser), (c) =>
+			c.json(c.var.user),
+		);
 
 	const response = await app.request('/protected', {
 		headers: { authorization: 'Bearer not-a-real-jwt' },
@@ -253,15 +316,16 @@ function createMiddlewareTestServer() {
 				fetch: async (request) => auth.handler(request),
 			});
 
-			const app = new Hono<Env>()
+			const app = new Hono<CloudEnv>()
 				.use('*', async (c, next) => {
 					c.set('db', createFakeDb(db));
-					c.set('auth', auth as unknown as Env['Variables']['auth']);
+					c.set('auth', auth as unknown as CloudEnv['Variables']['auth']);
 					c.set('authBaseURL', baseURL);
-					c.set('resolveUser', resolveRequestOAuthUser);
 					await next();
 				})
-				.get('/protected', requireBearerUser, (c) => c.json(c.var.user));
+				.get('/protected', requireBearerUser(resolveRequestOAuthUser), (c) =>
+					c.json(c.var.user),
+				);
 
 			return { auth, baseURL, db, server, wrongAudience, app };
 		} catch (error) {
@@ -290,5 +354,5 @@ function createFakeDb(memoryDb: MemoryDB) {
 				findFirst: async () => memoryDb.user?.[0] ?? null,
 			},
 		},
-	} as unknown as Env['Variables']['db'];
+	} as unknown as CloudEnv['Variables']['db'];
 }

@@ -5,12 +5,11 @@
  * Cloudflare account or a `wrangler types` run. The library's binding
  * contract is inherited from `ServerBindings`, so this file declares only
  * what the deployment itself owns. If you replace it with `wrangler types`
- * output, re-add the `extends` clause so the inherited bindings (GitHub
- * OAuth, AI provider house keys) survive the regeneration.
+ * output, re-add the `extends` clause so the inherited bindings (the optional
+ * OAuth keys and AI provider house keys) survive the regeneration.
  *
  * Hosted-only bindings (Autumn, ASSETS, ADMIN_USER_IDS) are deliberately
- * absent: the shared-wiki reference has no billing surface and no
- * dashboard SPA.
+ * absent: the instance reference has no billing surface and no dashboard SPA.
  */
 
 /// <reference types="@cloudflare/workers-types" />
@@ -21,16 +20,18 @@ declare namespace Cloudflare {
 	type ServerBindings = import('@epicenter/server').ServerBindings;
 
 	interface Env extends ServerBindings {
-		// Runtime-only Cloudflare bindings the library no longer names in
-		// ServerBindings (ADR-0066): this deployment reads them in its own
-		// `connectDb`/`resolveRooms` resolvers, so it declares them here.
-		HYPERDRIVE: Hyperdrive;
+		// Runtime-only Cloudflare binding the library no longer names in
+		// ServerBindings (ADR-0066): this deployment reads it in its own
+		// `resolveRooms` resolver, so it declares it here. There is no Hyperdrive
+		// binding: the instance composes no Postgres (ADR-0075).
 		ROOM: DurableObjectNamespace<import('@epicenter/server').Room>;
-		// Deployment-owned vars (wrangler.jsonc): this deployment's public
-		// origin and the shared() admission allowlist. The library never
-		// reads these by name; they flow through deployment callbacks.
+		// Deployment-owned config the library never reads by name; this
+		// deployment reads them in its own resolvers (ADR-0066). `API_PUBLIC_ORIGIN`
+		// is this instance's public origin (a wrangler.jsonc var); `INSTANCE_TOKEN`
+		// is the operator-supplied bearer (a `wrangler secret put` secret) the
+		// edge resolver constant-time compares each request.
 		API_PUBLIC_ORIGIN: string;
-		ALLOWED_MEMBER_EMAILS: string;
+		INSTANCE_TOKEN: string;
 	}
 }
 

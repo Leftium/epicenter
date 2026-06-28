@@ -169,6 +169,8 @@ Three layers, cheapest first:
 
 # Part B: the Super Chat (design settled; build gated behind the wedge)
 
+> **Transport superseded (2026-06-27).** The transport below ("per-user hub room over the plaintext relay") is replaced by [`20260627T120000-super-chat-cross-device-iroh.md`](20260627T120000-super-chat-cross-device-iroh.md): cross-device invocation rides **iroh** bi-streams (E2E even via relay), so Local Books is a first-class cross-device citizen instead of an exception. The catalog concept and **D1** device-qualified names below still hold; only how a remote device is reached changes. Read the iroh spec for the current direction.
+
 Status: the design is resolved against the code (see [Resolved design](#resolved-design-d1--o1-o4) and [Verdict](#verdict) below). D1, the one new primitive, is prototyped and green on branch `proto/super-chat-d1`. No product code lands in the apps yet; the build is gated behind the same wedge trigger ADR-0073 sets.
 
 ## The goal, in the user's words

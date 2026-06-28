@@ -11,8 +11,39 @@
  */
 
 import { spawn } from 'node:child_process';
+import type { TrustState } from '../account/reducer.js';
 import type { ByteChannel, RouteName } from './transport.js';
 import { asRouteName } from './transport.js';
+
+/**
+ * The minimum trust a peer must hold to reach a route: the per-route sensitivity
+ * policy (the spec's "tool sensitivity is a policy, not a stored state"). A
+ * low-risk route accepts a merely-`listed` peer; a sensitive route (like
+ * local-books) requires a human-confirmed `verified` peer. `revoked` peers never
+ * meet any threshold. There is no `revoked` threshold because no route is
+ * reachable only by revoked peers.
+ */
+export type RouteTrustThreshold = 'listed' | 'verified';
+
+/** Numeric trust rank; a peer reaches a route iff its rank ≥ the threshold's. */
+const TRUST_RANK: Record<TrustState, number> = {
+	revoked: 0,
+	listed: 1,
+	verified: 2,
+};
+
+/**
+ * Whether a peer in trust state `state` meets a route's `requires` threshold.
+ * `revoked` (rank 0) meets nothing; `listed` clears a `listed` route; `verified`
+ * clears both. A peer the reducer has never listed has no state at all, which the
+ * gateway treats as below `listed` (refused) before this is consulted.
+ */
+export function meetsTrustThreshold(
+	state: TrustState,
+	requires: RouteTrustThreshold,
+): boolean {
+	return TRUST_RANK[state] >= TRUST_RANK[requires];
+}
 
 /**
  * A spawn route: the gateway runs a stdio child and dumb-pipes the inbound
@@ -24,6 +55,10 @@ import { asRouteName } from './transport.js';
  * The command/args/cwd/env are caller-supplied so the gateway never depends on
  * any executor: the daemon wires `{ command: 'local-books', args: ['mcp'], ... }`
  * without `@epicenter/workspace` ever importing `@epicenter/local-books`.
+ *
+ * `requires` is the route's sensitivity policy (default `verified`, the safe
+ * choice: a route author opts DOWN to `listed` for a low-risk tool, never up by
+ * forgetting a field).
  */
 export type SpawnRoute = {
 	kind: 'spawn';
@@ -31,6 +66,7 @@ export type SpawnRoute = {
 	args?: string[];
 	cwd?: string;
 	env?: Record<string, string>;
+	requires?: RouteTrustThreshold;
 };
 
 /**
@@ -44,6 +80,11 @@ export type Route = SpawnRoute;
 
 /** A named set of routes; the keys are {@link RouteName}s. */
 export type RouteTable = Record<string, Route>;
+
+/** A route's effective trust threshold, defaulting to the safe `verified`. */
+export function routeTrustThreshold(route: Route): RouteTrustThreshold {
+	return route.requires ?? 'verified';
+}
 
 const ALPN_PREFIX = 'epicenter/route/';
 

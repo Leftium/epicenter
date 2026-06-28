@@ -18,6 +18,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SecretKey } from '@number0/iroh';
+import type { TrustState } from '../account/reducer.js';
 import { createPeerGateway, type PeerGateway } from './gateway.js';
 import { loadOrCreateDeviceSecret } from './key-store.js';
 import { asPeerId, asRouteName, type ByteChannel, type PeerId } from './transport.js';
@@ -30,6 +31,14 @@ const ECHO_ROUTE = {
 	args: ['-e', 'process.stdin.on("data",(d)=>process.stdout.write(d));'],
 };
 const ECHO = asRouteName('echo');
+
+/** A trust resolver backed by a fixed map; unlisted peers read `undefined`. */
+function fixedTrust(
+	entries: Iterable<[PeerId, TrustState]>,
+): (peerId: PeerId) => TrustState | undefined {
+	const states = new Map(entries);
+	return (peerId) => states.get(peerId);
+}
 
 const opened: Array<{ close(): Promise<void> }> = [];
 const tmpDirs: string[] = [];
@@ -82,8 +91,9 @@ test('admits an enrolled peer and dumb-pipes to the route child', async () => {
 	const server = await track(
 		createPeerGateway({
 			secret: SecretKey.generate(),
-			routes: { echo: ECHO_ROUTE },
-			allowlist: () => new Set<PeerId>([dialerId]),
+			// `listed` route: a listed dialer clears it.
+			routes: { echo: { ...ECHO_ROUTE, requires: 'listed' } },
+			trust: fixedTrust([[dialerId, 'listed']]),
 		}),
 	);
 	server.listen();
@@ -92,7 +102,7 @@ test('admits an enrolled peer and dumb-pipes to the route child', async () => {
 		createPeerGateway({
 			secret: dialerSecret,
 			routes: {},
-			allowlist: () => new Set(),
+			trust: fixedTrust([]),
 		}),
 	);
 
@@ -109,8 +119,8 @@ test('refuses an unenrolled peer before any byte reaches the child', async () =>
 		createPeerGateway({
 			secret: SecretKey.generate(),
 			routes: { echo: ECHO_ROUTE },
-			// Empty allowlist: nobody is enrolled.
-			allowlist: () => new Set<PeerId>(),
+			// Nobody is listed: every peer reads `undefined`, below `listed`.
+			trust: fixedTrust([]),
 		}),
 	);
 	server.listen();
@@ -119,7 +129,7 @@ test('refuses an unenrolled peer before any byte reaches the child', async () =>
 		createPeerGateway({
 			secret: SecretKey.generate(),
 			routes: {},
-			allowlist: () => new Set(),
+			trust: fixedTrust([]),
 		}),
 	);
 
@@ -131,6 +141,59 @@ test('refuses an unenrolled peer before any byte reaches the child', async () =>
 			hintAddrs: server.boundSockets(),
 		});
 		refused = (await probe(channel)) === null;
+	} catch {
+		refused = true;
+	}
+	expect(refused).toBe(true);
+});
+
+test('admits a peer for a route iff its state meets the route threshold', async () => {
+	// One gateway exposes two routes: a low-risk `echo` accepting `listed`, and a
+	// sensitive `books` demanding `verified`. A merely-listed dialer clears the
+	// first and is refused by the second, proving the per-route threshold is what
+	// admits, not a single global allowlist.
+	const listedSecret = SecretKey.generate();
+	const listedId = asPeerId(listedSecret.public().toString());
+	const LOW = asRouteName('echo');
+	const HIGH = asRouteName('books');
+
+	const server = await track(
+		createPeerGateway({
+			secret: SecretKey.generate(),
+			routes: {
+				echo: { ...ECHO_ROUTE, requires: 'listed' },
+				books: { ...ECHO_ROUTE, requires: 'verified' },
+			},
+			trust: fixedTrust([[listedId, 'listed']]),
+		}),
+	);
+	server.listen();
+
+	const dialer = await track(
+		createPeerGateway({
+			secret: listedSecret,
+			routes: {},
+			trust: fixedTrust([]),
+		}),
+	);
+
+	// Meets `listed`: admitted and echoed.
+	const low = await dialer.dial({
+		target: server.peerId,
+		route: LOW,
+		hintAddrs: server.boundSockets(),
+	});
+	expect(await probe(low)).toBe('ping');
+
+	// Below `verified`: refused before any byte reaches the child.
+	let refused = false;
+	try {
+		const high = await dialer.dial({
+			target: server.peerId,
+			route: HIGH,
+			hintAddrs: server.boundSockets(),
+		});
+		refused = (await probe(high)) === null;
 	} catch {
 		refused = true;
 	}

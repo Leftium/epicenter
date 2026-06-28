@@ -20,10 +20,18 @@ export { createLocalGatewayTransport } from './local-gateway-transport.js';
 export {
 	alpnForRoute,
 	alpnsForTable,
+	meetsTrustThreshold,
 	openRouteTarget,
 	routeNameForAlpn,
+	routeTrustThreshold,
 } from './route-table.js';
-export type { Route, RouteTable, RouteTarget, SpawnRoute } from './route-table.js';
+export type {
+	Route,
+	RouteTable,
+	RouteTarget,
+	RouteTrustThreshold,
+	SpawnRoute,
+} from './route-table.js';
 export {
 	asPeerId,
 	asRouteName,

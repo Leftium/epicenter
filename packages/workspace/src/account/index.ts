@@ -26,7 +26,14 @@ export {
 	signAssertion,
 	verifyAssertionSignature,
 } from './crypto.js';
-export { type Roster, type RosterEntry, rosterFromAssertions } from './reducer.js';
+export {
+	type Roster,
+	type RosterEntry,
+	rosterFromAssertions,
+	type TrustState,
+	trustFromAssertions,
+} from './reducer.js';
+export { ACCOUNT_SAS_DOMAIN, shortAuthString } from './sas.js';
 export {
 	ACCOUNT_ASSERTIONS_KEY,
 	accountAssertionLog,

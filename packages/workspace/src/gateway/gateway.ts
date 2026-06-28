@@ -28,14 +28,17 @@ import {
 	presetN0,
 } from '@number0/iroh';
 import { createLogger, type Logger } from 'wellcrafted/logger';
+import type { TrustState } from '../account/reducer.js';
 import { biStreamToByteChannel } from './iroh-channel.js';
 import {
 	alpnForRoute,
 	alpnsForTable,
+	meetsTrustThreshold,
 	openRouteTarget,
 	type RouteTable,
 	type RouteTarget,
 	routeNameForAlpn,
+	routeTrustThreshold,
 } from './route-table.js';
 import {
 	asPeerId,
@@ -59,12 +62,17 @@ export type PeerGatewayOptions = {
 	/** The named, default-closed route table this gateway exposes. */
 	routes: RouteTable;
 	/**
-	 * Ring-0: the set of `PeerId`s allowed to connect, re-read on EVERY inbound
-	 * connection so a mid-run promotion or revocation in the trust ledger takes
-	 * effect without a gateway restart. Wave 1 injects a static set; Wave 4
-	 * wires this to the synced per-user trust ledger's verified keys.
+	 * Ring-0: a peer's current trust state, or `undefined` for a peer this account
+	 * has never listed. Re-read on EVERY inbound connection so a mid-run `verify`
+	 * or `revoke` in the account doc takes effect without a gateway restart. The
+	 * gateway admits a connection iff the route the peer asked for has a threshold
+	 * its state meets (`meetsTrustThreshold`), so a low-risk route accepts a
+	 * `listed` peer while a sensitive one demands `verified`. This is Wave 4's
+	 * replacement for Wave 1's static `() => Set<PeerId>`: the node side wires it
+	 * to `accountRoom.trustState().get(peerId)`, the reducer's fold of the signed
+	 * log, so authority comes from device signatures, never the relay.
 	 */
-	allowlist: () => Set<PeerId>;
+	trust: (peerId: PeerId) => TrustState | undefined;
 	/** Transport reachability preset. Defaults to `minimal`. */
 	relay?: RelayPreset;
 	/** Bind address. Defaults to `127.0.0.1:0` (ephemeral loopback port). */
@@ -104,7 +112,7 @@ export async function createPeerGateway(
 	const {
 		secret,
 		routes,
-		allowlist,
+		trust,
 		relay = 'minimal',
 		bindAddr = '127.0.0.1:0',
 		logger = createLogger('workspace/gateway'),
@@ -145,17 +153,9 @@ export async function createPeerGateway(
 			const connection = await accepting.connect();
 			const remote = asPeerId(connection.remoteId().toString());
 
-			// Ring 0: re-read the allowlist per connection so the latest trust
-			// state wins, then refuse anything unenrolled BEFORE acceptBi/spawn.
-			if (!allowlist().has(remote)) {
-				logger.info('refused unenrolled peer', {
-					remote: remote.slice(0, 16),
-				});
-				connection.close(0n, [...Buffer.from('not enrolled')]);
-				return;
-			}
-
-			// Route selection rides the negotiated ALPN, not a wire envelope.
+			// Route selection rides the negotiated ALPN, not a wire envelope. It is
+			// known from the handshake before acceptBi, so its sensitivity policy
+			// gates Ring 0 below, still BEFORE any byte flows.
 			const routeName = routeNameForAlpn([...connection.alpn()]);
 			const route = routeName ? routes[routeName] : undefined;
 			if (!route) {
@@ -164,9 +164,25 @@ export async function createPeerGateway(
 				return;
 			}
 
+			// Ring 0: re-read the peer's trust per connection so the latest verify or
+			// revoke wins, then refuse anything that does not meet THIS route's
+			// threshold BEFORE acceptBi/spawn. A peer the account has never listed
+			// (`undefined`) is below `listed` and refused.
+			const state = trust(remote);
+			if (!state || !meetsTrustThreshold(state, routeTrustThreshold(route))) {
+				logger.info('refused peer below route threshold', {
+					remote: remote.slice(0, 16),
+					route: routeName,
+					state: state ?? 'unlisted',
+				});
+				connection.close(0n, [...Buffer.from('not enrolled')]);
+				return;
+			}
+
 			logger.info('admitted peer', {
 				remote: remote.slice(0, 16),
 				route: routeName,
+				state,
 			});
 
 			// acceptBi() resolves when the dialer opens its bi-stream (its first

@@ -27,10 +27,14 @@ import * as Y from 'yjs';
 
 import {
 	appendIdentityClaim,
+	readAssertions,
 	readRoster,
 	RESERVED_ACCOUNT_ROOM_GUID,
 	type Roster,
+	type TrustState,
+	trustFromAssertions,
 } from '../account/index.js';
+import type { PeerId } from '../gateway/transport.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
 import { attachYjsLog } from '../document/attach-yjs-log.js';
 import { asNodeId } from '../document/node-id.js';
@@ -76,6 +80,13 @@ export type AccountRoomHandle = {
 	peerId: string;
 	/** The current device roster: every dialable peer this account has listed. */
 	roster(): Roster;
+	/**
+	 * The current per-peer trust state, rooted in THIS device's key (its own and
+	 * its directly-paired devices' `verify`s confer trust). The gateway reads this
+	 * per inbound connection to drive Ring 0, so a `verify`/`revoke` that syncs in
+	 * takes effect with no restart.
+	 */
+	trustState(): ReadonlyMap<PeerId, TrustState>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -163,6 +174,8 @@ export async function openAccountRoom(
 			guid: ydoc.guid,
 			peerId,
 			roster: () => readRoster(ydoc, ownerId),
+			trustState: () =>
+				trustFromAssertions(readAssertions(ydoc), ownerId, peerId),
 			async [Symbol.asyncDispose]() {
 				unsubscribe();
 				ydoc.destroy();

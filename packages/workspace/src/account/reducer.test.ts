@@ -7,9 +7,9 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Assertion, UnsignedAssertion } from './assertion.js';
+import type { Assertion, AssertionVerb, UnsignedAssertion } from './assertion.js';
 import { peerIdFromSecret, signAssertion } from './crypto.js';
-import { rosterFromAssertions } from './reducer.js';
+import { rosterFromAssertions, trustFromAssertions } from './reducer.js';
 
 const ACCOUNT = 'user-1';
 
@@ -33,6 +33,26 @@ function identityClaim(
 		label: options.label,
 	};
 	return signAssertion(unsigned, secret);
+}
+
+/** Mint a valid `verify`/`revoke` cross-claim by `asserterSecret` about `subject`. */
+function crossClaim(
+	asserterSecret: Uint8Array,
+	verb: Extract<AssertionVerb, 'verify' | 'revoke'>,
+	subject: string,
+	seq: number,
+	account = ACCOUNT,
+): Assertion {
+	return signAssertion(
+		{
+			account,
+			asserter: peerIdFromSecret(asserterSecret),
+			subject,
+			verb,
+			seq,
+		},
+		asserterSecret,
+	);
 }
 
 describe('rosterFromAssertions', () => {
@@ -204,5 +224,149 @@ describe('rosterFromAssertions', () => {
 
 		expect(roster.size).toBe(1);
 		expect(roster.get(peerIdFromSecret(secret))).toEqual({ label: 'OK' });
+	});
+});
+
+describe('trustFromAssertions', () => {
+	// `self` is the gateway computing the projection; it is the root of trust.
+	const selfSecret = seed(100);
+	const self = peerIdFromSecret(selfSecret);
+
+	test('self is verified even before it has listed itself', () => {
+		const trust = trustFromAssertions([], ACCOUNT, self);
+		expect(trust.get(self)).toBe('verified');
+	});
+
+	test('a listed peer with no verify reads `listed`', () => {
+		const peerSecret = seed(101);
+		const peer = peerIdFromSecret(peerSecret);
+
+		const trust = trustFromAssertions(
+			[identityClaim(peerSecret, { label: 'Phone' })],
+			ACCOUNT,
+			self,
+		);
+		expect(trust.get(peer)).toBe('listed');
+	});
+
+	test('a valid verify from a trusted asserter (self) promotes to `verified`', () => {
+		const peerSecret = seed(102);
+		const peer = peerIdFromSecret(peerSecret);
+
+		const trust = trustFromAssertions(
+			[
+				identityClaim(peerSecret, { label: 'Phone' }),
+				crossClaim(selfSecret, 'verify', peer, 0),
+			],
+			ACCOUNT,
+			self,
+		);
+		expect(trust.get(peer)).toBe('verified');
+	});
+
+	test('a verify from an untrusted asserter is ignored (stays `listed`)', () => {
+		const peerSecret = seed(103);
+		const peer = peerIdFromSecret(peerSecret);
+		const strangerSecret = seed(104); // not self, never verified by self
+
+		const trust = trustFromAssertions(
+			[
+				identityClaim(peerSecret, { label: 'Phone' }),
+				crossClaim(strangerSecret, 'verify', peer, 0),
+			],
+			ACCOUNT,
+			self,
+		);
+		expect(trust.get(peer)).toBe('listed');
+	});
+
+	test('a revoke supersedes an earlier verify and is monotonic under replay', () => {
+		const peerSecret = seed(105);
+		const peer = peerIdFromSecret(peerSecret);
+
+		const verify = crossClaim(selfSecret, 'verify', peer, 0);
+		const revoke = crossClaim(selfSecret, 'revoke', peer, 1);
+
+		// revoke (seq 1) wins over verify (seq 0): revoked.
+		expect(
+			trustFromAssertions(
+				[identityClaim(peerSecret, { label: 'Phone' }), verify, revoke],
+				ACCOUNT,
+				self,
+			).get(peer),
+		).toBe('revoked');
+
+		// A replayed verify at the SAME seq does not resurrect: still revoked,
+		// order-independent (the reducer folds by the asserter's seq, not array
+		// position).
+		expect(
+			trustFromAssertions(
+				[identityClaim(peerSecret, { label: 'Phone' }), revoke, verify, verify],
+				ACCOUNT,
+				self,
+			).get(peer),
+		).toBe('revoked');
+	});
+
+	test('a strictly-greater-seq re-verify resurrects a revoked peer', () => {
+		const peerSecret = seed(106);
+		const peer = peerIdFromSecret(peerSecret);
+
+		const trust = trustFromAssertions(
+			[
+				identityClaim(peerSecret, { label: 'Phone' }),
+				crossClaim(selfSecret, 'verify', peer, 0),
+				crossClaim(selfSecret, 'revoke', peer, 1),
+				crossClaim(selfSecret, 'verify', peer, 2), // re-verify at a higher seq
+			],
+			ACCOUNT,
+			self,
+		);
+		expect(trust.get(peer)).toBe('verified');
+	});
+
+	test('depth-1 delegation: a device self verified can verify another, but no further', () => {
+		// self -> verifies pair; pair -> verifies leaf. The pair is a trusted
+		// asserter (directly paired), so leaf is verified. leaf -> verifies far, but
+		// leaf is NOT a trusted asserter (no transitive web-of-trust), so far stays
+		// listed.
+		const pairSecret = seed(107);
+		const pair = peerIdFromSecret(pairSecret);
+		const leafSecret = seed(108);
+		const leaf = peerIdFromSecret(leafSecret);
+		const farSecret = seed(109);
+		const far = peerIdFromSecret(farSecret);
+
+		const trust = trustFromAssertions(
+			[
+				identityClaim(pairSecret, { label: 'Pair' }),
+				identityClaim(leafSecret, { label: 'Leaf' }),
+				identityClaim(farSecret, { label: 'Far' }),
+				crossClaim(selfSecret, 'verify', pair, 0),
+				crossClaim(pairSecret, 'verify', leaf, 0),
+				crossClaim(leafSecret, 'verify', far, 0),
+			],
+			ACCOUNT,
+			self,
+		);
+		expect(trust.get(pair)).toBe('verified');
+		expect(trust.get(leaf)).toBe('verified');
+		expect(trust.get(far)).toBe('listed');
+	});
+
+	test('a cross-account verify is ignored', () => {
+		const peerSecret = seed(110);
+		const peer = peerIdFromSecret(peerSecret);
+
+		const trust = trustFromAssertions(
+			[
+				identityClaim(peerSecret, { label: 'Phone' }),
+				// Properly signed by self, but bound to a different account.
+				crossClaim(selfSecret, 'verify', peer, 0, 'someone-else'),
+			],
+			ACCOUNT,
+			self,
+		);
+		expect(trust.get(peer)).toBe('listed');
 	});
 });

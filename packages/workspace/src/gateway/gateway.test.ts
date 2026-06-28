@@ -26,7 +26,6 @@ import { asPeerId, asRouteName, type ByteChannel, type PeerId } from './transpor
 // An echo child that flushes each chunk immediately (cat block-buffers a small
 // write and would never echo before EOF).
 const ECHO_ROUTE = {
-	kind: 'spawn' as const,
 	command: 'bun',
 	args: ['-e', 'process.stdin.on("data",(d)=>process.stdout.write(d));'],
 };

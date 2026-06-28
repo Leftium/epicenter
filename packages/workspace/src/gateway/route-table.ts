@@ -61,7 +61,6 @@ export function meetsTrustThreshold(
  * forgetting a field).
  */
 export type SpawnRoute = {
-	kind: 'spawn';
 	command: string;
 	args?: string[];
 	cwd?: string;
@@ -70,11 +69,11 @@ export type SpawnRoute = {
 };
 
 /**
- * A route the gateway exposes. Today only {@link SpawnRoute} exists; a
- * `{ kind: 'service'; host; port }` variant (a `net.connect` dumb-pipe to a
- * local service port like `127.0.0.1:8000`) lands in Wave 5 alongside the
- * localhost-forward consumer that exercises it. The union is shaped so adding
- * it does not reshape callers.
+ * A route the gateway exposes. Today there is one route shape, {@link
+ * SpawnRoute}. A `service` variant (a `net.connect` dumb-pipe to a local service
+ * port like `127.0.0.1:8000`) lands in Wave 5 alongside the localhost-forward
+ * consumer that exercises it; introducing it reintroduces a `kind` discriminant
+ * across the variants.
  */
 export type Route = SpawnRoute;
 

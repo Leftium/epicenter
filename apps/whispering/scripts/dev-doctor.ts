@@ -72,9 +72,7 @@ if (isAdhoc) {
 	console.log(
 		'    normally mints a self-signed cert instead; re-run `bun run dev:local`',
 	);
-	console.log(
-		'    (or set WHISPERING_DEV_SIGNING_IDENTITY) and rebuild.',
-	);
+	console.log('    (or set WHISPERING_DEV_SIGNING_IDENTITY) and rebuild.');
 } else if (!identifierMatches) {
 	console.log(
 		`  ✗ signed identifier is "${identifierLine}", expected "${expectedIdentifier}".`,
@@ -98,7 +96,9 @@ console.log(
 );
 console.log(`  tccutil reset Microphone ${expectedIdentifier}`);
 console.log(`  tccutil reset Accessibility ${expectedIdentifier}`);
-console.log('  then relaunch dev and grant the new Microphone/Accessibility entries.');
+console.log(
+	'  then relaunch dev and grant the new Microphone/Accessibility entries.',
+);
 
 console.log('\nlive trust / capability / listener health:');
 console.log(

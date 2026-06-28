@@ -188,19 +188,19 @@ const inferenceApp = new Hono<Env>().post(
  * billing-agnostic; policies are opaque middleware that run after auth and
  * ownership and may short-circuit (e.g. 402) before the gateway streams.
  */
-export function mountInferenceApp(
-	app: Hono<Env>,
+export function mountInferenceApp<E extends Env = Env>(
+	app: Hono<E>,
 	opts: {
-		auth: MiddlewareHandler;
+		auth: MiddlewareHandler<E>;
 		ownership: OwnershipRule;
-		policies?: MiddlewareHandler[];
+		policies?: MiddlewareHandler<E>[];
 	},
 ): void {
 	const policies = opts.policies ?? [];
 	app.use(
 		API_ROUTES.ai.completions.prefixPattern,
 		opts.auth,
-		createRequireOwnership(opts.ownership),
+		createRequireOwnership<E>(opts.ownership),
 		...policies,
 	);
 	app.route('/', inferenceApp);

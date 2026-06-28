@@ -38,15 +38,15 @@ function openAiError(
 	return { error: { message, code } };
 }
 
-export function rateLimit(opts: {
+export function rateLimit<E extends Env = Env>(opts: {
 	/** Max requests allowed per owner partition within one window. */
 	requests: number;
 	/** Window length in seconds; the count resets when it elapses. */
 	windowSeconds: number;
-}): MiddlewareHandler<Env> {
+}): MiddlewareHandler<E> {
 	const windowMs = opts.windowSeconds * 1000;
 	const windows = new Map<string, { count: number; resetAt: number }>();
-	return createMiddleware<Env>(async (c, next) => {
+	return createMiddleware<E>(async (c, next) => {
 		const key = c.var.ownerId;
 		const now = Date.now();
 		const window = windows.get(key);

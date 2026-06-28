@@ -19,12 +19,15 @@
  */
 
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
+import type { MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { type OwnershipRule, resolveOwnerPartition } from '../ownership.js';
 import type { Env } from '../types.js';
 
-export function createRequireOwnership(rule: OwnershipRule) {
-	return createMiddleware<Env>(async (c, next) => {
+export function createRequireOwnership<E extends Env = Env>(
+	rule: OwnershipRule,
+): MiddlewareHandler<E> {
+	return createMiddleware<E>(async (c, next) => {
 		const ownerPartition = resolveOwnerPartition(rule, c);
 		const urlOwnerId = c.req.param('ownerId');
 		if (urlOwnerId !== undefined && urlOwnerId !== ownerPartition) {

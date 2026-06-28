@@ -15,10 +15,13 @@
 
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
-	cloudflare,
+	type CloudEnv,
+	connectHyperdriveDb,
+	createDurableObjectRooms,
 	createServerApp,
 	mountBlobsApp,
 	mountCloudAuth,
+	mountCloudDb,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -45,19 +48,15 @@ import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 const ownership = personal();
 
-const app = createServerApp({
-	// The Cloudflare runtime adapter owns the per-request pg client over
-	// Hyperdrive, `waitUntil`, and the Durable Object room registry. This edge
-	// points it at its OWN two bindings: the `Cloudflare.Env` cast and the
-	// binding names live here, where they are type-checked against this Worker's
-	// generated bindings (ADR-0066). Per-room DO sharding stays the cloud's
-	// binding of the room actor forever: hibernate-to-zero and
-	// single-writer-per-room at multi-tenant scale. A Bun host builds its own
-	// adapter inline.
-	runtime: cloudflare({
-		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
-		room: (env) => (env as Cloudflare.Env).ROOM,
-	}),
+const app = createServerApp<CloudEnv>({
+	// The one runtime-specific portable concern: bind this Worker's Durable Object
+	// room registry. The `Cloudflare.Env` cast and the binding name live here, at
+	// the app edge, type-checked against this Worker's generated bindings (ADR-0066).
+	// Per-room DO sharding stays the cloud's binding of the room actor forever:
+	// hibernate-to-zero and single-writer-per-room at multi-tenant scale. The cloud's
+	// Postgres + `waitUntil` are NOT here; they are installed by `mountCloudDb` below.
+	resolveRooms: (env) =>
+		createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 	identity: {
 		// The hosted cloud's public origin never changes per deploy, so it is
 		// baked from the constants source of truth rather than duplicated into
@@ -83,6 +82,17 @@ const bearer = requireBearerUser(resolveRequestOAuthUser);
 app.get('/', (c) =>
 	c.json({ product: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
+
+// Cloud-only Postgres lifecycle: a per-request pg client over Hyperdrive +
+// `waitUntil` to keep billing's after-response drain alive. Installed first so
+// `c.var.db` is set before Better Auth (and any billing handler) reads it. The
+// instance composes no Postgres and never calls this (ADR-0076). The binding name
+// and `Cloudflare.Env` cast live at this edge, type-checked against this Worker's
+// generated bindings (ADR-0066).
+mountCloudDb(app, {
+	connect: (env) => connectHyperdriveDb((env as Cloudflare.Env).HYPERDRIVE),
+	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
+});
 
 // Cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
 // plus the auth surface (sign-in, consent, OAuth metadata). Epicenter cloud

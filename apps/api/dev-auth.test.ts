@@ -13,13 +13,13 @@
  */
 
 import { expect, test } from 'bun:test';
-import { type Env, requireBearerUser } from '@epicenter/server/bun';
+import { type CloudEnv, requireBearerUser } from '@epicenter/server/bun';
 import { Hono } from 'hono';
 import { resolveDevUser } from './dev-auth.js';
 
 /** A minimal app: guard `/protected` with a wrapper closed over the dev resolver. */
 function devAuthApp() {
-	return new Hono<Env>().get(
+	return new Hono<CloudEnv>().get(
 		'/protected',
 		requireBearerUser(resolveDevUser),
 		(c) => c.json(c.var.user),

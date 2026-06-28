@@ -279,21 +279,23 @@ async function listOwnerBlobs(
  * (storage is unmetered until Autumn is wired); a future `syncBlobStorageWithAutumn`
  * would slot into `policies`.
  */
-export function mountBlobsApp(
-	app: Hono<Env>,
+export function mountBlobsApp<E extends Env = Env>(
+	app: Hono<E>,
 	opts: {
-		auth: MiddlewareHandler;
+		auth: MiddlewareHandler<E>;
 		ownership: OwnershipRule;
 		/** Extra middleware after auth + ownership on every blob route. */
-		policies?: MiddlewareHandler[];
+		policies?: MiddlewareHandler<E>[];
 	},
 ): void {
 	// Every blob route runs the same chain: authenticate, resolve + assert the
 	// owner partition, ensure object storage is configured, then any deployment
 	// policies. The chain is typed as a non-empty tuple so its leading fixed
 	// handler satisfies `app.on`'s overload (a bare `MiddlewareHandler[]` spread
-	// would be read as the path argument).
-	const requireOwnership = createRequireOwnership(opts.ownership);
+	// would be read as the path argument). It is bare-typed because it mixes the
+	// deployment's `E`-typed auth/ownership with the blob-local `BlobEnv` middleware
+	// (`requireBlobStore` stamps `c.var.blobStore`); both run on the same app.
+	const requireOwnership = createRequireOwnership<E>(opts.ownership);
 	const chain: [MiddlewareHandler, ...MiddlewareHandler[]] = [
 		opts.auth,
 		requireOwnership,

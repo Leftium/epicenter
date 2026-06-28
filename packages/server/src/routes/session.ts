@@ -45,14 +45,14 @@ const sessionApp = new Hono<Env>().get(
  * `:ownerId` to compare against, but `c.var.ownerId` is populated), and the route
  * mount into one call.
  */
-export function mountSessionApp(
-	app: Hono<Env>,
-	opts: { auth: MiddlewareHandler; ownership: OwnershipRule },
+export function mountSessionApp<E extends Env = Env>(
+	app: Hono<E>,
+	opts: { auth: MiddlewareHandler<E>; ownership: OwnershipRule },
 ): void {
 	app.use(
 		API_ROUTES.session.pattern,
 		opts.auth,
-		createRequireOwnership(opts.ownership),
+		createRequireOwnership<E>(opts.ownership),
 	);
 	app.route('/', sessionApp);
 }

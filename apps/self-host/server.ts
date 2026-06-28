@@ -47,7 +47,6 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
-	bun,
 	createBunRooms,
 	createEnvTokenResolver,
 	createServerApp,
@@ -132,9 +131,10 @@ export function startSelfHostServer(): void {
 
 	const ownership = instance();
 	const app = createServerApp({
-		// No db leg: the instance composes no Postgres, so `createServerApp`
-		// installs no db lifecycle and `c.var.db` is never set (ADR-0075).
-		runtime: bun({ rooms: bunRooms.rooms }),
+		// The instance composes no Postgres (no Better Auth), so it never calls
+		// `mountCloudDb` and `createServerApp` stays on the portable `Env`: `c.var.db`
+		// is never set (ADR-0076). Its one runtime concern is the bun:sqlite rooms.
+		resolveRooms: () => bunRooms.rooms,
 		identity: {
 			resolveOrigin: () => origin,
 			// A self-host trusts its OWN origin and the Tauri desktop client, never

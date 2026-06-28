@@ -17,12 +17,12 @@
 import type { Context, Hono } from 'hono';
 import { type CloudAuthBindings, createAuth } from './auth/create-auth.js';
 import { authApp } from './routes/auth.js';
-import type { Env } from './types.js';
+import type { CloudEnv } from './types.js';
 
 export { CloudAuthBindings } from './auth/create-auth.js';
 
 export function mountCloudAuth(
-	app: Hono<Env>,
+	app: Hono<CloudEnv>,
 	opts: {
 		/**
 		 * Resolve this cloud deployment's relational-auth secrets
@@ -32,7 +32,7 @@ export function mountCloudAuth(
 		 * deploy-gated `c.env as Cloudflare.Env`, the Bun host closes over its
 		 * validated env. Read per request because a Worker has no module-scope env.
 		 */
-		resolveAuthSecrets: (c: Context<Env>) => CloudAuthBindings;
+		resolveAuthSecrets: (c: Context<CloudEnv>) => CloudAuthBindings;
 		/**
 		 * Registrable domain for cross-subdomain session cookies (Epicenter cloud
 		 * passes `.epicenter.so`). Omit for a single-origin deployment, which then

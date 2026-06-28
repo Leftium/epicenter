@@ -31,7 +31,7 @@ import { createOAuthIssuerURL } from '../auth/oauth-metadata.js';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
 import { parseBearer } from '../auth/parse-bearer.js';
 import * as schema from '../db/schema/index.js';
-import type { Env, ResolveUser } from '../types.js';
+import type { CloudEnv, Env, ResolveUser } from '../types.js';
 
 /**
  * Resolve the OAuth bearer on the current request to the calling user.
@@ -67,7 +67,7 @@ import type { Env, ResolveUser } from '../types.js';
  * and subject.
  */
 export async function resolveRequestOAuthUser(
-	c: Context<Env>,
+	c: Context<CloudEnv>,
 ): Promise<Result<AuthUser, OAuthError>> {
 	const accessToken = parseBearer(c.req.header('authorization') ?? null);
 	if (!accessToken) return OAuthError.InvalidToken();
@@ -110,9 +110,9 @@ export async function resolveRequestOAuthUser(
 }
 
 export function requireCookieOrBearerUser(
-	resolveUser: ResolveUser,
-): MiddlewareHandler<Env> {
-	return createMiddleware<Env>(async (c, next) => {
+	resolveUser: ResolveUser<CloudEnv>,
+): MiddlewareHandler<CloudEnv> {
+	return createMiddleware<CloudEnv>(async (c, next) => {
 		const session = await c.var.auth.api.getSession({
 			headers: c.req.raw.headers,
 		});
@@ -138,10 +138,10 @@ export function requireCookieOrBearerUser(
  * passes {@link resolveRequestOAuthUser}, an instance its env-token resolver.
  * There is no `c.var.resolveUser` seam; the wrapper holds its resolver directly.
  */
-export function requireBearerUser(
-	resolveUser: ResolveUser,
-): MiddlewareHandler<Env> {
-	return createMiddleware<Env>(async (c, next) => {
+export function requireBearerUser<E extends Env = Env>(
+	resolveUser: ResolveUser<E>,
+): MiddlewareHandler<E> {
+	return createMiddleware<E>(async (c, next) => {
 		const { data: user, error } = await resolveUser(c);
 		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 		c.set('user', user);

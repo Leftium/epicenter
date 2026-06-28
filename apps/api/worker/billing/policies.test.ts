@@ -17,7 +17,7 @@
 
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
-import type { Env } from '@epicenter/server';
+import type { CloudEnv } from '@epicenter/server';
 import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 import { BillingError } from './errors.js';
@@ -79,13 +79,13 @@ beforeEach(() => {
 	trackCalls.length = 0;
 });
 
-function withContext(app: Hono<Env>) {
+function withContext(app: Hono<CloudEnv>) {
 	app.use('*', async (c, next) => {
 		c.set('afterResponseQueue', []);
 		c.set('user', {
 			id: 'user_1',
 			email: 'user@example.com',
-		} as Env['Variables']['user']);
+		} as CloudEnv['Variables']['user']);
 		await next();
 	});
 	return app;
@@ -95,13 +95,13 @@ function withContext(app: Hono<Env>) {
 
 /** Mount the inference policy around a stub completions handler returning `downstreamStatus`. */
 function makeAiApp(downstreamStatus: 200 | 500) {
-	const app = withContext(new Hono<Env>());
+	const app = withContext(new Hono<CloudEnv>());
 	app.use('/v1/chat/completions', chargeOpenAiCreditsWithAutumn);
 	app.post('/v1/chat/completions', (c) => c.body(null, downstreamStatus));
 	return app;
 }
 
-function aiRequest(app: Hono<Env>, body: unknown) {
+function aiRequest(app: Hono<CloudEnv>, body: unknown) {
 	return app.request('/v1/chat/completions', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -145,7 +145,7 @@ test('a guard rejection answers in the OpenAI error shape and reserves nothing',
  * settle the per-minute charge after the call.
  */
 function makeSttApp(downstream: { status: 200 | 429; duration?: number }) {
-	const app = withContext(new Hono<Env>());
+	const app = withContext(new Hono<CloudEnv>());
 	app.use('/v1/audio/transcriptions', chargeOpenAiTranscriptionCredits);
 	app.post('/v1/audio/transcriptions', (c) =>
 		c.body(
@@ -161,7 +161,7 @@ function makeSttApp(downstream: { status: 200 | 429; duration?: number }) {
 	return app;
 }
 
-function sttRequest(app: Hono<Env>) {
+function sttRequest(app: Hono<CloudEnv>) {
 	const form = new FormData();
 	form.append('file', new File([new Uint8Array([1, 2, 3])], 'audio.webm'));
 	form.append('model', 'whisper-1');

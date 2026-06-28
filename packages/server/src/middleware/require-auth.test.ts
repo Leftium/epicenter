@@ -32,7 +32,7 @@ import {
 	issueOAuthTokens,
 	randomOAuthTestPort,
 } from '../test-helpers/oauth.js';
-import type { Env } from '../types.js';
+import type { CloudEnv } from '../types.js';
 import {
 	requireBearerUser,
 	requireCookieOrBearerUser,
@@ -169,7 +169,7 @@ test('requireBearerUser returns 503 ServerError when the signing keys cannot be 
 		// means the token was never checked, so the client must retry (503), not
 		// discard and refresh a token that may be fine (401). No
 		// `WWW-Authenticate` challenge belongs on an infrastructure fault.
-		const app = new Hono<Env>()
+		const app = new Hono<CloudEnv>()
 			.use('*', async (c, next) => {
 				c.set('db', createFakeDb(setup.db));
 				c.set('authBaseURL', setup.baseURL);
@@ -179,7 +179,7 @@ test('requireBearerUser returns 503 ServerError when the signing keys cannot be 
 							throw new Error('signing keys unreadable');
 						},
 					},
-				} as unknown as Env['Variables']['auth']);
+				} as unknown as CloudEnv['Variables']['auth']);
 				await next();
 			})
 			.get('/protected', requireBearerUser(resolveRequestOAuthUser), (c) =>
@@ -210,11 +210,11 @@ test('requireCookieOrBearerUser resolves the user from a session cookie and skip
 		resolveUserCalls += 1;
 		return OAuthError.InvalidToken();
 	});
-	const app = new Hono<Env>()
+	const app = new Hono<CloudEnv>()
 		.use('*', async (c, next) => {
 			c.set('auth', {
 				api: { getSession: async () => ({ user: sessionUser }) },
-			} as unknown as Env['Variables']['auth']);
+			} as unknown as CloudEnv['Variables']['auth']);
 			await next();
 		})
 		.get('/protected', cookieOrBearer, (c) => c.json(c.var.user));
@@ -235,11 +235,11 @@ test('requireCookieOrBearerUser falls back to the bearer resolver when there is 
 		email: 'bearer@example.com',
 	});
 	const cookieOrBearer = requireCookieOrBearerUser(async () => Ok(bearerUser));
-	const app = new Hono<Env>()
+	const app = new Hono<CloudEnv>()
 		.use('*', async (c, next) => {
 			c.set('auth', {
 				api: { getSession: async () => null },
-			} as unknown as Env['Variables']['auth']);
+			} as unknown as CloudEnv['Variables']['auth']);
 			await next();
 		})
 		.get('/protected', cookieOrBearer, (c) => c.json(c.var.user));
@@ -258,7 +258,7 @@ test('requireBearerUser does not read signing keys for a non-JWT bearer', async 
 	// before `jwksFetch` runs: a garbage bearer costs no database read, and the
 	// failure is a 401, not an infrastructure 503.
 	let getJwksCalls = 0;
-	const app = new Hono<Env>()
+	const app = new Hono<CloudEnv>()
 		.use('*', async (c, next) => {
 			c.set('authBaseURL', 'http://localhost');
 			c.set('auth', {
@@ -268,7 +268,7 @@ test('requireBearerUser does not read signing keys for a non-JWT bearer', async 
 						return { keys: [] };
 					},
 				},
-			} as unknown as Env['Variables']['auth']);
+			} as unknown as CloudEnv['Variables']['auth']);
 			await next();
 		})
 		.get('/protected', requireBearerUser(resolveRequestOAuthUser), (c) =>
@@ -316,10 +316,10 @@ function createMiddlewareTestServer() {
 				fetch: async (request) => auth.handler(request),
 			});
 
-			const app = new Hono<Env>()
+			const app = new Hono<CloudEnv>()
 				.use('*', async (c, next) => {
 					c.set('db', createFakeDb(db));
-					c.set('auth', auth as unknown as Env['Variables']['auth']);
+					c.set('auth', auth as unknown as CloudEnv['Variables']['auth']);
 					c.set('authBaseURL', baseURL);
 					await next();
 				})
@@ -354,5 +354,5 @@ function createFakeDb(memoryDb: MemoryDB) {
 				findFirst: async () => memoryDb.user?.[0] ?? null,
 			},
 		},
-	} as unknown as Env['Variables']['db'];
+	} as unknown as CloudEnv['Variables']['db'];
 }

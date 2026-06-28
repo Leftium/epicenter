@@ -74,9 +74,9 @@ export const instance = (): OwnershipRule => ({
  * Personal:  the user's id branded as `OwnerId`.
  * Instance:  the rule's pinned `ownerId` (`INSTANCE_OWNER_ID`).
  */
-export function resolveOwnerPartition(
+export function resolveOwnerPartition<E extends Env = Env>(
 	rule: OwnershipRule,
-	c: Context<Env>,
+	c: Context<E>,
 ): OwnerId {
 	switch (rule.kind) {
 		case 'personal':

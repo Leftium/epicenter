@@ -132,8 +132,10 @@ function createRoomsApp(): Hono<Env> {
  * helper. The serialized error is the close reason; the client branches on
  * `error.name`.
  */
-function requireRoomBearer(resolveUser: ResolveUser): MiddlewareHandler<Env> {
-	return createMiddleware<Env>(async (c, next) => {
+function requireRoomBearer<E extends Env>(
+	resolveUser: ResolveUser<E>,
+): MiddlewareHandler<E> {
+	return createMiddleware<E>(async (c, next) => {
 		const { data: user, error } = await resolveUser(c);
 		if (error) {
 			if (isWebSocketUpgrade(c)) {
@@ -169,15 +171,15 @@ function requireRoomBearer(resolveUser: ResolveUser): MiddlewareHandler<Env> {
  * {@link requireRoomBearer} (bearer-only: rooms is for external clients,
  * never cookie-bearing browsers) reads it.
  */
-export function mountRoomsApp(
-	app: Hono<Env>,
-	opts: { ownership: OwnershipRule; resolveUser: ResolveUser },
+export function mountRoomsApp<E extends Env = Env>(
+	app: Hono<E>,
+	opts: { ownership: OwnershipRule; resolveUser: ResolveUser<E> },
 ): void {
 	app.use(
 		ROOM_ROUTE.prefixPattern,
 		normalizeWebSocketAuth,
 		requireRoomBearer(opts.resolveUser),
-		createRequireOwnership(opts.ownership),
+		createRequireOwnership<E>(opts.ownership),
 	);
 	app.route('/', createRoomsApp());
 }

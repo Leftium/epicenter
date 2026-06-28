@@ -22,7 +22,7 @@
 
 import { assertStrongToken } from '@epicenter/auth';
 import {
-	cloudflare,
+	createDurableObjectRooms,
 	createEnvTokenResolver,
 	createServerApp,
 	instance,
@@ -40,14 +40,13 @@ import { resolveSelfHostTrustedOrigins } from '../trusted-origins.js';
 const ownership = instance();
 
 const app = createServerApp({
-	// The Cloudflare runtime adapter: the Durable Object room registry only. The
-	// instance composes no Postgres (no Better Auth, no telemetry), so it passes no
-	// Hyperdrive binding and `createServerApp` installs no db lifecycle (ADR-0075).
-	// This edge points it at its OWN binding (the `Cloudflare.Env` cast stays here,
-	// type-checked against this Worker's generated bindings, ADR-0066).
-	runtime: cloudflare({
-		room: (env) => (env as Cloudflare.Env).ROOM,
-	}),
+	// The one runtime-specific concern: bind this Worker's Durable Object room
+	// registry. The instance composes no Postgres (no Better Auth, no telemetry), so
+	// it never calls `mountCloudDb` and `createServerApp` stays on the portable `Env`
+	// (ADR-0076). This edge points it at its OWN binding (the `Cloudflare.Env` cast
+	// stays here, type-checked against this Worker's generated bindings, ADR-0066).
+	resolveRooms: (env) =>
+		createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 	identity: {
 		// Self-hosters set their own public origin in wrangler.jsonc
 		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's.

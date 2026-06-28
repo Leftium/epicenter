@@ -40,14 +40,14 @@ import {
 	renderSignedInPage,
 	renderSignInPage,
 } from '../auth-pages/index.js';
-import type { Env } from '../types.js';
+import type { CloudEnv } from '../types.js';
 
 /**
  * Auth sub-app. Registration order matters: OAuth discovery routes must
  * register before the `/auth/*` Better Auth catch-all, or the catch-all
  * swallows discovery requests.
  */
-export const authApp = new Hono<Env>()
+export const authApp = new Hono<CloudEnv>()
 	// Server-rendered sign-in page. Re-entry into OAuth happens when the
 	// caller arrives with `?sig=` (signed authorize params).
 	.get('/sign-in', async (c) => {

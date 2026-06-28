@@ -44,13 +44,14 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
-	bun,
+	type CloudEnv,
 	CloudAuthBindings,
 	createBunRooms,
 	createDb,
 	createServerApp,
 	mountBlobsApp,
 	mountCloudAuth,
+	mountCloudDb,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -99,7 +100,7 @@ const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
  * identical across the two, so they cannot drift.
  */
 export function startBunApiServer(
-	opts: { resolveUser?: ResolveUser } = {},
+	opts: { resolveUser?: ResolveUser<CloudEnv> } = {},
 ): void {
 	// Validate this Bun host's environment once, at boot. The validated result IS
 	// the typed env handed to the Hono app: no `as`-cast over `process.env`, no
@@ -128,8 +129,8 @@ export function startBunApiServer(
 	const db = createDb(pool);
 
 	const ownership = personal();
-	const app = createServerApp({
-		runtime: bun({ db, rooms: bunRooms.rooms }),
+	const app = createServerApp<CloudEnv>({
+		resolveRooms: () => bunRooms.rooms,
 		identity: {
 			resolveOrigin: () => origin,
 			resolveTrustedOrigins: buildEpicenterTrustedOrigins,
@@ -145,11 +146,20 @@ export function startBunApiServer(
 	app.get('/', (c) =>
 		c.json({ product: 'hub', version: '0.1.0', runtime: 'bun' }),
 	);
+	// Cloud-only Postgres lifecycle: hand back the shared `pg.Pool` checkout (drizzle
+	// checks a client out per query, so `close` is a no-op) and let the live Bun
+	// process outlive the response (no `waitUntil`). Installed before `mountCloudAuth`
+	// so `c.var.db` is set when Better Auth reads it. The instance composes none of
+	// this (ADR-0076).
+	mountCloudDb(app, {
+		connect: async () => ({ db, close: async () => {} }),
+		afterResponse: () => {},
+	});
 	// The cloud's relational-auth layer (Better Auth on `c.var.auth` + the auth
-	// surface), mounted before the owner-scoped surfaces read it. Host-only cookies
-	// on the Bun dev host (no cross-subdomain domain like the Worker's `.epicenter.so`).
-	// The Cloud-only auth secrets come from the validated `env` closure (ADR-0076),
-	// never the portable `ServerBindings`.
+	// surface), mounted after the db lifecycle. Host-only cookies on the Bun dev host
+	// (no cross-subdomain domain like the Worker's `.epicenter.so`). The Cloud-only
+	// auth secrets come from the validated `env` closure (ADR-0076), never the
+	// portable `ServerBindings`.
 	mountCloudAuth(app, { resolveAuthSecrets: () => env });
 	mountSessionApp(app, { ownership, auth: cookieOrBearer });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.

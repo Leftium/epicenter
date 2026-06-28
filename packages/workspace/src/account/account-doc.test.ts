@@ -10,9 +10,14 @@ import * as Y from 'yjs';
 import {
 	accountAssertionLog,
 	appendIdentityClaim,
+	appendRevoke,
+	appendVerify,
+	readAssertions,
 	readRoster,
 } from './account-doc.js';
 import { peerIdFromSecret, signAssertion } from './crypto.js';
+import { asPeerId } from '../gateway/transport.js';
+import { trustFromAssertions } from './reducer.js';
 
 const ACCOUNT = 'user-1';
 
@@ -201,5 +206,71 @@ describe('appendIdentityClaim', () => {
 		expect(roster.size).toBe(2);
 		expect(roster.get(peerIdFromSecret(a))).toEqual({ label: 'Laptop' });
 		expect(roster.get(peerIdFromSecret(b))).toEqual({ label: 'Phone' });
+	});
+});
+
+describe('appendVerify / appendRevoke', () => {
+	test('a written verify reads `verified` under the asserter-rooted reducer', () => {
+		const ydoc = new Y.Doc();
+		const self = seed(10);
+		const target = seed(11);
+		const selfPeerId = peerIdFromSecret(self);
+		const subject = peerIdFromSecret(target);
+
+		const result = appendVerify({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: self,
+			subject,
+		});
+
+		expect(result.asserter).toBe(selfPeerId);
+		expect(result.subject).toBe(subject);
+		expect(accountAssertionLog(ydoc).length).toBe(1);
+		// Rooted in self's key, its own verify confers `verified` on the subject.
+		const trust = trustFromAssertions(readAssertions(ydoc), ACCOUNT, selfPeerId);
+		expect(trust.get(subject)).toBe('verified');
+	});
+
+	test('a written revoke reads `revoked`, and supersedes a prior verify', () => {
+		const ydoc = new Y.Doc();
+		const self = seed(12);
+		const target = seed(13);
+		const selfPeerId = peerIdFromSecret(self);
+		const subject = peerIdFromSecret(target);
+
+		appendVerify({ ydoc, account: ACCOUNT, secretKeyBytes: self, subject });
+		const revoked = appendRevoke({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: self,
+			subject,
+		});
+
+		// The verdict counter is per-asserter and spans verbs: verify=0, revoke=1.
+		expect(revoked.seq).toBe(1);
+		const trust = trustFromAssertions(readAssertions(ydoc), ACCOUNT, selfPeerId);
+		expect(trust.get(subject)).toBe('revoked');
+	});
+
+	test('verdict seq shares the per-asserter counter with identity claims', () => {
+		const ydoc = new Y.Doc();
+		const self = seed(14);
+		const subject = asPeerId(peerIdFromSecret(seed(15)));
+
+		// identity at seq 0, then the first verdict must be seq 1 (one counter).
+		appendIdentityClaim({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: self,
+			label: 'Workstation',
+		});
+		const verify = appendVerify({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: self,
+			subject,
+		});
+		expect(verify.seq).toBe(1);
 	});
 });

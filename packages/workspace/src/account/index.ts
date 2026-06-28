@@ -40,6 +40,10 @@ export {
 	appendIdentityClaim,
 	type AppendIdentityClaimOptions,
 	type AppendIdentityClaimResult,
+	appendRevoke,
+	appendVerify,
+	type AppendVerdictOptions,
+	type AppendVerdictResult,
 	readAssertions,
 	readRoster,
 } from './account-doc.js';

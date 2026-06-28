@@ -136,3 +136,78 @@ export function appendIdentityClaim(
 	accountAssertionLog(ydoc).push([signAssertion(unsigned, secretKeyBytes)]);
 	return { peerId, appended: true };
 }
+
+/** Inputs to {@link appendVerify} / {@link appendRevoke}. */
+export type AppendVerdictOptions = {
+	ydoc: Y.Doc;
+	/** The signed-in user id; binds the verdict to this account. */
+	account: string;
+	/** The asserting device's 32-byte iroh secret seed (`SecretKey.toBytes()`). */
+	secretKeyBytes: Uint8Array;
+	/** The peer the verdict is about (the target of verify/revoke). */
+	subject: PeerId;
+};
+
+/** The outcome of {@link appendVerify} / {@link appendRevoke}. */
+export type AppendVerdictResult = {
+	/** This device's peerId, the asserter that signed the verdict. */
+	asserter: PeerId;
+	/** The peer the verdict was stated about. */
+	subject: PeerId;
+	/** The per-asserter `seq` the appended verdict carries. */
+	seq: number;
+};
+
+/**
+ * Append a self-signed `verify` or `revoke` verdict about `subject`.
+ *
+ * This is the write side of the trust ledger the {@link trustFromAssertions}
+ * reducer folds: the asserting device states, under its own key, that it trusts
+ * (`verify`) or distrusts (`revoke`) another peer. The verdict is browser-safe
+ * to mint (portable signing over raw key bytes, no iroh) and cloud-unforgeable
+ * the moment it lands, exactly like an identity claim.
+ *
+ * Unlike {@link appendIdentityClaim}, a verdict is NOT idempotent: each call
+ * appends a fresh assertion at a strictly higher `seq` than any this device has
+ * made. The reducer keeps only the highest-seq verdict per (asserter, subject),
+ * so re-verifying or flipping verify↔revoke is just appending the next one. The
+ * caller decides whether to write (the daemon checks the current trust state
+ * first to avoid churn); this helper always writes when called.
+ *
+ * `seq` spans all of the device's verbs (identity and cross-claims share one
+ * per-asserter counter, see {@link Assertion}), counting only entries that verify
+ * under the device's own key so a forged high-`seq` entry cannot push it forward.
+ */
+function appendVerdict(
+	verb: 'verify' | 'revoke',
+	options: AppendVerdictOptions,
+): AppendVerdictResult {
+	const { ydoc, account, secretKeyBytes, subject } = options;
+	const asserter = peerIdFromSecret(secretKeyBytes);
+
+	const raw = readAssertions(ydoc);
+	const seq = (highestSelfSeq(raw, account, asserter) ?? -1) + 1;
+	const unsigned: UnsignedAssertion = {
+		account,
+		asserter,
+		subject,
+		verb,
+		seq,
+	};
+	accountAssertionLog(ydoc).push([signAssertion(unsigned, secretKeyBytes)]);
+	return { asserter, subject, seq };
+}
+
+/** Append a self-signed `verify` of `subject`. See {@link appendVerdict}. */
+export function appendVerify(
+	options: AppendVerdictOptions,
+): AppendVerdictResult {
+	return appendVerdict('verify', options);
+}
+
+/** Append a self-signed `revoke` of `subject`. See {@link appendVerdict}. */
+export function appendRevoke(
+	options: AppendVerdictOptions,
+): AppendVerdictResult {
+	return appendVerdict('revoke', options);
+}

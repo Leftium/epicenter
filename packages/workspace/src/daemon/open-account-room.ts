@@ -22,6 +22,7 @@
  */
 
 import { hostname } from 'node:os';
+import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 
 import {
@@ -40,6 +41,8 @@ import { loadOrCreateDeviceSecret } from '../gateway/key-store.js';
 import { hashYDocClientId } from '../shared/client-id.js';
 import { irohKeyPathFor } from './paths.js';
 import { resolveSyncBaseURL } from './mount-runtime.js';
+
+const log = createLogger('workspace/account-room');
 
 /** Inputs to {@link openAccountRoom}. */
 export type OpenAccountRoomOptions = {
@@ -105,38 +108,69 @@ export async function openAccountRoom(
 		filePath: yjsPath(options.epicenterRoot, ydoc.guid),
 	});
 
-	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl({
-			baseURL: resolveSyncBaseURL(options.baseURL),
-			ownerId,
+	// From the first attach onward the only handle that tears these resources
+	// down is the one we return, so any throw before we return would orphan the
+	// SQLite log and (once opened) the relay WebSocket for the daemon's whole
+	// life. `ydoc.destroy()` is the single cascade point: the log hooks
+	// `ydoc.once('destroy')` and collaboration's `[Symbol.dispose]` is a
+	// destroy, so destroying the doc releases whatever attached, even on the
+	// branch where `openCollaboration` itself threw and `collaboration` is unset.
+	try {
+		const collaboration = openCollaboration(ydoc, {
+			url: roomWsUrl({
+				baseURL: resolveSyncBaseURL(options.baseURL),
+				ownerId,
+				guid: ydoc.guid,
+				nodeId,
+			}),
+			openWebSocket: auth.openWebSocket,
+			onReconnectSignal: auth.onStateChange,
+			// The account doc carries no daemon actions; it is a synced log, not a
+			// dispatch surface.
+			actions: {},
+		});
+
+		// Announce this device, idempotently on the label across restarts. The
+		// local log is already hydrated (attachYjsLog is synchronous), so this
+		// first append computes its seq against local history without awaiting
+		// first sync, which keeps the daemon announcing itself even while offline.
+		const label = options.label ?? hostname();
+		const reassertSelfClaim = () =>
+			appendIdentityClaim({ ydoc, account: ownerId, secretKeyBytes, label });
+		const { peerId } = reassertSelfClaim();
+
+		// Re-assert after every sync. The first append can be made against a STALE
+		// local log: the iroh key lives outside the repo (irohKeyPathFor) while the
+		// account log lives under `.epicenter/`, so a `git clean` (or a restore, or
+		// a fresh worktree) can wipe the log while the key survives. The device
+		// then appends a low seq that the cloud's own older, higher-seq claim would
+		// shadow forever under the reducer's highest-seq rule. Re-asserting once the
+		// cloud state has merged (status `connected`) heals it: appendIdentityClaim
+		// is idempotent on the label, so this writes a superseding higher-seq claim
+		// only when the synced roster disagrees, then no-ops (no write, no loop).
+		const unsubscribe = collaboration.onStatusChange((status) => {
+			if (status.phase !== 'connected') return;
+			try {
+				reassertSelfClaim();
+			} catch (cause) {
+				log.warn(
+					new Error('account room: re-assert after sync failed', { cause }),
+				);
+			}
+		});
+
+		return {
 			guid: ydoc.guid,
-			nodeId,
-		}),
-		openWebSocket: auth.openWebSocket,
-		onReconnectSignal: auth.onStateChange,
-		// The account doc carries no daemon actions; it is a synced log, not a
-		// dispatch surface.
-		actions: {},
-	});
-
-	// Announce this device. The local log is already hydrated (attachYjsLog is
-	// synchronous) and every identity claim about this peer is signed by this
-	// device alone, so the append is correct against local state without waiting
-	// on the first cloud sync; it is idempotent on the label across restarts.
-	const { peerId } = appendIdentityClaim({
-		ydoc,
-		account: ownerId,
-		secretKeyBytes,
-		label: options.label ?? hostname(),
-	});
-
-	return {
-		guid: ydoc.guid,
-		peerId,
-		roster: () => readRoster(ydoc, ownerId),
-		async [Symbol.asyncDispose]() {
-			ydoc.destroy();
-			await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
-		},
-	};
+			peerId,
+			roster: () => readRoster(ydoc, ownerId),
+			async [Symbol.asyncDispose]() {
+				unsubscribe();
+				ydoc.destroy();
+				await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
+			},
+		};
+	} catch (cause) {
+		ydoc.destroy();
+		throw cause;
+	}
 }

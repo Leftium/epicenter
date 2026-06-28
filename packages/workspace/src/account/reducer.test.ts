@@ -159,6 +159,42 @@ describe('rosterFromAssertions', () => {
 		expect(roster.get(peerIdFromSecret(b))).toEqual({ label: 'Phone' });
 	});
 
+	test('an identity claim with no label falls back to the peerId', () => {
+		const secret = seed(14);
+		const peerId = peerIdFromSecret(secret);
+		// A valid self-signed identity claim that omits the optional label.
+		const noLabel = signAssertion(
+			{
+				account: ACCOUNT,
+				asserter: peerId,
+				subject: peerId,
+				verb: 'identity',
+				seq: 0,
+			},
+			secret,
+		);
+
+		expect(rosterFromAssertions([noLabel], ACCOUNT).get(peerId)).toEqual({
+			label: peerId,
+		});
+	});
+
+	test('a non-hex asserter is ignored without throwing', () => {
+		// A structurally-valid assertion shape whose asserter is not a hex key:
+		// the signature check must return false (not throw) and drop it.
+		const malformed = {
+			account: ACCOUNT,
+			asserter: 'not-a-hex-key',
+			subject: 'not-a-hex-key',
+			verb: 'identity' as const,
+			seq: 0,
+			label: 'Bogus',
+			sig: '00',
+		};
+
+		expect(rosterFromAssertions([malformed], ACCOUNT).size).toBe(0);
+	});
+
 	test('a structurally malformed log entry is ignored, not thrown on', () => {
 		const secret = seed(13);
 		const roster = rosterFromAssertions(

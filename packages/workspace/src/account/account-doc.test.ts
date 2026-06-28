@@ -12,7 +12,7 @@ import {
 	appendIdentityClaim,
 	readRoster,
 } from './account-doc.js';
-import { peerIdFromSecret } from './crypto.js';
+import { peerIdFromSecret, signAssertion } from './crypto.js';
 
 const ACCOUNT = 'user-1';
 
@@ -84,6 +84,99 @@ describe('appendIdentityClaim', () => {
 			.toArray()
 			.map((a) => a.seq);
 		expect(seqs).toEqual([0, 1]);
+	});
+
+	test('a forged high-seq entry in the device name does not bump its next seq', () => {
+		const ydoc = new Y.Doc();
+		const secret = seed(6);
+		const attacker = seed(7);
+		const peerId = peerIdFromSecret(secret);
+
+		// The device makes one real claim at seq 0.
+		appendIdentityClaim({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: secret,
+			label: 'Real',
+		});
+
+		// The relay injects a claim in the device's NAME at a high seq, signed by
+		// an attacker key (it has no device key). It fails the device's own
+		// signature check, so it must not advance the device's counter.
+		accountAssertionLog(ydoc).push([
+			signAssertion(
+				{
+					account: ACCOUNT,
+					asserter: peerId,
+					subject: peerId,
+					verb: 'identity',
+					seq: 99,
+					label: 'Injected',
+				},
+				attacker,
+			),
+		]);
+
+		// The next genuine rename must be seq 1 (real 0 + 1), NOT 100.
+		appendIdentityClaim({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: secret,
+			label: 'Renamed',
+		});
+
+		const ownSeqs = accountAssertionLog(ydoc)
+			.toArray()
+			.filter((a) => a.asserter === peerId && a.label === 'Renamed')
+			.map((a) => a.seq);
+		expect(ownSeqs).toEqual([1]);
+		// The injected entry never reaches the roster, and the real rename wins.
+		expect(readRoster(ydoc, ACCOUNT).get(peerId)).toEqual({ label: 'Renamed' });
+	});
+
+	test('re-asserting heals a stale local seq once a higher-seq own claim merges', () => {
+		// Models the git-clean case: the device key survived but the local log was
+		// wiped, so the device first announced at a low seq; then the cloud
+		// delivered this device's OWN older, higher-seq claim. Re-asserting (what
+		// open-account-room does on sync) must supersede it, not stay shadowed.
+		const ydoc = new Y.Doc();
+		const secret = seed(8);
+		const peerId = peerIdFromSecret(secret);
+
+		// Fresh device announces "New" at seq 0 (stale local log).
+		appendIdentityClaim({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: secret,
+			label: 'New',
+		});
+
+		// The cloud merges this device's own prior seq-5 claim with the old label.
+		accountAssertionLog(ydoc).push([
+			signAssertion(
+				{
+					account: ACCOUNT,
+					asserter: peerId,
+					subject: peerId,
+					verb: 'identity',
+					seq: 5,
+					label: 'Old',
+				},
+				secret,
+			),
+		]);
+		// Without healing, highest-seq-wins would pin the OLD label.
+		expect(readRoster(ydoc, ACCOUNT).get(peerId)).toEqual({ label: 'Old' });
+
+		// Re-assert: writes seq 6 with the desired label, reclaiming the roster.
+		const healed = appendIdentityClaim({
+			ydoc,
+			account: ACCOUNT,
+			secretKeyBytes: secret,
+			label: 'New',
+		});
+		expect(healed.appended).toBe(true);
+		expect(readRoster(ydoc, ACCOUNT).get(peerId)).toEqual({ label: 'New' });
 	});
 
 	test('two devices on one doc each list themselves', () => {

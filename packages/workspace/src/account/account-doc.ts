@@ -51,14 +51,20 @@ export function readRoster(ydoc: Y.Doc, account: string): Roster {
 }
 
 /**
- * The highest `seq` this peer has itself validly claimed, or `null` if it has
- * never appended a verifiable identity claim.
+ * The highest `seq` this device has itself validly asserted, or `null` if it has
+ * never appended a verifiable assertion.
  *
- * Counts only entries that verify under the peer's own key, so a cloud-injected
- * high-`seq` entry forged in the peer's name (it cannot sign one) does not push
- * the counter forward. The next claim uses `seq = (this ?? -1) + 1`, which is
- * strictly greater than any claim the device has actually made, so it wins the
- * reducer's highest-`seq` rule.
+ * `seq` is a single per-asserter counter spanning all of a device's verbs (see
+ * {@link Assertion}), so this scans every assertion the device signed, not just
+ * its `identity` claims. Keeping it verb-agnostic means a Wave 4 `verify` and a
+ * Wave 3 `identity` from the same device share one monotonic sequence, with no
+ * counter to reconcile when those verbs land.
+ *
+ * It counts only entries that verify under the device's own key, so a
+ * cloud-injected high-`seq` entry forged in the device's name (the cloud cannot
+ * sign one) does not push the counter forward. The next claim uses
+ * `seq = (this ?? -1) + 1`, strictly greater than any the device has actually
+ * made, so it wins the reducer's highest-`seq` rule.
  */
 function highestSelfSeq(
 	rawEntries: readonly unknown[],
@@ -70,9 +76,7 @@ function highestSelfSeq(
 		if (!checkAssertion.Check(raw)) continue;
 		const assertion = raw as Assertion;
 		if (assertion.account !== account) continue;
-		if (assertion.verb !== 'identity') continue;
 		if (assertion.asserter !== selfPeerId) continue;
-		if (assertion.subject !== selfPeerId) continue;
 		if (!verifyAssertionSignature(assertion)) continue;
 		if (highest === null || assertion.seq > highest) highest = assertion.seq;
 	}

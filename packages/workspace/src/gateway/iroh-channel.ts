@@ -16,7 +16,7 @@ import type { ByteChannel } from './transport.js';
  * Pump an iroh `RecvStream` into a Node `PassThrough` (the readable side). The
  * pump loop starts immediately and is not awaited by the caller.
  */
-export function recvToReadable(recv: RecvStream): PassThrough {
+function recvToReadable(recv: RecvStream): PassThrough {
 	const pt = new PassThrough();
 	void (async () => {
 		try {
@@ -41,7 +41,7 @@ export function recvToReadable(recv: RecvStream): PassThrough {
  * Wrap an iroh `SendStream` as a Node `Writable`. Each write forwards the chunk
  * bytes; `final()` calls `send.finish()` to signal end-of-stream to the peer.
  */
-export function sendToWritable(send: SendStream): Writable {
+function sendToWritable(send: SendStream): Writable {
 	return new Writable({
 		write(chunk: unknown, _enc: unknown, cb: (err?: Error | null) => void) {
 			// chunk is a Buffer when decodeStrings is true (the default).

@@ -41,4 +41,4 @@ export {
 	type PeerTransport,
 	type RouteName,
 } from './transport.js';
-export { biStreamToByteChannel, recvToReadable, sendToWritable } from './iroh-channel.js';
+export { biStreamToByteChannel } from './iroh-channel.js';

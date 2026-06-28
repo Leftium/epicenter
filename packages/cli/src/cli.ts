@@ -1,6 +1,7 @@
 import yargs from 'yargs';
 import { authCommand } from './commands/auth.js';
 import { blobsCommand } from './commands/blobs.js';
+import { callCommand, toolsCommand } from './commands/cross-device-tools.js';
 import { daemonCommand } from './commands/daemon.js';
 import { devicesCommand } from './commands/devices.js';
 import { initCommand } from './commands/init.js';
@@ -55,6 +56,8 @@ export function createCLI() {
 				.command(verifyCommand)
 				.command(revokeCommand)
 				.command(sasCommand)
+				.command(toolsCommand)
+				.command(callCommand)
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

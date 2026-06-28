@@ -238,10 +238,11 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
  */
 export async function getDaemon(
 	epicenterRoot: string,
+	timeoutMs?: number,
 ): Promise<Result<DaemonClient, DaemonError>> {
 	const sock = socketPathFor(epicenterRoot);
 	if (!(await pingDaemon(sock))) {
 		return DaemonError.Required({ epicenterRoot });
 	}
-	return Ok(daemonClient(sock));
+	return Ok(daemonClient(sock, timeoutMs));
 }

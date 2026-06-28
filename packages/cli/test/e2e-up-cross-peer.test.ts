@@ -183,8 +183,13 @@ async function awaitExit(child: ReturnType<typeof spawn>): Promise<number> {
 }
 
 function runtimeLeftovers(runtimeRoot: string): string[] {
+	// `.lease.sqlite` and `.iroh.key.json` are durable by design: the lease file
+	// is reclaimed on next start, and the iroh key IS the device's stable identity
+	// (loadOrCreateDeviceSecret persists it OUTSIDE the repo so the peerId survives
+	// restarts). Neither is an orphaned socket/metadata file teardown should sweep.
 	return readdirSync(runtimeRoot).filter(
-		(file) => !file.endsWith('.lease.sqlite'),
+		(file) =>
+			!file.endsWith('.lease.sqlite') && !file.endsWith('.iroh.key.json'),
 	);
 }
 

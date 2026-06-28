@@ -20,7 +20,7 @@
 
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import { ROOM_ROUTE } from '@epicenter/sync';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
@@ -30,7 +30,7 @@ import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { normalizeWebSocketAuth } from '../middleware/websocket-auth.js';
 import { doName } from '../owner.js';
 import type { OwnershipRule } from '../ownership.js';
-import type { Env } from '../types.js';
+import type { Env, ResolveUser } from '../types.js';
 
 /**
  * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy. Yjs
@@ -132,21 +132,23 @@ function createRoomsApp(): Hono<Env> {
  * helper. The serialized error is the close reason; the client branches on
  * `error.name`.
  */
-const requireRoomBearer = createMiddleware<Env>(async (c, next) => {
-	const { data: user, error } = await c.var.resolveUser(c);
-	if (error) {
-		if (isWebSocketUpgrade(c)) {
-			return c.var.rooms.rejectUpgrade({
-				request: c.req.raw,
-				code: 4000 + error.status,
-				reason: JSON.stringify(error),
-			});
+function requireRoomBearer(resolveUser: ResolveUser): MiddlewareHandler<Env> {
+	return createMiddleware<Env>(async (c, next) => {
+		const { data: user, error } = await resolveUser(c);
+		if (error) {
+			if (isWebSocketUpgrade(c)) {
+				return c.var.rooms.rejectUpgrade({
+					request: c.req.raw,
+					code: 4000 + error.status,
+					reason: JSON.stringify(error),
+				});
+			}
+			return createOAuthUnauthorizedResourceResponse(c, error);
 		}
-		return createOAuthUnauthorizedResourceResponse(c, error);
-	}
-	c.set('user', user);
-	await next();
-});
+		c.set('user', user);
+		await next();
+	});
+}
 
 /**
  * Mount the rooms surface on a deployment's server app.
@@ -154,6 +156,12 @@ const requireRoomBearer = createMiddleware<Env>(async (c, next) => {
  * Bundles the full request pipeline for the only WebSocket surface:
  * transport normalization, auth, ownership, and the route mount, in one
  * call. Deployments call this once; they do not assemble the chain manually.
+ *
+ * Rooms is the one surface that resolves the bearer itself rather than taking a
+ * prebuilt `auth` wrapper, because a failed WebSocket upgrade must close with a
+ * readable code rather than answer a plain HTTP error. So it closes its own
+ * WS-aware wrapper over the deployment's {@link ResolveUser} (the cloud's OAuth
+ * resolver, an instance's env-token resolver).
  *
  * Order matters. {@link normalizeWebSocketAuth} runs first so that on a
  * browser upgrade the ambient session cookie is dropped and the
@@ -163,12 +171,12 @@ const requireRoomBearer = createMiddleware<Env>(async (c, next) => {
  */
 export function mountRoomsApp(
 	app: Hono<Env>,
-	opts: { ownership: OwnershipRule },
+	opts: { ownership: OwnershipRule; resolveUser: ResolveUser },
 ): void {
 	app.use(
 		ROOM_ROUTE.prefixPattern,
 		normalizeWebSocketAuth,
-		requireRoomBearer,
+		requireRoomBearer(opts.resolveUser),
 		createRequireOwnership(opts.ownership),
 	);
 	app.route('/', createRoomsApp());

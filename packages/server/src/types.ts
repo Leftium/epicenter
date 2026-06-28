@@ -20,23 +20,24 @@ import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
 
 /**
- * How a request resolves to the calling user: the one injected auth seam.
+ * How a request resolves to the calling user: the one auth seam.
  *
  * The surface wrappers (`requireCookieOrBearerUser`, the rooms bearer with its
  * WebSocket-reject path, `requireBearerUser`) differ only in whether they
  * consult the cookie and how they surface a failure; the user resolution itself
- * is this single function. The deployment injects it once on `createServerApp`,
- * which stamps it onto `c.var.resolveUser`; every wrapper reads it from there
- * rather than calling a hardcoded resolver, so all three honor the injection.
+ * is this single function. The deployment builds each wrapper by closing it over
+ * its resolver (`requireBearerUser(resolveUser)`), so the resolver is held in the
+ * wrapper's closure, not stamped on the context: there is no `c.var.resolveUser`.
  *
- * Production passes nothing and gets the real resolver (`resolveRequestOAuthUser`:
- * an OAuth bearer verified against JWKS). A dev-only entrypoint injects a trivial
+ * The cloud closes over the real resolver (`resolveRequestOAuthUser`: an OAuth
+ * bearer verified against JWKS); an instance closes over its env-token resolver
+ * (`createEnvTokenResolver`). A dev-only entrypoint closes over a trivial
  * `Bearer dev:<userId>` resolver so the runtime-parity smoke needs no interactive
  * login; that bypass lives in a dev entry production never imports, never an
  * env-gated branch in this library.
  *
- * Returns the same `Result<AuthUser, OAuthError>` the real resolver returns, so
- * an injected resolver slots in without touching the wrappers' error handling
+ * Returns the same `Result<AuthUser, OAuthError>` every resolver returns, so a
+ * different resolver slots in without touching the wrappers' error handling
  * (HTTP 401, the OAuth `WWW-Authenticate` challenge, or the rooms 4401 close).
  */
 export type ResolveUser = (
@@ -155,13 +156,5 @@ export type Env = {
 		 */
 		afterResponseQueue: Promise<unknown>[];
 		rooms: Rooms;
-		/**
-		 * How this deployment resolves a request to its calling user, stamped by
-		 * `createServerApp` (the cloud passes the OAuth bearer resolver, an instance
-		 * its token resolver, ADR-0075). The auth wrappers read it here instead of
-		 * hardcoding a resolver, so a dev entry can inject a trivial bearer resolver
-		 * without the wrappers changing. See {@link ResolveUser}.
-		 */
-		resolveUser: ResolveUser;
 	};
 };

@@ -111,13 +111,14 @@ export function startSelfHostServer(): void {
 		process.exit(1);
 	}
 
-	// The bearer gate. A strong `INSTANCE_TOKEN` builds the verifier-shaped
-	// resolver (constant-time compare -> the named instance principal); a missing
-	// or weak token fails boot above. The resolver is the deployment's injected
-	// `ResolveUser`, feeding the one total gate exactly like the cloud's OAuth
+	// The bearer gate. A strong `INSTANCE_TOKEN` builds the env-token resolver
+	// (constant-time compare -> the named instance principal); a missing or weak
+	// token fails boot above. Every owner-scoped surface closes its bearer wrapper
+	// over that one resolver, the same total gate the cloud builds from its OAuth
 	// resolver (ADR-0075).
 	const token = requireStrongInstanceToken(env.INSTANCE_TOKEN);
 	const resolveUser = createEnvTokenResolver(token);
+	const auth = requireBearerUser(resolveUser);
 
 	const port = Number(env.PORT ?? 8787);
 	// The auth origin must match where the process actually listens. Default to
@@ -141,24 +142,24 @@ export function startSelfHostServer(): void {
 			// cannot drift.
 			resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
 		},
-		resolveUser,
 	});
 
 	app.get('/', (c) =>
 		c.json({ product: 'instance', version: '0.1.0', runtime: 'bun' }),
 	);
 	// No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The
-	// operator bearer (the `resolveUser` above) is the only gate, so every surface
-	// is bearer-authenticated (ADR-0075).
-	mountSessionApp(app, { ownership, auth: requireBearerUser });
-	mountRoomsApp(app, { ownership });
+	// operator bearer (`auth` above) is the only gate, so every surface is
+	// bearer-authenticated (ADR-0075).
+	mountSessionApp(app, { ownership, auth });
+	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
+	mountRoomsApp(app, { ownership, resolveUser });
 	// Inference spends the operator's house key on every request. Cap the burn
 	// rate so a leaked or overused bearer cannot run the provider bill up
 	// unbounded between invoices. This is the in-process backstop; the real
 	// ceiling is the hard spend limit you set on the provider key itself (README).
 	// Tune to your group's size, or drop the policy to leave it uncapped.
 	mountInferenceApp(app, {
-		auth: requireBearerUser,
+		auth,
 		ownership,
 		policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
 	});
@@ -166,7 +167,7 @@ export function startSelfHostServer(): void {
 	// until `BLOBS_S3_*` is set (the same honest opt-out as inference's house key).
 	// Storage is the operator's own bucket, so there is no house key to burn and no
 	// rate-limit policy here.
-	mountBlobsApp(app, { ownership, auth: requireBearerUser });
+	mountBlobsApp(app, { ownership, auth });
 
 	const server = Bun.serve({
 		port,

@@ -134,10 +134,13 @@ export function startBunApiServer(
 			resolveOrigin: () => origin,
 			resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 		},
-		// The dev entry passes a dev bearer resolver for the parity smoke; production
-		// keeps the real OAuth bearer resolver.
-		resolveUser: opts.resolveUser ?? resolveRequestOAuthUser,
 	});
+
+	// The dev entry passes a dev bearer resolver for the parity smoke; production
+	// keeps the real OAuth bearer resolver. Each owner-scoped wrapper closes over it.
+	const resolveUser = opts.resolveUser ?? resolveRequestOAuthUser;
+	const cookieOrBearer = requireCookieOrBearerUser(resolveUser);
+	const bearer = requireBearerUser(resolveUser);
 
 	app.get('/', (c) =>
 		c.json({ product: 'hub', version: '0.1.0', runtime: 'bun' }),
@@ -148,10 +151,11 @@ export function startBunApiServer(
 	// The Cloud-only auth secrets come from the validated `env` closure (ADR-0076),
 	// never the portable `ServerBindings`.
 	mountCloudAuth(app, { resolveAuthSecrets: () => env });
-	mountSessionApp(app, { ownership, auth: requireCookieOrBearerUser });
-	mountRoomsApp(app, { ownership });
-	mountInferenceApp(app, { auth: requireBearerUser, ownership });
-	mountBlobsApp(app, { ownership, auth: requireCookieOrBearerUser });
+	mountSessionApp(app, { ownership, auth: cookieOrBearer });
+	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
+	mountRoomsApp(app, { ownership, resolveUser });
+	mountInferenceApp(app, { auth: bearer, ownership });
+	mountBlobsApp(app, { ownership, auth: cookieOrBearer });
 
 	const server = Bun.serve({
 		port,

@@ -70,11 +70,14 @@ const app = createServerApp({
 			(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
 		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 	},
-	// The cloud resolves a request to its user by verifying an OAuth bearer
-	// against JWKS (it reads `c.var.auth` + `c.var.db`, both present below). An
-	// instance passes its bearer resolver instead (ADR-0075).
-	resolveUser: resolveRequestOAuthUser,
 });
+
+// The cloud resolves a request to its user by verifying an OAuth bearer against
+// JWKS (`resolveRequestOAuthUser` reads `c.var.auth` + `c.var.db`, both present
+// below). Each owner-scoped wrapper closes over that one resolver; an instance
+// closes over its env-token resolver instead (ADR-0075).
+const cookieOrBearer = requireCookieOrBearerUser(resolveRequestOAuthUser);
+const bearer = requireBearerUser(resolveRequestOAuthUser);
 
 // Public health endpoint at root.
 app.get('/', (c) =>
@@ -98,29 +101,31 @@ mountCloudAuth(app, {
 // Owner-partitioned reusable surfaces. Each primitive owns its own
 // ownership wiring; the deployment passes its auth choice, the rule, and any
 // deployment policies.
-mountSessionApp(app, { ownership, auth: requireCookieOrBearerUser });
-mountRoomsApp(app, { ownership });
+mountSessionApp(app, { ownership, auth: cookieOrBearer });
+// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
+// a prebuilt wrapper.
+mountRoomsApp(app, { ownership, resolveUser: resolveRequestOAuthUser });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
 // attached, so deferred quota means not calling it. A `syncBlobStorageWithAutumn`
 // policy slots in here when storage is billed.
-mountBlobsApp(app, { ownership, auth: requireCookieOrBearerUser });
+mountBlobsApp(app, { ownership, auth: cookieOrBearer });
 mountInferenceApp(app, {
-	auth: requireBearerUser,
+	auth: bearer,
 	ownership,
 	policies: [chargeOpenAiCreditsWithAutumn],
 });
 // OpenAI-compatible STT gateway (Groq Whisper, house key). Metered by audio
 // duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
 mountTranscriptionApp(app, {
-	auth: requireBearerUser,
+	auth: bearer,
 	ownership,
 	policies: [chargeOpenAiTranscriptionCredits],
 });
 
 // Cloud-only billing data plane. Auth is bundled into the mount so the
 // dashboard endpoints can't be mounted without it.
-mountBillingApi(app, { auth: requireCookieOrBearerUser });
+mountBillingApi(app, { auth: cookieOrBearer });
 
 // Dashboard SPA: Workers Static Assets binding serves the SvelteKit
 // build. Cloud-only because the `ASSETS` binding lives in this worker's

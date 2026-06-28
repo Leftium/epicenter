@@ -15,23 +15,23 @@
  * bearer. The two credentials are read by disjoint paths and never merge,
  * so there is nothing to police at the edge: `getSession` reads only the
  * cookie (Better Auth's `bearer()` plugin is not enabled), while the bearer
- * fallback runs the deployment's injected `c.var.resolveUser` (in production
- * {@link resolveRequestOAuthUser}, which verifies the JWT against JWKS; a dev
- * entry can inject a trivial bearer resolver instead).
+ * fallback runs the {@link ResolveUser} the deployment closed this wrapper over
+ * (in production {@link resolveRequestOAuthUser}, which verifies the JWT against
+ * JWKS; an instance closes over its env-token resolver instead).
  */
 
 import { AuthUser } from '@epicenter/auth';
 import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { verifyJwsAccessToken } from 'better-auth/oauth2';
 import { eq } from 'drizzle-orm';
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { Ok, type Result } from 'wellcrafted/result';
 import { createOAuthIssuerURL } from '../auth/oauth-metadata.js';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
 import { parseBearer } from '../auth/parse-bearer.js';
 import * as schema from '../db/schema/index.js';
-import type { Env } from '../types.js';
+import type { Env, ResolveUser } from '../types.js';
 
 /**
  * Resolve the OAuth bearer on the current request to the calling user.
@@ -109,8 +109,10 @@ export async function resolveRequestOAuthUser(
 	return Ok(AuthUser.assert(user));
 }
 
-export const requireCookieOrBearerUser = createMiddleware<Env>(
-	async (c, next) => {
+export function requireCookieOrBearerUser(
+	resolveUser: ResolveUser,
+): MiddlewareHandler<Env> {
+	return createMiddleware<Env>(async (c, next) => {
 		const session = await c.var.auth.api.getSession({
 			headers: c.req.raw.headers,
 		});
@@ -118,12 +120,12 @@ export const requireCookieOrBearerUser = createMiddleware<Env>(
 			c.set('user', AuthUser.assert(session.user));
 			return next();
 		}
-		const { data: user, error } = await c.var.resolveUser(c);
+		const { data: user, error } = await resolveUser(c);
 		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 		c.set('user', user);
 		await next();
-	},
-);
+	});
+}
 
 /**
  * Bearer-only authentication. Same as {@link requireCookieOrBearerUser}
@@ -131,10 +133,18 @@ export const requireCookieOrBearerUser = createMiddleware<Env>(
  * standard OAuth `WWW-Authenticate` header instead of the cookie failure
  * path. Use on protected resource routes that should never see a browser
  * cookie (rooms, AI chat).
+ *
+ * A factory that closes over the deployment's {@link ResolveUser}: the cloud
+ * passes {@link resolveRequestOAuthUser}, an instance its env-token resolver.
+ * There is no `c.var.resolveUser` seam; the wrapper holds its resolver directly.
  */
-export const requireBearerUser = createMiddleware<Env>(async (c, next) => {
-	const { data: user, error } = await c.var.resolveUser(c);
-	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-	c.set('user', user);
-	await next();
-});
+export function requireBearerUser(
+	resolveUser: ResolveUser,
+): MiddlewareHandler<Env> {
+	return createMiddleware<Env>(async (c, next) => {
+		const { data: user, error } = await resolveUser(c);
+		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
+		c.set('user', user);
+		await next();
+	});
+}

@@ -32,7 +32,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
-import type { Env, ResolveUser } from './types.js';
+import type { Env } from './types.js';
 
 /**
  * How one runtime does the three non-portable jobs, as one value (ADR-0066,
@@ -139,7 +139,6 @@ export type Identity = {
  *   2. Per-request pg connection + after-response queue, ONLY when the runtime
  *      provides a `db` leg (the cloud does; the Postgres-free instance omits
  *      it, so `c.var.db` is never set, ADR-0075).
- *   3. The deployment's user-resolution seam (`c.var.resolveUser`).
  *
  * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
  * and the rooms registry. The deployment is responsible for exposing a
@@ -154,28 +153,11 @@ type CreateServerAppOptions = {
 	runtime: RuntimeAdapter;
 	/** Who this deployment is on the web. {@link Identity}. */
 	identity: Identity;
-	/**
-	 * How a request resolves to the calling user, injected once for the whole
-	 * deployment and stamped onto `c.var.resolveUser`. REQUIRED: there is no
-	 * default, because the OAuth bearer resolver (`resolveRequestOAuthUser`) reads
-	 * `c.var.auth`, which only the cloud composes (via {@link mountCloudAuth}); an
-	 * instance has no Better Auth and passes its bearer resolver instead (ADR-0075).
-	 * The cloud passes `resolveRequestOAuthUser` explicitly; the surface wrappers
-	 * read it from the context, so injecting here redirects all of them at once and
-	 * leaves their cookie / WS-reject / 401 behavior untouched.
-	 *
-	 * A dev-only entrypoint injects a trivial `Bearer dev:<userId>` resolver so
-	 * the runtime-parity smoke needs no interactive login. That bypass must live
-	 * in a dev entry production never imports, NEVER an env-gated branch in this
-	 * library. See {@link ResolveUser}.
-	 */
-	resolveUser: ResolveUser;
 };
 
 export function createServerApp({
 	runtime: { db, resolveRooms },
 	identity: { resolveOrigin, resolveTrustedOrigins },
-	resolveUser,
 }: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
@@ -221,16 +203,6 @@ export function createServerApp({
 		});
 	}
 
-	// 3. The deployment's user-resolution seam, stamped onto `c.var.resolveUser`
-	// so every auth wrapper reads one resolver off the context instead of
-	// hardcoding it: the cloud passes the OAuth bearer resolver, an instance its
-	// token resolver (ADR-0075), a dev entry a trivial bearer resolver. The Better
-	// Auth instance (`c.var.auth`) is NOT built here; it is a cloud-only layer the
-	// cloud adds via `mountCloudAuth`, so an instance composes no Better Auth.
-	app.use('*', async (c, next) => {
-		c.set('resolveUser', resolveUser);
-		await next();
-	});
 
 	// CSRF gate on every `/api/*` route. Bearer requests are CSRF-immune
 	// and skip this check inside the middleware.

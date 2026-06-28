@@ -69,16 +69,17 @@ gate there:
 
 ```ts
 const token = assertStrongToken(env.INSTANCE_TOKEN);     // fail closed if weak
+const resolveUser = createEnvTokenResolver(token);       // one bearer
+const auth = requireBearerUser(resolveUser);             // every surface
 const app = createServerApp({
   runtime: bun({ rooms }),                               // no db leg, no Postgres
   identity: { resolveOrigin, resolveTrustedOrigins },
-  resolveUser: createEnvTokenResolver(token),              // one bearer
 });
-mountSessionApp(app, { ownership: instance(), auth: requireBearerUser });
-mountRoomsApp(app, { ownership: instance() });           // no telemetry recorder
+mountSessionApp(app, { ownership: instance(), auth });
+mountRoomsApp(app, { ownership: instance(), resolveUser }); // WS-aware, takes the resolver
 mountInferenceApp(app, {
   ownership: instance(),
-  auth: requireBearerUser,
+  auth,
   policies: [rateLimit({ requests: 120, windowSeconds: 60 })], // burn-rate floor
 });
 ```
@@ -87,13 +88,13 @@ Cloudflare reads the per-request secret at the edge instead, running the same
 entropy gate per request (a Worker has no boot phase):
 
 ```ts
-createServerApp({
-  resolveUser: (c) =>
-    createEnvTokenResolver(
-      assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
-    )(c),
-  // ...instance() ownership, same session + rooms + inference mounts
-});
+const resolveUser = (c) =>
+  createEnvTokenResolver(
+    assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
+  )(c);
+const auth = requireBearerUser(resolveUser);
+// ...createServerApp({ runtime, identity }), instance() ownership,
+// same session + rooms + inference mounts
 ```
 
 Deliberately absent: `mountBillingApi`, any OAuth provider, a launch-time mode selector, an admission allowlist, and first-boot token minting. The shape is the contract.

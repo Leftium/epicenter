@@ -30,8 +30,8 @@ import {
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
-	rateLimit,
 	Room,
+	rateLimit,
 	requireBearerUser,
 	verifyEnvToken,
 } from '@epicenter/server';

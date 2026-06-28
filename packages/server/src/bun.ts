@@ -32,13 +32,13 @@ export {
 	verifyEnvToken,
 } from './auth/instance-token.js';
 export { createDb, type Db } from './db/create-db.js';
+// An opt-in burn-rate cap for the inference `policies` seam (ADR-0076).
+export { rateLimit } from './middleware/rate-limit.js';
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
-// An opt-in burn-rate cap for the inference `policies` seam (ADR-0076).
-export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer (Better Auth on `c.var.auth` + the auth
 // surface). A cloud-on-Bun entry calls it once after `createServerApp`; the
 // single-partition instance never does (ADR-0076). `CloudAuthBindings` is its

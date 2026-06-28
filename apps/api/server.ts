@@ -45,6 +45,7 @@ import { resolve } from 'node:path';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	bun,
+	CloudAuthBindings,
 	createBunRooms,
 	createDb,
 	createServerApp,
@@ -53,11 +54,10 @@ import {
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
-	CloudAuthBindings,
 	personal,
+	type ResolveUser,
 	requireBearerUser,
 	requireCookieOrBearerUser,
-	type ResolveUser,
 	resolveRequestOAuthUser,
 	ServerBindings,
 } from '@epicenter/server/bun';

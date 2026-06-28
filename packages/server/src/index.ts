@@ -31,6 +31,9 @@ export {
 // runtime adapter (runtime/cloudflare.ts); a Bun host builds its own
 // `pg.Pool`-backed adapter inline.
 export { createDb, type Db } from './db/create-db.js';
+// An opt-in burn-rate cap for the inference `policies` seam: caps requests per
+// owner partition so a shared house key cannot be run up unbounded (ADR-0076).
+export { rateLimit } from './middleware/rate-limit.js';
 // Deploy-time admin operations (OAuth client seeding) live in each
 // deployment's own scripts (`apps/api` `oauth:seed:*`), not in this barrel, so
 // `pg` and the drizzle query-builder graph stay out of the worker's module and
@@ -48,9 +51,6 @@ export {
 	requireCookieOrBearerUser,
 	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
-// An opt-in burn-rate cap for the inference `policies` seam: caps requests per
-// owner partition so a shared house key cannot be run up unbounded (ADR-0076).
-export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
 // plus the `authApp` surface (sign-in, consent, OAuth metadata). The cloud calls
 // this once after `createServerApp`; the single-partition instance never does and

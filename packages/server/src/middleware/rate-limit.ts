@@ -30,6 +30,14 @@ import type { MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from '../types.js';
 
+/** Build the OpenAI error envelope the gateway answers a throttled request with. */
+function openAiError(
+	message: string,
+	code: string,
+): { error: { message: string; code: string } } {
+	return { error: { message, code } };
+}
+
 export function rateLimit(opts: {
 	/** Max requests allowed per owner partition within one window. */
 	requests: number;
@@ -52,12 +60,10 @@ export function rateLimit(opts: {
 		if (window.count >= opts.requests) {
 			c.header('retry-after', String(Math.ceil((window.resetAt - now) / 1000)));
 			return c.json(
-				{
-					error: {
-						message: 'Rate limit exceeded. Try again shortly.',
-						code: 'rate_limit_exceeded',
-					},
-				},
+				openAiError(
+					'Rate limit exceeded. Try again shortly.',
+					'rate_limit_exceeded',
+				),
 				429,
 			);
 		}

@@ -77,12 +77,29 @@ export const API_ROUTES = {
 		 * `/v1` (the de-facto OpenAI path) so any OpenAI-compatible client points
 		 * at `<origin>/v1` and works unchanged. `baseUrl` is what the client engine
 		 * is configured with; it appends `/chat/completions`.
+		 *
+		 * `prefixPattern` is scoped to `/v1/chat/*`, not the whole `/v1/*` tree, so
+		 * the chat auth + metering middleware does not also wrap the sibling
+		 * `/v1/audio/transcriptions` gateway (which carries its own, different
+		 * metering). One Connection (`baseUrl` = `<origin>/v1`) drives both.
 		 */
 		completions: {
 			pattern: '/v1/chat/completions',
-			prefixPattern: '/v1/*',
+			prefixPattern: '/v1/chat/*',
 			url: (baseURL: string) => `${stripTrailing(baseURL)}/v1/chat/completions`,
 			baseUrl: (baseURL: string) => `${stripTrailing(baseURL)}/v1`,
+		},
+		/**
+		 * The OpenAI-compatible speech-to-text gateway (ADR-0050/0056). The STT
+		 * sibling of the chat gateway, on the same `<origin>/v1` Connection base:
+		 * `transcribe()` appends `/audio/transcriptions`. Scoped middleware lives
+		 * under `/v1/audio/*` so its metering never crosses into chat.
+		 */
+		transcriptions: {
+			pattern: '/v1/audio/transcriptions',
+			prefixPattern: '/v1/audio/*',
+			url: (baseURL: string) =>
+				`${stripTrailing(baseURL)}/v1/audio/transcriptions`,
 		},
 	},
 } as const;

@@ -1,4 +1,5 @@
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { once } from 'wellcrafted/function';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineWindowEvent, defineWindowSignal } from '$lib/window-events';
 
@@ -23,8 +24,6 @@ export const pickerReady = defineWindowSignal('transformation-picker:ready');
 /** The most recent captured selection, replayed when the window asks for it. */
 let pendingInput = '';
 
-let responderRegistered = false;
-
 /**
  * Answer the picker window's first-mount request with the pending selection.
  * Registered lazily from `openWithSelection`, which only the main window calls,
@@ -33,13 +32,11 @@ let responderRegistered = false;
  * at module load would make the picker window answer its own request with an
  * empty `pendingInput` and clobber the real selection.
  */
-function registerInputResponder(): void {
-	if (responderRegistered) return;
-	responderRegistered = true;
+const registerInputResponder = once((): void => {
 	void pickerReady.listen(() => {
 		void pickerInput.emit({ input: pendingInput });
 	});
-}
+});
 
 /**
  * Open the transformation picker on a freshly captured selection. Creates the

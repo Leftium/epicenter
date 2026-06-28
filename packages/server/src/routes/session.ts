@@ -41,7 +41,7 @@ const sessionApp = new Hono<Env>().get(
  * The deployment supplies the auth middleware: the cloud passes
  * `requireCookieOrBearerUser` (the session endpoint serves both browser apps and
  * API clients), the single-partition instance passes `requireBearerUser` (it has
- * no cookies, ADR-0074). Bundles that auth, the ownership boundary (no URL
+ * no cookies, ADR-0075). Bundles that auth, the ownership boundary (no URL
  * `:ownerId` to compare against, but `c.var.ownerId` is populated), and the route
  * mount into one call.
  */

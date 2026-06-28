@@ -13,10 +13,10 @@
  *   instance: every request resolves to ONE partition pinned to a byte-
  *             constant (INSTANCE_OWNER_ID), independent of caller identity.
  *             The self-hosted single-partition instance (`apps/self-host`,
- *             ADR-0074); the operator bearer is the gate, so there is nobody
+ *             ADR-0075); the operator bearer is the gate, so there is nobody
  *             to admit or reject at the partition boundary.
  *
- * Exactly two topologies, split on partition cardinality (ADR-0074): `personal`
+ * Exactly two topologies, split on partition cardinality (ADR-0075): `personal`
  * derives the partition per identity (N partitions, Cloud-only); `instance` pins
  * it to a constant (one partition). There is no admission-gated or per-user shape
  * on an instance, and no mutable selector between the two: the deployment picks
@@ -36,7 +36,7 @@ import type { Env } from './types.js';
  * compose. Constructed via {@link personal} or {@link instance}; consumed by
  * {@link resolveOwnerPartition} and any sub-app that mounts ownership-scoped
  * routes. `instance` carries the constant it pins to, so the partition decision
- * stays decoupled from caller identity (ADR-0074).
+ * stays decoupled from caller identity (ADR-0075).
  */
 export type OwnershipRule =
 	| { kind: 'personal' }
@@ -46,7 +46,7 @@ export type OwnershipRule =
 export const personal = (): OwnershipRule => ({ kind: 'personal' });
 
 /**
- * Construct the single-partition instance ownership rule (self-host; ADR-0074).
+ * Construct the single-partition instance ownership rule (self-host; ADR-0075).
  *
  * The partition is pinned to the byte-constant {@link INSTANCE_OWNER_ID},
  * independent of caller identity: every valid operator bearer maps to the SAME

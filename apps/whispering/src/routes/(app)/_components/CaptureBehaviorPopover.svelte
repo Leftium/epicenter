@@ -36,8 +36,8 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				tooltip="More options"
-				aria-label="More options"
+				tooltip="Quick settings"
+				aria-label="Quick settings"
 				aria-expanded={open}
 				variant="ghost"
 				size="icon"

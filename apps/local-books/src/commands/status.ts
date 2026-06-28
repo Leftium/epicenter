@@ -1,9 +1,5 @@
-import { existsSync } from 'node:fs';
+import { readBooksStatus } from '../books/status.ts';
 import type { ParsedArgs } from '../cli.ts';
-import { openBooksDb } from '../db.ts';
-import { entityDef } from '../entities.ts';
-import { dbPath } from '../paths.ts';
-import { isAccessTokenExpired, isRefreshTokenExpired } from '../tokens.ts';
 import { formatRelative, resolveCompany } from './context.ts';
 
 /** Report token state and the per-entity mirror state (cursor, counts). */
@@ -15,61 +11,54 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 	}
 	const { config, realmId, store } = company;
 
-	const token = await store.get(realmId);
+	const status = await readBooksStatus({ config, realmId, store });
 	const now = Date.now();
 
-	console.log(`Company:      ${realmId}`);
-	console.log(`Environment:  ${config.environment}`);
-	console.log(`Data dir:     ${config.dataDir}`);
-	console.log(`Token file:   ${config.credentialsPath}`);
+	console.log(`Company ID:   ${status.realmId}`);
+	console.log(`QuickBooks:   ${status.environment}`);
+	console.log(`Data dir:     ${status.dataDir}`);
+	console.log(`Token file:   ${status.tokenFile}`);
 
-	if (!token) {
-		console.log(`Token:        none — run "local-books auth"`);
+	if (!status.accessToken || !status.refreshToken) {
+		console.log(`Connection:   not connected. Run "local-books auth".`);
 	} else {
-		const access = isAccessTokenExpired(token, now, 0) ? 'EXPIRED' : 'valid';
-		const refresh = isRefreshTokenExpired(token, now) ? 'EXPIRED' : 'valid';
+		const access = status.accessToken.valid ? 'valid' : 'expired';
+		const refresh = status.refreshToken.valid ? 'valid' : 'expired';
 		console.log(
-			`Token:        access ${access} (${formatRelative(token.accessTokenExpiresAt, now)}), ` +
-				`refresh ${refresh} (${formatRelative(token.refreshTokenExpiresAt, now)})`,
+			`Connection:   access ${access} (${formatRelative(status.accessToken.expiresAt, now)}), ` +
+				`refresh ${refresh} (${formatRelative(status.refreshToken.expiresAt, now)})`,
 		);
 	}
 
-	const path = dbPath(config.dataDir, realmId);
-	if (!existsSync(path)) {
-		console.log(
-			`Mirror:       not created yet — run "local-books sync --full"`,
-		);
+	if (!status.mirrorBuilt) {
+		console.log(`Local copy:   not built yet. Run "local-books sync --full".`);
 		return 0;
 	}
 
-	const db = openBooksDb(path);
 	// The cursor is one high-water mark for the whole company (CDC's contract), so
 	// it is shown once at the realm level, not repeated per entity.
-	const realm = db.readRealmState();
-	console.log(`Schema:       v${db.getMeta('schema_version')}`);
-	console.log(`Cursor:       ${realm.cdcCursor ?? '-'}`);
-	console.log(`Last full:    ${realm.lastFullPullAt ?? '-'}`);
-	console.log(`Last synced:  ${realm.lastSyncedAt ?? '-'}`);
+	console.log(`Schema:        v${status.schemaVersion}`);
+	console.log(
+		`Synced through:${status.cdcCursor ? ` ${status.cdcCursor}` : ' -'}`,
+	);
+	console.log(`Last full:     ${status.lastFullPullAt ?? '-'}`);
+	console.log(`Last synced:   ${status.lastSyncedAt ?? '-'}`);
 	console.log('');
 	console.log(
-		`${'Entity'.padEnd(12)} ${'Rows'.padStart(7)} ${'Deleted'.padStart(8)}`,
+		`${'Record type'.padEnd(13)} ${'Rows'.padStart(7)} ${'Removed'.padStart(8)}`,
 	);
-	for (const name of config.entities) {
-		const s = db.entityStatus(entityDef(name));
+	for (const s of status.entities) {
 		// Only the uninitialized case is worth a marker: a row count already tells
 		// the reader a pulled entity's state, but `0` alone is ambiguous between
-		// "pulled, genuinely empty" and "never pulled". Annotate the latter (the
+		// "synced, genuinely empty" and "never synced". Annotate the latter (the
 		// only informative state) instead of printing a status on all 16 lines.
 		if (!s.initialized) {
-			console.log(
-				`${name.padEnd(12)} ${'—'.padStart(7)} — not pulled (run sync)`,
-			);
+			console.log(`${s.entity.padEnd(13)} ${'-'.padStart(7)}  not synced yet`);
 			continue;
 		}
 		console.log(
-			`${name.padEnd(12)} ${String(s.rows).padStart(7)} ${String(s.deleted).padStart(8)}`,
+			`${s.entity.padEnd(13)} ${String(s.rows).padStart(7)} ${String(s.deleted).padStart(8)}`,
 		);
 	}
-	db.close();
 	return 0;
 }

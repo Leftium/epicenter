@@ -26,7 +26,7 @@
  *   by the cloud at its own edge and threaded onto `c.var.authSecrets`. Keeping
  *   them out of the portable contract is what makes it truly portable: the
  *   single-partition instance's env never inherits a secret it does not read
- *   (ADR-0075).
+ *   (ADR-0076).
  * - The deployment's public origin and any other cloud-only secrets (Autumn,
  *   admin IDs) are deployment config, supplied through `resolveOrigin` /
  *   policies.
@@ -53,10 +53,14 @@ export const ServerBindings = type({
 	'BLOBS_S3_BUCKET?': 'string',
 	'BLOBS_S3_REGION?': 'string',
 	// AI provider house keys are optional: set one to serve that provider
-	// through the gateway (routes/inference.ts), or omit it and a request for
-	// that provider gets 503 ProviderNotConfigured. House-key-only (ADR-0054).
+	// through the gateway (routes/inference.ts, routes/transcription.ts), or omit
+	// it and a request for that provider gets 503 ProviderNotConfigured.
+	// House-key-only (ADR-0054).
 	'OPENAI_API_KEY?': 'string',
 	'GEMINI_API_KEY?': 'string',
+	// Groq house key, available for an `STT_UPSTREAM` row served by Groq. The STT
+	// gateway ships on OpenAI `whisper-1` today, so this is currently unused.
+	'GROQ_API_KEY?': 'string',
 });
 
 /** The portable env contract; also the Hono `Env.Bindings` type (types.ts). */

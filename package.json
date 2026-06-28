@@ -62,7 +62,7 @@
 			"drizzle-kit": "^0.31.7",
 			"drizzle-orm": "^0.45.2",
 			"nanoid": "^5.1.14",
-			"wellcrafted": "^0.42.0",
+			"wellcrafted": "^0.43.0",
 			"date-fns": "^4.1.0",
 			"@biomejs/biome": "^2.4.10",
 			"wrangler": "^4.71.0",
@@ -93,7 +93,8 @@
 			"@tauri-apps/cli": "^2.9.6",
 			"marked": "^17.0.3",
 			"virtua": "^0.48.5",
-			"oauth4webapi": "^3.8.6"
+			"oauth4webapi": "^3.8.6",
+			"@modelcontextprotocol/sdk": "^1.29.0"
 		}
 	},
 	"packageManager": "bun@1.3.3",
@@ -161,5 +162,8 @@
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
 		"tinyexec": "^1.0.4"
+	},
+	"patchedDependencies": {
+		"y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch"
 	}
 }

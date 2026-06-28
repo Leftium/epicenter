@@ -6,7 +6,7 @@
  * `HYPERDRIVE` binding from its `c.env` and gets back the runtime-neutral
  * `{ db, close }` handle that `createServerApp`'s `db.connect` leg
  * expects. Only the Postgres-composing Cloudflare deployable (`apps/api`) calls
- * this; the single-partition instance composes no Postgres (ADR-0075). A Node
+ * this; the single-partition instance composes no Postgres (ADR-0076). A Node
  * host injects its own `db.connect` over a module-scope `pg.Pool` instead.
  *
  * Uses `Client` (not `Pool`) because Hyperdrive IS the connection pool.

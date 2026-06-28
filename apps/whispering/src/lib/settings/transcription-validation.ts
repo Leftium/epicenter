@@ -4,6 +4,7 @@ import {
 	type TranscriptionProviderEntry,
 } from '$lib/services/transcription/provider-ui';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
 function hasValue(value: string) {
@@ -38,19 +39,20 @@ export function getSelectedTranscriptionService():
 }
 
 /**
- * Checks if a transcription service has all required configuration. The
- * required key is the provider's own config key (apiKey / endpoint / model),
- * read straight from its registry entry.
+ * Whether a transcription service is usable right now. The required key is the
+ * provider's own config key (apiKey / endpoint / model), read from its registry
+ * entry. A cloud provider's key is a secret read through the credential facade,
+ * so "usable" means `available`.
  *
  * @param service - The transcription service to check
- * @returns true if the service is properly configured, false otherwise
+ * @returns true if the service is usable, false otherwise
  */
 export function isTranscriptionServiceConfigured(
 	service: TranscriptionProviderEntry,
 ): boolean {
 	switch (service.location) {
 		case 'cloud':
-			return hasValue(deviceConfig.get(service.apiKeyConfigKey));
+			return secrets.get(service.apiKeyConfigKey).status === 'available';
 		case 'self-hosted':
 			return (
 				hasValue(deviceConfig.get(service.endpointConfigKey)) &&

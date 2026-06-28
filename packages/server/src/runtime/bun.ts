@@ -16,7 +16,7 @@
  *                     it, so there is nothing per-request to tear down). The whole
  *                     `db` leg is OMITTED when no `db` is passed: the single-
  *                     partition instance composes no Postgres, so it builds no
- *                     pool (ADR-0074).
+ *                     pool (ADR-0075).
  *   - `db.afterResponse` is a no-op: a long-lived Bun process needs no `waitUntil`
  *                     to outlive the response, where Cloudflare hands the work
  *                     to `executionCtx.waitUntil` to hold the isolate open. It is
@@ -40,7 +40,7 @@ import type { RuntimeAdapter } from '../server-app.js';
  * boot-built room registry and, for a Postgres-backed deployment, its db handle.
  * Omit `db` for the single-partition instance: it composes no Postgres, so the
  * adapter provides only `resolveRooms` and `createServerApp` installs no db
- * lifecycle (ADR-0074).
+ * lifecycle (ADR-0075).
  */
 export function bun({ db, rooms }: { db?: Db; rooms: Rooms }): RuntimeAdapter {
 	return {

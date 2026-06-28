@@ -93,7 +93,6 @@ export { nullable } from './document/nullable';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { debounce } from './shared/debounce.js';
-export { once } from './shared/once.js';
 export type { Drainable } from './shared/types.js';
 
 // ════════════════════════════════════════════════════════════════════════════

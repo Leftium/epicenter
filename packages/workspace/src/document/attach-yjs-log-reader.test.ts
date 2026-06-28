@@ -129,4 +129,34 @@ describe('attachYjsLogReader', () => {
 
 		readerDoc.destroy();
 	});
+
+	test('a corrupt row is skipped instead of throwing the reader hydrate', async () => {
+		const filePath = join(workdir, 'corrupt-reader.sqlite');
+
+		const writerDoc = new Y.Doc();
+		const writer = attachYjsLog(writerDoc, { filePath });
+		writerDoc.getMap<number>('m').set('k', 7);
+		writerDoc.destroy();
+		await writer.whenDisposed;
+
+		// Append a corrupt row (lone 0x80 = unterminated varint) the read-only
+		// reader must tolerate. Pre-fix, replaying it threw and aborted the
+		// synchronous hydrate.
+		const rw = new Database(filePath);
+		rw.query('INSERT INTO updates (data) VALUES (?)').run(
+			new Uint8Array([0x80]),
+		);
+		rw.close();
+
+		const readerDoc = new Y.Doc();
+		const reader = attachYjsLogReader(readerDoc, { filePath });
+		expect(reader.fileExisted).toBe(true);
+		expect(readerDoc.getMap<number>('m').get('k')).toBe(7);
+
+		// Read-only: the reader skips but must NOT compact the bad row away;
+		// the writer owns healing the file on its next open.
+		expect(countRows(filePath)).toBe(2);
+
+		readerDoc.destroy();
+	});
 });

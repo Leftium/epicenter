@@ -99,7 +99,6 @@ export const session = createSession({
 				skills[Symbol.dispose]();
 				sidebarSearch[Symbol.dispose]();
 				paletteSearch[Symbol.dispose]();
-				files[Symbol.dispose]();
 				opensidian[Symbol.dispose]();
 			},
 		};

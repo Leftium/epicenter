@@ -26,11 +26,12 @@
 
 import { resolveMachineAuthClient } from '@epicenter/auth/node';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 
 const baseURL = (
 	process.argv[2] ??
 	process.env.BASE_URL ??
-	'http://localhost:8788'
+	`http://localhost:${API_BUN_DEV_PORT}`
 ).replace(/\/+$/, '');
 
 let pass = 0;

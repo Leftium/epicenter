@@ -14,14 +14,14 @@
  * `bun --watch server.ts` boots instantly with real stack traces. It is the
  * hosted cloud on Bun (local dev and the runtime-parity smoke), NOT the self-host
  * artifact: the single-partition instance has its own entry
- * (`apps/self-host/server.ts`), composing no Better Auth and no Postgres (ADR-0074).
+ * (`apps/self-host/server.ts`), composing no Better Auth and no Postgres (ADR-0075).
  *
  * The whole hosted-cloud-on-Bun bootstrap lives here, in the app, not behind a
  * shared `@epicenter/server` factory: everything mechanical (the `pg.Pool`, the
  * `bun:sqlite` rooms, the cloud auth layer, the session/rooms/inference/blobs
  * mounts, `Bun.serve`) is this app's composition to own. The instance does NOT
  * share it (it diverges on the substrate that matters: no Better Auth, no
- * Postgres), so a shared launcher would re-introduce the mode knob ADR-0074/0075
+ * Postgres), so a shared launcher would re-introduce the mode knob ADR-0075/0076
  * deleted. The library ships the parts; each Bun entry composes its own product.
  *
  * The wiring lives in {@link startBunApiServer} so `server.dev.ts` can boot the
@@ -42,6 +42,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	bun,
 	createBunRooms,
@@ -66,7 +67,7 @@ import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
 
 /**
  * The apps/api Bun env contract: the portable {@link ServerBindings}, the
- * Cloud-only {@link CloudAuthBindings} (Better Auth + OAuth secrets, ADR-0075),
+ * Cloud-only {@link CloudAuthBindings} (Better Auth + OAuth secrets, ADR-0076),
  * and this host's process config (`DATABASE_URL`, port, origin, data dir).
  *
  * `CloudAuthBindings` already requires `BETTER_AUTH_SECRET` and leaves each OAuth
@@ -110,7 +111,7 @@ export function startBunApiServer(
 		process.exit(1);
 	}
 
-	const port = Number(env.PORT ?? 8788);
+	const port = Number(env.PORT ?? API_BUN_DEV_PORT);
 	// The auth origin must match where the process actually listens (cookies, the
 	// OAuth issuer, the token audience all derive from it). Default to localhost
 	// on the chosen port; an operator overrides it with their domain.
@@ -144,7 +145,7 @@ export function startBunApiServer(
 	// The cloud's relational-auth layer (Better Auth on `c.var.auth` + the auth
 	// surface), mounted before the owner-scoped surfaces read it. Host-only cookies
 	// on the Bun dev host (no cross-subdomain domain like the Worker's `.epicenter.so`).
-	// The Cloud-only auth secrets come from the validated `env` closure (ADR-0075),
+	// The Cloud-only auth secrets come from the validated `env` closure (ADR-0076),
 	// never the portable `ServerBindings`.
 	mountCloudAuth(app, { resolveAuthSecrets: () => env });
 	mountSessionApp(app, { ownership, auth: requireCookieOrBearerUser });

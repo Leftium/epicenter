@@ -1,7 +1,7 @@
 /**
  * @epicenter/server
  *
- * One shared Hono library, two deployables (ADR-0074): the hosted Epicenter
+ * One shared Hono library, two deployables (ADR-0075): the hosted Epicenter
  * Cloud (`personal`, multi-tenant, partition keyed per user) and the self-hosted
  * single-partition instance (`instance`, one pinned `owners/instance` partition
  * behind one operator bearer). The full design lives in
@@ -15,7 +15,7 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
-// The single-partition instance's bearer VERIFIER (self-host; ADR-0074). The
+// The single-partition instance's bearer VERIFIER (self-host; ADR-0075). The
 // deployment injects `createInstanceTokenResolver(verifyEnvToken(secret))` as its
 // `ResolveUser` (paired with `instance()`). The pure generator + boot entropy gate
 // (`generateInstanceToken` / `assertStrongToken`) live in `@epicenter/auth`.
@@ -42,21 +42,21 @@ export { createDb, type Db } from './db/create-db.js';
 // these as the `auth` for each owner-scoped mount (the cloud passes
 // `requireCookieOrBearerUser`, an instance `requireBearerUser`) and passes
 // `resolveRequestOAuthUser` as `createServerApp`'s `resolveUser` (the cloud's user
-// resolution; an instance passes its bearer resolver instead, ADR-0074).
+// resolution; an instance passes its bearer resolver instead, ADR-0075).
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	resolveRequestOAuthUser,
 } from './middleware/require-auth.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
-// owner partition so a shared house key cannot be run up unbounded (ADR-0075).
+// owner partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
 // The cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
 // plus the `authApp` surface (sign-in, consent, OAuth metadata). The cloud calls
 // this once after `createServerApp`; the single-partition instance never does and
-// composes no Better Auth or Postgres (ADR-0074). `CloudAuthBindings` is the
+// composes no Better Auth or Postgres (ADR-0075). `CloudAuthBindings` is the
 // Cloud-only auth env contract the cloud merges into its own boot validation and
-// resolves through `mountCloudAuth`'s `resolveAuthSecrets` (ADR-0075).
+// resolves through `mountCloudAuth`'s `resolveAuthSecrets` (ADR-0076).
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 // `doName` builds a room's owner-scoped DO name, deployment-agnostic and
 // exported for composing apps. The Cloudflare room registry
@@ -75,11 +75,12 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // mount, accepting only the deployment-controlled knobs (ownership rule,
 // auth choice, optional policies). The cloud's Better Auth surface (sessions,
 // OAuth, `c.var.auth`) is bundled into `mountCloudAuth`; an instance composes
-// none of it (ADR-0074).
+// none of it (ADR-0075).
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
+export { mountTranscriptionApp } from './routes/transcription.js';
 export { bun } from './runtime/bun.js';
 // The Cloudflare runtime adapter: the per-runtime triple (db over Hyperdrive,
 // `waitUntil`, the Durable Object room registry) as one `RuntimeAdapter` both

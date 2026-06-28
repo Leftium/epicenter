@@ -12,14 +12,9 @@
  * and components statically import it while guarding calls with `tauri`. Keep
  * Tauri API loading lazy unless every importer moves behind a `.tauri` suffix.
  */
-type TauriPathApi = typeof import('@tauri-apps/api/path');
+import { once } from 'wellcrafted/function';
 
-let tauriPathApiPromise: Promise<TauriPathApi> | undefined;
-
-function getTauriPathApi() {
-	tauriPathApiPromise ??= import('@tauri-apps/api/path');
-	return tauriPathApiPromise;
-}
+const getTauriPathApi = once(() => import('@tauri-apps/api/path'));
 
 async function appDataPath(...segments: string[]) {
 	const { appDataDir, join } = await getTauriPathApi();

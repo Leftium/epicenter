@@ -42,6 +42,7 @@
  */
 
 import { InstantString } from '@epicenter/field';
+import { once } from 'wellcrafted/function';
 import * as Y from 'yjs';
 import { createDisposableCache } from '../cache/disposable-cache.js';
 // Type-only daemon imports: `verbatimModuleSyntax` erases them, so the browser
@@ -56,7 +57,6 @@ import type {
 import type { NodeMountRuntime } from '../daemon/mount-runtime.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import type { Guid } from '../shared/id.js';
-import { once } from '../shared/once.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
 import type { Drainable } from '../shared/types.js';
 import type { AgentId } from './agent-id.js';

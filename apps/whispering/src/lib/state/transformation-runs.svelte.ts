@@ -21,21 +21,12 @@ import { whispering } from '#platform/whispering';
 import type { TransformationRun } from '$lib/workspace';
 
 function createTransformationRuns() {
-	const map = fromTable(whispering.tables.transformationRuns);
+	const view = fromTable(whispering.tables.transformationRuns);
 
 	return {
-		[Symbol.dispose]() {
-			map[Symbol.dispose]();
-		},
-
-		/** All transformation runs as a reactive SvelteMap. */
-		get all() {
-			return map;
-		},
-
 		/** Get a run by ID. */
 		get(id: string) {
-			return map.get(id);
+			return view.byId(id);
 		},
 
 		/**
@@ -44,7 +35,7 @@ function createTransformationRuns() {
 		 * @param transformationId - FK to the parent transformation
 		 */
 		getByTransformationId(transformationId: string): TransformationRun[] {
-			return Array.from(map.values())
+			return view.all
 				.filter((run) => run.transformationId === transformationId)
 				.sort(
 					(a, b) =>
@@ -58,7 +49,7 @@ function createTransformationRuns() {
 		 * @param recordingId - FK to the recording
 		 */
 		getByRecordingId(recordingId: string): TransformationRun[] {
-			return Array.from(map.values())
+			return view.all
 				.filter((run) => run.recordingId === recordingId)
 				.sort(
 					(a, b) =>
@@ -91,13 +82,9 @@ function createTransformationRuns() {
 
 		/** Total number of runs. */
 		get count() {
-			return map.size;
+			return view.all.length;
 		},
 	};
 }
 
 export const transformationRuns = createTransformationRuns();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => transformationRuns[Symbol.dispose]());
-}

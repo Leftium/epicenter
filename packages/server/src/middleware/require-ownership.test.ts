@@ -85,7 +85,7 @@ describe('instance()', () => {
 	});
 
 	test('pins the SAME partition regardless of caller identity', async () => {
-		// The load-bearing invariant (ADR-0074): the partition is decoupled from
+		// The load-bearing invariant (ADR-0075): the partition is decoupled from
 		// the principal, so two different principals resolve to one `owners/instance`
 		// and a future per-person named token never re-partitions the box's data.
 		// This is exactly what `personal()` + a fixed owner id would NOT give.

@@ -1,5 +1,5 @@
 /**
- * Instance-token secret unit tests (ADR-0074).
+ * Instance-token secret unit tests (ADR-0075).
  *
  * Pins the two pure pieces of the instance bearer that live in `@epicenter/auth`:
  * the entropy gate fails closed on a missing / short / hand-typed token and passes

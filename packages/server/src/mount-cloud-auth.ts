@@ -4,7 +4,7 @@
  * The hosted cloud composes Better Auth: a per-request `c.var.auth` instance
  * (sessions, OAuth, JWKS) over Postgres, plus the `authApp` surface (sign-in,
  * consent, OAuth metadata, and the Better Auth catch-all). The single-partition
- * instance composes NEITHER (ADR-0074): it authenticates one operator-supplied
+ * instance composes NEITHER (ADR-0075): it authenticates one operator-supplied
  * bearer and has no sessions, so it never calls this and never constructs Better
  * Auth. That is the seam that lets an instance drop Postgres entirely.
  *
@@ -28,7 +28,7 @@ export function mountCloudAuth(
 		 * Resolve this cloud deployment's relational-auth secrets
 		 * ({@link CloudAuthBindings}) from its own env. The secrets are NOT in the
 		 * portable `ServerBindings` (the relational-auth substrate is Cloud-only,
-		 * ADR-0075), so the cloud supplies them at its own edge: the Worker casts its
+		 * ADR-0076), so the cloud supplies them at its own edge: the Worker casts its
 		 * deploy-gated `c.env as Cloudflare.Env`, the Bun host closes over its
 		 * validated env. Read per request because a Worker has no module-scope env.
 		 */
@@ -50,7 +50,7 @@ export function mountCloudAuth(
 	app.use('*', async (c, next) => {
 		// Resolve the cloud-only secrets once and stamp them on the context, so both
 		// readers (this Better Auth construction and the `authApp` sign-in page) take
-		// them from one resolved value rather than the raw `c.env` bag (ADR-0075).
+		// them from one resolved value rather than the raw `c.env` bag (ADR-0076).
 		const authSecrets = opts.resolveAuthSecrets(c);
 		c.set('authSecrets', authSecrets);
 		c.set(

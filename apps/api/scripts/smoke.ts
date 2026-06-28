@@ -29,11 +29,12 @@
  */
 
 import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 
 const BASE_URL = (
 	process.argv[2] ??
 	process.env.BASE_URL ??
-	'http://localhost:8788'
+	`http://localhost:${API_BUN_DEV_PORT}`
 ).replace(/\/+$/, '');
 
 // The dev resolver synthesizes the user from this id; personal-mode ownership

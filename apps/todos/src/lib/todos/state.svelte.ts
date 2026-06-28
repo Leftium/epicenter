@@ -13,11 +13,11 @@ const builtInById = new Map(
 );
 
 export function createTodosState(todos: TodosBrowser) {
-	const todosMap = fromTable(todos.tables.todos);
+	const todosView = fromTable(todos.tables.todos);
 	let selectedContextId = $state<ContextSlug | null>(null);
 
 	const notDeletedTodos = $derived(
-		[...todosMap.values()]
+		[...todosView.all]
 			.filter((todo) => todo.deletedAt === null)
 			.sort(compareTodos),
 	);
@@ -39,9 +39,6 @@ export function createTodosState(todos: TodosBrowser) {
 	);
 
 	return {
-		[Symbol.dispose]() {
-			todosMap[Symbol.dispose]();
-		},
 		get contexts() {
 			return BUILT_IN_CONTEXTS;
 		},

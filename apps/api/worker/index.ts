@@ -5,7 +5,7 @@
  * layers cloud-only billing, admin, and dashboard surfaces on top.
  * The self-hosted single-partition instance lives in a sibling apps/* folder
  * and composes the same library with `instance()` and no Autumn policies
- * (ADR-0074).
+ * (ADR-0075).
  *
  * Read top to bottom for the full URL surface of cloud. Each `mount*`
  * call bundles the auth + ownership + policies + route mount for one
@@ -22,6 +22,7 @@ import {
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
+	mountTranscriptionApp,
 	personal,
 	Room,
 	requireBearerUser,
@@ -30,7 +31,10 @@ import {
 	type ServerBindings,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
-import { chargeOpenAiCreditsWithAutumn } from './billing/policies.js';
+import {
+	chargeOpenAiCreditsWithAutumn,
+	chargeOpenAiTranscriptionCredits,
+} from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
@@ -68,7 +72,7 @@ const app = createServerApp({
 	},
 	// The cloud resolves a request to its user by verifying an OAuth bearer
 	// against JWKS (it reads `c.var.auth` + `c.var.db`, both present below). An
-	// instance passes its bearer resolver instead (ADR-0074).
+	// instance passes its bearer resolver instead (ADR-0075).
 	resolveUser: resolveRequestOAuthUser,
 });
 
@@ -83,9 +87,9 @@ app.get('/', (c) =>
 // cookie scoped to the registrable domain (host-only on localhost regardless).
 // Mounted before the owner-scoped surfaces so `c.var.auth` is set when their
 // cookie-or-bearer wrappers run. The single-partition instance composes none of
-// this (ADR-0074). The Cloud-only auth secrets are read at this Worker's own edge
+// this (ADR-0075). The Cloud-only auth secrets are read at this Worker's own edge
 // from its deploy-gated bindings (`c.env as Cloudflare.Env`), never the portable
-// `ServerBindings` (ADR-0075/0066).
+// `ServerBindings` (ADR-0076/0066).
 mountCloudAuth(app, {
 	cookieDomain: '.epicenter.so',
 	resolveAuthSecrets: (c) => c.env as Cloudflare.Env,
@@ -105,6 +109,13 @@ mountInferenceApp(app, {
 	auth: requireBearerUser,
 	ownership,
 	policies: [chargeOpenAiCreditsWithAutumn],
+});
+// OpenAI-compatible STT gateway (Groq Whisper, house key). Metered by audio
+// duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
+mountTranscriptionApp(app, {
+	auth: requireBearerUser,
+	ownership,
+	policies: [chargeOpenAiTranscriptionCredits],
 });
 
 // Cloud-only billing data plane. Auth is bundled into the mount so the

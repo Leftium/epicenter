@@ -29,7 +29,7 @@ export {
 	type InstanceSetting,
 	loadInstanceSetting,
 } from './instance-setting.js';
-// The pure pieces of the single-partition instance bearer (self-host; ADR-0074):
+// The pure pieces of the single-partition instance bearer (self-host; ADR-0075):
 // `generateInstanceToken` mints a strong token (`gen-token`), `assertStrongToken`
 // is the boot entropy gate. They live here (not `@epicenter/server`) so a token
 // can be generated and validated without the server graph. The verifier side

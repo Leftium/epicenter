@@ -82,14 +82,22 @@ export function attachYjsLog(
 	 * Compact the SQLite update log into a single row.
 	 *
 	 * Encodes the current doc state via `Y.encodeStateAsUpdateV2`, which
-	 * produces smaller output than merging individual updates. No-ops if
-	 * the log already has <= 1 row or the compacted blob exceeds 2 MB.
+	 * produces smaller output than merging individual updates. No-ops if the
+	 * compacted blob exceeds 2 MB, or if the log already has <= 1 row (unless
+	 * `force` is set).
 	 *
+	 * @param force - Compact even at <= 1 row. The corrupt-row heal sets this
+	 *   so a lone undecodable row is replaced, not left to re-throw on every
+	 *   future open.
 	 * @returns `true` if compaction ran, `false` if it no-oped.
 	 */
-	function compactUpdateLog(): boolean {
+	function compactUpdateLog({
+		force = false,
+	}: {
+		force?: boolean;
+	} = {}): boolean {
 		const row = countUpdates.get() as { count: number };
-		if (row.count <= 1) return false;
+		if (!force && row.count <= 1) return false;
 
 		const compacted = Y.encodeStateAsUpdateV2(ydoc);
 		if (compacted.byteLength > MAX_COMPACTED_BYTES) return false;
@@ -103,11 +111,32 @@ export function attachYjsLog(
 	const rows = selectUpdates.all() as {
 		data: Uint8Array;
 	}[];
+	let corruptRowsSkipped = 0;
 	for (const row of rows) {
-		Y.applyUpdateV2(ydoc, row.data);
+		// A corrupt BLOB (a half-written or truncated row) makes
+		// Y.applyUpdateV2 throw mid-replay. Unguarded, that aborts construction
+		// and the daemon cannot open the mount at all. Skip the bad row: the
+		// doc still hydrates from the good rows, and cloud resync supplies
+		// whatever the skipped row carried (same contract as the y-indexeddb
+		// load patch on the browser side).
+		try {
+			Y.applyUpdateV2(ydoc, row.data);
+		} catch (cause) {
+			corruptRowsSkipped++;
+			log.error(
+				new Error(
+					'Skipped a corrupt update row during replay; resync supplies it',
+					{ cause },
+				),
+			);
+		}
 	}
 
-	compactUpdateLog();
+	// A skipped row stays on disk and would re-throw on every future open.
+	// Compaction rewrites the whole log as one clean snapshot of the hydrated
+	// doc, dropping the bad rows; force it past the usual <= 1-row no-op so a
+	// lone corrupt row cannot linger.
+	compactUpdateLog({ force: corruptRowsSkipped > 0 });
 
 	let bytesSinceCompaction = 0;
 
@@ -161,10 +190,6 @@ export function attachYjsLog(
 	});
 
 	return {
-		/** `DELETE FROM updates`. Drops the durable log without destroying the Y.Doc. */
-		clearLocal: () => {
-			deleteUpdates.run();
-		},
 		/** Resolves after final compaction runs and the SQLite handle closes. */
 		whenDisposed,
 	};

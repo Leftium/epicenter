@@ -1,16 +1,43 @@
+import type {
+	DeviceConfigKey,
+	SecretKey,
+} from '$lib/state/device-config.svelte';
+
+type InferenceProvider = {
+	label: string;
+	/** Fixed model list, or null when the model is typed free-form (OpenRouter, Custom). */
+	models: readonly string[] | null;
+	/**
+	 * The provider's API key: a secret, so it routes through the credential facade
+	 * (`secrets.get`), not raw `deviceConfig`. `SecretKey` (not the wider
+	 * `DeviceConfigKey`) makes that structural, per ADR-0074.
+	 */
+	apiKeyConfigKey: SecretKey;
+	/** Device config key for the endpoint override; null when not configurable. */
+	endpointConfigKey: DeviceConfigKey | null;
+};
+
 /**
- * Single source of truth for inference providers and their models.
+ * Single source of truth for inference providers: their models, labels, and the
+ * deviceConfig key NAMES holding each provider's credential and endpoint override.
+ * SDK-free (only a type import), so the workspace schema and the transformations
+ * editor import it without bundling any provider client. This is the completion
+ * twin of transcription's `PROVIDERS`: the metadata table that also owns the
+ * config-key names, paired with the SDK-bearing `COMPLETION_DISPATCH`.
  *
  * Access patterns:
  * - Provider IDs:  `keyof typeof INFERENCE` → 'OpenAI' | 'Groq' | ...
  * - Models:        `INFERENCE.OpenAI.models` → readonly ['gpt-5', ...]
  * - Labels:        `INFERENCE.OpenAI.label` → 'OpenAI'
+ * - Config keys:   `INFERENCE.OpenAI.apiKeyConfigKey` → 'providers.openai.apiKey'
  * - Enumerate:     `Object.keys(INFERENCE)` / `Object.entries(INFERENCE)`
  * - Schema:        `type.enumerated(...INFERENCE.OpenAI.models)`
  */
 export const INFERENCE = {
 	OpenAI: {
 		label: 'OpenAI',
+		apiKeyConfigKey: 'providers.openai.apiKey',
+		endpointConfigKey: 'providers.openai.endpoint',
 		models: [
 			'gpt-5',
 			'gpt-5-mini',
@@ -27,6 +54,8 @@ export const INFERENCE = {
 	},
 	Groq: {
 		label: 'Groq',
+		apiKeyConfigKey: 'providers.groq.apiKey',
+		endpointConfigKey: 'providers.groq.endpoint',
 		models: [
 			// Production models
 			'gemma2-9b-it',
@@ -46,6 +75,8 @@ export const INFERENCE = {
 	},
 	Anthropic: {
 		label: 'Anthropic',
+		apiKeyConfigKey: 'providers.anthropic.apiKey',
+		endpointConfigKey: null,
 		models: [
 			// Claude 4.5 models (latest generation - recommended)
 			'claude-sonnet-4-5-20250929',
@@ -71,6 +102,8 @@ export const INFERENCE = {
 	},
 	Google: {
 		label: 'Google',
+		apiKeyConfigKey: 'providers.google.apiKey',
+		endpointConfigKey: null,
 		models: [
 			'gemini-2.5-pro',
 			'gemini-2.5-flash',
@@ -82,13 +115,17 @@ export const INFERENCE = {
 	},
 	OpenRouter: {
 		label: 'OpenRouter',
+		apiKeyConfigKey: 'providers.openrouter.apiKey',
+		endpointConfigKey: null,
 		models: null,
 	},
 	Custom: {
 		label: 'Custom (OpenAI-compatible)',
+		apiKeyConfigKey: 'providers.custom.apiKey',
+		endpointConfigKey: 'providers.custom.endpoint',
 		models: null,
 	},
-} as const;
+} as const satisfies Record<string, InferenceProvider>;
 
 export type InferenceProviderId = keyof typeof INFERENCE;
 

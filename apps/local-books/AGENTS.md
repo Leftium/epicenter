@@ -1,8 +1,8 @@
 # local-books
 
-Headless CLI that mirrors a QuickBooks Online company into a local SQLite database and keeps it current with incremental Change Data Capture (CDC). This is a faithful, re-pullable mirror, not a ledger: QuickBooks owns authoritative history, CDC drives upserts into current state.
+Headless CLI that mirrors a QuickBooks Online company into a local SQLite database and keeps it current with incremental Change Data Capture (CDC), then exposes that copy as a few verbs you (or an off-the-shelf coding agent) grill. This is a faithful, re-pullable mirror, not a ledger: QuickBooks owns authoritative history, CDC drives upserts into current state.
 
-Design authority: `specs/20260621T100000-local-books-cli-sync-engine.md` (top-level specs dir). Read it before changing the sync model.
+Design authority: the sync engine is `specs/20260621T100000-local-books-cli-sync-engine.md` (read it before changing the sync model); the capabilities are [ADR-0061](../../docs/adr/0061-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md); the standalone-CLI shape (the daemon/chat surface deferred) is [ADR-0072](../../docs/adr/0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md).
 
 ## Shape
 
@@ -20,12 +20,17 @@ Design authority: `specs/20260621T100000-local-books-cli-sync-engine.md` (top-le
 ## CLI
 
 ```
-local-books auth                              # one-time OAuth2 (localhost callback), tokens -> credentials.json
-local-books sync [--full] [--entity <name>...]
-local-books status
+local-books auth                                   # one-time OAuth2 (localhost callback), tokens -> credentials.json
+local-books sync [--full] [--entity <name>...]     # refresh the local copy
+local-books status                                 # connection + per-record-type state
+local-books query "<sql>"                          # read-only SQL over the local copy
+local-books report <Name> [--start --end --method] # live QuickBooks statement (P&L, balance sheet, ...)
+local-books recategorize <Purchase|Bill> <id> --to <accountId>   # the one QuickBooks write
+local-books demo                                   # build + grill a sample company offline
+local-books mcp                                    # stdio MCP server: expose the verbs to a coding agent
 ```
 
-Mode is chosen from stored state: `--full` / no cursor / cursor older than the CDC window / full-pull staleness backstop → FULL; otherwise INCREMENTAL.
+Sync mode is chosen from stored state: `--full` / no cursor / cursor older than the CDC window / full-pull staleness backstop forces FULL; otherwise INCREMENTAL.
 
 ## Config (env or `<data-dir>/config.json`)
 
@@ -33,20 +38,21 @@ Mode is chosen from stored state: `--full` / no cursor / cursor older than the C
 - `LOCAL_BOOKS_QB_ENV` — `sandbox` (default) or `production`.
 - `LOCAL_BOOKS_DIR` / `--data-dir` — data directory override.
 - `LOCAL_BOOKS_TOKEN_FILE` — override the token file path (default `<data-dir>/credentials.json`). Used by the test harness and any custom location. The `0600` file store works the same on a desktop, a headless server, an SSH session, and CI, which is what a headless-first tool needs. See ADR-0062.
-- `LOCAL_BOOKS_READ_ONLY` — serve the agent a read-only surface (both reads, no `recategorize_expense` write tool). See the agent-surface capability lattice below.
+- `LOCAL_BOOKS_READ_ONLY` — reads only: `query` and `report` stay available, `recategorize` is refused. Whether you run the verbs yourself or hand the `books.db` to an agent.
 - Base-URL overrides (`LOCAL_BOOKS_QB_API_BASE`, `_TOKEN_URL`, `_AUTHORIZE_URL`) point the client at a mock server for tests.
 
-## Agent surface (ADR-0047, ADR-0061)
+## Capabilities (verbs over the local copy)
 
-`books.ts` + `mount.ts` wrap the mirror as an Epicenter **data daemon**: it holds the SQLite and serves it as dispatched actions, but never runs inference. A client agent loop (`@epicenter/workspace/agent`) opens the same synced room and dispatches the tools; the financial data leaves the machine only as a tool result. Sourcing rule (ADR-0061): mirror the *facts* (rows), ask QuickBooks for the *opinions* it computes (reports); the mirror is never the write target.
+The three ADR-0061 capabilities are CLI verbs, each a thin `src/commands/*` adapter over a plain core in `src/books/*` that returns a `wellcrafted` `Result`. Sourcing rule (ADR-0061): read the *facts* (rows) from the local copy, ask QuickBooks for the *opinions* it computes (reports); the local copy is never the write target.
 
-- `src/agent/books-query.ts` — `books_sql_query`, open read-only SQL over the **local mirror** (`query`, auto-approved). Enforced read-only by a `new Database(path, { readonly: true })` connection, not a string check; results are row-capped. The high-volume, offline, row-level surface.
-- `src/agent/report.ts` — `books_report`, a **live** QuickBooks Reports API read (`query`, auto-approved): P&L, balance sheet, cash flow, A/R + A/P aging, trial balance. Never mirrored, never cached (reports have no CDC, so a cache would be a stale snapshot); one cheap call for whole-ledger aggregates.
-- `src/agent/recategorize.ts` — `recategorize_expense`, the one QuickBooks write-back (`mutation`, so the loop pauses for approval). Write-THROUGH, never write-to-mirror: it reads the `SyncToken` from the mirror, sparse-updates the expense line `AccountRef` on a Purchase/Bill via `qb.update(...)`, then folds QuickBooks' authoritative response back into the mirror; the next CDC sync reconfirms it. A stale `SyncToken` is a 409, never a clobber. `src/agent/qb-access.ts` (`createQbAccess`) lazily opens a QB client from the realm's token store, so this layer holds no credentials directly.
-- `src/agent/books-actions.ts` — `createBooksAgentActions({ dbPath, openQb?, readOnly? })`, a **capability lattice** so the agent is only offered what the daemon can do: `books_sql_query` always; `books_report` when `openQb` is present; `recategorize_expense` when `openQb` is present and not `readOnly`. No `openQb` = fully-offline, mirror-only; `readOnly` (env `LOCAL_BOOKS_READ_ONLY`) = both reads, no write. Local annotation tools (`mark_reviewed`, `add_note`) remain parked in the spec.
+- `src/books/query.ts` — `queryBooks({ dbPath, sql })`: read-only SQL over the **local copy**. Read-only is the connection (`new Database(path, { readonly: true })`), not a string check; results are row-capped. The high-volume, offline, row-level surface, and the same one an off-the-shelf coding agent uses when pointed at the file.
+- `src/books/report.ts` — `fetchReport({ openQb, input })`: a **live** QuickBooks Reports read (P&L, balance sheet, cash flow, A/R + A/P aging, trial balance). Never mirrored, never cached (reports have no CDC, so a cache would be a stale snapshot).
+- `src/books/recategorize.ts` — `recategorizeExpense({ openQb, dbPath, input })`: the one QuickBooks write-back. Write-THROUGH, never write-to-mirror: read the `SyncToken` from the local copy, sparse-update the expense line `AccountRef` on a Purchase/Bill via `qb.update(...)`, then fold QuickBooks' authoritative response back in; the next CDC sync reconfirms it. A stale `SyncToken` is a 409, never a clobber. Running the verb is the approval; it is refused under `LOCAL_BOOKS_READ_ONLY`.
+- `src/books/status.ts` — `readBooksStatus({ config, realmId, store })`: the connection + mirror state (token validity, cursor, per-record-type counts) as a plain object. "Not connected" and "mirror not built" are reported states, not errors. The `status` verb formats it for a human; the MCP `status` tool returns it verbatim.
+- `src/books/qb-access.ts` — `createQbAccess` lazily opens a QB client from the realm's token store, so `report` and `recategorize` hold no credentials directly.
 
-The CLI binary (`bin.ts` -> `cli.ts`) does not import this layer, so `bun build --compile` of the CLI stays lean.
+The verb-core seam is deliberate (ADR-0072): a consumer re-exposes the same `src/books/*` cores without a rewrite. The first such consumer is the MCP server (`src/commands/mcp.ts`, the `mcp` verb), the egress airlock to foreign hosts (ADR-0073): each tool's TypeBox input *is* its MCP `inputSchema` (TypeBox is JSON Schema at runtime), and each `run` maps straight onto a core. It is deliberately **not** `defineActions` and **not** on the mesh: Local Books is standalone (ADR-0072) and its financial data must never touch the relay (ADR-0004), so the only correct exposure is a local stdio subprocess reading the SQLite directly. Each tool's effect class rides the standard MCP `annotations` (`readOnlyHint`/`destructiveHint`: only the QuickBooks write-back is destructive), and read-only mode drops `recategorize` from the catalog (the core refuses too). The only added dependency is `@modelcontextprotocol/sdk` (stable v1, low-level `Server`); `bun build --compile` stays a single binary, and there is still no `@epicenter/workspace` / `@epicenter/chat` dependency.
 
 ## Testing
 
-`bun test` boots a mock QB server (`test/mock-qb-server.ts`) and drives the real command paths against it (seeded token file), so full pull, incremental CDC, cursor advance, and soft-delete are proven end-to-end without a live sandbox. The interactive browser hop of `auth` is the only piece a live sandbox is needed for. The agent surface (`src/agent/`) is tested through the real dispatch catalog against a seeded mirror.
+`bun test` boots a mock QB server (`test/mock-qb-server.ts`) and drives the real command paths against it (seeded token file), so full pull, incremental CDC, cursor advance, and soft-delete are proven end-to-end without a live sandbox. The interactive browser hop of `auth` is the only piece a live sandbox is needed for. The verb cores are tested directly in `src/books/*.test.ts`; the verbs through the binary in `test/books-cli.test.ts` and `test/grill-e2e.test.ts` (sync then grill). `test/mcp-server.test.ts` spawns the `mcp` subcommand and drives real JSON-RPC over stdio: it asserts the two error channels (unknown tool is a protocol error, a failed tool is an `isError` result), the read-only gate, and a clean stdout (stdout is the protocol channel, so a stray byte corrupts framing).

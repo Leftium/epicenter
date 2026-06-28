@@ -6,7 +6,7 @@ export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export { fromKv } from './from-kv.svelte.js';
 export {
 	fromTable,
-	type ReactiveTableMap,
+	type ReadonlyTableView,
 } from './from-table.svelte.js';
 export {
 	createPersistedMap,

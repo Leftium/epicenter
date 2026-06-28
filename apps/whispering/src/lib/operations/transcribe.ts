@@ -1,3 +1,8 @@
+import {
+	type Connection,
+	resolveConnection,
+	transcribe,
+} from '@epicenter/client';
 import { InstantString } from '@epicenter/field';
 import {
 	type AnyTaggedError,
@@ -5,6 +10,7 @@ import {
 	extractErrorMessage,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
 import {
 	SUPPORTED_LANGUAGES,
@@ -16,18 +22,16 @@ import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
-import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/groq';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
-import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
 import {
-	type CloudProviderId,
 	isLocalProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
+	type UploadProviderId,
 } from '$lib/services/transcription/providers';
-import { SpeachesTranscriptionServiceLive } from '$lib/services/transcription/self-hosted/speaches';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
+import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 
@@ -74,38 +78,112 @@ const TranscriptionOperationError = defineErrors({
 	}),
 });
 
-type CloudTranscribe = (
-	audio: Blob,
-	options: {
-		prompt: string;
-		spokenLanguage: SupportedLanguage;
-		apiKey: string;
-		modelName: string;
-		baseURL?: string;
-	},
-) => Promise<Result<string, TranscriptionError>>;
+/**
+ * How an upload (non-local) provider is reached. A `wire` provider assembles a
+ * `Connection` and a model and hands them to the shared `transcribe()`; a
+ * `bespoke` provider keeps its own SDK client (a different wire). The `kind`
+ * discriminant carries the routing, so there is no wire-vs-bespoke id subset to
+ * derive and no `in`-guard: one exhaustive switch on `.kind`.
+ *
+ * A bespoke entry closes over its own key and model (from the literal `PROVIDERS.X`
+ * pointers, the SSOT) rather than letting the caller read `PROVIDERS[id]`, because
+ * switching on `.kind` does not narrow the id back to a CloudProvider. The wire
+ * entries read the same pointers; the one fact `PROVIDERS` does not hold is the
+ * canonical wire base URL (it used to be each SDK's default), so that literal lives
+ * here.
+ */
+type UploadDispatch =
+	| { kind: 'wire'; connection: () => Connection; model: () => string }
+	| {
+			kind: 'bespoke';
+			transcribe: (
+				audio: Blob,
+				options: { prompt: string; spokenLanguage: SupportedLanguage },
+			) => Promise<Result<string, TranscriptionError>>;
+	  };
 
 /**
- * The cloud (upload) transcribers, keyed by provider id. This is the dispatch
- * table that replaces the old per-provider switch: each impl stays bespoke
- * (different SDKs, different errors), the table just maps id -> call. Importing
- * the impls here keeps their SDKs out of `providers.ts`, so the workspace
- * schema can import the provider IDs without bundling them.
- *
- * `satisfies Record<CloudProviderId, ...>` ties the table to PROVIDERS: a cloud
- * provider added there without a transcriber here is a compile error.
+ * Read a provider API key through the credential facade (ADR-0074): the key when
+ * set, undefined when missing. A provider key is a secret, so it routes through
+ * `secrets`, never raw `deviceConfig`, which is what makes the user-global vault
+ * cover transcription once auth lands. Device-local plaintext today.
  */
-const CLOUD_TRANSCRIBERS = {
-	OpenAI: OpenaiTranscriptionServiceLive.transcribe,
-	Groq: GroqTranscriptionServiceLive.transcribe,
-	ElevenLabs: ElevenLabsTranscriptionServiceLive.transcribe,
-	Deepgram: DeepgramTranscriptionServiceLive.transcribe,
-	Mistral: MistralTranscriptionServiceLive.transcribe,
-} satisfies Record<CloudProviderId, CloudTranscribe>;
-
-function isCloudProviderId(id: TranscriptionServiceId): id is CloudProviderId {
-	return id in CLOUD_TRANSCRIBERS;
+function secretApiKey(key: SecretKey): string | undefined {
+	const read = secrets.get(key);
+	return read.status === 'available' ? read.value : undefined;
 }
+
+/**
+ * Every upload transcription provider, keyed by id. `satisfies Record<UploadProviderId,
+ * UploadDispatch>` makes the table total over the non-local providers: a new cloud or
+ * self-hosted provider is a compile error until it has an entry, and a local provider
+ * cannot appear (it goes through the FFI path, branched in `transcribeAudio`).
+ *
+ * Wire entries (OpenAI, Groq, Speaches): the endpoint override beats the canonical
+ * default; Speaches stores a bare host, so its `/v1` is appended; a keyless local
+ * box sends no key. Bespoke entries (ElevenLabs, Deepgram, Mistral) keep their own
+ * clients because they do not speak the wire (Deepgram's raw body + `Authorization:
+ * Token`, ElevenLabs' `xi-api-key`, Mistral's `context_bias`); ADR-0060 blesses it.
+ */
+const UPLOAD_DISPATCH = {
+	OpenAI: {
+		kind: 'wire',
+		connection: () => ({
+			baseUrl:
+				deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
+				'https://api.openai.com/v1',
+			apiKey: secretApiKey(PROVIDERS.OpenAI.apiKeyConfigKey),
+		}),
+		model: () => settings.get(PROVIDERS.OpenAI.modelSettingKey),
+	},
+	Groq: {
+		kind: 'wire',
+		connection: () => ({
+			baseUrl:
+				deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
+				'https://api.groq.com/openai/v1',
+			apiKey: secretApiKey(PROVIDERS.Groq.apiKeyConfigKey),
+		}),
+		model: () => settings.get(PROVIDERS.Groq.modelSettingKey),
+	},
+	speaches: {
+		kind: 'wire',
+		connection: () => ({
+			baseUrl: `${deviceConfig.get(PROVIDERS.speaches.endpointConfigKey)}/v1`,
+		}),
+		model: () => deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
+	},
+	ElevenLabs: {
+		kind: 'bespoke',
+		transcribe: (audio, { prompt, spokenLanguage }) =>
+			ElevenLabsTranscriptionServiceLive.transcribe(audio, {
+				prompt,
+				spokenLanguage,
+				apiKey: secretApiKey(PROVIDERS.ElevenLabs.apiKeyConfigKey) ?? '',
+				modelName: settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
+			}),
+	},
+	Deepgram: {
+		kind: 'bespoke',
+		transcribe: (audio, { prompt, spokenLanguage }) =>
+			DeepgramTranscriptionServiceLive.transcribe(audio, {
+				prompt,
+				spokenLanguage,
+				apiKey: secretApiKey(PROVIDERS.Deepgram.apiKeyConfigKey) ?? '',
+				modelName: settings.get(PROVIDERS.Deepgram.modelSettingKey),
+			}),
+	},
+	Mistral: {
+		kind: 'bespoke',
+		transcribe: (audio, { prompt, spokenLanguage }) =>
+			MistralTranscriptionServiceLive.transcribe(audio, {
+				prompt,
+				spokenLanguage,
+				apiKey: secretApiKey(PROVIDERS.Mistral.apiKeyConfigKey) ?? '',
+				modelName: settings.get(PROVIDERS.Mistral.modelSettingKey),
+			}),
+	},
+} satisfies Record<UploadProviderId, UploadDispatch>;
 
 function getSpokenLanguage(): SupportedLanguage {
 	const language = settings.get('transcription.language');
@@ -337,34 +415,35 @@ async function transcribeViaUpload(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
+	// `transcribeAudio` routes local providers to `transcribeLocally`, so a local id
+	// is the impossible case here; this guard also narrows `selectedService` off the
+	// local ids so it indexes `UPLOAD_DISPATCH`.
+	if (isLocalProviderId(selectedService)) {
+		return TranscriptionOperationError.NoTranscriptionServiceSelected();
+	}
+
 	const { data: audio, error: loadError } =
 		await loadForCloudUpload(recordingId);
 	if (loadError) return Err(loadError);
 
+	// `auto` language and an empty prompt map to the wire's "unset" (omitted from
+	// the form). No per-provider key-format pre-check: no key just means no header,
+	// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 	const spokenLanguage = getSpokenLanguage();
 	const prompt = settings.get('transcription.prompt');
-	const provider = PROVIDERS[selectedService];
-
-	if (provider.location === 'self-hosted') {
-		return SpeachesTranscriptionServiceLive.transcribe(audio, {
-			spokenLanguage,
-			prompt,
-			modelId: deviceConfig.get(provider.modelIdConfigKey),
-			baseUrl: deviceConfig.get(provider.endpointConfigKey),
-		});
+	const entry = UPLOAD_DISPATCH[selectedService];
+	switch (entry.kind) {
+		case 'wire':
+			return transcribe(
+				audio,
+				resolveConnection(entry.connection(), customFetch),
+				{
+					model: entry.model(),
+					language: spokenLanguage === 'auto' ? undefined : spokenLanguage,
+					prompt: prompt || undefined,
+				},
+			);
+		case 'bespoke':
+			return entry.transcribe(audio, { prompt, spokenLanguage });
 	}
-
-	if (provider.location === 'cloud' && isCloudProviderId(selectedService)) {
-		return CLOUD_TRANSCRIBERS[selectedService](audio, {
-			spokenLanguage,
-			prompt,
-			apiKey: deviceConfig.get(provider.apiKeyConfigKey),
-			modelName: settings.get(provider.modelSettingKey),
-			baseURL: provider.endpointConfigKey
-				? deviceConfig.get(provider.endpointConfigKey) || undefined
-				: undefined,
-		});
-	}
-
-	return TranscriptionOperationError.NoTranscriptionServiceSelected();
 }

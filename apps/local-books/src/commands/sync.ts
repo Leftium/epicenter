@@ -1,9 +1,9 @@
 import ms from 'ms';
+import { createQbAccess } from '../books/qb-access.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
 import { dbPath } from '../paths.ts';
-import { createQbClient } from '../qb-client.ts';
 import {
 	repairEntities,
 	runSyncLoop,
@@ -11,7 +11,6 @@ import {
 	type SyncOutcome,
 	syncRealm,
 } from '../sync.ts';
-import { createTokenManager } from '../token-manager.ts';
 import { resolveCompany } from './context.ts';
 
 /** Print one sync pass: the realm line + per-entity counts to stdout, failures to stderr. */
@@ -22,12 +21,12 @@ function reportOutcome(o: SyncOutcome): void {
 	);
 	for (const e of o.entities) {
 		console.log(
-			`${e.entity.padEnd(12)} ${e.upserted} upserted, ${e.deleted} deleted` +
-				`${e.backfilled ? '  [full]' : ''}`,
+			`${e.entity.padEnd(13)} ${e.upserted} added or updated, ${e.deleted} removed` +
+				`${e.backfilled ? '  [full pull]' : ''}`,
 		);
 	}
 	for (const f of o.failures) {
-		console.error(`${f.entity}: FAILED — ${f.error.message}`);
+		console.error(`${f.entity}: sync failed: ${f.error.message}`);
 	}
 }
 
@@ -56,23 +55,26 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 	}
 	if (repairTargets.length > 0 && args.intervalMs != null) {
 		console.error(
-			'`--entity` is a one-shot repair and cannot be combined with `--interval`.',
-		);
-		return 1;
-	}
-
-	const token = await store.get(realmId);
-	if (!token) {
-		console.error(
-			`No stored token for company ${realmId}. Run "local-books auth".`,
+			'Cannot combine --entity with --interval. Run a one-time "sync --entity" pass, then start the "sync --interval" loop.',
 		);
 		return 1;
 	}
 
 	const now = () => Date.now();
 	const log = (m: string) => console.error(m);
-	const tokens = createTokenManager({ config, store, token, now });
-	const client = createQbClient({ config, realmId, tokens, log });
+	// The same opener report/recategorize/MCP use: it reloads the token and
+	// builds the client, or returns a "run auth" reason. One way to open a client.
+	const { data: client, error: openError } = await createQbAccess({
+		config,
+		realmId,
+		store,
+		now,
+		log,
+	})();
+	if (openError !== null) {
+		console.error(openError);
+		return 1;
+	}
 	const db = openBooksDb(dbPath(config.dataDir, realmId));
 	const deps: SyncDeps = { db, client, config, now, log };
 
@@ -85,7 +87,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		};
 		process.on('SIGINT', stop);
 		console.error(
-			`Syncing ${config.entities.join(', ')} for company ${realmId} (${config.environment}) every ${ms(args.intervalMs)} — Ctrl-C to stop.`,
+			`Syncing ${config.entities.join(', ')} for company ${realmId} (${config.environment}) every ${ms(args.intervalMs)}; press Ctrl-C to stop.`,
 		);
 		await runSyncLoop(deps, {
 			forceFull: args.full,

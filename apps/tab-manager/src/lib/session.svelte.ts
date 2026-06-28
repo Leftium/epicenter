@@ -112,9 +112,6 @@ function buildSession(
 				state,
 				[Symbol.dispose]() {
 					aiChat[Symbol.dispose]();
-					toolTrust[Symbol.dispose]();
-					bookmarks[Symbol.dispose]();
-					savedTabs[Symbol.dispose]();
 					tabManager[Symbol.dispose]();
 				},
 			};

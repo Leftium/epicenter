@@ -15,7 +15,7 @@ type Db = NodePgDatabase<typeof schema>;
  * reader (cloud-only, reached only through `mountCloudAuth`), NOT in the portable
  * {@link ServerBindings}: the relational-auth substrate is a Cloud-only layer, so
  * its env contract is too, and the single-partition instance's env never inherits
- * secrets it does not read (ADR-0075). The cloud threads it onto
+ * secrets it does not read (ADR-0076). The cloud threads it onto
  * `c.var.authSecrets` (mount-cloud-auth.ts) from its own deploy-gated env, the
  * same honest-edge move every Cloudflare-only binding already makes (ADR-0066),
  * so both readers (this builder and the `authApp` sign-in page) take it from one
@@ -80,7 +80,7 @@ export function createAuth({
 	// guarantee runtime, not deploy-time only (the wrangler `secrets.required` gate
 	// blocks a missing secret at deploy, but not a later dashboard deletion or a
 	// preview path), and it covers both cloud entries since both reach `betterAuth`
-	// only through here (ADR-0075).
+	// only through here (ADR-0076).
 	const secret = env.BETTER_AUTH_SECRET?.trim();
 	if (!secret) {
 		throw new Error(
@@ -113,7 +113,7 @@ export function createAuth({
 		// instead of a button that 500s. The single-partition instance offers none:
 		// it composes no Better Auth at all (this builder is cloud-only, reached
 		// only through `mountCloudAuth`), and the operator bearer is its only gate
-		// (ADR-0074). better-auth requests `read:user` +
+		// (ADR-0075). better-auth requests `read:user` +
 		// `user:email` for GitHub by default, so it reads the primary email and
 		// GitHub's verification flag. GitHub is deliberately NOT a trusted linking
 		// provider (see BASE_AUTH_CONFIG): an unverified GitHub email must not link

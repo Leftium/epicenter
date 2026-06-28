@@ -1,3 +1,4 @@
+import { complete, resolveConnection } from '@epicenter/client';
 import { InstantString } from '@epicenter/field';
 import { nanoid } from 'nanoid/non-secure';
 import {
@@ -6,10 +7,12 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
-import type { InferenceProviderId } from '$lib/constants/inference';
+import { customFetch } from '#platform/http';
+import { INFERENCE, type InferenceProviderId } from '$lib/constants/inference';
 import { services } from '$lib/services';
-import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
+import type { CompletionService } from '$lib/services/completion';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { secrets } from '$lib/state/secrets.svelte';
 import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 import { transformationHasWork } from '$lib/state/transformations.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
@@ -21,76 +24,30 @@ import type {
 } from '$lib/workspace';
 
 /**
- * Config map for completion providers, all sharing the
- * `{ apiKey, model, baseUrl?, systemPrompt, userPrompt }` call signature.
- * Exhaustive over InferenceProviderId: adding a provider to INFERENCE is a
- * compile error here until its entry exists. The custom service owns the
- * "endpoint is required" invariant via its validateParams. `*ConfigKey`
- * fields hold deviceConfig key names, same convention as the transcription
- * registry in `services/transcription/providers.ts`.
+ * How a completion provider is reached. A `wire` provider builds a `Connection`
+ * (the endpoint override beats `defaultBaseUrl`; Custom has no default, its base IS
+ * the user's endpoint) and calls the shared `complete()`; a `bespoke` provider
+ * keeps its own SDK client. The `kind` discriminant carries the routing, so there
+ * is no wire-vs-bespoke id subset and no guard: one branch on `.kind`.
+ *
+ * The config-key names live on INFERENCE (the editor reads them too); the one fact
+ * it does not hold is the canonical wire base URL, so that lives here. Anthropic
+ * and Google stay bespoke because they do not speak the OpenAI chat wire (Anthropic
+ * needs `max_tokens` and returns content blocks; Google combines the prompt into
+ * `generateContent`); ADR-0060 blesses the exception.
  */
-const COMPLETION_PROVIDERS = {
-	OpenAI: {
-		service: services.completions.openai,
-		apiKeyConfigKey: 'providers.openai.apiKey',
-		endpointConfigKey: 'providers.openai.endpoint',
-	},
-	Groq: {
-		service: services.completions.groq,
-		apiKeyConfigKey: 'providers.groq.apiKey',
-		endpointConfigKey: 'providers.groq.endpoint',
-	},
-	Anthropic: {
-		service: services.completions.anthropic,
-		apiKeyConfigKey: 'providers.anthropic.apiKey',
-		endpointConfigKey: null,
-	},
-	Google: {
-		service: services.completions.google,
-		apiKeyConfigKey: 'providers.google.apiKey',
-		endpointConfigKey: null,
-	},
-	OpenRouter: {
-		service: services.completions.openrouter,
-		apiKeyConfigKey: 'providers.openrouter.apiKey',
-		endpointConfigKey: null,
-	},
-	Custom: {
-		service: services.completions.custom,
-		apiKeyConfigKey: 'providers.custom.apiKey',
-		endpointConfigKey: 'providers.custom.endpoint',
-	},
-} as const satisfies Record<
-	InferenceProviderId,
-	{
-		service: {
-			complete: (opts: {
-				apiKey: string;
-				model: string;
-				systemPrompt: string;
-				userPrompt: string;
-				baseUrl?: string;
-			}) => Promise<Result<string, { message: string }>>;
-		};
-		apiKeyConfigKey: DeviceConfigKey;
-		/** Device config key for the endpoint; null when not configurable. */
-		endpointConfigKey: DeviceConfigKey | null;
-	}
->;
+type CompletionDispatch =
+	| { kind: 'wire'; defaultBaseUrl: string | null }
+	| { kind: 'bespoke'; service: CompletionService };
 
-/**
- * The deviceConfig keys a provider reads. Exposed so the editor can warn when the
- * credential a transformation needs is missing, instead of failing only at run
- * time. These live in deviceConfig (local, never synced); no sign-in required to
- * use your own key.
- */
-export function getProviderConfigKeys(provider: InferenceProviderId): {
-	apiKeyConfigKey: DeviceConfigKey;
-	endpointConfigKey: DeviceConfigKey | null;
-} {
-	const { apiKeyConfigKey, endpointConfigKey } = COMPLETION_PROVIDERS[provider];
-	return { apiKeyConfigKey, endpointConfigKey };
-}
+const COMPLETION_DISPATCH = {
+	OpenAI: { kind: 'wire', defaultBaseUrl: 'https://api.openai.com/v1' },
+	Groq: { kind: 'wire', defaultBaseUrl: 'https://api.groq.com/openai/v1' },
+	OpenRouter: { kind: 'wire', defaultBaseUrl: 'https://openrouter.ai/api/v1' },
+	Custom: { kind: 'wire', defaultBaseUrl: null },
+	Anthropic: { kind: 'bespoke', service: services.completions.anthropic },
+	Google: { kind: 'bespoke', service: services.completions.google },
+} satisfies Record<InferenceProviderId, CompletionDispatch>;
 
 export const TransformError = defineErrors({
 	InvalidInput: ({ message }: { message: string }) => ({ message }),
@@ -127,6 +84,14 @@ function applyReplacements(
  * Run the one optional AI phase: interpolate the templates with `{{input}}`,
  * then call the prompt's backend with its model. Keys, model names, and URLs are
  * pasted strings, so trim once here: a trailing space fails the request opaquely.
+ *
+ * The wire providers (OpenAI, Groq, OpenRouter, Custom) route through the shared
+ * Connection-floor `complete()`; the bespoke ones (Anthropic, Google) keep their
+ * own SDK clients: the same wire/bespoke axis as the transcription collapse. The
+ * structure differs in one way, though: here the credential read hoists to one line
+ * above the branch, because every completion provider is keyed alike. Transcription
+ * cannot hoist (its upload set includes the keyless self-hosted Speaches), so each
+ * of its entries closes over its own read instead.
  */
 function runPrompt(
 	input: string,
@@ -141,17 +106,45 @@ function runPrompt(
 		{ input },
 	);
 
-	const config = COMPLETION_PROVIDERS[prompt.inferenceProvider];
+	const provider = prompt.inferenceProvider;
+	const model = prompt.model.trim();
+	const { apiKeyConfigKey, endpointConfigKey } = INFERENCE[provider];
+	// The API key is a secret: read it through the credential facade (ADR-0074),
+	// not raw deviceConfig, so the user-global vault covers transformations once
+	// auth lands. Empty when unset, exactly as the device read was.
+	const apiKeyRead = secrets.get(apiKeyConfigKey);
+	const apiKey = (
+		apiKeyRead.status === 'available' ? apiKeyRead.value : ''
+	).trim();
 
-	return config.service.complete({
-		apiKey: deviceConfig.get(config.apiKeyConfigKey).trim(),
-		model: prompt.model.trim(),
-		baseUrl: config.endpointConfigKey
-			? deviceConfig.get(config.endpointConfigKey).trim() || undefined
-			: undefined,
-		systemPrompt,
-		userPrompt,
-	});
+	const dispatch = COMPLETION_DISPATCH[provider];
+	if (dispatch.kind === 'bespoke') {
+		return dispatch.service.complete({
+			apiKey,
+			model,
+			systemPrompt,
+			userPrompt,
+		});
+	}
+
+	// A wire provider: resolve a Connection (the endpoint override beats the
+	// canonical default; Custom's endpoint IS its base and is required), then one
+	// POST through the shared client. No key just means no header.
+	const override = endpointConfigKey
+		? deviceConfig.get(endpointConfigKey).trim()
+		: '';
+	const baseUrl = override || dispatch.defaultBaseUrl;
+	if (!baseUrl) {
+		return Promise.resolve(
+			TransformError.PromptFailed({
+				message: `Set a base URL for the ${provider} provider in settings.`,
+			}),
+		);
+	}
+	return complete(
+		resolveConnection({ baseUrl, apiKey: apiKey || undefined }, customFetch),
+		{ model, systemPrompt, userPrompt },
+	);
 }
 
 /**

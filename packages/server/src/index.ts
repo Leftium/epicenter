@@ -23,6 +23,7 @@ export {
 	createEnvTokenResolver,
 	INSTANCE_PRINCIPAL,
 } from './auth/instance-token.js';
+export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // Database concern (cloud-only). `createDb(client)` wraps a connected pg
 // client/pool in drizzle with the auth schema; a cloud entry hands the result to
 // `mountCloudDb`. The Cloudflare per-request `pg.Client` over Hyperdrive comes from
@@ -57,13 +58,6 @@ export {
 // its own boot validation and resolves through `resolveAuthSecrets` (ADR-0076).
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
-// The Cloudflare runtime backends a deployment wires into `createServerApp`'s
-// `resolveRooms` (the Durable Object room registry) and `mountCloudDb`'s `connect`
-// (a per-request pg client over Hyperdrive). A Bun host uses `createBunRooms` and
-// its own pool instead (the `@epicenter/server/bun` barrel omits both of these,
-// since their modules name Cloudflare bindings).
-export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // `doName` builds a room's owner-scoped DO name, deployment-agnostic and
 // exported for composing apps.
 export { doName } from './owner.js';
@@ -75,6 +69,12 @@ export { instance, type OwnershipRule, personal } from './ownership.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
+// The Cloudflare runtime backends a deployment wires into `createServerApp`'s
+// `resolveRooms` (the Durable Object room registry) and `mountCloudDb`'s `connect`
+// (a per-request pg client over Hyperdrive). A Bun host uses `createBunRooms` and
+// its own pool instead (the `@epicenter/server/bun` barrel omits both of these,
+// since their modules name Cloudflare bindings).
+export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
 // Reusable surfaces. Each `mount*` bundles auth + ownership + the route
 // mount, accepting only the deployment-controlled knobs (ownership rule,
 // auth choice, optional policies). The cloud's Better Auth surface (sessions,

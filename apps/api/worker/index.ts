@@ -55,8 +55,7 @@ const app = createServerApp<CloudEnv>({
 	// Per-room DO sharding stays the cloud's binding of the room actor forever:
 	// hibernate-to-zero and single-writer-per-room at multi-tenant scale. The cloud's
 	// Postgres + `waitUntil` are NOT here; they are installed by `mountCloudDb` below.
-	resolveRooms: (env) =>
-		createDurableObjectRooms((env as Cloudflare.Env).ROOM),
+	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 	identity: {
 		// The hosted cloud's public origin never changes per deploy, so it is
 		// baked from the constants source of truth rather than duplicated into

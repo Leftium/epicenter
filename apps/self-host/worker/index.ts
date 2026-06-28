@@ -45,8 +45,7 @@ const app = createServerApp({
 	// it never calls `mountCloudDb` and `createServerApp` stays on the portable `Env`
 	// (ADR-0076). This edge points it at its OWN binding (the `Cloudflare.Env` cast
 	// stays here, type-checked against this Worker's generated bindings, ADR-0066).
-	resolveRooms: (env) =>
-		createDurableObjectRooms((env as Cloudflare.Env).ROOM),
+	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 	identity: {
 		// Self-hosters set their own public origin in wrangler.jsonc
 		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's.

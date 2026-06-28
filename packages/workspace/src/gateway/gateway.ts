@@ -175,7 +175,7 @@ export async function createPeerGateway(
 					route: routeName,
 					state: state ?? 'unlisted',
 				});
-				connection.close(0n, [...Buffer.from('not enrolled')]);
+				connection.close(0n, [...Buffer.from('below route threshold')]);
 				return;
 			}
 

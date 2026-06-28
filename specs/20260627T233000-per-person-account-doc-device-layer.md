@@ -47,21 +47,27 @@ Today that box holds only per-workspace docs. The device roster and trust ledger
 are per-person durable state, so they live in **the missing per-person doc inside
 the same box**: a reserved **account room** every device joins.
 
-**Product sentence.** The per-person *account doc* owns the device roster and
-trust ledger; every one of a user's devices enters through the single
-coordination box it already syncs through; the gateway does iroh transport, the
-account doc does identity and authority, and workspace docs do document data:
-three jobs, three owners, never crossed.
+**Product sentence.** The per-person *account doc* carries **one append-only log
+of device-signed assertions**; roster, label, and trust are all projections of
+one device-local reducer; the cloud can drop or replay an entry but never forge
+one; the gateway does iroh transport, workspace docs do document data.
+
+The account doc holds **one structure**, not two. An earlier draft split it into a
+mutable roster map (`peerId -> { label }`) plus a separate signed trust log; two
+independent grills (Claude + codex) flagged that as a duality smell, a
+cloud-forgeable second source of device facts beside the unforgeable one. They are
+the same shape (a device asserts a fact about a peer, folded by a reducer), so
+they collapse: an identity claim is just an assertion where `asserter == subject`.
 
 ### Ownership
 
 | Value | Owner | Kind |
 | --- | --- | --- |
 | Device identity (`peerId` = iroh public key) | the device's `0600` iroh keyfile (`irohKeyPathFor`, Wave 2) | durable, device-local |
-| Roster identity (`peerId -> { label, kind }`) | the **account Y.Doc**, single-writer per device (each device owns only its own entry) | durable, per-person |
-| Trust (verify / revoke) | **assertions signed by a verified device's iroh key**, carried in the account Y.Doc; the gateway derives effective trust | durable, per-person, cloud-unforgeable |
+| The assertion log | the **account doc**: one append-only `Y.Array` of device-signed assertions; the cloud relays it, never authors it | durable, per-person, replication-only |
+| Roster, label, and trust | a **device-local reducer** that verifies signatures and folds the log into projections | derived, never stored, cloud-unforgeable |
 | Liveness / reachability | **a dial attempt** + iroh n0 discovery | ephemeral, no channel |
-| Transport allowlist | the **gateway**, derived from the verified-assertion set | runtime |
+| Transport allowlist | the **gateway**, a query over the reducer's output plus the tool's sensitivity policy | runtime |
 | Workspace data + editing presence | **workspace rooms** | untouched |
 
 ### Mechanism
@@ -71,14 +77,17 @@ three jobs, three owners, never crossed.
   super-chat client on launch. It reuses all existing room machinery (auth via
   the user's bearer, Y.Doc sync, the WebSocket upgrade), so there is **no new
   Durable Object type and no parallel infrastructure**.
-- **Self-registration.** On join, a device that holds an iroh key (a *peer*)
-  writes its own roster entry to the account Y.Doc: `peerId -> { label, kind }`,
-  where `kind` is `daemon` (v1) or `wasm-browser` (Vision C, a first-class
-  dialable peer that registers through the *same* path). `label` defaults to the
-  device hostname, user-overridable. A device owns and writes only its own
-  identity fields; trust is written by *other* devices (Wave 4). A today's browser
-  tab on a machine with a daemon is a *client* of that daemon over localhost, not
-  a peer; it borrows the daemon's identity and does **not** register.
+- **Self-signed identity claim.** On join, a device that holds an iroh key (a
+  *peer*) appends a **self-signed** `identity` assertion to the log: `asserter ==
+  subject == peerId`, carrying a `label` (hostname default, user-overridable),
+  signed by the device's iroh key. The roster is the reducer's fold of the latest
+  valid identity claim per peer, so it is **cloud-unforgeable too** (the bearer-
+  authed cloud cannot inject a fake "MacBook Pro" entry as a phishing target).
+  A WASM-iroh browser (Vision C) is a first-class dialable peer and registers
+  through this same path; a today's browser tab on a machine with a daemon is a
+  *client* of that daemon over localhost, not a peer, and does **not** register.
+  (`kind` is omitted until a v1 operation branches on it: dialing is uniform, and
+  the label already identifies the device.)
 - **Dial by `peerId`.** iroh n0 discovery (proven cross-machine in Wave 0)
   resolves the key to a live address, so the roster ships **no `hintAddrs`** over
   the relay. `hintAddrs` stays a Wave 1 dial optimization for the same-LAN direct
@@ -99,32 +108,44 @@ replicated distribution and query index for a signed trust log*; authority lives
 in a **device-local reducer over signed assertions** (Claude + codex agreed on
 this exact framing).
 
-- A trust assertion is an append-only record **signed by the asserting device's
-  iroh secret key**: `{ asserter: peerId, subject: peerId, verdict:
-  verified|revoked|roster-trust, seq, account, prevHash?, sig }`. `seq` is a
+- Every assertion is an append-only record **signed by the asserting device's
+  iroh secret key**, with one shape and three verbs:
+  `{ account, asserter: peerId, subject: peerId, verb: identity|verify|revoke,
+  seq, label?, sig }`. `identity` is a self-claim (`asserter == subject`, carries
+  `label`); `verify` and `revoke` are cross-claims about another peer. `seq` is a
   per-asserter monotonic counter and `account` binds it to this user, so a
-  replayed or cross-account assertion is rejected. The signature covers all
-  fields. The cloud can drop, reorder, or **replay** assertions (a DoS it could
-  already mount by refusing to relay), but it **cannot forge** one: it holds no
-  device's secret key (the iroh key is device-owned, never derived from the
-  account or the vault, per the parent spec). The signing primitive is
-  iroh-native Ed25519 (`SecretKey.sign(message)` / `EndpointId.verify(message,
-  sig)`, confirmed in the installed types), so the device's iroh key is both its
-  identity and its signing key: no second keypair.
-- Each gateway derives its Ring-0 allowlist by a **local reducer that verifies
-  signatures** and folds the asserted set into effective trust, rooted in keys it
-  already trusts (its own, and devices it has directly paired with: no transitive
-  web-of-trust in v1). An entry the cloud injected with no valid signature, or
-  signed by a non-trusted key, is ignored.
-- This is why trust is **append-only signed assertions**, never a mutable Y.Map
-  field: a mutable value is (a) unsigned, so cloud-forgeable, and (b) resolved by
-  Yjs's **clientID LWW, not timestamp**, so a concurrent `verify` from a
-  higher-clientID device could silently override a `revoke`. Signed assertions are
-  conflict-free under CRDT merge (a grow-only set), carry their own authenticity,
-  and let the reducer enforce **monotonic revocation**: once a valid `revoke` from
-  an authorized asserter is seen, a later or replayed `verify` does not resurrect
-  the peer unless a strictly-greater-`seq` signed re-verify supersedes it, ordered
-  by the asserter's own counter, never by Yjs's internal clientID.
+  replayed or cross-account assertion is rejected. (No `prevHash`: per-asserter
+  `seq` already orders an asserter's own claims, and the threat model concedes
+  cloud-drop, so a hash chain buys nothing.) The cloud can drop, reorder, or
+  **replay** assertions (a DoS it could already mount by refusing to relay), but
+  it **cannot forge** one: it holds no device's secret key (the iroh key is
+  device-owned, never derived from the account or the vault, per the parent spec).
+  The signing primitive is iroh-native Ed25519 (`SecretKey.sign(message)` /
+  `EndpointId.verify(message, sig)`, confirmed in the installed types), so the
+  device's iroh key is both its identity and its signing key: no second keypair.
+- A **single device-local reducer** verifies signatures and folds the whole log
+  into per-peer projections: the **roster** (latest valid `identity` claim per
+  peer) and the **trust state** (below). It is rooted in keys the gateway already
+  trusts (its own, and devices it has directly paired with: no transitive
+  web-of-trust in v1). An assertion with no valid signature, or signed by a
+  non-trusted key, is ignored, so a cloud-injected entry never reaches a
+  projection.
+- **Trust state collapses to three reducer outputs:** `listed` (a peer with a
+  valid self-signed `identity` claim and no verify), `verified` (a valid `verify`
+  from a trusted asserter), `revoked` (a valid `revoke`; **monotonic**: once seen,
+  a later or replayed `verify` does not resurrect the peer unless a
+  strictly-greater-`seq` signed re-verify supersedes it, ordered by the asserter's
+  own counter, never by Yjs's clientID). There is no stored `candidate` (an
+  unsigned cloud-injected key is simply ignored, not a state) and no stored
+  `roster-trusted`: whether a tool accepts a merely-`listed` peer is a **per-tool
+  sensitivity policy** (low-risk accepts `listed`; sensitive requires `verified`),
+  not a trust level. This keeps the discovery-vs-authority line the parent spec
+  drew from blurring back together.
+- This is why authority is **append-only signed assertions**, never a mutable
+  Y.Map field: a mutable value is unsigned (cloud-forgeable) and resolved by Yjs's
+  **clientID LWW, not timestamp**, so a concurrent `verify` from a higher-clientID
+  device could silently override a `revoke`. Signed assertions are conflict-free
+  under CRDT merge (a grow-only set) and carry their own authenticity and order.
 
 The precise property that keeps the cloud out of the trust path: the cloud can
 relay, drop, reorder, replay, or corrupt signed assertions, but it cannot forge
@@ -147,35 +168,37 @@ signed log) would have to rebuild.
    account doc for `ownerId = self` via the existing collaboration path.
 2. Wire every device to join it: the daemon (in `epicenter daemon up`, beside its
    mounts) and the super-chat client (on sign-in).
-3. The account Y.Doc schema: a roster map `peerId -> { label, kind }`. Each device
-   self-registers on join (idempotent upsert of its own entry).
-4. Super-chat reads the roster -> shows the user's devices -> **target-device-first
-   selection** (pick a device, then its narrow catalog), then dials by `peerId`
-   through the local gateway transport (the Wave 1 `PeerTransport` seam).
+3. The account doc schema: **one append-only `Y.Array` of signed assertions**,
+   plus the reducer. Wave 3 implements only the `identity` verb and the roster
+   projection: each device appends a self-signed `identity` claim on join
+   (idempotent: re-append only when its `label` changes). The reducer verifies the
+   self-signature, so the roster is unforgeable from day one and the trust verbs in
+   Wave 4 are a pure addition, not a rewrite.
+4. Super-chat reads the roster projection -> shows the user's devices ->
+   **target-device-first selection** (pick a device, then its narrow catalog), then
+   dials by `peerId` through the local gateway transport (the Wave 1
+   `PeerTransport` seam).
 
-### Wave 4 — authority (the trust ledger)
+### Wave 4 — authority (verify, revoke, allowlist)
 
-1. Trust as **append-only signed assertions** in the account doc (see "Why a
-   relayed Y.Doc is safe for trust"), not a mutable enum field. Each is
-   `{ asserter, subject, verdict: verified|revoked, clock, sig }`, signed by the
-   asserter's iroh key. The gateway derives effective trust per peer: `candidate`
-   (no assertion, just seen), `roster-trusted` (self-registered, TOFU, fine for
-   low-risk tools), `verified` (a valid `verify` from a trusted asserter),
-   `revoked` (a monotonic `revoke`; terminal unless a strictly-later signed
-   `verify` from a still-trusted asserter supersedes it).
-2. **Root of trust, no circularity:** a gateway implicitly trusts its OWN key, so
-   it honors `verify` assertions it signed itself (and, in v1, only those plus
-   ones from devices it has directly paired with: no transitive web-of-trust).
-   The verify act is a human one: existing-device approval (an already-paired
-   device signs a `verify` for the new one) or a SAS compare (the deterministic
-   6-digit code over both iroh public keys, ported from `proto-enroll.ts`; a
-   relay-substituted key yields a different code, so the human catches it). The
-   cloud never authors or alters an assertion.
-3. Derive the gateway's Ring-0 allowlist by **verifying the signed assertion
-   set**, replacing Wave 1's injected static `() => Set<PeerId>`. Re-read per
-   connection so a promotion/revocation propagates without a gateway restart.
-4. Sensitive tools (local-books) require `verified`; low-risk tools accept
-   `roster-trusted` TOFU (parent spec).
+1. Add the `verify` and `revoke` verbs to the **existing** log and reducer (a pure
+   addition: Wave 3 already built the signed log, the signature check, and the
+   roster projection). Effective trust is the reducer's `listed | verified |
+   revoked` (see "the security property"). No new structure, no migration.
+2. **Root of trust, no circularity:** a gateway implicitly trusts its own key, so
+   it honors `verify` assertions it signed itself, plus those from devices it has
+   directly paired with (no transitive web-of-trust in v1). The verify act is
+   human: existing-device approval (an already-paired device signs a `verify`) or a
+   SAS compare (the deterministic 6-digit code over both iroh public keys, ported
+   from `proto-enroll.ts`; a relay-substituted key yields a different code, so the
+   human catches it). The cloud never authors or alters an assertion.
+3. Derive the gateway's Ring-0 allowlist from the reducer output, replacing
+   Wave 1's injected static `() => Set<PeerId>`. Re-read per connection so a
+   verify/revoke propagates without a gateway restart.
+4. **Tool sensitivity is a policy, not a stored state:** the named route table
+   tags each route's required level (low-risk accepts `listed`; sensitive, like
+   local-books, requires `verified`). Ring-0 admits a peer for a route iff the
+   reducer's state for that peer meets the route's threshold.
 
 ---
 
@@ -215,6 +238,14 @@ signed log) would have to rebuild.
   durable per-user sync the account doc already provides. Deferred, not refused:
   the signed-assertion payload is transport-agnostic, so gossip can become a
   second distribution path later without changing the trust model.
+- **A mutable roster map beside the signed trust log** (the collapsed-away
+  duality). Two shapes for one fact, one of them cloud-forgeable. The roster is a
+  reducer projection of the same log.
+- **Stored `candidate` and `roster-trusted` states, `prevHash`, and `kind`.**
+  `candidate` is just "ignored"; `roster-trusted` is a per-tool policy, not a
+  state; `prevHash` is redundant with per-asserter `seq`; `kind` has no v1
+  operation branching on it. Each is added back only when a concrete operation
+  earns it.
 
 ## Open sub-decisions (settle during Wave 3)
 
@@ -225,7 +256,7 @@ signed log) would have to rebuild.
 - (Resolved.) Browser registration: the roster lists *dialable peers* (iroh-key
   holders). A v1 browser tab borrowing a daemon does not register; a Vision C
   WASM-iroh browser is a first-class dialable peer and registers through the same
-  path (`kind: wasm-browser`). See "Self-registration".
+  self-signed `identity` path. See "Self-signed identity claim".
 
 ## Trigger to revisit
 

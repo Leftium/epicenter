@@ -26,9 +26,13 @@ binary with a stable cert and the fixed identifier `so.epicenter.whispering.dev`
 then `exec`s it. The resulting designated requirement depends only on the
 identifier and the certificate, never the cdhash, so the grant survives rebuilds.
 
-The signing cert defaults to the first Developer ID or Apple Development identity
-on the machine. Override it with `WHISPERING_DEV_SIGNING_IDENTITY`. With no cert
-the runner falls back to ad-hoc and warns that the grant will not persist.
+The signing cert is chosen in three tiers: an explicit
+`WHISPERING_DEV_SIGNING_IDENTITY` override, else the first Developer ID or Apple
+Development identity on the machine, else a persistent self-signed code-signing
+cert the runner mints once (`Whispering Dev Local Codesign`) and reuses. Every
+tier is a stable signature, so there is no ad-hoc fallback to break the grant:
+even with no Apple account and no setup, the first `bun run dev` provisions the
+self-signed cert and asks once (a keychain prompt) to let `codesign` use it.
 
 ## Granting and resetting
 

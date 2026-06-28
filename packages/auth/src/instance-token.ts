@@ -10,10 +10,10 @@
  * dragging the server graph in: the CLI and the self-host scripts depend on
  * `@epicenter/auth`, not `@epicenter/server`.
  *
- * The matching VERIFIER side (turn a presented bearer into a principal, the
+ * The matching RESOLVER side (turn a presented bearer into a principal, the
  * `ResolveUser` a deployment injects) needs the server's `AuthUser`/`ResolveUser`
- * types, so it stays in `@epicenter/server` (`createInstanceTokenResolver`,
- * `verifyEnvToken`, `INSTANCE_PRINCIPAL`).
+ * types, so it stays in `@epicenter/server` (`createEnvTokenResolver`,
+ * `INSTANCE_PRINCIPAL`).
  *
  * Portable (ADR-0066): nothing here names `node:` or touches disk. The token
  * generator uses the Web Crypto `crypto` global (`getRandomValues`, `btoa`), which

@@ -21,15 +21,13 @@
  * on a Bun host, which supplies its own room and db concerns.
  */
 
-// The single-partition instance's bearer VERIFIER (self-host; ADR-0075): the
-// `ResolveUser` a Bun instance injects (`createInstanceTokenResolver(verifyEnvToken(token))`,
-// paired with `instance()`). The pure generator + boot entropy gate
-// (`generateInstanceToken` / `assertStrongToken`) live in `@epicenter/auth`.
+// The single-partition instance's bearer resolver (self-host; ADR-0075): the
+// `ResolveUser` a Bun instance injects (`createEnvTokenResolver(token)`, paired with
+// `instance()`). The pure generator + boot entropy gate (`generateInstanceToken` /
+// `assertStrongToken`) live in `@epicenter/auth`.
 export {
-	createInstanceTokenResolver,
+	createEnvTokenResolver,
 	INSTANCE_PRINCIPAL,
-	type VerifyToken,
-	verifyEnvToken,
 } from './auth/instance-token.js';
 export { createDb, type Db } from './db/create-db.js';
 // An opt-in burn-rate cap for the inference `policies` seam (ADR-0076).

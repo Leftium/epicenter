@@ -15,15 +15,13 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
-// The single-partition instance's bearer VERIFIER (self-host; ADR-0075). The
-// deployment injects `createInstanceTokenResolver(verifyEnvToken(secret))` as its
-// `ResolveUser` (paired with `instance()`). The pure generator + boot entropy gate
-// (`generateInstanceToken` / `assertStrongToken`) live in `@epicenter/auth`.
+// The single-partition instance's bearer resolver (self-host; ADR-0075). The
+// deployment injects `createEnvTokenResolver(secret)` as its `ResolveUser` (paired
+// with `instance()`). The pure generator + boot entropy gate (`generateInstanceToken`
+// / `assertStrongToken`) live in `@epicenter/auth`.
 export {
-	createInstanceTokenResolver,
+	createEnvTokenResolver,
 	INSTANCE_PRINCIPAL,
-	type VerifyToken,
-	verifyEnvToken,
 } from './auth/instance-token.js';
 // Database concern. `createDb(client)` wraps a connected pg client/pool in
 // drizzle with the internal schema (the portable core). The Cloudflare

@@ -72,7 +72,7 @@ const token = assertStrongToken(env.INSTANCE_TOKEN);     // fail closed if weak
 const app = createServerApp({
   runtime: bun({ rooms }),                               // no db leg, no Postgres
   identity: { resolveOrigin, resolveTrustedOrigins },
-  resolveUser: createInstanceTokenResolver(verifyEnvToken(token)), // one bearer
+  resolveUser: createEnvTokenResolver(token),              // one bearer
 });
 mountSessionApp(app, { ownership: instance(), auth: requireBearerUser });
 mountRoomsApp(app, { ownership: instance() });           // no telemetry recorder
@@ -89,8 +89,8 @@ entropy gate per request (a Worker has no boot phase):
 ```ts
 createServerApp({
   resolveUser: (c) =>
-    createInstanceTokenResolver(
-      verifyEnvToken(assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN)),
+    createEnvTokenResolver(
+      assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
     )(c),
   // ...instance() ownership, same session + rooms + inference mounts
 });

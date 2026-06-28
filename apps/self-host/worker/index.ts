@@ -23,7 +23,7 @@
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	cloudflare,
-	createInstanceTokenResolver,
+	createEnvTokenResolver,
 	createServerApp,
 	instance,
 	mountBlobsApp,
@@ -33,7 +33,6 @@ import {
 	Room,
 	rateLimit,
 	requireBearerUser,
-	verifyEnvToken,
 } from '@epicenter/server';
 import { resolveSelfHostTrustedOrigins } from '../trusted-origins.js';
 
@@ -68,10 +67,8 @@ const app = createServerApp({
 	// returns the trimmed token, so there is no `?? ''` coalesce whose removal could
 	// silently let an unset secret reach the compare.
 	resolveUser: (c) =>
-		createInstanceTokenResolver(
-			verifyEnvToken(
-				assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
-			),
+		createEnvTokenResolver(
+			assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
 		)(c),
 });
 

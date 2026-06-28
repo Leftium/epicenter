@@ -49,7 +49,7 @@ import { assertStrongToken } from '@epicenter/auth';
 import {
 	bun,
 	createBunRooms,
-	createInstanceTokenResolver,
+	createEnvTokenResolver,
 	createServerApp,
 	instance,
 	mountBlobsApp,
@@ -59,7 +59,6 @@ import {
 	rateLimit,
 	requireBearerUser,
 	ServerBindings,
-	verifyEnvToken,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
 import { resolveSelfHostTrustedOrigins } from './trusted-origins.js';
@@ -118,7 +117,7 @@ export function startSelfHostServer(): void {
 	// `ResolveUser`, feeding the one total gate exactly like the cloud's OAuth
 	// resolver (ADR-0075).
 	const token = requireStrongInstanceToken(env.INSTANCE_TOKEN);
-	const resolveUser = createInstanceTokenResolver(verifyEnvToken(token));
+	const resolveUser = createEnvTokenResolver(token);
 
 	const port = Number(env.PORT ?? 8787);
 	// The auth origin must match where the process actually listens. Default to

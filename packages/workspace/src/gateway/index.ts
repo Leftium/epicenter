@@ -20,7 +20,11 @@ export type {
 	PeerGatewayOptions,
 	RelayPreset,
 } from './gateway.js';
-export { loadOrCreateDeviceSecret } from './key-store.js';
+export {
+	type DeviceSecret,
+	generateDeviceSecret,
+	loadOrCreateDeviceSecret,
+} from './key-store.js';
 export { createLocalGatewayTransport } from './local-gateway-transport.js';
 export {
 	alpnForRoute,

@@ -14,6 +14,19 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { SecretKey } from '@number0/iroh';
 
+/**
+ * A device's iroh secret key: its durable identity AND its signing key
+ * (ADR-0073). Re-exported under a gateway-local name so consumers (and tests)
+ * never import `@number0/iroh` directly; iroh stays encapsulated behind this
+ * subpath, the one place it is allowed to leak.
+ */
+export type DeviceSecret = SecretKey;
+
+/** Generate a fresh, unpersisted {@link DeviceSecret}. */
+export function generateDeviceSecret(): DeviceSecret {
+	return SecretKey.generate();
+}
+
 type KeyFile = { bytes: number[] };
 
 /**

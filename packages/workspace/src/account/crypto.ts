@@ -30,7 +30,7 @@
 import { getPublicKey, hashes, sign, verify } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { asPeerId, type PeerId } from '../gateway/transport.js';
+import { asPeerId, type PeerId } from '../peer-transport.js';
 import {
 	type Assertion,
 	assertionSigningBytes,

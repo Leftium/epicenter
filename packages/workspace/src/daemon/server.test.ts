@@ -16,7 +16,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import type { PeerTransport } from '../gateway/transport.js';
+import type { PeerTransport } from '../peer-transport.js';
 import { type ActionRegistry, defineQuery } from '../shared/actions.js';
 import { daemonClient } from './client.js';
 import { claimDaemonLease, type DaemonLease } from './lease.js';

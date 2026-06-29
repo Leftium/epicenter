@@ -12,8 +12,8 @@
 
 import { spawn } from 'node:child_process';
 import type { TrustState } from '../account/reducer.js';
-import type { ByteChannel, RouteName } from './transport.js';
-import { asRouteName } from './transport.js';
+import type { ByteChannel, RouteName } from '../peer-transport.js';
+import { asRouteName } from '../peer-transport.js';
 
 /**
  * The minimum trust a peer must hold to reach a route: the per-route sensitivity

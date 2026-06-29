@@ -6,7 +6,7 @@
  * enforces the Ring-0 allowlist on every inbound connection before a byte
  * flows, and dumb-pipes admitted bi-streams to the local route target. On the
  * dialing side it exposes {@link PeerGateway.dial}, the primitive behind the
- * {@link ./transport.PeerTransport} seam.
+ * {@link ../peer-transport.PeerTransport} seam.
  *
  * This module is NODE-ONLY: it imports `@number0/iroh` (a native dep) and
  * `node:child_process`, so it must stay out of the browser barrel and is
@@ -45,7 +45,7 @@ import {
 	type ByteChannel,
 	type PeerId,
 	type RouteName,
-} from './transport.js';
+} from '../peer-transport.js';
 
 /**
  * Transport reachability knob. `minimal` is direct-only (no relay), correct for

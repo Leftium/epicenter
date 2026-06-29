@@ -18,7 +18,7 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
-import type { PeerId } from '../gateway/transport.js';
+import type { PeerId } from '../peer-transport.js';
 
 /**
  * Domain tag mixed into the SAS digest so a code minted here can never collide

@@ -31,7 +31,7 @@ import type {
 	AgentToolOutcome,
 } from '../agent/tools.js';
 import { createMcpGatewayCatalog } from '../gateway/index.js';
-import { asPeerId, asRouteName } from '../gateway/transport.js';
+import { asPeerId, asRouteName } from '../peer-transport.js';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './action-handler.js';
 import type {

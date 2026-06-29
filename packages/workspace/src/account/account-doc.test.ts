@@ -17,7 +17,7 @@ import {
 	readRoster,
 } from './account-doc.js';
 import { peerIdFromSecret, signAssertion } from './crypto.js';
-import { asPeerId } from '../gateway/transport.js';
+import { asPeerId } from '../peer-transport.js';
 import { trustFromAssertions } from './reducer.js';
 
 const ACCOUNT = 'user-1';

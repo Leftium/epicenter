@@ -1,5 +1,5 @@
 /**
- * Impl #1 of the {@link ./transport.PeerTransport} seam: dial through the LOCAL
+ * Impl #1 of the {@link ../peer-transport.PeerTransport} seam: dial through the LOCAL
  * daemon gateway, which owns the iroh endpoint.
  *
  * This is the only transport built in this landing. The consumer (the agent
@@ -12,7 +12,7 @@
  */
 
 import type { PeerGateway } from './gateway.js';
-import type { PeerTransport } from './transport.js';
+import type { PeerTransport } from '../peer-transport.js';
 
 /** Wrap a local {@link PeerGateway} as a {@link PeerTransport}. */
 export function createLocalGatewayTransport(

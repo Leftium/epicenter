@@ -21,7 +21,7 @@ import { SecretKey } from '@number0/iroh';
 import type { TrustState } from '../account/reducer.js';
 import { createPeerGateway, type PeerGateway } from './gateway.js';
 import { loadOrCreateDeviceSecret } from './key-store.js';
-import { asPeerId, asRouteName, type ByteChannel, type PeerId } from './transport.js';
+import { asPeerId, asRouteName, type ByteChannel, type PeerId } from '../peer-transport.js';
 
 // An echo child that flushes each chunk immediately (cat block-buffers a small
 // write and would never echo before EOF).

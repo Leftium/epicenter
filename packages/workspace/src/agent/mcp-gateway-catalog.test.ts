@@ -23,7 +23,7 @@ import {
 	asPeerId,
 	asRouteName,
 	type PeerId,
-} from '../gateway/transport.js';
+} from '../peer-transport.js';
 import { createMcpGatewayCatalog } from './mcp-gateway-catalog.js';
 
 const MINI_SERVER = fileURLToPath(

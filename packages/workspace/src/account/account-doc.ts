@@ -13,7 +13,7 @@
  */
 
 import type * as Y from 'yjs';
-import type { PeerId } from '../gateway/transport.js';
+import type { PeerId } from '../peer-transport.js';
 import {
 	type Assertion,
 	checkAssertion,

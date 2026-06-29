@@ -10,7 +10,7 @@
 
 import { PassThrough, Writable } from 'node:stream';
 import type { BiStream, RecvStream, SendStream } from '@number0/iroh';
-import type { ByteChannel } from './transport.js';
+import type { ByteChannel } from '../peer-transport.js';
 
 /**
  * Pump an iroh `RecvStream` into a Node `PassThrough` (the readable side). The

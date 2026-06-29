@@ -37,7 +37,7 @@ import {
 	shortAuthString,
 	type TrustState,
 } from '../account/index.js';
-import type { PeerId } from '../gateway/transport.js';
+import type { PeerId } from '../peer-transport.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
 import { attachYjsLog } from '../document/attach-yjs-log.js';
 import { asNodeId } from '../document/node-id.js';

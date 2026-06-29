@@ -26,7 +26,7 @@ import {
 } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import type { ByteChannel } from './transport.js';
+import type { ByteChannel } from '../peer-transport.js';
 
 /**
  * An MCP {@link Transport} over a {@link ByteChannel}. Mirrors the SDK's

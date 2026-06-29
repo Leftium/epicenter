@@ -29,7 +29,7 @@ import type {
 	PeerId,
 	PeerTransport,
 	RouteName,
-} from '../gateway/transport.js';
+} from '../peer-transport.js';
 import type {
 	AgentToolCall,
 	AgentToolDefinition,

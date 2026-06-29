@@ -14,7 +14,7 @@
 import type { Result } from 'wellcrafted/result';
 import type { AppendVerdictResult } from '../account/account-doc.js';
 import type { Roster } from '../account/reducer.js';
-import type { PeerId, PeerTransport } from '../gateway/transport.js';
+import type { PeerId, PeerTransport } from '../peer-transport.js';
 import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';

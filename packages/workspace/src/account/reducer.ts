@@ -23,7 +23,7 @@
  * the portable signature check.
  */
 
-import { asPeerId, type PeerId } from '../gateway/transport.js';
+import { asPeerId, type PeerId } from '../peer-transport.js';
 import { type Assertion, checkAssertion } from './assertion.js';
 import { verifyAssertionSignature } from './crypto.js';
 

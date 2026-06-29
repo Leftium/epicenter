@@ -50,6 +50,11 @@ export {
 	withRelayExposed,
 } from './gateway/route-table.js';
 export {
+	createServiceForward,
+	type ServiceForward,
+	type ServiceForwardOptions,
+} from './gateway/service-forward.js';
+export {
 	createRelayChannelTransport,
 	type RelayChannelTransport,
 } from './relay-channel/index.js';

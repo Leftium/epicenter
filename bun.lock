@@ -24,6 +24,7 @@
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",

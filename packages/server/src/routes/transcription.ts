@@ -7,7 +7,7 @@
  * user's own key) is configuration, not code.
  *
  * It is a multipart passthrough proxy: validate the requested model against the
- * local upstream table, inject the deployment's house key, forward the audio to
+ * single supported upstream, inject the deployment's house key, forward the audio to
  * the provider's OpenAI-compatible endpoint, and return the transcript JSON. It
  * forces `response_format=verbose_json` upstream so the reply carries `duration`
  * (and segments, language); the shared client reads only `text`, and a
@@ -22,7 +22,7 @@
  * (the user's own URL and key), never the Epicenter gateway.
  *
  * Error convention (OpenAI shape, mirroring the chat gateway):
- *   - 400 `UnknownModel`           the model is not in the STT upstream table.
+ *   - 400 `UnknownModel`           the model is not the supported STT model.
  *   - 400 `invalid_request`        no audio file in the multipart body.
  *   - 503 `ProviderNotConfigured`  no house key configured for the provider.
  *   - 402 `InsufficientCredits`    the deployment's metering policy (apps/api).
@@ -41,28 +41,17 @@ import { createRequireOwnership } from '../middleware/require-ownership.js';
 import type { OwnershipRule } from '../ownership.js';
 import type { Env } from '../types.js';
 
-/**
- * Per-model routing facts for the STT gateway: the OpenAI-compatible base URL,
- * the deployment env var holding the house key, and the id to send upstream
- * (which may differ from the public id). Kept local to the gateway, mirroring
- * `inference.ts`'s `PROVIDER_UPSTREAM`: the provider-routing fact lives here, not
- * in a shared catalog. v1 serves OpenAI `whisper-1` (reuses the deployment's
- * existing `OPENAI_API_KEY` house key, the chat gateway already provisions it).
- * `whisper-1` returns `duration` under `verbose_json`, which the per-minute meter
- * reads; the `gpt-4o-transcribe` models do not support `verbose_json`, so do not
- * swap to them without giving the meter another duration source. Add a row to
- * serve another model (a new house key, no new code).
- */
-const STT_UPSTREAM = {
-	'whisper-1': {
-		baseURL: 'https://api.openai.com/v1',
-		houseKeyEnv: 'OPENAI_API_KEY',
-		upstreamModel: 'whisper-1',
-	},
-} as const satisfies Record<
-	string,
-	{ baseURL: string; houseKeyEnv: 'OPENAI_API_KEY'; upstreamModel: string }
->;
+// The gateway's single upstream routing fact, kept local (mirroring
+// `inference.ts`): v1 serves OpenAI `whisper-1` over the OpenAI-compatible base,
+// reusing the deployment's existing `OPENAI_API_KEY` house key (the chat gateway
+// already provisions it). `whisper-1` returns `duration` under `verbose_json`,
+// which the per-minute meter reads; the `gpt-4o-transcribe` models do not support
+// `verbose_json`, so do not swap to them without giving the meter another
+// duration source. Held as inline constants until a real second upstream exists:
+// reintroduce a per-model routing table when one does, not before.
+const STT_MODEL = 'whisper-1';
+const STT_BASE_URL = 'https://api.openai.com/v1';
+const STT_HOUSE_KEY_ENV = 'OPENAI_API_KEY' as const;
 
 /** Build the OpenAI error envelope every gateway failure answers with. */
 function openAiError(
@@ -94,7 +83,7 @@ const transcriptionApp = new Hono<Env>().post(
 		}
 
 		const model = form.get('model');
-		if (typeof model !== 'string' || !(model in STT_UPSTREAM)) {
+		if (model !== STT_MODEL) {
 			return c.json(
 				openAiError(`Unknown model: ${String(model)}`, 'UnknownModel'),
 				400,
@@ -112,10 +101,9 @@ const transcriptionApp = new Hono<Env>().post(
 			);
 		}
 
-		const upstream = STT_UPSTREAM[model as keyof typeof STT_UPSTREAM];
 		// House-key-only (ADR-0054): the gateway holds the key and never reads one
 		// from the request, so it provably never receives a user's provider key.
-		const apiKey = c.env[upstream.houseKeyEnv];
+		const apiKey = c.env[STT_HOUSE_KEY_ENV];
 		if (!apiKey) {
 			return c.json(
 				openAiError(`${model} is not configured.`, 'ProviderNotConfigured'),
@@ -129,7 +117,7 @@ const transcriptionApp = new Hono<Env>().post(
 		// client-supplied `response_format`, stray fields) is dropped on purpose.
 		const upstreamForm = new FormData();
 		upstreamForm.append('file', file);
-		upstreamForm.append('model', upstream.upstreamModel);
+		upstreamForm.append('model', STT_MODEL);
 		upstreamForm.append('response_format', 'verbose_json');
 		const language = form.get('language');
 		if (typeof language === 'string') upstreamForm.append('language', language);
@@ -139,7 +127,7 @@ const transcriptionApp = new Hono<Env>().post(
 		let upstreamResponse: Response;
 		try {
 			upstreamResponse = await fetch(
-				`${upstream.baseURL}/audio/transcriptions`,
+				`${STT_BASE_URL}/audio/transcriptions`,
 				{
 					method: 'POST',
 					// No content-type: `fetch` sets the multipart boundary itself.

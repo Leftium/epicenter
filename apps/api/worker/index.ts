@@ -124,7 +124,7 @@ mountInferenceApp(app, {
 	ownership,
 	policies: [chargeOpenAiCreditsWithAutumn],
 });
-// OpenAI-compatible STT gateway (Groq Whisper, house key). Metered by audio
+// OpenAI-compatible STT gateway (OpenAI whisper-1, house key). Metered by audio
 // duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
 mountTranscriptionApp(app, {
 	auth: bearer,

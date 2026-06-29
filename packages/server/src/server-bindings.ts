@@ -58,9 +58,6 @@ export const ServerBindings = type({
 	// House-key-only (ADR-0054).
 	'OPENAI_API_KEY?': 'string',
 	'GEMINI_API_KEY?': 'string',
-	// Groq house key, available for an `STT_UPSTREAM` row served by Groq. The STT
-	// gateway ships on OpenAI `whisper-1` today, so this is currently unused.
-	'GROQ_API_KEY?': 'string',
 });
 
 /** The portable env contract; also the Hono `Env.Bindings` type (types.ts). */

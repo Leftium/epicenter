@@ -2,18 +2,20 @@
  * Open the per-person account room on the daemon: the relay floor's home.
  *
  * The account room is the per-user fleet room: an ordinary sync room at the
- * reserved guid {@link RESERVED_ACCOUNT_ROOM_GUID}, so it reuses every bit of
- * room machinery (bearer auth, Y.Doc sync, the WebSocket upgrade) the same way a
- * mount's room does. `epicenter daemon up` opens it alongside its mount and rides
- * the relay floor over the one connection it holds: the channel port carries
- * cross-device tool channels, and server-owned presence lists this user's other
- * online devices.
+ * reserved guid, so it reuses every bit of room machinery (bearer auth, Y.Doc
+ * sync, the WebSocket upgrade) the same way a mount's room does. `epicenter
+ * daemon up` opens it alongside its mount and rides the relay floor over the one
+ * connection it holds: the channel port carries cross-device tool channels, and
+ * server-owned presence lists this user's other online devices.
  *
- * What this node module owns is the node-only glue the browser-safe room core
- * cannot do: persist the doc's update log to disk and join the room over the
- * relay. There is no per-device signing or trust ledger; the relay floor
- * authenticates by the session's `userId`, and a route is reached on owner
- * identity plus a relay-exposed gate (see `gateway/relay-route.ts`).
+ * What this node module owns is the node-only glue the browser-safe core cannot
+ * do: resolve the durable node id off disk, resolve the daemon's sync base URL,
+ * and pin a deterministic Y.Doc clientID with `node:crypto`. The room itself
+ * (Y.Doc at the reserved guid, sync, the channel port) is the shared
+ * {@link openAccountRoomConnection} core a browser uses the same way. There is no
+ * per-device signing or trust ledger; the relay floor authenticates by the
+ * session's `userId`, and a route is reached on owner identity plus a
+ * relay-exposed gate (see `gateway/relay-route.ts`).
  *
  * It is gated on a signed-in session: the room is bearer-authed, so a signed-out
  * daemon has no account room (it returns `null`, the room's analogue of an
@@ -21,19 +23,12 @@
  * never aborts the mount that is the daemon's actual job.
  */
 
-import * as Y from 'yjs';
-
-import { RESERVED_ACCOUNT_ROOM_GUID } from '../account/reserved-guid.js';
+import {
+	type AccountRoomConnection,
+	openAccountRoomConnection,
+} from '../account/open-account-room-connection.js';
 import { resolveDaemonNodeId } from '../config/daemon-node-id.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
-import type { NodeId } from '../document/node-id.js';
-import { openCollaboration } from '../document/open-collaboration.js';
-import type { Peer } from '../document/presence-protocol.js';
-import { roomWsUrl } from '../document/transport.js';
-import {
-	type ChannelPort,
-	createChannelPort,
-} from '../relay-channel/index.js';
 import { hashYDocClientId } from '../shared/client-id.js';
 import { resolveSyncBaseURL } from './mount-runtime.js';
 
@@ -50,37 +45,8 @@ export type OpenAccountRoomOptions = {
 	baseURL?: string;
 };
 
-/**
- * A live account-room connection: the relay floor over one socket. `peers()`
- * reads the user's other online devices; `channelPort` carries cross-device tool
- * channels; `[Symbol.asyncDispose]` destroys the doc and drains its sync
- * connection.
- */
-export type AccountRoomHandle = {
-	/** The reserved guid this room was opened at. */
-	guid: string;
-	/** The signed-in account owner (userId); the relay floor's authorized identity. */
-	ownerId: string;
-	/**
-	 * This device's relay routing id and dial target: the relay routes by it (it
-	 * is stamped on the account-room socket as `?nodeId=`), and a peer reaches this
-	 * device by naming it.
-	 */
-	nodeId: NodeId;
-	/**
-	 * The relay-channel port over this account-room socket: the floor the
-	 * relay-channel acceptor and transport ride. It carries channels to and from
-	 * this user's other devices over the connection already held, no second socket.
-	 */
-	channelPort: ChannelPort;
-	/**
-	 * This account's other devices currently connected to the relay floor, from the
-	 * server's live presence (newest-wins per nodeId, self excluded). You reach a
-	 * device that is online, addressed by its nodeId, with no enrollment in between.
-	 */
-	peers(): Peer[];
-	[Symbol.asyncDispose](): Promise<void>;
-};
+/** The daemon's account-room handle is the shared {@link AccountRoomConnection}. */
+export type AccountRoomHandle = AccountRoomConnection;
 
 /**
  * Open the account room for the signed-in user and return a handle. Returns
@@ -99,47 +65,15 @@ export async function openAccountRoom(
 	// its mount room so the device presents one identity across both rooms.
 	const nodeId = resolveDaemonNodeId(options.epicenterRoot);
 
-	const ydoc = new Y.Doc({ guid: RESERVED_ACCOUNT_ROOM_GUID });
-	// Pin a deterministic clientID before any local edit, so each device's writes
-	// merge under one stable CRDT identity across restarts.
-	ydoc.clientID = hashYDocClientId(nodeId);
-
-	// The account doc carries no data of its own (presence is server-owned and the
-	// channel port rides text frames), so it attaches no durable log; the Y.Doc
-	// exists only because `openCollaboration` syncs through one. The only handle
-	// that tears the connection down is the one we return, so a throw before we
-	// return would orphan the relay WebSocket for the daemon's whole life.
-	// `ydoc.destroy()` is the single cascade point: collaboration's `[Symbol.dispose]`
-	// is hooked to the doc's destroy, so destroying the doc releases it even on the
-	// branch where `openCollaboration` itself threw and `collaboration` is unset.
-	try {
-		const collaboration = openCollaboration(ydoc, {
-			url: roomWsUrl({
-				baseURL: resolveSyncBaseURL(options.baseURL),
-				ownerId,
-				guid: ydoc.guid,
-				nodeId,
-			}),
-			openWebSocket: auth.openWebSocket,
-			onReconnectSignal: auth.onStateChange,
-			// The account doc carries no daemon actions; it is the relay floor's
-			// connection and a server-owned presence surface, not a dispatch surface.
-			actions: {},
-		});
-
-		return {
-			guid: ydoc.guid,
-			ownerId,
-			nodeId,
-			channelPort: createChannelPort(collaboration.textPort),
-			peers: () => collaboration.peers.list(),
-			async [Symbol.asyncDispose]() {
-				ydoc.destroy();
-				await collaboration.whenDisposed;
-			},
-		};
-	} catch (cause) {
-		ydoc.destroy();
-		throw cause;
-	}
+	return openAccountRoomConnection({
+		nodeId,
+		ownerId,
+		baseURL: resolveSyncBaseURL(options.baseURL),
+		openWebSocket: auth.openWebSocket,
+		onReconnectSignal: auth.onStateChange,
+		// The daemon pins a stable clientID so its writes merge under one CRDT
+		// identity across restarts; the browser omits it (the account doc carries
+		// no data) to stay free of `node:crypto`.
+		clientId: hashYDocClientId(nodeId),
+	});
 }

@@ -65,8 +65,14 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 			`${data.entity} ${data.id}${line}: ${change.fromAccount ?? '(none)'} -> ${change.toAccount}`,
 		);
 	}
-	console.error(
-		`Updated in QuickBooks (SyncToken ${data.syncToken ?? '?'}) and folded into the mirror.`,
-	);
+	if (data.folded) {
+		console.error(
+			`Updated in QuickBooks (SyncToken ${data.syncToken ?? '?'}) and folded into the mirror.`,
+		);
+	} else {
+		console.error(
+			`Updated in QuickBooks (SyncToken ${data.syncToken ?? '?'}), but folding into the mirror failed. The next sync will reconcile it; do not retry recategorize (the SyncToken has already bumped).`,
+		);
+	}
 	return 0;
 }

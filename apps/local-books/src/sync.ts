@@ -201,11 +201,15 @@ export async function syncRealm(
 	// excluded from this pass's CDC (it is already current), while the rest ride
 	// one batched CDC call. cursorBefore is non-null here (a null cursor forces
 	// FULL above).
-	const wasInitialized = new Map(
-		names.map((name) => [name, db.isInitialized(entityDef(name))]),
-	);
-	const newNames = names.filter((name) => !wasInitialized.get(name));
-	const cdcNames = names.filter((name) => wasInitialized.get(name));
+	const newNames: string[] = [];
+	const cdcNames: string[] = [];
+	for (const name of names) {
+		if (db.isInitialized(entityDef(name))) {
+			cdcNames.push(name);
+		} else {
+			newNames.push(name);
+		}
+	}
 
 	const backfill = await fullPullEach(deps, newNames, cursorAfter, {
 		backfilled: true,

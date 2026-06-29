@@ -111,6 +111,14 @@ export type RecategorizeResult = {
 	id: string;
 	changed: RecategorizeChange[];
 	syncToken: string | null;
+	/**
+	 * Whether the authoritative QuickBooks response was folded into the mirror.
+	 * The write itself succeeded either way; `false` means the best-effort fold
+	 * failed (lock past busy_timeout, disk error) and the next CDC sync will
+	 * reconcile the row. Callers report this honestly instead of always claiming
+	 * the fold happened.
+	 */
+	folded: boolean;
 };
 
 type ExpenseLine = Record<string, unknown> & {
@@ -176,22 +184,27 @@ export async function recategorizeExpense({
 
 		const toName = input.account_name ?? input.account_id;
 		const changed: RecategorizeChange[] = targets.map((line) => {
-			const detail = line[LINE_DETAIL];
-			const fromRef = detail?.AccountRef;
-			const change: RecategorizeChange = {
+			const fromRef = line[LINE_DETAIL]?.AccountRef;
+			return {
 				lineId: line.Id != null ? String(line.Id) : null,
 				fromAccount: fromRef?.name ?? fromRef?.value ?? null,
 				toAccount: toName,
 			};
+		});
+
+		// Rewrite each target line's AccountRef in place. This is network-visible:
+		// `lines` is sent to QuickBooks below. Kept as an explicit loop, separate from
+		// the pure `changed` map above, so the mutation is not a side effect buried in
+		// an expression whose name promises only an audit log.
+		for (const line of targets) {
 			line[LINE_DETAIL] = {
-				...detail,
+				...line[LINE_DETAIL],
 				AccountRef: {
 					value: input.account_id,
 					...(input.account_name ? { name: input.account_name } : {}),
 				},
 			};
-			return change;
-		});
+		}
 
 		const { data: qb, error: openError } = await openQb();
 		if (openError !== null) {
@@ -217,7 +230,7 @@ export async function recategorizeExpense({
 		// monotonic CDC sync reconciles the row, and the successful QuickBooks write
 		// must not be reported as a failure (which would invite a retry that hits a
 		// 409 on the now-bumped token).
-		trySync({
+		const { error: foldError } = trySync({
 			try: () =>
 				db.ingest([{ def, objects: [updated] }], {
 					syncedAt: new Date().toISOString(),
@@ -231,6 +244,7 @@ export async function recategorizeExpense({
 			changed,
 			syncToken:
 				typeof updated.SyncToken === 'string' ? updated.SyncToken : null,
+			folded: foldError === null,
 		});
 	} finally {
 		db.close();

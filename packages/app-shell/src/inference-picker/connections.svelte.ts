@@ -3,7 +3,7 @@
  * that owns the device's set of custom OpenAI-compatible connections plus the
  * model ids each was discovered to serve, and resolves a conversation's model to a
  * transport. Every chat app instantiates this once instead of re-deriving the same
- * two persisted stores, so the picker, the engine, and the cross-device banner all
+ * persisted store, so the picker, the engine, and the cross-device banner all
  * read one source.
  *
  * Device-local, never synced: a key is a secret on the plaintext relay and a
@@ -49,13 +49,20 @@ export type PersistFactory = <S extends StandardSchemaV1>(
  */
 export type HostedModel = { id: string; label: string; credits: number };
 
-const connectionSchema = type({
+/**
+ * One stored custom connection: the transport identity (`baseUrl` + optional
+ * `apiKey`) plus the model ids it was discovered to serve. A connection and its
+ * models are one concept, so they live in one record (not two stores joined by
+ * base URL); removing the connection drops its models with it. `models` is
+ * optional so a connection persisted before this shape still loads, then
+ * re-discovers on next open.
+ */
+const storedConnectionSchema = type({
 	baseUrl: 'string',
 	'apiKey?': 'string',
+	'models?': 'string[]',
 });
-
-/** Discovered model ids per connection, keyed by base URL. */
-const discoveredModelsSchema = type({ '[string]': 'string[]' });
+type StoredConnection = typeof storedConnectionSchema.infer;
 
 /** The reactive registry object returned by {@link createInferenceConnections}. */
 export type InferenceConnections = ReturnType<
@@ -77,15 +84,10 @@ export function createInferenceConnections({
 	/** The persistence mechanism (web: localStorage; extension: chrome.storage). */
 	persist: PersistFactory;
 }) {
-	const custom = persist(
+	const stored = persist(
 		`${storageKey}.inference-connections`,
-		connectionSchema.array(),
+		storedConnectionSchema.array(),
 		[],
-	);
-	const discovered = persist(
-		`${storageKey}.discovered-models`,
-		discoveredModelsSchema,
-		{},
 	);
 
 	/** The candidates a model resolves against, in priority order: every custom
@@ -104,9 +106,9 @@ export function createInferenceConnections({
 		models: readonly string[];
 	}[] {
 		return [
-			...custom.current.map((connection) => ({
+			...stored.current.map((connection) => ({
 				resolve: () => resolveConnection(connection),
-				models: discovered.current[connection.baseUrl] ?? [],
+				models: connection.models ?? [],
 			})),
 			{ resolve: () => hosted, models: hostedModels.map((m) => m.id) },
 		];
@@ -127,30 +129,28 @@ export function createInferenceConnections({
 	return {
 		/** The hosted catalog this app sells (for the picker's Epicenter group). */
 		hostedModels,
-		/** The device's custom connections, in display order. */
-		get custom() {
-			return custom.current;
-		},
-		/** Discovered model ids per connection, keyed by base URL. */
-		get discoveredModels() {
-			return discovered.current;
+		/**
+		 * The device's custom connections, in display order. Each carries its own
+		 * discovered `models` (see {@link StoredConnection}), so the picker reads one
+		 * list instead of joining a connection to a separate models map by base URL.
+		 */
+		get custom(): readonly StoredConnection[] {
+			return stored.current;
 		},
 
 		/** Add (or replace by base URL) a connection, optionally caching its models. */
 		add(connection: Connection, models?: string[]) {
-			custom.current = [
-				...custom.current.filter((c) => c.baseUrl !== connection.baseUrl),
-				connection,
+			const existing = stored.current.find(
+				(c) => c.baseUrl === connection.baseUrl,
+			);
+			stored.current = [
+				...stored.current.filter((c) => c.baseUrl !== connection.baseUrl),
+				{ ...connection, models: models ?? existing?.models ?? [] },
 			];
-			if (models)
-				discovered.current = {
-					...discovered.current,
-					[connection.baseUrl]: models,
-				};
 		},
-		/** Forget a connection by base URL. */
+		/** Forget a connection and its discovered models by base URL. */
 		remove(baseUrl: string) {
-			custom.current = custom.current.filter((c) => c.baseUrl !== baseUrl);
+			stored.current = stored.current.filter((c) => c.baseUrl !== baseUrl);
 		},
 
 		/** Discover the models a candidate endpoint serves (best effort, never throws). */

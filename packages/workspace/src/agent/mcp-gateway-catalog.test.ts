@@ -17,8 +17,8 @@ import {
 	type RouteTable,
 	type RouteTarget,
 } from '../gateway/route-table.js';
+import { asNodeId } from '../document/node-id.js';
 import {
-	asPeerId,
 	asRouteName,
 	type OpenChannelOptions,
 	type PeerTransport,
@@ -55,7 +55,7 @@ function inMemoryTransport(routes: RouteTable): PeerTransport {
 test('lists and calls the route MCP tools over the catalog', async () => {
 	const catalog = await createMcpGatewayCatalog({
 		transport: inMemoryTransport(ROUTES),
-		target: asPeerId('test-device'),
+		target: asNodeId('test-device'),
 		route: BOOKS,
 	});
 	disposers.push(() => catalog[Symbol.asyncDispose]());

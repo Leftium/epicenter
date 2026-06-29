@@ -13,11 +13,8 @@
  */
 
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import {
-	createRelayRouteOpener,
-	type RouteTable,
-	routeRelayExposed,
-} from '../gateway/index.js';
+import { createRelayRouteOpener } from '../gateway/relay-route.js';
+import { type RouteTable, routeRelayExposed } from '../gateway/route-table.js';
 import {
 	type ChannelPort,
 	createChannelAcceptor,

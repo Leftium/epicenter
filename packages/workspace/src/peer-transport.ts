@@ -24,6 +24,7 @@
  */
 
 import type { Brand } from 'wellcrafted/brand';
+import type { NodeId } from './document/node-id.js';
 
 /**
  * The two halves of a bidirectional byte channel, as Web Streams so one shape
@@ -40,17 +41,6 @@ export type ByteChannel = {
 };
 
 /**
- * A peer's relay routing id: the nodeId the relay routes a channel to, which is
- * the dial target. It is a claimed id (the same kind the room sync layer uses),
- * not a key; the relay authenticates the channel by the session's user, not by
- * this id.
- */
-export type PeerId = string & Brand<'PeerId'>;
-
-/** Syntactic sugar for `value as PeerId`; the only sanctioned `as PeerId`. */
-export const asPeerId = (value: string): PeerId => value as PeerId;
-
-/**
  * A named, allowlisted route on a peer's gateway (`books`, `whisper`, ...). The
  * route table is default-closed: nothing outside it is reachable, and the name
  * rides the relay-channel `channel_open` frame, so a route the target has not
@@ -63,8 +53,8 @@ export const asRouteName = (value: string): RouteName => value as RouteName;
 
 /** Inputs to {@link PeerTransport.openChannel}. */
 export type OpenChannelOptions = {
-	/** The remote peer to reach, by its relay routing id (nodeId). */
-	target: PeerId;
+	/** The remote peer to reach, identified by its {@link NodeId} (the relay routes to it). */
+	target: NodeId;
 	/** The named route on the remote peer's gateway. */
 	route: RouteName;
 	/**

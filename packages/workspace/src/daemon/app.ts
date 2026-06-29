@@ -30,8 +30,9 @@ import type {
 	AgentToolDefinition,
 	AgentToolOutcome,
 } from '../agent/tools.js';
-import { createMcpGatewayCatalog } from '../gateway/index.js';
-import { asPeerId, asRouteName } from '../peer-transport.js';
+import { createMcpGatewayCatalog } from '../agent/mcp-gateway-catalog.js';
+import { asNodeId } from '../document/node-id.js';
+import { asRouteName } from '../peer-transport.js';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './action-handler.js';
 import type {
@@ -190,7 +191,7 @@ export function buildDaemonApp(
 				try: async () => {
 					await using catalog = await createMcpGatewayCatalog({
 						transport: deviceGateway.transport,
-						target: asPeerId(device),
+						target: asNodeId(device),
 						route: asRouteName(route),
 					});
 					return catalog.definitions();
@@ -207,7 +208,7 @@ export function buildDaemonApp(
 				try: async () => {
 					await using catalog = await createMcpGatewayCatalog({
 						transport: deviceGateway.transport,
-						target: asPeerId(device),
+						target: asNodeId(device),
 						route: asRouteName(route),
 					});
 					// Await before the scope's `await using` disposes the catalog, or the

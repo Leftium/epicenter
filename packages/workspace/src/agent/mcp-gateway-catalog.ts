@@ -26,11 +26,8 @@ import type {
 import type { JsonValue } from 'wellcrafted/json';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { createStreamTransport } from '../mcp-stream-transport.js';
-import type {
-	PeerId,
-	PeerTransport,
-	RouteName,
-} from '../peer-transport.js';
+import type { NodeId } from '../document/node-id.js';
+import type { PeerTransport, RouteName } from '../peer-transport.js';
 import type {
 	AgentToolCall,
 	AgentToolDefinition,
@@ -41,8 +38,8 @@ import type {
 export type McpGatewayCatalogOptions = {
 	/** The transport-blind seam to the remote peer's gateway. */
 	transport: PeerTransport;
-	/** The device whose MCP tools this catalog exposes. */
-	target: PeerId;
+	/** The device whose MCP tools this catalog exposes, by its {@link NodeId}. */
+	target: NodeId;
 	/** The named route on the target's gateway (e.g. `books`). */
 	route: RouteName;
 	/**

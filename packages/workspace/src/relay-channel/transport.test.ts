@@ -19,7 +19,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { createMcpGatewayCatalog } from '../agent/mcp-gateway-catalog.js';
 import { createStreamTransport } from '../mcp-stream-transport.js';
-import { asPeerId, asRouteName, type ByteChannel } from '../peer-transport.js';
+import { asNodeId } from '../document/node-id.js';
+import { asRouteName, type ByteChannel } from '../peer-transport.js';
 import { createChannelAcceptor } from './acceptor.js';
 import type { ChannelFrame } from './protocol.js';
 import { type ChannelPort, createRelayChannelTransport } from './transport.js';
@@ -117,7 +118,7 @@ test('a relay-channel catalog lists and calls a tool over the loopback floor', a
 	const transport = createRelayChannelTransport(wire.caller);
 	const catalog = await createMcpGatewayCatalog({
 		transport,
-		target: asPeerId('laptop'),
+		target: asNodeId('laptop'),
 		route: asRouteName('books'),
 	});
 
@@ -145,7 +146,7 @@ test('a catalog for an unknown route is refused', async () => {
 	try {
 		await createMcpGatewayCatalog({
 			transport,
-			target: asPeerId('laptop'),
+			target: asNodeId('laptop'),
 			route: asRouteName('books'),
 			connectTimeoutMs: 2000,
 		});

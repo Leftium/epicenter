@@ -23,7 +23,7 @@
 
 import * as Y from 'yjs';
 
-import { RESERVED_ACCOUNT_ROOM_GUID } from '../account/index.js';
+import { RESERVED_ACCOUNT_ROOM_GUID } from '../account/reserved-guid.js';
 import { resolveDaemonNodeId } from '../config/daemon-node-id.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
 import { attachYjsLog } from '../document/attach-yjs-log.js';

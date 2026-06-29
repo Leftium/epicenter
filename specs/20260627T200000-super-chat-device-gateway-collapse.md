@@ -47,6 +47,72 @@ The shipping order is iroh-first (it is already proven: the loopback and `local-
 
 ---
 
+## Phase 0 design pass (2026-06-29): the relay-channel floor, settled before code
+
+Two independent passes (this Claude session reading the live code, plus a Codex consult against the same files) converged on the same answers to the six open transport questions. This section records them as the design to implement; per the two-state lifecycle it stays Draft and graduates into [ADR-0073](../docs/adr/0073-tools-speak-mcp-natively-epicenter-owns-only-the-transport-mcp-lacks.md) when the floor lands and this spec is deleted.
+
+**Resequencing (this supersedes the "iroh-first" shipping order above, not the north star).** Build the **relay-channel floor first**, because it is the one transport a browser can use and the [definition of done](#the-one-sentence-test) is a mobile browser reaching a NAT'd laptop. iroh stays exactly as shipped until the floor is proven; nothing iroh is deleted in this pass (deleting it before the floor works would regress the shipped `local-books mcp` over iroh). iroh's fate is decided by data after the floor carries invoke + services for browser and native (the [iroh probation](#vision-c--ambient-everywhere-now-the-client-shape-not-a-far-horizon) test: a real offline-LAN requirement, or a measured win a self-hosted relay cannot match).
+
+**One correction to the handoff's framing, found by both passes.** "The agent loop is unchanged" is true: it consumes only `ToolCatalog` (`agent/loop.ts`), transport-blind. "`createMcpGatewayCatalog` is unchanged" is **false**: that file is node-only (it imports the node-only `createStreamTransport`, and `ByteChannel` imports `node:stream`). The browser floor therefore requires moving the channel seam to a runtime-portable shape *before* a browser can drive the catalog. That move is the one piece of real architecture in this pass; everything else is a small new module.
+
+### The decisive code facts (grounding)
+
+- **The fleet rendezvous is the account room, not a content-doc room.** Rooms are keyed `owners/<ownerId>/rooms/<roomId>` where `roomId` is a Y.Doc guid (`server/src/owner.ts`, `server/src/routes/rooms.ts`), so devices in different docs cannot see each other. The account doc is the one room the whole fleet co-inhabits, at the reserved guid `owners/<userId>/rooms/epicenter.account` (`workspace/src/account/reserved-guid.ts`); daemons already open it (`daemon/open-account-room.ts`), and a browser super-chat client opens it anyway to read the roster. **The relay-channel rides the account-room connection.**
+- **The sync/channel separation seam already exists.** `sync-supervisor.ts` decodes binary frames as y-protocols and forwards every text frame verbatim to `config.onTextFrame(text)`, never interpreting them; it exposes `send(message: string | Uint8Array)`. So a channel layer that speaks **text** frames touches neither the Y.Doc nor the binary decode path. On the server, `RoomCore.handleMessage` branches string-vs-binary before the Yjs decode, and `handleTextFrame` is a plain `type` switch.
+- **The routing table already exists.** `RoomCore` holds `connections: Map<RoomSocket, Connection>` where `Connection` carries the server-resolved `userId` and the client `nodeId`, plus `pickRecipient(nodeId)`. user -> devices is a filter by `userId`; device -> held connection is `pickRecipient`. No new table.
+- **The daemon already holds both planes, independently.** `open-account-room.ts` (the relay WebSocket, control plane) and `open-device-gateway.ts` (the iroh endpoint, data plane) are separate, bridged only by `trustState()`. The relay-channel makes the account-room connection carry the data plane too, so on the floor path control and data share one connection (the iroh path keeps them split).
+
+### The six answers
+
+**1. One connection or two: multiplex over the existing account-room WebSocket.** A second socket duplicates bearer-at-upgrade auth, reconnect/backoff, liveness ping/pong, the 30-minute lifetime sweep, and presence membership, all for one one-shot invoke. The trap is coupling channel *logic* to sync *logic*, not sharing the connection (HTTP/2, gRPC, and SSH all multiplex legitimately). The separation is enforced by routing channel frames only through the existing `onTextFrame`/`send` seam (client) and a separate `ChannelRouter` object (server); the binary y-protocols lane is never touched. Head-of-line blocking is real (one WebSocket is one TCP stream) and acceptable for small MCP calls; the **honest trigger for a second socket is measured sync latency under channel load, not aesthetics**. Do not send blobs or long audio over this path yet.
+
+**2. The channel envelope (text JSON, five frames, total).** Text frames keep the binary sync lane untouched; the base64 cost is paid only on payload bytes and is the smaller price. The relay forwards `data` **blind** (it never parses MCP). One relay correlation id per channel; MCP keeps its own JSON-RPC ids inside the opaque bytes, so there is no second request id.
+
+```ts
+type ChannelId = string;
+// caller -> relay -> target. The relay rewrites `target` to a server-authored
+// `source` (the caller's nodeId) on the frame it delivers; `source` is never
+// client-forgeable.
+type ChannelOpen   = { type: 'channel_open';   id: ChannelId; target: string; route: string };
+type ChannelAccept = { type: 'channel_accept'; id: ChannelId };                 // route admitted, target alive
+type ChannelData   = { type: 'channel_data';   id: ChannelId; seq: number; bytes: string }; // base64 chunk
+type ChannelEnd    = { type: 'channel_end';    id: ChannelId };                 // clean EOF (half-close)
+type ChannelReset  = { type: 'channel_reset';  id: ChannelId;
+  code: 'offline' | 'refused' | 'timeout' | 'cancelled' | 'too_large' | 'protocol_error' | 'closed';
+  reason?: string };
+```
+
+Streaming is just repeated `channel_data` then `channel_end` (MCP Streamable-HTTP SSE is *payload*, never relay vocabulary). Cancellation is `channel_reset` from either side, forwarded once, then both maps drop. `channel_accept` resolves the open deterministically instead of leaning on a timeout (the `mcp-gateway-catalog` comment already notes a Ring-0 refusal otherwise hangs the MCP handshake). Limits: chunk well under the existing 5 MB room ceiling (around 64 KiB before base64); open timeout 15 s (matches `connectTimeoutMs`); no resumption.
+
+**3. Per-channel auth: the relay enforces routing integrity, the device endpoint is the boundary (honest asymmetry).** The relay refuses cross-owner routing **by construction**, using the already-authenticated `Connection.userId` (lifted from the bearer at upgrade, never client-supplied): it routes only among sockets of the same per-user fleet room and stamps the server-authored `source`. **Do not add a relay-scoped bearer to `channel_open`** (that would make the relay look like the authority, contradicting the boundary). The device endpoint is the real boundary, and the two transports authenticate on **different axes**: iroh authenticates a *device* by its Ed25519 key (Ring 0), the relay authenticates a *user* (it vouches, within ADR-0004's existing relay trust). The endpoint bearer (per-request, audience-bound, header-only, never query) plus `Origin` (only where an HTTP request exists) is the recipient-side check; it is Wave 3, not the keystone, because the keystone's route target is the unauthenticated `local-books mcp` stdio child. **Named gap to record:** `PeerTransport.openChannel` takes only `{ target, route }`, with no header slot, so Wave 3 adds an opaque auth preface the relay forwards but never validates (or the browser path moves to a browser-safe Streamable HTTP transport for endpoints that demand it).
+
+**4. Routing and liveness.** The relay reuses `connections` + `pickRecipient` in the account room; no new structure. Online means a held socket in that room; an open to no socket returns `channel_reset { code: 'offline' }`, and the catalog's connect timeout covers a silent drop. On socket close, `ChannelRouter.onClose(socket)` resets every channel touching it and drops its state. **No resumption, no replay, no durable pending calls** (an MCP call is not safely relay-replayable; the model re-issues if a tool errors). The 30-minute lifetime recycle also kills channels and is irrelevant to seconds-long invokes.
+
+**5. Why this is a clean generalization, not a resurrection of `dispatch.ts`.** The deleted path was action RPC **fused into** collaboration: it routed `action` names (`dispatch-protocol.ts`), invoked an `ActionRegistry` (`dispatch.ts` `runInboundDispatch`), parked pending calls inside `open-collaboration.ts`, and carried relay action cases inside `RoomCore`. The relay-channel is a **dumb byte pipe**: no `action`, no `input`, no `Result` envelope, no registry; the recipient route consumes bytes however it likes (MCP today, HTTP next, sync later). The line is **code separation, not connection sharing**, enforced by the dependency direction `agent loop -> ToolCatalog -> createMcpGatewayCatalog -> PeerTransport -> relay-channel transport -> text-frame port -> RoomCore -> ChannelRouter -> recipient socket`, where `ChannelRouter` imports no Yjs, no MCP, no actions, no reducer, and `open-collaboration` never parses a channel payload. The deleted dispatch shared the connection **and** the logic; the relay-channel shares only the connection.
+
+**6. Naming, placement, and the Web Streams move.** The browser floor cannot live under `@epicenter/workspace/gateway` (node-only: `@number0/iroh`), and the current `PeerTransport`/`ByteChannel` are not browser-safe (`ByteChannel` is `node:stream`). Resolution, and it is a seam move rather than a new architecture:
+
+- Redefine `ByteChannel` as **Web Streams**: `{ source: ReadableStream<Uint8Array>; sink: WritableStream<Uint8Array> }`. These are globals in modern browsers and Node 18+, so one shape serves both runtimes.
+- Move `PeerTransport`, `PeerId`, `RouteName`, `ByteChannel` into a browser-safe module (`workspace/src/peer-transport.ts`), out of the node-only gateway barrel.
+- Rewrite `createStreamTransport` browser-safe (Web Streams + a portable newline framer over `TextEncoder`/`Uint8Array`, replacing the node stdio `ReadBuffer`); `createMcpGatewayCatalog` then becomes browser-safe with no logic change (the MCP `Client` itself already runs in browsers).
+- Keep `@epicenter/workspace/gateway` node-only: the iroh adapters (`iroh-channel.ts`, the gateway dumb-pipe, the route-table child stdio via `Readable.toWeb`/`Writable.toWeb`) convert to Web Streams at their boundary. **Guardrail: `gateway.test.ts` and `cross-device-books-e2e.test.ts` stay green, proving the shipped iroh path is unregressed.**
+- New `workspace/src/relay-channel/` holds the browser-safe frame schemas (`protocol.ts`, TypeBox, mirroring how `document/dispatch-protocol.ts` is exposed and server-imported) and the relay-channel `PeerTransport` impl (`transport.ts`), exported via a new browser-safe `./relay-channel` subpath, never from `./gateway`.
+- New `server/src/room/channel-router.ts` holds the routing, beside `core.ts`; `RoomCore` parses the `channel_*` text frames and forwards them to it, and the old `dispatch_*` block is the smell being deleted, not extended.
+
+### The keystone, as ordered commits (smallest first, stop and look between each)
+
+1. **Seam move, behavior-preserving:** redefine `ByteChannel` as Web Streams; relocate the seam to `peer-transport.ts`; rewrite `createStreamTransport` portable; adapt the iroh adapters; make `createMcpGatewayCatalog` browser-safe. Gate on the two iroh tests staying green. No new feature; this commit only changes the channel's runtime shape.
+2. **Channel protocol:** the five frames + TypeBox validators in `relay-channel/protocol.ts`.
+3. **Server router:** `channel-router.ts` + `RoomCore` delegation; same-user routing refusal; offline `channel_reset`; `onClose` teardown.
+4. **Client transport:** the browser-safe relay-channel `PeerTransport` over the account-room `onTextFrame`/`send` port (a small `TextFramePort` seam exposed by whatever owns the supervisor).
+5. **Wire and prove:** a browser-shaped client opens the account room, builds the relay-channel transport, hands it to `createMcpGatewayCatalog`, and a test drives browser -> relay -> device -> MCP `tools/call` -> back. This is the [definition of done](#the-one-sentence-test) for the floor.
+
+### What this pass refuses (YAGNI)
+
+The biggest risk is **building HTTP/2 inside a WebSocket**. For the keystone do not build priorities, flow-control windows, resumable streams, SSE reconnection, channel persistence, a generic service proxy, sync-over-channel framing, or a second socket. Build one open, accept, chunks, end, reset, timeout. Multiplex/backpressure tuning, device-qualified naming, and iroh-vs-relay auto-selection all wait until their forcing function exists.
+
+---
+
 ## The one-sentence test
 
 You talk to one chat, hands-free; it can run a tool on another of your own devices and read you the answer; the cross-device hop crosses no server in transit (device to device over iroh), and **the UI you wrote never links a native networking library** to make that happen.

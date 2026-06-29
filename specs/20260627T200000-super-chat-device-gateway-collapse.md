@@ -66,23 +66,21 @@ Two independent passes (this Claude session reading the live code, plus a Codex 
 
 **1. One connection or two: multiplex over the existing account-room WebSocket.** A second socket duplicates bearer-at-upgrade auth, reconnect/backoff, liveness ping/pong, the 30-minute lifetime sweep, and presence membership, all for one one-shot invoke. The trap is coupling channel *logic* to sync *logic*, not sharing the connection (HTTP/2, gRPC, and SSH all multiplex legitimately). The separation is enforced by routing channel frames only through the existing `onTextFrame`/`send` seam (client) and a separate `ChannelRouter` object (server); the binary y-protocols lane is never touched. Head-of-line blocking is real (one WebSocket is one TCP stream) and acceptable for small MCP calls; the **honest trigger for a second socket is measured sync latency under channel load, not aesthetics**. Do not send blobs or long audio over this path yet.
 
-**2. The channel envelope (text JSON, five frames, total).** Text frames keep the binary sync lane untouched; the base64 cost is paid only on payload bytes and is the smaller price. The relay forwards `data` **blind** (it never parses MCP). One relay correlation id per channel; MCP keeps its own JSON-RPC ids inside the opaque bytes, so there is no second request id.
+**2. The channel envelope (text JSON, four frames, total).** Text frames keep the binary sync lane untouched; the base64 cost is paid only on payload bytes and is the smaller price. The relay forwards `data` **blind** (it never parses MCP). One relay correlation id per channel; MCP keeps its own JSON-RPC ids inside the opaque bytes, so there is no second request id. (Implementation note, 2026-06-29: an adversarial review collapsed an earlier five-frame draft to these four. A `channel_end` half-close was unearned for the one consumer, an MCP session that only closes the whole session, and depending on `ReadableStream.cancel()` to emit the terminal signal leaked channel entries; `channel_reset` is now the single terminal frame both ways. `seq` was dropped because one ordered WebSocket preserves order end to end.)
 
 ```ts
 type ChannelId = string;
-// caller -> relay -> target. The relay rewrites `target` to a server-authored
-// `source` (the caller's nodeId) on the frame it delivers; `source` is never
-// client-forgeable.
+// caller -> relay -> target. The relay forwards the open verbatim (a relay-
+// authored `source` field is the named Wave-3 seam for per-device trust).
 type ChannelOpen   = { type: 'channel_open';   id: ChannelId; target: string; route: string };
 type ChannelAccept = { type: 'channel_accept'; id: ChannelId };                 // route admitted, target alive
-type ChannelData   = { type: 'channel_data';   id: ChannelId; seq: number; bytes: string }; // base64 chunk
-type ChannelEnd    = { type: 'channel_end';    id: ChannelId };                 // clean EOF (half-close)
-type ChannelReset  = { type: 'channel_reset';  id: ChannelId;
-  code: 'offline' | 'refused' | 'timeout' | 'cancelled' | 'too_large' | 'protocol_error' | 'closed';
+type ChannelData   = { type: 'channel_data';   id: ChannelId; bytes: string };  // one base64 chunk
+type ChannelReset  = { type: 'channel_reset';  id: ChannelId;                    // the terminal frame, both ways
+  code: 'offline' | 'refused' | 'cancelled' | 'closed' | 'too_large' | 'protocol_error';
   reason?: string };
 ```
 
-Streaming is just repeated `channel_data` then `channel_end` (MCP Streamable-HTTP SSE is *payload*, never relay vocabulary). Cancellation is `channel_reset` from either side, forwarded once, then both maps drop. `channel_accept` resolves the open deterministically instead of leaning on a timeout (the `mcp-gateway-catalog` comment already notes a Ring-0 refusal otherwise hangs the MCP handshake). Limits: chunk well under the existing 5 MB room ceiling (around 64 KiB before base64); open timeout 15 s (matches `connectTimeoutMs`); no resumption.
+Terminal flow is reset-only: `channel_reset { closed }` is a clean end, any other code an error. Streaming is just repeated `channel_data` then the terminal reset (MCP Streamable-HTTP SSE is *payload*, never relay vocabulary). `channel_accept` resolves the open deterministically instead of leaning on a timeout (the `mcp-gateway-catalog` comment already notes a Ring-0 refusal otherwise hangs the MCP handshake). Limits: chunk well under the existing 5 MB room ceiling (around 64 KiB before base64); open timeout 15 s (matches `connectTimeoutMs`); a per-caller live-channel cap bounds the relay map; no resumption.
 
 **3. Per-channel auth: the relay enforces routing integrity, the device endpoint is the boundary (honest asymmetry).** The relay refuses cross-owner routing **by construction**, using the already-authenticated `Connection.userId` (lifted from the bearer at upgrade, never client-supplied): it routes only among sockets of the same per-user fleet room and stamps the server-authored `source`. **Do not add a relay-scoped bearer to `channel_open`** (that would make the relay look like the authority, contradicting the boundary). The device endpoint is the real boundary, and the two transports authenticate on **different axes**: iroh authenticates a *device* by its Ed25519 key (Ring 0), the relay authenticates a *user* (it vouches, within ADR-0004's existing relay trust). The endpoint bearer (per-request, audience-bound, header-only, never query) plus `Origin` (only where an HTTP request exists) is the recipient-side check; it is Wave 3, not the keystone, because the keystone's route target is the unauthenticated `local-books mcp` stdio child. **Named gap to record:** `PeerTransport.openChannel` takes only `{ target, route }`, with no header slot, so Wave 3 adds an opaque auth preface the relay forwards but never validates (or the browser path moves to a browser-safe Streamable HTTP transport for endpoints that demand it).
 
@@ -102,14 +100,14 @@ Streaming is just repeated `channel_data` then `channel_end` (MCP Streamable-HTT
 ### The keystone, as ordered commits (smallest first, stop and look between each)
 
 1. **Seam move, behavior-preserving:** redefine `ByteChannel` as Web Streams; relocate the seam to `peer-transport.ts`; rewrite `createStreamTransport` portable; adapt the iroh adapters; make `createMcpGatewayCatalog` browser-safe. Gate on the two iroh tests staying green. No new feature; this commit only changes the channel's runtime shape.
-2. **Channel protocol:** the five frames + TypeBox validators in `relay-channel/protocol.ts`.
+2. **Channel protocol:** the four frames + TypeBox validators in `relay-channel/protocol.ts`.
 3. **Server router:** `channel-router.ts` + `RoomCore` delegation; same-user routing refusal; offline `channel_reset`; `onClose` teardown.
 4. **Client transport:** the browser-safe relay-channel `PeerTransport` over the account-room `onTextFrame`/`send` port (a small `TextFramePort` seam exposed by whatever owns the supervisor).
 5. **Wire and prove:** a browser-shaped client opens the account room, builds the relay-channel transport, hands it to `createMcpGatewayCatalog`, and a test drives browser -> relay -> device -> MCP `tools/call` -> back. This is the [definition of done](#the-one-sentence-test) for the floor.
 
 ### What this pass refuses (YAGNI)
 
-The biggest risk is **building HTTP/2 inside a WebSocket**. For the keystone do not build priorities, flow-control windows, resumable streams, SSE reconnection, channel persistence, a generic service proxy, sync-over-channel framing, or a second socket. Build one open, accept, chunks, end, reset, timeout. Multiplex/backpressure tuning, device-qualified naming, and iroh-vs-relay auto-selection all wait until their forcing function exists.
+The biggest risk is **building HTTP/2 inside a WebSocket**. For the keystone do not build priorities, flow-control windows, resumable streams, SSE reconnection, channel persistence, a generic service proxy, sync-over-channel framing, or a second socket. Build one open, accept, chunks, reset. Multiplex/backpressure tuning, device-qualified naming, and iroh-vs-relay auto-selection all wait until their forcing function exists.
 
 ---
 

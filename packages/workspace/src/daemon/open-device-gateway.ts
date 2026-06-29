@@ -28,6 +28,12 @@ import {
 	type RelayPreset,
 	type RouteTable,
 } from '../gateway/index.js';
+import {
+	type ChannelPort,
+	createRelayChannelTransport,
+	type RelayChannelTransport,
+} from '../relay-channel/index.js';
+import { createSelectingTransport } from '../select-transport.js';
 import { irohKeyPathFor } from './paths.js';
 
 /** The slice of the account room the gateway reads: per-peer trust for Ring 0. */
@@ -52,6 +58,13 @@ export type OpenDeviceGatewayOptions = {
 	trust: DeviceGatewayTrustSource;
 	/** The served route table; defaults to {@link DEFAULT_DEVICE_ROUTES}. */
 	routes?: RouteTable;
+	/**
+	 * The account-room channel port. When present, the dial-side `transport` is the
+	 * SELECTING transport over iroh and the relay floor (iroh optimized, the floor
+	 * as fallback), so this daemon's cross-device calls reach a target over either.
+	 * Absent leaves the transport iroh-only.
+	 */
+	relayChannelPort?: ChannelPort;
 	/**
 	 * Transport reachability. Defaults to `n0`: iroh discovery resolves a peer by
 	 * its roster peerId (which IS its iroh `EndpointId`), so cross-machine dialing
@@ -96,6 +109,7 @@ export async function openDeviceGateway(
 		routes = DEFAULT_DEVICE_ROUTES,
 		relay = 'n0',
 		bindAddr,
+		relayChannelPort,
 		logger = createLogger('workspace/device-gateway'),
 	} = options;
 
@@ -112,11 +126,27 @@ export async function openDeviceGateway(
 	});
 	gateway.listen();
 
+	// The dial-side seam: iroh alone, or the selecting transport over iroh and the
+	// relay floor when an account-room port is available. The consumer (the MCP
+	// catalog) never learns which carried its bytes.
+	const irohTransport = createLocalGatewayTransport(gateway);
+	let relayTransport: RelayChannelTransport | undefined;
+	let transport: PeerTransport = irohTransport;
+	if (relayChannelPort) {
+		relayTransport = createRelayChannelTransport(relayChannelPort);
+		transport = createSelectingTransport({
+			iroh: irohTransport,
+			relay: relayTransport,
+		});
+	}
+
 	return {
 		peerId: gateway.peerId,
-		transport: createLocalGatewayTransport(gateway),
+		transport,
 		routeNames: () => Object.keys(routes),
 		async [Symbol.asyncDispose]() {
+			// Detach the relay client before the account-room port goes away.
+			relayTransport?.close();
 			await gateway.close();
 		},
 	};

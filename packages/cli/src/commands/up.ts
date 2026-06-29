@@ -210,6 +210,8 @@ export async function runUp(
 				openDeviceGateway({
 					epicenterRoot,
 					trust: accountRoom,
+					// Unify iroh and the relay floor behind one dial-side seam.
+					relayChannelPort: accountRoom.channelPort,
 					...(options.relay !== undefined && { relay: options.relay }),
 				}),
 			catch: (cause) => Err(extractErrorMessage(cause)),

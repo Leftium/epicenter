@@ -40,12 +40,6 @@
 			connections={inferenceConnections}
 			resolveToolTitle={(toolName) => actionTitles[toolName]?.title}
 			onAlwaysAllow={alwaysAllowPendingToolCall}
-			onSignIn={() => {
-				// TODO: open auth popover or navigate to sign-in
-			}}
-			onUpgrade={() => {
-				// TODO: open billing / upgrade flow
-			}}
 		/>
 	{/if}
 </div>

@@ -220,9 +220,7 @@ export async function runUp(
 			deviceGateway = gateway;
 			stack.defer(() => gateway[Symbol.asyncDispose]());
 			logSyncStatus(
-				`device gateway: listening as ${gateway.peerId} on ${
-					gateway.boundSockets().join(', ') || '(no direct address)'
-				} [routes: ${gateway.routeNames().join(', ')}]`,
+				`device gateway: listening as ${gateway.peerId} via n0 discovery [routes: ${gateway.routeNames().join(', ')}]`,
 			);
 		}
 	}

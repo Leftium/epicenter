@@ -76,8 +76,6 @@ export type DeviceGatewayHandle = {
 	peerId: PeerId;
 	/** The dial-side seam the cross-device tool layer opens channels through. */
 	transport: PeerTransport;
-	/** The bound socket addresses (`ip:port`) an off-host peer dials directly. */
-	boundSockets(): string[];
 	/** The route names this gateway serves (for operator display). */
 	routeNames(): string[];
 	[Symbol.asyncDispose](): Promise<void>;
@@ -117,7 +115,6 @@ export async function openDeviceGateway(
 	return {
 		peerId: gateway.peerId,
 		transport: createLocalGatewayTransport(gateway),
-		boundSockets: () => gateway.boundSockets(),
 		routeNames: () => Object.keys(routes),
 		async [Symbol.asyncDispose]() {
 			await gateway.close();

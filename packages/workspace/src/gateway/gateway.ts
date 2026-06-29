@@ -254,6 +254,7 @@ export async function createPeerGateway(
 		async dial({ target, route, hintAddrs, signal }) {
 			if (signal?.aborted) throw dialAbortError(signal);
 			await ensureOnline();
+			if (signal?.aborted) throw dialAbortError(signal);
 			const id = EndpointId.fromString(target);
 			const addr = new EndpointAddr(id, null, hintAddrs ?? null);
 			const connection = await endpoint.connect(addr, alpnForRoute(route));
@@ -273,10 +274,9 @@ export async function createPeerGateway(
 				}
 			};
 
-			const bi = await connection.openBi();
-			const channel = biStreamToByteChannel(bi, release);
-
-			// An abort between connect and here would miss the listener, so re-check.
+			// Attach the abort guard BEFORE opening the bi-stream, so an abort or a
+			// failure during `openBi` (a Ring-0 refusal closes the connection right
+			// after the handshake) releases the connection instead of leaking it.
 			if (signal) {
 				if (signal.aborted) {
 					release();
@@ -285,7 +285,19 @@ export async function createPeerGateway(
 				signal.addEventListener('abort', release, { once: true });
 			}
 
-			return channel;
+			let bi: Awaited<ReturnType<typeof connection.openBi>>;
+			try {
+				bi = await connection.openBi();
+			} catch (error) {
+				release();
+				throw error;
+			}
+			if (signal?.aborted) {
+				release();
+				throw dialAbortError(signal);
+			}
+
+			return biStreamToByteChannel(bi, release);
 		},
 
 		async close() {

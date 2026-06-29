@@ -26,6 +26,27 @@ A grilling pass (Claude plus Codex plus web research on the tunnel landscape) se
 
 ---
 
+## Greenfield north star (2026-06-29): one relay, two channel shapes, iroh as an optimization
+
+Taken to its greenfield conclusion, the refinement above collapses one more level. Every cross-device need is the same act: reach a named route on a device over a connection that device already holds. So the architecture has exactly one coordination primitive, and this is the destination the implementation walks toward.
+
+**One primitive: a per-user, authenticated, self-hostable relay** that routes typed channels to a person's devices over the single outbound connection each device holds. Sync was never special; it was always the first channel. This relay is the same node as the anchor (it holds the doc) and is what the room already is (it relays sync today); it is *generalized*, not added.
+
+**Two channel shapes are the whole vocabulary:**
+
+- **Convergent stream** (sync): one long-lived, bidirectional, CRDT channel. There is exactly one kind.
+- **Request/response to a route** (everything else): MCP `tools/call` (invoke), HTTP services (transcribe/speak), and your-own-box inference are all "send a request to a named route, get a response, possibly streamed." Where the route lives (a device via the relay, a device via iroh, or a cloud URL for hosted inference) is *addressing*, not a second shape.
+
+**One client seam, two transports.** Behind `PeerTransport`: the **relay-channel is the floor** (works for every client, browser or native, with no app required; server-mediated, which a browser requires anyway), and **iroh-direct is a native-only optimization** selected when both ends are native and reachable. This supersedes the "room-proxy as a deferred fallback" framing in the section above: the relay-channel is the floor we build toward, not a contingency. What is deferred is only its implementation order, not its status; the browser is a first-class citizen because it uses the floor.
+
+**iroh is an optimization, not load-bearing, and it is on probation.** Once the relay floor exists and is self-hostable, iroh's only remaining justifications are latency/bandwidth and the one thing the relay structurally cannot do: a LAN or fully offline link with no reachable relay at all (two of your own devices on a home network with no internet). iroh survives if and only if that offline-LAN case is a real requirement, or it earns a measured latency win a self-hosted relay cannot match. Confidentiality is not a justification (withdrawn above), and "no Epicenter server in the loop" is met by self-hosting the relay, not by iroh.
+
+**Privacy is which relay you run** (ADR-0068), never the transport. **The constraint that dissolves:** "the cloud cannot be an iroh peer (no UDP in Workers or Durable Objects)" stops mattering, because the relay is a WebSocket channel router (exactly what a Durable Object is built to be) and was never meant to join the iroh mesh.
+
+The shipping order is iroh-first (it is already proven: the loopback and `local-books mcp` over iroh) walking toward this floor; "native-everywhere by default" is a sequencing choice, not the ceiling. The relay-channel must land as a clean generalization of the room, with sync as one channel among several, never as one-off RPC bolted onto the sync handler: sharing the connection is fine, coupling the channel logic to the sync logic is the trap.
+
+---
+
 ## The one-sentence test
 
 You talk to one chat, hands-free; it can run a tool on another of your own devices and read you the answer; the cross-device hop crosses no server in transit (device to device over iroh), and **the UI you wrote never links a native networking library** to make that happen.

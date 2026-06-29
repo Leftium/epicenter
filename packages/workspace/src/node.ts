@@ -45,19 +45,18 @@ export {
 	type OpenAccountRoomOptions,
 } from './daemon/open-account-room.js';
 export {
-	DEFAULT_DEVICE_ROUTES,
-	type DeviceGatewayHandle,
-	type DeviceGatewayTrustSource,
-	openDeviceGateway,
-	type OpenDeviceGatewayOptions,
-} from './daemon/open-device-gateway.js';
-export {
 	type OpenRelayAcceptorOptions,
 	openRelayAcceptor,
 	type RelayAcceptorHandle,
 } from './daemon/open-relay-acceptor.js';
-export { withRelayExposed } from './gateway/route-table.js';
-export type { TransportPreference } from './select-transport.js';
+export {
+	DEFAULT_DEVICE_ROUTES,
+	withRelayExposed,
+} from './gateway/route-table.js';
+export {
+	createRelayChannelTransport,
+	type RelayChannelTransport,
+} from './relay-channel/index.js';
 export {
 	type DaemonClient,
 	DaemonError,
@@ -111,6 +110,7 @@ export {
 export { StartupError } from './daemon/startup-errors.js';
 export type {
 	DaemonRuntime,
+	DaemonServedDeviceGateway,
 	StartedMount,
 } from './daemon/types.js';
 export {

@@ -21,8 +21,8 @@ const routes: RouteTable = {
 		args: ['-e', 'process.stdin.on("data",(d)=>process.stdout.write(d));'],
 		relay: 'exposed',
 	},
-	// A sensitive route: iroh-only by default (no `relay`).
-	books: { command: 'local-books', args: ['mcp'], requires: 'verified' },
+	// A sensitive route: refused over the relay by default (no `relay`).
+	books: { command: 'local-books', args: ['mcp'] },
 };
 
 const owner = { kind: 'user', userId: 'u1' } as const;

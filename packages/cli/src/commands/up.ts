@@ -21,18 +21,17 @@ import {
 import type { StartedMount } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
+	createRelayChannelTransport,
 	type DaemonMetadata,
-	type EpicenterConfigError,
+	type DaemonServedDeviceGateway,
 	DEFAULT_DEVICE_ROUTES,
+	type EpicenterConfigError,
 	type InactiveMount,
 	openAccountRoom,
-	openDeviceGateway,
-	type OpenDeviceGatewayOptions,
 	openEpicenterRoot,
 	openRelayAcceptor,
 	StartupError,
 	startDaemonServer,
-	type TransportPreference,
 	unlinkMetadata,
 	withRelayExposed,
 	type WorkspaceAppError,
@@ -77,22 +76,6 @@ type UpOptions = {
 	createAuthClient?: () => Promise<
 		Result<SyncAuthClient, MachineAuthStorageError>
 	>;
-	/**
-	 * Device-gateway transport preset. Production leaves this unset, so the daemon
-	 * runs the real `n0` discovery transport (cross-machine reach by peerId, no
-	 * synced addresses). This is NOT an operator knob: no flag, env var, or config
-	 * field selects it. It exists only so hermetic tests inject `minimal` to bind a
-	 * loopback iroh endpoint instead of reaching n0's relays, the same injection
-	 * idiom as `createAuthClient` above.
-	 */
-	relay?: OpenDeviceGatewayOptions['relay'];
-	/**
-	 * Force the cross-device transport: `auto` (default) prefers iroh and falls
-	 * back to the relay floor; `relay`/`iroh` pin one. The operator knob a
-	 * two-machine relay smoke uses to exercise the floor, and a self-hoster uses to
-	 * pin their own relay.
-	 */
-	via?: TransportPreference;
 	/**
 	 * Route names to expose over the relay floor (default refused). Opts a route in
 	 * knowingly, accepting the floor's trusted-relay ceiling; used for a two-machine
@@ -209,60 +192,40 @@ export async function runUp(
 		logSyncStatus(`account room: online as ${accountRoom.nodeId}`);
 	}
 
-	// Open the device gateway alongside the account room: this is the site that
-	// turns the gateway primitive into a live endpoint. It needs the account
-	// room's trust fold to gate Ring 0, so it is gated on a present account room
-	// and is equally best-effort. Deferred AFTER the account room so LIFO teardown
-	// closes the gateway (and its route children) BEFORE the trust source it reads
-	// goes away. The handle is threaded into the daemon socket app so `tools` and
-	// `call` can dial through it.
 	// The served route table, with any `--relay-expose` routes opted in to the
-	// floor. Shared by the iroh gateway and the relay acceptor so both serve the
-	// same routes; the default exposes nothing over the relay.
+	// floor. The default exposes nothing over the relay until a route opts in with
+	// `relay: 'exposed'`.
 	const routes = options.relayExpose?.length
 		? withRelayExposed(DEFAULT_DEVICE_ROUTES, options.relayExpose)
 		: DEFAULT_DEVICE_ROUTES;
 
-	let deviceGateway: Awaited<ReturnType<typeof openDeviceGateway>> | undefined;
+	// Wire the relay floor over the account-room socket: this device both DIALS its
+	// peers and ACCEPTS inbound channels over the one per-user authenticated
+	// connection the account room already holds. Both need a present account room
+	// (a signed-in session), so a signed-out daemon has neither. The dial transport
+	// is threaded into the daemon socket app so `tools`/`call` reach a peer over the
+	// relay; the acceptor serves this device's relay-exposed routes back. Deferred
+	// AFTER the account room so LIFO teardown closes them BEFORE the socket they
+	// ride goes away.
+	let deviceGateway: DaemonServedDeviceGateway | undefined;
 	if (accountRoom !== null) {
-		const { data: gateway, error: gatewayError } = await tryAsync({
-			try: () =>
-				openDeviceGateway({
-					epicenterRoot,
-					trust: accountRoom,
-					routes,
-					// Unify iroh and the relay floor behind one dial-side seam.
-					relayChannelPort: accountRoom.channelPort,
-					...(options.relay !== undefined && { relay: options.relay }),
-					...(options.via !== undefined && { transportPreference: options.via }),
-				}),
-			catch: (cause) => Err(extractErrorMessage(cause)),
-		});
-		if (gatewayError !== null) {
-			logSyncStatus(
-				`device gateway: failed to open (${gatewayError}); cross-device tools disabled`,
-			);
-		} else {
-			deviceGateway = gateway;
-			stack.defer(() => gateway[Symbol.asyncDispose]());
-			logSyncStatus(
-				`device gateway: listening as ${gateway.peerId} via n0 discovery [routes: ${gateway.routeNames().join(', ')}]`,
-			);
-		}
-	}
+		const dialTransport = createRelayChannelTransport(accountRoom.channelPort);
+		stack.defer(() => dialTransport.close());
+		deviceGateway = { transport: dialTransport };
 
-	// Wire the relay-floor acceptor over the account-room socket: the device also
-	// serves its routes over the relay (a browser, or any client with no iroh,
-	// reaches them this way). Synchronous and safe to wire unconditionally, because
-	// the default route table exposes nothing over the relay until a route opts in
-	// with `relay: 'exposed'`; the endpoint gate is owner + relay-exposed route.
-	if (accountRoom !== null) {
 		const relayAcceptor = openRelayAcceptor({
 			channelPort: accountRoom.channelPort,
 			routes,
 			ownerUserId: accountRoom.ownerId,
 		});
 		stack.defer(() => relayAcceptor.close());
+
+		const exposed = Object.keys(routes).filter(
+			(name) => routes[name]?.relay === 'exposed',
+		);
+		logSyncStatus(
+			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed: ${exposed.join(', ') || 'none'}]`,
+		);
 	}
 
 	if (opened.status === 'started') {
@@ -317,12 +280,6 @@ export const upCommand = cmd({
 			description:
 				'Suppress peer join/leave lines (sync state changes still print)',
 		},
-		via: {
-			type: 'string',
-			choices: ['auto', 'iroh', 'relay'] as const,
-			description:
-				'Force the cross-device transport (auto prefers iroh, falls back to the relay floor)',
-		},
 		'relay-expose': {
 			type: 'array',
 			string: true,
@@ -334,7 +291,6 @@ export const upCommand = cmd({
 		const options: UpOptions = {
 			epicenterRoot: argv.C,
 			quiet: argv.quiet,
-			...(argv.via !== undefined && { via: argv.via as TransportPreference }),
 			...(argv['relay-expose'] !== undefined && {
 				relayExpose: argv['relay-expose'] as string[],
 			}),

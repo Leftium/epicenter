@@ -173,11 +173,6 @@ export {
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
-	createSelectingTransport,
-	type SelectingTransportOptions,
-	type TransportPreference,
-} from './select-transport.js';
-export {
 	type ConnectComposition,
 	type ConnectedTables,
 	type ConnectedWorkspace,

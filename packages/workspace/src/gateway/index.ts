@@ -1,11 +1,12 @@
 /**
- * `@epicenter/workspace/gateway` — the node-only device gateway.
+ * `@epicenter/workspace/gateway` — the node-only device route layer.
  *
- * The one process per device that owns the iroh endpoint (the ADR-0009 daemon
- * wearing one more hat). NODE-ONLY: this subpath pulls in `@number0/iroh` and
- * `node:child_process`, so it is deliberately kept out of the root barrel and
- * must never be imported by a browser build. Apps reach a gateway only through
- * the {@link PeerTransport} seam, never by importing iroh.
+ * The named route table the daemon serves over the relay floor, the relay-path
+ * authorization gate, the route-child spawner, and the transport-blind MCP
+ * catalog the agent loop consumes. NODE-ONLY: the route spawner pulls in
+ * `node:child_process`, so this subpath is kept out of the root barrel and must
+ * never be imported by a browser build. Apps reach a route only through the
+ * {@link PeerTransport} seam.
  */
 
 export {
@@ -13,38 +14,25 @@ export {
 	type McpGatewayCatalog,
 	type McpGatewayCatalogOptions,
 } from '../agent/mcp-gateway-catalog.js';
-export { createPeerGateway } from './gateway.js';
-export type {
-	DialOptions,
-	PeerGateway,
-	PeerGatewayOptions,
-	RelayPreset,
-} from './gateway.js';
 export {
 	type DeviceSecret,
 	generateDeviceSecret,
 	loadOrCreateDeviceSecret,
 } from './key-store.js';
-export { createLocalGatewayTransport } from './local-gateway-transport.js';
 export {
 	createRelayRouteOpener,
 	type RelayRouteOpenerOptions,
 } from './relay-route.js';
 export {
-	alpnForRoute,
-	alpnsForTable,
-	meetsTrustThreshold,
+	DEFAULT_DEVICE_ROUTES,
 	openRouteTarget,
-	routeNameForAlpn,
 	routeRelayExposed,
-	routeTrustThreshold,
 	withRelayExposed,
 } from './route-table.js';
 export type {
 	Route,
 	RouteTable,
 	RouteTarget,
-	RouteTrustThreshold,
 	SpawnRoute,
 } from './route-table.js';
 export {
@@ -56,4 +44,3 @@ export {
 	type PeerTransport,
 	type RouteName,
 } from '../peer-transport.js';
-export { biStreamToByteChannel } from './iroh-channel.js';

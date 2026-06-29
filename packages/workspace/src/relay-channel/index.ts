@@ -12,4 +12,7 @@
  * {@link ./protocol} module.
  */
 
+export * from './acceptor.js';
+export * from './channel-bytes.js';
 export * from './protocol.js';
+export * from './transport.js';

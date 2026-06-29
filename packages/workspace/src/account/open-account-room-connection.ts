@@ -97,6 +97,12 @@ export type AccountRoomConnection = {
 	 * device that is online, addressed by its nodeId, with no enrollment in between.
 	 */
 	peers(): Peer[];
+	/**
+	 * Subscribe to presence changes: `fn` runs with the new list each time a device
+	 * comes online or drops. Returns an unsubscribe. A picker UI drives a live
+	 * device list off this rather than polling {@link peers}.
+	 */
+	onPeersChange(fn: (peers: Peer[]) => void): () => void;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -145,6 +151,7 @@ export function openAccountRoomConnection(
 			nodeId,
 			channelPort: createChannelPort(collaboration.textPort),
 			peers: () => collaboration.peers.list(),
+			onPeersChange: (fn) => collaboration.peers.subscribe(fn),
 			async [Symbol.asyncDispose]() {
 				ydoc.destroy();
 				await collaboration.whenDisposed;

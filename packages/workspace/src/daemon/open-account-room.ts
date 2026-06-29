@@ -26,12 +26,10 @@ import * as Y from 'yjs';
 import { RESERVED_ACCOUNT_ROOM_GUID } from '../account/reserved-guid.js';
 import { resolveDaemonNodeId } from '../config/daemon-node-id.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
-import { attachYjsLog } from '../document/attach-yjs-log.js';
 import type { NodeId } from '../document/node-id.js';
 import { openCollaboration } from '../document/open-collaboration.js';
 import type { Peer } from '../document/presence-protocol.js';
 import { roomWsUrl } from '../document/transport.js';
-import { yjsPath } from '../document/workspace-paths.js';
 import {
 	type ChannelPort,
 	createChannelPort,
@@ -55,8 +53,8 @@ export type OpenAccountRoomOptions = {
 /**
  * A live account-room connection: the relay floor over one socket. `peers()`
  * reads the user's other online devices; `channelPort` carries cross-device tool
- * channels; `[Symbol.asyncDispose]` tears the doc, sync, and durable log down in
- * the same destroy-then-drain order a mount uses.
+ * channels; `[Symbol.asyncDispose]` destroys the doc and drains its sync
+ * connection.
  */
 export type AccountRoomHandle = {
 	/** The reserved guid this room was opened at. */
@@ -106,17 +104,14 @@ export async function openAccountRoom(
 	// merge under one stable CRDT identity across restarts.
 	ydoc.clientID = hashYDocClientId(nodeId);
 
-	const yjsLog = attachYjsLog(ydoc, {
-		filePath: yjsPath(options.epicenterRoot, ydoc.guid),
-	});
-
-	// From the first attach onward the only handle that tears these resources down
-	// is the one we return, so any throw before we return would orphan the SQLite
-	// log and (once opened) the relay WebSocket for the daemon's whole life.
-	// `ydoc.destroy()` is the single cascade point: the log hooks
-	// `ydoc.once('destroy')` and collaboration's `[Symbol.dispose]` is a destroy,
-	// so destroying the doc releases whatever attached, even on the branch where
-	// `openCollaboration` itself threw and `collaboration` is unset.
+	// The account doc carries no data of its own (presence is server-owned and the
+	// channel port rides text frames), so it attaches no durable log; the Y.Doc
+	// exists only because `openCollaboration` syncs through one. The only handle
+	// that tears the connection down is the one we return, so a throw before we
+	// return would orphan the relay WebSocket for the daemon's whole life.
+	// `ydoc.destroy()` is the single cascade point: collaboration's `[Symbol.dispose]`
+	// is hooked to the doc's destroy, so destroying the doc releases it even on the
+	// branch where `openCollaboration` itself threw and `collaboration` is unset.
 	try {
 		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl({
@@ -140,7 +135,7 @@ export async function openAccountRoom(
 			peers: () => collaboration.peers.list(),
 			async [Symbol.asyncDispose]() {
 				ydoc.destroy();
-				await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
+				await collaboration.whenDisposed;
 			},
 		};
 	} catch (cause) {

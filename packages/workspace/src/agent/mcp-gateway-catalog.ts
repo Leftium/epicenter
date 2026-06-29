@@ -44,7 +44,11 @@ export type McpGatewayCatalogOptions = {
 	target: PeerId;
 	/** The named route on the target's gateway (e.g. `books`). */
 	route: RouteName;
-	/** Direct dial hints (`ip:port`), forwarded to the transport if it needs them. */
+	/**
+	 * Direct dial hints (`ip:port`), optional and forwarded to the transport. A
+	 * discovery transport (`n0`) ignores them and resolves the peer by peerId;
+	 * only a direct-only (`minimal`) transport needs them.
+	 */
 	hintAddrs?: string[];
 	/**
 	 * How long to wait for the open + MCP handshake + first `tools/list` before

@@ -10,8 +10,9 @@
  * has not verified is refused before any tool runs.
  *
  * Both require a running daemon with a signed-in session (it owns the gateway).
- * Until the synced roster carries dial hints, `--addr` supplies the target's
- * direct address for an off-host peer; same-host loopback needs none.
+ * The daemon dials over `n0`, so iroh discovery resolves the target by its peerId
+ * and no address is needed for an off-host peer; `--addr` stays an optional
+ * same-LAN fast path, not a prerequisite.
  */
 
 import {
@@ -55,7 +56,8 @@ export const toolsCommand = cmd({
 			.option('addr', {
 				type: 'string',
 				array: true,
-				describe: 'Direct dial hint(s) ip:port for an off-host peer (repeatable)',
+				describe:
+					'Optional ip:port dial hint(s); n0 discovery finds the peer by id without them (repeatable)',
 			})
 			.option('C', epicenterRootOption)
 			.options(formatOptions)
@@ -113,7 +115,8 @@ export const callCommand = cmd({
 			.option('addr', {
 				type: 'string',
 				array: true,
-				describe: 'Direct dial hint(s) ip:port for an off-host peer (repeatable)',
+				describe:
+					'Optional ip:port dial hint(s); n0 discovery finds the peer by id without them (repeatable)',
 			})
 			.option('C', epicenterRootOption)
 			.options(formatOptions)

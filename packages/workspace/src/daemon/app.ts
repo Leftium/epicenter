@@ -146,8 +146,9 @@ export type AccountRoomError = InferErrors<typeof AccountRoomError>;
 /**
  * Wire body for `/tools`: list the catalog of one route on one target device.
  * `device` is the target's peerId (the dial target); `route` is the named route
- * on its gateway (e.g. `books`). `hintAddrs` are direct dial hints supplied by
- * the caller for an off-host peer until the synced roster carries them.
+ * on its gateway (e.g. `books`). `hintAddrs` are optional direct dial hints; the
+ * `n0` daemon resolves an off-host peer by its peerId via discovery, so they are
+ * a same-LAN fast path, not a requirement.
  */
 export const ToolsRequest = type({
 	device: 'string',

@@ -61,9 +61,11 @@ export type OpenChannelOptions = {
 	/** The named route on the remote peer's gateway. */
 	route: RouteName;
 	/**
-	 * Direct dial hints (`ip:port`). Wave 4's synced device roster resolves
-	 * these from the trust ledger; until then the caller supplies them. A
-	 * transport that resolves addresses itself (relay/discovery) ignores them.
+	 * Direct dial hints (`ip:port`), optional. The daemon transport is `n0`, so
+	 * iroh discovery resolves the peer by its peerId (its `EndpointId`, the very
+	 * id the roster stores) and a discovery transport ignores these. They remain a
+	 * same-LAN / `minimal`-preset fast path: a direct-only transport needs an
+	 * address because it cannot discover one. There is no synced `addr` field.
 	 */
 	hintAddrs?: string[];
 	/**

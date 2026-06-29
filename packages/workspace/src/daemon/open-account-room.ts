@@ -30,13 +30,12 @@ import {
 	appendRevoke,
 	appendVerify,
 	type AppendVerdictResult,
-	readAssertions,
+	createTrustView,
 	readRoster,
 	RESERVED_ACCOUNT_ROOM_GUID,
 	type Roster,
 	shortAuthString,
 	type TrustState,
-	trustFromAssertions,
 } from '../account/index.js';
 import type { PeerId } from '../gateway/transport.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
@@ -187,12 +186,15 @@ export async function openAccountRoom(
 			}
 		});
 
+		// One memoized trust projection for the room's lifetime: the gateway reads
+		// it per inbound connection, so the fold runs only when the log grows.
+		const trustState = createTrustView(ydoc, ownerId, peerId);
+
 		return {
 			guid: ydoc.guid,
 			peerId,
 			roster: () => readRoster(ydoc, ownerId),
-			trustState: () =>
-				trustFromAssertions(readAssertions(ydoc), ownerId, peerId),
+			trustState,
 			verify: (subject) =>
 				appendVerify({ ydoc, account: ownerId, secretKeyBytes, subject }),
 			revoke: (subject) =>

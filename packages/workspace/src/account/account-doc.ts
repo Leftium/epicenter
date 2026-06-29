@@ -24,7 +24,12 @@ import {
 	signAssertion,
 	verifyAssertionSignature,
 } from './crypto.js';
-import { type Roster, rosterFromAssertions } from './reducer.js';
+import {
+	type Roster,
+	rosterFromAssertions,
+	type TrustState,
+	trustFromAssertions,
+} from './reducer.js';
 
 /** The Y.Doc key under which the append-only assertion log lives. */
 export const ACCOUNT_ASSERTIONS_KEY = 'assertions';
@@ -212,4 +217,35 @@ export function appendRevoke(
 	options: AppendVerdictOptions,
 ): AppendVerdictResult {
 	return appendVerdict('revoke', options);
+}
+
+/**
+ * A memoized trust projection over a live account doc.
+ *
+ * The gateway reads trust on every inbound connection (Ring 0), and
+ * {@link trustFromAssertions} runs a signature-verifying fold over the whole log
+ * per call, so recomputing per connection is wasteful. The log is append-only, so
+ * its length is a monotonic version stamp: this recomputes the fold only when the
+ * log has grown (a local append or a synced-in verdict) and otherwise returns the
+ * cached map. Browser-safe like the rest of `account/`; no observer, so nothing to
+ * dispose.
+ */
+export function createTrustView(
+	ydoc: Y.Doc,
+	account: string,
+	selfPeerId: PeerId,
+): () => ReadonlyMap<PeerId, TrustState> {
+	const log = accountAssertionLog(ydoc);
+	let cachedLength = -1;
+	let cached: ReadonlyMap<PeerId, TrustState> = new Map();
+	return () => {
+		// Append-only: any local or synced change grows the log, so a length change
+		// is the invalidation signal. (A future compaction that deletes entries also
+		// changes the length, which still recomputes.)
+		if (log.length !== cachedLength) {
+			cached = trustFromAssertions(log.toArray(), account, selfPeerId);
+			cachedLength = log.length;
+		}
+		return cached;
+	};
 }

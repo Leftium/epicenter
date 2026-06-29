@@ -12,6 +12,7 @@ import {
 	appendIdentityClaim,
 	appendRevoke,
 	appendVerify,
+	createTrustView,
 	readAssertions,
 	readRoster,
 } from './account-doc.js';
@@ -272,5 +273,33 @@ describe('appendVerify / appendRevoke', () => {
 			subject,
 		});
 		expect(verify.seq).toBe(1);
+	});
+});
+
+describe('createTrustView', () => {
+	test('memoizes the fold until the append-only log grows', () => {
+		const ydoc = new Y.Doc();
+		const self = seed(16);
+		const selfPeerId = peerIdFromSecret(self);
+		const subject = asPeerId(peerIdFromSecret(seed(17)));
+		const trust = createTrustView(ydoc, ACCOUNT, selfPeerId);
+
+		// Self is always the root of trust, even before any append.
+		const first = trust();
+		expect(first.get(selfPeerId)).toBe('verified');
+		// A second read with no change returns the very same map (cache hit).
+		expect(trust()).toBe(first);
+
+		// An append grows the log, so the next read recomputes a fresh map.
+		appendVerify({ ydoc, account: ACCOUNT, secretKeyBytes: self, subject });
+		const second = trust();
+		expect(second).not.toBe(first);
+		expect(second.get(subject)).toBe('verified');
+
+		// A revoke at a higher seq supersedes, and again invalidates the cache.
+		appendRevoke({ ydoc, account: ACCOUNT, secretKeyBytes: self, subject });
+		const third = trust();
+		expect(third).not.toBe(second);
+		expect(third.get(subject)).toBe('revoked');
 	});
 });

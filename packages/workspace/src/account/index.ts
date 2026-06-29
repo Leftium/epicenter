@@ -44,6 +44,7 @@ export {
 	appendVerify,
 	type AppendVerdictOptions,
 	type AppendVerdictResult,
+	createTrustView,
 	readAssertions,
 	readRoster,
 } from './account-doc.js';

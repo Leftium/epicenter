@@ -253,7 +253,7 @@
 					{/if}
 
 					{#each connections.custom as connection (connection.baseUrl)}
-						{@const ids = connections.discoveredModels[connection.baseUrl] ?? []}
+						{@const ids = connection.models ?? []}
 						<Command.Group
 							heading="{connectionLabel(connection)} · {isLocal(
 								connection.baseUrl,

@@ -57,16 +57,3 @@ export function createFileTokenStore(filePath: string): TokenStore {
 		},
 	};
 }
-
-/** Process-lifetime in-memory store, for tests. Holds the typed set, no codec. */
-export function createMemoryTokenStore(): TokenStore {
-	const map = new Map<string, TokenSet>();
-	return {
-		async get(realmId) {
-			return map.get(realmId) ?? null;
-		},
-		async set(token) {
-			map.set(token.realmId, token);
-		},
-	};
-}

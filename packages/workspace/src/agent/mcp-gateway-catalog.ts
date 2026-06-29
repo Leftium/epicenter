@@ -44,10 +44,13 @@ export type McpGatewayCatalogOptions = {
 	route: RouteName;
 	/**
 	 * How long to wait for the open + MCP handshake + first `tools/list` before
-	 * giving up (ms, default 15000). A route the target refuses (wrong owner, or
-	 * not relay-exposed) resets the channel, so the MCP `initialize` never answers;
-	 * without this the caller would hang on the SDK's minute-long request timeout.
-	 * A timeout here IS the refusal signal.
+	 * giving up (ms, default 15000). This bounds ONLY the accepted-but-hung case:
+	 * the channel was admitted (`channel_accept` arrived) but the remote MCP server
+	 * never answers `initialize` / `tools/list`. A refused or offline route does NOT
+	 * reach this timeout: the acceptor (route unknown or not relay-exposed) and the
+	 * relay (no live target) send `channel_reset{refused|offline}`, so `openChannel`
+	 * rejects fast, pre-handshake. Without this bound an admitted-but-wedged server
+	 * would hang the caller on the SDK's minute-long request timeout instead.
 	 */
 	connectTimeoutMs?: number;
 	/** Diagnostics sink. Defaults to a `workspace/mcp-gateway` logger. */

@@ -32,6 +32,9 @@ import {
 	asRouteName,
 	createRelayChannelTransport,
 } from '@epicenter/workspace/relay-channel';
+import { createLogger } from 'wellcrafted/logger';
+
+const logger = createLogger('opensidian/cross-device');
 
 /** One mounted (device, route): the live MCP session plus its namespaced view. */
 type Mount = {
@@ -82,6 +85,17 @@ export function createCrossDeviceToolsState(config: AccountRoomConnectionConfig)
 			});
 			// A presence tick may have dropped this device while we dialed; if so,
 			// drop the session we just opened rather than mounting a stale one.
+			//
+			// Membership in `inFlight` is a sufficient supersession signal by two
+			// guarantees, not by luck: (1) JS run-to-completion makes this check, the
+			// `mounts.set`, and the `finally` below atomic with respect to presence
+			// frames (each frame is its own macrotask, so no reconcile interleaves once
+			// this dial resolves); and (2) single-socket FIFO plus reset-on-close means
+			// a dropped device's `channel_reset` (which rejects this dial) arrives
+			// before its later presence-rejoin, so a stale dial cannot outlive and
+			// clobber a remount of the same key. Only if the relay violated FIFO or
+			// dropped the close-reset would a per-dial token be needed here; under the
+			// floor's actual protocol it is not.
 			if (!inFlight.has(key)) {
 				await session[Symbol.asyncDispose]();
 				return;
@@ -93,8 +107,14 @@ export function createCrossDeviceToolsState(config: AccountRoomConnectionConfig)
 				catalog: namespaceToolCatalog(routePrefix(nodeId, route), session),
 			});
 			publishCatalogs();
-		} catch {
-			// Refused or offline: skip. A later presence tick reconciles a retry.
+		} catch (error) {
+			// A dial fails three ways, all handled the same: refused (presence
+			// advertised the route but the acceptor declined it), offline (the device
+			// dropped between presence and dial), or an accepted-but-hung MCP server
+			// timing out. Skip; a later presence tick reconciles a retry. Logged so a
+			// route advertised in presence but persistently unreachable is diagnosable
+			// rather than a silent no-op.
+			logger.info('cross-device route dial failed', { nodeId, route, error });
 		} finally {
 			inFlight.delete(key);
 		}

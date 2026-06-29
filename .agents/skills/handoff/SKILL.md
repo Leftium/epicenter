@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Draft a self-contained, copy-pasteable prompt so a fresh agent can continue without this thread. Use when the user says "hand this off", "compact this", "wrap up for the next session", "write a continuation prompt", "draft a prompt", "make a prompt I can copy-paste", "create a delegation brief", or invokes /handoff.
+description: Draft a cold-start, copy-pasteable continuation prompt so a fresh agent can resume without this thread, even if the current chat is closed. Use when the user says "hand this off", "compact this", "wrap up for the next session", "resume this later", "continue in a new chat", "write a continuation prompt", "draft a prompt", "make a prompt I can copy-paste", "create a delegation brief", or invokes /handoff.
 argument-hint: "What should the next agent accomplish?"
 metadata:
   author: epicenter
@@ -9,11 +9,11 @@ metadata:
 
 # Handoff
 
-Draft a self-contained prompt that can be pasted into a fresh agent thread or separate session.
+Draft a cold-start continuation prompt that can be pasted into a fresh agent thread or separate session.
 
 Return the prompt directly in the conversation. The user can copy it from there.
 
-The recipient has no thread context. Include only what they need to continue correctly.
+The recipient has no thread context and may be starting after this chat is closed. Include only what they need to continue correctly.
 
 Do not launch, supervise, or automate the recipient. This skill produces the prompt only.
 
@@ -43,4 +43,4 @@ Do not duplicate full specs, plans, decision docs, commits, or diffs. Link to st
 
 Close decisions the recipient should not spend time reopening. If a choice is still genuinely open, name the owner and the exact question.
 
-A good handoff can be pasted into a blank agent thread and executed without a clarifying question.
+A good handoff can be pasted into a blank agent thread and executed without reading this thread or asking what happened.

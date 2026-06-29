@@ -26,7 +26,6 @@
  * - `agent.defaultModel`        the model a brand new conversation starts on.
  * - `activeConversation`        the active-conversation source; defaults to internal
  *                               state. An app that keeps it in the URL injects its own.
- * - `generateId`                the message-id minter.
  *
  * A mutation is approval-gated by a synchronous pause: the loop waits on an
  * in-client decision, recorded per handle in `pendingApproval`. The "Always
@@ -47,7 +46,7 @@ import {
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
 import { bindAgentConversation, fromTable } from '@epicenter/svelte';
-import { InstantString } from '@epicenter/workspace';
+import { generateId, InstantString } from '@epicenter/workspace';
 import {
 	type AgentToolCall,
 	type Approval,
@@ -81,8 +80,8 @@ export type ConversationHandle = NonNullable<AgentChatState['active']>;
 /**
  * What the agent can do: the persona and capabilities an app gives its chat
  * loop. Grouped because every field varies with the app, not the device or the
- * route. The workspace handles, connections, id minter, and active-conversation
- * source the loop also needs are passed separately; they have different owners.
+ * route. The workspace handles, connections, and active-conversation source the
+ * loop also needs are passed separately; they have different owners.
  */
 export type AgentKit = {
 	/** The layered system prompts an answer is generated under, read per turn. */
@@ -99,7 +98,6 @@ export function createAgentChatState({
 	table,
 	whenLoaded,
 	connections,
-	generateId,
 	activeConversation,
 	agent: {
 		buildSystemPrompts,
@@ -114,14 +112,12 @@ export function createAgentChatState({
 	whenLoaded: Promise<unknown>;
 	/** The device connection registry (ADR-0059); resolves a model to a transport. */
 	connections: InferenceConnections;
-	/** Mint a message id. */
-	generateId: () => string;
 	/** The active-conversation source; defaults to internal `$state`. */
 	activeConversation?: ActiveConversation;
 	/** What the agent can do: the app's persona and capabilities. */
 	agent: AgentKit;
 }) {
-	const conversationsMap = fromTable(table);
+	const conversationsView = fromTable(table);
 
 	// The selected conversation: an injected source (a URL, say), or an internal
 	// `$state` default minted only when no source is given.
@@ -165,7 +161,7 @@ export function createAgentChatState({
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
-		const metadata = $derived(conversationsMap.get(conversationId));
+		const metadata = $derived(conversationsView.byId(conversationId));
 		/** The conversation's model (ADR-0055), read once for both the engine turn
 		 * and the picker's `model` getter. `model` is a required column, so this only
 		 * falls back when the row was deleted out from under a still-live handle (a
@@ -419,9 +415,9 @@ export function createAgentChatState({
 	 */
 	function reconcileHandles() {
 		for (const id of handles.keys()) {
-			if (!conversationsMap.has(id)) destroyConversation(id);
+			if (!table.has(id)) destroyConversation(id);
 		}
-		for (const id of conversationsMap.keys()) {
+		for (const id of conversationsView.all.map((c) => c.id)) {
 			const conversationId = asConversationId(id);
 			if (!handles.has(conversationId)) {
 				handles.set(conversationId, createConversationHandle(conversationId));
@@ -489,7 +485,6 @@ export function createAgentChatState({
 		[Symbol.dispose]() {
 			_unobserve();
 			for (const id of [...handles.keys()]) destroyConversation(id);
-			conversationsMap[Symbol.dispose]();
 		},
 
 		get active() {

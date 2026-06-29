@@ -25,8 +25,8 @@ import {
 	type JSONRPCMessage,
 	JSONRPCMessageSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { once } from 'wellcrafted/function';
 import type { ByteChannel } from './peer-transport.js';
-import { once } from './shared/once.js';
 
 /** An MCP {@link Transport} over a {@link ByteChannel} (Web Streams). */
 export function createStreamTransport(channel: ByteChannel): Transport {

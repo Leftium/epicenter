@@ -3,9 +3,9 @@
  *
  * Composes `@epicenter/server` with the `personal` ownership rule and
  * layers cloud-only billing, admin, and dashboard surfaces on top.
- * Self-hosted shared-wiki deployments live in a sibling apps/* folder and
- * compose the same library with `shared({ admit })` and no Autumn
- * policies.
+ * The self-hosted single-partition instance lives in a sibling apps/* folder
+ * and composes the same library with `instance()` and no Autumn policies
+ * (ADR-0075).
  *
  * Read top to bottom for the full URL surface of cloud. Each `mount*`
  * call bundles the auth + ownership + policies + route mount for one
@@ -15,10 +15,13 @@
 
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
-	authApp,
-	cloudflare,
+	type CloudEnv,
+	connectHyperdriveDb,
+	createDurableObjectRooms,
 	createServerApp,
 	mountBlobsApp,
+	mountCloudAuth,
+	mountCloudDb,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -27,6 +30,7 @@ import {
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
+	resolveRequestOAuthUser,
 	type ServerBindings,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
@@ -44,19 +48,14 @@ import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 const ownership = personal();
 
-const app = createServerApp({
-	// The Cloudflare runtime adapter owns the per-request pg client over
-	// Hyperdrive, `waitUntil`, and the Durable Object room registry. This edge
-	// points it at its OWN two bindings: the `Cloudflare.Env` cast and the
-	// binding names live here, where they are type-checked against this Worker's
-	// generated bindings (ADR-0066). Per-room DO sharding stays the cloud's
-	// binding of the room actor forever: hibernate-to-zero and
-	// single-writer-per-room at multi-tenant scale. A Bun host builds its own
-	// adapter inline.
-	runtime: cloudflare({
-		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
-		room: (env) => (env as Cloudflare.Env).ROOM,
-	}),
+const app = createServerApp<CloudEnv>({
+	// The one runtime-specific portable concern: bind this Worker's Durable Object
+	// room registry. The `Cloudflare.Env` cast and the binding name live here, at
+	// the app edge, type-checked against this Worker's generated bindings (ADR-0066).
+	// Per-room DO sharding stays the cloud's binding of the room actor forever:
+	// hibernate-to-zero and single-writer-per-room at multi-tenant scale. The cloud's
+	// Postgres + `waitUntil` are NOT here; they are installed by `mountCloudDb` below.
+	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 	identity: {
 		// The hosted cloud's public origin never changes per deploy, so it is
 		// baked from the constants source of truth rather than duplicated into
@@ -68,48 +67,74 @@ const app = createServerApp({
 		resolveOrigin: (env) =>
 			(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
 		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
-		// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
-		// a session via a cookie scoped to the registrable domain. cookie-config
-		// falls back to host-only on localhost regardless.
-		cookieDomain: '.epicenter.so',
 	},
 });
 
+// The cloud resolves a request to its user by verifying an OAuth bearer against
+// JWKS (`resolveRequestOAuthUser` reads `c.var.auth` + `c.var.db`, both present
+// below). Each owner-scoped wrapper closes over that one resolver; an instance
+// closes over its env-token resolver instead (ADR-0075).
+const cookieOrBearer = requireCookieOrBearerUser(resolveRequestOAuthUser);
+const bearer = requireBearerUser(resolveRequestOAuthUser);
+
 // Public health endpoint at root.
 app.get('/', (c) =>
-	c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
+	c.json({ product: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-// Auth surface (HTML pages + OAuth metadata; no /api prefix by design,
-// no deployment knobs).
-app.route('/', authApp);
+// Cloud-only Postgres lifecycle: a per-request pg client over Hyperdrive +
+// `waitUntil` to keep billing's after-response drain alive. Installed first so
+// `c.var.db` is set before Better Auth (and any billing handler) reads it. The
+// instance composes no Postgres and never calls this (ADR-0076). The binding name
+// and `Cloudflare.Env` cast live at this edge, type-checked against this Worker's
+// generated bindings (ADR-0066).
+mountCloudDb(app, {
+	connect: (env) => connectHyperdriveDb((env as Cloudflare.Env).HYPERDRIVE),
+	afterResponse: (c, work) => c.executionCtx.waitUntil(work),
+});
+
+// Cloud-only relational-auth layer: per-request Better Auth on `c.var.auth`
+// plus the auth surface (sign-in, consent, OAuth metadata). Epicenter cloud
+// serves app.epicenter.so and api.epicenter.so, which share a session via a
+// cookie scoped to the registrable domain (host-only on localhost regardless).
+// Mounted before the owner-scoped surfaces so `c.var.auth` is set when their
+// cookie-or-bearer wrappers run. The single-partition instance composes none of
+// this (ADR-0075). The Cloud-only auth secrets are read at this Worker's own edge
+// from its deploy-gated bindings (`c.env as Cloudflare.Env`), never the portable
+// `ServerBindings` (ADR-0076/0066).
+mountCloudAuth(app, {
+	cookieDomain: '.epicenter.so',
+	resolveAuthSecrets: (c) => c.env as Cloudflare.Env,
+});
 
 // Owner-partitioned reusable surfaces. Each primitive owns its own
-// auth + ownership wiring; the deployment passes only the rule and any
+// ownership wiring; the deployment passes its auth choice, the rule, and any
 // deployment policies.
-mountSessionApp(app, { ownership });
-mountRoomsApp(app, { ownership });
+mountSessionApp(app, { ownership, auth: cookieOrBearer });
+// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
+// a prebuilt wrapper.
+mountRoomsApp(app, { ownership, resolveUser: resolveRequestOAuthUser });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
 // attached, so deferred quota means not calling it. A `syncBlobStorageWithAutumn`
 // policy slots in here when storage is billed.
-mountBlobsApp(app, { ownership });
+mountBlobsApp(app, { ownership, auth: cookieOrBearer });
 mountInferenceApp(app, {
-	auth: requireBearerUser,
+	auth: bearer,
 	ownership,
 	policies: [chargeOpenAiCreditsWithAutumn],
 });
-// OpenAI-compatible STT gateway (Groq Whisper, house key). Metered by audio
+// OpenAI-compatible STT gateway (OpenAI whisper-1, house key). Metered by audio
 // duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
 mountTranscriptionApp(app, {
-	auth: requireBearerUser,
+	auth: bearer,
 	ownership,
 	policies: [chargeOpenAiTranscriptionCredits],
 });
 
 // Cloud-only billing data plane. Auth is bundled into the mount so the
 // dashboard endpoints can't be mounted without it.
-mountBillingApi(app, { auth: requireCookieOrBearerUser });
+mountBillingApi(app, { auth: cookieOrBearer });
 
 // Dashboard SPA: Workers Static Assets binding serves the SvelteKit
 // build. Cloud-only because the `ASSETS` binding lives in this worker's

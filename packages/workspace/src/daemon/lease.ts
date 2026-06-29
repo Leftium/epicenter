@@ -14,9 +14,9 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { once } from 'wellcrafted/function';
 import { Ok, type Result } from 'wellcrafted/result';
 
-import { once } from '../shared/once.js';
 import { bestEffortSync } from './best-effort.js';
 import { readMetadata } from './metadata.js';
 import { leasePathFor, socketPathFor } from './paths.js';

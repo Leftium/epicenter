@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono } from 'hono';
-import { shared } from '../ownership.js';
+import { instance } from '../ownership.js';
 import type { Env } from '../types.js';
 import { mountInferenceApp } from './inference.js';
 
@@ -49,9 +49,9 @@ function stubUpstream(response: Response): UpstreamCall[] {
 function createTestApp() {
 	const app = new Hono<Env>();
 	mountInferenceApp(app, {
-		// Permissive auth for the slice under test; admission passes too.
+		// Permissive auth for the slice under test.
 		auth: async (_c, next) => next(),
-		ownership: shared({ admit: () => true }),
+		ownership: instance(),
 	});
 	return app;
 }

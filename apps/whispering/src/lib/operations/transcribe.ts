@@ -31,6 +31,7 @@ import {
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
+import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 
@@ -102,6 +103,17 @@ type UploadDispatch =
 	  };
 
 /**
+ * Read a provider API key through the credential facade (ADR-0074): the key when
+ * set, undefined when missing. A provider key is a secret, so it routes through
+ * `secrets`, never raw `deviceConfig`, which is what makes the user-global vault
+ * cover transcription once auth lands. Device-local plaintext today.
+ */
+function secretApiKey(key: SecretKey): string | undefined {
+	const read = secrets.get(key);
+	return read.status === 'available' ? read.value : undefined;
+}
+
+/**
  * Every upload transcription provider, keyed by id. `satisfies Record<UploadProviderId,
  * UploadDispatch>` makes the table total over the non-local providers: a new cloud or
  * self-hosted provider is a compile error until it has an entry, and a local provider
@@ -120,7 +132,7 @@ const UPLOAD_DISPATCH = {
 			baseUrl:
 				deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
 				'https://api.openai.com/v1',
-			apiKey: deviceConfig.get(PROVIDERS.OpenAI.apiKeyConfigKey) || undefined,
+			apiKey: secretApiKey(PROVIDERS.OpenAI.apiKeyConfigKey),
 		}),
 		model: () => settings.get(PROVIDERS.OpenAI.modelSettingKey),
 	},
@@ -130,7 +142,7 @@ const UPLOAD_DISPATCH = {
 			baseUrl:
 				deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
 				'https://api.groq.com/openai/v1',
-			apiKey: deviceConfig.get(PROVIDERS.Groq.apiKeyConfigKey) || undefined,
+			apiKey: secretApiKey(PROVIDERS.Groq.apiKeyConfigKey),
 		}),
 		model: () => settings.get(PROVIDERS.Groq.modelSettingKey),
 	},
@@ -147,7 +159,7 @@ const UPLOAD_DISPATCH = {
 			ElevenLabsTranscriptionServiceLive.transcribe(audio, {
 				prompt,
 				spokenLanguage,
-				apiKey: deviceConfig.get(PROVIDERS.ElevenLabs.apiKeyConfigKey),
+				apiKey: secretApiKey(PROVIDERS.ElevenLabs.apiKeyConfigKey) ?? '',
 				modelName: settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
 			}),
 	},
@@ -157,7 +169,7 @@ const UPLOAD_DISPATCH = {
 			DeepgramTranscriptionServiceLive.transcribe(audio, {
 				prompt,
 				spokenLanguage,
-				apiKey: deviceConfig.get(PROVIDERS.Deepgram.apiKeyConfigKey),
+				apiKey: secretApiKey(PROVIDERS.Deepgram.apiKeyConfigKey) ?? '',
 				modelName: settings.get(PROVIDERS.Deepgram.modelSettingKey),
 			}),
 	},
@@ -167,7 +179,7 @@ const UPLOAD_DISPATCH = {
 			MistralTranscriptionServiceLive.transcribe(audio, {
 				prompt,
 				spokenLanguage,
-				apiKey: deviceConfig.get(PROVIDERS.Mistral.apiKeyConfigKey),
+				apiKey: secretApiKey(PROVIDERS.Mistral.apiKeyConfigKey) ?? '',
 				modelName: settings.get(PROVIDERS.Mistral.modelSettingKey),
 			}),
 	},

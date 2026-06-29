@@ -107,8 +107,9 @@ export function createMirror(root: string) {
 	/**
 	 * Run arbitrary read-only SQL for the console and return the full result set verbatim. The console
 	 * renders `{ columns, rows }` directly: a JOIN or aggregate row has no file, so this never feeds an
-	 * editable cell (the boundary). Capped at {@link CONSOLE_LIMIT} rows so a `SELECT *` cannot hang the
-	 * UI.
+	 * editable cell (the boundary). Fetches one row past {@link CONSOLE_LIMIT} so the console can tell a
+	 * capped result from one that lands exactly on the limit, then renders only the first
+	 * {@link CONSOLE_LIMIT}, so a `SELECT *` cannot hang the UI.
 	 */
 	function runSql(
 		sql: string,
@@ -120,7 +121,7 @@ export function createMirror(root: string) {
 				invoke<{ columns: string[]; rows: unknown[][] }>('query_mirror', {
 					root,
 					sql,
-					limit: CONSOLE_LIMIT,
+					limit: CONSOLE_LIMIT + 1,
 				}),
 			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
 		});

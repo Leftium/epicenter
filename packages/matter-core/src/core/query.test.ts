@@ -15,13 +15,13 @@ describe('buildStemQuery (the SQL shapes)', () => {
 		expect(buildStemQuery('books', { where: "status = 'reading'" })).toBe(
 			`SELECT "stem" FROM "books" WHERE status = 'reading'`,
 		);
-		expect(buildStemQuery('books', { orderBy: '"rating" DESC' })).toBe(
-			'SELECT "stem" FROM "books" ORDER BY "rating" DESC',
-		);
+		expect(
+			buildStemQuery('books', { sort: { column: 'rating', dir: 'desc' } }),
+		).toBe('SELECT "stem" FROM "books" ORDER BY "rating" DESC');
 		expect(
 			buildStemQuery('books', {
 				where: "status = 'reading'",
-				orderBy: '"rating" DESC',
+				sort: { column: 'rating', dir: 'desc' },
 			}),
 		).toBe(
 			`SELECT "stem" FROM "books" WHERE status = 'reading' ORDER BY "rating" DESC`,
@@ -44,7 +44,10 @@ describe('buildStemQuery (the SQL shapes)', () => {
 		);
 		// An explicit ORDER BY overrides the relevance rank.
 		expect(
-			buildStemQuery('books', { match: 'fox', orderBy: '"title" ASC' }),
+			buildStemQuery('books', {
+				match: 'fox',
+				sort: { column: 'title', dir: 'asc' },
+			}),
 		).toBe(
 			`SELECT "books"."stem" AS stem FROM "books" JOIN ${matched} ORDER BY "title" ASC`,
 		);
@@ -104,7 +107,10 @@ describe('buildStemQuery (executed against a real projection in bun:sqlite)', ()
 
 	test('filter plus sort returns the matching stems in order', () => {
 		expect(
-			run(freshDb(), { where: "status = 'reading'", orderBy: '"rating" DESC' }),
+			run(freshDb(), {
+				where: "status = 'reading'",
+				sort: { column: 'rating', dir: 'desc' },
+			}),
 		).toEqual(['sky', 'hobbit']);
 	});
 

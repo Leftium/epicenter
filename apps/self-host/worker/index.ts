@@ -1,90 +1,100 @@
 /**
- * Epicenter self-hosted shared-wiki Worker (reference implementation).
+ * Epicenter self-hosted instance Worker (Cloudflare; ADR-0075).
  *
- * Composes `@epicenter/server` with the `shared({ admit })` ownership rule
- * and ships zero billing surface. Workspace data is partitioned under the
- * literal `SHARED_OWNER_ID` ("shared"); the admit predicate runs per request
- * against a deployment-owned email allowlist.
+ * The instance on Cloudflare: the SAME `@epicenter/server` composition the Bun
+ * entry (`server.ts`) builds, wired to Cloudflare bindings instead of plain
+ * primitives (ADR-0066). One single-partition instance, not a shared wiki and not
+ * a mode: ownership is `instance()` (every request resolves to the pinned
+ * `owners/instance` partition), and authentication is one operator-supplied static
+ * bearer (`INSTANCE_TOKEN`), constant-time compared. No OAuth, no allowlist, no
+ * sessions. "Solo" vs "shared" is only how many people hold the token.
  *
- * This is a reference, not an Epicenter-operated product. Copy this folder,
- * fill in the deployment-owned secrets (Better Auth, OAuth provider keys,
- * AI provider keys), provision your Cloudflare bindings (Hyperdrive, R2, KV,
- * Durable Objects), and deploy. Community-supported.
+ * This is a reference, not an Epicenter-operated product. Copy this folder, set
+ * `INSTANCE_TOKEN` (`wrangler secret put INSTANCE_TOKEN`, generated with
+ * `bun run gen-token`), provision your Durable Object binding, and deploy. The
+ * instance composes no Better Auth and no Postgres, so there is no Hyperdrive
+ * binding and no `BETTER_AUTH_SECRET` (ADR-0075). Community-supported.
  *
- * Trust boundary: the deployer operates the infrastructure. Epicenter never
- * holds or sees the data stored here, so self-hosting is functionally
- * zero-knowledge against Epicenter.
+ * Trust boundary: the deployer operates the infrastructure. Epicenter never holds
+ * or sees the data stored here, so self-hosting is functionally zero-knowledge
+ * against Epicenter.
  */
 
+import { assertStrongToken } from '@epicenter/auth';
 import {
-	authApp,
-	cloudflare,
+	createDurableObjectRooms,
+	createEnvTokenResolver,
 	createServerApp,
+	instance,
+	mountBlobsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
+	type ResolveUser,
 	Room,
+	rateLimit,
 	requireBearerUser,
-	shared,
 } from '@epicenter/server';
+import { resolveSelfHostTrustedOrigins } from '../trusted-origins.js';
 
-const ownership = shared({
-	admit: (c) => {
-		// `ALLOWED_MEMBER_EMAILS` is this deployment's operator config, read off
-		// its own `Cloudflare.Env` (the honest-edge cast, ADR-0066; the resolver
-		// note below carries the full rationale). `?? ''` keeps a deployment that
-		// never set the var fail-closed (admits nobody) instead of throwing a
-		// TypeError on every request: wrangler types it `string`, but a declared
-		// var is not guaranteed present at runtime and self-host has no boot check.
-		const allowed = new Set(
-			((c.env as Cloudflare.Env).ALLOWED_MEMBER_EMAILS ?? '')
-				.split(',')
-				.map((s) => s.trim())
-				.filter(Boolean),
-		);
-		return allowed.has(c.var.user.email);
-	},
-});
+const ownership = instance();
 
 const app = createServerApp({
-	// The Cloudflare runtime adapter: a per-request pg client over Hyperdrive,
-	// `waitUntil` to drain the after-response queue past the response, and the
-	// Durable Object room registry. This edge points it at its OWN two bindings
-	// (the `Cloudflare.Env` cast and binding names stay here, type-checked
-	// against this Worker's generated bindings, ADR-0066). Identical wiring to
-	// the hosted deployable; the ownership rule and identity are what differ.
-	runtime: cloudflare({
-		hyperdrive: (env) => (env as Cloudflare.Env).HYPERDRIVE,
-		room: (env) => (env as Cloudflare.Env).ROOM,
-	}),
+	// The one runtime-specific concern: bind this Worker's Durable Object room
+	// registry. The instance composes no Postgres (no Better Auth, no telemetry), so
+	// it never calls `mountCloudDb` and `createServerApp` stays on the portable `Env`
+	// (ADR-0076). This edge points it at its OWN binding (the `Cloudflare.Env` cast
+	// stays here, type-checked against this Worker's generated bindings, ADR-0066).
+	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
 	identity: {
 		// Self-hosters set their own public origin in wrangler.jsonc
-		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's. It is
-		// operator config, not a binding `ServerBindings` names, so it is read off
-		// this deployment's own `Cloudflare.Env` at the honest edge (ADR-0066).
+		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's.
 		resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
 		// A self-host trusts its OWN origin and the Tauri desktop client, never
-		// Epicenter cloud's. Add any browser app origins you serve (and the
-		// Epicenter browser-extension origin, if your users point it at this
-		// deployment) here.
-		resolveTrustedOrigins: (baseURL) => [
-			new URL(baseURL).origin,
-			'tauri://localhost',
-		],
-		// No cookieDomain: a single-origin deployment uses host-only cookies
-		// scoped to its own host.
+		// Epicenter cloud's. Shared with `server.ts` so the two runtimes cannot
+		// drift. The instance has no Better Auth and no cookies, so there is no
+		// cookieDomain to set.
+		resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
 	},
 });
 
+// The instance authenticates one operator-supplied bearer. On Cloudflare the
+// secret lives on the per-request `c.env` (a Worker has no module-scope env), so
+// the wrapper closes over a resolver that reads `INSTANCE_TOKEN` at the honest edge
+// each request (ADR-0066). `assertStrongToken` runs the SAME entropy gate the Bun
+// entry runs at boot, so a missing or weak token fails closed on Cloudflare too
+// (ADR-0075's entropy floor): a Worker has no boot phase, so the gate runs per
+// request and a throw surfaces as a 500 instead of admitting a weak credential. It
+// also returns the trimmed token, so there is no `?? ''` coalesce whose removal
+// could silently let an unset secret reach the compare.
+const resolveUser: ResolveUser = (c) =>
+	createEnvTokenResolver(
+		assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
+	)(c);
+const auth = requireBearerUser(resolveUser);
+
 app.get('/', (c) =>
-	c.json({ mode: 'shared', version: '0.1.0', runtime: 'cloudflare' }),
+	c.json({ product: 'instance', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-app.route('/', authApp);
-
-mountSessionApp(app, { ownership });
-mountRoomsApp(app, { ownership });
-mountInferenceApp(app, { auth: requireBearerUser, ownership });
+// No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The
+// operator bearer (`auth` above) is the only gate, so every surface is
+// bearer-authenticated (ADR-0075).
+mountSessionApp(app, { ownership, auth });
+// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
+mountRoomsApp(app, { ownership, resolveUser });
+// Cap the inference burn rate so a leaked or overused bearer cannot run the
+// operator's house key up unbounded. Per-isolate on Cloudflare (approximate);
+// the real ceiling is the hard spend limit on the provider key itself (README).
+mountInferenceApp(app, {
+	auth,
+	ownership,
+	policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
+});
+// Content-addressed media store over any S3, mounted by default; it answers 503
+// until the operator sets `BLOBS_S3_*` (the same honest opt-out as inference's
+// house key). Storage is the operator's own bucket, so no house key to burn.
+mountBlobsApp(app, { ownership, auth });
 
 export default app;
 export { Room };

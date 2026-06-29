@@ -8,7 +8,7 @@
  * per-request `pg.Client` over Hyperdrive, see `db/backends/cloudflare.ts`)
  * and a Node host (a module-scope `pg.Pool`). `pg` + drizzle are the open
  * Postgres-wire standard both runtimes already speak (ADR-0066 Road 1); only
- * connection acquisition differs, which is what `connectDb` injects.
+ * connection acquisition differs, which is what the runtime's `db.connect` injects.
  */
 
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';

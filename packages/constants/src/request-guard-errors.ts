@@ -3,14 +3,12 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 /**
  * Structured error variants for request-boundary refusals.
  *
- * Emitted before the resource handler runs domain logic. Four flavors,
+ * Emitted before the resource handler runs domain logic. Three flavors,
  * grouped because they share the property "request was malformed at the
  * boundary, not by the domain":
  *
  *   - `OwnerMismatch` (403): middleware-level auth refusal: URL owner
  *     does not match the authenticated user.
- *   - `NotAdmitted` (403): middleware-level admission refusal: the
- *     authenticated user is not admitted to this shared-wiki deployment.
  *   - `ForbiddenOrigin` (403): middleware-level CSRF refusal: origin
  *     missing or not in the trusted-origin allowlist.
  *   - `MissingNodeId` (400): route-level input refusal: WebSocket
@@ -39,7 +37,6 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * function handle(error: RequestGuardError) {
  *   switch (error.name) {
  *     case 'OwnerMismatch':     // wrong URL for this signed-in user
- *     case 'NotAdmitted':       // signed in but not admitted
  *     case 'ForbiddenOrigin':   // CSRF: origin missing or not trusted
  *     case 'MissingNodeId':   // WebSocket upgrade without ?nodeId=
  *   }
@@ -49,11 +46,6 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 export const RequestGuardError = defineErrors({
 	OwnerMismatch: () => ({
 		message: 'The request URL owner does not match the authenticated user.',
-		status: 403 as const,
-	}),
-	NotAdmitted: () => ({
-		message:
-			'The authenticated user is not admitted to this shared-wiki deployment.',
 		status: 403 as const,
 	}),
 	ForbiddenOrigin: () => ({

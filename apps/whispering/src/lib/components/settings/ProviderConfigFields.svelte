@@ -214,24 +214,63 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Link } from '@epicenter/ui/link';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import {
+		deviceConfig,
+		SECRET_KEYS,
+		type SecretKey,
+	} from '$lib/state/device-config.svelte';
+	import { secrets } from '$lib/state/secrets.svelte';
 
 	let { provider }: { provider: ProviderConfigId } = $props();
 
 	const fields = $derived(PROVIDER_FIELDS[provider]);
+
+	/**
+	 * This component is the one settings surface that reads and writes provider API
+	 * keys. Keys are secrets, so they route through the credential facade
+	 * (`secrets`), never raw `deviceConfig`; endpoints, base URLs, and model IDs are
+	 * not secrets and stay on `deviceConfig`. There are deliberately no vault
+	 * lifecycle controls here (ADR-0074): with no auth the facade is device-local,
+	 * and when auth lands enabling sync is instant (the session carries the
+	 * server-derived keyring), so there is no passphrase prompt to build.
+	 */
+
+	/**
+	 * Whether a field's config key is a secret (a provider API key). `SECRET_KEYS`
+	 * is the single source of truth, so adding a secret there routes it here without
+	 * touching this component.
+	 */
+	function isSecretKey(key: ProviderField['configKey']): key is SecretKey {
+		return (SECRET_KEYS as readonly string[]).includes(key);
+	}
 </script>
 
 {#snippet providerField(field: ProviderField)}
 	<Field.Field>
 		<Field.Label for={field.id}>{field.label}</Field.Label>
-		<Input
-			id={field.id}
-			type={field.type}
-			placeholder={field.placeholder}
-			autocomplete="off"
-			bind:value={() => deviceConfig.get(field.configKey),
-				(value) => deviceConfig.set(field.configKey, value)}
-		/>
+		{#if isSecretKey(field.configKey)}
+			{@const configKey = field.configKey}
+			{@const read = secrets.get(configKey)}
+			<Input
+				id={field.id}
+				type={field.type}
+				placeholder={field.placeholder}
+				autocomplete="off"
+				bind:value={
+					() => (read.status === 'available' ? read.value : ''),
+					(value) => secrets.set(configKey, value)
+				}
+			/>
+		{:else}
+			<Input
+				id={field.id}
+				type={field.type}
+				placeholder={field.placeholder}
+				autocomplete="off"
+				bind:value={() => deviceConfig.get(field.configKey),
+					(value) => deviceConfig.set(field.configKey, value)}
+			/>
+		{/if}
 		<Field.Description>
 			{#each field.description as part}{#if typeof part === 'string'}{part}{:else}<Link
 						href={part.href}

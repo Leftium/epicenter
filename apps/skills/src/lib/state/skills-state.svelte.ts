@@ -26,33 +26,28 @@ export type SkillMetadataUpdate = Partial<
  * ```
  */
 function createSkillsState() {
-	const skillsMap = fromTable(skillsDoc.tables.skills);
-	const referencesMap = fromTable(skillsDoc.tables.references);
+	const skillsView = fromTable(skillsDoc.tables.skills);
+	const referencesView = fromTable(skillsDoc.tables.references);
 
 	const skills = $derived(
-		[...skillsMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+		skillsView.all.toSorted((a, b) => a.name.localeCompare(b.name)),
 	);
 
 	let selectedSkillId = $state<string | null>(null);
 
 	const selectedSkill = $derived.by(() => {
 		if (!selectedSkillId) return null;
-		return skillsMap.get(selectedSkillId) ?? null;
+		return skillsView.byId(selectedSkillId) ?? null;
 	});
 
 	const selectedReferences = $derived.by(() => {
 		if (!selectedSkillId) return [];
-		return [...referencesMap.values()]
+		return [...referencesView.all]
 			.filter((r) => r.skillId === selectedSkillId)
 			.sort((a, b) => a.path.localeCompare(b.path));
 	});
 
 	return {
-		[Symbol.dispose]() {
-			skillsMap[Symbol.dispose]();
-			referencesMap[Symbol.dispose]();
-		},
-
 		/** All skills, sorted alphabetically by name. */
 		get skills() {
 			return skills;
@@ -126,7 +121,7 @@ function createSkillsState() {
 		 */
 		deleteSkill(id: string) {
 			skillsDoc.ydoc.transact(() => {
-				for (const ref of referencesMap.values()) {
+				for (const ref of referencesView.all) {
 					if (ref.skillId === id) {
 						skillsDoc.tables.references.delete(ref.id);
 					}
@@ -164,7 +159,3 @@ function createSkillsState() {
 }
 
 export const skillsState = createSkillsState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => skillsState[Symbol.dispose]());
-}

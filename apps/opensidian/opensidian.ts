@@ -21,27 +21,9 @@ import {
 	defineActions,
 	defineTable,
 	defineWorkspace,
-	generateId,
-	type Id,
 	type InferTableRow,
 	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
-import type { Brand } from 'wellcrafted/brand';
-
-/**
- * Branded chat message ID for one persisted assistant, user, or system message.
- *
- * The brand keeps message IDs distinct from conversation IDs so references
- * stay type-safe across joins and edits.
- */
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-
-/**
- * Generate a unique {@link ChatMessageId} for a new chat message, centralizing
- * the branded id cast in one place.
- */
-export const generateChatMessageId = (): ChatMessageId =>
-	generateId<ChatMessageId>();
 
 /**
  * Tool trust: per-tool approval preferences for chat actions.

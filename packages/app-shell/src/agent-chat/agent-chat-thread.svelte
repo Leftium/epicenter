@@ -22,15 +22,18 @@
 		onAlwaysAllow,
 		emptyState,
 		placeholder,
+		inputAccessory,
 	}: {
 		/** The active conversation this thread renders end to end. */
 		conversation: ConversationHandle;
 		/** The device connection registry (ADR-0059), for the model picker and gap. */
 		connections: InferenceConnections;
-		/** Open the app's sign-in flow (the turn failed with HTTP 401). */
-		onSignIn: () => void;
-		/** Open the app's upgrade/billing flow (the turn failed with HTTP 402). */
-		onUpgrade: () => void;
+		/** Open the app's sign-in flow (the turn failed with HTTP 401). Omit to hide
+		 * the Sign In button in the error banner. */
+		onSignIn?: () => void;
+		/** Open the app's upgrade/billing flow (the turn failed with HTTP 402). Omit
+		 * to hide the Upgrade button in the error banner. */
+		onUpgrade?: () => void;
 		/** Override how one message's content renders (vocab's pinyin pass). Omit to
 		 * use the built-in renderer (text + tool calls), wired to this conversation's
 		 * approval state and the `resolveToolTitle` / `onAlwaysAllow` seams below. The
@@ -46,6 +49,8 @@
 		emptyState?: Snippet;
 		/** Optional input placeholder. */
 		placeholder?: string;
+		/** Optional control rendered in the input row (Vocab's dictation mic). */
+		inputAccessory?: Snippet;
 	} = $props();
 </script>
 
@@ -97,5 +102,6 @@
 		onSend={(content) => conversation.sendMessage(content)}
 		onStop={() => conversation.stop()}
 		{placeholder}
+		accessory={inputAccessory}
 	/>
 </div>

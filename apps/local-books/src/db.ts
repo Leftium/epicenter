@@ -70,7 +70,6 @@ export type IngestCounts = Record<
 
 export type EntityStatus = {
 	entity: string;
-	table: string;
 	rows: number;
 	deleted: number;
 	/** Whether this entity has been full-pulled (its table exists). */
@@ -373,7 +372,6 @@ export function openBooksDb(
 			if (!tableExists(def.table)) {
 				return {
 					entity: def.name,
-					table: def.table,
 					rows: 0,
 					deleted: 0,
 					initialized: false,
@@ -389,7 +387,6 @@ export function openBooksDb(
 				.get();
 			return {
 				entity: def.name,
-				table: def.table,
 				rows: rows?.n ?? 0,
 				deleted: deleted?.n ?? 0,
 				initialized: true,

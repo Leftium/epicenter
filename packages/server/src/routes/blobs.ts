@@ -36,7 +36,6 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import { MAX_BLOB_BYTES } from '../constants.js';
-import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { blobKey, blobOwnerPrefix } from '../owner.js';
 import type { OwnershipRule } from '../ownership.js';
@@ -273,28 +272,32 @@ async function listOwnerBlobs(
  * Mount the blobs surface on a deployment's server app.
  *
  * There is no public-read bypass in v1, so every route is
- * uniformly gated by the same chain: auth, then ownership, then
- * {@link requireBlobStore} (which 503s a deployment with no object storage and
- * otherwise stamps `c.var.blobStore`), then any deployment policies. Cloud
- * passes no policies in v1 (storage is unmetered until Autumn is wired); a
- * future `syncBlobStorageWithAutumn` would slot into `policies`.
+ * uniformly gated by the same chain: the deployment's auth (the cloud passes
+ * `requireCookieOrBearerUser`), then ownership, then {@link requireBlobStore}
+ * (which 503s a deployment with no object storage and otherwise stamps
+ * `c.var.blobStore`), then any deployment policies. Cloud passes no policies in v1
+ * (storage is unmetered until Autumn is wired); a future `syncBlobStorageWithAutumn`
+ * would slot into `policies`.
  */
-export function mountBlobsApp(
-	app: Hono<Env>,
+export function mountBlobsApp<E extends Env = Env>(
+	app: Hono<E>,
 	opts: {
+		auth: MiddlewareHandler<E>;
 		ownership: OwnershipRule;
 		/** Extra middleware after auth + ownership on every blob route. */
-		policies?: MiddlewareHandler[];
+		policies?: MiddlewareHandler<E>[];
 	},
 ): void {
 	// Every blob route runs the same chain: authenticate, resolve + assert the
 	// owner partition, ensure object storage is configured, then any deployment
 	// policies. The chain is typed as a non-empty tuple so its leading fixed
 	// handler satisfies `app.on`'s overload (a bare `MiddlewareHandler[]` spread
-	// would be read as the path argument).
-	const requireOwnership = createRequireOwnership(opts.ownership);
+	// would be read as the path argument). It is bare-typed because it mixes the
+	// deployment's `E`-typed auth/ownership with the blob-local `BlobEnv` middleware
+	// (`requireBlobStore` stamps `c.var.blobStore`); both run on the same app.
+	const requireOwnership = createRequireOwnership<E>(opts.ownership);
 	const chain: [MiddlewareHandler, ...MiddlewareHandler[]] = [
-		requireCookieOrBearerUser,
+		opts.auth,
 		requireOwnership,
 		requireBlobStore,
 		...(opts.policies ?? []),

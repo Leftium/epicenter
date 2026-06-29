@@ -12,6 +12,7 @@ import { INFERENCE, type InferenceProviderId } from '$lib/constants/inference';
 import { services } from '$lib/services';
 import type { CompletionService } from '$lib/services/completion';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { secrets } from '$lib/state/secrets.svelte';
 import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 import { transformationHasWork } from '$lib/state/transformations.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
@@ -108,7 +109,13 @@ function runPrompt(
 	const provider = prompt.inferenceProvider;
 	const model = prompt.model.trim();
 	const { apiKeyConfigKey, endpointConfigKey } = INFERENCE[provider];
-	const apiKey = deviceConfig.get(apiKeyConfigKey).trim();
+	// The API key is a secret: read it through the credential facade (ADR-0074),
+	// not raw deviceConfig, so the user-global vault covers transformations once
+	// auth lands. Empty when unset, exactly as the device read was.
+	const apiKeyRead = secrets.get(apiKeyConfigKey);
+	const apiKey = (
+		apiKeyRead.status === 'available' ? apiKeyRead.value : ''
+	).trim();
 
 	const dispatch = COMPLETION_DISPATCH[provider];
 	if (dispatch.kind === 'bespoke') {

@@ -40,44 +40,34 @@ export function createDefaultPrompt(): TransformationPrompt {
 }
 
 function createTransformations() {
-	const map = fromTable(whispering.tables.transformations);
+	const view = fromTable(whispering.tables.transformations);
 
-	// Memoize sorted array with $derived for referential stability.
+	// `toSorted` returns a fresh sorted array (`view.all` is a shared, readonly
+	// scan, never sorted in place). The `$derived` memoizes this copy for
+	// referential stability between changes.
 	const sorted = $derived(
-		[...map.values()].sort((a, b) => a.title.localeCompare(b.title)),
+		view.all.toSorted((a, b) => a.title.localeCompare(b.title)),
 	);
 
 	return {
-		[Symbol.dispose]() {
-			map[Symbol.dispose]();
-		},
-
-		/**
-		 * All transformations as a reactive SvelteMap.
-		 *
-		 * Components reading this re-render per-key when transformations change.
-		 */
-		get all() {
-			return map;
-		},
-
 		/**
 		 * Get a transformation by ID. Returns undefined if not found.
 		 */
 		get(id: string) {
-			return map.get(id);
+			return view.byId(id);
 		},
 
 		/**
 		 * All transformations as a sorted array (alphabetical by title).
-		 * Memoized via `$derived`. Stable reference until SvelteMap changes.
+		 * Memoized via `$derived`. Stable reference until the table changes.
 		 */
 		get sorted(): Transformation[] {
 			return sorted;
 		},
 
 		/**
-		 * Create or update a transformation. Writes to Yjs → observer updates SvelteMap.
+		 * Create or update a transformation. Writes to Yjs; the view re-reads on
+		 * the observer signal.
 		 */
 		set(transformation: Transformation) {
 			whispering.tables.transformations.set(transformation);
@@ -99,16 +89,12 @@ function createTransformations() {
 
 		/** Total number of transformations. */
 		get count() {
-			return map.size;
+			return view.all.length;
 		},
 	};
 }
 
 export const transformations = createTransformations();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => transformations[Symbol.dispose]());
-}
 
 /**
  * Generate a default transformation: empty title and description, both

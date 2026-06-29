@@ -22,7 +22,7 @@
 
 import { AuthUser, asUserId } from '@epicenter/auth';
 import { OAuthError } from '@epicenter/constants/oauth-errors';
-import type { ResolveUser } from '@epicenter/server/bun';
+import type { CloudEnv, ResolveUser } from '@epicenter/server/bun';
 import { Ok } from 'wellcrafted/result';
 
 const BEARER_PREFIX = 'Bearer ';
@@ -35,7 +35,7 @@ const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
  * token, empty id) is an `InvalidToken`, the same `Result` arm the real
  * resolver returns, so the surface wrappers reject it unchanged.
  */
-export const resolveDevUser: ResolveUser = async (c) => {
+export const resolveDevUser: ResolveUser<CloudEnv> = async (c) => {
 	const hostname = new URL(c.req.url).hostname;
 	if (!LOCAL_HOSTNAMES.has(hostname)) return OAuthError.InvalidToken();
 

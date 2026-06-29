@@ -29,11 +29,13 @@
  */
 
 import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
+import { asOwnerId } from '@epicenter/identity';
 
 const BASE_URL = (
 	process.argv[2] ??
 	process.env.BASE_URL ??
-	'http://localhost:8788'
+	`http://localhost:${API_BUN_DEV_PORT}`
 ).replace(/\/+$/, '');
 
 // The dev resolver synthesizes the user from this id; personal-mode ownership
@@ -118,7 +120,7 @@ async function main() {
 		`epicenter blob smoke ${new Date().toISOString()} ${randHex(4)}\n`,
 	);
 	const sha256 = await sha256Hex(payload);
-	const owner = ownerId as never;
+	const owner = asOwnerId(ownerId);
 	const ticketRes = await fetch(API_ROUTES.blobs.list.url(BASE_URL, owner), {
 		method: 'POST',
 		headers: { ...authHeaders, 'content-type': 'application/json' },

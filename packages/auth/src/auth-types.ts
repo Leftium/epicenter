@@ -4,7 +4,7 @@ import type { Brand } from 'wellcrafted/brand';
 
 /**
  * A signed-in account identifier. Issued by Better Auth, opaque to clients.
- * In personal mode, the bytes happen to equal the owner id; in shared mode
+ * In personal mode, the bytes happen to equal the owner id; on an instance
  * they do not. The brand prevents accidental cross-assignment.
  *
  * The validator is declared first; the type is derived from it via `.infer`
@@ -70,9 +70,9 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
  * let the app select this user's local workspace data.
  *
  * `userId` is stored explicitly (rather than synthesised from `ownerId`) so
- * the daemon can read it directly in shared mode, where `ownerId` is the
- * literal `SHARED_OWNER_ID` and is structurally not a `UserId`. Deployment
- * shape (personal vs shared) is not stored here; it is a property of the
+ * the daemon can read it directly on an instance, where `ownerId` is the
+ * literal `INSTANCE_OWNER_ID` and is structurally not a `UserId`. Deployment
+ * shape (personal vs instance) is not stored here; it is a property of the
  * server. See {@link OwnerId} for the rare derivation a consumer might need.
  */
 export const PersistedAuth = type({

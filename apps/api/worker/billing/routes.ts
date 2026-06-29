@@ -8,7 +8,7 @@
  * be mounted without it.
  */
 
-import type { Env } from '@epicenter/server';
+import type { CloudEnv } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
@@ -30,14 +30,14 @@ const BILLING_PREFIX = '/api/billing';
  * cloud-only deployment policy.
  */
 export function mountBillingApi(
-	app: Hono<Env>,
+	app: Hono<CloudEnv>,
 	opts: { auth: MiddlewareHandler },
 ): void {
 	app.use(`${BILLING_PREFIX}/*`, opts.auth);
 	app.route(BILLING_PREFIX, billingRoutes);
 }
 
-const billingRoutes = new Hono<Env>();
+const billingRoutes = new Hono<CloudEnv>();
 
 // A thrown provider failure becomes the opaque billing envelope at a fixed 503
 // (data unverifiable -> service unavailable). `isProviderError` covers both an
@@ -52,7 +52,7 @@ billingRoutes.onError((err, c) => {
 	return c.json(mapAutumnError(err), 503);
 });
 
-function svc(c: Context<Env>) {
+function svc(c: Context<CloudEnv>) {
 	// Billing is cloud-only: `AUTUMN_SECRET_KEY` lives on this deployment's own
 	// `Cloudflare.Env`, not the library's portable `ServerBindings` (ADR-0066),
 	// so read it through the same edge cast the runtime-port resolvers use.

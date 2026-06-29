@@ -10,27 +10,45 @@
  * stored: it is `basename(root)`, derived where it renders, so there is no cached copy to
  * keep in sync with the path.
  *
+ * Persisted to `open-vaults.json` in the app data dir via `tauri-plugin-store`, a plain
+ * inspectable file on disk rather than an opaque webview blob: the same disk-is-truth
+ * principle as matter's per-vault `matter.json` / `.matter/matter.sqlite`, applied to the
+ * app-level tab set. The home is the app data dir, not a vault, because the open SET spans
+ * vaults; it is session chrome, not any one vault's data. The store reads async, so the list
+ * hydrates once via {@link ensureHydrated}. The `(vaults)` layout `load` awaits that before
+ * any route in the group renders, so SvelteKit gates the paint on the real list: the strip
+ * shows tabs with no skeleton and no pre-hydration flash, and an id resolves against the real
+ * list, never a spurious 404. The framework's `load` owns readiness (it gates the paint);
+ * `ensureHydrated` is just the memoized read it awaits, not a `whenReady`/`hydrated` signal
+ * the UI has to branch on.
+ *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
  * drove its lifetime, this holds only the list of tabs and the open/close actions.
  * SvelteKit's router owns everything else, so there is no `Map<id, TableHandle>`, no
  * `activeId`, and no manual dispose policy here.
- *
- * Single-context: the list is read once at construction and written on each change,
- * with no cross-window `storage` sync (the desktop app is one webview). A future
- * multi-window build (Open Q4) would add a `storage` listener here so the windows
- * agree on the open set.
  */
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { LazyStore } from '@tauri-apps/plugin-store';
+import { type } from 'arktype';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { once } from 'wellcrafted/function';
+import { Err, tryAsync } from 'wellcrafted/result';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { routes } from '$lib/routes';
 
 /** One open vault as persisted: an opaque id and the absolute vault-root path. The tab label is
  *  `basename(root)`, derived at render, not stored. */
-export type OpenVault = { id: string; root: string };
+const OpenVault = type({ id: 'string', root: 'string' });
+export type OpenVault = typeof OpenVault.infer;
 
-const STORAGE_KEY = 'matter.open-vaults';
+/** The persisted shape: the tab list, in order. Reading the store back through this is what
+ *  turns a stale or hand-edited file into "no tabs" rather than a crash. */
+const OpenVaultList = OpenVault.array();
+
+const STORE_FILE = 'open-vaults.json';
+const STORE_KEY = 'vaults';
 
 /** Prompt for a folder; `null` if the dialog was cancelled. */
 async function openFolderDialog(): Promise<string | null> {
@@ -45,39 +63,39 @@ async function openFolderDialog(): Promise<string | null> {
 	return path;
 }
 
-/** Is `value` a list we can trust? A corrupt or stale store degrades to no tabs. */
-function isOpenVaultList(value: unknown): value is OpenVault[] {
-	return (
-		Array.isArray(value) &&
-		value.every(
-			(entry): entry is OpenVault =>
-				typeof entry === 'object' &&
-				entry !== null &&
-				typeof (entry as OpenVault).id === 'string' &&
-				typeof (entry as OpenVault).root === 'string',
-		)
-	);
-}
-
-/** Read the persisted list once at construction; a malformed store reads as no tabs. */
-function loadPersisted(): OpenVault[] {
-	if (!browser) return [];
-	const raw = localStorage.getItem(STORAGE_KEY);
-	if (raw === null) return [];
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		return isOpenVaultList(parsed) ? parsed : [];
-	} catch {
-		return [];
-	}
-}
-
 function createOpenVaults() {
-	// The list IS the tabs, in order. Persisted on every change so relaunch restores it.
-	let vaults = $state<OpenVault[]>(loadPersisted());
+	const store = new LazyStore(STORE_FILE);
+	// The list IS the tabs, in order. Empty until `ensureHydrated` fills it from disk.
+	let vaults = $state<OpenVault[]>([]);
 
+	// Read the persisted tabs from disk into the live list, once. The `(vaults)` layout `load`
+	// awaits this before the group paints, so it is the readiness gate and the strip needs no
+	// skeleton. Memoized via `once`: the read runs once and the SAME promise is cached, so
+	// `read` MUST NOT reject, or every `(vaults)` load would await a permanently-rejected promise.
+	// That is why both failure modes are swallowed into "no tabs" rather than thrown: a malformed
+	// shape (rejected by `OpenVaultList`) and an unreadable or corrupt file (`get()` rejects,
+	// caught by `tryAsync`); either way the next `open`/`close` rewrites a clean file.
+	// `LazyStore.get()` loads the file on first access, so there is no separate `load()` step;
+	// SSR has no Tauri runtime, so skip the read.
+	const ensureHydrated = once(read);
+	async function read(): Promise<void> {
+		if (!browser) return;
+		const { data: raw, error } = await tryAsync({
+			try: () => store.get(STORE_KEY),
+			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+		});
+		// An unreadable or corrupt file (`get()` rejects) is "no tabs", like a fresh install.
+		if (error) return;
+		const restored = OpenVaultList(raw);
+		if (!(restored instanceof type.errors)) vaults = restored;
+	}
+
+	// Persist the tabs. A fire-and-forget side effect: the store auto-saves 100ms after a
+	// `set` (the plugin default), so no caller awaits the disk write, and a dropped write
+	// only forgets a tab, never real data. `$state.snapshot` hands the store a plain array,
+	// not the reactive proxy.
 	function persist(): void {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(vaults));
+		void store.set(STORE_KEY, $state.snapshot(vaults)).catch(() => {});
 	}
 
 	/**
@@ -90,6 +108,7 @@ function createOpenVaults() {
 	async function open(): Promise<void> {
 		const root = await openFolderDialog();
 		if (root === null) return;
+		await ensureHydrated();
 		const existing = vaults.find((vault) => vault.root === root);
 		if (existing) {
 			await goto(routes.vault(existing.id));
@@ -109,7 +128,7 @@ function createOpenVaults() {
 	/**
 	 * Remove a tab. Navigating away from a closed ACTIVE tab is the caller's job (the
 	 * tab strip's `closeTab` navigates to a neighbor). That is what keeps the invariant
-	 * "the viewed id is always in the list" true: the route's `load` resolves id -> path
+	 * "the viewed id is always in the list" true: the route's `load` resolves id -> root
 	 * once and is not reactive to this list, so a removal that did NOT navigate would
 	 * leave a now-orphaned vault live until the next navigation.
 	 */
@@ -124,10 +143,12 @@ function createOpenVaults() {
 	}
 
 	return {
-		/** The open vaults, in tab order. */
+		/** The open vaults, in tab order. Empty until {@link ensureHydrated} resolves. */
 		get list(): OpenVault[] {
 			return vaults;
 		},
+		/** Hydrate the list from disk, once. The `(vaults)` layout `load` and child page `load`s await it. */
+		ensureHydrated,
 		open,
 		close,
 		get,

@@ -2,10 +2,10 @@
  * Tests for the dev-only `Bearer dev:<userId>` resolver.
  *
  * Drives {@link resolveDevUser} through the real `requireBearerUser` wrapper
- * (the production library middleware) by injecting it as `c.var.resolveUser`,
- * the same seam `createServerApp` stamps. This proves two things at once: the
+ * (the production library middleware) by closing the wrapper over it, exactly
+ * how a deployment builds its auth. This proves two things at once: the
  * resolver's own behavior (localhost guard, bearer parsing, synthetic user) and
- * that the wrapper honors the injected resolver instead of a hardcoded one.
+ * that the wrapper honors the resolver it was given instead of a hardcoded one.
  *
  * Imported from `@epicenter/server/bun` (not the main barrel) so the Cloudflare
  * `Room` Durable Object module, which imports `cloudflare:workers`, never loads
@@ -13,18 +13,17 @@
  */
 
 import { expect, test } from 'bun:test';
-import { type Env, requireBearerUser } from '@epicenter/server/bun';
+import { type CloudEnv, requireBearerUser } from '@epicenter/server/bun';
 import { Hono } from 'hono';
 import { resolveDevUser } from './dev-auth.js';
 
-/** A minimal app: inject the dev resolver, guard `/protected` with the wrapper. */
+/** A minimal app: guard `/protected` with a wrapper closed over the dev resolver. */
 function devAuthApp() {
-	return new Hono<Env>()
-		.use('*', async (c, next) => {
-			c.set('resolveUser', resolveDevUser);
-			await next();
-		})
-		.get('/protected', requireBearerUser, (c) => c.json(c.var.user));
+	return new Hono<CloudEnv>().get(
+		'/protected',
+		requireBearerUser(resolveDevUser),
+		(c) => c.json(c.var.user),
+	);
 }
 
 test('resolves Bearer dev:<userId> to a synthetic user on localhost', async () => {

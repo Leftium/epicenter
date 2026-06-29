@@ -4,6 +4,7 @@ import {
 	LogicalPosition,
 	primaryMonitor,
 } from '@tauri-apps/api/window';
+import { once } from 'wellcrafted/function';
 import { createLogger } from 'wellcrafted/logger';
 import {
 	type RecordingOverlayStatus,
@@ -51,7 +52,6 @@ const OVERLAY_BOTTOM_MARGIN = 72;
 
 let latestStatus: RecordingOverlayStatus | null = null;
 let queue: Promise<void> = Promise.resolve();
-let readyListenerRegistered: Promise<void> | null = null;
 
 async function computeOverlayPosition(): Promise<LogicalPosition | null> {
 	// Prefer the monitor the main window is on; fall back to the primary.
@@ -77,14 +77,14 @@ async function computeOverlayPosition(): Promise<LogicalPosition | null> {
  * creation and listener registration and be lost. Caching the promise (not a
  * boolean flag) also prevents a duplicate listener if two creations race.
  */
-function ensureReadyListener(): Promise<void> {
-	readyListenerRegistered ??= recordingOverlayReady
-		.listen(() => {
-			if (latestStatus) void recordingOverlayStatus.emit(latestStatus);
-		})
-		.then(() => undefined);
-	return readyListenerRegistered;
-}
+const ensureReadyListener = once(
+	(): Promise<void> =>
+		recordingOverlayReady
+			.listen(() => {
+				if (latestStatus) void recordingOverlayStatus.emit(latestStatus);
+			})
+			.then(() => undefined),
+);
 
 async function createOverlayWindow(): Promise<WebviewWindow | null> {
 	await ensureReadyListener();

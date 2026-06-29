@@ -12,9 +12,9 @@
  * See spec: `20260429T004302-workspace-as-daemon-transport.md` § Phase 2.
  */
 
+import { once } from 'wellcrafted/function';
 import { Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-import { once } from '../shared/once.js';
 import { buildDaemonApp } from './app.js';
 import type { DaemonLease } from './lease.js';
 import { unlinkSocketFile } from './runtime-files.js';

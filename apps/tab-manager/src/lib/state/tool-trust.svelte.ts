@@ -19,22 +19,23 @@ import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 export type ToolTrustState = ReturnType<typeof createToolTrustState>;
 
 export function createToolTrustState(tabManager: TabManagerBrowser) {
-	const trustMap = fromTable(tabManager.tables.toolTrust);
+	const trustView = fromTable(tabManager.tables.toolTrust);
 
 	/** Cached projection of trusted tool names: stable reference via $derived. */
-	const trustedNames = $derived([...trustMap.keys()]);
+	const trustedNames = $derived(trustView.all.map((row) => row.id));
 
 	return {
-		[Symbol.dispose]() {
-			trustMap[Symbol.dispose]();
-		},
-
 		/**
 		 * Whether a tool auto-approves without showing the approval UI.
 		 * Query tools should not call this because they auto-execute always.
+		 *
+		 * Honors only a trust row this binary can read: a grant written by a newer
+		 * binary (a future toolTrust schema) is unreadable here, so it falls back
+		 * to the safe "ask" default rather than auto-approving a row whose fields
+		 * it cannot see.
 		 */
 		shouldAutoApprove(name: string): boolean {
-			return trustMap.has(name);
+			return trustView.byId(name) !== undefined;
 		},
 
 		/** Auto-approve this tool from now on (the "Always Allow" action). */
@@ -48,7 +49,7 @@ export function createToolTrustState(tabManager: TabManagerBrowser) {
 		},
 
 		/** Names of all auto-approved tools, as a cached reactive array. */
-		get trustedToolNames(): string[] {
+		get trustedToolNames(): readonly string[] {
 			return trustedNames;
 		},
 	};

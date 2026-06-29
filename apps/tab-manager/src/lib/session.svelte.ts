@@ -2,7 +2,6 @@ import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
 import type { InstanceSetting, SyncAuthClient } from '@epicenter/auth';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { createAppAuthClient, createSession } from '@epicenter/svelte/auth';
-import { generateId } from '@epicenter/workspace';
 import {
 	createDispatchToolCatalog,
 	defaultApprovalDecision,
@@ -82,7 +81,6 @@ function buildSession(
 				table: tabManager.tables.conversations,
 				whenLoaded: tabManager.idb.whenLoaded,
 				connections: inferenceConnections,
-				generateId,
 				agent: {
 					buildSystemPrompts: () => [
 						buildDeviceConstraints(tabManager.nodeId),
@@ -112,9 +110,6 @@ function buildSession(
 				state,
 				[Symbol.dispose]() {
 					aiChat[Symbol.dispose]();
-					toolTrust[Symbol.dispose]();
-					bookmarks[Symbol.dispose]();
-					savedTabs[Symbol.dispose]();
 					tabManager[Symbol.dispose]();
 				},
 			};

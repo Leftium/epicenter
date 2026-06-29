@@ -4,11 +4,10 @@
  *
  * Mirrors {@link createDurableObjectRooms}: a deployment passes the
  * `HYPERDRIVE` binding from its `c.env` and gets back the runtime-neutral
- * `{ db, close }` handle that `createServerApp`'s `connectDb` concern
- * expects. Both Cloudflare deployables (`apps/api`, `apps/self-host`) call
- * this, so the per-request acquisition lives here once instead of being
- * restated at each edge. A Node host injects its own `connectDb` over a
- * module-scope `pg.Pool` instead.
+ * `{ db, close }` handle that `createServerApp`'s `db.connect` leg
+ * expects. Only the Postgres-composing Cloudflare deployable (`apps/api`) calls
+ * this; the single-partition instance composes no Postgres (ADR-0076). A Node
+ * host injects its own `db.connect` over a module-scope `pg.Pool` instead.
  *
  * Uses `Client` (not `Pool`) because Hyperdrive IS the connection pool.
  */
@@ -18,7 +17,7 @@ import { createDb, type Db } from '../create-db.js';
 
 /**
  * Open a per-request database handle over a Hyperdrive binding. The caller
- * (the `connectDb` concern in `createServerApp`) closes it after the
+ * (the `db.connect` leg in `createServerApp`) closes it after the
  * after-response queue drains.
  */
 export async function connectHyperdriveDb(

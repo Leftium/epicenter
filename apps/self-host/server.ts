@@ -1,118 +1,189 @@
 /**
- * Bun entry for apps/self-host: the shared-wiki deployable, off Cloudflare.
+ * Bun entry for apps/self-host: the single-partition instance (ADR-0075).
  *
- * The off-Cloudflare twin of `worker/index.ts`. It builds the SAME
- * `createServerApp(...)` the Worker builds, but binds the per-concern runtime
- * hooks to plain primitives instead of Cloudflare bindings (ADR-0066):
+ * The off-Cloudflare twin of `worker/index.ts`, and the instance's peer to the
+ * hosted cloud's own Bun bootstrap (`apps/api/server.ts`). Each Bun entry owns
+ * its composition rather than sharing a launcher: this one is bearer-only with no
+ * relational-auth substrate (no Better Auth, no cookie sessions), so a shared
+ * factory would re-introduce the mode knob ADR-0075/0076 deleted. It composes no
+ * Postgres (no Better Auth, no telemetry), so its
+ * runtime adapter (ADR-0066) provides only one leg:
  *
- *   - `connectDb`     a module-scope `pg.Pool` over `DATABASE_URL`
- *   - `afterResponse` fire-and-forget in the live process (no `waitUntil`)
  *   - `resolveRooms`  an in-process registry over `bun:sqlite` files
  *
- * This is the "one binary + Postgres, no Cloudflare account" self-host artifact:
- * `bun server.ts` (or a `bun build --compile` binary) is a complete shared wiki
- * on a single box. Rooms are `bun:sqlite` files on local disk, so this is a
- * single-node deployment by design: it does not shard or hibernate per room the
- * way the Durable Object edge does, which is exactly right for one community's
- * wiki and the price of owning your own data on your own machine.
+ * This is the "one binary, no Cloudflare account, no database" instance artifact:
+ * `bun server.ts` (or a `bun build --compile` binary) is a complete box on a
+ * single node. Rooms are `bun:sqlite` files on local disk, so this is a single-node
+ * deployment by design: it does not shard or hibernate per room the way the
+ * Durable Object edge does, which is exactly right for one homelab, one family, or
+ * one small team and the price of owning your own data on your own machine.
  *
- * Ownership is `shared({ admit })`: every authenticated user shares the literal
- * SHARED_OWNER_ID partition, gated by an email allowlist this host parses ONCE
- * at boot from `ALLOWED_MEMBER_EMAILS`. Unlike the Worker (which reads the
- * allowlist off its own `Cloudflare.Env` per request), boot validation lets this
- * entry resolve the set once and close over it, so admit names no Cloudflare
- * type and never re-parses.
+ * There is ONE shape, not a mode (ADR-0075). Ownership is `instance()`: every
+ * request resolves to the pinned `owners/instance` partition, independent of who
+ * presents the bearer. Authentication is one operator-supplied static bearer
+ * (`INSTANCE_TOKEN`), constant-time compared. "Solo" and "shared" are not
+ * configurations: they are only how many people you hand the one token to. No
+ * OAuth, no sessions, no allowlist, no mode, no first-boot minting. Multi-tenant
+ * per-user partitions are Epicenter Cloud's, never an instance's.
  *
- * Surface mirrors the Worker self-host: session + rooms + inference, zero
- * billing, no dashboard SPA. Blobs are intentionally not mounted; add
- * `mountBlobsApp` with `BLOBS_S3_*` set to offer a content-addressed media store
- * against any S3 (proven portable on Bun by the apps/api runtime-parity smoke).
+ * Boot FAILS CLOSED if `INSTANCE_TOKEN` is missing or fails the entropy gate, with
+ * an error that points at `gen-token`: the operator generates the token once
+ * (`bun run gen-token`) and supplies it through the environment, never a file the
+ * box mints. That gate replaces the 256-bit floor minting used to guarantee while
+ * keeping the instance Bun-or-Cloudflare (the operator supplies the secret either
+ * way).
  *
- * The wiring lives in {@link startSelfHostServer} so `server.dev.ts` can boot the
- * SAME server with a dev `resolveUser` injected (the smoke's credential) without
- * duplicating it. Production runs only when this file IS the entrypoint
- * (`import.meta.main`), so `server.dev.ts` importing the builder does not start a
- * second listener. Production passes no `resolveUser` and keeps the real OAuth
- * resolver; this file never imports the dev bypass.
+ * Surface: session + rooms + inference + blobs behind one bearer, zero billing,
+ * no dashboard SPA, no auth surface. The blob store is a portable
+ * content-addressed media store over any S3 (your own MinIO/Garage/R2); it is
+ * mounted by default and answers 503 until `BLOBS_S3_*` is set, exactly as the
+ * inference gateway answers 503 until a provider house key is set. Owning your
+ * own media on your own bucket is squarely the instance's purpose; configure
+ * `BLOBS_S3_*` to turn it on, or leave it unconfigured to run without object
+ * storage.
  */
 
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { assertStrongToken } from '@epicenter/auth';
 import {
-	BunHostBindings,
-	type ResolveUser,
-	shared,
-	startBunServer,
+	createBunRooms,
+	createEnvTokenResolver,
+	createServerApp,
+	instance,
+	mountBlobsApp,
+	mountInferenceApp,
+	mountRoomsApp,
+	mountSessionApp,
+	rateLimit,
+	requireBearerUser,
+	ServerBindings,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
+import { resolveSelfHostTrustedOrigins } from './trusted-origins.js';
 
 /**
- * Boot the apps/self-host Bun server, optionally with an injected user resolver.
- *
- * Production (`server.ts` as the entrypoint) passes nothing, so
- * `createServerApp` keeps the real OAuth resolver. `server.dev.ts` passes a dev
- * `Bearer dev:<userId>` resolver so the runtime smoke needs no interactive login.
- * Everything else (env validation, pool, rooms, mounts, `Bun.serve`) is identical
- * across the two, so they cannot drift.
+ * The instance's Bun env contract: the portable {@link ServerBindings} (the
+ * cloud-only secrets stay optional and unused here) plus this host's process
+ * config and its one bearer. There is deliberately NO `DATABASE_URL` and no
+ * `BETTER_AUTH_SECRET`: the instance composes no Postgres and no Better Auth
+ * (ADR-0075). `INSTANCE_TOKEN` is optional in the schema (so the arktype pass
+ * never duplicates the entropy gate's message) and asserted strong below.
  */
-export function startSelfHostServer(
-	opts: { resolveUser?: ResolveUser } = {},
-): void {
-	// Validate this host's environment once, at boot (ADR-0066): the library's
-	// portable secrets (`BunHostBindings` extends `ServerBindings`), this host's
-	// own config, and the shared-wiki membership allowlist, so a misconfiguration
-	// gets ONE descriptive error naming every missing or malformed var instead of
-	// a downstream surprise. The validated result IS the typed env handed to the
-	// Hono app: no `as`-cast over `process.env`, no lie. Unlike the Cloudflare
-	// edge (whose bindings are deploy-gated and `wrangler types`-typed),
-	// `process.env` is unchecked, so boot is the place to validate it.
-	const env = BunHostBindings.merge({
-		// The shared-wiki membership allowlist: comma-separated emails. Optional so
-		// boot never fails on it; an unset allowlist admits nobody (fail-closed,
-		// below) rather than opening the wiki to every Google account.
-		'ALLOWED_MEMBER_EMAILS?': 'string',
-	})(process.env);
+const InstanceBindings = ServerBindings.merge({
+	'PORT?': 'string',
+	'API_PUBLIC_ORIGIN?': 'string',
+	'DATA_DIR?': 'string',
+	'INSTANCE_TOKEN?': 'string',
+});
+
+/**
+ * Resolve the operator-supplied `INSTANCE_TOKEN` or fail closed, naming the
+ * generator. The library gate ({@link assertStrongToken}) owns the portable
+ * length/charset rule; this wrapper owns the exit and names the concrete command,
+ * so the operator is never left guessing how to mint a strong token.
+ * `process.exit` returns `never`, so a successful call returns the strong token.
+ */
+function requireStrongInstanceToken(value: string | undefined): string {
+	try {
+		return assertStrongToken(value);
+	} catch (e) {
+		console.error(
+			`Invalid configuration for the self-host instance:\n  ${(e as Error).message}\n` +
+				'  Generate a strong token with: bun run gen-token',
+		);
+		process.exit(1);
+	}
+}
+
+/** Boot the apps/self-host instance: validate env, build the bearer gate, listen. */
+export function startSelfHostServer(): void {
+	// Validate this host's environment once, at boot (ADR-0066) against
+	// {@link InstanceBindings}. A misconfiguration gets ONE descriptive error
+	// naming every missing or malformed var. The validated result IS the typed env
+	// handed to the Hono app: no `as`-cast over `process.env`, no lie.
+	const env = InstanceBindings(process.env);
 	if (env instanceof type.errors) {
 		console.error(
-			`Invalid environment for the self-host server:\n${env.summary}`,
+			`Invalid environment for the self-host instance:\n${env.summary}`,
 		);
 		process.exit(1);
 	}
 
-	// Parse the allowlist once at boot and close over the set, so admit is a plain
-	// membership test with no per-request env read or re-parse. An unset or empty
-	// var yields an empty set: the deployment admits nobody until the operator
-	// names members, so a missing allowlist fails closed.
-	const allowedMembers = new Set(
-		(env.ALLOWED_MEMBER_EMAILS ?? '')
-			.split(',')
-			.map((email) => email.trim())
-			.filter(Boolean),
-	);
+	// The bearer gate. A strong `INSTANCE_TOKEN` builds the env-token resolver
+	// (constant-time compare -> the named instance principal); a missing or weak
+	// token fails boot above. Every owner-scoped surface closes its bearer wrapper
+	// over that one resolver, the same total gate the cloud builds from its OAuth
+	// resolver (ADR-0075).
+	const token = requireStrongInstanceToken(env.INSTANCE_TOKEN);
+	const resolveUser = createEnvTokenResolver(token);
+	const auth = requireBearerUser(resolveUser);
 
-	// Ownership is `shared({ admit })`: every authenticated user shares the literal
-	// SHARED_OWNER_ID partition, gated by the email allowlist. A self-host trusts
-	// its OWN origin and the Tauri desktop client, never Epicenter cloud's;
-	// everything else is the shared Bun bootstrap.
-	const { origin, dataDir } = startBunServer({
-		env,
-		defaultPort: 8787,
-		mode: 'shared',
-		ownership: shared({
-			admit: (c) => allowedMembers.has(c.var.user.email),
-		}),
-		resolveTrustedOrigins: (baseURL) => [
-			new URL(baseURL).origin,
-			'tauri://localhost',
-		],
-		// Undefined in production; `server.dev.ts` passes a dev bearer resolver.
-		resolveUser: opts.resolveUser,
+	const port = Number(env.PORT ?? 8787);
+	// The auth origin must match where the process actually listens. Default to
+	// localhost; an operator overrides it with their own domain.
+	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
+
+	// One room directory of `bun:sqlite` files for this host.
+	const dataDir = resolve(env.DATA_DIR ?? './.data/rooms');
+	mkdirSync(dataDir, { recursive: true });
+	const bunRooms = createBunRooms({ dir: dataDir });
+
+	const ownership = instance();
+	const app = createServerApp({
+		// The instance composes no Postgres (no Better Auth), so it never calls
+		// `mountCloudDb` and `createServerApp` stays on the portable `Env`: `c.var.db`
+		// is never set (ADR-0076). Its one runtime concern is the bun:sqlite rooms.
+		resolveRooms: () => bunRooms.rooms,
+		identity: {
+			resolveOrigin: () => origin,
+			// A self-host trusts its OWN origin and the Tauri desktop client, never
+			// Epicenter cloud's. Shared with `worker/index.ts` so the two runtimes
+			// cannot drift.
+			resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
+		},
 	});
 
+	app.get('/', (c) =>
+		c.json({ product: 'instance', version: '0.1.0', runtime: 'bun' }),
+	);
+	// No `mountCloudAuth`: the instance composes no Better Auth and no sessions. The
+	// operator bearer (`auth` above) is the only gate, so every surface is
+	// bearer-authenticated (ADR-0075).
+	mountSessionApp(app, { ownership, auth });
+	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
+	mountRoomsApp(app, { ownership, resolveUser });
+	// Inference spends the operator's house key on every request. Cap the burn
+	// rate so a leaked or overused bearer cannot run the provider bill up
+	// unbounded between invoices. This is the in-process backstop; the real
+	// ceiling is the hard spend limit you set on the provider key itself (README).
+	// Tune to your group's size, or drop the policy to leave it uncapped.
+	mountInferenceApp(app, {
+		auth,
+		ownership,
+		policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
+	});
+	// Content-addressed media store over any S3, mounted by default; it answers 503
+	// until `BLOBS_S3_*` is set (the same honest opt-out as inference's house key).
+	// Storage is the operator's own bucket, so there is no house key to burn and no
+	// rate-limit policy here.
+	mountBlobsApp(app, { ownership, auth });
+
+	const server = Bun.serve({
+		port,
+		fetch: (req) => app.fetch(req, env),
+		websocket: bunRooms.websocket,
+	});
+	// `server` only exists once `Bun.serve` returns; hand it to the room registry
+	// so `handleUpgrade` can call `server.upgrade`.
+	bunRooms.bindServer(server);
+
 	console.log(
-		`apps/self-host (Bun) listening on ${origin} (rooms in ${dataDir}, ${allowedMembers.size} member(s) admitted)`,
+		`apps/self-host instance (Bun) listening on ${origin} ` +
+			`(rooms in ${dataDir}, partition owners/instance). Hand INSTANCE_TOKEN to ` +
+			'whoever should have access.',
 	);
 }
 
-// Run production only when this file is the entrypoint. `server.dev.ts` imports
-// `startSelfHostServer` to boot the dev variant, and must not trigger a second
-// listener here.
+// Run only when this file is the entrypoint.
 if (import.meta.main) startSelfHostServer();

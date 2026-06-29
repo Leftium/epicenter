@@ -3,5 +3,5 @@
 	"identifier": "default",
 	"description": "Matter main window: pick a folder and read its markdown",
 	"windows": ["main"],
-	"permissions": ["core:default", "dialog:default"]
+	"permissions": ["core:default", "dialog:default", "store:default"]
 }

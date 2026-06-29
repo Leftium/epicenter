@@ -12,10 +12,12 @@
 	}: {
 		/** The active conversation whose error state drives the banner. */
 		conversation: ConversationHandle;
-		/** Open the app's sign-in flow (the turn failed with HTTP 401). */
-		onSignIn: () => void;
-		/** Open the app's upgrade/billing flow (the turn failed with HTTP 402). */
-		onUpgrade: () => void;
+		/** Open the app's sign-in flow (the turn failed with HTTP 401). Omit to hide
+		 * the Sign In button (apps without a sign-in surface still get the message). */
+		onSignIn?: () => void;
+		/** Open the app's upgrade/billing flow (the turn failed with HTTP 402). Omit
+		 * to hide the Upgrade button (the message still shows). */
+		onUpgrade?: () => void;
 	} = $props();
 
 	const bannerClass =
@@ -30,17 +32,21 @@
 {#if conversation.isUnauthorized}
 	<div role="alert" class={bannerClass}>
 		<span class="min-w-0 flex-1">Sign in to use AI Chat</span>
-		<Button variant="ghost" size="sm" class={actionClass} onclick={onSignIn}>
-			<LogInIcon class="size-3" />
-			Sign In
-		</Button>
+		{#if onSignIn}
+			<Button variant="ghost" size="sm" class={actionClass} onclick={onSignIn}>
+				<LogInIcon class="size-3" />
+				Sign In
+			</Button>
+		{/if}
 	</div>
 {:else if conversation.isCreditsExhausted}
 	<div role="alert" class={bannerClass}>
 		<span class="min-w-0 flex-1">You're out of credits</span>
-		<Button variant="ghost" size="sm" class={actionClass} onclick={onUpgrade}>
-			Upgrade
-		</Button>
+		{#if onUpgrade}
+			<Button variant="ghost" size="sm" class={actionClass} onclick={onUpgrade}>
+				Upgrade
+			</Button>
+		{/if}
 	</div>
 {:else if conversation.visibleError}
 	<div role="alert" class={bannerClass}>

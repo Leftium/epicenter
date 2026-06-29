@@ -2,7 +2,7 @@
  * The relay-channel {@link PeerTransport}: the universal FLOOR.
  *
  * It opens a named request/response channel to a target device by multiplexing
- * the five `channel_*` frames over a {@link ChannelPort} (the account-room
+ * the four `channel_*` frames over a {@link ChannelPort} (the account-room
  * WebSocket each device already holds), and hands back a {@link ByteChannel} the
  * MCP client rides like any byte channel. The agent loop and
  * `createMcpGatewayCatalog` never learn which transport is underneath; this is

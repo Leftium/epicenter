@@ -2,7 +2,7 @@
  * The relay-channel router: the server half of the universal device-channel
  * relay's floor.
  *
- * It multiplexes named request/response channels (the five `channel_*` frames of
+ * It multiplexes named request/response channels (the four `channel_*` frames of
  * `@epicenter/workspace/relay-channel`) over the account-room WebSocket each
  * device already holds, forwarding a channel's bytes BLIND between a caller
  * socket and a target device's socket. It never parses the MCP (or HTTP) payload

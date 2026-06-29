@@ -38,6 +38,14 @@ import type { RoomSocket } from './contracts.js';
 const WS_READY_OPEN = 1;
 
 /**
+ * Most live channels one caller socket may hold at once. A same-user device is
+ * already authenticated, so this is not a trust boundary; it bounds the memory a
+ * misbehaving or compromised own-device can pin inside the 30-minute socket
+ * lifetime by opening channels it never closes.
+ */
+const MAX_CHANNELS_PER_SOCKET = 64;
+
+/**
  * What the router needs from the room it lives in, injected so it stays free of
  * `RoomCore`'s Yjs and presence state.
  *
@@ -107,9 +115,22 @@ export function createChannelRouter(deps: ChannelRouterDeps): ChannelRouter {
 		return null;
 	}
 
+	/** Count the live channels a socket currently owns as the caller. */
+	function callerChannelCount(socket: RoomSocket): number {
+		let count = 0;
+		for (const channel of channels.values()) {
+			if (channel.caller === socket) count += 1;
+		}
+		return count;
+	}
+
 	function handleOpen(caller: RoomSocket, frame: ChannelOpenFrame): void {
 		if (channels.has(frame.id)) {
 			reset(caller, frame.id, 'protocol_error', 'duplicate channel id');
+			return;
+		}
+		if (callerChannelCount(caller) >= MAX_CHANNELS_PER_SOCKET) {
+			reset(caller, frame.id, 'refused', 'channel limit reached');
 			return;
 		}
 		const target = deps.findDevice(frame.target);

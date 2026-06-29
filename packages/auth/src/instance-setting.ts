@@ -1,4 +1,19 @@
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import { type Instance, normalizeInstanceUrl } from './instance.js';
+
+const InstanceSettingError = defineErrors({
+	/** The stored record could not be read (a throwing `getItem`). */
+	Unreadable: ({ cause }: { cause: unknown }) => ({
+		message: `Could not read the stored instance setting; falling back to the hosted default: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	/** The stored record was present but not parseable JSON. */
+	Corrupt: ({ cause }: { cause: unknown }) => ({
+		message: `Discarding a corrupt instance setting; falling back to the hosted default: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
 
 /**
  * The persisted instance setting as a small handle every client shares.
@@ -30,14 +45,23 @@ export type InstanceSetting = {
  * hosted" rule, including the ADR-0071 invariant: OAuth runs only against the
  * hosted default, so a non-hosted base URL with no token cannot authenticate and
  * reads as the hosted default rather than a wedged override.
+ *
+ * A corrupt record (present but not parseable) is logged before the fallback, so
+ * a self-hoster whose stored bearer was mangled can tell it apart from "never
+ * configured" instead of silently reading as the hosted default.
  */
-function decodeInstance(raw: string | null, defaultBaseURL: string): Instance {
+function decodeInstance(
+	raw: string | null,
+	defaultBaseURL: string,
+	log: Logger,
+): Instance {
 	const hosted: Instance = { baseURL: defaultBaseURL };
 	if (raw === null) return hosted;
 	let parsed: Partial<Instance>;
 	try {
 		parsed = JSON.parse(raw) as Partial<Instance>;
-	} catch {
+	} catch (cause) {
+		log.warn(InstanceSettingError.Corrupt({ cause }));
 		return hosted;
 	}
 	// Re-normalize on read so a hand-edited record cannot smuggle in a malformed
@@ -91,27 +115,31 @@ function makeInstanceSetting({
  *
  * `storage` may be `undefined` (SSR import with no `localStorage`); the handle
  * then reports the hosted default and persists nothing. Reads are guarded so a
- * throwing `getItem` (private-mode Safari) reads as the default; writes
- * propagate so a credential that could not be persisted fails loudly, matching
- * {@link createWebStoragePersistedAuthStorage}.
+ * throwing `getItem` (private-mode Safari) reads as the default and is logged;
+ * writes propagate so a credential that could not be persisted fails loudly,
+ * matching {@link createWebStoragePersistedAuthStorage}.
  */
 export function createInstanceSetting({
 	storageKey,
 	defaultBaseURL,
 	storage,
+	log = createLogger('auth/instance-setting'),
 }: {
 	storageKey: string;
 	defaultBaseURL: string;
 	storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined;
+	/** Library logger for corrupt or unreadable stored records. */
+	log?: Logger;
 }): InstanceSetting {
 	let raw: string | null = null;
 	try {
 		raw = storage?.getItem(storageKey) ?? null;
-	} catch {
+	} catch (cause) {
+		log.warn(InstanceSettingError.Unreadable({ cause }));
 		raw = null;
 	}
 	return makeInstanceSetting({
-		initial: decodeInstance(raw, defaultBaseURL),
+		initial: decodeInstance(raw, defaultBaseURL, log),
 		defaultBaseURL,
 		persist: (serialized) => {
 			if (!storage) return;
@@ -138,13 +166,16 @@ export async function loadInstanceSetting({
 	defaultBaseURL,
 	read,
 	write,
+	log = createLogger('auth/instance-setting'),
 }: {
 	defaultBaseURL: string;
 	read: () => Promise<string | null>;
 	write: (serialized: string | null) => Promise<void>;
+	/** Library logger for corrupt stored records. */
+	log?: Logger;
 }): Promise<InstanceSetting> {
 	return makeInstanceSetting({
-		initial: decodeInstance(await read(), defaultBaseURL),
+		initial: decodeInstance(await read(), defaultBaseURL, log),
 		defaultBaseURL,
 		persist: write,
 	});

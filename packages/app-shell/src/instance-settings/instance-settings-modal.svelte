@@ -10,24 +10,18 @@
 		open = $bindable(false),
 		appName,
 		setting,
-		onSaved = () => location.reload(),
 	}: {
 		open?: boolean;
 		/** The app's display name, woven into the description. */
 		appName: string;
 		/** The shared instance setting handle this app injected. */
 		setting: InstanceSetting;
-		/**
-		 * Run after a save or revert persists. Defaults to a full reload so auth
-		 * construction re-reads the new instance; an extension can inject its own
-		 * re-init.
-		 */
-		onSaved?: () => void;
 	} = $props();
 
-	// Seed the form from the snapshot once; saving runs `onSaved` (a reload by
-	// default), so there is no live value to track. `hasOverride` only gates the
-	// "Use hosted" button, so it stays a derived read of the stable handle.
+	// Seed the form from the snapshot once; saving reloads so auth construction
+	// re-reads the new instance, so there is no live value to track. `hasOverride`
+	// only gates the "Use hosted" button, so it stays a derived read of the stable
+	// handle.
 	let urlInput = $state(
 		untrack(() => (setting.isDefault() ? '' : setting.read().baseURL)),
 	);
@@ -53,12 +47,12 @@
 			return;
 		}
 		await setting.write({ baseURL, token });
-		onSaved();
+		location.reload();
 	}
 
 	async function useHosted() {
 		await setting.clear();
-		onSaved();
+		location.reload();
 	}
 </script>
 

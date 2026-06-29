@@ -17,12 +17,13 @@ afterEach(() => {
 const routes: RouteTable = {
 	// A low-risk route opted IN to the relay floor.
 	echo: {
+		kind: 'spawn',
 		command: 'bun',
 		args: ['-e', 'process.stdin.on("data",(d)=>process.stdout.write(d));'],
 		relay: 'exposed',
 	},
 	// A sensitive route: refused over the relay by default (no `relay`).
-	books: { command: 'local-books', args: ['mcp'] },
+	books: { kind: 'spawn', command: 'local-books', args: ['mcp'] },
 };
 
 const owner = { kind: 'user', userId: 'u1' } as const;

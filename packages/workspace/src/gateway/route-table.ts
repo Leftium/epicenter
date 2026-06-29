@@ -9,6 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { connect } from 'node:net';
 import { Readable, Writable } from 'node:stream';
 import type { ByteChannel } from '../peer-transport.js';
 
@@ -23,7 +24,21 @@ import type { ByteChannel } from '../peer-transport.js';
  * relay removes the third party; ADR-0068).
  */
 export const DEFAULT_DEVICE_ROUTES: RouteTable = {
-	books: { command: 'local-books', args: ['mcp'] },
+	books: { kind: 'spawn', command: 'local-books', args: ['mcp'] },
+};
+
+/**
+ * The relay-floor exposure policy every route variant carries (default
+ * `refused`): whether this route is reachable over the relay floor at all, where
+ * the caller is a server-authenticated USER (the relay stamps an unforgeable
+ * `source.userId`). A sensitive route (financial, a shell) stays `refused`; a
+ * route author opts one IN with `relay: 'exposed'`, knowingly accepting the relay
+ * floor's trusted-relay ceiling (a self-hosted relay removes the third party;
+ * ADR-0068). It lives on the shared base, not a variant, so {@link
+ * routeRelayExposed} and {@link withRelayExposed} stay branchless across kinds.
+ */
+type RouteRelayPolicy = {
+	relay?: 'exposed' | 'refused';
 };
 
 /**
@@ -36,30 +51,39 @@ export const DEFAULT_DEVICE_ROUTES: RouteTable = {
  * The command/args/cwd/env are caller-supplied so the route table never depends
  * on any executor: the daemon wires `{ command: 'local-books', args: ['mcp'] }`
  * without `@epicenter/workspace` ever importing `@epicenter/local-books`.
- *
- * `relay` is the relay-floor exposure policy (default `refused`): whether this
- * route is reachable over the relay floor at all, where the caller is a
- * server-authenticated USER (the relay stamps an unforgeable `source.userId`). A
- * sensitive route (financial, a shell) stays `refused`; a route author opts one
- * IN with `relay: 'exposed'`, knowingly accepting the relay floor's
- * trusted-relay ceiling (a self-hosted relay removes the third party; ADR-0068).
  */
-export type SpawnRoute = {
+export type SpawnRoute = RouteRelayPolicy & {
+	kind: 'spawn';
 	command: string;
 	args?: string[];
 	cwd?: string;
 	env?: Record<string, string>;
-	relay?: 'exposed' | 'refused';
 };
 
 /**
- * A route the gateway exposes. Today there is one route shape, {@link
- * SpawnRoute}. A `service` variant (a `net.connect` dumb-pipe to a local service
- * port like `127.0.0.1:8000`) lands in Wave 5 alongside the localhost-forward
- * consumer that exercises it; introducing it reintroduces a `kind` discriminant
- * across the variants.
+ * A service route: the gateway opens a TCP connection to a local service port
+ * (e.g. a whisper box on `127.0.0.1:8000`) and dumb-pipes the inbound channel to
+ * it, the same `ByteChannel` shape a spawn route produces from a child's stdio.
+ * This is the second honest vocabulary on one transport: a spawn route carries
+ * MCP, a service route carries whatever wire the local service speaks (HTTP for
+ * `transcribe` / `speak` / own-box inference). The relay never parses either; it
+ * forwards bytes BLIND (ADR-0073). The consuming side reaches it as an ordinary
+ * `Connection { baseUrl }` pointed at a localhost forward the daemon owns (see
+ * {@link ./service-forward.createServiceForward}).
  */
-export type Route = SpawnRoute;
+export type ServiceRoute = RouteRelayPolicy & {
+	kind: 'service';
+	/** The local service to dumb-pipe the channel to. */
+	service: { host: string; port: number };
+};
+
+/**
+ * A route the gateway exposes, discriminated by `kind`: a {@link SpawnRoute} (a
+ * stdio child, MCP today) or a {@link ServiceRoute} (a TCP service, HTTP today).
+ * Both ride the same relay floor and the same {@link ByteChannel} seam; the kind
+ * only decides what local target {@link openRouteTarget} opens.
+ */
+export type Route = SpawnRoute | ServiceRoute;
 
 /** A named set of routes; the keys are route names. */
 export type RouteTable = Record<string, Route>;
@@ -93,8 +117,16 @@ export type RouteTarget = { channel: ByteChannel; close(): void };
 /**
  * Open the local target for a route and return its {@link ByteChannel}. The
  * relay acceptor dumb-pipes the inbound relay channel to this channel and back.
+ * The `kind` discriminant picks the local target; both arms produce the same
+ * {@link ByteChannel} seam, so the acceptor never learns which it got.
  */
 export function openRouteTarget(route: Route): RouteTarget {
+	if (route.kind === 'service') return openServiceTarget(route.service);
+	return openSpawnTarget(route);
+}
+
+/** Spawn the route's stdio child and adapt its stdio to a {@link ByteChannel}. */
+function openSpawnTarget(route: SpawnRoute): RouteTarget {
 	const child = spawn(route.command, route.args ?? [], {
 		cwd: route.cwd,
 		env: route.env ? { ...process.env, ...route.env } : process.env,
@@ -116,6 +148,27 @@ export function openRouteTarget(route: Route): RouteTarget {
 				// already exited
 			}
 		},
+	};
+}
+
+/**
+ * Open a TCP connection to the local service and adapt its duplex socket to a
+ * {@link ByteChannel}. A `net.Socket` is one duplex, so the same socket is both
+ * the source (its readable half) and the sink (its writable half); `close`
+ * destroys it. The relay channel's bytes pipe straight to the service and back,
+ * never parsed (the service's HTTP is its own concern, not the gateway's).
+ */
+function openServiceTarget(service: {
+	host: string;
+	port: number;
+}): RouteTarget {
+	const socket = connect({ host: service.host, port: service.port });
+	return {
+		channel: {
+			source: nodeReadableToWeb(socket),
+			sink: nodeWritableToWeb(socket),
+		},
+		close: () => socket.destroy(),
 	};
 }
 

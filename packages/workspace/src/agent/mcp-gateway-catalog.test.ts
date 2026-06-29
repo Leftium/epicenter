@@ -30,7 +30,7 @@ const MINI_SERVER = fileURLToPath(
 );
 const BOOKS = asRouteName('books');
 const ROUTES: RouteTable = {
-	books: { command: 'bun', args: ['run', MINI_SERVER] },
+	books: { kind: 'spawn', command: 'bun', args: ['run', MINI_SERVER] },
 };
 
 const spawned: RouteTarget[] = [];

@@ -43,7 +43,8 @@ function stubDeviceGateway(): DaemonServedDeviceGateway {
 		// Web Streams {@link ByteChannel} shape a real route yields; the catalog's
 		// channel close ends the child's stdin and tears it down.
 		openChannel: async () =>
-			openRouteTarget({ command: 'bun', args: ['run', MINI_MCP_SERVER] }).channel,
+			openRouteTarget({ kind: 'spawn', command: 'bun', args: ['run', MINI_MCP_SERVER] })
+				.channel,
 	};
 	return { transport };
 }

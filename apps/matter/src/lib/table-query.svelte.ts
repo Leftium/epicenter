@@ -22,7 +22,6 @@
  * value or rebuild never lands a stale result.
  */
 
-import { quoteIdent } from '@epicenter/matter-core';
 import type { Mirror } from './mirror.svelte';
 
 /** Let a burst of keystrokes (or rapid external edits) settle before querying the mirror. */
@@ -55,20 +54,17 @@ export function createTableQuery(mirror: Mirror, tableName: () => string) {
 		void mirror.version; // re-run after the mirror is rebuilt (downstream of row edits)
 
 		// No control active: the grid renders synchronously from the in-memory rows, so issue no SQL.
-		if (!whereClause && !matchText && !currentSort) {
+		if (!isActive) {
 			orderedStems = undefined;
 			error = undefined;
 			return;
 		}
-		const orderBy = currentSort
-			? `${quoteIdent(currentSort.column)} ${currentSort.dir === 'desc' ? 'DESC' : 'ASC'}`
-			: undefined;
 		let cancelled = false;
 		const handle = setTimeout(async () => {
 			const { data, error: failure } = await mirror.runQuery(tableName(), {
 				where: whereClause || undefined,
 				match: matchText || undefined,
-				orderBy,
+				sort: currentSort,
 			});
 			if (cancelled) return; // a newer control, a rebuild, or this tab being torn down won
 			if (failure) error = failure.message;

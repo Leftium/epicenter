@@ -102,15 +102,12 @@ export type RelayPeerSnapshot = typeof RelayPeerSnapshot.infer;
 
 /**
  * Wire body for `/tools`: list the catalog of one route on one target device.
- * `device` is the target's peerId (the dial target); `route` is the named route
- * on its gateway (e.g. `books`). `hintAddrs` are optional direct dial hints; the
- * `n0` daemon resolves an off-host peer by its peerId via discovery, so they are
- * a same-LAN fast path, not a requirement.
+ * `device` is the target's nodeId (the dial target the relay routes to); `route`
+ * is the named route on its gateway (e.g. `books`).
  */
 export const ToolsRequest = type({
 	device: 'string',
 	route: 'string',
-	'hintAddrs?': 'string[]',
 });
 export type ToolsRequest = typeof ToolsRequest.infer;
 
@@ -124,7 +121,6 @@ export const CallRequest = type({
 	route: 'string',
 	tool: 'string',
 	input: 'unknown',
-	'hintAddrs?': 'string[]',
 });
 export type CallRequest = typeof CallRequest.infer;
 
@@ -132,10 +128,10 @@ export type CallRequest = typeof CallRequest.infer;
  * Tagged error for the cross-device tool routes. `Unavailable` means this daemon
  * has no live gateway to dial through (signed out, or it failed to open).
  * `DialFailed` means the channel to the target route could not be opened: the
- * route refused this device (below its trust threshold), the peer is unreachable,
- * or the MCP handshake timed out. The refusal and the unreachable case are
- * indistinguishable to the dialer by design (a refused peer is closed after the
- * QUIC handshake), so both surface here.
+ * route refused this device (wrong owner, or the route is not relay-exposed), the
+ * peer is offline, or the MCP handshake timed out. The refusal and the offline
+ * case are indistinguishable to the dialer by design (a refused channel is just
+ * reset), so both surface here.
  */
 export const DeviceGatewayError = defineErrors({
 	Unavailable: () => ({
@@ -147,7 +143,7 @@ export const DeviceGatewayError = defineErrors({
 		route: string;
 		cause: unknown;
 	}) => ({
-		message: `could not reach route "${route}" on ${device}: ${extractErrorMessage(cause)}. The device may be offline, or it has not verified this one.`,
+		message: `could not reach route "${route}" on ${device}: ${extractErrorMessage(cause)}. The device may be offline, or the route is not exposed over the relay.`,
 		device,
 		route,
 		cause,
@@ -189,14 +185,13 @@ export function buildDaemonApp(
 		})
 		.post('/tools', sValidator('json', ToolsRequest), async (c) => {
 			if (!deviceGateway) return c.json(DeviceGatewayError.Unavailable());
-			const { device, route, hintAddrs } = c.req.valid('json');
+			const { device, route } = c.req.valid('json');
 			const { data, error } = await tryAsync({
 				try: async () => {
 					await using catalog = await createMcpGatewayCatalog({
 						transport: deviceGateway.transport,
 						target: asPeerId(device),
 						route: asRouteName(route),
-						hintAddrs,
 					});
 					return catalog.definitions();
 				},
@@ -207,14 +202,13 @@ export function buildDaemonApp(
 		})
 		.post('/call', sValidator('json', CallRequest), async (c) => {
 			if (!deviceGateway) return c.json(DeviceGatewayError.Unavailable());
-			const { device, route, tool, input, hintAddrs } = c.req.valid('json');
+			const { device, route, tool, input } = c.req.valid('json');
 			const { data, error } = await tryAsync({
 				try: async () => {
 					await using catalog = await createMcpGatewayCatalog({
 						transport: deviceGateway.transport,
 						target: asPeerId(device),
 						route: asRouteName(route),
-						hintAddrs,
 					});
 					// Await before the scope's `await using` disposes the catalog, or the
 					// MCP client closes while the call is still in flight.

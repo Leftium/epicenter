@@ -4,13 +4,13 @@
  * It opens a named request/response channel to a target device by multiplexing
  * the five `channel_*` frames over a {@link ChannelPort} (the account-room
  * WebSocket each device already holds), and hands back a {@link ByteChannel} the
- * MCP client rides exactly as it rides an iroh bi-stream. The agent loop and
+ * MCP client rides like any byte channel. The agent loop and
  * `createMcpGatewayCatalog` never learn which transport is underneath; this is
  * the second impl behind the seam, the one a browser can use with no app.
  *
  * Browser-safe: it depends only on the wire protocol, the Web Streams bridge,
- * and a `ChannelPort` the caller wires to its sync connection. It never imports
- * `@number0/iroh` or any node builtin.
+ * and a `ChannelPort` the caller wires to its sync connection. It imports no
+ * node builtin and no transport-native dependency.
  */
 
 import type {

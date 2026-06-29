@@ -3,8 +3,8 @@
  * request/response channels over the account-room WebSocket each device already
  * holds (the [collapse spec]'s relay floor). They share that one authenticated
  * socket with Yjs sync (binary frames) and presence, but are independent at the
- * protocol level: the relay forwards a channel's bytes BLIND, exactly as iroh
- * dumb-pipes a bi-stream, and never parses the MCP (or HTTP) payload inside.
+ * protocol level: the relay forwards a channel's bytes BLIND and never parses
+ * the MCP (or HTTP) payload inside.
  *
  * Frame flow (all text frames on the one socket; `id` is the caller-minted
  * channel correlation id, echoed unchanged; the relay routes by it and forwards

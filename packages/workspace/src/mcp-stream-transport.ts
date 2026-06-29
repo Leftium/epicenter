@@ -3,10 +3,10 @@
  * `Client`/`Server` ride any byte channel the seam produces.
  *
  * A {@link ByteChannel} is `{ source: ReadableStream, sink: WritableStream }`
- * (Web Streams), so this transport is runtime-portable: it rides an iroh
- * bi-stream (the native daemon path), a child's stdio (a route target, adapted
- * with `Readable.toWeb`/`Writable.toWeb`), and the relay-channel's account-room
- * frames (the browser floor) with no change to the `Client`/`Server` above it.
+ * (Web Streams), so this transport is runtime-portable: it rides a child's stdio
+ * (a route target, adapted with `Readable.toWeb`/`Writable.toWeb`) and the
+ * relay-channel's account-room frames (the browser floor) with no change to the
+ * `Client`/`Server` above it.
  *
  * Browser-safe by construction: it uses only Web Streams, `TextEncoder` /
  * `TextDecoder`, and the MCP SDK's `JSONRPCMessageSchema` (zod). It never
@@ -100,8 +100,8 @@ export function createStreamTransport(channel: ByteChannel): Transport {
 
 		async close(): Promise<void> {
 			// End the send half and release the recv half so the channel is not left
-			// half-open; fire `onclose` once. The underlying connection (the iroh
-			// connection, or the relay channel) is torn down by whoever owns it.
+			// half-open; fire `onclose` once. The underlying connection (the relay
+			// channel, or a spawned child's stdio) is torn down by whoever owns it.
 			try {
 				await writer?.close();
 			} catch {

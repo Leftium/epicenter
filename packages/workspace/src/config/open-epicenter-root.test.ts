@@ -36,7 +36,7 @@ let originalRuntimeDir: string | undefined;
 let runtimeRoot: string;
 
 beforeEach(() => {
-	// Point the runtime dir at a fresh `/tmp` dir so the daemon's iroh keyfile
+	// Point the runtime dir at a fresh `/tmp` dir so the daemon's node-id file
 	// (written by `resolveDaemonNodeId` under `runtimeDir()`) never leaks into
 	// the user's real data dir.
 	originalRuntimeDir = process.env.EPICENTER_RUNTIME_DIR;

@@ -2,8 +2,8 @@
  * The relay floor's data path, proven in one process: the real
  * `createMcpGatewayCatalog` drives an MCP client over the relay-channel
  * transport, across a loopback that stands in for the relay, into the channel
- * acceptor, which pipes to an in-process MCP server. No iroh, no WebSocket, no
- * spawned child: just the client transport, the acceptor, and the shared bridge.
+ * acceptor, which pipes to an in-process MCP server. No WebSocket and no spawned
+ * child: just the client transport, the acceptor, and the shared bridge.
  *
  * The loopback is a faithful 2-party stand-in for the relay's forwarding (the
  * relay's routing and refusal logic is unit-tested in `packages/server`

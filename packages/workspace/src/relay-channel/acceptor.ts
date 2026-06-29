@@ -2,12 +2,11 @@
  * The device side of the relay floor: accept inbound channels and dumb-pipe them
  * to a named local route.
  *
- * It is the mirror of the iroh gateway's accept loop, over the relay-channel port
- * instead of an iroh endpoint. On a `channel_open` it opens the named route's
- * byte target (a warm MCP stdio child, injected so this module stays browser-safe
- * and never imports `node:child_process`), answers `channel_accept`, and pipes
- * the channel's bytes to and from that target. It never parses the MCP frames; it
- * is the same dumb byte pipe as the native path.
+ * It runs the device's accept loop over the relay-channel port. On a
+ * `channel_open` it opens the named route's byte target (a warm MCP stdio child,
+ * injected so this module stays browser-safe and never imports
+ * `node:child_process`), answers `channel_accept`, and pipes the channel's bytes
+ * to and from that target. It never parses the MCP frames; it is a dumb byte pipe.
  *
  * Browser-safe: the route opener is injected (the daemon wires it to
  * `gateway/route-table.openRouteTarget`), so this module pulls no node builtin.
@@ -23,7 +22,7 @@ export type RouteTarget = { channel: ByteChannel; close(): void };
 
 /**
  * Open the local byte target for an inbound channel, or `null` to refuse it (the
- * relay-channel equivalent of the iroh route table's default-closed gate). All
+ * route table's default-closed gate). All
  * authorization lives HERE, in the injected opener, not in the acceptor: the
  * daemon refuses unless `source` is its own authenticated owner and the route is
  * explicitly relay-exposed, then returns `openRouteTarget(...)`. `source` is the
@@ -86,8 +85,7 @@ export function createChannelAcceptor(
 
 			// Dumb byte pipe both directions: caller bytes -> route stdin, route stdout
 			// -> caller. Either pipe settling (a clean route EOF or an error) tears the
-			// channel down once, mirroring the iroh gateway; the bridge's own close
-			// emits the terminal reset.
+			// channel down once; the bridge's own close emits the terminal reset.
 			void bridge.channel.source
 				.pipeTo(target.channel.sink)
 				.then(() => teardown(id), () => teardown(id));

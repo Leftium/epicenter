@@ -7,8 +7,7 @@
  * ({@link ./transport}) wraps an accepted channel in one of these and hands the
  * {@link ByteChannel} to the MCP client; the device acceptor ({@link ./acceptor})
  * wraps an admitted channel in one and pipes it to the route target. Neither side
- * parses the bytes: this is the dumb pipe, the same role iroh's bi-stream adapter
- * plays for the native path.
+ * parses the bytes: this is the dumb pipe that carries them whole.
  *
  * Terminal flow is RESET-ONLY (there is no half-close `channel_end`): the one
  * consumer, an MCP session, only ever "closes the session", so a single

@@ -36,7 +36,7 @@ const DEFAULT_ROUTE = 'books';
 
 export const toolsCommand = cmd({
 	command: 'tools <device>',
-	describe: "List a verified device's MCP tools for one route (default: books)",
+	describe: "List a device's MCP tools for one route (default: books)",
 	builder: (yargs) =>
 		yargs
 			.positional('device', {
@@ -48,12 +48,6 @@ export const toolsCommand = cmd({
 				type: 'string',
 				default: DEFAULT_ROUTE,
 				describe: 'Named route on the target gateway',
-			})
-			.option('addr', {
-				type: 'string',
-				array: true,
-				describe:
-					'Optional ip:port dial hint(s); n0 discovery finds the peer by id without them (repeatable)',
 			})
 			.option('C', epicenterRootOption)
 			.options(formatOptions)
@@ -74,7 +68,6 @@ export const toolsCommand = cmd({
 		const { data, error } = await daemon.tools({
 			device,
 			route: argv.route,
-			hintAddrs: argv.addr,
 		});
 		if (error) {
 			fail(error.message);
@@ -86,7 +79,7 @@ export const toolsCommand = cmd({
 
 export const callCommand = cmd({
 	command: 'call <device> <route> <tool> [input]',
-	describe: "Call one MCP tool on a verified device's route",
+	describe: "Call one MCP tool on a device's route",
 	builder: (yargs) =>
 		yargs
 			.positional('device', {
@@ -107,12 +100,6 @@ export const callCommand = cmd({
 			.positional('input', {
 				type: 'string',
 				describe: 'Inline JSON or @file.json (else stdin)',
-			})
-			.option('addr', {
-				type: 'string',
-				array: true,
-				describe:
-					'Optional ip:port dial hint(s); n0 discovery finds the peer by id without them (repeatable)',
 			})
 			.option('C', epicenterRootOption)
 			.options(formatOptions)
@@ -138,7 +125,6 @@ export const callCommand = cmd({
 			tool: argv.tool,
 			// MCP arguments are an object; an absent input means no arguments.
 			input: input ?? {},
-			hintAddrs: argv.addr,
 		});
 		if (error) {
 			fail(error.message);

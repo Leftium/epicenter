@@ -1,8 +1,8 @@
 /**
  * The relay route opener is the endpoint gate on the relay path, so the test
  * pins its refusals: only this daemon's authenticated owner, only an explicitly
- * relay-exposed route. A sensitive route (iroh-only `requires`, no `relay`) and
- * any other identity are refused before a child is ever spawned.
+ * relay-exposed route. A sensitive route (no `relay`, default refused) and any
+ * other identity are refused before a child is ever spawned.
  */
 
 import { afterEach, expect, test } from 'bun:test';
@@ -34,7 +34,7 @@ test('admits an exposed route for the owner', () => {
 	if (target) opened.push(target);
 });
 
-test('refuses a route not exposed over the relay (iroh-only stays iroh-only)', () => {
+test('refuses a route not exposed over the relay (default refused stays refused)', () => {
 	const open = createRelayRouteOpener({ routes, ownerUserId: 'u1' });
 	expect(open({ route: 'books', source: owner })).toBeNull();
 });

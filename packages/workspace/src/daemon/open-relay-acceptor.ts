@@ -1,14 +1,13 @@
 /**
  * Wire the device's relay-floor acceptor: accept inbound relay channels over the
  * account-room socket and serve them from the daemon's route table. It is the
- * relay mirror of the iroh accept loop (`gateway.ts`), riding the connection the
- * account room already holds instead of an iroh endpoint.
+ * device's accept loop, riding the connection the account room already holds.
  *
  * The endpoint gate (the caller must be this owner, the route must be explicitly
  * `relay: 'exposed'`) lives in {@link createRelayRouteOpener}; the acceptor is
  * pure mechanism. By default the route table exposes NOTHING over the relay (the
- * `books` route is `verified`/iroh-only), so this is safe to wire unconditionally:
- * the device participates in the floor but admits a route only once one opts in.
+ * `books` route is `refused`), so this is safe to wire unconditionally: the
+ * device participates in the floor but admits a route only once one opts in.
  *
  * NODE-ONLY: the route opener spawns route children.
  */
@@ -27,7 +26,7 @@ import {
 export type OpenRelayAcceptorOptions = {
 	/** The relay-channel port over the account-room socket. */
 	channelPort: ChannelPort;
-	/** The served route table (shared with the iroh gateway). */
+	/** The served route table. */
 	routes: RouteTable;
 	/** This daemon's authenticated account owner; the only caller admitted. */
 	ownerUserId: string;

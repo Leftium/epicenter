@@ -33,8 +33,8 @@ const MINI_MCP_SERVER = fileURLToPath(
 
 /**
  * A stub device gateway whose transport serves the fixture MCP server over a
- * child's stdio, bypassing iroh. It proves the `/tools` and `/call` route
- * plumbing (socket -> catalog -> MCP) without binding a real endpoint; the real
+ * child's stdio, in process. It proves the `/tools` and `/call` route plumbing
+ * (socket -> catalog -> MCP) without opening a real relay channel; the real
  * gateway path is proven in `mcp-gateway-catalog.test.ts` and `packages/cli`.
  */
 function stubDeviceGateway(): DaemonServedDeviceGateway {

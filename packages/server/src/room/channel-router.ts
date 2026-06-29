@@ -5,9 +5,8 @@
  * It multiplexes named request/response channels (the five `channel_*` frames of
  * `@epicenter/workspace/relay-channel`) over the account-room WebSocket each
  * device already holds, forwarding a channel's bytes BLIND between a caller
- * socket and a target device's socket, exactly as the iroh gateway dumb-pipes a
- * bi-stream. It never parses the MCP (or HTTP) payload inside a `channel_data`
- * frame.
+ * socket and a target device's socket. It never parses the MCP (or HTTP) payload
+ * inside a `channel_data` frame.
  *
  * This is a clean GENERALIZATION of the deleted dispatch path, not a revival:
  * the deleted relay parsed `action`/`input` and a typed `Result`, and that logic

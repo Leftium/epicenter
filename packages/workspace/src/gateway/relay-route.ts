@@ -3,13 +3,13 @@
  *
  * The relay-channel acceptor ({@link ../relay-channel/acceptor}) is mechanism; it
  * holds no policy and pipes whatever this opener admits. ALL relay-path
- * authorization lives here, the relay equivalent of the iroh gateway's Ring 0
- * (`gateway.ts` `handleIncoming`): admit an inbound channel only when
+ * authorization lives here, the device's whole admission gate: admit an inbound
+ * channel only when
  *
  *   - the relay-authored `source` is a `user` that is THIS daemon's own owner
  *     (the relay authenticated it; a keyless caller cannot forge it), and
  *   - the named route is explicitly `relay: 'exposed'` (default refused), so a
- *     sensitive route (financial, a shell) stays iroh-only.
+ *     sensitive route (financial, a shell) stays refused.
  *
  * NODE-ONLY: it spawns the route child via {@link openRouteTarget}. The daemon
  * injects it into the browser-safe acceptor, so the acceptor itself stays free of

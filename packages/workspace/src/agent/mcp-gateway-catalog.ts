@@ -4,7 +4,7 @@
  * and Epicenter owns only the transport). This is the SECOND catalog impl beside
  * {@link createDispatchToolCatalog}; the agent loop consumes the `ToolCatalog`
  * interface and never learns whether a tool is a local action, a relayed peer
- * action, or a remote MCP tool reached over iroh or the relay floor.
+ * action, or a remote MCP tool reached over the relay floor.
  *
  * One catalog binds to ONE route on ONE target device (the spec's
  * target-device-first picker): open the channel, drive an MCP `Client` over
@@ -14,9 +14,8 @@
  *
  * Runtime-portable: every dependency is browser-safe (the `PeerTransport` seam,
  * the Web Streams {@link createStreamTransport}, and the MCP `Client`, which
- * pulls no node builtin). It is exported today from `@epicenter/workspace/gateway`
- * for the daemon's iroh transport; the browser-safe export rides in with the
- * relay-channel consumer.
+ * pulls no node builtin), so the same catalog serves the daemon dialing over the
+ * relay floor and a browser doing the same.
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -47,15 +46,9 @@ export type McpGatewayCatalogOptions = {
 	/** The named route on the target's gateway (e.g. `books`). */
 	route: RouteName;
 	/**
-	 * Direct dial hints (`ip:port`), optional and forwarded to the transport. A
-	 * discovery transport (`n0`) ignores them and resolves the peer by peerId;
-	 * only a direct-only (`minimal`) transport needs them.
-	 */
-	hintAddrs?: string[];
-	/**
 	 * How long to wait for the open + MCP handshake + first `tools/list` before
-	 * giving up (ms, default 15000). A peer the route refuses (Ring 0) closes the
-	 * connection after the QUIC handshake, so the MCP `initialize` never answers;
+	 * giving up (ms, default 15000). A route the target refuses (wrong owner, or
+	 * not relay-exposed) resets the channel, so the MCP `initialize` never answers;
 	 * without this the caller would hang on the SDK's minute-long request timeout.
 	 * A timeout here IS the refusal signal.
 	 */
@@ -86,7 +79,6 @@ export async function createMcpGatewayCatalog(
 		transport,
 		target,
 		route,
-		hintAddrs,
 		connectTimeoutMs = 15_000,
 		logger = createLogger('workspace/mcp-gateway'),
 	} = options;
@@ -100,7 +92,6 @@ export async function createMcpGatewayCatalog(
 			const channel = await transport.openChannel({
 				target,
 				route,
-				hintAddrs,
 				signal: connectAbort.signal,
 			});
 			await client.connect(createStreamTransport(channel));

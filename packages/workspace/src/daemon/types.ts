@@ -30,6 +30,12 @@ import type { MaybePromise } from '../shared/types.js';
  */
 export type DaemonServedAccountRoom = {
 	roster(): Roster;
+	/**
+	 * This account's other devices currently online on the relay floor (live
+	 * presence). What the daemon socket app reads to serve `/relay-peers`, the
+	 * dial-target source for `tools`/`call`.
+	 */
+	peers(): Peer[];
 	/** Append this device's self-signed `verify` of `subject`. */
 	verify(subject: PeerId): AppendVerdictResult;
 	/** Append this device's self-signed `revoke` of `subject`. */

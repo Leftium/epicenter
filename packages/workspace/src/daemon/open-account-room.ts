@@ -41,7 +41,9 @@ import type { PeerId } from '../peer-transport.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
 import { resolveDaemonNodeId } from '../config/daemon-node-id.js';
 import { attachYjsLog } from '../document/attach-yjs-log.js';
+import type { NodeId } from '../document/node-id.js';
 import { openCollaboration } from '../document/open-collaboration.js';
+import type { Peer } from '../document/presence-protocol.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
 import { loadOrCreateDeviceSecret } from '../gateway/key-store.js';
@@ -88,6 +90,12 @@ export type AccountRoomHandle = {
 	/** This device's peerId (its iroh public key, 64-hex). */
 	peerId: string;
 	/**
+	 * This device's relay routing id and dial target: the relay routes by it (it
+	 * is stamped on the account-room socket as `?nodeId=`), and a peer reaches
+	 * this device by naming it.
+	 */
+	nodeId: NodeId;
+	/**
 	 * The relay-channel port over this account-room socket: the floor the
 	 * relay-channel acceptor and transport ride. It carries channels to and from
 	 * this user's other devices over the connection already held, no second socket.
@@ -95,6 +103,13 @@ export type AccountRoomHandle = {
 	channelPort: ChannelPort;
 	/** The current device roster: every dialable peer this account has listed. */
 	roster(): Roster;
+	/**
+	 * This account's other devices currently connected to the relay floor, from
+	 * the server's live presence (newest-wins per nodeId, self excluded). The dial
+	 * target lives here now, not in the roster: you reach a device that is online,
+	 * addressed by its nodeId, with no signed enrollment in between.
+	 */
+	peers(): Peer[];
 	/**
 	 * The current per-peer trust state, rooted in THIS device's key (its own and
 	 * its directly-paired devices' `verify`s confer trust). The gateway reads this
@@ -207,8 +222,10 @@ export async function openAccountRoom(
 			guid: ydoc.guid,
 			ownerId,
 			peerId,
+			nodeId,
 			channelPort: createChannelPort(collaboration.textPort),
 			roster: () => readRoster(ydoc, ownerId),
+			peers: () => collaboration.peers.list(),
 			trustState,
 			verify: (subject) =>
 				appendVerify({ ydoc, account: ownerId, secretKeyBytes, subject }),

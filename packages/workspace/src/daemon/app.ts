@@ -105,6 +105,18 @@ export const DeviceSnapshot = type({
 export type DeviceSnapshot = typeof DeviceSnapshot.infer;
 
 /**
+ * Row shape returned by `/relay-peers`. One row per same-owner device currently
+ * connected to the relay floor (the account room's live presence). `nodeId` is
+ * the dial target: `tools`/`call` route to it over the relay. Distinct from
+ * `/peers` (who is editing THIS workspace room) and from `/devices` (the
+ * account-doc roster, online or not).
+ */
+export const RelayPeerSnapshot = type({
+	nodeId: 'string',
+});
+export type RelayPeerSnapshot = typeof RelayPeerSnapshot.infer;
+
+/**
  * Wire body for `/verify`, `/revoke`, and `/sas`. `peerId` is the subject device
  * (the dial target the operator names). The daemon signs with its own device key,
  * so the asserter is never on the wire.
@@ -227,6 +239,14 @@ export function buildDaemonApp(
 			if (!accountRoom) return c.json(Ok(rows));
 			for (const [peerId, entry] of accountRoom.roster()) {
 				rows.push({ peerId, label: entry.label });
+			}
+			return c.json(Ok(rows));
+		})
+		.post('/relay-peers', (c) => {
+			const rows: RelayPeerSnapshot[] = [];
+			if (!accountRoom) return c.json(Ok(rows));
+			for (const peer of accountRoom.peers()) {
+				rows.push({ nodeId: peer.nodeId });
 			}
 			return c.json(Ok(rows));
 		})

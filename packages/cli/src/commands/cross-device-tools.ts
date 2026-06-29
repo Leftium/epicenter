@@ -3,23 +3,19 @@
  * cross-device tool loop, target-device-FIRST.
  *
  * You name the device you want, not a tool floating in a global namespace: the
- * picker resolves `<device>` against the account-doc roster (by peerId or label),
- * then the LOCAL daemon dials that device's gateway over iroh, runs an MCP
- * session against the named route, and lists or calls. The remote route gates the
- * dial on trust (a `books` route demands a `verified` peer), so a device this one
- * has not verified is refused before any tool runs.
+ * picker resolves `<device>` against the relay floor's live presence (the
+ * same-owner devices currently online), then the LOCAL daemon opens a channel to
+ * that device over the relay, runs an MCP session against the named route, and
+ * lists or calls. The remote admits the channel on owner identity and a
+ * relay-exposed route, so a route the target has not exposed is refused before
+ * any tool runs.
  *
- * Both require a running daemon with a signed-in session (it owns the gateway).
- * The daemon dials over `n0`, so iroh discovery resolves the target by its peerId
- * and no address is needed for an off-host peer; `--addr` stays an optional
- * same-LAN fast path, not a prerequisite.
+ * Both require a running daemon with a signed-in session (it holds the
+ * account-room connection the relay rides). You reach a device that is online,
+ * addressed by its nodeId; an offline device is unreachable and is not listed.
  */
 
-import {
-	type DaemonClient,
-	type DeviceSnapshot,
-	getDaemon,
-} from '@epicenter/workspace/node';
+import { type DaemonClient, getDaemon } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
 import { epicenterRootOption } from '../util/common-options.js';
 import {
@@ -46,7 +42,7 @@ export const toolsCommand = cmd({
 			.positional('device', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Target device: peer id or label (see `epicenter devices`)',
+				describe: "Target device: nodeId (shown in the target's daemon up log)",
 			})
 			.option('route', {
 				type: 'string',
@@ -96,7 +92,7 @@ export const callCommand = cmd({
 			.positional('device', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Target device: peer id or label (see `epicenter devices`)',
+				describe: "Target device: nodeId (shown in the target's daemon up log)",
 			})
 			.positional('route', {
 				type: 'string',
@@ -163,46 +159,32 @@ export const callCommand = cmd({
 });
 
 /**
- * Resolve a `<device>` token to a peerId against the roster. Accepts an exact
- * peerId or a device label; on a miss prints the known devices and returns
- * `null` (the caller stops). This is the target-device-first picker: you cannot
- * dial a device the account has not listed.
+ * Resolve a `<device>` token to a dial target (a nodeId) against the relay
+ * floor's live presence. Accepts the exact nodeId of a device currently online
+ * on the relay; on a miss prints the online devices and returns `null` (the
+ * caller stops). This is the target-device-first picker: you dial a device that
+ * is online, addressed by its nodeId, never an enrolled-but-offline one.
  */
 async function resolveDevice(
 	daemon: DaemonClient,
 	token: string,
 ): Promise<string | null> {
-	const { data: rows, error } = await daemon.devices();
+	const { data: rows, error } = await daemon.relayPeers();
 	if (error) {
 		fail(error.message);
 		return null;
 	}
 
-	const byPeerId = rows.find((row) => row.peerId === token);
-	if (byPeerId) return byPeerId.peerId;
-	const byLabel = rows.filter((row) => row.label === token);
-	if (byLabel.length === 1) return byLabel[0]!.peerId;
-	if (byLabel.length > 1) {
-		fail(`device label "${token}" is ambiguous; use a peer id`, {
-			details: byLabel.map((row) => `  ${row.peerId}  ${row.label}`),
-		});
-		return null;
-	}
+	const match = rows.find((row) => row.nodeId === token);
+	if (match) return match.nodeId;
 
-	fail(`no device "${token}" in this account's roster`, {
+	fail(`no device "${token}" online on the relay`, {
 		details:
 			rows.length === 0
-				? ['run `epicenter devices` (the roster is empty)']
-				: ['known devices:', ...describeDevices(rows)],
+				? ['no other devices are online (run `epicenter daemon up` on the target, signed in)']
+				: ['online devices:', ...rows.map((row) => `  ${row.nodeId}`)],
 	});
 	return null;
-}
-
-function describeDevices(rows: DeviceSnapshot[]): string[] {
-	return rows
-		.slice()
-		.sort((a, b) => a.label.localeCompare(b.label))
-		.map((row) => `  ${row.peerId}  ${row.label}`);
 }
 
 function emitTools(

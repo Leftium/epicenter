@@ -206,9 +206,7 @@ export async function runUp(
 		);
 	} else if (accountRoom !== null) {
 		stack.defer(() => accountRoom[Symbol.asyncDispose]());
-		logSyncStatus(
-			`account room: online as ${accountRoom.peerId} (${accountRoom.roster().size} device(s))`,
-		);
+		logSyncStatus(`account room: online as ${accountRoom.nodeId}`);
 	}
 
 	// Open the device gateway alongside the account room: this is the site that

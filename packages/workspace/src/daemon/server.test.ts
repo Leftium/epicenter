@@ -95,6 +95,9 @@ function makeAccountRoom(
 		verified,
 		revoked,
 		roster: () => roster as never,
+		// No relay presence in this stub; the `/relay-peers` path is not under
+		// test here (the cross-device dial path has its own e2e coverage).
+		peers: () => [],
 		verify: (subject) => {
 			verified.push(subject);
 			return { asserter: 'self' as never, subject, seq: 1 };

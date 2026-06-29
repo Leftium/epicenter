@@ -37,6 +37,7 @@ import type {
 	DeviceGatewayError,
 	DeviceSnapshot,
 	PeerSnapshot,
+	RelayPeerSnapshot,
 	RunRequest,
 	SasSnapshot,
 	ToolsRequest,
@@ -180,6 +181,8 @@ export function daemonClient(
 		peers: () => call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers'),
 		devices: () =>
 			call<DeviceSnapshot[], never>(socketPath, timeoutMs, '/devices'),
+		relayPeers: () =>
+			call<RelayPeerSnapshot[], never>(socketPath, timeoutMs, '/relay-peers'),
 		verify: (request: VerdictRequest) =>
 			call<VerdictSnapshot, AccountRoomError>(
 				socketPath,

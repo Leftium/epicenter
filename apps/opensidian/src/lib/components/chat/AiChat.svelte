@@ -5,7 +5,7 @@
 	} from '@epicenter/app-shell/agent-chat';
 	import { requireOpensidian } from '$lib/session';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import CrossDeviceTools from './CrossDeviceTools.svelte';
+	import CrossDeviceStatus from './CrossDeviceStatus.svelte';
 
 	const opensidian = requireOpensidian();
 	const chat = opensidian.state.chat;
@@ -22,7 +22,7 @@
 				onCreate={() => chat.createConversation()}
 			/>
 		</div>
-		<CrossDeviceTools />
+		<CrossDeviceStatus />
 	</div>
 
 	{#if active}

@@ -3,17 +3,17 @@
  *
  * This is what makes the floor load-bearing in the app (ADR-0073): it opens this
  * device's own account-room connection (the per-user fleet room every device
- * joins) and, when the user picks one of their other online devices, drives an
- * MCP `tools/call` to that device's relay-exposed route over the account-room
- * socket. No in-room dispatch path is involved; the gateway catalog it produces
- * is composed beside opensidian's in-process action catalog in `session.ts`.
+ * joins) and AUTO-MOUNTS every relay-exposed route the user's other online
+ * devices advertise in presence. No picker: the consent boundary is the daemon
+ * exposing a route (`--relay-expose books`, default refused); a browser is a pure
+ * consumer that reflects whatever its fleet exposes. The mounted catalogs compose
+ * beside opensidian's in-process action catalog in `session.ts`.
  *
- * Single active device: connecting to one replaces the prior. The session's
- * composite is first-wins on tool name, so two devices serving the same route
- * (two boxes both running `local-books` over `books`) would collide: the second
- * device's identically-named tools would never surface and every call would route
- * to the first. Holding one active device sidesteps that; multi-device needs
- * per-device tool namespacing and is deferred.
+ * Each device's tools are namespaced by `<shortNodeId>_<route>` so two devices
+ * serving the same route (two boxes both running `local-books`) coexist instead
+ * of colliding under the composite's first-wins rule. The mounted set is
+ * reconciled against presence: a device coming online mounts its routes, one
+ * dropping unmounts them.
  */
 
 import {
@@ -25,6 +25,7 @@ import {
 import {
 	createMcpGatewayCatalog,
 	type McpGatewayCatalog,
+	namespaceToolCatalog,
 	type ToolCatalog,
 } from '@epicenter/workspace/agent';
 import {
@@ -32,102 +33,120 @@ import {
 	createRelayChannelTransport,
 } from '@epicenter/workspace/relay-channel';
 
-/** The default relay-exposed route a device serves (Local Books MCP). */
-export const DEFAULT_CROSS_DEVICE_ROUTE = 'books';
-
-/** The device the session is currently reaching tools on, and how that dial is going. */
-export type ActiveDevice = {
-	/** The target device's routing id, as presence reports it (a bare string). */
+/** One mounted (device, route): the live MCP session plus its namespaced view. */
+type Mount = {
 	nodeId: string;
 	route: string;
-	status: 'connecting' | 'ready' | 'error';
-	/** Set only when `status` is `'error'`: the refusal or timeout message. */
-	error?: string;
+	/** The namespaced catalog the session composes. */
+	catalog: ToolCatalog;
+	/** The live MCP session to close on unmount. */
+	session: McpGatewayCatalog;
 };
+
+/** Stable per-mount key: a device serves at most one session per route. */
+const mountKey = (nodeId: string, route: string) => `${nodeId}::${route}`;
+
+/** A collision-free, `__`-free prefix identifying one device's route. */
+function routePrefix(nodeId: string, route: string): string {
+	const short = nodeId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+	return `${short}_${route}`;
+}
 
 export function createCrossDeviceToolsState(config: AccountRoomConnectionConfig) {
 	const accountRoom = openAccountRoomConnection(config);
 	const transport = createRelayChannelTransport(accountRoom.channelPort);
 
-	let peers = $state<Peer[]>(accountRoom.peers());
-	const unsubscribePeers = accountRoom.onPeersChange((next) => {
-		peers = next;
-	});
+	const mounts = new Map<string, Mount>();
+	/** Keys currently being dialed, so a presence flap does not double-mount. */
+	const inFlight = new Set<string>();
+	/** The ready namespaced catalogs, for the session composite. Reassigned to notify. */
+	let catalogs = $state<ToolCatalog[]>([]);
+	/** The mounted sources, for a passive UI hint. Reassigned alongside `catalogs`. */
+	let sources = $state<{ nodeId: string; route: string }[]>([]);
 
-	let active = $state<ActiveDevice | null>(null);
-	let activeCatalog: McpGatewayCatalog | null = null;
-
-	async function disposeActiveCatalog(): Promise<void> {
-		const catalog = activeCatalog;
-		activeCatalog = null;
-		if (catalog) await catalog[Symbol.asyncDispose]();
+	function publishCatalogs(): void {
+		const live = [...mounts.values()];
+		catalogs = live.map((mount) => mount.catalog);
+		sources = live.map(({ nodeId, route }) => ({ nodeId, route }));
 	}
 
-	/** Whether `active` still names the dial we are awaiting (not superseded). */
-	function stillActive(nodeId: string, route: string): boolean {
-		return active?.nodeId === nodeId && active.route === route;
+	async function mount(nodeId: string, route: string): Promise<void> {
+		const key = mountKey(nodeId, route);
+		if (mounts.has(key) || inFlight.has(key)) return;
+		inFlight.add(key);
+		try {
+			const session = await createMcpGatewayCatalog({
+				transport,
+				target: asNodeId(nodeId),
+				route: asRouteName(route),
+			});
+			// A presence tick may have dropped this device while we dialed; if so,
+			// drop the session we just opened rather than mounting a stale one.
+			if (!inFlight.has(key)) {
+				await session[Symbol.asyncDispose]();
+				return;
+			}
+			mounts.set(key, {
+				nodeId,
+				route,
+				session,
+				catalog: namespaceToolCatalog(routePrefix(nodeId, route), session),
+			});
+			publishCatalogs();
+		} catch {
+			// Refused or offline: skip. A later presence tick reconciles a retry.
+		} finally {
+			inFlight.delete(key);
+		}
 	}
+
+	async function unmount(key: string): Promise<void> {
+		// Cancel an in-flight dial so its late resolve drops its session (see mount).
+		inFlight.delete(key);
+		const mount = mounts.get(key);
+		if (!mount) return;
+		mounts.delete(key);
+		publishCatalogs();
+		await mount.session[Symbol.asyncDispose]();
+	}
+
+	/** Mount what presence advertises, unmount what it no longer does. */
+	function reconcile(peers: Peer[]): void {
+		const desired = new Set<string>();
+		for (const peer of peers) {
+			for (const route of peer.exposedRoutes ?? []) {
+				desired.add(mountKey(peer.nodeId, route));
+				void mount(peer.nodeId, route);
+			}
+		}
+		for (const key of [...mounts.keys(), ...inFlight]) {
+			if (!desired.has(key)) void unmount(key);
+		}
+	}
+
+	reconcile(accountRoom.peers());
+	const unsubscribePeers = accountRoom.onPeersChange(reconcile);
 
 	return {
-		/** This user's other online devices, live (newest-wins per nodeId, self excluded). */
-		get peers(): Peer[] {
-			return peers;
-		},
-		/** The device tools are being reached on, or `null` for local-only. */
-		get active(): ActiveDevice | null {
-			return active;
-		},
-		/**
-		 * The ready gateway catalog as a list, for the session's composite. Empty
-		 * until a device is connected and its `tools/list` has answered.
-		 */
+		/** The ready namespaced cross-device catalogs, for the session composite. */
 		catalogs(): ToolCatalog[] {
-			return activeCatalog && active?.status === 'ready' ? [activeCatalog] : [];
+			return catalogs;
 		},
-		/**
-		 * Reach one device's route, replacing any prior active device. Opens the
-		 * channel and runs the MCP handshake; a refused or offline route surfaces as
-		 * `status: 'error'` rather than throwing.
-		 */
-		async connect(
-			nodeId: string,
-			route: string = DEFAULT_CROSS_DEVICE_ROUTE,
-		): Promise<void> {
-			await disposeActiveCatalog();
-			active = { nodeId, route, status: 'connecting' };
-			try {
-				const catalog = await createMcpGatewayCatalog({
-					transport,
-					target: asNodeId(nodeId),
-					route: asRouteName(route),
-				});
-				// A newer connect/disconnect may have superseded this dial while we
-				// awaited the handshake; if so, drop the catalog we just opened.
-				if (!stillActive(nodeId, route)) {
-					await catalog[Symbol.asyncDispose]();
-					return;
-				}
-				activeCatalog = catalog;
-				active = { nodeId, route, status: 'ready' };
-			} catch (error) {
-				if (stillActive(nodeId, route)) {
-					active = {
-						nodeId,
-						route,
-						status: 'error',
-						error: error instanceof Error ? error.message : String(error),
-					};
-				}
-			}
+		/** How many cross-device tool sources are mounted (for a passive UI hint). */
+		get sourceCount(): number {
+			return sources.length;
 		},
-		/** Drop the active device, leaving the session with only its local tools. */
-		async disconnect(): Promise<void> {
-			await disposeActiveCatalog();
-			active = null;
+		/** Mounted sources as `{ nodeId, route }`, for a passive UI hint. */
+		get sources(): { nodeId: string; route: string }[] {
+			return sources;
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			unsubscribePeers();
-			await disposeActiveCatalog();
+			inFlight.clear();
+			for (const mount of mounts.values()) {
+				await mount.session[Symbol.asyncDispose]();
+			}
+			mounts.clear();
 			transport.close();
 			await accountRoom[Symbol.asyncDispose]();
 		},

@@ -94,6 +94,24 @@ Until you verify B, the `books` route refuses it before any tool runs, so the ca
 
 Two things gate this, and both are independent of iroh. The roster and the `verify` verdict travel over the account room, an ordinary sync room on the Epicenter relay, so both machines must be signed into the same account and reach the same sync server. If `epicenter devices` on A never shows B, that is a control-plane sync problem, not a transport one. Discovery also takes a few seconds to publish after `daemon up`, so a call issued in the first moment can miss a freshly started peer; retry once.
 
+### Two-machine smoke over the relay floor
+
+The relay floor carries the same MCP call without iroh: the channel rides the account-room WebSocket both machines already hold, the cloud relay routes it, and no device key, dial, or `verify` is involved. The acceptor admits the route only because it is explicitly relay-exposed and the caller is the same authenticated account (a self-hosted relay removes the third party; the relay floor's ceiling is a trusted relay).
+
+```bash
+# Machine B (the target): expose `books` over the relay floor (default refused,
+# since it is financial; this knowingly accepts the trusted-relay ceiling).
+epicenter daemon up -C <root> --relay-expose books
+
+# Machine A (the caller): force the relay path instead of iroh.
+epicenter daemon up -C <root> --via relay
+
+# On machine A, after both account rooms have synced:
+epicenter call <B-nodeId> books <tool>   # routes over the relay floor
+```
+
+`--via relay` pins machine A's selecting transport to the floor (default `auto` would try iroh first). `--relay-expose books` opts the route in on machine B; without it the acceptor refuses every relay channel by default. The relay routes by the device's account-room node id (today the same string as its iroh peerId), so the `<B-nodeId>` from B's startup banner is the target. No `verify` is needed: relay-path auth is the relay's same-account vouch plus the relay-exposed route, not the device-key trust ledger.
+
 ## Exit codes
 
 `run` is the only command with granular codes, so a script can branch on the failure kind:

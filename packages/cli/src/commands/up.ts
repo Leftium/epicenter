@@ -32,7 +32,9 @@ import {
 	openRelayAcceptor,
 	StartupError,
 	startDaemonServer,
+	type TransportPreference,
 	unlinkMetadata,
+	withRelayExposed,
 	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
@@ -84,6 +86,19 @@ type UpOptions = {
 	 * idiom as `createAuthClient` above.
 	 */
 	relay?: OpenDeviceGatewayOptions['relay'];
+	/**
+	 * Force the cross-device transport: `auto` (default) prefers iroh and falls
+	 * back to the relay floor; `relay`/`iroh` pin one. The operator knob a
+	 * two-machine relay smoke uses to exercise the floor, and a self-hoster uses to
+	 * pin their own relay.
+	 */
+	via?: TransportPreference;
+	/**
+	 * Route names to expose over the relay floor (default refused). Opts a route in
+	 * knowingly, accepting the floor's trusted-relay ceiling; used for a two-machine
+	 * smoke or by a self-hoster who runs their own relay.
+	 */
+	relayExpose?: string[];
 };
 
 /**
@@ -203,6 +218,13 @@ export async function runUp(
 	// closes the gateway (and its route children) BEFORE the trust source it reads
 	// goes away. The handle is threaded into the daemon socket app so `tools` and
 	// `call` can dial through it.
+	// The served route table, with any `--relay-expose` routes opted in to the
+	// floor. Shared by the iroh gateway and the relay acceptor so both serve the
+	// same routes; the default exposes nothing over the relay.
+	const routes = options.relayExpose?.length
+		? withRelayExposed(DEFAULT_DEVICE_ROUTES, options.relayExpose)
+		: DEFAULT_DEVICE_ROUTES;
+
 	let deviceGateway: Awaited<ReturnType<typeof openDeviceGateway>> | undefined;
 	if (accountRoom !== null) {
 		const { data: gateway, error: gatewayError } = await tryAsync({
@@ -210,9 +232,11 @@ export async function runUp(
 				openDeviceGateway({
 					epicenterRoot,
 					trust: accountRoom,
+					routes,
 					// Unify iroh and the relay floor behind one dial-side seam.
 					relayChannelPort: accountRoom.channelPort,
 					...(options.relay !== undefined && { relay: options.relay }),
+					...(options.via !== undefined && { transportPreference: options.via }),
 				}),
 			catch: (cause) => Err(extractErrorMessage(cause)),
 		});
@@ -237,7 +261,7 @@ export async function runUp(
 	if (accountRoom !== null) {
 		const relayAcceptor = openRelayAcceptor({
 			channelPort: accountRoom.channelPort,
-			routes: DEFAULT_DEVICE_ROUTES,
+			routes,
 			ownerUserId: accountRoom.ownerId,
 		});
 		stack.defer(() => relayAcceptor.close());
@@ -295,11 +319,27 @@ export const upCommand = cmd({
 			description:
 				'Suppress peer join/leave lines (sync state changes still print)',
 		},
+		via: {
+			type: 'string',
+			choices: ['auto', 'iroh', 'relay'] as const,
+			description:
+				'Force the cross-device transport (auto prefers iroh, falls back to the relay floor)',
+		},
+		'relay-expose': {
+			type: 'array',
+			string: true,
+			description:
+				'Route names to expose over the relay floor (default refused); accepts the trusted-relay ceiling',
+		},
 	},
 	handler: async (argv) => {
 		const options: UpOptions = {
 			epicenterRoot: argv.C,
 			quiet: argv.quiet,
+			...(argv.via !== undefined && { via: argv.via as TransportPreference }),
+			...(argv['relay-expose'] !== undefined && {
+				relayExpose: argv['relay-expose'] as string[],
+			}),
 		};
 
 		const { data: handle, error } = await runUp(options);

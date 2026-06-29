@@ -56,6 +56,8 @@ export {
 	openRelayAcceptor,
 	type RelayAcceptorHandle,
 } from './daemon/open-relay-acceptor.js';
+export { withRelayExposed } from './gateway/route-table.js';
+export type { TransportPreference } from './select-transport.js';
 export {
 	type DaemonClient,
 	DaemonError,

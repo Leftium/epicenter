@@ -38,6 +38,7 @@ export {
 	routeNameForAlpn,
 	routeRelayExposed,
 	routeTrustThreshold,
+	withRelayExposed,
 } from './route-table.js';
 export type {
 	Route,

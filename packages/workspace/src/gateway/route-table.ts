@@ -101,6 +101,24 @@ export function routeRelayExposed(route: Route): boolean {
 	return route.relay === 'exposed';
 }
 
+/**
+ * Return a route table with the named routes opted in to the relay floor. Used by
+ * the daemon's `--relay-expose` knob to expose a route over the relay for a
+ * two-machine smoke or a self-hoster who accepts the trusted-relay ceiling; an
+ * unknown name is ignored (it cannot expose a route that does not exist).
+ */
+export function withRelayExposed(
+	routes: RouteTable,
+	names: readonly string[],
+): RouteTable {
+	const next: RouteTable = { ...routes };
+	for (const name of names) {
+		const route = next[name];
+		if (route) next[name] = { ...route, relay: 'exposed' };
+	}
+	return next;
+}
+
 const ALPN_PREFIX = 'epicenter/route/';
 
 /** The ALPN bytes a dialer negotiates to reach the given route. */

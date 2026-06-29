@@ -33,7 +33,10 @@ import {
 	createRelayChannelTransport,
 	type RelayChannelTransport,
 } from '../relay-channel/index.js';
-import { createSelectingTransport } from '../select-transport.js';
+import {
+	createSelectingTransport,
+	type TransportPreference,
+} from '../select-transport.js';
 import { irohKeyPathFor } from './paths.js';
 
 /** The slice of the account room the gateway reads: per-peer trust for Ring 0. */
@@ -65,6 +68,13 @@ export type OpenDeviceGatewayOptions = {
 	 * Absent leaves the transport iroh-only.
 	 */
 	relayChannelPort?: ChannelPort;
+	/**
+	 * Which transport the selecting seam uses. `auto` (default) prefers iroh and
+	 * falls back to the floor; `iroh`/`relay` force one. The knob a two-machine
+	 * relay smoke uses to pin the floor (`daemon up --via relay`) and a self-hoster
+	 * uses to pin their own relay. Ignored when there is no `relayChannelPort`.
+	 */
+	transportPreference?: TransportPreference;
 	/**
 	 * Transport reachability. Defaults to `n0`: iroh discovery resolves a peer by
 	 * its roster peerId (which IS its iroh `EndpointId`), so cross-machine dialing
@@ -110,6 +120,7 @@ export async function openDeviceGateway(
 		relay = 'n0',
 		bindAddr,
 		relayChannelPort,
+		transportPreference,
 		logger = createLogger('workspace/device-gateway'),
 	} = options;
 
@@ -137,6 +148,7 @@ export async function openDeviceGateway(
 		transport = createSelectingTransport({
 			iroh: irohTransport,
 			relay: relayTransport,
+			...(transportPreference !== undefined && { prefer: transportPreference }),
 		});
 	}
 

@@ -14,6 +14,7 @@
 	import {
 		CONNECTION_PRESETS,
 		type Connection,
+		type ListModelsError,
 		type PresetId,
 	} from '@epicenter/client';
 	import { Button } from '@epicenter/ui/button';
@@ -60,7 +61,38 @@
 	// Discovery state for the connect form.
 	let discovering = $state(false);
 	let discovered = $state<string[] | null>(null);
-	let discoveryFailed = $state(false);
+	// A tailored, per-variant message when discovery fails (401 vs unreachable vs
+	// malformed), or null when discovery has not failed.
+	let discoveryError = $state<string | null>(null);
+
+	// Clear all of the connect form's working state. Called on close so a user who
+	// connected one provider lands back on the preset chooser (not a stale sub-form
+	// with a leftover typed API key) the next time they open the picker.
+	function resetConnectForm() {
+		formPreset = null;
+		formBaseUrl = '';
+		formApiKey = '';
+		formModel = '';
+		showKey = false;
+		discovering = false;
+		discovered = null;
+		discoveryError = null;
+	}
+
+	// Turn a discovery failure into an actionable hint per variant, so the user
+	// knows whether to fix the URL, the key, or just type a model.
+	function discoveryMessage(error: ListModelsError): string {
+		switch (error.name) {
+			case 'Unreachable':
+				return "Couldn't reach this endpoint. Check the URL and that the server is running, or type a model manually.";
+			case 'RequestFailed':
+				if (error.status === 401 || error.status === 403)
+					return 'The endpoint rejected this API key. Check the key, then type a model manually.';
+				return `The endpoint returned ${error.status}. Type a model manually.`;
+			case 'Malformed':
+				return "This endpoint didn't return an OpenAI model list. Type a model manually.";
+		}
+	}
 
 	function isLocal(baseUrl: string): boolean {
 		return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(baseUrl);
@@ -94,9 +126,9 @@
 	// The label on the closed trigger: a hosted model shows its product role
 	// (Fast, Best); a custom model shows its raw id (Ollama ids have no nice name).
 	const triggerLabel = $derived(
-		connections.hostedModels.find((m) => m.id === model)?.label ??
-			model ??
-			'Select model',
+		!model
+			? 'Select model'
+			: (connections.hostedModels.find((m) => m.id === model)?.label ?? model),
 	);
 
 	function selectModel(id: string) {
@@ -109,7 +141,7 @@
 		formApiKey = '';
 		formModel = '';
 		discovered = null;
-		discoveryFailed = false;
+		discoveryError = null;
 		formBaseUrl =
 			id === 'custom'
 				? ''
@@ -135,7 +167,10 @@
 
 	// Reopening the picker always lands on the model list, never a half-filled form.
 	$effect(() => {
-		if (!open) view = 'list';
+		if (!open) {
+			view = 'list';
+			resetConnectForm();
+		}
 	});
 
 	// Auto-discover on a debounced change of the connect form's endpoint or key.
@@ -146,20 +181,20 @@
 		const key = formApiKey.trim();
 		if (!url) {
 			discovered = null;
-			discoveryFailed = false;
+			discoveryError = null;
 			discovering = false;
 			return;
 		}
 		let cancelled = false;
 		discovering = true;
-		discoveryFailed = false;
+		discoveryError = null;
 		const handle = setTimeout(async () => {
 			const { data, error } = await connections.discover(url, key || undefined);
 			if (cancelled) return;
 			discovering = false;
 			if (error) {
 				discovered = null;
-				discoveryFailed = true;
+				discoveryError = discoveryMessage(error);
 				return;
 			}
 			discovered = data;
@@ -370,9 +405,9 @@
 								</Command.List>
 							</Command.Root>
 						{:else}
-							{#if discoveryFailed}
+							{#if discoveryError}
 								<p class="text-xs text-muted-foreground">
-									Couldn't list models, type one manually.
+									{discoveryError}
 								</p>
 							{:else if formBaseUrl.trim()}
 								<p class="text-xs text-muted-foreground">

@@ -26,6 +26,7 @@ import {
 	type InactiveMount,
 	openAccountRoom,
 	openDeviceGateway,
+	type OpenDeviceGatewayOptions,
 	openEpicenterRoot,
 	StartupError,
 	startDaemonServer,
@@ -72,6 +73,15 @@ type UpOptions = {
 	createAuthClient?: () => Promise<
 		Result<SyncAuthClient, MachineAuthStorageError>
 	>;
+	/**
+	 * Device-gateway transport preset. Production leaves this unset, so the daemon
+	 * runs the real `n0` discovery transport (cross-machine reach by peerId, no
+	 * synced addresses). This is NOT an operator knob: no flag, env var, or config
+	 * field selects it. It exists only so hermetic tests inject `minimal` to bind a
+	 * loopback iroh endpoint instead of reaching n0's relays, the same injection
+	 * idiom as `createAuthClient` above.
+	 */
+	relay?: OpenDeviceGatewayOptions['relay'];
 };
 
 /**
@@ -194,7 +204,12 @@ export async function runUp(
 	let deviceGateway: Awaited<ReturnType<typeof openDeviceGateway>> | undefined;
 	if (accountRoom !== null) {
 		const { data: gateway, error: gatewayError } = await tryAsync({
-			try: () => openDeviceGateway({ epicenterRoot, trust: accountRoom }),
+			try: () =>
+				openDeviceGateway({
+					epicenterRoot,
+					trust: accountRoom,
+					...(options.relay !== undefined && { relay: options.relay }),
+				}),
 			catch: (cause) => Err(extractErrorMessage(cause)),
 		});
 		if (gatewayError !== null) {

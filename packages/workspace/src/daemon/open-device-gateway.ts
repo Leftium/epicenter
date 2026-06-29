@@ -53,9 +53,12 @@ export type OpenDeviceGatewayOptions = {
 	/** The served route table; defaults to {@link DEFAULT_DEVICE_ROUTES}. */
 	routes?: RouteTable;
 	/**
-	 * Transport reachability. Defaults to `minimal` (direct, loopback/same-LAN):
-	 * cross-machine discovery (`n0`) is a later wave, so until the roster carries
-	 * dial hints the dialer supplies addresses for an off-host peer.
+	 * Transport reachability. Defaults to `n0`: iroh discovery resolves a peer by
+	 * its roster peerId (which IS its iroh `EndpointId`), so cross-machine dialing
+	 * needs no synced dial hints, no signed `addr` field, nothing beyond the roster
+	 * the account doc already carries. `minimal` (direct, loopback/same-LAN) is a
+	 * hermeticity seam for tests, never an operator mode: the daemon always runs
+	 * `n0`, and there is no flag, env var, or config field to pick otherwise.
 	 */
 	relay?: RelayPreset;
 	/** Bind address. Defaults to the gateway's own `127.0.0.1:0`. */
@@ -93,7 +96,7 @@ export async function openDeviceGateway(
 		epicenterRoot,
 		trust,
 		routes = DEFAULT_DEVICE_ROUTES,
-		relay = 'minimal',
+		relay = 'n0',
 		bindAddr,
 		logger = createLogger('workspace/device-gateway'),
 	} = options;

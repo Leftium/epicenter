@@ -11,6 +11,10 @@
  * is not exercised here. It has its own unit tests in
  * `@epicenter/auth/src/node/machine-auth.test.ts`.
  *
+ * Signed-in fixtures pin the device gateway to `relay: 'minimal'` so the daemon
+ * binds a loopback iroh endpoint instead of reaching n0's relays. Production
+ * leaves it unset, so `daemon up` runs the real `n0` discovery transport.
+ *
  * Key behaviors:
  * - happy path loads epicenter.config.ts, writes metadata, binds the
  *   socket, and replies to ping
@@ -192,6 +196,7 @@ describe('runUp: happy path', () => {
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
+				relay: 'minimal',
 			}),
 		);
 		try {
@@ -368,6 +373,7 @@ describe('runUp: failure cleanup', () => {
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
+				relay: 'minimal',
 			}),
 		);
 
@@ -391,6 +397,7 @@ describe('runUp: failure cleanup', () => {
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
+				relay: 'minimal',
 			}),
 		);
 
@@ -410,6 +417,7 @@ describe('runUp: failure cleanup', () => {
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
+				relay: 'minimal',
 			}),
 		);
 
@@ -476,6 +484,7 @@ describe('runUp: failure cleanup', () => {
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
+				relay: 'minimal',
 			}),
 		);
 
@@ -529,6 +538,7 @@ describe('runUp: failure cleanup', () => {
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
+				relay: 'minimal',
 			}),
 		);
 
@@ -583,6 +593,7 @@ describe('runUp: orphan path', () => {
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
+				relay: 'minimal',
 			}),
 		);
 

@@ -33,12 +33,6 @@
 		conversation={active}
 		connections={inferenceConnections}
 		placeholder="Ask something in English..."
-		onSignIn={() => {
-			// Vocab has no dedicated sign-in surface yet.
-		}}
-		onUpgrade={() => {
-			// Vocab has no dedicated billing surface yet.
-		}}
 	>
 		{#snippet inputAccessory()}
 			<DictationButton disabled={isGenerating} onTranscript={appendTranscript} />

@@ -20,15 +20,6 @@
 	/>
 
 	{#if active}
-		<AgentChatThread
-			conversation={active}
-			connections={inferenceConnections}
-			onSignIn={() => {
-				// TODO: open auth popover or navigate to sign-in
-			}}
-			onUpgrade={() => {
-				// TODO: open billing / upgrade flow
-			}}
-		/>
+		<AgentChatThread conversation={active} connections={inferenceConnections} />
 	{/if}
 </div>

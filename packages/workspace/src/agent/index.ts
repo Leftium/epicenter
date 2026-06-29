@@ -18,6 +18,7 @@ export {
 	type McpGatewayCatalog,
 	type McpGatewayCatalogOptions,
 } from './mcp-gateway-catalog.js';
+export { namespaceToolCatalog } from './namespace-tool-catalog.js';
 export type {
 	AgentEngine,
 	AgentEngineRequest,

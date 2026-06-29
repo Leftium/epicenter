@@ -19,6 +19,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { composeToolCatalogs } from '../agent/compose-tool-catalogs.js';
 import { createMcpGatewayCatalog } from '../agent/mcp-gateway-catalog.js';
+import { namespaceToolCatalog } from '../agent/namespace-tool-catalog.js';
 import type { ToolCatalog } from '../agent/tools.js';
 import { createStreamTransport } from '../mcp-stream-transport.js';
 import { asNodeId } from '../document/node-id.js';
@@ -191,6 +192,21 @@ test('a composed catalog routes a tool call to the floor gateway, the rest stays
 		signal,
 	);
 	expect(localOutcome.output).toBe('local file body');
+
+	// The production auto-mount path: the same gateway namespaced per device, so
+	// the model calls `<deviceKey>__customers` and the prefix is stripped before
+	// the call rides the floor.
+	const namespaced = composeToolCatalogs([
+		namespaceToolCatalog('laptop3f_books', gateway),
+	]);
+	expect(namespaced.definitions().map((d) => d.name)).toEqual([
+		'laptop3f_books__customers',
+	]);
+	const nsOutcome = await namespaced.resolve(
+		{ toolCallId: 'n1', toolName: 'laptop3f_books__customers', input: {} },
+		signal,
+	);
+	expect(nsOutcome.output).toBe(CUSTOMERS.join('\n'));
 
 	await gateway[Symbol.asyncDispose]();
 	transport.close();

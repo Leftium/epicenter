@@ -96,9 +96,9 @@ export const chargeOpenAiCreditsWithAutumn = createMiddleware<CloudEnv>(
 	},
 );
 
-// The hosted STT gateway pins one backend (mirrors `STT_UPSTREAM` in the
-// library's transcription route), so the usage event's model and provider are
-// fixed here rather than read from the request.
+// The hosted STT gateway pins one backend (mirrors `STT_MODEL` / `STT_BASE_URL`
+// in the library's transcription route), so the usage event's model and provider
+// are fixed here rather than read from the request.
 const HOSTED_STT_MODEL = 'whisper-1';
 const HOSTED_STT_PROVIDER = 'openai';
 

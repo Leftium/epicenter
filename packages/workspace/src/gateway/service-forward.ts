@@ -34,14 +34,21 @@ export type ServiceForwardOptions = {
 	target: NodeId;
 	/** The named service route on the target gateway (e.g. `whisper`). */
 	route: RouteName;
-	/** Listen host (default `127.0.0.1`: loopback only, never a public interface). */
-	host?: string;
-	/** Listen port (default `0`: an OS-assigned ephemeral port, read back as `port`). */
-	port?: number;
 };
 
+/**
+ * A forward always binds `127.0.0.1` with an OS-assigned ephemeral port: it
+ * bridges a REMOTE device's service to this machine, so binding anything but
+ * loopback would expose that service to the local network with no auth, and the
+ * consumer reads the assigned port back off {@link ServiceForward.port} to build
+ * its `Connection.baseUrl`. A fixed port or a different bind is a non-breaking
+ * option to add the day a consumer needs one; none does yet.
+ */
+const FORWARD_HOST = '127.0.0.1';
+const FORWARD_PORT = 0;
+
 export type ServiceForward = {
-	/** The localhost port the forward listens on: the host of the consumer's `Connection.baseUrl`. */
+	/** The loopback port the forward listens on: the host of the consumer's `Connection.baseUrl`. */
 	port: number;
 	/** Stop listening and destroy every live connection (each closes its relay channel). */
 	close(): Promise<void>;
@@ -55,7 +62,7 @@ export type ServiceForward = {
 export function createServiceForward(
 	options: ServiceForwardOptions,
 ): Promise<ServiceForward> {
-	const { transport, target, route, host = '127.0.0.1', port = 0 } = options;
+	const { transport, target, route } = options;
 
 	// Track live sockets so `close()` can drop in-flight connections; a connection
 	// removes itself on close, so this never grows past the live set.
@@ -91,7 +98,7 @@ export function createServiceForward(
 	}
 
 	return new Promise((resolve) => {
-		server.listen(port, host, () => {
+		server.listen(FORWARD_PORT, FORWARD_HOST, () => {
 			resolve({
 				port: (server.address() as AddressInfo).port,
 				close: () =>

@@ -86,18 +86,27 @@ export async function createMcpGatewayCatalog(
 	} = options;
 
 	const client = new Client({ name: 'epicenter-gateway', version: '0.0.0' });
+	const connectAbort = new AbortController();
 	const definitions = await withTimeout(
 		connectTimeoutMs,
 		`open MCP catalog for ${route} on ${target.slice(0, 16)}`,
 		async () => {
-			const channel = await transport.openChannel({ target, route, hintAddrs });
+			const channel = await transport.openChannel({
+				target,
+				route,
+				hintAddrs,
+				signal: connectAbort.signal,
+			});
 			await client.connect(createStreamTransport(channel));
 			const listed = await client.listTools();
 			return listed.tools.map(toAgentToolDefinition);
 		},
 	).catch(async (error) => {
-		// A refused route or a dead channel surfaces here; release the half-open
-		// client so the endpoint is not leaked, then propagate the refusal.
+		// A refused route or a dead channel surfaces here. Abort the dial so the
+		// transport closes its connection even if `openChannel` resolved after the
+		// timeout fired (otherwise that connection leaks), release the half-open
+		// client, then propagate the refusal.
+		connectAbort.abort(error);
 		await client.close().catch(() => {});
 		throw error;
 	});

@@ -66,6 +66,13 @@ export type OpenChannelOptions = {
 	 * transport that resolves addresses itself (relay/discovery) ignores them.
 	 */
 	hintAddrs?: string[];
+	/**
+	 * Abort the open. Aborting closes the underlying connection the transport
+	 * opened, even if the open resolves after the abort fires, so a caller that
+	 * times the open out (a Ring-0 refusal hangs the MCP handshake) does not leak
+	 * the connection.
+	 */
+	signal?: AbortSignal;
 };
 
 /**

@@ -88,6 +88,13 @@ export type DialOptions = {
 	route: RouteName;
 	/** Direct dial hints (`ip:port`); required under the `minimal` preset. */
 	hintAddrs?: string[];
+	/**
+	 * Abort the dial. Aborting closes the connection this dial opened, whether the
+	 * abort lands before, during, or after the connect resolves, so a timed-out
+	 * dial (a refused route leaves the MCP handshake hanging) never leaks the iroh
+	 * connection.
+	 */
+	signal?: AbortSignal;
 };
 
 export type PeerGateway = {
@@ -104,6 +111,13 @@ export type PeerGateway = {
 	/** Close the endpoint and tear down any live route children. */
 	close(): Promise<void>;
 };
+
+/** The error a dial rejects with when its abort signal has fired. */
+function dialAbortError(signal: AbortSignal): Error {
+	return signal.reason instanceof Error
+		? signal.reason
+		: new Error('dial aborted', { cause: signal.reason });
+}
 
 /** Build and bind a {@link PeerGateway}. Call {@link PeerGateway.listen} to accept. */
 export async function createPeerGateway(
@@ -134,6 +148,8 @@ export async function createPeerGateway(
 
 	/** Live route children, tracked so {@link close} can tear them down. */
 	const targets = new Set<RouteTarget>();
+	/** Live dial-side connections, tracked so {@link close} can release them. */
+	const dialConnections = new Set<Awaited<ReturnType<typeof endpoint.connect>>>();
 	let listening = false;
 	let onlinePromise: Promise<void> | undefined;
 
@@ -236,18 +252,54 @@ export async function createPeerGateway(
 			})();
 		},
 
-		async dial({ target, route, hintAddrs }) {
+		async dial({ target, route, hintAddrs, signal }) {
+			if (signal?.aborted) throw dialAbortError(signal);
 			await ensureOnline();
 			const id = EndpointId.fromString(target);
 			const addr = new EndpointAddr(id, null, hintAddrs ?? null);
 			const connection = await endpoint.connect(addr, alpnForRoute(route));
+			dialConnections.add(connection);
+
+			// Close the connection exactly once: when the channel is fully torn down
+			// (StreamTransport.close destroys the recv half, so the source emits
+			// 'close') or when the caller aborts the dial. Without this the dial-side
+			// connection outlives the channel and is released only by `close()`.
+			const release = () => {
+				if (!dialConnections.delete(connection)) return;
+				try {
+					connection.close(0n, [...Buffer.from('dial released')]);
+				} catch {
+					// already closed
+				}
+			};
+
 			const bi = await connection.openBi();
-			return biStreamToByteChannel(bi);
+			const channel = biStreamToByteChannel(bi);
+			channel.source.on('close', release);
+
+			// An abort between connect and here would miss the listener, so re-check.
+			if (signal) {
+				if (signal.aborted) {
+					release();
+					throw dialAbortError(signal);
+				}
+				signal.addEventListener('abort', release, { once: true });
+			}
+
+			return channel;
 		},
 
 		async close() {
 			for (const target of targets) target.close();
 			targets.clear();
+			for (const connection of dialConnections) {
+				try {
+					connection.close(0n, [...Buffer.from('gateway closed')]);
+				} catch {
+					// already closed
+				}
+			}
+			dialConnections.clear();
 			try {
 				await endpoint.close();
 			} catch {

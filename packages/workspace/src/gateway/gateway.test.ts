@@ -198,3 +198,37 @@ test('admits a peer for a route iff its state meets the route threshold', async 
 	}
 	expect(refused).toBe(true);
 });
+
+test('dial rejects promptly when its signal is already aborted', async () => {
+	const server = await track(
+		createPeerGateway({
+			secret: SecretKey.generate(),
+			routes: { echo: { ...ECHO_ROUTE, requires: 'listed' } },
+			trust: fixedTrust([]),
+		}),
+	);
+	server.listen();
+
+	const dialer = await track(
+		createPeerGateway({
+			secret: SecretKey.generate(),
+			routes: {},
+			trust: fixedTrust([]),
+		}),
+	);
+
+	// A pre-aborted signal short-circuits before any connect, so a caller that has
+	// already timed the open out gets a prompt rejection instead of a hang.
+	let rejected = false;
+	try {
+		await dialer.dial({
+			target: server.peerId,
+			route: ECHO,
+			hintAddrs: server.boundSockets(),
+			signal: AbortSignal.abort(),
+		});
+	} catch {
+		rejected = true;
+	}
+	expect(rejected).toBe(true);
+});

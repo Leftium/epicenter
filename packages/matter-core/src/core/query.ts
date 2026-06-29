@@ -21,15 +21,19 @@ function ftsMatchLiteral(term: string): string {
 	return quoteString(phrase);
 }
 
-/** The grid's query controls: a SQL `WHERE` fragment, full-text search text, and a SQL `ORDER BY`
- *  fragment. All optional; an all-empty query is just `SELECT "stem" FROM <table>`. */
+/** A column sort: which column, ascending or descending. The column is a known header name (not free
+ *  text), quoted into the `ORDER BY` fragment inside {@link buildStemQuery}. */
+export type Sort = { column: string; dir: 'asc' | 'desc' };
+
+/** The grid's query controls: a SQL `WHERE` fragment, full-text search text, and a column sort. All
+ *  optional; an all-empty query is just `SELECT "stem" FROM <table>`. */
 export type StemQuery = {
 	/** A raw SQL boolean expression for the `WHERE` clause (the user's own filter box). */
 	where?: string;
 	/** Plain search text, matched full-text against the folder's FTS5 index. */
 	match?: string;
-	/** A SQL `ORDER BY` fragment built from a clicked header (a known, quoted column plus direction). */
-	orderBy?: string;
+	/** The active column sort (a clicked header), or omitted for relevance / natural order. */
+	sort?: Sort;
 };
 
 /**
@@ -37,30 +41,36 @@ export type StemQuery = {
  * select over the base table. With a `match`, the full-text search runs in a derived subquery that
  * exposes ONLY `rowid` and `rank`, joined back to the base table; that subquery is what keeps the FTS
  * index's columns (`status`, `title`, ...) from shadowing the base table's columns of the same name, so
- * the user's unqualified `where`/`orderBy` never hit an "ambiguous column" error. Relevance (`rank`)
- * orders the results unless an explicit `ORDER BY` is given. `orderBy` is a SQL fragment the caller
- * builds from a known column, so it is inlined; `where` is the user's own clause against their own
- * read-only db, where the worst a bad clause does is return an error.
+ * the user's unqualified `where`/`sort` never hit an "ambiguous column" error. Relevance (`rank`)
+ * orders the results unless an explicit `sort` is given. `sort` names a known header column, quoted
+ * into the `ORDER BY` here; `where` is the user's own clause against their own read-only db, where the
+ * worst a bad clause does is return an error.
  */
 export function buildStemQuery(
 	tableName: string,
-	{ where, match, orderBy }: StemQuery,
+	{ where, match, sort }: StemQuery,
 ): string {
 	const table = quoteIdent(tableName);
+	const orderBy = sort
+		? `${quoteIdent(sort.column)} ${sort.dir === 'desc' ? 'DESC' : 'ASC'}`
+		: undefined;
+
+	// The base select differs by mode, but the WHERE and ORDER BY tail is shared. A matched query also
+	// falls back to relevance (`rank`) when the caller gives no explicit sort.
+	let sql = `SELECT "stem" FROM ${table}`;
+	let defaultOrder: string | undefined;
 	if (match) {
 		const fts = quoteIdent(ftsTableName(tableName));
 		// The match subquery projects only rowid + rank, so its alias contributes no column that could
 		// collide with a base column in the user's where/order by. `_fts_match` is a synthetic alias.
 		const matched = `(SELECT rowid, rank FROM ${fts} WHERE ${fts} MATCH ${ftsMatchLiteral(match)})`;
-		let sql =
+		sql =
 			`SELECT ${table}."stem" AS stem FROM ${table} ` +
 			`JOIN ${matched} "_fts_match" ON ${table}.rowid = "_fts_match".rowid`;
-		if (where) sql += ` WHERE ${where}`;
-		sql += ` ORDER BY ${orderBy ?? '"_fts_match".rank'}`;
-		return sql;
+		defaultOrder = '"_fts_match".rank';
 	}
-	let sql = `SELECT "stem" FROM ${table}`;
 	if (where) sql += ` WHERE ${where}`;
-	if (orderBy) sql += ` ORDER BY ${orderBy}`;
+	const order = orderBy ?? defaultOrder;
+	if (order) sql += ` ORDER BY ${order}`;
 	return sql;
 }

@@ -5,6 +5,7 @@
 	} from '@epicenter/app-shell/agent-chat';
 	import { requireOpensidian } from '$lib/session';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
+	import CrossDeviceTools from './CrossDeviceTools.svelte';
 
 	const opensidian = requireOpensidian();
 	const chat = opensidian.state.chat;
@@ -12,12 +13,17 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<ConversationSwitcher
-		conversations={chat.conversations}
-		activeConversationId={chat.activeConversationId}
-		onSwitch={(id) => chat.switchTo(id)}
-		onCreate={() => chat.createConversation()}
-	/>
+	<div class="flex items-center gap-1 pr-1">
+		<div class="min-w-0 flex-1">
+			<ConversationSwitcher
+				conversations={chat.conversations}
+				activeConversationId={chat.activeConversationId}
+				onSwitch={(id) => chat.switchTo(id)}
+				onCreate={() => chat.createConversation()}
+			/>
+		</div>
+		<CrossDeviceTools />
+	</div>
 
 	{#if active}
 		<AgentChatThread

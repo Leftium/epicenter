@@ -17,11 +17,7 @@ function makeStubClient() {
 	};
 	const client = {
 		peers: unreachable as DaemonClient['peers'],
-		devices: unreachable as DaemonClient['devices'],
 		relayPeers: unreachable as DaemonClient['relayPeers'],
-		verify: unreachable as DaemonClient['verify'],
-		revoke: unreachable as DaemonClient['revoke'],
-		sas: unreachable as DaemonClient['sas'],
 		tools: unreachable as DaemonClient['tools'],
 		call: unreachable as DaemonClient['call'],
 		list: unreachable as DaemonClient['list'],

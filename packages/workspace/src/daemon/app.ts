@@ -90,70 +90,15 @@ export type DaemonListSnapshot = {
 };
 
 /**
- * Row shape returned by `/devices`. One row per peer in this account's roster.
- *
- * Distinct from {@link PeerSnapshot}: `/peers` is who is connected to THIS
- * workspace room right now (live presence), while `/devices` is the per-person
- * roster from the account doc (every dialable device the account has listed,
- * online or not). `peerId` is the device's iroh public key (64-hex), the dial
- * target; `label` is its human-facing name (hostname by default).
- */
-export const DeviceSnapshot = type({
-	peerId: 'string',
-	label: 'string',
-});
-export type DeviceSnapshot = typeof DeviceSnapshot.infer;
-
-/**
  * Row shape returned by `/relay-peers`. One row per same-owner device currently
  * connected to the relay floor (the account room's live presence). `nodeId` is
  * the dial target: `tools`/`call` route to it over the relay. Distinct from
- * `/peers` (who is editing THIS workspace room) and from `/devices` (the
- * account-doc roster, online or not).
+ * `/peers`, which is who is editing THIS workspace room.
  */
 export const RelayPeerSnapshot = type({
 	nodeId: 'string',
 });
 export type RelayPeerSnapshot = typeof RelayPeerSnapshot.infer;
-
-/**
- * Wire body for `/verify`, `/revoke`, and `/sas`. `peerId` is the subject device
- * (the dial target the operator names). The daemon signs with its own device key,
- * so the asserter is never on the wire.
- */
-export const VerdictRequest = type({
-	peerId: 'string',
-});
-export type VerdictRequest = typeof VerdictRequest.infer;
-
-/** Body returned by a successful `/verify` or `/revoke`: the appended verdict. */
-export const VerdictSnapshot = type({
-	/** The subject the verdict was stated about. */
-	peerId: 'string',
-	/** The per-asserter `seq` the verdict carries. */
-	seq: 'number',
-});
-export type VerdictSnapshot = typeof VerdictSnapshot.infer;
-
-/** Body returned by `/sas`: the 6-digit code for the (this device, subject) pair. */
-export const SasSnapshot = type({
-	peerId: 'string',
-	sas: 'string',
-});
-export type SasSnapshot = typeof SasSnapshot.infer;
-
-/**
- * Tagged error for the account-doc write routes. They need a live account room
- * (a signed-in session); without one the daemon cannot sign a verdict or derive
- * a SAS, so it answers with this rather than silently no-opping.
- */
-export const AccountRoomError = defineErrors({
-	Unavailable: () => ({
-		message:
-			'no account room: the daemon has no signed-in session. Sign in, then restart `epicenter daemon up`.',
-	}),
-});
-export type AccountRoomError = InferErrors<typeof AccountRoomError>;
 
 /**
  * Wire body for `/tools`: list the catalog of one route on one target device.
@@ -234,14 +179,6 @@ export function buildDaemonApp(
 			}
 			return c.json(Ok(rows));
 		})
-		.post('/devices', (c) => {
-			const rows: DeviceSnapshot[] = [];
-			if (!accountRoom) return c.json(Ok(rows));
-			for (const [peerId, entry] of accountRoom.roster()) {
-				rows.push({ peerId, label: entry.label });
-			}
-			return c.json(Ok(rows));
-		})
 		.post('/relay-peers', (c) => {
 			const rows: RelayPeerSnapshot[] = [];
 			if (!accountRoom) return c.json(Ok(rows));
@@ -249,25 +186,6 @@ export function buildDaemonApp(
 				rows.push({ nodeId: peer.nodeId });
 			}
 			return c.json(Ok(rows));
-		})
-		.post('/verify', sValidator('json', VerdictRequest), (c) => {
-			if (!accountRoom) return c.json(AccountRoomError.Unavailable());
-			const { peerId } = c.req.valid('json');
-			const { seq } = accountRoom.verify(asPeerId(peerId));
-			return c.json(Ok<VerdictSnapshot>({ peerId, seq }));
-		})
-		.post('/revoke', sValidator('json', VerdictRequest), (c) => {
-			if (!accountRoom) return c.json(AccountRoomError.Unavailable());
-			const { peerId } = c.req.valid('json');
-			const { seq } = accountRoom.revoke(asPeerId(peerId));
-			return c.json(Ok<VerdictSnapshot>({ peerId, seq }));
-		})
-		.post('/sas', sValidator('json', VerdictRequest), (c) => {
-			if (!accountRoom) return c.json(AccountRoomError.Unavailable());
-			const { peerId } = c.req.valid('json');
-			return c.json(
-				Ok<SasSnapshot>({ peerId, sas: accountRoom.sas(asPeerId(peerId)) }),
-			);
 		})
 		.post('/tools', sValidator('json', ToolsRequest), async (c) => {
 			if (!deviceGateway) return c.json(DeviceGatewayError.Unavailable());

@@ -1,7 +1,7 @@
 /**
  * The reserved guid of the per-person account room.
  *
- * The account doc (the device roster and, later, the trust ledger) is not a new
+ * The account room (the per-user fleet room the relay floor rides) is not a new
  * Durable Object type: it is an ordinary sync room opened at
  * `owners/<userId>/rooms/<RESERVED_ACCOUNT_ROOM_GUID>`, so it reuses every bit
  * of room machinery (bearer auth, Y.Doc sync, the WebSocket upgrade). What makes

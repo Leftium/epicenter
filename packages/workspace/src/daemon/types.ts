@@ -12,9 +12,7 @@
  */
 
 import type { Result } from 'wellcrafted/result';
-import type { AppendVerdictResult } from '../account/account-doc.js';
-import type { Roster } from '../account/reducer.js';
-import type { PeerId, PeerTransport } from '../peer-transport.js';
+import type { PeerTransport } from '../peer-transport.js';
 import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
@@ -23,25 +21,14 @@ import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise } from '../shared/types.js';
 
 /**
- * What the daemon socket app reads to serve `/devices`: the current device
- * roster (the account doc's reducer projection). A live account room satisfies
- * this structurally; the daemon serves an empty list when there is none (signed
- * out, or the account room failed to open).
+ * What the daemon socket app reads to serve `/relay-peers`: this account's other
+ * devices currently online on the relay floor (live presence), the dial-target
+ * source for `tools`/`call`. A live account room satisfies this structurally; the
+ * daemon serves an empty list when there is none (signed out, or the account room
+ * failed to open).
  */
 export type DaemonServedAccountRoom = {
-	roster(): Roster;
-	/**
-	 * This account's other devices currently online on the relay floor (live
-	 * presence). What the daemon socket app reads to serve `/relay-peers`, the
-	 * dial-target source for `tools`/`call`.
-	 */
 	peers(): Peer[];
-	/** Append this device's self-signed `verify` of `subject`. */
-	verify(subject: PeerId): AppendVerdictResult;
-	/** Append this device's self-signed `revoke` of `subject`. */
-	revoke(subject: PeerId): AppendVerdictResult;
-	/** The 6-digit SAS for the (this device, `subject`) pair, for out-of-band compare. */
-	sas(subject: PeerId): string;
 };
 
 /**

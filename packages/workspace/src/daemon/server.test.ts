@@ -81,32 +81,14 @@ function claimTestLease(): DaemonLease {
 }
 
 /**
- * A stub account room backed by a plain roster map. `verify`/`revoke` record the
- * subjects they were asked to sign (the daemon's write path is exercised without
- * a real Y.Doc); `sas` returns a fixed code. Structurally satisfies
+ * A stub account room that reports a fixed relay-presence list from `peers()`
+ * (the source the daemon serves at `/relay-peers`). Structurally satisfies
  * {@link DaemonServedAccountRoom}.
  */
-function makeAccountRoom(
-	roster: Map<string, { label: string }>,
-): DaemonServedAccountRoom & { verified: string[]; revoked: string[] } {
-	const verified: string[] = [];
-	const revoked: string[] = [];
+function makeAccountRoom(nodeIds: string[]): DaemonServedAccountRoom {
 	return {
-		verified,
-		revoked,
-		roster: () => roster as never,
-		// No relay presence in this stub; the `/relay-peers` path is not under
-		// test here (the cross-device dial path has its own e2e coverage).
-		peers: () => [],
-		verify: (subject) => {
-			verified.push(subject);
-			return { asserter: 'self' as never, subject, seq: 1 };
-		},
-		revoke: (subject) => {
-			revoked.push(subject);
-			return { asserter: 'self' as never, subject, seq: 2 };
-		},
-		sas: () => '004217',
+		peers: () =>
+			nodeIds.map((nodeId) => ({ nodeId, connectedAt: 0, actions: {} })),
 	};
 }
 
@@ -148,8 +130,8 @@ describe('startDaemonServer', () => {
 		}
 	});
 
-	test('devices serves the account-room roster, empty without one', async () => {
-		// Without an account room, /devices is a valid empty list.
+	test('relay-peers serves the account-room presence, empty without one', async () => {
+		// Without an account room, /relay-peers is a valid empty list.
 		const leaseA = claimTestLease();
 		const withoutRoom = await startDaemonServer({
 			lease: leaseA,
@@ -158,77 +140,26 @@ describe('startDaemonServer', () => {
 		try {
 			const server = expectOk(withoutRoom);
 			expect(
-				expectOk(await daemonClient(server.socketPath).devices()),
+				expectOk(await daemonClient(server.socketPath).relayPeers()),
 			).toEqual([]);
 		} finally {
 			if (withoutRoom.error === null) await withoutRoom.data.close();
 			leaseA.release();
 		}
 
-		// With a roster, /devices maps each entry to a { peerId, label } row.
+		// With presence, /relay-peers maps each online device to a { nodeId } row.
 		const leaseB = claimTestLease();
-		const roster = new Map([
-			['aa'.repeat(32), { label: 'Laptop' }],
-			['bb'.repeat(32), { label: 'Phone' }],
-		]);
 		const withRoom = await startDaemonServer({
 			lease: leaseB,
 			mount: { mount: 'demo', runtime: makeRuntime() },
-			accountRoom: makeAccountRoom(roster),
+			accountRoom: makeAccountRoom(['node-laptop', 'node-phone']),
 		});
 		try {
 			const server = expectOk(withRoom);
-			const rows = expectOk(await daemonClient(server.socketPath).devices());
-			expect(rows).toEqual([
-				{ peerId: 'aa'.repeat(32), label: 'Laptop' },
-				{ peerId: 'bb'.repeat(32), label: 'Phone' },
-			]);
+			const rows = expectOk(await daemonClient(server.socketPath).relayPeers());
+			expect(rows).toEqual([{ nodeId: 'node-laptop' }, { nodeId: 'node-phone' }]);
 		} finally {
 			if (withRoom.error === null) await withRoom.data.close();
-			leaseB.release();
-		}
-	});
-
-	test('verify/revoke/sas write through the account room; absent room errors', async () => {
-		const subject = 'cc'.repeat(32);
-
-		// With an account room, the verdict routes sign through it and SAS returns.
-		const leaseA = claimTestLease();
-		const room = makeAccountRoom(new Map());
-		const withRoom = await startDaemonServer({
-			lease: leaseA,
-			mount: { mount: 'demo', runtime: makeRuntime() },
-			accountRoom: room,
-		});
-		try {
-			const client = daemonClient(expectOk(withRoom).socketPath);
-			const verified = expectOk(await client.verify({ peerId: subject }));
-			expect(verified).toEqual({ peerId: subject, seq: 1 });
-			expect(room.verified).toEqual([subject]);
-
-			const revoked = expectOk(await client.revoke({ peerId: subject }));
-			expect(revoked).toEqual({ peerId: subject, seq: 2 });
-			expect(room.revoked).toEqual([subject]);
-
-			const sas = expectOk(await client.sas({ peerId: subject }));
-			expect(sas).toEqual({ peerId: subject, sas: '004217' });
-		} finally {
-			if (withRoom.error === null) await withRoom.data.close();
-			leaseA.release();
-		}
-
-		// Without one, a verdict route is a typed Unavailable error, not a no-op.
-		const leaseB = claimTestLease();
-		const withoutRoom = await startDaemonServer({
-			lease: leaseB,
-			mount: { mount: 'demo', runtime: makeRuntime() },
-		});
-		try {
-			const client = daemonClient(expectOk(withoutRoom).socketPath);
-			const error = expectErr(await client.verify({ peerId: subject }));
-			expect(error.name).toBe('Unavailable');
-		} finally {
-			if (withoutRoom.error === null) await withoutRoom.data.close();
 			leaseB.release();
 		}
 	});

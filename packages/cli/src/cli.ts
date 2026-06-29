@@ -3,17 +3,11 @@ import { authCommand } from './commands/auth.js';
 import { blobsCommand } from './commands/blobs.js';
 import { callCommand, toolsCommand } from './commands/cross-device-tools.js';
 import { daemonCommand } from './commands/daemon.js';
-import { devicesCommand } from './commands/devices.js';
 import { initCommand } from './commands/init.js';
 import { listCommand } from './commands/list.js';
 import { matterCommand } from './commands/matter.js';
 import { peersCommand } from './commands/peers.js';
 import { runCommand } from './commands/run.js';
-import {
-	revokeCommand,
-	sasCommand,
-	verifyCommand,
-} from './commands/trust.js';
 
 /**
  * Create the Epicenter CLI instance.
@@ -29,7 +23,7 @@ import {
  *   - `matter`: lint a folder of typed markdown (disk is the source; SQLite is a projection)
  *   - `run`:   invoke one by action key; `--peer` dispatches over RPC
  *   - `peers`: enumerate other clients currently online via the workspace presence row
- *   - `devices`: list this account's devices from the per-person account-doc roster
+ *   - `tools`/`call`: list or call a peer device's MCP tools over the relay floor
  *
  * Every mount action is invoked through `run`, e.g.
  * `epicenter run markdown_rebuild '{}'` to re-materialize the read-only
@@ -48,14 +42,10 @@ export function createCLI() {
 				.command(blobsCommand)
 				.command(initCommand)
 				.command(daemonCommand)
-				.command(devicesCommand)
 				.command(listCommand)
 				.command(matterCommand)
 				.command(peersCommand)
 				.command(runCommand)
-				.command(verifyCommand)
-				.command(revokeCommand)
-				.command(sasCommand)
 				.command(toolsCommand)
 				.command(callCommand)
 				.demandCommand(1)

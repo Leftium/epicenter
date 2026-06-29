@@ -1,19 +1,19 @@
 /**
- * Open the per-person account room on the daemon (Wave 3: discovery / roster).
+ * Open the per-person account room on the daemon: the relay floor's home.
  *
- * The account doc is the per-person device roster and (from Wave 4) trust
- * ledger. It is NOT a new Durable Object: it is an ordinary sync room at the
+ * The account room is the per-user fleet room: an ordinary sync room at the
  * reserved guid {@link RESERVED_ACCOUNT_ROOM_GUID}, so it reuses every bit of
  * room machinery (bearer auth, Y.Doc sync, the WebSocket upgrade) the same way a
- * mount's room does. `epicenter daemon up` opens it alongside its mount.
+ * mount's room does. `epicenter daemon up` opens it alongside its mount and rides
+ * the relay floor over the one connection it holds: the channel port carries
+ * cross-device tool channels, and server-owned presence lists this user's other
+ * online devices.
  *
- * What this node module owns is exactly the node-only glue the browser-safe
- * `account/` core cannot do: load the device's durable iroh secret from its
- * `0600` keyfile, persist the doc's update log to disk, join the room over the
- * relay, and append the device's self-signed `identity` claim with the
- * machine's hostname as its label. The signing and the roster fold themselves
- * are the portable `account/` code; this module hands it raw key bytes and a
- * `Y.Doc`, never iroh, so the trust path stays browser-verifiable.
+ * What this node module owns is the node-only glue the browser-safe room core
+ * cannot do: persist the doc's update log to disk and join the room over the
+ * relay. There is no per-device signing or trust ledger; the relay floor
+ * authenticates by the session's `userId`, and a route is reached on owner
+ * identity plus a relay-exposed gate (see `gateway/relay-route.ts`).
  *
  * It is gated on a signed-in session: the room is bearer-authed, so a signed-out
  * daemon has no account room (it returns `null`, the room's analogue of an
@@ -21,45 +21,27 @@
  * never aborts the mount that is the daemon's actual job.
  */
 
-import { hostname } from 'node:os';
-import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 
-import {
-	appendIdentityClaim,
-	appendRevoke,
-	appendVerify,
-	type AppendVerdictResult,
-	createTrustView,
-	readRoster,
-	RESERVED_ACCOUNT_ROOM_GUID,
-	type Roster,
-	shortAuthString,
-	type TrustState,
-} from '../account/index.js';
-import type { PeerId } from '../peer-transport.js';
-import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
+import { RESERVED_ACCOUNT_ROOM_GUID } from '../account/index.js';
 import { resolveDaemonNodeId } from '../config/daemon-node-id.js';
+import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
 import { attachYjsLog } from '../document/attach-yjs-log.js';
 import type { NodeId } from '../document/node-id.js';
 import { openCollaboration } from '../document/open-collaboration.js';
 import type { Peer } from '../document/presence-protocol.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
-import { loadOrCreateDeviceSecret } from '../gateway/key-store.js';
 import {
 	type ChannelPort,
 	createChannelPort,
 } from '../relay-channel/index.js';
 import { hashYDocClientId } from '../shared/client-id.js';
-import { irohKeyPathFor } from './paths.js';
 import { resolveSyncBaseURL } from './mount-runtime.js';
-
-const log = createLogger('workspace/account-room');
 
 /** Inputs to {@link openAccountRoom}. */
 export type OpenAccountRoomOptions = {
-	/** The Epicenter root whose daemon is opening the room (selects the keyfile). */
+	/** The Epicenter root whose daemon is opening the room (selects the node id). */
 	epicenterRoot: string;
 	/**
 	 * The machine auth client, or `null` when signed out. The room is opened only
@@ -68,31 +50,23 @@ export type OpenAccountRoomOptions = {
 	auth: WorkspaceAuthClient | null;
 	/** Explicit sync base URL; falls back through {@link resolveSyncBaseURL}. */
 	baseURL?: string;
-	/**
-	 * The device label to publish. Defaults to the machine hostname; injectable
-	 * so tests pin a deterministic value. A user-facing rename surface can pass a
-	 * stored override here in a later wave.
-	 */
-	label?: string;
 };
 
 /**
- * A live account-room connection. `roster()` reads the current device roster
- * (the reducer's fold of the signed log); `[Symbol.asyncDispose]` tears the
- * doc, sync, and durable log down in the same destroy-then-drain order a mount
- * uses.
+ * A live account-room connection: the relay floor over one socket. `peers()`
+ * reads the user's other online devices; `channelPort` carries cross-device tool
+ * channels; `[Symbol.asyncDispose]` tears the doc, sync, and durable log down in
+ * the same destroy-then-drain order a mount uses.
  */
 export type AccountRoomHandle = {
 	/** The reserved guid this room was opened at. */
 	guid: string;
 	/** The signed-in account owner (userId); the relay floor's authorized identity. */
 	ownerId: string;
-	/** This device's peerId (its iroh public key, 64-hex). */
-	peerId: string;
 	/**
 	 * This device's relay routing id and dial target: the relay routes by it (it
-	 * is stamped on the account-room socket as `?nodeId=`), and a peer reaches
-	 * this device by naming it.
+	 * is stamped on the account-room socket as `?nodeId=`), and a peer reaches this
+	 * device by naming it.
 	 */
 	nodeId: NodeId;
 	/**
@@ -101,43 +75,20 @@ export type AccountRoomHandle = {
 	 * this user's other devices over the connection already held, no second socket.
 	 */
 	channelPort: ChannelPort;
-	/** The current device roster: every dialable peer this account has listed. */
-	roster(): Roster;
 	/**
-	 * This account's other devices currently connected to the relay floor, from
-	 * the server's live presence (newest-wins per nodeId, self excluded). The dial
-	 * target lives here now, not in the roster: you reach a device that is online,
-	 * addressed by its nodeId, with no signed enrollment in between.
+	 * This account's other devices currently connected to the relay floor, from the
+	 * server's live presence (newest-wins per nodeId, self excluded). You reach a
+	 * device that is online, addressed by its nodeId, with no enrollment in between.
 	 */
 	peers(): Peer[];
-	/**
-	 * The current per-peer trust state, rooted in THIS device's key (its own and
-	 * its directly-paired devices' `verify`s confer trust). The gateway reads this
-	 * per inbound connection to drive Ring 0, so a `verify`/`revoke` that syncs in
-	 * takes effect with no restart.
-	 */
-	trustState(): ReadonlyMap<PeerId, TrustState>;
-	/**
-	 * Append this device's self-signed `verify` of `subject` (existing-device
-	 * approval): writes a verdict into the held account doc, which syncs and, on
-	 * the next inbound connection, lifts `subject` to `verified` at the gateway.
-	 */
-	verify(subject: PeerId): AppendVerdictResult;
-	/** Append this device's self-signed `revoke` of `subject`. See {@link verify}. */
-	revoke(subject: PeerId): AppendVerdictResult;
-	/**
-	 * The 6-digit short authentication string for the (this device, `subject`)
-	 * pair: the human compares it across both screens before approving a `verify`.
-	 */
-	sas(subject: PeerId): string;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /**
- * Open the account room for the signed-in user, append this device's identity
- * claim, and return a handle. Returns `null` when machine auth is absent or
- * signed out (a valid state, like an inactive mount): there is no account room
- * without a bearer to auth the room socket.
+ * Open the account room for the signed-in user and return a handle. Returns
+ * `null` when machine auth is absent or signed out (a valid state, like an
+ * inactive mount): there is no account room without a bearer to auth the room
+ * socket.
  */
 export async function openAccountRoom(
 	options: OpenAccountRoomOptions,
@@ -147,12 +98,8 @@ export async function openAccountRoom(
 	const { ownerId } = auth.state;
 
 	// The nodeId the relay routes by is the daemon's durable node id, shared with
-	// its mount room so the device presents one identity across both rooms. The
-	// iroh key is now only the signing key: its public key is the peerId the
-	// roster lists and its raw bytes sign the identity claim.
+	// its mount room so the device presents one identity across both rooms.
 	const nodeId = resolveDaemonNodeId(options.epicenterRoot);
-	const secret = loadOrCreateDeviceSecret(irohKeyPathFor(options.epicenterRoot));
-	const secretKeyBytes = Uint8Array.from(secret.toBytes());
 
 	const ydoc = new Y.Doc({ guid: RESERVED_ACCOUNT_ROOM_GUID });
 	// Pin a deterministic clientID before any local edit, so each device's writes
@@ -163,13 +110,13 @@ export async function openAccountRoom(
 		filePath: yjsPath(options.epicenterRoot, ydoc.guid),
 	});
 
-	// From the first attach onward the only handle that tears these resources
-	// down is the one we return, so any throw before we return would orphan the
-	// SQLite log and (once opened) the relay WebSocket for the daemon's whole
-	// life. `ydoc.destroy()` is the single cascade point: the log hooks
-	// `ydoc.once('destroy')` and collaboration's `[Symbol.dispose]` is a
-	// destroy, so destroying the doc releases whatever attached, even on the
-	// branch where `openCollaboration` itself threw and `collaboration` is unset.
+	// From the first attach onward the only handle that tears these resources down
+	// is the one we return, so any throw before we return would orphan the SQLite
+	// log and (once opened) the relay WebSocket for the daemon's whole life.
+	// `ydoc.destroy()` is the single cascade point: the log hooks
+	// `ydoc.once('destroy')` and collaboration's `[Symbol.dispose]` is a destroy,
+	// so destroying the doc releases whatever attached, even on the branch where
+	// `openCollaboration` itself threw and `collaboration` is unset.
 	try {
 		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl({
@@ -180,60 +127,18 @@ export async function openAccountRoom(
 			}),
 			openWebSocket: auth.openWebSocket,
 			onReconnectSignal: auth.onStateChange,
-			// The account doc carries no daemon actions; it is a synced log, not a
-			// dispatch surface.
+			// The account doc carries no daemon actions; it is the relay floor's
+			// connection and a server-owned presence surface, not a dispatch surface.
 			actions: {},
 		});
-
-		// Announce this device, idempotently on the label across restarts. The
-		// local log is already hydrated (attachYjsLog is synchronous), so this
-		// first append computes its seq against local history without awaiting
-		// first sync, which keeps the daemon announcing itself even while offline.
-		const label = options.label ?? hostname();
-		const reassertSelfClaim = () =>
-			appendIdentityClaim({ ydoc, account: ownerId, secretKeyBytes, label });
-		const { peerId } = reassertSelfClaim();
-
-		// Re-assert after every sync. The first append can be made against a STALE
-		// local log: the iroh key lives outside the repo (irohKeyPathFor) while the
-		// account log lives under `.epicenter/`, so a `git clean` (or a restore, or
-		// a fresh worktree) can wipe the log while the key survives. The device
-		// then appends a low seq that the cloud's own older, higher-seq claim would
-		// shadow forever under the reducer's highest-seq rule. Re-asserting once the
-		// cloud state has merged (status `connected`) heals it: appendIdentityClaim
-		// is idempotent on the label, so this writes a superseding higher-seq claim
-		// only when the synced roster disagrees, then no-ops (no write, no loop).
-		const unsubscribe = collaboration.onStatusChange((status) => {
-			if (status.phase !== 'connected') return;
-			try {
-				reassertSelfClaim();
-			} catch (cause) {
-				log.warn(
-					new Error('account room: re-assert after sync failed', { cause }),
-				);
-			}
-		});
-
-		// One memoized trust projection for the room's lifetime: the gateway reads
-		// it per inbound connection, so the fold runs only when the log grows.
-		const trustState = createTrustView(ydoc, ownerId, peerId);
 
 		return {
 			guid: ydoc.guid,
 			ownerId,
-			peerId,
 			nodeId,
 			channelPort: createChannelPort(collaboration.textPort),
-			roster: () => readRoster(ydoc, ownerId),
 			peers: () => collaboration.peers.list(),
-			trustState,
-			verify: (subject) =>
-				appendVerify({ ydoc, account: ownerId, secretKeyBytes, subject }),
-			revoke: (subject) =>
-				appendRevoke({ ydoc, account: ownerId, secretKeyBytes, subject }),
-			sas: (subject) => shortAuthString(peerId, subject),
 			async [Symbol.asyncDispose]() {
-				unsubscribe();
 				ydoc.destroy();
 				await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
 			},

@@ -15,11 +15,6 @@ export {
 	type McpGatewayCatalogOptions,
 } from '../agent/mcp-gateway-catalog.js';
 export {
-	type DeviceSecret,
-	generateDeviceSecret,
-	loadOrCreateDeviceSecret,
-} from './key-store.js';
-export {
 	createRelayRouteOpener,
 	type RelayRouteOpenerOptions,
 } from './relay-route.js';

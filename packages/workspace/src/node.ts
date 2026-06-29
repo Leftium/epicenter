@@ -24,16 +24,12 @@ export {
 } from './daemon/action-errors.js';
 export type { DaemonListSnapshot } from './daemon/app.js';
 export {
-	AccountRoomError,
 	CallRequest,
 	DeviceGatewayError,
-	DeviceSnapshot,
 	PeerSnapshot,
+	RelayPeerSnapshot,
 	RunRequest,
-	SasSnapshot,
 	ToolsRequest,
-	VerdictRequest,
-	VerdictSnapshot,
 } from './daemon/app.js';
 export {
 	type AttachMountInfrastructureOptions,

@@ -30,9 +30,9 @@
  * a typed `Result` the relay had to understand; this one is a dumb byte pipe.
  *
  * Minimal on purpose: `channel_data.bytes` is the whole payload (no `seq`, since
- * one ordered WebSocket preserves order end to end), and the open carries no
- * `source` yet (the relay vouches same-user; a relay-authored `source` is the
- * named seam Wave 3 adds when per-device trust needs it).
+ * one ordered WebSocket preserves order end to end), and the caller's open
+ * carries no `source`: the relay stamps an unforgeable one it authenticated, and
+ * the acceptor authorizes by it (see {@link ChannelSourceSchema}).
  */
 
 import Type, { type Static } from 'typebox';
@@ -46,8 +46,9 @@ import { Compile } from 'typebox/compile';
  * Who opened a channel, as the RELAY authenticated them. The relay stamps this
  * onto the open it forwards from the caller's `Connection.userId` and overwrites
  * any caller-provided value, so the device acceptor can authorize a keyless
- * caller by its server-authenticated identity (the relay's Ring-0 equivalent).
- * `kind` is the discriminant a future device-signed source slots beside.
+ * caller by its server-authenticated identity. `kind` is a discriminant kept
+ * open for forward compatibility; today the only source the relay stamps is
+ * `user`.
  */
 export const ChannelSourceSchema = Type.Object({
 	kind: Type.Literal('user'),

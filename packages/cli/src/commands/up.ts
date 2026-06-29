@@ -171,14 +171,14 @@ export async function runUp(
 	if (startResult.error) return startResult;
 	const opened = startResult.data;
 
-	// Open the per-person account room alongside the mount: the device roster
-	// lives here (Wave 3), not on per-room workspace presence. It is best-effort
-	// and independent of the mount: a signed-out daemon has none (null), and a
-	// failure to open it never aborts the mount that is the daemon's real job.
-	// Opened before the socket binds so its roster can back the `/devices` route,
-	// and deferred before the socket/runtime below, so on LIFO teardown it
-	// disposes AFTER the socket closes: no in-flight `/devices` read can race a
-	// torn-down roster.
+	// Open the per-person account room alongside the mount: it holds the relay
+	// floor's connection (its live presence and the channel port), not per-room
+	// workspace presence. It is best-effort and independent of the mount: a
+	// signed-out daemon has none (null), and a failure to open it never aborts the
+	// mount that is the daemon's real job. Opened before the socket binds so its
+	// presence can back `/relay-peers`, and deferred before the socket/runtime
+	// below, so on LIFO teardown it disposes AFTER the socket closes: no in-flight
+	// `/relay-peers` read can race a torn-down connection.
 	const { data: accountRoom, error: accountRoomError } = await tryAsync({
 		try: () => openAccountRoom({ epicenterRoot, auth }),
 		catch: (cause) => Err(extractErrorMessage(cause)),

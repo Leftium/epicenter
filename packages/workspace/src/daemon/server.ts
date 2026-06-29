@@ -32,9 +32,9 @@ export type DaemonServerOptions = {
 	/** Mount served by the unix-socket app. */
 	mount: DaemonServedMount;
 	/**
-	 * The per-person account room, when one is open. Its roster backs `/devices`;
-	 * omit it (signed out, or it failed to open) and `/devices` serves an empty
-	 * list. The daemon socket still binds either way.
+	 * The per-person account room, when one is open. Its live presence backs
+	 * `/relay-peers`; omit it (signed out, or it failed to open) and `/relay-peers`
+	 * serves an empty list. The daemon socket still binds either way.
 	 */
 	accountRoom?: DaemonServedAccountRoom;
 	/**

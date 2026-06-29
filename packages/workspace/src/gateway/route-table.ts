@@ -1,9 +1,9 @@
 /**
  * The named, default-closed route table the daemon serves over the relay floor.
  *
- * The table IS the exposure decision (the collapsed "Ring 1"): the relay
- * acceptor admits an inbound channel only for a route that exists in the table
- * AND is `relay: 'exposed'`, and the relay router carries nothing else. There is
+ * The table IS the exposure decision: the relay acceptor admits an inbound
+ * channel only for a route that exists in the table AND is `relay: 'exposed'`,
+ * and the relay router carries nothing else. There is
  * no generic reverse proxy and no route negotiation envelope on the wire; the
  * named route rides the relay-channel `channel_open` frame.
  */

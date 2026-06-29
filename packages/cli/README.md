@@ -59,58 +59,35 @@ epicenter peers -C ~/workspace
 
 ## Cross-device tools
 
-Your signed-in devices form a per-person roster, and one device reaches another's tools by naming the target device. Each device runs a daemon that owns one iroh endpoint, the device gateway, and serves a small default-closed route table: a route like `books` spawns that device's MCP server. You ask for a device, not a tool floating in a global namespace.
+Your signed-in devices reach each other's tools over the relay floor: one per-user authenticated relay routes a typed channel to a device over the account-room WebSocket each daemon already holds. You ask for a device by its nodeId, not a tool floating in a global namespace, and the channel reaches a named route on that device's daemon (a route like `books` spawns that device's MCP server).
 
-Trust is explicit and per device. The roster lists every device, but a sensitive route admits only a device you have verified; `books` exposes financial data, so it demands a verified peer. You verify a device once, the signed verdict syncs to your other devices, and the remote gateway checks it on every inbound connection.
-
-The daemon dials over n0, so iroh discovery finds a target by its peerId. You never type an address.
+A route is default-closed over the relay. The relay stamps an unforgeable identity on every channel (the authenticated account it belongs to), and a device admits an inbound channel only when the caller is your own account AND the route is explicitly relay-exposed. A sensitive route (`books` exposes financial data) stays refused until the operator opts it in with `--relay-expose`, knowingly accepting the relay's plaintext ceiling (a self-hosted relay removes the third party; privacy is which relay you run).
 
 | Verb | What it does |
 | --- | --- |
-| `epicenter devices` | List the account roster: each device's peerId, label, and trust state |
-| `epicenter verify <peerId>` | Sign a verdict that trusts a device, lifting it to `verified` |
-| `epicenter revoke <peerId>` | Sign a verdict that revokes a device |
-| `epicenter tools <device>` | List a verified device's MCP tools for one route (default `books`) |
-| `epicenter call <device> <route> <tool> [input]` | Call one tool on a verified device's route |
+| `epicenter tools <device>` | List a device's MCP tools for one route (default `books`) |
+| `epicenter call <device> <route> <tool> [input]` | Call one tool on a device's route |
 
-`<device>` is a peerId or a label from `epicenter devices`.
+`<device>` is the target's nodeId, printed in its `epicenter daemon up` banner. Only a device currently online on the relay is reachable.
 
 ### Two-machine smoke
 
 To confirm cross-device reach end to end, sign two machines into the same account and run:
 
 ```bash
-# On both machines. Each prints
-# "device gateway: listening as <peerId> via n0 discovery". Note both peerIds.
-epicenter daemon up -C <root>
-
-# On machine A, after a few seconds for discovery to publish:
-epicenter devices                        # machine B should appear in the roster
-epicenter verify <B-peerId>              # trust B
-epicenter call <B-peerId> books <tool>   # no address needed
-```
-
-Until you verify B, the `books` route refuses it before any tool runs, so the call fails until `verify` lands and syncs.
-
-Two things gate this, and both are independent of iroh. The roster and the `verify` verdict travel over the account room, an ordinary sync room on the Epicenter relay, so both machines must be signed into the same account and reach the same sync server. If `epicenter devices` on A never shows B, that is a control-plane sync problem, not a transport one. Discovery also takes a few seconds to publish after `daemon up`, so a call issued in the first moment can miss a freshly started peer; retry once.
-
-### Two-machine smoke over the relay floor
-
-The relay floor carries the same MCP call without iroh: the channel rides the account-room WebSocket both machines already hold, the cloud relay routes it, and no device key, dial, or `verify` is involved. The acceptor admits the route only because it is explicitly relay-exposed and the caller is the same authenticated account (a self-hosted relay removes the third party; the relay floor's ceiling is a trusted relay).
-
-```bash
-# Machine B (the target): expose `books` over the relay floor (default refused,
-# since it is financial; this knowingly accepts the trusted-relay ceiling).
+# Machine B (the target): expose `books` over the relay floor. It is refused by
+# default (financial data), so this knowingly accepts the trusted-relay ceiling.
+# The banner prints "account room: online as <nodeId>"; note B's nodeId.
 epicenter daemon up -C <root> --relay-expose books
 
-# Machine A (the caller): force the relay path instead of iroh.
-epicenter daemon up -C <root> --via relay
+# Machine A (the caller):
+epicenter daemon up -C <root>
 
 # On machine A, after both account rooms have synced:
-epicenter call <B-nodeId> books <tool>   # routes over the relay floor
+epicenter call <B-nodeId> books <tool>
 ```
 
-`--via relay` pins machine A's selecting transport to the floor (default `auto` would try iroh first). `--relay-expose books` opts the route in on machine B; without it the acceptor refuses every relay channel by default. The relay routes by the device's account-room node id (today the same string as its iroh peerId), so the `<B-nodeId>` from B's startup banner is the target. No `verify` is needed: relay-path auth is the relay's same-account vouch plus the relay-exposed route, not the device-key trust ledger.
+Two things gate this. Both machines must be signed into the same account and reach the same sync server, because the relay floor rides the account-room WebSocket each device holds; if `epicenter tools <B-nodeId>` on A cannot reach B, that is a control-plane sync problem, not a transport one. And the target must have opted `books` in with `--relay-expose`; without it the acceptor refuses every relay channel by default. No device key, dial address, or `verify` is involved: the relay's same-account vouch plus the relay-exposed route is the whole gate.
 
 ## Exit codes
 

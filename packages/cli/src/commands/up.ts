@@ -171,6 +171,18 @@ export async function runUp(
 	if (startResult.error) return startResult;
 	const opened = startResult.data;
 
+	// The served route table, with any `--relay-expose` routes opted in to the
+	// floor. The default exposes nothing over the relay until a route opts in with
+	// `relay: 'exposed'`. Computed before the account room opens so the daemon can
+	// advertise its exposed routes in presence (floor discovery: the user's other
+	// devices read this and auto-mount them).
+	const routes = options.relayExpose?.length
+		? withRelayExposed(DEFAULT_DEVICE_ROUTES, options.relayExpose)
+		: DEFAULT_DEVICE_ROUTES;
+	const exposedRoutes = Object.keys(routes).filter(
+		(name) => routes[name]?.relay === 'exposed',
+	);
+
 	// Open the per-person account room alongside the mount: it holds the relay
 	// floor's connection (its live presence and the channel port), not per-room
 	// workspace presence. It is best-effort and independent of the mount: a
@@ -180,7 +192,7 @@ export async function runUp(
 	// below, so on LIFO teardown it disposes AFTER the socket closes: no in-flight
 	// `/relay-peers` read can race a torn-down connection.
 	const { data: accountRoom, error: accountRoomError } = await tryAsync({
-		try: () => openAccountRoom({ epicenterRoot, auth }),
+		try: () => openAccountRoom({ epicenterRoot, auth, exposedRoutes }),
 		catch: (cause) => Err(extractErrorMessage(cause)),
 	});
 	if (accountRoomError !== null) {
@@ -191,13 +203,6 @@ export async function runUp(
 		stack.defer(() => accountRoom[Symbol.asyncDispose]());
 		logSyncStatus(`account room: online as ${accountRoom.nodeId}`);
 	}
-
-	// The served route table, with any `--relay-expose` routes opted in to the
-	// floor. The default exposes nothing over the relay until a route opts in with
-	// `relay: 'exposed'`.
-	const routes = options.relayExpose?.length
-		? withRelayExposed(DEFAULT_DEVICE_ROUTES, options.relayExpose)
-		: DEFAULT_DEVICE_ROUTES;
 
 	// Wire the relay floor over the account-room socket: this device both DIALS its
 	// peers and ACCEPTS inbound channels over the one per-user authenticated
@@ -220,11 +225,8 @@ export async function runUp(
 		});
 		stack.defer(() => relayAcceptor.close());
 
-		const exposed = Object.keys(routes).filter(
-			(name) => routes[name]?.relay === 'exposed',
-		);
 		logSyncStatus(
-			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed: ${exposed.join(', ') || 'none'}]`,
+			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed: ${exposedRoutes.join(', ') || 'none'}]`,
 		);
 	}
 

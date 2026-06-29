@@ -51,6 +51,16 @@ export const PeerSchema = Type.Object({
 	connectedAt: Type.Number(),
 	actions: ActionManifestSchema,
 	agentId: Type.Optional(Type.String()),
+	/**
+	 * The relay-floor route names this peer serves with `relay: 'exposed'` (a
+	 * daemon's opted-in gateway routes, e.g. `['books']`). Discovery for the
+	 * floor: a consumer reads this to know which devices serve which routes and
+	 * auto-mounts them, rather than blindly probing every device for a guessed
+	 * route name. Absent or `[]` for a pure consumer (a browser exposes nothing).
+	 * Additive and optional, so an older peer that omits it is simply not a
+	 * cross-device tool source.
+	 */
+	exposedRoutes: Type.Optional(Type.Array(Type.String())),
 });
 export type Peer = Static<typeof PeerSchema>;
 
@@ -78,6 +88,8 @@ export const PresencePublishFrameSchema = Type.Object({
 	type: Type.Literal('presence_publish'),
 	actions: ActionManifestSchema,
 	agentId: Type.Optional(Type.String()),
+	/** This node's relay-exposed route names; see {@link PeerSchema.exposedRoutes}. */
+	exposedRoutes: Type.Optional(Type.Array(Type.String())),
 });
 export type PresencePublishFrame = Static<typeof PresencePublishFrameSchema>;
 

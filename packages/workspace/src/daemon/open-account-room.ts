@@ -43,6 +43,12 @@ export type OpenAccountRoomOptions = {
 	auth: WorkspaceAuthClient | null;
 	/** Explicit sync base URL; falls back through {@link resolveSyncBaseURL}. */
 	baseURL?: string;
+	/**
+	 * The relay-exposed route names this daemon serves, advertised in account-room
+	 * presence so the user's other devices auto-mount them (floor discovery).
+	 * Empty or omitted when no route opted in with `relay: 'exposed'`.
+	 */
+	exposedRoutes?: string[];
 };
 
 /** The daemon's account-room handle is the shared {@link AccountRoomConnection}. */
@@ -75,5 +81,8 @@ export async function openAccountRoom(
 		// identity across restarts; the browser omits it (the account doc carries
 		// no data) to stay free of `node:crypto`.
 		clientId: hashYDocClientId(nodeId),
+		...(options.exposedRoutes !== undefined && {
+			exposedRoutes: options.exposedRoutes,
+		}),
 	});
 }

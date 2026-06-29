@@ -121,6 +121,12 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	 * (e.g. a daemon); omit for ordinary participants and content docs.
 	 */
 	agentId?: string;
+	/**
+	 * The relay-exposed route names this node serves, published in presence so a
+	 * peer can auto-mount them (floor discovery). Set only by a daemon that opened
+	 * relay-exposed routes; omit for a pure consumer (a browser exposes nothing).
+	 */
+	exposedRoutes?: string[];
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -218,6 +224,9 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		type: 'presence_publish',
 		actions: ownManifest,
 		agentId: config.agentId,
+		...(config.exposedRoutes !== undefined && {
+			exposedRoutes: config.exposedRoutes,
+		}),
 	} satisfies PresencePublishFrame);
 
 	function handleDispatchResultFrame(text: string): boolean {

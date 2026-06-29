@@ -66,6 +66,12 @@ export type AccountRoomConnectionConfig = {
 	 * free of `node:crypto`.
 	 */
 	clientId?: number;
+	/**
+	 * The relay-exposed route names this device serves, advertised in account-room
+	 * presence so the user's other devices auto-mount them (floor discovery). The
+	 * daemon passes its opened routes; a browser is a pure consumer and omits it.
+	 */
+	exposedRoutes?: string[];
 };
 
 /**
@@ -114,8 +120,15 @@ export type AccountRoomConnection = {
 export function openAccountRoomConnection(
 	config: AccountRoomConnectionConfig,
 ): AccountRoomConnection {
-	const { nodeId, ownerId, baseURL, openWebSocket, onReconnectSignal, clientId } =
-		config;
+	const {
+		nodeId,
+		ownerId,
+		baseURL,
+		openWebSocket,
+		onReconnectSignal,
+		clientId,
+		exposedRoutes,
+	} = config;
 
 	const ydoc = new Y.Doc({ guid: RESERVED_ACCOUNT_ROOM_GUID });
 	// Pin a deterministic clientID before any local edit when the caller supplies
@@ -143,6 +156,9 @@ export function openAccountRoomConnection(
 			// The account doc carries no actions; it is the relay floor's connection
 			// and a server-owned presence surface, not a dispatch surface.
 			actions: {},
+			// Advertise this device's relay-exposed routes so the user's other
+			// devices can auto-mount them. A browser passes nothing here.
+			...(exposedRoutes !== undefined && { exposedRoutes }),
 		});
 
 		return {

@@ -14,7 +14,10 @@
  * node-side cross-device tool layer, never a browser build.
  *
  * Lifted from the proven `proto/super-chat-gateway-iroh` prototype (commit
- * 9d538b18cb), retyped against {@link ByteChannel}.
+ * 9d538b18cb), retyped against {@link ByteChannel} and rebuilt as a factory: the
+ * private framing state (`readBuffer`, the started/closed flags) lives in the
+ * closure, and the methods read the live `onmessage`/`onclose`/`onerror` the SDK
+ * assigns onto the returned object.
  */
 
 import {
@@ -30,48 +33,76 @@ import type { ByteChannel } from './transport.js';
  * `StdioServerTransport` framing (newline-delimited JSON-RPC), but reads its
  * bytes from `channel.source` and writes them to `channel.sink` rather than
  * `process.stdin`/`process.stdout`.
+ *
+ * The SDK's `Protocol` assigns `onmessage`/`onclose`/`onerror` onto the transport
+ * AFTER construction, so the methods read those fields off the returned object
+ * (not a captured local), and the disposer fires `onclose` exactly once.
  */
-export class StreamTransport implements Transport {
-	private readBuffer = new ReadBuffer();
-	private started = false;
-	onmessage?: (message: JSONRPCMessage) => void;
-	onclose?: () => void;
-	onerror?: (error: Error) => void;
+export function createStreamTransport(channel: ByteChannel): Transport {
+	const readBuffer = new ReadBuffer();
+	let started = false;
+	let closed = false;
 
-	constructor(private channel: ByteChannel) {}
+	// `onclose` must fire exactly once whether the remote half closes (the
+	// source's 'close' event) or we close locally; both paths route here.
+	const fireClose = () => {
+		if (closed) return;
+		closed = true;
+		transport.onclose?.();
+	};
 
-	async start(): Promise<void> {
-		if (this.started) throw new Error('StreamTransport already started');
-		this.started = true;
-		this.channel.source.on('data', (chunk: Buffer) => {
-			this.readBuffer.append(chunk);
-			for (;;) {
-				let message: JSONRPCMessage | null;
-				try {
-					message = this.readBuffer.readMessage();
-				} catch (error) {
-					this.onerror?.(error as Error);
-					return;
+	const transport: Transport = {
+		onmessage: undefined,
+		onclose: undefined,
+		onerror: undefined,
+
+		async start(): Promise<void> {
+			if (started) throw new Error('StreamTransport already started');
+			started = true;
+			channel.source.on('data', (chunk: Buffer) => {
+				readBuffer.append(chunk);
+				for (;;) {
+					let message: JSONRPCMessage | null;
+					try {
+						message = readBuffer.readMessage();
+					} catch (error) {
+						transport.onerror?.(error as Error);
+						return;
+					}
+					if (message === null) break;
+					transport.onmessage?.(message);
 				}
-				if (message === null) break;
-				this.onmessage?.(message);
-			}
-		});
-		this.channel.source.on('error', (error) => this.onerror?.(error));
-		// The sink is a Writable too: a failed `writeAll`/`finish` on the iroh send
-		// half surfaces as an 'error' event. `send` writes without a per-write error
-		// callback, so without this listener that event is unhandled and crashes the
-		// process; route it through the same `onerror` hook as the source.
-		this.channel.sink.on('error', (error) => this.onerror?.(error));
-		this.channel.source.on('close', () => this.onclose?.());
-	}
+			});
+			channel.source.on('error', (error) => transport.onerror?.(error));
+			// The sink is a Writable too: a failed `writeAll`/`finish` on the iroh
+			// send half surfaces as an 'error' event. `send` writes without a
+			// per-write error callback path that suppresses it, so without this
+			// listener that event is unhandled and crashes the process; route it
+			// through the same `onerror` hook as the source.
+			channel.sink.on('error', (error) => transport.onerror?.(error));
+			channel.source.on('close', fireClose);
+		},
 
-	async send(message: JSONRPCMessage): Promise<void> {
-		this.channel.sink.write(serializeMessage(message));
-	}
+		async send(message: JSONRPCMessage): Promise<void> {
+			// Await the write so a failed send rejects (the MCP `Client` fails the
+			// pending request fast) instead of resolving as if it had been sent, and
+			// so a full sink applies backpressure rather than buffering unboundedly.
+			await new Promise<void>((resolve, reject) => {
+				channel.sink.write(serializeMessage(message), (error) =>
+					error ? reject(error) : resolve(),
+				);
+			});
+		},
 
-	async close(): Promise<void> {
-		this.channel.sink.end();
-		this.onclose?.();
-	}
+		async close(): Promise<void> {
+			// End the send half and release the recv half so the channel is not left
+			// half-open; fire `onclose` once. The underlying iroh connection is closed
+			// by the dialer that owns it (see `gateway.dial`).
+			channel.sink.end();
+			channel.source.destroy();
+			fireClose();
+		},
+	};
+
+	return transport;
 }

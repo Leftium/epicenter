@@ -8,12 +8,12 @@
  *
  * One catalog binds to ONE route on ONE target device (the spec's
  * target-device-first picker): open the channel, drive an MCP `Client` over
- * {@link StreamTransport}, list the tools once and cache them, and map each
+ * {@link createStreamTransport}, list the tools once and cache them, and map each
  * `tools/call` onto {@link ToolCatalog.resolve}. The held channel keeps one warm
  * MCP session for the catalog's lifetime; `[Symbol.asyncDispose]` closes it.
  *
  * NODE-ONLY: it reaches a gateway through the node-only transport and the
- * node-only {@link StreamTransport}. It is exported from
+ * node-only {@link createStreamTransport}. It is exported from
  * `@epicenter/workspace/gateway`, never the browser-reachable agent barrel.
  */
 
@@ -24,7 +24,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonValue } from 'wellcrafted/json';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { StreamTransport } from '../gateway/mcp-stream-transport.js';
+import { createStreamTransport } from '../gateway/mcp-stream-transport.js';
 import type {
 	PeerId,
 	PeerTransport,
@@ -91,7 +91,7 @@ export async function createMcpGatewayCatalog(
 		`open MCP catalog for ${route} on ${target.slice(0, 16)}`,
 		async () => {
 			const channel = await transport.openChannel({ target, route, hintAddrs });
-			await client.connect(new StreamTransport(channel));
+			await client.connect(createStreamTransport(channel));
 			const listed = await client.listTools();
 			return listed.tools.map(toAgentToolDefinition);
 		},

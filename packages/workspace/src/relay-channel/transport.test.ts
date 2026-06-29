@@ -17,7 +17,9 @@ import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { composeToolCatalogs } from '../agent/compose-tool-catalogs.js';
 import { createMcpGatewayCatalog } from '../agent/mcp-gateway-catalog.js';
+import type { ToolCatalog } from '../agent/tools.js';
 import { createStreamTransport } from '../mcp-stream-transport.js';
 import { asNodeId } from '../document/node-id.js';
 import { asRouteName, type ByteChannel } from '../peer-transport.js';
@@ -133,6 +135,64 @@ test('a relay-channel catalog lists and calls a tool over the loopback floor', a
 	expect(outcome.output).toBe(CUSTOMERS.join('\n'));
 
 	await catalog[Symbol.asyncDispose]();
+	transport.close();
+	acceptor.close();
+});
+
+test('a composed catalog routes a tool call to the floor gateway, the rest stays local', async () => {
+	// The closest headless proof of prompt 1's claim: a client agent loop drives a
+	// `tools/call` to a device's relay-exposed route over the floor with no
+	// dispatch path, while its own in-process tools still resolve locally. This
+	// exercises the REAL gateway catalog + `composeToolCatalogs` together (the
+	// server stamp/route is `channel-router.test.ts`; the same-room requirement is
+	// verified by inspection). It is NOT the live two-daemon smoke prompt 1 defines.
+	const wire = loopbackPorts();
+
+	const [routeEnd, serverEnd] = byteChannelPair();
+	const server = miniBooksServer();
+	await server.connect(createStreamTransport(serverEnd));
+	const acceptor = createChannelAcceptor(wire.target, ({ route }) =>
+		route === 'books'
+			? { channel: routeEnd, close: () => void server.close() }
+			: null,
+	);
+
+	const transport = createRelayChannelTransport(wire.caller);
+	const gateway = await createMcpGatewayCatalog({
+		transport,
+		target: asNodeId('laptop'),
+		route: asRouteName('books'),
+	});
+
+	// A stand-in for the app's in-process catalog (opensidian's file/bash actions).
+	const local: ToolCatalog = {
+		definitions: () => [{ name: 'files_read', kind: 'query' }],
+		resolve: async () => ({ output: 'local file body', isError: false }),
+	};
+
+	// Local first so a local action shadows a same-named remote tool.
+	const merged = composeToolCatalogs([local, gateway]);
+
+	expect(merged.definitions().map((d) => d.name).sort()).toEqual([
+		'customers',
+		'files_read',
+	]);
+
+	const signal = new AbortController().signal;
+	const remote = await merged.resolve(
+		{ toolCallId: 'r1', toolName: 'customers', input: {} },
+		signal,
+	);
+	expect(remote.isError).toBe(false);
+	expect(remote.output).toBe(CUSTOMERS.join('\n'));
+
+	const localOutcome = await merged.resolve(
+		{ toolCallId: 'l1', toolName: 'files_read', input: {} },
+		signal,
+	);
+	expect(localOutcome.output).toBe('local file body');
+
+	await gateway[Symbol.asyncDispose]();
 	transport.close();
 	acceptor.close();
 });

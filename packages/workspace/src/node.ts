@@ -49,11 +49,10 @@ export {
 	DEFAULT_DEVICE_ROUTES,
 	withRelayExposed,
 } from './gateway/route-table.js';
-export {
-	createServiceForward,
-	type ServiceForward,
-	type ServiceForwardOptions,
-} from './gateway/service-forward.js';
+// `createServiceForward` (gateway/service-forward.ts) is built and proven (its
+// e2e test imports it directly) but NOT exported here: it has no production
+// consumer yet. The operator-wiring wave that adds config-driven service routes
+// and a daemon/CLI forward command re-exports it then, beside its first caller.
 export {
 	createRelayChannelTransport,
 	type RelayChannelTransport,

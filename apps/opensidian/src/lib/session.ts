@@ -2,7 +2,6 @@ import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
 import { createSession } from '@epicenter/svelte/auth';
 import { createNodeId } from '@epicenter/workspace';
 import { createDispatchToolCatalog } from '@epicenter/workspace/agent';
-import { generateChatMessageId } from 'opensidian';
 import { openOpensidianBrowser } from 'opensidian/browser';
 import { auth } from '$platform/auth';
 import { DEFAULT_MODEL } from './chat/models';
@@ -45,7 +44,6 @@ export const session = createSession({
 			table: opensidian.tables.conversations,
 			whenLoaded: opensidian.idb.whenLoaded,
 			connections: inferenceConnections,
-			generateId: generateChatMessageId,
 			activeConversation: {
 				get current() {
 					return searchParams.chat;

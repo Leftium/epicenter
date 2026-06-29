@@ -74,6 +74,7 @@ import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import type { Connection } from '../types.js';
+import { createChannelRouter } from './channel-router.js';
 import { RoomError, type RoomSocket, type RoomUpdateLog } from './contracts.js';
 
 const log = createLogger('server/room/core');
@@ -366,6 +367,20 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		return newest;
 	}
 
+	/**
+	 * The relay-channel router: forwards `channel_*` frames between a caller socket
+	 * and a target device's socket over this same room. It is the generalization of
+	 * the dispatch path, kept as a SEPARATE module that imports no sync, MCP, or
+	 * action code; the core reaches it through one delegation in `handleTextFrame`
+	 * and one teardown in `removeConnection`. `findDevice` is `pickRecipient`
+	 * (this room is one user's fleet); `ownerOf` is the socket's authenticated
+	 * `userId`, the relay's only routing authority.
+	 */
+	const channelRouter = createChannelRouter({
+		findDevice: pickRecipient,
+		ownerOf: (socket) => connections.get(socket)?.userId,
+	});
+
 	// ==========================================================================
 	// Dispatch helpers
 	// ==========================================================================
@@ -521,6 +536,14 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			return;
 		}
 
+		// Relay-channel frames are delegated WHOLE to the separate channel router,
+		// never handled as cases beside dispatch: the channel layer stays a distinct
+		// module from sync and dispatch, sharing only this socket.
+		if (channelRouter.owns(parsed)) {
+			channelRouter.handleFrame(ws, parsed);
+			return;
+		}
+
 		const type =
 			parsed && typeof parsed === 'object' && 'type' in parsed
 				? (parsed as { type: unknown }).type
@@ -617,6 +640,10 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 					pendingDispatches.delete(id);
 				}
 			}
+
+			// Reset every relay channel this socket was a party to, so a half-open
+			// channel never lingers after the caller or target drops.
+			channelRouter.onClose(socket);
 
 			connections.delete(socket);
 

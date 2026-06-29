@@ -39,8 +39,8 @@ import {
 } from '../account/index.js';
 import type { PeerId } from '../peer-transport.js';
 import type { WorkspaceAuthClient } from '../config/open-epicenter-root.js';
+import { resolveDaemonNodeId } from '../config/daemon-node-id.js';
 import { attachYjsLog } from '../document/attach-yjs-log.js';
-import { asNodeId } from '../document/node-id.js';
 import { openCollaboration } from '../document/open-collaboration.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
@@ -131,12 +131,13 @@ export async function openAccountRoom(
 	if (auth === null || auth.state.status === 'signed-out') return null;
 	const { ownerId } = auth.state;
 
-	// The device's durable iroh key is both its identity and its signing key
-	// (ADR-0073). Load it once; its public key is the nodeId the relay routes by
-	// and the peerId the roster lists, and its raw bytes sign the identity claim.
+	// The nodeId the relay routes by is the daemon's durable node id, shared with
+	// its mount room so the device presents one identity across both rooms. The
+	// iroh key is now only the signing key: its public key is the peerId the
+	// roster lists and its raw bytes sign the identity claim.
+	const nodeId = resolveDaemonNodeId(options.epicenterRoot);
 	const secret = loadOrCreateDeviceSecret(irohKeyPathFor(options.epicenterRoot));
 	const secretKeyBytes = Uint8Array.from(secret.toBytes());
-	const nodeId = asNodeId(secret.public().toString());
 
 	const ydoc = new Y.Doc({ guid: RESERVED_ACCOUNT_ROOM_GUID });
 	// Pin a deterministic clientID before any local edit, so each device's writes

@@ -114,12 +114,19 @@
 		};
 	});
 
-	/** Render one result cell: NULL as a faint dash, an object as compact JSON, everything else as text. */
+	/** Render one non-null result cell: an object as compact JSON, everything else as text. NULL and
+	 *  undefined never reach here, the template renders them as a faint dash. */
 	function renderCell(value: unknown): string {
-		if (value === null || value === undefined) return '';
 		if (typeof value === 'object') return JSON.stringify(value);
 		return String(value);
 	}
+
+	// `runSql` fetches one row past CONSOLE_LIMIT: an overflow row is the capped signal. Render only the
+	// first CONSOLE_LIMIT so a result that lands exactly on the limit is not misreported as capped.
+	const capped = $derived(!!result && result.rows.length > CONSOLE_LIMIT);
+	const rows = $derived(
+		capped ? result!.rows.slice(0, CONSOLE_LIMIT) : (result?.rows ?? []),
+	);
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
@@ -153,7 +160,7 @@
 
 	<div class="flex-1 overflow-auto">
 		{#if result}
-			{#if result.rows.length === 0}
+			{#if rows.length === 0}
 				<Empty.Root class="min-h-48 border-0">
 					<Empty.Media variant="icon"><DatabaseIcon /></Empty.Media>
 					<Empty.Title>No rows</Empty.Title>
@@ -164,8 +171,8 @@
 					class="border-b px-4 py-1.5 text-xs text-muted-foreground"
 					role="status"
 				>
-					{result.rows.length}
-					{result.rows.length === 1 ? 'row' : 'rows'}{#if result.rows.length === CONSOLE_LIMIT}, capped at the first {CONSOLE_LIMIT}{/if}
+					{rows.length}
+					{rows.length === 1 ? 'row' : 'rows'}{#if capped}, capped at the first {CONSOLE_LIMIT}{/if}
 				</div>
 				<Table.Root class="min-w-full">
 					<Table.Header>
@@ -178,7 +185,7 @@
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
-						{#each result.rows as row, r (r)}
+						{#each rows as row, r (r)}
 							<Table.Row>
 								{#each row as cell, c (c)}
 									<Table.Cell class="max-w-80 truncate font-mono text-xs">

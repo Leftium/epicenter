@@ -16,6 +16,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Ok, type Result } from 'wellcrafted/result';
 
+import { once } from '../shared/once.js';
 import { bestEffortSync } from './best-effort.js';
 import { readMetadata } from './metadata.js';
 import { leasePathFor, socketPathFor } from './paths.js';
@@ -30,7 +31,6 @@ function createDaemonLease({
 	epicenterRoot: string;
 	leasePath: string;
 }) {
-	let released = false;
 	return {
 		/** Filesystem-resolved absolute path that scopes this daemon. */
 		epicenterRoot,
@@ -39,14 +39,12 @@ function createDaemonLease({
 		/** Filesystem path of the unix socket this daemon binds. */
 		socketPath: socketPathFor(epicenterRoot),
 		/** Release the daemon lease. Idempotent. */
-		release(): void {
-			if (released) return;
-			released = true;
+		release: once((): void => {
 			bestEffortSync(() => {
 				if (db?.inTransaction) db.run('ROLLBACK');
 			});
 			bestEffortSync(() => db?.close());
-		},
+		}),
 	};
 }
 

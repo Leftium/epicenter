@@ -29,6 +29,7 @@ import {
 } from '@number0/iroh';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type { TrustState } from '../account/reducer.js';
+import { once } from '../shared/once.js';
 import { biStreamToByteChannel } from './iroh-channel.js';
 import {
 	alpnForRoute,
@@ -150,7 +151,6 @@ export async function createPeerGateway(
 	const targets = new Set<RouteTarget>();
 	/** Live dial-side connections, tracked so {@link close} can release them. */
 	const dialConnections = new Set<Awaited<ReturnType<typeof endpoint.connect>>>();
-	let listening = false;
 	let onlinePromise: Promise<void> | undefined;
 
 	/** For the `n0` preset, wait once for relay connectivity before dialing. */
@@ -234,9 +234,7 @@ export async function createPeerGateway(
 		boundSockets: () => endpoint.boundSockets(),
 		endpointAddr: () => endpoint.addr(),
 
-		listen() {
-			if (listening) return;
-			listening = true;
+		listen: once(() => {
 			void (async () => {
 				for (;;) {
 					let incoming: Awaited<ReturnType<Endpoint['acceptNext']>>;
@@ -251,7 +249,7 @@ export async function createPeerGateway(
 					void handleIncoming(incoming);
 				}
 			})();
-		},
+		}),
 
 		async dial({ target, route, hintAddrs, signal }) {
 			if (signal?.aborted) throw dialAbortError(signal);

@@ -26,13 +26,13 @@ import {
 	JSONRPCMessageSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { ByteChannel } from './peer-transport.js';
+import { once } from './shared/once.js';
 
 /** An MCP {@link Transport} over a {@link ByteChannel} (Web Streams). */
 export function createStreamTransport(channel: ByteChannel): Transport {
 	const encoder = new TextEncoder();
 	const decoder = new TextDecoder();
 	let started = false;
-	let closed = false;
 	let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 	let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
 	// Decoded text read off the source but not yet split into a full line.
@@ -40,11 +40,7 @@ export function createStreamTransport(channel: ByteChannel): Transport {
 
 	// `onclose` must fire exactly once whether the remote half ends (the pump
 	// loop sees `done`), the source errors, or we close locally; all route here.
-	const fireClose = () => {
-		if (closed) return;
-		closed = true;
-		transport.onclose?.();
-	};
+	const fireClose = once(() => transport.onclose?.());
 
 	// Drain every complete newline-delimited JSON-RPC message out of `pending`.
 	const drainLines = () => {

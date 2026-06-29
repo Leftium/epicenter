@@ -14,6 +14,7 @@
 
 import { Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
+import { once } from '../shared/once.js';
 import { buildDaemonApp } from './app.js';
 import type { DaemonLease } from './lease.js';
 import { unlinkSocketFile } from './runtime-files.js';
@@ -51,7 +52,6 @@ function createDaemonServer({
 	server: ReturnType<typeof bindUnixSocket>;
 	socketPath: string;
 }) {
-	let isClosed = false;
 	return {
 		/** Filesystem path of the unix socket this server binds. */
 		socketPath,
@@ -60,15 +60,13 @@ function createDaemonServer({
 		 * itself; this method also sweeps any leftover socket file as a guard
 		 * for hard-error paths. Idempotent.
 		 */
-		async close() {
-			if (isClosed) return;
-			isClosed = true;
+		close: once(async () => {
 			await tryAsync({
 				try: () => server.stop(true),
 				catch: () => Ok(undefined),
 			});
 			unlinkSocketFile(socketPath);
-		},
+		}),
 	};
 }
 

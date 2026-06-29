@@ -6,9 +6,13 @@ import { openBooksDb } from '../src/db.ts';
 import { createQbClient } from '../src/qb-client.ts';
 import { repairEntities, runSyncLoop, syncRealm } from '../src/sync.ts';
 import { createTokenManager } from '../src/token-manager.ts';
-import { createMemoryTokenStore } from '../src/token-store.ts';
 import { type TokenSet, tokenSetFromGrant } from '../src/tokens.ts';
-import { makeConfig, sampleGrant, tempDir } from './helpers.ts';
+import {
+	createMemoryTokenStore,
+	makeConfig,
+	sampleGrant,
+	tempDir,
+} from './helpers.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 /** A minimal QuickBooks Customer fixture (a name list the transactions reference). */

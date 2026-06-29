@@ -2,6 +2,21 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig } from '../src/config.ts';
+import type { TokenStore } from '../src/token-store.ts';
+import type { TokenSet } from '../src/tokens.ts';
+
+/** Process-lifetime in-memory token store, for tests. Holds the typed set, no codec. */
+export function createMemoryTokenStore(): TokenStore {
+	const map = new Map<string, TokenSet>();
+	return {
+		async get(realmId) {
+			return map.get(realmId) ?? null;
+		},
+		async set(token) {
+			map.set(token.realmId, token);
+		},
+	};
+}
 
 /** A full AppConfig with test defaults; override per test. Bypasses env/file. */
 export function makeConfig(over: Partial<AppConfig> = {}): AppConfig {

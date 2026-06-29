@@ -124,7 +124,8 @@ export function startBunApiServer(
 	const bunRooms = createBunRooms({ dir: dataDir });
 
 	// One pool for the process; drizzle checks a client out per query and returns
-	// it, so `bun()`'s `db.connect` hands back the shared handle with a no-op close.
+	// it, so the `mountCloudDb` connect leg below hands back the shared handle with
+	// a no-op close.
 	const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
 	const db = createDb(pool);
 

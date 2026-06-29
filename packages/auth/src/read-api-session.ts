@@ -4,9 +4,10 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { type Result, tryAsync } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { AuthFetch } from './auth-contract.js';
-import { ApiSessionResponse } from './auth-types.js';
+import { AuthError } from './auth-errors.js';
+import { ApiSessionResponse, type AuthUser } from './auth-types.js';
 
 /**
  * The neutral outcome of one bearer `/api/session` read. The variants name the
@@ -79,4 +80,28 @@ export async function readApiSession({
 		try: async () => ApiSessionResponse.assert(await response.json()),
 		catch: (cause) => ApiSessionReadError.Malformed({ cause }),
 	});
+}
+
+/**
+ * Read `/api/session` as an {@link AuthUser} for the bearer clients' `getProfile`.
+ *
+ * `fetch` is the client's own auth-attaching fetch: it owns the Authorization
+ * header (it sets the bearer for the Epicenter origin and strips it elsewhere),
+ * so this reuses {@link readApiSession} only for the request, status branching,
+ * and body parsing. The token readApiSession is given is overwritten by `fetch`
+ * before the wire, so it is passed empty. Any read failure (unreachable,
+ * rejected, unexpected, malformed) surfaces as the single `ProfileUnavailable`
+ * the `AuthClient` contract returns.
+ */
+export async function getProfileVia(
+	fetch: AuthFetch,
+	baseURL: string,
+): Promise<Result<AuthUser, AuthError>> {
+	const { data: session, error } = await readApiSession({
+		baseURL,
+		fetch,
+		token: '',
+	});
+	if (error) return AuthError.ProfileUnavailable({ cause: error });
+	return Ok(session.user);
 }

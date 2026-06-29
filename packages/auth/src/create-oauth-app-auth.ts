@@ -1,14 +1,12 @@
-import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
-	type AuthUser,
 	type OAuthTokenGrant,
 	type PersistedAuth,
 } from './auth-types.js';
@@ -20,6 +18,7 @@ import {
 import type { PersistedAuthStorage } from './persisted-auth-storage.js';
 import {
 	type ApiSessionReadError,
+	getProfileVia,
 	readApiSession,
 } from './read-api-session.js';
 
@@ -382,28 +381,6 @@ export function createOAuthAppAuth({
 		return retryResponse;
 	}
 
-	async function getProfile(): Promise<Result<AuthUser, AuthError>> {
-		const { data: response, error } = await tryAsync({
-			try: () => authedFetch(API_ROUTES.session.url(baseURL)),
-			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
-		});
-		if (error) return Err(error);
-		if (!response.ok) {
-			return AuthError.ProfileUnavailable({
-				cause: {
-					message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
-					status: response.status,
-				},
-			});
-		}
-		const { data: user, error: parseError } = await tryAsync({
-			try: async () => ApiSessionResponse.assert(await response.json()).user,
-			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
-		});
-		if (parseError) return Err(parseError);
-		return Ok(user);
-	}
-
 	async function completeSignInWithGrant(
 		grant: OAuthTokenGrant,
 		generation: number,
@@ -495,7 +472,7 @@ export function createOAuthAppAuth({
 			}
 		},
 		fetch: authedFetch,
-		getProfile,
+		getProfile: () => getProfileVia(authedFetch, baseURL),
 		async openWebSocket(url, protocols = []) {
 			const accessToken = await bearerForNetwork(false);
 			const authProtocols = accessToken

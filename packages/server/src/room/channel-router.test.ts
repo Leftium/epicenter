@@ -52,7 +52,10 @@ describe('channel open', () => {
 	test('forwards an open to a same-owner online target, no reset to caller', () => {
 		const { caller, target, router } = setup();
 		router.handleFrame(caller.socket, open);
-		expect(target.sent).toEqual([open]);
+		// The relay stamps the server-authored source onto the forwarded open.
+		expect(target.sent).toEqual([
+			{ ...open, source: { kind: 'user', userId: 'u1' } },
+		]);
 		expect(caller.sent).toEqual([]);
 	});
 

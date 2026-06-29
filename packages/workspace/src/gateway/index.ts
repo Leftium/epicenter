@@ -27,11 +27,16 @@ export {
 } from './key-store.js';
 export { createLocalGatewayTransport } from './local-gateway-transport.js';
 export {
+	createRelayRouteOpener,
+	type RelayRouteOpenerOptions,
+} from './relay-route.js';
+export {
 	alpnForRoute,
 	alpnsForTable,
 	meetsTrustThreshold,
 	openRouteTarget,
 	routeNameForAlpn,
+	routeRelayExposed,
 	routeTrustThreshold,
 } from './route-table.js';
 export type {

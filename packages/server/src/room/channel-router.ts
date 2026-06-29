@@ -147,9 +147,13 @@ export function createChannelRouter(deps: ChannelRouterDeps): ChannelRouter {
 			return;
 		}
 		channels.set(frame.id, { caller, target });
-		// Deliver the open verbatim; the target reads `route` to pick its handler
-		// and answers with channel_accept or channel_reset, which we forward back.
-		send(target, frame);
+		// Stamp the server-authored source, OVERWRITING any caller-provided one, so
+		// the acceptor authorizes by an identity the caller cannot forge. The target
+		// reads `route` to pick its handler and answers with accept or reset.
+		send(target, {
+			...frame,
+			source: { kind: 'user', userId: callerOwner },
+		});
 	}
 
 	return {

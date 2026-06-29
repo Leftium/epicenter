@@ -57,9 +57,18 @@ export function meetsTrustThreshold(
  * any executor: the daemon wires `{ command: 'local-books', args: ['mcp'], ... }`
  * without `@epicenter/workspace` ever importing `@epicenter/local-books`.
  *
- * `requires` is the route's sensitivity policy (default `verified`, the safe
+ * `requires` is the route's iroh sensitivity policy (default `verified`, the safe
  * choice: a route author opts DOWN to `listed` for a low-risk tool, never up by
  * forgetting a field).
+ *
+ * `relay` is the SEPARATE relay-floor policy (default `refused`): whether this
+ * route is reachable over the relay floor at all, where the caller is a
+ * server-authenticated USER, not a device-key-trusted peer. It is not `requires`,
+ * because a keyless browser user can never meet a device-key threshold. A
+ * sensitive route (financial, a shell) stays `refused` and is iroh-only; a route
+ * author opts a low-risk route IN with `relay: 'exposed'`, knowingly accepting
+ * the relay floor's trusted-relay ceiling (a self-hosted relay removes the third
+ * party; ADR-0068).
  */
 export type SpawnRoute = {
 	command: string;
@@ -67,6 +76,7 @@ export type SpawnRoute = {
 	cwd?: string;
 	env?: Record<string, string>;
 	requires?: RouteTrustThreshold;
+	relay?: 'exposed' | 'refused';
 };
 
 /**
@@ -84,6 +94,11 @@ export type RouteTable = Record<string, Route>;
 /** A route's effective trust threshold, defaulting to the safe `verified`. */
 export function routeTrustThreshold(route: Route): RouteTrustThreshold {
 	return route.requires ?? 'verified';
+}
+
+/** Whether a route is reachable over the relay floor (default `refused`). */
+export function routeRelayExposed(route: Route): boolean {
+	return route.relay === 'exposed';
 }
 
 const ALPN_PREFIX = 'epicenter/route/';

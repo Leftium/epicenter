@@ -106,7 +106,7 @@ test('a relay-channel catalog lists and calls a tool over the loopback floor', a
 	const [routeEnd, serverEnd] = byteChannelPair();
 	const server = miniBooksServer();
 	await server.connect(createStreamTransport(serverEnd));
-	const acceptor = createChannelAcceptor(wire.target, (route) =>
+	const acceptor = createChannelAcceptor(wire.target, ({ route }) =>
 		route === 'books'
 			? { channel: routeEnd, close: () => void server.close() }
 			: null,

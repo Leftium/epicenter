@@ -94,7 +94,10 @@ describe('relay channels through createRoomCore', () => {
 			route: 'books',
 		};
 		send(core, caller.socket, open);
-		expect(target.frames).toEqual([open]);
+		// The relay stamps the server-authored source onto the forwarded open.
+		expect(target.frames).toEqual([
+			{ ...open, source: { kind: 'user', userId: 'u1' } },
+		]);
 		expect(caller.frames).toEqual([]);
 
 		const accept: ChannelFrame = { type: 'channel_accept', id: 'c1' };
@@ -108,6 +111,21 @@ describe('relay channels through createRoomCore', () => {
 		const res: ChannelFrame = { type: 'channel_data', id: 'c1', bytes: 'cmVz' };
 		send(core, target.socket, res);
 		expect(caller.frames.at(-1)).toEqual(res);
+	});
+
+	test('overwrites a caller-forged source with the authenticated owner', () => {
+		const { core, caller, target } = setup();
+		send(core, caller.socket, {
+			type: 'channel_open',
+			id: 'c1',
+			target: 'laptop',
+			route: 'books',
+			// A caller tries to forge a different identity.
+			source: { kind: 'user', userId: 'attacker' },
+		});
+		expect(target.frames.at(-1)).toMatchObject({
+			source: { kind: 'user', userId: 'u1' }, // the relay's, not the forged one
+		});
 	});
 
 	test('refuses an open to a different owner', () => {

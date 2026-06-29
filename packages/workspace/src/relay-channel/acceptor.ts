@@ -15,17 +15,25 @@
 
 import type { ByteChannel } from '../peer-transport.js';
 import { type ChannelBridge, createChannelBridge } from './channel-bytes.js';
+import type { ChannelSource } from './protocol.js';
 import type { ChannelPort } from './transport.js';
 
 /** A live local route target: its byte channel plus a teardown handle. */
 export type RouteTarget = { channel: ByteChannel; close(): void };
 
 /**
- * Open the local byte target for a named route, or `null` if the route is not
- * exposed (the relay-channel equivalent of the iroh route table's default-closed
- * gate). The daemon injects `(route) => routes[route] ? openRouteTarget(...) : null`.
+ * Open the local byte target for an inbound channel, or `null` to refuse it (the
+ * relay-channel equivalent of the iroh route table's default-closed gate). All
+ * authorization lives HERE, in the injected opener, not in the acceptor: the
+ * daemon refuses unless `source` is its own authenticated owner and the route is
+ * explicitly relay-exposed, then returns `openRouteTarget(...)`. `source` is the
+ * relay-authored identity (absent only if no compliant relay stamped it, which a
+ * strict opener also refuses).
  */
-export type RouteOpener = (route: string) => RouteTarget | null;
+export type RouteOpener = (request: {
+	route: string;
+	source?: ChannelSource;
+}) => RouteTarget | null;
 
 export type ChannelAcceptor = {
 	/** Detach from the port and tear down every live route target. */
@@ -54,16 +62,16 @@ export function createChannelAcceptor(
 
 	const unsubscribe = port.onFrame((frame) => {
 		if (frame.type === 'channel_open') {
-			const { id, route } = frame;
+			const { id, route, source } = frame;
 			if (live.has(id)) return; // duplicate id; ignore
 
-			const target = openRoute(route);
+			const target = openRoute({ route, source });
 			if (!target) {
 				port.send({
 					type: 'channel_reset',
 					id,
 					code: 'refused',
-					reason: `unknown route ${route}`,
+					reason: `route ${route} refused`,
 				});
 				return;
 			}

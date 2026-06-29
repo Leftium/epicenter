@@ -43,15 +43,32 @@ import { Compile } from 'typebox/compile';
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Who opened a channel, as the RELAY authenticated them. The relay stamps this
+ * onto the open it forwards from the caller's `Connection.userId` and overwrites
+ * any caller-provided value, so the device acceptor can authorize a keyless
+ * caller by its server-authenticated identity (the relay's Ring-0 equivalent).
+ * `kind` is the discriminant a future device-signed source slots beside.
+ */
+export const ChannelSourceSchema = Type.Object({
+	kind: Type.Literal('user'),
+	userId: Type.String(),
+});
+export type ChannelSource = Static<typeof ChannelSourceSchema>;
+
+/**
  * Caller -> relay -> target: open a channel `id` to device `target` on its named
- * `route`. The relay validates `target` is a live same-user device and forwards
- * the frame; the target reads `route` to pick its local route handler.
+ * `route`. The caller omits `source`; the relay validates `target` is a live
+ * same-owner device, stamps the server-authored `source`, and forwards the
+ * frame. The target reads `route` to pick its local handler and `source` to
+ * authorize the open (the stdio route target has no header to carry a bearer, so
+ * the acceptor IS the endpoint gate on the relay path).
  */
 export const ChannelOpenFrameSchema = Type.Object({
 	type: Type.Literal('channel_open'),
 	id: Type.String(),
 	target: Type.String(),
 	route: Type.String(),
+	source: Type.Optional(ChannelSourceSchema),
 });
 export type ChannelOpenFrame = Static<typeof ChannelOpenFrameSchema>;
 

@@ -3,35 +3,46 @@
  *
  * A {@link PeerTransport} opens a raw byte channel to a named route on a remote
  * peer. It is the ONLY thing the cross-device tool layer (the agent loop's
- * MCP-client `ToolCatalog` arm, Wave 5) sees: it never learns whether the bytes
- * travel over iroh directly, over a localhost forward to a daemon that owns
- * iroh, or (later) over an in-process WASM iroh endpoint inside a browser.
+ * MCP-client `ToolCatalog` arm) sees: it never learns whether the bytes travel
+ * over the relay floor (a channel multiplexed on the account-room WebSocket) or
+ * over a direct iroh peer link.
  *
- * Two implementations are planned, one built:
- *   - Impl #1 (this landing): dial through the LOCAL daemon gateway, which owns
- *     the iroh endpoint ({@link ./local-gateway-transport.createLocalGatewayTransport}).
- *   - Impl #2 (Vision C, NOT built): in-process WASM iroh in a browser peer.
+ * Two implementations sit behind this seam (the [collapse spec]'s "one client
+ * seam, two transports"):
+ *   - the relay-channel, the universal FLOOR: works in any browser with no app,
+ *     server-mediated over the device's existing sync connection.
+ *   - iroh-direct, a native-only optimization: dial through the LOCAL daemon
+ *     gateway, which owns the iroh endpoint
+ *     ({@link ./gateway/local-gateway-transport.createLocalGatewayTransport}).
  *
- * The seam is the {@link ByteChannel}; transport selection lives behind it. Do
- * not hardcode "iroh is reached via localhost" above this interface, or the
- * phone/WASM case becomes a rewrite instead of a second impl.
+ * The seam is the {@link ByteChannel}, which is intentionally runtime-portable
+ * (Web Streams, not node streams) so the same seam serves a browser and a node
+ * daemon. Do not hardcode "iroh is reached via localhost" above this interface,
+ * or the browser-relay case becomes a rewrite instead of a second impl.
  *
- * A *peer* is the unit that holds an iroh keypair and is enrolled/dialed: a
- * native daemon gateway today, a WASM-iroh browser later. A browser tab on a
- * machine that already runs a daemon is a *client* of that daemon over
- * localhost, not a separately-enrolled peer: it borrows its daemon's identity.
+ * A *peer* is the unit that is enrolled/dialed: a native daemon gateway holding
+ * an iroh keypair, or a browser client authenticated to the relay as its user. A
+ * browser tab on a machine that already runs a daemon may instead reach that
+ * daemon over localhost and borrow its identity.
  */
 
-import type { Readable, Writable } from 'node:stream';
 import type { Brand } from 'wellcrafted/brand';
 
 /**
- * The two halves of a bidirectional byte channel. iroh's `connection.openBi()`
- * hands you exactly this (a `SendStream` sink and a `RecvStream` source) and
- * stdio is the same shape, so an MCP transport written against `{ source, sink }`
- * rides an iroh bi-stream, a child's stdio, or an in-memory pipe unchanged.
+ * The two halves of a bidirectional byte channel, as Web Streams so one shape
+ * serves both runtimes: `ReadableStream`/`WritableStream` are globals in modern
+ * browsers and in Node 18+. The relay-channel transport builds these from the
+ * account-room WebSocket frames; the iroh adapter ({@link
+ * ./gateway/iroh-channel.biStreamToByteChannel}) builds them from an iroh
+ * bi-stream, and the route table builds them from a child's stdio via
+ * `Readable.toWeb`/`Writable.toWeb`. An MCP transport written against `{ source,
+ * sink }` ({@link ./mcp-stream-transport.createStreamTransport}) rides any of
+ * them unchanged.
  */
-export type ByteChannel = { source: Readable; sink: Writable };
+export type ByteChannel = {
+	source: ReadableStream<Uint8Array>;
+	sink: WritableStream<Uint8Array>;
+};
 
 /**
  * A peer's stable identity: its iroh `EndpointId` in base32 string form. This

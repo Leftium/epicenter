@@ -11,6 +11,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { Readable, Writable } from 'node:stream';
 import type { TrustState } from '../account/reducer.js';
 import type { ByteChannel, RouteName } from '../peer-transport.js';
 import { asRouteName } from '../peer-transport.js';
@@ -123,7 +124,14 @@ export function openRouteTarget(route: Route): RouteTarget {
 		stdio: ['pipe', 'pipe', 'inherit'],
 	});
 	return {
-		channel: { source: child.stdout!, sink: child.stdin! },
+		// Adapt the child's stdio to the seam's {@link ByteChannel} shape so the
+		// route target speaks the same Web Streams as an iroh bi-stream and the
+		// relay channel. The node-to-web bridge (and its one type cast) is named
+		// and contained below.
+		channel: {
+			source: nodeReadableToWeb(child.stdout!),
+			sink: nodeWritableToWeb(child.stdin!),
+		},
 		close: () => {
 			try {
 				child.kill();
@@ -132,4 +140,22 @@ export function openRouteTarget(route: Route): RouteTarget {
 			}
 		},
 	};
+}
+
+/**
+ * The one home for the node-stdio to Web-Streams bridge.
+ *
+ * `Readable.toWeb` / `Writable.toWeb` do the real conversion (with backpressure),
+ * but `@types/node` types them against node's `stream/web` `ReadableStream`, a TS
+ * type distinct from the global Web Streams the {@link ByteChannel} seam is typed
+ * against even though Bun makes them one runtime object. That nominal gap is the
+ * only reason a cast exists; naming it here keeps the seam's call sites clean and
+ * gives the interop a single documented place to live.
+ */
+function nodeReadableToWeb(readable: Readable): ReadableStream<Uint8Array> {
+	return Readable.toWeb(readable) as unknown as ReadableStream<Uint8Array>;
+}
+
+function nodeWritableToWeb(writable: Writable): WritableStream<Uint8Array> {
+	return Writable.toWeb(writable) as unknown as WritableStream<Uint8Array>;
 }

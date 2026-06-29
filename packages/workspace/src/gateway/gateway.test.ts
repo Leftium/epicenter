@@ -64,15 +64,21 @@ async function track(gw: Promise<PeerGateway>): Promise<PeerGateway> {
 function probe(channel: ByteChannel, ms = 4000): Promise<string | null> {
 	return new Promise((resolve) => {
 		const timer = setTimeout(() => resolve(null), ms);
-		channel.source.once('data', (chunk: Buffer) => {
-			clearTimeout(timer);
-			resolve(chunk.toString());
-		});
-		channel.source.once('close', () => {
-			clearTimeout(timer);
-			resolve(null);
-		});
-		channel.sink.write(Buffer.from('ping'));
+		const writer = channel.sink.getWriter();
+		const reader = channel.source.getReader();
+		// A refused dial closes the connection, so the write may reject; that is the
+		// null (refusal) path the read below also resolves to.
+		void writer.write(new TextEncoder().encode('ping')).catch(() => {});
+		reader.read().then(
+			({ value, done }) => {
+				clearTimeout(timer);
+				resolve(done || !value ? null : new TextDecoder().decode(value));
+			},
+			() => {
+				clearTimeout(timer);
+				resolve(null);
+			},
+		);
 	});
 }
 

@@ -1,10 +1,10 @@
 /**
  * The cross-device {@link ToolCatalog}: tools are a remote peer's MCP tools,
- * reached over the {@link PeerTransport} seam (ADR-0073: over iroh the device
- * speaks MCP, and Epicenter owns only the transport). This is the SECOND catalog
- * impl beside {@link createDispatchToolCatalog}; the agent loop consumes the
- * `ToolCatalog` interface and never learns whether a tool is a local action, a
- * relayed peer action, or a remote MCP tool over iroh.
+ * reached over the {@link PeerTransport} seam (ADR-0073: the device speaks MCP,
+ * and Epicenter owns only the transport). This is the SECOND catalog impl beside
+ * {@link createDispatchToolCatalog}; the agent loop consumes the `ToolCatalog`
+ * interface and never learns whether a tool is a local action, a relayed peer
+ * action, or a remote MCP tool reached over iroh or the relay floor.
  *
  * One catalog binds to ONE route on ONE target device (the spec's
  * target-device-first picker): open the channel, drive an MCP `Client` over
@@ -12,9 +12,11 @@
  * `tools/call` onto {@link ToolCatalog.resolve}. The held channel keeps one warm
  * MCP session for the catalog's lifetime; `[Symbol.asyncDispose]` closes it.
  *
- * NODE-ONLY: it reaches a gateway through the node-only transport and the
- * node-only {@link createStreamTransport}. It is exported from
- * `@epicenter/workspace/gateway`, never the browser-reachable agent barrel.
+ * Runtime-portable: every dependency is browser-safe (the `PeerTransport` seam,
+ * the Web Streams {@link createStreamTransport}, and the MCP `Client`, which
+ * pulls no node builtin). It is exported today from `@epicenter/workspace/gateway`
+ * for the daemon's iroh transport; the browser-safe export rides in with the
+ * relay-channel consumer.
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -24,7 +26,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonValue } from 'wellcrafted/json';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { createStreamTransport } from '../gateway/mcp-stream-transport.js';
+import { createStreamTransport } from '../mcp-stream-transport.js';
 import type {
 	PeerId,
 	PeerTransport,

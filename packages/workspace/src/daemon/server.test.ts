@@ -12,10 +12,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { openRouteTarget } from '../gateway/route-table.js';
 import type { PeerTransport } from '../peer-transport.js';
 import { type ActionRegistry, defineQuery } from '../shared/actions.js';
 import { daemonClient } from './client.js';
@@ -39,12 +39,11 @@ const MINI_MCP_SERVER = fileURLToPath(
  */
 function stubDeviceGateway(): DaemonServedDeviceGateway {
 	const transport: PeerTransport = {
-		openChannel: async () => {
-			const child = spawn('bun', ['run', MINI_MCP_SERVER], {
-				stdio: ['pipe', 'pipe', 'inherit'],
-			});
-			return { source: child.stdout!, sink: child.stdin! };
-		},
+		// Reuse the production spawn-and-adapt path so the stub channel is the same
+		// Web Streams {@link ByteChannel} shape a real route yields; the catalog's
+		// channel close ends the child's stdin and tears it down.
+		openChannel: async () =>
+			openRouteTarget({ command: 'bun', args: ['run', MINI_MCP_SERVER] }).channel,
 	};
 	return { transport };
 }

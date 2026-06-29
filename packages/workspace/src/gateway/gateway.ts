@@ -210,15 +210,16 @@ export async function createPeerGateway(
 			// Dumb byte pipe: inbound iroh recv -> child stdin, child stdout ->
 			// outbound iroh send. The gateway never parses the MCP frames.
 			const wire = biStreamToByteChannel(bi);
-			wire.source.pipe(target.channel.sink);
-			target.channel.source.pipe(wire.sink);
-
 			const teardown = () => {
 				if (!targets.delete(target)) return;
 				target.close();
 			};
-			wire.source.on('close', teardown);
-			target.channel.source.on('close', teardown);
+			// Pipe both directions over Web Streams. When either direction settles
+			// (EOF or error), tear down the route child once; the other pipe settles
+			// on its own as its streams close. `pipeTo` rejects are swallowed into the
+			// same teardown so a reset never becomes an unhandled rejection.
+			void wire.source.pipeTo(target.channel.sink).then(teardown, teardown);
+			void target.channel.source.pipeTo(wire.sink).then(teardown, teardown);
 		} catch (error) {
 			logger.warn(
 				error instanceof Error
@@ -261,9 +262,10 @@ export async function createPeerGateway(
 			dialConnections.add(connection);
 
 			// Close the connection exactly once: when the channel is fully torn down
-			// (StreamTransport.close destroys the recv half, so the source emits
-			// 'close') or when the caller aborts the dial. Without this the dial-side
-			// connection outlives the channel and is released only by `close()`.
+			// (StreamTransport.close cancels the recv half and closes the send half,
+			// so `biStreamToByteChannel`'s onClose fires) or when the caller aborts the
+			// dial. Without this the dial-side connection outlives the channel and is
+			// released only by `close()`.
 			const release = () => {
 				if (!dialConnections.delete(connection)) return;
 				try {
@@ -274,8 +276,7 @@ export async function createPeerGateway(
 			};
 
 			const bi = await connection.openBi();
-			const channel = biStreamToByteChannel(bi);
-			channel.source.on('close', release);
+			const channel = biStreamToByteChannel(bi, release);
 
 			// An abort between connect and here would miss the listener, so re-check.
 			if (signal) {

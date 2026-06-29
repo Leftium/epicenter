@@ -5,11 +5,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { toast } from '@epicenter/ui/sonner';
-	import {
-		generateMessageId,
-		VOCAB_MODEL,
-		VOCAB_SYSTEM_PROMPT,
-	} from '@epicenter/vocab';
+	import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { requireVocab } from '$lib/session';
@@ -29,7 +25,6 @@
 		table: vocab.tables.conversations,
 		whenLoaded: vocab.idb.whenLoaded,
 		connections: inferenceConnections,
-		generateId: generateMessageId,
 		agent: {
 			buildSystemPrompts: () => [VOCAB_SYSTEM_PROMPT],
 			defaultModel: VOCAB_MODEL,

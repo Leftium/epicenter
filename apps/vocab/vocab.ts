@@ -15,22 +15,9 @@
 
 import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
-import {
-	defineKv,
-	defineWorkspace,
-	generateId,
-	type Id,
-} from '@epicenter/workspace';
+import { defineKv, defineWorkspace } from '@epicenter/workspace';
 import type { AgentMessage } from '@epicenter/workspace/agent';
 import { Type } from 'typebox';
-import type { Brand } from 'wellcrafted/brand';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Branded ID Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type MessageId = Id & Brand<'MessageId'>;
-export const generateMessageId = (): MessageId => generateId<MessageId>();
 
 /**
  * Vocab runs a single Chinese-tuned model. It is an app constant, not a
@@ -88,7 +75,7 @@ export const VOCAB_DICTATION_LANGUAGE = 'en';
 /**
  * A complete chat message: the unit Vocab persists. Each finished message is
  * written once, whole, as one JSON blob in the conversation's LWW store keyed by
- * {@link MessageId} (ADR-0046/0047), the moment a turn finishes.
+ * its message id (ADR-0046/0047), the moment a turn finishes.
  *
  * It is the shared {@link AgentMessage} so Vocab rides the one client agent loop
  * (`@epicenter/workspace/agent`). Vocab is capability-free, so every message is

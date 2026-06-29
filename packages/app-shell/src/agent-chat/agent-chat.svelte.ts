@@ -26,7 +26,6 @@
  * - `agent.defaultModel`        the model a brand new conversation starts on.
  * - `activeConversation`        the active-conversation source; defaults to internal
  *                               state. An app that keeps it in the URL injects its own.
- * - `generateId`                the message-id minter.
  *
  * A mutation is approval-gated by a synchronous pause: the loop waits on an
  * in-client decision, recorded per handle in `pendingApproval`. The "Always
@@ -47,7 +46,7 @@ import {
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
 import { bindAgentConversation, fromTable } from '@epicenter/svelte';
-import { InstantString } from '@epicenter/workspace';
+import { generateId, InstantString } from '@epicenter/workspace';
 import {
 	type AgentToolCall,
 	type Approval,
@@ -81,8 +80,8 @@ export type ConversationHandle = NonNullable<AgentChatState['active']>;
 /**
  * What the agent can do: the persona and capabilities an app gives its chat
  * loop. Grouped because every field varies with the app, not the device or the
- * route. The workspace handles, connections, id minter, and active-conversation
- * source the loop also needs are passed separately; they have different owners.
+ * route. The workspace handles, connections, and active-conversation source the
+ * loop also needs are passed separately; they have different owners.
  */
 export type AgentKit = {
 	/** The layered system prompts an answer is generated under, read per turn. */
@@ -99,7 +98,6 @@ export function createAgentChatState({
 	table,
 	whenLoaded,
 	connections,
-	generateId,
 	activeConversation,
 	agent: {
 		buildSystemPrompts,
@@ -114,8 +112,6 @@ export function createAgentChatState({
 	whenLoaded: Promise<unknown>;
 	/** The device connection registry (ADR-0059); resolves a model to a transport. */
 	connections: InferenceConnections;
-	/** Mint a message id. */
-	generateId: () => string;
 	/** The active-conversation source; defaults to internal `$state`. */
 	activeConversation?: ActiveConversation;
 	/** What the agent can do: the app's persona and capabilities. */

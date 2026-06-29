@@ -16,7 +16,7 @@ describe('checkChannelFrame', () => {
 		{ type: 'channel_open', id: 'c1', target: 'peerB', route: 'books' },
 		{ type: 'channel_accept', id: 'c1' },
 		{ type: 'channel_data', id: 'c1', bytes: 'aGVsbG8=' },
-		{ type: 'channel_end', id: 'c1' },
+		{ type: 'channel_reset', id: 'c1', code: 'closed' },
 		{ type: 'channel_reset', id: 'c1', code: 'offline' },
 		{ type: 'channel_reset', id: 'c1', code: 'refused', reason: 'no route' },
 	];
@@ -29,6 +29,8 @@ describe('checkChannelFrame', () => {
 		// not a channel frame at all (presence / sync text)
 		{ type: 'presence', peers: [] },
 		{ type: 'dispatch_request', id: 'c1', to: 'x', action: 'y' },
+		// channel_end was removed: the floor is reset-only
+		{ type: 'channel_end', id: 'c1' },
 		// missing required fields
 		{ type: 'channel_open', id: 'c1', route: 'books' }, // no target
 		{ type: 'channel_data', id: 'c1' }, // no bytes

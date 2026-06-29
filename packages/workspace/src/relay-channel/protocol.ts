@@ -13,8 +13,14 @@
  *   caller -> relay -> target : `channel_open`   (open a channel to `target`/`route`)
  *   target -> relay -> caller : `channel_accept` (route admitted, target alive)
  *   either <-> relay <-> other: `channel_data`   (an opaque base64 byte chunk)
- *   either <-> relay <-> other: `channel_end`    (clean EOF half-close)
- *   either <-> relay <-> other: `channel_reset`  (refusal / cancel / teardown)
+ *   either <-> relay <-> other: `channel_reset`  (the terminal frame, both directions)
+ *
+ * Terminal flow is RESET-ONLY: there is no half-close `channel_end`. The one
+ * consumer (an MCP session) only closes the whole session, so a single
+ * `channel_reset` carries the terminal signal both ways, `closed` meaning a clean
+ * end and any other code an error. This also keeps teardown deterministic and the
+ * relay's channel entry from lingering (closing a writable always emits the reset;
+ * a half-close that relied on `ReadableStream.cancel()` did not).
  *
  * Browser-safe: pure TypeBox schemas, no node builtin, so the client transport
  * (`packages/workspace/src/relay-channel/`) and the server router
@@ -68,19 +74,12 @@ export const ChannelDataFrameSchema = Type.Object({
 });
 export type ChannelDataFrame = Static<typeof ChannelDataFrameSchema>;
 
-/** Either side -> relay -> other: clean end-of-stream (half-close). */
-export const ChannelEndFrameSchema = Type.Object({
-	type: Type.Literal('channel_end'),
-	id: Type.String(),
-});
-export type ChannelEndFrame = Static<typeof ChannelEndFrameSchema>;
-
 /**
- * Why a channel ended other than cleanly. `offline` (relay: no live target
- * socket) and `refused` (target: route unknown or policy) are the open-time
- * outcomes; `cancelled` (a side aborted), `closed` (normal teardown),
- * `too_large` (a chunk past the socket ceiling), and `protocol_error` (a
- * malformed frame) end an established channel.
+ * Why a channel ended. It is the terminal frame in both directions: `closed` is
+ * a clean end, the rest are failures. `offline` (relay: no live target socket)
+ * and `refused` (target: route unknown or policy) are the open-time outcomes;
+ * `cancelled` (a side aborted), `too_large` (a chunk past the socket ceiling),
+ * and `protocol_error` (a malformed frame) end an established channel.
  */
 export const ChannelResetCodeSchema = Type.Union([
 	Type.Literal('offline'),
@@ -109,7 +108,6 @@ export const ChannelFrameSchema = Type.Union([
 	ChannelOpenFrameSchema,
 	ChannelAcceptFrameSchema,
 	ChannelDataFrameSchema,
-	ChannelEndFrameSchema,
 	ChannelResetFrameSchema,
 ]);
 export type ChannelFrame = Static<typeof ChannelFrameSchema>;

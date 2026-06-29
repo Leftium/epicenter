@@ -85,11 +85,7 @@ export function createRelayChannelTransport(
 			return;
 		}
 
-		if (
-			frame.type === 'channel_data' ||
-			frame.type === 'channel_end' ||
-			frame.type === 'channel_reset'
-		) {
+		if (frame.type === 'channel_data' || frame.type === 'channel_reset') {
 			entry.bridge.handleInbound(frame);
 		}
 	});
@@ -133,14 +129,13 @@ export function createRelayChannelTransport(
 		close() {
 			unsubscribe();
 			for (const [id, entry] of channels) {
+				// Reset every channel so the relay frees its entry instead of holding it
+				// until the socket itself closes.
+				port.send({ type: 'channel_reset', id, code: 'closed' });
 				if (entry.kind === 'opening') {
 					entry.reject(new Error('relay-channel transport closed'));
 				} else {
-					entry.bridge.handleInbound({
-						type: 'channel_reset',
-						id,
-						code: 'closed',
-					});
+					entry.bridge.handleInbound({ type: 'channel_reset', id, code: 'closed' });
 				}
 			}
 			channels.clear();

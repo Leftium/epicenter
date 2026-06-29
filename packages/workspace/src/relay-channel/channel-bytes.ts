@@ -1,7 +1,7 @@
 /**
- * The per-channel bridge: turn ONE relay channel (its `channel_data` / `_end` /
- * `_reset` frames) into a {@link ByteChannel}, the Web Streams duplex the rest of
- * the system speaks.
+ * The per-channel bridge: turn ONE relay channel (its `channel_data` / `_reset`
+ * frames) into a {@link ByteChannel}, the Web Streams duplex the rest of the
+ * system speaks.
  *
  * It is the piece both ends of the floor share. The client transport
  * ({@link ./transport}) wraps an accepted channel in one of these and hands the
@@ -10,15 +10,29 @@
  * parses the bytes: this is the dumb pipe, the same role iroh's bi-stream adapter
  * plays for the native path.
  *
+ * Terminal flow is RESET-ONLY (there is no half-close `channel_end`): the one
+ * consumer, an MCP session, only ever "closes the session", so a single
+ * `channel_reset` carries the terminal signal in BOTH directions, with `closed`
+ * meaning a clean end and any other code meaning an error. Reset-only is also
+ * what keeps teardown deterministic: closing the writable always emits the reset
+ * (it does not depend on `ReadableStream.cancel()` firing, which Web Streams skip
+ * when the source is already closed), so no relay/peer channel entry lingers.
+ *
+ * Confidentiality and integrity from the relay are NOT provided here: a
+ * compromised relay can read, drop, mutate, or inject channel bytes. That is the
+ * accepted model (ADR-0004 trusts the relay with plaintext); the auth boundary on
+ * a tool call is the device endpoint's own bearer check (the spec's "the endpoint
+ * is the boundary, never the relay"), and privacy from Epicenter is self-host
+ * (ADR-0068), never the wire.
+ *
  * Browser-safe: Web Streams plus `btoa`/`atob`, no node builtin.
  */
 
-import { once } from '../shared/once.js';
 import type { ByteChannel } from '../peer-transport.js';
 import type {
 	ChannelDataFrame,
-	ChannelEndFrame,
 	ChannelFrame,
+	ChannelResetCode,
 	ChannelResetFrame,
 } from './protocol.js';
 
@@ -29,7 +43,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
 	return btoa(binary);
 }
 
-/** Decode a `channel_data` frame's base64 string back to raw bytes. */
+/** Decode a `channel_data` frame's base64 string back to raw bytes; throws on malformed input. */
 export function base64ToBytes(base64: string): Uint8Array {
 	const binary = atob(base64);
 	const bytes = new Uint8Array(binary.length);
@@ -37,8 +51,8 @@ export function base64ToBytes(base64: string): Uint8Array {
 	return bytes;
 }
 
-/** Inbound frames a bridge consumes for its channel (everything but the open/accept). */
-type InboundFrame = ChannelDataFrame | ChannelEndFrame | ChannelResetFrame;
+/** Inbound frames a bridge consumes for its channel (data plus the terminal reset). */
+type InboundFrame = ChannelDataFrame | ChannelResetFrame;
 
 /** A live channel as a {@link ByteChannel}, plus the inbound-frame feed. */
 export type ChannelBridge = {
@@ -53,28 +67,26 @@ export type ChannelBridgeOptions = {
 	id: string;
 	/** Emit an outbound frame for this channel over the account-room socket. */
 	send(frame: ChannelFrame): void;
-	/** Called once when the channel is fully done (reset, abort, or reader close). */
+	/** Called once when the channel is fully done (either side's close). */
 	onTeardown?(): void;
 };
 
 /**
  * Bridge one channel id to a {@link ByteChannel}.
  *
- * Outbound (the `sink`): each chunk becomes a `channel_data` frame; a clean
- * `close` (the MCP transport half-closing its send side) becomes `channel_end`;
- * an `abort` becomes `channel_reset { cancelled }`. When the consumer cancels the
- * `source` (the MCP transport's final `close`), the whole channel is done, so a
- * `channel_reset { closed }` tells the relay to drop its entry.
+ * Outbound (the `sink`): each chunk becomes a `channel_data` frame; closing or
+ * aborting the writable (the MCP transport closing the session) emits the
+ * terminal `channel_reset` exactly once.
  *
- * Inbound (the `source`): a `channel_data` enqueues bytes, a `channel_end`
- * closes the source cleanly (EOF), and a `channel_reset` errors it so the MCP
- * request in flight rejects, then tears down.
+ * Inbound (the `source`): a `channel_data` enqueues bytes (malformed base64 is a
+ * controlled `protocol_error` reset, never a thrown crash); a `channel_reset`
+ * ends the source, cleanly for `closed` and with an error otherwise so an
+ * in-flight MCP read rejects.
  */
 export function createChannelBridge(
 	options: ChannelBridgeOptions,
 ): ChannelBridge {
 	const { id, send, onTeardown } = options;
-	const teardown = once(() => onTeardown?.());
 
 	let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
 	let sourceEnded = false;
@@ -89,15 +101,37 @@ export function createChannelBridge(
 		}
 	};
 
+	// One terminal transition wins, whichever side fires first.
+	let closed = false;
+	/** We are closing: tell the peer with a reset, end our source, tear down. */
+	const localClose = (code: ChannelResetCode) => {
+		if (closed) return;
+		closed = true;
+		send({ type: 'channel_reset', id, code });
+		endSource(code === 'closed' ? undefined : new Error(`channel ${code}`));
+		onTeardown?.();
+	};
+	/** The peer closed (its reset reached us): end our source, tear down, no echo. */
+	const remoteClose = (frame: ChannelResetFrame) => {
+		if (closed) return;
+		closed = true;
+		endSource(
+			frame.code === 'closed'
+				? undefined
+				: new Error(
+						`channel reset: ${frame.code}${frame.reason ? ` (${frame.reason})` : ''}`,
+					),
+		);
+		onTeardown?.();
+	};
+
 	const source = new ReadableStream<Uint8Array>({
 		start(c) {
 			controller = c;
 		},
+		// The consumer (the MCP transport's close cancels its reader) is done.
 		cancel() {
-			// The consumer is done with the whole channel (the MCP transport's final
-			// close cancels its reader). Tell the relay so it frees the channel entry.
-			send({ type: 'channel_reset', id, code: 'closed' });
-			teardown();
+			localClose('closed');
 		},
 	});
 
@@ -105,36 +139,34 @@ export function createChannelBridge(
 		write(chunk) {
 			send({ type: 'channel_data', id, bytes: bytesToBase64(chunk) });
 		},
+		// The MCP transport's close closes the writer; this always fires on close,
+		// so the terminal reset is deterministic.
 		close() {
-			// Half-close: this side will write no more, but the peer may still answer.
-			send({ type: 'channel_end', id });
+			localClose('closed');
 		},
 		abort() {
-			send({ type: 'channel_reset', id, code: 'cancelled' });
-			endSource(new Error('channel aborted'));
-			teardown();
+			localClose('cancelled');
 		},
 	});
 
 	return {
 		channel: { source, sink },
 		handleInbound(frame) {
-			switch (frame.type) {
-				case 'channel_data':
-					if (!sourceEnded) controller?.enqueue(base64ToBytes(frame.bytes));
+			if (frame.type === 'channel_data') {
+				if (sourceEnded) return;
+				let bytes: Uint8Array;
+				try {
+					bytes = base64ToBytes(frame.bytes);
+				} catch {
+					// Malformed payload from a peer or a compromised relay: a controlled
+					// reset, never a thrown crash through the frame listener.
+					localClose('protocol_error');
 					return;
-				case 'channel_end':
-					endSource();
-					return;
-				case 'channel_reset':
-					endSource(
-						new Error(
-							`channel reset: ${frame.code}${frame.reason ? ` (${frame.reason})` : ''}`,
-						),
-					);
-					teardown();
-					return;
+				}
+				controller?.enqueue(bytes);
+				return;
 			}
+			remoteClose(frame);
 		},
 	};
 }

@@ -77,19 +77,21 @@ export function createChannelAcceptor(
 			live.set(id, { bridge, target });
 
 			// Dumb byte pipe both directions: caller bytes -> route stdin, route stdout
-			// -> caller. A pipe failure is swallowed; teardown closes the target child.
-			void bridge.channel.source.pipeTo(target.channel.sink).catch(() => {});
-			void target.channel.source.pipeTo(bridge.channel.sink).catch(() => {});
+			// -> caller. Either pipe settling (a clean route EOF or an error) tears the
+			// channel down once, mirroring the iroh gateway; the bridge's own close
+			// emits the terminal reset.
+			void bridge.channel.source
+				.pipeTo(target.channel.sink)
+				.then(() => teardown(id), () => teardown(id));
+			void target.channel.source
+				.pipeTo(bridge.channel.sink)
+				.then(() => teardown(id), () => teardown(id));
 			return;
 		}
 
 		const entry = live.get(frame.id);
 		if (!entry) return; // not an admitted channel; drop
-		if (
-			frame.type === 'channel_data' ||
-			frame.type === 'channel_end' ||
-			frame.type === 'channel_reset'
-		) {
+		if (frame.type === 'channel_data' || frame.type === 'channel_reset') {
 			entry.bridge.handleInbound(frame);
 		}
 	});

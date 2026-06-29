@@ -53,6 +53,18 @@ shapes, see `docs/adr/`.
   community shared-wiki reference, not Epicenter-operated).
 - **`personal()` / `shared({ admit })`**: the `packages/server` seam that splits
   the two deployables. Billing is hosted-only and lives in `apps/api/worker/billing/`.
+- **Three cross-device layers**: every cross-device feature is one of three jobs, kept
+  separate. *Inference* (the chat brain) streams tokens from an OpenAI-compatible endpoint
+  (ADR-0050) and is not iroh. *Sync* (convergent state) carries history plus the device
+  roster/trust ledger over a room; the roster syncs, but each device's tool list is
+  dial-fetched and cached, not synced. *Invoke* (the agent's hands) is the chat acting as
+  an MCP host calling MCP servers that live on a person's own devices, reached through a
+  transport seam (`ToolCatalog` / `PeerTransport`) so the loop never sees the transport.
+- **Invoke transport**: native clients reach a device's tools directly over iroh (no server
+  in the path; also the zero-setup self-host on-ramp, an "embedded Tailscale"); a
+  zero-install web client, if ever built, is server-mediated through the room WebSocket the
+  device already holds (ADR-0004), never a browser iroh peer. iroh is independence and
+  connectivity, not confidentiality (a deployment choice, ADR-0068).
 
 ## Workspace API
 

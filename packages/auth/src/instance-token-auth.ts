@@ -1,12 +1,10 @@
-import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
-import { ApiSessionResponse, type AuthUser } from './auth-types.js';
-import { readApiSession } from './read-api-session.js';
+import { getProfileVia, readApiSession } from './read-api-session.js';
 
 type AuthFetchInput = Request | string | URL;
 
@@ -177,28 +175,6 @@ export function createInstanceTokenAuth({
 		return response;
 	}
 
-	async function getProfile(): Promise<Result<AuthUser, AuthError>> {
-		const { data: response, error } = await tryAsync({
-			try: () => authedFetch(API_ROUTES.session.url(baseURL)),
-			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
-		});
-		if (error) return Err(error);
-		if (!response.ok) {
-			return AuthError.ProfileUnavailable({
-				cause: {
-					message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
-					status: response.status,
-				},
-			});
-		}
-		const { data: user, error: parseError } = await tryAsync({
-			try: async () => ApiSessionResponse.assert(await response.json()).user,
-			catch: (cause) => AuthError.ProfileUnavailable({ cause }),
-		});
-		if (parseError) return Err(parseError);
-		return Ok(user);
-	}
-
 	return {
 		get state() {
 			return state;
@@ -218,7 +194,7 @@ export function createInstanceTokenAuth({
 			return Ok(undefined);
 		},
 		fetch: authedFetch,
-		getProfile,
+		getProfile: () => getProfileVia(authedFetch, baseURL),
 		async openWebSocket(url, protocols = []) {
 			// The room URL is always built from `baseURL`, so the bearer is always
 			// addressed to its own origin; attach it unconditionally.

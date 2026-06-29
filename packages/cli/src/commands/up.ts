@@ -23,11 +23,13 @@ import {
 	claimDaemonLease,
 	type DaemonMetadata,
 	type EpicenterConfigError,
+	DEFAULT_DEVICE_ROUTES,
 	type InactiveMount,
 	openAccountRoom,
 	openDeviceGateway,
 	type OpenDeviceGatewayOptions,
 	openEpicenterRoot,
+	openRelayAcceptor,
 	StartupError,
 	startDaemonServer,
 	unlinkMetadata,
@@ -223,6 +225,20 @@ export async function runUp(
 				`device gateway: listening as ${gateway.peerId} via n0 discovery [routes: ${gateway.routeNames().join(', ')}]`,
 			);
 		}
+	}
+
+	// Wire the relay-floor acceptor over the account-room socket: the device also
+	// serves its routes over the relay (a browser, or any client with no iroh,
+	// reaches them this way). Synchronous and safe to wire unconditionally, because
+	// the default route table exposes nothing over the relay until a route opts in
+	// with `relay: 'exposed'`; the endpoint gate is owner + relay-exposed route.
+	if (accountRoom !== null) {
+		const relayAcceptor = openRelayAcceptor({
+			channelPort: accountRoom.channelPort,
+			routes: DEFAULT_DEVICE_ROUTES,
+			ownerUserId: accountRoom.ownerId,
+		});
+		stack.defer(() => relayAcceptor.close());
 	}
 
 	if (opened.status === 'started') {

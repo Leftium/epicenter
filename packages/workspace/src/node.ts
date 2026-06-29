@@ -52,6 +52,11 @@ export {
 	type OpenDeviceGatewayOptions,
 } from './daemon/open-device-gateway.js';
 export {
+	type OpenRelayAcceptorOptions,
+	openRelayAcceptor,
+	type RelayAcceptorHandle,
+} from './daemon/open-relay-acceptor.js';
+export {
 	type DaemonClient,
 	DaemonError,
 	daemonClient,

@@ -14,5 +14,6 @@
 
 export * from './acceptor.js';
 export * from './channel-bytes.js';
+export * from './channel-port.js';
 export * from './protocol.js';
 export * from './transport.js';

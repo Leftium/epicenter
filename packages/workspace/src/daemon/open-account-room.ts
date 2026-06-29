@@ -45,6 +45,10 @@ import { openCollaboration } from '../document/open-collaboration.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
 import { loadOrCreateDeviceSecret } from '../gateway/key-store.js';
+import {
+	type ChannelPort,
+	createChannelPort,
+} from '../relay-channel/index.js';
 import { hashYDocClientId } from '../shared/client-id.js';
 import { irohKeyPathFor } from './paths.js';
 import { resolveSyncBaseURL } from './mount-runtime.js';
@@ -79,8 +83,16 @@ export type OpenAccountRoomOptions = {
 export type AccountRoomHandle = {
 	/** The reserved guid this room was opened at. */
 	guid: string;
+	/** The signed-in account owner (userId); the relay floor's authorized identity. */
+	ownerId: string;
 	/** This device's peerId (its iroh public key, 64-hex). */
 	peerId: string;
+	/**
+	 * The relay-channel port over this account-room socket: the floor the
+	 * relay-channel acceptor and transport ride. It carries channels to and from
+	 * this user's other devices over the connection already held, no second socket.
+	 */
+	channelPort: ChannelPort;
 	/** The current device roster: every dialable peer this account has listed. */
 	roster(): Roster;
 	/**
@@ -192,7 +204,9 @@ export async function openAccountRoom(
 
 		return {
 			guid: ydoc.guid,
+			ownerId,
 			peerId,
+			channelPort: createChannelPort(collaboration.textPort),
 			roster: () => readRoster(ydoc, ownerId),
 			trustState,
 			verify: (subject) =>

@@ -187,6 +187,11 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	let remotePeers: Peer[] = [];
 	const presenceListeners = new Set<(peers: Peer[]) => void>();
 
+	// Observers of every inbound text frame, additive to presence/dispatch. The
+	// relay-channel layer (a separate module) subscribes here and narrows to its
+	// own frames, so it rides this socket without coupling to sync or dispatch.
+	const textFrameListeners = new Set<(text: string) => void>();
+
 	// Returns true if `text` was a recognized `presence` frame (and thus
 	// consumed); false if the caller should route it elsewhere (dispatch).
 	function handlePresenceFrame(text: string): boolean {
@@ -238,6 +243,9 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		// presence (the full peer list) and dispatch. Try presence first,
 		// then caller-side dispatch results, then recipient-side inbound calls.
 		onTextFrame(text) {
+			// Additive observers (the relay channel) see every text frame and filter
+			// to their own; presence and dispatch routing below is unchanged.
+			for (const listener of textFrameListeners) listener(text);
 			if (handlePresenceFrame(text)) return;
 			if (handleDispatchResultFrame(text)) return;
 			void runInboundDispatch({ rawFrame: text, actions: userActions }).then(
@@ -311,6 +319,19 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		onStatusChange: supervisor.onStatusChange,
 		/** Restart the current connection cycle. */
 		reconnect: supervisor.reconnect,
+		/**
+		 * The raw text-frame port over this socket: send a text frame, and observe
+		 * every inbound one. The relay-channel layer builds a `ChannelPort` on top
+		 * (see `relay-channel/createChannelPort`); this handle stays sync-agnostic
+		 * and never parses a channel frame.
+		 */
+		textPort: {
+			send: (text: string) => supervisor.send(text),
+			subscribe: (listener: (text: string) => void): (() => void) => {
+				textFrameListeners.add(listener);
+				return () => textFrameListeners.delete(listener);
+			},
+		},
 		/**
 		 * Online peers in this workspace, derived from the server-owned
 		 * presence channel.

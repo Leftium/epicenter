@@ -7,11 +7,17 @@
  * records. The capability-free case is the same loop with {@link NO_TOOLS}.
  */
 
+export { composeToolCatalogs } from './compose-tool-catalogs.js';
 export {
 	createDispatchToolCatalog,
 	type DispatchSurface,
 	type DispatchToolCatalogOptions,
 } from './dispatch-catalog.js';
+export {
+	createMcpGatewayCatalog,
+	type McpGatewayCatalog,
+	type McpGatewayCatalogOptions,
+} from './mcp-gateway-catalog.js';
 export type {
 	AgentEngine,
 	AgentEngineRequest,

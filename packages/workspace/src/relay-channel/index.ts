@@ -17,3 +17,12 @@ export * from './channel-bytes.js';
 export * from './channel-port.js';
 export * from './protocol.js';
 export * from './transport.js';
+// The seam every channel rides, re-exported here so a browser names a route and
+// holds a transport from the floor barrel alone.
+export {
+	asRouteName,
+	type ByteChannel,
+	type OpenChannelOptions,
+	type PeerTransport,
+	type RouteName,
+} from '../peer-transport.js';

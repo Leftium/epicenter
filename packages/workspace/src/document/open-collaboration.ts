@@ -1,36 +1,31 @@
 /**
  * `openCollaboration`: the one collaboration primitive on a document.
  *
- * Connects a Yjs document to the relay and derives per-peer liveness and action
- * manifests from the server-owned presence channel. An additive text-frame port
- * (`textPort`) lets the relay-channel layer ride the same socket for cross-device
- * MCP channels without coupling to sync or presence.
+ * Connects a Yjs document to the relay and derives per-peer liveness from the
+ * server-owned presence channel. An additive text-frame port (`textPort`) lets
+ * the relay-channel layer ride the same socket for cross-device MCP channels
+ * without coupling to sync or presence.
  *
  * Two wire surfaces ride one auth context:
  *
  *   binary WS frames  -> standard y-protocols SYNC.
- *   text WS frames    -> server -> client: presence (the full peer list
- *                        including each peer's action manifest, sent on
- *                        every membership or manifest change);
+ *   text WS frames    -> server -> client: presence (the full peer list, sent on
+ *                        every membership change);
  *                        client -> server: presence_publish (this node's
- *                        manifest, sent once per connect).
+ *                        identity: agent designation and exposed route names),
+ *                        sent once per connect.
  *
  * The Y.Doc holds durable workspace state; presence lives on the relay's
  * `connections` map.
  *
  * Content docs (rich-text bodies, attachments, nested independently-syncing
- * docs) use the same primitive with `actions: {}`: the published manifest is
- * empty, presence still flows in over the socket for online discovery.
+ * docs) use the same primitive with `actions: {}`; presence still flows in over
+ * the socket for online discovery.
  */
 
 import type { Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
-import {
-	ACTION_KEY_PATTERN,
-	type ActionManifest,
-	type ActionRegistry,
-	toActionMeta,
-} from '../shared/actions.js';
+import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
 	createSyncSupervisor,
 	type OpenWebSocketFn,
@@ -92,10 +87,11 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	connectDeadlineMs?: number;
 	log?: Logger;
 	/**
-	 * Injected local action registry. Collaboration publishes this registry to
-	 * peers as its presence manifest and exposes it as `collaboration.actions`,
-	 * but the caller remains the registry owner. Pass `{}` for content docs and
-	 * consume-only participants.
+	 * Injected local action registry. The caller remains the registry owner;
+	 * Collaboration validates the action keys and exposes it as
+	 * `collaboration.actions`, the local callable surface. It is no longer
+	 * published in presence (the action manifest is decommissioned). Pass `{}`
+	 * for content docs and consume-only participants.
 	 */
 	actions: TActions;
 	/**
@@ -184,16 +180,14 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		for (const listener of presenceListeners) listener(remotePeers);
 	}
 
-	// Build the manifest once at construction time. The action registry is
-	// fixed for the lifetime of this Collaboration, so we cache the JSON form
-	// and publish it on every (re)connect.
-	const ownManifest: ActionManifest = {};
-	for (const [key, action] of Object.entries(userActions)) {
-		ownManifest[key] = toActionMeta(action);
-	}
+	// This node publishes only its identity and exposed-route names in presence.
+	// The legacy action manifest is decommissioned: nothing reads `Peer.actions`
+	// once the in-room dispatch subsystem was deleted (ADR-0073). The `actions`
+	// wire field stays required and is sent empty, so an older relay or peer sees
+	// no schema change while the device stops feeding a dead field.
 	const presencePublishFrame = JSON.stringify({
 		type: 'presence_publish',
-		actions: ownManifest,
+		actions: {},
 		agentId: config.agentId,
 		...(config.exposedRoutes !== undefined && {
 			exposedRoutes: config.exposedRoutes,
@@ -215,9 +209,9 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	});
 
 	const unsubscribeStatusListener = supervisor.onStatusChange((status) => {
-		// Publish this node's action manifest on every (re)connect. The relay
-		// stores it against the new socket and rebroadcasts presence so peers
-		// see it.
+		// Publish this node's presence identity (agent designation and exposed
+		// route names) on every (re)connect. The relay stores it against the new
+		// socket and rebroadcasts presence so peers see it.
 		if (status.phase === 'connected') {
 			supervisor.send(presencePublishFrame);
 		}

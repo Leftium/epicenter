@@ -12,13 +12,18 @@
  * See spec: `20260429T004302-workspace-as-daemon-transport.md` § Phase 2.
  */
 
+import { once } from 'wellcrafted/function';
 import { Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import { buildDaemonApp } from './app.js';
 import type { DaemonLease } from './lease.js';
 import { unlinkSocketFile } from './runtime-files.js';
 import { StartupError } from './startup-errors.js';
-import type { DaemonServedMount } from './types.js';
+import type {
+	DaemonServedAccountRoom,
+	DaemonServedDeviceGateway,
+	DaemonServedMount,
+} from './types.js';
 import { bindUnixSocket } from './unix-socket.js';
 
 export type DaemonServerOptions = {
@@ -26,6 +31,18 @@ export type DaemonServerOptions = {
 	lease: DaemonLease;
 	/** Mount served by the unix-socket app. */
 	mount: DaemonServedMount;
+	/**
+	 * The per-person account room, when one is open. Its live presence backs
+	 * `/relay-peers`; omit it (signed out, or it failed to open) and `/relay-peers`
+	 * serves an empty list. The daemon socket still binds either way.
+	 */
+	accountRoom?: DaemonServedAccountRoom;
+	/**
+	 * The live device gateway, when one is open. Its transport backs `/tools` and
+	 * `/call`; omit it and those routes answer a typed Unavailable. The daemon
+	 * socket still binds either way.
+	 */
+	deviceGateway?: DaemonServedDeviceGateway;
 };
 
 function createDaemonServer({
@@ -35,7 +52,6 @@ function createDaemonServer({
 	server: ReturnType<typeof bindUnixSocket>;
 	socketPath: string;
 }) {
-	let isClosed = false;
 	return {
 		/** Filesystem path of the unix socket this server binds. */
 		socketPath,
@@ -44,15 +60,13 @@ function createDaemonServer({
 		 * itself; this method also sweeps any leftover socket file as a guard
 		 * for hard-error paths. Idempotent.
 		 */
-		async close() {
-			if (isClosed) return;
-			isClosed = true;
+		close: once(async () => {
 			await tryAsync({
 				try: () => server.stop(true),
 				catch: () => Ok(undefined),
 			});
 			unlinkSocketFile(socketPath);
-		},
+		}),
 	};
 }
 
@@ -71,9 +85,11 @@ export type DaemonServer = ReturnType<typeof createDaemonServer>;
 export async function startDaemonServer({
 	lease,
 	mount,
+	accountRoom,
+	deviceGateway,
 }: DaemonServerOptions): Promise<Result<DaemonServer, StartupError>> {
 	const { socketPath } = lease;
-	const app = buildDaemonApp(mount);
+	const app = buildDaemonApp(mount, accountRoom, deviceGateway);
 	const bindResult = trySync({
 		try: () => bindUnixSocket({ socketPath, fetch: app.fetch }),
 		catch: (cause) => StartupError.BindFailed({ cause }),

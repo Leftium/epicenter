@@ -1,75 +1,52 @@
 /**
  * Resolve a daemon's durable node identity for one Epicenter root.
  *
- * A node id is the install-stable identity the relay routes presence and peer
- * dispatch by (see `document/node-id.ts`). The daemon's storage scope is its
- * Epicenter root's `.epicenter/` dir: the id is generated once and persisted to
- * `.epicenter/node.json`, so a restart reuses it, two folders on one machine
- * get distinct ids (distinct dirs), and two machines never collide (the id is
- * random, never derived from the root path or the mount name).
+ * The daemon's identity is a durable nanoid persisted under `runtimeDir()`: the
+ * same id file always yields the same NodeId, so a restart reuses the identity,
+ * two folders on one machine get distinct ids (distinct files, keyed by dir
+ * hash), and two machines never collide (the id is minted randomly on first
+ * boot). The file lives under `runtimeDir()` (machine-local, OUTSIDE the repo
+ * tree), not under `.epicenter/`, so it survives `git clean` and is never
+ * accidentally committed.
  *
- * `.epicenter/` is gitignored, so the id is machine-local. Vendoring or cloning
- * an app folder yields a fresh node on first run, which is the correct
- * identity for a new replica of the same app corpus.
+ * The NodeId is the relay's routing label (stamped on the room WebSocket as
+ * `?nodeId=`) and the seed for the Y.Doc CRDT `clientID` via
+ * `hashYDocClientId(nodeId)`. It is a plain claimed id, not a signing key: the
+ * relay floor authenticates by the session's `userId`, never the nodeId.
  *
- * This reuses the one node-id mechanism (`createNodeId`) behind a
- * JSON-file-backed `SimpleStorage`, so the daemon shares its generate-once /
- * persist semantics with the browser and extension instead of inventing a
- * second scheme.
+ * Browser app nodeIds (opensidian, fuji, honeycrisp, vocab, tab-manager) are the
+ * same kind of nanoid, persisted in Web Storage via `createNodeId` /
+ * `createNodeIdAsync` in `document/node-id.ts`. This module only differs in
+ * where the daemon persists its own: under the runtime dir instead of storage.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
-import {
-	createNodeId,
-	type NodeId,
-	type SimpleStorage,
-} from '../document/node-id.js';
-
-/** `.epicenter/node.json`: the daemon's machine-local identity file. */
-function nodeStatePath(epicenterRoot: string): string {
-	return join(epicenterRoot, '.epicenter', 'node.json');
-}
+import { nodeIdPathFor } from '../daemon/paths.js';
+import { asNodeId, type NodeId } from '../document/node-id.js';
+import { generateId } from '../shared/id.js';
 
 /**
- * `SimpleStorage` backed by a JSON object file. A missing or unparseable file
- * reads as empty (so a corrupt file self-heals into a fresh value on the next
- * write); writes create the parent dir and persist with owner-only mode.
- */
-function createJsonFileStorage(filePath: string): SimpleStorage {
-	function read(): Record<string, unknown> {
-		if (!existsSync(filePath)) return {};
-		try {
-			const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
-			return parsed !== null && typeof parsed === 'object'
-				? (parsed as Record<string, unknown>)
-				: {};
-		} catch {
-			return {};
-		}
-	}
-	return {
-		getItem(key) {
-			const value = read()[key];
-			return typeof value === 'string' ? value : null;
-		},
-		setItem(key, value) {
-			mkdirSync(dirname(filePath), { recursive: true });
-			const next = { ...read(), [key]: value };
-			writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`, {
-				mode: 0o600,
-			});
-		},
-	};
-}
-
-/**
- * Read or lazily generate the daemon's node id for an Epicenter root,
- * persisting it under `.epicenter/node.json`. Idempotent across restarts.
+ * Read or lazily mint the daemon's durable node id for an Epicenter root,
+ * persisting it at `nodeIdPathFor(epicenterRoot)`. Idempotent across restarts.
+ *
+ * A present-but-empty id file fails loud rather than rotating the identity:
+ * silently minting a fresh id would re-seed `hashYDocClientId` and fork the
+ * daemon's CRDT identity, so corruption is surfaced, not healed.
  */
 export function resolveDaemonNodeId(epicenterRoot: string): NodeId {
-	return createNodeId({
-		storage: createJsonFileStorage(nodeStatePath(epicenterRoot)),
-	});
+	const path = nodeIdPathFor(epicenterRoot);
+	if (existsSync(path)) {
+		const stored = readFileSync(path, 'utf8').trim();
+		if (stored.length === 0) {
+			throw new Error(
+				`resolveDaemonNodeId: node id file is empty at ${path}; refusing to ` +
+					`rotate the daemon's identity (would fork its CRDT clientID)`,
+			);
+		}
+		return asNodeId(stored);
+	}
+	const fresh = generateId<NodeId>();
+	writeFileSync(path, fresh);
+	return fresh;
 }

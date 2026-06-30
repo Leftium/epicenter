@@ -57,6 +57,38 @@ epicenter peers -C ~/workspace
 
 `-C` is a start directory for Epicenter-root discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon opens the mount that config declares. Discovery is upward-only and never scans down, so run from inside your Epicenter folder (or any directory under it) or pass `-C <epicenter-root>`. From a repo whose Epicenter folder lives at `repo/apps`, that is `epicenter daemon up -C apps`.
 
+## Cross-device tools
+
+Your signed-in devices reach each other's tools over the relay floor: one per-user authenticated relay routes a typed channel to a device over the account-room WebSocket each daemon already holds. You ask for a device by its nodeId, not a tool floating in a global namespace, and the channel reaches a named route on that device's daemon (a route like `books` spawns that device's MCP server).
+
+A route is default-closed over the relay. The relay stamps an unforgeable identity on every channel (the authenticated account it belongs to), and a device admits an inbound channel only when the caller is your own account AND the route is explicitly relay-exposed. A sensitive route (`books` exposes financial data) stays refused until the operator opts it in with `--relay-expose`, knowingly accepting the relay's plaintext ceiling (a self-hosted relay removes the third party; privacy is which relay you run).
+
+| Verb | What it does |
+| --- | --- |
+| `epicenter tools <device>` | List a device's MCP tools for one route (default `books`) |
+| `epicenter call <device> <route> <tool> [input]` | Call one tool on a device's route |
+
+`<device>` is the target's nodeId, printed in its `epicenter daemon up` banner. Only a device currently online on the relay is reachable.
+
+### Two-machine smoke
+
+To confirm cross-device reach end to end, sign two machines into the same account and run:
+
+```bash
+# Machine B (the target): expose `books` over the relay floor. It is refused by
+# default (financial data), so this knowingly accepts the trusted-relay ceiling.
+# The banner prints "account room: online as <nodeId>"; note B's nodeId.
+epicenter daemon up -C <root> --relay-expose books
+
+# Machine A (the caller):
+epicenter daemon up -C <root>
+
+# On machine A, after both account rooms have synced:
+epicenter call <B-nodeId> books <tool>
+```
+
+Two things gate this. Both machines must be signed into the same account and reach the same sync server, because the relay floor rides the account-room WebSocket each device holds; if `epicenter tools <B-nodeId>` on A cannot reach B, that is a control-plane sync problem, not a transport one. And the target must have opted `books` in with `--relay-expose`; without it the acceptor refuses every relay channel by default. No device key, dial address, or `verify` is involved: the relay's same-account vouch plus the relay-exposed route is the whole gate.
+
 ## Exit codes
 
 `run` is the only command with granular codes, so a script can branch on the failure kind:

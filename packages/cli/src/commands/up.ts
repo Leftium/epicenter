@@ -21,17 +21,25 @@ import {
 import type { StartedMount } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
+	createRelayChannelTransport,
 	type DaemonMetadata,
+	type DaemonServedDeviceGateway,
+	DEFAULT_DEVICE_ROUTES,
 	type EpicenterConfigError,
+	exposedRoutesByKind,
 	type InactiveMount,
+	openAccountRoom,
 	openEpicenterRoot,
+	openRelayAcceptor,
 	StartupError,
 	startDaemonServer,
 	unlinkMetadata,
 	type WorkspaceAppError,
+	withRelayExposed,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
 import { epicenterRootOption } from '../util/common-options.js';
@@ -69,6 +77,12 @@ type UpOptions = {
 	createAuthClient?: () => Promise<
 		Result<SyncAuthClient, MachineAuthStorageError>
 	>;
+	/**
+	 * Route names to expose over the relay floor (default refused). Opts a route in
+	 * knowingly, accepting the floor's trusted-relay ceiling; used for a two-machine
+	 * smoke or by a self-hoster who runs their own relay.
+	 */
+	relayExpose?: string[];
 };
 
 /**
@@ -158,13 +172,78 @@ export async function runUp(
 	if (startResult.error) return startResult;
 	const opened = startResult.data;
 
+	// The served route table, with any `--relay-expose` routes opted in to the
+	// floor. The default exposes nothing over the relay until a route opts in with
+	// `relay: 'exposed'`. Computed before the account room opens so the daemon can
+	// advertise its exposed routes in presence (floor discovery: the user's other
+	// devices read this and auto-mount the routes as tool catalogs).
+	const routes = options.relayExpose?.length
+		? withRelayExposed(DEFAULT_DEVICE_ROUTES, options.relayExpose)
+		: DEFAULT_DEVICE_ROUTES;
+	// The relay-exposed route names this daemon advertises in presence. The floor
+	// carries tool routes only (ADR-0078), so every exposed route is an MCP server a
+	// peer auto-mounts.
+	const { spawn: exposedRoutes } = exposedRoutesByKind(routes);
+
+	// Open the per-person account room alongside the mount: it holds the relay
+	// floor's connection (its live presence and the channel port), not per-room
+	// workspace presence. It is best-effort and independent of the mount: a
+	// signed-out daemon has none (null), and a failure to open it never aborts the
+	// mount that is the daemon's real job. Opened before the socket binds so its
+	// presence can back `/relay-peers`, and deferred before the socket/runtime
+	// below, so on LIFO teardown it disposes AFTER the socket closes: no in-flight
+	// `/relay-peers` read can race a torn-down connection.
+	const { data: accountRoom, error: accountRoomError } = await tryAsync({
+		try: () => openAccountRoom({ epicenterRoot, auth, exposedRoutes }),
+		catch: (cause) => Err(extractErrorMessage(cause)),
+	});
+	if (accountRoomError !== null) {
+		logSyncStatus(
+			`account room: failed to open (${accountRoomError}); continuing`,
+		);
+	} else if (accountRoom !== null) {
+		stack.defer(() => accountRoom[Symbol.asyncDispose]());
+		logSyncStatus(`account room: online as ${accountRoom.nodeId}`);
+	}
+
+	// Wire the relay floor over the account-room socket: this device both DIALS its
+	// peers and ACCEPTS inbound channels over the one per-user authenticated
+	// connection the account room already holds. Both need a present account room
+	// (a signed-in session), so a signed-out daemon has neither. The dial transport
+	// is threaded into the daemon socket app so `tools`/`call` reach a peer over the
+	// relay; the acceptor serves this device's relay-exposed routes back. Deferred
+	// AFTER the account room so LIFO teardown closes them BEFORE the socket they
+	// ride goes away.
+	let deviceGateway: DaemonServedDeviceGateway | undefined;
+	if (accountRoom !== null) {
+		const dialTransport = createRelayChannelTransport(accountRoom.channelPort);
+		stack.defer(() => dialTransport.close());
+		deviceGateway = { transport: dialTransport };
+
+		const relayAcceptor = openRelayAcceptor({
+			channelPort: accountRoom.channelPort,
+			routes,
+			ownerUserId: accountRoom.ownerId,
+		});
+		stack.defer(() => relayAcceptor.close());
+
+		logSyncStatus(
+			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed MCP: ${exposedRoutes.join(', ') || 'none'}]`,
+		);
+	}
+
 	if (opened.status === 'started') {
 		const started = opened.entry;
 		stack.defer(async () => {
 			await started.runtime[Symbol.asyncDispose]();
 		});
 
-		const serverResult = await startDaemonServer({ lease, mount: started });
+		const serverResult = await startDaemonServer({
+			lease,
+			mount: started,
+			accountRoom: accountRoom ?? undefined,
+			deviceGateway,
+		});
 		if (serverResult.error) return serverResult;
 		const daemonServer = serverResult.data;
 		stack.defer(() => daemonServer.close());
@@ -205,11 +284,20 @@ export const upCommand = cmd({
 			description:
 				'Suppress peer join/leave lines (sync state changes still print)',
 		},
+		'relay-expose': {
+			type: 'array',
+			string: true,
+			description:
+				'Route names to expose over the relay floor (default refused); accepts the trusted-relay ceiling',
+		},
 	},
 	handler: async (argv) => {
 		const options: UpOptions = {
 			epicenterRoot: argv.C,
 			quiet: argv.quiet,
+			...(argv['relay-expose'] !== undefined && {
+				relayExpose: argv['relay-expose'] as string[],
+			}),
 		};
 
 		const { data: handle, error } = await runUp(options);

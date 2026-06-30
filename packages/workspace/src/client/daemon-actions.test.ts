@@ -17,6 +17,9 @@ function makeStubClient() {
 	};
 	const client = {
 		peers: unreachable as DaemonClient['peers'],
+		relayPeers: unreachable as DaemonClient['relayPeers'],
+		tools: unreachable as DaemonClient['tools'],
+		call: unreachable as DaemonClient['call'],
 		list: unreachable as DaemonClient['list'],
 		run: (input: RunRequest) => {
 			calls.push({ method: 'run', arg: input });

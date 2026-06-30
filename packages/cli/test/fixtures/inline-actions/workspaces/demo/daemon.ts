@@ -50,6 +50,10 @@ const collaboration = {
 		list: () => [],
 		subscribe: () => () => {},
 	},
+	textPort: {
+		send: () => {},
+		subscribe: () => () => {},
+	},
 	dispatch: async () => {
 		throw new Error('fixture does not dispatch');
 	},

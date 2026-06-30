@@ -105,3 +105,20 @@ export function logPathFor(dir: string): string {
 		`${dirHash(dir)}.log`,
 	);
 }
+
+/**
+ * Path for the daemon's durable node-id file for the root at `dir`.
+ *
+ * Hash-keyed the same way as {@link metadataPathFor} and {@link leasePathFor},
+ * so two daemons on the same machine get distinct ids and the same daemon always
+ * loads the same id on restart. Lives under `runtimeDir()` (machine-local,
+ * OUTSIDE the repo tree) so it survives `git clean` and is never accidentally
+ * committed.
+ *
+ * The node id is a public routing label (the relay's `?nodeId=`) and the seed
+ * for the Y.Doc CRDT `clientID`, not a secret, so the file is written with the
+ * default mode.
+ */
+export function nodeIdPathFor(dir: string): string {
+	return join(runtimeDir(), `${dirHash(dir)}.node-id`);
+}

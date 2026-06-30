@@ -16,8 +16,29 @@ import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
 import type { Peer } from '../document/presence-protocol.js';
+import type { PeerTransport } from '../peer-transport.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise } from '../shared/types.js';
+
+/**
+ * What the daemon socket app reads to serve `/relay-peers`: this account's other
+ * devices currently online on the relay floor (live presence), the dial-target
+ * source for `tools`/`call`. A live account room satisfies this structurally; the
+ * daemon serves an empty list when there is none (signed out, or the account room
+ * failed to open).
+ */
+export type DaemonServedAccountRoom = {
+	peers(): Peer[];
+};
+
+/**
+ * What the daemon socket app reads to serve `/tools` and `/call`: the dial-side
+ * transport of the live device gateway. Absent (signed out, or the gateway
+ * failed to open) means cross-device tool routes answer a typed Unavailable.
+ */
+export type DaemonServedDeviceGateway = {
+	transport: PeerTransport;
+};
 
 /**
  * Collaboration fields the daemon socket app reads while serving `/peers` and

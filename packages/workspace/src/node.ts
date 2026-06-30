@@ -23,7 +23,14 @@ export {
 	RunError,
 } from './daemon/action-errors.js';
 export type { DaemonListSnapshot } from './daemon/app.js';
-export { PeerSnapshot, RunRequest } from './daemon/app.js';
+export {
+	CallRequest,
+	DeviceGatewayError,
+	PeerSnapshot,
+	RelayPeerSnapshot,
+	RunRequest,
+	ToolsRequest,
+} from './daemon/app.js';
 export {
 	type AttachMountInfrastructureOptions,
 	attachMountInfrastructure,
@@ -66,6 +73,16 @@ export {
 	type SqliteMountOptions,
 } from './daemon/mount-runtime.js';
 export {
+	type AccountRoomHandle,
+	type OpenAccountRoomOptions,
+	openAccountRoom,
+} from './daemon/open-account-room.js';
+export {
+	type OpenRelayAcceptorOptions,
+	openRelayAcceptor,
+	type RelayAcceptorHandle,
+} from './daemon/open-relay-acceptor.js';
+export {
 	dirHash,
 	leasePathFor,
 	logPathFor,
@@ -81,6 +98,7 @@ export {
 export { StartupError } from './daemon/startup-errors.js';
 export type {
 	DaemonRuntime,
+	DaemonServedDeviceGateway,
 	StartedMount,
 } from './daemon/types.js';
 export {
@@ -102,5 +120,16 @@ export {
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
+export {
+	DEFAULT_DEVICE_ROUTES,
+	exposedRoutesByKind,
+	openRouteTarget,
+	type RouteTable,
+	withRelayExposed,
+} from './gateway/route-table.js';
+export {
+	createRelayChannelTransport,
+	type RelayChannelTransport,
+} from './relay-channel/index.js';
 export { hashYDocClientId } from './shared/client-id.js';
 export type { EpicenterRoot } from './shared/types.js';

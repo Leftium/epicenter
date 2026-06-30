@@ -46,10 +46,8 @@ import {
 	mkdtempSync,
 	readdirSync,
 	rmSync,
-	writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { machineAuthFilePath } from '@epicenter/auth/node';
+import { join } from 'node:path';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/inline-actions');
 const BIN_PATH = join(import.meta.dir, '..', 'src', 'bin.ts');
@@ -70,22 +68,14 @@ function makeEnv(): EnvOverrides {
 	const home = mkdtempSync('/tmp/eps-e2e-home-');
 	const runtimeDir = mkdtempSync('/tmp/eps-e2e-rt-');
 	const dataDir = mkdtempSync('/tmp/eps-e2e-data-');
-	const authPath = machineAuthFilePath({ dataDir });
 	mkdirSync(runtimeDir, { recursive: true });
-	mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 });
-	writeFileSync(
-		authPath,
-		JSON.stringify({
-			grant: {
-				accessToken: 'access-stored',
-				refreshToken: 'refresh-stored',
-				accessTokenExpiresAt: Date.now() + 3_600_000,
-			},
-			userId: 'user-1',
-			ownerId: 'user-1',
-		}),
-		{ mode: 0o600 },
-	);
+	// No machine-auth grant is written, so the daemon runs SIGNED-OUT. These
+	// lifecycle tests assert socket / metadata / IPC behavior, not cross-device;
+	// the demo fixture's stubbed collaboration already supplies the peers
+	// snapshot. A signed-in daemon would open the account room and the device
+	// gateway, and the gateway now runs the real `n0` transport (which reaches
+	// n0's public relays) - networking that has no place in a hermetic suite.
+	// Real signed-in-binary n0 coverage lives in the manual two-machine smoke.
 	return {
 		home,
 		runtimeDir,
@@ -183,8 +173,12 @@ async function awaitExit(child: ReturnType<typeof spawn>): Promise<number> {
 }
 
 function runtimeLeftovers(runtimeRoot: string): string[] {
+	// `.lease.sqlite` and `.node-id` are durable by design: the lease file is
+	// reclaimed on next start, and the node id IS the device's stable identity
+	// (resolveDaemonNodeId persists it OUTSIDE the repo so the nodeId survives
+	// restarts). Neither is an orphaned socket/metadata file teardown should sweep.
 	return readdirSync(runtimeRoot).filter(
-		(file) => !file.endsWith('.lease.sqlite'),
+		(file) => !file.endsWith('.lease.sqlite') && !file.endsWith('.node-id'),
 	);
 }
 

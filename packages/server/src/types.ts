@@ -83,6 +83,14 @@ export type Connection = {
 	 * never set it. Opaque to the relay (forwarded, never inspected).
 	 */
 	agentId?: string;
+	/**
+	 * The relay-exposed (MCP) route names this connection serves, set from the
+	 * node's `presence_publish` and mirrored on the wire so peers can auto-mount them
+	 * (floor discovery). The floor carries tool routes only (ADR-0078). Undefined
+	 * until published; a pure consumer never sets it. Opaque to the relay (forwarded,
+	 * never inspected).
+	 */
+	exposedRoutes?: string[];
 };
 
 /**

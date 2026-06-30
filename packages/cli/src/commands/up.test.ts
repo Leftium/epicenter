@@ -11,6 +11,10 @@
  * is not exercised here. It has its own unit tests in
  * `@epicenter/auth/src/node/machine-auth.test.ts`.
  *
+ * Signed-in fixtures open the account room and wire the relay floor over its
+ * channel port (no network beyond the account-room socket the stub auth
+ * provides); a signed-out fixture has neither.
+ *
  * Key behaviors:
  * - happy path loads epicenter.config.ts, writes metadata, binds the
  *   socket, and replies to ping

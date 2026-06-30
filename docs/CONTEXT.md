@@ -26,7 +26,8 @@ shapes, see `docs/adr/`.
 - **Relay**: moves bytes between a person's devices when they cannot reach each
   other directly, then forgets. Blind to content in principle. *Fused with the anchor
   today*: the hosted relay is one Cloudflare Durable Object that also holds and reads
-  your plaintext (ADR-0035); the Iroh split separates the blind relay from the anchor.
+  your plaintext (ADR-0035); separating the relay role from the anchor (ADR-0035) would
+  let a blind relay route to an anchor you hold.
 - **Store**: the anchor's app-blind sibling for big binaries (audio, images),
   `put` / `get` / `has` by reference; the doc carries the reference, never the bytes
   (ADR-0035). Any S3-compatible endpoint (versitygw for dev, Garage for self-host).
@@ -58,6 +59,20 @@ shapes, see `docs/adr/`.
   bearer). There is no admission-gated `shared` topology; per-person named tokens
   are a deliberately-unbuilt seam behind the same verifier and the same constant
   partition. Billing is hosted-only and lives in `apps/api/worker/billing/`.
+- **Three cross-device layers**: every cross-device feature is one of three jobs, kept
+  separate. *Inference* (the chat brain) streams tokens from an OpenAI-compatible endpoint
+  (ADR-0050), over the inference seam, not the device relay. *Sync* (convergent state)
+  carries document history over the relay; each device's tool list is dial-fetched and
+  cached, and which devices are online is server-owned presence (no synced roster or trust
+  ledger). *Invoke* (the agent's hands) is the chat acting as an MCP host calling MCP
+  servers that live on a person's own devices, reached through a transport seam
+  (`ToolCatalog` / `PeerTransport`) so the loop never sees the transport.
+- **Invoke transport**: every client reaches a device's tools over the relay floor, a typed
+  channel multiplexed on the per-user account-room WebSocket the device already holds
+  (ADR-0004). A browser is first-class because it uses the same floor with no app. The relay
+  stamps an unforgeable `source` and routes by nodeId; a route is admitted only on owner
+  identity plus an explicit `relay: 'exposed'` opt-in. Confidentiality is not the
+  transport's job; privacy is which relay you run (self-host, ADR-0068).
 
 ## Workspace API
 

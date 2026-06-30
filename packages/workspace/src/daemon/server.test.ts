@@ -13,12 +13,44 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { openRouteTarget } from '../gateway/route-table.js';
+import type { PeerTransport } from '../peer-transport.js';
 import { type ActionRegistry, defineQuery } from '../shared/actions.js';
 import { daemonClient } from './client.js';
 import { claimDaemonLease, type DaemonLease } from './lease.js';
 import { startDaemonServer } from './server.js';
-import type { DaemonServedMount } from './types.js';
+import type {
+	DaemonServedAccountRoom,
+	DaemonServedDeviceGateway,
+	DaemonServedMount,
+} from './types.js';
+
+const MINI_MCP_SERVER = fileURLToPath(
+	new URL('../agent/test-fixtures/mini-mcp-server.ts', import.meta.url),
+);
+
+/**
+ * A stub device gateway whose transport serves the fixture MCP server over a
+ * child's stdio, in process. It proves the `/tools` and `/call` route plumbing
+ * (socket -> catalog -> MCP) without opening a real relay channel; the real
+ * gateway path is proven in `mcp-gateway-catalog.test.ts` and `packages/cli`.
+ */
+function stubDeviceGateway(): DaemonServedDeviceGateway {
+	const transport: PeerTransport = {
+		// Reuse the production spawn-and-adapt path so the stub channel is the same
+		// Web Streams {@link ByteChannel} shape a real route yields; the catalog's
+		// channel close ends the child's stdin and tears it down.
+		openChannel: async () =>
+			openRouteTarget({
+				kind: 'spawn',
+				command: 'bun',
+				args: ['run', MINI_MCP_SERVER],
+			}).channel,
+	};
+	return { transport };
+}
 
 let originalRuntimeDir: string | undefined;
 let runtimeRoot: string;
@@ -50,6 +82,18 @@ function makeRuntime({
 
 function claimTestLease(): DaemonLease {
 	return expectOk(claimDaemonLease(workDir));
+}
+
+/**
+ * A stub account room that reports a fixed relay-presence list from `peers()`
+ * (the source the daemon serves at `/relay-peers`). Structurally satisfies
+ * {@link DaemonServedAccountRoom}.
+ */
+function makeAccountRoom(nodeIds: string[]): DaemonServedAccountRoom {
+	return {
+		peers: () =>
+			nodeIds.map((nodeId) => ({ nodeId, connectedAt: 0, actions: {} })),
+	};
 }
 
 beforeEach(() => {
@@ -87,6 +131,92 @@ describe('startDaemonServer', () => {
 		} finally {
 			if (serverResult.error === null) await serverResult.data.close();
 			lease.release();
+		}
+	});
+
+	test('relay-peers serves the account-room presence, empty without one', async () => {
+		// Without an account room, /relay-peers is a valid empty list.
+		const leaseA = claimTestLease();
+		const withoutRoom = await startDaemonServer({
+			lease: leaseA,
+			mount: { mount: 'demo', runtime: makeRuntime() },
+		});
+		try {
+			const server = expectOk(withoutRoom);
+			expect(
+				expectOk(await daemonClient(server.socketPath).relayPeers()),
+			).toEqual([]);
+		} finally {
+			if (withoutRoom.error === null) await withoutRoom.data.close();
+			leaseA.release();
+		}
+
+		// With presence, /relay-peers maps each online device to a { nodeId } row.
+		const leaseB = claimTestLease();
+		const withRoom = await startDaemonServer({
+			lease: leaseB,
+			mount: { mount: 'demo', runtime: makeRuntime() },
+			accountRoom: makeAccountRoom(['node-laptop', 'node-phone']),
+		});
+		try {
+			const server = expectOk(withRoom);
+			const rows = expectOk(await daemonClient(server.socketPath).relayPeers());
+			expect(rows).toEqual([
+				{ nodeId: 'node-laptop' },
+				{ nodeId: 'node-phone' },
+			]);
+		} finally {
+			if (withRoom.error === null) await withRoom.data.close();
+			leaseB.release();
+		}
+	});
+
+	test('tools/call dial the device gateway; absent gateway errors', async () => {
+		// With a gateway, /tools lists the route's MCP catalog and /call runs a tool.
+		const leaseA = claimTestLease();
+		const withGateway = await startDaemonServer({
+			lease: leaseA,
+			mount: { mount: 'demo', runtime: makeRuntime() },
+			deviceGateway: stubDeviceGateway(),
+		});
+		try {
+			const client = daemonClient(expectOk(withGateway).socketPath);
+			const tools = expectOk(
+				await client.tools({ device: 'bb'.repeat(32), route: 'books' }),
+			);
+			expect(tools.map((t) => t.name)).toEqual(['customers']);
+			expect(tools[0]?.kind).toBe('query');
+
+			const outcome = expectOk(
+				await client.call({
+					device: 'bb'.repeat(32),
+					route: 'books',
+					tool: 'customers',
+					input: {},
+				}),
+			);
+			expect(outcome.isError).toBe(false);
+			expect(String(outcome.output)).toContain('Acme');
+		} finally {
+			if (withGateway.error === null) await withGateway.data.close();
+			leaseA.release();
+		}
+
+		// Without one, a cross-device route is a typed Unavailable error.
+		const leaseB = claimTestLease();
+		const withoutGateway = await startDaemonServer({
+			lease: leaseB,
+			mount: { mount: 'demo', runtime: makeRuntime() },
+		});
+		try {
+			const client = daemonClient(expectOk(withoutGateway).socketPath);
+			const error = expectErr(
+				await client.tools({ device: 'bb'.repeat(32), route: 'books' }),
+			);
+			expect(error.name).toBe('Unavailable');
+		} finally {
+			if (withoutGateway.error === null) await withoutGateway.data.close();
+			leaseB.release();
 		}
 	});
 

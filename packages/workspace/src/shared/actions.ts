@@ -386,7 +386,8 @@ export function toActionMeta({
  * declared `input` schema. This is the one place the schema is enforced at
  * runtime: a value that reaches a handler has already matched the contract the
  * action published. The daemon maps it to a usage error (bad input, not a
- * handler crash); the dispatch boundary folds it into `ActionFailed`.
+ * handler crash); a cross-device MCP route that projects the action surfaces it
+ * as an `isError` tool result.
  */
 export const ActionInputError = defineErrors({
 	InvalidInput: ({

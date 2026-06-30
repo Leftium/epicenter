@@ -26,7 +26,7 @@ test('a service route dumb-pipes the channel to a local TCP socket', async () =>
 	const service = await echoServer();
 	const target = openRouteTarget({
 		kind: 'service',
-		service: { host: '127.0.0.1', port: service.port },
+		service: { port: service.port },
 		relay: 'exposed',
 	});
 

@@ -94,7 +94,7 @@ test('a service route is reachable as an ordinary HTTP Connection over the relay
 		route === 'whisper'
 			? openRouteTarget({
 					kind: 'service',
-					service: { host: '127.0.0.1', port: whisperPort },
+					service: { port: whisperPort },
 					relay: 'exposed',
 				})
 			: null,

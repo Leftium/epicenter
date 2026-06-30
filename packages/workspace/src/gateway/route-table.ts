@@ -21,7 +21,7 @@ import {
  * mcp`. The command is caller-data, so the workspace package never imports
  * `@epicenter/local-books`; the operator must have `local-books` on PATH.
  *
- * The route stays `relay: 'refused'` by default; the daemon opts it in with
+ * The route is refused by default (no `relay`); the daemon opts it in with
  * `--relay-expose books`, so its financial data is reachable over the relay
  * floor only once the operator knowingly accepts that ceiling (a self-hosted
  * relay removes the third party; ADR-0068).
@@ -41,7 +41,7 @@ export const DEFAULT_DEVICE_ROUTES: RouteTable = {
  * routeRelayExposed} and {@link withRelayExposed} stay branchless across kinds.
  */
 type RouteRelayPolicy = {
-	relay?: 'exposed' | 'refused';
+	relay?: 'exposed';
 };
 
 /**
@@ -76,8 +76,8 @@ export type SpawnRoute = RouteRelayPolicy & {
  */
 export type ServiceRoute = RouteRelayPolicy & {
 	kind: 'service';
-	/** The local service to dumb-pipe the channel to. */
-	service: { host: string; port: number };
+	/** The local service port to dumb-pipe the channel to (loopback only). */
+	service: { port: number };
 };
 
 /**
@@ -151,6 +151,9 @@ function openSpawnTarget(route: SpawnRoute): RouteTarget {
 	};
 }
 
+/** The service target dials loopback only; the local service must bind `127.0.0.1`. */
+const SERVICE_HOST = '127.0.0.1';
+
 /**
  * Open a TCP connection to the local service and adapt its duplex socket to a
  * {@link ByteChannel}. A `net.Socket` is one duplex, so the same socket is both
@@ -158,11 +161,8 @@ function openSpawnTarget(route: SpawnRoute): RouteTarget {
  * destroys it. The relay channel's bytes pipe straight to the service and back,
  * never parsed (the service's HTTP is its own concern, not the gateway's).
  */
-function openServiceTarget(service: {
-	host: string;
-	port: number;
-}): RouteTarget {
-	const socket = connect({ host: service.host, port: service.port });
+function openServiceTarget(service: { port: number }): RouteTarget {
+	const socket = connect({ host: SERVICE_HOST, port: service.port });
 	return {
 		channel: {
 			source: nodeReadableToWeb(socket),

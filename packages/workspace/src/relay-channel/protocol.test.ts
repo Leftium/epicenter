@@ -6,10 +6,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import {
-	type ChannelFrame,
-	checkChannelFrame,
-} from './protocol.js';
+import { type ChannelFrame, checkChannelFrame } from './protocol.js';
 
 describe('checkChannelFrame', () => {
 	const valid: ChannelFrame[] = [

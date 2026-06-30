@@ -25,10 +25,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type {
-	AgentToolDefinition,
-	AgentToolOutcome,
-} from '../agent/tools.js';
+import type { AgentToolDefinition, AgentToolOutcome } from '../agent/tools.js';
 import type { RunError } from './action-errors.js';
 import type {
 	CallRequest,

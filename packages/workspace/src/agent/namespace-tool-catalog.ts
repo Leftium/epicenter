@@ -38,14 +38,15 @@ export function namespaceToolCatalog(
 	const qualified = `${prefix}${SEPARATOR}`;
 	return {
 		definitions(): AgentToolDefinition[] {
-			return catalog
-				.definitions()
-				.map((definition) => ({
-					...definition,
-					name: `${qualified}${definition.name}`,
-				}));
+			return catalog.definitions().map((definition) => ({
+				...definition,
+				name: `${qualified}${definition.name}`,
+			}));
 		},
-		resolve(call: AgentToolCall, signal: AbortSignal): Promise<AgentToolOutcome> {
+		resolve(
+			call: AgentToolCall,
+			signal: AbortSignal,
+		): Promise<AgentToolOutcome> {
 			if (!call.toolName.startsWith(qualified)) {
 				return Promise.resolve({
 					output: `No tool named ${call.toolName} is available.`,

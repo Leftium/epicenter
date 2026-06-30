@@ -16,8 +16,8 @@ import {
 	checkChannelFrame,
 } from '@epicenter/workspace/relay-channel';
 import type { Connection } from '../types.js';
-import { createRoomCore } from './core.js';
 import type { RoomSocket, RoomUpdateLog } from './contracts.js';
+import { createRoomCore } from './core.js';
 
 /** An in-memory update log; this test never exercises sync, only channel frames. */
 function memLog(): RoomUpdateLog {
@@ -188,7 +188,11 @@ describe('relay channels through createRoomCore', () => {
 		const stranger = fakeSocket();
 		core.addConnection(stranger.socket, conn('stranger'));
 		const before = target.frames.length;
-		send(core, stranger.socket, { type: 'channel_data', id: 'c5', bytes: 'eA==' });
+		send(core, stranger.socket, {
+			type: 'channel_data',
+			id: 'c5',
+			bytes: 'eA==',
+		});
 		expect(target.frames.length).toBe(before); // dropped: not a party
 	});
 });

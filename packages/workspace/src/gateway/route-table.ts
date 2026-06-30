@@ -10,10 +10,7 @@
 
 import { spawn } from 'node:child_process';
 import type { ByteChannel, RouteTarget } from '../peer-transport.js';
-import {
-	nodeReadableToWeb,
-	nodeWritableToWeb,
-} from './node-stream-bridge.js';
+import { nodeReadableToWeb, nodeWritableToWeb } from './node-stream-bridge.js';
 
 /**
  * The default served route table: one `books` route that spawns `local-books

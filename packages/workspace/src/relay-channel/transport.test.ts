@@ -21,8 +21,8 @@ import { composeToolCatalogs } from '../agent/compose-tool-catalogs.js';
 import { createMcpGatewayCatalog } from '../agent/mcp-gateway-catalog.js';
 import { namespaceToolCatalog } from '../agent/namespace-tool-catalog.js';
 import type { ToolCatalog } from '../agent/tools.js';
-import { createStreamTransport } from '../mcp-stream-transport.js';
 import { asNodeId } from '../document/node-id.js';
+import { createStreamTransport } from '../mcp-stream-transport.js';
 import { asRouteName, type ByteChannel } from '../peer-transport.js';
 import { createChannelAcceptor } from './acceptor.js';
 import type { ChannelFrame } from './protocol.js';
@@ -174,10 +174,12 @@ test('a composed catalog routes a tool call to the floor gateway, the rest stays
 	// Local first so a local action shadows a same-named remote tool.
 	const merged = composeToolCatalogs([local, gateway]);
 
-	expect(merged.definitions().map((d) => d.name).sort()).toEqual([
-		'customers',
-		'files_read',
-	]);
+	expect(
+		merged
+			.definitions()
+			.map((d) => d.name)
+			.sort(),
+	).toEqual(['customers', 'files_read']);
 
 	const signal = new AbortController().signal;
 	const remote = await merged.resolve(

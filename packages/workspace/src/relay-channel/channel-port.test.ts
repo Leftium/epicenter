@@ -19,13 +19,22 @@ function fakeTextPort() {
 			return () => listeners.delete(listener);
 		},
 	};
-	return { port, sent, deliver: (text: string) => listeners.forEach((l) => l(text)) };
+	return {
+		port,
+		sent,
+		deliver: (text: string) => listeners.forEach((l) => l(text)),
+	};
 }
 
 test('send serializes a channel frame to text', () => {
 	const { port, sent } = fakeTextPort();
 	const channelPort = createChannelPort(port);
-	const open: ChannelFrame = { type: 'channel_open', id: 'c1', target: 'b', route: 'books' };
+	const open: ChannelFrame = {
+		type: 'channel_open',
+		id: 'c1',
+		target: 'b',
+		route: 'books',
+	};
 	channelPort.send(open);
 	expect(sent).toEqual([JSON.stringify(open)]);
 });

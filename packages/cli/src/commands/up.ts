@@ -34,8 +34,8 @@ import {
 	StartupError,
 	startDaemonServer,
 	unlinkMetadata,
-	withRelayExposed,
 	type WorkspaceAppError,
+	withRelayExposed,
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { extractErrorMessage } from 'wellcrafted/error';

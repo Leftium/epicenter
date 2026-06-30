@@ -18,11 +18,7 @@ import {
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-const CUSTOMERS = [
-	'Acme | 4200.00',
-	'Globex | 1500.00',
-	'Initech | 300.00',
-];
+const CUSTOMERS = ['Acme | 4200.00', 'Globex | 1500.00', 'Initech | 300.00'];
 
 const server = new Server(
 	{ name: 'mini-books', version: '0.0.0' },

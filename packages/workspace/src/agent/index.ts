@@ -13,12 +13,6 @@ export {
 	type DispatchSurface,
 	type DispatchToolCatalogOptions,
 } from './dispatch-catalog.js';
-export {
-	createMcpGatewayCatalog,
-	type McpGatewayCatalog,
-	type McpGatewayCatalogOptions,
-} from './mcp-gateway-catalog.js';
-export { namespaceToolCatalog } from './namespace-tool-catalog.js';
 export type {
 	AgentEngine,
 	AgentEngineRequest,
@@ -32,6 +26,11 @@ export {
 	createConversation,
 } from './loop.js';
 export {
+	createMcpGatewayCatalog,
+	type McpGatewayCatalog,
+	type McpGatewayCatalogOptions,
+} from './mcp-gateway-catalog.js';
+export {
 	type AgentMessage,
 	type AgentMessagePart,
 	type AgentMessageRole,
@@ -44,6 +43,7 @@ export {
 	type ModelToolCall,
 	toModelMessages,
 } from './message.js';
+export { namespaceToolCatalog } from './namespace-tool-catalog.js';
 export {
 	type AgentToolCall,
 	type AgentToolDefinition,

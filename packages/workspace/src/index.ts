@@ -99,6 +99,15 @@ export type { Drainable } from './shared/types.js';
 // DOCUMENT PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
+// The per-user account room: the relay floor's home. Browser-safe; a browser
+// passes `{ ...signedIn, nodeId }` to reach the same room the daemon joins, so
+// the two route cross-device channels to each other over the floor. The daemon's
+// node-only opener (`@epicenter/workspace/node`) wraps this core.
+export {
+	type AccountRoomConnection,
+	type AccountRoomConnectionConfig,
+	openAccountRoomConnection,
+} from './account/open-account-room-connection.js';
 export {
 	createDisposableCache,
 	type DisposableCache,
@@ -171,15 +180,6 @@ export {
 // browser apps and the daemon use this one builder.
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
-// The per-user account room: the relay floor's home. Browser-safe; a browser
-// passes `{ ...signedIn, nodeId }` to reach the same room the daemon joins, so
-// the two route cross-device channels to each other over the floor. The daemon's
-// node-only opener (`@epicenter/workspace/node`) wraps this core.
-export {
-	type AccountRoomConnection,
-	type AccountRoomConnectionConfig,
-	openAccountRoomConnection,
-} from './account/open-account-room-connection.js';
 export {
 	type ConnectComposition,
 	type ConnectedTables,

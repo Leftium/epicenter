@@ -117,12 +117,20 @@ describe('established channel', () => {
 		const { caller, target, router } = setup();
 		router.handleFrame(caller.socket, open);
 
-		const reset: ChannelFrame = { type: 'channel_reset', id: 'c1', code: 'cancelled' };
+		const reset: ChannelFrame = {
+			type: 'channel_reset',
+			id: 'c1',
+			code: 'cancelled',
+		};
 		router.handleFrame(caller.socket, reset);
 		expect(target.sent.at(-1)).toEqual(reset);
 
 		const sentBefore = target.sent.length;
-		router.handleFrame(caller.socket, { type: 'channel_data', id: 'c1', bytes: 'eA==' });
+		router.handleFrame(caller.socket, {
+			type: 'channel_data',
+			id: 'c1',
+			bytes: 'eA==',
+		});
 		expect(target.sent.length).toBe(sentBefore); // dropped: channel gone
 	});
 
@@ -131,7 +139,11 @@ describe('established channel', () => {
 		router.handleFrame(caller.socket, open);
 		const stranger = fakeSocket();
 		const before = target.sent.length;
-		router.handleFrame(stranger.socket, { type: 'channel_data', id: 'c1', bytes: 'eA==' });
+		router.handleFrame(stranger.socket, {
+			type: 'channel_data',
+			id: 'c1',
+			bytes: 'eA==',
+		});
 		expect(target.sent.length).toBe(before); // dropped: not a party
 	});
 });

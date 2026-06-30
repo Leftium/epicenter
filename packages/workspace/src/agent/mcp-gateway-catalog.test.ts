@@ -12,9 +12,9 @@
 
 import { afterEach, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
+import { asNodeId } from '../document/node-id.js';
 import { openRouteTarget, type RouteTable } from '../gateway/route-table.js';
 import type { RouteTarget } from '../peer-transport.js';
-import { asNodeId } from '../document/node-id.js';
 import {
 	asRouteName,
 	type OpenChannelOptions,

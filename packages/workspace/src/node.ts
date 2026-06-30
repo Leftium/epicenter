@@ -36,27 +36,6 @@ export {
 	attachMountInfrastructure,
 } from './daemon/attach-mount-infrastructure.js';
 export {
-	type AccountRoomHandle,
-	openAccountRoom,
-	type OpenAccountRoomOptions,
-} from './daemon/open-account-room.js';
-export {
-	type OpenRelayAcceptorOptions,
-	openRelayAcceptor,
-	type RelayAcceptorHandle,
-} from './daemon/open-relay-acceptor.js';
-export {
-	DEFAULT_DEVICE_ROUTES,
-	exposedRoutesByKind,
-	openRouteTarget,
-	type RouteTable,
-	withRelayExposed,
-} from './gateway/route-table.js';
-export {
-	createRelayChannelTransport,
-	type RelayChannelTransport,
-} from './relay-channel/index.js';
-export {
 	type DaemonClient,
 	DaemonError,
 	daemonClient,
@@ -93,6 +72,16 @@ export {
 	nodeMountRuntime,
 	type SqliteMountOptions,
 } from './daemon/mount-runtime.js';
+export {
+	type AccountRoomHandle,
+	type OpenAccountRoomOptions,
+	openAccountRoom,
+} from './daemon/open-account-room.js';
+export {
+	type OpenRelayAcceptorOptions,
+	openRelayAcceptor,
+	type RelayAcceptorHandle,
+} from './daemon/open-relay-acceptor.js';
 export {
 	dirHash,
 	leasePathFor,
@@ -131,5 +120,16 @@ export {
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
+export {
+	DEFAULT_DEVICE_ROUTES,
+	exposedRoutesByKind,
+	openRouteTarget,
+	type RouteTable,
+	withRelayExposed,
+} from './gateway/route-table.js';
+export {
+	createRelayChannelTransport,
+	type RelayChannelTransport,
+} from './relay-channel/index.js';
 export { hashYDocClientId } from './shared/client-id.js';
 export type { EpicenterRoot } from './shared/types.js';

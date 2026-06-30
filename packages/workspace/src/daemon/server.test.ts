@@ -43,8 +43,11 @@ function stubDeviceGateway(): DaemonServedDeviceGateway {
 		// Web Streams {@link ByteChannel} shape a real route yields; the catalog's
 		// channel close ends the child's stdin and tears it down.
 		openChannel: async () =>
-			openRouteTarget({ kind: 'spawn', command: 'bun', args: ['run', MINI_MCP_SERVER] })
-				.channel,
+			openRouteTarget({
+				kind: 'spawn',
+				command: 'bun',
+				args: ['run', MINI_MCP_SERVER],
+			}).channel,
 	};
 	return { transport };
 }
@@ -158,7 +161,10 @@ describe('startDaemonServer', () => {
 		try {
 			const server = expectOk(withRoom);
 			const rows = expectOk(await daemonClient(server.socketPath).relayPeers());
-			expect(rows).toEqual([{ nodeId: 'node-laptop' }, { nodeId: 'node-phone' }]);
+			expect(rows).toEqual([
+				{ nodeId: 'node-laptop' },
+				{ nodeId: 'node-phone' },
+			]);
 		} finally {
 			if (withRoom.error === null) await withRoom.data.close();
 			leaseB.release();

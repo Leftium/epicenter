@@ -57,7 +57,9 @@ function routePrefix(nodeId: string, route: string): string {
 	return `${short}_${route}`;
 }
 
-export function createCrossDeviceToolsState(config: AccountRoomConnectionConfig) {
+export function createCrossDeviceToolsState(
+	config: AccountRoomConnectionConfig,
+) {
 	const accountRoom = openAccountRoomConnection(config);
 	const transport = createRelayChannelTransport(accountRoom.channelPort);
 

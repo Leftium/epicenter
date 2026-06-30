@@ -83,12 +83,14 @@ export function createChannelAcceptor(
 			// Dumb byte pipe both directions: caller bytes -> route stdin, route stdout
 			// -> caller. Either pipe settling (a clean route EOF or an error) tears the
 			// channel down once; the bridge's own close emits the terminal reset.
-			void bridge.channel.source
-				.pipeTo(target.channel.sink)
-				.then(() => teardown(id), () => teardown(id));
-			void target.channel.source
-				.pipeTo(bridge.channel.sink)
-				.then(() => teardown(id), () => teardown(id));
+			void bridge.channel.source.pipeTo(target.channel.sink).then(
+				() => teardown(id),
+				() => teardown(id),
+			);
+			void target.channel.source.pipeTo(bridge.channel.sink).then(
+				() => teardown(id),
+				() => teardown(id),
+			);
 			return;
 		}
 

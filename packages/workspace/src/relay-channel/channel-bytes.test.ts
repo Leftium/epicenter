@@ -59,7 +59,11 @@ describe('inbound', () => {
 	test('channel_data is readable from the source', async () => {
 		const { bridge } = makeBridge();
 		const reader = bridge.channel.source.getReader();
-		bridge.handleInbound({ type: 'channel_data', id: 'c1', bytes: bytesToBase64(enc('yo')) });
+		bridge.handleInbound({
+			type: 'channel_data',
+			id: 'c1',
+			bytes: bytesToBase64(enc('yo')),
+		});
 		const { value } = await reader.read();
 		expect(value && new TextDecoder().decode(value)).toBe('yo');
 	});
@@ -103,7 +107,11 @@ describe('inbound', () => {
 		// frame is refused on its length before `atob` ever allocates its bytes.
 		const oversized = 'A'.repeat(3 * 1024 * 1024);
 		expect(() =>
-			bridge.handleInbound({ type: 'channel_data', id: 'c1', bytes: oversized }),
+			bridge.handleInbound({
+				type: 'channel_data',
+				id: 'c1',
+				bytes: oversized,
+			}),
 		).not.toThrow();
 		expect(resets(sent)).toEqual([
 			{ type: 'channel_reset', id: 'c1', code: 'too_large' },

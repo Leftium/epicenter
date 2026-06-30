@@ -178,8 +178,7 @@ function runtimeLeftovers(runtimeRoot: string): string[] {
 	// (resolveDaemonNodeId persists it OUTSIDE the repo so the nodeId survives
 	// restarts). Neither is an orphaned socket/metadata file teardown should sweep.
 	return readdirSync(runtimeRoot).filter(
-		(file) =>
-			!file.endsWith('.lease.sqlite') && !file.endsWith('.node-id'),
+		(file) => !file.endsWith('.lease.sqlite') && !file.endsWith('.node-id'),
 	);
 }
 

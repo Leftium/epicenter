@@ -31,11 +31,12 @@ describe('composeToolCatalogs', () => {
 			stubCatalog('a', ['one', 'two']),
 			stubCatalog('b', ['three']),
 		]);
-		expect(merged.definitions().map((d) => d.name).sort()).toEqual([
-			'one',
-			'three',
-			'two',
-		]);
+		expect(
+			merged
+				.definitions()
+				.map((d) => d.name)
+				.sort(),
+		).toEqual(['one', 'three', 'two']);
 	});
 
 	test('first catalog wins a name collision in definitions', () => {
@@ -84,10 +85,12 @@ describe('composeToolCatalogs', () => {
 		expect(merged.definitions().map((d) => d.name)).toEqual(['one']);
 
 		catalogs.push(stubCatalog('device', ['remote']));
-		expect(merged.definitions().map((d) => d.name).sort()).toEqual([
-			'one',
-			'remote',
-		]);
+		expect(
+			merged
+				.definitions()
+				.map((d) => d.name)
+				.sort(),
+		).toEqual(['one', 'remote']);
 		expect(await merged.resolve(call('remote'), signal)).toEqual({
 			output: 'device:remote',
 			isError: false,

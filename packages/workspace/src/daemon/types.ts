@@ -12,11 +12,11 @@
  */
 
 import type { Result } from 'wellcrafted/result';
-import type { PeerTransport } from '../peer-transport.js';
 import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
 import type { Peer } from '../document/presence-protocol.js';
+import type { PeerTransport } from '../peer-transport.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise } from '../shared/types.js';
 

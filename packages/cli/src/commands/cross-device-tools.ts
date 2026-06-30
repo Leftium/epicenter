@@ -167,14 +167,21 @@ async function resolveDevice(
 	fail(`no device "${token}" online on the relay`, {
 		details:
 			rows.length === 0
-				? ['no other devices are online (run `epicenter daemon up` on the target, signed in)']
+				? [
+						'no other devices are online (run `epicenter daemon up` on the target, signed in)',
+					]
 				: ['online devices:', ...rows.map((row) => `  ${row.nodeId}`)],
 	});
 	return null;
 }
 
 function emitTools(
-	tools: Array<{ name: string; title?: string; description?: string; kind: string }>,
+	tools: Array<{
+		name: string;
+		title?: string;
+		description?: string;
+		kind: string;
+	}>,
 	format: OutputFormat | undefined,
 ): void {
 	if (format === 'json' || format === 'jsonl') {

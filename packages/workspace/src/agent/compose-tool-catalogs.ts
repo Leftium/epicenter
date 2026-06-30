@@ -39,7 +39,8 @@ export function composeToolCatalogs(
 		const byName = new Map<string, AgentToolDefinition>();
 		for (const catalog of catalogs()) {
 			for (const definition of catalog.definitions()) {
-				if (!byName.has(definition.name)) byName.set(definition.name, definition);
+				if (!byName.has(definition.name))
+					byName.set(definition.name, definition);
 			}
 		}
 		return [...byName.values()];

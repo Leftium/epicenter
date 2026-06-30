@@ -19,14 +19,11 @@
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type {
-	CallToolResult,
-	Tool,
-} from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonValue } from 'wellcrafted/json';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { createStreamTransport } from '../mcp-stream-transport.js';
 import type { NodeId } from '../document/node-id.js';
+import { createStreamTransport } from '../mcp-stream-transport.js';
 import type { PeerTransport, RouteName } from '../peer-transport.js';
 import type {
 	AgentToolCall,

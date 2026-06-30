@@ -135,7 +135,11 @@ export function createRelayChannelTransport(
 				if (entry.kind === 'opening') {
 					entry.reject(new Error('relay-channel transport closed'));
 				} else {
-					entry.bridge.handleInbound({ type: 'channel_reset', id, code: 'closed' });
+					entry.bridge.handleInbound({
+						type: 'channel_reset',
+						id,
+						code: 'closed',
+					});
 				}
 			}
 			channels.clear();

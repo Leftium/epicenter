@@ -23,9 +23,8 @@
  * as an optional number rather than computed here.
  */
 
-import * as Y from 'yjs';
-
 import type { OwnerId } from '@epicenter/identity';
+import * as Y from 'yjs';
 import type { NodeId } from '../document/node-id.js';
 import {
 	type OnReconnectSignal,
@@ -34,10 +33,7 @@ import {
 } from '../document/open-collaboration.js';
 import type { Peer } from '../document/presence-protocol.js';
 import { roomWsUrl } from '../document/transport.js';
-import {
-	type ChannelPort,
-	createChannelPort,
-} from '../relay-channel/index.js';
+import { type ChannelPort, createChannelPort } from '../relay-channel/index.js';
 import { RESERVED_ACCOUNT_ROOM_GUID } from './reserved-guid.js';
 
 /**

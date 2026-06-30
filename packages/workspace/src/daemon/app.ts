@@ -24,13 +24,10 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, tryAsync } from 'wellcrafted/result';
 import type { JsonValue } from 'wellcrafted/json';
-import type {
-	AgentToolDefinition,
-	AgentToolOutcome,
-} from '../agent/tools.js';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import { createMcpGatewayCatalog } from '../agent/mcp-gateway-catalog.js';
+import type { AgentToolDefinition, AgentToolOutcome } from '../agent/tools.js';
 import { asNodeId } from '../document/node-id.js';
 import { asRouteName } from '../peer-transport.js';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
@@ -139,7 +136,11 @@ export const DeviceGatewayError = defineErrors({
 		message:
 			'no device gateway: the daemon has no signed-in session or the gateway failed to open. Sign in, then restart `epicenter daemon up`.',
 	}),
-	DialFailed: ({ device, route, cause }: {
+	DialFailed: ({
+		device,
+		route,
+		cause,
+	}: {
 		device: string;
 		route: string;
 		cause: unknown;
@@ -196,7 +197,8 @@ export function buildDaemonApp(
 					});
 					return catalog.definitions();
 				},
-				catch: (cause) => DeviceGatewayError.DialFailed({ device, route, cause }),
+				catch: (cause) =>
+					DeviceGatewayError.DialFailed({ device, route, cause }),
 			});
 			if (error !== null) return c.json(error);
 			return c.json(Ok<AgentToolDefinition[]>(data));
@@ -222,7 +224,8 @@ export function buildDaemonApp(
 						c.req.raw.signal,
 					);
 				},
-				catch: (cause) => DeviceGatewayError.DialFailed({ device, route, cause }),
+				catch: (cause) =>
+					DeviceGatewayError.DialFailed({ device, route, cause }),
 			});
 			if (error !== null) return c.json(error);
 			return c.json(Ok<AgentToolOutcome>(data));

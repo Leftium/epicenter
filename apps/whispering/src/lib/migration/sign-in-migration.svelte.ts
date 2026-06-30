@@ -1,6 +1,6 @@
 /**
- * First-sign-in migration: move this device's signed-out PLAINTEXT local doc
- * into the signed-in encrypted owner doc.
+ * First-sign-in migration: move this device's signed-out local doc into the
+ * signed-in, owner-partitioned synced doc.
  *
  * Flag-free: the local data itself is the state. On each signed-in boot we probe
  * the local doc's recording count; > 0 opens the dialog, which nags again next

@@ -53,7 +53,7 @@ export type ByteChannel = {
 export type RouteTarget = { channel: ByteChannel; close(): void };
 
 /**
- * A named, allowlisted route on a peer's gateway (`books`, `whisper`, ...). The
+ * A named, allowlisted MCP tool route on a peer's gateway (`books`, ...). The
  * route table is default-closed: nothing outside it is reachable, and the name
  * rides the relay-channel `channel_open` frame, so a route the target has not
  * exposed over the relay is refused before a byte flows.

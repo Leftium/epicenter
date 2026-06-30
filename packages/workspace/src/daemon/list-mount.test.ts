@@ -35,8 +35,6 @@ function makeMount({
 			peers: {
 				list: () => peers,
 			},
-			status: { phase: 'connected' },
-			dispatch: async () => ({ data: null, error: null }) as never,
 		};
 	}
 	return {

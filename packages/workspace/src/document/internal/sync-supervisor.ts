@@ -109,9 +109,9 @@ type SyncSupervisorConfig = {
 	openWebSocket?: OpenWebSocketFn;
 	log?: Logger;
 	/**
-	 * Receive WebSocket text frames. The supervisor never interprets
-	 * text frames itself; downstream code (e.g. dispatch_inbound
-	 * handlers) receives the raw string.
+	 * Receive WebSocket text frames. The supervisor never interprets text
+	 * frames itself; downstream code (presence and the relay-channel layer)
+	 * receives the raw string.
 	 */
 	onTextFrame: (text: string) => void;
 };

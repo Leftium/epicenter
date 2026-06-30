@@ -3,7 +3,7 @@ import { createSession } from '@epicenter/svelte/auth';
 import { createNodeId } from '@epicenter/workspace';
 import {
 	composeToolCatalogs,
-	createDispatchToolCatalog,
+	createLocalToolCatalog,
 } from '@epicenter/workspace/agent';
 import { openOpensidianBrowser } from 'opensidian/browser';
 import { auth } from '$platform/auth';
@@ -44,9 +44,7 @@ export const session = createSession({
 		const terminal = createTerminalState({ files, workspace: opensidian });
 		const skills = createSkillState({ workspace: opensidian });
 		// Opensidian's own file and bash actions, resolved in-process with no relay.
-		const localCatalog = createDispatchToolCatalog(opensidian.collaboration, {
-			localActions: opensidian.actions,
-		});
+		const localCatalog = createLocalToolCatalog(opensidian.actions);
 		// The shared chat registry (ADR-0047/0059) with opensidian's variation
 		// injected: layered vault/global skill prompts read per turn, its in-process
 		// file and bash actions as the tool surface, and the URL (`?chat=`) as the

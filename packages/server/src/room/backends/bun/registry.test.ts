@@ -66,13 +66,6 @@ function nodeIds(frame: PresenceFrame): string[] {
 	return frame.peers.map((p) => p.nodeId);
 }
 
-function jsonFrames(ws: StubWs, type: string): Array<Record<string, unknown>> {
-	return ws
-		.textFrames()
-		.map((t) => JSON.parse(t) as Record<string, unknown>)
-		.filter((f) => f.type === type);
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // HARNESS
 // ────────────────────────────────────────────────────────────────────────────
@@ -178,7 +171,7 @@ describe('Node backend: binary sync', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// HTTP SYNC RPC + DISPATCH
+// HTTP SYNC RPC + TEXT FRAMES
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('Node backend: HTTP sync RPC', () => {
@@ -189,42 +182,7 @@ describe('Node backend: HTTP sync RPC', () => {
 	});
 });
 
-describe('Node backend: dispatch relay', () => {
-	test('a request routes inbound to the recipient and the result back', () => {
-		const { open, message } = makeRooms();
-		const caller = connect(open, 'caller');
-		const recipient = connect(open, 'recipient');
-
-		message(
-			caller,
-			JSON.stringify({
-				type: 'dispatch_request',
-				id: 'd1',
-				to: 'recipient',
-				action: 'noop_ping',
-				input: { x: 1 },
-			}),
-		);
-		const inbound = jsonFrames(recipient, 'dispatch_inbound');
-		expect(inbound).toHaveLength(1);
-		expect(inbound[0]).toMatchObject({ id: 'd1', action: 'noop_ping' });
-
-		message(
-			recipient,
-			JSON.stringify({
-				type: 'dispatch_response',
-				id: 'd1',
-				result: { data: 'pong', error: null },
-			}),
-		);
-		const results = jsonFrames(caller, 'dispatch_result');
-		expect(results).toHaveLength(1);
-		expect(results[0]).toMatchObject({
-			id: 'd1',
-			result: { data: 'pong', error: null },
-		});
-	});
-
+describe('Node backend: text frames', () => {
 	test('an unknown text frame closes the socket with 4400', () => {
 		const { open, message } = makeRooms();
 		const caller = connect(open, 'caller');

@@ -2,22 +2,18 @@
  * `@epicenter/workspace/agent`: the client-side agent loop (ADR-0047).
  *
  * One shape for every agent: the loop runs in the client, streams the live turn
- * into a snapshot the UI renders, reaches tools as dispatched actions through a
- * {@link ToolCatalog}, and persists only finished messages as last-write-wins
- * records. The capability-free case is the same loop with {@link NO_TOOLS}.
+ * into a snapshot the UI renders, reaches tools through a {@link ToolCatalog},
+ * and persists only finished messages as last-write-wins records. The
+ * capability-free case is the same loop with {@link NO_TOOLS}.
  */
 
 export { composeToolCatalogs } from './compose-tool-catalogs.js';
-export {
-	createDispatchToolCatalog,
-	type DispatchSurface,
-	type DispatchToolCatalogOptions,
-} from './dispatch-catalog.js';
 export type {
 	AgentEngine,
 	AgentEngineRequest,
 	EngineChunk,
 } from './engine.js';
+export { createLocalToolCatalog } from './local-tool-catalog.js';
 export {
 	type ConversationError,
 	type ConversationHandle,

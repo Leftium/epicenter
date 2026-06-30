@@ -24,10 +24,10 @@
  *
  * Browser-safe: pure TypeBox schemas, no node builtin, so the client transport
  * (`packages/workspace/src/relay-channel/`) and the server router
- * (`packages/server/src/room/channel-router.ts`) share one source of truth, the
- * same way the deleted dispatch protocol was shared. This REPLACES that protocol
- * (`document/dispatch-protocol.ts`): the deleted one routed `action`/`input` and
- * a typed `Result` the relay had to understand; this one is a dumb byte pipe.
+ * (`packages/server/src/room/channel-router.ts`) share one source of truth. It
+ * replaces the former in-room dispatch protocol, which routed `action`/`input`
+ * and a typed `Result` the relay had to understand; this one is a dumb byte
+ * pipe.
  *
  * Minimal on purpose: `channel_data.bytes` is the whole payload (no `seq`, since
  * one ordered WebSocket preserves order end to end), and the caller's open

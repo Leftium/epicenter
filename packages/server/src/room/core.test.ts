@@ -4,11 +4,10 @@
  *
  * `createRoomCore` imports nothing Cloudflare and never branches on runtime, so
  * every invariant a backend relies on lives here: presence (debounce, the 4401
- * immediate path, multi-tab same-node dedup), dispatch correlation (happy path,
- * `RecipientOffline` on absent/disconnected recipient, the only-the-recipient-
- * may-answer guard), binary + HTTP sync, compaction, the connection-lifetime
- * bound (`handleMessage` for active sockets, `sweepExpiredConnections` for idle
- * ones), and liveness ping/pong. The backends only own their adapter glue (the
+ * immediate path, multi-tab same-node dedup), the unknown-text-frame close,
+ * binary + HTTP sync, compaction, the connection-lifetime bound (`handleMessage`
+ * for active sockets, `sweepExpiredConnections` for idle ones), and liveness
+ * ping/pong. The backends only own their adapter glue (the
  * Durable Object hibernation accept + alarm, the Bun `server.upgrade` + timer),
  * which their own tests cover; both inherit this behavior unchanged.
  *
@@ -182,82 +181,10 @@ describe('RoomCore: presence', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Dispatch relay
+// Text frames
 // ────────────────────────────────────────────────────────────────────────────
 
-function request(to: string, id = 'd1') {
-	return JSON.stringify({
-		type: 'dispatch_request',
-		id,
-		to,
-		action: 'noop',
-		input: {},
-	});
-}
-
-describe('RoomCore: dispatch', () => {
-	test('routes inbound to the recipient and the result back to the caller', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		const recipient = connect(core, 'recipient');
-
-		core.handleMessage(caller, request('recipient'));
-		expect(recipient.json('dispatch_inbound').at(0)).toMatchObject({
-			id: 'd1',
-			action: 'noop',
-		});
-
-		core.handleMessage(
-			recipient,
-			JSON.stringify({
-				type: 'dispatch_response',
-				id: 'd1',
-				result: { data: 'ok', error: null },
-			}),
-		);
-		expect(caller.json('dispatch_result').at(0)).toMatchObject({
-			id: 'd1',
-			result: { data: 'ok', error: null },
-		});
-	});
-
-	test('answers RecipientOffline immediately when no recipient is connected', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		core.handleMessage(caller, request('ghost'));
-		const results = caller.json('dispatch_result');
-		expect(results).toHaveLength(1);
-		expect(JSON.stringify(results[0])).toContain('RecipientOffline');
-	});
-
-	test('fails an in-flight dispatch RecipientOffline when the recipient disconnects', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		const recipient = connect(core, 'recipient');
-		core.handleMessage(caller, request('recipient'));
-		core.removeConnection(recipient, 1000);
-		const results = caller.json('dispatch_result');
-		expect(results).toHaveLength(1);
-		expect(JSON.stringify(results[0])).toContain('RecipientOffline');
-	});
-
-	test('a non-recipient member cannot forge a result for a dispatch id it does not own', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		connect(core, 'recipient');
-		const intruder = connect(core, 'intruder');
-		core.handleMessage(caller, request('recipient'));
-		core.handleMessage(
-			intruder,
-			JSON.stringify({
-				type: 'dispatch_response',
-				id: 'd1',
-				result: { data: 'forged', error: null },
-			}),
-		);
-		expect(caller.json('dispatch_result')).toHaveLength(0);
-	});
-
+describe('RoomCore: text frames', () => {
 	test('an unparseable or unknown text frame closes the socket with 4400', () => {
 		const core = newRoom();
 		const ws = connect(core, 'A');

@@ -3,17 +3,13 @@
  *
  * `DaemonRuntime` is the contract every opened mount returns: async dispose
  * plus the local action registry the daemon serves. Collaborative mounts may
- * also expose a hosted `Collaboration` for identity, sync, peer
- * presence, and peer dispatch.
+ * also expose a hosted `Collaboration` for identity, sync, and peer presence.
  *
  * `DaemonServedMount` is the narrowed mount-handler contract for the socket
  * app. `StartedMount` is the lifecycle-owning mount shape opened from a
  * configured mount factory.
  */
 
-import type { Result } from 'wellcrafted/result';
-import type { DispatchError, DispatchRequest } from '../document/dispatch.js';
-import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
 import type { Peer } from '../document/presence-protocol.js';
 import type { PeerTransport } from '../peer-transport.js';
@@ -41,15 +37,13 @@ export type DaemonServedDeviceGateway = {
 };
 
 /**
- * Collaboration fields the daemon socket app reads while serving `/peers` and
- * peer `/run`.
+ * Collaboration fields the daemon socket app reads while serving `/peers`: the
+ * live peer list for this workspace room.
  */
 type DaemonServedCollaboration = {
 	peers: {
 		list(): Peer[];
 	};
-	status: SyncStatus;
-	dispatch(req: DispatchRequest): Promise<Result<unknown, DispatchError>>;
 };
 
 /**
@@ -76,14 +70,14 @@ export type DaemonRuntime = {
 	/**
 	 * The action registry this daemon serves locally. When `collaboration` is
 	 * present, this must be the same registry handed to `openCollaboration`, so
-	 * local runs, peer manifests, and inbound peer dispatch stay in lockstep.
+	 * local runs and the published peer manifest stay in lockstep.
 	 */
 	readonly actions: ActionRegistry;
 
 	/**
-	 * Optional hosted collaboration. Identity, sync status, live-node
-	 * presence, and peer dispatch live here when the mount participates in a
-	 * collaborative Yjs workspace.
+	 * Optional hosted collaboration. Identity, sync status, and live-node
+	 * presence live here when the mount participates in a collaborative Yjs
+	 * workspace.
 	 */
 	readonly collaboration?: Collaboration<ActionRegistry>;
 };

@@ -2,9 +2,9 @@
  * The cross-device {@link ToolCatalog}: tools are a remote peer's MCP tools,
  * reached over the {@link PeerTransport} seam (ADR-0073: the device speaks MCP,
  * and Epicenter owns only the transport). This is the SECOND catalog impl beside
- * {@link createDispatchToolCatalog}; the agent loop consumes the `ToolCatalog`
- * interface and never learns whether a tool is a local action, a relayed peer
- * action, or a remote MCP tool reached over the relay floor.
+ * {@link createLocalToolCatalog}; the agent loop consumes the `ToolCatalog`
+ * interface and never learns whether a tool is a local in-process action or a
+ * remote MCP tool reached over the relay floor.
  *
  * One catalog binds to ONE route on ONE target device (the spec's
  * target-device-first picker): open the channel, drive an MCP `Client` over

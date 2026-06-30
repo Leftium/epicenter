@@ -7,8 +7,7 @@
  * Key behaviors:
  * - the configured mount is served over the daemon client
  * - close stops the listener, removes the socket file, and can run twice
- * - /run executes a real action handler over the Unix socket, and
- *   forwards peer calls when `to` is present
+ * - /run executes a real action handler over the Unix socket
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -59,13 +58,9 @@ let workDir: string;
 function makeRuntime({
 	actions = {},
 	collaboration = true,
-	dispatch = async () => ({ data: null, error: null }) as never,
 }: {
 	actions?: ActionRegistry;
 	collaboration?: boolean;
-	dispatch?: NonNullable<
-		DaemonServedMount['runtime']['collaboration']
-	>['dispatch'];
 } = {}): DaemonServedMount['runtime'] {
 	const runtime: DaemonServedMount['runtime'] = { actions };
 	if (collaboration) {
@@ -73,8 +68,6 @@ function makeRuntime({
 			peers: {
 				list: () => [],
 			},
-			status: { phase: 'connected' },
-			dispatch,
 		};
 	}
 	return runtime;
@@ -289,89 +282,6 @@ describe('startDaemonServer', () => {
 				}),
 			);
 			expect(data).toEqual({ imported: 1 });
-		} finally {
-			if (serverResult.error === null) await serverResult.data.close();
-			lease.release();
-		}
-	});
-
-	test('run with to forwards mount-local action keys over the socket', async () => {
-		const lease = claimTestLease();
-		let invokedAction = '';
-		let invokedTo = '';
-		const runtime = makeRuntime({
-			dispatch: async (request) => {
-				invokedAction = request.action;
-				invokedTo = request.to;
-				return { data: 'remote-ok', error: null };
-			},
-		});
-		const serverResult = await startDaemonServer({
-			lease,
-			mount: { mount: 'demo', runtime },
-		});
-
-		try {
-			const server = expectOk(serverResult);
-			const data = expectOk(
-				await daemonClient(server.socketPath).run({
-					actionPath: 'peer_only_action',
-					input: null,
-					peer: { to: 'mac', waitMs: 25 },
-				}),
-			);
-			expect(data).toBe('remote-ok');
-			expect(invokedAction).toBe('peer_only_action');
-			expect(invokedTo).toBe('mac');
-		} finally {
-			if (serverResult.error === null) await serverResult.data.close();
-			lease.release();
-		}
-	});
-
-	test('run with to rejects invalid wait budgets as a domain error', async () => {
-		const lease = claimTestLease();
-		const serverResult = await startDaemonServer({
-			lease,
-			mount: { mount: 'demo', runtime: makeRuntime() },
-		});
-
-		try {
-			const server = expectOk(serverResult);
-			const error = expectErr(
-				await daemonClient(server.socketPath).run({
-					actionPath: 'peer_only_action',
-					input: null,
-					peer: { to: 'mac', waitMs: -1 },
-				}),
-			);
-			expect(error.name).toBe('UsageError');
-		} finally {
-			if (serverResult.error === null) await serverResult.data.close();
-			lease.release();
-		}
-	});
-
-	test('run with to rejects a local-only mount as a usage error', async () => {
-		const lease = claimTestLease();
-		const serverResult = await startDaemonServer({
-			lease,
-			mount: {
-				mount: 'mirror',
-				runtime: makeRuntime({ collaboration: false }),
-			},
-		});
-
-		try {
-			const server = expectOk(serverResult);
-			const error = expectErr(
-				await daemonClient(server.socketPath).run({
-					actionPath: 'sync',
-					input: null,
-					peer: { to: 'mac', waitMs: 25 },
-				}),
-			);
-			expect(error.name).toBe('UsageError');
 		} finally {
 			if (serverResult.error === null) await serverResult.data.close();
 			lease.release();

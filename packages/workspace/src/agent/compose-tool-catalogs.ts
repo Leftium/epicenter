@@ -1,15 +1,14 @@
 /**
  * Compose several {@link ToolCatalog}s into one the agent loop consumes
  * unchanged. The loop is handed a single catalog; an app that reaches tools more
- * than one way (its in-process actions through {@link createDispatchToolCatalog}
+ * than one way (its in-process actions through {@link createLocalToolCatalog}
  * PLUS one {@link createMcpGatewayCatalog} per cross-device route it has dialed
  * over the relay floor) merges them here.
  *
  * Collision rule: first-wins. A tool name that appears in more than one catalog
  * is owned by the EARLIEST catalog in the list, for both the offered definition
  * and the `resolve` that runs it. Pass the local in-process catalog first so a
- * local action shadows a same-named remote tool, matching the dispatch catalog's
- * own "a local action shadows a remote one" rule.
+ * local action shadows a same-named remote tool.
  *
  * The source may be a live getter: `definitions()` and `resolve()` re-read it on
  * every call, so an app that mounts or unmounts a device's catalog over time

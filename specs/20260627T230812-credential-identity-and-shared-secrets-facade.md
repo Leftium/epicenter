@@ -3,7 +3,7 @@
 **Date**: 2026-06-27
 **Status**: Draft
 **Owner**: platform / inference + secrets
-**Relates**: [ADR-0074](../docs/adr/0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) (the vault this facade fronts), [ADR-0078](../docs/adr/0078-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md) (the auth wave that delivers the keyring)
+**Relates**: [ADR-0074](../docs/adr/0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) (the vault this facade fronts), [ADR-0079](../docs/adr/0079-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md) (the auth wave that delivers the keyring)
 
 ## One Sentence
 
@@ -108,7 +108,7 @@ Sequenced after Open Question 1 is answered. Earned-now vs needs-the-keyring is 
 - [ ] **2.3** The three chat apps gain the `available | missing` contract for free (the change lives in app-shell).
 
 ### Wave 3: the synced vault wire (deferred, needs the auth wave)
-- [ ] **3.1** Attach the `epicenter:secret-vault` doc, `activateEncryption(session.keyring)`, first-sign-in device->vault migration. Blocked on ADR-0078's keyring delivery. This is the "Wire the vault to the session" wave.
+- [ ] **3.1** Attach the `epicenter:secret-vault` doc, `activateEncryption(session.keyring)`, first-sign-in device->vault migration. Blocked on ADR-0079's keyring delivery. This is the "Wire the vault to the session" wave.
 
 ## Open Questions
 
@@ -133,4 +133,4 @@ Sequenced after Open Question 1 is answered. Earned-now vs needs-the-keyring is 
 - `packages/app-shell/src/inference-picker/connections.svelte.ts:52` - the `{ baseUrl, apiKey? }` schema to split.
 - `packages/client/src/connection.ts:110,135` - where the bearer is attached off the connection object.
 - `apps/whispering/src/lib/state/secrets.svelte.ts` - the named-key facade to generalize.
-- `docs/adr/0074-...md` (the vault), `docs/adr/0078-...md` (the keyring-delivering auth wave).
+- `docs/adr/0074-...md` (the vault), `docs/adr/0079-...md` (the keyring-delivering auth wave).

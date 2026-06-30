@@ -1,8 +1,8 @@
-# 0078. Whispering authenticates with an OAuth bearer on every surface; the web build keeps its own origin
+# 0079. Whispering authenticates with an OAuth bearer on every surface; the web build keeps its own origin
 
 - **Status:** Proposed
 - **Date:** 2026-06-27
-- **Relates:** [ADR-0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md) (the bearer is audience-scoped, attached only to the origin it signed into), [ADR-0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) (auth owns `/api/session`, the data client is owner-scoped), [ADR-0070](0070-self-host-adds-no-new-ownership-or-auth-mode.md) and [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md) (OAuth is hosted-only; a self-hosted instance authenticates with a static token), [ADR-0074](0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) (the secret vault consumes a server-derived keyring delivered over the authenticated session). Also relates to the portable-SPA stance (serve web apps same-origin under the api origin to use cookie auth, and not from branded subdomains).
+- **Relates:** [ADR-0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md) (the bearer is audience-scoped, attached only to the origin it signed into), [ADR-0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) (auth owns `/api/session`, the data client is owner-scoped), [ADR-0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) (self-host is one partition behind one operator-supplied static bearer; supersedes ADR-0070) and [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md) (OAuth is hosted-only; a self-hosted instance authenticates with a static token), [ADR-0074](0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) (the secret vault consumes a server-derived keyring delivered over the authenticated session). Also relates to the portable-SPA stance (serve web apps same-origin under the api origin to use cookie auth, and not from branded subdomains).
 
 ## Context
 
@@ -37,7 +37,7 @@ The web bearer's XSS exposure is handled as hardening inside the OAuth choice, n
 - Ship a tight CSP and Trusted Types where practical; treat the vault surface as high-risk.
 - Never add cross-subdomain `.epicenter.so` cookies as a halfway cookie option.
 
-Self-host authenticates with a static bearer (`createInstanceTokenAuth`) per ADR-0070/0071; nothing here adds a new mode.
+Self-host authenticates with one operator-supplied static bearer (`createInstanceTokenAuth`), pinned to the single `owners/instance` partition per ADR-0075, per ADR-0071; nothing here adds a new mode.
 
 ## Consequences
 

@@ -46,7 +46,11 @@ import {
 } from '@epicenter/workspace/node';
 import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { parseRelayServiceFlag, runUp } from './up.js';
+import {
+	parseRelayForwardFlag,
+	parseRelayServiceFlag,
+	runUp,
+} from './up.js';
 
 const STUB_AUTH = {
 	state: {
@@ -625,5 +629,33 @@ describe('parseRelayServiceFlag', () => {
 
 	test('splits on the first "=" so a value with extra "=" fails the port check, not silently', () => {
 		expectErr(parseRelayServiceFlag('whisper=8000=extra'));
+	});
+});
+
+describe('parseRelayForwardFlag', () => {
+	test('parses a well-formed "<route>@<nodeId>" value', () => {
+		expect(expectOk(parseRelayForwardFlag('whisper@node-abc'))).toEqual({
+			route: 'whisper',
+			target: 'node-abc',
+		});
+	});
+
+	test('rejects a value with no "@"', () => {
+		expectErr(parseRelayForwardFlag('whisper'));
+	});
+
+	test('rejects an invalid route name', () => {
+		expectErr(parseRelayForwardFlag('_bad@node'));
+	});
+
+	test('rejects an empty target nodeId', () => {
+		expectErr(parseRelayForwardFlag('whisper@'));
+	});
+
+	test('splits on the first "@" so a nodeId containing "@" is kept whole', () => {
+		expect(expectOk(parseRelayForwardFlag('whisper@node@weird'))).toEqual({
+			route: 'whisper',
+			target: 'node@weird',
+		});
 	});
 });

@@ -52,15 +52,27 @@ export const PeerSchema = Type.Object({
 	actions: ActionManifestSchema,
 	agentId: Type.Optional(Type.String()),
 	/**
-	 * The relay-floor route names this peer serves with `relay: 'exposed'` (a
-	 * daemon's opted-in gateway routes, e.g. `['books']`). Discovery for the
-	 * floor: a consumer reads this to know which devices serve which routes and
-	 * auto-mounts them, rather than blindly probing every device for a guessed
-	 * route name. Absent or `[]` for a pure consumer (a browser exposes nothing).
-	 * Additive and optional, so an older peer that omits it is simply not a
-	 * cross-device tool source.
+	 * The relay-floor SPAWN route names this peer serves with `relay: 'exposed'` (a
+	 * daemon's opted-in MCP gateway routes, e.g. `['books']`). Discovery for the
+	 * floor's MCP vocabulary: a consumer reads this to know which devices serve
+	 * which MCP routes and auto-mounts them as tool catalogs, rather than blindly
+	 * probing every device for a guessed route name. It carries SPAWN routes only;
+	 * service routes ride {@link exposedServices} so a consumer's MCP auto-mount
+	 * never mis-dials a service route as MCP. Absent or `[]` for a pure consumer (a
+	 * browser exposes nothing). Additive and optional, so an older peer that omits
+	 * it is simply not a cross-device tool source.
 	 */
 	exposedRoutes: Type.Optional(Type.Array(Type.String())),
+	/**
+	 * The relay-floor SERVICE route names this peer serves with `relay: 'exposed'`
+	 * (a daemon's opted-in HTTP service routes, e.g. `['whisper']`). The second
+	 * honest vocabulary on the floor: a service route is reached as an ordinary
+	 * `Connection { baseUrl }` through a localhost forward (see
+	 * `gateway/service-forward.ts`), NOT as an MCP session, so it is advertised in
+	 * its own bucket separate from {@link exposedRoutes}. Additive and optional: an
+	 * older peer omits it, and a consumer that does not forward services ignores it.
+	 */
+	exposedServices: Type.Optional(Type.Array(Type.String())),
 });
 export type Peer = Static<typeof PeerSchema>;
 
@@ -88,8 +100,10 @@ export const PresencePublishFrameSchema = Type.Object({
 	type: Type.Literal('presence_publish'),
 	actions: ActionManifestSchema,
 	agentId: Type.Optional(Type.String()),
-	/** This node's relay-exposed route names; see {@link PeerSchema.exposedRoutes}. */
+	/** This node's relay-exposed SPAWN route names; see {@link PeerSchema.exposedRoutes}. */
 	exposedRoutes: Type.Optional(Type.Array(Type.String())),
+	/** This node's relay-exposed SERVICE route names; see {@link PeerSchema.exposedServices}. */
+	exposedServices: Type.Optional(Type.Array(Type.String())),
 });
 export type PresencePublishFrame = Static<typeof PresencePublishFrameSchema>;
 

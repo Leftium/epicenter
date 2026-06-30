@@ -147,6 +147,33 @@ describe('RoomCore: presence', () => {
 		expect(a.presence().length).toBe(aFrames); // membership unchanged: no rebroadcast
 	});
 
+	test('a published exposedServices is mirrored in a peer snapshot, separate from exposedRoutes', () => {
+		const core = newRoom();
+		const a = connect(core, 'A');
+		const b = connect(core, 'B');
+
+		core.handleMessage(
+			a,
+			JSON.stringify({
+				type: 'presence_publish',
+				actions: {},
+				exposedRoutes: ['books'],
+				exposedServices: ['whisper'],
+			}),
+		);
+
+		// B's latest snapshot carries A with both buckets intact: the relay forwards
+		// them verbatim and a service route never leaks into the MCP (spawn) bucket.
+		const peers = (b.json('presence').at(-1)?.peers ?? []) as Array<{
+			nodeId: string;
+			exposedRoutes?: string[];
+			exposedServices?: string[];
+		}>;
+		const peerA = peers.find((p) => p.nodeId === 'A');
+		expect(peerA?.exposedRoutes).toEqual(['books']);
+		expect(peerA?.exposedServices).toEqual(['whisper']);
+	});
+
 	test('a 4401 close rebroadcasts immediately, bypassing the grace window', () => {
 		const core = newRoom();
 		const a = connect(core, 'A');

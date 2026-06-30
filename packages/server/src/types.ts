@@ -84,12 +84,20 @@ export type Connection = {
 	 */
 	agentId?: string;
 	/**
-	 * The relay-exposed route names this connection serves, set from the node's
-	 * `presence_publish` and mirrored on the wire so peers can auto-mount them
+	 * The relay-exposed SPAWN (MCP) route names this connection serves, set from the
+	 * node's `presence_publish` and mirrored on the wire so peers can auto-mount them
 	 * (floor discovery). Undefined until published; a pure consumer never sets it.
 	 * Opaque to the relay (forwarded, never inspected).
 	 */
 	exposedRoutes?: string[];
+	/**
+	 * The relay-exposed SERVICE route names this connection serves, set from the
+	 * node's `presence_publish` and mirrored on the wire so peers can forward them
+	 * (floor discovery). Kept separate from {@link exposedRoutes} so a consumer's MCP
+	 * auto-mount never mis-dials a service route. Undefined until published; a pure
+	 * consumer never sets it. Opaque to the relay (forwarded, never inspected).
+	 */
+	exposedServices?: string[];
 };
 
 /**

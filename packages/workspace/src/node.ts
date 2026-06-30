@@ -47,6 +47,8 @@ export {
 } from './daemon/open-relay-acceptor.js';
 export {
 	DEFAULT_DEVICE_ROUTES,
+	exposedRoutesByKind,
+	type RouteTable,
 	withRelayExposed,
 } from './gateway/route-table.js';
 // `createServiceForward` (gateway/service-forward.ts) is built and proven (its

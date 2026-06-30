@@ -122,11 +122,20 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	 */
 	agentId?: string;
 	/**
-	 * The relay-exposed route names this node serves, published in presence so a
-	 * peer can auto-mount them (floor discovery). Set only by a daemon that opened
-	 * relay-exposed routes; omit for a pure consumer (a browser exposes nothing).
+	 * The relay-exposed SPAWN (MCP) route names this node serves, published in
+	 * presence so a peer can auto-mount them as tool catalogs (floor discovery). Set
+	 * only by a daemon that opened relay-exposed spawn routes; omit for a pure
+	 * consumer (a browser exposes nothing).
 	 */
 	exposedRoutes?: string[];
+	/**
+	 * The relay-exposed SERVICE route names this node serves, published in presence
+	 * so a peer can reach them through a localhost forward (floor discovery). Set
+	 * only by a daemon that opened relay-exposed service routes; omit for a pure
+	 * consumer. Kept separate from {@link exposedRoutes} so an MCP auto-mount never
+	 * mis-dials a service route as MCP.
+	 */
+	exposedServices?: string[];
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -226,6 +235,9 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		agentId: config.agentId,
 		...(config.exposedRoutes !== undefined && {
 			exposedRoutes: config.exposedRoutes,
+		}),
+		...(config.exposedServices !== undefined && {
+			exposedServices: config.exposedServices,
 		}),
 	} satisfies PresencePublishFrame);
 

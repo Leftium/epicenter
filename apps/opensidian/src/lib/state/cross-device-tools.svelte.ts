@@ -3,11 +3,18 @@
  *
  * This is what makes the floor load-bearing in the app (ADR-0073): it opens this
  * device's own account-room connection (the per-user fleet room every device
- * joins) and AUTO-MOUNTS every relay-exposed route the user's other online
- * devices advertise in presence. No picker: the consent boundary is the daemon
- * exposing a route (`--relay-expose books`, default refused); a browser is a pure
- * consumer that reflects whatever its fleet exposes. The mounted catalogs compose
- * beside opensidian's in-process action catalog in `session.ts`.
+ * joins) and AUTO-MOUNTS every relay-exposed SPAWN (MCP) route the user's other
+ * online devices advertise in presence (`peer.exposedRoutes`). No picker: the
+ * consent boundary is the daemon exposing a route (`--relay-expose books`, default
+ * refused); a browser is a pure consumer that reflects whatever its fleet exposes.
+ * The mounted catalogs compose beside opensidian's in-process action catalog in
+ * `session.ts`.
+ *
+ * It mounts MCP routes only. A peer's SERVICE routes (`peer.exposedServices`, e.g.
+ * a whisper box) speak HTTP, not MCP, and are reached through a localhost forward
+ * as an ordinary `Connection { baseUrl }`, never an MCP session; mounting one here
+ * would mis-dial it as MCP. So this reads `exposedRoutes` (spawn) and ignores
+ * `exposedServices` by design.
  *
  * Each device's tools are namespaced by `<shortNodeId>_<route>` so two devices
  * serving the same route (two boxes both running `local-books`) coexist instead

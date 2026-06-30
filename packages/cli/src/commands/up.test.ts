@@ -46,7 +46,7 @@ import {
 } from '@epicenter/workspace/node';
 import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { runUp } from './up.js';
+import { parseRelayServiceFlag, runUp } from './up.js';
 
 const STUB_AUTH = {
 	state: {
@@ -596,5 +596,34 @@ describe('runUp: orphan path', () => {
 		} finally {
 			await handle.teardown();
 		}
+	});
+});
+
+describe('parseRelayServiceFlag', () => {
+	test('parses a well-formed "<name>=<port>" value', () => {
+		expect(expectOk(parseRelayServiceFlag('whisper=8000'))).toEqual({
+			name: 'whisper',
+			port: 8000,
+		});
+	});
+
+	test('rejects a value with no "="', () => {
+		expectErr(parseRelayServiceFlag('whisper'));
+	});
+
+	test('rejects an invalid route name', () => {
+		expectErr(parseRelayServiceFlag('_bad=8000'));
+		expectErr(parseRelayServiceFlag('has space=8000'));
+	});
+
+	test('rejects a non-numeric or out-of-range port', () => {
+		expectErr(parseRelayServiceFlag('whisper=abc'));
+		expectErr(parseRelayServiceFlag('whisper=0'));
+		expectErr(parseRelayServiceFlag('whisper=70000'));
+		expectErr(parseRelayServiceFlag('whisper=80.5'));
+	});
+
+	test('splits on the first "=" so a value with extra "=" fails the port check, not silently', () => {
+		expectErr(parseRelayServiceFlag('whisper=8000=extra'));
 	});
 });

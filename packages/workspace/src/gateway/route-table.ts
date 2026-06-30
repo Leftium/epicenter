@@ -97,6 +97,30 @@ export function routeRelayExposed(route: Route): boolean {
 }
 
 /**
+ * The relay-exposed route names this device advertises in presence, partitioned
+ * by kind. The split is the floor's discovery contract: a `spawn` route is an MCP
+ * server a peer auto-mounts as a tool catalog, while a `service` route is an HTTP
+ * service a peer reaches through a localhost forward (a `Connection { baseUrl }`),
+ * never an MCP session. Carrying the two in separate buckets is what keeps a
+ * consumer's MCP auto-mount from mis-dialing a service route as MCP: it reads
+ * `spawn` only, and a forward consumer reads `service`. A refused route appears in
+ * neither (it is not reachable over the floor at all).
+ */
+export function exposedRoutesByKind(routes: RouteTable): {
+	spawn: string[];
+	service: string[];
+} {
+	const spawn: string[] = [];
+	const service: string[] = [];
+	for (const [name, route] of Object.entries(routes)) {
+		if (!routeRelayExposed(route)) continue;
+		if (route.kind === 'service') service.push(name);
+		else spawn.push(name);
+	}
+	return { spawn, service };
+}
+
+/**
  * Return a route table with the named routes opted in to the relay floor. Used by
  * the daemon's `--relay-expose` knob to expose a route over the relay for a
  * two-machine smoke or a self-hoster who accepts the trusted-relay ceiling; an

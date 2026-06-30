@@ -26,10 +26,12 @@ import {
 	type DaemonServedDeviceGateway,
 	DEFAULT_DEVICE_ROUTES,
 	type EpicenterConfigError,
+	exposedRoutesByKind,
 	type InactiveMount,
 	openAccountRoom,
 	openEpicenterRoot,
 	openRelayAcceptor,
+	type RouteTable,
 	StartupError,
 	startDaemonServer,
 	unlinkMetadata,
@@ -53,6 +55,39 @@ const CLI_VERSION = packageJson.version;
  */
 function logSyncStatus(message: string): void {
 	process.stderr.write(`${message}\n`);
+}
+
+/** A wire-safe route name (matched literally by the remote acceptor and on the wire). */
+const RELAY_ROUTE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/**
+ * Parse one `--relay-service <name>=<port>` flag value into a service-route spec.
+ * Loopback is the design (the daemon dials `127.0.0.1:<port>`; the cross-device
+ * hop is the relay floor, so the service box runs the daemon), so the grammar
+ * carries no host: `<host>:<port>` is the seam to add the day a non-co-located
+ * producer exists. Returns the offending reason on a malformed value; the handler
+ * fails fast on it so a typo never starts a daemon with a route it cannot serve.
+ */
+export function parseRelayServiceFlag(
+	spec: string,
+): Result<{ name: string; port: number }, string> {
+	const separator = spec.indexOf('=');
+	if (separator === -1) return Err(`expected "<name>=<port>" (got "${spec}")`);
+	const name = spec.slice(0, separator);
+	const portText = spec.slice(separator + 1);
+	if (!RELAY_ROUTE_NAME_PATTERN.test(name)) {
+		return Err(
+			`invalid route name "${name}": use letters, numbers, "_" or "-", starting with a letter or number`,
+		);
+	}
+	if (!/^\d+$/.test(portText)) {
+		return Err(`invalid port "${portText}" for route "${name}": expected digits`);
+	}
+	const port = Number(portText);
+	if (port < 1 || port > 65535) {
+		return Err(`port ${port} for route "${name}" is out of range (1-65535)`);
+	}
+	return Ok({ name, port });
 }
 
 type UpOptions = {
@@ -82,6 +117,14 @@ type UpOptions = {
 	 * smoke or by a self-hoster who runs their own relay.
 	 */
 	relayExpose?: string[];
+	/**
+	 * Local HTTP services to expose over the relay floor as service routes, each
+	 * `{ name, port }`. Declaring one IS the opt-in (it is exposed straightaway),
+	 * and the daemon dials it on loopback (`127.0.0.1:<port>`): the cross-device hop
+	 * is the relay floor, so the service box runs the daemon. The handler parses the
+	 * `--relay-service <name>=<port>` flag into these via {@link parseRelayServiceFlag}.
+	 */
+	relayService?: { name: string; port: number }[];
 };
 
 /**
@@ -175,13 +218,25 @@ export async function runUp(
 	// floor. The default exposes nothing over the relay until a route opts in with
 	// `relay: 'exposed'`. Computed before the account room opens so the daemon can
 	// advertise its exposed routes in presence (floor discovery: the user's other
-	// devices read this and auto-mount them).
-	const routes = options.relayExpose?.length
+	// devices read this and auto-mount spawn routes or forward service routes).
+	const exposedTable = options.relayExpose?.length
 		? withRelayExposed(DEFAULT_DEVICE_ROUTES, options.relayExpose)
 		: DEFAULT_DEVICE_ROUTES;
-	const exposedRoutes = Object.keys(routes).filter(
-		(name) => routes[name]?.relay === 'exposed',
-	);
+	// Operator-declared service routes are exposed by the act of declaring them (the
+	// `--relay-service` flag IS the opt-in) and dial loopback only; they ride the
+	// floor as a second vocabulary (HTTP, reached through a localhost forward), not
+	// MCP. A name colliding with a default route replaces it (last wins).
+	const serviceRoutes: RouteTable = {};
+	for (const { name, port } of options.relayService ?? []) {
+		serviceRoutes[name] = { kind: 'service', service: { port }, relay: 'exposed' };
+	}
+	const routes: RouteTable = { ...exposedTable, ...serviceRoutes };
+	// Split the exposed routes by kind so presence advertises each vocabulary in its
+	// own bucket: spawn routes a peer auto-mounts as MCP, service routes a peer
+	// forwards. The split is what stops a consumer's MCP auto-mount from mis-dialing
+	// a service route as MCP.
+	const { spawn: exposedRoutes, service: exposedServices } =
+		exposedRoutesByKind(routes);
 
 	// Open the per-person account room alongside the mount: it holds the relay
 	// floor's connection (its live presence and the channel port), not per-room
@@ -192,7 +247,8 @@ export async function runUp(
 	// below, so on LIFO teardown it disposes AFTER the socket closes: no in-flight
 	// `/relay-peers` read can race a torn-down connection.
 	const { data: accountRoom, error: accountRoomError } = await tryAsync({
-		try: () => openAccountRoom({ epicenterRoot, auth, exposedRoutes }),
+		try: () =>
+			openAccountRoom({ epicenterRoot, auth, exposedRoutes, exposedServices }),
 		catch: (cause) => Err(extractErrorMessage(cause)),
 	});
 	if (accountRoomError !== null) {
@@ -226,7 +282,7 @@ export async function runUp(
 		stack.defer(() => relayAcceptor.close());
 
 		logSyncStatus(
-			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed: ${exposedRoutes.join(', ') || 'none'}]`,
+			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed MCP: ${exposedRoutes.join(', ') || 'none'}; exposed services: ${exposedServices.join(', ') || 'none'}]`,
 		);
 	}
 
@@ -288,6 +344,12 @@ export const upCommand = cmd({
 			description:
 				'Route names to expose over the relay floor (default refused); accepts the trusted-relay ceiling',
 		},
+		'relay-service': {
+			type: 'array',
+			string: true,
+			description:
+				'Expose a local HTTP service over the relay floor as "<name>=<port>" (loopback; declaring it is the opt-in)',
+		},
 	},
 	handler: async (argv) => {
 		const options: UpOptions = {
@@ -297,6 +359,20 @@ export const upCommand = cmd({
 				relayExpose: argv['relay-expose'] as string[],
 			}),
 		};
+
+		const relayServiceSpecs = argv['relay-service'] as string[] | undefined;
+		if (relayServiceSpecs?.length) {
+			const parsed: { name: string; port: number }[] = [];
+			for (const spec of relayServiceSpecs) {
+				const { data, error } = parseRelayServiceFlag(spec);
+				if (error !== null) {
+					process.stderr.write(`--relay-service: ${error}\n`);
+					process.exit(1);
+				}
+				parsed.push(data);
+			}
+			options.relayService = parsed;
+		}
 
 		const { data: handle, error } = await runUp(options);
 		if (error) {

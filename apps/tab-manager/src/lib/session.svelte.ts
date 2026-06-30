@@ -3,7 +3,7 @@ import type { InstanceSetting, SyncAuthClient } from '@epicenter/auth';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { createAppAuthClient, createSession } from '@epicenter/svelte/auth';
 import {
-	createDispatchToolCatalog,
+	createLocalToolCatalog,
 	defaultApprovalDecision,
 } from '@epicenter/workspace/agent';
 import { DEFAULT_MODEL } from './chat/models';
@@ -75,8 +75,8 @@ function buildSession(
 			const unifiedView = createUnifiedViewState({ bookmarks, savedTabs });
 			// The shared chat registry (ADR-0047/0059) with tab-manager's variation
 			// injected: device-constraint + base prompts read per turn, its in-process
-			// browser actions as the tool surface (peers excluded by `selfNodeId`), and
-			// the "Always Allow" trust set folded into the approval policy.
+			// browser actions as the tool surface, and the "Always Allow" trust set
+			// folded into the approval policy.
 			const aiChat = createAgentChatState({
 				table: tabManager.tables.conversations,
 				whenLoaded: tabManager.idb.whenLoaded,
@@ -87,10 +87,7 @@ function buildSession(
 						TAB_MANAGER_SYSTEM_PROMPT,
 					],
 					defaultModel: DEFAULT_MODEL,
-					toolCatalog: createDispatchToolCatalog(tabManager.collaboration, {
-						localActions: tabManager.actions,
-						selfNodeId: tabManager.nodeId,
-					}),
+					toolCatalog: createLocalToolCatalog(tabManager.actions),
 					// A tool the user chose to "Always Allow" auto-approves; otherwise a
 					// query runs unattended and a mutation asks (ADR-0044).
 					decideApproval: (call, definition) =>

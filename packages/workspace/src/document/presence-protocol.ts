@@ -1,16 +1,16 @@
 /**
  * Presence wire protocol: the relay-owned peer list, plus the one frame the
- * node sends to publish its own manifest.
+ * node sends to publish its own presence identity.
  *
  * The relay owns presence (its `connections` map is the source of truth) and
- * broadcasts the FULL peer list on every membership or manifest change. The
- * client stores the latest list verbatim: there is no delta protocol and no
- * client-side reassembly, the frame IS the state.
+ * broadcasts the FULL peer list on every membership change. The client stores
+ * the latest list verbatim: there is no delta protocol and no client-side
+ * reassembly, the frame IS the state.
  *
- * The wire carries each peer's full action manifest so the receiver can
- * render affordances, validate input schemas, or hand the manifest to an AI
- * tool layer with no second round trip. Manifests are opaque to the relay: it
- * stores and forwards them as bytes, never inspects their shape.
+ * The `actions` manifest field is decommissioned: it is retained on the wire
+ * (always `{}`) for version-skew safety now that the in-room dispatch subsystem
+ * is deleted (ADR-0073), but nothing reads it. The live presence payload is each
+ * peer's `nodeId`, `connectedAt`, `agentId`, and `exposedRoutes`.
  *
  * Shared by the relay (`packages/server/src/room/core.ts`, the sender) and
  * the client (`open-collaboration.ts`, the reader).
@@ -27,8 +27,9 @@ import { ActionMetaSchema } from '../shared/actions.js';
 
 /**
  * Wire schema for an action manifest. `Record<string, ActionMeta>` where each
- * value is the metadata-only projection of a callable `Action`. Reuses
- * `ActionMetaSchema` so the wire stays in lockstep with the local registry.
+ * value is the metadata-only projection of a callable `Action`. Retained for
+ * wire compatibility but no longer populated: producers send `{}` (see the
+ * module header). Reuses `ActionMetaSchema` so the type stays valid.
  */
 export const ActionManifestSchema = Type.Record(
 	Type.String(),
@@ -38,9 +39,10 @@ export const ActionManifestSchema = Type.Record(
 /**
  * One peer's entry on the wire.
  *
- * `nodeId` routes dispatches; `connectedAt` lets receivers render an
- * "online since" affordance; `actions` is the peer's published manifest, or
- * `{}` if the peer has not (yet) published one. `agentId` is the catalog agent
+ * `nodeId` is the peer's relay routing address; `connectedAt` lets receivers
+ * render an "online since" affordance. `actions` is decommissioned (always
+ * `{}`, retained for wire compatibility; see the module header). `agentId` is
+ * the catalog agent
  * this peer answers as (ADR-0025), present only on a peer that mounted with one
  * (a resident daemon) and absent for ordinary participants. It is the join key
  * a picker uses to decorate a durable agent as live: the catalog owns the
@@ -78,12 +80,12 @@ export const PresenceFrameSchema = Type.Object({
 export type PresenceFrame = Static<typeof PresenceFrameSchema>;
 
 /**
- * Client -> server: publish this node's action manifest, and optionally the
- * catalog agent it answers as. The relay stores both against the sending
+ * Client -> server: publish this node's presence identity (its agent
+ * designation and exposed route names). The relay stores it against the sending
  * socket's nodeId and rebroadcasts presence so peers see the update. Sent once
- * on connect; re-sent if the local action registry changes. `agentId` is set
- * only by a peer that mounted as a resident agent (ADR-0025); ordinary
- * participants omit it.
+ * on connect. `actions` is decommissioned and sent as `{}` (see the module
+ * header). `agentId` is set only by a peer that mounted as a resident agent
+ * (ADR-0025); ordinary participants omit it.
  */
 export const PresencePublishFrameSchema = Type.Object({
 	type: Type.Literal('presence_publish'),

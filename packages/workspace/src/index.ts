@@ -134,10 +134,6 @@ export { attachChildDocWorker } from './document/child-doc-worker.js';
 export { type ConnectionConfig, connectDoc } from './document/connect-doc.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
-export {
-	DispatchError,
-	type DispatchRequest,
-} from './document/dispatch.js';
 // `docGuid` is intentionally NOT exported: child-doc guid derivation is an
 // internal workspace detail. Callers reach it through the table path,
 // `tables.<table>.docs.<field>.guid(rowId)`, which is the public contract.

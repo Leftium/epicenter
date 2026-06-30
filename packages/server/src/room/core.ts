@@ -1,11 +1,10 @@
 /**
- * Runtime-agnostic Yjs sync + dispatch room.
+ * Runtime-agnostic Yjs sync room.
  *
- * Owns: the Yjs document, the connection set, server-owned presence, and
- * the dispatch correlation table. Does NOT own the WebSocket lifecycle
- * (fetch/upgrade/`webSocketMessage` callbacks), the alarm scheduling, or
- * the update-log storage; those are backend-specific and live in the
- * adapter.
+ * Owns: the Yjs document, the connection set, and server-owned presence.
+ * Does NOT own the WebSocket lifecycle (fetch/upgrade/`webSocketMessage`
+ * callbacks), the alarm scheduling, or the update-log storage; those are
+ * backend-specific and live in the adapter.
  *
  * Imports no `cloudflare:workers` symbols. Both Cloudflare's Durable
  * Object and the Bun backend (`room/backends/bun/`) drive the same
@@ -19,13 +18,9 @@
  * the protocol level:
  *
  *   binary WS frames  -> standard y-protocols SYNC.
- *   text WS frames    -> live-node dispatch and the server-owned
- *                        presence channel (`presence`).
- *
- * Dispatch is relay-mediated and rides text frames: a caller's
- * `dispatch_request` is routed to the recipient as `dispatch_inbound`;
- * the recipient's `dispatch_response` is routed back to the caller as
- * `dispatch_result`, correlated by a caller-minted `id`.
+ *   text WS frames    -> the server-owned presence channel (`presence` /
+ *                        `presence_publish`), plus relay-channel frames the
+ *                        core delegates whole to the channel router.
  *
  * ## Presence
  *
@@ -57,20 +52,13 @@ import {
 	stateVectorsEqual,
 } from '@epicenter/sync';
 import {
-	checkDispatchRequestFrame,
-	checkDispatchResponseFrame,
-	type DispatchErrorWire,
-	type DispatchInboundFrame,
-	type DispatchResultFrame,
-} from '@epicenter/workspace/document/dispatch-protocol';
-import {
 	checkPresencePublishFrame,
 	type Peer,
 	type PresenceFrame,
 } from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
 import { createLogger } from 'wellcrafted/logger';
-import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
+import { Err, Ok, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import type { Connection } from '../types.js';
@@ -113,14 +101,6 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 const PRESENCE_REBROADCAST_GRACE_MS = 300;
 
 /**
- * How long the relay holds an in-flight dispatch before answering the
- * caller with `RecipientOffline`. Bounds the `pendingDispatches` map for
- * long-lived sockets; not the caller's deadline. The caller's
- * `dispatch()` carries its own ceiling.
- */
-const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
-
-/**
  * WebSocket close code emitted by the auth layer when the connection's
  * credentials are permanently invalid. Bypasses the presence grace window:
  * peers see the client drop immediately instead of waiting 300 ms for a
@@ -159,22 +139,6 @@ const MAX_CONNECTION_LIFETIME_MS = 30 * 60_000;
  * authenticated upgrade instead of making the client give up.
  */
 const CLOSE_CODE_CONNECTION_LIFETIME = 4408;
-
-// ============================================================================
-// Internal types
-// ============================================================================
-
-/**
- * In-flight dispatch routing entry. The relay holds one of these for each
- * dispatch awaiting a response: the caller socket the result returns to,
- * the recipient socket the call is waiting on, and the safety timeout
- * that answers `RecipientOffline` if the recipient never replies.
- */
-type PendingDispatch = {
-	callerWs: RoomSocket;
-	recipientWs: RoomSocket;
-	timeout: ReturnType<typeof setTimeout>;
-};
 
 // ============================================================================
 // createRoomCore
@@ -216,12 +180,6 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * (handoff).
 	 */
 	let pendingRebroadcast: ReturnType<typeof setTimeout> | null = null;
-
-	/**
-	 * In-flight dispatches awaiting `dispatch_response`, keyed by the
-	 * caller-minted correlation id.
-	 */
-	const pendingDispatches = new Map<string, PendingDispatch>();
 
 	// ==========================================================================
 	// Init
@@ -370,119 +328,16 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 
 	/**
 	 * The relay-channel router: forwards `channel_*` frames between a caller socket
-	 * and a target device's socket over this same room. It is the generalization of
-	 * the dispatch path, kept as a SEPARATE module that imports no sync, MCP, or
-	 * action code; the core reaches it through one delegation in `handleTextFrame`
-	 * and one teardown in `removeConnection`. `findDevice` is `pickRecipient`
-	 * (this room is one user's fleet); `ownerOf` is the socket's authenticated
-	 * `userId`, the relay's only routing authority.
+	 * and a target device's socket over this same room. A SEPARATE module that
+	 * imports no sync, MCP, or action code; the core reaches it through one
+	 * delegation in `handleTextFrame` and one teardown in `removeConnection`.
+	 * `findDevice` is `pickRecipient` (this room is one user's fleet); `ownerOf`
+	 * is the socket's authenticated `userId`, the relay's only routing authority.
 	 */
 	const channelRouter = createChannelRouter({
 		findDevice: pickRecipient,
 		ownerOf: (socket) => connections.get(socket)?.userId,
 	});
-
-	// ==========================================================================
-	// Dispatch helpers
-	// ==========================================================================
-
-	/**
-	 * Caller -> relay: start a dispatch. Picks the most-recently-connected
-	 * socket for `to`, pushes `dispatch_inbound` to it, and records the
-	 * pending entry so the recipient's `dispatch_response` can be routed
-	 * back to `callerWs`. A malformed frame is dropped silently: the
-	 * caller's own ceiling settles it.
-	 */
-	function handleDispatchRequest(callerWs: RoomSocket, frame: unknown): void {
-		if (!checkDispatchRequestFrame.Check(frame)) return;
-		const { id, to, action, input } = frame;
-
-		const recipientWs = pickRecipient(to);
-		if (!recipientWs) {
-			sendDispatchResult(callerWs, id, recipientOffline(to));
-			return;
-		}
-
-		const timeout = setTimeout(() => {
-			const pending = pendingDispatches.get(id);
-			if (!pending) return;
-			pendingDispatches.delete(id);
-			sendDispatchResult(pending.callerWs, id, recipientOffline(to));
-		}, DISPATCH_INTERNAL_TIMEOUT_MS);
-
-		pendingDispatches.set(id, { callerWs, recipientWs, timeout });
-
-		try {
-			recipientWs.send(
-				JSON.stringify({
-					type: 'dispatch_inbound',
-					id,
-					action,
-					input,
-				} satisfies DispatchInboundFrame),
-			);
-		} catch {
-			// Recipient socket died between pickRecipient and send.
-			clearTimeout(timeout);
-			pendingDispatches.delete(id);
-			sendDispatchResult(callerWs, id, recipientOffline(to));
-		}
-	}
-
-	/**
-	 * Recipient -> relay: an action outcome. Routes the result back to the
-	 * caller that started the dispatch. A `dispatch_response` with no
-	 * matching pending entry is a late reply (the caller already gave up,
-	 * or the entry was lost to hibernation) and is dropped.
-	 *
-	 * Only the socket the dispatch was actually sent to may answer it. In a
-	 * shared room a different member's socket cannot forge a result for a
-	 * dispatch id it does not own, even if it learns the id. The id is unicast
-	 * to the recipient, so this is defense in depth, not the only barrier.
-	 *
-	 * The TypeBox validator guarantees `frame.result` is a well-formed
-	 * `Result<unknown, ActionResponseError>`. The relay still forwards the
-	 * error side opaquely; the caller's own validator narrows it again to
-	 * `DispatchErrorWire` (which adds `RecipientOffline` to the union).
-	 */
-	function handleDispatchResponse(
-		responderWs: RoomSocket,
-		frame: unknown,
-	): void {
-		if (!checkDispatchResponseFrame.Check(frame)) return;
-
-		const pending = pendingDispatches.get(frame.id);
-		if (!pending) return;
-		if (pending.recipientWs !== responderWs) return;
-
-		clearTimeout(pending.timeout);
-		pendingDispatches.delete(frame.id);
-
-		sendDispatchResult(pending.callerWs, frame.id, frame.result);
-	}
-
-	/**
-	 * Send a `dispatch_result` frame to the caller socket. A dead caller
-	 * socket is swallowed: its close event already ran (or will run) the
-	 * pending-entry cleanup.
-	 */
-	function sendDispatchResult(
-		callerWs: RoomSocket,
-		id: string,
-		result: Result<unknown, unknown>,
-	): void {
-		try {
-			callerWs.send(
-				JSON.stringify({
-					type: 'dispatch_result',
-					id,
-					result,
-				} satisfies DispatchResultFrame),
-			);
-		} catch {
-			/* caller socket already dead; close cleanup handles the entry */
-		}
-	}
 
 	/**
 	 * Node -> relay: publish this socket's action manifest and optional agent
@@ -508,10 +363,11 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	}
 
 	/**
-	 * Route a client -> relay text frame. Recognized types are `dispatch_request`,
-	 * `dispatch_response`, and `presence_publish`. The TypeBox-compiled validator
-	 * inside each handler narrows the frame; this dispatcher only owns the
-	 * `type` switch and the protocol-error close path.
+	 * Route a client -> relay text frame. The only recognized type is
+	 * `presence_publish`; relay-channel frames are delegated whole to the channel
+	 * router above. The TypeBox-compiled validator inside the handler narrows the
+	 * frame; this dispatcher only owns the `type` switch and the protocol-error
+	 * close path.
 	 *
 	 * Unparseable JSON or an unknown frame type is a genuine protocol desync and
 	 * closes the socket with `4400 protocol-error`. A recognized frame with
@@ -539,8 +395,8 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		}
 
 		// Relay-channel frames are delegated WHOLE to the separate channel router,
-		// never handled as cases beside dispatch: the channel layer stays a distinct
-		// module from sync and dispatch, sharing only this socket.
+		// never handled as cases beside presence: the channel layer stays a distinct
+		// module from sync and presence, sharing only this socket.
 		if (channelRouter.owns(parsed)) {
 			channelRouter.handleFrame(ws, parsed);
 			return;
@@ -552,12 +408,6 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				: undefined;
 
 		switch (type) {
-			case 'dispatch_request':
-				handleDispatchRequest(ws, parsed);
-				return;
-			case 'dispatch_response':
-				handleDispatchResponse(ws, parsed);
-				return;
 			case 'presence_publish':
 				handlePresencePublish(ws, parsed);
 				return;
@@ -588,7 +438,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 *   responsible for the runtime-specific accept (hibernation API
 		 *   or `Bun.serve` upgrade) before calling this.
 		 * @param connection - The connection attachment URL-stamped at
-		 *   upgrade. `nodeId` is the dispatch address; `userId`
+		 *   upgrade. `nodeId` is the relay routing address; `userId`
 		 *   is the auth principal; `connectedAt` and `actions` are mirrored
 		 *   on the wire so receivers can render node affordances.
 		 */
@@ -612,9 +462,8 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		/**
 		 * Drop a closed socket and run the disconnect-time flow.
 		 *
-		 * - Fails every in-flight dispatch touching this socket: a closed
-		 *   recipient answers the caller `RecipientOffline`; a closed
-		 *   caller just drops the entry (nobody to answer).
+		 * - Resets every relay channel this socket was a party to, so a
+		 *   half-open channel never lingers after the caller or target drops.
 		 * - Removes the socket from `connections`.
 		 * - If this was the LAST socket for the client, schedules the
 		 *   debounced presence rebroadcast (or fires it immediately on
@@ -627,21 +476,6 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		removeConnection(socket: RoomSocket, code: number): void {
 			const data = connections.get(socket);
 			if (!data) return;
-
-			for (const [id, pending] of pendingDispatches) {
-				if (pending.recipientWs === socket) {
-					clearTimeout(pending.timeout);
-					pendingDispatches.delete(id);
-					sendDispatchResult(
-						pending.callerWs,
-						id,
-						recipientOffline(data.nodeId),
-					);
-				} else if (pending.callerWs === socket) {
-					clearTimeout(pending.timeout);
-					pendingDispatches.delete(id);
-				}
-			}
 
 			// Reset every relay channel this socket was a party to, so a half-open
 			// channel never lingers after the caller or target drops.
@@ -663,8 +497,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * Handle one inbound WebSocket message.
 		 *
 		 * Routes on the message envelope:
-		 * - text frames: dispatch correlation (`dispatch_request`,
-		 *   `dispatch_response`) and other client text frames.
+		 * - text frames: presence and relay-channel frames.
 		 * - binary frames: standard y-protocols SYNC.
 		 *
 		 * Oversized messages close the socket with `1009 Message too
@@ -863,19 +696,4 @@ function compactUpdateLog(doc: Y.Doc, updateLog: RoomUpdateLog): void {
 		entries: count,
 		compactedBytes: compacted.byteLength,
 	});
-}
-
-/**
- * The relay's one self-produced dispatch outcome: the recipient has no
- * usable socket (never connected, dropped mid-flight, timed out, or sent
- * a non-`Result` reply).
- *
- * Shaped as `Err` so the wire body is always a `Result`. The return type
- * is pinned to the wire contract's `RecipientOffline` variant, so a field
- * added there fails to compile here.
- */
-function recipientOffline(
-	to: string,
-): Result<unknown, Extract<DispatchErrorWire, { name: 'RecipientOffline' }>> {
-	return Err({ name: 'RecipientOffline', to });
 }

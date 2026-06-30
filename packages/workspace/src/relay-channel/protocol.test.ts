@@ -23,9 +23,9 @@ describe('checkChannelFrame', () => {
 	});
 
 	const invalid: unknown[] = [
-		// not a channel frame at all (presence / sync text)
+		// not a channel frame at all (presence text)
 		{ type: 'presence', peers: [] },
-		{ type: 'dispatch_request', id: 'c1', to: 'x', action: 'y' },
+		{ type: 'presence_publish', actions: {} },
 		// channel_end was removed: the floor is reset-only
 		{ type: 'channel_end', id: 'c1' },
 		// missing required fields

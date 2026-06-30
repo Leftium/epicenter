@@ -182,82 +182,10 @@ describe('RoomCore: presence', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Dispatch relay
+// Text frames
 // ────────────────────────────────────────────────────────────────────────────
 
-function request(to: string, id = 'd1') {
-	return JSON.stringify({
-		type: 'dispatch_request',
-		id,
-		to,
-		action: 'noop',
-		input: {},
-	});
-}
-
-describe('RoomCore: dispatch', () => {
-	test('routes inbound to the recipient and the result back to the caller', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		const recipient = connect(core, 'recipient');
-
-		core.handleMessage(caller, request('recipient'));
-		expect(recipient.json('dispatch_inbound').at(0)).toMatchObject({
-			id: 'd1',
-			action: 'noop',
-		});
-
-		core.handleMessage(
-			recipient,
-			JSON.stringify({
-				type: 'dispatch_response',
-				id: 'd1',
-				result: { data: 'ok', error: null },
-			}),
-		);
-		expect(caller.json('dispatch_result').at(0)).toMatchObject({
-			id: 'd1',
-			result: { data: 'ok', error: null },
-		});
-	});
-
-	test('answers RecipientOffline immediately when no recipient is connected', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		core.handleMessage(caller, request('ghost'));
-		const results = caller.json('dispatch_result');
-		expect(results).toHaveLength(1);
-		expect(JSON.stringify(results[0])).toContain('RecipientOffline');
-	});
-
-	test('fails an in-flight dispatch RecipientOffline when the recipient disconnects', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		const recipient = connect(core, 'recipient');
-		core.handleMessage(caller, request('recipient'));
-		core.removeConnection(recipient, 1000);
-		const results = caller.json('dispatch_result');
-		expect(results).toHaveLength(1);
-		expect(JSON.stringify(results[0])).toContain('RecipientOffline');
-	});
-
-	test('a non-recipient member cannot forge a result for a dispatch id it does not own', () => {
-		const core = newRoom();
-		const caller = connect(core, 'caller');
-		connect(core, 'recipient');
-		const intruder = connect(core, 'intruder');
-		core.handleMessage(caller, request('recipient'));
-		core.handleMessage(
-			intruder,
-			JSON.stringify({
-				type: 'dispatch_response',
-				id: 'd1',
-				result: { data: 'forged', error: null },
-			}),
-		);
-		expect(caller.json('dispatch_result')).toHaveLength(0);
-	});
-
+describe('RoomCore: text frames', () => {
 	test('an unparseable or unknown text frame closes the socket with 4400', () => {
 		const core = newRoom();
 		const ws = connect(core, 'A');

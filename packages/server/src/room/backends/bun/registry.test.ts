@@ -3,7 +3,7 @@
  *
  * Proves the same {@link createRoomCore} runs behind the in-process Node
  * backend that runs behind the Cloudflare Durable Object: presence, binary
- * sync fan-out, and dispatch relay all behave identically, and the
+ * sync fan-out, and relay-channel routing all behave identically, and the
  * `bun:sqlite` update log persists and reloads a room's history. There is no
  * `cloudflare:workers` mock here, by design (ADR-0066): the core is exercised
  * through the Node backend's own surface.

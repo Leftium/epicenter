@@ -5,7 +5,7 @@
  * `CONNECTING` (we never call `onopen`), so the supervisor parks in
  * `attemptConnection`. That means these tests only cover the synchronous
  * setup of `openCollaboration`: the action-key guard and the `Symbol.dispose`
- * sugar. Socket-coupled behavior (presence routing, dispatch result routing,
+ * sugar. Socket-coupled behavior (presence routing, relay-channel routing,
  * disconnect settling) is intentionally out of scope here and needs a
  * different fake.
  *

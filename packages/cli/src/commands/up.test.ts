@@ -163,9 +163,6 @@ function writeRuntimeMount({
 				list: () => [],
 				subscribe: () => () => {},
 			},
-			dispatch: async () => {
-				throw new Error('fixture does not dispatch');
-			},
 		};
 
 		export default {

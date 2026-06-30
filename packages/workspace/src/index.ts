@@ -6,7 +6,7 @@
  * result to IndexedDB persistence and WebSocket sync via
  * `openCollaboration`. `openCollaboration` also consumes the
  * server-owned presence channel and exposes the live-peer surface
- * (`peers.list()`) plus socket-backed `dispatch()` for cross-node calls.
+ * (`peers.list()`).
  *
  * @example
  * ```typescript

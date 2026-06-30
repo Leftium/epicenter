@@ -44,3 +44,30 @@ test('a service route dumb-pipes the channel to a local TCP socket', async () =>
 	target.close();
 	service.close();
 });
+
+test('a service route to a refused port fails gracefully, never crashing the daemon', async () => {
+	// Bind then immediately close a server to get a port guaranteed to refuse.
+	const probe = createServer();
+	await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+	const deadPort = (probe.address() as AddressInfo).port;
+	await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+	// The connect's ECONNREFUSED must surface as a stream rejection (the acceptor
+	// pipe then resets the channel), NOT an unhandled socket 'error' that takes the
+	// long-lived daemon process down. The toWeb bridge attaches its error listener
+	// synchronously at construction, before the async connect failure fires.
+	const target = openRouteTarget({
+		kind: 'service',
+		service: { port: deadPort },
+		relay: 'exposed',
+	});
+	const reader = target.channel.source.getReader();
+	let rejected = false;
+	await reader.read().catch(() => {
+		rejected = true;
+	});
+	expect(rejected).toBe(true);
+
+	reader.releaseLock();
+	target.close();
+});

@@ -50,7 +50,12 @@ const FORWARD_PORT = 0;
 export type ServiceForward = {
 	/** The loopback port the forward listens on: the host of the consumer's `Connection.baseUrl`. */
 	port: number;
-	/** Stop listening and destroy every live connection (each closes its relay channel). */
+	/**
+	 * Stop accepting and destroy every live connection. Destroying a socket aborts
+	 * its pipes, which reset its relay channel; this resolves once the listener is
+	 * shut and the sockets are destroyed, not after each reset has flushed (the
+	 * shared transport's own `close` reclaims any straggler entry regardless).
+	 */
 	close(): Promise<void>;
 };
 

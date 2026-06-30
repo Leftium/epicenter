@@ -12,13 +12,10 @@
  * `gateway/route-table.openRouteTarget`), so this module pulls no node builtin.
  */
 
-import type { ByteChannel } from '../peer-transport.js';
+import type { RouteTarget } from '../peer-transport.js';
 import { type ChannelBridge, createChannelBridge } from './channel-bytes.js';
 import type { ChannelSource } from './protocol.js';
 import type { ChannelPort } from './transport.js';
-
-/** A live local route target: its byte channel plus a teardown handle. */
-export type RouteTarget = { channel: ByteChannel; close(): void };
 
 /**
  * Open the local byte target for an inbound channel, or `null` to refuse it (the

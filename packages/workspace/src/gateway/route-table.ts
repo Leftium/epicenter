@@ -10,7 +10,7 @@
 
 import { spawn } from 'node:child_process';
 import { connect } from 'node:net';
-import type { ByteChannel } from '../peer-transport.js';
+import type { ByteChannel, RouteTarget } from '../peer-transport.js';
 import {
 	nodeReadableToWeb,
 	nodeWritableToWeb,
@@ -113,9 +113,6 @@ export function withRelayExposed(
 	}
 	return next;
 }
-
-/** A live local route target: its byte channel plus a teardown handle. */
-export type RouteTarget = { channel: ByteChannel; close(): void };
 
 /**
  * Open the local target for a route and return its {@link ByteChannel}. The

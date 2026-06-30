@@ -41,6 +41,17 @@ export type ByteChannel = {
 };
 
 /**
+ * A live local route target: the {@link ByteChannel} a device opened for an
+ * inbound channel, plus the teardown handle that closes it. The acceptor
+ * (`relay-channel/acceptor.ts`) dumb-pipes an admitted channel to this; the
+ * daemon's `gateway/route-table.ts` `openRouteTarget` produces it (a spawn
+ * child's stdio or a service socket). It lives here, on the browser-safe seam,
+ * so both sides share one definition without the acceptor importing the
+ * node-only route table.
+ */
+export type RouteTarget = { channel: ByteChannel; close(): void };
+
+/**
  * A named, allowlisted route on a peer's gateway (`books`, `whisper`, ...). The
  * route table is default-closed: nothing outside it is reachable, and the name
  * rides the relay-channel `channel_open` frame, so a route the target has not

@@ -22,7 +22,10 @@ function fakeTextPort() {
 	return {
 		port,
 		sent,
-		deliver: (text: string) => listeners.forEach((l) => l(text)),
+		deliver: (text: string) =>
+			listeners.forEach((l) => {
+				l(text);
+			}),
 	};
 }
 

@@ -234,9 +234,9 @@ browser profile never see each other's data.
 
 `openCollaboration` remains the lower-level sync primitive behind this opener.
 It wraps the sync supervisor, mirrors the relay's server-owned presence channel
-as `collaboration.peers`, and runs inbound dispatch frames against the local
-action registry. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full
-model.
+as `collaboration.peers`, and exposes a raw `textPort` that the relay-channel
+floor rides to carry cross-device MCP tool calls over the same socket. See
+[SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
 The `id` you pass to `defineWorkspace(...)` becomes `workspace.ydoc.guid` when
 you call `.connect(...)`. Namespace it to your app (e.g. `epicenter.my-app`) to
@@ -415,7 +415,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
    - **One subsystem to wait on.** Expose the subsystem (`idb`, `persistence`, ...) on the bundle root and let consumers reach through: `await bundle.idb.whenLoaded`. Do not alias `whenLoaded`/`whenReady` flat at the bundle root just to save a `.idb`; the alias lies about composition.
    - **Two or more subsystems to compose into one barrier.** Then `whenReady` earns its place: `whenReady: Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])`. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly. Consumers `await bundle.whenReady`. The CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and `{#await}` gates in editors all consume this aggregate.
 
-5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.collaboration.peers` and `bundle.collaboration.dispatch` (for cross-node calls), and (for per-row content docs) whatever you exposed in the returned bundle.
+5. Read and write through `bundle.tables`, `bundle.kv`, and `bundle.collaboration.peers`, and (for per-row content docs) whatever you exposed in the returned bundle.
 6. Iterate `Object.entries(bundle.actions)` and read each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for cache handles when you're done. Use `cache[Symbol.dispose]()` to flush every live entry.
 
@@ -1431,7 +1431,7 @@ What the package does give you is the raw material a server adapter needs:
 - `toActionMeta(action)` to project an action to its wire-safe metadata
 - iterate with `Object.entries(actions)`
 - action metadata (`type`, `title`, `input`, `description`)
-- direct access to `bundle.tables`, `bundle.kv`, `bundle.collaboration.peers`, `bundle.collaboration.dispatch`, and per-row content factories
+- direct access to `bundle.tables`, `bundle.kv`, `bundle.collaboration.peers`, and per-row content factories
 
 If you want HTTP, CLI, or MCP on top, build or import an adapter around those primitives.
 
@@ -1563,13 +1563,11 @@ Public KV methods:
 - `observe(key, callback)`
 - `observeAll(callback)`
 
-### Presence and dispatch
+### Presence
 
 ```typescript
 import {
 	type Collaboration,
-	DispatchError,
-	type DispatchRequest,
 	type Peer,
 } from '@epicenter/workspace';
 ```
@@ -1579,9 +1577,7 @@ import {
 - `collaboration.peers.list()`: `Peer[]`, the local install excluded
 - `collaboration.peers.subscribe(fn)`: returns an unsubscribe function
 
-Cross-node calls:
-
-- `collaboration.dispatch(req)`: `Promise<Result<unknown, DispatchError>>`
+Cross-device tool calls do not ride this handle; they travel as MCP over the relay-channel floor (ADR-0073), which builds on the collaboration's raw `textPort` to multiplex blind byte channels over the same socket.
 
 ### Introspection
 

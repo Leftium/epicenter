@@ -4,11 +4,10 @@
  *
  * `createRoomCore` imports nothing Cloudflare and never branches on runtime, so
  * every invariant a backend relies on lives here: presence (debounce, the 4401
- * immediate path, multi-tab same-node dedup), dispatch correlation (happy path,
- * `RecipientOffline` on absent/disconnected recipient, the only-the-recipient-
- * may-answer guard), binary + HTTP sync, compaction, the connection-lifetime
- * bound (`handleMessage` for active sockets, `sweepExpiredConnections` for idle
- * ones), and liveness ping/pong. The backends only own their adapter glue (the
+ * immediate path, multi-tab same-node dedup), the unknown-text-frame close,
+ * binary + HTTP sync, compaction, the connection-lifetime bound (`handleMessage`
+ * for active sockets, `sweepExpiredConnections` for idle ones), and liveness
+ * ping/pong. The backends only own their adapter glue (the
  * Durable Object hibernation accept + alarm, the Bun `server.upgrade` + timer),
  * which their own tests cover; both inherit this behavior unchanged.
  *

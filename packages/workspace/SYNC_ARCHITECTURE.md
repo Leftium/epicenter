@@ -29,21 +29,16 @@ const collaboration = openCollaboration(ydoc, {
 // Local invocation: direct function call against the registry.
 await collaboration.actions.tabs_close({ tabIds: [1, 2] });
 
-// Remote invocation: pick an online peer, dispatch to it over the relay.
+// Online peers (relay-owned presence), each carrying its published action
+// manifest and the relay-floor MCP routes it exposes.
 const phone = collaboration.peers
     .list()
     .find((peer) => peer.nodeId === 'phone');
-if (phone) {
-    const { data, error } = await collaboration.dispatch({
-        to: phone.nodeId,
-        action: 'tabs_close',
-        input: { tabIds: [1, 2] },
-        signal: AbortSignal.timeout(5_000),
-    });
-}
 ```
 
-Content docs (rich-text bodies, attachments, anything nested that syncs independently) use the same call with `actions: {}`. Inbound dispatch frames reply `ActionNotFound`; sync and presence are unchanged.
+Cross-device tool calls do not ride this handle. A device exposes a named MCP route over the relay-channel floor, and a signed-in client reaches it over the same socket; see [the relay-channel plane](#relay-channel-plane-text-blind) below and ADR-0073.
+
+Content docs (rich-text bodies, attachments, anything nested that syncs independently) use the same call with `actions: {}`: the published manifest is empty, while sync and presence are unchanged.
 
 ## The `Collaboration` handle
 
@@ -58,10 +53,10 @@ Content docs (rich-text bodies, attachments, anything nested that syncs independ
 | `onStatusChange`  | Subscribe to status changes; returns unsubscribe                   |
 | `reconnect`       | Manually wake the supervisor (resets backoff)                      |
 | `peers`         | `list()` / `subscribe()` over the server-owned presence channel    |
-| `dispatch`        | Fire a cross-node call over the relay socket                     |
+| `textPort`        | Raw text-frame port; the relay-channel floor builds blind MCP channels on top |
 | `[Symbol.dispose]`| Sugar for `ydoc.destroy()`; cascades through every attachment      |
 
-`peers.list()` returns `Peer[]`, where each peer carries `{ nodeId, connectedAt, actions }`. `actions` is the peer's published `ActionManifest` (the metadata-only projection of its `ActionRegistry`), suitable for rendering UI affordances, validating input against schemas, or feeding an AI tool layer.
+`peers.list()` returns `Peer[]`, where each peer carries `{ nodeId, connectedAt, actions, agentId?, exposedRoutes? }`. `actions` is the peer's published `ActionManifest` (the metadata-only projection of its `ActionRegistry`), suitable for rendering UI affordances, validating input against schemas, or feeding an AI tool layer. `exposedRoutes` lists the relay-floor MCP route names that peer serves with `relay: 'exposed'` (a daemon's opted-in gateway routes, for example `['books']`); a signed-in client reads it to discover which devices to auto-mount as cross-device tool catalogs.
 
 ## The wire: one socket, three channels
 
@@ -69,10 +64,11 @@ Content docs (rich-text bodies, attachments, anything nested that syncs independ
 
 ```
 binary frames   ->  Yjs CRDT sync (STEP1 / STEP2 / UPDATE)
-text frames     ->  presence + dispatch
+text frames     ->  presence (the server-owned peer list)
+text frames     ->  relay-channel (blind MCP byte pipe)
 ```
 
-Channels are independent: a malformed dispatch frame does not tear down sync. The server NEVER inspects the contents of a Yjs binary frame or a dispatch input; it only routes and persists.
+Channels are independent: a malformed relay-channel frame does not tear down sync. The server NEVER inspects the contents of a Yjs binary frame or a relay-channel byte chunk; it only routes and persists.
 
 ### Sync plane (binary)
 
@@ -94,6 +90,8 @@ type Peer = {
     nodeId: string;
     connectedAt: number;
     actions: ActionManifest;   // Record<string, ActionMeta>
+    agentId?: string;          // set only by a resident agent mount (ADR-0025)
+    exposedRoutes?: string[];  // relay-floor MCP route names served with `relay: 'exposed'`
 };
 ```
 
@@ -123,74 +121,43 @@ Presence used to ride y-protocols Awareness. Awareness is built for ephemeral pe
 
 Cursor and selection sync, when they arrive, bring Awareness back, used for what it is designed for and kept separate from this presence channel.
 
-### Dispatch plane (text, in-band)
+### Relay-channel plane (text, blind)
 
-A cross-node call rides text frames on the same socket as presence and sync. The wire is four correlated frames:
+A cross-device tool call rides text frames on the same socket as presence and sync, but the relay never understands them: the relay-channel layer multiplexes named request/response channels, and the relay forwards each channel's bytes BLIND. This is the relay floor (ADR-0073): one per-user authenticated socket that routes typed channels to a person's own devices, with sync as the first channel and cross-device tool calls as another.
 
-```ts
-caller -> relay:     { type: 'dispatch_request',  id, to, action, input }
-relay  -> recipient: { type: 'dispatch_inbound',  id, action, input }
-recipient -> relay:  { type: 'dispatch_response', id, result }
-relay  -> caller:    { type: 'dispatch_result',   id, result }
-```
+The wire is a four-frame, reset-only channel protocol. `id` is the caller-minted channel correlation id, echoed unchanged:
 
 ```ts
-const { data, error } = await collaboration.dispatch({
-    to: 'phone-install-id',
-    action: 'tabs_close',
-    input: { tabIds: [1, 2] },
-    signal: AbortSignal.timeout(5_000),
-});
+caller -> relay -> target:  { type: 'channel_open',   id, target, route }
+target -> relay -> caller:  { type: 'channel_accept', id }
+either <-> relay <-> other: { type: 'channel_data',   id, bytes }  // opaque base64 chunk
+either <-> relay <-> other: { type: 'channel_reset',  id, code }   // terminal, both directions
 ```
 
 End to end:
 
 ```
-caller                      relay                        recipient
-──────                      ─────                        ─────────
-dispatch_request ─────────▶ look up `to` in connections
+caller                      relay                         target device
+──────                      ─────                         ─────────────
+channel_open ─────────────▶ validate `target` is a live
+{ id, target, route }       same-owner device, stamp the
+                            authenticated source
+                            { kind: 'user', userId }
                             │
-                            ├─ no live socket ─▶ dispatch_result { RecipientOffline }
+                            ├─ no live socket ─▶ channel_reset { offline }
                             │
-                            └─ dispatch_inbound ──▶ runInboundDispatch:
-                                                      actions[action](input)
-                                                      │
-                            ◀── dispatch_response ────┘
-       dispatch_result ◀──  forward opaquely
-       { Ok(data) }
-       or { Err(...) }
+                            └─ channel_open ────────────▶ acceptor admits only if
+                                                          source.userId is its own
+                                                          owner AND `route` is
+                                                          relay: 'exposed'
+                            ◀── channel_accept ───────────┘
+   channel_data  ◀────────  forward bytes verbatim  ──────────▶  channel_data
+   (MCP request / response; the relay decodes neither direction)
 ```
 
-The caller's `signal` (or a ~90 s caller-side ceiling) settles the promise if no result arrives. The relay holds its own internal 60 s timeout so a stuck dispatch eventually answers `RecipientOffline`.
+The bytes inside `channel_data` are an MCP session today (an HTTP one later); the relay base64-forwards them and parses nothing. Authorization is two server-side checks with no device-key ledger: the relay stamps the caller's authenticated `source` (overwriting any caller-supplied value), and the device acceptor admits the channel only when `source.userId` matches its own owner and the named route was opted in with `--relay-expose` (default refused, ADR-0078). A `channel_reset` is the terminal frame in both directions: `closed` is a clean end, while `offline`, `refused`, `cancelled`, `too_large`, and `protocol_error` are the failure codes.
 
-`dispatch` always resolves to `Result<unknown, DispatchError>`:
-
-| Variant            | Produced by | When                                                       |
-| ------------------ | ----------- | ---------------------------------------------------------- |
-| `RecipientOffline` | relay       | No live socket for `to`, or its socket closed mid-handler  |
-| `ActionNotFound`   | recipient   | Recipient has no handler for `action`                      |
-| `ActionFailed`     | recipient   | Recipient handler threw or returned `Err`; `cause` is a string |
-| `Cancelled`        | local       | Caller's `AbortSignal` aborted before the response arrived |
-| `NetworkFailed`    | local       | Dispatch socket disconnected, dropped, or returned a malformed result |
-
-`RecipientOffline`, `ActionNotFound`, and `ActionFailed` arrive in `dispatch_result` frames. `Cancelled` and `NetworkFailed` are produced locally.
-
-Because the relay answers reachability inline (its `connections` Map decides, on the same socket that routes the call), callers that need to tell "addressed an offline install" apart from "the call reached the peer and failed" branch on `RecipientOffline` directly. There is no separate liveness pre-check, and no window where a client cache disagrees with the relay.
-
-`dispatch` returns `Result<unknown, DispatchError>`; the caller narrows the success payload against the shape the target action returns:
-
-```ts
-const { data } = await collaboration.dispatch({
-    to: phone.nodeId,
-    action: 'tabs_close',
-    input: { tabIds: [1, 2] },
-});
-const closed = data as { tabIds: number[] };
-```
-
-With manifests on the presence wire, that narrowing is *runtime-verifiable*: walk `node.actions` and confirm the action key exists before dispatching. The wire payload is the ground truth.
-
-The recipient side is `runInboundDispatch`: the supervisor routes inbound text frames to it, it looks up the action in the local registry, runs it, and emits the `dispatch_response`. A content doc with `actions: {}` always replies `ActionNotFound`.
+There is no in-room request/response RPC on this socket. Cross-device capability is exclusively the relay floor's explicitly-exposed MCP routes: a daemon advertises its `relay: 'exposed'` route names in account-room presence via `exposedRoutes`, and a signed-in client auto-mounts every advertised `(device, route)` of its own fleet as an MCP tool catalog over this channel transport.
 
 ## URLs and routing
 
@@ -221,7 +188,7 @@ This is the consumer Google Docs model and the first of three account layers, in
 - **Layer 2 (future)**: shared-drive content. A shared-wiki deployment uses `ownerId === 'shared'` so content survives a departing user.
 - **Layer 3 (future)**: tenancy and billing. An organization groups user accounts for one invoice and admin policy; it never owns a document.
 
-`nodeId` is appended as a query parameter (`?nodeId=`) on every connect, including reconnects. It is a routing label stamped on the socket at upgrade, not an auth principal: the relay authorizes the room from the token, and within that room `nodeId` only decides which socket dispatch is delivered to.
+`nodeId` is appended as a query parameter (`?nodeId=`) on every connect, including reconnects. It is a routing label stamped on the socket at upgrade, not an auth principal: the relay authorizes the room from the token, and within that room `nodeId` only decides which socket the relay routes a frame to (a presence push, or a relay-channel byte chunk).
 
 `/owners/:ownerId/rooms/:room` is the single cloud sync route shape (personal: `:ownerId` is the user id; shared: `:ownerId === 'shared'`). Browser apps and the workspace daemon both build their URL with `roomWsUrl`.
 
@@ -282,4 +249,4 @@ cycleController    aborts on reconnect(); kills the current iteration only
 
 ## Mental model in one paragraph
 
-`openCollaboration(ydoc, config)` is the one collaboration primitive: it opens a single WebSocket to the relay, runs the Yjs binary sync protocol, publishes its own action manifest at connect via `presence_publish`, mirrors the relay's server-owned presence channel into `peers` (including each peer's manifest), and runs inbound dispatch frames against the local `actions` registry. Cross-node calls go out through `dispatch(...)`, which rides the same socket as text frames and answers with a typed `Result<unknown, DispatchError>`. The relay is a dumb pipe: it merges Yjs updates (eventually consistent CRDT semantics, no admission control), tracks the live connections Map (source of truth for who is here), and forwards dispatch text frames (it never executes them). Presence is the relay's `connections` Map, not Yjs Awareness; dispatch is in-band text on the sync socket, not HTTP. Content docs use the same primitive with `actions: {}`.
+`openCollaboration(ydoc, config)` is the one collaboration primitive: it opens a single WebSocket to the relay, runs the Yjs binary sync protocol, publishes its own action manifest at connect via `presence_publish`, mirrors the relay's server-owned presence channel into `peers` (including each peer's manifest and exposed route names), and exposes a raw `textPort` that the relay-channel floor rides for blind cross-device MCP. The relay is a dumb pipe: it merges Yjs updates (eventually consistent CRDT semantics, no admission control), tracks the live connections Map (source of truth for who is here), and forwards relay-channel byte frames without parsing them. Presence is the relay's `connections` Map, not Yjs Awareness. Cross-device tool calls ride the relay-channel floor as MCP (ADR-0073), not an in-room RPC. Content docs use the same primitive with `actions: {}`.

@@ -26,16 +26,11 @@
  *   [ok] Project selection through `-C <p>`.
  *        Covered by the lifecycle tests that start, query, log, and stop the
  *        fixture from a resolved project directory.
- *   [ok] Invariant 6: `run --peer` wait cap + hint.
- *        Covered by `run-peer-errors.test.ts`.
- *   [gap] Cross-peer `run --peer` against a real warm peer
- *        (steps 5-7 of the brief's pseudocode). Infra gap. This requires
- *        a y-websocket-compatible fake relay; none exists in `packages/sync/`
- *        or `packages/cli/`, and writing one is a separate spec
- *        (`specs/20260427T000000-execute-cli-up-long-lived-peer.md`
- *        § "Wave 8 isn't a commit"). The lifecycle tests below stand in for
- *        that coverage, exercising every CLI verb against a fixture with fake
- *        peer attachments.
+ *   [n/a] Cross-device `run --peer` was refused and deleted (ADR-0078): cross-
+ *        device capability is now explicitly-exposed MCP routes over the relay
+ *        floor (`epicenter tools` / `call`), outside this daemon-lifecycle suite.
+ *        The lifecycle tests below exercise every surviving CLI verb against a
+ *        fixture with fake peer attachments.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -73,9 +68,9 @@ function makeEnv(): EnvOverrides {
 	// lifecycle tests assert socket / metadata / IPC behavior, not cross-device;
 	// the demo fixture's stubbed collaboration already supplies the peers
 	// snapshot. A signed-in daemon would open the account room and the device
-	// gateway, and the gateway now runs the real `n0` transport (which reaches
-	// n0's public relays) - networking that has no place in a hermetic suite.
-	// Real signed-in-binary n0 coverage lives in the manual two-machine smoke.
+	// gateway over the relay floor (the per-user authenticated relay), networking
+	// that has no place in a hermetic suite. Real signed-in-binary relay-floor
+	// coverage lives in the manual two-machine smoke.
 	return {
 		home,
 		runtimeDir,

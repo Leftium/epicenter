@@ -47,7 +47,7 @@ The daemon uses `resolveDaemonNodeId(epicenterRoot)`, which persists the id to `
 
 ### 1. Relay Routing
 
-The `nodeId` is stamped on the WebSocket upgrade URL as `?nodeId=` (built into the URL passed to `openCollaboration`, typically via `roomWsUrl(...)`). The relay binds the id to the socket at upgrade and stores it on the socket attachment for the lifetime of the connection; there is no round-trip validation. This bound id is the address that `dispatch({ to })` routes to. A WebSocket upgrade without a `nodeId` is rejected at the route boundary, so a connection can never become a presence-ghost (visible in presence but unreachable by dispatch).
+The `nodeId` is stamped on the WebSocket upgrade URL as `?nodeId=` (built into the URL passed to `openCollaboration`, typically via `roomWsUrl(...)`). The relay binds the id to the socket at upgrade and stores it on the socket attachment for the lifetime of the connection; there is no round-trip validation. This bound id is the address the relay routes by: it picks the target socket by `nodeId` when it forwards a frame (presence or a relay-channel byte chunk) to this node. A WebSocket upgrade without a `nodeId` is rejected at the route boundary, so a connection can never become a presence-ghost (visible in presence but unreachable by relay routing).
 
 ### 2. Presence
 
@@ -80,5 +80,4 @@ Because the daemon derives `clientID` from the install-stable `nodeId`, the `cli
 ## Related Documentation
 
 - [Network Topology](./network-topology.md): node types and connections
-- [Action Dispatch](./action-dispatch.md): cross-node action invocation
 - [Security](./security.md): network security model

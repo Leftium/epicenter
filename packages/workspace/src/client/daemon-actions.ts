@@ -24,17 +24,10 @@ type DaemonSuccessOutput<TOutput> =
 		? TData
 		: Awaited<TOutput>;
 
-/**
- * The facade never sends a `peer` target, so by construction the daemon can
- * only answer with the local-run error variants; the peer variants
- * (`PeerNotFound`, `RemoteCallFailed`) are excluded from the surface.
- */
-type LocalRunError = Extract<RunError, { name: 'UsageError' | 'RuntimeError' }>;
-
 type WrapDaemonAction<F> = F extends (...args: infer Args) => infer R
 	? (
 			...args: WithDaemonOptions<Args>
-		) => Promise<Result<DaemonSuccessOutput<R>, LocalRunError | DaemonError>>
+		) => Promise<Result<DaemonSuccessOutput<R>, RunError | DaemonError>>
 	: never;
 
 /**

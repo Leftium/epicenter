@@ -18,10 +18,7 @@ export {
 	WorkspaceAppError,
 	type WorkspaceAuthClient,
 } from './config/open-epicenter-root.js';
-export {
-	type PeerSyncStatus,
-	RunError,
-} from './daemon/action-errors.js';
+export { RunError } from './daemon/action-errors.js';
 export type { DaemonListSnapshot } from './daemon/app.js';
 export {
 	CallRequest,

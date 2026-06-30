@@ -7,8 +7,7 @@
  *
  *   /peers  ->  collaboration.peers.list()
  *   /list   ->  mount label + bare action manifest
- *   /run    ->  invokeAction(...) locally, or collab.dispatch(...)
- *               on a peer when `peer` is present
+ *   /run    ->  invokeAction(...) against this daemon's registry
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -49,11 +48,9 @@ import type {
  *   2. Compile-time inference for the hand-rolled client; both sides import
  *      the exact same shape.
  *
- * `peer` selects the execution target: absent runs the action on this
- * daemon, present dispatches it to `peer.to`. Grouping the peer fields into
- * one optional object makes the co-occurrence invariant structural: a
- * `waitMs` (peer RPC deadline; the daemon owns its default) cannot exist
- * without a peer target.
+ * A run always targets this daemon's own action registry. Reaching another
+ * device's actions is an explicitly-exposed MCP route over the relay floor
+ * (`/tools`, `/call`), not a `/run` field.
  *
  * Naming follows arktype's idiom (one PascalCase name declares both the
  * value and the type).
@@ -61,20 +58,16 @@ import type {
 export const RunRequest = type({
 	actionPath: 'string',
 	input: 'unknown',
-	'peer?': {
-		to: 'string',
-		'waitMs?': 'number',
-	},
 });
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per live peer node.
+ * Row shape returned by `/peers`. One row per live peer node: who is editing
+ * this workspace room right now.
  *
- * `nodeId` is the install-stable, client-claimed identity and the address
- * used by `collab.dispatch({ to })`. There is no per-socket `connectionId`
- * or server-stamped identity on the wire. The relay routes by `nodeId`
- * inside the already authorized sync room.
+ * `nodeId` is the install-stable, client-claimed identity. There is no
+ * per-socket `connectionId` or server-stamped identity on the wire. The relay
+ * routes by `nodeId` inside the already authorized sync room.
  */
 export const PeerSnapshot = type({
 	nodeId: 'string',

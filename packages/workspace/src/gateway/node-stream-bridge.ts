@@ -8,10 +8,8 @@
  * only reason a cast exists; naming it here keeps the seam's call sites clean and
  * gives the interop a single documented place to live.
  *
- * Two callers share it: a route TARGET ({@link ./route-table.openRouteTarget}, a
- * spawn child's stdio or a service socket) and the consuming FORWARD ({@link
- * ./service-forward.createServiceForward}, an inbound localhost socket). Both
- * adapt a node stream to the {@link ../peer-transport.ByteChannel} the relay
+ * The route TARGET ({@link ./route-table.openRouteTarget}) uses it to adapt a
+ * spawn child's stdio to the {@link ../peer-transport.ByteChannel} the relay
  * channel rides. NODE-ONLY.
  */
 

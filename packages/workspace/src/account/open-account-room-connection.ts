@@ -67,20 +67,12 @@ export type AccountRoomConnectionConfig = {
 	 */
 	clientId?: number;
 	/**
-	 * The relay-exposed SPAWN (MCP) route names this device serves, advertised in
+	 * The relay-exposed (MCP) route names this device serves, advertised in
 	 * account-room presence so the user's other devices auto-mount them as tool
-	 * catalogs (floor discovery). The daemon passes its opened spawn routes; a
-	 * browser is a pure consumer and omits it.
+	 * catalogs (floor discovery). The daemon passes its opened routes; a browser is
+	 * a pure consumer and omits it.
 	 */
 	exposedRoutes?: string[];
-	/**
-	 * The relay-exposed SERVICE route names this device serves, advertised in
-	 * account-room presence so the user's other devices can forward them (floor
-	 * discovery). Kept separate from {@link exposedRoutes} so an MCP auto-mount
-	 * never mis-dials a service route. The daemon passes its opened service routes;
-	 * a browser omits it.
-	 */
-	exposedServices?: string[];
 };
 
 /**
@@ -137,7 +129,6 @@ export function openAccountRoomConnection(
 		onReconnectSignal,
 		clientId,
 		exposedRoutes,
-		exposedServices,
 	} = config;
 
 	const ydoc = new Y.Doc({ guid: RESERVED_ACCOUNT_ROOM_GUID });
@@ -167,10 +158,9 @@ export function openAccountRoomConnection(
 			// and a server-owned presence surface, not a dispatch surface.
 			actions: {},
 			// Advertise this device's relay-exposed routes so the user's other
-			// devices can auto-mount them (spawn) or forward them (service). A
-			// browser passes nothing here.
+			// devices can auto-mount them as tool catalogs. A browser passes nothing
+			// here.
 			...(exposedRoutes !== undefined && { exposedRoutes }),
-			...(exposedServices !== undefined && { exposedServices }),
 		});
 
 		return {

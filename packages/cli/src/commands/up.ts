@@ -19,11 +19,9 @@ import {
 	resolveMachineAuthClient,
 } from '@epicenter/auth/node';
 import type { StartedMount } from '@epicenter/workspace/daemon';
-import { asNodeId } from '@epicenter/workspace';
 import {
 	claimDaemonLease,
 	createRelayChannelTransport,
-	createServiceForward,
 	type DaemonMetadata,
 	type DaemonServedDeviceGateway,
 	DEFAULT_DEVICE_ROUTES,
@@ -33,7 +31,6 @@ import {
 	openAccountRoom,
 	openEpicenterRoot,
 	openRelayAcceptor,
-	type RouteTable,
 	StartupError,
 	startDaemonServer,
 	unlinkMetadata,
@@ -41,7 +38,6 @@ import {
 	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { asRouteName } from '@epicenter/workspace/relay-channel';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
@@ -58,66 +54,6 @@ const CLI_VERSION = packageJson.version;
  */
 function logSyncStatus(message: string): void {
 	process.stderr.write(`${message}\n`);
-}
-
-/** A wire-safe route name (matched literally by the remote acceptor and on the wire). */
-const RELAY_ROUTE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
-/**
- * Parse one `--relay-service <name>=<port>` flag value into a service-route spec.
- * Loopback is the design (the daemon dials `127.0.0.1:<port>`; the cross-device
- * hop is the relay floor, so the service box runs the daemon), so the grammar
- * carries no host: `<host>:<port>` is the seam to add the day a non-co-located
- * producer exists. Returns the offending reason on a malformed value; the handler
- * fails fast on it so a typo never starts a daemon with a route it cannot serve.
- */
-export function parseRelayServiceFlag(
-	spec: string,
-): Result<{ name: string; port: number }, string> {
-	const separator = spec.indexOf('=');
-	if (separator === -1) return Err(`expected "<name>=<port>" (got "${spec}")`);
-	const name = spec.slice(0, separator);
-	const portText = spec.slice(separator + 1);
-	if (!RELAY_ROUTE_NAME_PATTERN.test(name)) {
-		return Err(
-			`invalid route name "${name}": use letters, numbers, "_" or "-", starting with a letter or number`,
-		);
-	}
-	if (!/^\d+$/.test(portText)) {
-		return Err(`invalid port "${portText}" for route "${name}": expected digits`);
-	}
-	const port = Number(portText);
-	if (port < 1 || port > 65535) {
-		return Err(`port ${port} for route "${name}" is out of range (1-65535)`);
-	}
-	return Ok({ name, port });
-}
-
-/**
- * Parse one `--relay-forward <route>@<nodeId>` flag value into a forward spec: the
- * named SERVICE route on the target device this daemon bridges to a localhost port.
- * The target nodeId is read off the producing device's `daemon up` banner, the same
- * way `epicenter call <nodeId> ...` names a device. Returns the offending reason on
- * a malformed value; the handler fails fast on it.
- */
-export function parseRelayForwardFlag(
-	spec: string,
-): Result<{ route: string; target: string }, string> {
-	const separator = spec.indexOf('@');
-	if (separator === -1) {
-		return Err(`expected "<route>@<nodeId>" (got "${spec}")`);
-	}
-	const route = spec.slice(0, separator);
-	const target = spec.slice(separator + 1);
-	if (!RELAY_ROUTE_NAME_PATTERN.test(route)) {
-		return Err(
-			`invalid route name "${route}": use letters, numbers, "_" or "-", starting with a letter or number`,
-		);
-	}
-	if (target.length === 0) {
-		return Err(`missing target nodeId after "@" in "${spec}"`);
-	}
-	return Ok({ route, target });
 }
 
 type UpOptions = {
@@ -147,23 +83,6 @@ type UpOptions = {
 	 * smoke or by a self-hoster who runs their own relay.
 	 */
 	relayExpose?: string[];
-	/**
-	 * Local HTTP services to expose over the relay floor as service routes, each
-	 * `{ name, port }`. Declaring one IS the opt-in (it is exposed straightaway),
-	 * and the daemon dials it on loopback (`127.0.0.1:<port>`): the cross-device hop
-	 * is the relay floor, so the service box runs the daemon. The handler parses the
-	 * `--relay-service <name>=<port>` flag into these via {@link parseRelayServiceFlag}.
-	 */
-	relayService?: { name: string; port: number }[];
-	/**
-	 * Remote service routes to bridge to a localhost port, each `{ route, target }`:
-	 * this device reaches another device's service route as an ordinary
-	 * `Connection { baseUrl }` pointed at the forward's loopback port. The handler
-	 * parses the `--relay-forward <route>@<nodeId>` flag into these via
-	 * {@link parseRelayForwardFlag}. Only the consumer side runs these; opening one
-	 * needs a signed-in account room (a signed-out daemon logs a skip).
-	 */
-	relayForward?: { route: string; target: string }[];
 };
 
 /**
@@ -257,25 +176,14 @@ export async function runUp(
 	// floor. The default exposes nothing over the relay until a route opts in with
 	// `relay: 'exposed'`. Computed before the account room opens so the daemon can
 	// advertise its exposed routes in presence (floor discovery: the user's other
-	// devices read this and auto-mount spawn routes or forward service routes).
-	const exposedTable = options.relayExpose?.length
+	// devices read this and auto-mount the routes as tool catalogs).
+	const routes = options.relayExpose?.length
 		? withRelayExposed(DEFAULT_DEVICE_ROUTES, options.relayExpose)
 		: DEFAULT_DEVICE_ROUTES;
-	// Operator-declared service routes are exposed by the act of declaring them (the
-	// `--relay-service` flag IS the opt-in) and dial loopback only; they ride the
-	// floor as a second vocabulary (HTTP, reached through a localhost forward), not
-	// MCP. A name colliding with a default route replaces it (last wins).
-	const serviceRoutes: RouteTable = {};
-	for (const { name, port } of options.relayService ?? []) {
-		serviceRoutes[name] = { kind: 'service', service: { port }, relay: 'exposed' };
-	}
-	const routes: RouteTable = { ...exposedTable, ...serviceRoutes };
-	// Split the exposed routes by kind so presence advertises each vocabulary in its
-	// own bucket: spawn routes a peer auto-mounts as MCP, service routes a peer
-	// forwards. The split is what stops a consumer's MCP auto-mount from mis-dialing
-	// a service route as MCP.
-	const { spawn: exposedRoutes, service: exposedServices } =
-		exposedRoutesByKind(routes);
+	// The relay-exposed route names this daemon advertises in presence. The floor
+	// carries tool routes only (ADR-0078), so every exposed route is an MCP server a
+	// peer auto-mounts.
+	const { spawn: exposedRoutes } = exposedRoutesByKind(routes);
 
 	// Open the per-person account room alongside the mount: it holds the relay
 	// floor's connection (its live presence and the channel port), not per-room
@@ -286,8 +194,7 @@ export async function runUp(
 	// below, so on LIFO teardown it disposes AFTER the socket closes: no in-flight
 	// `/relay-peers` read can race a torn-down connection.
 	const { data: accountRoom, error: accountRoomError } = await tryAsync({
-		try: () =>
-			openAccountRoom({ epicenterRoot, auth, exposedRoutes, exposedServices }),
+		try: () => openAccountRoom({ epicenterRoot, auth, exposedRoutes }),
 		catch: (cause) => Err(extractErrorMessage(cause)),
 	});
 	if (accountRoomError !== null) {
@@ -321,32 +228,7 @@ export async function runUp(
 		stack.defer(() => relayAcceptor.close());
 
 		logSyncStatus(
-			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed MCP: ${exposedRoutes.join(', ') || 'none'}; exposed services: ${exposedServices.join(', ') || 'none'}]`,
-		);
-
-		// Open a localhost forward for each `--relay-forward <route>@<device>`: this
-		// device reaches the target's SERVICE route as an ordinary
-		// `Connection { baseUrl }` at the forward's loopback port. The forward binds
-		// its listener now and dials the remote route lazily per inbound connection,
-		// so a target that is offline at startup does not fail the bind; the dial (and
-		// a closed client connection) only fails once something connects. Each is
-		// deferred so LIFO teardown drops the forwards before the dial transport.
-		for (const { route, target } of options.relayForward ?? []) {
-			const forward = await createServiceForward({
-				transport: dialTransport,
-				target: asNodeId(target),
-				route: asRouteName(route),
-			});
-			stack.defer(() => forward.close());
-			logSyncStatus(
-				`service forward: ${route}@${target} -> http://127.0.0.1:${forward.port}`,
-			);
-		}
-	} else if (options.relayForward?.length) {
-		// A forward rides the dial transport the account room holds; with no account
-		// room (signed out, or it failed to open) there is nothing to forward over.
-		logSyncStatus(
-			'service forward: skipped (no account room; sign in, then restart `epicenter daemon up`)',
+			`relay floor: online [routes: ${Object.keys(routes).join(', ') || 'none'}; exposed MCP: ${exposedRoutes.join(', ') || 'none'}]`,
 		);
 	}
 
@@ -408,18 +290,6 @@ export const upCommand = cmd({
 			description:
 				'Route names to expose over the relay floor (default refused); accepts the trusted-relay ceiling',
 		},
-		'relay-service': {
-			type: 'array',
-			string: true,
-			description:
-				'Expose a local HTTP service over the relay floor as "<name>=<port>" (loopback; declaring it is the opt-in)',
-		},
-		'relay-forward': {
-			type: 'array',
-			string: true,
-			description:
-				'Bridge a remote device\'s service route to a localhost port as "<route>@<nodeId>"',
-		},
 	},
 	handler: async (argv) => {
 		const options: UpOptions = {
@@ -429,34 +299,6 @@ export const upCommand = cmd({
 				relayExpose: argv['relay-expose'] as string[],
 			}),
 		};
-
-		const relayServiceSpecs = argv['relay-service'] as string[] | undefined;
-		if (relayServiceSpecs?.length) {
-			const parsed: { name: string; port: number }[] = [];
-			for (const spec of relayServiceSpecs) {
-				const { data, error } = parseRelayServiceFlag(spec);
-				if (error !== null) {
-					process.stderr.write(`--relay-service: ${error}\n`);
-					process.exit(1);
-				}
-				parsed.push(data);
-			}
-			options.relayService = parsed;
-		}
-
-		const relayForwardSpecs = argv['relay-forward'] as string[] | undefined;
-		if (relayForwardSpecs?.length) {
-			const parsed: { route: string; target: string }[] = [];
-			for (const spec of relayForwardSpecs) {
-				const { data, error } = parseRelayForwardFlag(spec);
-				if (error !== null) {
-					process.stderr.write(`--relay-forward: ${error}\n`);
-					process.exit(1);
-				}
-				parsed.push(data);
-			}
-			options.relayForward = parsed;
-		}
 
 		const { data: handle, error } = await runUp(options);
 		if (error) {

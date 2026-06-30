@@ -10,9 +10,10 @@
  * ({@link ./relay-channel/transport.createRelayChannelTransport}): the universal
  * floor, a channel multiplexed on the per-user account-room WebSocket, so it
  * works in any browser with no app, server-mediated over the device's existing
- * sync connection. The seam stays an interface so a second byte protocol (an
- * HTTP-over-channel services transport) can ride it without the consumer
- * changing.
+ * sync connection. The seam stays an interface so the MCP `ToolCatalog` consumer
+ * (`agent/mcp-gateway-catalog.ts`) never imports the relay-channel implementation
+ * or learns how a route is reached, only that the bytes arrive: it is the
+ * browser-safe boundary between the tool layer and the transport.
  *
  * The seam is the {@link ByteChannel}, intentionally runtime-portable (Web
  * Streams, not node streams) so the same seam serves a browser and a node daemon.

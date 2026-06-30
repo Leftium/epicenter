@@ -9,7 +9,6 @@
  */
 
 import { spawn } from 'node:child_process';
-import { connect } from 'node:net';
 import type { ByteChannel, RouteTarget } from '../peer-transport.js';
 import {
 	nodeReadableToWeb,
@@ -64,29 +63,15 @@ export type SpawnRoute = RouteRelayPolicy & {
 };
 
 /**
- * A service route: the gateway opens a TCP connection to a local service port
- * (e.g. a whisper box on `127.0.0.1:8000`) and dumb-pipes the inbound channel to
- * it, the same `ByteChannel` shape a spawn route produces from a child's stdio.
- * This is the second honest vocabulary on one transport: a spawn route carries
- * MCP, a service route carries whatever wire the local service speaks (HTTP for
- * `transcribe` / `speak` / own-box inference). The relay never parses either; it
- * forwards bytes BLIND (ADR-0073). The consuming side reaches it as an ordinary
- * `Connection { baseUrl }` pointed at a localhost forward the daemon owns (see
- * {@link ./service-forward.createServiceForward}).
+ * A route the gateway exposes. Today the only kind is a {@link SpawnRoute} (a
+ * stdio child speaking MCP): the relay floor carries tool routes and only tool
+ * routes (ADR-0078). Movable compute (inference) is a URL-addressed
+ * `Connection { baseUrl }` reached through the inference gateway, never a relay
+ * route, so there is no second kind to tunnel. The `kind: 'spawn'` discriminant
+ * stays on {@link SpawnRoute} as the named seam to add another kind the day one
+ * earns its keep.
  */
-export type ServiceRoute = RouteRelayPolicy & {
-	kind: 'service';
-	/** The local service port to dumb-pipe the channel to (loopback only). */
-	service: { port: number };
-};
-
-/**
- * A route the gateway exposes, discriminated by `kind`: a {@link SpawnRoute} (a
- * stdio child, MCP today) or a {@link ServiceRoute} (a TCP service, HTTP today).
- * Both ride the same relay floor and the same {@link ByteChannel} seam; the kind
- * only decides what local target {@link openRouteTarget} opens.
- */
-export type Route = SpawnRoute | ServiceRoute;
+export type Route = SpawnRoute;
 
 /** A named set of routes; the keys are route names. */
 export type RouteTable = Record<string, Route>;
@@ -97,27 +82,21 @@ export function routeRelayExposed(route: Route): boolean {
 }
 
 /**
- * The relay-exposed route names this device advertises in presence, partitioned
- * by kind. The split is the floor's discovery contract: a `spawn` route is an MCP
- * server a peer auto-mounts as a tool catalog, while a `service` route is an HTTP
- * service a peer reaches through a localhost forward (a `Connection { baseUrl }`),
- * never an MCP session. Carrying the two in separate buckets is what keeps a
- * consumer's MCP auto-mount from mis-dialing a service route as MCP: it reads
- * `spawn` only, and a forward consumer reads `service`. A refused route appears in
- * neither (it is not reachable over the floor at all).
+ * The relay-exposed route names this device advertises in presence, under the
+ * `spawn` bucket. Every relay route is an MCP server a peer auto-mounts as a tool
+ * catalog (the floor carries tool routes only, ADR-0078), so there is one bucket
+ * today; a refused route appears in none (it is not reachable over the floor at
+ * all). The `{ spawn }` shape keeps presence discovery stable as the named seam to
+ * carry a second kind the day {@link Route} grows one.
  */
 export function exposedRoutesByKind(routes: RouteTable): {
 	spawn: string[];
-	service: string[];
 } {
 	const spawn: string[] = [];
-	const service: string[] = [];
 	for (const [name, route] of Object.entries(routes)) {
-		if (!routeRelayExposed(route)) continue;
-		if (route.kind === 'service') service.push(name);
-		else spawn.push(name);
+		if (routeRelayExposed(route)) spawn.push(name);
 	}
-	return { spawn, service };
+	return { spawn };
 }
 
 /**
@@ -141,11 +120,10 @@ export function withRelayExposed(
 /**
  * Open the local target for a route and return its {@link ByteChannel}. The
  * relay acceptor dumb-pipes the inbound relay channel to this channel and back.
- * The `kind` discriminant picks the local target; both arms produce the same
- * {@link ByteChannel} seam, so the acceptor never learns which it got.
+ * One kind today ({@link SpawnRoute}); the acceptor never learns the kind, it
+ * only pipes the {@link ByteChannel} seam this produces.
  */
 export function openRouteTarget(route: Route): RouteTarget {
-	if (route.kind === 'service') return openServiceTarget(route.service);
 	return openSpawnTarget(route);
 }
 
@@ -172,26 +150,5 @@ function openSpawnTarget(route: SpawnRoute): RouteTarget {
 				// already exited
 			}
 		},
-	};
-}
-
-/** The service target dials loopback only; the local service must bind `127.0.0.1`. */
-const SERVICE_HOST = '127.0.0.1';
-
-/**
- * Open a TCP connection to the local service and adapt its duplex socket to a
- * {@link ByteChannel}. A `net.Socket` is one duplex, so the same socket is both
- * the source (its readable half) and the sink (its writable half); `close`
- * destroys it. The relay channel's bytes pipe straight to the service and back,
- * never parsed (the service's HTTP is its own concern, not the gateway's).
- */
-function openServiceTarget(service: { port: number }): RouteTarget {
-	const socket = connect({ host: SERVICE_HOST, port: service.port });
-	return {
-		channel: {
-			source: nodeReadableToWeb(socket),
-			sink: nodeWritableToWeb(socket),
-		},
-		close: () => socket.destroy(),
 	};
 }

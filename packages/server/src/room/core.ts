@@ -281,7 +281,6 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				actions: attachment.actions,
 				agentId: attachment.agentId,
 				exposedRoutes: attachment.exposedRoutes,
-				exposedServices: attachment.exposedServices,
 			});
 		}
 		return Array.from(seen.values()).sort((a, b) =>
@@ -502,7 +501,6 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			actions: frame.actions,
 			agentId: frame.agentId,
 			exposedRoutes: frame.exposedRoutes,
-			exposedServices: frame.exposedServices,
 		};
 		connections.set(socket, updated);
 		socket.serializeAttachment?.(updated);

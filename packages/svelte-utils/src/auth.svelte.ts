@@ -25,7 +25,9 @@ export { createSession, type SignedIn } from './session.svelte.js';
  * shape is preserved.
  */
 function reactiveAuthClient<T extends AuthClient>(auth: T): T {
-	const subscribeState = createSubscriber((update) => auth.onStateChange(update));
+	const subscribeState = createSubscriber((update) =>
+		auth.onStateChange(update),
+	);
 	const reactive = {
 		...auth,
 		get state() {

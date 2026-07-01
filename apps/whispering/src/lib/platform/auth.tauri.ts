@@ -1,8 +1,8 @@
 import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createTauriDeepLinkOAuthLauncher } from '@epicenter/auth/oauth-launchers/tauri';
 import {
-	EPICENTER_FUJI_OAUTH_CLIENT_ID,
-	EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
+	EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
+	EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI,
 } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAppAuthClient } from '@epicenter/svelte/auth';
@@ -14,16 +14,16 @@ import type { PlatformAuth } from './types';
 // constants, never the instance base URL, because OAuth runs only against the
 // hosted star.
 export const auth: PlatformAuth = createAppAuthClient(instanceSetting.read(), {
-	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
+	clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
 	persistedAuthStorage: createWebStoragePersistedAuthStorage({
-		key: 'fuji.auth.persisted',
+		key: 'whispering.auth.persisted',
 		storage: window.localStorage,
 	}),
 	launcher: createTauriDeepLinkOAuthLauncher({
 		issuer: `${APP_URLS.API}/auth`,
-		clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
+		clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
 		resource: APP_URLS.API,
-		redirectUri: EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
+		redirectUri: EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI,
 		// Deep-link callbacks can cold-start the app; localStorage (not
 		// sessionStorage) keeps the PKCE transaction alive across the launch.
 		storage: window.localStorage,

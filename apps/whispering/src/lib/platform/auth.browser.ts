@@ -1,0 +1,29 @@
+import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
+import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
+import { EPICENTER_WHISPERING_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
+import { APP_URLS } from '@epicenter/constants/vite';
+import { createAppAuthClient } from '@epicenter/svelte/auth';
+import { instanceSetting } from '$lib/instance';
+import type { PlatformAuth } from './types';
+
+// One choke point: the persisted instance picks hosted OAuth vs a self-host
+// token (ADR-0071). The launcher is built once from the hosted constants, never
+// the instance base URL, because OAuth runs only against the hosted star.
+export const auth: PlatformAuth = createAppAuthClient(instanceSetting.read(), {
+	clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
+	persistedAuthStorage: createWebStoragePersistedAuthStorage({
+		key: 'whispering.auth.persisted',
+		storage: window.localStorage,
+	}),
+	launcher: createBrowserOAuthLauncher({
+		issuer: `${APP_URLS.API}/auth`,
+		clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
+		resource: APP_URLS.API,
+		redirectUri: `${window.location.origin}/auth/callback`,
+		storage: window.sessionStorage,
+	}),
+});
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => auth[Symbol.dispose]());
+}

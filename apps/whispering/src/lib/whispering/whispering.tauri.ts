@@ -1,38 +1,10 @@
 /**
- * Tauri runtime client for Whispering.
- *
- * Builds the workspace, attaches IndexedDB persistence and same-device
- * broadcast sync, and registers the shared recordings export action (which
- * resolves to a native Save dialog through the `#platform/download` seam).
+ * Tauri runtime client for Whispering. Consumed everywhere through the
+ * `#platform/whispering` seam; see `whispering.active.ts` for what
+ * `openWhispering` builds. The desktop default transcription service is
+ * the on-device Parakeet model.
  */
 
-import {
-	attachBroadcastChannel,
-	attachIndexedDb,
-	defineActions,
-	satisfiesWorkspace,
-} from '@epicenter/workspace';
-import { createWhispering } from '$lib/workspace';
-import { defineRecordingsMarkdownExport } from './recordings-markdown-export';
+import { openWhispering } from './whispering.active';
 
-export function openWhispering() {
-	const workspace = createWhispering({
-		defaultTranscriptionService: 'parakeet',
-	});
-
-	const idb = attachIndexedDb(workspace.ydoc);
-	attachBroadcastChannel(workspace.ydoc);
-
-	return satisfiesWorkspace({
-		...workspace,
-		actions: defineActions({
-			...workspace.actions,
-			recordings_export_markdown: defineRecordingsMarkdownExport(
-				workspace.tables.recordings,
-			),
-		}),
-		whenReady: idb.whenLoaded,
-	});
-}
-
-export const whispering = openWhispering();
+export const whispering = openWhispering('parakeet');

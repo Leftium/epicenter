@@ -253,6 +253,7 @@ pub async fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(Mutex::new(Recorder::new()))
         // Registry of in-flight model downloads; `cancel_download` aborts them.
         .manage(DownloadManager::default())
@@ -282,6 +283,15 @@ pub async fn run() {
             // (hidden); the frontend shows it when recording starts.
             #[cfg(target_os = "macos")]
             overlay::create_recording_overlay(app.handle());
+
+            // Register the `epicenter-whispering://` scheme at runtime on
+            // Windows and Linux (macOS registers it from the bundle plist).
+            // Lets the OAuth sign-in deep-link callback reach the running app.
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().register_all()?;
+            }
 
             Ok(())
         });

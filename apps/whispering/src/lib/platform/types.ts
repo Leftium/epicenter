@@ -10,6 +10,7 @@
  * ships under the web (default) resolution.
  */
 
+import type { createAppAuthClient } from '@epicenter/svelte/auth';
 import type { Command } from '$lib/commands';
 import type { KeyBinding } from '$lib/tauri/commands';
 
@@ -70,6 +71,13 @@ export type Shortcuts = {
 		binding: KeyBinding,
 	): ShortcutConflict | null;
 };
+
+/**
+ * Contract for `#platform/auth`. Identical on web and Tauri: both build the
+ * same Epicenter OAuth client, differing only in the launcher (a redirect on
+ * web, a deep-link round-trip on Tauri).
+ */
+export type PlatformAuth = ReturnType<typeof createAppAuthClient>;
 
 /**
  * Contract for `#platform/os`: host-OS identity, resolved once per build target.

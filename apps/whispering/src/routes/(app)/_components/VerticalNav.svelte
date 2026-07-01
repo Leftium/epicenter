@@ -8,6 +8,10 @@
 	import { GithubIcon } from '$lib/components/icons';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
+	import { auth } from '#platform/auth';
+	import { whispering } from '#platform/whispering';
+	import { AccountPopover } from '@epicenter/app-shell/account-popover';
+	import { recordingActive } from '$lib/state/recording-active.svelte';
 
 	const sidebar = useSidebar();
 </script>
@@ -68,6 +72,18 @@
 
 	<Sidebar.Footer>
 		<Sidebar.Menu>
+			<!-- Account / sync (route-independent: visible on the bare home page) -->
+			<Sidebar.MenuItem>
+				<AccountPopover
+					{auth}
+					collaboration={whispering.collaboration}
+					syncNoun="recordings"
+					disabledReason={recordingActive.current
+						? 'Stop recording to change your account'
+						: undefined}
+				/>
+			</Sidebar.MenuItem>
+
 			<!-- Toggle dark mode -->
 			<Sidebar.MenuItem>
 				<Sidebar.MenuButton>

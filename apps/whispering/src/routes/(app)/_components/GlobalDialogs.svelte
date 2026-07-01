@@ -4,6 +4,7 @@
 	import MacosAccessibilityGuideDialog from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
+	import SignInMigrationDialog from '$lib/migration/SignInMigrationDialog.svelte';
 </script>
 
 <!--
@@ -16,6 +17,7 @@
 <MacosAccessibilityGuideDialog />
 <MoreDetailsDialog />
 <UpdateDialog />
+<SignInMigrationDialog />
 
 {#if import.meta.env.DEV}
 	<DevAccessibilityToggle />

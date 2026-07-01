@@ -393,6 +393,7 @@ type CreateWhisperingOptions = {
 	defaultTranscriptionService: TranscriptionServiceId;
 };
 
+/** Build the Whispering workspace bundle: `{ ydoc, tables, kv, actions, settings }`. */
 export function createWhispering({
 	defaultTranscriptionService,
 }: CreateWhisperingOptions) {

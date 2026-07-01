@@ -4,7 +4,7 @@
 **Status**: Draft
 **Owner**: Braden
 **Branch**: progressive-sign-in (waves branch off main as they start)
-**Relates**: [ADR-0087](../docs/adr/0087-sign-in-is-an-enhancement-never-a-door.md) (the decision this spec executes), [ADR-0071](../docs/adr/0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md), [ADR-0075](../docs/adr/0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md), [ADR-0079](../docs/adr/0079-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md), `specs/20260627T221642-whispering-optional-unified-auth.md` (the vault session that keeps `createSession` alive)
+**Relates**: [ADR-0088](../docs/adr/0088-sign-in-is-an-enhancement-never-a-door.md) (the decision this spec executes), [ADR-0071](../docs/adr/0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md), [ADR-0075](../docs/adr/0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md), [ADR-0079](../docs/adr/0079-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md), `specs/20260627T221642-whispering-optional-unified-auth.md` (the vault session that keeps `createSession` alive)
 **Prompts**: `specs/20260701T151347-progressive-sign-in-collapse.prompt.md` (per-wave executor kickoffs, grill prompts, check-in protocol)
 
 ## One Sentence
@@ -153,6 +153,14 @@ small inline affordance instead of gating the app.
 as a concept (null workspace, `require*()`, redirect routes, two documented
 shapes).
 
+**Drift note (post `450f488854`, PR #2253)**: honeycrisp's workspace nested
+under `$lib/workspace/` and auth moved behind `#platform/auth`; the gate and
+Shape A session are unchanged, so the recipe holds. ADR-0087 (honeycrisp is
+the maintained notes product) stands; its Shape A auth-lifecycle clause is
+superseded by ADR-0088. ADR-0086 retires opensidian's chat and cross-device
+surfaces (superseded by the super app), which rescopes opensidian's
+conversion to minimal (see per-app judgment points).
+
 ### The break is compatibility-free
 
 - Gated apps never wrote unowned local data (the workspace did not exist
@@ -186,7 +194,7 @@ lifecycle), not deleted. Do not remove it in Wave 4.
 
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
-| Refuse app-level sign-in gates | 2 coherence | Delete all four gates | ADR-0087; the local-first product sentence. |
+| Refuse app-level sign-in gates | 2 coherence | Delete all four gates | ADR-0088; the local-first product sentence. |
 | One composition shape | 1 evidence | Whispering's boot-branch + reload | Shipped and live in `whispering.active.ts`; census confirms every keying invariant holds. |
 | Identity change handling | 1 evidence | `location.reload()`, never in-place doc swap | Whispering's Option A decision, re-verified: reload deletes hot-swap, rebinding, and reactive re-auth machinery. `reloadOnOwnerChange` keys on `ownerId`, so token expiry never reloads. |
 | Boot-branch helper home | 2 coherence | `@epicenter/svelte/auth` (`packages/svelte-utils/src/`) | Sibling of `createSession`; already imports `@epicenter/auth`; MIT `packages/workspace` cannot (license firewall). |
@@ -263,7 +271,7 @@ deleted):
 	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { honeycrisp } from '$lib/honeycrisp';
-	import { auth } from '$platform/auth';
+	import { auth } from '#platform/auth';
 	import { onMount } from 'svelte';
 	import { reloadOnOwnerChange } from '@epicenter/svelte/auth';
 
@@ -290,10 +298,10 @@ the gate no longer branches on auth at all.
 ```ts
 import { connectLocalFirst } from '@epicenter/svelte/auth';
 import { createNodeId } from '@epicenter/workspace';
-import { auth } from '$platform/auth';
-import { createHoneycrispDoc } from './workspace';  // the existing iso factory
+import { auth } from '#platform/auth';
+import { createHoneycrisp } from '$lib/workspace';  // the iso factory (package root export, ADR-0087)
 
-const workspace = createHoneycrispDoc();
+const workspace = createHoneycrisp();
 const { whenReady, collaboration } = connectLocalFirst({
 	auth,
 	ydoc: workspace.ydoc,
@@ -353,8 +361,12 @@ For each app, in this order, as standalone commits:
 
 Per-app judgment points (executor decides, PR body records):
 
-- **opensidian** (biggest sweep, ~20 files): cross-device tools and terminal
-  are signed-in-only; chat needs a configured connection or sign-in.
+- **opensidian** (biggest sweep, ~20 files, but MINIMAL conversion): ADR-0086
+  retired its chat and cross-device surfaces (the super app supersedes them),
+  so prefer deleting those surfaces over gating them, do not invest in
+  affordance polish, and keep the conversion to recipe steps 1-4 and 6-7. The
+  point of converting opensidian at all is unblocking Wave 4's
+  `SignedOutScreen` deletion while the app still has to typecheck.
 - **tab-manager**: keep the outer `{#await}` (async storage); the singleton
   is built after storage resolves, then everything else follows the recipe.
   `window.location.reload()` works in the sidepanel.
@@ -366,7 +378,7 @@ One wave = one PR = one merged unit before the next starts.
 
 ### Wave 0: decision records (this PR)
 
-- [x] **0.1** ADR-0087 recorded as Proposed.
+- [x] **0.1** ADR-0088 recorded as Proposed.
 - [x] **0.2** This spec + the companion prompt file.
 
 ### Wave 1: extract the kit from Whispering (refactor-only, zero behavior change)
@@ -405,7 +417,7 @@ One wave = one PR = one merged unit before the next starts.
 - [ ] **4.3** Rewrite the `workspace-app-composition` skill (both
       `.agents/skills/` and the `.claude/skills/` mirror) to one shape;
       delete Shape A / Shape B language.
-- [ ] **4.4** Flip ADR-0087 to Accepted; delete this spec and the prompt
+- [ ] **4.4** Flip ADR-0088 to Accepted; delete this spec and the prompt
       file; add the spec-history entry.
 - [ ] **4.5** Run `bun scripts/check-doc-hygiene.ts`.
 
@@ -433,14 +445,14 @@ rg -l "SignedOutScreen|connectLocalFirst" apps/api/ui   # empty: dashboard untou
 1. User migrated local rows (bare doc cleared), works signed in, signs out.
 2. Next boot opens the bare doc, which is empty.
 3. Expected: empty local app; owner data is invisible until re-sign-in;
-   nothing was deleted. This is doctrine (ADR-0087), not a bug.
+   nothing was deleted. This is doctrine (ADR-0088), not a bug.
 
 ### "Keep for now", forever
 
 1. User declines migration; local rows persist.
 2. Every signed-in boot re-offers the dialog (flag-free by design).
 3. Expected: acceptable; the data itself is the state. Do not add a
-   "don't ask again" flag without reopening ADR-0087's flag-free stance.
+   "don't ask again" flag without reopening ADR-0088's flag-free stance.
 
 ### reauth-required
 
@@ -494,7 +506,7 @@ rg -l "SignedOutScreen|connectLocalFirst" apps/api/ui   # empty: dashboard untou
 - [ ] Sign-out reloads to the local doc; owner replica remains on disk.
 - [ ] All Invariants greps pass; repo typecheck and test suites pass.
 - [ ] Whispering behavior is unchanged after Wave 1 (its own smoke passes).
-- [ ] ADR-0087 flipped to Accepted; this spec deleted; doc hygiene passes.
+- [ ] ADR-0088 flipped to Accepted; this spec deleted; doc hygiene passes.
 
 ## References
 

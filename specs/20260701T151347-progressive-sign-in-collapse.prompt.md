@@ -1,7 +1,7 @@
 # Progressive sign-in collapse: execution prompts
 
 Companion to `specs/20260701T151347-progressive-sign-in-collapse.md` (the
-canonical plan; if this file disagrees with the spec or ADR-0087, they win).
+canonical plan; if this file disagrees with the spec or ADR-0088, they win).
 Three sections: kickoff prompts for the executing agent, grill prompts to run
 against each finished wave, and the check-in protocol for the coordinating
 reviewer. Delete this file with the spec in Wave 4.
@@ -17,7 +17,7 @@ fresh branch off `main`. Fill `<...>` slots.
 
 ```txt
 Read specs/20260701T151347-progressive-sign-in-collapse.md and
-docs/adr/0087-sign-in-is-an-enhancement-never-a-door.md in full before
+docs/adr/0088-sign-in-is-an-enhancement-never-a-door.md in full before
 touching code. Load the skills: workspace-app-composition, svelte, auth,
 git, writing-voice.
 
@@ -43,7 +43,7 @@ Open a PR titled against main and list every judgment call in the body.
 ```txt
 Read specs/20260701T151347-progressive-sign-in-collapse.md (especially "The
 per-app conversion recipe" and the honeycrisp before/after call sites) and
-docs/adr/0087-sign-in-is-an-enhancement-never-a-door.md. Load the skills:
+docs/adr/0088-sign-in-is-an-enhancement-never-a-door.md. Load the skills:
 workspace-app-composition, svelte, sveltekit, auth, git, writing-voice.
 Wave 1 must already be merged; verify connectLocalFirst exists in
 @epicenter/svelte/auth before starting, and stop if it does not.
@@ -85,7 +85,7 @@ all be merged; verify with the Invariants block before starting.
 
 Execute Wave 4: delete SignedOutScreen, make AccountPopover.instanceConnect
 required, rewrite the workspace-app-composition skill (both .agents/skills
-and .claude/skills copies) to one composition shape, flip ADR-0087 to
+and .claude/skills copies) to one composition shape, flip ADR-0088 to
 Accepted, delete the spec and its .prompt.md companion, add the
 docs/spec-history.md entry, and run bun scripts/check-doc-hygiene.ts.
 Do NOT delete createSession (demoted, kept for the vault session).
@@ -127,7 +127,7 @@ per item.
 
 ```txt
 You are reviewing the conversion of apps/<app> from an auth-gated app to a
-local-first app per docs/adr/0087. The claim: the app is fully usable signed
+local-first app per docs/adr/0088. The claim: the app is fully usable signed
 out, and sign-in only adds sync. Attack:
 
 1. Boot signed out (mentally or by running it): trace the singleton from
@@ -158,7 +158,7 @@ passes it and the JSDoc no longer says optional; (3) the
 workspace-app-composition skill: no Shape A/Shape B language survives, the
 one documented shape matches what the five apps actually do, and both skill
 copies are identical; (4) createSession still exists and its JSDoc forbids
-owning a workspace lifecycle; (5) ADR-0087 is Accepted, the spec and prompt
+owning a workspace lifecycle; (5) ADR-0088 is Accepted, the spec and prompt
 files are gone, spec-history has the entry, and check-doc-hygiene passes.
 ```
 

@@ -1,4 +1,4 @@
-# 0087. Sign-in is an enhancement, never a door
+# 0088. Sign-in is an enhancement, never a door
 
 - **Status:** Proposed
 - **Date:** 2026-07-01

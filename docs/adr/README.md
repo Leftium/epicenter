@@ -155,5 +155,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0085](0085-a-box-is-a-role-an-addressable-endpoint-plays-not-a-node-type.md) | A box is a role an addressable endpoint plays, not a distinct node type | Accepted |
 | [0086](0086-no-live-consumer-for-network-reachable-capability-reach-opensidian-is-superseded-not-migrated.md) | There is no live consumer for network-reachable capability reach; opensidian's cross-device tools are superseded by the super app, not migrated | Accepted |
 | [0087](0087-honeycrisp-is-the-maintained-notes-product-from-one-isomorphic-workspace-surface.md) | Honeycrisp is the maintained notes product from one isomorphic workspace surface | Proposed |
+| [0088](0088-sign-in-is-an-enhancement-never-a-door.md) | Sign-in is an enhancement, never a door | Proposed |
 
 When you add an ADR, add its row here.

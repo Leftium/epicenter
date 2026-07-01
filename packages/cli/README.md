@@ -108,21 +108,21 @@ Error text goes to stderr; machine-readable output (`--format json|jsonl`, table
 `epicenter.config.ts` marks the Epicenter root and declares its mount. One folder is one app is one mount: the default export is a single `Mount`. App packages ship mount factories that return `Mount` values; `Mount.name` is the display label `epicenter list` prints as its header. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so the mount's visible markdown projection is a direct child folder.
 
 ```ts
-import { fuji } from "@epicenter/fuji/mount";
+import { honeycrisp } from "@epicenter/honeycrisp/mount";
 
-export default fuji();
+export default honeycrisp();
 ```
 
-The returned `Mount.name` is `fuji`, so `epicenter list` prints `fuji` as its header regardless of the Epicenter folder name. Actions are addressed by their bare key (`epicenter run entries_update`): the daemon serves one mount, so the key alone is unambiguous.
+The returned `Mount.name` is `honeycrisp`, so `epicenter list` prints `honeycrisp` as its header regardless of the Epicenter folder name. Actions are addressed by their bare key (`epicenter run folders_delete`): the daemon serves one mount, so the key alone is unambiguous.
 
 The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and the generated projection are direct children:
 
 ```
 repo/                      unreserved repo root
-└── fuji/                  Epicenter root (folder name is your choice)
+└── honeycrisp/             Epicenter root (folder name is your choice)
     ├── epicenter.config.ts   tracked, marks the Epicenter root
     ├── .epicenter/           ignored, machine state for this root
-    └── entries/              generated Markdown projection (one folder per table)
+    └── notes/                generated Markdown projection (one folder per table)
 ```
 
 Put `epicenter.config.ts` in a folder dedicated to one app. The marker is the config file, not the folder name. Run several apps by giving each its own folder, each its own root.
@@ -152,11 +152,11 @@ Use scripts for anything beyond one-shot CLI calls:
 
 ```ts
 import { connectDaemonActions } from "@epicenter/workspace/node";
-import type { FujiActions } from "@epicenter/fuji";
+import type { HoneycrispActions } from "@epicenter/honeycrisp";
 
-const fuji = await connectDaemonActions<FujiActions>();
+const honeycrisp = await connectDaemonActions<HoneycrispActions>();
 
-await fuji.entries_update({ id, tags: ["triaged"] });
+await honeycrisp.folders_delete({ folderId });
 ```
 
 Scripts get normal TypeScript control flow. The CLI stays small: list, run, peers, and daemon lifecycle.

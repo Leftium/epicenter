@@ -10,14 +10,14 @@ metadata:
 
 A workspace app is composed in layers: a pure isomorphic doc factory, one or
 more environment factories that bind it to a runtime (browser, Chrome
-extension, Tauri), a single side-effectful session singleton, and (for the two
+extension, Tauri), a single side-effectful session singleton, and (for
 multi-platform apps) a build-time platform DI seam. Daemon and script bindings
 do not live in the app package at all; they live per-project under
 `workspaces/<app>/` and are registered through `epicenter.config.ts`.
 
 Two shipped shapes; pick by whether the app gates UI on signed-in identity.
 
-**Shape A**: auth-gated SvelteKit web apps (honeycrisp, vocab, fuji). The app
+**Shape A**: auth-gated SvelteKit web apps (honeycrisp, vocab). The app
 is not a running thing until identity exists, so a `session` singleton owns the
 workspace lifecycle and UI lives under `(signed-in)` routes.
 
@@ -28,9 +28,9 @@ handle.
 ## File Layout
 
 Two layouts ship today. Single-platform apps keep the composition files flat at
-the package root; the two apps with a `src-tauri/` directory (fuji, whispering)
-nest the same files under `src/lib/workspace/` and add a `src/lib/platform/`
-seam.
+the package root; the multi-platform app with a `src-tauri/` directory
+(currently whispering) nests the same files under `src/lib/workspace/` and
+adds a `src/lib/platform/` seam.
 
 **Flat root** (honeycrisp, opensidian, vocab):
 
@@ -45,7 +45,7 @@ apps/<app>/
    `- platform/auth/         auth client construction
 ```
 
-**Nested under `src/lib/workspace/`** (fuji, whispering; both have `src-tauri/`):
+**Nested under `src/lib/workspace/`** (this is the general shape; has `src-tauri/`):
 
 ```txt
 apps/<app>/
@@ -60,8 +60,16 @@ apps/<app>/
    `- platform/              #platform/* impls (X.browser.ts / X.tauri.ts) + types.ts contract
 ```
 
-Package exports follow the file's actual owner. Every app exports the iso
-factory as `.` and the mount factory as `./mount`:
+Whispering, the only nested app today, does not match this file-for-file: it
+has no `mount.ts` (it is not daemon-mounted) and no `session.ts` (it is Shape
+B, a module singleton), and its `#platform/*` seam covers far more than auth
+(commands, analytics, blob-store, download, http, shortcuts, os). Treat the
+diagram above as the shape for the next nested app, not a literal description
+of whispering's current file list.
+
+Package exports follow the file's actual owner. Flat-root apps export the iso
+factory as `.` and the mount factory as `./mount`; a nested app without a
+daemon mount exports narrower surfaces instead:
 
 ```jsonc
 // honeycrisp / vocab (flat root)
@@ -70,11 +78,11 @@ factory as `.` and the mount factory as `./mount`:
   "./mount": "./mount.ts"
 }
 
-// fuji (nested): the export points straight at the implementation; there is
-// no root re-export wrapper.
+// whispering (nested, no mount): no `.` or `./mount`, since whispering isn't
+// daemon-mounted.
 "exports": {
-  ".": "./src/lib/workspace/index.ts",
-  "./mount": "./src/lib/workspace/mount.ts"
+  "./commands": "./src/lib/commands.ts",
+  "./workspace": "./src/lib/workspace/index.ts"
 }
 ```
 
@@ -163,7 +171,7 @@ re-exports `session.require` under an app-specific name.
 
 ```ts
 import { createSession } from '@epicenter/svelte/auth';
-import { auth } from '#platform/auth'; // fuji; flat-root apps import from $lib/platform/auth
+import { auth } from '#platform/auth'; // nested apps; flat-root apps import from $lib/platform/auth
 
 export const session = createSession({ /* auth + build */ });
 export const requireHoneycrisp = session.require;
@@ -186,7 +194,7 @@ where the workspace is built (NOT the Shape A/B handle label).
 | Workspace built | Reachable in | Gate |
 | --- | --- | --- |
 | Eager module singleton, no auth gate: todos, whispering, skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
-| Post-auth inside a `session` (only `session.current`): fuji, honeycrisp, vocab, opensidian | the signed-in component | `<WorkspaceGate pending={session.current.idb.whenLoaded}>` |
+| Post-auth inside a `session` (only `session.current`): honeycrisp, vocab, opensidian | the signed-in component | `<WorkspaceGate pending={session.current.idb.whenLoaded}>` |
 | Extension entrypoint, no `load`: tab-manager | the component | `{#await idb.whenLoaded}` |
 
 - Correctness gates (404 / redirect / param) always go in `load`; only `load`
@@ -201,7 +209,7 @@ against `sveltejs/kit`; for the `{#await}` form see the `svelte` skill.
 
 ## Platform DI: the `#platform/*` seam
 
-Multi-platform apps (the two with `src-tauri/`: fuji, whispering) select
+Multi-platform apps (the app with `src-tauri/`: currently whispering) select
 browser-vs-Tauri implementations at BUILD time via Node-standard `#platform/*`
 subpath imports. This is the canonical mechanism. It replaced the old
 `resolve.extensions` / `moduleSuffixes` suffix trick (see "Why not suffixes"
@@ -317,7 +325,7 @@ lifecycle command is `epicenter daemon up`, not `epicenter serve`.
 - Reintroducing `resolve.extensions` suffixes or tsconfig `moduleSuffixes` for
   platform selection.
 - Dropping `...defaultClientConditions` from the Tauri `conditions` array.
-- Adding a `./browser` package export to honeycrisp/vocab/fuji for symmetry
+- Adding a `./browser` package export to honeycrisp/vocab for symmetry
   with opensidian. Keep the asymmetry; only opensidian has a consumer for it.
 - Placing `daemon.ts` or `script.ts` inside the app package. They live under a
   project's `workspaces/<app>/` and are registered via `epicenter.config.ts`.

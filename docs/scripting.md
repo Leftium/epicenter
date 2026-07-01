@@ -14,26 +14,22 @@ import {
   findEpicenterRoot,
   openWorkspaceSqlite,
 } from "@epicenter/workspace/node";
-import type { FujiActions } from "@epicenter/fuji";
+import type { HoneycrispActions } from "@epicenter/honeycrisp";
 
 // the Epicenter root is the folder that holds epicenter.config.ts
 const epicenterRoot = findEpicenterRoot();
+const folderId = "archive";
 
 // reads: open the guid-keyed materializer read-only
-const db = openWorkspaceSqlite(epicenterRoot, "epicenter-fuji");
-const urgent = db
-  .query(
-    "SELECT * FROM entries WHERE EXISTS (SELECT 1 FROM json_each(entries.tags) WHERE value = ?)",
-  )
-  .all("urgent");
+const db = openWorkspaceSqlite(epicenterRoot, "epicenter-honeycrisp");
+const orphaned = db.query("SELECT * FROM notes WHERE folderId = ?").all(folderId);
 
 // writes: typed proxy over unix socket to the daemon
-const fuji = await connectDaemonActions<FujiActions>({
+const honeycrisp = await connectDaemonActions<HoneycrispActions>({
   epicenterRoot,
 });
-for (const note of urgent) {
-  await fuji.entries_update({ id: note.id, tags: ["triaged"] });
-}
+console.log(`Re-parenting ${orphaned.length} notes before removing the folder`);
+await honeycrisp.folders_delete({ folderId });
 
 db.close();
 ```
@@ -57,7 +53,7 @@ slight staleness is fine.
 
 `openWorkspaceSqlite(epicenterRoot, workspaceId)` opens the guid-keyed
 convention path `.epicenter/sqlite/<workspaceId>.db` read-only; first-party
-mounts like Fuji write there. A mount that passed a custom `filePath` to its
+mounts like Honeycrisp write there. A mount that passed a custom `filePath` to its
 materializer needs `openSqliteReader({ filePath })` with that same explicit
 path. Neither helper inspects `epicenter.config.ts`. `.epicenter/` is generated
 machine state, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh;
@@ -73,9 +69,9 @@ npm package).
 
 ## Writes: typed invoke through the daemon
 
-`connectDaemonActions<TActions>({ epicenterRoot })` returns a typed proxy. The proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
+`connectDaemonActions<TActions>({ epicenterRoot })` returns a typed proxy. The proxy translates `honeycrisp.folders_delete({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
 
-The mount name comes from the single `Mount.name` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`; the CLI prints that label as the header for `epicenter list`.
+The mount name comes from the single `Mount.name` default-exported by `epicenter.config.ts`. App factories like `honeycrisp()` return a mount whose name is `honeycrisp`; the CLI prints that label as the header for `epicenter list`.
 
 Two consequences fall out:
 

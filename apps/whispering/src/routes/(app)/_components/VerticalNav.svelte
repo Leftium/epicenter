@@ -74,16 +74,14 @@
 		<Sidebar.Menu>
 			<!-- Account / sync (route-independent: visible on the bare home page) -->
 			<Sidebar.MenuItem>
-				<div class="flex items-center px-1.5 py-1">
-					<AccountPopover
-						{auth}
-						collaboration={whispering.collaboration}
-						syncNoun="recordings"
-						disabledReason={recordingActive.current
-							? 'Stop recording to change your account'
-							: undefined}
-					/>
-				</div>
+				<AccountPopover
+					{auth}
+					collaboration={whispering.collaboration}
+					syncNoun="recordings"
+					disabledReason={recordingActive.current
+						? 'Stop recording to change your account'
+						: undefined}
+				/>
 			</Sidebar.MenuItem>
 
 			<!-- Toggle dark mode -->

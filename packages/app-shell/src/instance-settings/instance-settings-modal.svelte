@@ -92,8 +92,8 @@
 		<Modal.Header>
 			<Modal.Title>Connect to a self-hosted instance</Modal.Title>
 			<Modal.Description>
-				Point {appName} at your own Epicenter star. Your data and token go only
-				to this origin; the hosted cloud is never an endpoint.
+				Point {appName} at your own Epicenter instance. Your data and token go
+				straight to it; nothing passes through the hosted cloud.
 			</Modal.Description>
 		</Modal.Header>
 		<div class="flex flex-col gap-4">
@@ -127,8 +127,7 @@
 					autocomplete="off"
 				/>
 				<p class="text-xs text-muted-foreground">
-					Your instance prints this token on first boot. Hosted Epicenter signs
-					in with OAuth instead, with no token.
+					Your instance prints this token the first time it boots.
 				</p>
 			</div>
 			{#if error}

@@ -13,15 +13,17 @@
  * re-runs this selection.
  */
 
+import type { SyncAuthClient } from '@epicenter/auth';
+import type { SignedIn } from '@epicenter/svelte/auth';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
+	connectDoc,
 	createNodeId,
 } from '@epicenter/workspace';
 import { auth } from '#platform/auth';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import { createWhispering } from '$lib/workspace';
-import { buildSignedIn, wireSynced } from './whispering.synced';
 
 /**
  * Stable per-node id for relay room addressing, read synchronously from
@@ -29,6 +31,33 @@ import { buildSignedIn, wireSynced } from './whispering.synced';
  * `chrome.storage`). Shared across Epicenter apps on this origin.
  */
 const nodeId = createNodeId({ storage: window.localStorage });
+
+/**
+ * Project the current (non-signed-out) `auth.state` into a `SignedIn` payload
+ * for `connectDoc`.
+ *
+ * `server`/`baseURL` are constant across auth states (one API per client), so
+ * they are read once. This is the same projection `createSession` does
+ * internally; we inline it on purpose, because `createSession`'s live
+ * reactive swap fights reload-on-auth (see the spec's decision 2.3). Throws
+ * if called while signed-out: the one caller branches on `auth.state.status`
+ * first.
+ */
+function buildSignedIn(auth: SyncAuthClient): SignedIn {
+	const baseURL = auth.baseURL;
+	const server = new URL(baseURL).host;
+	const state = auth.state;
+	if (state.status === 'signed-out') {
+		throw new Error('[whispering] buildSignedIn() called while signed-out.');
+	}
+	return {
+		server,
+		baseURL,
+		ownerId: state.ownerId,
+		openWebSocket: auth.openWebSocket,
+		onReconnectSignal: auth.onStateChange,
+	};
+}
 
 export function openActiveWhispering(
 	defaultTranscriptionService: TranscriptionServiceId,
@@ -43,10 +72,10 @@ export function openActiveWhispering(
 	const signedIn = buildSignedIn(auth);
 	const workspace = createWhispering({ defaultTranscriptionService });
 	attachBroadcastChannel(workspace.ydoc);
-	const { idb, collaboration } = wireSynced(workspace.ydoc, {
-		signedIn,
-		nodeId,
-		actions: workspace.actions,
-	});
+	const { idb, collaboration } = connectDoc(
+		workspace.ydoc,
+		{ ...signedIn, nodeId },
+		{ actions: workspace.actions },
+	);
 	return { workspace, whenReady: idb.whenLoaded, collaboration };
 }

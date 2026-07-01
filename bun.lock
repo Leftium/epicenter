@@ -95,8 +95,6 @@
         "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
-        "@tanstack/svelte-query": "catalog:",
-        "@tanstack/svelte-query-devtools": "catalog:",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "bits-ui": "catalog:",

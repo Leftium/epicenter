@@ -250,7 +250,7 @@ Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal:
 lookup.
 
 For production-shaped browser wiring, see
-`apps/honeycrisp/honeycrisp.browser.ts`. For auth session transitions, see
+`apps/honeycrisp/src/lib/workspace/browser.ts`. For auth session transitions, see
 `apps/honeycrisp/src/lib/session.ts`.
 
 ## Core Philosophy
@@ -527,7 +527,7 @@ same row and share one underlying Y.Doc safely; the workspace-owned cache handle
 construction, refcounting, and `gcTime`-delayed teardown.
 
 Reference implementations: `apps/opensidian/opensidian.browser.ts` and
-`apps/honeycrisp/honeycrisp.browser.ts`.
+`apps/honeycrisp/src/lib/workspace/browser.ts`.
 
 ## Schema definition
 

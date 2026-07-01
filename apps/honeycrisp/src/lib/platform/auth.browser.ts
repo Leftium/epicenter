@@ -2,8 +2,9 @@ import { EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createHostedBrowserRedirectAuth } from '@epicenter/svelte/auth';
 import { instanceSetting } from '$lib/instance';
+import type { PlatformAuth } from './types';
 
-export const auth = createHostedBrowserRedirectAuth({
+export const auth: PlatformAuth = createHostedBrowserRedirectAuth({
 	instanceSetting,
 	namespace: 'honeycrisp',
 	clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,

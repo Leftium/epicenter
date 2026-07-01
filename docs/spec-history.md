@@ -16,7 +16,7 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1282 specs ever** (570 still in tree, 712 removed).
+**1282 specs ever** (567 still in tree, 715 removed).
 
 
 ## 2026
@@ -537,8 +537,8 @@
 | 2026-03-18 | auth-pages-fixes | in tree | specs/20260318T101545-auth-pages-fixes.md |
 | 2026-03-18 | autumn-ai-billing | in tree | specs/20260318T120000-autumn-ai-billing.md |
 | 2026-03-18 | opensidian-consolidation | in tree | specs/20260318T123049-opensidian-consolidation.md |
-| 2026-03-18 | honeycrisp-refactor | in tree | specs/20260318T123322-honeycrisp-refactor.md |
-| 2026-03-18 | honeycrisp-code-smells | in tree | specs/20260318T141054-honeycrisp-code-smells.md |
+| 2026-03-18 | honeycrisp-refactor | removed | specs/20260318T123322-honeycrisp-refactor.md |
+| 2026-03-18 | honeycrisp-code-smells | removed | specs/20260318T141054-honeycrisp-code-smells.md |
 | 2026-03-18 | opensidian-workspace-split | in tree | specs/20260318T142427-opensidian-workspace-split.md |
 | 2026-03-18 | tool-approval-architecture | in tree | specs/20260318T155243-tool-approval-architecture.md |
 | 2026-03-18 | auth-pages-polish | in tree | specs/20260318T165500-auth-pages-polish.md |
@@ -643,7 +643,7 @@
 | 2026-03-11 | monorepo-cleanup | in tree | specs/20260311T195924-monorepo-cleanup.md |
 | 2026-03-11 | flatten-isomorphic-folders | in tree | specs/20260311T203500-flatten-isomorphic-folders.md |
 | 2026-03-11 | remove-gray-matter-polyfills | removed | specs/20260311T213400-remove-gray-matter-polyfills.md |
-| 2026-03-11 | apple-notes-archetype | in tree | specs/20260311T224500-apple-notes-archetype.md |
+| 2026-03-11 | apple-notes-archetype | removed | specs/20260311T224500-apple-notes-archetype.md |
 | 2026-03-11 | changelog-release-strategy | in tree | specs/20260311T224500-changelog-release-strategy.md |
 | 2026-03-11 | gettoken-falsy-return-fix | removed | specs/20260311T230000-gettoken-falsy-return-fix.md |
 | 2026-03-11 | remove-commands-table-and-awareness | removed | specs/20260311T230000-remove-commands-table-and-awareness.md |

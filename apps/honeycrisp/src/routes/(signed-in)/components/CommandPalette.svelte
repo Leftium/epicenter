@@ -1,5 +1,8 @@
 <script lang="ts">
-	import * as Command from '@epicenter/ui/command';
+	import {
+		CommandPalette as UiCommandPalette,
+		type CommandPaletteItem,
+	} from '@epicenter/ui/command-palette';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
@@ -9,93 +12,58 @@
 	const honeycrisp = requireHoneycrisp();
 
 	let isOpen = $state(false);
+
+	const items = $derived.by((): CommandPaletteItem[] => [
+		{
+			id: 'folder:all',
+			label: 'All Notes',
+			group: 'Folders',
+			icon: FileTextIcon,
+			onSelect: () => honeycrisp.state.view.selectFolder(null),
+		},
+		...honeycrisp.state.folders.all.map((folder): CommandPaletteItem => ({
+			id: `folder:${folder.id}`,
+			label: folder.icon ? `${folder.icon} ${folder.name}` : folder.name,
+			keywords: [folder.name],
+			group: 'Folders',
+			icon: folder.icon ? undefined : FolderIcon,
+			onSelect: () => honeycrisp.state.view.selectFolder(folder.id),
+		})),
+		...honeycrisp.state.notes.all.map((note): CommandPaletteItem => ({
+			id: `note:${note.id}`,
+			label: note.title || 'Untitled',
+			description: note.preview || undefined,
+			group: 'Notes',
+			icon: FileTextIcon,
+			onSelect: () => honeycrisp.state.view.selectNote(note.id),
+		})),
+		{
+			id: 'action:new-note',
+			label: 'New Note',
+			group: 'Actions',
+			icon: PlusIcon,
+			onSelect: () => {
+				const { id } = honeycrisp.state.notes.create(
+					honeycrisp.state.view.selectedFolderId,
+				);
+				honeycrisp.state.view.selectNote(id);
+			},
+		},
+		{
+			id: 'action:new-folder',
+			label: 'New Folder',
+			group: 'Actions',
+			icon: FolderPlusIcon,
+			onSelect: () => honeycrisp.state.folders.create(),
+		},
+	]);
 </script>
 
-<svelte:window
-	onkeydown={(e) => {
-		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-			e.preventDefault();
-			isOpen = !isOpen;
-		}
-	}}
+<UiCommandPalette
+	{items}
+	bind:open={isOpen}
+	placeholder="Search notes..."
+	emptyMessage="No results found."
+	title="Search Notes"
+	description="Search folders, notes, and actions"
 />
-
-<Command.Dialog bind:open={isOpen}>
-	<Command.Input placeholder="Search notes..." />
-	<Command.List>
-		<Command.Empty>No results found.</Command.Empty>
-
-		<Command.Group heading="Folders">
-			<Command.Item
-				onSelect={() => {
-					honeycrisp.state.view.selectFolder(null);
-					isOpen = false;
-				}}
-			>
-				<FileTextIcon class="mr-2 size-4" />
-				All Notes
-			</Command.Item>
-			{#each honeycrisp.state.folders.all as folder (folder.id)}
-				<Command.Item
-					onSelect={() => {
-						honeycrisp.state.view.selectFolder(folder.id);
-						isOpen = false;
-					}}
-				>
-					{#if folder.icon}
-						<span class="mr-2 text-base leading-none">{folder.icon}</span>
-					{:else}
-						<FolderIcon class="mr-2 size-4" />
-					{/if}
-					{folder.name}
-				</Command.Item>
-			{/each}
-		</Command.Group>
-
-		<Command.Separator />
-
-		<Command.Group heading="Notes">
-			{#each honeycrisp.state.notes.all as note (note.id)}
-				<Command.Item
-					onSelect={() => {
-					honeycrisp.state.view.selectNote(note.id);
-						isOpen = false;
-					}}
-				>
-					<FileTextIcon class="mr-2 size-4" />
-					<div class="flex flex-col">
-						<span>{note.title || 'Untitled'}</span>
-						{#if note.preview}
-							<span class="text-muted-foreground line-clamp-1 text-xs"
-								>{note.preview}</span
-							>
-						{/if}
-					</div>
-				</Command.Item>
-			{/each}
-		</Command.Group>
-
-		<Command.Separator />
-
-		<Command.Group heading="Actions">
-			<Command.Item
-				onSelect={() => {
-					const { id } = honeycrisp.state.notes.create(honeycrisp.state.view.selectedFolderId);
-					honeycrisp.state.view.selectNote(id);
-				}}
-			>
-				<PlusIcon class="mr-2 size-4" />
-				New Note
-			</Command.Item>
-			<Command.Item
-				onSelect={() => {
-				honeycrisp.state.folders.create();
-					isOpen = false;
-				}}
-			>
-				<FolderPlusIcon class="mr-2 size-4" />
-				New Folder
-			</Command.Item>
-		</Command.Group>
-	</Command.List>
-</Command.Dialog>

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { asOwnerId } from '@epicenter/identity';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
-import type { AuthFetch } from './auth-contract.js';
+import type { AuthConnectionState, AuthFetch } from './auth-contract.js';
 import { asUserId } from './index.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
 
@@ -173,6 +173,76 @@ describe('createInstanceTokenAuth', () => {
 		expect(data).toEqual({
 			id: asUserId('owner-1'),
 			email: 'owner-1@example.com',
+		});
+	});
+
+	test('connection reports pending at boot then connected on a 200', async () => {
+		const fetch: AuthFetch = async () => json(sessionBody());
+		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
+		expect(auth.connection?.state).toEqual({ status: 'pending' });
+		await flush();
+		expect(auth.connection?.state).toEqual({ status: 'connected' });
+	});
+
+	test('connection fails as rejected when the token is refused (401)', async () => {
+		const fetch: AuthFetch = async () => json({}, 401);
+		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
+		await flush();
+		expect(auth.state.status).toBe('signed-out');
+		expect(auth.connection?.state).toEqual({
+			status: 'failed',
+			reason: 'rejected',
+		});
+	});
+
+	test('connection fails as unreachable when the star is offline', async () => {
+		const fetch: AuthFetch = async () => {
+			throw new Error('offline');
+		};
+		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
+		await flush();
+		expect(auth.connection?.state).toEqual({
+			status: 'failed',
+			reason: 'unreachable',
+		});
+	});
+
+	test('connection notifies subscribers and recovers on a retry', async () => {
+		let reachable = false;
+		const fetch: AuthFetch = async () => {
+			if (!reachable) throw new Error('offline');
+			return json(sessionBody());
+		};
+		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
+		const seen: AuthConnectionState['status'][] = [];
+		auth.connection?.onChange((s) => seen.push(s.status));
+		await flush();
+		expect(auth.connection?.state).toEqual({
+			status: 'failed',
+			reason: 'unreachable',
+		});
+
+		reachable = true;
+		await auth.startSignIn();
+		expect(auth.connection?.state).toEqual({ status: 'connected' });
+		// The retry moves pending -> connected, both observed after subscribing.
+		expect(seen).toContain('pending');
+		expect(seen).toContain('connected');
+	});
+
+	test('a 401 on a resource call marks the connection rejected', async () => {
+		const fetch: AuthFetch = async (input) =>
+			String(input).endsWith('/api/session')
+				? json(sessionBody())
+				: json({}, 401);
+		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
+		await flush();
+		expect(auth.connection?.state).toEqual({ status: 'connected' });
+
+		await auth.fetch('/api/owners/owner-1/blobs');
+		expect(auth.connection?.state).toEqual({
+			status: 'failed',
+			reason: 'rejected',
 		});
 	});
 });

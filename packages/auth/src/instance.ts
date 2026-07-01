@@ -30,17 +30,24 @@ export type Instance = {
 };
 
 /**
- * Failures of {@link normalizeInstanceUrl}. Callers branch on `name` to render a
- * clear validation message.
+ * Failures of {@link normalizeInstanceUrl}. Callers branch on `name` to show an
+ * actionable message that names what to fix, not just that the input is bad.
  */
-export const InstanceError = defineErrors({
-	/** The text the user typed is not a usable http(s) URL. */
-	InvalidUrl: ({ input }: { input: string }) => ({
-		message: `"${input}" is not a valid instance URL.`,
+export const InstanceUrlError = defineErrors({
+	/** The field is blank. */
+	Empty: () => ({ message: 'Enter your instance URL.' }),
+	/** A scheme was written out, but it is not http(s). */
+	UnsupportedScheme: ({ input }: { input: string }) => ({
+		message: `Use an http:// or https:// address, not "${input}".`,
+		input,
+	}),
+	/** The text is not a parseable http(s) URL. */
+	Malformed: ({ input }: { input: string }) => ({
+		message: `"${input}" is not a valid URL.`,
 		input,
 	}),
 });
-export type InstanceError = InferErrors<typeof InstanceError>;
+export type InstanceUrlError = InferErrors<typeof InstanceUrlError>;
 
 /**
  * Normalize user-entered instance text into a canonical `baseURL`: trim, default
@@ -53,25 +60,24 @@ export type InstanceError = InferErrors<typeof InstanceError>;
  */
 export function normalizeInstanceUrl(
 	raw: string,
-): Result<string, InstanceError> {
+): Result<string, InstanceUrlError> {
 	const trimmed = raw.trim();
-	if (trimmed === '') return InstanceError.InvalidUrl({ input: raw });
-	// A present scheme must be http(s); a bare host defaults to https. This
-	// rejects `ftp://…` up front rather than prepending https to garbage.
+	if (trimmed === '') return InstanceUrlError.Empty();
+	// A written-out scheme must be http(s); a bare host defaults to https so a
+	// homelabber can type "box.local:8788". Reject `ftp://…` rather than
+	// prepending https to it.
 	const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
 	if (hasScheme && !/^https?:\/\//i.test(trimmed)) {
-		return InstanceError.InvalidUrl({ input: raw });
+		return InstanceUrlError.UnsupportedScheme({ input: raw });
 	}
-	const withScheme = hasScheme ? trimmed : `https://${trimmed}`;
 	let url: URL;
 	try {
-		url = new URL(withScheme);
+		url = new URL(hasScheme ? trimmed : `https://${trimmed}`);
 	} catch {
-		return InstanceError.InvalidUrl({ input: raw });
+		return InstanceUrlError.Malformed({ input: raw });
 	}
-	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-		return InstanceError.InvalidUrl({ input: raw });
-	}
-	if (url.hostname === '') return InstanceError.InvalidUrl({ input: raw });
+	// The scheme gate plus the https default leave the protocol always http(s),
+	// so only an empty host (e.g. "https://") can still slip through here.
+	if (url.hostname === '') return InstanceUrlError.Malformed({ input: raw });
 	return Ok(`${url.origin}${url.pathname}`.replace(/\/+$/, ''));
 }

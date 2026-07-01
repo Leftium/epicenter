@@ -1,9 +1,8 @@
 <script lang="ts">
 	import type { InstanceSetting, SyncAuthClient } from '@epicenter/auth';
-	import { Button } from '@epicenter/ui/button';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
 	import InstanceSettingsModal from './instance-settings-modal.svelte';
+	import InstanceSignIn from './instance-sign-in.svelte';
 
 	let {
 		appName,
@@ -28,25 +27,13 @@
 		class?: string;
 	} = $props();
 
-	let signingIn = $state(false);
-	let signInError = $state<string | null>(null);
-	let instanceModalOpen = $state(false);
+	let modalOpen = $state(false);
 
-	// A token override flips the copy from "sign in" to "connect". Derived reads
-	// of the stable handle; saving the modal reloads, so nothing changes live.
-	const usingToken = $derived(setting.read().token !== undefined);
+	// A token override flips the heading from "sign in" to "connect". Derived reads
+	// of the stable handle; saving the modal reloads, so nothing changes live. The
+	// sign-in actions themselves live in the shared {@link InstanceSignIn}.
+	const usingToken = $derived(!setting.isDefault());
 	const instanceHost = $derived(new URL(setting.read().baseURL).host);
-
-	async function startSignIn() {
-		signInError = null;
-		signingIn = true;
-		try {
-			const { error } = await auth.startSignIn();
-			if (error) signInError = error.message;
-		} finally {
-			signingIn = false;
-		}
-	}
 </script>
 
 <div
@@ -63,27 +50,12 @@
 			{usingToken ? 'Sign in to your self-hosted instance.' : tagline}
 		</p>
 	</div>
-	{#if signInError}
-		<p class="text-xs text-destructive">{signInError}</p>
-	{/if}
-	<Button class="w-full max-w-xs" disabled={signingIn} onclick={startSignIn}>
-		{#if signingIn}
-			<Spinner class="size-4" />
-			{usingToken ? 'Connecting…' : 'Signing in…'}
-		{:else}
-			{usingToken ? 'Retry connection' : 'Sign in with Epicenter'}
-		{/if}
-	</Button>
-	<Button
-		variant="link"
-		size="sm"
-		class="text-muted-foreground"
-		onclick={() => (instanceModalOpen = true)}
-	>
-		{setting.isDefault()
-			? 'Connect to a self-hosted instance'
-			: 'Change instance'}
-	</Button>
+	<InstanceSignIn
+		{auth}
+		{setting}
+		onConfigure={() => (modalOpen = true)}
+		class="w-full max-w-xs"
+	/>
 </div>
 
-<InstanceSettingsModal bind:open={instanceModalOpen} {appName} {setting} />
+<InstanceSettingsModal bind:open={modalOpen} {appName} {setting} />

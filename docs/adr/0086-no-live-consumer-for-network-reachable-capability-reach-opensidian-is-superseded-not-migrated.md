@@ -16,7 +16,8 @@ This resolves ADR-0079's Trigger to revisit. The trigger asked "power-user or ma
 
 ## Consequences
 
-- The capability-plane buildout (`specs/20260630T120000-capability-plane-greenfield-buildout.md` and its handoff, currently uncommitted in a separate worktree) loses its stated reason to exist. Its one named justification, migrating opensidian's consumer, is void, since that consumer is itself being retired. That work should not resume as scoped; picking it up again requires a new named consumer first.
+<!-- doc-path-check: ignore-next-line -->
+- The capability-plane buildout (`specs/20260630T120000-capability-plane-greenfield-buildout.md` and its handoff, never committed, and now removed from the worktree they sat in) loses its stated reason to exist. Its one named justification, migrating opensidian's consumer, is void, since that consumer is itself being retired. That work should not resume as scoped; picking it up again requires a new named consumer first.
 - ADR-0072's own reopening trigger ("reopen the daemon... when there is a concrete need for multi-device chat with the books from a non-terminal client... and the shared Epicenter agent-chat client is the ready delivery vehicle") is now answered in the opposite direction its authors may have expected: the delivery vehicle exists, the super app, but it reaches Local Books locally, not by reopening a network daemon. The daemon-reopening trigger stays closed.
 - The relay floor's channel layer keeps its existing deletion path, bound to the Whispering-sync milestone (ADR-0079), now with one less reason to delay: there is no in-flight migration left for it to wait on.
 - This forecloses nothing permanently. Reopening a network-reachable capability endpoint later requires the same bar every deferred feature in this system requires: a real, named consumer, not a hypothetical one.

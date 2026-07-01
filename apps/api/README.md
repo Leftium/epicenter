@@ -164,4 +164,4 @@ See `wrangler.jsonc` for Durable Object bindings, KV namespaces, and Hyperdrive 
 
 ## License
 
-[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The sync server and sync protocol are AGPL so that anyone hosting a modified version shares their changes. Client libraries and apps are MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).
+[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The apps, the shared server library, and internal glue are AGPL so that anyone hosting a modified version shares their changes. The developer toolkit (`workspace`, `ui`, `filesystem`, `sync`) is MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).

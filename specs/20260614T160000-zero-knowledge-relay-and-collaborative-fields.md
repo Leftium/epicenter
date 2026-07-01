@@ -311,13 +311,13 @@ A Yjs doc is the unit of **concurrent co-editing**, never the unit of **readersh
 
 - **Split by entity, never one megadoc.** One root metadata doc plus one independent child doc per collaborative field (guid from `(workspaceId, collection, rowId, fieldName)`). These are **separate top-level docs, not Yjs subdocuments**: subdocs propagate updates *through* the parent, which would defeat independent per-field encryption, lazy loading, and per-room sync (grounded in yjs/yjs). Derived-guid independent docs give each field its own lifecycle, encryption, and room.
 - **Non-goal: a single doc fanned out to many simultaneous editors (a "megaroom").** Thousands of live editors on one doc is a different system (segmented/sharded docs) and is out of scope. Collaboration here is small-fan-out (your devices; a few co-authors of one page).
-- **Readership is a database read, not CRDT sync.** Browsing/searching a corpus is served from a SQLite projection (client-side for personal; server-side for shared-wiki), never by joining a Yjs room. The per-DO 1,000 req/s and 10 GB caps bind only under the excluded megaroom load; flush coalescing keeps a hot doc far under both, and a `SQLITE_FULL` DO still serves reads and deletes so reclaim always recovers it.
+- **Readership is a database read, not CRDT sync.** Browsing/searching a corpus is served from a SQLite projection (client-side for personal; server-side for a self-hosted instance), never by joining a Yjs room. The per-DO 1,000 req/s and 10 GB caps bind only under the excluded megaroom load; flush coalescing keeps a hot doc far under both, and a `SQLITE_FULL` DO still serves reads and deletes so reclaim always recovers it.
 
 ### Deployable fork: trust model decides where truth lives
 
-The personal hosted relay (`apps/api`) and the self-hosted shared-wiki relay (`apps/self-host`) have different trust models, so they have different sources of truth. This is not "two relay modes for one deployable" (rejected above); it is two deployables with genuinely different threat models sharing `packages/server` primitives.
+The personal hosted relay (`apps/api`) and the self-hosted instance relay (`apps/self-host`) have different trust models, so they have different sources of truth. This is not "two relay modes for one deployable" (rejected above); it is two deployables with genuinely different threat models sharing `packages/server` primitives.
 
-| | Personal hosted (this spec) | Self-host shared-wiki (separate spec) |
+| | Personal hosted (this spec) | Self-hosted instance (separate spec) |
 | --- | --- | --- |
 | Server may read content | No (ZK) | Yes (members' own server) |
 | Source of truth | Encrypted append log (opaque blobs) | Plaintext SQLite (queryable, FTS) |
@@ -326,7 +326,7 @@ The personal hosted relay (`apps/api`) and the self-hosted shared-wiki relay (`a
 | Yjs lifetime | Long-lived per device | Hydrated on open, materialized + destroyed on quiesce |
 | Encryption | Mandatory update-blob | Optional (server trusted) |
 
-**Phase 4.2's "delete the server merge brain" is scoped to the personal relay.** The shared-wiki relay legitimately keeps a smart but **ephemeral** Y.Doc: hydrate a page's doc from its SQLite row, fan out to the few live editors, materialize back to SQLite on quiesce, destroy the doc (snapshot-hydrate-then-destroy is supported; clientID rotation is harmless because presence keys on `deviceId`). Non-editing readers never join the room; they read the SQLite row over HTTP. The shared-wiki SQLite-as-truth design is its own spec; this spec only fixes the boundary so Phase 4.2 does not delete a brain that deployable wants.
+**Phase 4.2's "delete the server merge brain" is scoped to the personal relay.** A self-hosted instance relay may legitimately keep a smart but **ephemeral** Y.Doc: hydrate a page's doc from its SQLite row, fan out to the few live editors, materialize back to SQLite on quiesce, destroy the doc (snapshot-hydrate-then-destroy is supported; clientID rotation is harmless because presence keys on `deviceId`). Non-editing readers never join the room; they read the SQLite row over HTTP. The self-hosted SQLite-as-truth design is its own spec; this spec only fixes the boundary so Phase 4.2 does not delete a brain that deployable wants.
 
 ## Call sites: before and after
 
@@ -396,7 +396,7 @@ Clean break uses Build, then Remove. No "prove old path still works" wave becaus
 ### Phase 5: Storage bounding (deferred until cold-start latency or fleet storage bills enough to matter)
 
 - [ ] **5.1** Non-destructive checkpoint: client uploads `(encrypt(encodeStateAsUpdateV2(doc)), asOfSeq)`; relay keeps the newest and serves `checkpoint + after(asOfSeq)` on cold start. Deletes nothing.
-- [ ] **5.2** (Optional, per-deployable, off by default) Operator-policy reclaim: an operator timer deletes raw blobs <= newest-checkpoint.asOfSeq older than a retention window. Never client-triggered. Personal: enable when fleet storage bills enough. Shared-wiki: leave off (or feed only owner checkpoints); rate-limit row-bombing instead.
+- [ ] **5.2** (Optional, per-deployable, off by default) Operator-policy reclaim: an operator timer deletes raw blobs <= newest-checkpoint.asOfSeq older than a retention window. Never client-triggered. Personal: enable when fleet storage bills enough. Self-hosted instance: leave off (or feed only owner checkpoints); rate-limit row-bombing instead.
 
 ## Edge Cases
 
@@ -426,9 +426,9 @@ Clean break uses Build, then Remove. No "prove old path still works" wave becaus
 
 ## Open Questions
 
-1. **Shared-wiki reclaim / abuse policy.**
+1. **Self-hosted instance reclaim / abuse policy.**
    - Context: a malicious member could row-bomb one doc toward the 10 GB per-DO cap, or upload a bad checkpoint.
-   - **Recommendation**: keep operator reclaim off for shared-wiki (or feed it only owner checkpoints); bound growth with flush coalescing + rate limits. Do not add server-side content validation to the personal relay. Leave open.
+   - **Recommendation**: keep operator reclaim off for the self-hosted instance (or feed it only owner checkpoints); bound growth with flush coalescing + rate limits. Do not add server-side content validation to the personal relay. Leave open.
 
 2. **Flush debounce window vs liveness.**
    - Context: coalescing trades a few hundred ms of remote-echo latency for a large drop in row count.

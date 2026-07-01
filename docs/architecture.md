@@ -10,8 +10,8 @@ The dependency shape runs bottom to top. Apps depend on middleware; middleware d
 +----------------------------------------------------------------------------+
 | APPS                                                                       |
 |                                                                            |
-| opensidian   whispering   tab-manager   fuji   zhongwen                    |
-| honeycrisp   dashboard    api           landing                            |
+| opensidian   whispering   tab-manager   fuji   vocab                       |
+| honeycrisp   self-host    api           landing                            |
 +----------------------------------------------------------------------------+
                                       |
                                       v

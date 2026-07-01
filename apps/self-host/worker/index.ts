@@ -3,7 +3,7 @@
  *
  * The instance on Cloudflare: the SAME `@epicenter/server` composition the Bun
  * entry (`server.ts`) builds, wired to Cloudflare bindings instead of plain
- * primitives (ADR-0066). One single-partition instance, not a shared wiki and not
+ * primitives (ADR-0066). One single-partition instance, not a multi-user wiki and not
  * a mode: ownership is `instance()` (every request resolves to the pinned
  * `owners/instance` partition), and authentication is one operator-supplied static
  * bearer (`INSTANCE_TOKEN`), constant-time compared. No OAuth, no allowlist, no

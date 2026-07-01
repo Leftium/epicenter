@@ -206,15 +206,15 @@ The grant is a nested object; identity is split out:
 ```txt
 PersistedAuth
   grant: { accessToken, refreshToken, accessTokenExpiresAt }  -> online-only server access
-  userId   -> stored explicitly so the shared daemon can read it
+  userId   -> stored explicitly so the instance daemon can read it
   ownerId  -> local storage partition selection
 ```
 
 The grant lets the app call the server and is useless offline on its own.
 `userId` / `ownerId` remain useful offline: they select
 this user's local workspace data. `userId` is stored explicitly rather than
-synthesised from `ownerId` so the shared daemon can read it when
-`ownerId === SHARED_OWNER_ID` (in shared mode `ownerId` is the literal shared id
+synthesised from `ownerId` so the instance daemon can read it when
+`ownerId === INSTANCE_OWNER_ID` (in instance mode `ownerId` is the literal pinned id
 and is structurally not a `UserId`). Profile data is intentionally absent;
 application surfaces fetch it when they display it.
 
@@ -490,19 +490,19 @@ The deployment seam lives in `packages/server/src/ownership.ts`:
 ```ts
 export type OwnershipRule =
 	| { kind: 'personal' }
-	| { kind: 'shared'; admit: Admit };
+	| { kind: 'instance'; ownerId: OwnerId };
 
 export const personal = (): OwnershipRule => ({ kind: 'personal' });
-export const shared = (opts: { admit: Admit }): OwnershipRule => ({
-	kind: 'shared',
-	admit: opts.admit,
+export const instance = (): OwnershipRule => ({
+	kind: 'instance',
+	ownerId: INSTANCE_OWNER_ID,
 });
 ```
 
 `resolveOwnerPartition(rule, c)` is the single switch on `rule.kind`. Personal
-mode returns the user's id branded as `OwnerId` (`ownerId === userId`). Shared
-mode runs the admission predicate and returns the literal `SHARED_OWNER_ID`, or
-`RequestGuardError.NotAdmitted` (403) for rejected users. `createRequireOwnership`
+mode returns the user's id branded as `OwnerId` (`ownerId === userId`). Instance
+mode returns the literal `INSTANCE_OWNER_ID`; there is no admission predicate,
+since the operator bearer already gated the request (ADR-0075). `createRequireOwnership`
 sets `c.var.ownerId` and, on routes with a `:ownerId` segment, rejects a URL
 mismatch with `OwnerMismatch` (403).
 

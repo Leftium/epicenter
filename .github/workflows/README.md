@@ -82,9 +82,7 @@ We use [changesets](https://github.com/changesets/changesets) to version and pub
 | `packages/field` | `@epicenter/field` | yes |
 | `packages/identity` | `@epicenter/identity` | yes |
 | `packages/svelte-utils` | `@epicenter/svelte` | yes (see note) |
-| `packages/ai` | `@epicenter/ai` | no (private) |
 | `packages/constants` | `@epicenter/constants` | no (private) |
-| `packages/vault` | `@epicenter/vault` | no (private) |
 
 ### Fixed version group
 

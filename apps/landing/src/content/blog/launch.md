@@ -46,5 +46,5 @@ Join our Discord: [go.epicenter.so/discord](https://go.epicenter.so/discord)
 
 ---
 
-*P.S. Everything is AGPLv3 licensed. Fork it, extend it, make it yours. That's the whole point.*
+*P.S. The apps are AGPLv3 and the developer toolkit is MIT. Fork it, extend it, build on it. That's the whole point.*
 

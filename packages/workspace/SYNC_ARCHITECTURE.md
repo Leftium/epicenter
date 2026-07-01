@@ -173,24 +173,24 @@ roomWsUrl({
 // -> wss://api.epicenter.so/api/owners/<ownerId>/rooms/<guid>?nodeId=<id>
 ```
 
-In personal mode `ownerId` equals the signed-in user's id; in shared mode it is
-the literal `'shared'`. The URL shape is uniform across both modes. The relay
+In personal mode `ownerId` equals the signed-in user's id; on an instance it is
+the literal `'instance'`. The URL shape is uniform across both modes. The relay
 takes the user from the auth token, resolves the expected owner partition for
 the deployment, verifies the URL `:ownerId` matches that partition, and builds
 the internal Durable Object name `owners/${ownerId}/rooms/${room}`. Personal
-deployments resolve one partition per user. Shared-wiki deployments resolve one
-shared partition for admitted users.
+deployments resolve one partition per user. Self-hosted instance deployments
+resolve one partition for operator-authorized requests.
 
 This is the consumer Google Docs model and the first of three account layers, introduced over time:
 
 - **Layer 1 (this)**: personal content. `owners/${ownerId}` owns the doc, where `ownerId === userId`.
 - **Layer 1.5 (future)**: sharing. A per-document ACL grants other users access; the owner's DO name does not change.
-- **Layer 2 (future)**: shared-drive content. A shared-wiki deployment uses `ownerId === 'shared'` so content survives a departing user.
+- **Layer 2 (future)**: shared-drive content. A self-hosted instance uses `ownerId === 'instance'` so content is decoupled from any caller identity.
 - **Layer 3 (future)**: tenancy and billing. An organization groups user accounts for one invoice and admin policy; it never owns a document.
 
 `nodeId` is appended as a query parameter (`?nodeId=`) on every connect, including reconnects. It is a routing label stamped on the socket at upgrade, not an auth principal: the relay authorizes the room from the token, and within that room `nodeId` only decides which socket the relay routes a frame to (a presence push, or a relay-channel byte chunk).
 
-`/owners/:ownerId/rooms/:room` is the single cloud sync route shape (personal: `:ownerId` is the user id; shared: `:ownerId === 'shared'`). Browser apps and the workspace daemon both build their URL with `roomWsUrl`.
+`/owners/:ownerId/rooms/:room` is the single cloud sync route shape (personal: `:ownerId` is the user id; instance: `:ownerId === 'instance'`). Browser apps and the workspace daemon both build their URL with `roomWsUrl`.
 
 ## Supervisor lifecycle
 

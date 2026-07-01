@@ -69,4 +69,4 @@ But I have a phone and a laptop. I want to search my notes by date and tag, not 
 
 The markdown files are still there. You can still grep them. You can still open them in Obsidian. The CRDT layer is invisible until you need it:and then it's exactly what you needed.
 
-If you want to look at the code: [github.com/EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter). The workspace library is at [packages/workspace](https://github.com/EpicenterHQ/epicenter/tree/main/packages/workspace). Everything's MIT, except the sync server which is AGPL. Fork it, break it, build your own second brain on top of it.
+If you want to look at the code: [github.com/EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter). The workspace library is at [packages/workspace](https://github.com/EpicenterHQ/epicenter/tree/main/packages/workspace). The developer toolkit is MIT; the apps and sync server are AGPL. Fork it, break it, build your own second brain on top of it.

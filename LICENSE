@@ -23,11 +23,16 @@ entirely MIT; the boundary is enforced by 'bun run check:licenses'.
                                                          component library
     - packages/filesystem       (@epicenter/filesystem)  POSIX layer over
                                                          workspace tables
-    - packages/util             (@epicenter/util)        toolkit-internal
-                                                         runtime utilities
+    - packages/sync             (@epicenter/sync)        Yjs sync protocol
+    - packages/identity         (@epicenter/identity)    capability + identity
+                                                         vocabulary
+    - packages/agent-protocol   (@epicenter/agent-protocol) agent wire contract
     - packages/encryption       (@epicenter/encryption)  toolkit-internal
                                                          HKDF + blob crypto
-    - packages/sync             (@epicenter/sync)        Yjs sync protocol
+    - packages/field            (@epicenter/field)       toolkit-internal
+                                                         field schema kinds
+    - packages/chat             (@epicenter/chat)        toolkit-internal
+                                                         chat primitives
 
 ================================================================================
 2. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
@@ -52,7 +57,7 @@ who forks and distributes a modified binary shares the changes back.
     - apps/api                   (@epicenter/api)        hosted personal
                                                          cloud Worker
                                                          (worker + ui)
-    - apps/self-host              (@epicenter/self-host)   self-hosted shared wiki
+    - apps/self-host              (@epicenter/self-host)   self-hosted instance
                                                          reference Worker
     - apps/whispering            (@epicenter/whispering) desktop transcription
     - apps/honeycrisp            (@epicenter/honeycrisp) notes app
@@ -64,13 +69,18 @@ who forks and distributes a modified binary shares the changes back.
     - apps/reddit                (@epicenter/reddit)     reddit importer
     - apps/landing               (@epicenter/landing)    public site
     - apps/posthog-reverse-proxy (@epicenter/posthog-reverse-proxy) analytics
+    - apps/matter                (@epicenter/matter)     markdown grid
+    - apps/wiki                  (@epicenter/wiki)       wiki app
+    - apps/local-books           (@epicenter/local-books) quickbooks mirror
+    - apps/todos                 (@epicenter/todos)      todos app
 
   Packages:
-    - packages/sync              (@epicenter/sync)       Yjs sync protocol
     - packages/auth              (@epicenter/auth)       auth core (private)
     - packages/svelte-utils      (@epicenter/svelte)     svelte reactive
                                                          helpers + auth
                                                          wrapper (private)
+    - packages/app-shell         (@epicenter/app-shell)  shared app shell UI
+                                                         (private)
     - packages/skills            (@epicenter/skills)     workspace skills
     - packages/constants         (@epicenter/constants)  shared constants
     - packages/cli               (@epicenter/cli)        the epicenter CLI
@@ -79,6 +89,9 @@ who forks and distributes a modified binary shares the changes back.
     - packages/server            (@epicenter/server)     shared Hono server
                                                          library (private)
     - packages/client            (@epicenter/client)     API client (private)
+    - packages/matter-core       (@epicenter/matter-core) markdown to SQLite
+                                                         engine
+    - packages/vite-config       (@epicenter/vite-config) shared vite config
 
 ================================================================================
 3. Proprietary (deferred tier, currently empty)

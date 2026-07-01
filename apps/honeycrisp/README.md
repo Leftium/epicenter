@@ -2,7 +2,7 @@
 
 Honeycrisp is a notes app that works offline first and syncs when it can. Notes, folders, and rich text are all Yjs CRDTs. Two devices can edit the same note simultaneously and converge without conflicts. Open two browser tabs and try it.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
 ---
 
@@ -118,4 +118,4 @@ This starts the app dev server on port 5175. Auth and sync expect the local API 
 
 ## License
 
-MIT
+AGPL-3.0

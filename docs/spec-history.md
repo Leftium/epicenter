@@ -114,13 +114,13 @@
 | 2026-06-01 | creative-os-stack-naming-and-drop-serialization | in tree | specs/20260601T120000-creative-os-stack-naming-and-drop-serialization.md |
 | 2026-06-01 | markdown-sync-greenfield | in tree | specs/20260601T160000-markdown-sync-greenfield.md |
 | 2026-06-01 | epicenter-apply-markdown-reconcile | in tree | specs/20260601T120000-epicenter-apply-markdown-reconcile.md |
-| 2026-06-01 | personal-and-shared-wiki-rename | in tree | specs/20260601T130000-personal-and-shared-wiki-rename.md |
+| 2026-06-01 | personal-and-shared-wiki-rename | removed (superseded by ADR-0075 instance topology) | specs/20260601T130000-personal-and-shared-wiki-rename.md |
 | 2026-05-31 | prelaunch-reset-runbook | in tree | specs/20260531T205543-prelaunch-reset-runbook.md |
 | 2026-05-30 | schema-declared-body-docs | removed | specs/20260530T180000-schema-declared-body-docs.md |
 | 2026-05-30 | body-docs-clean-break | removed | specs/20260530T220000-body-docs-clean-break.md |
 | 2026-05-30 | bodies-as-generic-doc-opener | removed | specs/20260530T230000-bodies-as-generic-doc-opener.md |
 | 2026-05-30 | transcription-provider-registry | in tree | apps/whispering/specs/20260530T183000-transcription-provider-registry.md |
-| 2026-05-30 | mit-identity-package-clean-break | in tree | specs/20260530T170000-mit-identity-package-clean-break.md |
+| 2026-05-30 | mit-identity-package-clean-break | removed | specs/20260530T170000-mit-identity-package-clean-break.md |
 | 2026-05-30 | daemon-manifest-and-mount-materializers | removed | specs/20260530T120000-daemon-manifest-and-mount-materializers.md |
 | 2026-05-30 | uniform-per-doc-providers | in tree | specs/20260530T160000-uniform-per-doc-providers.md |
 | 2026-05-30 | ai-workflows-reactive-vs-bulk-only | removed | specs/20260530T113000-ai-workflows-reactive-vs-bulk-only.md |
@@ -137,8 +137,8 @@
 | 2026-05-28 | autumn-billing-boundary-cleanup | removed | specs/20260528T132334-autumn-billing-boundary-cleanup.md |
 | 2026-05-28 | jwks-signing-key-greenfield | in tree | specs/jwks-signing-key-greenfield.md |
 | 2026-05-28 | config-force-mount-array | in tree | specs/20260528T121508-config-force-mount-array.md |
-| 2026-05-28 | omega-deployment-profiles | in tree | specs/20260528T054721-omega-deployment-profiles.md |
-| 2026-05-28 | deployment-collapse | in tree | specs/20260528T145510-deployment-collapse.md |
+| 2026-05-28 | omega-deployment-profiles | removed (superseded by ADR-0075 instance topology) | specs/20260528T054721-omega-deployment-profiles.md |
+| 2026-05-28 | deployment-collapse | removed (superseded by ADR-0075 instance topology) | specs/20260528T145510-deployment-collapse.md |
 | 2026-05-28 | repo-history-cleanup-rehearsal | in tree | specs/20260528T000000-repo-history-cleanup-rehearsal.md |
 | 2026-05-27 | mount-level-git-autosave | removed | specs/20260527T235147-mount-level-git-autosave.md |
 | 2026-05-27 | whispering-markdown-materializer-greenfield | removed | specs/20260527T180000-whispering-markdown-materializer-greenfield.md |
@@ -172,7 +172,7 @@
 | 2026-05-24 | asset-visibility-and-client-sdk | in tree | specs/20260524T021140-asset-visibility-and-client-sdk.md |
 | 2026-05-23 | collapse-owner-partition-honest-ids | removed | specs/20260523T160000-collapse-owner-partition-honest-ids.md |
 | 2026-05-23 | greenfield-workspace-encryption-boundary | in tree | specs/20260523T000000-greenfield-workspace-encryption-boundary.md |
-| 2026-05-22 | server-package-split | in tree | specs/20260522T230000-server-package-split.md |
+| 2026-05-22 | server-package-split | removed | specs/20260522T230000-server-package-split.md |
 | 2026-05-22 | workspace-project-layout | removed | specs/20260522T220000-workspace-project-layout.md |
 | 2026-05-22 | top-level-epicenter-path-cleanup | removed | specs/20260522T203209-top-level-epicenter-path-cleanup.md |
 | 2026-05-22 | greenfield-pass | in tree | specs/goals/greenfield-pass.md |
@@ -361,7 +361,7 @@
 | 2026-04-29 | sync-as-peer-transport | removed | specs/20260429T230000-sync-as-peer-transport.md |
 | 2026-04-29 | remote-workspace-is-the-action-tree | removed | specs/20260429T120000-remote-workspace-is-the-action-tree.md |
 | 2026-04-29 | workspace-as-daemon-transport | removed | specs/20260429T004302-workspace-as-daemon-transport.md |
-| 2026-04-28 | licensing-strategy | in tree | specs/20260428T120000-licensing-strategy.md |
+| 2026-04-28 | licensing-strategy | removed (promoted to docs/licensing/licensing-strategy.md) | specs/20260428T120000-licensing-strategy.md |
 | 2026-04-28 | cli-mandatory-daemon-collapse | removed | specs/20260428T140000-cli-mandatory-daemon-collapse.md |
 | 2026-04-28 | list-collapse-to-local-primitive | removed | specs/20260428T183933-list-collapse-to-local-primitive.md |
 | 2026-04-28 | script-first-cli-collapse | removed | specs/20260428T-script-first-cli-collapse.md |
@@ -520,7 +520,7 @@
 | 2026-03-20 | spec-freshness-audit | removed | specs/20260320T120000-spec-freshness-audit.md |
 | 2026-03-20 | persisted-state-redesign | in tree | specs/20260320T142920-persisted-state-redesign.md |
 | 2026-03-20 | device-token-follow-up-and-pr-stack | in tree | specs/20260320T221430-device-token-follow-up-and-pr-stack.md |
-| 2026-03-19 | rewrite-how-to-monetize | in tree | specs/20260319T002657-rewrite-how-to-monetize.md |
+| 2026-03-19 | rewrite-how-to-monetize | removed | specs/20260319T002657-rewrite-how-to-monetize.md |
 | 2026-03-19 | pr-1507-quality-and-cla-followup | in tree | specs/20260319T100044-pr-1507-quality-and-cla-followup.md |
 | 2026-03-19 | autumn-billing-ui | in tree | specs/20260319T105618-autumn-billing-ui.md |
 | 2026-03-19 | browser-state-chrome-authority | removed | specs/20260319T120000-browser-state-chrome-authority.md |
@@ -532,7 +532,7 @@
 | 2026-03-19 | autumn-phase4-storage-billing | in tree | specs/20260319T140004-autumn-phase4-storage-billing.md |
 | 2026-03-19 | opensidian-terminal-panel | removed | specs/20260319T160000-opensidian-terminal-panel.md |
 | 2026-03-19 | browser-state-chrome-authority-v2 | removed | specs/20260319T170000-browser-state-chrome-authority-v2.md |
-| 2026-03-19 | licensing-restructure | in tree | specs/20260319T180117-licensing-restructure.md |
+| 2026-03-19 | licensing-restructure | removed | specs/20260319T180117-licensing-restructure.md |
 | 2026-03-18 | workspace-lifecycle-cleanup | in tree | specs/20260318T055905-workspace-lifecycle-cleanup.md |
 | 2026-03-18 | auth-pages-fixes | in tree | specs/20260318T101545-auth-pages-fixes.md |
 | 2026-03-18 | autumn-ai-billing | in tree | specs/20260318T120000-autumn-ai-billing.md |
@@ -1020,7 +1020,7 @@
 | 2025-11-25 | async-destroy-cleanup | removed | packages/epicenter/docs/specs/20251125T090506-async-destroy-cleanup.md |
 | 2025-11-21 | remove-assistant-rebuild | in tree | specs/20251121T171358 remove-assistant-rebuild.md |
 | 2025-11-21 | remove-assistant-rebuild | removed | docs/specs/20251121T171358 remove-assistant-rebuild.md |
-| 2025-11-14 | mit-to-agpl-migration | in tree | specs/20251114T042734 mit-to-agpl-migration.md |
+| 2025-11-14 | mit-to-agpl-migration | removed | specs/20251114T042734 mit-to-agpl-migration.md |
 | 2025-11-14 | transform-dates-validation | in tree | specs/20251114T190000-transform-dates-validation.md |
 | 2025-11-14 | transform-dates-validation | removed | docs/specs/20251114T190000-transform-dates-validation.md |
 | 2025-11-14 | ffmpeg-stop-fix | removed | docs/specs/20251114T000000 ffmpeg-stop-fix.md |

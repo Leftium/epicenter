@@ -100,7 +100,7 @@ When creating a new package in `packages/`, follow this exact structure.
   "exports": {
     ".": "./src/index.ts"
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
@@ -118,6 +118,7 @@ Key conventions:
 - Use `"workspace:*"` for internal deps (e.g., `"@epicenter/workspace": "workspace:*"`).
 - Use `"catalog:"` for shared versions managed in the root `package.json` catalogs.
 - `peerDependencies` for packages consumers must also install (e.g., `yjs`).
+- `license`: default `AGPL-3.0-or-later` (everything Epicenter ships or runs). Use `MIT` only if the package is meant for third-party developers to embed in their own software (the toolkit). See `docs/licensing/licensing-strategy.md`; `bun run check:licenses` fails if an MIT package can reach an AGPL one.
 
 ### `tsconfig.json`
 

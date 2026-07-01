@@ -16,7 +16,7 @@
  * Library-side and billing-agnostic, exactly like the chat gateway. Auth,
  * ownership, and any metering policy are supplied by the deployment through
  * {@link mountTranscriptionApp}: apps/api passes its per-audio-minute Autumn
- * policy, a self-hosted shared-wiki deployment passes none. The gateway is
+ * policy, a self-hosted instance deployment passes none. The gateway is
  * house-key-only (ADR-0054): it never reads a provider key from the request, so
  * it provably never receives a user's key. BYOK is a custom client Connection
  * (the user's own URL and key), never the Epicenter gateway.
@@ -172,7 +172,7 @@ const transcriptionApp = new Hono<Env>().post(
  * Mount the OpenAI-compatible speech-to-text gateway on a deployment's server
  * app. Mirrors {@link mountInferenceApp}: it bundles the deployment's auth, its
  * ownership rule, and any deployment policies (apps/api passes its
- * per-audio-minute Autumn policy; a self-hosted shared-wiki deployment passes
+ * per-audio-minute Autumn policy; a self-hosted instance deployment passes
  * none). The library stays billing-agnostic; policies are opaque middleware that
  * run after auth and ownership and may short-circuit (e.g. 402) before the
  * gateway proxies.

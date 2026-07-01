@@ -32,8 +32,8 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 /**
  * 16 chars over {@link ALPHABET} = ~82.7 bits. Sized for the largest
- * population we mint: rows in a *shared-mode* workspace, where every
- * admitted user's rows pool into one table. At 100M such rows the chance
+ * population we mint: rows in a multi-user workspace, where many users' rows
+ * pool into one table. At 100M such rows the chance
  * of any collision is ~1-in-1.6-billion; even at 1B rows it is ~1-in-16M.
  * This is the minimum length that stays safe at that scale, which matters
  * because each id is a CRDT map key (longer = more bytes per row synced).

@@ -491,12 +491,12 @@ never thrown away; it becomes the reference apps and the proof the format works.
     every app stores in the OPEN format (Yjs truth -> markdown + SQLite projection).
     zero setup. obsess over how writing/capture FEELS. nothing about apps-as-a-platform.
 
-  PHASE 2 - SELF-HOST / TEAM (same code, different deployment)
+  PHASE 2 - SELF-HOST (same code, different deployment)
     personal = your instance, we host it (invisible).
     self-host = the same instance on your box.
-    team/shared = a shared instance (shared({admit})), e.g. a shared wiki many people
-                  build dashboards on; data syncs down + materializes to each person's
-                  markdown folder. falls out of the storage/sync seam, not a rewrite.
+    instance = one pinned partition (instance()); data syncs down + materializes
+               to markdown folders. falls out of the storage/sync seam, not a
+               rewrite.
 
   PHASE 3 - APP HOSTING (only after Phase 1 pulls real users)
     open the workspace API + a registry so people write their OWN SPAs / React

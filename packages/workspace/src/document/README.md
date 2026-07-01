@@ -99,8 +99,8 @@ guid from the workspace id, table name, row id, and field; rows do not store
 those guids. Browser runtimes use `tables.notes.docs.body.open(noteId)` when a
 surface needs the content doc. Daemon projections can derive the same guid,
 read one doc for one row, and destroy it.
-See `apps/fuji/src/lib/workspace/browser.ts` and
-`apps/fuji/src/lib/workspace/mount.ts` for the Fuji pattern.
+See `apps/honeycrisp/honeycrisp.browser.ts` for the current browser-side child
+doc pattern. No shipped daemon currently projects rich-text child docs.
 
 ## Design Decisions
 
@@ -125,7 +125,7 @@ Tests live in `*.test.ts` next to the implementation. Use `createWorkspace({ id:
 ## Canonical references
 
 - `apps/whispering/src/lib/whispering/whispering.tauri.ts`: IndexedDB + BroadcastChannel + recording markdown export
-- `apps/fuji/src/lib/workspace/browser.ts`: IndexedDB + sync + server-owned presence
-- `apps/fuji/src/lib/workspace/mount.ts`: daemon materializers and per-row body doc reads
+- `apps/honeycrisp/honeycrisp.browser.ts`: IndexedDB + sync + per-row child docs
+- `apps/tab-manager/mount.ts`: daemon materializers for root-table projections
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-node sync design

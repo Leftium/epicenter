@@ -9,7 +9,7 @@ Fuji has been removed, and Honeycrisp is the notes app that still has a live wor
 
 ## Decision
 
-Honeycrisp is the maintained Epicenter notes product. It ships from one SvelteKit codebase on web and desktop, with one package root export that exposes the isomorphic workspace definition. Runtime-specific concerns live behind `#platform/*` imports and environment factories under `src/lib/workspace/`; the auth lifecycle stays Shape A through `createSession` and `WorkspaceGate`. Honeycrisp does not regain Fuji, a daemon mount, or a `./mount` export.
+Honeycrisp is the maintained Epicenter notes product. It ships from one SvelteKit codebase on web and desktop, with one package root export that exposes the isomorphic workspace definition. Runtime-specific concerns live behind `#platform/*` imports and environment factories under `src/lib/workspace/`; the auth lifecycle follows the repo-wide composition in [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md): sign-in is an enhancement over a local-first boot, not a gate. Honeycrisp does not regain Fuji, a daemon mount, or a `./mount` export.
 
 ## Consequences
 
@@ -19,4 +19,4 @@ The `@epicenter/honeycrisp` package root remains the integration contract for co
 
 - **Restore Fuji or the daemon mount surface.** Rejected. Fuji was removed deliberately, and ADR-0080 makes the Super App an in-process workspace composer rather than a per-app daemon consumer.
 - **Fork Honeycrisp into separate web and desktop apps.** Rejected. That would split the workspace contract and duplicate the product surface for no benefit.
-- **Adopt Whispering's module singleton shape.** Rejected. Honeycrisp is auth-gated with one route tree, so Shape A keeps owner changes and first paint simpler.
+- **Adopt Whispering's module singleton shape.** Initially rejected here, then adopted repo-wide the same day by [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md), which answers this bullet's concerns with `reloadOnOwnerChange` and the hydration gate. The product-surface decision above is independent of that lifecycle choice.

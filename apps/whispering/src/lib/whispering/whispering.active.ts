@@ -13,14 +13,14 @@
  * re-runs this selection.
  */
 
-import { auth } from '#platform/auth';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	createNodeId,
 } from '@epicenter/workspace';
-import { createWhispering } from '$lib/workspace';
+import { auth } from '#platform/auth';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
+import { createWhispering } from '$lib/workspace';
 import { buildSignedIn, wireSynced } from './whispering.synced';
 
 /**

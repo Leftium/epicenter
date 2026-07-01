@@ -29,9 +29,15 @@
 		"@tauri-apps/plugin-opener": "^2"
 	},
 	"peerDependenciesMeta": {
-		"@tauri-apps/api": { "optional": true },
-		"@tauri-apps/plugin-deep-link": { "optional": true },
-		"@tauri-apps/plugin-opener": { "optional": true }
+		"@tauri-apps/api": {
+			"optional": true
+		},
+		"@tauri-apps/plugin-deep-link": {
+			"optional": true
+		},
+		"@tauri-apps/plugin-opener": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"@tauri-apps/api": "catalog:",

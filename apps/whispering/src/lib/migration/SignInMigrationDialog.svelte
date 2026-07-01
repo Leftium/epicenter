@@ -3,19 +3,17 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { signInMigration } from './sign-in-migration.svelte';
-
-	const count = $derived(signInMigration.recordingCount);
 </script>
 
 <Dialog.Root bind:open={signInMigration.open}>
 	<Dialog.Content class="max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>Add your recordings to this account?</Dialog.Title>
+			<Dialog.Title>Add your local data to your account?</Dialog.Title>
 			<Dialog.Description>
-				This device has {count}
-				recording{count === 1 ? '' : 's'} saved locally, outside your account.
-				Add them to sync across your devices, or remove them from this device.
-				Audio files stay where they were recorded.
+				This device has {signInMigration.summary} saved locally, outside your
+				account. Add them to sync across your devices, or remove them from this
+				device.{#if signInMigration.recordingCount > 0}{' '}Audio files stay where
+					they were recorded.{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 

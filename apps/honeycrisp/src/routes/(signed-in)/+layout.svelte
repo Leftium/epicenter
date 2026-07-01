@@ -2,9 +2,9 @@
 	import { SignedOutScreen } from '@epicenter/app-shell/instance-settings';
 	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import * as Tooltip from '@epicenter/ui/tooltip';
+	import { auth } from '#platform/auth';
 	import { instanceSetting } from '$lib/instance';
 	import { requireHoneycrisp, session } from '$lib/session';
-	import { auth } from '$platform/auth';
 
 	let { children } = $props();
 </script>

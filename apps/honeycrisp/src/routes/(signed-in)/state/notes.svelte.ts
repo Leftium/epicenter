@@ -27,7 +27,7 @@ import {
 	type NoteId,
 } from '@epicenter/honeycrisp';
 import { fromTable } from '@epicenter/svelte';
-import type { HoneycrispBrowser } from '../../../../honeycrisp.browser';
+import type { HoneycrispBrowser } from '$lib/workspace/browser';
 import type { createFolders } from './folders.svelte';
 import { searchParams } from './search-params.svelte';
 
@@ -248,7 +248,6 @@ export function createNotes({
 				title,
 				preview,
 				wordCount,
-				updatedAt: InstantString.now(),
 			});
 		},
 	};

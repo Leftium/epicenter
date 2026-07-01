@@ -27,12 +27,11 @@ handle.
 
 ## File Layout
 
-Two layouts ship today. Single-platform apps keep the composition files flat at
-the package root; the multi-platform app with a `src-tauri/` directory
-(currently whispering) nests the same files under `src/lib/workspace/` and
-adds a `src/lib/platform/` seam.
+Two layouts ship today. Older single-platform apps keep the composition files
+flat at the package root; apps preparing for multi-platform builds nest the same
+files under `src/lib/workspace/` and add a `src/lib/platform/` seam.
 
-**Flat root** (honeycrisp, opensidian, vocab):
+**Flat root** (opensidian, vocab):
 
 ```txt
 apps/<app>/
@@ -45,7 +44,7 @@ apps/<app>/
    `- platform/auth/         auth client construction
 ```
 
-**Nested under `src/lib/workspace/`** (this is the general shape; has `src-tauri/`):
+**Nested under `src/lib/workspace/`** (honeycrisp, whispering):
 
 ```txt
 apps/<app>/
@@ -55,26 +54,26 @@ apps/<app>/
    |  |- index.ts            iso schema + create<App>() factory   (package "." export)
    |  |- browser.ts          browser env factory open<App>Browser()
    |  |- index.test.ts       tests
-   |  `- mount.ts            mount factory <app>()                (package "./mount" export)
+   |  `- mount.ts            optional mount factory <app>()       (package "./mount" export)
    |- session.ts             the session singleton
    `- platform/              #platform/* impls (X.browser.ts / X.tauri.ts) + types.ts contract
 ```
 
-Whispering, the only nested app today, does not match this file-for-file: it
-has no `mount.ts` (it is not daemon-mounted) and no `session.ts` (it is Shape
-B, a module singleton), and its `#platform/*` seam covers far more than auth
-(commands, analytics, blob-store, download, http, shortcuts, os). Treat the
-diagram above as the shape for the next nested app, not a literal description
-of whispering's current file list.
+Honeycrisp is the Shape A nested app: it has `src/lib/session.ts`, a package
+`.` export to `src/lib/workspace/index.ts`, and currently only a default
+browser `#platform/auth` implementation. It has no `mount.ts` and no `./mount`
+export. Whispering is Shape B: it has no `session.ts`, no `mount.ts`, no `.`
+export, and many more `#platform/*` seams because audio and desktop services
+earn them.
 
 Package exports follow the file's actual owner. Flat-root apps export the iso
 factory as `.`; only apps with a live daemon consumer export a mount factory as
 `./mount`. Apps without a daemon mount export narrower surfaces instead:
 
 ```jsonc
-// honeycrisp (flat root, no mount)
+// honeycrisp (nested, no mount)
 "exports": {
-  ".": "./honeycrisp.ts"
+  ".": "./src/lib/workspace/index.ts"
 }
 
 // whispering (nested, no mount): no `.` or `./mount`, since whispering isn't
@@ -152,13 +151,7 @@ export function openHoneycrispBrowser({
 	signedIn: SignedIn;
 	nodeId: NodeId;
 }) {
-	const workspace = createHoneycrisp();
-	const idb = attachLocalStorage(workspace.ydoc, {
-		server: signedIn.server,
-		ownerId: signedIn.ownerId,
-	});
-	const collaboration = openCollaboration(workspace.ydoc, { /* ... */ });
-	return { ...workspace, idb, collaboration };
+	return honeycrispWorkspace.connect({ ...signedIn, nodeId });
 }
 ```
 
@@ -326,6 +319,8 @@ lifecycle command is `epicenter daemon up`, not `epicenter serve`.
 - Dropping `...defaultClientConditions` from the Tauri `conditions` array.
 - Adding a `./browser` package export to honeycrisp/vocab for symmetry
   with opensidian. Keep the asymmetry; only opensidian has a consumer for it.
+- Adding `./mount` back to honeycrisp. Honeycrisp's integration contract is the
+  package `.` isomorphic workspace export.
 - Placing `daemon.ts` or `script.ts` inside the app package. They live under a
   project's `workspaces/<app>/` and are registered via `epicenter.config.ts`.
 - Restoring `serve` as the public lifecycle command (it is `epicenter daemon up`).

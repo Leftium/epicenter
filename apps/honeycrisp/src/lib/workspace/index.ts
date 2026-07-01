@@ -4,13 +4,13 @@
  * files, Svelte state, or daemon process lifecycle.
  *
  * Distribution: `apps/honeycrisp/package.json` exports this file as the
- * `@epicenter/honeycrisp` package root. Browser code, daemon code, and tests
- * all import from here. The table shapes here are the wire contract for sync;
+ * `@epicenter/honeycrisp` package root. Browser code and tests import from
+ * here. The table shapes here are the wire contract for sync;
  * forking a column shape breaks sync compatibility with peers running the
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/honeycrisp/honeycrisp.browser.ts`  -> `openHoneycrispBrowser({ signedIn, nodeId })`
+ *  - `apps/honeycrisp/src/lib/workspace/browser.ts` -> `openHoneycrispBrowser({ signedIn, nodeId })`
  */
 
 import { field } from '@epicenter/field';

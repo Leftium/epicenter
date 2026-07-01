@@ -5,7 +5,12 @@
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./honeycrisp.ts"
+		".": "./src/lib/workspace/index.ts"
+	},
+	"imports": {
+		"#platform/auth": {
+			"default": "./src/lib/platform/auth.browser.ts"
+		}
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
@@ -14,7 +19,6 @@
 		"preview": "vite preview",
 		"deploy": "wrangler deploy",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {
@@ -41,8 +45,6 @@
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@tanstack/svelte-query": "catalog:",
-		"@tanstack/svelte-query-devtools": "catalog:",
 		"prosemirror-commands": "^1.6.0",
 		"prosemirror-inputrules": "^1.4.0",
 		"prosemirror-keymap": "^1.2.0",

@@ -15,7 +15,7 @@
 
 import type { SignedIn } from '@epicenter/svelte/auth';
 import type { NodeId } from '@epicenter/workspace';
-import { honeycrispWorkspace } from './honeycrisp.js';
+import { honeycrispWorkspace } from './index.js';
 
 export function openHoneycrispBrowser({
 	signedIn,

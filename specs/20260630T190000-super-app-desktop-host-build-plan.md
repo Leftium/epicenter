@@ -2,7 +2,7 @@
 
 - **Status:** Draft
 - **Date:** 2026-06-30
-- **Decision of record:** [ADR-0080](../docs/adr/0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md). This spec is the execution scaffolding for that ADR and is deleted when the slices land.
+- **Decision of record:** [ADR-0080](../docs/adr/0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) (the desktop-host shape) and [ADR-0084](../docs/adr/0084-super-chat-tools-load-as-vendored-typescript-the-shell-is-a-bun-hosted-local-server.md) (how the host loads tools and packages its shell). This spec is the execution scaffolding for both and is deleted when the slices land.
 - **Relates:** [seam-2 data placement rule](20260630T173000-cross-device-topology-seam-2-the-rule.md) (where each app's data lives), ADR-0079 (the planes), ADR-0047 (client agent loop), ADR-0072/0073 (Local Books off the mesh, MCP verb facade)
 
 ## What this is

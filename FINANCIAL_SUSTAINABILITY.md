@@ -20,4 +20,4 @@ MIT: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`
 
 AGPL-3.0-or-later: every app (`apps/api`, `apps/self-host`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/fuji`, `apps/vocab`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`, `apps/matter`, `apps/wiki`, `apps/local-books`, `apps/todos`), the shared server library (`packages/server`), the CLI (`packages/cli`, which depends on AGPL internals), and our internal packages (`packages/auth`, `packages/svelte-utils`, `packages/app-shell`, `packages/skills`, `packages/constants`, `packages/client`, `packages/matter-core`, `packages/vite-config`).
 
-Each package has its own LICENSE file. See the root [LICENSE](LICENSE) for the full breakdown.
+Each package under packages/ and apps/ has its own LICENSE file. See the root [LICENSE](LICENSE) for the full breakdown.

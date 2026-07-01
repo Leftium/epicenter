@@ -1,8 +1,8 @@
 Copyright 2023-2026 Braden Wong
 
 This repository contains software under multiple licenses. Each package
-contains its own LICENSE file, and each package.json declares its
-applicable license. This file is the index.
+under packages/ and apps/ contains its own LICENSE file, and each
+package.json declares its applicable license. This file is the index.
 
 For the reasoning behind the split, see docs/licensing/licensing-strategy.md
 and FINANCIAL_SUSTAINABILITY.md.

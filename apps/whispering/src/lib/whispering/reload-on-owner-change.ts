@@ -44,6 +44,14 @@ export function reloadOnOwnerChange(auth: SyncAuthClient) {
 		if (reloading) return;
 		if (ownerKey(state) === bootKey) return;
 		reloading = true;
+		// A sign-in completing on /auth/callback fires this state change before
+		// that page's own goto('/') can run, mid-`startSignIn()`. A bare reload
+		// would land back on the callback URL and replay the already-consumed
+		// authorization code, surfacing a spurious error after a real success.
+		if (window.location.pathname === '/auth/callback') {
+			window.location.replace('/');
+			return;
+		}
 		window.location.reload();
 	});
 }

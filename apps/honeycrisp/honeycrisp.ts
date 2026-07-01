@@ -11,7 +11,6 @@
  *
  * Composition lives elsewhere:
  *  - `apps/honeycrisp/honeycrisp.browser.ts`  -> `openHoneycrispBrowser({ signedIn, nodeId })`
- *  - `apps/honeycrisp/mount.ts`  -> `honeycrisp(opts?)` mount factory
  */
 
 import { field } from '@epicenter/field';

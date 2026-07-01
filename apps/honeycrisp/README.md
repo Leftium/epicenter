@@ -22,9 +22,6 @@ honeycrispWorkspace
 
 openHoneycrispBrowser()
   browser runtime: local storage, sync, child-doc storage and sync
-
-honeycrisp() (mount)
-  daemon runtime: Yjs log, sync, SQLite mirror, markdown materializer
 ```
 
 The Svelte app mounts the browser runtime through `createSession`, so the workspace is only created after a signed-in identity provides `ownerId` and sync transport.

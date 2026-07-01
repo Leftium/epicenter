@@ -2,7 +2,12 @@ import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
+import type {
+	AuthConnectionState,
+	AuthFetch,
+	AuthState,
+	SyncAuthClient,
+} from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import { getProfileVia, readApiSession } from './read-api-session.js';
 
@@ -85,10 +90,27 @@ export function createInstanceTokenAuth({
 	const epicenterOrigin = new URL(baseURL).origin;
 	let state: AuthState = { status: 'signed-out' };
 	const listeners = new Set<(state: AuthState) => void>();
+	// The boot bearer check verifies against a remote star, so it can be in flight
+	// or fail for a reason `AuthState` cannot carry (a failure keeps `signed-out`).
+	// `connection` runs alongside `state` on its own listener set so a UI can tell
+	// "still connecting" from "unreachable" from "rejected token".
+	let connectionState: AuthConnectionState = { status: 'pending' };
+	const connectionListeners = new Set<(state: AuthConnectionState) => void>();
 
 	function setState(next: AuthState) {
 		state = next;
 		for (const listener of listeners) {
+			try {
+				listener(next);
+			} catch (cause) {
+				log.error(InstanceTokenAuthError.SubscriberThrew({ cause }));
+			}
+		}
+	}
+
+	function setConnection(next: AuthConnectionState) {
+		connectionState = next;
+		for (const listener of connectionListeners) {
 			try {
 				listener(next);
 			} catch (cause) {
@@ -123,16 +145,26 @@ export function createInstanceTokenAuth({
 	 * only reflects its outcome onto state and the `AuthClient` error contract.
 	 */
 	async function confirmSession(): Promise<Result<undefined, AuthError>> {
+		setConnection({ status: 'pending' });
 		const { data: session, error } = await readApiSession({
 			baseURL,
 			token,
 			fetch: fetchImpl,
 		});
 		if (error) {
+			// `Rejected` (401/403) is a bad token; anything else (offline, wrong
+			// origin, non-Epicenter response) reads as unreachable. Only a rejected
+			// token is a durable "signed-out"; a transient outage leaves state alone
+			// so it does not look like a bad credential.
 			if (error.name === 'Rejected') setState({ status: 'signed-out' });
+			setConnection({
+				status: 'failed',
+				reason: error.name === 'Rejected' ? 'rejected' : 'unreachable',
+			});
 			return AuthError.StartSignInFailed({ cause: error });
 		}
 		setState({ status: 'signed-in', ownerId: session.ownerId });
+		setConnection({ status: 'connected' });
 		return Ok(undefined);
 	}
 
@@ -171,6 +203,7 @@ export function createInstanceTokenAuth({
 			state.status === 'signed-in'
 		) {
 			setState({ status: 'signed-out' });
+			setConnection({ status: 'failed', reason: 'rejected' });
 		}
 		return response;
 	}
@@ -195,6 +228,17 @@ export function createInstanceTokenAuth({
 		},
 		fetch: authedFetch,
 		getProfile: () => getProfileVia(authedFetch, baseURL),
+		connection: {
+			get state() {
+				return connectionState;
+			},
+			onChange(fn) {
+				connectionListeners.add(fn);
+				return () => {
+					connectionListeners.delete(fn);
+				};
+			},
+		},
 		async openWebSocket(url, protocols = []) {
 			// The room URL is always built from `baseURL`, so the bearer is always
 			// addressed to its own origin; attach it unconditionally.
@@ -205,6 +249,7 @@ export function createInstanceTokenAuth({
 		},
 		[Symbol.dispose]() {
 			listeners.clear();
+			connectionListeners.clear();
 		},
 	};
 }

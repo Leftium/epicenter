@@ -142,7 +142,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
 | `define*` | **None**: pure data or type contract | Schemas, defaults, typed bundle values | Plain config object or same value back | `defineTable`, `defineKv`, `defineMutation`, `defineQuery`, `defineWorkspace` |
-| `create*` | **Constructs**: bundles, models, registries, or pure definitions | Definitions, options | Disposable bundle or pure value | `createWorkspace` (root bundle: ydoc + tables + kv + empty actions + dispose), `createFuji` (app model), `createDisposableCache` (refcounted per-row cache) |
+| `create*` | **Constructs**: bundles, models, registries, or pure definitions | Definitions, options | Disposable bundle or pure value | `createWorkspace` (root bundle: ydoc + tables + kv + empty actions + dispose), `createDisposableCache` (refcounted per-row cache) |
 | `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config (workspace materializers take the bundle from `createWorkspace`) | Typed handle, non-idempotent, hold the reference | `attachRichText`, `attachPlainText`, `attachRecords`, `attachTimeline`, `attachIndexedDb`, `attachLocalStorage`, `attachYjsLog`, `attachBroadcastChannel`, `attachMarkdownExport`, `attachBunSqliteMaterializer` |
 | `open*` | **Opens a runtime over a Y.Doc or a local resource**: returns a typed handle with its own teardown. The Y.Doc-bound case (`openCollaboration`) registers `ydoc.on('destroy')` like `attach*` does; the resource case (`openSqliteReader`) takes no Y.Doc and returns a `[Symbol.dispose]()` handle. | Y.Doc + config, or resource config | Typed runtime handle | `openCollaboration`, `openSqliteReader`, `openWorkspaceSqlite` |
 
@@ -250,8 +250,8 @@ Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal:
 lookup.
 
 For production-shaped browser wiring, see
-`apps/fuji/src/lib/workspace/browser.ts`. For auth session transitions, see
-`apps/fuji/src/lib/session.ts`.
+`apps/honeycrisp/honeycrisp.browser.ts`. For auth session transitions, see
+`apps/honeycrisp/src/lib/session.ts`.
 
 ## Core Philosophy
 
@@ -526,9 +526,8 @@ Each `.open(rowId)` returns a disposable handle. Multiple consumers can open the
 same row and share one underlying Y.Doc safely; the workspace-owned cache handles
 construction, refcounting, and `gcTime`-delayed teardown.
 
-Reference implementations: `apps/opensidian/opensidian.browser.ts`,
-`apps/fuji/src/lib/workspace/browser.ts`, `apps/fuji/src/lib/workspace/mount.ts`,
-and `apps/honeycrisp/honeycrisp.browser.ts`.
+Reference implementations: `apps/opensidian/opensidian.browser.ts` and
+`apps/honeycrisp/honeycrisp.browser.ts`.
 
 ## Schema definition
 

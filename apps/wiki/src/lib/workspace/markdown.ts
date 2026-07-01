@@ -8,7 +8,8 @@
  *                   whose `schema` is the TypeBox schema as JSON.
  *
  * Wiring lives here (filesystem-facing) rather than in the isomorphic factory,
- * mirroring how fuji keeps `index.ts` pure and composes IO in `browser.ts`.
+ * mirroring how honeycrisp keeps `honeycrisp.ts` pure and composes IO in
+ * `honeycrisp.browser.ts`.
  * The generated files are for reading, search, and curation. Wiki data still
  * mutates through validated workspace actions rather than disk edits.
  */

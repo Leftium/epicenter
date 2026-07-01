@@ -28,7 +28,6 @@ export const APPS = {
 	API: { port: 8787, url: PRODUCTION_API_URL },
 	SH: { port: 5173, url: 'https://epicenter.sh' },
 	WHISPERING: { port: 1420, url: 'https://whispering.epicenter.so' },
-	FUJI: { port: 5174, url: 'https://fuji.epicenter.so' },
 	HONEYCRISP: { port: 5175, url: 'https://honeycrisp.epicenter.so' },
 	OPENSIDIAN: {
 		port: 5176,

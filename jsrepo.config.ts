@@ -21,7 +21,6 @@ import { defineConfig, js, repository } from 'jsrepo';
  */
 
 const BLOCKS = {
-	fuji: ['workspace', 'daemon-route'],
 	honeycrisp: ['workspace', 'daemon-route'],
 	opensidian: ['workspace', 'daemon-route'],
 	vocab: ['workspace', 'daemon-route'],

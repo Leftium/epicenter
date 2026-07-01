@@ -4,6 +4,8 @@ export {
 } from './app-auth-client.js';
 export type {
 	AuthClient,
+	AuthConnection,
+	AuthConnectionState,
 	AuthFetch,
 	AuthState,
 	SyncAuthClient,
@@ -21,7 +23,7 @@ export {
 } from './create-oauth-app-auth.js';
 export {
 	type Instance,
-	InstanceError,
+	InstanceUrlError,
 	normalizeInstanceUrl,
 } from './instance.js';
 export {

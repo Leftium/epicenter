@@ -2,7 +2,7 @@
  * Wiki workspace contract: id, the two tables, the runtime "define a type" /
  * "create a page" actions, and the workspace factory.
  *
- * Isomorphic, mirroring fuji's `src/lib/workspace/index.ts`: this file imports
+ * Isomorphic, mirroring honeycrisp's `honeycrisp.ts`: this file imports
  * only isomorphic dependencies (`@epicenter/workspace`, `typebox`,
  * `wellcrafted`). Filesystem wiring (the markdown vault) lives in
  * `./markdown.ts`; the per-type SQLite index lives in `./projection.ts`.

@@ -10,7 +10,7 @@
 			owner: string;
 			repo: string;
 		};
-		/** Optional path appended after the repo URL (e.g. '/tree/main/apps/fuji'). */
+		/** Optional path appended after the repo URL (e.g. '/tree/main/apps/honeycrisp'). */
 		path?: string;
 		stars?: Promise<number> | number;
 		starsTweenedDuration?: number;

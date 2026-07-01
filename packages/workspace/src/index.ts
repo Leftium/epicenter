@@ -67,7 +67,7 @@ export {
 // Daemon, config, and Epicenter-root surfaces are node-only (they resolve real
 // paths or sit on the mount contract) and ship from `@epicenter/workspace/node`
 // and `@epicenter/workspace/daemon`. Keeping them out of this root barrel stops
-// browser bundles (fuji, whispering, etc.) from traversing `node:*` modules.
+// browser bundles (honeycrisp, whispering, etc.) from traversing `node:*` modules.
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID + DATE PRIMITIVES

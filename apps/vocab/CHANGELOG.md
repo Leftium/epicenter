@@ -1,4 +1,4 @@
-# @epicenter/zhongwen
+# @epicenter/vocab
 
 ## 0.0.2
 

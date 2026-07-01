@@ -2,7 +2,7 @@
 
 Live tabs and saved tabs are fundamentally different things. Live tabs mirror Chrome's reality. They're ephemeral, they vanish on restart, and they're not yours to own. Saved tabs and bookmarks are workspace data: they persist, sync across devices, and survive browser restarts. Tab Manager is a browser extension that keeps these two layers separate and bridges them with an AI chat drawer that can act on your workspace.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
 ---
 
@@ -127,4 +127,4 @@ Auth uses Google OAuth via `browser.identity`. The workspace mounts once a signe
 
 ## License
 
-MIT
+AGPL-3.0

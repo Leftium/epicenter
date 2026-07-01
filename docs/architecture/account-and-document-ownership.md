@@ -10,7 +10,7 @@ A document is owned by a user, addressed by the user's identity. There is no
 container between the user and the document.
 
 ```
-owner   = the user (in personal mode) or the deployment (in shared mode)
+owner   = the user (in personal mode) or the deployment (in instance mode)
 document = a Y.Doc, identified by its guid
 ```
 
@@ -69,10 +69,11 @@ builder   roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, nodeId })
 ```
 
 The DO partition is `owners/<ownerId>` in both modes. In personal mode
-`ownerId === user.id`, derived from the authenticated user's id. In shared mode
-`ownerId === 'shared'`, so every admitted user on the deployment shares the
-same partition. The room id is the Y.Doc's guid: the document already carries
-its own identity, so nothing else is composed into the name.
+`ownerId === user.id`, derived from the authenticated user's id. In instance
+mode `ownerId === 'instance'`, so every operator-authorized request on the
+deployment shares the same partition. The room id is the Y.Doc's guid: the
+document already carries its own identity, so nothing else is composed into the
+name.
 
 Browser apps and the daemon use the same route and the same builder. They sync
 the same document by using the same guid.

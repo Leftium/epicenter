@@ -249,7 +249,7 @@ export function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
         });
         const sessionOwnerId = isPersonal
           ? session?.user?.id
-          : (session ? TEAM_OWNER_ID : undefined);
+          : (session ? INSTANCE_OWNER_ID : undefined);
         if (sessionOwnerId !== urlOwnerId) {
           return c.json(AssetError.Unauthorized(), 401);
         }

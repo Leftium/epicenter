@@ -2,7 +2,7 @@
 
 A local editor for writing the prompt files and configuration that power Epicenter agents. It uses Yjs CRDTs under the hood, so undo and redo work across sessions and the format is ready for collaboration, but it does not sync anywhere. Your skills stay on your machine.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
 ---
 
@@ -76,4 +76,4 @@ bun dev
 
 ## License
 
-MIT
+AGPL-3.0

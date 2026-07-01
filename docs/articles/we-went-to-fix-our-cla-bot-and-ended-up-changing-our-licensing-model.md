@@ -51,7 +51,7 @@ We were running a CLA for a dual-licensing model we weren't actually doing. We h
 
 The CLA was friction with no corresponding benefit.
 
-So we split the licenses. MIT for the library packages and apps: `packages/workspace`, `packages/ui`, `apps/whispering`, `apps/tab-manager`. AGPL for the sync server and sync protocol: `apps/api`, `packages/sync`. No CLA.
+So we split the licenses by how you use the code. MIT for the developer toolkit you build with: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`. AGPL for everything we ship or run: all apps (including `apps/whispering` and `apps/tab-manager`), the shared server library (`packages/server`), and internal glue. No CLA.
 
 Enterprise features, when we build them, will live in a separate directory and be written entirely by the Epicenter team. That's the open-core model: AGPL base, proprietary enterprise layer on top. It achieves the same business outcome as dual licensing without requiring copyright assignment from contributors.
 

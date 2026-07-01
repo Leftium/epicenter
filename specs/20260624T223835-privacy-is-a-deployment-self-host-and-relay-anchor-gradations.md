@@ -96,10 +96,10 @@ The decisive probe: `personal` with one user yields one partition; `shared` with
    + clean per-member isolation on one machine   - everyone needs an identity
    + one box to maintain                          - you are the ops team of one
 
-  D · FAMILY / TEAM, shared wiki                    supported NOW (only built one)
+  D · FAMILY / TEAM, self-hosted instance           supported NOW (only built one)
   ┌─────────┐       Cloudflare Worker (apps/self-host)
-  │ members │══════▶│ star, partition: shared (owners/shared/) + admit allowlist│
-  └─────────┘       │ auth: OAuth + admit predicate                            │
+  │ members │══════▶│ star, partition: instance (owners/instance/)             │
+  └─────────┘       │ auth: operator bearer                                    │
    + the one config with a real deployable + tests  - it is a CF WORKER (needs a
    + co-ownership matches a wiki's model              CF account, not your metal)
 

@@ -58,4 +58,4 @@ bun run build    # Static output with /dashboard base path
 
 ## License
 
-[AGPL-3.0](../../LICENSE). Most packages in this monorepo are MIT. This app is the exception.
+[AGPL-3.0](../../LICENSE). Code Epicenter ships or runs is AGPL-3.0; the MIT surface is the developer toolkit. This app is the hosted API's dashboard, so AGPL-3.0.

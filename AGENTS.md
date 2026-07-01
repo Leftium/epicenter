@@ -8,6 +8,8 @@ Planning docs and decisions: Authoritative sources, in order, are `docs/adr/` (d
 
 Deployment seam: One library (`packages/server`), two deployables (`apps/api` = hosted personal cloud, `apps/self-host` = self-hosted single-partition instance reference). Multi-tenancy (per-user partitions, OAuth, billing) is Cloud-only; an instance is one pinned partition behind one operator bearer (ADR-0075). Billing (catalog, routes, Autumn) lives in `apps/api/worker/billing/` and is hosted-only; never extract it back to a shared package. The self-hosted instance deployable is community-supported, not Epicenter-operated.
 
+License boundary: apps and `packages/server` are AGPL; the embeddable toolkit packages are MIT (decision procedure in `docs/licensing/licensing-strategy.md`). Moving or copying code from an AGPL package into an MIT one is a relicensing act; `bun run check:licenses` guards dependency edges only and cannot see copied source.
+
 Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun test`, `bun install`, and `bun x` (instead of npx).
 
 Agent instruction files: Treat `AGENTS.md` as the canonical shared instructions file. `CLAUDE.md` files are compatibility shims for Claude Code and should only import a sibling `AGENTS.md` with `@AGENTS.md`, plus rare Claude-specific notes if needed. When adding a nested `AGENTS.md`, add a sibling `CLAUDE.md` shim. Do not create orphan `CLAUDE.md` files.

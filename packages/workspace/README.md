@@ -246,7 +246,8 @@ modes: build the URL with
 `roomWsUrl({ baseURL, ownerId, guid: workspace.ydoc.guid, nodeId })`. A cloud
 doc is owned by the authenticated `OwnerId`, so the server resolves the Durable
 Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal:
-`ownerId === userId`; shared: `ownerId === 'shared'`), with no workspace lookup.
+`ownerId === userId`; instance: `ownerId === 'instance'`), with no workspace
+lookup.
 
 For production-shaped browser wiring, see
 `apps/honeycrisp/honeycrisp.browser.ts`. For auth session transitions, see

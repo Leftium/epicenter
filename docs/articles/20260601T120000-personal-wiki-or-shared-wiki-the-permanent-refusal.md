@@ -1,5 +1,11 @@
 # Personal Wiki or Shared Wiki: The Permanent Refusal
 
+Historical note: this article records the product argument that replaced
+`team` with `shared`. ADR-0075 later collapsed the implementation to
+`personal | instance`: the self-hosted instance is still one flat partition, but
+the old `shared({ admit })` factory and `ownerId === 'shared'` sentinel are no
+longer current API.
+
 Epicenter is a personal wiki or a shared wiki. That sentence took us longer to find than it should have, because we almost called the second mode "team."
 
 ## The Wrong Turn

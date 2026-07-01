@@ -4,8 +4,7 @@
  * One shared Hono library, two deployables (ADR-0075): the hosted Epicenter
  * Cloud (`personal`, multi-tenant, partition keyed per user) and the self-hosted
  * single-partition instance (`instance`, one pinned `owners/instance` partition
- * behind one operator bearer). The full design lives in
- * `specs/20260522T230000-server-package-split.md`.
+ * behind one operator bearer).
  *
  * Deployments construct the server app, choose an `OwnershipRule`, then
  * mount each reusable surface with the matching `mount*` primitive. Each

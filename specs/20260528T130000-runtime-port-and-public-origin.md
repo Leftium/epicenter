@@ -39,7 +39,7 @@ export function createServerApp({ resolveOrigin }: CreateServerAppOptions): Hono
 // apps/api (hosted): bake the constant, dev overrides
 createServerApp({ resolveOrigin: (env) => env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL });
 
-// apps/team-api (self-host): operator config, required
+// apps/self-host (self-hosted instance): operator config, required
 createServerApp({ resolveOrigin: (env) => env.API_PUBLIC_ORIGIN });
 ```
 
@@ -88,7 +88,7 @@ The codebase already half-imagines this: `server-app.ts` notes "a future Bun
 backend wires its own in-process Rooms here," and `EPICENTER_API_URL` in constants
 already does the `process.env ?? PRODUCTION_API_URL` dance for Node consumers.
 
-Do NOT build the rest of the port now. There is no Node host, and `apps/team-api`
+Do NOT build the rest of the port now. There is no Node host, and `apps/self-host`
 is also Cloudflare. Build it when a second runtime is real; each deployable
 constructs its own `Runtime` at the `apps/*` edge and `packages/server` only
 consumes the port.

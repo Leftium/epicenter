@@ -112,4 +112,4 @@ so editors can load and collaborate on them on demand.
 
 ## License
 
-MIT
+AGPL-3.0

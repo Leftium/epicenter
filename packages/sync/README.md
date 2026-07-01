@@ -103,4 +103,4 @@ In practice:
 
 ## License
 
-AGPL-3.0. That matches the package manifest and the repository's split-license model for sync infrastructure.
+MIT. `@epicenter/sync` is wire-protocol vocabulary in the developer toolkit (code you build with), so it is MIT like the rest of the toolkit. That matches the package manifest.

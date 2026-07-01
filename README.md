@@ -6,6 +6,7 @@
   <p align="center"><strong>Local-first apps that write to files you own.</strong></p>
   <p align="center">Your data lives on your machine as plain Markdown and SQLite: grep it, version it, open it in Obsidian. When an app stops mattering, your files don't.</p>
   <p align="center">Start with <a href="apps/whispering">Whispering</a>, our desktop speech-to-text app. You can install it today.</p>
+  <p align="center">Run the apps freely under AGPL-3.0; build on the developer toolkit freely under MIT. <a href="#license">What that means</a>.</p>
 </p>
 
 <p align="center">
@@ -15,8 +16,11 @@
   <a href="https://github.com/EpicenterHQ/epicenter/releases/latest" target="_blank">
     <img alt="Latest release" src="https://img.shields.io/github/v/release/EpicenterHQ/epicenter?style=flat-square&label=Latest%20Release&color=brightgreen" />
   </a>
-  <a href="LICENSE" target="_blank">
-    <img alt="License" src="https://img.shields.io/github/license/EpicenterHQ/epicenter.svg?style=flat-square" />
+  <a href="#license">
+    <img alt="Apps license: AGPL-3.0" src="https://img.shields.io/badge/apps-AGPL--3.0-blue?style=flat-square" />
+  </a>
+  <a href="#license">
+    <img alt="Toolkit license: MIT" src="https://img.shields.io/badge/toolkit-MIT-brightgreen?style=flat-square" />
   </a>
   <a href="https://go.epicenter.so/discord" target="_blank">
     <img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat-square&logo=discord&logoColor=white" />
@@ -60,6 +64,8 @@ Press a shortcut, speak, optionally transform the transcript, and paste the resu
 [Install Whispering](apps/whispering#install-whispering) | [Download latest release](https://github.com/EpicenterHQ/epicenter/releases/latest)
 
 ## Build With The Toolkit
+
+The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. These are the packages meant to leave this repo: [`@epicenter/workspace`](packages/workspace), [`@epicenter/ui`](packages/ui), [`@epicenter/filesystem`](packages/filesystem), and [`@epicenter/sync`](packages/sync). They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
 
 The hard problem with local-first apps is synchronization. If each device has its own SQLite file or Markdown folder, how do you keep them in sync? [`@epicenter/workspace`](packages/workspace) answers by making Yjs the source of truth, then projecting app state to SQLite for queries and Markdown for reading.
 
@@ -168,7 +174,7 @@ The detailed privacy notes for Whispering live in [apps/whispering](apps/whisper
 | [Whispering](apps/whispering) | Installable app | Desktop speech-to-text with local and bring-your-own-provider transcription paths. |
 | [Matter](apps/matter) | WIP product work | Typed grid for user-owned Markdown folders. It edits ordinary `.md` files directly; `matter.sqlite` is a disposable query mirror. |
 | [API](apps/api) | Hosted infrastructure | Personal cloud Worker for hosted Epicenter services. Includes hosted-only billing and dashboard code. |
-| [Self-host](apps/self-host) | Reference deployable | Community-supported shared wiki deployable without hosted billing. |
+| [Self-host](apps/self-host) | Reference deployable | Community-supported single-partition instance without hosted billing. |
 | Other app folders | Research and prototypes | Useful history and experiments, not the current product lineup. |
 
 ### Packages
@@ -199,8 +205,8 @@ apps/api
   owns hosted-only dashboard and billing code
 
 apps/self-host
-  self-hosted shared wiki reference deployable
-  composes packages/server with shared({ admit })
+  self-hosted single-partition instance reference deployable
+  composes packages/server with instance()
   community-supported
   no hosted billing surface
 ```
@@ -249,15 +255,15 @@ Contributors coordinate in [Discord](https://go.epicenter.so/discord).
 
 ## License
 
-Epicenter uses a two-tier split:
+Epicenter uses a two-tier split by how you use the code:
 
-- [MIT](licenses/LICENSE-MIT) for the local-first-on-Yjs developer toolkit: `@epicenter/workspace`, `@epicenter/ui`, `@epicenter/filesystem`, and `@epicenter/sync`.
-- [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for non-toolkit app surfaces, hosted server code, and internal packages.
+- [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/workspace`, `@epicenter/ui`, `@epicenter/filesystem`, `@epicenter/sync`) and the toolkit-internal contracts they carry (`@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/encryption`, `@epicenter/field`, `@epicenter/chat`). Nine packages today.
+- [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for code we ship or run: every app, the shared server library, the CLI, and the rest of the internal packages.
 - There is no proprietary tier today. Revenue is intended to come from hosting and services, not from selling closed licenses.
 
 Every dependency of the toolkit packages is MIT-compatible, enforced by `bun run check:licenses`. The license split follows the same broad pattern as Plausible and PostHog for hosted open-source services, and Yjs for MIT core libraries with copyleft server pieces.
 
-See the root [LICENSE](LICENSE), [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md), and [licensing strategy spec](specs/20260428T120000-licensing-strategy.md) for the full model.
+See the root [LICENSE](LICENSE), [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md), and the [licensing strategy](docs/licensing/licensing-strategy.md) for the full model.
 
 ---
 

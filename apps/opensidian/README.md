@@ -2,7 +2,7 @@
 
 Opensidian is a local-first note-taking app with a built-in bash terminal and real-time sync. Your notes live in a CRDT-backed virtual filesystem that a shell can write to just as easily as the editor can. Try it at [opensidian.com](https://opensidian.com).
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
 ---
 
@@ -110,4 +110,4 @@ same-origin and the cookie-backed client can replace local bearer storage.
 
 ## License
 
-[MIT](./LICENSE)
+[AGPL-3.0](./LICENSE)

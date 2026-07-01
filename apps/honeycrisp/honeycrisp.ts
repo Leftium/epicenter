@@ -153,5 +153,3 @@ export const honeycrispWorkspace = defineWorkspace({
 export type HoneycrispWorkspace = WorkspaceFromDefinition<
 	typeof honeycrispWorkspace
 >;
-
-export type HoneycrispActions = HoneycrispWorkspace['actions'];

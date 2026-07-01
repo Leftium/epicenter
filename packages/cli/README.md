@@ -108,18 +108,18 @@ Error text goes to stderr; machine-readable output (`--format json|jsonl`, table
 `epicenter.config.ts` marks the Epicenter root and declares its mount. One folder is one app is one mount: the default export is a single `Mount`. App packages ship mount factories that return `Mount` values; `Mount.name` is the display label `epicenter list` prints as its header. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so the mount's visible markdown projection is a direct child folder.
 
 ```ts
-import { honeycrisp } from "@epicenter/honeycrisp/mount";
+import { notes } from "@acme/notes/mount";
 
-export default honeycrisp();
+export default notes();
 ```
 
-The returned `Mount.name` is `honeycrisp`, so `epicenter list` prints `honeycrisp` as its header regardless of the Epicenter folder name. Actions are addressed by their bare key (`epicenter run folders_delete`): the daemon serves one mount, so the key alone is unambiguous.
+The returned `Mount.name` is `notes`, so `epicenter list` prints `notes` as its header regardless of the Epicenter folder name. Actions are addressed by their bare key (`epicenter run notes_update`): the daemon serves one mount, so the key alone is unambiguous.
 
 The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and the generated projection are direct children:
 
 ```
 repo/                      unreserved repo root
-└── honeycrisp/             Epicenter root (folder name is your choice)
+└── my-notes/               Epicenter root (folder name is your choice)
     ├── epicenter.config.ts   tracked, marks the Epicenter root
     ├── .epicenter/           ignored, machine state for this root
     └── notes/                generated Markdown projection (one folder per table)
@@ -152,11 +152,11 @@ Use scripts for anything beyond one-shot CLI calls:
 
 ```ts
 import { connectDaemonActions } from "@epicenter/workspace/node";
-import type { HoneycrispActions } from "@epicenter/honeycrisp";
+import type { NotesActions } from "@acme/notes";
 
-const honeycrisp = await connectDaemonActions<HoneycrispActions>();
+const notes = await connectDaemonActions<NotesActions>();
 
-await honeycrisp.folders_delete({ folderId });
+await notes.notes_update({ id, pinned: false });
 ```
 
 Scripts get normal TypeScript control flow. The CLI stays small: list, run, peers, and daemon lifecycle.

@@ -40,6 +40,36 @@
 	// "retry / change". Reads the boot snapshot, which only changes across a reload.
 	const configured = $derived(!setting.isDefault());
 
+	// The self-host token client reports why it is not connected; hosted OAuth has
+	// no such channel (`auth.connection` is undefined) and falls back to the
+	// generic startSignIn error rendered below.
+	const host = $derived(new URL(setting.read().baseURL).host);
+	const connectionState = $derived(auth.connection?.state);
+	const connectionNotice = $derived.by(() => {
+		const c = connectionState;
+		if (!c) return null;
+		switch (c.status) {
+			case 'pending':
+				return { text: `Connecting to ${host}…`, tone: 'text-muted-foreground' };
+			case 'failed':
+				return {
+					text:
+						c.reason === 'rejected'
+							? `${host} rejected the saved token.`
+							: `Couldn't reach ${host}. Check the URL and that your server is running.`,
+					tone: 'text-destructive',
+				};
+			case 'connected':
+				return null;
+		}
+	});
+	// Busy while the boot check is still verifying or a manual retry is in flight.
+	// A pending boot check has no ceiling here: `fetch` has no default timeout, so
+	// a star that accepts the socket but never answers leaves this on "Connecting…"
+	// until the browser's own timeout fires. Refused connections and 401s fail
+	// fast, so the common failures self-heal into a retryable state.
+	const verifying = $derived(signingIn || connectionState?.status === 'pending');
+
 	// One sign-in surface: the primary button and the "retry" action are the same
 	// `auth.startSignIn()`, whose meaning (hosted OAuth vs. verifying the persisted
 	// token) is fixed by the constructed client, so the label follows `configured`.
@@ -56,15 +86,13 @@
 </script>
 
 <div class={cn('flex flex-col gap-3', className)}>
-	{#if signInError}
+	{#if connectionNotice}
+		<p class="text-xs {connectionNotice.tone}">{connectionNotice.text}</p>
+	{:else if signInError}
 		<p class="text-xs text-destructive">{signInError}</p>
 	{/if}
-	<Button
-		class="w-full"
-		disabled={signingIn || accountLocked}
-		onclick={startSignIn}
-	>
-		{#if signingIn}
+	<Button class="w-full" disabled={verifying || accountLocked} onclick={startSignIn}>
+		{#if verifying}
 			<Spinner class="size-4" />
 			{configured ? 'Connecting…' : 'Signing in…'}
 		{:else if auth.state.status === 'reauth-required'}

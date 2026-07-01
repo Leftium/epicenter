@@ -25,14 +25,32 @@ export { createSession, type SignedIn } from './session.svelte.js';
  * shape is preserved.
  */
 function reactiveAuthClient<T extends AuthClient>(auth: T): T {
-	const subscribe = createSubscriber((update) => auth.onStateChange(update));
-	return {
+	const subscribeState = createSubscriber((update) => auth.onStateChange(update));
+	const reactive = {
 		...auth,
 		get state() {
-			subscribe();
+			subscribeState();
 			return auth.state;
 		},
 	} as T;
+	// The self-host token client also exposes a connection-verification channel
+	// (pending / unreachable / rejected) that changes without touching `state`, so
+	// give it its own subscriber. Clients without one (hosted OAuth, cookie) skip
+	// this and keep the plain spread value (undefined).
+	const source = auth.connection;
+	if (source) {
+		const subscribeConnection = createSubscriber((update) =>
+			source.onChange(update),
+		);
+		reactive.connection = {
+			get state() {
+				subscribeConnection();
+				return source.state;
+			},
+			onChange: source.onChange,
+		};
+	}
+	return reactive;
 }
 
 /**

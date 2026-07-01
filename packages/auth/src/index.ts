@@ -4,6 +4,8 @@ export {
 } from './app-auth-client.js';
 export type {
 	AuthClient,
+	AuthConnection,
+	AuthConnectionState,
 	AuthFetch,
 	AuthState,
 	SyncAuthClient,

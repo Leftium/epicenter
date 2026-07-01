@@ -17,6 +17,37 @@ export type AuthFetch = (
 	init?: RequestInit,
 ) => Promise<Response>;
 
+/**
+ * Outcome of verifying a client's credential against its star. Exposed only by
+ * clients that perform a remote bearer verification at boot (the self-host token
+ * client, {@link createInstanceTokenAuth}). A failed verification does NOT change
+ * identity {@link AuthState}, which stays `signed-out`, so this is the separate
+ * channel a UI reads to explain WHY it is signed out: an unreachable star versus
+ * a rejected token.
+ */
+export type AuthConnectionState =
+	| { status: 'pending' }
+	| { status: 'connected' }
+	| {
+			status: 'failed';
+			/**
+			 * `rejected`: the star answered and refused the token (401/403).
+			 * `unreachable`: no usable answer (offline, wrong origin, or a box that
+			 * did not respond like an Epicenter star).
+			 */
+			reason: 'rejected' | 'unreachable';
+	  };
+
+/**
+ * Observable {@link AuthConnectionState}. `onChange` does not replay the current
+ * value, mirroring {@link AuthClient.onStateChange}; read `state` once before
+ * subscribing when the boot value matters (the Svelte reactive wrapper does).
+ */
+export type AuthConnection = {
+	get state(): AuthConnectionState;
+	onChange(fn: (state: AuthConnectionState) => void): () => void;
+};
+
 export type AuthClient = {
 	state: AuthState;
 	/**
@@ -72,6 +103,14 @@ export type AuthClient = {
 	 * this when it renders the user; everything else reads `ownerId` off `state`.
 	 */
 	getProfile(): Promise<Result<AuthUser, AuthError>>;
+	/**
+	 * Connection-verification channel, present only on clients that verify a
+	 * remote bearer at boot (the self-host token client). Absent on hosted OAuth
+	 * (identity resolves through the persisted grant, not a boot bearer check) and
+	 * on the same-origin cookie client (no remote star), so it is an optional
+	 * capability a UI feature-detects, not a universal field.
+	 */
+	connection?: AuthConnection;
 	[Symbol.dispose](): void;
 };
 

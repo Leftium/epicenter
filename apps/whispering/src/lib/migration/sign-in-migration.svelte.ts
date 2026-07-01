@@ -60,9 +60,9 @@ function openLocalSource() {
 type LocalSource = ReturnType<typeof openLocalSource>;
 
 /** Upsert every valid row from one table into another; idempotent by id. */
-function copyTable<R extends { id: string }>(
-	from: { scan(): { rows: R[] } },
-	to: { set(row: R): { error: unknown } },
+function copyTable<TRow extends { id: string }>(
+	from: { scan(): { rows: TRow[] } },
+	to: { set(row: TRow): { error: unknown } },
 ): void {
 	for (const row of from.scan().rows) {
 		const { error } = to.set(row);
@@ -72,10 +72,13 @@ function copyTable<R extends { id: string }>(
 
 /**
  * Copy the whole local doc into the owner doc in one transaction (one observer
- * fire, one relay batch), then delete the plaintext local copy. The copy is
- * synchronous, so it either fully lands before `clearLocal` or throws before it;
- * a throw leaves the local copy intact, so the next boot re-prompts and re-runs
- * idempotently.
+ * fire, one relay batch), then delete the plaintext local copy. Yjs does not
+ * roll back a `transact()` callback on throw, so a mid-loop failure can leave
+ * partial rows already committed to the owner doc; the safety net is that
+ * `copyTable` is idempotent by id, not that the transaction is atomic. Either
+ * way `clearLocal` only runs after the whole copy resolves without throwing,
+ * so a failure leaves the local copy intact and the next attempt re-runs
+ * safely over whatever partial state exists.
  */
 async function addLocalToOwner(source: LocalSource): Promise<void> {
 	await whispering.whenReady;
@@ -101,6 +104,10 @@ function createSignInMigration() {
 			return open;
 		},
 		set open(value: boolean) {
+			// Ignore Escape/outside-click while a copy or delete is in flight; the
+			// buttons are already disabled, so the dialog's own close path is the
+			// one spot this guard was missing.
+			if (phase !== 'idle') return;
 			open = value;
 		},
 		get recordingCount() {

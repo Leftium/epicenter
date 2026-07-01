@@ -152,5 +152,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0082](0082-local-mail-mirror-is-push-free-polling-collapsing-hosted-vs-self-host-to-one-oauth-client-id.md) | Local Mail's mirror is push-free CDC polling; hosted vs self-host collapses to one OAuth Client ID | Proposed |
 | [0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) | `apps/email` is refused; Local Mail is the only Gmail client | Accepted |
 | [0084](0084-super-chat-tools-load-as-vendored-typescript-the-shell-is-a-bun-hosted-local-server.md) | Super Chat's tools load as vendored TypeScript via Bun's native dynamic import; its shell is a Bun-hosted local server, not a bundled SPA | Proposed |
+| [0085](0085-a-box-is-a-role-an-addressable-endpoint-plays-not-a-node-type.md) | A box is a role an addressable endpoint plays, not a distinct node type | Accepted |
 
 When you add an ADR, add its row here.

@@ -195,29 +195,28 @@
 				{...props}
 				variant="ghost"
 				size="icon-sm"
+				class="relative"
 				{tooltip}
 				disabled={!!disabledReason}
 			>
-				<div class="relative">
-					{#if signOut.isPending}
-						<LoaderCircle class="size-4 animate-spin" />
-					{:else if !isSignedIn}
-						<CloudOff class="size-4 text-muted-foreground" />
-					{:else if !syncStatus}
-						<User class="size-4" />
-					{:else if syncStatus.phase === 'connected'}
-						<Cloud class="size-4" />
-					{:else if syncStatus.phase === 'connecting'}
-						<LoaderCircle class="size-4 animate-spin" />
-					{:else}
-						<CloudOff class="size-4 text-destructive" />
-					{/if}
-					{#if !isSignedIn}
-						<span
-							class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary"
-						></span>
-					{/if}
-				</div>
+				{#if signOut.isPending}
+					<LoaderCircle class="size-4 animate-spin" />
+				{:else if !isSignedIn}
+					<CloudOff class="size-4 text-muted-foreground" />
+				{:else if !syncStatus}
+					<User class="size-4" />
+				{:else if syncStatus.phase === 'connected'}
+					<Cloud class="size-4" />
+				{:else if syncStatus.phase === 'connecting'}
+					<LoaderCircle class="size-4 animate-spin" />
+				{:else}
+					<CloudOff class="size-4 text-destructive" />
+				{/if}
+				{#if !isSignedIn}
+					<span
+						class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary"
+					></span>
+				{/if}
 			</Button>
 		{/snippet}
 	</Popover.Trigger>

@@ -173,7 +173,8 @@ function createSignInMigration() {
 				counts = {
 					recordings: source.tables.recordings.scan().rows.length,
 					transformations: source.tables.transformations.scan().rows.length,
-					transformationRuns: source.tables.transformationRuns.scan().rows.length,
+					transformationRuns:
+						source.tables.transformationRuns.scan().rows.length,
 				};
 			} finally {
 				source.dispose();

@@ -21,7 +21,7 @@ export {
 } from './create-oauth-app-auth.js';
 export {
 	type Instance,
-	InstanceError,
+	InstanceUrlError,
 	normalizeInstanceUrl,
 } from './instance.js';
 export {

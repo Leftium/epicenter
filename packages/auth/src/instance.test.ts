@@ -24,14 +24,19 @@ describe('normalizeInstanceUrl', () => {
 		expect(data).toBe('https://host.example.com/epicenter');
 	});
 
-	test('rejects empty input', () => {
+	test('rejects empty input as Empty', () => {
 		const { data, error } = normalizeInstanceUrl('   ');
 		expect(data).toBeNull();
-		expect(error?.name).toBe('InvalidUrl');
+		expect(error?.name).toBe('Empty');
 	});
 
-	test('rejects a non-http(s) scheme', () => {
+	test('rejects a non-http(s) scheme as UnsupportedScheme', () => {
 		const { error } = normalizeInstanceUrl('ftp://host.example.com');
-		expect(error?.name).toBe('InvalidUrl');
+		expect(error?.name).toBe('UnsupportedScheme');
+	});
+
+	test('rejects a schemed-but-hostless URL as Malformed', () => {
+		const { error } = normalizeInstanceUrl('https://');
+		expect(error?.name).toBe('Malformed');
 	});
 });

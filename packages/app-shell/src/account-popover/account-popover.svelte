@@ -55,9 +55,12 @@
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/**
-		 * When set, the trigger is disabled and shows this string as its tooltip.
-		 * Lets a host block account changes that would reload the page at an unsafe
-		 * moment (e.g. while a recording is in progress). Omit to leave it enabled.
+		 * When set, the account actions that reload the page (sign in, sign out,
+		 * forget device) are disabled and this reason is shown, both as the trigger
+		 * tooltip and as a line inside the popover. The trigger itself stays openable
+		 * so the reason is discoverable (a disabled trigger swallows hover, hiding the
+		 * one message that matters). Lets a host block account changes at an unsafe
+		 * moment, e.g. while a recording is in progress. Omit to leave it enabled.
 		 */
 		disabledReason?: string;
 		/**
@@ -83,6 +86,10 @@
 	let popoverOpen = $state(false);
 	let forgettingDevice = $state(false);
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
+	// A page-reloading account change (sign in/out, forget device) is unsafe right
+	// now; the reason is shown and those actions are disabled. Reconnect is safe
+	// (it never reloads), so it stays enabled.
+	const accountLocked = $derived(!!disabledReason);
 	const accountCacheKey = $derived(
 		auth.state.status === 'signed-out' ? null : auth.state.ownerId,
 	);
@@ -191,14 +198,7 @@
 <Popover.Root bind:open={popoverOpen}>
 	<Popover.Trigger>
 		{#snippet child({ props })}
-			<Button
-				{...props}
-				variant="ghost"
-				size="icon-sm"
-				class="relative"
-				{tooltip}
-				disabled={!!disabledReason}
-			>
+			<Button {...props} variant="ghost" size="icon-sm" class="relative" {tooltip}>
 				{#if signOut.isPending}
 					<LoaderCircle class="size-4 animate-spin" />
 				{:else if !isSignedIn}
@@ -226,6 +226,9 @@
 				<div class="space-y-1">
 					<p class="text-sm font-medium">{accountLabel}</p>
 				</div>
+				{#if disabledReason}
+					<p class="text-xs text-muted-foreground">{disabledReason}</p>
+				{/if}
 				{#if collaboration && syncStatus}
 					<div class="border-t pt-3 space-y-1">
 						<p class="text-xs text-muted-foreground">
@@ -256,6 +259,7 @@
 						size="sm"
 						class="flex-1"
 						onclick={() => signOut.mutate()}
+						disabled={accountLocked}
 					>
 						<LogOut class="size-3.5" />
 						Sign out
@@ -268,7 +272,7 @@
 							size="sm"
 							class="w-full justify-start text-destructive hover:text-destructive"
 							onclick={forgetDevice}
-							disabled={forgettingDevice}
+							disabled={forgettingDevice || accountLocked}
 						>
 							{#if forgettingDevice}
 								<LoaderCircle class="size-3.5 animate-spin" />
@@ -288,13 +292,16 @@
 						Sign in to sync your {syncNoun} across devices.
 					</p>
 				</div>
+				{#if disabledReason}
+					<p class="text-xs text-muted-foreground">{disabledReason}</p>
+				{/if}
 				{#if startSignIn.error}
 					<p class="text-xs text-destructive">{startSignIn.error.message}</p>
 				{/if}
 				<Button
 					class="w-full"
 					onclick={() => startSignIn.mutate()}
-					disabled={startSignIn.isPending}
+					disabled={startSignIn.isPending || accountLocked}
 				>
 					{#if startSignIn.isPending}
 						<LoaderCircle class="size-4 animate-spin" />

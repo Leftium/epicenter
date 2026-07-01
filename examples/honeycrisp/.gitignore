@@ -1,5 +1,5 @@
 # Epicenter machine state, regenerable from the Yjs persistence under it.
-# The Markdown projection (entries/) is tracked on purpose: it is the file
+# The Markdown projection (notes/) is tracked on purpose: it is the file
 # output you keep and version.
 .epicenter/
 

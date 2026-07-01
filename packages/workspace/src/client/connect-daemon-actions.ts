@@ -12,10 +12,10 @@
  * @example
  * ```ts
  * import { connectDaemonActions } from '@epicenter/workspace/node';
- * import type { FujiActions } from '@epicenter/fuji';
+ * import type { HoneycrispActions } from '@epicenter/honeycrisp';
  *
- * const fuji = await connectDaemonActions<FujiActions>();
- * await fuji.entries_update({ id, tags: ['untagged'] });
+ * const honeycrisp = await connectDaemonActions<HoneycrispActions>();
+ * await honeycrisp.folders_delete({ folderId });
  * ```
  *
  * Daemon-scope calls (peers, list with the mount label) live on `DaemonClient`

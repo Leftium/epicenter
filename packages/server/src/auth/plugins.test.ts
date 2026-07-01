@@ -15,7 +15,7 @@
 import { expect, test } from 'bun:test';
 import {
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
-	EPICENTER_FUJI_OAUTH_CLIENT_ID,
+	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	EPICENTER_OAUTH_SCOPES,
 } from '@epicenter/constants/oauth-clients';
 import {
@@ -29,12 +29,12 @@ import { generateCodeChallenge } from 'better-auth/oauth2';
 import { authPlugins } from './plugins.js';
 
 const trustedClientFixture = {
-	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
-	name: 'Fuji',
+	clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
+	name: 'Honeycrisp',
 	type: 'user-agent-based',
 	redirectUris: [
-		'http://localhost:5174/auth/callback',
-		'https://fuji.epicenter.so/auth/callback',
+		'http://localhost:5175/auth/callback',
+		'https://honeycrisp.epicenter.so/auth/callback',
 	],
 } as const satisfies TrustedOAuthClient;
 const redirectUri = trustedClientFixture.redirectUris[0];

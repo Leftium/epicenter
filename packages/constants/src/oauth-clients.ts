@@ -21,13 +21,9 @@
  * machine, install, or secret. Every CLI install uses the same value.
  */
 export const EPICENTER_CLI_OAUTH_CLIENT_ID = 'epicenter-cli';
-export const EPICENTER_FUJI_OAUTH_CLIENT_ID = 'epicenter-fuji';
-export const EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI =
-	'epicenter-fuji://auth/callback';
 export const EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID = 'epicenter-honeycrisp';
-// Like Fuji, Whispering ships both web and Tauri, so it has a deep-link
-// redirect for the desktop build in addition to its web `/auth/callback`
-// origins.
+// Whispering ships both web and Tauri, so it has a deep-link redirect for
+// the desktop build in addition to its web `/auth/callback` origins.
 export const EPICENTER_WHISPERING_OAUTH_CLIENT_ID = 'epicenter-whispering';
 export const EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI =
 	'epicenter-whispering://auth/callback';

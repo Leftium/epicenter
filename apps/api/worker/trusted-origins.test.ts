@@ -20,7 +20,7 @@ describe('buildEpicenterTrustedOrigins', () => {
 	});
 
 	test('a production deployment does not trust localhost dev origins', () => {
-		expect(PROD).not.toContain(localUrl(APPS.FUJI));
+		expect(PROD).not.toContain(localUrl(APPS.HONEYCRISP));
 		expect(PROD).not.toContain(localUrl(APPS.API));
 		expect(PROD).not.toContain(`http://${new URL(APPS.API.url).host}`);
 		// `tauri://localhost` is a legitimate production origin, so the check is
@@ -29,14 +29,14 @@ describe('buildEpicenterTrustedOrigins', () => {
 	});
 
 	test('a local deployment trusts the localhost dev origins', () => {
-		expect(LOCAL).toContain(localUrl(APPS.FUJI));
+		expect(LOCAL).toContain(localUrl(APPS.HONEYCRISP));
 		expect(LOCAL).toContain(localUrl(APPS.API));
 		expect(LOCAL).toContain(`http://${new URL(APPS.API.url).host}`);
 	});
 
 	test('both deployments trust the production app origins', () => {
-		expect(PROD).toContain(APPS.FUJI.url);
-		expect(LOCAL).toContain(APPS.FUJI.url);
+		expect(PROD).toContain(APPS.HONEYCRISP.url);
+		expect(LOCAL).toContain(APPS.HONEYCRISP.url);
 	});
 
 	test('is frozen so Cloudflare isolates cannot accumulate mutations', () => {

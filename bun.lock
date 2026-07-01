@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -76,62 +75,6 @@
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "@types/bun": "catalog:",
-        "mode-watcher": "catalog:",
-        "svelte": "catalog:",
-        "svelte-check": "catalog:",
-        "svelte-sonner": "catalog:",
-        "tailwindcss": "catalog:",
-        "typescript": "catalog:",
-        "vite": "catalog:",
-      },
-    },
-    "apps/fuji": {
-      "name": "@epicenter/fuji",
-      "version": "0.0.2",
-      "dependencies": {
-        "@epicenter/app-shell": "workspace:*",
-        "@epicenter/auth": "workspace:*",
-        "@epicenter/constants": "workspace:*",
-        "@epicenter/field": "workspace:*",
-        "@epicenter/svelte": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
-        "@tanstack/svelte-table": "catalog:",
-        "@tanstack/table-core": "9.0.0-alpha.10",
-        "@tauri-apps/api": "catalog:",
-        "@tauri-apps/plugin-deep-link": "^2.4.9",
-        "@tauri-apps/plugin-opener": "catalog:",
-        "arktype": "catalog:",
-        "bits-ui": "catalog:",
-        "date-fns": "catalog:",
-        "markdown-it": "^14.1.1",
-        "nanoid": "catalog:",
-        "prosemirror-commands": "^1.6.0",
-        "prosemirror-inputrules": "^1.4.0",
-        "prosemirror-keymap": "^1.2.0",
-        "prosemirror-markdown": "^1.13.0",
-        "prosemirror-model": "^1.25.0",
-        "prosemirror-schema-basic": "^1.2.0",
-        "prosemirror-schema-list": "^1.4.0",
-        "prosemirror-state": "^1.4.0",
-        "prosemirror-view": "^1.41.0",
-        "typebox": "catalog:",
-        "virtua": "catalog:",
-        "wellcrafted": "catalog:",
-        "y-indexeddb": "catalog:",
-        "y-prosemirror": "^1.3.7",
-        "yjs": "catalog:",
-      },
-      "devDependencies": {
-        "@epicenter/ui": "workspace:*",
-        "@epicenter/vite-config": "workspace:*",
-        "@lucide/svelte": "catalog:",
-        "@sveltejs/adapter-static": "catalog:",
-        "@sveltejs/kit": "catalog:",
-        "@sveltejs/vite-plugin-svelte": "catalog:",
-        "@tailwindcss/vite": "catalog:",
-        "@tauri-apps/cli": "catalog:",
-        "@types/bun": "catalog:",
-        "@types/markdown-it": "^14.1.2",
         "mode-watcher": "catalog:",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
@@ -606,12 +549,12 @@
         "typescript": "catalog:",
       },
     },
-    "examples/fuji": {
-      "name": "@examples/fuji",
-      "version": "0.0.2",
+    "examples/honeycrisp": {
+      "name": "@examples/honeycrisp",
+      "version": "0.0.1",
       "dependencies": {
         "@epicenter/cli": "workspace:*",
-        "@epicenter/fuji": "workspace:*",
+        "@epicenter/honeycrisp": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "wellcrafted": "catalog:",
         "yjs": "catalog:",
@@ -1366,8 +1309,6 @@
 
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 
-    "@epicenter/fuji": ["@epicenter/fuji@workspace:apps/fuji"],
-
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 
     "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
@@ -1466,7 +1407,7 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.1", "", { "os": "win32", "cpu": "x64" }, "sha512-bm4Mowrv+GXMlpWX++EcXw/iLyd1o3+bJkC2DkWXYVvgZCqD/bSj9ctZeAMC3cIxgjRVR2Dufaiu4YPxr5gW1A=="],
 
-    "@examples/fuji": ["@examples/fuji@workspace:examples/fuji"],
+    "@examples/honeycrisp": ["@examples/honeycrisp@workspace:examples/honeycrisp"],
 
     "@examples/notes-cross-peer": ["@examples/notes-cross-peer@workspace:examples/notes-cross-peer"],
 

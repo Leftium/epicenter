@@ -108,12 +108,12 @@ Error text goes to stderr; machine-readable output (`--format json|jsonl`, table
 `epicenter.config.ts` marks the Epicenter root and declares its mount. One folder is one app is one mount: the default export is a single `Mount`. App packages ship mount factories that return `Mount` values; `Mount.name` is the display label `epicenter list` prints as its header. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so the mount's visible markdown projection is a direct child folder.
 
 ```ts
-import { notes } from "@acme/notes/mount";
+import notes from "./workspaces/notes/mount";
 
-export default notes();
+export default notes;
 ```
 
-The returned `Mount.name` is `notes`, so `epicenter list` prints `notes` as its header regardless of the Epicenter folder name. Actions are addressed by their bare key (`epicenter run notes_update`): the daemon serves one mount, so the key alone is unambiguous.
+The default-exported `Mount.name` is `notes`, so `epicenter list` prints `notes` as its header regardless of the Epicenter folder name. Actions are addressed by their bare key (`epicenter run notes_update`): the daemon serves one mount, so the key alone is unambiguous.
 
 The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and the generated projection are direct children:
 
@@ -152,7 +152,7 @@ Use scripts for anything beyond one-shot CLI calls:
 
 ```ts
 import { connectDaemonActions } from "@epicenter/workspace/node";
-import type { NotesActions } from "@acme/notes";
+import type { NotesActions } from "./workspaces/notes/actions";
 
 const notes = await connectDaemonActions<NotesActions>();
 

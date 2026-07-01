@@ -4,7 +4,7 @@ A script is a Bun file that calls a running daemon's actions through `connectDae
 
 For bulk, analytical, FTS, or join-heavy reads, drop to the direct-file SQLite materializer (below): one `O(rows)` SQL scan beats N round-trips. That is the escape hatch, not the default. Actions per [ADR-0021](adr/0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) are the only surface that crosses the process boundary; the SQLite reader is a separate read-only view of the materialized file, not workspace access.
 
-The Epicenter root is the folder that holds `epicenter.config.ts`. That config default-exports one `Mount`; one foreground daemon serves that mount over the root's Unix socket. The CLI addresses actions by their bare key (`epicenter run notes_update`): the daemon serves one mount, so the key alone is unambiguous, and the mount name is just the header `epicenter list` prints. Scripts likewise call actions by their bare keys through `connectDaemonActions`.
+The Epicenter root is the folder that holds `epicenter.config.ts`. That config default-exports one `Mount`; one foreground daemon serves that mount over the root's Unix socket. The CLI addresses actions by their bare key (`epicenter run notes_update`): the daemon serves one mount, so the key alone is unambiguous, and the mount name is just the header `epicenter list` prints. Scripts likewise call actions by their bare keys through `connectDaemonActions`. The `notes` mount below is a local project example, not a first-party package.
 
 ## The whole shape
 
@@ -14,14 +14,14 @@ import {
   findEpicenterRoot,
   openWorkspaceSqlite,
 } from "@epicenter/workspace/node";
-import type { NotesActions } from "@acme/notes";
+import type { NotesActions } from "./workspaces/notes/actions";
 
 // the Epicenter root is the folder that holds epicenter.config.ts
 const epicenterRoot = findEpicenterRoot();
 const cutoff = "2026-01-01T00:00:00Z";
 
 // reads: open the guid-keyed materializer read-only
-const db = openWorkspaceSqlite(epicenterRoot, "acme-notes");
+const db = openWorkspaceSqlite(epicenterRoot, "notes");
 const stale = db
   .query("SELECT id FROM notes WHERE pinned = 1 AND updatedAt < ?")
   .all(cutoff);

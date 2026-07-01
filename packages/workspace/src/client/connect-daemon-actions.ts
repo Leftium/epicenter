@@ -12,7 +12,7 @@
  * @example
  * ```ts
  * import { connectDaemonActions } from '@epicenter/workspace/node';
- * import type { NotesActions } from '@acme/notes';
+ * import type { NotesActions } from './workspaces/notes/actions';
  *
  * const notes = await connectDaemonActions<NotesActions>();
  * await notes.notes_update({ id, pinned: false });

@@ -13,12 +13,12 @@
 	```svelte
 	<script lang="ts">
 		import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
-		import { auth, fuji } from '$lib/fuji/client';
+		import { auth, honeycrisp } from '$lib/honeycrisp/client';
 	</script>
 
 	<WorkspaceGate
-		pending={fuji.idb.whenLoaded}
-		onForgetDevice={() => fuji.wipe()}
+		pending={honeycrisp.idb.whenLoaded}
+		onForgetDevice={() => honeycrisp.wipe()}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children?.()}

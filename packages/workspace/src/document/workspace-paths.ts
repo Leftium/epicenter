@@ -41,8 +41,8 @@ function epicenterStateDir(epicenterRoot: string): string {
  *
  * @example
  * ```ts
- * yjsPath('/Users/braden/Code/vault', 'epicenter-fuji')
- * // '/Users/braden/Code/vault/.epicenter/yjs/epicenter-fuji.db'
+ * yjsPath('/Users/braden/Code/vault', 'epicenter-honeycrisp')
+ * // '/Users/braden/Code/vault/.epicenter/yjs/epicenter-honeycrisp.db'
  * ```
  */
 export function yjsPath(epicenterRoot: string, workspaceId: string): string {
@@ -65,8 +65,8 @@ export function yjsPath(epicenterRoot: string, workspaceId: string): string {
  *
  * @example
  * ```ts
- * sqlitePath('/Users/braden/Code/vault', 'epicenter-fuji')
- * // '/Users/braden/Code/vault/.epicenter/sqlite/epicenter-fuji.db'
+ * sqlitePath('/Users/braden/Code/vault', 'epicenter-honeycrisp')
+ * // '/Users/braden/Code/vault/.epicenter/sqlite/epicenter-honeycrisp.db'
  * ```
  */
 export function sqlitePath(epicenterRoot: string, workspaceId: string): string {
@@ -83,8 +83,8 @@ export function sqlitePath(epicenterRoot: string, workspaceId: string): string {
  *
  * @example
  * ```ts
- * markdownPath('/Users/braden/Code/vault', 'epicenter-fuji')
- * // '/Users/braden/Code/vault/.epicenter/md/epicenter-fuji'
+ * markdownPath('/Users/braden/Code/vault', 'epicenter-honeycrisp')
+ * // '/Users/braden/Code/vault/.epicenter/md/epicenter-honeycrisp'
  * ```
  */
 export function markdownPath(

@@ -16,8 +16,8 @@
  * `body` is a plain string column on the row for this slice (routed to the
  * markdown file's body section by `./markdown.ts`, never into frontmatter). It
  * shares the row's whole-row LWW, the same trade every page already accepts.
- * Promote it to a per-row content `Y.Doc` (fuji's entry-body pattern) when
- * collaborative or independently-syncing body editing is real.
+ * Promote it to a per-row content `Y.Doc` (honeycrisp's note-body pattern)
+ * when collaborative or independently-syncing body editing is real.
  */
 
 import { field } from '@epicenter/field';

@@ -7,7 +7,6 @@ on:
       - 'apps/whispering/**'
       - 'apps/landing/**'
       - 'apps/opensidian/**'
-      - 'apps/fuji/**'
       - 'apps/honeycrisp/**'
       - 'apps/vocab/**'
       - 'packages/**'
@@ -81,7 +80,7 @@ jobs:
           # abort the loop on the first app that fails to build or upload.
           set -uo pipefail
 
-          apps=(whispering landing opensidian fuji honeycrisp vocab)
+          apps=(whispering landing opensidian honeycrisp vocab)
           preview_alias="pr-${PR_NUMBER}"
           rows=""
           for app in "${apps[@]}"; do

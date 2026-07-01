@@ -4,7 +4,7 @@ A script is a Bun file that calls a running daemon's actions through `connectDae
 
 For bulk, analytical, FTS, or join-heavy reads, drop to the direct-file SQLite materializer (below): one `O(rows)` SQL scan beats N round-trips. That is the escape hatch, not the default. Actions per [ADR-0021](adr/0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) are the only surface that crosses the process boundary; the SQLite reader is a separate read-only view of the materialized file, not workspace access.
 
-The Epicenter root is the folder that holds `epicenter.config.ts`. That config default-exports one `Mount`; one foreground daemon serves that mount over the root's Unix socket. The CLI addresses actions by their bare key (`epicenter run entries_update`): the daemon serves one mount, so the key alone is unambiguous, and the mount name is just the header `epicenter list` prints. Scripts likewise call actions by their bare keys through `connectDaemonActions`.
+The Epicenter root is the folder that holds `epicenter.config.ts`. That config default-exports one `Mount`; one foreground daemon serves that mount over the root's Unix socket. The CLI addresses actions by their bare key (`epicenter run notes_update`): the daemon serves one mount, so the key alone is unambiguous, and the mount name is just the header `epicenter list` prints. Scripts likewise call actions by their bare keys through `connectDaemonActions`. The `notes` mount below is a local project example, not a first-party package.
 
 ## The whole shape
 
@@ -14,25 +14,22 @@ import {
   findEpicenterRoot,
   openWorkspaceSqlite,
 } from "@epicenter/workspace/node";
-import type { FujiActions } from "@epicenter/fuji";
+import type { NotesActions } from "./workspaces/notes/actions";
 
 // the Epicenter root is the folder that holds epicenter.config.ts
 const epicenterRoot = findEpicenterRoot();
+const cutoff = "2026-01-01T00:00:00Z";
 
 // reads: open the guid-keyed materializer read-only
-const db = openWorkspaceSqlite(epicenterRoot, "epicenter-fuji");
-const urgent = db
-  .query(
-    "SELECT * FROM entries WHERE EXISTS (SELECT 1 FROM json_each(entries.tags) WHERE value = ?)",
-  )
-  .all("urgent");
+const db = openWorkspaceSqlite(epicenterRoot, "notes");
+const stale = db
+  .query("SELECT id FROM notes WHERE pinned = 1 AND updatedAt < ?")
+  .all(cutoff);
 
 // writes: typed proxy over unix socket to the daemon
-const fuji = await connectDaemonActions<FujiActions>({
-  epicenterRoot,
-});
-for (const note of urgent) {
-  await fuji.entries_update({ id: note.id, tags: ["triaged"] });
+const notes = await connectDaemonActions<NotesActions>({ epicenterRoot });
+for (const note of stale) {
+  await notes.notes_update({ id: note.id, pinned: false });
 }
 
 db.close();
@@ -57,7 +54,7 @@ slight staleness is fine.
 
 `openWorkspaceSqlite(epicenterRoot, workspaceId)` opens the guid-keyed
 convention path `.epicenter/sqlite/<workspaceId>.db` read-only; first-party
-mounts like Fuji write there. A mount that passed a custom `filePath` to its
+mounts write there. A mount that passed a custom `filePath` to its
 materializer needs `openSqliteReader({ filePath })` with that same explicit
 path. Neither helper inspects `epicenter.config.ts`. `.epicenter/` is generated
 machine state, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh;
@@ -73,9 +70,9 @@ npm package).
 
 ## Writes: typed invoke through the daemon
 
-`connectDaemonActions<TActions>({ epicenterRoot })` returns a typed proxy. The proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
+`connectDaemonActions<TActions>({ epicenterRoot })` returns a typed proxy. The proxy translates `notes.notes_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
 
-The mount name comes from the single `Mount.name` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`; the CLI prints that label as the header for `epicenter list`.
+The mount name comes from the single `Mount.name` default-exported by `epicenter.config.ts`. An app factory like `notes()` returns a mount whose name is `notes`; the CLI prints that label as the header for `epicenter list`.
 
 Two consequences fall out:
 

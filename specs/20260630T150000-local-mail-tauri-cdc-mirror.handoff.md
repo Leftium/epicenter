@@ -23,29 +23,28 @@ Each device authorizes Gmail directly (Google permits up to 100 concurrent grant
 - No push, no Pub/Sub, no webhook, in either mode. Plain interval polling only. [ADR-0082]
 - Hosted vs self-host is exactly one override value (`clientId`); the mirror/schema/poll-loop/write-through code path is identical in both. [ADR-0082]
 - Self-host operators register their own Google Cloud project and OAuth client; do NOT let self-host reuse Epicenter's Client ID (breaks the sovereignty point of self-hosting). [ADR-0082 rejected alternatives]
-- This is a SEPARATE app from `apps/email` (the 2026-06-06 hosted server-proxy webmail spec). Do not merge them or treat one as superseding the other; they solve different problems (thin always-online webmail vs. thick offline-capable native mirror). [spec header, user-confirmed 2026-06-30]
-- The mirror shape is a port of `local-books`, not a fresh design. Read `apps/local-books/src/{sync,qb-client,db,recategorize,token-store}.ts` before inventing anything; the spec's mapping table names the exact file:line correspondences.
+- `apps/email` (the 2026-06-06 hosted server-proxy webmail spec) is refused; Local Mail is the only Gmail client. Its spec is deleted; the deleted `GOOGLE_MAIL_CLIENT_ID`/`GOOGLE_MAIL_CLIENT_SECRET` Web-app OAuth client is not Local Mail's client, do not reuse it. [ADR-0083]
+- The mirror shape is a port of `local-books`, not a fresh design. Read `apps/local-books/src/{sync,qb-client,db,token-store}.ts` and `apps/local-books/src/books/recategorize.ts` before inventing anything; the spec's mapping table names the exact file:line correspondences.
 
 ## Current state
 
-- Nothing built yet. `apps/local-mail` does not exist. This is Phase 0.
+- Nothing built yet. `apps/local-mail` does not exist.
 - `apps/local-books` is the reference implementation; it is shipped and stable on `main` (stdio MCP server, #2214, ADR-0073).
 - Base is `main`. A concurrent session has docs work on `chore/scrub-stale-dispatch-vocabulary`; coordinate, do not force-push.
+- **Phase 0 mostly done 2026-06-30** (throwaway script, not committed — lived in a scratchpad dir, gone with the session that ran it). Real findings landed in the spec's mapping table and open questions 3/4 (both marked RESOLVED/PARTIALLY RESOLVED). Open question 5 (OAuth delivery mechanism) also resolved. One piece left: the `historyId` expiry window itself needs a genuine multi-day wait against a saved baseline (`historyId` 554264 from `braden@epicenter.so`, saved 2026-06-30T18:11:47-07:00) — that baseline and its refresh token are NOT preserved anywhere durable (scratchpad only), so a fresh multi-day check will need `connect` re-run from scratch. A live Desktop OAuth client already exists for this: `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET` in Infisical `/apps/local-mail`, reusable directly, do not create another.
 
 ## Start here, in order
 
-1. **Phase 0 (do this before any schema/UI work): the Gmail History API throwaway script.** Modeled on `apps/local-books/src/qb-client.ts`'s `cdc()`/`queryAll()`, against a real test Gmail account. Answers open questions 3 and 4 in the spec empirically: actual `historyId` expiry window (Gmail's retention is dynamic, narrower than QuickBooks' fixed 30 days), and whether backfill needs chunking in a long-lived Tauri process the way it would inside a Cloudflare Worker (it likely doesn't, but confirm).
-2. **Resolve spec open question 5 (OAuth PKCE wiring) against current Google Desktop-app OAuth docs** before building the connect flow — loopback redirect handling and Tauri custom-URI-scheme registration are the most likely real-world gotcha in this whole design.
-3. **Then Phase 1**: `mail.db` schema (`messages`/`threads`/`labels` + `_meta` kv), backfill, incremental poll loop. No UI, no writes yet.
-4. **Phase 2**: connect flow (both modes), Tauri OAuth wiring.
-5. **Phase 3**: write-through actions (archive/label) + reconciliation.
-6. **Phase 4**: UI — the old `apps/email` spec's "UI Shape" section (3-pane `@epicenter/ui` layout) is still valid reference even though its transport model doesn't apply; reuse it, don't redesign it.
+1. **Optional follow-up to Phase 0**: if the `historyId` expiry window still matters before Phase 1 schema decisions lock in, re-run a throwaway probe against the existing `/apps/local-mail` Infisical client, save a fresh baseline `historyId`, and check back after several days (or immediately continue to Phase 1 and treat this as a parallel, non-blocking check — nothing else in Phase 1 depends on knowing the exact number).
+2. **Phase 1**: `mail.db` schema (`messages`/`threads`/`labels` + `_meta` kv), backfill, incremental poll loop. No UI, no writes yet. Note the confirmed CDC-shape finding: Gmail's `history.list` is thinner than QuickBooks' `/cdc` — `messagesAdded` records need a follow-up `messages.get` for content, `labelsAdded`/`labelsRemoved` records carry enough to update in place. A no-change response has no `history` key at all, don't treat it as `.length === 0`. `apps/local-mail` does not exist yet; scaffold it from-scratch (`package.json`, `tsconfig.json` extending the repo's leaf-tier base, per the `tsconfig` skill), templated on `apps/local-books` for the mirror logic. No existing app combines a Tauri shell with a third-party-API OAuth mirror the way Local Mail needs — `apps/fuji`/`apps/whispering` are the Tauri shell/`src-tauri` template, `apps/local-books` is the mirror/CDC/OAuth-mechanics template; there is no single app to copy wholesale.
+3. **Phase 2**: connect flow (both modes), Tauri OAuth wiring. Open question 5 is resolved: PKCE + loopback callback (`127.0.0.1:port`, OS-assigned, no fixed port to pre-register), NOT a Tauri deep-link/custom URI scheme — Google's Desktop client type refuses custom schemes outright. Google Cloud Console does issue Desktop clients a `client_secret`; the token exchange still includes it.
+4. **Phase 3**: write-through actions (archive/label) + reconciliation.
+5. **Phase 4**: UI — the deleted `apps/email` spec's "UI Shape" section (preserved verbatim in the Local Mail spec's Appendix, since the old spec was never committed and git history can't recover it) is still valid reference even though its transport model was refused (ADR-0083); reuse it, don't redesign it.
 
 ## Open questions the owner must resolve, do not guess
 
 1. Does the existing secret vault (ADR-0074) extend to self-host, so a second device can pick up the Gmail refresh token via sync instead of re-consenting? Verify against the vault's actual shipped scope, don't assume.
 2. Default poll interval (foregrounded vs backgrounded/idle). Not decided.
-3. A background review surfaced a real question worth relaying to the owner before much work lands: **does `apps/email` (webmail) still earn its place next to Local Mail?** Webmail's only real justification is no-install/mobile reach (Tauri can't ship to iOS/Android); every other reason ("quick thin client", "onramp") is weaker and nobody has stated a committed requirement for it. Worth a direct ask before investing further in either spec, not a blocker for starting Local Mail itself.
 
 ## Constraints (repo rules)
 

@@ -149,5 +149,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md) | Cross-device is two planes: Epicenter syncs the CRDT, the box is reached directly as a URL-addressed connection | Accepted (capability-layer deletion bound to the Whispering-sync milestone) |
 | [0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) | Per-upstream OAuth concurrency decides whether a materialized mirror is box-owned (Local Books) or device-local (Gmail), not a property of "cloud-upstream apps" as a category | Proposed |
 | [0082](0082-local-mail-mirror-is-push-free-polling-collapsing-hosted-vs-self-host-to-one-oauth-client-id.md) | Local Mail's mirror is push-free CDC polling; hosted vs self-host collapses to one OAuth Client ID | Proposed |
+| [0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) | `apps/email` is refused; Local Mail is the only Gmail client | Accepted |
 
 When you add an ADR, add its row here.

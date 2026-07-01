@@ -114,7 +114,7 @@
 | 2026-06-01 | creative-os-stack-naming-and-drop-serialization | in tree | specs/20260601T120000-creative-os-stack-naming-and-drop-serialization.md |
 | 2026-06-01 | markdown-sync-greenfield | in tree | specs/20260601T160000-markdown-sync-greenfield.md |
 | 2026-06-01 | epicenter-apply-markdown-reconcile | in tree | specs/20260601T120000-epicenter-apply-markdown-reconcile.md |
-| 2026-06-01 | personal-and-shared-wiki-rename | removed (superseded by ADR-0075 instance topology) | specs/20260601T130000-personal-and-shared-wiki-rename.md |
+| 2026-06-01 | personal-and-shared-wiki-rename | removed | specs/20260601T130000-personal-and-shared-wiki-rename.md |
 | 2026-05-31 | prelaunch-reset-runbook | in tree | specs/20260531T205543-prelaunch-reset-runbook.md |
 | 2026-05-30 | schema-declared-body-docs | removed | specs/20260530T180000-schema-declared-body-docs.md |
 | 2026-05-30 | body-docs-clean-break | removed | specs/20260530T220000-body-docs-clean-break.md |
@@ -137,8 +137,8 @@
 | 2026-05-28 | autumn-billing-boundary-cleanup | removed | specs/20260528T132334-autumn-billing-boundary-cleanup.md |
 | 2026-05-28 | jwks-signing-key-greenfield | in tree | specs/jwks-signing-key-greenfield.md |
 | 2026-05-28 | config-force-mount-array | in tree | specs/20260528T121508-config-force-mount-array.md |
-| 2026-05-28 | omega-deployment-profiles | removed (superseded by ADR-0075 instance topology) | specs/20260528T054721-omega-deployment-profiles.md |
-| 2026-05-28 | deployment-collapse | removed (superseded by ADR-0075 instance topology) | specs/20260528T145510-deployment-collapse.md |
+| 2026-05-28 | omega-deployment-profiles | removed | specs/20260528T054721-omega-deployment-profiles.md |
+| 2026-05-28 | deployment-collapse | removed | specs/20260528T145510-deployment-collapse.md |
 | 2026-05-28 | repo-history-cleanup-rehearsal | in tree | specs/20260528T000000-repo-history-cleanup-rehearsal.md |
 | 2026-05-27 | mount-level-git-autosave | removed | specs/20260527T235147-mount-level-git-autosave.md |
 | 2026-05-27 | whispering-markdown-materializer-greenfield | removed | specs/20260527T180000-whispering-markdown-materializer-greenfield.md |
@@ -361,7 +361,7 @@
 | 2026-04-29 | sync-as-peer-transport | removed | specs/20260429T230000-sync-as-peer-transport.md |
 | 2026-04-29 | remote-workspace-is-the-action-tree | removed | specs/20260429T120000-remote-workspace-is-the-action-tree.md |
 | 2026-04-29 | workspace-as-daemon-transport | removed | specs/20260429T004302-workspace-as-daemon-transport.md |
-| 2026-04-28 | licensing-strategy | removed (promoted to docs/licensing/licensing-strategy.md) | specs/20260428T120000-licensing-strategy.md |
+| 2026-04-28 | licensing-strategy | removed | specs/20260428T120000-licensing-strategy.md |
 | 2026-04-28 | cli-mandatory-daemon-collapse | removed | specs/20260428T140000-cli-mandatory-daemon-collapse.md |
 | 2026-04-28 | list-collapse-to-local-primitive | removed | specs/20260428T183933-list-collapse-to-local-primitive.md |
 | 2026-04-28 | script-first-cli-collapse | removed | specs/20260428T-script-first-cli-collapse.md |

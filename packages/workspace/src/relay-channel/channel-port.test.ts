@@ -2,7 +2,7 @@
  * The channel port is the one seam between the sync socket's raw text frames and
  * the relay channel, so the test pins both directions: outbound frames serialize
  * to text, and the inbound text stream is narrowed to channel frames only
- * (presence, dispatch, and junk are ignored here, still handled elsewhere).
+ * (presence and junk are ignored here, still handled elsewhere).
  */
 
 import { expect, test } from 'bun:test';

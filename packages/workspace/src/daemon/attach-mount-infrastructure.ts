@@ -95,7 +95,7 @@ export function attachMountInfrastructure<TActions extends ActionRegistry>(
 		actions,
 		/** Durable Y.Doc update log handle. */
 		yjsLog,
-		/** Cloud sync, presence, and dispatch handle for this mount. */
+		/** Cloud sync, presence, and relay-channel handle for this mount. */
 		collaboration,
 		/**
 		 * Destroy the Y.Doc, then await collaboration, log, and materializer

@@ -155,7 +155,8 @@ export type ResolvedRoom = {
  * `request` is the untouched inbound request (the Bun backend upgrades it in
  * place; the Cloudflare backend forwards a userId-stamped copy to its DO).
  * `userId` is the authenticated principal stamped server-side; `nodeId` is
- * the client's own dispatch address, validated present at the route boundary.
+ * the client's own address the relay routes by, validated present at the route
+ * boundary.
  */
 export type RoomUpgrade = {
 	request: Request;

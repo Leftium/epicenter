@@ -15,8 +15,7 @@
  * are passed to `openCollaboration` as the `nodeId` config field, stamped
  * onto the WebSocket upgrade URL (the relay binds the id to the socket at
  * upgrade and stores it on the socket attachment for the lifetime of the
- * connection: no round-trip validation), and echoed as the `from` field on
- * every HTTP dispatch.
+ * connection: no round-trip validation).
  */
 
 import type { Brand } from 'wellcrafted/brand';

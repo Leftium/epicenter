@@ -4,6 +4,8 @@
 - **Date:** 2026-06-26
 - **Relates:** [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the only cross-process surface, the thing projected to MCP), [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the client loop dispatches actions advertised over presence, the mesh in question), [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md) (the blind coordination box and the Iroh blind-relay direction), [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) (the relay reads plaintext), [ADR-0050](0050-the-inference-contract-is-openai-compatible.md) (the model boundary is OpenAI-compatible, never MCP), [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) (Local Books stays standalone, off the mesh)
 
+> Note (2026-06-30): Invariant 5 is refined by [ADR-0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md); cross-device is two planes (Epicenter syncs the CRDT, the box is reached directly as a URL-addressed connection). This ADR's decision text stands.
+
 ## Context
 
 Epicenter already ships a working, tested cross-device tool mesh: each connected install advertises its full `defineActions` manifest over the server-owned presence channel, and a client dispatches an action to a peer by `nodeId` over the room WebSocket, resolving a `Result` (ADR-0021, ADR-0047). MCP, the industry-standard tool protocol, is absent from the repo. The recurring question was whether to converge the two. A greenfield pass separated MCP into two layers and found they converge differently: the data vocabulary fits Epicenter exactly, the session and transport protocol does not.

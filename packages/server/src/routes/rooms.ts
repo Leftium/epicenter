@@ -65,10 +65,10 @@ function createRoomsApp(): Hono<Env> {
 
 				if (isWebSocketUpgrade(c)) {
 					// Validate nodeId presence at the route boundary so the backend
-					// can trust it is set. nodeId is the dispatch address
-					// `dispatch({ to })` resolves against; a missing one would
-					// produce a presence-ghost connection (visible in presence
-					// frames but unreachable by dispatch).
+					// can trust it is set. nodeId is the address the relay
+					// channel routes frames to; a missing one would produce a
+					// presence-ghost connection (visible in presence frames but
+					// unreachable by the relay channel).
 					const nodeId = c.req.query('nodeId');
 					if (!nodeId) {
 						const err = RequestGuardError.MissingNodeId();

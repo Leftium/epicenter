@@ -11,9 +11,8 @@
  * Liveness does not live in the Y.Doc. Presence is server-owned: the
  * relay binds `nodeId` to a socket by URL stamp at upgrade, and the
  * client derives `peers.list()` from the relay's `presence` full-list
- * text frame. Cross-node dispatch rides a sibling HTTP endpoint
- * correlated with two WebSocket text frames; no Y.Doc array is reserved
- * for it.
+ * text frame. Cross-node channels ride the relay's WebSocket text
+ * frames; no Y.Doc array is reserved for them.
  *
  * @example
  * ```typescript

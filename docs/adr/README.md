@@ -146,5 +146,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0076](0076-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md) | The relational-auth substrate (Better Auth + Postgres) is a Cloud-only layer; the instance composes neither | Accepted |
 | [0077](0077-parsed-row-memoization-belongs-to-the-table-the-svelte-adapter-is-a-stateless-view.md) | Parsed-row memoization belongs to the table; the Svelte adapter is a stateless view | Accepted |
 | [0078](0078-inference-is-a-url-addressed-connection-the-relay-floor-carries-only-tools.md) | Inference is a URL-addressed connection reached through the gateway; the relay floor carries only MCP tool routes | Accepted |
+| [0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md) | Cross-device is two planes: Epicenter syncs the CRDT, the box is reached directly as a URL-addressed connection | Accepted (capability-layer deletion bound to the Whispering-sync milestone) |
+| [0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) | Per-upstream OAuth concurrency decides whether a materialized mirror is box-owned (Local Books) or device-local (Gmail), not a property of "cloud-upstream apps" as a category | Proposed |
+| [0082](0082-local-mail-mirror-is-push-free-polling-collapsing-hosted-vs-self-host-to-one-oauth-client-id.md) | Local Mail's mirror is push-free CDC polling; hosted vs self-host collapses to one OAuth Client ID | Proposed |
+| [0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) | `apps/email` is refused; Local Mail is the only Gmail client | Accepted |
 
 When you add an ADR, add its row here.

@@ -55,7 +55,7 @@ const COMPACTION_DELAY_MS = 30_000;
 const CONNECTION_SWEEP_INTERVAL_MS = 5 * 60_000;
 
 /**
- * Yjs sync + dispatch room backed by a Cloudflare Durable Object.
+ * Yjs sync and relay-channel room backed by a Cloudflare Durable Object.
  *
  * Owns the Hibernation API integration (`acceptWebSocket`,
  * `serializeAttachment`, `setAlarm`) and forwards every meaningful event
@@ -140,7 +140,7 @@ export class Room extends DurableObject {
 	 * at the route boundary) onto the URL before forwarding. Together they
 	 * form the {@link Connection} stamped on the socket attachment for the
 	 * lifetime of the connection. `userId` is what presence carries to
-	 * peers; `nodeId` is the address `dispatch({ to })` routes to.
+	 * peers; `nodeId` is the address the relay channel routes frames to.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected,
 	 * so compacting now would be wasteful.

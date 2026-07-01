@@ -15,7 +15,7 @@
  * There is no `local` vs `collaborative` kind. The context carries the Epicenter
  * root, the mount name, a durable node id, and a nullable `session`. A purely
  * local mirror ignores the session, a mount that wants the peer plane (presence
- * + remote dispatch) uses its socket. The session is `null` when machine auth is
+ * and the relay channel) uses its socket. The session is `null` when machine auth is
  * signed out, so the logged-out case is always in front of the author.
  *
  * Most mounts need a session, so they declare with `defineSessionMount` and get
@@ -42,8 +42,8 @@ import type { DaemonRuntime } from './types.js';
  *
  * - `ownerId` is the workspace owner the daemon syncs as.
  * - `openWebSocket` / `onReconnectSignal` / `fetch` are the auth-owned transport
- *   refs forwarded into `openCollaboration` for sync, presence, and dispatch,
- *   and into one-shot HTTP reads.
+ *   refs forwarded into `openCollaboration` for sync, presence, and the relay
+ *   channel, and into one-shot HTTP reads.
  */
 export type MountSession = {
 	readonly ownerId: OwnerId;
@@ -62,8 +62,8 @@ export type MountSession = {
  *   share one identifier with logs and local cache keys. It is a label, not an
  *   identity seed: it never feeds the node id or the Y.Doc `clientID`.
  * - `nodeId` is the durable per-install identity (generated once and persisted
- *   under `.epicenter/`). It is the relay's routing id for presence and peer
- *   dispatch, and the seed for the Y.Doc `clientID`. Auth-independent: present
+ *   under `.epicenter/`). It is the relay's routing id for presence and
+ *   relay-channel frames, and the seed for the Y.Doc `clientID`. Auth-independent: present
  *   even when signed out.
  * - `session` is the signed-in capability kit, or `null` when signed out.
  */

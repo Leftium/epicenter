@@ -54,9 +54,6 @@ const collaboration = {
 		send: () => {},
 		subscribe: () => () => {},
 	},
-	dispatch: async () => {
-		throw new Error('fixture does not dispatch');
-	},
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},

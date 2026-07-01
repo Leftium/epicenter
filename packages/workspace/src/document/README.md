@@ -20,7 +20,7 @@ The pattern: `defineWorkspace({ id, tables, kv, actions })` declares the shared 
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachLocalStorage(ydoc, { server, ownerId })  // scoped IDB + scoped BC |
 | wipeLocalStorage({ server, ownerId })           // delete local data for owner |
-| openCollaboration (sync + presence + dispatch)                 |
+| openCollaboration (sync + presence + relay channel)            |
 | attachBunSqliteMaterializer / attachMarkdownExport             |
 +----------------------------------------------------------------+
 | Y.Doc (raw CRDT)                                               |

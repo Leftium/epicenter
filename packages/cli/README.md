@@ -1,6 +1,6 @@
 # @epicenter/cli
 
-> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by the configured mount, locally or on a currently online peer.
+> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by the configured mount.
 
 Each verb is a one-line shell shortcut for one workspace primitive:
 
@@ -10,7 +10,6 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  +------------+---------------------------------------------+
    Enumerate     | list       | Object.entries(runtime.actions)             |
    Invoke        | run        | local daemon invoke                         |
-   Dispatch      | run --peer | relay dispatch to a live peer               |
    Presence      | peers      | collaboration.peers.list()                  |
                  +------------+---------------------------------------------+
 

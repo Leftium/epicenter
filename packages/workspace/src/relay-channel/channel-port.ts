@@ -6,7 +6,7 @@
  * That port is sync-agnostic; it knows nothing of channels. This adapter is the
  * one place the relay-channel layer meets it: it serializes outbound channel
  * frames to JSON text, and narrows the inbound text stream to the channel frames
- * (the rest, presence and dispatch and anything else, is ignored here and still
+ * (the rest, presence and anything else, is ignored here and still
  * handled by their own consumers). So the channel layer rides the sync socket
  * while staying a separate module from sync, exactly the seam the floor requires.
  *

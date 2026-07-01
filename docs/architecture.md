@@ -89,7 +89,6 @@ Apps wrap `createWorkspace` in a per-app factory. That is where the app id, tabl
 createWorkspace()
   -> honeycrispWorkspace (defineWorkspace())
     -> openHoneycrispBrowser()
-    -> honeycrisp() (mount)
 ```
 
 Use `defineWorkspace()` when returning the composed object so TypeScript keeps the exact inferred bundle shape after spreads.

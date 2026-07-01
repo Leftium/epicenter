@@ -39,7 +39,7 @@ apps/<app>/
 |- <app>.ts                  iso schema + create<App>() factory   (package "." export)
 |- <app>.browser.ts          browser env factory open<App>Browser()
 |- <app>.test.ts             tests
-|- mount.ts                  mount factory <app>()                (package "./mount" export)
+|- mount.ts                  optional mount factory <app>()       (package "./mount" export)
 `- src/lib/
    |- session.ts             the session singleton (NOT session.svelte.ts)
    `- platform/auth/         auth client construction
@@ -68,14 +68,13 @@ diagram above as the shape for the next nested app, not a literal description
 of whispering's current file list.
 
 Package exports follow the file's actual owner. Flat-root apps export the iso
-factory as `.` and the mount factory as `./mount`; a nested app without a
-daemon mount exports narrower surfaces instead:
+factory as `.`; only apps with a live daemon consumer export a mount factory as
+`./mount`. Apps without a daemon mount export narrower surfaces instead:
 
 ```jsonc
-// honeycrisp / vocab (flat root)
+// honeycrisp (flat root, no mount)
 "exports": {
-  ".": "./honeycrisp.ts",
-  "./mount": "./mount.ts"
+  ".": "./honeycrisp.ts"
 }
 
 // whispering (nested, no mount): no `.` or `./mount`, since whispering isn't
@@ -98,7 +97,7 @@ add a `./browser` export to the rest for symmetry's sake.
 | Iso factory | `<app>.ts` / `workspace/index.ts` | A + B | `create<App>()`: pure doc construction | workspace (`ydoc`, tables, kv, actions) |
 | Browser factory | `<app>.browser.ts` / `workspace/browser.ts` | A + B | `open<App>Browser({ signedIn, nodeId })`: bind to browser persistence + sync | iso bundle plus IndexedDB/local storage, collaboration |
 | Extension / tauri factory | `<app>.extension.ts` etc. | B | bind to chrome.storage / Tauri APIs | iso bundle plus runtime resources |
-| Mount factory | `mount.ts` / `workspace/mount.ts` | A + B | `<app>(opts?)`: calls `<app>Workspace.mount({ runtime: nodeMountRuntime(), ... })` and returns the `Mount` a project's `epicenter.config.ts` default-exports | `Mount` (node persistence, materializers) |
+| Mount factory | `mount.ts` / `workspace/mount.ts` | A + B | Optional. `<app>(opts?)` calls `<app>Workspace.mount({ runtime: nodeMountRuntime(), ... })` and returns the `Mount` a project's `epicenter.config.ts` default-exports | `Mount` (node persistence, materializers) |
 | Session singleton | `src/lib/session.ts` | A | `createSession({ ... })`: owns workspace lifecycle, side effects | `session`, `session.require` |
 | Auth | `src/lib/platform/auth/` (or `#platform/auth`) | A | auth client construction | `auth` |
 
@@ -109,9 +108,9 @@ persisted state, network) live only in the session singleton (`src/lib/session.t
 ## Iso Factory
 
 `create<App>()` builds the document and returns the workspace. It is the package
-`.` export and the wire contract for sync: every browser, mount, and test
-consumer imports it, and forking a table column shape breaks sync compatibility
-with peers running the canonical schema.
+`.` export and the wire contract for sync: browser, daemon, local-host, and test
+consumers import it when they need the shared schema. Forking a table column
+shape breaks sync compatibility with peers running the canonical schema.
 
 ```ts
 export function createHoneycrisp() {

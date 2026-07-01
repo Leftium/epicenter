@@ -5,8 +5,7 @@
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./honeycrisp.ts",
-		"./mount": "./mount.ts"
+		".": "./honeycrisp.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

@@ -4,7 +4,7 @@
  * One folder is one app is one mount: the config default-exports a single
  * `Mount` declared directly.
  *
- *   `export default honeycrisp();`
+ *   `export default notes();`
  *
  * `epicenter.config.ts` is dynamically imported, so its default export crosses
  * a runtime boundary where TypeScript types are erased and nothing typechecks
@@ -103,7 +103,7 @@ export async function loadEpicenterConfig(
 		return EpicenterConfigError.EpicenterConfigInvalid({
 			epicenterConfigPath,
 			detail:
-				'no mount is declared yet; default-export the mount your app factory returns, for example `export default honeycrisp()`',
+				'no mount is declared yet; default-export the mount your app factory returns, for example `export default notes()`',
 		});
 	}
 	if (!isMount(value)) {

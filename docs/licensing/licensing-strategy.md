@@ -3,6 +3,8 @@
 **Status:** Active
 **Date:** 2026-04-28
 **Owner:** Braden Wong
+<!-- doc-path-check: ignore-next-line -->
+**Promoted from:** `specs/20260428T120000-licensing-strategy.md` (spec deleted in PR #2248)
 
 ## Summary
 
@@ -14,7 +16,12 @@ This document is the canonical reference. The companion document [FINANCIAL_SUST
 
 ## Operating principle
 
-One rule classifies every package: is this meant for third-party developers to embed in their own software? If yes, it is MIT (the developer toolkit). Otherwise it is something we ship as a product or run as our own infrastructure, and it is AGPL-3.0. This is safe because the toolkit is not our competitive moat; the moat is the apps, the hosting, and the AGPL `server` engine, so giving the toolkit away permissively costs us nothing and buys adoption.
+Two rules classify every package, not one.
+
+1. **Product decision (roots):** is this a package we actively offer third-party developers to embed in their own software? If yes, it is a toolkit root and it is MIT. This is the only judgment call; everything else follows mechanically.
+2. **Mechanical rule (closure):** whatever a root's workspace dependency closure touches must also be MIT, or the root itself could not legally stay MIT. A package can be swept into MIT by rule 2 alone even though nobody embeds it standalone. `@epicenter/agent-protocol` is that case: no third party embeds `agent-protocol` on its own, but it sits inside the dependency closure of the MIT toolkit roots, so rule 2 forces it to MIT regardless.
+
+A package that is neither a chosen root nor inside a root's closure is something we ship as a product or run as our own infrastructure, and it is AGPL-3.0. This is safe because the toolkit is not our competitive moat; the moat is the apps, the hosting, and the AGPL `server` engine, so giving the toolkit away permissively costs us nothing and buys adoption.
 
 To the two audiences it reads as two promises:
 
@@ -57,7 +64,7 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
 - Toolkit-internal packages (`identity`, `agent-protocol`, `encryption`, `field`, `chat`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. `@epicenter/identity` owns the capability and identity vocabulary shared by the MIT toolkit and the AGPL auth layer; `@epicenter/agent-protocol` is the agent wire contract shared the same way. They are not separately marketed.
-- MIT-clean closure: the toolkit no longer depends on any AGPL package. `OwnerId` and `AuthState` live in `@epicenter/identity`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; the agent wire contract is the now-MIT `@epicenter/agent-protocol`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL because it also pulls AGPL `auth`.
+- MIT-clean closure: the toolkit no longer depends on any AGPL package. `OwnerId` and `AuthState` live in `@epicenter/identity`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; the agent wire contract is the now-MIT `@epicenter/agent-protocol`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL primarily because it is a shipped CLI app (decision-procedure rule 2, not a toolkit root); it also directly imports AGPL `auth` for machine-auth login, and reaches AGPL `constants` only transitively, through `auth` and `client`.
 
 ### Tier 2: AGPL-3.0
 
@@ -115,7 +122,8 @@ The boundary currently errs toward AGPL: some toolkit-shaped code is AGPL only b
 | `@epicenter/svelte` main barrel (`fromTable`, `fromKv`, `fromDisposableCache`, `createPersistedState`, `createPersistedMap`, `bindAgentConversation`) | AGPL | MIT; the auth wrapper (the `./auth` subpath) relocates to an AGPL `@epicenter/auth/svelte` | A third party embeds the MIT `@epicenter/workspace` in a Svelte app, or we publish the toolkit for external use. Strongest candidate: the barrel already imports only MIT `@epicenter/workspace`, so the split is nearly free. |
 | `@epicenter/client` | AGPL | MIT | We decide to offer a public client SDK. Requires closure surgery first: `AuthFetch` moves to `@epicenter/identity` and `API_ROUTES` to an MIT constants surface. |
 | `packages/matter-core` | AGPL | MIT | We offer Matter's markdown-to-SQLite engine for third-party embedding as a standalone library. |
-| `room/contracts`, `is-websocket-upgrade` (in `packages/server`) | AGPL | MIT | A third party implements a wire-compatible room backend against these contracts. Low value until then. |
+| `is-websocket-upgrade` (in `packages/server`) | AGPL (by location only) | MIT, no surgery needed | Its only import is Hono's `Context` type; nothing in its own closure is AGPL. It sits inside AGPL `packages/server` only because nothing ships it standalone yet, not because it needs surgery. Move the file out whenever a consumer wants it alone. |
+| `room/contracts` (in `packages/server`) | AGPL | MIT | Imports `UserId` from AGPL `@epicenter/auth`, so it needs the same closure surgery as `@epicenter/client`: `UserId` moves to `@epicenter/identity` (next to the already-relocated `OwnerId`/`AuthState`) before this file's closure is MIT-clean. A third party implements a wire-compatible room backend against these contracts. Low value until then. |
 
 Recording these keeps the "nothing moves today" answer honest: the design is not frozen, it just has no live producer for any of these seams yet.
 
@@ -155,13 +163,13 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/app-shell` | AGPL-3.0 | Shared app shell UI (private, internal) |
 | `packages/skills` | AGPL-3.0 | Skill definitions |
 | `packages/constants` | AGPL-3.0 | Shared constants |
-| `packages/cli` | AGPL-3.0 | `epicenter` CLI (depends on AGPL auth + constants, so AGPL rather than MIT) |
+| `packages/cli` | AGPL-3.0 | `epicenter` CLI: a shipped CLI app (decision-procedure rule 2), not a toolkit root; also directly imports AGPL `auth` and transitively reaches AGPL `constants` through `auth` and `client` |
 | `packages/server` | AGPL-3.0 | Shared Hono server library |
 | `packages/client` | AGPL-3.0 | API client |
 | `packages/matter-core` | AGPL-3.0 | Markdown-to-SQLite projection engine |
 | `packages/vite-config` | AGPL-3.0 | Shared Vite config |
 
-> **MIT-clean closure:** the MIT toolkit's entire dependency closure is MIT. `@epicenter/workspace` no longer imports from any AGPL package: shared capability state lives in `@epicenter/identity`, the room route plus bearer subprotocol moved to the now-MIT `@epicenter/sync`, and the agent wire contract is the now-MIT `@epicenter/agent-protocol`. `cli` stays AGPL because it pulls AGPL `auth`. `bun run check:licenses` walks every package's dependency closure and fails if an MIT package can reach an AGPL one.
+> **MIT-clean closure:** the MIT toolkit's entire dependency closure is MIT. `@epicenter/workspace` no longer imports from any AGPL package: shared capability state lives in `@epicenter/identity`, the room route plus bearer subprotocol moved to the now-MIT `@epicenter/sync`, and the agent wire contract is the now-MIT `@epicenter/agent-protocol`. `cli` stays AGPL because it is a shipped CLI app (decision-procedure rule 2); it also directly imports AGPL `auth`, and reaches AGPL `constants` only transitively, through `auth` and `client`. `bun run check:licenses` walks every package's dependency closure and fails if an MIT package can reach an AGPL one.
 
 ## Decision procedure for new packages
 

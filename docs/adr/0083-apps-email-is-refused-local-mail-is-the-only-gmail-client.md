@@ -5,6 +5,7 @@
 
 ## Context
 
+<!-- doc-path-check: ignore-next-line -->
 `specs/20260606T114052-email-client-architecture.md` proposed a hosted-only, server-proxy webmail SPA: the browser never talks to Gmail, the Cloudflare Worker holds tokens and proxies every call, no local storage, no self-host mode. It was drafted before Local Mail (ADR-0081/ADR-0082) existed, and Local Mail's spec explicitly framed the two as coexisting, "the way `local-books` and a hypothetical hosted books UI would." That framing was carried as an open question, not a settled one: `apps/email`'s only real justification is no-install/mobile reach (a native Tauri app cannot ship to iOS/Android); every other reason (a "quick thin client", an "onramp") is weaker, and nobody had stated no-install reach as a committed product requirement. `apps/email` was never implemented past the spec; its only artifact is an unused Google OAuth Web-app client (`GOOGLE_MAIL_CLIENT_ID`/`GOOGLE_MAIL_CLIENT_SECRET` in Infisical), referenced nowhere in code.
 
 ## Decision
@@ -13,6 +14,7 @@
 
 ## Consequences
 
+<!-- doc-path-check: ignore-next-line -->
 - `specs/20260606T114052-email-client-architecture.md` is deleted. It was never committed, so nothing in git history recovers it; its "UI Shape" layout and Gmail-scope/CASA research are preserved in `specs/20260630T150000-local-mail-tauri-cdc-mirror.md`'s Appendix for Local Mail's Phase 4 UI work.
 - The Google Cloud OAuth Web-app client behind `GOOGLE_MAIL_CLIENT_ID`/`GOOGLE_MAIL_CLIENT_SECRET` has no remaining purpose; it should be revoked in Google Cloud Console and the two secrets removed from Infisical `/api`, pending confirmation (a live external credential and a shared secret store, not a local git-reversible change).
 - Local Mail's own Gmail OAuth client (spec open question 5) is a separate, new Desktop-app-type client in the same "Epicenter Mail" Cloud project (same consent-screen posture and scope sensitivity), not a reuse of the Web-app client this ADR retires.

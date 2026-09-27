@@ -153,6 +153,30 @@ failure must refuse the switch without destroying the old session. A standalone
 build must keep working after Epicenter quits and converge through the same
 authority when connected. Native work must not deliver into the next tool.
 
+The product proof is a repeated cross-app task that improves on manual
+export/import. A candidate is a tool that reads Whispering transcripts and
+writes derived notes into its own dataset. Reading without mutating the source
+reduces integration risk; it is an implementation convention, not an enforced
+permission boundary for trusted code.
+
+Three contracts remain unresolved before that proof:
+
+- The producer's supported read shape, compatibility policy, and behavior when
+  producer and consumer versions differ.
+- What a source reference identifies, including edits or deletion after notes
+  are derived, and whether outputs are pinned, refreshed, or marked outdated.
+- What freshness the consumer can report from its own received and persisted
+  state. It cannot know whether an offline producer holds newer edits.
+
+One known dataset and a maintained first-party consumer can test this without
+general discovery. Measure repeated task completion and friction against the
+existing workflow; comparing retention between self-selected one-app and
+two-app users does not establish causation. Expand the tool runner when people
+request additional tools and native packaging or distribution demonstrably
+blocks their delivery. Successful integration alone does not establish demand
+for a host or a public framework. Preserve the architectural options without
+treating all deployment targets as simultaneous launch commitments.
+
 ## Considered alternatives
 
 - **Every application lives in the Epicenter host.** Saves per-product packaging

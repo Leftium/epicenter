@@ -8,7 +8,7 @@ async function main() {
 		args: process.argv.slice(2),
 		options: {
 			resume: { type: 'string' },
-			model: { type: 'string', default: 'claude-fable-5-1' },
+			model: { type: 'string', default: 'claude-opus-5-5' },
 			'dry-run': { type: 'boolean', default: false },
 		},
 	});

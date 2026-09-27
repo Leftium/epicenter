@@ -63,7 +63,7 @@ The launcher reapplies the access boundary on every turn. If the shell tool
 yields a running process, keep monitoring it and provide progress updates.
 There is no interactive attach step.
 
-`--model` selects a model; the default remains `claude-fable-5-1`.
+`--model` selects a model; the default is `claude-opus-5-5`.
 `--dry-run` previews launch arguments without invoking Claude. Consult the native
 result or transcript before attributing findings to a model: access restrictions
 and fallback can change the model used.

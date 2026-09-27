@@ -31,18 +31,17 @@ Ask for concrete signatures and callsites, what disappears, new complexity, and
 requirements being questioned. Keeping the design is valid when it earns its
 place. A narrow question does not require a full architectural report.
 
-For an adversarial architecture review, pass `--effort high` to the launcher.
-Keep the model's default effort for narrower consultations. Use `xhigh` for a
-focused unresolved decision when deeper reasoning may change the recommendation,
-then verify that claim against the callers.
-
 ## Send a brief
 
-Requires Bun, Git, and authenticated Claude Code 2.1.257 or later with access to
-the selected model. Run from this repository; supply the brief directly on stdin:
+Requires Bun, Git, and authenticated Claude Code 2.1.280 or later with access to
+the selected model. Use `--effort high` for an adversarial architecture review,
+including follow-ups. Use `xhigh` only for a focused unresolved decision, then
+return to high. For narrower consultations, omit `--effort` and let Claude Code
+select its configured or model default. Run from this repository; supply the
+brief directly on stdin:
 
 ```bash
-bun .agents/skills/consult-claude/scripts/consult-claude.ts <<'BRIEF'
+bun .agents/skills/consult-claude/scripts/consult-claude.ts --effort high <<'BRIEF'
 [Concrete question, code blocks, source paths, diagram, reasoning, uncertainties.]
 BRIEF
 ```
@@ -58,20 +57,19 @@ any permission denials. A process starting or exiting successfully is not proof
 of a successful consultation. Preserve the session ID for follow-ups.
 
 ```bash
-bun .agents/skills/consult-claude/scripts/consult-claude.ts --resume <session_id> <<'EVIDENCE'
+bun .agents/skills/consult-claude/scripts/consult-claude.ts --effort high --resume <session_id> <<'EVIDENCE'
 [Requested evidence, commands and relevant raw output, changed source, next question.]
 EVIDENCE
 ```
 
 Resume only a completed consultation from this launcher, in the same checkout.
-Pass the same `--effort` on follow-ups when the review called for one. The launcher
-reapplies the access boundary on every turn. If the shell tool
+The launcher reapplies the access boundary on every turn. If the shell tool
 yields a running process, keep monitoring it and provide progress updates.
 There is no interactive attach step.
 
 `--model` selects a model; the default is `claude-opus-5-5`.
-`--effort` selects the effort for this consultation; omitting it leaves Claude's
-model default in place.
+`--effort` selects the effort for this launch; omitting it leaves effort selection
+to Claude Code.
 `--dry-run` previews launch arguments without invoking Claude. Consult the native
 result or transcript before attributing findings to a model: access restrictions
 and fallback can change the model used.

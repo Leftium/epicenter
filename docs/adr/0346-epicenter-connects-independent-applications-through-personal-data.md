@@ -15,6 +15,12 @@
 > modify tools of your own. Those tools can run inside Epicenter or become
 > independent applications.
 
+Epicenter's data workspace has a purpose even without a personal-tool runner:
+
+> Use focused apps to do your work. Open Epicenter to see, organize, and work
+> directly with the data they share. Pull it into files when you want to use
+> your own tools.
+
 Today `apps/epicenter` packages a Tauri core and Bun sidecar. Its
 `src/applications.ts` declares a fixed application list. Product windows share
 native capabilities. Arbitrary personal-tool installation and standalone
@@ -37,6 +43,40 @@ data and runs one personal tool at a time.**
 | Epicenter desktop | Browses authorized synchronized datasets, manages synchronized preferences and its own device settings, and runs one personal tool session. |
 | Personal tool | An explicitly installed, trusted SPA that runs while selected in Epicenter. It has no hidden page, persistent global shortcuts, or background execution after leaving it. |
 | Shared packages and Rust crates | Reuse data contracts and native implementation across products. Importing code does not share running processes or loaded models. |
+
+**The data workspace connects synchronized datasets to explicit file workflows.**
+
+Signing in connects Epicenter's page-owned replicas to the account authority.
+The data browser offers views over compatible datasets without requiring the
+specialized applications to be open. It operates on its received data and
+cannot see unsent edits held by another application.
+
+```txt
+account authority
+       ↕ automatic synchronization
+Epicenter's live local replica
+       ↕ explicit pull / push
+working folder
+       ↕
+editors, scripts, agents, Matter views
+```
+
+Pull previews and writes replica data into the working folder. Push previews
+and applies file edits to the replica. Both require the person's confirmation;
+neither verb is remote synchronization. Between these operations the folder
+holds still. Pulling offline uses the data this replica has received, without
+promising that another device has no newer edits.
+
+Matter's `matter.json` describes fields and views over files. It does not
+discover remote datasets or supply every application's rich-content codec.
+`packages/matter-core` and `packages/data/src/artifact` provide relevant
+building blocks; combining them into a generic signed-in data workspace still
+requires compatible definitions, content codecs, and replica discovery.
+
+Browsing data and working through files are useful workflows to test separately
+from demand for hosted applications. A person can customize their workflow with
+an editor, script, or agent before building an SPA. The personal-tool runner
+extends this workspace; it is not its sole reason to exist.
 
 A tool needing residency or additional native capabilities can become a
 standalone application. Browser, hosted, and standalone builds may share source

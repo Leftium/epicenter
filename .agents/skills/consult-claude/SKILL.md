@@ -31,6 +31,11 @@ Ask for concrete signatures and callsites, what disappears, new complexity, and
 requirements being questioned. Keeping the design is valid when it earns its
 place. A narrow question does not require a full architectural report.
 
+For an adversarial architecture review, pass `--effort high` to the launcher.
+Keep the model's default effort for narrower consultations. Use `xhigh` for a
+focused unresolved decision when deeper reasoning may change the recommendation,
+then verify that claim against the callers.
+
 ## Send a brief
 
 Requires Bun, Git, and authenticated Claude Code 2.1.257 or later with access to
@@ -59,11 +64,14 @@ EVIDENCE
 ```
 
 Resume only a completed consultation from this launcher, in the same checkout.
-The launcher reapplies the access boundary on every turn. If the shell tool
+Pass the same `--effort` on follow-ups when the review called for one. The launcher
+reapplies the access boundary on every turn. If the shell tool
 yields a running process, keep monitoring it and provide progress updates.
 There is no interactive attach step.
 
 `--model` selects a model; the default is `claude-opus-5-5`.
+`--effort` selects the effort for this consultation; omitting it leaves Claude's
+model default in place.
 `--dry-run` previews launch arguments without invoking Claude. Consult the native
 result or transcript before attributing findings to a model: access restrictions
 and fallback can change the model used.

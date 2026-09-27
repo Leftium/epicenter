@@ -46,6 +46,13 @@ bun .agents/skills/consult-claude/scripts/consult-claude.ts --effort high <<'BRI
 BRIEF
 ```
 
+On macOS, the Codex workspace sandbox can hide Claude Code Keychain login:
+`claude auth status` then reports `loggedIn: false` even when the same command
+outside the sandbox reports true. If that happens, request outside-sandbox
+execution for the launcher and its follow-ups. Keep the launcher read-only
+Claude restrictions in place; do not log in again, export credentials, or
+switch the whole Codex task to Full access to work around this boundary.
+
 The launcher runs one native print-mode turn in the current checkout with only
 Read, Glob, and Grep. Restricted mode, blocked MCP tools, disabled hooks, and
 outside-read restrictions enforce the boundary. It creates no replica, brief

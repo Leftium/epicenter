@@ -1,31 +1,37 @@
 ---
 name: consult-claude
-description: Get Claude Code's second opinion on a proposal or implementation. Use when the user asks to consult Claude, requests Claude's design judgment or research, or has asked to include Claude during design review. Do not enlist Claude merely because a task is complex.
+description: Get Claude Code's second opinion on a proposal or implementation. Use when the user asks to consult Claude, requests Claude's design judgment or research, or invokes a design-review workflow that includes Claude. Do not enlist Claude merely because a task is complex.
 ---
 
 # Consult Claude
 
-Codex briefs Claude on the problem, proposed design, and reasoning. Claude reads
-the current checkout and returns its judgment, alternatives, and objections.
+Codex briefs Claude on the problem and evidence. For an adversarial design
+review, the first brief omits the proposed design and reasoning; a follow-up
+provides them after Claude's independent initial answer. Claude reads the
+current checkout and returns its judgment, alternatives, and objections.
 Codex owns implementation and verification; when Claude needs a test, benchmark,
 or experiment, it requests that evidence from Codex.
 
 ## Make the design legible
 
-Supply the desired outcome, genuine constraints, actual and proposed API code,
-representative callsites, relevant implementation excerpts with source paths,
-and your engineering reasoning and unresolved questions. Use an ASCII diagram
-when it clarifies ownership, lifecycle, or data flow. Distinguish observed facts,
-proposals, assumptions, and preferences. Give enough concrete evidence to judge
-the decision immediately; Claude can read further to verify your account.
+Supply the desired outcome, genuine constraints, representative callsites, and
+relevant existing implementation excerpts with source paths. For a blind
+adversarial design pass, withhold proposed API code and your engineering
+reasoning until Claude has answered from the outcome and callers. Then supply
+the proposal, reasoning, and unresolved questions in the same session. For
+other consultations, include actual and proposed API code up front. Use an
+ASCII diagram when it clarifies ownership, lifecycle, or data flow. Distinguish
+observed facts, proposals, assumptions, and preferences. Give enough concrete
+evidence to judge the decision; Claude can read further to verify your account.
 
 For design questions, have Claude apply
 [adversarial-review](../adversarial-review/SKILL.md) itself, without launching another
 reviewer. That skill's coordinator owns reviewer selection; this consultation
-supplies a Claude review when requested by the user. A standalone request for
-Claude's opinion does not itself launch a Codex reviewer. Explicitly ask for the strongest
-greenfield direction: starting from the desired outcome and actual callers,
-what would it build if the current abstraction did not exist? Treat your reasoning
+supplies its Claude reviewer or a standalone Claude opinion. A standalone
+request for Claude's opinion does not itself launch a Codex reviewer. Explicitly
+ask for the strongest greenfield direction: starting from the desired outcome
+and actual callers, what would it build if the current abstraction did not
+exist? Treat your reasoning
 as evidence, not constraints.
 Ask for concrete signatures and callsites, what disappears, new complexity, and
 requirements being questioned. Keeping the design is valid when it earns its

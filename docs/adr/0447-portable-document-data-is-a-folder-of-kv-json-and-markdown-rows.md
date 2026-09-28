@@ -13,16 +13,17 @@ ADR-0337 makes the folder a working copy: a person pulls data into it and pushes
 
 ## Decision
 
-**For portable document libraries, the folder contains the authoritative current data, including files owned by rows.** Its layout is:
+**For portable document libraries, the folder contains the authoritative current data, including files owned by rows.** A person chooses the folder and its name. An app opens that folder directly; the folder's name and parent path have no meaning in the format. For example:
 
 ```txt
-<library>/
+My Data/
   kv.json                          library values, excluding device settings
-  <table>/<row-id>.md              one row: YAML frontmatter and Markdown body
-  <table>/<row-id>/<filename>      optional file owned by that row
+  notes/n456.md                    one Markdown row
+  recordings/r123.md               another Markdown row
+  recordings/r123/audio.wav        file owned by that recording
 ```
 
-`kv.json` is one JSON object. A row's Markdown path supplies its table and stable row identity. Its frontmatter holds fields; its body holds document content when the row has a body. The optional directory has the same table and row identity and contains one primary file, including a file whose extension is `.md`. A recording's audio lives there. A reusable file belongs to its own row in a `files` table; other rows may refer to it without owning its lifetime. No independently synchronized blob ID, blob inventory, or per-recording upload marker is part of this format.
+The general paths are `kv.json`, `<table>/<row-id>.md`, and optionally `<table>/<row-id>/<filename>`. `kv.json` is one JSON object. A row's Markdown path supplies its table and stable row identity. Its frontmatter holds fields; its body holds document content when the row has a body. The optional directory has the same table and row identity and contains one primary file, including a file whose extension is `.md`. A recording's audio lives there. A reusable file belongs to its own row in a `files` table; other rows may refer to it without owning its lifetime. No independently synchronized blob ID, blob inventory, or per-recording upload marker is part of this format.
 
 **A row file is the publication point for its owned file.** An app finishes writing the owned bytes before publishing the Markdown row. It removes the Markdown row before removing owned bytes. An interrupted operation may leave orphan bytes, which readers preserve and do not present as a completed row. A row whose expected bytes are absent remains visible with a missing-file error; the app does not silently discard or repair its source. Apps do not replace a recording's original audio in place.
 

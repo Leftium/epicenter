@@ -597,5 +597,6 @@ Two habits make the link hard to forget:
 | [0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) | An authority mints every generation, so every store has an account | Accepted (supersedes 0233 and 0279; amends 0324, 0293, and 0262) |
 | [0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md) | The folder is a working copy, and pull and push are the whole cycle | Accepted (unbuilt; amends 0271, 0289, and 0329: the continuous render and the watcher go, pull and push replace them) |
 | [0446](0446-stores-own-records-and-immutable-attachments-across-local-and-personal.md) | Stores own records and immutable attachments across Local and Personal | Proposed (unbuilt; greenfield destination storage and row attachment lifecycle) |
+| [0447](0447-portable-document-data-is-a-folder-of-kv-json-and-markdown-rows.md) | Portable document data is a folder of kv.json and Markdown rows | Proposed (unbuilt; canonical document folders and consistent snapshots) |
 
 When you add an ADR, add its row here.

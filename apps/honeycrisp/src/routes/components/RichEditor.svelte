@@ -38,14 +38,14 @@
 	} from '$lib/editor/rich-session.js';
 	import { noteSchema as schema } from '$lib/editor/schema.js';
 	import { richAvailability } from '$lib/note-source.js';
-	import type { NoteEditor } from '$lib/notes.svelte.js';
+	import type { FileEditor } from '$lib/notes.svelte.js';
 
 	let {
 		editor,
 		focusRequest,
 		onOpenSource,
 	}: {
-		editor: NoteEditor;
+		editor: FileEditor;
 		focusRequest: number;
 		onOpenSource: () => void;
 	} = $props();

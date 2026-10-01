@@ -47,8 +47,6 @@ export const honeycrispDefinition = defineStore({
 
 /** The stem of `notes/<id>.md`. */
 export type NoteId = string;
-/** The stem of `folders/<id>.md`. */
-export type FolderId = string;
 
 export type NoteFields = CreateRowOf<typeof honeycrispDefinition.tables.notes>;
 export type FolderFields = CreateRowOf<
@@ -59,7 +57,6 @@ export type NoteEntry = Entry<NoteFields>;
 export type FolderEntry = Entry<FolderFields>;
 
 export const NOTES = 'notes';
-export const FOLDERS = 'folders';
 
 export function notePath(id: NoteId): string {
 	return `${NOTES}/${id}.md`;

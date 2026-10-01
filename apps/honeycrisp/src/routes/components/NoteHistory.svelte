@@ -3,25 +3,26 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { toast } from '@epicenter/ui/sonner';
 	import type { FileRevision } from '$lib/bridge/contract.js';
-	import type { NoteEditor, Notes } from '$lib/notes.svelte.js';
+	import type { FileEditor } from '$lib/notes.svelte.js';
+	import type { NotesHost } from '$lib/platform/types.js';
 
 	let {
-		notes,
+		history,
 		editor,
 		open = $bindable(),
-	}: { notes: Notes; editor: NoteEditor; open: boolean } = $props();
+	}: {
+		history: NonNullable<NotesHost['history']>;
+		editor: FileEditor;
+		open: boolean;
+	} = $props();
 
 	// svelte-ignore state_referenced_locally
-	const history = notes.host.history;
-	// svelte-ignore state_referenced_locally
 	const path = editor.path;
-	const revisions: Promise<FileRevision[]> = history
-		? history.log(path, 50)
-		: Promise.resolve([]);
+	// svelte-ignore state_referenced_locally
+	const revisions = history.log(path, 50);
 	let shown = $state<{ revision: FileRevision; source: string } | undefined>();
 
 	async function show(revision: FileRevision) {
-		if (!history) return;
 		try {
 			shown = { revision, source: await history.show(revision.oid, path) };
 		} catch (cause) {

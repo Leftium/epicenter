@@ -122,17 +122,15 @@ test('a clean draft adopts an external change without writing', async () => {
 	expect(draft.buffer).toBe('two\n');
 	expect(draft.accepted.source).toBe('two\n');
 	expect(draft.phase).toBe('saved');
-	expect(draft.adoptions).toBe(1);
 	await draft.save();
 	expect(files.writes).toEqual([]);
 });
 
-test('observing the same bytes changes nothing and counts no adoption', async () => {
+test('observing the same bytes changes nothing', async () => {
 	const { files, draft } = await open('one\n');
 	draft.input('one and mine\n');
 	expect(draft.observe(files.observed())).toBe('same');
 	expect(draft.buffer).toBe('one and mine\n');
-	expect(draft.adoptions).toBe(0);
 });
 
 test('a dirty draft keeps its text and holds the external version apart', async () => {
@@ -275,7 +273,6 @@ test('load saved discards the draft only when chosen', async () => {
 	draft.loadSaved();
 	expect(draft.buffer).toBe('theirs\n');
 	expect(draft.phase).toBe('saved');
-	expect(draft.adoptions).toBe(1);
 	expect(files.writes).toEqual([]);
 });
 

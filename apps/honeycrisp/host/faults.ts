@@ -8,8 +8,6 @@
  */
 import type { FaultState, Faults } from '../src/lib/bridge/contract.js';
 
-export type FaultInjector = ReturnType<typeof createFaults>;
-
 const NONE: Faults = {
 	holdSaves: false,
 	saveDelayMs: 0,

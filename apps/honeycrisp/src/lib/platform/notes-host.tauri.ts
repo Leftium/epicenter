@@ -5,8 +5,9 @@
  * The page calls no native command. The shell put the bridge token in the
  * window before any script ran; without it this window has no folder.
  */
-import { createBridgeTransport } from '../bridge/folder-client.js';
+
 import { openBridgeNotesHost } from '../bridge/notes-host.js';
+import { createBridgeTransport } from '../bridge/transport.js';
 import type { OpenNotesHost } from './types.js';
 
 declare global {

@@ -85,6 +85,10 @@ dividers, and line breaks. There is no underline and there are no images.
 
 ## When the file changes underneath you
 
+Every opened text file has one retained draft in a registry keyed by its path.
+A note is a view of that file, with metadata controls and a rich-text view.
+Renaming a file retargets its existing draft instead of reopening a second one.
+
 Each open note keeps four things apart: the saved file it last agreed with,
 your draft, the text a running save captured, and any newer version seen on
 disk.
@@ -133,7 +137,7 @@ browser folder with a subset of Git commands.
 ## Git
 
 History is ordinary Git in `<root>/.git`. A successful content save through
-tables, KV, or the file browser requests a commit and does not wait for it. A commit that
+tables or the file browser requests a commit and does not wait for it. A commit that
 fails is reported under **Git history** and leaves the saved file saved; it is
 never shown as a save error. The browser terminal follows the same automatic
 history policy. Desktop terminal commands and other programs edit disk directly;
@@ -175,7 +179,7 @@ security policy that allows only its own scripts and same-origin connections.
 
 | Route | Purpose |
 | --- | --- |
-| `POST /bridge/call` | `{ path, args }` to `{ ok }` or `{ fault }`. `path` is one of `tables.<notes\|folders>.<list\|get\|create\|update\|writeSource\|rename\|delete>`, `kv.<get\|update\|writeSource>`, `files.<list\|children\|read\|open\|write\|remove\|move\|mkdir\|rmdir>`, `git.<snapshot\|status\|commit\|paths\|stage\|commitStaged\|diff\|log>`. Anything else is a fault. Results are the folder library's `Result` values unchanged. |
+| `POST /bridge/call` | `{ path, args }` to `{ ok }` or `{ fault }`. `path` is one of `tables.notes.<list\|get\|create\|update\|writeSource\|rename\|delete>`, `tables.folders.<list\|get\|create\|update\|delete>`, `files.<list\|read\|write\|remove\|move\|mkdir\|rmdir>`, `git.<snapshot\|status\|commit\|log>`. Anything else is a fault. Results are the folder library's `Result` values unchanged. |
 | `GET /bridge/events` | Newline-delimited JSON: `{type:"git",snapshot}` on every Git change, `{type:"files"}` after any change under the root, `{type:"closeRequested"}` when the shell held back a close, `{type:"ping"}`. |
 | `POST /bridge/app` | Honeycrisp's own operations: `info`, `terminal`, `reveal`, `fileLog`, `show`, `faults`, `setFaults`, `closeReceived`, `quit`. |
 
@@ -183,8 +187,9 @@ Values are JSON with tags for what JSON cannot carry: `{"$t":"u"}` for
 undefined, `{"$t":"b","v":"<base64>"}` for bytes, `{"$t":"m","v":[...]}` for a
 Map, `{"$t":"e",...}` for an Error.
 
-`/bridge/call`, the encoding, and `src/lib/bridge/folder-client.ts` contain
-nothing specific to Honeycrisp. `host/serve.ts` requests the commit after a
+`src/lib/bridge/transport.ts` carries typed calls and reconnecting events.
+`src/lib/bridge/notes-host.ts` implements the concrete folder surface Honeycrisp
+uses; it does not construct an arbitrary remote folder. `host/serve.ts` requests the commit after a
 content save itself, rather than leaving it to the folder, so a commit can be
 made to fail in testing without touching the save.
 
@@ -242,7 +247,7 @@ development only.
 | `src/lib/editor/rich-session.ts` | The rich-text view's state, undo history, and tie to the draft. No DOM. |
 | `src/lib/draft.svelte.ts` | One file's draft: accepted file, buffer, in-flight save, external version. |
 | `src/lib/note-source.ts` | Source-preserving changes to a note's text. |
-| `src/lib/notes.svelte.ts` | Listings, selection, retained drafts, and file actions. |
+| `src/lib/notes.svelte.ts` | Listings, selection, one retained-file registry, structured note mutations, and file actions. |
 | `src/lib/bridge/` | The bridge contract, encoding, and page-side client. |
 | `src/lib/platform/` | The `#platform/notes-host` seam and its two leaves. |
 | `src/routes/components/` | Header, folder list, note list, editors, files, terminal. |

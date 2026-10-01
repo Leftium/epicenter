@@ -203,15 +203,10 @@ export function createRichSession(
 	 * it last wrote. A draft body that is anything else was changed elsewhere.
 	 */
 	let syncedBody = opened.body;
-	/** Counts document replacements from outside, for tests and focus handling. */
-	let replacements = 0;
 
 	return {
 		get state() {
 			return state;
-		},
-		get replacements() {
-			return replacements;
 		},
 		/**
 		 * Apply a transaction. Returns the state to display, or undefined when
@@ -260,7 +255,6 @@ export function createRichSession(
 			if (!available.editable) return undefined;
 			syncedBody = available.body;
 			state = stateFor(available.inspection.doc, state);
-			replacements += 1;
 			return state;
 		},
 		/** Whether the draft's body is the one this document stands for. */

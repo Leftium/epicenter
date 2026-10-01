@@ -14,7 +14,6 @@ import type {
 	FileListing,
 	FileVersion,
 	GitSnapshot,
-	TableWriteError,
 } from '@epicenter/app/files';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -47,20 +46,19 @@ import type { NotesHost } from './platform/types.js';
 import { createTerminalSession } from './terminal.svelte.js';
 
 export type Notes = ReturnType<typeof createNotes>;
-export type NoteEditor = Draft<NoteEntry>;
-export type TextFileEditor = Draft<SavedText>;
+export type FileEditor = Draft<SavedText | NoteEntry>;
 
-/** A raw file the person opened from the file browser. */
+/** A retained file opened by path, including notes. */
 export type OpenFile =
 	| { readonly kind: 'loading' }
 	| { readonly kind: 'failed'; readonly message: string }
-	| { readonly kind: 'text'; readonly editor: TextFileEditor }
+	| { readonly kind: 'text'; readonly editor: FileEditor }
 	| { readonly kind: 'binary' | 'tooLarge'; readonly size: number };
 
 export type Selection =
 	| {
 			readonly kind: 'note';
-			readonly editor: NoteEditor;
+			readonly editor: FileEditor;
 			/** The listed row, or undefined when the file left the folder. */
 			readonly entry: NoteEntry | undefined;
 	  }
@@ -116,27 +114,37 @@ export function createNotes(host: NotesHost) {
 		deleted: boolean;
 		query: string;
 	}>({ folderId: null, deleted: false, query: '' });
-	let refreshSequence = 0;
 	let refreshing: Promise<void> | undefined;
 	let refreshAgain = false;
 
 	/** Folders open in the file browser; kept while the browser is hidden. */
 	const expanded = new SvelteSet<string>([NOTES]);
-	const editors = new SvelteMap<string, NoteEditor>();
 	const openFiles = new SvelteMap<string, OpenFile>();
 	const notePaths = $derived(new Set(notes.map((entry) => entry.path)));
 
+	/**
+	 * Every run reads the same signals whatever is selected: the open-file
+	 * collection whole, the note rows, and the path. Svelte re-runs a derived with the
+	 * values from before an update while an effect that read it is torn down,
+	 * and keeps that run's dependencies. A lookup by the selected key alone
+	 * would leave this subscribed to the path just left, so a file that
+	 * finishes loading afterwards would never show. Reading the lookup straight
+	 * from the accessor does not avoid it: a view's `{@const}` over the
+	 * selection is a derived too, and inherits the same keyed dependencies.
+	 */
 	const selection = $derived.by((): Selection | undefined => {
-		if (selectedPath === undefined) return undefined;
-		const editor = editors.get(selectedPath);
-		if (editor !== undefined)
+		const files = new Map(openFiles);
+		const rows = notes;
+		const path = selectedPath;
+		if (path === undefined) return undefined;
+		const file = files.get(path);
+		if (file?.kind === 'text' && noteIdOf(path) !== undefined)
 			return {
 				kind: 'note',
-				editor,
-				entry: notes.find((entry) => entry.path === selectedPath),
+				editor: file.editor,
+				entry: rows.find((entry) => entry.path === path),
 			};
-		const file = openFiles.get(selectedPath);
-		return file && { kind: 'file', path: selectedPath, file };
+		return file && { kind: 'file', path, file };
 	});
 
 	const terminal = createTerminalSession(host.terminal, refreshAll);
@@ -145,16 +153,15 @@ export function createNotes(host: NotesHost) {
 	});
 	const unsubscribeChanges = host.onExternalChange(() => void refreshAll());
 
-	function textEditorAt(path: string): TextFileEditor | undefined {
+	function editorAt(path: string): FileEditor | undefined {
 		const file = openFiles.get(path);
 		return file?.kind === 'text' ? file.editor : undefined;
 	}
 
-	function allEditors(): (NoteEditor | TextFileEditor)[] {
-		const all: (NoteEditor | TextFileEditor)[] = [...editors.values()];
-		for (const file of openFiles.values())
-			if (file.kind === 'text') all.push(file.editor);
-		return all;
+	function allEditors(): FileEditor[] {
+		return [...openFiles.values()].flatMap((file) =>
+			file.kind === 'text' ? [file.editor] : [],
+		);
 	}
 
 	async function readNote(path: string): Promise<Observed<NoteEntry>> {
@@ -167,7 +174,7 @@ export function createNotes(host: NotesHost) {
 				return { kind: 'unreadable', message: read.error.message };
 			return read.data === undefined
 				? { kind: 'removed' }
-				: { kind: 'present', file: read.data as NoteEntry };
+				: { kind: 'present', file: read.data };
 		} catch (cause) {
 			return {
 				kind: 'unreadable',
@@ -194,55 +201,59 @@ export function createNotes(host: NotesHost) {
 		}
 	}
 
-	function editorFor(entry: NoteEntry): NoteEditor {
-		let editor = editors.get(entry.path);
-		if (editor === undefined) {
-			editor = createDraft<NoteEntry>(
-				{
-					write: async (accepted, source) => {
-						const written = await notesTable.writeSource(accepted, source);
-						return written.error
-							? Err(written.error)
-							: Ok(written.data as NoteEntry);
-					},
-					read: readNote,
+	/** A path owns one draft; its saved observation selects the write boundary. */
+	function editorFor(initial: SavedText | NoteEntry): FileEditor {
+		const existing = editorAt(initial.path);
+		if (existing !== undefined) return existing;
+		const editor = createDraft<SavedText | NoteEntry>(
+			{
+				async write(accepted, source) {
+					if ('fields' in accepted)
+						return notesTable.writeSource(accepted, source);
+					const written = await folder.files.write(accepted.path, source, {
+						expected: accepted.version,
+					});
+					return written.error
+						? Err(written.error)
+						: Ok({ path: accepted.path, source, version: written.data });
 				},
-				entry,
-				{ onSaved: () => void refresh() },
-			);
-			editors.set(entry.path, editor);
-		}
+				read: (path) =>
+					noteIdOf(path) !== undefined ? readNote(path) : readText(path),
+			},
+			initial,
+			{ onSaved: () => void refresh() },
+		);
+		openFiles.set(initial.path, { kind: 'text', editor });
 		return editor;
 	}
 
 	function forget(path: string) {
-		editors.get(path)?.dispose();
-		editors.delete(path);
-		const file = openFiles.get(path);
-		if (file?.kind === 'text') file.editor.dispose();
+		editorAt(path)?.dispose();
 		openFiles.delete(path);
 		if (selectedPath === path) selectedPath = undefined;
 	}
 
-	async function observeOpenFiles(current: FileListing, sequence: number) {
-		const present = new Set(current.files.map((file) => file.path));
-		for (const [path, file] of openFiles) {
-			if (sequence !== refreshSequence) return;
-			if (file.kind === 'loading') continue;
-			if (file.kind !== 'text') {
-				if (!present.has(path)) openFiles.delete(path);
-				continue;
-			}
-			const observed = present.has(path)
-				? await readText(path)
-				: ({ kind: 'removed' } as const);
-			if (sequence !== refreshSequence) return;
-			if (file.editor.observe(observed) === 'gone') forget(path);
+	/** Retarget the retained file after a successful move or recovery write. */
+	function retarget(from: string, to: string, saved?: NoteEntry): boolean {
+		const file = openFiles.get(from);
+		openFiles.delete(from);
+		if (file?.kind === 'text') {
+			file.editor.rebase(saved ?? { ...file.editor.accepted, path: to });
 		}
+		if (file !== undefined && file.kind !== 'loading') openFiles.set(to, file);
+		const selected = selectedPath === from;
+		if (selected) selectedPath = to;
+		// An in-progress read still belongs to the old path. Reopen only a
+		// loading selection; text drafts keep their identity and are not re-read here.
+		return selected && file?.kind === 'loading';
 	}
 
 	async function refreshOnce() {
-		const sequence = ++refreshSequence;
+		const opened = [...openFiles].map(([path, file]) => ({
+			path,
+			file,
+			accepted: file.kind === 'text' ? file.editor.accepted : undefined,
+		}));
 		let rows: Awaited<ReturnType<typeof notesTable.list>>;
 		let folderRows: Awaited<ReturnType<typeof foldersTable.list>>;
 		let files: Awaited<ReturnType<typeof folder.files.list>>;
@@ -257,39 +268,54 @@ export function createNotes(host: NotesHost) {
 			listError = cause instanceof Error ? cause.message : String(cause);
 			return;
 		}
-		if (sequence !== refreshSequence) return;
 		if (rows.error) {
 			// Never show an empty list for a failed read.
 			listError = rows.error.message;
 		} else {
 			listError = undefined;
-			notes = rows.data.entries as NoteEntry[];
+			notes = [...rows.data.entries];
 			unreadable = rows.data.unreadable.map((item) => ({
 				path: item.path,
 				message: item.error.message,
 			}));
-			const present = new Map(notes.map((entry) => [entry.path, entry]));
-			const broken = new Map(unreadable.map((item) => [item.path, item]));
-			for (const [path, editor] of editors) {
-				const entry = present.get(path);
-				const failed = broken.get(path);
-				const outcome = editor.observe(
-					entry !== undefined
-						? { kind: 'present', file: entry }
-						: failed !== undefined
-							? { kind: 'unreadable', message: failed.message }
-							: { kind: 'removed' },
-				);
-				if (outcome === 'gone') forget(path);
-			}
 		}
-		if (!folderRows.error) folders = folderRows.data.entries as FolderEntry[];
+		if (!folderRows.error) folders = [...folderRows.data.entries];
 		if (files.error) {
 			listingError = files.error.message;
 		} else {
 			listingError = undefined;
 			listing = files.data;
-			await observeOpenFiles(files.data, sequence);
+		}
+		const present = new Map(notes.map((entry) => [entry.path, entry]));
+		const broken = new Map(unreadable.map((item) => [item.path, item]));
+		const paths = new Set(files.data?.files.map((file) => file.path));
+		for (const { path, file, accepted } of opened) {
+			if (openFiles.get(path) !== file) continue;
+			if (file.kind === 'loading') continue;
+			if (file.kind !== 'text') {
+				if (!files.error && !paths.has(path)) openFiles.delete(path);
+				continue;
+			}
+			if (file.editor.accepted !== accepted) continue;
+			let observed: Observed<SavedText | NoteEntry>;
+			if (noteIdOf(path) !== undefined) {
+				if (rows.error) continue;
+				const entry = present.get(path);
+				const failed = broken.get(path);
+				observed =
+					entry !== undefined
+						? { kind: 'present', file: entry }
+						: failed !== undefined
+							? { kind: 'unreadable', message: failed.message }
+							: { kind: 'removed' };
+			} else {
+				if (files.error) continue;
+				observed = paths.has(path) ? await readText(path) : { kind: 'removed' };
+			}
+			// The path may have been renamed or explicitly discarded during the read.
+			if (openFiles.get(path) !== file || file.editor.accepted !== accepted)
+				continue;
+			if (file.editor.observe(observed) === 'gone') forget(path);
 		}
 	}
 
@@ -316,29 +342,39 @@ export function createNotes(host: NotesHost) {
 		await Promise.all([refresh(), folder.git.status().catch(() => undefined)]);
 	}
 
-	/** Select a path: a note opens its editor, any other file opens as raw text or details. */
+	/** Select a file without replacing any draft already retained for its path. */
 	async function open(path: string) {
 		selectedPath = path;
 		focusRequest += 1;
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
 		const known = openFiles.get(path);
-		if (
-			editors.has(path) ||
-			known?.kind === 'text' ||
-			known?.kind === 'loading'
-		)
+		if (known?.kind === 'text' || known?.kind === 'loading') return;
+		// Identity, rather than the loading tag, keeps an old read from replacing
+		// a newer open after rename, deletion, or an explicit discard.
+		const loading: OpenFile = { kind: 'loading' };
+		openFiles.set(path, loading);
+		if (noteIdOf(path) !== undefined) {
+			let entry = notes.find((item) => item.path === path);
+			if (entry === undefined) {
+				await refresh();
+				entry = notes.find((item) => item.path === path);
+			}
+			const observed: Observed<NoteEntry> =
+				entry !== undefined
+					? { kind: 'present', file: entry }
+					: await readNote(path);
+			if (openFiles.get(path) !== loading) return;
+			if (observed.kind === 'present') editorFor(observed.file);
+			else
+				openFiles.set(path, {
+					kind: 'failed',
+					message:
+						observed.kind === 'removed'
+							? 'This note is no longer in the folder.'
+							: observed.message,
+				});
 			return;
-		let entry = notes.find((item) => item.path === path);
-		if (entry === undefined && noteIdOf(path) !== undefined) {
-			// The list may predate a note written by the terminal or another program.
-			await refresh();
-			entry = notes.find((item) => item.path === path);
 		}
-		if (entry !== undefined) {
-			editorFor(entry);
-			return;
-		}
-		openFiles.set(path, { kind: 'loading' });
 		const read = await readTextFile(folder.files, path).catch(
 			(cause: unknown) => ({
 				data: null,
@@ -347,44 +383,18 @@ export function createNotes(host: NotesHost) {
 				},
 			}),
 		);
-		if (openFiles.get(path)?.kind !== 'loading') return;
-		openFiles.set(
-			path,
-			read.error
-				? { kind: 'failed', message: read.error.message }
-				: read.data.kind === 'text'
-					? {
-							kind: 'text',
-							editor: createDraft<SavedText>(
-								{
-									async write(accepted, source) {
-										const written = await folder.files.write(
-											accepted.path,
-											source,
-											{ expected: accepted.version },
-										);
-										if (written.error) return Err(written.error);
-										return Ok({
-											path: accepted.path,
-											source,
-											version: written.data,
-										});
-									},
-									read: readText,
-								},
-								read.data.file,
-								{ onSaved: () => void refresh() },
-							),
-						}
-					: read.data,
-		);
+		if (openFiles.get(path) !== loading) return;
+		if (read.error)
+			openFiles.set(path, { kind: 'failed', message: read.error.message });
+		else if (read.data.kind === 'text') editorFor(read.data.file);
+		else openFiles.set(path, read.data);
 	}
 
 	/** The listed row for a path, read fresh when an editor does not hold it. */
 	async function noteForOperation(
 		path: string,
 	): Promise<Result<NoteEntry, string>> {
-		const editor = editors.get(path);
+		const editor = editorAt(path);
 		if (editor !== undefined && !(await editor.settle())) return Err(UNSETTLED);
 		const read = await readNote(path);
 		if (read.kind === 'removed')
@@ -400,8 +410,9 @@ export function createNotes(host: NotesHost) {
 	async function patchNote(
 		path: string,
 		fields: Partial<NoteFields>,
+		{ save = 'now' }: { save?: 'now' | 'later' } = {},
 	): Promise<string | undefined> {
-		const editor = editors.get(path);
+		const editor = editorAt(path);
 		if (editor !== undefined) {
 			const patched = applyFields(editor.buffer, fields);
 			if (patched.error !== null) {
@@ -409,6 +420,7 @@ export function createNotes(host: NotesHost) {
 				return patched.error;
 			}
 			editor.input(patched.data);
+			if (save === 'later') return undefined;
 			await editor.save();
 			if (editor.phase === 'failed') return editor.failure;
 			if (editor.phase === 'conflict')
@@ -430,7 +442,7 @@ export function createNotes(host: NotesHost) {
 		from: string,
 		to: string,
 	): Promise<string | undefined> {
-		const editor = textEditorAt(from);
+		const editor = editorAt(from);
 		let expected: FileVersion;
 		if (editor !== undefined) {
 			if (!(await editor.settle())) return UNSETTLED;
@@ -445,10 +457,9 @@ export function createNotes(host: NotesHost) {
 			await refreshAll();
 			return describeWriteError(moved.error);
 		}
-		const wasSelected = selectedPath === from;
-		forget(from);
+		const reopen = retarget(from, to);
 		await refreshAll();
-		if (wasSelected) await open(to);
+		if (reopen) await open(to);
 		return undefined;
 	}
 
@@ -457,7 +468,6 @@ export function createNotes(host: NotesHost) {
 		path: string,
 		id: string,
 	): Promise<string | undefined> {
-		const editor = editors.get(path);
 		const target = await noteForOperation(path);
 		if (target.error !== null) return target.error;
 		const renamed = await notesTable.rename(target.data, id);
@@ -465,13 +475,9 @@ export function createNotes(host: NotesHost) {
 			await refresh();
 			return describeWriteError(renamed.error);
 		}
-		if (editor !== undefined) {
-			editors.delete(path);
-			editor.rebase(renamed.data as NoteEntry);
-			editors.set(renamed.data.path, editor);
-		}
-		if (selectedPath === path) selectedPath = renamed.data.path;
+		const reopen = retarget(path, renamed.data.path, renamed.data);
 		await refresh();
+		if (reopen) await open(renamed.data.path);
 		return undefined;
 	}
 
@@ -526,10 +532,8 @@ export function createNotes(host: NotesHost) {
 		isNote(path: string) {
 			return notePaths.has(path);
 		},
-		/** The retained editor for a note, when one is open. */
-		editorAt(path: string): NoteEditor | undefined {
-			return editors.get(path);
-		},
+		/** The one retained text draft for an opened file. */
+		editorAt,
 		/** Drafts closing now would lose: typing, a running save, or a conflict. */
 		get unsettled() {
 			return allEditors().filter((editor) => editor.unsettled).length;
@@ -545,9 +549,6 @@ export function createNotes(host: NotesHost) {
 		refresh,
 		refreshAll,
 		open,
-		openNote(id: string) {
-			return open(notePath(id));
-		},
 		/** Create a note in the folder being shown and open it. */
 		async createNote(): Promise<string | undefined> {
 			const at = now();
@@ -565,7 +566,7 @@ export function createNotes(host: NotesHost) {
 				});
 				if (created.error) return describeWriteError(created.error);
 				await refresh();
-				editorFor(created.data as NoteEntry);
+				editorFor(created.data);
 				selectedPath = created.data.path;
 				focusRequest += 1;
 				return undefined;
@@ -633,7 +634,7 @@ export function createNotes(host: NotesHost) {
 		 * identity; otherwise it becomes a new note.
 		 */
 		async saveDraftAsNote(path: string): Promise<string | undefined> {
-			const editor = editors.get(path);
+			const editor = editorAt(path);
 			if (editor === undefined) return 'There is no draft to save.';
 			try {
 				let target = path;
@@ -650,10 +651,7 @@ export function createNotes(host: NotesHost) {
 				const saved = await readNote(target);
 				if (saved.kind !== 'present')
 					return 'The note was written but could not be read back.';
-				editors.delete(path);
-				editor.rebase(saved.file);
-				editors.set(target, editor);
-				if (selectedPath === path) selectedPath = target;
+				retarget(path, target, saved.file);
 				await refresh();
 				return undefined;
 			} catch (cause) {
@@ -662,7 +660,7 @@ export function createNotes(host: NotesHost) {
 		},
 		/** Explicitly discard a draft whose file is gone or unreadable. */
 		discardDraft(path: string) {
-			const editor = editors.get(path) ?? textEditorAt(path);
+			const editor = editorAt(path);
 			if (editor?.external !== undefined && editor.external.kind !== 'changed')
 				forget(path);
 		},
@@ -677,7 +675,12 @@ export function createNotes(host: NotesHost) {
 			if (problem !== undefined) return problem;
 			const to = joinPath(directory, name);
 			if (to === path) return undefined;
-			if (notePaths.has(path) || editors.has(path)) {
+			if (editorAt(to) !== undefined)
+				return `A draft for "${name}" is still open. Save or discard it before renaming another file to this name.`;
+			if (
+				notePaths.has(path) ||
+				(noteIdOf(path) !== undefined && editorAt(path) !== undefined)
+			) {
 				const id = noteIdOf(to);
 				if (id === undefined) return 'A note file keeps its .md extension.';
 				return renameNoteFile(path, id);
@@ -737,13 +740,16 @@ export function createNotes(host: NotesHost) {
 					);
 				return Ok({ kind: 'folder', path });
 			}
-			if (editors.has(path) || notePaths.has(path)) {
+			if (
+				notePaths.has(path) ||
+				(noteIdOf(path) !== undefined && editorAt(path) !== undefined)
+			) {
 				const entry = await noteForOperation(path);
 				return entry.error !== null
 					? entry
 					: Ok({ kind: 'note', entry: entry.data });
 			}
-			const text = textEditorAt(path);
+			const text = editorAt(path);
 			if (text !== undefined) {
 				if (!(await text.settle())) return Err(UNSETTLED);
 				return Ok({ kind: 'file', path, version: text.accepted.version });
@@ -762,7 +768,7 @@ export function createNotes(host: NotesHost) {
 			const path =
 				deletion.kind === 'note' ? deletion.entry.path : deletion.path;
 			// The confirmation is modal, but a save may have started or failed since the capture.
-			const editor = editors.get(path) ?? textEditorAt(path);
+			const editor = editorAt(path);
 			if (editor?.unsettled) return UNSETTLED;
 			const removed =
 				deletion.kind === 'note'
@@ -770,7 +776,7 @@ export function createNotes(host: NotesHost) {
 					: await folder.files.remove(path, { expected: deletion.version });
 			if (removed.error) {
 				await refreshAll();
-				return describeWriteError(removed.error as TableWriteError);
+				return describeWriteError(removed.error);
 			}
 			forget(path);
 			await refreshAll();

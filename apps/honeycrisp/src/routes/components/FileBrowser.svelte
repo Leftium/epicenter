@@ -21,7 +21,7 @@
 	import type { Notes } from '$lib/notes.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';
 
-	let { notes, onOpen }: { notes: Notes; onOpen?: () => void } = $props();
+	let { notes }: { notes: Notes } = $props();
 
 	const rows = $derived(notes.listing ? visibleRows(notes.listing, notes.expanded) : []);
 
@@ -51,7 +51,6 @@
 			return;
 		}
 		void notes.open(row.path);
-		onOpen?.();
 	}
 
 	function startCreate(directory: string, type: 'file' | 'folder') {
@@ -153,23 +152,29 @@
 			return;
 		}
 		committing = true;
-		const problem =
-			current.kind === 'rename'
-				? await notes.rename(current.path, name)
-				: current.type === 'file'
-					? await notes.createFile(directory, name)
-					: await notes.createDirectory(directory, name);
-		committing = false;
-		if (problem) {
-			const action =
-				current.kind === 'rename' ? 'rename' : `create the ${current.type}`;
-			toast.error(`Could not ${action}`, { description: problem });
-			return;
+		try {
+			const problem =
+				current.kind === 'rename'
+					? await notes.rename(current.path, name)
+					: current.type === 'file'
+						? await notes.createFile(directory, name)
+						: await notes.createDirectory(directory, name);
+			if (problem) {
+				const action =
+					current.kind === 'rename' ? 'rename' : `create the ${current.type}`;
+				toast.error(`Could not ${action}`, { description: problem });
+				return;
+			}
+			editing = undefined;
+			await tick();
+			focusRow(joinPath(directory, name));
+		} catch (cause) {
+			toast.error(current.kind === 'rename' ? 'Could not rename the file' : `Could not create the ${current.type}`, {
+				description: cause instanceof Error ? cause.message : String(cause),
+			});
+		} finally {
+			committing = false;
 		}
-		editing = undefined;
-		if (current.kind === 'create' && current.type === 'file') onOpen?.();
-		await tick();
-		focusRow(joinPath(directory, name));
 	}
 
 	async function cancel() {

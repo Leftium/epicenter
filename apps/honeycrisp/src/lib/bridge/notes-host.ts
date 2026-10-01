@@ -3,7 +3,6 @@
  * bound to the page's own origin; tests supply one bound to a host's `fetch`.
  */
 import type { GitSnapshot } from '@epicenter/app/files';
-import { FOLDERS, NOTES } from '../data.js';
 import type { NotesFolder, NotesHost } from '../platform/types.js';
 import type {
 	FaultState,
@@ -11,7 +10,7 @@ import type {
 	HostInfo,
 	TerminalReply,
 } from './contract.js';
-import { type BridgeTransport, createRemoteFolder } from './folder-client.js';
+import type { BridgeTransport } from './transport.js';
 
 export async function openBridgeNotesHost(
 	transport: BridgeTransport,
@@ -19,13 +18,60 @@ export async function openBridgeNotesHost(
 	const lifetime = new AbortController();
 	const [info, snapshot] = await Promise.all([
 		transport.app<HostInfo>({ op: 'info' }),
-		transport.call(['git', 'snapshot'], []) as Promise<GitSnapshot>,
+		transport.call(['git', 'snapshot'], []),
 	]);
-	const folder = createRemoteFolder<NotesFolder>(transport, {
-		tables: [NOTES, FOLDERS],
-		snapshot,
-		signal: lifetime.signal,
-	});
+	let gitSnapshot = snapshot;
+	const gitListeners = new Set<(snapshot: GitSnapshot) => void>();
+	const folder: NotesFolder = {
+		tables: {
+			notes: {
+				list: () => transport.call(['tables', 'notes', 'list'], []),
+				get: (...args) => transport.call(['tables', 'notes', 'get'], args),
+				create: (...args) =>
+					transport.call(['tables', 'notes', 'create'], args),
+				update: (...args) =>
+					transport.call(['tables', 'notes', 'update'], args),
+				writeSource: (...args) =>
+					transport.call(['tables', 'notes', 'writeSource'], args),
+				rename: (...args) =>
+					transport.call(['tables', 'notes', 'rename'], args),
+				delete: (...args) =>
+					transport.call(['tables', 'notes', 'delete'], args),
+			},
+			folders: {
+				list: () => transport.call(['tables', 'folders', 'list'], []),
+				get: (...args) => transport.call(['tables', 'folders', 'get'], args),
+				create: (...args) =>
+					transport.call(['tables', 'folders', 'create'], args),
+				update: (...args) =>
+					transport.call(['tables', 'folders', 'update'], args),
+				delete: (...args) =>
+					transport.call(['tables', 'folders', 'delete'], args),
+			},
+		},
+		files: {
+			list: () => transport.call(['files', 'list'], []),
+			read: (...args) => transport.call(['files', 'read'], args),
+			write: (...args) => transport.call(['files', 'write'], args),
+			remove: (...args) => transport.call(['files', 'remove'], args),
+			move: (...args) => transport.call(['files', 'move'], args),
+			mkdir: (...args) => transport.call(['files', 'mkdir'], args),
+			rmdir: (...args) => transport.call(['files', 'rmdir'], args),
+		},
+		git: {
+			get snapshot() {
+				return gitSnapshot;
+			},
+			subscribe(listener) {
+				gitListeners.add(listener);
+				listener(gitSnapshot);
+				return () => gitListeners.delete(listener);
+			},
+			status: () => transport.call(['git', 'status'], []),
+			commit: (...args) => transport.call(['git', 'commit'], args),
+			log: (...args) => transport.call(['git', 'log'], args),
+		},
+	};
 	const changeListeners = new Set<() => void>();
 	const closeListeners = new Set<() => void>();
 	let closePending = false;
@@ -39,7 +85,8 @@ export async function openBridgeNotesHost(
 	transport.listen((event) => {
 		switch (event.type) {
 			case 'git':
-				folder.receiveSnapshot(event.snapshot as GitSnapshot);
+				gitSnapshot = event.snapshot;
+				for (const listener of gitListeners) listener(gitSnapshot);
 				break;
 			case 'files':
 			// A dropped stream may have missed changes; reread to be sure.

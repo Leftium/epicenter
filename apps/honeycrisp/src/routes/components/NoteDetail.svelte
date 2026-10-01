@@ -7,10 +7,10 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PinIcon from '@lucide/svelte/icons/pin';
-	import { instantNow, type NoteEntry } from '$lib/data.js';
+	import { instantNow, type NoteEntry, type NoteFields } from '$lib/data.js';
 	import { withFileNewlines } from '$lib/files.js';
-	import { applyFields, missingFields } from '$lib/note-source.js';
-	import type { NoteEditor, Notes } from '$lib/notes.svelte.js';
+	import { missingFields } from '$lib/note-source.js';
+	import type { FileEditor, Notes } from '$lib/notes.svelte.js';
 	import DraftStatus from './DraftStatus.svelte';
 	import { confirmDelete } from './file-actions.js';
 	import NoteHistory from './NoteHistory.svelte';
@@ -22,7 +22,7 @@
 		entry,
 	}: {
 		notes: Notes;
-		editor: NoteEditor;
+		editor: FileEditor;
 		/** The listed row, or undefined when the file left the folder. */
 		entry: NoteEntry | undefined;
 	} = $props();
@@ -41,13 +41,8 @@
 	let tab = $state<'rich' | 'source'>('rich');
 	let historyOpen = $state(false);
 
-	function patch(fields: Parameters<typeof applyFields>[1]) {
-		const patched = applyFields(editor.buffer, fields);
-		if (patched.error !== null) {
-			editor.refuse(patched.error);
-			return;
-		}
-		editor.input(patched.data);
+	function patch(fields: Partial<NoteFields>) {
+		void notes.patchNote(editor.path, fields, { save: 'later' });
 	}
 
 	const folderName = (id: string) =>
@@ -201,5 +196,5 @@
 </section>
 
 {#if notes.host.history && historyOpen}
-	<NoteHistory {notes} {editor} bind:open={historyOpen} />
+	<NoteHistory history={notes.host.history} {editor} bind:open={historyOpen} />
 {/if}

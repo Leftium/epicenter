@@ -72,9 +72,9 @@ describe('bundles', () => {
 			conditions: ['tauri'],
 		});
 		expect(modules.filter((path) => YJS.test(path))).toEqual([]);
-		expect(
-			modules.some((path) => path.endsWith('bridge/folder-client.ts')),
-		).toBe(true);
+		expect(modules.some((path) => path.endsWith('bridge/transport.ts'))).toBe(
+			true,
+		);
 		expect(
 			modules.filter((path) =>
 				/files\/(browser-store|native|native-store)\.ts$/.test(path),

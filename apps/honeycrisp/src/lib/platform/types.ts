@@ -7,21 +7,31 @@
  * UI never asks which one it has except through the optional capabilities
  * below.
  */
-import type { Folder, FolderGit } from '@epicenter/app/files';
-import type { FaultState, Faults, FileRevision } from '../bridge/contract.js';
+import type { Folder, FolderFiles, FolderGit } from '@epicenter/app/files';
+import type {
+	FaultState,
+	Faults,
+	FileRevision,
+	FOLDER_METHODS,
+} from '../bridge/contract.js';
 import type { honeycrispDefinition } from '../data.js';
 
 type Definition = typeof honeycrispDefinition;
 
 /** The folder surface the notes UI uses. Remotes are outside this app. */
-export type NotesFolder = Pick<
-	Folder<Definition>,
-	'tables' | 'kv' | 'files'
-> & {
-	readonly git: Pick<
-		FolderGit,
-		'snapshot' | 'subscribe' | 'status' | 'commit' | 'log' | 'diff'
-	>;
+export type NotesFolder = {
+	tables: {
+		notes: Pick<
+			Folder<Definition>['tables']['notes'],
+			(typeof FOLDER_METHODS.tables.notes)[number]
+		>;
+		folders: Pick<
+			Folder<Definition>['tables']['folders'],
+			(typeof FOLDER_METHODS.tables.folders)[number]
+		>;
+	};
+	files: Pick<FolderFiles, (typeof FOLDER_METHODS.files)[number]>;
+	git: Pick<FolderGit, (typeof FOLDER_METHODS.git)[number] | 'subscribe'>;
 };
 
 export type TerminalRun = {

@@ -10,43 +10,63 @@
  *   POST /bridge/app     an `AppRequest` -> { ok } | { fault }
  *
  * Every request carries `Authorization: Bearer <token>`. Values use the
- * tagged encoding in `codec.ts`. `/bridge/call` is the folder itself and is
- * app-agnostic; `/bridge/app` is Honeycrisp's own.
+ * tagged encoding in `codec.ts`. `/bridge/call` exposes only the folder
+ * operations Honeycrisp consumes; `/bridge/app` handles its shell operations.
  */
+
+import type { GitSnapshot } from '@epicenter/app/files';
+import type { NotesFolder } from '../platform/types.js';
+
+/** Paths are coupled to their real folder method's arguments and result. */
+export type FolderCallPath =
+	| readonly ['tables', 'notes', keyof NotesFolder['tables']['notes']]
+	| readonly ['tables', 'folders', keyof NotesFolder['tables']['folders']]
+	| readonly ['files', keyof NotesFolder['files']]
+	| readonly ['git', 'snapshot' | 'status' | 'commit' | 'log'];
+
+export type FolderCallMethod<TPath extends FolderCallPath> =
+	TPath extends readonly [
+		'tables',
+		'notes',
+		infer TMethod extends keyof NotesFolder['tables']['notes'],
+	]
+		? NotesFolder['tables']['notes'][TMethod]
+		: TPath extends readonly [
+					'tables',
+					'folders',
+					infer TMethod extends keyof NotesFolder['tables']['folders'],
+				]
+			? NotesFolder['tables']['folders'][TMethod]
+			: TPath extends readonly [
+						'files',
+						infer TMethod extends keyof NotesFolder['files'],
+					]
+				? NotesFolder['files'][TMethod]
+				: TPath extends readonly ['git', 'snapshot']
+					? () => Promise<GitSnapshot>
+					: TPath extends readonly [
+								'git',
+								infer TMethod extends 'status' | 'commit' | 'log',
+							]
+						? NotesFolder['git'][TMethod]
+						: never;
 
 /** The folder methods a page may call, by namespace. Anything else is refused. */
 export const FOLDER_METHODS = {
-	tables: [
-		'list',
-		'get',
-		'create',
-		'update',
-		'writeSource',
-		'rename',
-		'delete',
-	],
-	kv: ['get', 'update', 'writeSource'],
-	files: [
-		'list',
-		'children',
-		'read',
-		'open',
-		'write',
-		'remove',
-		'move',
-		'mkdir',
-		'rmdir',
-	],
-	git: [
-		'snapshot',
-		'status',
-		'commit',
-		'paths',
-		'stage',
-		'commitStaged',
-		'diff',
-		'log',
-	],
+	tables: {
+		notes: [
+			'list',
+			'get',
+			'create',
+			'update',
+			'writeSource',
+			'rename',
+			'delete',
+		],
+		folders: ['list', 'get', 'create', 'update', 'delete'],
+	},
+	files: ['list', 'read', 'write', 'remove', 'move', 'mkdir', 'rmdir'],
+	git: ['snapshot', 'status', 'commit', 'log'],
 } as const;
 
 export type CallRequest = {
@@ -57,7 +77,7 @@ export type CallRequest = {
 export type BridgeReply = { readonly ok: unknown } | { readonly fault: string };
 
 export type BridgeEvent =
-	| { readonly type: 'git'; readonly snapshot: unknown }
+	| { readonly type: 'git'; readonly snapshot: GitSnapshot }
 	/** Something under the root changed; reread what is on screen. */
 	| { readonly type: 'files' }
 	/** Every native close or quit asks the page to settle or confirm discard. */
@@ -118,18 +138,15 @@ export type AppRequest =
 	/** The page agrees to quit: every draft is saved, or the person chose to discard. */
 	| { readonly op: 'quit' };
 
-export function isAllowedCall(
-	path: readonly string[],
-	tables: readonly string[],
-): boolean {
+export function isAllowedCall(path: readonly string[]): boolean {
 	const [namespace, second, third] = path;
 	if (namespace === 'tables')
 		return (
 			path.length === 3 &&
-			tables.includes(second ?? '') &&
-			(FOLDER_METHODS.tables as readonly string[]).includes(third ?? '')
+			(second === 'notes' || second === 'folders') &&
+			(FOLDER_METHODS.tables[second] as readonly string[]).includes(third ?? '')
 		);
-	if (namespace === 'kv' || namespace === 'files' || namespace === 'git')
+	if (namespace === 'files' || namespace === 'git')
 		return (
 			path.length === 2 &&
 			(FOLDER_METHODS[namespace] as readonly string[]).includes(second ?? '')

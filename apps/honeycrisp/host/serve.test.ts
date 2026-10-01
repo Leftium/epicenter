@@ -30,13 +30,15 @@ import { join } from 'node:path';
 import type { InstantString } from '@epicenter/app/field';
 import { expectOk } from 'wellcrafted/testing';
 import type { BridgeEvent } from '../src/lib/bridge/contract.js';
-import { createBridgeTransport } from '../src/lib/bridge/folder-client.js';
 import { openBridgeNotesHost } from '../src/lib/bridge/notes-host.js';
+import { createBridgeTransport } from '../src/lib/bridge/transport.js';
 import type { NoteEntry } from '../src/lib/data.js';
 import { applyRichBody } from '../src/lib/note-source.js';
 import { createFolderHost, type FolderHostOptions } from './serve.js';
 
 const { createDraft } = await import('../src/lib/draft.svelte.ts');
+const { createNotes } = await import('../src/lib/notes.svelte.ts');
+const { watch } = await import('../src/lib/effects.test-support.svelte.ts');
 
 // Real git processes; generous under a loaded machine.
 setDefaultTimeout(60_000);
@@ -202,6 +204,14 @@ describe('the boundary', () => {
 			['git', 'push'],
 			['tables', 'secrets', 'list'],
 			['files', 'constructor'],
+			['kv', 'update'],
+			['files', 'open'],
+			['files', 'children'],
+			['git', 'diff'],
+			['git', 'stage'],
+			['git', 'commitStaged'],
+			['tables', 'folders', 'writeSource'],
+			['tables', 'folders', 'rename'],
 		]) {
 			const response = await send(
 				new Request(`${ORIGIN}/bridge/call`, {
@@ -294,18 +304,6 @@ describe('notes are files', () => {
 			() => folder.git.snapshot.lastCommit?.status === 'failed',
 			'the failed file checkpoint',
 		);
-	});
-
-	test('the automatic bridge refuses staged authoring', async () => {
-		const { transport } = await open();
-		for (const [method, args] of [
-			['stage', ['all']],
-			['commitStaged', ['Manual']],
-		] as const) {
-			expect(await transport.call(['git', method], args)).toMatchObject({
-				error: { name: 'AutomaticHistory' },
-			});
-		}
 	});
 
 	test('creating a note writes one Markdown file and requests a commit', async () => {
@@ -820,5 +818,297 @@ describe('the page', () => {
 		) as BridgeEvent;
 		expect(second.type).toBe('closeRequested');
 		await reader.cancel();
+	});
+});
+
+/**
+ * A path owns one draft across note and file views, rename, and external
+ * classification changes. These use the real native folder and bridge.
+ */
+describe('retained files', () => {
+	async function product() {
+		const fixture = await open();
+		const state = createNotes(fixture.notes);
+		cleanup.push(() => state.close());
+		await state.refreshAll();
+		return { ...fixture, state };
+	}
+
+	test('a note and a raw file keep the same drafts when selection changes', async () => {
+		const { state, folder } = await product();
+		const note = await createNote(folder);
+		expectOk(
+			await folder.files.write('scratch.txt', 'raw\n', { expected: 'absent' }),
+		);
+		await state.refresh();
+		await state.open(note.path);
+		const noteDraft = state.editorAt(note.path);
+		await state.open('scratch.txt');
+		const rawDraft = state.editorAt('scratch.txt');
+		await state.open(note.path);
+		expect(state.selection?.kind).toBe('note');
+		expect(state.editorAt(note.path)).toBe(noteDraft);
+		await state.open('scratch.txt');
+		expect(state.selection?.kind).toBe('file');
+		expect(state.editorAt('scratch.txt')).toBe(rawDraft);
+		expect(state.unsettled).toBe(0);
+	});
+
+	test('renaming an edited raw file retains its draft and writes only to the new path', async () => {
+		const { state, folder, root } = await product();
+		expectOk(
+			await folder.files.write('scratch.txt', 'raw\n', { expected: 'absent' }),
+		);
+		await state.refresh();
+		await state.open('scratch.txt');
+		const draft = state.editorAt('scratch.txt')!;
+		draft.input('saved before rename\n');
+		expect(await state.rename('scratch.txt', 'renamed.txt')).toBeUndefined();
+		expect(state.editorAt('scratch.txt')).toBeUndefined();
+		expect(state.editorAt('renamed.txt')).toBe(draft);
+		expect(state.selectedPath).toBe('renamed.txt');
+		draft.input('saved after rename\n');
+		await draft.save();
+		expect(await readFile(join(root, 'renamed.txt'), 'utf8')).toBe(
+			'saved after rename\n',
+		);
+		await expect(stat(join(root, 'scratch.txt'))).rejects.toThrow();
+	});
+
+	test('deleting an edited raw file captures its saved version and forgets only that draft', async () => {
+		const { state, folder, root } = await product();
+		expectOk(
+			await folder.files.write('scratch.txt', 'raw\n', { expected: 'absent' }),
+		);
+		await state.refresh();
+		await state.open('scratch.txt');
+		const draft = state.editorAt('scratch.txt')!;
+		draft.input('saved before deleting\n');
+		const deletion = expectOk(await state.deletionFor('scratch.txt'));
+		expect(deletion.kind).toBe('file');
+		expect(await readFile(join(root, 'scratch.txt'), 'utf8')).toBe(
+			'saved before deleting\n',
+		);
+		expect(await state.remove(deletion)).toBeUndefined();
+		expect(state.editorAt('scratch.txt')).toBeUndefined();
+		expect(state.selectedPath).toBeUndefined();
+		await expect(stat(join(root, 'scratch.txt'))).rejects.toThrow();
+	});
+
+	test('a raw file changed after deletion was confirmed is kept with its retained draft', async () => {
+		const { state, folder, root } = await product();
+		expectOk(
+			await folder.files.write('scratch.txt', 'raw\n', { expected: 'absent' }),
+		);
+		await state.refresh();
+		await state.open('scratch.txt');
+		const draft = state.editorAt('scratch.txt');
+		const deletion = expectOk(await state.deletionFor('scratch.txt'));
+		await writeFile(join(root, 'scratch.txt'), 'outside change\n');
+		expect(await state.remove(deletion)).toContain('The file changed');
+		expect(state.editorAt('scratch.txt')).toBe(draft);
+		expect(draft?.buffer).toBe('outside change\n');
+		expect(await readFile(join(root, 'scratch.txt'), 'utf8')).toBe(
+			'outside change\n',
+		);
+	});
+
+	test('a raw file renamed into a note keeps its draft and adopts the table observation', async () => {
+		const { state, folder, root } = await product();
+		const source =
+			'---\ntitle: Before\n# keep this comment\nunknown: "keep"\n---\nBody\n';
+		expectOk(
+			await folder.files.write('notes/raw.txt', source, { expected: 'absent' }),
+		);
+		await state.refresh();
+		await state.open('notes/raw.txt');
+		const draft = state.editorAt('notes/raw.txt')!;
+		expect(await state.rename('notes/raw.txt', 'raw.md')).toBeUndefined();
+		expect(state.editorAt('notes/raw.md')).toBe(draft);
+		expect(state.selection?.kind).toBe('note');
+		expect('fields' in draft.accepted).toBe(true);
+		expect(
+			await state.patchNote('notes/raw.md', { title: 'After' }),
+		).toBeUndefined();
+		const saved = await readFile(join(root, 'notes/raw.md'), 'utf8');
+		expect(saved).toContain('title: After');
+		expect(saved).toContain('# keep this comment\nunknown: "keep"');
+	});
+
+	test('a dirty note survives malformed external source and refuses rename until resolved', async () => {
+		const { state, folder, root } = await product();
+		const note = await createNote(folder);
+		await state.refresh();
+		await state.open(note.path);
+		const draft = state.editorAt(note.path)!;
+		draft.input(`${note.source}my unsaved text\n`);
+		await writeFile(
+			join(root, note.path),
+			'---\ntitle: [broken\n---\noutside\n',
+		);
+		await state.refresh();
+		expect(state.editorAt(note.path)).toBe(draft);
+		expect(draft.buffer).toContain('my unsaved text');
+		expect(draft.external?.kind).toBe('changed');
+		expect(await state.rename(note.path, 'renamed.md')).toBe(
+			'Save or discard the open edits first.',
+		);
+		expect(await readFile(join(root, note.path), 'utf8')).toContain('[broken');
+		draft.loadSaved();
+		expect(draft.buffer).toContain('[broken');
+	});
+
+	test('metadata changes share the open draft, with explicit deferred and immediate saves', async () => {
+		const { state, folder, root } = await product();
+		const note = await createNote(folder);
+		await state.refresh();
+		await state.open(note.path);
+		const draft = state.editorAt(note.path)!;
+		expect(
+			await state.patchNote(
+				note.path,
+				{ title: 'Typed title' },
+				{ save: 'later' },
+			),
+		).toBeUndefined();
+		expect(draft.buffer).toContain('title: Typed title');
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(note.source);
+		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
+		const saved = await readFile(join(root, note.path), 'utf8');
+		expect(saved).toContain('title: Typed title');
+		expect(saved).toContain('pinned: true');
+		expect(state.editorAt(note.path)).toBe(draft);
+	});
+
+	test('an unopened metadata action changes the file without retaining an invisible draft', async () => {
+		const { state, folder, root } = await product();
+		const note = await createNote(folder);
+		await state.refresh();
+		expect(await state.patchNote(note.path, { pinned: true })).toBeUndefined();
+		expect(state.editorAt(note.path)).toBeUndefined();
+		expect(state.selectedPath).toBeUndefined();
+		expect(await readFile(join(root, note.path), 'utf8')).toContain(
+			'pinned: true',
+		);
+	});
+
+	test('a listing captured before a save cannot roll the accepted draft back after the save', async () => {
+		const { state, folder, root } = await product();
+		const note = await createNote(folder);
+		await state.refresh();
+		await state.open(note.path);
+		const draft = state.editorAt(note.path)!;
+		const list = folder.tables.notes.list;
+		const started = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		let held = false;
+		folder.tables.notes.list = async () => {
+			const result = await list();
+			if (!held) {
+				held = true;
+				started.resolve();
+				await release.promise;
+			}
+			return result;
+		};
+		const observed: string[] = [];
+		const stop = watch(() => {
+			observed.push(draft.buffer);
+		});
+		const refreshing = state.refresh();
+		await started.promise;
+		draft.input(`${note.source}saved while listing waits\n`);
+		await draft.save();
+		const saved = draft.accepted;
+		release.resolve();
+		await refreshing;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		stop();
+		expect(draft.accepted.version).toEqual(saved.version);
+		expect(draft.buffer).toBe(saved.source);
+		expect(draft.external).toBeUndefined();
+		// A second old value means the screen actually rolled back, even if the
+		// save's queued refresh eventually put the new value back.
+		expect(observed.filter((source) => source === note.source)).toHaveLength(1);
+		expect(await readFile(join(root, note.path), 'utf8')).toBe(saved.source);
+	});
+
+	test('renaming a raw file refuses a destination with a retained removed-file draft', async () => {
+		const { state, folder, root } = await product();
+		expectOk(await folder.files.write('a.txt', 'A\n', { expected: 'absent' }));
+		expectOk(await folder.files.write('b.txt', 'B\n', { expected: 'absent' }));
+		await state.refresh();
+		await state.open('a.txt');
+		const a = state.editorAt('a.txt');
+		await state.open('b.txt');
+		const b = state.editorAt('b.txt')!;
+		b.input('Retained B\n');
+		await rm(join(root, 'b.txt'));
+		await state.refresh();
+		expect(b.external?.kind).toBe('removed');
+		expect(await state.rename('a.txt', 'b.txt')).toContain('draft');
+		expect(state.editorAt('a.txt')).toBe(a);
+		expect(state.editorAt('b.txt')).toBe(b);
+		expect(b.buffer).toBe('Retained B\n');
+		expect(await readFile(join(root, 'a.txt'), 'utf8')).toBe('A\n');
+		await expect(stat(join(root, 'b.txt'))).rejects.toThrow();
+		state.discardDraft('b.txt');
+	});
+
+	test('renaming a note also refuses a destination with a retained removed-note draft', async () => {
+		const { state, folder, root } = await product();
+		const a = await createNote(folder, 'A');
+		const b = await createNote(folder, 'B');
+		await state.refresh();
+		await state.open(a.path);
+		const aDraft = state.editorAt(a.path);
+		await state.open(b.path);
+		const bDraft = state.editorAt(b.path)!;
+		bDraft.input(`${b.source}Retained B\n`);
+		await rm(join(root, b.path));
+		await state.refresh();
+		expect(bDraft.external?.kind).toBe('removed');
+		expect(await state.rename(a.path, `${b.stem}.md`)).toContain('draft');
+		expect(state.editorAt(a.path)).toBe(aDraft);
+		expect(state.editorAt(b.path)).toBe(bDraft);
+		expect(bDraft.buffer).toContain('Retained B');
+		expect(await readFile(join(root, a.path), 'utf8')).toBe(a.source);
+		state.discardDraft(b.path);
+	});
+
+	test('a refresh awaiting a raw read cannot forget a draft renamed while it waits', async () => {
+		const { state, folder } = await product();
+		expectOk(
+			await folder.files.write('scratch.txt', 'raw\n', { expected: 'absent' }),
+		);
+		await state.refresh();
+		await state.open('scratch.txt');
+		const draft = state.editorAt('scratch.txt')!;
+		const read = folder.files.read;
+		const started = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		let held = false;
+		folder.files.read = async (path) => {
+			const result = await read(path);
+			if (path === 'scratch.txt' && !held) {
+				held = true;
+				started.resolve();
+				await release.promise;
+			}
+			return result;
+		};
+		const refreshing = state.refresh();
+		await started.promise;
+		const renaming = state.rename('scratch.txt', 'renamed.txt');
+		await until(
+			() => state.editorAt('renamed.txt') === draft,
+			'the retargeted draft',
+		);
+		release.resolve();
+		await refreshing;
+		expect(await renaming).toBeUndefined();
+		expect(state.editorAt('renamed.txt')).toBe(draft);
+		expect(draft.external).toBeUndefined();
+		expect(draft.path).toBe('renamed.txt');
 	});
 });

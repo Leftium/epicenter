@@ -196,7 +196,6 @@ describe('undo history', () => {
 		expectDraftHoldsScreen();
 		while (redoDepth(session.state) > 0) expect(run(redo)).toBe(true);
 		expect(body()).toBe('one two\n\nthree\n');
-		expect(session.replacements).toBe(0);
 	});
 
 	test('survives a look at Source that changes nothing', () => {
@@ -220,7 +219,6 @@ describe('undo history', () => {
 		expect(replaced).toBeDefined();
 		expect(session.state.doc.textContent).toBe('from source');
 		expect(undoDepth(session.state)).toBe(0);
-		expect(session.replacements).toBe(1);
 		// Undo does not bring back text from before the replacement.
 		run(undo);
 		expect(body()).toBe('from source\n');

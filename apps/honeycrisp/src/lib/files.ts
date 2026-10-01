@@ -146,7 +146,7 @@ const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
  * same bytes back.
  */
 export async function readTextFile(
-	files: FolderFiles,
+	files: Pick<FolderFiles, 'read'>,
 	path: string,
 ): Promise<Result<OpenedFile, FileError>> {
 	const read = await files.read(path);

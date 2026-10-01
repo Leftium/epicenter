@@ -3,14 +3,14 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { toast } from '@epicenter/ui/sonner';
 	import { diffLines } from '$lib/line-diff.js';
-	import type { NoteEditor, TextFileEditor } from '$lib/notes.svelte.js';
+	import type { FileEditor } from '$lib/notes.svelte.js';
 
 	let {
 		editor,
 		onSaveAsNote,
 		onDiscard,
 	}: {
-		editor: NoteEditor | TextFileEditor;
+		editor: FileEditor;
 		/** Write a draft whose file is gone back into the folder; absent for raw files. */
 		onSaveAsNote?: () => Promise<string | undefined>;
 		/** Forget a draft whose file is gone or unreadable. */

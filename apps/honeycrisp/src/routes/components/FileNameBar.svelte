@@ -30,9 +30,16 @@
 		const value = next.trim();
 		if (value === '' || value === name || renaming) return;
 		renaming = true;
-		const problem = await onRename(value);
-		renaming = false;
-		if (problem) toast.error('Could not rename the file', { description: problem });
+		try {
+			const problem = await onRename(value);
+			if (problem) toast.error('Could not rename the file', { description: problem });
+		} catch (cause) {
+			toast.error('Could not rename the file', {
+				description: cause instanceof Error ? cause.message : String(cause),
+			});
+		} finally {
+			renaming = false;
+		}
 	}
 </script>
 

@@ -3,7 +3,6 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
@@ -17,13 +16,10 @@
 		notes,
 		path,
 		file,
-		onBack,
 	}: {
 		notes: Notes;
 		path: string;
 		file: OpenFile;
-		/** Shown on narrow screens, where the list and the editor take turns. */
-		onBack?: () => void;
 	} = $props();
 
 	const name = $derived(basename(path));
@@ -41,11 +37,6 @@
 
 <section class="flex h-full min-h-0 flex-col" aria-label="File">
 	<div class="flex items-center gap-2 border-b px-3 py-3 sm:px-4">
-		{#if onBack}
-			<Button variant="ghost" size="icon-sm" aria-label="Back to notes" onclick={onBack} {@attach (node: HTMLElement) => node.focus()}>
-				<ArrowLeftIcon />
-			</Button>
-		{/if}
 		<FileIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 		<div class="min-w-0 flex-1">
 			<h2 class="truncate text-sm font-medium">{name}</h2>

@@ -87,8 +87,6 @@ export function createDraft<T extends SavedText>(
 	let external = $state.raw<External<T> | undefined>();
 	let failure = $state<string | undefined>();
 	let refusal = $state<string | undefined>();
-	/** Counts buffer replacements from disk, so a view can drop stale undo history. */
-	let adoptions = $state(0);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let saving: Promise<void> | undefined;
 	let recheck = false;
@@ -107,7 +105,6 @@ export function createDraft<T extends SavedText>(
 		external = undefined;
 		failure = undefined;
 		refusal = undefined;
-		adoptions += 1;
 	}
 
 	function apply(observed: Observed<T>): ObserveOutcome {
@@ -225,9 +222,6 @@ export function createDraft<T extends SavedText>(
 		/** Why the last structured change was refused; typing clears it. */
 		get refusal() {
 			return refusal;
-		},
-		get adoptions() {
-			return adoptions;
 		},
 		get dirty() {
 			return dirty();

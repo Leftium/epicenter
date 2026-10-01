@@ -193,8 +193,8 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 	const context: TableContext = {
 		boundary,
 		admit,
-		async publish(changes) {
-			const result = await boundary.apply(changes);
+		async publish(changes, guard) {
+			const result = await boundary.apply(changes, guard);
 			if (result.error === null || result.error.name === 'Partial')
 				history.noteEdit();
 			if (result.error === null) history.requestAutomaticCommit();

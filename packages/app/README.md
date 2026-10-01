@@ -190,6 +190,23 @@ containing a path separator, and entry operations refuse a nested path such as
 listable and editable. Rename and delete refuse when the current same-stem
 attachments differ from the one the entry captured.
 
+Create, rename, and delete depend on the other filenames in the table
+directory: an occupied or case-colliding destination, a same-stem file the new
+row would adopt, and the attachment the entry captured. Each operation checks
+those filenames once to refuse early, and the folder checks them again where
+the files are published, before it writes anything. A browser folder runs that
+check in the same IndexedDB transaction as the writes, so a write from another
+tab lands wholly before or after it. A native folder runs it in the queue that
+orders the folder's own saves; another program can still add a file after the
+check. A refusal names the condition (`Exists`, `Collision`, or
+`AmbiguousAttachment`), writes nothing, and requests no history. Unrelated
+files appearing in the directory refuse nothing.
+
+A native checkpoint enumerates and reads the folder in that same queue, so it
+never captures one of the folder's own multi-file saves half applied. It makes
+no Git call while it holds its turn, and other reads do not wait for it. It is
+not atomic against another program writing the directory.
+
 `@epicenter/app/files/terminal` runs a just-bash shell over a folder. The shell
 reads and writes the same files, and its `git` command supports `status`,
 `diff [--cached]`, `log`, `add`, `commit -m`, `push`, `fetch`, and

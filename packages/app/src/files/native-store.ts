@@ -10,9 +10,12 @@
  *
  * One boundary applies its batches one at a time, so two saves through the
  * same opened folder never share that window: the later one checks against
- * what the earlier one left. This orders this boundary's own batches only. It
- * is not a file lock, and another program or a second boundary on the same
- * directory still races as described above.
+ * what the earlier one left. A batch's directory guard and a capture's
+ * enumeration and reads take the same turn, so a guard sees what the earlier
+ * batch left and a capture never sees one of this boundary's batches half
+ * applied. This orders this boundary's own batches and captures only. It is
+ * not a file lock, and another program or a second boundary on the same
+ * directory still races as described above. Other reads are not ordered.
  *
  * A multi-file batch applies ordered steps. When a step fails, the result
  * reports which steps reached the folder; nothing is rolled back.
@@ -271,8 +274,8 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		return Ok(undefined);
 	}
 
-	// Batches from this boundary run in arrival order. A batch that fails or
-	// throws releases the next one.
+	// Batches and captures from this boundary run in arrival order. One that
+	// fails or throws releases the next.
 	let tail: Promise<unknown> = Promise.resolve();
 	function inOrder<T>(work: () => Promise<T>): Promise<T> {
 		const result = tail.then(work, work);
@@ -306,47 +309,53 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		}
 	}
 
-	return {
-		async list() {
-			const files: { path: string; size: number }[] = [];
+	async function list(): Promise<Result<FileListing, FileError>> {
+		const files: { path: string; size: number }[] = [];
+		const directories: string[] = [];
+		try {
+			await walk(root, '', files, directories);
+		} catch (cause) {
+			return FileError.Io({ path: '', operation: 'enumerate', cause });
+		}
+		files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+		const listing: FileListing = { files, directories: directories.sort() };
+		return Ok(listing);
+	}
+
+	async function children(
+		directory: string,
+	): Promise<Result<{ files: string[]; directories: string[] }, FileError>> {
+		if (directory !== '') {
+			const refused = invalid(directory);
+			if (refused) return refused;
+			const kind = await verifyLiteral(directory);
+			if (kind.error) return kind;
+			if (kind.data === 'absent')
+				return FileError.NotFound({ path: directory });
+			if (kind.data === 'file')
+				return FileError.NotADirectory({ path: directory });
+		}
+		try {
+			const entries = await readdir(
+				directory === '' ? root : absolute(directory),
+				{ withFileTypes: true },
+			);
+			const files: string[] = [];
 			const directories: string[] = [];
-			try {
-				await walk(root, '', files, directories);
-			} catch (cause) {
-				return FileError.Io({ path: '', operation: 'enumerate', cause });
+			for (const entry of entries) {
+				if (directory === '' && entry.name === '.git') continue;
+				if (entry.isFile()) files.push(entry.name);
+				else if (entry.isDirectory()) directories.push(entry.name);
 			}
-			files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-			const listing: FileListing = { files, directories: directories.sort() };
-			return Ok(listing);
-		},
-		async children(directory) {
-			if (directory !== '') {
-				const refused = invalid(directory);
-				if (refused) return refused;
-				const kind = await verifyLiteral(directory);
-				if (kind.error) return kind;
-				if (kind.data === 'absent')
-					return FileError.NotFound({ path: directory });
-				if (kind.data === 'file')
-					return FileError.NotADirectory({ path: directory });
-			}
-			try {
-				const entries = await readdir(
-					directory === '' ? root : absolute(directory),
-					{ withFileTypes: true },
-				);
-				const files: string[] = [];
-				const directories: string[] = [];
-				for (const entry of entries) {
-					if (directory === '' && entry.name === '.git') continue;
-					if (entry.isFile()) files.push(entry.name);
-					else if (entry.isDirectory()) directories.push(entry.name);
-				}
-				return Ok({ files: files.sort(), directories: directories.sort() });
-			} catch (cause) {
-				return FileError.Io({ path: directory, operation: 'list', cause });
-			}
-		},
+			return Ok({ files: files.sort(), directories: directories.sort() });
+		} catch (cause) {
+			return FileError.Io({ path: directory, operation: 'list', cause });
+		}
+	}
+
+	return {
+		list,
+		children,
 		async read(path) {
 			const refused = invalid(path);
 			if (refused) return refused;
@@ -367,7 +376,7 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			if (read.error) return read;
 			return Ok(new Blob([read.data.bytes as Uint8Array<ArrayBuffer>]));
 		},
-		async apply(changes) {
+		async apply(changes, guard) {
 			for (const change of changes) {
 				const paths =
 					change.kind === 'move' ? [change.from, change.to] : [change.path];
@@ -377,6 +386,13 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 				}
 			}
 			return inOrder(async () => {
+				if (guard !== undefined) {
+					// Checked in this batch's turn, so it sees every earlier batch.
+					const found = await children(guard.directory);
+					if (found.error && found.error.name !== 'NotFound') return found;
+					const checked = guard.check(found.data?.files ?? []);
+					if (checked.error) return checked;
+				}
 				const applied: FileStep[] = [];
 				for (let index = 0; index < changes.length; index++) {
 					const change = changes[index]!;
@@ -426,25 +442,30 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			}
 		},
 		async capture() {
-			const listing = await this.list();
-			if (listing.error) return listing;
-			const files = new Map<string, Uint8Array>();
-			const unreadable: { path: string; error: FileError }[] = [];
-			for (const { path } of listing.data.files) {
-				if (!isPortablePath(path)) continue;
-				try {
-					files.set(path, new Uint8Array(await readFile(absolute(path))));
-				} catch (cause) {
-					// A file removed during enumeration is simply absent from this capture.
-					if (codeOf(cause) === 'ENOENT') continue;
-					unreadable.push({
-						path,
-						error: FileError.Io({ path, operation: 'read', cause }).error,
-					});
+			// Enumeration and every read share one turn with this boundary's
+			// batches. A rename landing between the two would otherwise leave the
+			// old path unreadable and the new path never enumerated.
+			return inOrder(async () => {
+				const listing = await list();
+				if (listing.error) return listing;
+				const files = new Map<string, Uint8Array>();
+				const unreadable: { path: string; error: FileError }[] = [];
+				for (const { path } of listing.data.files) {
+					if (!isPortablePath(path)) continue;
+					try {
+						files.set(path, new Uint8Array(await readFile(absolute(path))));
+					} catch (cause) {
+						// Another program removed it after enumeration: absent from this capture.
+						if (codeOf(cause) === 'ENOENT') continue;
+						unreadable.push({
+							path,
+							error: FileError.Io({ path, operation: 'read', cause }).error,
+						});
+					}
 				}
-			}
-			const captured: CapturedFiles = { files, unreadable };
-			return Ok(captured);
+				const captured: CapturedFiles = { files, unreadable };
+				return Ok(captured);
+			});
 		},
 	};
 }

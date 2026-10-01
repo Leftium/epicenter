@@ -14,6 +14,7 @@
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type {
 	CapturedFiles,
+	DirectoryGuard,
 	FileBoundary,
 	FileChange,
 	FileListing,
@@ -83,19 +84,19 @@ export function prefixRange(
 }
 
 /** Refusal raised inside a transaction body; the transaction is aborted. */
-export class Refusal {
-	constructor(readonly error: FileError) {}
+export class Refusal<E = FileError> {
+	constructor(readonly error: E) {}
 }
 
 /**
  * Run `body` in one readwrite transaction. A thrown `Refusal` aborts it and
  * becomes the returned error; nothing it wrote remains.
  */
-export async function writeTransaction<T>(
+export async function writeTransaction<T, E = never>(
 	db: IDBDatabase,
 	stores: readonly string[],
 	body: (tx: IDBTransaction) => Promise<T>,
-): Promise<Result<T, FileError>> {
+): Promise<Result<T, FileError | E>> {
 	let tx: IDBTransaction;
 	try {
 		tx = db.transaction(stores as string[], 'readwrite', {
@@ -115,7 +116,7 @@ export async function writeTransaction<T>(
 			// Already finished or aborted.
 		}
 		await done.catch(() => {});
-		if (cause instanceof Refusal) return Err(cause.error);
+		if (cause instanceof Refusal) return Err(cause.error as FileError | E);
 		return FileError.Io({ path: '', operation: 'write', cause });
 	}
 	try {
@@ -147,15 +148,31 @@ function toVersion(
 /**
  * Apply file changes inside an already open transaction over the inventory,
  * contents, and directories stores. Throws `Refusal` on a failed condition.
+ * `guard` is checked first, in the same transaction, so a write through any
+ * connection to the database lands wholly before or wholly after it.
  */
-export async function applyInTransaction(
+export async function applyInTransaction<E = never>(
 	tx: IDBTransaction,
 	environment: IndexedDbEnvironment,
 	changes: readonly FileChange[],
+	guard?: DirectoryGuard<E>,
 ): Promise<void> {
 	const inventory = tx.objectStore(STORES.inventory);
 	const contents = tx.objectStore(STORES.contents);
 	const directories = tx.objectStore(STORES.directories);
+
+	if (guard !== undefined) {
+		const prefix = `${guard.directory}/`;
+		const keys = (await request(
+			inventory.getAllKeys(prefixRange(environment, prefix)),
+		)) as string[];
+		const checked = guard.check(
+			keys
+				.map((key) => key.slice(prefix.length))
+				.filter((filename) => !filename.includes('/')),
+		);
+		if (checked.error) throw new Refusal(checked.error);
+	}
 
 	async function current(path: string) {
 		return (await request(inventory.get(path))) as InventoryRecord | undefined;
@@ -403,7 +420,10 @@ export function createBrowserFileBoundary(
 			if (read.error) return read;
 			return Ok(new Blob([read.data.bytes.slice() as Uint8Array<ArrayBuffer>]));
 		},
-		async apply(changes) {
+		async apply<E extends { readonly name: string } = never>(
+			changes: readonly FileChange[],
+			guard?: DirectoryGuard<E>,
+		) {
 			for (const change of changes) {
 				const paths =
 					change.kind === 'move' ? [change.from, change.to] : [change.path];
@@ -412,12 +432,12 @@ export function createBrowserFileBoundary(
 					if (refused) return refused;
 				}
 			}
-			const result = await writeTransaction(
+			const result = await writeTransaction<void, E>(
 				db,
 				[STORES.inventory, STORES.contents, STORES.directories],
-				(tx) => applyInTransaction(tx, environment, changes),
+				(tx) => applyInTransaction(tx, environment, changes, guard),
 			);
-			return result.error ? result : Ok(undefined);
+			return result.error ? Err(result.error) : Ok(undefined);
 		},
 		async mkdir(path) {
 			const refused = invalid(path);

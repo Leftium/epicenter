@@ -1,5 +1,9 @@
 # Store-relative recording implementation evidence
 
+> Historical. This records evidence for the earlier Yjs-store Whispering. The
+> standalone app keeps recordings as files in a Git-versioned folder and none of
+> the modules named below exist; see [ARCHITECTURE.md](../ARCHITECTURE.md).
+
 Historical evidence: the Personal audio copy path and its browser harness were
 removed during the hosted blob authority cutover. The results below describe the
 earlier implementation, not the current Whispering UI.

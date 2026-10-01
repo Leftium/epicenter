@@ -27,11 +27,11 @@ Epicenter's `make_specta_builder()` registers the commands and sets `ErrorHandli
 
 This mode changes the generated TypeScript API. Tauri still sends a Rust `Err` through its rejected IPC channel. The generated helper catches a non-`Error` rejection and casts it to `E`; it rethrows a JavaScript `Error`. Generation therefore establishes the compile-time contract, not runtime validation of every rejection. Do not present an unexpected thrown failure as a known Rust domain variant. Adapt a transport rejection only where an operation deliberately owns that failure meaning.
 
-`apps/whispering/src/lib/tauri/commands.ts` combines generated commands with one handwritten raw-byte command. It must not reshape every generated command: `DataError` already produces the application Result. The raw `tauri::ipc::Response` command remains handwritten because Specta cannot export that response type.
+A consumer's command boundary combines generated commands with any handwritten raw-byte command. It must not reshape every generated command: `DataError` already produces the application Result. A raw `tauri::ipc::Response` command remains handwritten because Specta cannot export that response type. The standalone Whispering app no longer calls these commands; its shell registers none.
 
 ## Keep the generated contract in sync
 
-A Rust command or error change must update `make_specta_builder()`, regenerate both `apps/whispering/src/lib/tauri/bindings.gen.ts` and `apps/epicenter/src/ui/bindings.gen.ts`, and review their diffs. Generated types should change when the wire contract changes. Check the relevant TypeScript type assertions and both consumers. Keep exhaustive `switch (error.name)` handling where a caller translates every variant.
+A Rust command or error change must update `make_specta_builder()`, regenerate both `apps/whispering/src/lib/tauri/bindings.gen.ts` and `apps/epicenter/src/ui/bindings.gen.ts`, and review their diffs. Generated types should change when the wire contract changes. Check the relevant TypeScript type assertions and the Epicenter consumer. The Whispering copy is generated output that Epicenter's Rust tests read; nothing in Whispering imports it. Keep exhaustive `switch (error.name)` handling where a caller translates every variant.
 
 The current `DataError` implementation is pinned to upstream Git revisions in `apps/epicenter/src-tauri/Cargo.toml` because it landed after the last published `tauri-specta` release. Replace those pins with released compatible versions when available; do not silently downgrade to the status-tagged mode while the generated callers expect `{ data, error }`.
 

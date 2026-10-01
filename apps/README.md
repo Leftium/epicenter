@@ -69,9 +69,13 @@ records the declaration name.
 ## Product ownership
 
 Keep the inert declaration separate from live acquisition. Vocab uses
-`src/lib/data.ts` and `src/lib/resources.ts`; Whispering composes its resources
-in `src/lib/whispering/resources.ts`. Mounted routes start acquisition. Importing
-those modules or preloading a route must not acquire root resources.
+`src/lib/data.ts` and `src/lib/resources.ts`. Mounted routes start acquisition.
+Importing those modules or preloading a route must not acquire root resources.
+
+Whispering is the exception to the store: it is a standalone desktop app whose
+data is a Git-versioned folder of files (`@epicenter/app/files`). Its declaration
+is `src/lib/definition.ts`, and its mounted page opens a workspace from
+`src/lib/workspace/`. See its [README](whispering/README.md).
 
 Pass the store or capability a consumer needs. Product composition functions
 express startup dependencies and feature availability; they do not create a

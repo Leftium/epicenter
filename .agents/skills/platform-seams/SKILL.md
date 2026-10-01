@@ -29,6 +29,15 @@ persistence. Keep resource composition at the product boundary; do not restore
 Whispering's removed `#platform/runtime` seam. For constructors and ownership,
 read the [resource contracts](../../../packages/app/README.md).
 
+## Whispering is not a seam app
+
+Whispering is a standalone desktop app whose data is a folder of files. It has
+no `#platform/*` map and no build condition. Its one boundary is the workspace
+type in `apps/whispering/src/lib/workspace/`, chosen at runtime by whether the
+desktop shell injected a bridge, and its native code runs in a separate folder
+host process. The "storage is not a seam" rule above is about store-backed apps
+and does not describe it. See `apps/whispering/ARCHITECTURE.md`.
+
 ## Declaring one
 
 **1. Map the specifier in `package.json` "imports".** One entry per condition,

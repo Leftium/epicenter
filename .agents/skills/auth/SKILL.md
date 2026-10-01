@@ -197,7 +197,7 @@ acquire no resources. Keep reactive `.state` reads in UI modules adapted with
 sign-in may start from a working page because the callback installs the next
 Account in a fresh document.
 
-Honeycrisp and Whispering support signed-out local startup. Vocab requires an
+Honeycrisp supports signed-out local startup. Whispering has no accounts. Vocab requires an
 Account. Honeycrisp's Local and Personal routes select independently opened
 stores. One warning before explicit account changes authorizes interruption of
 active recordings and unsaved drafts, including work started while sign-in is
@@ -214,5 +214,4 @@ the bounded auth operation. Unexpected retirement enters a resource-free
 recovery destination. Recovery opens no resources until explicitly requested.
 A cancelled navigation or history restoration must not reactivate retired
 resources. Preserve component disposal, acquisition rollback, account fences,
-and independent source-library transfer lifetimes. See the Whispering README
-for its working, callback, sign-out, and recovery routes.
+and independent source-library transfer lifetimes.

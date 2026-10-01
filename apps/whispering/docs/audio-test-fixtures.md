@@ -1,5 +1,10 @@
 # Audio decoder test fixtures
 
+> These fixtures belong to the Epicenter host's Rust audio decoder, not to the
+> standalone Whispering app in this directory, which decodes no audio. For
+> Whispering's own repeatable capture audio, see "Fixture audio" in
+> [README.md](../README.md).
+
 Fixtures live at `apps/epicenter/src-tauri/tests/fixtures/` and are
 consumed by `apps/epicenter/src-tauri/tests/decode_fixtures.rs`.
 

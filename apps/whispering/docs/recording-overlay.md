@@ -1,5 +1,9 @@
 # Recording overlay
 
+> Historical. This describes the recording overlay of the earlier Whispering that
+> ran inside the Epicenter desktop host. The standalone app in this directory has
+> no overlay window; see [README.md](../README.md) for what it supports.
+
 A small floating pill that appears while Whispering is capturing audio, inspired
 by Handy's recording overlay. It shows that Whispering is listening and lets the
 user stop or cancel without returning to the main window.

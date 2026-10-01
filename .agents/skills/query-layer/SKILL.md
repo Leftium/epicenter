@@ -62,6 +62,10 @@ Mutations expose `.options` and are callable. They do not expose `.execute()`.
 
 ## Canonical Whispering Query Module Shape
 
+The Whispering query modules these examples came from were removed when
+Whispering became a standalone file-folder app with no query layer. The shape
+is still the convention for a `$lib/queries` module in an app that has one.
+
 For Whispering-style `$lib/queries` modules, keep source-of-truth declarations close to the work they describe. Factories receive the session-owned runtime explicitly:
 
 ```typescript
@@ -211,6 +215,5 @@ Load these on demand based on what you're working on:
 - If working with **runtime dependency injection and service selection**, read [references/runtime-dependency-injection.md](references/runtime-dependency-injection.md)
 - If working with **cache management, query definitions, RPC namespace, or notify coordination**, read [references/advanced-query-patterns.md](references/advanced-query-patterns.md)
 
-- See `apps/whispering/src/lib/queries/README.md` for detailed architecture
 - See the `services-layer` skill for how services are implemented
 - See the `error-handling` skill for trySync/tryAsync patterns and toast-on-error conventions

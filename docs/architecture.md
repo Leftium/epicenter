@@ -32,9 +32,10 @@ Recover selected old content by first pulling the current working copy, keeping
 its manifest, then copying in old content and pushing. Missing rows receive fresh
 identities; invalid content can be edited and retried.
 
-This folder workflow is wired into host-backed Honeycrisp. Whispering's existing
-Markdown ZIP is a one-way recording export, without a manifest, settings, or
-audio; it is not yet the same workflow. Unused backup orchestration and structural
+This folder workflow is wired into host-backed Honeycrisp. Whispering does not
+use it: its data is a Git-versioned folder of files that the app reads and
+writes directly, with no store and no export step (see
+[its README](../apps/whispering/README.md)). Unused backup orchestration and structural
 archives are removed; live store safeguards remain under
 [ADR-0379](adr/0379-reconstruction-is-an-explicit-destructive-library-operation.md). [ADR-0394](adr/0394-materialization-contains-documents-and-blob-references.md)
 and [ADR-0395](adr/0395-restore-is-one-request-that-carries-its-own-safety-copy.md)

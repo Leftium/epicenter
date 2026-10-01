@@ -111,7 +111,8 @@ installed apps, for now.
 Markdown files. Its rich-text editor keeps a local draft and undo history;
 saved files and ordinary Git hold the durable data.
 
-Whispering, vocab, skills, and the Epicenter host now compile against the store.
+Vocab, skills, and the Epicenter host now compile against the store. Whispering
+is a standalone desktop app over a Git-versioned folder of files, not the store.
 The superseded data stack was deleted before they were migrated, deliberately,
 so old data is not imported into the new model.
 
@@ -148,7 +149,8 @@ Signed-in sync sends your data to a trusted server that reads it in plaintext. O
 | [Local Mail](apps/local-mail) | Runs, separately | Gmail mirror with a triage window. No CLI; it reconciles in the foreground only. |
 | [API](apps/api) | Hosted infrastructure | Personal cloud Worker. Owns the store authority binding, hosted-only billing, and the dashboard. |
 | [Self-host](apps/self-host) | Reference deployable | Community-supported single-partition instance without hosted billing. |
-| [Whispering](apps/whispering), [vocab](apps/vocab), [skills](apps/skills), [Epicenter](apps/epicenter) | Compile | Migrated onto the store. |
+| [Whispering](apps/whispering) | Runs, development milestone | Standalone desktop recorder. Recordings, transcripts, and settings are files in one Git-versioned folder. |
+| [vocab](apps/vocab), [skills](apps/skills), [Epicenter](apps/epicenter) | Compile | Migrated onto the store. |
 | Other app folders | Research and prototypes | Useful history and experiments, not the current product lineup. |
 
 ### Packages
@@ -210,7 +212,7 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 | `bun dev:posthog-reverse-proxy` | PostHog reverse proxy Worker | wrangler default |
 | `bun dev:self-host` | Self-host server (needs `INSTANCE_TOKEN`) | 8787 |
 
-`bun dev:whispering`, `bun dev:vocab`, `bun dev:skills`, and `bun dev:epicenter` still exist, and those apps compile against the store.
+`bun dev:whispering` runs the standalone Whispering desktop app (`bun dev:whispering:ui` runs its page in a browser tab). `bun dev:vocab`, `bun dev:skills`, and `bun dev:epicenter` still exist, and those apps compile against the store.
 
 The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for Tauri apps such as Honeycrisp and Matter. Local Books and Local Mail run their own multi-process dev flows; their READMEs document them.
 

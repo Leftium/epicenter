@@ -140,8 +140,8 @@
 		"dev:api-dashboard:ui": "bun run --cwd apps/api/ui dev",
 		"dev:epicenter": "EPICENTER_API_URL=http://localhost:8787 bun run --filter @epicenter/api --filter @epicenter/epicenter dev",
 		"dev:epicenter:mail": "infisical run --silent --env=dev --path=/apps/local-mail --project-config-dir=apps/api -- bun dev:epicenter",
-		"dev:honeycrisp": "bun run --filter @epicenter/api --filter @epicenter/honeycrisp dev",
-		"dev:honeycrisp:ui": "bun run --cwd apps/honeycrisp dev",
+		"dev:honeycrisp": "bun run --cwd apps/honeycrisp dev",
+		"dev:honeycrisp:ui": "bun run --cwd apps/honeycrisp dev:ui",
 		"dev:landing": "bun run --cwd apps/landing dev",
 		"dev:local-mail": "bun run --filter @epicenter/api --filter @epicenter/local-mail-ui dev",
 		"dev:local-mail:ui": "bun run --cwd apps/local-mail/ui dev",
@@ -180,7 +180,9 @@
 		"clean": "bun run scripts/clean.ts",
 		"nuke": "bun run scripts/clean.ts --nuke",
 		"cf:audit:remote": "bun run --cwd ops cf:audit:remote",
-		"jsrepo:build": "jsrepo build"
+		"jsrepo:build": "jsrepo build",
+		"build:honeycrisp": "bun run --cwd apps/honeycrisp build:desktop",
+		"build:honeycrisp:ui": "bun run --cwd apps/honeycrisp build"
 	},
 	"devDependencies": {
 		"@y/y": "14.0.0-rc.26",

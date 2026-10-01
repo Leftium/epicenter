@@ -1,83 +1,117 @@
 /**
- * Which build gets which credential.
+ * Platform Selection Tests
  *
- * Honeycrisp has two: the hosted web SPA, and the build the desktop Epicenter
- * host serves. What separates them is auth. NOT
- * their data: every build owns its own store and reaches the same authority per
- * account (ADR-0226), so there is no `#platform/application` seam any more and
- * nothing here asserts one. Nor their files and secrets: Honeycrisp opens
- * neither, so it declares no storage seam.
+ * A dropped seam leaf fails no build: resolution falls back to `default` and
+ * the desktop page quietly opens a browser folder. These tests read the
+ * declarations and the bundles and name what broke.
  *
- * The failure this guards is silent. Drop the `epicenter-host` leaf from a seam
- * and resolution falls back to `default`, so the host-served build would go
- * looking for a credential only a browser can obtain, while still building and
- * still starting. Nothing downstream would complain. These assertions complain
- * instead.
- *
- * This reads declarations only, so it can say exactly which seam lost its host
- * leaf, in milliseconds.
+ * Key behaviors:
+ * - `#platform/notes-host` declares a desktop leaf and a browser default
+ * - Neither page bundle, nor the folder host, contains a Yjs module
+ * - The desktop page bundle contains no Node module and no browser folder store
  */
-
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const appRoot = fileURLToPath(new URL('../..', import.meta.url));
+const appDir = join(import.meta.dir, '..', '..');
+const manifest = JSON.parse(
+	await readFile(join(appDir, 'package.json'), 'utf8'),
+) as {
+	imports: Record<string, Record<string, string>>;
+	dependencies: Record<string, string>;
+};
 
-const imports = (
-	(await Bun.file(join(appRoot, 'package.json')).json()) as {
-		imports: Record<string, Record<string, string>>;
-	}
-).imports;
-
-async function leafSource(specifier: string, condition: string) {
-	const leaf = imports[specifier]?.[condition];
-	if (leaf === undefined) {
-		throw new Error(`${specifier} declares no ${condition} leaf`);
-	}
-	return Bun.file(join(appRoot, leaf)).text();
+/** Every module a bundle of `entry` pulls in, as paths. Built in its own process. */
+async function inputs(
+	entry: string,
+	options: { target: 'browser' | 'bun'; conditions?: string[] },
+): Promise<string[]> {
+	const child = Bun.spawn(
+		[
+			process.execPath,
+			join(appDir, 'scripts', 'module-graph.ts'),
+			entry,
+			options.target,
+			...(options.conditions ?? []),
+		],
+		{ cwd: appDir, stdout: 'pipe', stderr: 'pipe' },
+	);
+	const [stdout, stderr, code] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	if (code !== 0) throw new Error(`Bundling ${entry} failed:\n${stderr}`);
+	return JSON.parse(stdout) as string[];
 }
 
-describe('platform seams', () => {
-	test('every seam names a host leaf and a default leaf', () => {
-		for (const [specifier, conditions] of Object.entries(imports)) {
-			expect({
-				specifier,
-				host: typeof conditions['epicenter-host'],
-				fallback: typeof conditions.default,
-			}).toEqual({ specifier, host: 'string', fallback: 'string' });
-		}
+const YJS = /(^|\/)(@y\/|yjs\/|y-prosemirror\/|y-protocols\/)/;
+
+describe('#platform/notes-host', () => {
+	test('declares the desktop leaf and the browser default', () => {
+		expect(manifest.imports['#platform/notes-host']).toEqual({
+			tauri: './src/lib/platform/notes-host.tauri.ts',
+			default: './src/lib/platform/notes-host.browser.ts',
+		});
 	});
 
-	test('every declared leaf is a file that exists', () => {
-		for (const conditions of Object.values(imports)) {
-			for (const leaf of Object.values(conditions)) {
-				expect({ leaf, exists: existsSync(join(appRoot, leaf)) }).toEqual({
-					leaf,
-					exists: true,
-				});
-			}
-		}
+	test('the manifest depends on no Yjs package', () => {
+		expect(
+			Object.keys(manifest.dependencies).filter((name) =>
+				/^@y\/|^yjs$|^y-/.test(name),
+			),
+		).toEqual([]);
 	});
 });
 
-describe('storage ownership', () => {
-	test('data is not a platform seam at all', async () => {
-		// The refusal, asserted so that re-adding the seam is a decision someone
-		// makes rather than a file someone drops in. A host that owned its
-		// windows' data would need a second authority, a second transport
-		// topology, and an answer for what happens when it and Cloud disagree,
-		// to make a convergence that already happens happen sooner.
-		expect(Object.keys(imports)).not.toContain('#platform/application');
+describe('bundles', () => {
+	test('the desktop page reaches its folder over the bridge only', async () => {
+		const modules = await inputs('src/lib/platform/notes-host.tauri.ts', {
+			target: 'browser',
+			conditions: ['tauri'],
+		});
+		expect(modules.filter((path) => YJS.test(path))).toEqual([]);
+		expect(
+			modules.some((path) => path.endsWith('bridge/folder-client.ts')),
+		).toBe(true);
+		expect(
+			modules.filter((path) =>
+				/files\/(browser-store|native|native-store)\.ts$/.test(path),
+			),
+		).toEqual([]);
+		expect(modules.filter((path) => path.includes('isomorphic-git'))).toEqual(
+			[],
+		);
 	});
 
-	test('no seam selects an authority, and the host build reads the broker', async () => {
-		// The deployment names the authority (ADR-0326), so there is nothing to
-		// select at runtime and no `#platform/instance` to select it with.
-		expect(Object.keys(imports)).not.toContain('#platform/instance');
-		expect(await leafSource('#platform/auth', 'epicenter-host')).toContain(
-			'createDesktopBrokerAuth',
-		);
+	test('the browser page opens a browser folder without Yjs', async () => {
+		const modules = await inputs('src/lib/platform/notes-host.browser.ts', {
+			target: 'browser',
+		});
+		expect(modules.filter((path) => YJS.test(path))).toEqual([]);
+		expect(
+			modules.some((path) => path.endsWith('files/browser-store.ts')),
+		).toBe(true);
+		expect(
+			modules.filter((path) => /files\/native(-store)?\.ts$/.test(path)),
+		).toEqual([]);
+	});
+
+	test('the editor, the draft, and the note state contain no Yjs module', async () => {
+		for (const entry of [
+			'src/lib/editor/markdown.ts',
+			'src/lib/note-source.ts',
+			'src/lib/data.ts',
+		]) {
+			const modules = await inputs(entry, { target: 'browser' });
+			expect(modules.filter((path) => YJS.test(path))).toEqual([]);
+		}
+	});
+
+	test('the folder host contains no Yjs module', async () => {
+		const modules = await inputs('host/main.ts', { target: 'bun' });
+		expect(modules.filter((path) => YJS.test(path))).toEqual([]);
+		expect(modules.some((path) => path.endsWith('files/native.ts'))).toBe(true);
 	});
 });

@@ -1,0 +1,34 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "Honeycrisp",
+	"version": "0.0.1",
+	"identifier": "so.epicenter.honeycrisp",
+	"build": {
+		"beforeDevCommand": {
+			"script": "bun run build:desktop-ui && bun run build:host",
+			"wait": true
+		},
+		"beforeBuildCommand": "bun run build:desktop-ui && bun run build:host",
+		"frontendDist": "frontend-placeholder"
+	},
+	"app": {
+		"windows": [],
+		"security": {
+			"capabilities": [],
+			"csp": "default-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["app"],
+		"category": "Productivity",
+		"publisher": "Epicenter",
+		"copyright": "Copyright © 2026 Epicenter",
+		"shortDescription": "Markdown notes in a folder you own",
+		"externalBin": ["binaries/honeycrisp-host"],
+		"resources": {
+			"../build-desktop": "ui"
+		},
+		"icon": ["icons/icon.png", "icons/icon.icns"]
+	}
+}

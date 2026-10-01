@@ -102,13 +102,14 @@ approved.
 
 ## Status
 
-There is one runtime: a desktop SPA in a WebView, over a store the client owns.
+Store-backed apps run as a desktop SPA in a WebView, over a store the client owns.
 A host serves bundles and brokers credentials; it owns no application data. A
 hosted web runtime with a host-owned replica is refused, and so are third-party
 installed apps, for now.
 
-[Honeycrisp](apps/honeycrisp) is the app running on the store, and its
-README is the worked example.
+[Honeycrisp](apps/honeycrisp) is a standalone desktop notes app over native
+Markdown files. Its rich-text editor keeps a local draft and undo history;
+saved files and ordinary Git hold the durable data.
 
 Whispering, vocab, skills, and the Epicenter host now compile against the store.
 The superseded data stack was deleted before they were migrated, deliberately,
@@ -141,7 +142,7 @@ Signed-in sync sends your data to a trusted server that reads it in plaintext. O
 
 | App | Status | Notes |
 | --- | --- | --- |
-| [Honeycrisp](apps/honeycrisp) | Runs on the store | Local-first notes. Folders and notes are rows; a note's body is the node on its row. |
+| [Honeycrisp](apps/honeycrisp) | Runs, development milestone | Standalone Markdown notes. Metadata stays in frontmatter, logical folders preserve note identity, and Git records saved files. |
 | [Matter](apps/matter) | Runs, separately | Typed grid over user-owned Markdown folders. It edits ordinary `.md` files directly; `matter.sqlite` is a disposable query mirror. |
 | [Local Books](apps/local-books) | Runs, separately | Headless CLI mirror that pulls QuickBooks into local SQLite. |
 | [Local Mail](apps/local-mail) | Runs, separately | Gmail mirror with a triage window. No CLI; it reconciles in the foreground only. |
@@ -200,7 +201,7 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 
 | Command | Starts | App port |
 | --- | --- | --- |
-| `bun dev:honeycrisp` | API + Honeycrisp desktop | 5175 |
+| `bun dev:honeycrisp` | Standalone Honeycrisp desktop, no API | Ephemeral loopback port |
 | `bun dev:honeycrisp:ui` | Honeycrisp in the browser, no API or Tauri shell | 5175 |
 | `bun dev:api` | Hosted API worker alone | 8787 |
 | `bun dev:api-dashboard` | API + dashboard UI | 5178 |

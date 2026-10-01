@@ -68,8 +68,8 @@ records the declaration name.
 
 ## Product ownership
 
-Keep the inert declaration separate from live acquisition. Honeycrisp and Vocab
-use `src/lib/data.ts` and `src/lib/resources.ts`; Whispering composes its resources
+Keep the inert declaration separate from live acquisition. Vocab uses
+`src/lib/data.ts` and `src/lib/resources.ts`; Whispering composes its resources
 in `src/lib/whispering/resources.ts`. Mounted routes start acquisition. Importing
 those modules or preloading a route must not acquire root resources.
 
@@ -111,7 +111,8 @@ bindings that resource needs.
 (`@epicenter/app/files`) rather than a Yjs store. `bun dev:todos` starts its UI
 with a loopback Git backend and needs no hosted API.
 
-Honeycrisp's [README](honeycrisp/README.md) is the notes application's worked
-example; [Local Mail's README](local-mail/README.md) explains its saved queries
-and Gmail cache. Epicenter owns the desktop host and Home session, not these
-applications' stores.
+Honeycrisp's [README](honeycrisp/README.md) explains its standalone Tauri shell,
+native Markdown folder, and local editing drafts. It needs neither the Epicenter
+host nor an account. [Local Mail's README](local-mail/README.md) explains its
+saved queries and Gmail cache. Epicenter owns the desktop host and Home session
+for applications that use that host.

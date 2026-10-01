@@ -1,0 +1,23 @@
+[package]
+name = "honeycrisp"
+version = "0.0.1"
+description = "Honeycrisp desktop shell"
+authors = ["Epicenter"]
+repository = "https://github.com/EpicenterHQ/epicenter"
+edition = "2021"
+
+[lib]
+name = "honeycrisp_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+getrandom = "0.3"
+serde_json = "1"
+tauri = { version = "2", features = [] }
+
+[profile.release]
+panic = "abort"
+strip = true

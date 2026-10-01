@@ -1,11 +1,12 @@
 /**
- * Honeycrisp's ProseMirror schema for a note's body.
+ * The bounded ProseMirror schema for a note's body.
  *
- * Shared so the live editor (`Editor.svelte`) and the Markdown codec
- * (`markdown.ts`, which the file export and import both run through) convert
- * the same document shape (ADR-0264). Nothing reads a title or a preview
- * through here any more; those are sliced off the `Y.Node` directly
- * (`node-text.ts`).
+ * It holds exactly what `markdown.ts` can write and read back: paragraphs,
+ * headings, quotes, code blocks, bullet, ordered, and task lists, rules, hard
+ * breaks, and the bold, italic, strikethrough, code, and link marks. There is
+ * no underline and no image: Markdown has no underline, and an image would
+ * need file handling this editor does not have. Source that needs more stays
+ * in the Source view.
  */
 import { type MarkSpec, type NodeSpec, Schema } from 'prosemirror-model';
 import { schema as basicSchema } from 'prosemirror-schema-basic';
@@ -21,6 +22,7 @@ const taskList = {
 const taskItem = {
 	content: 'paragraph block*',
 	attrs: { checked: { default: false } },
+	defining: true,
 	parseDOM: [
 		{
 			tag: 'li.task-item',
@@ -51,11 +53,6 @@ const taskItem = {
 	],
 } satisfies NodeSpec;
 
-const underline = {
-	parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
-	toDOM: () => ['u', 0],
-} satisfies MarkSpec;
-
 const strike = {
 	parseDOM: [
 		{ tag: 's' },
@@ -66,13 +63,55 @@ const strike = {
 	toDOM: () => ['s', 0],
 } satisfies MarkSpec;
 
+/**
+ * A code block that keeps the text after its opening fence (`ts` in
+ * ```` ```ts ````). The basic schema's code block has nowhere to hold it, so
+ * a save from the rich-text view would drop it.
+ */
+const codeBlock = {
+	content: 'text*',
+	marks: '',
+	group: 'block',
+	code: true,
+	defining: true,
+	attrs: { params: { default: '' } },
+	parseDOM: [
+		{
+			tag: 'pre',
+			preserveWhitespace: 'full',
+			getAttrs: (dom) => ({
+				params: dom instanceof HTMLElement ? (dom.dataset.params ?? '') : '',
+			}),
+		},
+	],
+	toDOM: (node) => [
+		'pre',
+		node.attrs.params ? { 'data-params': node.attrs.params } : {},
+		['code', 0],
+	],
+} satisfies NodeSpec;
+
 const nodes = addListNodes(
-	basicSchema.spec.nodes.append({ taskList, taskItem }),
+	basicSchema.spec.nodes
+		.remove('image')
+		.update('code_block', codeBlock)
+		.append({ taskList, taskItem }),
 	'paragraph block*',
 	'block',
 );
 
+/**
+ * Inline code is literal text: Markdown reads `**` inside backticks as two
+ * asterisks, so bold, italic, and strikethrough cannot sit on code. A link
+ * can.
+ */
+const code = {
+	...(basicSchema.spec.marks.get('code') as MarkSpec),
+	excludes: 'strong em strike',
+} satisfies MarkSpec;
+
 export const noteSchema = new Schema({
 	nodes,
-	marks: basicSchema.spec.marks.append({ underline, strike }),
+	// `strike` is declared before `code` is replaced so `excludes` can name it.
+	marks: basicSchema.spec.marks.append({ strike }).update('code', code),
 });

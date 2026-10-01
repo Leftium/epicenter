@@ -12,7 +12,6 @@ for (const [path, exported, required] of [
 		3,
 	],
 	['apps/local-mail/ui/src/lib/resources.ts', 'openMailResources', 2],
-	['apps/honeycrisp/src/lib/resources.ts', 'openHoneycrispResources', 2],
 	['apps/vocab/src/lib/resources.ts', 'openVocabResources', 2],
 ] as const)
 	test(`${exported} retains roots after required failure and fences departure independently`, async () => {

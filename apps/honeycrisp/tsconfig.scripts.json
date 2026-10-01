@@ -1,11 +1,10 @@
 {
-	"extends": "./tsconfig.json",
-	// The browser journey runs in Bun and evaluates callbacks in the app document.
-	"include": [
-		"evidence/editor/**/*.ts",
-		"scripts/app.browser.ts",
-		"scripts/app-retirement.ts",
-		"scripts/app-auth.ts",
-		".svelte-kit/ambient.d.ts"
-	]
+	// The Bun folder host and build scripts. They import the bridge contract
+	// and the data declaration from `src/lib`, and nothing that needs SvelteKit.
+	"extends": "../../tsconfig.dom.json",
+	"compilerOptions": {
+		"types": ["bun"],
+		"noEmit": true
+	},
+	"include": ["host/**/*.ts", "scripts/**/*.ts"]
 }

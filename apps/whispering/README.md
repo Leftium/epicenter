@@ -259,4 +259,6 @@ These are absent, not hidden behind a setting:
 The earlier Whispering stored recordings in a Yjs store. Nothing reads that
 data. There is no migration.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit, and
+[desktop verification](./docs/desktop-verification.md) for native acceptance
+results, screenshots, and the microphone hardware limit.

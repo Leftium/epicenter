@@ -83,11 +83,11 @@ export type TerminalReply = {
 
 /** Deterministic failures for acceptance testing against a disposable root. */
 export type Faults = {
-	/** Managed saves wait here until released. */
+	/** Content saves wait here until released. */
 	readonly holdSaves: boolean;
-	/** Every managed save waits this long before it runs. */
+	/** Every content save waits this long before it runs. */
 	readonly saveDelayMs: number;
-	/** The next N managed saves fail without writing. */
+	/** The next N content saves fail without writing. */
 	readonly failSaves: number;
 	/** The next N requested commits fail without committing. */
 	readonly failCommits: number;

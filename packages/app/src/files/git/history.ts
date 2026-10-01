@@ -1,7 +1,7 @@
 /**
  * History coordination for one opened folder (ADR-0468, ADR-0469, ADR-0471).
  *
- * File saves never wait here. A managed save may request a commit; the commit
+ * File saves never wait here. A content save may request a commit; the commit
  * runner keeps one active pass and one pending pass. A pass captures the
  * whole portable folder, writes blobs and trees, writes a commit on the pinned
  * branch head, and moves the branch with a compare-and-swap. It never reads
@@ -54,6 +54,9 @@ export const GitError = defineErrors({
 		reason,
 	}),
 	NothingToCommit: () => ({ message: 'Nothing is staged to commit' }),
+	AutomaticHistory: () => ({
+		message: 'Staged authoring requires commitOnEdit: false',
+	}),
 	BranchMoved: ({
 		expected,
 		actual,
@@ -289,7 +292,7 @@ export function createHistory({
 	let lastPull: GitSnapshot['lastPull'];
 	let remoteSeq = 0;
 	/**
-	 * Whether the next commit pass was requested by a managed save. Consumed
+	 * Whether the next commit pass was requested by a content save. Consumed
 	 * when a pass starts; only such passes push afterward.
 	 */
 	let automaticQueued = false;
@@ -554,7 +557,7 @@ export function createHistory({
 			lastCommit = { ...outcome, at: Date.now() };
 			await refreshSync();
 			let followingPush: Promise<PushOutcome> | undefined;
-			// Only a pass a managed save requested pushes afterward; an explicit
+			// Only a pass a content save requested pushes afterward; an explicit
 			// commit stays local, and commits finishing during close do not push.
 			if (
 				automatic &&
@@ -891,7 +894,7 @@ export function createHistory({
 			if (wasFresh) emit();
 		},
 		/**
-		 * The implicit request after a managed save; never awaited by the save.
+		 * The implicit request after a content save; never awaited by the save.
 		 * The pass it starts or joins pushes afterward when a remote exists.
 		 */
 		requestAutomaticCommit() {
@@ -944,6 +947,8 @@ export function createHistory({
 		async stage(
 			paths: readonly string[] | 'all',
 		): Promise<Result<undefined, GitError>> {
+			if (closing) return GitError.Closed();
+			if (commitOnEdit) return GitError.AutomaticHistory();
 			const result = await guarded('add', () =>
 				backend.exclusive(() => backend.stage(paths)),
 			);
@@ -953,6 +958,8 @@ export function createHistory({
 		commitStaged(
 			message: string,
 		): Promise<Result<{ oid: string; parent: string | undefined }, GitError>> {
+			if (closing) return Promise.resolve(GitError.Closed());
+			if (commitOnEdit) return Promise.resolve(GitError.AutomaticHistory());
 			return manual('commit', () => commitStaged(message));
 		},
 		diff: (options: { staged: boolean; paths: readonly string[] }) =>

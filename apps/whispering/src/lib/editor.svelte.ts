@@ -308,7 +308,7 @@ export function createRecordingEditor(
 	);
 }
 
-/** A raw text file editor. Its saves are conditional writes that request no commit. */
+/** A text file editor whose conditional saves follow the folder's history policy. */
 export function createTextFileEditor(
 	files: FolderFiles,
 	file: SavedText,

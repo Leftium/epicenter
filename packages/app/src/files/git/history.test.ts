@@ -87,7 +87,7 @@ test('close cancels queued and active pushes at once while a held local pass dra
 	});
 
 	await write('a.txt', 'a');
-	// A managed save's automatic request commits and then pushes.
+	// A content save's automatic request commits and then pushes.
 	history.requestAutomaticCommit();
 	// The automatic push after that commit is now active and stalled.
 	for (let index = 0; index < 100 && probe.pushStarts === 0; index++)

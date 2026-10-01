@@ -373,8 +373,7 @@ export function createNotes(host: NotesHost) {
 									read: readText,
 								},
 								read.data.file,
-								// Raw writes request no commit; recheck so the change shows as uncommitted.
-								{ onSaved: () => void refreshAll() },
+								{ onSaved: () => void refresh() },
 							),
 						}
 					: read.data,
@@ -655,8 +654,6 @@ export function createNotes(host: NotesHost) {
 				editor.rebase(saved.file);
 				editors.set(target, editor);
 				if (selectedPath === path) selectedPath = target;
-				// A raw write requests no commit; this one is a managed save.
-				void folder.git.commit();
 				await refresh();
 				return undefined;
 			} catch (cause) {

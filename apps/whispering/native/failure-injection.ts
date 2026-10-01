@@ -165,10 +165,32 @@ export function createFailureInjection({
 				});
 				if (audio === undefined || input.attachment === undefined)
 					return { value: failure };
-				const landed = await folder.files.write(audio, input.attachment.bytes, {
-					expected: 'absent',
-				});
-				if (landed.error) return { value: landed };
+				// Use the folder boundary to validate the directory and literal path.
+				// Land bytes externally: a partial publication requests no history.
+				const directory = await folder.files.mkdir(RECORDINGS);
+				if (directory.error) return { value: directory };
+				const current = await folder.files.read(audio);
+				if (current.error && current.error.name !== 'NotFound')
+					return { value: current };
+				if (current.error === null)
+					return {
+						value: FileError.Conflict({
+							path: audio,
+							expected: 'absent',
+							actual: current.data.version,
+						}),
+					};
+				try {
+					await writeFile(join(root, audio), input.attachment.bytes, {
+						flag: 'wx',
+					});
+				} catch (cause) {
+					return {
+						value: FileError.Io({ path: audio, operation: 'create', cause }),
+					};
+				}
+				// The external write bypassed publication's status invalidation.
+				await folder.git.status();
 				return {
 					value: ApplyError.Partial({
 						applied: [{ kind: 'write', path: audio }],

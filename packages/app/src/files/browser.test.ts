@@ -1,9 +1,14 @@
 /**
  * Browser folders over fake IndexedDB with real isomorphic-git objects.
+ *
+ * Complete table, KV, and file publications request automatic history without
+ * waiting for it. Conflicts and directory operations request no history;
+ * staged authoring requires manual mode, including through the folder shell.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import * as isogit from 'isomorphic-git';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineStore, defineTable, field, plainText } from '../index.js';
 import {
 	createBrowserFileBoundary,
@@ -389,20 +394,81 @@ describe('browser folder persistence and history', () => {
 		expect(status.data!.changes).toEqual([]);
 	});
 
-	test('raw writes do not request commits; status reports them as uncommitted', async () => {
+	test('file write, move, and remove request automatic history', async () => {
 		const folder = await open();
-		await folder.files.write('notes/raw.txt', 'hello', { expected: 'absent' });
-		await Bun.sleep(20);
+		const version = expectOk(
+			await folder.files.write('notes/raw.txt', 'hello', {
+				expected: 'absent',
+			}),
+		);
+		expect(folder.git.snapshot.activity.commit.active).toBe(true);
+		await settled(folder);
+		expect(folder.git.snapshot.lastCommit).toMatchObject({
+			status: 'committed',
+			message: 'Add notes/raw.txt',
+		});
+		expectOk(
+			await folder.files.move('notes/raw.txt', 'moved.txt', {
+				expected: version,
+			}),
+		);
+		await settled(folder);
+		expect((await folder.git.status()).data!.changes).toEqual([]);
+		expectOk(await folder.files.remove('moved.txt', { expected: version }));
+		await settled(folder);
+		expect(folder.git.snapshot.lastCommit).toMatchObject({
+			status: 'committed',
+			message: 'Delete moved.txt',
+		});
+		expect((await folder.git.log(10)).data).toHaveLength(3);
+	});
+
+	test('directories and refused content saves request no history', async () => {
+		const folder = await open();
+		expectOk(await folder.files.mkdir('empty'));
+		expectOk(await folder.files.rmdir('empty'));
+		const conflict = expectErr(
+			await folder.files.write('missing.txt', 'x', {
+				expected: { sha256: '0'.repeat(64), size: 1 },
+			}),
+		);
+		expect(conflict.name).toBe('Conflict');
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
-		const status = await folder.git.status();
-		expect(status.data!.changes).toEqual([
-			{ path: 'notes/raw.txt', kind: 'add' },
-		]);
-		const outcome = await folder.git.commit();
-		expect(outcome.status).toBe('committed');
-		if (outcome.status === 'committed')
-			expect(outcome.message).toBe('Add notes/raw.txt');
-		expect((await folder.git.commit()).status).toBe('unchanged');
+		expect(folder.git.snapshot.activity.commit).toEqual({
+			active: false,
+			pending: false,
+		});
+	});
+
+	test('automatic mode refuses staging and a staged commit', async () => {
+		const folder = await open();
+		expect(expectErr(await folder.git.stage('all')).name).toBe(
+			'AutomaticHistory',
+		);
+		expect(expectErr(await folder.git.commitStaged('Authored')).name).toBe(
+			'AutomaticHistory',
+		);
+		expect((await folder.git.paths()).data).toEqual([]);
+	});
+
+	test('KV publication requests automatic history under the same policy', async () => {
+		const folder = await open();
+		const saved = expectOk(
+			await folder.kv.update(expectOk(await folder.kv.get()), {
+				theme: 'dark',
+			}),
+		);
+		await settled(folder);
+		expect(folder.git.snapshot.lastCommit).toMatchObject({
+			status: 'committed',
+			message: 'Add kv.json',
+		});
+		expectOk(await folder.kv.writeSource(saved, '{"theme":"light"}'));
+		await settled(folder);
+		expect(folder.git.snapshot.lastCommit).toMatchObject({
+			status: 'committed',
+			message: 'Update kv.json',
+		});
 	});
 
 	test('subscribe delivers the cached snapshot synchronously, unknown before the first scan', async () => {
@@ -427,6 +493,12 @@ describe('browser folder persistence and history', () => {
 			stem: 'manual',
 			fields: { title: 'M', done: false },
 		});
+		expectOk(
+			await folder.files.write('manual.txt', 'x', { expected: 'absent' }),
+		);
+		expectOk(
+			await folder.kv.writeSource(expectOk(await folder.kv.get()), '{}'),
+		);
 		await Bun.sleep(20);
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 		const result = await folder.git.commitAndPush();
@@ -565,6 +637,31 @@ describe('browser folder persistence and history', () => {
 });
 
 describe('browser terminal', () => {
+	test('shell writes use automatic history and reject staged authoring', async () => {
+		const folder = await open();
+		const terminal = createFolderTerminal(folder);
+		expect((await terminal.exec('echo text > typed.txt')).exitCode).toBe(0);
+		await settled(folder);
+		expect(folder.git.snapshot.lastCommit?.status).toBe('committed');
+		expect(
+			new TextDecoder().decode(
+				expectOk(await folder.files.read('typed.txt')).bytes,
+			),
+		).toBe('text\n');
+		expect((await folder.git.status()).data?.changes).toEqual([]);
+		const before = expectOk(await folder.git.log(10)).map(
+			(commit) => commit.oid,
+		);
+		for (const command of ['git add typed.txt', 'git commit -m "Authored"']) {
+			const refused = await terminal.exec(command);
+			expect(refused.exitCode).not.toBe(0);
+			expect(refused.stderr).toContain('commitOnEdit: false');
+		}
+		expect(
+			expectOk(await folder.git.log(10)).map((commit) => commit.oid),
+		).toEqual(before);
+	});
+
 	test('shell reads and writes the same files; git staging semantics are real', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const terminal = createFolderTerminal(folder);
@@ -587,7 +684,7 @@ describe('browser terminal', () => {
 				(await folder.files.read('notes.txt')).data!.bytes,
 			),
 		).toBe('shell note\n');
-		// A shell write requests no automatic commit even when enabled elsewhere.
+		// This folder opted out of automatic commits for staged authoring.
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 
 		let status = await terminal.exec('git status');

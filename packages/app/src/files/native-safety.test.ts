@@ -151,7 +151,13 @@ describe('native partial moves', () => {
 			});
 			await folder.files.write('locked/a.txt', 'A', { expected: 'absent' });
 			await folder.files.mkdir('open');
-			expect((await folder.git.commit()).status).toBe('committed');
+			for (
+				let attempt = 0;
+				attempt < 200 && folder.git.snapshot.activity.commit.active;
+				attempt++
+			)
+				await Bun.sleep(10);
+			expect(folder.git.snapshot.lastCommit?.status).toBe('committed');
 			expect((await folder.git.status()).data?.changes).toEqual([]);
 			const committed = folder.git.snapshot.lastCommit;
 			await chmod(join(root, 'locked'), 0o555);
@@ -162,7 +168,10 @@ describe('native partial moves', () => {
 				expect(moved.error?.name).toBe('Partial');
 				const files = folder.git.snapshot.files;
 				expect(files.state === 'observed' && files.stale).toBe(true);
-				await Bun.sleep(20);
+				expect(folder.git.snapshot.activity.commit).toEqual({
+					active: false,
+					pending: false,
+				});
 				expect(folder.git.snapshot.lastCommit).toBe(committed);
 			} finally {
 				await chmod(join(root, 'locked'), 0o755);

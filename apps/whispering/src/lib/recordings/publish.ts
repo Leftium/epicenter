@@ -25,7 +25,6 @@ import {
 	type Entry,
 	type FileTable,
 	type FolderFiles,
-	type FolderGit,
 	patchSource,
 	rowPath,
 	sameVersion,
@@ -67,7 +66,6 @@ export type PublishOutcome =
 export type PublishTarget = {
 	readonly tables: { readonly recordings: FileTable<RecordingFields> };
 	readonly files: Pick<FolderFiles, 'children' | 'read' | 'write'>;
-	readonly git: Pick<FolderGit, 'commit'>;
 };
 
 export function audioPathOf(capture: PendingCapture): string {
@@ -180,8 +178,6 @@ export async function publishRecording(
 			landed: [audioPath],
 			message: written.error.message,
 		};
-	// A raw write requests no commit, and this one completes a managed save.
-	void target.git.commit();
 	const saved = await table.get(capture.id);
 	if (saved.error) return { status: 'failed', message: saved.error.message };
 	if (saved.data === undefined)

@@ -2,14 +2,15 @@
  * `@epicenter/app/files/terminal`: a just-bash shell over an opened folder.
  *
  * The shell reads and writes the same files as the app through the folder's
- * file boundary; there is no scratch copy. A shell write is an external-writer
- * edit: it saves immediately and requests no automatic commit. A command that
+ * file boundary; there is no scratch copy. Each successful content write
+ * follows the folder's automatic history policy. A command that
  * rewrites a file it read in the same command writes against the version it
  * read, so an intervening replacement is refused; a plain redirection is a
  * deliberate overwrite.
  *
  * `git` is a real command over the folder's history: status, diff, log, add,
- * commit -m, push, fetch, and pull --ff-only. Other Git commands are refused.
+ * commit -m, push, fetch, and pull --ff-only. Staged authoring requires
+ * `commitOnEdit: false`. Other Git commands are refused.
  */
 import {
 	Bash,

@@ -132,12 +132,14 @@ browser folder with a subset of Git commands.
 
 ## Git
 
-History is ordinary Git in `<root>/.git`. A successful save of a note, a
-folder, or `kv.json` requests a commit and does not wait for it. A commit that
+History is ordinary Git in `<root>/.git`. A successful content save through
+tables, KV, or the file browser requests a commit and does not wait for it. A commit that
 fails is reported under **Git history** and leaves the saved file saved; it is
-never shown as a save error. Edits made in the terminal, the file browser, or
-by other programs are saved files that are not committed until the next
-commit includes them.
+never shown as a save error. The browser terminal follows the same automatic
+history policy. Desktop terminal commands and other programs edit disk directly;
+their changes enter the next checkpoint or an explicit commit. In the browser
+terminal, automatic history refuses `git add` and `git commit`; staged authoring
+requires a folder opened with `commitOnEdit: false`.
 
 Each note has a **History** button listing its commits. Choosing a version
 puts it in your draft; nothing is saved until the draft saves.
@@ -183,7 +185,7 @@ Map, `{"$t":"e",...}` for an Error.
 
 `/bridge/call`, the encoding, and `src/lib/bridge/folder-client.ts` contain
 nothing specific to Honeycrisp. `host/serve.ts` requests the commit after a
-managed save itself, rather than leaving it to the folder, so a commit can be
+content save itself, rather than leaving it to the folder, so a commit can be
 made to fail in testing without touching the save.
 
 Between the shell and the host: the host's first stdout line is

@@ -2,8 +2,8 @@
  * The opened folder handle shared by the browser and native openers (ADR-0471).
  *
  * `tables`, `kv`, and `files` publish through one file boundary. `git`
- * observes and records history. Managed table and KV saves request an
- * automatic commit when `commitOnEdit` is true; raw file writes never do.
+ * observes and records history. Complete content saves request an
+ * automatic commit when `commitOnEdit` is true.
  * Closing fences new work immediately, settles admitted operations and local
  * commit passes, cancels outgoing network work, and then releases storage.
  */
@@ -49,8 +49,8 @@ export type FolderGitOptions = {
 	/** The remote branch to push to and fetch from. */
 	readonly remote?: GitRemote;
 	/**
-	 * Whether managed saves request automatic commits (and then pushes when a
-	 * remote is configured). Fixed for this handle's lifetime. Default `true`.
+	 * Whether complete content saves request automatic commits and pushes when
+	 * a remote is configured. Fixed for this handle's lifetime. Default `true`.
 	 */
 	readonly commitOnEdit?: boolean;
 };
@@ -63,7 +63,7 @@ export type FolderFiles = {
 	read(path: string): Promise<Result<FileRead, FileError>>;
 	/** Stable bytes for consumption (ADR-0466). */
 	open(path: string): Promise<Result<Blob, FileError>>;
-	/** A raw write at an exact literal path. Raw writes do not request commits. */
+	/** Write at an exact literal path, then request history under the folder policy. */
 	write(
 		path: string,
 		content: string | Uint8Array,
@@ -90,7 +90,7 @@ export type FolderGit = {
 	status(): Promise<Result<FilesObservation, GitError>>;
 	/**
 	 * Commit current source files if they changed, and reset the index to the
-	 * head either way. Never requests a push; a pass it shares with a managed
+	 * head either way. Never requests a push; a pass it shares with a
 	 * save's automatic request pushes because of that request.
 	 */
 	commit(): Promise<CommitOutcome>;
@@ -110,8 +110,9 @@ export type FolderGit = {
 	pullFastForward(): Promise<Result<PullOutcome, PullError | GitError>>;
 	/** Per-path staged and unstaged state, as `git status` reports it. */
 	paths(): Promise<Result<PathStatus[], GitError>>;
+	/** Staged authoring requires `commitOnEdit: false`. */
 	stage(paths: readonly string[] | 'all'): Promise<Result<undefined, GitError>>;
-	/** Commit staged changes with a user-authored message. */
+	/** Commit staged changes with a user-authored message in manual mode. */
 	commitStaged(
 		message: string,
 	): Promise<Result<{ oid: string; parent: string | undefined }, GitError>>;
@@ -206,14 +207,6 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 		tables[name] = createFileTable(name, parsed, context) as FileTable<unknown>;
 
 	const encoder = new TextEncoder();
-	const rawWrite = async <T>(
-		work: () => Promise<Result<T, FileError | ApplyError>>,
-	) => {
-		const result = await admit(work);
-		if (result.error === null || result.error.name === 'Partial')
-			history.noteEdit();
-		return result;
-	};
 
 	const files: FolderFiles = {
 		list: () => admit(() => boundary.list()),
@@ -228,18 +221,18 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 				typeof content === 'string'
 					? encoder.encode(content)
 					: new Uint8Array(content);
-			return rawWrite(async () => {
+			return admit(async () => {
 				const version = await captureVersion(bytes);
-				const applied = await boundary.apply([
+				const applied = await context.publish([
 					{ kind: 'write', path, bytes, version, expected },
 				]);
 				return applied.error ? applied : Ok(version);
 			});
 		},
 		remove: (path, { expected }) =>
-			rawWrite(() => boundary.apply([{ kind: 'remove', path, expected }])),
+			admit(() => context.publish([{ kind: 'remove', path, expected }])),
 		move: (from, to, { expected }) =>
-			rawWrite(() => boundary.apply([{ kind: 'move', from, to, expected }])),
+			admit(() => context.publish([{ kind: 'move', from, to, expected }])),
 		mkdir: (path) => admit(() => boundary.mkdir(path)),
 		rmdir: (path) => admit(() => boundary.rmdir(path)),
 	};

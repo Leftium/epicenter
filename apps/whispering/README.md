@@ -96,14 +96,16 @@ Terminal on the right.
 A save writes files. A commit records them in history. They are separate
 outcomes and the status reports them separately.
 
-- A managed save (a new recording, a title or notes edit, a transcription,
-  Settings) requests a commit automatically. Typing saves after a short pause.
+- Every content save through tables, KV, or Files requests a commit automatically.
+  Typing saves after a short pause.
 - A commit that fails or is blocked never undoes a save and never reports the
   save as failed. The status says "Saved" and what happened to the commit, and
   **Commit now** tries again.
-- Edits from the terminal, from other programs, and raw text edits in Files are
-  saved files that request no commit. They show as uncommitted until Commit now,
-  or until you commit them yourself.
+- The browser terminal follows the folder's automatic history policy and refuses
+  `git add` and `git commit` in automatic mode. Staged authoring requires a folder
+  opened with `commitOnEdit: false`.
+- Desktop terminal commands and other programs edit disk directly. Their changes
+  enter the next automatic checkpoint or an explicit commit.
 
 ### When a save does not finish
 

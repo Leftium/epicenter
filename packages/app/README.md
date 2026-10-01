@@ -100,7 +100,7 @@ await folder.close();
 | --- | --- |
 | `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `version` (SHA-256 and size of those bytes), fields, body, `issues`, and zero or one owned same-stem `attachment`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update`, `writeSource`, `rename`, and `delete` receive a captured entry and refuse if the file changed. |
 | `kv` | Root `kv.json`, read and conditionally replaced like an entry. |
-| `files` | Literal paths. `write(path, bytes, { expected })` takes a version, `'absent'`, or `'any'` (a deliberate overwrite) and copies the bytes before it returns to the caller. `open(path)` returns stable bytes. Raw writes never request commits. |
+| `files` | Literal paths. `write(path, bytes, { expected })` takes a version, `'absent'`, or `'any'` (a deliberate overwrite) and copies the bytes before it returns to the caller. `open(path)` returns stable bytes. Complete writes, removes, and moves request history under the folder policy. |
 | `git` | A shared status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, and terminal-level `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `signal`, `close()` | Closing fences new work and immediately cancels queued pushes and fetches and aborts the active transport. It then waits for admitted file operations, local commit passes, explicit Git operations (status, staging, a staged commit and its refresh, diff, log), and the cancelled transport to settle before releasing storage. |
 
@@ -114,16 +114,17 @@ the limit) is a frontmatter issue on a readable entry, and `update` refuses it.
 `patchSource` and `readSource`
 are exported for editors that keep their own buffer (ADR-0465).
 
-A save returns once its files are published. With `commitOnEdit`, a table or
-KV save then requests a background commit: one active pass and one pending
-pass, no timer. Inside the Git lock, a pass pins the branch head, then captures
+A save returns once its files are published. With `commitOnEdit` (default
+`true`), complete table and KV saves and file writes, removes, and moves request
+a background commit: one active pass and one pending pass, no timer. Inside
+the Git lock, a pass pins the branch head, then captures
 every source file, writes blobs and trees, writes a commit on that head with a
 subject derived from the tree difference (ADR-0469), and moves the branch only
 with a compare-and-swap. A pass that waited while a pull changed files and the
 branch therefore captures the pulled files; it cannot commit an older capture
 over them. A moved branch is reported and not retried.
 
-Only a pass that a managed save requested pushes afterward, through an
+Only a pass that a content save requested pushes afterward, through an
 independent runner that pushes the exact commit it pinned. `commit()` stays
 local. `commitAndPush()` always commits and then pushes, awaiting the push its
 pass started when requests coalesced. Commit and push failures never undo a
@@ -167,15 +168,16 @@ processes respect; isomorphic-git writes only immutable objects there. Native
 version checks are best effort against other programs. Multi-file native
 operations report `Partial` results instead of rolling back, including a move
 whose destination landed but whose source could not be removed. A partial
-table rename or delete marks observations stale without requesting a commit.
+content operation marks observations stale without requesting a commit.
 
 A native whole-folder commit or fast-forward writes every file as plain
 `100644` bytes without attribute filters, so it is refused, before any branch
 or index change, in a repository it would misrepresent: tracked or untracked
 (not ignored) symbolic links, executables, or other special files; submodules;
 nested `.git` data; `core.autocrlf`; or `text`, `eol`, `crlf`, `filter`,
-`ident`, or `working-tree-encoding` attributes on a source file. Reads, raw file
-writes, and explicit native Git through `stage` and `commitStaged` still work.
+`ident`, or `working-tree-encoding` attributes on a source file. Reads and raw file
+writes still work. Explicit native Git through `stage` and `commitStaged`
+requires manual mode (`commitOnEdit: false`).
 Git LFS is not supported.
 
 Table rows are files directly in the table directory. `get` refuses a stem
@@ -187,8 +189,13 @@ attachments differ from the one the entry captured.
 `@epicenter/app/files/terminal` runs a just-bash shell over a folder. The shell
 reads and writes the same files, and its `git` command supports `status`,
 `diff [--cached]`, `log`, `add`, `commit -m`, `push`, `fetch`, and
-`pull --ff-only`. Its browser bundle references `node:zlib` for gzip commands
-the terminal does not enable; the application aliases that module (see
+`pull --ff-only`. Shell writes follow the same folder policy. `add` and staged
+`commit -m` are refused in automatic mode; open with `commitOnEdit: false` for
+staged authoring. Empty-directory `mkdir` and `rmdir` request no checkpoint.
+External writers request no checkpoint; their files can join the next
+whole-folder checkpoint. Automatic history is best effort per save, and file
+Results never wait for or report a later Git failure. Its browser bundle references
+`node:zlib` for gzip commands the terminal does not enable; the application aliases that module (see
 `apps/todos/vite.config.ts`). The browser entry installs a `Buffer` global from
 the `buffer` package for isomorphic-git; bundlers should alias `buffer` to the
 same package for its dependencies.

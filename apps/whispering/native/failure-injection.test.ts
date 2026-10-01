@@ -39,7 +39,10 @@ async function open() {
 	const folder = (await openNativeFolder({
 		root,
 		definition: whisperingDefinition,
-		git: { author: { name: 'Test', email: 'test@localhost' } },
+		git: {
+			author: { name: 'Test', email: 'test@localhost' },
+			commitOnEdit: false,
+		},
 	})) as unknown as Folder<DataDefinition>;
 	cleanups.push(async () => {
 		await folder.close();

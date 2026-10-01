@@ -13,7 +13,7 @@
  *   staged commit's refresh, and starts no network work
  * - A pull whose files landed but whose index or branch did not never leaves
  *   a fresh clean observation behind
- * - Explicit `commit()` never pushes; only managed-save requests and
+ * - Explicit `commit()` never pushes; only content-save requests and
  *   `commitAndPush()` do, once per pass
  *
  * See also:
@@ -184,16 +184,19 @@ test('an external branch move after the parent is pinned is refused, not overwri
 test('close waits for a held stage and a held staged commit, including its refresh', async () => {
 	const stageGate = gate();
 	const commitGate = gate();
-	const { db, history, write, pushes } = await setup((real) => ({
-		async stage(paths) {
-			await stageGate.opened;
-			return real.stage(paths);
-		},
-		async commitIndex(message, commitAuthor) {
-			await commitGate.opened;
-			return real.commitIndex(message, commitAuthor);
-		},
-	}));
+	const { db, history, write, pushes } = await setup(
+		(real) => ({
+			async stage(paths) {
+				await stageGate.opened;
+				return real.stage(paths);
+			},
+			async commitIndex(message, commitAuthor) {
+				await commitGate.opened;
+				return real.commitIndex(message, commitAuthor);
+			},
+		}),
+		{ commitOnEdit: false },
+	);
 	await write('a.txt', 'one');
 	const staging = history.stage(['a.txt']);
 	let closed = false;
@@ -210,12 +213,15 @@ test('close waits for a held stage and a held staged commit, including its refre
 	db.close();
 
 	// A fresh history: a held staged commit keeps close open through its refresh.
-	const second = await setup((real) => ({
-		async commitIndex(message, commitAuthor) {
-			await commitGate.opened;
-			return real.commitIndex(message, commitAuthor);
-		},
-	}));
+	const second = await setup(
+		(real) => ({
+			async commitIndex(message, commitAuthor) {
+				await commitGate.opened;
+				return real.commitIndex(message, commitAuthor);
+			},
+		}),
+		{ commitOnEdit: false },
+	);
 	await second.write('a.txt', 'one');
 	expect((await second.history.stage(['a.txt'])).error).toBeNull();
 	const committing = second.history.commitStaged('Stage one file');
@@ -308,7 +314,7 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 	});
 }
 
-test('explicit commit stays local; managed-save requests and commitAndPush push once per pass', async () => {
+test('explicit commit stays local; content-save requests and commitAndPush push once per pass', async () => {
 	const held = gate();
 	let holdNext = false;
 	const { db, history, write, pushes } = await setup((real) => ({
@@ -356,7 +362,7 @@ test('explicit commit stays local; managed-save requests and commitAndPush push 
 	db.close();
 });
 
-test('a managed save still pushes when an explicit pass already captured it', async () => {
+test('a content save still pushes when an explicit pass already captured it', async () => {
 	const { db, real, history, write, pushes } = await setup();
 	await write('a.txt', 'one');
 	await history.commit();
@@ -368,7 +374,7 @@ test('a managed save still pushes when an explicit pass already captured it', as
 	});
 	await entered.opened;
 	const explicit = history.commit();
-	await write('a.txt', 'managed save');
+	await write('a.txt', 'content save');
 	history.requestAutomaticCommit();
 	held.open();
 	await owner;

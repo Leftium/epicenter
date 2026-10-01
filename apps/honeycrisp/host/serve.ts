@@ -8,7 +8,7 @@
  * it to `Bun.serve`.
  *
  * The files in the directory are the saved data. Git history is ordinary Git
- * in `<root>/.git`. A successful managed save (a table or `kv.json` write)
+ * in `<root>/.git`. A successful content save through tables, KV, or files
  * requests a commit and returns without waiting for it; a commit that fails
  * is reported in the Git snapshot and never becomes a save error.
  */
@@ -18,6 +18,7 @@ import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 import {
 	type CommitOutcome,
+	GitError,
 	type GitSnapshot,
 	pathProblem,
 } from '@epicenter/app/files';
@@ -58,14 +59,16 @@ export type FolderHostOptions = {
 
 export type FolderHost = Awaited<ReturnType<typeof createFolderHost>>;
 
-const MANAGED_WRITES = new Set([
+const CONTENT_WRITES = new Set([
 	'create',
 	'update',
 	'writeSource',
 	'rename',
 	'delete',
+	'write',
+	'remove',
+	'move',
 ]);
-const RAW_WRITES = new Set(['write', 'remove', 'move']);
 
 const TYPES: Record<string, string> = {
 	'.html': 'text/html; charset=utf-8',
@@ -119,7 +122,7 @@ export async function createFolderHost(options: FolderHostOptions) {
 	const email = (
 		await git(options.root, ['config', 'user.email'])
 	).stdout.trim();
-	// The host requests commits itself, after each managed save, so a commit
+	// The host requests commits itself, after each content save, so a commit
 	// can be made to fail on purpose without touching the save.
 	const folder = await openNativeFolder({
 		root: options.root,
@@ -164,7 +167,7 @@ export async function createFolderHost(options: FolderHostOptions) {
 			(real === undefined || injectedCommit.at >= real.at)
 				? injectedCommit
 				: real;
-		// Managed saves do request commits; the host is what requests them.
+		// The host requests automatic history after every content save.
 		return { ...snapshot, commitOnEdit: true, lastCommit };
 	}
 
@@ -212,11 +215,15 @@ export async function createFolderHost(options: FolderHostOptions) {
 			throw new Error(`Not a folder method: ${JSON.stringify(path)}`);
 		const [namespace, second, third] = path as [string, string, string?];
 		if (namespace === 'git' && second === 'snapshot') return snapshotView();
+		if (
+			namespace === 'git' &&
+			(second === 'stage' || second === 'commitStaged')
+		)
+			return GitError.AutomaticHistory();
 		const method = namespace === 'tables' ? third! : second;
-		const managed =
-			(namespace === 'tables' || namespace === 'kv') &&
-			MANAGED_WRITES.has(method);
-		const write = managed || (namespace === 'files' && RAW_WRITES.has(method));
+		const write =
+			(namespace === 'tables' || namespace === 'kv' || namespace === 'files') &&
+			CONTENT_WRITES.has(method);
 		if (write && !(await faults.beforeSave()))
 			return {
 				data: null,
@@ -238,7 +245,7 @@ export async function createFolderHost(options: FolderHostOptions) {
 			return read.error ? read : { data: read.data.bytes, error: null };
 		}
 		const result = (await target[method]!(...args)) as { error?: unknown };
-		if (managed && result?.error === null) requestCommit();
+		if (write && result?.error === null) requestCommit();
 		return result;
 	}
 

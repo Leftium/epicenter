@@ -175,8 +175,8 @@ bridge, and the host-gone fallback uses a page event and a refused navigation.
 
 ## History
 
-The host opens the folder with automatic commits on and no remote. A managed
-save requests a commit and does not wait for it. `src/lib/status.ts` turns the
+The host opens the folder with automatic commits on and no remote. Every content
+save through tables, KV, or files requests a commit and does not wait for it. `src/lib/status.ts` turns the
 folder's Git snapshot into separate lines for saved files, uncommitted changes,
 and the last commit attempt, and never lets a commit outcome change what it says
 about a save.

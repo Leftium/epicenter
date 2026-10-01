@@ -226,6 +226,7 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 	const { root, bridge, remote } = await start();
 	const pending = capture();
 	await bridge.app('inject', { rowWrites: 2 });
+	expect((await remote.folder.git.status()).data?.changes).toEqual([]);
 
 	const first = await publishRecording(remote.folder, pending);
 	expect(first.status).toBe('partial');
@@ -234,6 +235,17 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${pending.id}.wav`,
 	]);
+	expect(await bridge.transport.call(['git', 'snapshot'], [])).toMatchObject({
+		activity: { commit: { active: false, pending: false } },
+		files: {
+			state: 'observed',
+			stale: false,
+			value: {
+				changes: [{ path: `recordings/${pending.id}.wav`, kind: 'add' }],
+			},
+		},
+	});
+	expect((await remote.folder.git.log(10)).data).toEqual([]);
 
 	// The second armed failure hits the recovery write; the audio stays put.
 	const second = await publishRecording(remote.folder, pending);

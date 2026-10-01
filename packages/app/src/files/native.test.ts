@@ -6,7 +6,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineStore, defineTable, field } from '../index.js';
+import {
+	createBrowserFileBoundary,
+	openFolderDatabase,
+} from './browser-store.js';
 import { createHistory } from './git/history.js';
 import { createNativeGitBackend } from './git/native-backend.js';
 import {
@@ -19,6 +24,7 @@ import {
 import { type Folder, openBrowserFolder } from './index.js';
 import { openNativeFolder } from './native.js';
 import { createNativeFileBoundary } from './native-store.js';
+import { captureVersion } from './version.js';
 
 const definition = defineStore({
 	id: 'so.epicenter.todostest',
@@ -108,6 +114,38 @@ describe('native folder', () => {
 			'done: true',
 		);
 		await folder.close();
+	});
+
+	test('a complete file save checkpoints external bytes and refuses staged authoring', async () => {
+		const root = await scratch('native-content-policy-');
+		const folder = await openNativeFolder({
+			root,
+			definition,
+			git: { author },
+		});
+		try {
+			await writeFile(join(root, 'external.md'), 'external');
+			expect(folder.git.snapshot.lastCommit).toBeUndefined();
+			expect(folder.git.snapshot.activity.commit).toEqual({
+				active: false,
+				pending: false,
+			});
+			expectOk(
+				await folder.files.write('saved.md', 'saved', { expected: 'absent' }),
+			);
+			await settled(folder);
+			expect(await git(root, 'show', 'HEAD:external.md')).toBe('external');
+			expect(await git(root, 'show', 'HEAD:saved.md')).toBe('saved');
+			expect(expectErr(await folder.git.stage('all')).name).toBe(
+				'AutomaticHistory',
+			);
+			expect(expectErr(await folder.git.commitStaged('Authored')).name).toBe(
+				'AutomaticHistory',
+			);
+			expect(await git(root, 'status', '--porcelain')).toBe('');
+		} finally {
+			await folder.close();
+		}
 	});
 
 	test('literal lookup: a stem does not alias a differently cased file', async () => {
@@ -230,6 +268,7 @@ describe('browser and native exchange through a real bare repository', () => {
 		globalThis.fetch = await gitHttpFetch(root);
 		const browserRemote = { url: 'http://git.test/remote.git', branch: 'main' };
 
+		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
 		const browser = await openBrowserFolder({
 			id: 'exchange',
 			definition,
@@ -237,7 +276,7 @@ describe('browser and native exchange through a real bare repository', () => {
 				author: { name: 'Browser', email: 'browser@example.test' },
 				remote: browserRemote,
 			},
-			indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+			indexedDb: environment,
 		});
 		await browser.tables.todos.create({
 			stem: 'first',
@@ -289,7 +328,24 @@ describe('browser and native exchange through a real bare repository', () => {
 			{ fields: { title: 'Native edit' } },
 		);
 		await settled(native);
-		await browser.files.write('scratch.txt', 'local', { expected: 'absent' });
+		// Another writer publishes without a save request on this handle.
+		const externalDb = await openFolderDatabase(
+			'epicenter-folder:exchange',
+			environment,
+		);
+		const bytes = new TextEncoder().encode('local');
+		expectOk(
+			await createBrowserFileBoundary(externalDb, environment).apply([
+				{
+					kind: 'write',
+					path: 'scratch.txt',
+					bytes,
+					version: await captureVersion(bytes),
+					expected: 'absent',
+				},
+			]),
+		);
+		externalDb.close();
 		await browser.git.fetch();
 		const dirty = await browser.git.pullFastForward();
 		expect(dirty.error?.name).toBe('Dirty');
@@ -322,18 +378,21 @@ describe('browser and native exchange through a real bare repository', () => {
 			},
 			indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
 		});
-		await browser.tables.todos.create({
-			stem: 'offline',
-			fields: { title: 'Offline', done: false },
-		});
+		expectOk(
+			await browser.files.write('offline.txt', 'Offline', {
+				expected: 'absent',
+			}),
+		);
 		await settled(browser);
 		expect(browser.git.snapshot.lastCommit?.status).toBe('committed');
 		expect(browser.git.snapshot.lastPush?.status).toBe('failed');
 		const sync = browser.git.snapshot.sync;
 		expect(sync.state === 'observed' && sync.value.ahead).toBe(1);
-		expect((await browser.tables.todos.get('offline')).data!.fields.title).toBe(
-			'Offline',
-		);
+		expect(
+			new TextDecoder().decode(
+				expectOk(await browser.files.read('offline.txt')).bytes,
+			),
+		).toBe('Offline');
 		await browser.close();
 	});
 });

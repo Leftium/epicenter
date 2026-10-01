@@ -9,7 +9,7 @@
  * - The directory gets its layout and a repository; existing files are untouched
  * - Requests without the token, or for another host or origin, are refused
  * - Reading a note never rewrites it; an edit keeps unknown frontmatter and comments
- * - A managed save requests a commit and does not wait for it
+ * - A content save requests a commit and does not wait for it
  * - An external edit is announced, and a stale save is refused
  * - Held, delayed, and failed saves and failed commits behave as injected
  * - The terminal runs in the same directory with the real git
@@ -28,6 +28,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InstantString } from '@epicenter/app/field';
+import { expectOk } from 'wellcrafted/testing';
 import type { BridgeEvent } from '../src/lib/bridge/contract.js';
 import { createBridgeTransport } from '../src/lib/bridge/folder-client.js';
 import { openBridgeNotesHost } from '../src/lib/bridge/notes-host.js';
@@ -104,6 +105,7 @@ async function open(options: Partial<FolderHostOptions> = {}) {
 		send,
 		git,
 		commits,
+		transport,
 	};
 }
 
@@ -241,6 +243,71 @@ describe('the boundary', () => {
 });
 
 describe('notes are files', () => {
+	test('file saves, moves, and removals request automatic history through the bridge', async () => {
+		const { folder, root, git, commits } = await open();
+		const created = expectOk(
+			await folder.files.write('references/example.md', 'Example\n', {
+				expected: 'absent',
+			}),
+		);
+		await commits(2);
+		expect(git('show', 'HEAD:references/example.md')).toBe('Example');
+		expectOk(
+			await folder.files.move(
+				'references/example.md',
+				'references/renamed.md',
+				{
+					expected: created,
+				},
+			),
+		);
+		await commits(3);
+		expect(git('ls-tree', '-r', '--name-only', 'HEAD')).toContain(
+			'references/renamed.md',
+		);
+		expect(await readFile(join(root, 'references/renamed.md'), 'utf8')).toBe(
+			'Example\n',
+		);
+		expectOk(
+			await folder.files.remove('references/renamed.md', {
+				expected: created,
+			}),
+		);
+		await commits(4);
+		expect(git('ls-tree', '-r', '--name-only', 'HEAD')).not.toContain(
+			'references/',
+		);
+	});
+
+	test('a file save survives an automatic history failure', async () => {
+		const { folder, notes, root } = await open({ faults: {} });
+		await notes.faults!.set({ failCommits: 1 });
+		expectOk(
+			await folder.files.write('SKILL.md', 'Instructions\n', {
+				expected: 'absent',
+			}),
+		);
+		expect(await readFile(join(root, 'SKILL.md'), 'utf8')).toBe(
+			'Instructions\n',
+		);
+		await until(
+			() => folder.git.snapshot.lastCommit?.status === 'failed',
+			'the failed file checkpoint',
+		);
+	});
+
+	test('the automatic bridge refuses staged authoring', async () => {
+		const { transport } = await open();
+		for (const [method, args] of [
+			['stage', ['all']],
+			['commitStaged', ['Manual']],
+		] as const) {
+			expect(await transport.call(['git', method], args)).toMatchObject({
+				error: { name: 'AutomaticHistory' },
+			});
+		}
+	});
+
 	test('creating a note writes one Markdown file and requests a commit', async () => {
 		const { folder, root, git, commits } = await open();
 		const note = await createNote(folder);

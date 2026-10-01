@@ -64,6 +64,18 @@ Todos CLI opens with automatic commits disabled and explicitly commits and
 pushes its completed changes. `git.commit()` attempts only the local commit;
 `git.commitAndPush()` explicitly requests both stages.
 
+The policy applies equally to completed table, KV, and literal file mutations.
+`files.write`, `files.move`, and `files.remove` request history without per-call
+flags. Empty-directory operations have no Git tree content to record. A partial
+publication invalidates status but requests no checkpoint; its landed files may
+enter a later whole-folder checkpoint.
+
+Embedded terminal file mutations follow the same policy. Staged authoring through
+`git.stage` and `git.commitStaged` requires `commitOnEdit: false`; an automatic
+checkpoint supersedes staged-only intent. Native programs and real shells write
+outside the folder API and request no automatic history. Their changes enter a
+later checkpoint or an explicit commit.
+
 Outgoing work has an independent runner with one active attempt and one pending
 request. Each attempt captures the commit it will push; a later pass reads the
 latest local commit. A slow upload or push does not block local commit attempts.

@@ -386,12 +386,11 @@ export function createLibrary(workspace: Workspace) {
 				: read.data.kind === 'text'
 					? {
 							kind: 'text',
-							// Raw writes request no commit; recheck so the change shows as uncommitted.
 							editor: createTextFileEditor(
 								folder.files,
 								read.data.file,
 								autosave,
-								() => void refreshAll(),
+								() => void refresh(),
 							),
 						}
 					: read.data,

@@ -926,7 +926,6 @@ export function createNotes(host: NotesHost) {
 			if (session !== undefined) {
 				// The session keeps an unknown or partial outcome itself.
 				const outcome = await reserve([path, to], () => session.move(to));
-				rehome(session);
 				await refreshAll();
 				if (outcome.kind === 'partial')
 					return `"${name}" was created, but "${basename(path)}" could not be removed, so both files exist now. ${outcome.message}`;

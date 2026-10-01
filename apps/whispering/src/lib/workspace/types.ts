@@ -6,8 +6,12 @@
  * same code for both. Capabilities a storage cannot offer are `undefined`
  * here, not emulated: a browser folder has no directory to reveal.
  */
-import type { FolderAccess } from '@epicenter/app/files';
-import type { FolderTerminal } from '@epicenter/app/files/terminal';
+import type {
+	FolderAccess,
+	FolderTerminal,
+	OpenFolderError,
+} from '@epicenter/folder';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { CaptureDevice } from '../capture.js';
 import type {
@@ -18,6 +22,31 @@ import type { TranscriptionError } from '../transcription.js';
 import type { TransformationError } from '../transformation.js';
 
 export type WhisperingFolder = FolderAccess<typeof whisperingDefinition>;
+
+/**
+ * Why no workspace could be opened. The message is what the person is shown.
+ * Neither storage is tried in place of the other: a browser folder that is
+ * refused is not replaced by a desktop one, and a desktop folder that cannot
+ * be reached is not replaced by browser storage.
+ */
+export const WorkspaceError = defineErrors({
+	/** This browser's storage refused or could not be opened. */
+	BrowserFolder: ({ refusal }: { refusal: OpenFolderError }) => ({
+		message:
+			refusal.name === 'InsideTauri'
+				? 'This window is inside a desktop app, but Whispering’s folder host is not running, so there is no folder to open. Browser storage is not used inside a desktop app.'
+				: refusal.name === 'NoIndexedDb'
+					? 'This browser has no storage Whispering can use (IndexedDB is unavailable here), so the folder cannot be opened.'
+					: refusal.message,
+		refusal,
+	}),
+	/** The desktop folder host did not answer when the window opened. */
+	FolderHost: ({ reason }: { reason: string }) => ({
+		message: `Whispering’s folder host could not be reached, so the folder cannot be opened: ${reason}`,
+		reason,
+	}),
+});
+export type WorkspaceError = InferErrors<typeof WorkspaceError>;
 
 /** Repeatable failures a debug desktop shell can arm. */
 export type InjectionState = {
@@ -40,7 +69,10 @@ export type Workspace = {
 	readonly capture: CaptureDevice;
 	/** Something the person should know about capture, such as a refused fixture. */
 	readonly captureNotice: string | undefined;
-	/** Files changed outside this page. A browser folder has no outside writer. */
+	/**
+	 * Files changed, so read again. On the desktop this is any program writing
+	 * the directory; in a browser it is a save from this tab or another tab.
+	 */
 	onExternalChange(listener: () => void): () => void;
 	/** Show the folder in the system file manager; a problem is returned as text. */
 	readonly reveal: (() => Promise<string | undefined>) | undefined;

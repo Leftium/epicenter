@@ -7,8 +7,10 @@
  * what it leaves on disk, not that the desktop app runs.
  *
  * Key behaviors:
- * - Record, stop, and save produce a row, a same-stem audio file, and a commit
+ * - Record, stop, and save produce audio, a row that names it, and a commit
  * - Captured audio and its id survive a partial publication and a retry
+ * - A row that names no audio says so: nothing is guessed from a file's name
+ * - Deleting a recording deletes its row and results and keeps its audio
  * - A title edit in details and the Source view are one draft
  * - A clean editor follows an outside edit; a dirty one keeps both versions
  * - A malformed row stays listed and its source is untouched
@@ -19,6 +21,7 @@ import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import {
+	mkdir,
 	mkdtemp,
 	readdir,
 	readFile,
@@ -28,20 +31,24 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ApplyError, FileError } from '@epicenter/app/files';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import { FileError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { loadAudio } from './audio-source.js';
 import { createFixtureDevice, toneWav } from './capture.js';
-import { whisperingDefinition } from './definition.js';
+import { describeDeletion } from './deletion-copy.js';
 import type { Library } from './library.svelte.js';
 import {
 	commitLine,
+	filesLine,
 	filesLineOf,
 	summaryLine,
 	uncommittedLine,
 } from './status.js';
 import type { Workspace } from './workspace/types.js';
+import {
+	batchWithRecordingFailures,
+	openTestFolder,
+} from './workspace.test-support.js';
 
 const { createLibrary } = await import('./library.svelte.ts');
 const { patchRow } = await import('./editor.svelte.ts');
@@ -69,13 +76,7 @@ async function open({
 		root ??
 		(await realpath(await mkdtemp(join(tmpdir(), 'whispering-library-'))));
 	if (root === undefined) roots.push(directory);
-	const folder = await openNativeFolder({
-		root: directory,
-		definition: whisperingDefinition,
-		git: { author: { name: 'Test', email: 'test@localhost' } },
-	});
-	let remaining = failRowWrites;
-	const recordings = folder.tables.recordings;
+	const folder = await openTestFolder(directory);
 	let remainingResults = failResultWrites;
 	const transcriptions = folder.tables.transcriptions;
 	const tables = {
@@ -92,37 +93,18 @@ async function open({
 				});
 			},
 		},
-		recordings: {
-			...recordings,
-			// What a native folder reports when the audio lands and the row does not.
-			create: async (input: Parameters<typeof recordings.create>[0]) => {
-				if (remaining === 0 || input.attachment === undefined)
-					return recordings.create(input);
-				remaining -= 1;
-				const audio = `recordings/${input.stem}.${input.attachment.extension}`;
-				const landed = await folder.files.write(audio, input.attachment.bytes, {
-					expected: 'absent',
-				});
-				if (landed.error) return landed;
-				return ApplyError.Partial({
-					applied: [{ kind: 'write', path: audio }],
-					failed: { kind: 'write', path: `recordings/${input.stem}.md` },
-					error: FileError.Io({
-						path: `recordings/${input.stem}.md`,
-						operation: 'create',
-						cause: new Error('disk refused the row'),
-					}).error,
-					notAttempted: [],
-				});
-			},
-		},
 	};
+	// The folder's own batch fails at the row, after the audio landed.
+	const batch = batchWithRecordingFailures(folder, directory, {
+		audio: 0,
+		row: failRowWrites,
+	});
 	const transcribed: { audioPath: string; baseUrl: string; model: string }[] =
 		[];
 	const changeListeners = new Set<() => void>();
 	const workspace: Workspace = {
 		kind: 'native',
-		folder: { ...folder, tables } as Workspace['folder'],
+		folder: { ...folder, tables, batch } as Workspace['folder'],
 		location: directory,
 		terminal: {
 			cwd: '/',
@@ -209,17 +191,17 @@ test('record, stop, and save leave a row, real audio, and a commit', async () =>
 	expect(entry.issues).toBeUndefined();
 	expect(entry.fields.capture).toBe('fixture');
 	expect(entry.fields.durationMs).toBe(1000);
-	expect(entry.attachment).toBe(`recordings/${entry.stem}.wav`);
+	expect(entry.fields.audioPath).toBe(`recordings/${entry.stem}.wav`);
 	expect(library.selectedPath).toBe(entry.path);
-	expect(new Uint8Array(await readFile(join(root, entry.attachment!)))).toEqual(
-		new Uint8Array(toneWav()),
-	);
+	expect(
+		new Uint8Array(await readFile(join(root, entry.fields.audioPath!))),
+	).toEqual(new Uint8Array(toneWav()));
 
 	const outcome = await library.commit();
 	expect(['committed', 'unchanged']).toContain(outcome.status);
 	const tree = git(root, 'ls-tree', '-r', '--name-only', 'HEAD');
 	expect(tree).toContain(entry.path);
-	expect(tree).toContain(entry.attachment!);
+	expect(tree).toContain(entry.fields.audioPath!);
 	expect(tree).toContain('kv.json');
 });
 
@@ -254,9 +236,7 @@ test('renaming in details and editing the source are one draft, saved to the row
 	await record(library);
 	const editor = recordingEditor(library);
 
-	expect(patchRow(editor, { fields: { title: 'Standup notes' } })).toBe(
-		true,
-	);
+	expect(patchRow(editor, { fields: { title: 'Standup notes' } })).toBe(true);
 	// The Source view shows the same unsaved text the details changed.
 	expect(editor.buffer).toContain('title: Standup notes');
 	expect(editor.dirty).toBe(true);
@@ -372,7 +352,7 @@ test('a malformed row stays listed and its bytes are not rewritten', async () =>
 	);
 
 	editor.input(
-		'---\ntitle: Repaired\nrecordedAt: 2026-01-02T03:04:05.000Z\ndurationMs: 1\ncapture: microphone\nmood: curious\n---\nStill here\n',
+		'---\ntitle: Repaired\nrecordedAt: 2026-01-02T03:04:05.000Z\ndurationMs: 1\ncapture: microphone\naudioPath: recordings/broken.wav\nmood: curious\n---\nStill here\n',
 	);
 	await editor.save();
 	await library.refresh();
@@ -394,7 +374,7 @@ test('a transcription is saved as its own row naming the recording', async () =>
 
 	expect(transcribed).toEqual([
 		{
-			audioPath: entry.attachment!,
+			audioPath: entry.fields.audioPath!,
 			baseUrl: 'http://127.0.0.1:18080/v1',
 			model: 'verification-model',
 		},
@@ -420,30 +400,141 @@ test('reopening the folder shows the same recording and result', async () => {
 	const second = await open({ root: first.root });
 
 	expect(second.library.entries.map((item) => item.path)).toEqual([entry.path]);
-	expect(second.library.entries[0]!.attachment).toBe(entry.attachment);
+	expect(second.library.entries[0]!.fields.audioPath).toBe(
+		entry.fields.audioPath,
+	);
 	expect(second.library.resultsFor(entry.stem!)[0]!.body).toBe(
 		'a steady tone\n',
 	);
-	const opened2 = await second.library.folder.files.open(entry.attachment!);
+	const opened2 = await second.library.folder.files.open(
+		entry.fields.audioPath!,
+	);
 	expect(new Uint8Array(await opened2.data!.arrayBuffer())).toEqual(
 		new Uint8Array(toneWav()),
 	);
 	expect(git(first.root, 'status', '--porcelain').trim()).toBe('');
 });
 
-test('deleting a recording removes its row, audio, and results', async () => {
+test('deleting a recording removes its row and results, keeps its audio, and says so first', async () => {
 	const { library, root } = await open();
 	await record(library);
 	const entry = library.entries[0]!;
+	const audioPath = entry.fields.audioPath!;
 	await library.transcribe(entry);
 
 	const deletion = await library.deletionFor(entry.path);
 	expect(deletion.error).toBeNull();
+	// What the person is asked matches what the deletion does.
+	const asked = describeDeletion(deletion.data!, library.recordingNaming);
+	expect(asked.description).toContain(
+		`This deletes ${entry.path}, 1 transcription result from the folder.`,
+	);
+	expect(asked.description).toContain(`Its audio ${audioPath} is not deleted`);
 	expect(await library.remove(deletion.data!)).toBeUndefined();
 
 	expect(library.entries).toHaveLength(0);
-	expect(await readdir(join(root, 'recordings'))).toEqual([]);
 	expect(await readdir(join(root, 'transcriptions'))).toEqual([]);
+	// The table removed its row file. The audio is an ordinary file and stays.
+	expect(await readdir(join(root, 'recordings'))).toEqual([
+		`${entry.stem}.wav`,
+	]);
+	expect(new Uint8Array(await readFile(join(root, audioPath)))).toEqual(
+		new Uint8Array(toneWav()),
+	);
+
+	// The audio is deleted as the file it is, from Files, with its own question.
+	expect(library.recordingNaming(audioPath)).toBeUndefined();
+	const file = await library.deletionFor(audioPath);
+	expect(file.data).toMatchObject({ kind: 'file', path: audioPath });
+	expect(await library.remove(file.data!)).toBeUndefined();
+	expect(await readdir(join(root, 'recordings'))).toEqual([]);
+});
+
+test('deleting the audio a recording names keeps the recording, and the missing file is reported', async () => {
+	const { library, root } = await open();
+	await record(library);
+	const entry = library.entries[0]!;
+	const audioPath = entry.fields.audioPath!;
+	// Renaming it would leave the row naming a file that is gone.
+	expect(await library.rename(audioPath, 'other.wav')).toContain(
+		'names this audio file',
+	);
+
+	const deletion = await library.deletionFor(audioPath);
+	const asked = describeDeletion(deletion.data!, library.recordingNaming);
+	expect(asked.description).toContain('names it as its audio and is kept');
+	expect(await library.remove(deletion.data!)).toBeUndefined();
+
+	expect(await readdir(join(root, 'recordings'))).toEqual([`${entry.stem}.md`]);
+	expect(library.entries).toHaveLength(1);
+	// The row still names the path; the missing file is reported, not hidden.
+	expect(library.entries[0]!.fields.audioPath).toBe(audioPath);
+	const loaded = await loadAudio(library.folder.files, audioPath, undefined);
+	expect(loaded.error?.name).toBe('NotFound');
+});
+
+test('a row written before audioPath names no audio: it needs repair, and no same-stem file is used', async () => {
+	const { library, root, transcribed } = await open();
+	await mkdir(join(root, 'recordings'), { recursive: true });
+	// The earlier layout: no audioPath, with the audio beside the row.
+	const old =
+		'---\ntitle: Old take\nrecordedAt: 2026-01-02T03:04:05.000Z\ndurationMs: 1000\ncapture: fixture\n---\nNotes\n';
+	await writeFile(join(root, 'recordings', 'old.md'), old);
+	await writeFile(join(root, 'recordings', 'old.wav'), toneWav());
+	await library.refreshAll();
+
+	const entry = library.entries.find((item) => item.stem === 'old')!;
+	expect(entry.issues).toEqual([
+		{ kind: 'field', field: 'audioPath', message: 'The field is missing' },
+	]);
+	expect(entry.fields.audioPath).toBeUndefined();
+	// The file beside it is an ordinary file that no recording names.
+	expect(library.recordingNaming('recordings/old.wav')).toBeUndefined();
+
+	await library.transcribe(entry);
+
+	expect(transcribed).toHaveLength(0);
+	const run = library.transcriptionRun('old');
+	expect(run?.kind).toBe('failed');
+	if (run?.kind === 'failed') expect(run.message).toContain('names no audio');
+	// Nothing was migrated or rewritten.
+	expect(await readFile(join(root, 'recordings', 'old.md'), 'utf8')).toBe(old);
+
+	// The person repairs it in Source by naming the audio.
+	await library.open('recordings/old.md');
+	const editor = recordingEditor(library);
+	expect(
+		patchRow(editor, { fields: { audioPath: 'recordings/old.wav' } }),
+	).toBe(true);
+	await editor.save();
+	await library.refresh();
+	const repaired = library.entries.find((item) => item.stem === 'old')!;
+	expect(repaired.issues).toBeUndefined();
+	expect(library.recordingNaming('recordings/old.wav')?.path).toBe(
+		'recordings/old.md',
+	);
+	await library.transcribe(repaired);
+	expect(transcribed.map((request) => request.audioPath)).toEqual([
+		'recordings/old.wav',
+	]);
+});
+
+test('a title edit changes frontmatter only: no file is renamed and the audio path stands', async () => {
+	const { library, root } = await open();
+	await record(library);
+	const entry = library.entries[0]!;
+	const editor = recordingEditor(library);
+	const before = (await readdir(join(root, 'recordings'))).sort();
+
+	patchRow(editor, { fields: { title: 'A new title' } });
+	await editor.save();
+	await library.refresh();
+
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual(before);
+	const saved = library.entries[0]!;
+	expect(saved.path).toBe(entry.path);
+	expect(saved.fields.title).toBe('A new title');
+	expect(saved.fields.audioPath).toBe(entry.fields.audioPath);
 });
 
 test('a recording cannot be deleted while its transcription runs, including one started after confirming', async () => {
@@ -476,7 +567,10 @@ test('a recording cannot be deleted while its transcription runs, including one 
 	expect(await readdir(join(root, 'transcriptions'))).toHaveLength(1);
 	const again = await library.deletionFor(entry.path);
 	expect(await library.remove(again.data!)).toBeUndefined();
-	expect(await readdir(join(root, 'recordings'))).toEqual([]);
+	// The row is gone; the audio it named is not the table's to delete.
+	expect(await readdir(join(root, 'recordings'))).toEqual([
+		`${entry.stem}.wav`,
+	]);
 	expect(await readdir(join(root, 'transcriptions'))).toEqual([]);
 });
 
@@ -498,7 +592,9 @@ test('a recording cannot be deleted while a received transcript is unsaved; disc
 	const deletion = await library.deletionFor(entry.path);
 	expect(await library.remove(deletion.data!)).toBeUndefined();
 
-	expect(await readdir(join(root, 'recordings'))).toEqual([]);
+	expect(await readdir(join(root, 'recordings'))).toEqual([
+		`${entry.stem}.wav`,
+	]);
 	expect(
 		await readdir(join(root, 'transcriptions')).catch(() => [] as string[]),
 	).toEqual([]);
@@ -521,7 +617,7 @@ test('audio replaced by bytes of the same length is noticed by its content', asy
 	const { library, root } = await open();
 	await record(library);
 	const entry = library.entries[0]!;
-	const path = entry.attachment!;
+	const path = entry.fields.audioPath!;
 	const first = await loadAudio(library.folder.files, path, undefined);
 	expect(first.error).toBeNull();
 
@@ -605,4 +701,286 @@ test('a transcript whose file was not saved is reported as unsaved until it is',
 	expect(status(library).files.tone).toBe('good');
 	expect(library.resultsFor(entry.stem!)[0]!.body).toBe('a steady tone\n');
 	expect(await readdir(join(root, 'transcriptions'))).toHaveLength(1);
+});
+
+test('a confirmed publication with failed observation stays saved and retry never republishes', async () => {
+	const { library, root } = await open();
+	const folder = library.folder;
+	const batch = folder.batch;
+	const table = folder.tables.recordings;
+	const get = table.get;
+	let batches = 0;
+	let refuseObservation = true;
+	Object.assign(folder, {
+		batch: (collect: Parameters<typeof batch>[0]) => {
+			batches += 1;
+			return batch(collect);
+		},
+	});
+	Object.assign(table, {
+		get: (stem: string) =>
+			batches > 0 && refuseObservation
+				? Promise.resolve(
+						FileError.Io({
+							path: `recordings/${stem}.md`,
+							operation: 'read',
+							cause: new Error('read after publication failed'),
+						}),
+					)
+				: get(stem),
+	});
+	await record(library);
+	const pending = library.pending[0]!;
+	expect(batches).toBe(1);
+	expect(pending.capture.bytes).toEqual(toneWav());
+	expect(filesLineOf(library).label).not.toContain('not saved');
+	expect(library.unsavedWork).toEqual([]);
+	const path = join(root, 'recordings', `${pending.capture.id}.md`);
+	const source = await readFile(path, 'utf8');
+	await rm(path);
+	refuseObservation = false;
+	await library.retryPending(pending.capture.id);
+	expect(batches).toBe(1);
+	expect(await readdir(join(root, 'recordings'))).toEqual([
+		`${pending.capture.id}.wav`,
+	]);
+	expect(library.pending[0]!.capture.id).toBe(pending.capture.id);
+	expect(library.pending[0]!.capture.bytes).toEqual(toneWav());
+	await writeFile(path, source);
+	await library.retryPending(pending.capture.id);
+	expect(batches).toBe(1);
+	expect(library.pending).toHaveLength(0);
+	expect(library.entries[0]!.stem).toBe(pending.capture.id);
+});
+
+/** Record once with the read-back after the batch refused, counting every batch and request. */
+async function publishedButUnshown() {
+	const started = await open();
+	const { library } = started;
+	const folder = library.folder;
+	const batch = folder.batch;
+	const table = folder.tables.recordings;
+	const get = table.get;
+	const seen = { batches: 0, refuse: true };
+	Object.assign(folder, {
+		batch: (collect: Parameters<typeof batch>[0]) => {
+			seen.batches += 1;
+			return batch(collect);
+		},
+	});
+	Object.assign(table, {
+		get: (stem: string) =>
+			seen.batches > 0 && seen.refuse
+				? Promise.resolve(
+						FileError.Io({
+							path: `recordings/${stem}.md`,
+							operation: 'read',
+							cause: new Error('read after publication failed'),
+						}),
+					)
+				: get(stem),
+	});
+	await record(library);
+	return { ...started, seen, held: library.pending[0]! };
+}
+
+test('a confirmed publication is reported as saved with a separate observation problem, and holds nothing', async () => {
+	const { library, root, seen, held, transcribed } =
+		await publishedButUnshown();
+
+	// The product state says what is true: published, and not shown.
+	expect(held.state).toMatchObject({
+		kind: 'published',
+		problem: 'unreadable',
+		checking: false,
+		publication: {
+			audio: { path: held.capture.fields.audioPath },
+			row: { path: `recordings/${held.capture.id}.md` },
+		},
+	});
+	if (held.state.kind !== 'published') return;
+	expect(held.state.message).toContain('read after publication failed');
+	// Both files are in the folder, with the captured bytes.
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
+		`${held.capture.id}.md`,
+		`${held.capture.id}.wav`,
+	]);
+	expect(
+		new Uint8Array(await readFile(join(root, held.capture.fields.audioPath))),
+	).toEqual(new Uint8Array(toneWav()));
+
+	// The status is a saved one, with the open question named beside it.
+	const line = status(library);
+	expect(line.files).toMatchObject({
+		label: 'Saved · 1 recording to check',
+		tone: 'warning',
+	});
+	expect(line.files.detail).toContain('nothing is written again');
+	// The header's one line may show a running commit instead; it never says unsaved.
+	expect(line.summary.label).not.toContain('not saved');
+	// Nothing is only in the window, so nothing holds the app open.
+	expect(library.unsaved).toBe(false);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(await library.prepareToLeave()).toBe(true);
+
+	// Still unreadable: looking again changes nothing and publishes nothing.
+	await library.retryPending(held.capture.id);
+	expect(seen.batches).toBe(1);
+	expect(library.pending[0]!.state).toMatchObject({
+		kind: 'published',
+		problem: 'unreadable',
+	});
+	expect(library.pending[0]!.attempts).toBe(held.attempts);
+	expect(library.pending[0]!.capture).toBe(held.capture);
+	expect(transcribed).toEqual([]);
+
+	// Readable again: the current row is what is shown and edited.
+	seen.refuse = false;
+	await library.retryPending(held.capture.id);
+	expect(seen.batches).toBe(1);
+	expect(library.pending).toHaveLength(0);
+	expect(library.selectedPath).toBe(`recordings/${held.capture.id}.md`);
+	expect(recordingEditor(library).baseline.source).toBe(
+		await readFile(join(root, 'recordings', `${held.capture.id}.md`), 'utf8'),
+	);
+	expect(status(library).files.label).toBe('All changes saved to files');
+	expect(transcribed).toEqual([]);
+});
+
+test('a published row that another writer replaced or edited is observed as it is, never repaired', async () => {
+	const { library, root, seen, held } = await publishedButUnshown();
+	const path = join(root, 'recordings', `${held.capture.id}.md`);
+	const published = await readFile(path, 'utf8');
+	seen.refuse = false;
+
+	// Another program writes its own file over the row.
+	const foreign = '---\ntitle: Someone else\n---\nKeep me\n';
+	await writeFile(path, foreign);
+	await library.retryPending(held.capture.id);
+
+	expect(seen.batches).toBe(1);
+	expect(library.pending[0]!.state).toMatchObject({
+		kind: 'published',
+		problem: 'foreign',
+	});
+	expect(library.pending[0]!.capture).toBe(held.capture);
+	expect(await readFile(path, 'utf8')).toBe(foreign);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(status(library).files.label).toBe('Saved · 1 recording to check');
+
+	// The person's own edit of the title and notes is still this recording.
+	const edited = `${published.replace(/title: .*/, 'title: Renamed since')}Notes added since\n`;
+	await writeFile(path, edited);
+	await library.retryPending(held.capture.id);
+
+	expect(seen.batches).toBe(1);
+	expect(library.pending).toHaveLength(0);
+	expect(await readFile(path, 'utf8')).toBe(edited);
+	const editor = recordingEditor(library);
+	expect(editor.baseline.source).toBe(edited);
+	expect(editor.dirty).toBe(false);
+	expect(library.entries[0]!.fields.title).toBe('Renamed since');
+});
+
+test('dismissing a published notice drops the window’s copy and changes nothing in the folder', async () => {
+	const { library, root, seen, held } = await publishedButUnshown();
+	const before = (await readdir(join(root, 'recordings'))).sort();
+
+	library.discardPending(held.capture.id);
+
+	expect(library.pending).toHaveLength(0);
+	expect(seen.batches).toBe(1);
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual(before);
+	expect(status(library).files.label).toBe('All changes saved to files');
+});
+
+test('a partial publication is still unresolved: it is reported as not saved and holds the app open', async () => {
+	const { library } = await open({ failRowWrites: 1 });
+	await record(library);
+
+	expect(library.pending[0]!.state.kind).toBe('partial');
+	expect(status(library).files).toMatchObject({
+		label: '1 recording not saved',
+		tone: 'error',
+	});
+	expect(library.unsavedWork).toEqual([
+		'1 recording is not saved to the folder. Its audio is kept in this window. Any files already written stay in the folder.',
+	]);
+	expect(await library.prepareToLeave()).toBe(false);
+});
+
+test('an observation notice never hides another file’s unsaved typing', () => {
+	const line = filesLine({
+		saving: false,
+		problems: 0,
+		unsaved: true,
+		pendingCaptures: 0,
+		capturesSaving: false,
+		publishedUnshown: 1,
+		unsavedResults: 0,
+		unsavedTransformations: 0,
+	});
+	expect(line.label).toBe('Unsaved typing');
+});
+
+test('a late observation cannot restore a published notice that was dismissed', async () => {
+	const { library, seen, held } = await publishedButUnshown();
+	const reply =
+		Promise.withResolvers<
+			Awaited<ReturnType<typeof library.folder.tables.recordings.get>>
+		>();
+	Object.assign(library.folder.tables.recordings, { get: () => reply.promise });
+	const refreshing = library.retryPending(held.capture.id);
+	library.discardPending(held.capture.id);
+	reply.resolve(
+		FileError.Io({
+			path: `recordings/${held.capture.id}.md`,
+			operation: 'read',
+			cause: new Error('late read failure'),
+		}),
+	);
+	await refreshing;
+	expect(library.pending).toHaveLength(0);
+	expect(library.selectedPath).toBeUndefined();
+	expect(seen.batches).toBe(1);
+});
+
+test('a late successful observation cannot select a dismissed recording', async () => {
+	const { library, seen, held } = await publishedButUnshown();
+	const entry = library.entries[0]!;
+	const reply =
+		Promise.withResolvers<
+			Awaited<ReturnType<typeof library.folder.tables.recordings.get>>
+		>();
+	Object.assign(library.folder.tables.recordings, { get: () => reply.promise });
+	const refreshing = library.retryPending(held.capture.id);
+	library.discardPending(held.capture.id);
+	reply.resolve(Ok(entry));
+	await refreshing;
+	expect(library.pending).toHaveLength(0);
+	expect(library.selectedPath).toBeUndefined();
+	expect(seen.batches).toBe(1);
+});
+
+test('a late observation does not replace a file selected while it was reading', async () => {
+	const { library, seen, held } = await publishedButUnshown();
+	const entry = library.entries[0]!;
+	const reply =
+		Promise.withResolvers<
+			Awaited<ReturnType<typeof library.folder.tables.recordings.get>>
+		>();
+	Object.assign(library.folder.tables.recordings, { get: () => reply.promise });
+	const refreshing = library.retryPending(held.capture.id);
+	const created = await library.folder.files.create(
+		'other.txt',
+		'Another open file',
+	);
+	expect(created.error).toBeNull();
+	await library.open('other.txt');
+	expect(library.selectedPath).toBe('other.txt');
+	reply.resolve(Ok(entry));
+	await refreshing;
+	expect(library.pending).toHaveLength(0);
+	expect(library.selectedPath).toBe('other.txt');
+	expect(seen.batches).toBe(1);
 });

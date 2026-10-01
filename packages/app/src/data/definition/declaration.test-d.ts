@@ -1,12 +1,12 @@
 import { defineStore } from '@epicenter/app';
 import { type BlobId, generateBlobId } from '@epicenter/blobs';
-import type * as Y from '@y/y';
-import { type Static, Type } from 'typebox';
 import type {
 	CalendarDateString,
 	DateTimeString,
 	InstantString,
-} from '../field/index.js';
+} from '@epicenter/definition/field';
+import type * as Y from '@y/y';
+import { type Static, Type } from 'typebox';
 import type { TypedTableHandle } from '../store/handles.js';
 import { plainText } from './body.js';
 import { type CreateRowOf, defineTable, field, type RowOf } from './index.js';

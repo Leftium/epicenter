@@ -155,7 +155,7 @@
 <footer class="mt-10 border-t pt-4 text-xs text-muted-foreground">
 	<p>
 		{#if captures.location.kind === 'directory'}
-			Files are in <code class="break-all">{captures.location.path}/captures</code>.
+			Files are in <code>captures</code> under <code class="break-all">{captures.location.root}</code>.
 		{:else}
 			Files are kept in this browser.
 		{/if}

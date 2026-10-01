@@ -5,7 +5,6 @@
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import { toast } from '@epicenter/ui/sonner';
 import { basename } from '$lib/files.js';
-import { displayTitle } from '$lib/note-source.js';
 import type { Deletion, Notes } from '$lib/notes.svelte.js';
 
 export async function copyPath(path: string) {
@@ -19,17 +18,13 @@ export async function copyPath(path: string) {
 
 function describe(deletion: Deletion) {
 	switch (deletion.kind) {
-		case 'note': {
-			const { entry } = deletion;
-			return {
-				title: `Delete “${displayTitle(entry.fields.title, entry.body)}” permanently?`,
-				description: `This deletes ${entry.path} from the folder. Committed versions stay in Git history.`,
-			};
-		}
 		case 'file':
 			return {
-				title: `Delete ${basename(deletion.path)}?`,
-				description: `This deletes ${deletion.path} from the folder. Committed versions stay in Git history.`,
+				title:
+					deletion.title !== undefined
+						? `Delete “${deletion.title}” permanently?`
+						: `Delete ${basename(deletion.file.path)}?`,
+				description: `This deletes ${deletion.file.path} from the folder. Committed versions stay in Git history.`,
 			};
 		case 'folder':
 			return {

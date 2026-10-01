@@ -8,16 +8,20 @@
  * - A quit request is acknowledged with `asking` at once, then answered once
  *   with `proceed` or `cancel` for that request ID
  * - A request that arrives before a listener is attached waits for it
- * - A stopped host is reported, including to a listener attached afterwards
- * - With no shell, or a shell that refuses the listener, the problem is
- *   stated instead of quits being silently unprotected
+ * - A stopped service is reported, including to a listener attached afterwards
+ * - A shell that refuses the quit listener is stated as a problem instead of
+ *   quits being silently unprotected, and the listener that did attach is
+ *   still stopped on close
+ *
+ * See also:
+ * - `folder.epicenter-host.test.ts` for the folder this lifetime sits beside
  */
 import { expect, test } from 'bun:test';
 import {
 	createShellLifetime,
-	HOST_STOPPED_EVENT,
 	QUIT_ANSWER_COMMAND,
 	QUIT_REQUESTED_EVENT,
+	SERVICE_STOPPED_EVENT,
 	type ShellPort,
 } from './shell-lifetime.js';
 import type { QuitAnswer } from './types.js';
@@ -93,15 +97,15 @@ test('a request that arrives before the page listens is acknowledged and waits',
 	expect(invoked.at(-1)?.args).toEqual({ requestId: 3, answer: 'proceed' });
 });
 
-test('a stopped host is reported, also to a listener attached later', async () => {
+test('a stopped service is reported, also to a listener attached later', async () => {
 	const { port, emit, handlers } = shell();
 	const lifetime = createShellLifetime(port);
 	await lifetime.ready;
 	let early = 0;
-	lifetime.onHostStopped(() => early++);
-	emit(HOST_STOPPED_EVENT);
+	lifetime.onServiceStopped(() => early++);
+	emit(SERVICE_STOPPED_EVENT);
 	let late = 0;
-	lifetime.onHostStopped(() => late++);
+	lifetime.onServiceStopped(() => late++);
 	await tick();
 	expect([early, late]).toEqual([1, 1]);
 
@@ -109,17 +113,28 @@ test('a stopped host is reported, also to a listener attached later', async () =
 	expect(handlers.size).toBe(0);
 });
 
-test('no shell, or a refused listener, is stated as a problem', async () => {
-	const none = createShellLifetime(undefined);
-	await none.ready;
-	expect(none.quitProtectionProblem).toContain('not running inside');
-
+test('a refused quit listener is stated as a problem, and the other listener is still stopped', async () => {
+	const { port, handlers } = shell();
 	const refused = createShellLifetime({
-		listen: async () => {
-			throw new Error('event.listen not allowed');
+		...port,
+		listen: async (event, handler) => {
+			if (event === QUIT_REQUESTED_EVENT)
+				throw new Error('event.listen not allowed');
+			return port.listen(event, handler);
 		},
-		invoke: async () => {},
 	});
 	await refused.ready;
 	expect(refused.quitProtectionProblem).toContain('event.listen not allowed');
+	expect([...handlers.keys()]).toEqual([SERVICE_STOPPED_EVENT]);
+
+	refused.close();
+	expect(handlers.size).toBe(0);
+});
+
+test('a lifetime closed before its listeners attach leaves none behind', async () => {
+	const { port, handlers } = shell();
+	const lifetime = createShellLifetime(port);
+	lifetime.close();
+	await lifetime.ready;
+	expect(handlers.size).toBe(0);
 });

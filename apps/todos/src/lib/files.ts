@@ -8,7 +8,7 @@ import {
 	type FileVersion,
 	type FolderFiles,
 	pathProblem,
-} from '@epicenter/app/files';
+} from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 
 export type TreeRow = {

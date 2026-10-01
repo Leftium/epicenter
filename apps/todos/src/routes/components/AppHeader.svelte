@@ -5,6 +5,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import ArrowDownToLineIcon from '@lucide/svelte/icons/arrow-down-to-line';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PanelLeftIcon from '@lucide/svelte/icons/panel-left';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import {
@@ -19,6 +20,7 @@
 		uncommittedLine,
 	} from '$lib/status.js';
 	import type { Todos } from '$lib/todos.svelte.js';
+	import { copyPath } from './file-actions.js';
 
 	let {
 		todos,
@@ -49,6 +51,15 @@
 		['Remote', 'status-remote', remote],
 		['Last pull', 'status-pull', pull],
 	]);
+
+	/** The directory on this computer, when the todos are in one. */
+	const directory = $derived(
+		todos.folder.location.kind === 'directory' ? todos.folder.location.root : undefined,
+	);
+	/** Pull, fetch, and push need a remote; a desktop folder starts without one. */
+	const hasRemote = $derived(todos.git.remote !== undefined);
+	const NO_REMOTE =
+		'This folder has no Git remote, so there is nothing to pull from or push to.';
 
 	const tones: Record<StatusLine['tone'], string> = {
 		neutral: 'bg-muted-foreground/50',
@@ -120,6 +131,21 @@
 	</Button>
 	<!-- On narrow screens the list itself says what this is; the width goes to status. -->
 	<h1 class="text-sm font-semibold max-sm:sr-only">Todos</h1>
+	{#if directory !== undefined}
+		<!-- The files are ordinary files; say where, so any program can open them. -->
+		<Button
+			variant="ghost"
+			size="sm"
+			class="max-w-[22rem] min-w-0 shrink font-mono text-xs font-normal text-muted-foreground max-md:hidden"
+			tooltip="Your todos are files in this folder. Click to copy its path."
+			aria-label="Todos folder: {directory}. Copy path"
+			data-testid="folder-path"
+			onclick={() => void copyPath(directory)}
+		>
+			<FolderIcon />
+			<span class="truncate">{directory}</span>
+		</Button>
+	{/if}
 
 	<Popover.Root>
 		<Popover.Trigger>
@@ -141,6 +167,21 @@
 		</Popover.Trigger>
 		<Popover.Content align="start" class="w-80 max-w-[calc(100vw-1rem)] p-0">
 			<dl class="divide-y text-sm">
+				<div class="grid grid-cols-[5.5rem_1fr] gap-x-3 px-3 py-2">
+					<dt class="text-xs text-muted-foreground">Folder</dt>
+					<dd class="min-w-0">
+						{#if directory !== undefined}
+							<span class="block font-mono text-xs break-all select-all" data-testid="status-folder">{directory}</span>
+							<span class="mt-0.5 block text-xs text-muted-foreground">
+								Each todo is a file in <code>todos/</code> here. Edits made by other programs show up in this window.
+							</span>
+							<Button class="mt-1.5" variant="outline" size="sm" onclick={() => void copyPath(directory)}>Copy path</Button>
+						{:else}
+							<span class="font-medium" data-testid="status-folder">This browser</span>
+							<span class="mt-0.5 block text-xs text-muted-foreground">Saved in this browser's storage, not in a folder on this computer.</span>
+						{/if}
+					</dd>
+				</div>
 				{#each details as [name, testid, line] (name)}
 					{#if line}
 						<div class="grid grid-cols-[5.5rem_1fr] gap-x-3 px-3 py-2">
@@ -163,8 +204,8 @@
 				<Button
 					variant="ghost"
 					size="sm"
-					disabled={busy}
-					tooltip="Download the remote history without changing files"
+					disabled={busy || !hasRemote}
+					tooltip={hasRemote ? 'Download the remote history without changing files' : NO_REMOTE}
 					onclick={fetchRemote}
 				>
 					{#if working === 'fetch'}<Spinner class="size-3.5" />{/if}
@@ -178,16 +219,21 @@
 		<Button
 			variant="outline"
 			size="sm"
-			disabled={busy}
-			tooltip="Get commits from the remote. Only a clean fast-forward is applied."
+			disabled={busy || !hasRemote}
+			tooltip={hasRemote ? 'Get commits from the remote. Only a clean fast-forward is applied.' : NO_REMOTE}
 			onclick={pullRemote}
 		>
 			{#if working === 'pull'}<Spinner class="size-3.5" />{:else}<ArrowDownToLineIcon />{/if}
 			<span class="max-sm:sr-only">Pull</span>
 		</Button>
-		<Button size="sm" disabled={busy} onclick={commitAndPush}>
+		<Button
+			size="sm"
+			disabled={busy}
+			tooltip={hasRemote ? undefined : 'Commit the saved files. There is no remote to push to.'}
+			onclick={commitAndPush}
+		>
 			{#if working === 'commit'}<Spinner class="size-3.5" />{/if}
-			Commit and push
+			{hasRemote ? 'Commit and push' : 'Commit'}
 		</Button>
 		<Button
 			variant={terminalOpen ? 'secondary' : 'ghost'}

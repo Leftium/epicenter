@@ -11,16 +11,25 @@
  * Nothing here is specific to Whispering.
  */
 
-import type { DataDefinition } from '@epicenter/app/definition';
+import type { DataDefinition } from '@epicenter/definition';
 import {
+	BatchError,
+	type FileCapture,
 	FileError,
 	type FolderAccess,
+	type FolderBatch,
 	type FolderFiles,
 	type FolderGit,
 	GitError,
 	type GitSnapshot,
-} from '@epicenter/app/files';
+} from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
+import type {
+	BatchContent,
+	BatchPlan,
+	BatchRowInput,
+	BatchStep,
+} from './batch-plan.js';
 
 export type BridgeEvent =
 	| { readonly type: 'git'; readonly snapshot: GitSnapshot }
@@ -66,9 +75,11 @@ const FILE_METHODS = [
 	'list',
 	'children',
 	'read',
-	'write',
+	'create',
+	'replace',
 	'remove',
 	'move',
+	'overwrite',
 	'mkdir',
 	'rmdir',
 ] as const;
@@ -83,6 +94,105 @@ const GIT_RESULT_METHODS = [
 ] as const;
 
 const RECONNECT_MS = 500;
+
+/**
+ * A detached copy of what a caller passed, taken synchronously at the call.
+ *
+ * The folder fixes a save's bytes, its captured baseline, and a row's values
+ * when the method is called. A bridged call is sent a moment later, so
+ * without this the caller could reuse its array or change its capture or
+ * fields in between and a different save would be sent. Bytes are copied
+ * once, here; the wire encoding reads this copy and makes no second one.
+ *
+ * Only shape is copied. A value of the wrong shape is passed on as it is, so
+ * the folder refuses it with its own answer.
+ */
+function detach<T>(value: T): T {
+	if (value === null || typeof value !== 'object') return value;
+	if (value instanceof Uint8Array) return new Uint8Array(value) as T;
+	if (value instanceof ArrayBuffer) return value.slice(0) as T;
+	if (Array.isArray(value)) return value.map(detach) as T;
+	if (value instanceof Map)
+		return new Map(
+			[...value].map(([key, item]) => [detach(key), detach(item)]),
+		) as T;
+	if (value instanceof Set) return new Set([...value].map(detach)) as T;
+	// An error, a Blob, or another class instance is the wire encoding's to judge.
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null) return value;
+	const copy: Record<string, unknown> = {};
+	for (const [key, item] of Object.entries(value)) copy[key] = detach(item);
+	return copy as T;
+}
+
+/**
+ * Run a batch callback once, synchronously, against a recorder that writes
+ * down the mutations it names. The host names the same mutations on the real
+ * folder's batch, which is what validates and publishes them. A callback that
+ * throws or returns anything publishes nothing, with the folder's own
+ * refusals, and the recorder stops accepting calls when the callback returns.
+ */
+function recordBatch<TDefinition extends DataDefinition>(
+	tableNames: readonly string[],
+	collect: (batch: FolderBatch<TDefinition>) => undefined,
+): Result<BatchPlan, BatchError> {
+	const steps: BatchStep[] = [];
+	let sealed = false;
+	function add(step: BatchStep) {
+		if (sealed)
+			throw new Error(
+				'This batch is sealed. A batch collects mutations only while its callback runs; it cannot be kept or used after an await.',
+			);
+		steps.push(step);
+	}
+
+	const tables: Record<string, unknown> = {};
+	for (const table of tableNames)
+		tables[table] = Object.freeze({
+			// The row's stem, values, and body are fixed here, when it is named.
+			create: (input: BatchRowInput) =>
+				add({ op: 'tables.create', table, input: detach({ ...input }) }),
+		});
+	// Each mutation's bytes and captured baseline are fixed when it is named.
+	const recorder = Object.freeze({
+		files: Object.freeze({
+			create: (path: string, content: BatchContent) =>
+				add({ op: 'files.create', path, content: detach(content) }),
+			replace: (file: FileCapture, content: BatchContent) =>
+				add({
+					op: 'files.replace',
+					file: detach(file),
+					content: detach(content),
+				}),
+			remove: (file: FileCapture) =>
+				add({ op: 'files.remove', file: detach(file) }),
+			move: (file: FileCapture, destination: string) =>
+				add({ op: 'files.move', file: detach(file), destination }),
+			overwrite: (path: string, content: BatchContent) =>
+				add({ op: 'files.overwrite', path, content: detach(content) }),
+		}),
+		tables: Object.freeze(tables),
+	}) as unknown as FolderBatch<TDefinition>;
+
+	let returned: unknown;
+	try {
+		returned = (collect as (batch: FolderBatch<TDefinition>) => unknown)(
+			recorder,
+		);
+	} catch (cause) {
+		return BatchError.Threw({ cause });
+	} finally {
+		sealed = true;
+	}
+	if (returned !== undefined) {
+		const thenable =
+			typeof (returned as { then?: unknown } | null)?.then === 'function';
+		// The promise is not waited for; its later failure is already reported here.
+		if (thenable) void Promise.resolve(returned).catch(() => {});
+		return BatchError.Returned({ thenable });
+	}
+	return Ok(steps);
+}
 
 export async function connectFolder<const TDefinition extends DataDefinition>(
 	definition: TDefinition,
@@ -206,22 +316,30 @@ export async function connectFolder<const TDefinition extends DataDefinition>(
 		}
 	})();
 
+	/**
+	 * One folder method as a bridged call. Its arguments are detached here,
+	 * synchronously, before anything is sent: the content, the capture or entry
+	 * it is conditional on, and a row's values are what the caller passed at
+	 * this moment, whatever the caller does with its objects afterward.
+	 */
+	const method =
+		(path: readonly string[]) =>
+		(...args: unknown[]) =>
+			fileCall(path, detach(args));
+
 	const tables: Record<string, Record<string, unknown>> = {};
 	for (const name of Object.keys(definition.tables)) {
 		const table: Record<string, unknown> = { name };
-		for (const method of TABLE_METHODS)
-			table[method] = (...args: unknown[]) =>
-				fileCall(['tables', name, method], args);
+		for (const verb of TABLE_METHODS)
+			table[verb] = method(['tables', name, verb]);
 		tables[name] = Object.freeze(table);
 	}
 
 	const kv: Record<string, unknown> = {};
-	for (const method of KV_METHODS)
-		kv[method] = (...args: unknown[]) => fileCall(['kv', method], args);
+	for (const verb of KV_METHODS) kv[verb] = method(['kv', verb]);
 
 	const files: Record<string, unknown> = {};
-	for (const method of FILE_METHODS)
-		files[method] = (...args: unknown[]) => fileCall(['files', method], args);
+	for (const verb of FILE_METHODS) files[verb] = method(['files', verb]);
 	// The host answers with bytes; the page owns the Blob.
 	const open: FolderFiles['open'] = async (path) => {
 		const read = await fileCall<Result<Uint8Array<ArrayBuffer>, FileError>>(
@@ -311,11 +429,24 @@ export async function connectFolder<const TDefinition extends DataDefinition>(
 		);
 	Object.assign(git, { commit, push, commitAndPush, fetch });
 
+	// The callback runs here, in the page, and only when the client is open.
+	// What it named is one call: the host publishes it through the real
+	// folder's batch, so a lost reply leaves the whole batch unconfirmed.
+	const tableNames = Object.keys(definition.tables);
+	const batch: FolderAccess<TDefinition>['batch'] = (collect) => {
+		if (controller.signal.aborted) return Promise.resolve(FileError.Closed());
+		const recorded = recordBatch<TDefinition>(tableNames, collect);
+		if (recorded.error) return Promise.resolve(recorded);
+		// Already detached, mutation by mutation, as each was named.
+		return fileCall(['batch'], [recorded.data]);
+	};
+
 	const folder = Object.freeze({
 		tables: Object.freeze(tables),
 		kv: Object.freeze(kv),
 		files: Object.freeze(files),
 		git: Object.freeze(git),
+		batch,
 	}) as unknown as FolderAccess<TDefinition>;
 
 	return {

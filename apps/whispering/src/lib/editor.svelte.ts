@@ -26,7 +26,7 @@ import {
 	patchSource,
 	type SourceChange,
 	sameVersion,
-} from '@epicenter/app/files';
+} from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	RECORDINGS,
@@ -314,7 +314,7 @@ export function conflictCopyPath(path: string, now = new Date()): string {
 function copyKeeper(files: FolderFiles): DraftStore<SavedText>['keepCopy'] {
 	return async (path, source) => {
 		const copy = conflictCopyPath(path);
-		const written = await files.write(copy, source, { expected: 'absent' });
+		const written = await files.create(copy, source);
 		return written.error ? Err(written.error.message) : Ok(copy);
 	};
 }
@@ -354,11 +354,16 @@ export function createTextFileEditor(
 	return createDraft<SavedText>(
 		{
 			async write(baseline, source) {
-				const written = await files.write(baseline.path, source, {
-					expected: baseline.version,
-				});
+				const written = await files.replace(
+					{ path: baseline.path, version: baseline.version },
+					source,
+				);
 				if (written.error) return Err(written.error);
-				return Ok({ path: baseline.path, source, version: written.data });
+				return Ok({
+					path: baseline.path,
+					source,
+					version: written.data.version,
+				});
 			},
 			async read(path) {
 				const read = await readTextFile(files, path);

@@ -18,8 +18,8 @@ of it. [What is not supported](#what-is-not-supported) lists the rest.
 ~/Epicenter/local/so.epicenter.whispering/
 ├── kv.json                          transcription endpoint and model
 ├── recordings/
-│   ├── <recording-id>.md            title, time, length in frontmatter; notes in the body
-│   └── <recording-id>.<extension>   the audio, with the extension its bytes call for
+│   ├── <recording-id>.md            title, time, length, and audioPath in frontmatter; notes in the body
+│   └── <recording-id>.<extension>   the audio that row names, with the extension its bytes call for
 ├── transcriptions/
 │   └── <result-id>.md               names its recording in frontmatter; transcript in the body
 ├── transformations/
@@ -43,6 +43,20 @@ A recording's ID is its file stem, set when the recording ends
 frontmatter and never moves a file. Audio is committed as real bytes. There is no
 LFS pointer and no LFS service.
 
+A recording's file names its audio in `audioPath`, such as
+`audioPath: recordings/20260102-030405-k3f9.wav`. That line is the only link
+between the two files:
+
+- The app plays, transcribes, and lists only the file `audioPath` names. A file
+  that merely has the same name with another extension is an ordinary file and
+  is not treated as the recording's audio.
+- A recording file with no `audioPath` is listed as "Needs repair" and has no
+  audio to play or transcribe. This includes any recording file written before
+  the field existed. The app does not fill the path in for you: add the line in
+  Source, or with any editor.
+- The audio file cannot be renamed from the app while a recording names it,
+  since nothing would update the recording.
+
 ## Run it
 
 From the repository root. Rust and Bun are required, and `git` must be on `PATH`.
@@ -57,7 +71,7 @@ WHISPERING_DATA_ROOT=/tmp/whispering-demo bun dev:whispering
 # A release bundle: apps/whispering/src-tauri/target/release/bundle
 bun build:whispering
 
-# The page alone in a browser tab, over a logical folder in IndexedDB
+# The page alone in a browser tab, over a folder kept in IndexedDB
 bun dev:whispering:ui
 ```
 
@@ -148,8 +162,9 @@ Each result file records the recording, transcription, and transformation it
 came from, when, the model and endpoint, and the exact prompt and transcript
 text that were sent. A result therefore still reads correctly after you edit or
 delete its transformation. Deleting a transformation keeps its results.
-Deleting a recording deletes its transcripts and the results made from them.
-A recording cannot be deleted while a transcription or transformation of it is
+Deleting a recording deletes its file, its transcripts, and the results made
+from them. Its audio file is kept, and the confirmation says so; delete it
+from Files when you no longer want it. A recording cannot be deleted while a transcription or transformation of it is
 running, or while an answer for it is waiting to be saved: finish it, save it
 again, or discard it in the notice under the header first.
 
@@ -190,13 +205,35 @@ outcomes and the status reports them separately.
 
 ### When a save does not finish
 
-Captured audio stays in the window until the folder has both files. If writing
+Captured audio stays in the window until the folder is known to have both files. If writing
 stops partway (the audio is saved and its row is not), the recording appears in
 the notice under the header, on every page, with what happened, a player for
 the audio held in the window, and **Try again**. Trying again keeps the
-recording's ID, writes only what is missing, and cannot create a second
-recording. If another file already occupies the recording's path and is not
-this recording, nothing is overwritten and the recording stays pending.
+recording's ID and cannot create a second recording. It first reads what the
+folder has. If the audio there is exactly the audio held in the window, it
+saves the recording's file beside it, and only if that audio has not changed
+in the meantime. If a different file is at the recording's audio path or its
+own path, even audio of the same length, nothing is overwritten and the
+recording stays pending. A file that only shares the recording's name with
+another extension is not in the way.
+
+Sometimes a recording is saved and then cannot be shown: the folder confirmed
+both files were written, and reading the recording's file straight afterward
+failed, or another program removed or replaced that file in between. That is
+not a failed save, and the app does not call it one. The status reads "Saved ·
+1 recording to check" and the notice says the recording was saved, with
+**Refresh** and **Dismiss**:
+
+- **Refresh** reads the folder again and writes nothing. When the file reads
+  as this recording, including after you have changed its title or notes, the
+  notice goes away and the recording opens.
+- If the file is gone or is no longer this recording, the app leaves it as it
+  is. It does not write the recording a second time. Restore the file
+  yourself, for example from Git history, if you want it back.
+- **Dismiss** drops the notice and the copy of the audio held in the window.
+  Nothing in the folder changes.
+
+This notice does not keep the app from closing, since nothing is unsaved.
 
 A transcript or a transformation result whose file could not be written is kept
 the same way: the status says it is not saved, and the notice shows the text
@@ -303,8 +340,12 @@ A debug build has a bug-icon menu in the header:
 | --- | --- |
 | Pause autosave | Typing stays unsaved until "Save now", so an outside edit can be raced against a draft. |
 | Fail the next recording file write | The next save lands the audio and fails the row: a partial publication. Each press arms one more. |
-| Fail the next audio write | The next save fails before anything is written. |
+| Fail the next audio write | The next save of a new recording fails before anything is written. |
 | Lock the branch | Creates a lock on the branch ref, where an interrupted Git process leaves one, so commits fail while saves succeed. Press again to unlock. It never replaces a lock that already exists and only ever removes the lock it created. |
+
+Both publication failures are real: for the length of that one save, the folder
+host puts an empty directory where the file would be written, so the folder
+itself fails that step and reports it. The directory is removed afterward.
 
 The same failures can be armed at launch with
 `WHISPERING_DEBUG_FAIL_ROW_WRITES=<n>`, `WHISPERING_DEBUG_FAIL_AUDIO_WRITES=<n>`,
@@ -348,10 +389,16 @@ These are absent, not hidden behind a setting:
 - Importing audio files, choosing an input device, and recording overlays.
 - Windows and Linux are untested. The terminal needs a POSIX shell.
 - A release pipeline. `bun build:whispering` produces a locally signed bundle.
-- Running inside the Epicenter desktop host as a native app. `bun run
-  build:epicenter` still emits the page for that host, where it runs as a
-  browser page over a logical folder. The host's Whispering commands in
+- Running inside the Epicenter desktop host. `bun run build:epicenter` still
+  emits the page for that host, but the page does not open a folder there: a
+  browser folder is refused inside a desktop app, and this app does not yet
+  use the desktop's own folder owner. It shows "Could not open the recordings
+  folder" with that reason. The host's Whispering commands in
   `apps/epicenter/src-tauri` are no longer called by this app.
+- Moving a recording's audio and having the recording follow. Nothing repairs
+  `audioPath`, and nothing collects audio files that no recording names.
+- Recordings saved by an earlier build of this app, whose files have no
+  `audioPath`. They are listed as needing repair until the line is added.
 
 The earlier Whispering stored recordings and transformations in a Yjs store.
 Nothing reads that data. There is no migration. The pages, sidebar, and

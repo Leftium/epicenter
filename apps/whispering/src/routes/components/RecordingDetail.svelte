@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/app/files';
+	import { readSource } from '@epicenter/folder';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
@@ -12,6 +12,7 @@
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { audioPathIn } from '$lib/definition.js';
 	import { patchRow, type RecordingEditor, type RecordingEntry, stemOf } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
@@ -42,8 +43,10 @@
 	const id = $derived(stemOf(editor.path));
 	const results = $derived(library.resultsFor(id));
 	const run = $derived(library.transcriptionRun(id));
+	/** The audio the saved row names. Nothing is guessed from another file's name. */
+	const audioPath = $derived(entry ? audioPathIn(entry.fields) : undefined);
 	const history = $derived(
-		entry ? committedState(library.git, [entry.path, ...(entry.attachment ? [entry.attachment] : [])]) : undefined,
+		entry ? committedState(library.git, [entry.path, ...(audioPath ? [audioPath] : [])]) : undefined,
 	);
 	let tab = $state('details');
 
@@ -117,13 +120,16 @@
 		</Tabs.List>
 		<Tabs.Content value="details" class="min-h-0 flex-1 overflow-y-auto">
 			<div class="flex flex-col gap-4 py-1">
-				{#if entry?.attachment}
+				{#if audioPath}
 					<AudioPlayer
-						source={{ kind: 'file', files: library.folder.files, path: entry.attachment, generation: library.generation }}
+						source={{ kind: 'file', files: library.folder.files, path: audioPath, generation: library.generation }}
 						label="Audio of {title || id}"
 					/>
 				{:else}
-					<p class="text-sm text-muted-foreground">This recording has no audio file beside its row.</p>
+					<p class="text-sm text-muted-foreground" data-testid="no-audio">
+						This recording’s file names no audio: it has no <code class="font-mono">audioPath</code>. Add the audio
+						file’s path in Source.
+					</p>
 				{/if}
 
 				<dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -143,7 +149,7 @@
 					</dd>
 					<dt class="text-muted-foreground">Files</dt>
 					<dd class="min-w-0 font-mono text-xs break-all">
-						{editor.path}{#if entry?.attachment}<br />{entry.attachment}{/if}
+						{editor.path}{#if audioPath}<br />{audioPath}{/if}
 					</dd>
 				</dl>
 
@@ -153,7 +159,7 @@
 						<Button
 							class="ml-auto"
 							size="sm"
-							disabled={entry === undefined || entry.attachment === undefined || run?.kind === 'running'}
+							disabled={entry === undefined || audioPath === undefined || run?.kind === 'running'}
 							onclick={() => entry && void library.transcribe(entry)}
 							data-testid="transcribe"
 						>

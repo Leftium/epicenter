@@ -12,7 +12,7 @@
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
-import { captureVersion } from '@epicenter/app/files';
+import { captureVersion } from '@epicenter/folder';
 import type { NotesHost } from './platform/types.js';
 
 const { createNotes } = await import('./notes.svelte.ts');
@@ -76,9 +76,9 @@ async function open() {
 				subscribe: () => () => {},
 				status: async () => undefined,
 			},
+			onFilesChanged: () => () => {},
 		},
 		terminal: { cwd: '/', description: '' },
-		onExternalChange: () => () => {},
 	} as unknown as NotesHost;
 	const notes = createNotes(host);
 	await notes.refreshAll();
@@ -120,13 +120,13 @@ test('a raw file opened after a note shows its text once it is read, whatever re
 	expect(
 		selection?.kind === 'file' &&
 			selection.file.kind === 'text' &&
-			selection.file.editor.buffer,
+			selection.file.session.buffer,
 	).toBe(RAW);
 	stop();
 	stopDetail();
 });
 
-test('overlapping opens of one raw path load it once and retain one draft', async () => {
+test('overlapping opens of one raw path load it once and keep one session', async () => {
 	const { notes, release, reads } = await open();
 	const first = notes.open('kv.json');
 	await rendered();
@@ -134,11 +134,11 @@ test('overlapping opens of one raw path load it once and retain one draft', asyn
 	expect(reads()).toBe(1);
 	release();
 	await first;
-	const draft = notes.editorAt('kv.json');
-	expect(draft?.buffer).toBe(RAW);
+	const session = notes.sessionAt('kv.json');
+	expect(session?.buffer).toBe(RAW);
 	await notes.open('notes/a.md');
 	await notes.open('kv.json');
-	expect(notes.editorAt('kv.json')).toBe(draft);
+	expect(notes.sessionAt('kv.json')).toBe(session);
 	expect(reads()).toBe(1);
 });
 
@@ -182,7 +182,10 @@ test('an externally removed binary file keeps the selected missing-file screen',
 	const files = notes.host.folder.files;
 	const bytes = new Uint8Array([0]);
 	const version = await captureVersion(bytes);
-	files.read = async () => ({ data: { bytes, version }, error: null });
+	files.read = async (path) => ({
+		data: { path, bytes, version },
+		error: null,
+	});
 	await notes.open('kv.json');
 	const selected = notes.selection;
 	expect(selected?.kind === 'file' && selected.file.kind).toBe('binary');

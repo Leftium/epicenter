@@ -4,7 +4,8 @@
  * and transcription requests leave from the host.
  */
 
-import { connectFolder } from '../bridge/folder-client.js';
+import { Ok, type Result } from 'wellcrafted/result';
+import { connectFolder, type RemoteFolder } from '../bridge/folder-client.js';
 import { type BridgeConnection, createHttpBridge } from '../bridge/http.js';
 import {
 	type CaptureDevice,
@@ -14,7 +15,11 @@ import {
 import { whisperingDefinition } from '../definition.js';
 import { TranscriptionError } from '../transcription.js';
 import { TransformationError } from '../transformation.js';
-import type { InjectionState, Workspace } from './types.js';
+import {
+	type InjectionState,
+	type Workspace,
+	WorkspaceError,
+} from './types.js';
 
 /** What the host reports about itself. Mirrors `HostInfo` in `native/host.ts`. */
 type HostInfo = {
@@ -48,10 +53,18 @@ const describe = (cause: unknown) =>
 
 export async function openDesktopWorkspace(
 	connection: BridgeConnection,
-): Promise<Workspace> {
+): Promise<Result<Workspace, WorkspaceError>> {
 	const bridge = createHttpBridge(connection);
-	const info = await bridge.app<HostInfo>('info');
-	const remote = await connectFolder(whisperingDefinition, bridge.transport);
+	// The bridge rejects when the host is unreachable or faults. That is the
+	// answer: the page opens no other storage in the host's place.
+	let info: HostInfo;
+	let remote: RemoteFolder<typeof whisperingDefinition>;
+	try {
+		info = await bridge.app<HostInfo>('info');
+		remote = await connectFolder(whisperingDefinition, bridge.transport);
+	} catch (cause) {
+		return WorkspaceError.FolderHost({ reason: describe(cause) });
+	}
 
 	// The folder-relative directory the next command starts in.
 	let cwd = '';
@@ -66,7 +79,7 @@ export async function openDesktopWorkspace(
 						bridge.app<{ name: string; bytes: Uint8Array }>('fixture'),
 				});
 
-	return {
+	return Ok({
 		kind: 'native',
 		folder: remote.folder,
 		location: info.root,
@@ -164,5 +177,5 @@ export async function openDesktopWorkspace(
 				}
 			: undefined,
 		close: () => remote.close(),
-	};
+	});
 }

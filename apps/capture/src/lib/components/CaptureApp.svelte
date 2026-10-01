@@ -43,8 +43,8 @@
 	}
 
 	// Leaving would lose something: unsaved or unsent input, or any open
-	// capture once the host is gone and nothing can be saved again.
-	const mustStay = $derived(captures.unsettled > 0 || captures.hostStopped);
+	// capture once the folder is closed and nothing can be saved again.
+	const mustStay = $derived(captures.unsettled > 0 || captures.folderStopped);
 
 	// Drafts live only in this page. A reload, a tab close, or a navigation out
 	// of the app is held back here; quitting the desktop app asks below.
@@ -54,8 +54,7 @@
 			navigation.cancel();
 	});
 
-	$effect(() => host.onExternalChange(() => void captures.refresh()));
-	$effect(() => host.onHostStopped(() => captures.markHostStopped()));
+	$effect(() => host.onServiceStopped(() => captures.markServiceStopped()));
 	$effect(() =>
 		host.onQuitRequested(async (answer) => {
 			const remaining = await captures.settleAll();
@@ -65,7 +64,7 @@
 			}
 			confirmationDialog.open({
 				title: `${remaining} ${remaining === 1 ? 'thing is' : 'things are'} not saved`,
-				description: captures.hostStopped
+				description: captures.folderStopped
 					? 'Epicenter can no longer save from this window. Quitting discards the text still open here. Keep working to copy or download it first.'
 					: 'Some text could not be saved, or was typed and not added yet. Quitting now discards it. Keep working to finish, resolve, or copy it.',
 				confirm: { text: 'Discard and quit', variant: 'destructive' },
@@ -99,13 +98,16 @@
 			const outcome = await captures.commit();
 			if (outcome.status === 'committed' || outcome.status === 'unchanged')
 				toast.success('History is up to date');
+			// No answer came back, so the snapshot cannot say what happened.
+			else if (outcome.status === 'unconfirmed')
+				toast.warning('The commit was not confirmed', { description: outcome.error });
 		} finally {
 			committing = false;
 		}
 	}
 
 	const status = $derived.by((): { text: string; tone: 'quiet' | 'pending' | 'problem' } => {
-		if (captures.hostStopped) return { text: 'Saving unavailable', tone: 'problem' };
+		if (captures.folderStopped) return { text: 'Saving unavailable', tone: 'problem' };
 		const state = draft?.saveState.kind;
 		if (state === 'saving') return { text: 'Saving…', tone: 'quiet' };
 		if (state === 'conflict') return { text: 'Changed elsewhere', tone: 'problem' };
@@ -158,10 +160,15 @@
 </header>
 
 <main class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pb-16 pt-6 sm:px-6">
-	{#if captures.hostStopped}
+	{#if captures.folderStopped}
 		<Alert.Root variant="destructive">
-			<Alert.Title>Epicenter stopped serving this folder</Alert.Title>
+			<Alert.Title>Epicenter closed this folder</Alert.Title>
 			<Alert.Description>Saving cannot be confirmed from this window. Your text is still here. Open each capture with unsaved text and copy or download it, then restart Epicenter. Reloading or quitting now discards it.</Alert.Description>
+		</Alert.Root>
+	{:else if captures.serviceStopped}
+		<Alert.Root>
+			<Alert.Title>Epicenter's background service stopped</Alert.Title>
+			<Alert.Description>Captures still save to the folder from this window. Reloading it, or exporting captures from an account, may not work until Epicenter restarts.</Alert.Description>
 		</Alert.Root>
 	{/if}
 	{#if host.quitProtectionProblem}

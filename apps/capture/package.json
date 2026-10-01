@@ -4,10 +4,6 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"exports": {
-		"./bridge": "./src/lib/bridge/contract.ts",
-		"./native": "./native/index.ts"
-	},
 	"imports": {
 		"#platform/folder": {
 			"epicenter-host": "./src/lib/platform/folder.epicenter-host.ts",
@@ -24,7 +20,6 @@
 		"build:epicenter": "EPICENTER_HOST=1 bun run build",
 		"preview": "vite preview",
 		"smoke:browser": "bun scripts/browser-smoke.ts",
-		"harness:native": "bun scripts/native-harness.ts",
 		"harness:recovery": "bun scripts/recovery-harness.ts",
 		"prepare": "svelte-kit sync || echo ''",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.epicenter-host.json && tsc -p tsconfig.scripts.json",
@@ -35,6 +30,7 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/capture": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/folder": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@tauri-apps/api": "catalog:",
 		"buffer": "^6.0.3"

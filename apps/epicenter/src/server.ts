@@ -61,7 +61,6 @@ import {
 	BOOTSTRAP_ROUTE,
 	BUILT_IN_ROUTES,
 	CHECKOUT_ROUTE,
-	CAPTURE_BRIDGE_ROUTE,
 	MAIL_CALLBACK_ROUTE,
 	MAIL_PENDING_CALLBACK_ROUTE,
 	SESSION_ROUTE,
@@ -104,7 +103,6 @@ export type HomeServerOptions = {
 	appSecrets?: AppSecretOwner;
 	aiCatalog?: AiCatalog;
 	noAccountAiCatalog?: AiCatalog;
-	capture?: { fetch(request: Request): Promise<Response> };
 };
 
 const SESSION_COOKIE = 'epicenter_session';
@@ -131,7 +129,6 @@ export function createHomeServer({
 	appSecrets,
 	aiCatalog,
 	noAccountAiCatalog,
-	capture,
 }: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Device refuses to serve without a launch token.');
@@ -274,16 +271,6 @@ export function createHomeServer({
 			'/_epicenter/ai/no-account',
 			createAiCatalogRoutes(noAccountAiCatalog),
 		);
-
-	// Capture reaches its native folder through the same session and Origin gate.
-	app.use(`${CAPTURE_BRIDGE_ROUTE.pattern}/*`, async (c, next) => {
-		c.header('cache-control', 'no-store');
-		if (c.req.method === 'GET' || c.req.method === 'HEAD')
-			return requireBrowserSession(c, next);
-		return requirePrivateBroker(c, next);
-	});
-	if (capture)
-		app.all(`${CAPTURE_BRIDGE_ROUTE.pattern}/*`, (c) => capture.fetch(c.req.raw));
 
 	app.use('/_epicenter/inference', async (c, next) => {
 		if (c.req.method === 'GET' || c.req.method === 'HEAD')

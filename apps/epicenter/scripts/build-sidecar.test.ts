@@ -4,7 +4,8 @@
  * Verifies the compiled Bun child runs without a system Bun on PATH, refuses a
  * production boot on any port but the fixed one, finds packaged Home and
  * Whispering assets through the Rust-supplied resource path, and exits when the
- * parent pipe closes.
+ * parent pipe closes. Todos assets are served without opening its data folder;
+ * native Folder commands belong to the Rust shell.
  *
  * The serving half boots in development mode on a port the OS hands out, not in
  * production mode on 39130. Binding the real production port made this test
@@ -15,7 +16,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -132,13 +133,22 @@ test('compiled host refuses a mis-bound production boot, serves packaged apps, a
 		`Production must bind port ${PRODUCTION_PORT}`,
 	);
 
+	// Still no system Bun on PATH: the one directory there holds only `git`,
+	// which the Todos folder needs for its history.
+	const git = Bun.which('git');
+	if (git === null) throw new Error('This test needs git on PATH.');
+	const gitOnly = mkdtempSync(join(tmpdir(), 'epicenter-git-only-'));
+	symlinkSync(git, join(gitOnly, 'git'));
+
 	const port = freePort();
 	const sidecar = Bun.spawn([binary, '--runtime-mode=development'], {
 		env: {
 			EPICENTER_APPS_DIST: join(appDir, 'dist'),
 			EPICENTER_INFERENCE_URL: 'http://127.0.0.1:1/v1',
 			EPICENTER_INFERENCE_MODEL: 'unused-model',
-			PATH: '',
+			PATH: gitOnly,
+			GIT_CONFIG_GLOBAL: '/dev/null',
+			GIT_CONFIG_NOSYSTEM: '1',
 		},
 		stdin: 'pipe',
 		stdout: 'pipe',
@@ -194,12 +204,21 @@ test('compiled host refuses a mis-bound production boot, serves packaged apps, a
 		const entry = await fetch(`${origin}${entryPath ?? ''}`, session);
 		expect(entry.status).toBe(200);
 		expect(entry.headers.get('content-type')).toContain('text/javascript');
-		const vad = await fetch(
-			`${origin}/apps/whispering/vad/silero_vad_v5.onnx`,
-			session,
-		);
-		expect(vad.status).toBe(200);
-		expect((await vad.arrayBuffer()).byteLength).toBeGreaterThan(1_000);
+		const todos = await fetch(`${origin}/apps/todos/`, session);
+		expect(todos.status).toBe(200);
+		expect(await todos.text()).toContain('/apps/todos/_app/');
+		const removedBridge = await fetch(`${origin}/_epicenter/todos/call`, {
+			method: 'POST',
+			headers: {
+				cookie: cookie ?? '',
+				origin,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ path: ['files', 'list'], args: [] }),
+		});
+		expect(removedBridge.status).toBe(404);
+		const todosDir = join(dataDir, 'checkout', 'so.epicenter.todos');
+		expect(await Bun.file(join(todosDir, '.git', 'HEAD')).exists()).toBe(false);
 
 		sidecar.stdin.end();
 		expect(await sidecar.exited).toBe(0);

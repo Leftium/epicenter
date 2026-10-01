@@ -1,15 +1,25 @@
 /**
  * The Epicenter host leaf: the page was served by the desktop host, so the
- * captures are a real directory reached over the host's same-origin bridge.
+ * captures are a real directory owned by the shell's Rust folder plugin. It
+ * opens through the desktop entry only, which refuses outside the shell.
  *
- * The page holds no folder handle. The host's browser session is the
- * credential; without it the bridge answers 401 and opening fails with that
- * reason. There is no browser folder to fall back to in this build.
+ * The page names the folder by its ID and nothing else; the shell chose the
+ * directory, the author, the history policy, and which windows may use it. Closing detaches this page: saves it
+ * already made still land and are still committed, and the folder stays open
+ * for the shell and its other windows.
+ *
+ * A refused or missing plugin fails the open with its reason. There is no
+ * browser folder to fall back to in this build.
  */
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { captureDefinition } from '@epicenter/capture';
+import { openFolder } from '@epicenter/folder/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { createBridgeTransport, openBridgeFolder } from '../bridge/client.js';
-import { createShellLifetime, type ShellPort } from './shell-lifetime.js';
+import {
+	createShellLifetime,
+	type ShellLifetime,
+	type ShellPort,
+} from './shell-lifetime.js';
 import type { OpenCaptureHost } from './types.js';
 
 const tauriPort: ShellPort = {
@@ -20,21 +30,35 @@ const tauriPort: ShellPort = {
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
-	const bridge = await openBridgeFolder(createBridgeTransport());
-	const lifetime = createShellLifetime(isTauri() ? tauriPort : undefined);
-	await lifetime.ready;
+	const opened = await openFolder({ definition: captureDefinition });
+	if (opened.error)
+		throw new Error(opened.error.message, { cause: opened.error });
+	const folder = opened.data;
+
+	let lifetime: ShellLifetime | undefined;
+	try {
+		lifetime = createShellLifetime(tauriPort);
+		await lifetime.ready;
+	} catch (cause) {
+		// The page gets no host, so nothing would ever detach this session.
+		lifetime?.close();
+		await folder.close();
+		throw cause;
+	}
+	const shell = lifetime;
+
 	return {
-		folder: bridge.folder,
-		location: { kind: 'directory', path: bridge.root },
-		onExternalChange: bridge.onExternalChange,
-		onQuitRequested: lifetime.onQuitRequested,
-		onHostStopped: lifetime.onHostStopped,
+		folder,
+		location: folder.location,
+		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
+		onQuitRequested: shell.onQuitRequested,
+		onServiceStopped: shell.onServiceStopped,
 		get quitProtectionProblem() {
-			return lifetime.quitProtectionProblem;
+			return shell.quitProtectionProblem;
 		},
 		async close() {
-			lifetime.close();
-			await bridge.close();
+			shell.close();
+			await folder.close();
 		},
 	};
 };

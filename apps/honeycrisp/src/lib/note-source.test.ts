@@ -12,8 +12,8 @@
  * - CRLF files and the blank line after frontmatter are kept
  */
 import { describe, expect, test } from 'bun:test';
-import type { InstantString } from '@epicenter/app/field';
-import { readSource } from '@epicenter/app/files';
+import type { InstantString } from '@epicenter/definition';
+import { readSource } from '@epicenter/folder';
 import { serializeNoteBody } from './editor/markdown.js';
 import { diffLines } from './line-diff.js';
 import {

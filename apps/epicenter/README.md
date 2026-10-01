@@ -2,11 +2,13 @@
 
 Epicenter is the repository's native application host. It owns one Tauri runtime, one native command API, and the trusted app catalog. Product SPAs keep their source in their own `apps/*` folders; Epicenter builds and serves their desktop variants without copying that source into this folder.
 
+Honeycrisp ships its own desktop shell and is built from `apps/honeycrisp`.
+
 ```text
 trusted SPA source                 Epicenter build output
 
 apps/whispering/src  -----------> dist/whispering
-apps/honeycrisp/src  -----------> dist/honeycrisp
+apps/todos/src       -----------> dist/todos
 apps/epicenter/ui     -----------> dist/home
                                           |
                                           v
@@ -27,6 +29,11 @@ store, with no platform seam, and reaches one authority per signed-in account
 no application data and constructs no database. What the condition still selects
 is the credential path (`#platform/auth`, `#platform/instance`), because the
 host really does broker a credential its windows cannot obtain.
+
+Todos is a compiled application of a different kind: its data is a folder of
+ordinary files, not a store. Its `epicenter-host` build selects
+`#platform/folder`, and its window reaches one directory through this host.
+See [The Todos folder](#the-todos-folder).
 
 ## Configure the server
 
@@ -136,9 +143,54 @@ windows:
 
 ```bash
 open 'epicenter://app/whispering'
-open 'epicenter://app/honeycrisp'
+open 'epicenter://app/todos'
 open 'epicenter://app/home'
 ```
+
+## The Todos folder
+
+Todos keeps each todo as a Markdown file in an ordinary directory:
+`so.epicenter.todos` under the working-copy directory native startup resolved
+(`~/Epicenter` in production, `~/Epicenter Dev` in development, or
+`EPICENTER_FOLDER_DIR`). Other programs edit the same files.
+
+The Rust shell installs the shared `tauri-plugin-epicenter-folder` and registers
+`so.epicenter.todos` for the `todos` window. Registration selects the directory;
+first attach opens it. The folder owner survives page reloads and sibling
+client departures until native shutdown drains it.
+
+The page uses the shared TypeScript Folder adapter over generated Tauri invoke
+commands. Todos has its own capability grant for the trusted production or
+development origin. The Bun host serves its compiled UI; Todos file operations
+have no HTTP route. Markdown interpretation and the restricted terminal remain
+shared TypeScript code, while Rust owns file publication, Git, watching, and the
+cross-process lock.
+
+A window close hides the loaded page and preserves its drafts. Quitting or
+replacing the page loses unsaved typing. Native shutdown drains accepted saves
+and commits; forced termination can leave saved files uncommitted. Two native
+processes cannot open the same directory. See Todos' [README](../todos/README.md)
+for version checks, terminal leases, and external-edit limits.
+
+## The Capture folder
+
+Capture keeps one Markdown file per capture under
+`<folderDir>/so.epicenter.capture/captures`. Frontmatter holds `capturedAt`;
+the body holds the original text and an ordered list under `## Thoughts`.
+The page edits that source, and its full-source editor exposes the same bytes.
+It opens without an Epicenter account.
+
+The host mounts Capture's own bridge from `@epicenter/capture-app/native` at
+`/_epicenter/capture`, behind the browser session and exact Origin checks.
+Native startup chooses the directory. Capture opens it on the first request;
+host shutdown drains admitted work and closes it. No request chooses a root.
+The browser build keeps a separate logical folder in IndexedDB.
+
+Closing the native window hides it with its drafts intact. Before quitting,
+the host asks Capture to save or resolve its unsaved work. If the page cannot
+answer, the native dialog requires an explicit discard before exit. A stopped
+sidecar leaves the page open for recovering its text. Forced termination and
+Tauri's process restart do not wait for this handshake.
 
 ## Install a local application release
 
@@ -180,7 +232,7 @@ bun run --cwd apps/epicenter desktop:build:remote
 # Typecheck the host and Home
 bun run --cwd apps/epicenter typecheck
 
-# Typecheck the host, Home, Whispering, and Honeycrisp
+# Typecheck the host, Home, Whispering, Honeycrisp, Capture, and Todos
 bun run --cwd apps/epicenter typecheck:desktop
 
 # Host, routing, sidecar, and window tests

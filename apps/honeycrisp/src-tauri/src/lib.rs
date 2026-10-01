@@ -1,312 +1,208 @@
 //! The Honeycrisp desktop shell.
 //!
-//! The shell owns three things and no data: it starts the Bun folder host,
-//! opens one window on the host's loopback origin, and holds a window close or
-//! an application quit back until the page saves or confirms a discard.
+//! The shell opens one window on the bundled notes page and gives that window
+//! two things:
 //!
-//! The page calls no native command. It reaches its notes directory through
-//! the host's same-origin `/bridge`, with a token generated here for this
-//! launch and placed in the window before any page script runs.
+//! - Its folder, through the shared folder plugin. The shell registers one
+//!   scope for the window `main`: the root from `HONEYCRISP_ROOT` or the
+//!   default, and the fallback author and local history policy. The plugin
+//!   reads the person's Git identity under its lock and owns the files,
+//!   change detection, and Git history. The
+//!   page names the scope and nothing else.
+//! - Honeycrisp's own commands (`commands.rs`): close consent, the terminal,
+//!   per-file history, and reveal.
 //!
-//! Host process contract:
-//! - environment: `HONEYCRISP_HOST_TOKEN`, `HONEYCRISP_UI_DIST`,
-//!   `HONEYCRISP_SHELL=1`; `HONEYCRISP_ROOT` and the `HONEYCRISP_FAULTS`
-//!   family pass through from this process's environment.
-//! - stdout line 1: `{"ready":true,"port":<n>,"root":"<path>"}`.
-//! - later stdout line: `{"quit":true}` approves closing.
-//! - stdin: the line `close-requested` asks the page to settle its drafts;
-//!   closing stdin stops the host.
+//! Drafts exist only in the page, so every way out asks it first: the
+//! window's close button, an exit request from the runtime, and the macOS
+//! Quit menu item. `close.rs` decides; nothing here approves a close for a
+//! page that holds its folder.
 
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    AppHandle, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
+use tauri_plugin_epicenter_folder::{Author, FolderConfig, FolderExt, ScopeConfig};
 
-const READY_TIMEOUT: Duration = Duration::from_secs(20);
+/// Public for `examples/harness.rs`, which drives the gate for the page
+/// client's tests.
+pub mod close;
 
-/// The running folder host and the page's explicit permission to quit.
-struct Host {
-    child: Mutex<Option<Child>>,
-    stdin: Mutex<Option<ChildStdin>>,
-    /// The page may still hold work when its file host stops.
-    gone: AtomicBool,
-    /// The page agreed to quit; no close request is held back afterward.
-    quitting: AtomicBool,
-}
+mod command_names;
+mod commands;
+mod history;
+mod process;
+mod reveal;
+mod root;
+mod terminal;
 
-impl Host {
-    /// Whether a close or quit must wait. When it must, the page is asked to
-    /// save its drafts or let the person choose.
-    fn hold(&self, app: &AppHandle) -> bool {
-        if self.quitting.load(Ordering::SeqCst) {
-            return false;
-        }
-        // Every close needs the page's answer. The shell cannot know whether
-        // typing arrived after any earlier observation of the drafts.
-        let asked = !self.gone.load(Ordering::SeqCst) && {
-            let mut stdin = self.stdin.lock().unwrap();
-            match stdin.as_mut() {
-                Some(pipe) => writeln!(pipe, "close-requested")
-                    .and_then(|()| pipe.flush())
-                    .is_ok(),
-                None => false,
+#[cfg(test)]
+mod testing;
+#[cfg(test)]
+mod tests;
+
+pub use command_names::COMMANDS;
+
+use close::CloseGate;
+use commands::{hold, Shell, WINDOW};
+use terminal::Terminal;
+
+const QUIT_MENU_ITEM: &str = "quit-notes";
+
+/// The plugin, the commands, and the close routing of the notes window. The
+/// folder and the window are added in setup, once paths can be resolved.
+fn shell<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder
+        .plugin(tauri_plugin_epicenter_folder::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::close_register,
+            commands::close_opened,
+            commands::close_approve,
+            commands::close_decline,
+            commands::shell_info,
+            commands::terminal_run,
+            commands::file_log,
+            commands::file_show,
+            commands::reveal_folder,
+        ])
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == QUIT_MENU_ITEM && !hold(app) {
+                app.exit(0);
             }
-        };
-        if !asked {
-            self.gone.store(true, Ordering::SeqCst);
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.eval("window.dispatchEvent(new Event('honeycrisp:close-blocked'));");
-            }
-        }
-        true
-    }
-
-    fn stop(&self) {
-        self.quitting.store(true, Ordering::SeqCst);
-        // Closing stdin is the host's signal to finish and exit.
-        self.stdin.lock().unwrap().take();
-        if let Some(mut child) = self.child.lock().unwrap().take() {
-            // Let folder.close() settle requested commits before terminating.
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while Instant::now() < deadline {
-                match child.try_wait() {
-                    Ok(Some(_)) => return,
-                    Ok(None) => thread::sleep(Duration::from_millis(25)),
-                    Err(_) => break,
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == WINDOW && hold(window.app_handle()) {
+                    api.prevent_close();
                 }
             }
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        })
+}
+
+/// Local history, using the repository's author after the owner takes its lock.
+/// An origin never turns this app into a syncing folder.
+fn folder_config(root: &Path) -> FolderConfig {
+    FolderConfig {
+        remote: None,
+        use_repository_author: true,
+        use_repository_origin: false,
+        ..FolderConfig::new(
+            root,
+            Author {
+                name: "Honeycrisp".to_string(),
+                email: "honeycrisp@localhost".to_string(),
+            },
+        )
     }
 }
 
-fn launch_token() -> Result<String, String> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|error| format!("generate the bridge token: {error}"))?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
-}
-
-#[cfg(debug_assertions)]
-fn host_command(_app: &AppHandle) -> Result<(Command, PathBuf), String> {
-    let app_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or("the src-tauri directory has no parent")?
-        .to_path_buf();
-    let mut command = Command::new("bun");
-    command.current_dir(&app_dir).arg("run").arg("host/main.ts");
-    Ok((command, app_dir.join("build-desktop")))
-}
-
-#[cfg(not(debug_assertions))]
-fn host_command(app: &AppHandle) -> Result<(Command, PathBuf), String> {
-    let executable =
-        std::env::current_exe().map_err(|error| format!("resolve the executable: {error}"))?;
-    let directory = executable
-        .parent()
-        .ok_or("the executable has no parent directory")?;
-    let filename = if cfg!(windows) {
-        "honeycrisp-host.exe"
-    } else {
-        "honeycrisp-host"
-    };
-    let ui = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("resolve the resource directory: {error}"))?
-        .join("ui");
-    Ok((Command::new(directory.join(filename)), ui))
-}
-
-/// Start the host and wait for its ready line. Returns its port.
-fn start_host(app: &AppHandle, token: &str) -> Result<u16, String> {
-    let (mut command, ui_dist) = host_command(app)?;
-    command
-        .env("HONEYCRISP_HOST_TOKEN", token)
-        .env("HONEYCRISP_UI_DIST", ui_dist)
-        .env("HONEYCRISP_SHELL", "1")
-        .env_remove("HONEYCRISP_HOST_PAGE_TOKEN")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(if cfg!(debug_assertions) {
-            Stdio::inherit()
-        } else {
-            Stdio::null()
-        });
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("start the notes folder host: {error}"))?;
-    let stdin = child.stdin.take().ok_or("capture the host's stdin")?;
-    let stdout = child.stdout.take().ok_or("capture the host's stdout")?;
-
-    let (sender, receiver) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        let read = reader.read_line(&mut line).map(|_| line);
-        let _ = sender.send((read, reader));
-    });
-    let (line, reader) = match receiver.recv_timeout(READY_TIMEOUT) {
-        Ok((Ok(line), reader)) => (line, reader),
-        Ok((Err(error), _)) => {
-            let _ = child.kill();
-            return Err(format!("read the host's ready line: {error}"));
-        }
-        Err(_) => {
-            let _ = child.kill();
-            return Err("the notes folder host did not become ready in 20 seconds".into());
-        }
-    };
-    let ready: serde_json::Value = serde_json::from_str(line.trim()).map_err(|_| {
-        let _ = child.kill();
-        format!("the notes folder host did not start: {}", line.trim())
+/// Register the notes directory for the notes window and hold the shell's own
+/// state for that window. Nothing is written inside the directory here: the
+/// owner takes its lock on the first attach, and the page sets up a missing
+/// layout through it.
+fn install<R: Runtime>(app: &AppHandle<R>, root: PathBuf) -> Result<(), String> {
+    let root = root::locate(&root)?;
+    app.folders().register(ScopeConfig {
+        scope: root::SCOPE.to_string(),
+        folder: folder_config(&root),
+        windows: vec![WINDOW.to_string()],
     })?;
-    let port = ready
-        .get("port")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|port| u16::try_from(port).ok())
-        .ok_or("the host's ready line has no port")?;
-
-    app.manage(Host {
-        child: Mutex::new(Some(child)),
-        stdin: Mutex::new(Some(stdin)),
-        gone: AtomicBool::new(false),
-        quitting: AtomicBool::new(false),
+    app.manage(Shell {
+        gate: CloseGate::new(),
+        terminal: Arc::new(Terminal::new(root)),
     });
+    Ok(())
+}
 
-    // Follow what the page reports through the host for the rest of the run.
-    let handle = app.clone();
-    thread::spawn(move || {
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
-            let Ok(message) = serde_json::from_str::<serde_json::Value>(&line) else {
-                continue;
-            };
-            let host = handle.state::<Host>();
-            if message.get("quit").and_then(serde_json::Value::as_bool) == Some(true) {
-                host.quitting.store(true, Ordering::SeqCst);
-                handle.exit(0);
-            }
-        }
-        // Host failure is not permission to discard work in the page.
-        let host = handle.state::<Host>();
-        host.gone.store(true, Ordering::SeqCst);
-        if !host.quitting.load(Ordering::SeqCst) {
-            eprintln!("The Honeycrisp folder host stopped; keeping the window's drafts.");
-        }
-    });
+/// The app's configuration, capabilities, and bundled page. Expanded once:
+/// the tests build the mock app from this same context.
+fn context<R: Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
 
-    Ok(port)
+/// Whether `target` is the bundled page. The window shows that and nothing
+/// else. The bundled page has exactly one origin per platform:
+/// `tauri://localhost`, or `http://tauri.localhost` where the webview cannot
+/// serve a custom scheme. Another port on the same host is another origin,
+/// and an address carrying credentials is not one the shell ever produces.
+fn is_app_page(target: &Url) -> bool {
+    let bundled = matches!(
+        (target.scheme(), target.host_str()),
+        ("tauri", Some("localhost")) | ("http", Some("tauri.localhost"))
+    );
+    bundled
+        && target.port().is_none()
+        && target.username().is_empty()
+        && target.password().is_none()
+}
+
+/// The predefined macOS Quit item calls Cocoa's `terminate:` directly,
+/// bypassing the preventable exit request, so Quit is an item of our own.
+#[cfg(target_os = "macos")]
+fn quit_menu(app: &AppHandle) -> tauri::Result<()> {
+    let menu = Menu::default(app)?;
+    let quit = MenuItem::with_id(
+        app,
+        QUIT_MENU_ITEM,
+        "Quit Honeycrisp",
+        true,
+        Some("CmdOrCtrl+Q"),
+    )?;
+    let app_menu = Submenu::with_items(
+        app,
+        "Honeycrisp",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    menu.remove_at(0)?;
+    menu.insert(&app_menu, 0)?;
+    app.set_menu(menu)?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == "quit-notes" {
-                if let Some(host) = app.try_state::<Host>() {
-                    if host.hold(app) {
-                        return;
-                    }
-                }
-                app.exit(0);
-            }
-        })
+    let app = shell(tauri::Builder::default())
         .setup(|app| {
-            let handle = app.handle().clone();
+            let handle = app.handle();
             #[cfg(target_os = "macos")]
-            {
-                // The predefined macOS Quit item calls Cocoa's terminate:
-                // directly, bypassing the preventable Tauri exit request.
-                let menu = Menu::default(&handle)?;
-                let quit = MenuItem::with_id(
-                    &handle, "quit-notes", "Quit Honeycrisp", true, Some("CmdOrCtrl+Q"),
-                )?;
-                let app_menu = Submenu::with_items(&handle, "Honeycrisp", true, &[
-                    &PredefinedMenuItem::about(&handle, None, None)?,
-                    &PredefinedMenuItem::separator(&handle)?,
-                    &PredefinedMenuItem::services(&handle, None)?,
-                    &PredefinedMenuItem::separator(&handle)?,
-                    &PredefinedMenuItem::hide(&handle, None)?,
-                    &PredefinedMenuItem::hide_others(&handle, None)?,
-                    &PredefinedMenuItem::separator(&handle)?,
-                    &quit,
-                ])?;
-                menu.remove_at(0)?;
-                menu.insert(&app_menu, 0)?;
-                app.set_menu(menu)?;
-            }
-            let token = launch_token()?;
-            let port = start_host(&handle, &token)?;
-            let origin = format!("http://127.0.0.1:{port}");
-            let url: Url = format!("{origin}/").parse()?;
-            // The token exists only in a page from the host's own origin.
-            let script = format!(
-                "if (location.origin === {origin}) {{ Object.defineProperty(window, '__HONEYCRISP_BRIDGE__', {{ value: Object.freeze({{ token: {token} }}) }}); }}",
-                origin = serde_json::to_string(&origin)?,
-                token = serde_json::to_string(&token)?,
-            );
-            let allowed = origin.clone();
-            let navigation_handle = handle.clone();
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+            quit_menu(handle)?;
+            let root = root::choose(std::env::var_os("HONEYCRISP_ROOT"), || {
+                handle
+                    .path()
+                    .home_dir()
+                    .map_err(|cause| format!("resolve the home directory: {cause}"))
+            })?;
+            install(handle, root)?;
+            WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
                 .title("Honeycrisp")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(900.0, 560.0)
-                .initialization_script(&script)
-                // The window shows the notes page and nothing else.
-                .on_navigation(move |target| {
-                    if target.origin().ascii_serialization() != allowed {
-                        return false;
-                    }
-                    // With no host, the page's explicit discard choice needs
-                    // a path to the shell. Never load this control address.
-                    if target.path() == "/__honeycrisp__/quit" {
-                        let host = navigation_handle.state::<Host>();
-                        if host.gone.load(Ordering::SeqCst) {
-                            host.quitting.store(true, Ordering::SeqCst);
-                            navigation_handle.exit(0);
-                        }
-                        return false;
-                    }
-                    true
-                })
+                .on_navigation(is_app_page)
                 .build()?;
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if let Some(host) = window.try_state::<Host>() {
-                    if host.hold(window.app_handle()) {
-                        api.prevent_close();
-                    }
-                }
-            }
-        })
-        .build(tauri::generate_context!())
+        .build(context())
         .expect("error while building the Honeycrisp application");
 
-    app.run(|handle, event| match event {
-        // Runtime exit requests need the same page acknowledgment as closing
-        // the window. The macOS menu is routed explicitly above.
-        RunEvent::ExitRequested { api, .. } => {
-            if let Some(host) = handle.try_state::<Host>() {
-                if host.hold(handle) {
-                    api.prevent_exit();
-                }
+    app.run(|handle, event| {
+        // The folder plugin drains and unlocks the folder on exit itself.
+        if let RunEvent::ExitRequested { api, .. } = event {
+            if hold(handle) {
+                api.prevent_exit();
             }
         }
-        RunEvent::Exit => {
-            if let Some(host) = handle.try_state::<Host>() {
-                host.stop();
-            }
-        }
-        _ => {}
     });
 }

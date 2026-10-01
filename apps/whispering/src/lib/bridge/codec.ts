@@ -3,7 +3,7 @@
  *
  * JSON cannot carry `undefined`, bytes, maps, or errors, and the folder API
  * uses all four: an entry's `issues: undefined` discriminates a valid row,
- * file reads and attachments are bytes, `readMany` answers with a map, and an
+ * file reads and saved audio are bytes, `readMany` answers with a map, and an
  * `Io` failure carries its cause. Each is written as a tagged object and read
  * back as the same kind of value, so a `Result` crosses the bridge unchanged.
  *

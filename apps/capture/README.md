@@ -10,7 +10,7 @@ There are two builds of the same UI, and the build decides where the folder is:
 
 | Build | Folder | History |
 | --- | --- | --- |
-| Desktop, inside Epicenter | An ordinary directory, opened by the Epicenter host. | Real Git in that directory's `.git`. No remote. |
+| Desktop, inside Epicenter | An ordinary directory, owned by the Epicenter desktop shell. | Real Git in that directory's `.git`, recorded by the shell. No remote. |
 | Browser | A logical folder in this browser's IndexedDB. | Git objects in IndexedDB. No remote. |
 
 Run the browser build with `bun dev:capture` (or `bun dev:capture:ui`) from
@@ -91,9 +91,12 @@ spaces included, until you add it or clear it.
 - On the desktop, closing the Capture window hides it; the page and its text
   stay loaded. Using the Quit menu or Cmd-Q asks the window first. If everything saves,
   it quits. Otherwise it offers **Keep working** or **Discard and quit**.
-- If the Epicenter host process stops, the window says saving cannot be
+- If Epicenter closes the folder, the window says saving cannot be
   confirmed. Your text stays so you can copy or download it, and reloads are
   held back.
+- If Epicenter's background service stops, the window says so. Saving does
+  not depend on that service and carries on; reloading the window may not
+  work until Epicenter restarts.
 
 Nothing persists unsaved text across a reload or a quit you confirm.
 
@@ -125,104 +128,157 @@ signing in.
 
 The captures are files in `so.epicenter.capture/captures` under Epicenter's
 working-copy directory (`~/Epicenter/so.epicenter.capture` in production).
-The timeline shows the real path. Edit the files with any program: Capture
-rereads when the operating system reports a change, a timer compares each
-file's size and modification time to recover a missed report, and the window
-rereads when it regains focus.
+The timeline shows the directory. Edit the files with any program: Capture
+rereads when the shell reports a change, every 30 seconds while the window is
+visible, and when the window regains focus.
 
-What is and is not protected:
+The Epicenter desktop shell owns that directory, through the shared folder
+plugin in
+[`packages/tauri-plugin-epicenter-folder`](../../packages/tauri-plugin-epicenter-folder/README.md).
+Its README states what the owner promises and what it does not. What that
+means for Capture:
 
 - One Epicenter owns the directory at a time, through a lock file beside it,
   `.so.epicenter.capture.epicenter-lock`. A second one is refused with a
   message naming the directory.
-- Other programs are not asked to take the lock. A save checks the file's
-  version and checks again immediately before replacing it. An edit landing
-  in the instant between that check and the replacement is overwritten. This
-  is a best-effort check, not an operating-system compare-and-swap.
-- A change that is neither reported nor visible in size or modification time
-  is not noticed until the next reread. After each of its own writes the host
-  compares the directory at once, so a file Capture created and another
-  program then removed is noticed even when no report arrives.
-- Capture refuses to open a directory whose `.git` is a symbolic link or a
-  `gitdir:` file (a linked worktree or submodule), before running any Git
-  command there. It checks when it opens the directory, not afterwards.
+- Other programs are not asked to take the lock. A save names the version of
+  the file this window read, and the owner refuses it if the file is no
+  longer that version. An edit by another program in the instant between the
+  owner's last check and its replacement of the file is overwritten. This is
+  a best-effort check, not an operating-system compare-and-swap.
+- The owner watches the directory and also rechecks it on a timer, so a
+  change the operating system did not report is still announced. A change
+  announced to the window is a hint to reread. It never carries file contents
+  and never replaces text you have typed.
+- The owner records Git history after each save, on its own schedule, whether
+  or not a Capture window is still open. The window schedules no commits.
+- History is local-only. The shell registers the Capture folder to take the
+  commit author from the directory's Git config when one is set there
+  (otherwise `Capture <capture@localhost>`), to ignore that config's
+  `origin`, and with no remote. So nothing is fetched or pushed, whatever
+  remote the directory names. Capture has no control that fetches, pulls, or
+  pushes. The policy in effect is on the folder's Git snapshot.
+- The owner refuses a directory whose `.git` is a symbolic link or a
+  `gitdir:` file (a linked worktree or submodule).
 
 ### How it is wired
 
 ```text
 Capture window (WebView)
-   POST /_epicenter/capture/call      one folder method
-   GET  /_epicenter/capture/events    Git snapshots and "something changed" hints
-        |  the host's browser session; calls also need the exact Origin
+   openFolder({ definition })      from @epicenter/folder/tauri
+        |  Tauri invoke: plugin:epicenter-folder|attach, read, apply, commit, ...
+        |  Tauri events: folder-files-changed, folder-snapshot-changed
         v
-Epicenter Bun host  ->  apps/capture/native  ->  openNativeFolder(<dir>)
+Epicenter shell (Rust)  ->  tauri-plugin-epicenter-folder  ->  <directory>
 ```
 
-`apps/capture/native` is the only owner of the directory in the host process.
-It runs each call to completion before the next and accepts only the calls in
-`CAPTURE_CALLS`. The folder itself commits after every complete save, table
-or raw, in both builds; the owner adds no commit logic of its own. Raw reads and writes are
-limited to `captures/<name>.md` and `recovery/<name>.json|md`, and a write
-must name the version it replaces or require the file to be absent. There is
-no terminal and no remote.
+The page names the folder by its ID, `so.epicenter.capture`, and nothing
+else. The shell registered that ID with its directory, its history policy, and
+the windows that may use it, so a page cannot ask for an arbitrary path or
+choose an author or a remote. There is no HTTP route and no Bun process
+between the window and its files.
+
+`src/lib/platform/folder.epicenter-host.ts` is the whole desktop leaf. It
+calls `openFolder` from `@epicenter/folder/tauri`, which opens the shell's
+folder or returns why it cannot, and hands the folder to the same collection
+and draft code the browser build uses. The browser leaf calls `openFolder`
+from `@epicenter/folder/browser` and states its own history policy: a local
+author, a commit after each save, and no remote. Each entry refuses in the
+other environment. `vite.config.ts` points the bare `@epicenter/folder`
+specifier, which `@epicenter/capture` imports, at the same entry, so a build
+emits one adapter.
+
+Capture uses the folder's captures table, the Git snapshot and commit, and
+three file verbs for `captures/*.md` and `recovery/*`: `read`, `create`
+(refused when anything is at the path), and `replace` (refused unless the
+file is still the exact one that was read). It takes no verb that overwrites.
+That surface is the `CaptureFolder` type in `src/lib/platform/types.ts`. The plugin
+grants an authorized Capture window the whole Capture directory and nothing
+outside it; there is no per-call allowlist.
+
+Capture opens no terminal. A folder loads its terminal with a dynamic
+import, so each build emits that chunk, and the page never requests or runs
+it.
 
 The build Epicenter serves is selected by the `epicenter-host` condition on
 `#platform/folder`. That leaf opens no browser folder, so it cannot fall back
-to IndexedDB: if the bridge does not answer, opening fails with the reason.
+to IndexedDB. Outside the shell, in a window the folder does not allow, with no
+folder registered, or with no plugin installed, opening fails and the page
+shows the reason.
 
-### Host integration
+### What closing and stopping mean
 
-`apps/epicenter/src/main.ts` creates the bridge at
-`join(boot.folderDir, captureDefinition.id)` and passes it to the host server.
-Both shutdown paths drain and close it. The route comes from the exported
-Capture bridge contract; the server requires its browser session and checks
-Origin on calls that change data.
+| Event | What happens |
+| --- | --- |
+| The page is destroyed or reloaded | `close()` stops the quit listeners and the change hints, and detaches this page's session. Saves it already sent still land and are still committed. The folder stays open in the shell for its other windows. |
+| The Capture window is closed | The shell hides it. The page, its session, and its drafts stay loaded. |
+| The shell closes the folder | The folder's Git snapshot arrives with `closed`. The window says saving cannot be confirmed, keeps every draft, and holds reloads back. |
+| Epicenter's Bun service stops (`capture-host-stopped`) | A notice. The folder is the shell's, so saving carries on. The service served this page, so a reload may fail until Epicenter restarts. |
+| A reply to a save is lost | The draft is kept and marked not confirmed. Try again is checked against the version the window last read, so a write that did land comes back as a change to review. Nothing is sent twice automatically. |
 
-The Rust shell owns the quit handshake in `capture_lifetime.rs`. It accepts
-answers only from the Capture window for the current request. If the page
-does not acknowledge the request, a native dialog requires an explicit choice
-before discarding its text. Closing the window hides it and retains the page.
-Forced termination, OS termination requests such as Dock Quit, and the shell's
-process restart bypass this handshake.
+### Quitting
 
-The page side of quitting is in `src/lib/platform/shell-lifetime.ts`:
+The Rust shell owns the quit handshake in
+`apps/epicenter/src-tauri/src/capture_lifetime.rs`. It accepts answers only
+from the Capture window for the current request. If the page does not
+acknowledge the request, a native dialog requires an explicit choice before
+discarding its text.
+
+The handshake covers the Quit menu item and Cmd-Q, and nothing else. Dock
+Quit, an operating-system termination request, a forced termination, and the
+shell's own process restart bypass it, and unsaved text in the window is lost.
+
+The page side is in `src/lib/platform/shell-lifetime.ts`:
 
 | Shell to page | Page to shell |
 | --- | --- |
 | Event `capture-quit-requested`, payload: a numeric request ID | `invoke('capture_quit_answer', { requestId, answer: 'asking' })` at once, then exactly one of `'proceed'` or `'cancel'` |
-| Event `capture-host-stopped` | None. The page keeps its text and holds reloads back. |
+| Event `capture-host-stopped` | None. The page shows the notice above. |
 
 A request that arrives before the page is listening is acknowledged and
-answered once it is. If the window cannot listen for these events, the page
-says so in a notice instead of quitting unprotected in silence.
+answered once it is. If the window cannot listen for quit requests, the page
+says so in a notice instead of quitting unprotected in silence. If the
+listeners cannot be set up at all, the page detaches the session it attached
+and shows the failure.
 
 ## Layout
 
 | Path | Role |
 | --- | --- |
-| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the IndexedDB folder, `folder.epicenter-host.ts` reaches the host's directory, and `shell-lifetime.ts` is the quit protocol. `auth.*.ts` is used only by the old-data export. |
-| `src/lib/bridge/` | The desktop page's side of the bridge: the route and call list (`contract.ts`), the value encoding (`codec.ts`), and the transport and remote folder (`client.ts`). |
-| `native/` | The host's side, Bun only: the folder owner and its queue (`owner.ts`), the directory lock, the change watcher, and the HTTP handler (`bridge.ts`). Exported as `@epicenter/capture-app/native`. |
+| `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the IndexedDB folder, `folder.epicenter-host.ts` attaches to the shell's directory, and `shell-lifetime.ts` is the quit protocol. `auth.*.ts` is used only by the old-data export. |
 | `src/lib/draft.svelte.ts` | One capture's draft: buffer, baseline, save queue, conflict choices, and unsent input. |
 | `src/lib/captures.svelte.ts` | The listing, the open drafts, and every write. |
 | `src/lib/recovery/` | Opens the old account store for an export. Loaded only from the recovery screen. |
 | `src/lib/components/` | The timeline, a capture, the conflict choices, and the recovery screen, composed from `@epicenter/ui`. |
+
+The package exports nothing. No host imports a part of this app.
 
 ## Checks
 
 ```sh
 bun test packages/capture apps/capture
 bun run --cwd packages/capture typecheck
-bun run --cwd apps/capture typecheck        # both seam leaves and the Bun side
+bun run --cwd apps/capture typecheck        # both seam leaves and the scripts
 bun run --cwd apps/capture build            # browser
 bun run --cwd apps/capture build:epicenter  # the build Epicenter serves
+bun scripts/check-ui-boundary.ts
 ```
 
 The two builds share SvelteKit's output directory, so run them one after the
 other.
 
+| Test | What it checks |
+| --- | --- |
+| `src/lib/platform/folder.epicenter-host.test.ts` | The desktop leaf over the real folder adapter, with the shell's `invoke` and events scripted: refusals fail the open, closing detaches once, the collection keeps a draft through a conflict, a lost reply, and an outside change, and an import interrupted by a lost reply is finished by a retry. It does not run the Rust owner. |
+| `src/lib/platform-selection.test.ts` | Which leaf each build bundles: the desktop bundle has the desktop adapter and no browser adapter, IndexedDB store, Git implementation, or Node module; the browser bundle has the browser adapter and no desktop adapter, generated bindings, or quit protocol. |
+| `src/lib/captures.test.ts`, `src/lib/draft.test.ts` | The collection and the draft over a real directory and a recorded store. |
+
+The Rust owner, its watcher, its lock, and its history are tested in
+`packages/tauri-plugin-epicenter-folder` and in
+`packages/folder/src/tauri-native.test.ts`. The desktop window itself is
+checked by hand in the Epicenter shell.
+
 | Script | What it checks |
 | --- | --- |
 | `bun run --cwd apps/capture smoke:browser` | The browser build in Chromium, with two pages sharing one folder: exact saved Markdown, thought edits, keyboard submit and tab keys, source editing, reload, outside changes, leave warnings, deletion, and an import. Needs a free local port and `bun x playwright install chromium`. |
-| `bun apps/capture/scripts/recovery-harness.ts [dir] [bundle.json]` | Imports a bundle into a real directory twice and prints both reports. Exits nonzero if the retry creates anything. |
-| `bun apps/capture/scripts/native-harness.ts <dir> [port]` | Serves the bridge and the desktop build on a loopback port, over a real directory, for checking the page and bridge independently of the Epicenter shell. |
+| `bun apps/capture/scripts/recovery-harness.ts [dir] [bundle.json]` | A standalone tool, not the desktop backend: imports a bundle into a real directory twice, through `@epicenter/folder/bun` with an explicit author and no remote, and prints both reports. Exits nonzero if the retry creates anything. |

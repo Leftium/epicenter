@@ -1,0 +1,671 @@
+//! The IPC surface: one thin command per owner operation.
+//!
+//! Every command but `attach` names a session by resource ID. The ID is looked
+//! up in the invoking webview's own resource table, and the session is then
+//! checked against the invoking window's label, so a page can only use a
+//! session it attached itself. No command accepts a root, an author, a remote,
+//! or a history policy.
+//!
+//! Owner calls block on files and `git`, so each runs on the blocking pool,
+//! never on the thread that drives the windows.
+
+use std::collections::BTreeMap;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+
+use epicenter_folder_core::files::{
+    ApplyError, Children, FileChange, FileError, FileListing, FileRead,
+};
+use epicenter_folder_core::git::{CommitSummary, PathStatus};
+use epicenter_folder_core::history::{
+    CommitOutcome, CommitPass, FetchOutcome, FilesObservation, GitError, GitSnapshot, OwnerEvent,
+    PullError, PullOutcome, PushOutcome, Settled,
+};
+use epicenter_folder_core::owner::FolderOwner;
+use epicenter_folder_core::registry::AttachError;
+use serde::Serialize;
+use specta::Type;
+use tauri::{Manager, Resource, ResourceId, Runtime, Webview};
+use tauri_specta::Event;
+
+use crate::lifecycle::{Instance, Live, SessionState};
+use crate::Folders;
+
+/// The shared Git snapshot of a scope changed.
+#[derive(Debug, Clone, Serialize, Type, Event)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderSnapshotChanged {
+    pub scope: String,
+    /// Only grows; an event numbered at or below the last one seen is stale.
+    pub sequence: u64,
+    pub snapshot: GitSnapshot,
+}
+
+/// Files of a scope changed, through any window or outside the app.
+#[derive(Debug, Clone, Serialize, Type, Event)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderFilesChanged {
+    pub scope: String,
+    pub revision: u64,
+    pub paths: Vec<String>,
+}
+
+/// The version of this command contract. A page built against another
+/// version is refused at attach, before it can change anything.
+pub const PROTOCOL: u32 = 1;
+
+/// What a window receives when it attaches to a scope.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Attached {
+    /// Names this window's session in every later call.
+    pub session: u32,
+    /// The canonical directory the owner holds, for showing to a person.
+    pub root: String,
+    /// The snapshot at attach; events numbered above `sequence` follow it.
+    pub sequence: u64,
+    pub snapshot: GitSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct StagedCommit {
+    pub oid: String,
+    pub parent: Option<String>,
+}
+
+/// One window's session as the webview's resource table holds it, so a
+/// command can find it by resource ID. The session itself is `SessionState`,
+/// which the plugin's lifecycle state also reaches, weakly, to end it when
+/// the page or the window goes away. `detach` closes the resource; a
+/// destroyed window's table cannot be reached, so its sessions are ended
+/// through the lifecycle instead. The owner and every other session carry on.
+struct SessionResource(Arc<SessionState>);
+
+const SESSION_RESOURCE: &str = "epicenter-folder-session";
+
+impl Resource for SessionResource {
+    fn name(&self) -> std::borrow::Cow<'_, str> {
+        SESSION_RESOURCE.into()
+    }
+
+    fn close(self: Arc<Self>) {
+        self.0.end();
+    }
+}
+
+/// The identity of one actual webview, kept in that webview's own resource
+/// table. Clones of a `Webview` share its table; a new webview created under
+/// the same label has its own. See `lifecycle`.
+struct InstanceResource(Arc<Instance>);
+
+const INSTANCE_RESOURCE: &str = "epicenter-folder-webview";
+
+impl Resource for InstanceResource {
+    fn name(&self) -> std::borrow::Cow<'_, str> {
+        INSTANCE_RESOURCE.into()
+    }
+}
+
+/// Give a webview Tauri just announced its instance. A webview that already
+/// has one keeps it.
+pub(crate) fn adopt<R: Runtime>(webview: &Webview<R>) {
+    if instance(webview).is_some() {
+        return;
+    }
+    let created = webview
+        .state::<Folders>()
+        .lifecycles
+        .created(webview.window().label());
+    webview.resources_table().add(InstanceResource(created));
+}
+
+/// The instance of exactly this webview, read from its own table.
+fn instance<R: Runtime>(webview: &Webview<R>) -> Option<Arc<Instance>> {
+    let table = webview.resources_table();
+    let rid = table
+        .names()
+        .find(|(_, name)| name == INSTANCE_RESOURCE)
+        .map(|(rid, _)| rid)?;
+    table
+        .get::<InstanceResource>(rid)
+        .ok()
+        .map(|resource| Arc::clone(&resource.0))
+}
+
+/// A page is going away: a reload or a navigation. A webview's resource table
+/// outlives its pages, so the sessions the old page attached are ended here,
+/// which stops its events and releases its leases, and an attach still in
+/// flight for the old page is fenced. Only this plugin's resources are
+/// touched. The owner, what it already admitted, and every other window
+/// carry on.
+pub(crate) fn end_page<R: Runtime>(webview: &Webview<R>) {
+    // This webview's own instance: a handle to a destroyed webview that
+    // shares a label with a live one ends nothing of the live one's.
+    if let Some(instance) = instance(webview) {
+        instance.page_started();
+    }
+    #[cfg(test)]
+    crate::tests::page_advanced(webview.label());
+    // The ended sessions are inert; drop their table entries as well. Only
+    // those: the new page may already have attached, and its session sits in
+    // this same table. Which sessions the old page's were is decided by the
+    // instance, above; here an entry goes only if its session has ended. The
+    // table lock is held while each session is asked, and a session's own
+    // lock is the innermost one, so this takes nothing `register` holds.
+    let mut table = webview.resources_table();
+    let ended: Vec<ResourceId> = table
+        .names()
+        .filter(|(_, name)| name == SESSION_RESOURCE)
+        .map(|(rid, _)| rid)
+        .filter(|rid| {
+            table
+                .get::<SessionResource>(*rid)
+                .is_ok_and(|resource| resource.0.ended())
+        })
+        .collect();
+    for rid in ended {
+        let _ = table.close(rid);
+    }
+}
+
+const NO_SESSION: &str = "this window has no such folder session; attach first";
+
+fn session<R: Runtime>(webview: &Webview<R>, rid: ResourceId) -> Result<Arc<SessionState>, String> {
+    let resource = webview
+        .resources_table()
+        .get::<SessionResource>(rid)
+        .map_err(|_| NO_SESSION.to_string())?;
+    Ok(Arc::clone(&resource.0))
+}
+
+fn owner<R: Runtime>(webview: &Webview<R>, rid: ResourceId) -> Result<FolderOwner, String> {
+    session(webview, rid)?.owner(webview.label())
+}
+
+/// The owner for a call that may run inside a terminal lease. A lease is
+/// usable only by the session that acquired it: another window that learned
+/// its number cannot join that window's command.
+fn leased_owner<R: Runtime>(
+    webview: &Webview<R>,
+    rid: ResourceId,
+    lease: Option<u64>,
+) -> Result<FolderOwner, String> {
+    let session = session(webview, rid)?;
+    let owner = session.owner(webview.label())?;
+    if lease.is_some_and(|lease| !session.holds_lease(lease)) {
+        return Err("this session does not hold that terminal lease".to_string());
+    }
+    Ok(owner)
+}
+
+fn file_denied(reason: String) -> FileError {
+    FileError::Denied { reason }
+}
+
+fn git_denied(reason: String) -> GitError {
+    GitError::Denied { reason }
+}
+
+/// Run blocking owner work off the window thread.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+    lost: impl FnOnce(String) -> T,
+) -> T {
+    match tauri::async_runtime::spawn_blocking(work).await {
+        Ok(value) => value,
+        Err(cause) => lost(cause.to_string()),
+    }
+}
+
+/// A read whose worker was lost changed nothing: an ordinary failure.
+fn file_lost<T>(operation: &'static str) -> impl FnOnce(String) -> Result<T, FileError> {
+    move |cause| {
+        Err(FileError::Io {
+            path: String::new(),
+            operation: operation.to_string(),
+            cause,
+        })
+    }
+}
+
+/// A publication whose worker was lost may have reached the folder.
+fn file_unconfirmed(operation: &'static str, path: String) -> impl FnOnce(String) -> FileError {
+    move |cause| FileError::Unconfirmed {
+        path,
+        operation: operation.to_string(),
+        cause,
+    }
+}
+
+fn git_lost<T>(operation: &'static str) -> impl FnOnce(String) -> Result<T, GitError> {
+    move |cause| Err(GitError::failed(operation, cause))
+}
+
+/// A Git change whose worker was lost may have reached history.
+fn git_unconfirmed(operation: &'static str) -> impl FnOnce(String) -> GitError {
+    move |cause| GitError::Unconfirmed {
+        operation: operation.to_string(),
+        cause,
+    }
+}
+
+// ============================================================================
+// Sessions
+// ============================================================================
+
+/// Attach this window to a scope the shell registered for it. The folder is
+/// locked and opened on its first attach and stays open afterward.
+#[tauri::command]
+#[specta::specta]
+pub async fn attach<R: Runtime>(
+    webview: Webview<R>,
+    scope: String,
+    protocol: u32,
+) -> Result<Attached, AttachError> {
+    if protocol != PROTOCOL {
+        return Err(AttachError::Incompatible {
+            host: PROTOCOL,
+            page: protocol,
+        });
+    }
+    let label = webview.label().to_string();
+    // The instance and page this attach belongs to: those of exactly this
+    // webview, read from its own table. This handle can outlive its window,
+    // and another window can take its label meanwhile; the label says nothing
+    // about which webview this is.
+    let gone = || AttachError::Unavailable {
+        message: "the page that was attaching is gone".to_string(),
+    };
+    let instance = instance(&webview).ok_or_else(gone)?;
+    let attaching_page = instance.page().ok_or_else(gone)?;
+    let app = webview.app_handle().clone();
+    let attaching = (scope.clone(), label.clone());
+    let session = blocking(
+        move || {
+            let session = app
+                .state::<Folders>()
+                .registry
+                .attach(&attaching.0, &attaching.1);
+            #[cfg(test)]
+            crate::tests::attach_opened(&attaching.1);
+            session
+        },
+        |message| Err(AttachError::Unavailable { message }),
+    )
+    .await?;
+    let owner = session
+        .authorize(&label)
+        .map_err(|message| AttachError::Unavailable { message })?
+        .clone();
+
+    // The owner calls listeners while it holds its snapshot lock, so the
+    // listener only queues; a thread of this session does the emitting.
+    let (queue, events) = mpsc::channel::<OwnerEvent>();
+    let queue = Mutex::new(queue);
+    let subscription = owner.subscribe(move |event| {
+        let _ = queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .send(event.clone());
+    });
+    let target = webview.app_handle().clone();
+    let (event_scope, event_label) = (scope, label.clone());
+    std::thread::Builder::new()
+        .name("folder-events".to_string())
+        .spawn(move || {
+            // Ends when the subscription, and so the sender, is dropped.
+            for event in events {
+                let _ = match event {
+                    OwnerEvent::Snapshot { sequence, snapshot } => FolderSnapshotChanged {
+                        scope: event_scope.clone(),
+                        sequence,
+                        snapshot,
+                    }
+                    .emit_to(&target, event_label.as_str()),
+                    OwnerEvent::FilesChanged { revision, paths } => FolderFilesChanged {
+                        scope: event_scope.clone(),
+                        revision,
+                        paths,
+                    }
+                    .emit_to(&target, event_label.as_str()),
+                };
+            }
+        })
+        .map_err(|cause| AttachError::Unavailable {
+            message: format!("the folder event thread could not start: {cause}"),
+        })?;
+
+    let (sequence, snapshot) = owner.sequenced_snapshot();
+    let state = SessionState::new(
+        &instance,
+        Live {
+            session,
+            leases: BTreeMap::new(),
+            _subscription: subscription,
+        },
+    );
+    // Registered only if the page that asked is still this webview's current
+    // page. Its window may have been destroyed, or the page reloaded, while
+    // the folder was being opened; the session would belong to nobody.
+    let registered = instance.register(attaching_page, &state, || {
+        webview
+            .resources_table()
+            .add(SessionResource(Arc::clone(&state)))
+    });
+    let Some(rid) = registered else {
+        state.end();
+        return Err(gone());
+    };
+    Ok(Attached {
+        session: rid,
+        root: owner.root().display().to_string(),
+        sequence,
+        snapshot: (*snapshot).clone(),
+    })
+}
+
+/// End this window's session. Saves it already made still land and are still
+/// committed, and every other window is unaffected.
+#[tauri::command]
+#[specta::specta]
+pub fn detach<R: Runtime>(webview: Webview<R>, session: u32) {
+    let _ = webview.resources_table().close(session);
+}
+
+// ============================================================================
+// Files
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list<R: Runtime>(webview: Webview<R>, session: u32) -> Result<FileListing, FileError> {
+    let owner = owner(&webview, session).map_err(file_denied)?;
+    blocking(move || owner.list(), file_lost("enumerate")).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn children<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    directory: String,
+) -> Result<Children, FileError> {
+    let owner = owner(&webview, session).map_err(file_denied)?;
+    blocking(move || owner.children(&directory), file_lost("list")).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn read<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    path: String,
+) -> Result<FileRead, FileError> {
+    let owner = owner(&webview, session).map_err(file_denied)?;
+    blocking(move || owner.read(&path), file_lost("read")).await
+}
+
+/// One result per requested path, in the order given.
+#[tauri::command]
+#[specta::specta]
+pub async fn read_many<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    paths: Vec<String>,
+) -> Result<Vec<Settled<FileRead, FileError>>, FileError> {
+    let owner = owner(&webview, session).map_err(file_denied)?;
+    blocking(
+        move || {
+            Ok(owner
+                .read_many(&paths)?
+                .into_iter()
+                .map(Settled::from)
+                .collect())
+        },
+        file_lost("read"),
+    )
+    .await
+}
+
+/// Publish ordered changes. A complete batch requests an automatic commit
+/// before this returns.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    changes: Vec<FileChange>,
+    lease: Option<u64>,
+) -> Result<(), ApplyError> {
+    let owner = leased_owner(&webview, session, lease).map_err(|reason| ApplyError::Refused {
+        error: file_denied(reason),
+    })?;
+    let path = changes
+        .first()
+        .map(|change| change.step().paths()[0].to_string())
+        .unwrap_or_default();
+    blocking(
+        move || owner.apply(&changes, lease),
+        // Not a refusal: some of the batch may have landed.
+        |cause| {
+            Err(ApplyError::Unconfirmed {
+                path,
+                operation: "publishing to".to_string(),
+                cause,
+            })
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn mkdir<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    path: String,
+    lease: Option<u64>,
+) -> Result<(), FileError> {
+    let owner = leased_owner(&webview, session, lease).map_err(file_denied)?;
+    let lost = file_unconfirmed("creating", path.clone());
+    blocking(move || owner.mkdir(&path, lease), |cause| Err(lost(cause))).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rmdir<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    path: String,
+    lease: Option<u64>,
+) -> Result<(), FileError> {
+    let owner = leased_owner(&webview, session, lease).map_err(file_denied)?;
+    let lost = file_unconfirmed("removing", path.clone());
+    blocking(move || owner.rmdir(&path, lease), |cause| Err(lost(cause))).await
+}
+
+/// Hold the folder's file gate for one terminal command. Every other
+/// publication waits, so the owner ends the lease at its time limit, and the
+/// lease ends with this window's session.
+#[tauri::command]
+#[specta::specta]
+pub async fn acquire_lease<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+) -> Result<u64, FileError> {
+    let resource = self::session(&webview, session).map_err(file_denied)?;
+    let owner = owner(&webview, session).map_err(file_denied)?;
+    let lease = blocking(move || owner.lease(), file_lost("lease")).await?;
+    // A session that ended while the lease was being acquired drops it here,
+    // which gives the folder back at once.
+    resource.keep_lease(lease).map_err(file_denied)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn release_lease<R: Runtime>(webview: Webview<R>, session: u32, lease: u64) {
+    if let Ok(resource) = self::session(&webview, session) {
+        resource.release_lease(lease);
+    }
+}
+
+// ============================================================================
+// Git
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn status<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    lease: Option<u64>,
+) -> Result<FilesObservation, GitError> {
+    let owner = leased_owner(&webview, session, lease).map_err(git_denied)?;
+    blocking(
+        move || {
+            let _waiting = owner.vouch(lease);
+            owner.status()
+        },
+        git_lost("status"),
+    )
+    .await
+}
+
+/// A commit pass always settles as an outcome, never as an error.
+#[tauri::command]
+#[specta::specta]
+pub async fn commit<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    lease: Option<u64>,
+) -> Result<CommitPass, GitError> {
+    let owner = leased_owner(&webview, session, lease).map_err(git_denied)?;
+    Ok(blocking(
+        move || {
+            let _waiting = owner.vouch(lease);
+            owner.commit()
+        },
+        |error| CommitPass {
+            outcome: CommitOutcome::Unconfirmed { error },
+            following_push: None,
+        },
+    )
+    .await)
+}
+
+/// Wait for the push pass `joining` names, or request one.
+#[tauri::command]
+#[specta::specta]
+pub async fn push<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    joining: Option<u32>,
+) -> Result<PushOutcome, GitError> {
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    Ok(blocking(
+        move || owner.push(joining.map(u64::from)),
+        |error| PushOutcome::Unconfirmed { error },
+    )
+    .await)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fetch<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+) -> Result<FetchOutcome, GitError> {
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    blocking(
+        move || owner.fetch(),
+        |cause| Err(git_unconfirmed("fetch")(cause)),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn pull_fast_forward<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    lease: Option<u64>,
+) -> Result<PullOutcome, PullError> {
+    let owner = leased_owner(&webview, session, lease)
+        .map_err(|reason| PullError::from(git_denied(reason)))?;
+    blocking(
+        move || {
+            let _waiting = owner.vouch(lease);
+            owner.pull_fast_forward()
+        },
+        |cause| Err(git_unconfirmed("pull")(cause).into()),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn paths<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+) -> Result<Vec<PathStatus>, GitError> {
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    blocking(move || owner.paths(), git_lost("status")).await
+}
+
+/// Stage current contents of `paths`, including deletions; `null` stages everything.
+#[tauri::command]
+#[specta::specta]
+pub async fn stage<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    paths: Option<Vec<String>>,
+) -> Result<(), GitError> {
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    blocking(
+        move || owner.stage(paths.as_deref()),
+        |cause| Err(git_unconfirmed("add")(cause)),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn commit_staged<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    message: String,
+) -> Result<StagedCommit, GitError> {
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    blocking(
+        move || {
+            owner
+                .commit_staged(&message)
+                .map(|(oid, parent)| StagedCommit { oid, parent })
+        },
+        |cause| Err(git_unconfirmed("commit")(cause)),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn diff<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    staged: bool,
+    paths: Vec<String>,
+) -> Result<String, GitError> {
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    blocking(move || owner.diff(staged, &paths), git_lost("diff")).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn log<R: Runtime>(
+    webview: Webview<R>,
+    session: u32,
+    depth: u32,
+) -> Result<Vec<CommitSummary>, GitError> {
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    blocking(move || owner.log(depth), git_lost("log")).await
+}

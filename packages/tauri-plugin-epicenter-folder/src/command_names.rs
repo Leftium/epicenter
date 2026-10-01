@@ -1,0 +1,25 @@
+/// Every command this plugin exposes. The build script generates a permission
+/// for each, and a test checks the list against the registered handlers.
+pub const COMMANDS: &[&str] = &[
+    "attach",
+    "detach",
+    "list",
+    "children",
+    "read",
+    "read_many",
+    "apply",
+    "mkdir",
+    "rmdir",
+    "acquire_lease",
+    "release_lease",
+    "status",
+    "commit",
+    "push",
+    "fetch",
+    "pull_fast_forward",
+    "paths",
+    "stage",
+    "commit_staged",
+    "diff",
+    "log",
+];

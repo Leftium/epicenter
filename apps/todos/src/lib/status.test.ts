@@ -11,7 +11,7 @@
  * - Observation times are absolute
  */
 import { expect, test } from 'bun:test';
-import { type GitSnapshot, PullError } from '@epicenter/app/files';
+import { type GitSnapshot, PullError } from '@epicenter/folder';
 import {
 	commitAndPushToast,
 	commitLine,

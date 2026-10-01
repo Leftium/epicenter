@@ -2,22 +2,21 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { toast } from '@epicenter/ui/sonner';
-	import type { FileRevision } from '$lib/bridge/contract.js';
-	import type { FileEditor } from '$lib/notes.svelte.js';
-	import type { NotesHost } from '$lib/platform/types.js';
+	import type { FileSession } from '$lib/file-session.svelte.js';
+	import type { FileRevision, NotesHost } from '$lib/platform/types.js';
 
 	let {
 		history,
-		editor,
+		session,
 		open = $bindable(),
 	}: {
 		history: NonNullable<NotesHost['history']>;
-		editor: FileEditor;
+		session: FileSession;
 		open: boolean;
 	} = $props();
 
 	// svelte-ignore state_referenced_locally
-	const path = editor.path;
+	const path = session.path;
 	// svelte-ignore state_referenced_locally
 	const revisions = history.log(path, 50);
 	let shown = $state<{ revision: FileRevision; source: string } | undefined>();
@@ -70,11 +69,11 @@
 		</div>
 		<Dialog.Footer>
 			<Button
-				disabled={shown === undefined}
+				disabled={shown === undefined || !session.admitting}
 				onclick={() => {
 					if (shown === undefined) return;
-					editor.input(shown.source);
-					open = false;
+					// Nothing is taken while the app is closing; the version stays chosen.
+					if (session.input(shown.source)) open = false;
 				}}
 			>
 				Use this version as my draft

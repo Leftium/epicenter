@@ -13,7 +13,6 @@ node_modules
 # Desktop shell
 /src-tauri/target
 /src-tauri/gen/schemas
-/src-tauri/binaries
 
 # OS
 .DS_Store

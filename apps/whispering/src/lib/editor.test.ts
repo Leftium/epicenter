@@ -4,11 +4,10 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { InstantString } from '@epicenter/app/field';
-import { FileError, type FolderFiles } from '@epicenter/app/files';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import type { InstantString } from '@epicenter/definition';
+import { FileError, type FolderFiles } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
-import { whisperingDefinition } from './definition.js';
+import { openTestFolder } from './workspace.test-support.js';
 
 const { createTextFileEditor, createRowEditor } = await import(
 	'./editor.svelte.ts'
@@ -20,14 +19,7 @@ afterEach(async () => {
 
 async function open() {
 	const root = await mkdtemp(join(tmpdir(), 'whispering-conflict-'));
-	const folder = await openNativeFolder({
-		root,
-		definition: whisperingDefinition,
-		git: {
-			author: { name: 'Test', email: 'test@localhost' },
-			commitOnEdit: false,
-		},
-	});
+	const folder = await openTestFolder(root, { commitOnEdit: false });
 	cleanup.push(async () => {
 		await folder.close();
 		await rm(root, { recursive: true, force: true });
@@ -38,9 +30,8 @@ async function open() {
 for (const failure of ['unreachable', 'binary'] as const) {
 	test(`a conflict read that is ${failure} keeps input and allows a later reread`, async () => {
 		const folder = await open();
-		const version = expectOk(
-			await folder.files.write('note.md', 'original', { expected: 'absent' }),
-		);
+		const saved = expectOk(await folder.files.create('note.md', 'original'));
+		const { version } = saved;
 		let blocked = true;
 		const files: FolderFiles = {
 			...folder.files,
@@ -63,10 +54,9 @@ for (const failure of ['unreachable', 'binary'] as const) {
 		);
 		cleanup.push(async () => editor.dispose());
 		expectOk(
-			await folder.files.write(
-				'note.md',
+			await folder.files.replace(
+				saved,
 				failure === 'binary' ? new Uint8Array([0, 255]) : 'outside',
-				{ expected: version },
 			),
 		);
 		editor.input('my typing');
@@ -75,9 +65,7 @@ for (const failure of ['unreachable', 'binary'] as const) {
 		expect(editor.buffer).toBe('my typing');
 		expect(editor.baseline.version).toEqual(version);
 		blocked = false;
-		expectOk(
-			await folder.files.write('note.md', 'outside', { expected: 'any' }),
-		);
+		expectOk(await folder.files.overwrite('note.md', 'outside'));
 		await editor.retry();
 		expect(editor.saveState).toMatchObject({
 			kind: 'conflict',
@@ -98,6 +86,7 @@ test('a recording conflict read failure preserves typing instead of reporting re
 				recordedAt: '2026-10-01T00:00:00.000Z' as InstantString,
 				durationMs: 1,
 				capture: 'fixture',
+				audioPath: 'recordings/one.wav',
 			},
 		}),
 	);
@@ -138,16 +127,16 @@ test('a recording conflict read failure preserves typing instead of reporting re
 
 test('a rejected save leaves the draft failed and retryable', async () => {
 	const folder = await open();
-	const version = expectOk(
-		await folder.files.write('note.md', 'original', { expected: 'absent' }),
+	const { version } = expectOk(
+		await folder.files.create('note.md', 'original'),
 	);
 	let blocked = true;
 	const editor = createTextFileEditor(
 		{
 			...folder.files,
-			write: (...args) => {
+			replace: (...args) => {
 				if (blocked) return Promise.reject(new Error('host disappeared'));
-				return folder.files.write(...args);
+				return folder.files.replace(...args);
 			},
 		},
 		{ path: 'note.md', source: 'original', version },
@@ -171,19 +160,19 @@ test('a rejected save leaves the draft failed and retryable', async () => {
 for (const readFailure of [false, true]) {
 	test(`an unacknowledged saved draft reconciles without a false conflict${readFailure ? ' after a failed confirmation read' : ''}`, async () => {
 		const folder = await open();
-		const original = expectOk(
-			await folder.files.write('note.md', 'original', { expected: 'absent' }),
+		const { version: original } = expectOk(
+			await folder.files.create('note.md', 'original'),
 		);
 		let confirmationFails = readFailure;
 		const files: FolderFiles = {
 			...folder.files,
-			async write(path, source, options) {
-				const result = await folder.files.write(path, source, options);
+			async replace(file, source) {
+				const result = await folder.files.replace(file, source);
 				return result.error
 					? result
 					: FileError.Unconfirmed({
-							path,
-							operation: 'write',
+							path: file.path,
+							operation: 'replace',
 							cause: 'reply lost after saving',
 						});
 			},

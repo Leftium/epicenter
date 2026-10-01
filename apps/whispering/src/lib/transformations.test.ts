@@ -30,7 +30,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readSource } from '@epicenter/app/files';
+import { readSource } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
 import type { Library } from './library.svelte.js';
@@ -404,7 +404,7 @@ test('a transcript whose recording was deleted outside refuses', async () => {
 	const editor = await cleanupProfile(library);
 	await library.refresh();
 	await rm(join(root, recording.path));
-	await rm(join(root, recording.attachment!));
+	await rm(join(root, recording.fields.audioPath!));
 	// The list still shows the recording: nothing has refreshed it.
 	expect(library.entries).toHaveLength(1);
 
@@ -505,7 +505,8 @@ test('a recording cannot be deleted while a transformation of it runs, including
 	const again = await library.deletionFor(recording.path);
 	expect(again.data).toMatchObject({ kind: 'recording' });
 	expect(await library.remove(again.data!)).toBeUndefined();
-	expect(await names(root, 'recordings')).toEqual([]);
+	// The row and the results are gone. The audio is an ordinary file and stays.
+	expect(await names(root, 'recordings')).toEqual([`${recording.stem}.wav`]);
 	expect(await names(root, RUNS)).toEqual([]);
 });
 
@@ -530,7 +531,7 @@ test('a recording cannot be deleted while a received result for it is unsaved; d
 	library.discardTransformationRun(held.id);
 	expect(await library.remove(confirmed.data!)).toBeUndefined();
 
-	expect(await names(root, 'recordings')).toEqual([]);
+	expect(await names(root, 'recordings')).toEqual([`${recording.stem}.wav`]);
 	expect(await names(root, RUNS)).toEqual([]);
 });
 
@@ -582,7 +583,7 @@ test('a failed run is not sent again once its recording or transcript text is go
 
 	// The recording is deleted outside the app.
 	await rm(join(root, recording.path));
-	await rm(join(root, recording.attachment!));
+	await rm(join(root, recording.fields.audioPath!));
 	await library.retryTransformation(failed.id);
 	expect(library.transformationRuns[0]!.state).toMatchObject({
 		kind: 'failed',

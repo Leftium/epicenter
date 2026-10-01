@@ -11,7 +11,9 @@
 				"trusted-app-windows-development",
 				"trusted-whispering-native-development",
 				"trusted-whispering-overlay-development",
-				"capture-drafts-development"
+				"capture-drafts-development",
+				"todos-folder-development",
+				"capture-folder-development"
 			]
 		}
 	}

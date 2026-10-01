@@ -37,33 +37,33 @@
 		toggleQuote,
 	} from '$lib/editor/rich-session.js';
 	import { noteSchema as schema } from '$lib/editor/schema.js';
+	import type { FileSession } from '$lib/file-session.svelte.js';
 	import { richAvailability } from '$lib/note-source.js';
-	import type { FileEditor } from '$lib/notes.svelte.js';
 
 	let {
-		editor,
+		session,
 		focusRequest,
 		onOpenSource,
 	}: {
-		editor: FileEditor;
+		session: FileSession;
 		focusRequest: number;
 		onOpenSource: () => void;
 	} = $props();
 
 	/**
-	 * The session owns the document and its undo history; the view below only
-	 * displays it. Both live from the moment the draft is editable as rich
+	 * The rich session owns the document and its undo history; the view below
+	 * only displays it. Both live from the moment the draft is editable as rich
 	 * text until it stops being so, and no edit in between recreates them.
 	 */
-	let session = $state.raw<RichSession>();
+	let rich = $state.raw<RichSession>();
 	let view = $state.raw<EditorView>();
 	let element = $state<HTMLDivElement>();
 
 	/** Why the draft cannot be edited as rich text, or undefined when it can. */
 	const reasons = $derived.by((): readonly string[] | undefined => {
 		// While the document stands for the draft's body there is nothing to decide.
-		if (session?.inSync) return undefined;
-		const availability = richAvailability(editor.buffer);
+		if (rich?.inSync) return undefined;
+		const availability = richAvailability(session.buffer);
 		return availability.editable ? undefined : availability.reasons;
 	});
 	/**
@@ -155,14 +155,14 @@
 	$effect(() => {
 		if (!element || !editable) return;
 		const opened = untrack(() =>
-			createRichSession(editor, { viewPlugins: [placeholder, taskCheckbox] }),
+			createRichSession(session, { viewPlugins: [placeholder, taskCheckbox] }),
 		);
 		if (!opened) return;
 		const created = new EditorView(element, {
 			state: opened.state,
 			attributes: { class: 'focus:outline-none', 'aria-label': 'Note text' },
 			dispatchTransaction(this: EditorView, transaction) {
-				// The session decides. A refused transaction changes nothing on
+				// The rich session decides. A refused transaction changes nothing on
 				// screen; an accepted one is already in the draft.
 				const next = opened.apply(transaction);
 				if (next === undefined) return;
@@ -170,21 +170,21 @@
 				readActive(next);
 			},
 		});
-		session = opened;
+		rich = opened;
 		view = created;
 		readActive(opened.state);
 		return () => {
 			created.destroy();
 			view = undefined;
-			session = undefined;
+			rich = undefined;
 		};
 	});
 
-	// The draft's body changed from outside this view: the session replaces
+	// The draft's body changed from outside this view: the rich session replaces
 	// the document and drops the undo history that described the old text.
 	$effect(() => {
-		editor.buffer;
-		const current = untrack(() => session);
+		session.buffer;
+		const current = untrack(() => rich);
 		const mounted = untrack(() => view);
 		if (!current || !mounted) return;
 		const next = untrack(() => current.sync());
@@ -292,7 +292,8 @@
 						}}
 					>
 						<Input class="h-8" placeholder="https://example.com" aria-label="Link address" bind:value={linkHref} />
-						<Button type="submit" size="sm">{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
+						<!-- The popover is outside the app's inert root. -->
+						<Button type="submit" size="sm" disabled={!session.admitting}>{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
 					</form>
 				</Popover.Content>
 			</Popover.Root>

@@ -3,7 +3,7 @@ import { APPS } from '@epicenter/constants/apps';
 import { workspaceAppViteConfig } from '@epicenter/vite-config';
 import { defaultClientConditions, defineConfig, mergeConfig } from 'vite';
 
-/** The desktop page: served by the folder host, reaching a real directory. */
+/** The desktop page: bundled into the shell, reaching the directory it owns. */
 const isDesktop = process.env.HONEYCRISP_DESKTOP === '1';
 
 export default defineConfig(
@@ -15,14 +15,30 @@ export default defineConfig(
 			...(isDesktop && {
 				conditions: ['tauri', ...defaultClientConditions],
 			}),
-			alias: {
+			alias: [
+				// Shared code imports the folder contract from the bare specifier.
+				// Each build resolves that exact specifier to its one adapter, so
+				// the desktop page carries no browser storage or Git, and the
+				// browser page no desktop adapter. Subpaths are left alone.
+				{
+					find: /^@epicenter\/folder$/,
+					replacement: isDesktop
+						? '@epicenter/folder/tauri'
+						: '@epicenter/folder/browser',
+				},
 				// isomorphic-git and its SHA-1 dependency expect Node's Buffer.
-				buffer: fileURLToPath(import.meta.resolve('buffer/')),
+				{
+					find: /^buffer$/,
+					replacement: fileURLToPath(import.meta.resolve('buffer/')),
+				},
 				// just-bash's browser bundle imports gzip helpers the terminal never enables.
-				'node:zlib': fileURLToPath(
-					new URL('./src/lib/shims/zlib.ts', import.meta.url),
-				),
-			},
+				{
+					find: /^node:zlib$/,
+					replacement: fileURLToPath(
+						new URL('./src/lib/shims/zlib.ts', import.meta.url),
+					),
+				},
+			],
 		},
 		optimizeDeps: { include: ['buffer'] },
 	}),

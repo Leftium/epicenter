@@ -92,6 +92,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/capture": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/folder": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@tauri-apps/api": "catalog:",
         "buffer": "^6.0.3",
@@ -117,7 +118,6 @@
         "@epicenter/app": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
-        "@epicenter/capture-app": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/device": "workspace:*",
@@ -128,6 +128,7 @@
         "@epicenter/skills": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
+        "@epicenter/todos": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/whispering": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
@@ -155,8 +156,10 @@
       "name": "@epicenter/honeycrisp",
       "version": "0.0.2",
       "dependencies": {
-        "@epicenter/app": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/definition": "workspace:*",
+        "@epicenter/folder": "workspace:*",
+        "@tauri-apps/api": "catalog:",
         "bits-ui": "catalog:",
         "buffer": "^6.0.3",
         "date-fns": "catalog:",
@@ -463,7 +466,7 @@
       "name": "@epicenter/todos",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/app": "workspace:*",
+        "@epicenter/folder": "workspace:*",
         "buffer": "^6.0.3",
         "wellcrafted": "catalog:",
       },
@@ -527,8 +530,9 @@
       "name": "@epicenter/whispering",
       "version": "7.11.1",
       "dependencies": {
-        "@epicenter/app": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/definition": "workspace:*",
+        "@epicenter/folder": "workspace:*",
         "nanoid": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -604,6 +608,7 @@
         "@epicenter/blobs": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/definition": "workspace:*",
         "@epicenter/device": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/principal": "workspace:*",
@@ -613,11 +618,6 @@
         "@tauri-apps/api": "catalog:",
         "@tauri-apps/plugin-clipboard-manager": "^2.3.0",
         "@y/y": "14.0.0-rc.26",
-        "buffer": "^6.0.3",
-        "diff": "^8.0.4",
-        "ignore": "^7.0.5",
-        "isomorphic-git": "1.38.5",
-        "just-bash": "3.4.2",
         "lib0": "1.0.0-rc.32",
         "nanoid": "catalog:",
         "openai": "^7.12.1",
@@ -702,6 +702,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/app": "workspace:*",
+        "@epicenter/definition": "workspace:*",
+        "@epicenter/folder": "workspace:*",
         "markdown-it": "^14.0.0",
       },
       "devDependencies": {
@@ -743,6 +745,18 @@
         "vite": "catalog:",
       },
     },
+    "packages/definition": {
+      "name": "@epicenter/definition",
+      "version": "0.0.1",
+      "dependencies": {
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/device": {
       "name": "@epicenter/device",
       "version": "0.0.1",
@@ -756,6 +770,28 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "playwright": "^1.61.1",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+      },
+    },
+    "packages/folder": {
+      "name": "@epicenter/folder",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/definition": "workspace:*",
+        "@tauri-apps/api": "catalog:",
+        "buffer": "^6.0.3",
+        "diff": "^8.0.4",
+        "ignore": "^7.0.5",
+        "isomorphic-git": "1.38.5",
+        "just-bash": "3.4.2",
+        "nanoid": "catalog:",
+        "wellcrafted": "catalog:",
+        "yaml": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "fake-indexeddb": "^6.2.5",
         "typescript": "catalog:",
         "vite": "catalog:",
       },
@@ -1250,9 +1286,13 @@
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 
+    "@epicenter/definition": ["@epicenter/definition@workspace:packages/definition"],
+
     "@epicenter/device": ["@epicenter/device@workspace:packages/device"],
 
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
+
+    "@epicenter/folder": ["@epicenter/folder@workspace:packages/folder"],
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 

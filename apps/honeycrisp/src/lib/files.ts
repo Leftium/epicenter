@@ -3,12 +3,12 @@
  * for editing. Paths are the folder's literal paths; nothing here writes.
  */
 import {
+	type FileCapture,
 	type FileError,
 	type FileListing,
-	type FileVersion,
 	type FolderFiles,
 	pathProblem,
-} from '@epicenter/app/files';
+} from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 
 export type TreeRow = {
@@ -125,15 +125,15 @@ export function nameProblem(
 /** Text larger than this opens as file details instead of in the editor. */
 export const EDITABLE_TEXT_LIMIT = 1024 * 1024;
 
+/**
+ * One text file as it was read or written: the folder's capture of its path
+ * and bytes, with the exact text those bytes are. It is the baseline a later
+ * replace, move, or remove is conditional on.
+ */
+export type Capture = FileCapture & { readonly source: string };
+
 export type OpenedFile =
-	| {
-			readonly kind: 'text';
-			readonly file: {
-				readonly path: string;
-				readonly source: string;
-				readonly version: FileVersion;
-			};
-	  }
+	| { readonly kind: 'text'; readonly file: Capture }
 	/** Not UTF-8 text, or text with NUL bytes: shown as details, never saved as text. */
 	| { readonly kind: 'binary'; readonly size: number }
 	| { readonly kind: 'tooLarge'; readonly size: number };

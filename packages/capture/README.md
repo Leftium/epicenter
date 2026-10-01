@@ -1,8 +1,12 @@
 # Capture file model
 
 A capture is one Markdown file, `captures/<stem>.md`, in a folder opened with
-`@epicenter/app/files`. The file's bytes are the saved data. There is no Yjs
+`@epicenter/folder`. The file's bytes are the saved data. There is no Yjs
 document, no thought rows, and no IDs for thoughts.
+
+`captureDefinition` is declared with `defineFolder` from `@epicenter/folder`
+and the `defineTable` and `field` vocabulary of `@epicenter/definition`. This
+package opens nothing; an application passes the definition to an opener.
 
 ```markdown
 ---
@@ -112,7 +116,13 @@ const report = await runLegacyImport(folder.files, bundle);
 
 `legacyCaptureDefinition` is the old Personal store: `captures` and `thoughts`
 with Yjs text bodies, `entries` from the earlier recursive model, and
-`promotions` for a handoff that no longer exists.
+`promotions` for a handoff that no longer exists. It is the one declaration
+here that stays on `@epicenter/app`, because it describes a Yjs store.
+
+`runLegacyImport` takes the folder's `read`, `create`, and `replace`. Every
+document, the bundle, and the report are saved with `create`, which refuses an
+occupied path. Only the receipt is ever saved with `replace`, and only over
+the exact receipt the import read.
 
 **The bundle** is one snapshot of what one device held. It is plain JSON
 (`readLegacyBundle` checks a parsed file and refuses one that is not a bundle,
@@ -126,7 +136,8 @@ naming each problem). Exporting only reads the store.
 - A row whose stored values could not be read is in `unreadable`, with its
   raw values and its body text when that was readable.
 
-**The import** writes new files and never replaces one:
+**The import** writes new files and never replaces a capture, a bundle, or a
+report:
 
 | File | Holds |
 | --- | --- |

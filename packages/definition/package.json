@@ -1,0 +1,25 @@
+{
+	"name": "@epicenter/definition",
+	"version": "0.0.1",
+	"private": true,
+	"description": "Inert data-definition vocabulary: the closed field palette, table and KV declarations, durable name grammars, and the compiler that turns a declaration into field checks.",
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		".": "./src/index.ts",
+		"./field": "./src/field/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"license": "AGPL-3.0-or-later"
+}

@@ -16,7 +16,8 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import { openFolder } from '@epicenter/folder/bun';
+import { expectOk } from 'wellcrafted/testing';
 import {
 	addThought,
 	captureDefinition,
@@ -80,14 +81,16 @@ test('an open fence alone is not marked and reads as no thoughts', () => {
 test('the legacy import writes the marked file and reports it as source-only', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'capture-compose-'));
 	roots.push(root);
-	const folder = await openNativeFolder({
-		root,
-		definition: captureDefinition,
-		git: {
-			author: { name: 'Test', email: 'test@localhost' },
-			commitOnEdit: false,
-		},
-	});
+	const folder = expectOk(
+		await openFolder({
+			root,
+			definition: captureDefinition,
+			git: {
+				author: { name: 'Test', email: 'test@localhost' },
+				commitOnEdit: false,
+			},
+		}),
+	);
 	const report = await runLegacyImport(folder.files, {
 		format: 'epicenter.capture.legacy-bundle',
 		version: 1,

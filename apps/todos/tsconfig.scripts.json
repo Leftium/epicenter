@@ -1,5 +1,6 @@
 {
-	// Bun entrypoints for the loopback Git backend, the dev launcher, and the native CLI.
+	// Bun entrypoints for the loopback Git backend, the dev launcher, the native
+	// CLI.
 	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {
 		"types": ["bun"],

@@ -7,7 +7,7 @@
  * absolute times an observation or attempt happened, so they never go stale on
  * screen.
  */
-import type { CommitOutcome, GitSnapshot } from '@epicenter/app/files';
+import type { CommitOutcome, GitSnapshot } from '@epicenter/folder';
 
 export type Tone = 'neutral' | 'busy' | 'good' | 'warning' | 'error';
 export type StatusLine = {
@@ -49,9 +49,11 @@ export function filesLine(state: {
 	saving: boolean;
 	problems: number;
 	unsaved: boolean;
-	/** Captured recordings that are not fully in the folder yet. */
+	/** Captured recordings not known to be in the folder. Published ones are not counted. */
 	pendingCaptures: number;
 	capturesSaving: boolean;
+	/** Recordings confirmed published whose row could not be shown as theirs. */
+	publishedUnshown: number;
 	/** Transcripts received whose result file could not be written. */
 	unsavedResults: number;
 	/** Transformation results received whose file could not be written. */
@@ -92,6 +94,18 @@ export function filesLine(state: {
 		return { label: 'Saving…', tone: 'busy' };
 	if (state.unsaved)
 		return { label: 'Unsaved typing', short: 'Unsaved', tone: 'busy' };
+	// Saved, and said so. What is open is how the folder's row reads now.
+	if (state.publishedUnshown > 0)
+		return {
+			label:
+				state.publishedUnshown === 1
+					? 'Saved · 1 recording to check'
+					: `Saved · ${state.publishedUnshown} recordings to check`,
+			short: 'Saved · check',
+			detail:
+				'The recording was written to the folder. Its file could not then be shown as this recording. Use Refresh in the notice under the header; nothing is written again.',
+			tone: 'warning',
+		};
 	return { label: 'All changes saved to files', short: 'Saved', tone: 'good' };
 }
 
@@ -104,14 +118,18 @@ export function filesLineOf(library: {
 	readonly unsavedResults: number;
 	readonly unsavedTransformations: number;
 }): StatusLine {
+	const published = library.pending.filter(
+		(item) => item.state.kind === 'published',
+	).length;
 	return filesLine({
 		saving: library.saving,
 		problems: library.saveProblems,
 		unsaved: library.unsaved,
-		pendingCaptures: library.pending.length,
+		pendingCaptures: library.pending.length - published,
 		capturesSaving: library.pending.some(
 			(item) => item.state.kind === 'saving',
 		),
+		publishedUnshown: published,
 		unsavedResults: library.unsavedResults,
 		unsavedTransformations: library.unsavedTransformations,
 	});

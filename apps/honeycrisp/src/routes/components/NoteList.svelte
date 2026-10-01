@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/app/files';
+	import { readSource } from '@epicenter/folder';
 	import { Button } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import { toast } from '@epicenter/ui/sonner';
@@ -20,10 +20,10 @@
 
 	/** What the row shows: the open draft when there is one, else the saved file. */
 	function shown(note: NoteEntry) {
-		const editor = notes.editorAt(note.path);
-		if (editor === undefined || !editor.dirty)
+		const session = notes.sessionAt(note.path);
+		if (session === undefined || !session.dirty)
 			return { title: displayTitle(note.fields.title, note.body), preview: previewText(note.body) };
-		const draft = readSource(editor.buffer);
+		const draft = readSource(session.buffer);
 		return {
 			title: displayTitle(draft.values?.title ?? note.fields.title, draft.body),
 			preview: previewText(draft.body),
@@ -108,7 +108,7 @@
 			<h3 class="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">{group.label}</h3>
 			{#each group.entries as note (note.path)}
 				{@const row = shown(note)}
-				{@const editor = notes.editorAt(note.path)}
+				{@const session = notes.sessionAt(note.path)}
 				<ContextMenu.Root>
 					<ContextMenu.Trigger>
 						<button
@@ -124,9 +124,11 @@
 									{row.title}
 								</span>
 								<span class="shrink-0 text-xs text-muted-foreground">
-									{#if editor?.phase === 'conflict' || editor?.phase === 'failed'}
+									{#if session?.status === 'conflict' || session?.status === 'failed'}
 										<span class="text-destructive">not saved</span>
-									{:else if editor?.unsettled}
+									{:else if session?.status === 'unconfirmed'}
+										<span class="text-warning">not confirmed</span>
+									{:else if session?.unsettled}
 										draft
 									{:else if updated(note) !== ''}
 										{format(new Date(updated(note)), 'h:mm a')}
@@ -139,7 +141,10 @@
 						</button>
 					</ContextMenu.Trigger>
 					<ContextMenu.Content class="w-52">
-						{#if note.issues}
+						{#if notes.fenced}
+							<!-- An open menu is outside the app's inert root. -->
+							<ContextMenu.Item disabled>The app is closing</ContextMenu.Item>
+						{:else if note.issues}
 							<ContextMenu.Item onSelect={() => void notes.open(note.path)}>Open to repair</ContextMenu.Item>
 							<ContextMenu.Item variant="destructive" onSelect={() => void confirmDelete(notes, note.path)}>
 								Delete file…

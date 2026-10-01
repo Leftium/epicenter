@@ -7,9 +7,14 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
 ## Constraints
 
 - **The page stays native-free.** Nothing under `src/` imports a Node, Bun, or
-  Tauri module, or `@epicenter/app/files/native`. The page reaches the folder
-  only through `src/lib/workspace/`. `src/lib/page-boundary.test.ts` enforces
+  Tauri module, `@epicenter/folder/bun`, or `@epicenter/folder/tauri`. The page
+  names the folder contract through `@epicenter/folder` and reaches a folder
+  only through `src/lib/workspace/`; `@epicenter/folder/browser` is imported
+  by the browser workspace alone. `src/lib/page-boundary.test.ts` enforces
   this; keep it passing and do not weaken it.
+- **A folder that cannot be opened is reported, not replaced.** Opening
+  returns a `Result`. A refused browser folder is never retried as a desktop
+  one, and an unreachable folder host is never replaced by browser storage.
 - **One session per mounted layout.** `src/routes/+layout.svelte` opens the
   session and `AppShell` puts it in context. A page or component takes it with
   `getSession()`; it never opens a workspace, builds a library, or keeps
@@ -17,9 +22,11 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
   change belongs to the session. Only leaving the app is guarded, never a
   navigation between routes. `src/lib/page-boundary.test.ts` enforces the
   ownership.
-- **Native work belongs in `native/`.** The folder host is the only process that
-  touches the data folder. Add a host operation there and expose it through the
+- **Native work belongs in `native/`.** The Bun folder host is the only process
+  that touches the data folder. Add a host operation there and expose it through the
   workspace type, with a browser implementation or an explicit `undefined`.
+  Do not attach the Rust folder owner (`tauri-plugin-epicenter-folder`) to the
+  same directory: one root has one owner, and that cutover is separate work.
 - **The shell registers no commands.** Do not add a Tauri command or capability
   to give the page a native ability. Load the `tauri` skill before changing
   `src-tauri/`.
@@ -30,13 +37,32 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
 - **Files are authoritative.** Do not add a cache, mirror, or second store of
   recordings. Do not add Yjs, the `@epicenter/app` store, accounts, or sync to
   this workflow.
+- **A recording's audio is the file its row names.** `audioPath` is the only
+  link. Do not infer audio from a file that shares the row's stem, do not
+  fill in a missing `audioPath`, and do not delete audio because its row was
+  deleted: a table owns one Markdown file per row.
 - **A save is never reported by its commit.** Keep saved-file state and history
   state separate in code and in copy.
-- **Never overwrite to recover.** Recovery writes only what is missing, as an
-  exclusive creation, and refuses when a path holds something it did not write.
+- **Recovery replaces only what it observed.** A recording is published as one
+  `folder.batch`: the audio, then the row. To finish one whose audio landed
+  without its row, read the audio, confirm it is exactly the pending bytes,
+  and publish `batch.files.replace(observed, pendingBytes)` with the row's
+  `create`. The condition is the point: the batch lands only if the audio is
+  still what was read. Never use `overwrite`, never replace audio or a row
+  that is not this capture's, and never serialize a row by hand.
+- **A receipt proves publication; it is not an observation.** A complete batch
+  receipt covering the audio and the row means the recording was saved. Never
+  report that as unsaved, and never build an entry or baseline from it. The
+  row read that follows is a separate fact about what can be shown now: when
+  it fails, or the row is gone or foreign, the state is "saved, cannot be
+  shown", and the only action from there is to read again. Do not publish
+  again, recreate, or repair after a confirmed receipt. `Partial`,
+  `Unconfirmed`, and a refusal before publication are not confirmed: they stay
+  unsaved and keep the close guard.
 - **Fixture audio and failure injection are debug-only.** They are enabled by
   the shell's build, never by an environment variable alone, and the UI says so
-  while they are active.
+  while they are active. An injected publication failure obstructs the real
+  batch so the folder fails its own step; it never answers for the folder.
 - **A transformation never writes its transcript.** A result is a new row in
   `transformation_runs/` with a stem fixed before the request is sent. Saving a
   received result again must not call the endpoint or create a second file.

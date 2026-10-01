@@ -1,5 +1,5 @@
 // Every build is a static SPA. The browser build writes `build/`. The desktop
-// build writes `build-desktop/`, which the folder host serves.
+// build writes `build-desktop/`, which the desktop shell bundles.
 import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 

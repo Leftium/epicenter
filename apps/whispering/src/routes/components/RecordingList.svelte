@@ -7,6 +7,7 @@
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { resolve } from '$app/paths';
+	import { audioPathIn } from '$lib/definition.js';
 	import type { RecordingEntry } from '$lib/editor.svelte.js';
 	import type { Library } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
@@ -40,7 +41,8 @@
 	const hidden = $derived(library.entries.length - visible.length);
 
 	function historyOf(entry: RecordingEntry) {
-		return committedState(library.git, [entry.path, ...(entry.attachment ? [entry.attachment] : [])]);
+		const audioPath = audioPathIn(entry.fields);
+		return committedState(library.git, [entry.path, ...(audioPath ? [audioPath] : [])]);
 	}
 </script>
 
@@ -96,7 +98,7 @@
 					<span class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
 						<span>{formatTime(entry.fields.recordedAt, 'short') || entry.path}</span>
 						{#if count > 0}<span>· {count} {count === 1 ? 'transcription' : 'transcriptions'}</span>{/if}
-						{#if !entry.attachment && !entry.issues}<span>· no audio</span>{/if}
+						{#if !audioPathIn(entry.fields)}<span>· names no audio</span>{/if}
 						{#if history === 'uncommitted'}<span data-testid="row-history">· saved, not in history yet</span>{/if}
 					</span>
 				</button>

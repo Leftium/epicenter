@@ -9,9 +9,12 @@
 
 	// The mounted page acquires the folder; importing modules opens nothing.
 	// Which folder is the build's choice: a browser folder, or the desktop
-	// host's directory. There is no sign-in on this path.
+	// shell's directory. There is no sign-in on this path.
 	const opening = openCaptureHost().then(async (host) => {
 		const captures = createCaptures(host);
+		// Listen before the first read, so no change falls between them. The
+		// folder drops the listener when it closes.
+		host.onExternalChange(() => void captures.refresh());
 		await captures.refresh();
 		return { host, captures };
 	});

@@ -24,6 +24,7 @@ use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_epicenter_folder::{Author as FolderAuthor, FolderConfig, FolderExt, ScopeConfig};
 use tauri_specta::Event as _;
 
 /// The command list, shared with `build.rs` through `include!`. Only the tests
@@ -104,7 +105,13 @@ const DEVELOPMENT_PORT: u16 = 39_131;
 const PROTOCOL_VERSION: u8 = 7;
 const HOSTED_AUTH_ORIGIN: &str = "https://api.epicenter.so";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long Bun gets to shut down after its stdin closes before it is killed.
+///
+/// Longer than Bun's own ten-second shutdown grace (`SHUTDOWN_GRACE_MS` in
+/// `src/sidecar-runtime.ts`), so Bun's owners finish what they admitted, such
+/// as a Capture save and its commit, and Bun exits by itself. The kill is the
+/// bound for a host that hangs anyway: work still running then is lost.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(12);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BuiltInApp {
@@ -113,16 +120,18 @@ enum BuiltInApp {
     Honeycrisp,
     Capture,
     Mail,
+    Todos,
     Books,
 }
 
 impl BuiltInApp {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Home,
         Self::Whispering,
         Self::Honeycrisp,
         Self::Capture,
         Self::Mail,
+        Self::Todos,
         Self::Books,
     ];
 
@@ -132,10 +141,14 @@ impl BuiltInApp {
     /// ones Home offers. Home is absent because you are already looking at it,
     /// not because it is above the others (ADR-0209). Books is a
     /// release-bundled placeholder document with nothing behind it to open.
+    /// Honeycrisp now ships its own desktop shell, outside this host.
     /// All stay reserved IDs the catalog refuses to admit, so "not launchable"
     /// never means "free for someone else to claim".
     const fn is_launchable(self) -> bool {
-        matches!(self, Self::Whispering | Self::Honeycrisp | Self::Capture | Self::Mail)
+        matches!(
+            self,
+            Self::Whispering | Self::Capture | Self::Mail | Self::Todos
+        )
     }
 
     const fn id(self) -> &'static str {
@@ -145,6 +158,7 @@ impl BuiltInApp {
             Self::Honeycrisp => "honeycrisp",
             Self::Capture => "capture",
             Self::Mail => "mail",
+            Self::Todos => "todos",
             Self::Books => "books",
         }
     }
@@ -156,6 +170,7 @@ impl BuiltInApp {
             Self::Honeycrisp => "/apps/honeycrisp/",
             Self::Capture => "/apps/capture/",
             Self::Mail => "/apps/mail/",
+            Self::Todos => "/apps/todos/",
             Self::Books => "/apps/books/",
         }
     }
@@ -167,6 +182,7 @@ impl BuiltInApp {
             Self::Honeycrisp => "Epicenter: Honeycrisp",
             Self::Capture => "Epicenter: Capture",
             Self::Mail => "Epicenter: Mail",
+            Self::Todos => "Epicenter: Todos",
             Self::Books => "Epicenter: Books",
         }
     }
@@ -774,6 +790,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             open_forwarded_deep_links(app, &args);
         }))
+        .plugin(tauri_plugin_epicenter_folder::init())
         .plugin(log_plugin)
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -814,7 +831,29 @@ pub fn run() {
         .setup(move |app| {
             specta_builder.mount_events(app);
 
-            app.manage(app_data::DesktopPaths::resolve(app.handle())?);
+            let desktop_paths = app_data::DesktopPaths::resolve(app.handle())?;
+            let mut todos_folder = FolderConfig::new(
+                desktop_paths.folder_dir.join("so.epicenter.todos"),
+                FolderAuthor { name: "Todos".into(), email: "todos@localhost".into() },
+            );
+            todos_folder.use_repository_author = true;
+            todos_folder.use_repository_origin = true;
+            app.folders().register(ScopeConfig {
+                scope: "so.epicenter.todos".into(),
+                folder: todos_folder,
+                windows: vec!["todos".into()],
+            }).map_err(anyhow::Error::msg)?;
+            let mut capture_folder = FolderConfig::new(
+                desktop_paths.folder_dir.join("so.epicenter.capture"),
+                FolderAuthor { name: "Capture".into(), email: "capture@localhost".into() },
+            );
+            capture_folder.use_repository_author = true;
+            app.folders().register(ScopeConfig {
+                scope: "so.epicenter.capture".into(),
+                folder: capture_folder,
+                windows: vec!["capture".into()],
+            }).map_err(anyhow::Error::msg)?;
+            app.manage(desktop_paths);
 
             // The active local model and the unload policy are device-local host
             // state (ADR-0180), so they live beside the app's own config rather
@@ -2178,6 +2217,7 @@ mod tests {
                 ("honeycrisp", "/apps/honeycrisp/", "Epicenter: Honeycrisp"),
                 ("capture", "/apps/capture/", "Epicenter: Capture"),
                 ("mail", "/apps/mail/", "Epicenter: Mail"),
+                ("todos", "/apps/todos/", "Epicenter: Todos"),
                 ("books", "/apps/books/", "Epicenter: Books"),
             ]
         );
@@ -2194,7 +2234,10 @@ mod tests {
             .filter(|window| window.is_launchable())
             .map(BuiltInApp::id)
             .collect();
-        assert_eq!(launchable, ["whispering", "honeycrisp", "capture", "mail"]);
+        assert_eq!(
+            launchable,
+            ["whispering", "capture", "mail", "todos"]
+        );
     }
 
     #[test]
@@ -2203,10 +2246,8 @@ mod tests {
             parse_application_id("whispering"),
             Some(Application::Compiled(BuiltInApp::Whispering))
         ));
-        assert!(matches!(
-            parse_application_id("honeycrisp"),
-            Some(Application::Compiled(BuiltInApp::Honeycrisp))
-        ));
+        // Honeycrisp ships its own shell; its old host id stays reserved.
+        assert!(parse_application_id("honeycrisp").is_none());
         assert!(matches!(
             parse_application_id("capture"),
             Some(Application::Compiled(BuiltInApp::Capture))
@@ -2214,6 +2255,10 @@ mod tests {
         assert!(matches!(
             parse_application_id("mail"),
             Some(Application::Compiled(BuiltInApp::Mail))
+        ));
+        assert!(matches!(
+            parse_application_id("todos"),
+            Some(Application::Compiled(BuiltInApp::Todos))
         ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
@@ -2819,6 +2864,7 @@ mod tests {
             ("epicenter://app/honeycrisp", BuiltInApp::Honeycrisp),
             ("epicenter://app/capture", BuiltInApp::Capture),
             ("epicenter://app/mail", BuiltInApp::Mail),
+            ("epicenter://app/todos", BuiltInApp::Todos),
             ("epicenter://app/books", BuiltInApp::Books),
         ] {
             assert_eq!(parse_app_deep_link(&url.parse().unwrap()), Some(expected));

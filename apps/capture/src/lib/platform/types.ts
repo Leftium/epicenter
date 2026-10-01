@@ -1,11 +1,16 @@
 /**
  * The seam between the Capture UI and where its folder lives.
  *
- * `#platform/folder` resolves at build time. The Epicenter host leaf reaches a
- * real directory through the host's folder bridge; the browser leaf opens a
- * logical folder in IndexedDB. Neither leaf imports a native module.
+ * `#platform/folder` resolves at build time. The Epicenter host leaf attaches
+ * to a real directory the desktop shell owns; the browser leaf opens a logical
+ * folder in IndexedDB. Neither leaf imports the other's storage.
  */
-import type { FileTable, FolderFiles, FolderGit } from '@epicenter/app/files';
+import type {
+	FileTable,
+	FolderFiles,
+	FolderGit,
+	FolderLocation,
+} from '@epicenter/folder';
 import type { CaptureFields } from '@epicenter/capture';
 
 /** The folder surface Capture uses. */
@@ -17,24 +22,21 @@ export type CaptureFolder = {
 		>;
 	};
 	/**
-	 * Conditional writes of exact source follow the folder's history policy.
+	 * Exact source at a literal path. `create` needs the path unoccupied and
+	 * `replace` needs the file to be the one that was read; Capture takes no
+	 * verb that overwrites.
 	 */
-	readonly files: Pick<FolderFiles, 'read' | 'write'>;
+	readonly files: Pick<FolderFiles, 'read' | 'create' | 'replace'>;
 	readonly git: Pick<FolderGit, 'snapshot' | 'subscribe' | 'commit'>;
 };
-
-/** Where the captures are, in terms a person can act on. */
-export type CaptureLocation =
-	| { readonly kind: 'browser' }
-	/** An ordinary directory; `path` is its canonical absolute path. */
-	| { readonly kind: 'directory'; readonly path: string };
 
 /** The page's answer to a quit: go ahead, or stay open. */
 export type QuitAnswer = (answer: 'proceed' | 'cancel') => Promise<void>;
 
 export type CaptureHost = {
 	readonly folder: CaptureFolder;
-	readonly location: CaptureLocation;
+	/** Where the folder says its files are. For showing; never joined onto. */
+	readonly location: FolderLocation;
 	/**
 	 * Runs `listener` when files may have changed outside this page. A hint to
 	 * reread, never file contents. Returns a stop function.
@@ -48,15 +50,21 @@ export type CaptureHost = {
 	 */
 	onQuitRequested(listener: (answer: QuitAnswer) => void): () => void;
 	/**
-	 * Runs `listener` when the desktop host process that owns the folder has
-	 * stopped, so no save can be confirmed from this window again.
+	 * Runs `listener` when the Epicenter service that served this page has
+	 * stopped. The folder is not that service's: saving carries on. What the
+	 * page can no longer do is load anything more from it, a reload included.
+	 * A folder that stops says so itself, as `closed` on its Git snapshot.
 	 */
-	onHostStopped(listener: () => void): () => void;
+	onServiceStopped(listener: () => void): () => void;
 	/**
 	 * Why quitting the desktop app cannot ask this window first, when it
 	 * cannot. `undefined` when it can, and in a browser.
 	 */
 	readonly quitProtectionProblem: string | undefined;
+	/**
+	 * Let go of this page's use of the folder. Saves already made still land.
+	 * On the desktop the folder stays open for the shell and its other windows.
+	 */
 	close(): Promise<void>;
 };
 

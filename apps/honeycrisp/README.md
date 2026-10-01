@@ -13,18 +13,23 @@ From the repository root:
 
 | Command | What it does |
 | --- | --- |
-| `bun dev:honeycrisp` | Builds the page and the folder host, then starts the desktop app (`tauri dev`). |
+| `bun dev:honeycrisp` | Builds the desktop page, then starts the desktop app (`tauri dev`). |
 | `bun build:honeycrisp` | Builds the desktop app bundle (`tauri build`). |
 | `bun dev:honeycrisp:ui` | Starts the browser build on port 5175. Notes live in this browser, not in a directory. |
 | `bun build:honeycrisp:ui` | Builds the browser page into `apps/honeycrisp/build`. |
 
 Development and builds need Bun, Rust, Git, and the Tauri prerequisites for your
-platform. The packaged app includes its file host and needs Git available on
-the machine. It starts signed out and stays that way; it does not need the
+platform. The packaged app is one program and needs Git available on the
+machine. It starts signed out and stays that way; it does not need the
 Epicenter desktop app or the hosted API.
 
-Checks: `bun run --cwd apps/honeycrisp typecheck` and
-`bun run --cwd apps/honeycrisp test`.
+Checks, from `apps/honeycrisp`:
+
+| Command | What it checks |
+| --- | --- |
+| `bun run typecheck` | Both page builds and the scripts. |
+| `bun run test` | The page: editor, drafts, notes over a real directory, bundle contents. Needs no Rust. |
+| `bun run test:native` | The shell: its Rust tests, then the page's close handling against the shell's real close gate. Needs Rust. |
 
 ## Where notes live
 
@@ -45,8 +50,9 @@ for testing:
 HONEYCRISP_ROOT=/tmp/honeycrisp-test bun dev:honeycrisp
 ```
 
-A missing directory is created with this layout and a Git repository whose
-first commit is `kv.json`. An existing directory is opened as it is.
+A missing directory gets this layout and a Git repository. Creating its default
+`kv.json` requests history asynchronously. An early note edit can join that
+first commit. Existing data and history are left intact when opening.
 
 A note's file stem is its identity. Its frontmatter holds `title`, `folderId`,
 `pinned`, `createdAt`, `updatedAt`, and `deletedAt`; its body is the note.
@@ -85,23 +91,37 @@ dividers, and line breaks. There is no underline and there are no images.
 
 ## When the file changes underneath you
 
-Every opened text file has one retained draft in a registry keyed by its path.
-A note is a view of that file, with metadata controls and a rich-text view.
-Renaming a file retargets its existing draft instead of reopening a second one.
+Every opened text file has one editing session, kept by its path. A note is a
+view of that file, with metadata controls and a rich-text view; changing its
+title, folder, or pin is a change to the same text, saved the same way.
+Renaming a file moves its session with it instead of opening a second one.
+Each mutation reserves its paths before preparation starts, including its
+rename destination or recovery target. Opening a reserved path cannot create
+a competing editor. Close waits for preparation already admitted, and its
+input fence prevents a new publication.
 
-Each open note keeps four things apart: the saved file it last agreed with,
-your draft, the text a running save captured, and any newer version seen on
-disk.
+Each session keeps these apart: the saved file it last agreed with, your
+draft, the exact text a save submitted, a rename or delete that was submitted,
+and any other version seen on disk.
 
 | What happened | What Honeycrisp does |
 | --- | --- |
 | The file changed and you had no unsaved edits | Shows the new file. Nothing is written back. Undo history restarts. |
-| The file changed and you had unsaved edits | Keeps your draft, stops autosaving, and offers **Compare**, **Discard my draft and load the file**, and **Save my draft over the file**. |
-| You typed while a save was running | The save accepts only the text it captured. The newer typing stays a draft and saves next. |
+| The file changed and you had unsaved edits | Keeps your draft, stops autosaving, and offers **Compare and choose**. The comparison shows one version of the file, and **Discard my draft and load the file** and **Save my draft over the file** apply to exactly that version. If the file changes again while it is open, both are held back until you look at the new version. |
+| You typed while a save was running | The save accepts only the text it submitted. The newer typing stays a draft and saves next. |
 | Your save was based on an older file | The save is refused and writes nothing. Your draft is kept. |
 | A save failed | Your draft is kept, with **Try again**. |
-| The file was deleted, or can no longer be read as text | Your draft is kept, with **Copy draft**, **Save draft as a note**, and **Discard draft**. |
+| A save got no reply | It is shown as not confirmed: the file may or may not have it. Nothing more is saved. **Send it again** sends exactly that text again; anything typed since stays a draft. It ends when a resend is confirmed, or when the file is found to hold exactly that text. Typing since then is saved when you press **Save**, edit again, or close. If the file holds other text, that is shown beside it and the save stays not confirmed, even when your draft equals the saved file. |
+| A rename or delete of an open file got no reply, or a rename created the new file without removing the old one | The editor stays where it was, keeps what you type, and saves nothing more. It renames, deletes, and removes nothing else. **Copy draft** keeps your text; look in Files to see what is there. |
+| A change to a file that is not open got no reply (a new note, a pin, a rename or delete from Files) | It is listed under **Not confirmed** in the status menu, never as failed. Nothing else is changed at that file from the app, and a second new note is not made under another name. A new file or a field change clears when the folder shows exactly what was asked for, and can be sent again exactly. A rename or delete stays listed for as long as the app runs; restarting stops listing it and does not show that it did or did not happen. Closing waits for a change that is still being sent, and asks before leaving one that was never confirmed. |
+| The file was deleted, or can no longer be read as text | Your draft is kept, with **Copy draft**, **Save draft as a note** (or **as a file**), and **Discard draft**. |
+| You rename or delete a file | It applies to the version the editor holds. If another program changed the file since, nothing is renamed or deleted, and the editor shows that change. |
 | You open another note | Each note keeps its draft. |
+
+A draft saved back after its file was deleted goes to the same path. A note
+whose path meanwhile holds a different file becomes a new note; any other
+file stays a draft for you to compare. A save back that got no reply is never
+saved a second time somewhere else.
 
 A save checks the file just before it replaces it. On a real directory that
 check is not atomic: another program can still write in the instant between
@@ -112,12 +132,21 @@ caught.
 Drafts exist only in the open window. Closing the window, quitting the app
 (including Cmd+Q), and reloading the page are held back while any draft is
 unsaved: Honeycrisp saves what it can, and asks before discarding the rest.
-A draft does not survive the app being killed or crashing.
+Any change that was not confirmed counts too, with or without an open
+editor, and the prompt says so: quitting stops keeping track of it and does
+not cancel it. A draft does not
+survive the app being killed or crashing.
+
+While the desktop app answers a close it takes no input: typing, buttons,
+menus, and the terminal do nothing until you choose **Keep editing** or the
+app closes. The
+editors stay as they are, with their undo history. A browser tab has no such
+step; its leave prompt is the browser's.
 
 Every native close asks the page. The shell cannot infer permission from an
-earlier observation of the drafts. If the file process stops, the window keeps
-its drafts; closing asks whether to stay and
-copy them from Source or explicitly discard them.
+earlier observation of the drafts: once the notes are open, only the page's
+answer to that one request lets a close through. A page that does not answer
+is asked again on the next attempt, and the window stays.
 
 ## Header controls
 
@@ -131,111 +160,156 @@ On the desktop the terminal runs each command in `/bin/sh` with the real
 `git`, so it is exactly an outside program editing the same files. It is a
 command runner, not a terminal emulator: a command gets no keyboard input, and
 its output appears when it ends. `cd` carries to the next command; environment
-changes do not. In the browser build the terminal is an emulated shell over the
-browser folder with a subset of Git commands.
+changes do not. A command is stopped after two minutes, along with anything it
+started, and output past 1 MB is cut off. In the browser build the terminal is
+an emulated shell over the browser folder with a subset of Git commands.
 
 ## Git
 
-History is ordinary Git in `<root>/.git`. A successful content save through
-tables or the file browser requests a commit and does not wait for it. A commit that
-fails is reported under **Git history** and leaves the saved file saved; it is
-never shown as a save error. The browser terminal follows the same automatic
-history policy. Desktop terminal commands and other programs edit disk directly;
-their changes enter the next checkpoint or an explicit commit. In the browser
-terminal, automatic history refuses `git add` and `git commit`; staged authoring
-requires a folder opened with `commitOnEdit: false`.
+History is ordinary Git in `<root>/.git`. A successful content save from an
+editor or the file browser is committed, and the save does not wait for the
+commit. A commit that fails is reported under **Git history** and leaves the
+saved file saved; it is never shown as a save error. The browser terminal
+follows the same automatic history policy. Desktop terminal commands and other
+programs edit disk directly; their changes enter the next commit, automatic or
+explicit. In the browser terminal, automatic history refuses `git add` and
+`git commit`; staged authoring requires a folder opened with
+`commitOnEdit: false`.
 
 Each note has a **History** button listing its commits. Choosing a version
-puts it in your draft; nothing is saved until the draft saves.
+puts it in your draft; nothing is saved until the draft saves. A version that
+is not text, or is larger than 16 MB, is refused instead of shown.
 
 ## How the desktop app is built
 
 ```text
-Tauri shell (src-tauri)          starts the host, opens one window, asks the
-        │                        page before accepting close or quit
+Tauri shell (src-tauri)          one program and one window. It registers the
+        │                        notes directory with the shared folder plugin
+        │                        and asks the page before a close or quit.
         ▼
-Bun folder host (host/)          opens the directory with openNativeFolder,
-        │                        serves the built page and /bridge on one
-        │                        loopback origin
+Folder plugin                    owns the directory: conditional file writes,
+        │                        the root lock, change detection, Git history.
+        │                        It is the Rust crate in
+        │                        packages/tauri-plugin-epicenter-folder.
         ▼
-Page (src/)                      reaches the folder with fetch; calls no
-                                 native command
+Page (build-desktop, bundled)    opens the folder by its ID through
+                                 @epicenter/folder and calls the shell's own
+                                 commands. Frontmatter and drafts stay in the
+                                 page.
 ```
 
 The page chooses where its folder lives at build time through
-`#platform/notes-host`. The desktop leaf uses the bridge; the browser leaf
-opens a logical folder in IndexedDB with `openBrowserFolder`. Neither leaf
-imports a native module, and `src/lib/platform-selection.test.ts` checks both
-bundles and the host for that and for the absence of any Yjs module.
+`#platform/notes-host`. The desktop leaf opens the shell's folder with
+`openFolder` from `@epicenter/folder/tauri`; the browser leaf opens a folder
+in IndexedDB with `openFolder` from `@epicenter/folder/browser`. Shared code
+imports the folder contract from the bare `@epicenter/folder`, which
+`vite.config.ts` aliases to the build's one entry. A desktop folder that
+cannot be opened is an error on screen, never a fallback to browser storage.
+`src/lib/platform-selection.test.ts` checks that the desktop bundle holds no
+browser store and no Git implementation, that neither bundle holds a Yjs or
+Node module, and that the browser bundle holds no desktop adapter.
 
-### Bridge contract
+The page changes a file only on a capture: `files.create` for a file that
+must not exist, and `files.replace`, `files.move`, and `files.remove` on the
+capture the editor holds. Tables are read as listings. `folder.onFilesChanged`
+is a hint to read again.
 
-The host listens on `127.0.0.1` at a port it picks. The shell generates a
-token per launch, gives it to the host in its environment, and puts it in the
-window before any page script runs. Every `/bridge` request carries
-`Authorization: Bearer <token>`. The host refuses a `Host` header other than
-its own and an `Origin` other than its own. The page is served with a content
-security policy that allows only its own scripts and same-origin connections.
+### What the shell decides
 
-| Route | Purpose |
+The page names one thing, the scope `so.epicenter.honeycrisp`. The shell
+decides the rest in Rust, before any page exists:
+
+- The root: `HONEYCRISP_ROOT`, else the default directory above. The shell
+  makes the directory itself if it is missing and writes nothing inside it.
+- The commit author: the owner reads the root's Git identity after taking its
+  lock, with `Honeycrisp <honeycrisp@localhost>` as the fallback.
+- Where history goes: nowhere but the directory. The folder is registered
+  with no remote, and a repository that names an `origin` is still opened
+  without one.
+- Which window may use the folder and the commands: `main`, through
+  `src-tauri/capabilities/main.json`. The window loads the bundled page and
+  refuses to navigate anywhere else, including the same host on another port
+  or an address carrying credentials.
+
+The layout is set up by the page, through the folder, after the folder plugin
+holds the directory's lock (`src/lib/platform/first-open.ts`). It looks first:
+a missing table directory is made, and `kv.json` is written only when a read
+confirmed it is absent, on the condition that it still is. The owner requests
+history asynchronously after that save; an early note edit can join the same
+commit. Opening a folder that already has its `kv.json`
+writes nothing and requests no commit, whether or not it has any history. A
+directory another Epicenter holds is reported as in use and gains no file.
+
+### Shell commands
+
+Besides the folder plugin's commands, the page calls these. None takes a root
+or a working directory.
+
+| Command | Purpose |
 | --- | --- |
-| `POST /bridge/call` | `{ path, args }` to `{ ok }` or `{ fault }`. `path` is one of `tables.notes.<list\|get\|create\|update\|writeSource\|rename\|delete>`, `tables.folders.<list\|get\|create\|update\|delete>`, `files.<list\|read\|write\|remove\|move\|mkdir\|rmdir>`, `git.<snapshot\|status\|commit\|log>`. Anything else is a fault. Results are the folder library's `Result` values unchanged. |
-| `GET /bridge/events` | Newline-delimited JSON: `{type:"git",snapshot}` on every Git change, `{type:"files"}` after any change under the root, `{type:"closeRequested"}` when the shell held back a close, `{type:"ping"}`. |
-| `POST /bridge/app` | Honeycrisp's own operations: `info`, `terminal`, `reveal`, `fileLog`, `show`, `faults`, `setFaults`, `closeReceived`, `quit`. |
+| `close_register`, `close_opened`, `close_approve`, `close_decline` | Close consent, below. |
+| `shell_info` | The root, and where the terminal's next command starts. |
+| `terminal_run` | One command in `/bin/sh`. The shell keeps the working directory between commands, so hiding the terminal or reloading the page loses nothing. |
+| `file_log`, `file_show` | One file's commits, and its text at one of them. The path must be a literal path inside the folder and the commit a hexadecimal id. |
+| `reveal_folder` | Open the root in the system file manager. |
 
-Values are JSON with tags for what JSON cannot carry: `{"$t":"u"}` for
-undefined, `{"$t":"b","v":"<base64>"}` for bytes, `{"$t":"m","v":[...]}` for a
-Map, `{"$t":"e",...}` for an Error.
+The terminal is an outside writer, exactly as another program is. It requests
+no commit. The folder plugin notices its changes, and the page rereads after
+each command.
 
-`src/lib/bridge/transport.ts` carries typed calls and reconnecting events.
-`src/lib/bridge/notes-host.ts` implements the concrete folder surface Honeycrisp
-uses; it does not construct an arbitrary remote folder. `host/serve.ts` requests the commit after a
-content save itself, rather than leaving it to the folder, so a commit can be
-made to fail in testing without touching the save.
+### Close consent
 
-Between the shell and the host: the host's first stdout line is
-`{"ready":true,"port":<n>,"root":"<path>"}`; a later `{"quit":true}` line
-approves closing. The shell writes `close-requested`
-to the host's stdin when it holds back a close, and closing stdin stops the
-host. `host/main.ts` lists every environment variable.
+Three things can close the app: the window's close button, an exit request
+from the system, and the Quit menu item. On macOS a custom Quit item routes
+Cmd+Q through the same path, because the predefined one bypasses Tauri's
+preventable exit event. Each asks `src-tauri/src/close.rs`:
 
-Only `quit` approves closing. A close request
-waits across event-stream reconnects and page mounting until the page receives
-it. On macOS, a custom Quit menu item routes Cmd+Q through this handshake;
-the predefined Cocoa Quit action bypasses Tauri's preventable exit event.
+1. The page registers when it starts, before it opens the folder, and gets a
+   generation. A reload registers again; the page before it can no longer
+   answer.
+2. Until the page says its folder is open, a close goes ahead: a page that is
+   loading, or whose folder failed to open, holds no draft.
+3. After that every close is held and the page receives a `close-requested`
+   event naming a request. The page stops taking input, then saves what it
+   can. With nothing left unsaved it approves; otherwise it asks, and **Keep
+   editing** declines and takes input again. Input stays stopped while an
+   approval is on its way. It is taken again only when the gate answers that
+   the approval was not taken because the page was replaced or the request
+   was already answered. Any other failure leaves input stopped, and the
+   next close is asked again.
+4. Only an approval naming the current page and the current request lets the
+   close through. A declined request, a request from before a reload, and a
+   second answer are refused.
 
-## Testing with injected faults
+A page that never answers is asked the same request again on the next attempt.
+Nothing in the shell approves on its behalf, so if the page's process dies
+after the notes opened, the window can only be force-quit.
 
-Start with a disposable root and `HONEYCRISP_FAULTS=1`:
+## Testing failures by hand
 
-```sh
-HONEYCRISP_ROOT=/tmp/honeycrisp-test HONEYCRISP_FAULTS=1 bun dev:honeycrisp
-```
-
-The status details then show a **Test faults** panel: hold saves until
-released, delay saves by five seconds, fail the next save, fail the next
-commit. `HONEYCRISP_HOLD_SAVES=1`, `HONEYCRISP_SAVE_DELAY_MS`,
-`HONEYCRISP_FAIL_SAVES`, and `HONEYCRISP_FAIL_COMMITS` set the same faults at
-launch. A held or delayed save waits before it reads the file, so the
-conditional check still runs afterwards against whatever is on disk by then.
-
-The host refuses `HONEYCRISP_FAULTS=1` without `HONEYCRISP_ROOT`, so faults
-never run against the default notes directory.
-
-A real commit failure needs no injection: `touch .git/refs/heads/main.lock` in
-the terminal makes the next commit fail until the file is removed.
-
-To run the host without the desktop shell, for example to open the desktop
-page in an ordinary browser:
+There is no fault panel. The earlier one lived in the Bun folder host, which
+is gone, and the shell does not wrap the folder's writes to bring it back.
+Use a disposable directory, never the default one:
 
 ```sh
-bun run --cwd apps/honeycrisp build:desktop-ui
-HONEYCRISP_ROOT=/tmp/honeycrisp-test bun run --cwd apps/honeycrisp host:standalone
+HONEYCRISP_ROOT=/tmp/honeycrisp-test bun dev:honeycrisp
 ```
 
-It prints its address. In this mode the token is written into the served
-page, so any local process that can fetch the page can read it. Use it for
-development only.
+Both failures below are real, made from the app's terminal or any other one,
+and `src-tauri/src/tests.rs` runs the same two through the folder plugin.
+
+| To see | Do this in the notes directory | Undo |
+| --- | --- | --- |
+| A save that fails: the draft is kept, with **Try again** | `chmod a-w notes`, then edit a note | `chmod u+w notes` |
+| A commit that fails while the file stays saved | `touch .git/refs/heads/main.lock`, then edit a note | `rm .git/refs/heads/main.lock`, then **Commit saved files** |
+| A file changed underneath an unsaved draft | While the first row's save is failing, `echo changed >> notes/<id>.md` | `chmod u+w notes`, then choose in the note |
+
+What cannot be produced by hand in the running app is a save held open or
+slowed on purpose, so that typing lands while it runs. Those orders are fixed
+in tests instead: `src/lib/file-session.test.ts` holds a save and types
+during it, loses a reply before or after the write lands, and changes the
+file under a review; `src/lib/notes.folder.test.ts` does the same over a real
+directory.
 
 ## Layout
 
@@ -245,22 +319,30 @@ development only.
 | `src/lib/editor/schema.ts` | The bounded ProseMirror schema. |
 | `src/lib/editor/markdown.ts` | Markdown to document and back, the equivalence it is held to, and the check that gates opening and editing. |
 | `src/lib/editor/rich-session.ts` | The rich-text view's state, undo history, and tie to the draft. No DOM. |
-| `src/lib/draft.svelte.ts` | One file's draft: accepted file, buffer, in-flight save, external version. |
+| `src/lib/file-session.svelte.ts` | One open file's session: saved capture, buffer, submitted attempt, external version. The only place that asks the folder to write, move, or remove a file. |
 | `src/lib/note-source.ts` | Source-preserving changes to a note's text. |
-| `src/lib/notes.svelte.ts` | Listings, selection, one retained-file registry, structured note mutations, and file actions. |
-| `src/lib/bridge/` | The bridge contract, encoding, and page-side client. |
-| `src/lib/platform/` | The `#platform/notes-host` seam and its two leaves. |
+| `src/lib/notes.svelte.ts` | Listings, selection, the sessions kept by path, note and folder actions as source patches, and the input fence. |
+| `src/lib/platform/` | The `#platform/notes-host` seam, its two leaves, and `shell.tauri.ts`, the page side of the shell's commands. |
 | `src/routes/components/` | Header, folder list, note list, editors, files, terminal. |
-| `host/` | The Bun folder host: bridge, terminal, change detection, fault injection. |
-| `src-tauri/` | The desktop shell. |
+| `src-tauri/src/lib.rs` | The desktop shell: the folder plugin, the notes scope, the window, close routing. |
+| `src-tauri/src/root.rs` | Choosing and resolving the root directory. |
+| `src/lib/platform/first-open.ts` | Setting up a folder that has no layout yet, through the attached folder. |
+| `src-tauri/src/commands.rs` | The shell's commands, each a thin call into a module below. |
+| `src-tauri/src/close.rs` | Whether a close or quit may go ahead. |
+| `src-tauri/src/terminal.rs`, `history.rs`, `reveal.rs` | The terminal, per-file history, and reveal. |
+| `src-tauri/capabilities/main.json` | What the notes window may call. |
+| `native-tests/` | The page's close handling against the shell's real close gate. |
 
 ## Tech stack
 
 The [desktop acceptance report](evidence/desktop/README.md) includes native
-screenshots, saved Markdown and Git versions, checks, and verified limits.
+screenshots, saved Markdown and Git versions, checks, and verified limits. It
+was made with the earlier Bun folder host. The
+[native migration record](evidence/native-migration/README.md) says what
+replaced the host and which native checks are still to be run.
 
 - [SvelteKit](https://kit.svelte.dev) with the static adapter, SSR disabled
 - [ProseMirror](https://prosemirror.net) with `prosemirror-history` and `prosemirror-markdown`
-- `@epicenter/app/files` for file tables, source-preserving frontmatter, and Git history
-- [Tauri](https://tauri.app) for the desktop shell, [Bun](https://bun.sh) for the folder host
+- `@epicenter/folder` for the folder, its note and folder listings, and source-preserving frontmatter, and `@epicenter/definition` for the declaration
+- [Tauri](https://tauri.app) for the desktop shell, with the `tauri-plugin-epicenter-folder` crate owning the directory and its Git history
 - `@epicenter/ui` and [Tailwind CSS](https://tailwindcss.com)

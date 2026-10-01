@@ -1,20 +1,21 @@
 /**
- * The browser leaf: a logical folder in this browser's IndexedDB, with the
- * same tables, files, and Git history as the desktop directory, and a shell
- * emulated over those files. Nothing native is imported here.
+ * The browser leaf: a folder in this browser's IndexedDB, with the same
+ * files and Git history as the desktop directory, and the folder's own shell
+ * emulated over those files. Nothing native is imported here, and this entry
+ * refuses inside the desktop app.
  */
-import { openBrowserFolder } from '@epicenter/app/files';
-import { createFolderTerminal } from '@epicenter/app/files/terminal';
+import { openFolder } from '@epicenter/folder/browser';
 import { honeycrispDefinition } from '../data.js';
-import type { OpenNotesHost } from './types.js';
+import type { NotesHost, OpenNotes } from './types.js';
 
-export const openNotesHost: OpenNotesHost = async () => {
-	const folder = await openBrowserFolder({
-		id: honeycrispDefinition.id,
+async function acquire(): Promise<NotesHost> {
+	const opened = await openFolder({
 		definition: honeycrispDefinition,
-		git: { author: { name: 'Honeycrisp', email: 'honeycrisp@localhost' } },
+		browser: { author: { name: 'Honeycrisp', email: 'honeycrisp@localhost' } },
 	});
-	const terminal = createFolderTerminal(folder);
+	if (opened.error) throw new Error(opened.error.message);
+	const folder = opened.data;
+	const terminal = folder.terminal();
 	return {
 		folder,
 		terminal: {
@@ -28,11 +29,17 @@ export const openNotesHost: OpenNotesHost = async () => {
 		location: 'This browser',
 		reveal: undefined,
 		history: undefined,
-		faults: undefined,
-		// Only this page writes a browser folder; it rereads after its own work.
-		onExternalChange: () => () => {},
-		onCloseRequested: () => () => {},
-		quit: async () => {},
 		close: () => folder.close(),
 	};
+}
+
+// A tab has no shell to ask before it closes; the page's leave guards apply.
+export const openNotes: OpenNotes = async ({ create }) => {
+	const host = await acquire();
+	try {
+		return await create(host);
+	} catch (cause) {
+		await host.close();
+		throw cause;
+	}
 };

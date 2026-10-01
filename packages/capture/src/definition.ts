@@ -1,9 +1,5 @@
-import {
-	type CreateRowOf,
-	defineStore,
-	defineTable,
-	field,
-} from '@epicenter/app';
+import { type CreateRowOf, defineTable, field } from '@epicenter/definition';
+import { defineFolder } from '@epicenter/folder';
 
 /**
  * Each capture is `captures/<stem>.md`: `capturedAt` in frontmatter, and a
@@ -15,7 +11,7 @@ import {
  * offset (`2026-10-01T10:30:00+08:00`) is as valid as the UTC form the app
  * writes.
  */
-export const captureDefinition = defineStore({
+export const captureDefinition = defineFolder({
 	id: 'so.epicenter.capture',
 	title: 'Capture',
 	kv: {},

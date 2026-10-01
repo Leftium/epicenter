@@ -1,37 +1,40 @@
 /**
  * The seam between the notes UI and where its folder lives.
  *
- * `#platform/notes-host` resolves at build time. The desktop leaf reaches a
- * real directory through the folder host's bridge; the browser leaf opens a
- * logical folder in IndexedDB. Neither leaf imports a native module, and the
- * UI never asks which one it has except through the optional capabilities
- * below.
+ * `#platform/notes-host` resolves at build time. The desktop leaf opens the
+ * folder the desktop shell owns and uses the shell's own commands, including
+ * its real `/bin/sh`; the browser leaf opens a folder in IndexedDB with the
+ * folder's emulated shell. The UI never asks which one it has except through
+ * the optional capabilities below.
  */
-import type { Folder, FolderFiles, FolderGit } from '@epicenter/app/files';
-import type {
-	FaultState,
-	Faults,
-	FileRevision,
-	FOLDER_METHODS,
-} from '../bridge/contract.js';
+import type { Folder, FolderFiles, FolderGit } from '@epicenter/folder';
 import type { honeycrispDefinition } from '../data.js';
 
 type Definition = typeof honeycrispDefinition;
 
-/** The folder surface the notes UI uses. Remotes are outside this app. */
+/**
+ * The folder surface the notes UI uses. Tables are read as listings; every
+ * change to a file goes through `files`, on a capture. The folder says when
+ * files changed, as a hint to read again. Remotes are outside this app.
+ */
 export type NotesFolder = {
 	tables: {
-		notes: Pick<
-			Folder<Definition>['tables']['notes'],
-			(typeof FOLDER_METHODS.tables.notes)[number]
-		>;
-		folders: Pick<
-			Folder<Definition>['tables']['folders'],
-			(typeof FOLDER_METHODS.tables.folders)[number]
-		>;
+		notes: Pick<Folder<Definition>['tables']['notes'], 'list'>;
+		folders: Pick<Folder<Definition>['tables']['folders'], 'list'>;
 	};
-	files: Pick<FolderFiles, (typeof FOLDER_METHODS.files)[number]>;
-	git: Pick<FolderGit, (typeof FOLDER_METHODS.git)[number] | 'subscribe'>;
+	files: Pick<
+		FolderFiles,
+		| 'list'
+		| 'read'
+		| 'create'
+		| 'replace'
+		| 'move'
+		| 'remove'
+		| 'mkdir'
+		| 'rmdir'
+	>;
+	git: Pick<FolderGit, 'snapshot' | 'subscribe' | 'status' | 'commit' | 'log'>;
+	onFilesChanged: Folder<Definition>['onFilesChanged'];
 };
 
 export type TerminalRun = {
@@ -49,6 +52,14 @@ export type NotesTerminal = {
 	exec(command: string): Promise<TerminalRun>;
 };
 
+/** One commit that changed a file. */
+export type FileRevision = {
+	readonly oid: string;
+	readonly subject: string;
+	/** Seconds since the epoch. */
+	readonly timestamp: number;
+};
+
 export type NotesHost = {
 	readonly folder: NotesFolder;
 	readonly terminal: NotesTerminal;
@@ -63,20 +74,34 @@ export type NotesHost = {
 				show(oid: string, path: string): Promise<string>;
 		  }
 		| undefined;
-	/** Fault injection for acceptance testing; absent unless the host enables it. */
-	readonly faults:
-		| {
-				get(): Promise<FaultState>;
-				set(faults: Partial<Faults>): Promise<FaultState>;
-		  }
-		| undefined;
-	/** Runs `listener` when files changed outside this page. Returns a stop function. */
-	onExternalChange(listener: () => void): () => void;
-	/** Runs `listener` when a close or quit was held back. Returns a stop function. */
-	onCloseRequested(listener: (reason?: 'unavailable') => void): () => void;
-	/** Tell the shell the page agrees to quit. A browser has nothing to tell. */
-	quit(): Promise<void>;
 	close(): Promise<void>;
 };
 
-export type OpenNotesHost = () => Promise<NotesHost>;
+/** What answering a close needs from the notes state. */
+export type ClosableNotes = {
+	/**
+	 * Stop taking input and actions. Returns the release, for a close that was
+	 * declined or refused.
+	 */
+	fenceInput(): () => void;
+	/** Try to save every draft. Resolves how many still cannot be closed safely. */
+	settleAll(): Promise<number>;
+};
+
+/**
+ * Open the notes: acquire the folder, then build the notes state over it.
+ *
+ * The desktop leaf arranges close consent around this. It registers with the
+ * shell before acquiring the folder, and from the moment the folder is held
+ * it answers every window close and quit: input is fenced, drafts are saved,
+ * and `askToDiscard` decides the rest. A browser tab has no shell to answer;
+ * its leave guards are the page's own.
+ */
+export type OpenNotes = <TNotes extends ClosableNotes>(options: {
+	/** Build the notes state over the opened folder. */
+	create(host: NotesHost): Promise<TNotes>;
+	/** Ask whether to discard `remaining` unsaved drafts and quit. */
+	askToDiscard(remaining: number): Promise<boolean>;
+	/** An answer to a close could not be sent; the close stays held. */
+	report(cause: unknown): void;
+}) => Promise<TNotes>;

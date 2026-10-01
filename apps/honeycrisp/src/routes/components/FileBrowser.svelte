@@ -328,7 +328,7 @@
 										{#each group as action (action.label)}
 											<ContextMenu.Item
 												variant={action.destructive ? 'destructive' : 'default'}
-												disabled={action.disabled}
+												disabled={action.disabled || notes.fenced}
 												onSelect={action.run}
 											>
 												{action.label}
@@ -355,7 +355,7 @@
 										{#each group as action (action.label)}
 											<DropdownMenu.Item
 												variant={action.destructive ? 'destructive' : 'default'}
-												disabled={action.disabled}
+												disabled={action.disabled || notes.fenced}
 												onSelect={action.run}
 											>
 												{action.label}

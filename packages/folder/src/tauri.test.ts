@@ -1,0 +1,928 @@
+/**
+ * Tauri Folder Adapter Tests
+ *
+ * `openFolder` from the desktop entry turns the native folder owner's commands
+ * into the same folder handle the browser opener returns. These tests script
+ * the shell's replies to pin what the adapter itself decides: what an
+ * unanswered command means, when a guarded save may look again, and what
+ * closing does.
+ *
+ * Key behaviors:
+ * - Outside the shell, opening is refused and nothing is invoked; a refusal
+ *   inside the shell never opens browser storage
+ * - A save's capture comes from the bytes that were sent, not from a read
+ * - A batch is one `apply`, and its receipt comes from what was sent
+ * - A lost reply to a save is `Unconfirmed` and is never sent again; a lost
+ *   reply to a read is an ordinary failure
+ * - An outcome the owner could not confirm stays `Unconfirmed` here
+ * - A page built for another protocol version is refused at attach
+ * - A terminal command runs under one lease, released however it ends
+ * - Snapshot events replace the snapshot in order; a stale one is dropped
+ * - Closing detaches this window once and does not shut the folder down
+ *
+ * See also:
+ * - `tauri-native.test.ts` for the same adapter against the real Rust owner
+ */
+import { afterEach, expect, mock, test } from 'bun:test';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { expectErr, expectOk } from 'wellcrafted/testing';
+import { defineFolder, defineTable, field } from './contract.js';
+import { captureVersion } from './version.js';
+
+type Call = { cmd: string; args: Record<string, unknown> };
+type Reply = (call: Call) => unknown;
+
+let inShell = true;
+let calls: Call[] = [];
+/** Replies by command. A function that throws an `Error` loses the reply. */
+let replies: Record<string, Reply> = {};
+let failedListener: string | undefined;
+const listeners = new Map<string, Set<(event: { payload: unknown }) => void>>();
+
+const refuse = (error: unknown): never => {
+	// A Rust `Err` rejects with the error value itself, not an `Error`.
+	throw error;
+};
+
+mock.module('@tauri-apps/api/core', () => ({
+	isTauri: () => inShell,
+	async invoke(cmd: string, args: Record<string, unknown> = {}) {
+		const name = cmd.replace('plugin:epicenter-folder|', '');
+		calls.push({ cmd: name, args });
+		const reply = replies[name];
+		if (reply === undefined) throw new Error(`no scripted reply for ${name}`);
+		return reply({ cmd: name, args });
+	},
+}));
+mock.module('@tauri-apps/api/event', () => ({
+	async listen(name: string, callback: (event: { payload: unknown }) => void) {
+		if (failedListener !== undefined && name.endsWith(failedListener))
+			throw new Error('event.listen not allowed');
+		const set = listeners.get(name) ?? new Set();
+		listeners.set(name, set);
+		set.add(callback);
+		return () => set.delete(callback);
+	},
+}));
+
+const { openFolder } = await import('./tauri.js');
+
+const definition = defineFolder({
+	id: 'so.epicenter.taurifoldertest',
+	kv: {},
+	tables: {
+		todos: defineTable({
+			fields: { title: field.string(), done: field.boolean() },
+		}),
+	},
+});
+
+const wireSnapshot = (overrides: Record<string, unknown> = {}) => ({
+	branch: 'main',
+	remote: null,
+	commitOnEdit: true,
+	files: { state: 'unknown', error: null },
+	sync: { state: 'unknown', error: null },
+	activity: Object.fromEntries(
+		['scan', 'commit', 'push', 'fetch', 'pull'].map((name) => [
+			name,
+			{ active: false, pending: false },
+		]),
+	),
+	lastCommit: null,
+	lastPush: null,
+	lastFetch: null,
+	lastPull: null,
+	closed: false,
+	...overrides,
+});
+
+function emit(name: string, payload: unknown) {
+	for (const listener of listeners.get(`plugin:epicenter-folder:${name}`) ?? [])
+		listener({ payload });
+}
+
+const sent = (cmd: string) => calls.filter((call) => call.cmd === cmd);
+
+async function attached() {
+	replies = {
+		attach: () => ({
+			session: 7,
+			root: '/Users/someone/Epicenter/notes',
+			sequence: 3,
+			snapshot: wireSnapshot(),
+		}),
+		detach: () => null,
+	};
+	const folder = expectOk(await openFolder({ id: 'notes', definition }));
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 1 });
+	expect(folder.location).toEqual({
+		kind: 'directory',
+		root: '/Users/someone/Epicenter/notes',
+	});
+	calls = [];
+	return folder;
+}
+
+afterEach(() => {
+	inShell = true;
+	calls = [];
+	replies = {};
+	failedListener = undefined;
+	listeners.clear();
+});
+
+test("the folder opened is the definition's own ID unless another is named", async () => {
+	replies = {
+		attach: () => ({
+			session: 7,
+			root: '/Users/someone/Epicenter/notes',
+			sequence: 3,
+			snapshot: wireSnapshot({ commitOnEdit: false }),
+		}),
+		detach: () => null,
+	};
+	const folder = expectOk(
+		await openFolder({
+			definition,
+			// Browser settings do not reach the shell: its own policy is in effect.
+			browser: { commitOnEdit: true },
+		}),
+	);
+	expect(sent('attach')[0]?.args).toEqual({
+		scope: 'so.epicenter.taurifoldertest',
+		protocol: 1,
+	});
+	expect(folder.git.snapshot.commitOnEdit).toBe(false);
+	await folder.close();
+});
+
+test('a refusal inside the shell is returned; browser storage is never opened instead', async () => {
+	const indexedDB = new IDBFactory();
+	for (const refusal of [
+		{ name: 'UnknownScope', scope: 'notes' },
+		{ name: 'WindowNotPermitted', scope: 'notes', window: 'main' },
+		'plugin epicenter-folder not found',
+	]) {
+		replies = { attach: () => refuse(refusal) };
+		const refused = expectErr(
+			await openFolder({
+				id: 'notes',
+				definition,
+				browser: { indexedDb: { indexedDB, IDBKeyRange } },
+			}),
+		);
+		expect<string>(refused.name).toBe(
+			typeof refusal === 'string' ? 'Unavailable' : refusal.name,
+		);
+	}
+	expect(await indexedDB.databases()).toEqual([]);
+});
+
+test('outside the desktop shell, opening is refused and nothing is invoked', async () => {
+	inShell = false;
+
+	const refused = expectErr(await openFolder({ id: 'notes', definition }));
+
+	expect(refused.name).toBe('NotTauri');
+	expect(calls).toEqual([]);
+});
+
+test('an attach the shell refuses is returned with its reason and leaves no listener', async () => {
+	replies = {
+		attach: () =>
+			refuse({ name: 'Busy', root: '/Users/someone/Epicenter/notes' }),
+	};
+
+	const refused = expectErr(await openFolder({ id: 'notes', definition }));
+
+	expect(refused.name).toBe('Busy');
+	expect(refused.message).toContain('/Users/someone/Epicenter/notes');
+	expect([...listeners.values()].every((set) => set.size === 0)).toBe(true);
+});
+
+test('a bare-string attach rejection preserves its cause and leaves no listeners', async () => {
+	const reason = 'epicenter-folder.attach not allowed';
+	replies.attach = () => refuse(reason);
+	const error = expectErr(await openFolder({ id: 'notes', definition }));
+	expect(error.name).toBe('Unavailable');
+	expect(error.message).toContain(reason);
+	expect(calls.map((call) => call.cmd)).toEqual(['attach']);
+	expect([...listeners.values()].every((set) => set.size === 0)).toBe(true);
+});
+
+test.each([
+	'folder-snapshot-changed',
+	'folder-files-changed',
+])('a failed %s listener leaves no listener and never attaches', async (event) => {
+	failedListener = event;
+	const error = expectErr(await openFolder({ id: 'notes', definition }));
+	expect(error.name).toBe('Unavailable');
+	expect(error.message).toContain('event.listen not allowed');
+	expect(calls).toEqual([]);
+	expect([...listeners.values()].every((set) => set.size === 0)).toBe(true);
+});
+
+test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
+	replies = {
+		attach: () => refuse({ name: 'Incompatible', host: 2, page: 1 }),
+	};
+
+	const refused = expectErr(await openFolder({ id: 'notes', definition }));
+
+	expect(refused.name).toBe('Incompatible');
+	expect(refused.message).toContain('Update the app');
+	expect(calls.map((call) => call.cmd)).toEqual(['attach']);
+});
+
+test('a save whose reply is lost is Unconfirmed and is sent exactly once', async () => {
+	const folder = await attached();
+	replies.apply = () => {
+		throw new Error('the webview lost its IPC connection');
+	};
+
+	const lost = expectErr(await folder.files.create('notes/a.md', 'text'));
+
+	expect(lost.name).toBe('Unconfirmed');
+	expect(lost.message).toContain('may have completed');
+	expect(sent('apply')).toHaveLength(1);
+	expect(sent('apply')[0]?.args).toEqual({
+		session: 7,
+		changes: [
+			{
+				kind: 'write',
+				path: 'notes/a.md',
+				bytes: [116, 101, 120, 116],
+				expected: { kind: 'absent' },
+			},
+		],
+		lease: null,
+	});
+});
+
+test('a read whose reply is lost is an ordinary failure, and Git changes are Unconfirmed', async () => {
+	const folder = await attached();
+	const lose = () => {
+		throw new Error('connection lost');
+	};
+	replies = {
+		...replies,
+		read: lose,
+		commit: lose,
+		push: lose,
+		stage: lose,
+		status: lose,
+	};
+
+	expect(expectErr(await folder.files.read('a.md')).name).toBe('Io');
+	expect(expectErr(await folder.git.status()).name).toBe('Failed');
+	expect(await folder.git.commit()).toEqual({
+		status: 'unconfirmed',
+		error: 'connection lost',
+	});
+	expect(await folder.git.push()).toEqual({
+		status: 'unconfirmed',
+		error: 'connection lost',
+	});
+	expect(expectErr(await folder.git.stage('all')).name).toBe('Unconfirmed');
+	for (const cmd of ['read', 'commit', 'push', 'stage', 'status'])
+		expect(sent(cmd)).toHaveLength(1);
+});
+
+test('a primitive rejection of a change remains Unconfirmed and is not retried', async () => {
+	const folder = await attached();
+	const reason = 'epicenter-folder.apply not allowed';
+	replies.apply = () => refuse(reason);
+	const error = expectErr(await folder.files.create('a.md', 'new'));
+	expect(error.name).toBe('Unconfirmed');
+	expect(error.message).toContain(reason);
+	expect(sent('apply')).toHaveLength(1);
+	await folder.close();
+});
+
+test('typed refusals from the owner become the shared file errors', async () => {
+	const folder = await attached();
+	const version = { sha256: 'a'.repeat(64), size: 4 };
+	replies.apply = () =>
+		refuse({
+			name: 'Refused',
+			error: {
+				name: 'Conflict',
+				path: 'a.md',
+				expected: { kind: 'version', ...version },
+				actual: null,
+			},
+		});
+
+	const conflict = expectErr(
+		await folder.files.replace({ path: 'a.md', version }, 'next'),
+	);
+
+	expect(conflict.name).toBe('Conflict');
+	if (conflict.name !== 'Conflict') return;
+	expect(conflict.expected).toEqual(version);
+	expect(conflict.actual).toBeUndefined();
+	expect(conflict.message).toBe(
+		"The file at 'a.md' was removed after it was read",
+	);
+
+	replies.apply = () =>
+		refuse({
+			name: 'Partial',
+			applied: [{ kind: 'write', path: 'b.md' }],
+			failed: { kind: 'remove', path: 'a.md' },
+			error: { name: 'Io', path: 'a.md', operation: 'retire', cause: 'busy' },
+			notAttempted: [],
+		});
+	const partial = expectErr(
+		await folder.files.move({ path: 'a.md', version }, 'b.md'),
+	);
+	expect(partial.name).toBe('Partial');
+	if (partial.name !== 'Partial') return;
+	expect(partial.applied).toEqual([{ kind: 'write', path: 'b.md' }]);
+	expect(partial.error.message).toBe("Could not retire 'a.md': busy");
+});
+
+test('an outcome the owner itself could not confirm is Unconfirmed, not a refusal', async () => {
+	const folder = await attached();
+	const unknown = {
+		name: 'Unconfirmed',
+		path: 'a.md',
+		operation: 'publishing to',
+		cause: 'the worker stopped',
+	};
+	replies.apply = () => refuse(unknown);
+	replies.commit = () => ({
+		outcome: { status: 'unconfirmed', error: 'the worker stopped' },
+		followingPush: null,
+	});
+	replies.fetch = () =>
+		refuse({
+			name: 'Unconfirmed',
+			operation: 'fetch',
+			cause: 'the worker stopped',
+		});
+
+	const save = expectErr(await folder.files.overwrite('a.md', 'text'));
+
+	expect(save.name).toBe('Unconfirmed');
+	expect(save.message).toContain('may have completed');
+	expect(await folder.git.commit()).toEqual({
+		status: 'unconfirmed',
+		error: 'the worker stopped',
+	});
+	expect(expectErr(await folder.git.fetch()).name).toBe('Unconfirmed');
+	expect(sent('apply')).toHaveLength(1);
+});
+
+test("a table save changes exactly its row file, under that file's exact condition", async () => {
+	const folder = await attached();
+	// Audio already shares the stem. It is not asked about and not sent.
+	replies.children = () => ({ files: ['take.png'], directories: [] });
+	replies.apply = () => null;
+
+	const created = expectOk(
+		await folder.tables.todos.create({
+			stem: 'take',
+			fields: { title: 'Take', done: false },
+		}),
+	);
+
+	expect(sent('apply')).toHaveLength(1);
+	const { changes, ...rest } = sent('apply')[0]?.args as {
+		changes: { kind: string; path: string; expected: unknown }[];
+	};
+	expect(rest).toEqual({ session: 7, lease: null });
+	expect(
+		changes.map(({ kind, path, expected }) => ({ kind, path, expected })),
+	).toEqual([
+		{ kind: 'write', path: 'todos/take.md', expected: { kind: 'absent' } },
+	]);
+
+	calls = [];
+	expectOk(await folder.tables.todos.rename(created, 'next'));
+	expectOk(await folder.tables.todos.delete(created));
+	expect(sent('apply').map((call) => call.args.changes)).toEqual([
+		[
+			{
+				kind: 'move',
+				from: 'todos/take.md',
+				to: 'todos/next.md',
+				expected: { kind: 'version', ...created.version },
+			},
+		],
+		[
+			{
+				kind: 'remove',
+				path: 'todos/take.md',
+				expected: { kind: 'version', ...created.version },
+			},
+		],
+	]);
+});
+
+test('a save returns the capture of the bytes it sent, without reading them back', async () => {
+	const folder = await attached();
+	replies.apply = () => null;
+	const sentVersion = await captureVersion(new TextEncoder().encode('mine'));
+
+	const created = expectOk(await folder.files.create('a.md', 'mine'));
+	const moved = expectOk(await folder.files.move(created, 'b.md'));
+
+	// The owner was asked to publish and nothing else: no read followed.
+	expect(calls.map((call) => call.cmd)).toEqual(['apply', 'apply']);
+	expect(created).toEqual({ path: 'a.md', version: sentVersion });
+	expect(moved).toEqual({ path: 'b.md', version: sentVersion });
+
+	// Another writer replaced the file right after the save was acknowledged.
+	// Reading is a new observation; the save's capture is still what was saved.
+	const raced = new TextEncoder().encode('someone else');
+	replies.read = () => ({
+		bytes: [...raced],
+		version: { sha256: 'e'.repeat(64), size: raced.byteLength },
+	});
+	const observed = expectOk(await folder.files.read('b.md'));
+	expect(observed.version).toEqual({ sha256: 'e'.repeat(64), size: 12 });
+	expect(moved.version).toEqual(sentVersion);
+	expect(Object.isFrozen(moved) && Object.isFrozen(moved.version)).toBe(true);
+});
+
+const ROW_SOURCE = '---\ntitle: Take\ndone: false\n---\n';
+
+test('a batch is one apply: ordered changes, exact conditions, and a receipt from what was sent', async () => {
+	const folder = await attached();
+	// Audio shares the row's stem; only a colliding row name would matter.
+	replies.children = () => ({
+		files: ['take.png', 'other.md'],
+		directories: [],
+	});
+	replies.apply = () => null;
+	const audio = new Uint8Array([1, 2, 3]);
+	const observed = {
+		path: 'audio/old.webm',
+		version: { sha256: 'a'.repeat(64), size: 9 },
+	};
+
+	const receipt = expectOk(
+		await folder.batch((batch) => {
+			batch.files.replace(observed, audio);
+			batch.tables.todos.create({
+				stem: 'take',
+				fields: { title: 'Take', done: false },
+			});
+			batch.files.move(observed, 'audio/kept.webm');
+		}),
+	);
+
+	// One admission published once. Before it, the typed row's directory was
+	// listed by name for the destination check; no file was read, before or
+	// after.
+	expect(calls.map((call) => call.cmd)).toEqual(['children', 'apply']);
+	expect(sent('children')[0]?.args).toEqual({ session: 7, directory: 'todos' });
+	const { changes, ...rest } = sent('apply')[0]?.args as {
+		changes: Record<string, unknown>[];
+	};
+	expect(rest).toEqual({ session: 7, lease: null });
+	expect(changes).toEqual([
+		{
+			kind: 'write',
+			path: 'audio/old.webm',
+			bytes: [1, 2, 3],
+			expected: { kind: 'version', ...observed.version },
+		},
+		{
+			kind: 'write',
+			path: 'todos/take.md',
+			bytes: [...new TextEncoder().encode(ROW_SOURCE)],
+			expected: { kind: 'absent' },
+		},
+		{
+			kind: 'move',
+			from: 'audio/old.webm',
+			to: 'audio/kept.webm',
+			expected: { kind: 'version', ...observed.version },
+		},
+	]);
+	expect(receipt.steps).toEqual([
+		{
+			kind: 'write',
+			path: 'audio/old.webm',
+			file: { path: 'audio/old.webm', version: await captureVersion(audio) },
+		},
+		{
+			kind: 'write',
+			path: 'todos/take.md',
+			file: {
+				path: 'todos/take.md',
+				version: await captureVersion(new TextEncoder().encode(ROW_SOURCE)),
+			},
+		},
+		{
+			kind: 'move',
+			from: 'audio/old.webm',
+			to: 'audio/kept.webm',
+			file: { path: 'audio/kept.webm', version: observed.version },
+		},
+	]);
+});
+
+test('a batch the owner stopped partway keeps its applied steps, and a lost reply fabricates no receipt', async () => {
+	const folder = await attached();
+	replies.children = () => ({ files: [], directories: [] });
+	const publish = () =>
+		folder.batch((batch) => {
+			batch.files.create('audio/take.webm', new Uint8Array([1]));
+			batch.tables.todos.create({
+				stem: 'take',
+				fields: { title: 'Take', done: false },
+			});
+		});
+	replies.apply = () =>
+		refuse({
+			name: 'Partial',
+			applied: [{ kind: 'write', path: 'audio/take.webm' }],
+			failed: { kind: 'write', path: 'todos/take.md' },
+			error: {
+				name: 'Io',
+				path: 'todos/take.md',
+				operation: 'create',
+				cause: 'disk full',
+			},
+			notAttempted: [],
+		});
+	const partial = expectErr(await publish());
+	expect(partial).toMatchObject({
+		name: 'Partial',
+		applied: [{ kind: 'write', path: 'audio/take.webm' }],
+		failed: { kind: 'write', path: 'todos/take.md' },
+	});
+
+	calls = [];
+	replies.apply = () => {
+		throw new Error('the webview lost its IPC connection');
+	};
+	const lost = await publish();
+	expect(lost.data).toBeNull();
+	expect(lost.error?.name).toBe('Unconfirmed');
+	// Sent once; nothing here decides to send it again.
+	expect(sent('apply')).toHaveLength(1);
+});
+
+test('a terminal command holds one lease for its whole run and releases it when it ends', async () => {
+	const folder = await attached();
+	replies.acquire_lease = () => 41;
+	replies.release_lease = () => null;
+	replies.list = () => ({ files: [], directories: [] });
+	replies.children = () => ({ files: [], directories: [] });
+	replies.apply = () => null;
+	const terminal = folder.terminal();
+
+	const result = await terminal.exec('echo held > note.md');
+
+	expect(result).toEqual({ stdout: '', stderr: '', exitCode: 0 });
+	const order = calls.map((call) => call.cmd);
+	expect(order[0]).toBe('acquire_lease');
+	expect(order.at(-1)).toBe('release_lease');
+	expect(sent('acquire_lease')).toHaveLength(1);
+	expect(sent('release_lease')).toEqual([
+		{ cmd: 'release_lease', args: { session: 7, lease: 41 } },
+	]);
+	// Every write the command made named the lease it ran under.
+	expect(sent('apply').length).toBeGreaterThan(0);
+	for (const call of sent('apply')) expect(call.args.lease).toBe(41);
+
+	// The folder's ordinary calls never borrow a terminal's lease.
+	calls = [];
+	expectOk(await folder.files.overwrite('b.md', 'x'));
+	expect(sent('apply')[0]?.args.lease).toBeNull();
+});
+
+test('a terminal command that fails or cannot get the lease still leaves no lease held', async () => {
+	const folder = await attached();
+	let leases = 0;
+	replies.acquire_lease = () =>
+		leases++ === 0 ? refuse({ name: 'Closed' }) : 42;
+	replies.release_lease = () => null;
+	replies.list = () => {
+		throw new Error('connection lost');
+	};
+	const terminal = folder.terminal({ cwd: '/' });
+
+	const unheld = await terminal.exec('ls');
+	expect(unheld).toEqual({
+		stdout: '',
+		stderr: 'The folder is closed\n',
+		exitCode: 1,
+	});
+	expect(sent('release_lease')).toHaveLength(0);
+
+	const failed = await terminal.exec('ls');
+	expect(failed.exitCode).not.toBe(0);
+	expect(sent('release_lease')).toEqual([
+		{ cmd: 'release_lease', args: { session: 7, lease: 42 } },
+	]);
+});
+
+test('snapshot events replace the snapshot in order and a stale one is dropped', async () => {
+	const folder = await attached();
+	const heard: (string | undefined)[] = [];
+	folder.git.subscribe((snapshot) => heard.push(snapshot.lastCommit?.status));
+	const committed = (sequence: number, oid: string) =>
+		emit('folder-snapshot-changed', {
+			scope: 'notes',
+			sequence,
+			snapshot: wireSnapshot({
+				lastCommit: {
+					at: 1,
+					result: {
+						status: 'committed',
+						oid,
+						parent: null,
+						message: 'Add a.md',
+						changedPaths: 1,
+						indexWarning: null,
+					},
+				},
+			}),
+		});
+
+	committed(3, 'stale: the attach reply already carried sequence 3');
+	committed(5, 'five');
+	committed(4, 'late');
+	emit('folder-snapshot-changed', {
+		scope: 'another-scope',
+		sequence: 9,
+		snapshot: wireSnapshot(),
+	});
+
+	expect(heard).toEqual([undefined, 'committed']);
+	expect(folder.git.snapshot.lastCommit).toEqual({
+		status: 'committed',
+		oid: 'five',
+		parent: undefined,
+		message: 'Add a.md',
+		changedPaths: 1,
+		indexWarning: undefined,
+		at: 1,
+	});
+	expect(folder.git.snapshot.remote).toBeUndefined();
+});
+
+test('file change events reach listeners until they stop listening', async () => {
+	const folder = await attached();
+	const heard: (readonly string[])[] = [];
+	const stop = folder.onFilesChanged((paths) => heard.push(paths));
+
+	emit('folder-files-changed', {
+		scope: 'notes',
+		revision: 1,
+		paths: ['a.md'],
+	});
+	emit('folder-files-changed', {
+		scope: 'other',
+		revision: 2,
+		paths: ['b.md'],
+	});
+	stop();
+	emit('folder-files-changed', {
+		scope: 'notes',
+		revision: 3,
+		paths: ['c.md'],
+	});
+
+	expect(heard).toEqual([['a.md']]);
+});
+
+test('an observer that throws on an owner event silences no other observer, and closing from one fences the rest', async () => {
+	const folder = await attached();
+	const files: string[] = [];
+	const branches: string[] = [];
+	folder.onFilesChanged(() => {
+		throw new Error('broken listener');
+	});
+	folder.onFilesChanged((paths) => files.push(...paths));
+	let throwing = false;
+	folder.git.subscribe(() => {
+		if (throwing) throw new Error('broken subscriber');
+	});
+	folder.git.subscribe((snapshot) => branches.push(snapshot.branch));
+	throwing = true;
+
+	emit('folder-files-changed', {
+		scope: 'notes',
+		revision: 1,
+		paths: ['a.md'],
+	});
+	emit('folder-snapshot-changed', {
+		scope: 'notes',
+		sequence: 4,
+		snapshot: wireSnapshot({ branch: 'next' }),
+	});
+	expect(files).toEqual(['a.md']);
+	expect(branches).toEqual(['main', 'next']);
+	// The adapter's own state moved on as well: the throw cost it nothing.
+	expect(folder.git.snapshot.branch).toBe('next');
+
+	// A listener that closes the folder: the one after it is not called, in
+	// this dispatch or any later one.
+	let closing: Promise<void> | undefined;
+	folder.onFilesChanged(() => {
+		closing = folder.close();
+	});
+	const late: string[] = [];
+	folder.onFilesChanged((paths) => late.push(...paths));
+	emit('folder-files-changed', {
+		scope: 'notes',
+		revision: 2,
+		paths: ['b.md'],
+	});
+	await closing;
+	emit('folder-files-changed', {
+		scope: 'notes',
+		revision: 3,
+		paths: ['c.md'],
+	});
+	expect(files).toEqual(['a.md', 'b.md']);
+	expect(late).toEqual([]);
+	expect(sent('detach')).toHaveLength(1);
+});
+
+/** A reply the test settles later, to hold a command in flight. */
+function held<T>() {
+	const { promise, resolve } = Promise.withResolvers<T>();
+	return { reply: () => promise, settle: resolve };
+}
+
+const committed = {
+	outcome: {
+		status: 'committed',
+		oid: 'c'.repeat(40),
+		parent: null,
+		message: 'Add a.md',
+		changedPaths: 1,
+		indexWarning: null,
+	},
+	followingPush: null,
+};
+
+test('closing waits for a Git call already running, then detaches, and later Git calls invoke nothing', async () => {
+	const folder = await attached();
+	const commit = held<typeof committed>();
+	replies.commit = commit.reply;
+
+	const committing = folder.git.commit();
+	const closing = folder.close();
+	await Bun.sleep(20);
+	// The session is still attached: the commit's reply has somewhere to land.
+	expect(calls.map((call) => call.cmd)).toEqual(['commit']);
+	commit.settle(committed);
+
+	expect((await committing).status).toBe('committed');
+	await closing;
+	expect(calls.map((call) => call.cmd)).toEqual(['commit', 'detach']);
+
+	calls = [];
+	expect(await folder.git.commit()).toEqual({ status: 'closed' });
+	expect(await folder.git.push()).toEqual({ status: 'closed' });
+	expect(await folder.git.commitAndPush()).toEqual({
+		commit: { status: 'closed' },
+		push: { status: 'closed' },
+	});
+	for (const refused of [
+		await folder.git.status(),
+		await folder.git.fetch(),
+		await folder.git.pullFastForward(),
+		await folder.git.paths(),
+		await folder.git.stage('all'),
+		await folder.git.commitStaged('message'),
+		await folder.git.diff({ staged: false, paths: [] }),
+		await folder.git.log(1),
+	])
+		expect(expectErr(refused).name).toBe('Closed');
+	const terminal = await folder.terminal().exec('ls');
+	expect(terminal).toEqual({
+		stdout: '',
+		stderr: 'The folder is closed\n',
+		exitCode: 1,
+	});
+	expect(calls).toEqual([]);
+});
+
+test("closing only stops this page waiting for a push; nothing cancels the owner's push", async () => {
+	const folder = await attached();
+	const push = held<{ status: string; oid: string }>();
+	replies.push = push.reply;
+	const fetch = held<{ oid: null }>();
+	replies.fetch = fetch.reply;
+
+	const pushing = folder.git.push();
+	const fetching = folder.git.fetch();
+	await folder.close();
+
+	expect(await pushing).toEqual({ status: 'stoppedWaiting' });
+	expect(expectErr(await fetching).name).toBe('StoppedWaiting');
+	// Only the detach followed: no command told the owner to stop its push.
+	expect(calls.map((call) => call.cmd)).toEqual(['push', 'fetch', 'detach']);
+	push.settle({ status: 'pushed', oid: 'c'.repeat(40) });
+	fetch.settle({ oid: null });
+});
+
+test('closing stops a running terminal command and releases its lease before detaching', async () => {
+	const folder = await attached();
+	replies.acquire_lease = () => 43;
+	replies.release_lease = () => null;
+	const listing = held<{ files: never[]; directories: never[] }>();
+	replies.list = listing.reply;
+	replies.apply = () => null;
+	const terminal = folder.terminal();
+
+	const running = terminal.exec('echo one > a.md && echo two > b.md');
+	const queued = terminal.exec('echo three > c.md');
+	await Bun.sleep(20);
+	const closing = folder.close();
+	await Bun.sleep(20);
+	expect(sent('detach')).toHaveLength(0);
+	listing.settle({ files: [], directories: [] });
+	await closing;
+	await running;
+
+	const order = calls.map((call) => call.cmd);
+	expect(order.indexOf('release_lease')).toBeGreaterThan(-1);
+	expect(order.indexOf('release_lease')).toBeLessThan(order.indexOf('detach'));
+	expect(order.at(-1)).toBe('detach');
+	// The command stopped: its later steps wrote nothing after the close.
+	expect(sent('apply')).toHaveLength(0);
+	// The command queued behind it never started.
+	expect(await queued).toEqual({
+		stdout: '',
+		stderr: 'The folder is closed\n',
+		exitCode: 1,
+	});
+	expect(sent('acquire_lease')).toHaveLength(1);
+});
+
+test('a commit whose outcome is unknown leaves the push unknown, not skipped', async () => {
+	const folder = await attached();
+	replies.commit = () => {
+		throw new Error('connection lost');
+	};
+
+	expect(await folder.git.commitAndPush()).toEqual({
+		commit: { status: 'unconfirmed', error: 'connection lost' },
+		push: { status: 'unconfirmed', error: 'connection lost' },
+	});
+
+	const commit = held<typeof committed>();
+	replies.commit = commit.reply;
+	const waiting = new AbortController();
+	const stopped = folder.git.commitAndPush({ signal: waiting.signal });
+	waiting.abort();
+	expect(await stopped).toEqual({
+		commit: { status: 'stoppedWaiting' },
+		push: { status: 'stoppedWaiting' },
+	});
+	commit.settle(committed);
+	// Neither case asked for a push of its own.
+	expect(sent('push')).toHaveLength(0);
+});
+
+test('a push the owner refuses before pinning a commit names no commit', async () => {
+	const folder = await attached();
+	replies.push = () =>
+		refuse({
+			name: 'Denied',
+			reason: 'this window has no such folder session',
+		});
+
+	const refused = await folder.git.push();
+
+	expect(refused).toEqual({
+		status: 'skipped',
+		reason: 'Git push failed: this window has no such folder session',
+	});
+	replies.push = () => ({
+		status: 'skipped',
+		reason: 'git rev-parse: bad ref',
+	});
+	expect(await folder.git.push()).toEqual({
+		status: 'skipped',
+		reason: 'git rev-parse: bad ref',
+	});
+});
+
+test('closing detaches this window once and later work is refused as closed', async () => {
+	const folder = await attached();
+	replies.read = () => ({
+		bytes: [1],
+		version: { sha256: 'b'.repeat(64), size: 1 },
+	});
+	expectOk(await folder.files.read('a.md'));
+
+	await Promise.all([folder.close(), folder.close()]);
+
+	expect(sent('detach')).toEqual([{ cmd: 'detach', args: { session: 7 } }]);
+	expect(folder.signal.aborted).toBe(true);
+	expect(expectErr(await folder.files.read('a.md')).name).toBe('Closed');
+	expect(sent('read')).toHaveLength(1);
+	expect([...listeners.values()].every((set) => set.size === 0)).toBe(true);
+});

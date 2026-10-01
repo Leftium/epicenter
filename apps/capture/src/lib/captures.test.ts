@@ -1,7 +1,7 @@
 /**
  * Captures Collection Tests
  *
- * Runs the real collection and draft modules over a real native folder in a
+ * Runs the real collection and draft modules over a real directory folder in a
  * temporary directory, and edits files on disk as another program would.
  *
  * Key behaviors:
@@ -27,8 +27,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CommitOutcome } from '@epicenter/app/files';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import type { CommitOutcome } from '@epicenter/folder';
+import { openFolder } from '@epicenter/folder/bun';
 import { captureDefinition } from '@epicenter/capture';
 
 const { createCaptures } = await import('./captures.svelte.ts');
@@ -41,7 +41,7 @@ afterAll(async () => {
 async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'capture-app-'));
 	roots.push(root);
-	const folder = await openNativeFolder({
+	const opened = await openFolder({
 		root,
 		definition: captureDefinition,
 		git: {
@@ -49,6 +49,8 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 			commitOnEdit: false,
 		},
 	});
+	if (opened.error) throw new Error(opened.error.message);
+	const folder = opened.data;
 	const captures = createCaptures(
 		{
 			folder: {
@@ -62,7 +64,7 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 					commit: options.commit ?? folder.git.commit,
 				},
 			},
-			location: { kind: 'directory', path: root },
+			location: folder.location,
 		},
 		{ batchMs: 60_000 },
 	);

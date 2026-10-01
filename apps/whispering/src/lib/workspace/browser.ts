@@ -5,9 +5,13 @@
  * behind them. The terminal is the in-page shell over those files, and
  * transcription requests go straight from the page, so the endpoint must allow
  * this origin.
+ *
+ * The opener is the browser one, named explicitly. It refuses inside a
+ * desktop app and where there is no IndexedDB, and that refusal is what the
+ * person is shown: nothing else is opened in its place.
  */
-import { openBrowserFolder } from '@epicenter/app/files';
-import { createFolderTerminal } from '@epicenter/app/files/terminal';
+import { openFolder } from '@epicenter/folder/browser';
+import { Ok, type Result } from 'wellcrafted/result';
 import { audioMimeTypeOf } from '../audio-format.js';
 import {
 	createFixtureDevice,
@@ -23,7 +27,7 @@ import {
 	requestTransformation,
 	TransformationError,
 } from '../transformation.js';
-import type { Workspace } from './types.js';
+import { type Workspace, WorkspaceError } from './types.js';
 
 const KEY_STORAGE = 'whispering.transcriptionApiKey';
 
@@ -38,18 +42,24 @@ function wantsToneFixture(): boolean {
 	);
 }
 
-export async function openBrowserWorkspace(): Promise<Workspace> {
-	const folder = await openBrowserFolder({
-		id: whisperingDefinition.id,
+export async function openBrowserWorkspace(): Promise<
+	Result<Workspace, WorkspaceError>
+> {
+	const opened = await openFolder({
 		definition: whisperingDefinition,
-		git: { author: { name: 'Whispering', email: 'whispering@localhost' } },
+		browser: {
+			author: { name: 'Whispering', email: 'whispering@localhost' },
+		},
 	});
+	if (opened.error)
+		return WorkspaceError.BrowserFolder({ refusal: opened.error });
+	const folder = opened.data;
 
-	return {
+	return Ok({
 		kind: 'browser',
 		folder,
 		location: 'This browser’s storage for this site (IndexedDB)',
-		terminal: createFolderTerminal(folder),
+		terminal: folder.terminal(),
 		terminalNote:
 			'An in-page shell over the browser folder: common file commands and git status, diff, log. Saves request history.',
 		capture: wantsToneFixture()
@@ -59,7 +69,8 @@ export async function openBrowserWorkspace(): Promise<Workspace> {
 				})
 			: createMicrophoneDevice(),
 		captureNotice: undefined,
-		onExternalChange: () => () => {},
+		// A hint to read again: this tab's saves and other tabs' on this origin.
+		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
 		reveal: undefined,
 		async transcribe({ audioPath, baseUrl, model }) {
 			const read = await folder.files.read(audioPath);
@@ -109,5 +120,5 @@ export async function openBrowserWorkspace(): Promise<Workspace> {
 		debugControls: import.meta.env.DEV,
 		injection: undefined,
 		close: () => folder.close(),
-	};
+	});
 }

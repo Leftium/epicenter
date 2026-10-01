@@ -3,7 +3,7 @@
  * command, and working directory. It lives as long as the opened folder, so
  * hiding the terminal or switching layouts keeps everything on screen.
  */
-import type { FolderTerminal } from '@epicenter/app/files/terminal';
+import type { FolderTerminal } from '@epicenter/folder';
 
 export type TerminalRun = {
 	readonly id: number;

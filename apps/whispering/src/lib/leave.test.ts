@@ -16,13 +16,15 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileError } from '@epicenter/app/files';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import { FileError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { createFixtureDevice, toneWav } from './capture.js';
-import { whisperingDefinition } from './definition.js';
 import type { Library } from './library.svelte.js';
 import type { CloseDecision, Workspace } from './workspace/types.js';
+import {
+	batchWithRecordingFailures,
+	openTestFolder,
+} from './workspace.test-support.js';
 
 const { createLibrary } = await import('./library.svelte.ts');
 const { createLeaveGuard } = await import('./leave.svelte.ts');
@@ -54,15 +56,15 @@ async function open({
 		await mkdtemp(join(tmpdir(), 'whispering-leave-')),
 	);
 	roots.push(root);
-	const folder = await openNativeFolder({
-		root,
-		definition: whisperingDefinition,
-		git: { author: { name: 'Test', email: 'test@localhost' } },
-	});
-	let audioFailures = failAudioWrites;
+	const folder = await openTestFolder(root);
 	let resultFailures = failResultWrites;
 	let outputFailures = failOutputWrites;
-	const { recordings, transcriptions, transformation_runs } = folder.tables;
+	const { transcriptions, transformation_runs } = folder.tables;
+	// The acceptance case: the audio write fails, so no file reaches the folder.
+	const batch = batchWithRecordingFailures(folder, root, {
+		audio: failAudioWrites,
+		row: 0,
+	});
 	const refused = (path: string) =>
 		FileError.Io({ path, operation: 'create', cause: new Error('disk full') });
 	const tables = {
@@ -75,15 +77,6 @@ async function open({
 				if (outputFailures === 0) return transformation_runs.create(input);
 				outputFailures -= 1;
 				return refused(`transformation_runs/${input.stem}.md`);
-			},
-		},
-		recordings: {
-			...recordings,
-			// The acceptance case: the audio write fails, so no file reaches the folder.
-			create: async (input: Parameters<typeof recordings.create>[0]) => {
-				if (audioFailures === 0) return recordings.create(input);
-				audioFailures -= 1;
-				return refused(`recordings/${input.stem}.wav`);
 			},
 		},
 		transcriptions: {
@@ -101,7 +94,7 @@ async function open({
 	let quitSignals = 0;
 	const workspace: Workspace = {
 		kind: 'native',
-		folder: { ...folder, tables } as Workspace['folder'],
+		folder: { ...folder, tables, batch } as Workspace['folder'],
 		location: root,
 		terminal: {
 			cwd: '/',
@@ -318,7 +311,10 @@ test('a transformation result whose file was not saved blocks the close and is k
 	await record(library);
 	await library.transcribe(library.entries[0]!);
 	expect(
-		await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' }),
+		await library.createTransformation({
+			title: 'Clean up',
+			prompt: 'Tidy.\n',
+		}),
 	).toBeUndefined();
 	const profile = library.selectedTransformation!;
 	patchRow(profile.editor, { fields: { model: 'chat-model' } });

@@ -42,11 +42,6 @@ export const WHISPERING_APPLICATION: Application = {
 	title: BUILT_IN_ROUTES.whispering.title,
 };
 
-export const HONEYCRISP_APPLICATION: Application = {
-	id: BUILT_IN_ROUTES.honeycrisp.id,
-	title: BUILT_IN_ROUTES.honeycrisp.title,
-};
-
 export const CAPTURE_APPLICATION: Application = {
 	id: BUILT_IN_ROUTES.capture.id,
 	title: BUILT_IN_ROUTES.capture.title,
@@ -55,6 +50,11 @@ export const CAPTURE_APPLICATION: Application = {
 export const MAIL_APPLICATION: Application = {
 	id: BUILT_IN_ROUTES.mail.id,
 	title: BUILT_IN_ROUTES.mail.title,
+};
+
+export const TODOS_APPLICATION: Application = {
+	id: BUILT_IN_ROUTES.todos.id,
+	title: BUILT_IN_ROUTES.todos.title,
 };
 
 /**
@@ -66,9 +66,9 @@ export const MAIL_APPLICATION: Application = {
  */
 export const COMPILED_APPLICATIONS: readonly Application[] = [
 	WHISPERING_APPLICATION,
-	HONEYCRISP_APPLICATION,
 	CAPTURE_APPLICATION,
 	MAIL_APPLICATION,
+	TODOS_APPLICATION,
 ];
 
 /** IDs that belong to Epicenter's own built-in routes and cannot be installed. */
@@ -79,4 +79,6 @@ export const RESERVED_APPLICATION_IDS: readonly string[] = [
 	APPS.CAPTURE.id,
 	APPS.VOCAB.id,
 	'so.epicenter.local-mail',
+	// The Todos folder's data id, which also names its directory.
+	'so.epicenter.todos',
 ];

@@ -30,7 +30,7 @@
  * There are no hidden tombstones. Deleting the receipt makes the next import
  * treat every source as new. `README.md` states these bounds.
  */
-import type { FolderFiles } from '@epicenter/app/files';
+import type { FileCapture, FolderFiles } from '@epicenter/folder';
 import { CAPTURES_TABLE } from '../definition.js';
 import { composeBody, type Refusal } from '../document.js';
 import {
@@ -470,7 +470,11 @@ export type ImportReport = {
 	readonly complete: boolean;
 };
 
-export type ImportFiles = Pick<FolderFiles, 'read' | 'write'>;
+/**
+ * The file verbs the import uses. `create` is exclusive, and `replace` lands
+ * only over the exact receipt that was read; nothing here can overwrite.
+ */
+export type ImportFiles = Pick<FolderFiles, 'read' | 'create' | 'replace'>;
 
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
@@ -484,7 +488,7 @@ async function createExclusive(
 	| { status: 'failed'; message: string }
 > {
 	try {
-		const written = await files.write(path, source, { expected: 'absent' });
+		const written = await files.create(path, source);
 		if (written.error === null) return { status: 'created' };
 		if (written.error.name !== 'Conflict')
 			return { status: 'failed', message: written.error.message };
@@ -513,7 +517,8 @@ type ReceiptRead =
 	| {
 			ok: true;
 			receipt: ImportReceipt | undefined;
-			version: Awaited<ReturnType<ImportFiles['write']>>['data'];
+			/** The receipt file as it was read; `undefined` when there is none yet. */
+			file: FileCapture | undefined;
 	  }
 	| { ok: false; message: string };
 
@@ -525,7 +530,7 @@ async function readReceipt(
 	const read = await files.read(path);
 	if (read.error !== null)
 		return read.error.name === 'NotFound'
-			? { ok: true, receipt: undefined, version: null }
+			? { ok: true, receipt: undefined, file: undefined }
 			: { ok: false, message: read.error.message };
 	try {
 		const value = JSON.parse(decoder.decode(read.data.bytes)) as ImportReceipt;
@@ -553,7 +558,11 @@ async function readReceipt(
 				ok: false,
 				message: `${path} is not an import receipt for this account.`,
 			};
-		return { ok: true, receipt: value, version: read.data.version };
+		return {
+			ok: true,
+			receipt: value,
+			file: { path: read.data.path, version: read.data.version },
+		};
 	} catch (cause) {
 		return {
 			ok: false,
@@ -664,14 +673,15 @@ export async function runLegacyImport(
 		let current = before;
 		for (let attempt = 0; attempt < 3; attempt++) {
 			try {
-				const written = await files.write(
-					receiptPath,
-					serializeReceipt(account, {
-						...current.receipt?.imports,
-						...recorded,
-					}),
-					{ expected: current.version ?? 'absent' },
-				);
+				const next = serializeReceipt(account, {
+					...current.receipt?.imports,
+					...recorded,
+				});
+				// Only over the receipt that was read, or where none was found.
+				const written =
+					current.file === undefined
+						? await files.create(receiptPath, next)
+						: await files.replace(current.file, next);
 				if (written.error === null) {
 					receipt = { status: 'written' };
 					break;

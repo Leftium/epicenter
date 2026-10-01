@@ -6,10 +6,18 @@
  * folder returned. Only a `Blob` changes shape on the way out, since a Blob
  * cannot be serialized: `files.open` answers with its bytes.
  *
+ * A batch arrives as a list of the mutations the page's callback named. It is
+ * checked here, at the boundary, and then named on the folder's own batch, so
+ * the folder validates, serializes, and publishes it as one batch.
+ *
  * Nothing here is specific to Whispering.
  */
-import type { DataDefinition } from '@epicenter/app/definition';
-import type { Folder } from '@epicenter/app/files';
+import type { DataDefinition } from '@epicenter/definition';
+import type { Folder } from '@epicenter/folder/bun';
+import {
+	collectBatchPlan,
+	parseBatchPlan,
+} from '../src/lib/bridge/batch-plan.js';
 
 type AnyFolder = Folder<DataDefinition>;
 
@@ -28,9 +36,11 @@ const FILE_METHODS = new Set([
 	'children',
 	'read',
 	'open',
-	'write',
+	'create',
+	'replace',
 	'remove',
 	'move',
+	'overwrite',
 	'mkdir',
 	'rmdir',
 ]);
@@ -61,6 +71,12 @@ function resolve(folder: AnyFolder, path: readonly string[]): Method {
 	const [area, first, second] = path;
 	if (area === 'git' && first === 'snapshot' && path.length === 2)
 		return () => folder.git.snapshot;
+	if (area === 'batch' && path.length === 1)
+		return (plan) => {
+			// A malformed plan throws here, before the folder is asked for anything.
+			const checked = parseBatchPlan(plan, Object.keys(folder.tables));
+			return folder.batch((batch) => collectBatchPlan(batch, checked));
+		};
 	if (area === 'tables' && path.length === 3 && second !== undefined) {
 		const table =
 			first !== undefined && Object.hasOwn(folder.tables, first)

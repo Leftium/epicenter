@@ -18,6 +18,8 @@ export function createTerminalSession(
 	terminal: NotesTerminal,
 	/** Shell writes are saved files; the app shows them and rechecks status. */
 	afterRun: () => Promise<void>,
+	/** Whether a command may start. False while a close is being answered. */
+	admits: () => boolean = () => true,
 ) {
 	let runs = $state<TerminalEntry[]>([]);
 	let command = $state('');
@@ -45,10 +47,17 @@ export function createTerminalSession(
 		set command(value: string) {
 			command = value;
 		},
-		/** Run the typed command. `clear` empties the output without running. */
+		/** Whether a command may start now. */
+		get admitting() {
+			return admits();
+		},
+		/**
+		 * Run the typed command. `clear` empties the output without running.
+		 * Nothing starts, and the typed command stays, while commands are held.
+		 */
 		async run() {
 			const line = command.trim();
-			if (line === '' || running) return;
+			if (line === '' || running || !admits()) return;
 			command = '';
 			cursor = -1;
 			if (line === 'clear') {

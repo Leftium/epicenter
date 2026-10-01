@@ -113,7 +113,8 @@ pub fn request_quit(app: &AppHandle, code: i32) -> bool {
     true
 }
 
-/// A dead sidecar cannot save a draft. Keep the page alive for copying it.
+/// Report stopped host services and keep the page alive to recover drafts.
+/// The native folder owner continues independently of those services.
 pub fn host_stopped(window: &WebviewWindow) {
     let _ = window.emit("capture-host-stopped", ());
     let _ = window.show();

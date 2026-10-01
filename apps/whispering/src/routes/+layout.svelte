@@ -21,23 +21,32 @@
 	const opening = openSession();
 
 	onDestroy(() => {
-		void opening.then((session) => session.close()).catch(() => {});
+		void opening.then((opened) => opened.data?.close()).catch(() => {});
 	});
 </script>
+
+{#snippet failed(message: string)}
+	<Empty.Root class="h-dvh">
+		<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
+		<Empty.Title>Could not open the recordings folder</Empty.Title>
+		<Empty.Description>{message}</Empty.Description>
+	</Empty.Root>
+{/snippet}
 
 <svelte:head><title>Whispering</title></svelte:head>
 
 <Tooltip.Provider>
 	{#await opening}
 		<Loading class="h-dvh" label="Opening your recordings…" />
-	{:then session}
-		<AppShell {session}>{@render props.children?.()}</AppShell>
+	{:then opened}
+		<!-- A refused folder is shown as refused. No other storage is opened in its place. -->
+		{#if opened.error}
+			{@render failed(opened.error.message)}
+		{:else}
+			<AppShell session={opened.data}>{@render props.children?.()}</AppShell>
+		{/if}
 	{:catch error}
-		<Empty.Root class="h-dvh">
-			<Empty.Media><TriangleAlertIcon class="size-8 text-muted-foreground" /></Empty.Media>
-			<Empty.Title>Could not open the recordings folder</Empty.Title>
-			<Empty.Description>{error instanceof Error ? error.message : String(error)}</Empty.Description>
-		</Empty.Root>
+		{@render failed(error instanceof Error ? error.message : String(error))}
 	{/await}
 </Tooltip.Provider>
 

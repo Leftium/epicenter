@@ -1,0 +1,29 @@
+"$schema" = "schemas/schema.json"
+
+# Granting this to a window lets it call the plugin. It does not choose a
+# folder: a window reaches only the scopes the shell registered for its label.
+[default]
+description = "Attach to the folders the shell registered for this window, then read, publish, and record history through them."
+permissions = [
+  "allow-attach",
+  "allow-detach",
+  "allow-list",
+  "allow-children",
+  "allow-read",
+  "allow-read-many",
+  "allow-apply",
+  "allow-mkdir",
+  "allow-rmdir",
+  "allow-acquire-lease",
+  "allow-release-lease",
+  "allow-status",
+  "allow-commit",
+  "allow-push",
+  "allow-fetch",
+  "allow-pull-fast-forward",
+  "allow-paths",
+  "allow-stage",
+  "allow-commit-staged",
+  "allow-diff",
+  "allow-log",
+]

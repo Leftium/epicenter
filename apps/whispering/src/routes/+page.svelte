@@ -7,6 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
+	import { audioPathIn } from '$lib/definition.js';
 	import { getSession } from '$lib/session.svelte.js';
 	import AudioPlayer from './components/AudioPlayer.svelte';
 	import { copyText, formatTime, recordingTitle } from './components/file-actions.js';
@@ -16,6 +17,8 @@
 
 	/** The newest saved recording. A capture still being saved is in the notice under the header. */
 	const latest = $derived(library.entries[0]);
+	/** The audio the newest row names. Nothing is guessed from another file's name. */
+	const audioPath = $derived(latest ? audioPathIn(latest.fields) : undefined);
 	const transcript = $derived(latest?.stem ? library.resultsFor(latest.stem)[0] : undefined);
 	const run = $derived(latest?.stem ? library.transcriptionRun(latest.stem) : undefined);
 
@@ -62,25 +65,29 @@
 				<p class="text-sm text-destructive" role="alert" data-testid="transcription-error">{run.message}</p>
 			{:else if run?.kind !== 'unsaved'}
 				<p class="text-sm text-muted-foreground">
-					The audio is saved. Nothing is sent anywhere until you ask for a transcript.
+					{#if audioPath}
+						Transcription uses the audio file this recording names. Nothing is sent anywhere until you ask for a transcript.
+					{:else}
+						Nothing can be sent for a transcript until this recording’s file names its audio.
+					{/if}
 				</p>
 			{/if}
 
 			<div class="flex w-full items-center gap-2">
-				{#if latest.attachment}
+				{#if audioPath}
 					<div class="min-w-0 flex-1">
 						<AudioPlayer
-							source={{ kind: 'file', files: library.folder.files, path: latest.attachment, generation: library.generation }}
+							source={{ kind: 'file', files: library.folder.files, path: audioPath, generation: library.generation }}
 							label="Audio of {recordingTitle(latest)}"
 						/>
 					</div>
 				{:else}
-					<p class="flex-1 text-sm text-muted-foreground">This recording has no audio file.</p>
+					<p class="flex-1 text-sm text-muted-foreground">This recording’s file names no audio. Open it to add the path.</p>
 				{/if}
 				{#if !transcript && run?.kind !== 'unsaved'}
 					<Button
 						size="sm"
-						disabled={latest.attachment === undefined || run?.kind === 'running'}
+						disabled={audioPath === undefined || run?.kind === 'running'}
 						onclick={() => void library.transcribe(latest)}
 						data-testid="transcribe-latest"
 					>

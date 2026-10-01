@@ -1,7 +1,7 @@
 /**
  * What kind of audio a capture actually produced.
  *
- * A recording's attachment is named `<id>.<extension>`, and the extension is
+ * A new recording's audio is saved as `<id>.<extension>`, and the extension is
  * what players, Git tooling, and a transcription endpoint use to decide how to
  * read it. A recorder's reported MIME type is a claim; the container's own
  * signature is evidence. The signature decides when it is recognized, and the
@@ -9,7 +9,7 @@
  */
 
 export type AudioFormat = {
-	/** One ASCII alphanumeric segment, valid as a same-stem attachment extension. */
+	/** One ASCII alphanumeric segment, used as the saved audio file's extension. */
 	readonly extension: string;
 	readonly mimeType: string;
 };

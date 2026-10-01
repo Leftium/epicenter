@@ -1,18 +1,23 @@
 /** Inert data-definition vocabulary. Runtime store entrypoints live beside it. */
 
 export {
+	type AddressByteCeilings,
 	CalendarDateString,
+	DATA_ADDRESS_CEILINGS,
 	DateTimeString,
 	type Field,
 	type FieldOf,
 	InstantString,
+	isDataId,
+	isRowId,
+	isTableName,
 	jsonValue,
 	type Kind,
 	REFERENCE_KEYWORD,
 	recognize,
 	referenceTargetOf,
-} from '../field/index.js';
-export * from './addresses.js';
+	SQLITE_UNUSABLE_AS_RELATION_NAME,
+} from '@epicenter/definition';
 export { plainText } from './body.js';
 export {
 	type Conformance,

@@ -18,16 +18,18 @@
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
+import { OpenFolderError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { toneWav } from './capture.js';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
 import type { Session } from './session.svelte.js';
+import { type Workspace, WorkspaceError } from './workspace/types.js';
 import {
 	deferred,
 	openTestWorkspace,
 	type TestWorkspaceOptions,
 } from './workspace.test-support.js';
-import type { Workspace } from './workspace/types.js';
 
 const { openSession } = await import('./session.svelte.ts');
 const { patchRow } = await import('./editor.svelte.ts');
@@ -39,7 +41,7 @@ afterEach(async () => {
 
 async function open(options: TestWorkspaceOptions = {}) {
 	const test = await openTestWorkspace(options);
-	const session: Session = await openSession(test.open);
+	const session: Session = expectOk(await openSession(test.open));
 	cleanups.push(async () => {
 		await session.close();
 		await test.remove();
@@ -200,10 +202,27 @@ test('a session whose first read fails releases the folder it opened', async () 
 		},
 	};
 
-	await expect(openSession(async () => unreadable)).rejects.toThrow(
+	await expect(openSession(async () => Ok(unreadable))).rejects.toThrow(
 		'the folder host went away',
 	);
 
 	expect(test.closes).toBe(1);
 	expect(test.closeListeners.size).toBe(0);
+});
+
+test('a workspace that cannot be opened is returned as the refusal, and no session exists', async () => {
+	let opens = 0;
+	const refused = expectErr(
+		await openSession(async () => {
+			opens += 1;
+			return WorkspaceError.BrowserFolder({
+				refusal: OpenFolderError.InsideTauri().error,
+			});
+		}),
+	);
+
+	// One attempt, one answer: nothing else was opened in its place.
+	expect(opens).toBe(1);
+	expect(refused.name).toBe('BrowserFolder');
+	expect(refused.message).toContain('Browser storage is not used');
 });

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { toast } from '@epicenter/ui/sonner';
@@ -23,40 +22,12 @@
 	// Drafts live only in this window. Three things can end it, and each is held
 	// back while a draft is unsettled:
 	// - a reload or in-page navigation: cancelled here, and the webview asks first;
-	// - closing the window or quitting the app: the shell always asks this page.
+	// - closing the window or quitting the app: the shell asks the page, which
+	//   answers from `+page.svelte` before these notes exist. While it answers,
+	//   `notes.fenced` holds back every input and action here.
 	beforeNavigate(({ cancel }) => {
 		if (notes.unsettled > 0) cancel();
 	});
-
-	$effect(() =>
-		notes.host.onCloseRequested(async (reason) => {
-			if (reason === 'unavailable') {
-				confirmationDialog.open({
-					title: 'The notes folder is unavailable',
-					description: 'The file process stopped. Your drafts are still in this window. Keep editing to copy them from Source. Quitting discards unsaved work.',
-					confirm: { text: 'Discard and quit', variant: 'destructive' },
-					cancel: { text: 'Keep editing' },
-					onConfirm: () => notes.host.quit(),
-				});
-				return;
-			}
-			const remaining = await notes.settleAll();
-			if (remaining === 0) {
-				await notes.host.quit();
-				return;
-			}
-			confirmationDialog.open({
-				title: `${remaining} ${remaining === 1 ? 'draft is' : 'drafts are'} not saved`,
-				description:
-					'They could not be saved to their files. Quitting now discards them. Keep editing to retry, compare, or copy them.',
-				confirm: { text: 'Discard and quit', variant: 'destructive' },
-				cancel: { text: 'Keep editing' },
-				async onConfirm() {
-					await notes.host.quit();
-				},
-			});
-		}),
-	);
 
 	async function toggleTerminal() {
 		terminalOpen = !terminalOpen;
@@ -79,8 +50,8 @@
 			// A reload would end this window's drafts. The leave prompt below is
 			// the webview's to show or not; refusing the shortcut does not depend on it.
 			event.preventDefault();
-			toast.warning('Reload stopped: some edits are not saved', {
-				description: 'Wait for them to save, or resolve them in the note, then reload.',
+			toast.warning('Reload stopped: some changes are not saved or not confirmed', {
+				description: 'Wait for them to save, or resolve them in the note or the status menu, then reload.',
 			});
 		} else if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'b') {
 			event.preventDefault();
@@ -96,7 +67,9 @@
 	}}
 />
 
-<div class="flex h-dvh flex-col overflow-hidden">
+<!-- While a close is being answered nothing here takes input. The editors stay
+     mounted, so Keep editing returns to the same text and undo history. -->
+<div class="flex h-dvh flex-col overflow-hidden" inert={notes.fenced}>
 	<AppHeader
 		{notes}
 		{filesOpen}
@@ -119,8 +92,8 @@
 				<Resizable.Pane id="detail" order={3} defaultSize={filesOpen ? 40 : 60} minSize={30}>
 					{@const selection = notes.selection}
 					{#if selection?.kind === 'note'}
-						{#key selection.editor}
-							<NoteDetail {notes} editor={selection.editor} entry={selection.entry} />
+						{#key selection.session}
+							<NoteDetail {notes} session={selection.session} entry={selection.entry} />
 						{/key}
 					{:else if selection?.kind === 'file'}
 						<FileView {notes} path={selection.path} file={selection.file} />

@@ -12,7 +12,7 @@
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import { openFolder } from '@epicenter/folder/bun';
 import { captureDefinition } from '@epicenter/capture';
 import { readLegacyBundle, runLegacyImport } from '@epicenter/capture/legacy';
 
@@ -31,7 +31,9 @@ if (!read.ok) {
 	process.exit(2);
 }
 
-const folder = await openNativeFolder({
+// Local history only: an explicit author, no remote, and one commit at the
+// end instead of one per file.
+const opened = await openFolder({
 	root,
 	definition: captureDefinition,
 	git: {
@@ -39,6 +41,11 @@ const folder = await openNativeFolder({
 		commitOnEdit: false,
 	},
 });
+if (opened.error) {
+	console.error(opened.error.message);
+	process.exit(2);
+}
+const folder = opened.data;
 let exitCode = 0;
 try {
 	const first = await runLegacyImport(folder.files, read.bundle);

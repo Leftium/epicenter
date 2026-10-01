@@ -57,15 +57,20 @@
 			<Button variant="outline" size="sm" onclick={() => void notes.open(path)}>Try again</Button>
 		</Empty.Root>
 	{:else if file.kind === 'text'}
-		{@const editor = file.editor}
-		<DraftStatus {editor} onDiscard={() => notes.discardDraft(editor.path)} />
+		{@const session = file.session}
+		<DraftStatus
+			{session}
+			noun="file"
+			onRecover={() => notes.recoverDraft(session.path)}
+			onDiscard={() => notes.discardDraft(session.path)}
+		/>
 		<div class="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4">
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={editor.buffer}
+				value={session.buffer}
 				aria-label="Contents of {name}"
 				spellcheck={false}
-				oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
+				oninput={(event) => session.input(withFileNewlines(event.currentTarget.value, session.buffer))}
 			/>
 		</div>
 	{:else}

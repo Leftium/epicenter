@@ -5,7 +5,16 @@
 	import { tick } from 'svelte';
 	import type { TerminalSession } from '$lib/terminal.svelte.js';
 
-	let { session, onClose }: { session: TerminalSession; onClose: () => void } = $props();
+	let {
+		session,
+		directory,
+		onClose,
+	}: {
+		session: TerminalSession;
+		/** The directory on this computer the shell works in, when there is one. */
+		directory: string | undefined;
+		onClose: () => void;
+	} = $props();
 
 	let output = $state<HTMLDivElement | null>(null);
 	let input = $state<HTMLInputElement | null>(null);
@@ -28,7 +37,9 @@
 <section class="flex h-full min-h-0 flex-col bg-muted/30 font-mono text-xs" aria-label="Terminal">
 	<div class="flex h-9 shrink-0 items-center gap-3 border-b ps-3 pe-1 font-sans text-xs text-muted-foreground">
 		<span class="font-medium text-foreground">Terminal</span>
-		<span class="truncate max-md:hidden">Same files as the app · git status, add, commit -m, diff, log, push, fetch, pull --ff-only</span>
+		<span class="truncate max-md:hidden">
+			{directory === undefined ? 'Same files as the app' : `Files in ${directory}`} · git status, diff, log, push, fetch, pull --ff-only
+		</span>
 		<Button class="ml-auto" variant="ghost" size="icon-sm" tooltip="Hide terminal" aria-label="Hide terminal" onclick={onClose}>
 			<XIcon />
 		</Button>

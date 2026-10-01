@@ -10,9 +10,10 @@
  *   bun apps/todos/scripts/native.ts <checkout> pull
  *
  * The CLI opens the folder with `commitOnEdit: false`: a command saves files,
- * then `create` and `complete` request one explicit commit and push.
+ * then `create` and `complete` request one explicit commit and push. A
+ * checkout that cannot be opened prints the refusal and exits 1.
  */
-import { openNativeFolder } from '@epicenter/app/files/native';
+import { openFolder } from '@epicenter/folder/bun';
 import { todosDefinition } from '../src/lib/definition.js';
 
 const [root, command, ...args] = process.argv.slice(2);
@@ -23,9 +24,11 @@ if (root === undefined || command === undefined) {
 	process.exit(2);
 }
 
-async function output(cwd: string, ...gitArgs: string[]) {
-	const child = Bun.spawn(['git', ...gitArgs], {
-		cwd,
+/** A Git setting of the checkout, or undefined when Git has none or cannot read it. */
+async function output(checkout: string, ...gitArgs: string[]) {
+	// `-C`, not a working directory: a checkout that does not exist is then
+	// Git's refusal here and the opener's `InvalidRoot` below, not a failed spawn.
+	const child = Bun.spawn(['git', '-C', checkout, ...gitArgs], {
 		stdout: 'pipe',
 		stderr: 'pipe',
 	});
@@ -37,7 +40,7 @@ async function output(cwd: string, ...gitArgs: string[]) {
 }
 
 const remoteUrl = await output(root, 'remote', 'get-url', 'origin');
-const folder = await openNativeFolder({
+const opened = await openFolder({
 	root,
 	definition: todosDefinition,
 	git: {
@@ -50,6 +53,11 @@ const folder = await openNativeFolder({
 		commitOnEdit: false,
 	},
 });
+if (opened.error) {
+	print({ error: opened.error.message });
+	process.exit(1);
+}
+const folder = opened.data;
 
 function print(value: unknown) {
 	console.log(

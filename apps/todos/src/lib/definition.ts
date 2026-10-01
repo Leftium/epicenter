@@ -1,10 +1,15 @@
-import { defineStore, defineTable, field } from '@epicenter/app';
+import {
+	type CreateRowOf,
+	defineFolder,
+	defineTable,
+	field,
+} from '@epicenter/folder';
 
 /**
  * Each todo is `todos/<stem>.md`: `title` and `done` in frontmatter, notes in
  * the Markdown body. The stem is the file's identity; the title is a field.
  */
-export const todosDefinition = defineStore({
+export const todosDefinition = defineFolder({
 	id: 'so.epicenter.todos',
 	title: 'Todos',
 	kv: {},
@@ -15,4 +20,4 @@ export const todosDefinition = defineStore({
 	},
 });
 
-export type TodoFields = { title: string; done: boolean };
+export type TodoFields = CreateRowOf<typeof todosDefinition.tables.todos>;

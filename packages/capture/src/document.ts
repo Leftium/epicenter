@@ -41,7 +41,7 @@
  * the heading, a second bullet list in the section, or frontmatter with no
  * closing line. The source stays editable as text.
  */
-import { frameSource } from '@epicenter/app/files';
+import { frameSource } from '@epicenter/folder';
 import MarkdownIt from 'markdown-it';
 
 export type Newline = '\n' | '\r\n';

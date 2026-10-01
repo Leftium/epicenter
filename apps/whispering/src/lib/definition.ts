@@ -1,17 +1,19 @@
 import {
 	type CreateRowOf,
-	defineStore,
+	type DataDefinition,
 	defineTable,
 	field,
 	type KvOf,
-} from '@epicenter/app';
+} from '@epicenter/definition';
 
 /**
  * Whispering's folder: each recording is `recordings/<id>.md` with its
- * metadata in frontmatter, notes in the Markdown body, and zero or one
- * same-stem audio file beside it. Each transcription result is its own row in
- * `transcriptions/`, naming the recording it was made from, with the transcript
- * as its body. Settings that travel with the folder live in `kv.json`.
+ * metadata in frontmatter and notes in the Markdown body. The row names its
+ * audio in `audioPath`; the audio is an ordinary file the table does not own,
+ * so nothing is inferred from a file that happens to share the row's stem.
+ * Each transcription result is its own row in `transcriptions/`, naming the
+ * recording it was made from, with the transcript as its body. Settings that
+ * travel with the folder live in `kv.json`.
  *
  * A transformation is a reusable prompt: `transformations/<id>.md` with its
  * title, model, and endpoint in frontmatter and the prompt as its body.
@@ -23,8 +25,12 @@ import {
  *
  * The file stem is a row's identity. A recording's title is a field, so
  * renaming a recording never moves a file or breaks a result's `recordingId`.
+ *
+ * The page and the Bun folder host both load this module, so it names only
+ * the inert vocabulary. Each opener checks the definition before it acquires
+ * anything, and `definition.test.ts` checks it with `defineFolder`.
  */
-export const whisperingDefinition = defineStore({
+export const whisperingDefinition = {
 	id: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: {
@@ -40,6 +46,12 @@ export const whisperingDefinition = defineStore({
 				durationMs: field.number(),
 				/** Where the audio came from, so fixture audio is never mistaken for a microphone take. */
 				capture: field.select(['microphone', 'fixture']),
+				/**
+				 * The folder-relative path of the audio file, such as
+				 * `recordings/20260102-030405-k3f9.wav`. A row without it has no
+				 * audio the app will play, transcribe, or name.
+				 */
+				audioPath: field.string(),
 			},
 		}),
 		transcriptions: defineTable({
@@ -77,7 +89,7 @@ export const whisperingDefinition = defineStore({
 			},
 		}),
 	},
-});
+} as const satisfies DataDefinition;
 
 export type CaptureSource = 'microphone' | 'fixture';
 
@@ -110,6 +122,23 @@ export const RECORDING_ROW = /^recordings\/([^/]+)\.md$/;
 
 export function recordingIdOf(path: string): string | undefined {
 	return RECORDING_ROW.exec(path)?.[1];
+}
+
+/** Where a new capture's audio is saved. An existing row's audio is whatever its `audioPath` says. */
+export function recordingAudioPath(id: string, extension: string): string {
+	return `${RECORDINGS}/${id}.${extension}`;
+}
+
+/**
+ * The audio a recording row names, or undefined when it names none. A row
+ * written before `audioPath` existed names none: it is listed as needing
+ * repair, and no file is guessed from its stem.
+ */
+export function audioPathIn(
+	fields: Readonly<Partial<RecordingFields>>,
+): string | undefined {
+	const path = fields.audioPath;
+	return typeof path === 'string' && path !== '' ? path : undefined;
 }
 
 /** `transcriptions/<id>.md` and nothing nested below it. */

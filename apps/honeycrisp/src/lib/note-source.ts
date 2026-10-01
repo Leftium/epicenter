@@ -7,9 +7,9 @@
  * source-preserving patch: unknown frontmatter keys, comments, quoting, and
  * line endings are kept as written.
  */
-import { patchSource, readSource } from '@epicenter/app/files';
+import { patchSource, readSource } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { NoteFields } from './data.js';
+import type { FolderFields, NoteFields } from './data.js';
 import { type BodyInspection, inspectNoteBody } from './editor/markdown.js';
 
 export type RichAvailability =
@@ -72,10 +72,17 @@ export function applyRichBody(
 /** Change frontmatter fields, leaving the body and every other key as written. */
 export function applyFields(
 	source: string,
-	fields: Partial<NoteFields>,
+	fields: Partial<NoteFields> | Partial<FolderFields>,
 ): Result<string, string> {
 	const patched = patchSource(source, { fields });
 	return patched.error ? Err(patched.error.reason) : Ok(patched.data);
+}
+
+/** The source of a new note or folder file: its fields in order, and no body. */
+export function newSource(
+	fields: NoteFields | FolderFields,
+): Result<string, string> {
+	return applyFields('', fields);
 }
 
 /** The declared fields a file lacks, filled with the values a new note gets. */

@@ -16,25 +16,27 @@
  * Git status comes from the folder's shared snapshot; this module adds no
  * status cache of its own. A save and its commit are separate outcomes.
  */
-import type {
-	CommitOutcome,
-	Entry,
-	FileListing,
-	FileVersion,
-	GitSnapshot,
-	KvSnapshot,
-	TableWriteError,
-} from '@epicenter/app/files';
-import { sameVersion } from '@epicenter/app/files';
+import {
+	type CommitOutcome,
+	type Entry,
+	type FileListing,
+	type FileVersion,
+	type GitSnapshot,
+	type KvSnapshot,
+	sameVersion,
+	type TableWriteError,
+} from '@epicenter/folder';
 import { customAlphabet } from 'nanoid';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { audioMimeTypeOf } from './audio-format.js';
 import type { ActiveCapture, CapturedAudio } from './capture.js';
 import {
+	audioPathIn,
 	RECORDING_ROW,
 	RECORDINGS,
 	type RecordingFields,
+	recordingAudioPath,
 	recordingIdOf,
 	TRANSCRIPTION_ROW,
 	TRANSCRIPTIONS,
@@ -63,7 +65,8 @@ import {
 	readTextFile,
 } from './files.js';
 import {
-	audioPathOf,
+	type ConfirmedPublication,
+	observePublication,
 	type PendingCapture,
 	publishRecording,
 } from './recordings/publish.js';
@@ -96,6 +99,7 @@ export type Selection =
 export type Deletion =
 	| {
 			readonly kind: 'recording';
+			/** The row that is deleted. The audio it names is a separate file and stays. */
 			readonly entry: RecordingEntry;
 			readonly results: readonly TranscriptionEntry[];
 			/** Transformation results made from this recording's transcripts. */
@@ -114,14 +118,38 @@ export type Deletion =
 	  }
 	| { readonly kind: 'folder'; readonly path: string };
 
-/** Captured audio that is not fully in the folder yet. The bytes stay here until it is. */
+/**
+ * A capture the window still holds: its fixed id and bytes, and where its
+ * publication stands. Every state but `published` is unresolved: the
+ * recording is not known to be in the folder, and the bytes here are what
+ * would be lost. `published` is resolved as a save and open only as a display
+ * question.
+ */
 export type PendingRecording = {
 	readonly capture: PendingCapture;
 	readonly mimeType: string;
 	readonly attempts: number;
 	readonly state:
 		| { readonly kind: 'saving' }
-		/** Nothing from the last attempt reached the folder. */
+		/**
+		 * A complete receipt confirmed both files were published. The row could
+		 * not then be shown as this recording: the read failed, or another writer
+		 * removed or changed it afterward. Nothing is unsaved. The only thing
+		 * done from here is to read the row again; nothing is published again and
+		 * nothing is recreated. No entry is made from `publication`.
+		 */
+		| {
+				readonly kind: 'published';
+				readonly publication: ConfirmedPublication;
+				readonly problem: 'unreadable' | 'missing' | 'foreign';
+				readonly message: string;
+				/** Whether the row is being read again now. */
+				readonly checking: boolean;
+		  }
+		/**
+		 * The last attempt failed or was not confirmed. It may have written
+		 * nothing, or its reply or read-back may have been lost after it wrote.
+		 */
 		| { readonly kind: 'failed'; readonly message: string }
 		/** The audio file is saved; the recording's row is not. */
 		| {
@@ -129,7 +157,7 @@ export type PendingRecording = {
 				readonly message: string;
 				readonly landed: readonly string[];
 		  }
-		/** Another file occupies this recording's path; nothing was overwritten. */
+		/** The folder holds something at this recording's paths that is not its own; nothing was overwritten. */
 		| {
 				readonly kind: 'unexpected';
 				readonly message: string;
@@ -178,7 +206,9 @@ export type TransformationRun = {
 
 const UNSETTLED = 'Save or discard the open edits first.';
 const RECORDING_NAME =
-	'A recording’s files are named by its ID, which its transcription results refer to. Change the title instead.';
+	'A recording’s file is named by its ID, which its transcription results refer to. Change the title instead.';
+const RECORDING_AUDIO_NAME =
+	'A recording names this audio file in its audioPath field, so renaming it here would leave that recording without audio. Change the recording’s title instead.';
 const TRANSFORMATION_NAME =
 	'A transformation’s file is named by its ID, which its saved results refer to. Change the title instead.';
 
@@ -562,7 +592,7 @@ export function createLibrary(workspace: Workspace) {
 		if (selectedPath === path) selectedPath = undefined;
 	}
 
-	/** Settle input, then capture current attachment ownership for a file operation. */
+	/** Settle input, then read the saved recording row an operation acts on. */
 	async function recordingForOperation(
 		path: string,
 	): Promise<Result<RecordingEntry, string>> {
@@ -594,7 +624,10 @@ export function createLibrary(workspace: Workspace) {
 			if (read.error) return read.error.message;
 			expected = read.data.version;
 		}
-		const moved = await folder.files.move(from, to, { expected });
+		const moved = await folder.files.move(
+			{ path: from, version: expected },
+			to,
+		);
 		if (moved.error) {
 			await refreshAll();
 			return describeWriteError(moved.error);
@@ -610,11 +643,15 @@ export function createLibrary(workspace: Workspace) {
 	function unsavedWork(): string[] {
 		const held: string[] = [];
 		if (recorder.phase !== 'idle') held.push('A recording is in progress.');
-		if (pending.length > 0)
+		// A confirmed publication is saved even when its current row cannot be read.
+		const unresolved = pending.filter(
+			(item) => item.state.kind !== 'published',
+		).length;
+		if (unresolved > 0)
 			held.push(
-				pending.length === 1
-					? '1 recording is not saved to the folder. Its audio is only in this window.'
-					: `${pending.length} recordings are not saved to the folder. Their audio is only in this window.`,
+				unresolved === 1
+					? '1 recording is not saved to the folder. Its audio is kept in this window. Any files already written stay in the folder.'
+					: `${unresolved} recordings are not saved to the folder. Their audio is kept in this window. Any files already written stay in the folder.`,
 			);
 		const transcripts = [...runs.values()];
 		const unsavedTranscripts = transcripts.filter(
@@ -663,6 +700,13 @@ export function createLibrary(workspace: Workspace) {
 					: [next, ...pending];
 	}
 
+	/** The capture's recording is in the folder and was read as it is now: show it. */
+	async function settle(id: string, entry: RecordingEntry) {
+		setPending(id, undefined);
+		await refreshAll();
+		editorFor(entry);
+	}
+
 	/** One publication attempt for a pending capture. Its id and bytes never change. */
 	async function publish(item: PendingRecording) {
 		const attempt: PendingRecording = {
@@ -673,16 +717,22 @@ export function createLibrary(workspace: Workspace) {
 		setPending(item.capture.id, attempt);
 		const outcome = await publishRecording(folder, item.capture);
 		if (outcome.status === 'saved') {
-			setPending(item.capture.id, undefined);
-			await refreshAll();
-			editorFor(outcome.entry);
+			await settle(item.capture.id, outcome.entry);
 			selectedPath = outcome.entry.path;
 			return;
 		}
 		setPending(item.capture.id, {
 			...attempt,
 			state:
-				outcome.status === 'partial'
+				outcome.status === 'published'
+					? {
+							kind: 'published',
+							publication: outcome.publication,
+							problem: outcome.problem.status,
+							message: outcome.problem.message,
+							checking: false,
+						}
+					: outcome.status === 'partial'
 					? {
 							kind: 'partial',
 							message: outcome.message,
@@ -696,22 +746,69 @@ export function createLibrary(workspace: Workspace) {
 							}
 						: { kind: 'failed', message: outcome.message },
 		});
-		// A partial publication changed the folder; show what is there now.
+		// A partial or complete publication changed the folder; show what is there now.
+		await refreshAll();
+	}
+
+	/**
+	 * Look again at a recording whose publication is confirmed. This reads the
+	 * row and nothing else: no batch, no file write, no request. A row that is
+	 * this recording now, with whatever title or notes it has, ends the notice
+	 * and becomes the entry that is shown. A row that is unreadable, gone, or
+	 * someone else's is left exactly as it is and the notice says so.
+	 */
+	async function reconcile(item: PendingRecording) {
+		if (item.state.kind !== 'published' || item.state.checking) return;
+		const confirmed = item.state;
+		const selectionBefore = selectedPath;
+		setPending(item.capture.id, {
+			...item,
+			state: { ...confirmed, checking: true },
+		});
+		let observed: Awaited<ReturnType<typeof observePublication>>;
+		try {
+			observed = await observePublication(folder, item.capture);
+		} catch (cause) {
+			// A read that throws (the folder host went away) is an unreadable row.
+			observed = { status: 'unreadable', message: describe(cause) };
+		}
+		// Dismissed while the read was running: its result must not restore
+		// the notice or change the person's selection.
+		if (!pending.some((held) => held.capture.id === item.capture.id)) return;
+		if (observed.status === 'present') {
+			await settle(item.capture.id, observed.entry);
+			// Refresh may settle its notice, but it cannot undo a newer selection.
+			if (selectedPath === selectionBefore) selectedPath = observed.entry.path;
+			return;
+		}
+		setPending(item.capture.id, {
+			...item,
+			state: {
+				...confirmed,
+				problem: observed.status,
+				message: observed.message,
+				checking: false,
+			},
+		});
 		await refreshAll();
 	}
 
 	function accept(audio: CapturedAudio, endedAt: Date) {
+		const id = recordingId(endedAt);
 		const item: PendingRecording = {
+			// Fixed here, once: every attempt publishes this id, these bytes, and
+			// these fields, and the row names the audio's path itself.
 			capture: {
-				id: recordingId(endedAt),
+				id,
 				bytes: audio.bytes,
-				extension: audio.extension,
 				fields: {
 					title: defaultTitle(endedAt),
 					recordedAt: endedAt.toISOString(),
 					durationMs: audio.durationMs,
 					capture: audio.source,
+					audioPath: recordingAudioPath(id, audio.extension),
 				} as RecordingFields,
+				body: '',
 			},
 			mimeType: audio.mimeType,
 			attempts: 0,
@@ -1162,27 +1259,42 @@ export function createLibrary(workspace: Workspace) {
 			active = undefined;
 			recorder = { phase: 'idle' };
 		},
-		/** Publish a pending capture again, under the same id and with the same bytes. */
+		/**
+		 * Act on a held capture again. One whose publication is not confirmed is
+		 * published again, under the same id and with the same bytes. One whose
+		 * publication is confirmed is only read again: it is never republished.
+		 */
 		async retryPending(id: string) {
 			const item = pending.find((candidate) => candidate.capture.id === id);
 			if (item === undefined || item.state.kind === 'saving') return;
-			await publish(item);
+			if (item.state.kind === 'published') await reconcile(item);
+			else await publish(item);
 		},
-		/** Give up on a pending capture. Files already in the folder are left as they are. */
+		/**
+		 * Drop a held capture. Files already in the folder are left as they are.
+		 * For a published capture this drops only the notice and the copy held
+		 * here: the recording's files are in the folder.
+		 */
 		discardPending(id: string) {
 			setPending(id, undefined);
 		},
-		pendingAudioPath: audioPathOf,
+		/** The recording whose row names `path` as its audio, if one does. */
+		recordingNaming(path: string): RecordingEntry | undefined {
+			return entries.find((entry) => audioPathIn(entry.fields) === path);
+		},
 
 		async transcribe(entry: RecordingEntry) {
 			const id = entry.stem;
 			if (id === undefined || runs.get(id)?.kind === 'running') return;
 			// Its transcript would name a recording that is on its way out.
 			if (deleting.has(id)) return;
-			if (entry.attachment === undefined) {
+			// Only the path the row names is sent. No file is guessed from its stem.
+			const audioPath = audioPathIn(entry.fields);
+			if (audioPath === undefined) {
 				runs.set(id, {
 					kind: 'failed',
-					message: 'This recording has no audio file to transcribe.',
+					message:
+						'This recording’s file names no audio (it has no audioPath), so there is nothing to transcribe. Add the audio file’s path in Source.',
 				});
 				return;
 			}
@@ -1193,7 +1305,7 @@ export function createLibrary(workspace: Workspace) {
 			let answered: Awaited<ReturnType<Workspace['transcribe']>>;
 			try {
 				answered = await workspace.transcribe({
-					audioPath: entry.attachment,
+					audioPath,
 					baseUrl: used.transcriptionBaseUrl,
 					model: used.transcriptionModel,
 				});
@@ -1399,8 +1511,9 @@ export function createLibrary(workspace: Workspace) {
 				return RECORDING_NAME;
 			if (transformationPaths.has(path) || transformationEditors.has(path))
 				return TRANSFORMATION_NAME;
-			const owner = entries.find((entry) => entry.attachment === path);
-			if (owner !== undefined) return RECORDING_NAME;
+			// Nothing repairs a row's `audioPath` when the file it names moves.
+			if (entries.some((entry) => audioPathIn(entry.fields) === path))
+				return RECORDING_AUDIO_NAME;
 			return renameFile(path, to);
 		},
 		/** A new empty text file; it never replaces an existing one. */
@@ -1413,9 +1526,7 @@ export function createLibrary(workspace: Workspace) {
 			const path = joinPath(directory, name);
 			if (listing?.directories.includes(path))
 				return `"${name}" already exists here.`;
-			const written = await folder.files.write(path, '', {
-				expected: 'absent',
-			});
+			const written = await folder.files.create(path, '');
 			if (written.error) return describeWriteError(written.error);
 			await refreshAll();
 			await open(path);
@@ -1514,7 +1625,7 @@ export function createLibrary(workspace: Workspace) {
 				const removed =
 					deletion.kind === 'transformation'
 						? await profiles.delete(deletion.entry)
-						: await folder.files.remove(path, { expected: deletion.version });
+						: await folder.files.remove({ path, version: deletion.version });
 				if (removed.error) {
 					await refreshAll();
 					return describeWriteError(removed.error);
@@ -1545,6 +1656,8 @@ export function createLibrary(workspace: Workspace) {
 			// is no await between the checks above and this.
 			deleting.add(id);
 			try {
+				// The table removes the row file and nothing else. The audio the row
+				// names is an ordinary file; it stays, and Files can delete it.
 				const removed = await table.delete(deletion.entry);
 				if (removed.error) {
 					await refreshAll();

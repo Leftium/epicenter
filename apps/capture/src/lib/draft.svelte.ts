@@ -24,7 +24,7 @@
  * edited, and capture text that could not be applied. `unsettled` counts all
  * of it, so leaving the page asks first.
  */
-import { type Entry, sameVersion } from '@epicenter/app/files';
+import { type Entry, sameVersion } from '@epicenter/folder';
 import {
 	addThought,
 	type CaptureDocument,

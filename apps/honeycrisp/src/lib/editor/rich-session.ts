@@ -7,9 +7,10 @@
  *
  * - Every transaction that changes the document is checked before it is
  *   shown. If its Markdown would not parse back to an equivalent document,
- *   or the draft cannot take it, the transaction is refused and the screen
- *   does not change. If it passes, the draft receives the Markdown in the
- *   same step. There is never text on screen that the draft does not hold.
+ *   or the draft cannot or will not take it, the transaction is refused and
+ *   the screen does not change. If it passes, the draft receives the Markdown
+ *   in the same step. There is never text on screen that the draft does not
+ *   hold.
  * - When the draft's body changes from anywhere else (the Source view, a
  *   file adopted from disk, a discarded conflict), `sync` replaces the
  *   document and starts a new undo history, because the old history
@@ -18,7 +19,7 @@
  * The session has no DOM. A view displays `state` and sends transactions to
  * `apply`; tests drive it the same way.
  */
-import { readSource } from '@epicenter/app/files';
+import { readSource } from '@epicenter/folder';
 import {
 	baseKeymap,
 	chainCommands,
@@ -154,10 +155,11 @@ function editingPlugins(): Plugin[] {
 	];
 }
 
-/** The part of a draft the session reads and writes. */
-export type SessionDraft = {
+/** The part of a file session the rich-text view reads and writes. */
+export type SourceBuffer = {
 	readonly buffer: string;
-	input(text: string): void;
+	/** Take the whole new source. False means it was not taken. */
+	input(text: string): boolean;
 	refuse(reason: string): void;
 };
 
@@ -168,7 +170,7 @@ export type RichSession = NonNullable<ReturnType<typeof createRichSession>>;
  * undefined when it is not; the caller shows why from `richAvailability`.
  */
 export function createRichSession(
-	draft: SessionDraft,
+	draft: SourceBuffer,
 	{
 		now = instantNow,
 		viewPlugins = [],
@@ -236,8 +238,9 @@ export function createRichSession(
 					draft.refuse(patched.error);
 					return undefined;
 				}
+				// Input that is not being taken is not shown either.
+				if (!draft.input(patched.data)) return undefined;
 				syncedBody = readSource(patched.data).body ?? syncedBody;
-				draft.input(patched.data);
 			}
 			state = next;
 			return next;

@@ -21,6 +21,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { captureVersion } from '@epicenter/folder/bun';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { connectFolder } from '../src/lib/bridge/folder-client.js';
 import { createHttpBridge } from '../src/lib/bridge/http.js';
 import { toneWav } from '../src/lib/capture.js';
@@ -78,13 +80,14 @@ function capture(id = '20260102-030405-abcd'): PendingCapture {
 	return {
 		id,
 		bytes: toneWav(),
-		extension: 'wav',
 		fields: {
 			title: 'First take',
 			recordedAt: '2026-01-02T03:04:05.000Z',
 			durationMs: 1000,
 			capture: 'fixture',
+			audioPath: `recordings/${id}.wav`,
 		} as RecordingFields,
+		body: '',
 	};
 }
 
@@ -133,6 +136,112 @@ test('only folder methods can be called', async () => {
 	await expect(
 		bridge.transport.call(['tables', '__proto__', 'list'], []),
 	).rejects.toThrow();
+	// The old unconditional-by-option write is gone; each verb states its condition.
+	await expect(
+		bridge.transport.call(['files', 'write'], ['note.md', 'x']),
+	).rejects.toThrow('not a folder method');
+});
+
+test('a bridged batch is the folder’s own batch: one publication, captures from the bytes it was given', async () => {
+	const { root, remote } = await start();
+	const audio = toneWav();
+
+	const receipt = expectOk(
+		await remote.folder.batch((batch) => {
+			batch.files.create('recordings/one.wav', audio);
+			batch.tables.recordings.create({
+				stem: 'one',
+				fields: capture('one').fields,
+				body: 'Notes\n',
+			});
+		}),
+	);
+
+	expect(receipt.steps.map((step) => step.kind)).toEqual(['write', 'write']);
+	const [first, second] = receipt.steps;
+	if (first?.kind !== 'write' || second?.kind !== 'write')
+		throw new Error('expected two writes');
+	expect(first.file).toEqual({
+		path: 'recordings/one.wav',
+		version: await captureVersion(audio),
+	});
+	expect(second.path).toBe('recordings/one.md');
+	// The row is the source the table's own create writes, and reads back valid.
+	const source = await readFile(join(root, 'recordings', 'one.md'), 'utf8');
+	expect(second.file.version).toEqual(
+		await captureVersion(new TextEncoder().encode(source)),
+	);
+	const row = expectOk(await remote.folder.tables.recordings.get('one'));
+	expect(row?.issues).toBeUndefined();
+	expect(row?.fields.audioPath).toBe('recordings/one.wav');
+	expect(row?.body).toBe('Notes\n');
+
+	// The folder's refusals come back as its own: an occupied row publishes nothing.
+	const refused = expectErr(
+		await remote.folder.batch((batch) => {
+			batch.files.create('recordings/two.wav', audio);
+			batch.tables.recordings.create({
+				stem: 'one',
+				fields: capture('one').fields,
+			});
+		}),
+	);
+	expect(refused.name).toBe('Exists');
+	// A stale capture is the folder's conflict, and the step after it never runs.
+	const stale = expectErr(
+		await remote.folder.batch((batch) => {
+			batch.files.replace(
+				{ path: 'recordings/one.wav', version: { sha256: 'stale', size: 1 } },
+				audio,
+			);
+			batch.files.create('recordings/three.wav', audio);
+		}),
+	);
+	expect(stale.name).toBe('Conflict');
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
+		'one.md',
+		'one.wav',
+	]);
+});
+
+test('a batch plan is checked at the bridge before the folder is asked for anything', async () => {
+	const { directory, root, host, bridge } = await start();
+	const send = (plan: unknown) =>
+		host.handle(
+			new Request(`${ORIGIN}/bridge/call`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${TOKEN}`,
+				},
+				body: JSON.stringify({ path: ['batch'], args: [plan] }),
+			}),
+		);
+
+	for (const plan of [
+		'not a list',
+		[{ op: 'files.exec', path: 'a' }],
+		[{ op: 'files.create', path: 'a.md' }],
+		[{ op: 'files.create', path: 7, content: 'x' }],
+		[{ op: 'tables.create', table: '__proto__', input: { stem: 'a' } }],
+		[{ op: 'tables.create', table: 'nowhere', input: { stem: 'a' } }],
+		[{ op: 'files.create', path: 'ok.md', content: 'x' }, null],
+	]) {
+		const answered = await send(plan);
+		expect(answered.status).toBe(400);
+		expect(((await answered.json()) as { fault: string }).fault).toContain(
+			'The batch plan is not usable',
+		);
+	}
+	// A path the folder refuses is the folder's refusal, as a Result, not a fault.
+	const escaped = (await bridge.transport.call(
+		['batch'],
+		[[{ op: 'files.create', path: '../outside.md', content: 'x' }]],
+	)) as { error: { name: string } | null };
+	expect(escaped.error?.name).toBe('InvalidPath');
+	// None of it wrote anything, inside the folder or beside it.
+	expect((await readdir(root)).filter((name) => name !== '.git')).toEqual([]);
+	expect(await readdir(directory)).toEqual(['data']);
 });
 
 test('a recording published through the bridge is real files and real history', async () => {
@@ -230,11 +339,27 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 
 	const first = await publishRecording(remote.folder, pending);
 	expect(first.status).toBe('partial');
-	if (first.status === 'partial')
+	if (first.status === 'partial') {
 		expect(first.landed).toEqual([`recordings/${pending.id}.wav`]);
+		// The failure is the folder's own report of its own step, not an invented one.
+		expect(first.message).toBe(
+			`'recordings/${pending.id}.md' is a directory, not a file`,
+		);
+	}
+	// The audio is the captured bytes, and the obstruction is gone again.
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${pending.id}.wav`,
 	]);
+	expect(
+		new Uint8Array(
+			await readFile(join(root, 'recordings', `${pending.id}.wav`)),
+		),
+	).toEqual(new Uint8Array(pending.bytes));
+	expect((await bridge.app<{ rowWrites: number }>('injection')).rowWrites).toBe(
+		1,
+	);
+	// A partial publication requests no commit; the page rechecks status after one.
+	await remote.folder.git.status();
 	expect(await bridge.transport.call(['git', 'snapshot'], [])).toMatchObject({
 		activity: { commit: { active: false, pending: false } },
 		files: {
@@ -247,16 +372,27 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 	});
 	expect((await remote.folder.git.log(10)).data).toEqual([]);
 
-	// The second armed failure hits the recovery write; the audio stays put.
+	// The second armed failure hits the recovery batch, which replaces the
+	// audio it read with the same bytes and fails at the row. The audio stays put.
 	const second = await publishRecording(remote.folder, pending);
 	expect(second.status).toBe('partial');
+	if (second.status === 'partial')
+		expect(second.landed).toEqual([`recordings/${pending.id}.wav`]);
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${pending.id}.wav`,
 	]);
 
 	const third = await publishRecording(remote.folder, pending);
 	expect(third.status).toBe('saved');
-	if (third.status === 'saved') expect(third.recovered).toBe(true);
+	if (third.status === 'saved') {
+		expect(third.recovered).toBe(true);
+		expect(third.entry.fields).toEqual(pending.fields);
+	}
+	expect(
+		new Uint8Array(
+			await readFile(join(root, 'recordings', `${pending.id}.wav`)),
+		),
+	).toEqual(new Uint8Array(pending.bytes));
 	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
 		`${pending.id}.md`,
 		`${pending.id}.wav`,
@@ -280,6 +416,38 @@ test('an injected audio failure writes nothing, and retry saves', async () => {
 	const second = await publishRecording(remote.folder, pending);
 	expect(second.status).toBe('saved');
 	if (second.status === 'saved') expect(second.recovered).toBe(false);
+});
+
+test('an armed failure leaves a path that is already occupied alone, and is not spent on it', async () => {
+	const { root, bridge, remote } = await start();
+	const pending = capture();
+	const foreign = '---\ntitle: Someone else\n---\nKeep me\n';
+	await mkdir(join(root, 'recordings'), { recursive: true });
+	await writeFile(join(root, 'recordings', `${pending.id}.md`), foreign);
+	await bridge.app('inject', { rowWrites: 1 });
+
+	// The page's own check refuses first; the raw batch is refused by the folder.
+	expect((await publishRecording(remote.folder, pending)).status).toBe(
+		'unexpected',
+	);
+	const refused = expectErr(
+		await remote.folder.batch((batch) => {
+			batch.files.create(pending.fields.audioPath, pending.bytes);
+			batch.tables.recordings.create({
+				stem: pending.id,
+				fields: pending.fields,
+			});
+		}),
+	);
+
+	expect(refused.name).toBe('Exists');
+	expect(
+		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
+	).toBe(foreign);
+	expect(await readdir(join(root, 'recordings'))).toEqual([`${pending.id}.md`]);
+	expect((await bridge.app<{ rowWrites: number }>('injection')).rowWrites).toBe(
+		1,
+	);
 });
 
 test('a locked branch fails the commit and never the save; unlocking lets it commit', async () => {
@@ -462,7 +630,9 @@ test('a transformation is sent by the host with the device key, which never reac
 					{ status: 401 },
 				);
 			return Response.json({
-				choices: [{ message: { role: 'assistant', content: 'A steady tone.' } }],
+				choices: [
+					{ message: { role: 'assistant', content: 'A steady tone.' } },
+				],
 			});
 		},
 	});

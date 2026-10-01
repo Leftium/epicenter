@@ -9,9 +9,14 @@
  * terminal exactly as they were. Only leaving the app is guarded.
  */
 import { createContext } from 'svelte';
+import { Ok, type Result } from 'wellcrafted/result';
 import { createLeaveGuard } from './leave.svelte.js';
 import { createLibrary } from './library.svelte.js';
-import { openWorkspace, type Workspace } from './workspace/index.js';
+import {
+	openWorkspace,
+	type Workspace,
+	type WorkspaceError,
+} from './workspace/index.js';
 
 export function createSession(workspace: Workspace) {
 	const library = createLibrary(workspace);
@@ -64,19 +69,23 @@ export type Session = ReturnType<typeof createSession>;
 
 /**
  * Open the workspace this page was given and read the folder once. Called by
- * the app layout when it mounts; importing this module opens nothing.
+ * the app layout when it mounts; importing this module opens nothing. A
+ * workspace that cannot be opened is returned as the reason, and no session
+ * exists.
  */
 export async function openSession(
-	open: () => Promise<Workspace> = openWorkspace,
-): Promise<Session> {
-	const session = createSession(await open());
+	open: () => Promise<Result<Workspace, WorkspaceError>> = openWorkspace,
+): Promise<Result<Session, WorkspaceError>> {
+	const opened = await open();
+	if (opened.error) return opened;
+	const session = createSession(opened.data);
 	try {
 		await session.library.start();
 	} catch (cause) {
 		await session.close().catch(() => {});
 		throw cause;
 	}
-	return session;
+	return Ok(session);
 }
 
 /** The session of the mounted app layout. Set by the shell, read by pages. */

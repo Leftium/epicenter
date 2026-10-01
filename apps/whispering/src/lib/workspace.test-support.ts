@@ -1,22 +1,107 @@
 /**
- * A workspace for tests: a real directory and Git repository opened with the
- * native folder, a fixture capture device, and stubbed endpoints. Nothing here
- * reaches a network, a microphone, or a provider.
+ * A workspace for tests: a real directory and Git repository opened as the
+ * desktop host opens it, a fixture capture device, and stubbed endpoints.
+ * Nothing here reaches a network, a microphone, or a provider.
  *
  * The endpoint stubs are plain functions, so a test decides each answer and
  * counts each request.
  */
+import { mkdirSync, rmdirSync } from 'node:fs';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileError } from '@epicenter/app/files';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import { FileError, openFolder } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import { createFixtureDevice, toneWav } from './capture.js';
 import { whisperingDefinition } from './definition.js';
-import type { CloseDecision, Workspace } from './workspace/types.js';
+import type {
+	CloseDecision,
+	WhisperingFolder,
+	Workspace,
+} from './workspace/types.js';
 
 type TransformRequest = Parameters<Workspace['transform']>[0];
+
+/** A real directory opened as Whispering's folder, as the desktop host opens it. */
+export async function openTestFolder(
+	root: string,
+	git: { commitOnEdit?: boolean } = {},
+) {
+	return expectOk(
+		await openFolder({
+			root,
+			definition: whisperingDefinition,
+			git: { author: { name: 'Test', email: 'test@localhost' }, ...git },
+		}),
+	);
+}
+
+/** How many upcoming recording publications fail, and at which step. */
+export type RecordingFailures = {
+	/** Fail at the audio, the batch's first step: nothing reaches the folder. */
+	audio: number;
+	/** Fail at the row, after the audio landed: a real partial publication. */
+	row: number;
+};
+
+/**
+ * The folder's own `batch`, with a real failure in the way of a recording's
+ * publication while `failures` has any left.
+ *
+ * Nothing is answered on the folder's behalf. An empty directory is put at
+ * the path of the step that should fail, from inside the batch callback, so
+ * it is there before the folder publishes. The folder then fails that step
+ * itself and reports what it reports for a real disk: a plain refusal when
+ * the audio is obstructed, `Partial` with the audio applied when the row is.
+ */
+export function batchWithRecordingFailures(
+	folder: Pick<WhisperingFolder, 'batch'>,
+	root: string,
+	failures: RecordingFailures,
+): WhisperingFolder['batch'] {
+	return async (collect) => {
+		let obstacle: string | undefined;
+		const result = await folder.batch((batch) => {
+			let audioPath: string | undefined;
+			let stem: string | undefined;
+			collect({
+				files: {
+					...batch.files,
+					create(path, content) {
+						audioPath ??= path;
+						batch.files.create(path, content);
+					},
+				},
+				tables: {
+					...batch.tables,
+					recordings: {
+						create(input) {
+							stem = input.stem;
+							batch.tables.recordings.create(input);
+						},
+					},
+				},
+			});
+			if (stem === undefined) return undefined;
+			let target: string | undefined;
+			if (failures.audio > 0 && audioPath !== undefined) {
+				failures.audio -= 1;
+				target = audioPath;
+			} else if (failures.row > 0) {
+				failures.row -= 1;
+				target = `recordings/${stem}.md`;
+			}
+			if (target !== undefined) {
+				obstacle = join(root, target);
+				mkdirSync(obstacle, { recursive: true });
+			}
+			return undefined;
+		});
+		if (obstacle !== undefined) rmdirSync(obstacle);
+		return result;
+	};
+}
 
 export type TestWorkspaceOptions = {
 	/** Replace the stubbed transcription answer. */
@@ -25,6 +110,8 @@ export type TestWorkspaceOptions = {
 	transform?: Workspace['transform'];
 	/** Fail this many recording saves before any file is written, so the capture stays pending. */
 	failAudioWrites?: number;
+	/** Fail this many recording saves at the row, after the audio is written. */
+	failRowWrites?: number;
 	/** Fail this many transformation result writes before any byte is written. */
 	failRunWrites?: number;
 	/** Report this many transformation result writes as failed after the file landed. */
@@ -35,17 +122,14 @@ export async function openTestWorkspace({
 	transcribe,
 	transform,
 	failAudioWrites = 0,
+	failRowWrites = 0,
 	failRunWrites = 0,
 	loseRunWriteAnswers = 0,
 }: TestWorkspaceOptions = {}) {
 	const root = await realpath(
 		await mkdtemp(join(tmpdir(), 'whispering-workspace-')),
 	);
-	const folder = await openNativeFolder({
-		root,
-		definition: whisperingDefinition,
-		git: { author: { name: 'Test', email: 'test@localhost' } },
-	});
+	const folder = await openTestFolder(root);
 	let remainingFailures = failRunWrites;
 	let remainingLostAnswers = loseRunWriteAnswers;
 	const runs = folder.tables.transformation_runs;
@@ -55,22 +139,8 @@ export async function openTestWorkspace({
 			operation: 'create',
 			cause: new Error('disk refused the result'),
 		});
-	let remainingAudioFailures = failAudioWrites;
-	const recordings = folder.tables.recordings;
 	const tables = {
 		...folder.tables,
-		recordings: {
-			...recordings,
-			create: async (input: Parameters<typeof recordings.create>[0]) => {
-				if (remainingAudioFailures === 0) return recordings.create(input);
-				remainingAudioFailures -= 1;
-				return FileError.Io({
-					path: `recordings/${input.stem}.wav`,
-					operation: 'create',
-					cause: new Error('disk refused the audio'),
-				});
-			},
-		},
 		transformation_runs: {
 			...runs,
 			create: async (input: Parameters<typeof runs.create>[0]) => {
@@ -98,7 +168,14 @@ export async function openTestWorkspace({
 
 	const workspace: Workspace = {
 		kind: 'native',
-		folder: { ...folder, tables } as Workspace['folder'],
+		folder: {
+			...folder,
+			tables,
+			batch: batchWithRecordingFailures(folder, root, {
+				audio: failAudioWrites,
+				row: failRowWrites,
+			}),
+		} as Workspace['folder'],
 		location: root,
 		terminal: {
 			get cwd() {
@@ -160,7 +237,7 @@ export async function openTestWorkspace({
 		/** What `openSession` is given: it counts how many times a folder was opened. */
 		open: async () => {
 			opens += 1;
-			return workspace;
+			return Ok(workspace);
 		},
 		/** Every transformation request the endpoint stub received, in order. */
 		transformed,

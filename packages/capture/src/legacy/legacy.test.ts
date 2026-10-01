@@ -24,7 +24,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import { openFolder } from '@epicenter/folder/bun';
 import { openMemory } from '@epicenter/app/memory';
 import * as Y from '@y/y';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -48,14 +48,16 @@ afterAll(async () => {
 async function setup() {
 	const root = await mkdtemp(join(tmpdir(), 'capture-legacy-'));
 	roots.push(root);
-	const folder = await openNativeFolder({
-		root,
-		definition: captureDefinition,
-		git: {
-			author: { name: 'Test', email: 'test@localhost' },
-			commitOnEdit: false,
-		},
-	});
+	const folder = expectOk(
+		await openFolder({
+			root,
+			definition: captureDefinition,
+			git: {
+				author: { name: 'Test', email: 'test@localhost' },
+				commitOnEdit: false,
+			},
+		}),
+	);
 	const captureFiles = async () =>
 		(await readdir(join(root, 'captures')).catch(() => [])).sort();
 	return {
@@ -362,11 +364,12 @@ test('a failed receipt is reported, and the retry records the identical files', 
 	let failReceipt = true;
 	const files: ImportFiles = {
 		read: (path) => folder.files.read(path),
-		write: async (path, content, options) => {
+		create: async (path, content) => {
 			if (failReceipt && path.includes('receipt'))
 				throw new Error('disk went away');
-			return folder.files.write(path, content, options);
+			return folder.files.create(path, content);
 		},
+		replace: (file, content) => folder.files.replace(file, content),
 	};
 	const partial = await runLegacyImport(files, DINNER);
 	expect(partial.documents.map((item) => item.status)).toEqual(['created']);
@@ -392,9 +395,7 @@ test('a differing destination is reported, left alone, and not recorded', async 
 	const { folder, text } = await setup();
 	const plan = await planLegacyImport(DINNER, undefined);
 	const destination = plan.documents[0]?.path ?? '';
-	await folder.files.write(destination, 'someone else wrote this', {
-		expected: 'absent',
-	});
+	await folder.files.create(destination, 'someone else wrote this');
 
 	const report = await runLegacyImport(folder.files, DINNER);
 	expect(report.documents.map((item) => item.status)).toEqual(['differs']);
@@ -410,9 +411,7 @@ test('a differing destination is reported, left alone, and not recorded', async 
 test('an unreadable receipt stops the import before anything is written', async () => {
 	const { folder, captureFiles } = await setup();
 	const plan = await planLegacyImport(DINNER, undefined);
-	await folder.files.write(plan.receiptPath, '{ not json', {
-		expected: 'absent',
-	});
+	await folder.files.create(plan.receiptPath, '{ not json');
 	await expect(runLegacyImport(folder.files, DINNER)).rejects.toThrow(
 		'Nothing was imported',
 	);
@@ -462,7 +461,7 @@ for (const [name, imports] of [
 		const { folder, captureFiles } = await setup();
 		try {
 			const plan = await planLegacyImport(DINNER, undefined);
-			const written = await folder.files.write(
+			const written = await folder.files.create(
 				plan.receiptPath,
 				JSON.stringify({
 					format: 'epicenter.capture.legacy-import-receipt',
@@ -470,7 +469,6 @@ for (const [name, imports] of [
 					account: ACCOUNT,
 					imports,
 				}),
-				{ expected: 'absent' },
 			);
 			expectOk(written);
 			await expect(runLegacyImport(folder.files, DINNER)).rejects.toThrow(

@@ -7,14 +7,15 @@
  *
  * Key behaviors:
  * - Every displayed edit is in the draft, including spaces and Enter
- * - An edit Markdown cannot express is refused before it is displayed
+ * - An edit Markdown cannot express, or the draft is not taking, is refused
+ *   before it is displayed
  * - Undo history lasts across edits and across a look at Source
  * - A body changed elsewhere replaces the document and resets history
  * - Moving the cursor writes nothing
  */
 import { describe, expect, test } from 'bun:test';
-import type { InstantString } from '@epicenter/app/field';
-import { readSource } from '@epicenter/app/files';
+import type { InstantString } from '@epicenter/definition';
+import { readSource } from '@epicenter/folder';
 import { baseKeymap, toggleMark } from 'prosemirror-commands';
 import { redo, redoDepth, undo, undoDepth } from 'prosemirror-history';
 import { type Command, TextSelection } from 'prosemirror-state';
@@ -35,10 +36,14 @@ function draftOf(source: string) {
 		buffer: source,
 		inputs: 0,
 		refusal: undefined as string | undefined,
+		/** Whether input is being taken, as it is not while the app closes. */
+		admits: true,
 		input(text: string) {
+			if (!draft.admits) return false;
 			draft.buffer = text;
 			draft.inputs += 1;
 			draft.refusal = undefined;
+			return true;
 		},
 		refuse(reason: string) {
 			draft.refusal = reason;
@@ -167,6 +172,24 @@ describe('an edit Markdown cannot express', () => {
 		expect(session.state).toBe(before);
 		expect(draft.buffer).toBe(buffer);
 		expect(draft.refusal).toContain('cannot be written as Markdown');
+	});
+
+	test('an edit the draft is not taking is not displayed, and editing continues from the same history afterwards', () => {
+		const { type, run, session, draft, body, end } = open('one\n');
+		end();
+		type('!');
+		const state = session.state;
+		const depth = undoDepth(state);
+		draft.admits = false;
+		expect(type('late')).toBe(false);
+		expect(session.state).toBe(state);
+		expect(body()).toBe('one!\n');
+		draft.admits = true;
+		expect(type('?')).toBe(true);
+		expect(body()).toBe('one!?\n');
+		expect(undoDepth(session.state)).toBeGreaterThanOrEqual(depth);
+		while (undoDepth(session.state) > 0) run(undo);
+		expect(body()).toBe('one\n');
 	});
 
 	test('a line break in a heading is refused; the heading text is untouched', () => {

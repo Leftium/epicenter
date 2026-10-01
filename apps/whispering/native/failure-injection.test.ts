@@ -16,10 +16,10 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DataDefinition } from '@epicenter/app/definition';
-import type { Folder } from '@epicenter/app/files';
-import { openNativeFolder } from '@epicenter/app/files/native';
-import { whisperingDefinition } from '../src/lib/definition.js';
+import type { DataDefinition } from '@epicenter/definition';
+import type { Folder } from '@epicenter/folder/bun';
+import { expectOk } from 'wellcrafted/testing';
+import { openTestFolder } from '../src/lib/workspace.test-support.js';
 import {
 	createFailureInjection,
 	LOCK_MARKER_PREFIX,
@@ -36,13 +36,8 @@ async function open() {
 	const root = await realpath(
 		await mkdtemp(join(tmpdir(), 'whispering-lock-')),
 	);
-	const folder = (await openNativeFolder({
-		root,
-		definition: whisperingDefinition,
-		git: {
-			author: { name: 'Test', email: 'test@localhost' },
-			commitOnEdit: false,
-		},
+	const folder = (await openTestFolder(root, {
+		commitOnEdit: false,
 	})) as unknown as Folder<DataDefinition>;
 	cleanups.push(async () => {
 		await folder.close();
@@ -157,7 +152,7 @@ test('starting and stopping a debug host leaves an existing branch lock in place
 
 test('the real lock blocks a real Git ref update, and releasing it unblocks it', async () => {
 	const { root, folder } = await open();
-	await folder.files.write('note.md', 'one\n', { expected: 'absent' });
+	expectOk(await folder.files.create('note.md', 'one\n'));
 	expect((await folder.git.commit()).status).toBe('committed');
 	const head = execFileSync('git', ['rev-parse', 'HEAD'], {
 		cwd: root,
@@ -172,7 +167,7 @@ test('the real lock blocks a real Git ref update, and releasing it unblocks it',
 			stdio: 'pipe',
 		}),
 	).toThrow();
-	await folder.files.write('note.md', 'two\n', { expected: 'any' });
+	expectOk(await folder.files.overwrite('note.md', 'two\n'));
 	expect((await folder.git.commit()).status).not.toBe('committed');
 	expect(await readFile(join(root, 'note.md'), 'utf8')).toBe('two\n');
 

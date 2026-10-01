@@ -14,7 +14,7 @@
  * Git is reported beside saving, never as part of it: a file that saved is
  * saved whether or not its commit worked.
  */
-import type { GitSnapshot } from '@epicenter/app/files';
+import type { FileCapture, GitSnapshot } from '@epicenter/folder';
 import {
 	CAPTURES_TABLE,
 	type CaptureDocument,
@@ -103,8 +103,8 @@ export function createCaptures(
 	const stopGit = folder.git.subscribe((snapshot) => {
 		git = snapshot;
 	});
-	/** The desktop host that owns the folder has stopped. */
-	let hostStopped = $state(false);
+	/** The Epicenter service that served this page has stopped. */
+	let serviceStopped = $state(false);
 
 	/** Moves when a write starts and when it ends. */
 	let writes = 0;
@@ -128,7 +128,7 @@ export function createCaptures(
 	/** Write exact source at a path that must be absent, and read it back as an entry. */
 	async function createExact(path: string, source: string) {
 		const written = await writing(() =>
-			folder.files.write(path, source, { expected: 'absent' }),
+			folder.files.create(path, source),
 		);
 		if (written.error !== null)
 			return { data: null, error: written.error } as const;
@@ -320,12 +320,19 @@ export function createCaptures(
 		get git() {
 			return git;
 		},
-		get hostStopped() {
-			return hostStopped;
+		/**
+		 * The folder's owner closed it: nothing saves from this window again.
+		 * The folder reports this itself, on its Git snapshot.
+		 */
+		get folderStopped() {
+			return git.closed;
 		},
-		/** The host process is gone: nothing saves from this window again. */
-		markHostStopped() {
-			hostStopped = true;
+		get serviceStopped() {
+			return serviceStopped;
+		},
+		/** Saving is the folder's and carries on; the page can load nothing more. */
+		markServiceStopped() {
+			serviceStopped = true;
 		},
 		get newCapture() {
 			return newCapture;
@@ -484,11 +491,10 @@ export function createCaptures(
 		/** Raw file access for the import, counted as this page's writes. */
 		importFiles: {
 			read: (path: string) => folder.files.read(path),
-			write: (
-				path: string,
-				content: string | Uint8Array,
-				writeOptions: Parameters<typeof folder.files.write>[2],
-			) => writing(() => folder.files.write(path, content, writeOptions)),
+			create: (path: string, content: string | Uint8Array) =>
+				writing(() => folder.files.create(path, content)),
+			replace: (file: FileCapture, content: string | Uint8Array) =>
+				writing(() => folder.files.replace(file, content)),
 		},
 		commit: () => folder.git.commit(),
 

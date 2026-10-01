@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/app/files';
+	import { readSource } from '@epicenter/folder';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Checkbox } from '@epicenter/ui/checkbox';
@@ -59,7 +59,7 @@
 		/>
 	</div>
 
-	<SaveStatus {editor} onDiscardRemoved={() => todos.discardRemoved(editor.path)} />
+	<SaveStatus {editor} onDiscard={() => todos.discard(editor.path)} />
 
 	{#if entry?.issues || parsed.issues.length > 0}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">

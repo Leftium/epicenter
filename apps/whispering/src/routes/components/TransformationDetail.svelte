@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/app/files';
+	import { readSource } from '@epicenter/folder';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';

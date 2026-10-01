@@ -31,8 +31,8 @@
 
 	const name = $derived(basename(path));
 	const directory = $derived(dirname(path));
-	/** The recording whose row owns this audio file, if any. */
-	const owner = $derived(library.entries.find((entry) => entry.attachment === path));
+	/** The recording whose row names this file as its audio, if one does. */
+	const owner = $derived(library.recordingNaming(path));
 
 	/** A file shown as details: its extension names the type, then its size. */
 	function details(size: number) {
@@ -121,6 +121,6 @@
 		prefix={directory === '' ? '' : `${directory}/`}
 		{name}
 		onRename={(next) => library.rename(path, next)}
-		onDelete={() => void confirmDelete(library, owner?.path ?? path)}
+		onDelete={() => void confirmDelete(library, path)}
 	/>
 </section>

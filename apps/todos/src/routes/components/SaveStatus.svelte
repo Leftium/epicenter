@@ -2,9 +2,10 @@
 	import { Button } from '@epicenter/ui/button';
 	import type { TextFileEditor, TodoEditor } from '$lib/editor.svelte.js';
 
-	let { editor, onDiscardRemoved }: {
+	let { editor, onDiscard }: {
 		editor: TodoEditor | TextFileEditor;
-		onDiscardRemoved: () => void;
+		/** Drop this editor's input without writing; offered only when it cannot save. */
+		onDiscard: () => void;
 	} = $props();
 </script>
 
@@ -15,6 +16,7 @@
 	{:else if editor.saveState.kind === 'failed'}
 		<span class="text-destructive" role="alert">Not saved: {editor.saveState.message}</span>
 		<Button size="xs" variant="outline" onclick={() => void editor.retry()}>Try again</Button>
+		<Button size="xs" variant="outline" onclick={onDiscard}>Discard mine</Button>
 	{:else if editor.saveState.kind === 'conflict'}
 		<span class="text-destructive" role="alert">
 			{editor.saveState.current
@@ -27,7 +29,7 @@
 			</Button>
 			<Button size="xs" onclick={() => void editor.keepMine()}>Save mine over it</Button>
 		{:else}
-			<Button size="xs" variant="outline" onclick={onDiscardRemoved}>Discard mine</Button>
+			<Button size="xs" variant="outline" onclick={onDiscard}>Discard mine</Button>
 		{/if}
 	{:else if editor.dirty}
 		<span class="text-muted-foreground">Unsaved typing</span>

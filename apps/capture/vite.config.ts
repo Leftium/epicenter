@@ -14,10 +14,23 @@ export default defineConfig(
 			...(isEpicenterHost && {
 				conditions: ['epicenter-host', ...defaultClientConditions],
 			}),
-			alias: {
+			alias: [
+				// Each build opens one kind of folder, and its leaf imports that
+				// entry by name. The bare specifier, which `@epicenter/capture`
+				// imports the shared contract from, follows it, so the other
+				// adapter is not emitted. Exact match only: subpaths are untouched.
+				{
+					find: /^@epicenter\/folder$/,
+					replacement: isEpicenterHost
+						? '@epicenter/folder/tauri'
+						: '@epicenter/folder/browser',
+				},
 				// isomorphic-git and its SHA-1 dependency expect Node's Buffer.
-				buffer: fileURLToPath(import.meta.resolve('buffer/')),
-			},
+				{
+					find: 'buffer',
+					replacement: fileURLToPath(import.meta.resolve('buffer/')),
+				},
+			],
 		},
 		optimizeDeps: { include: ['buffer'] },
 	}),

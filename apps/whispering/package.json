@@ -41,8 +41,9 @@
 		"vite-plugin-devtools-json": "^1.0.0"
 	},
 	"dependencies": {
-		"@epicenter/app": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/definition": "workspace:*",
+		"@epicenter/folder": "workspace:*",
 		"nanoid": "catalog:",
 		"wellcrafted": "catalog:"
 	}

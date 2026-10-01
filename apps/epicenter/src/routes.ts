@@ -9,7 +9,6 @@
  * SPA reaches domain code.
  */
 
-import { BRIDGE_PATH as CAPTURE_BRIDGE_PATH } from '@epicenter/capture-app/bridge';
 import { CHECKOUT_PATH } from '@epicenter/app/artifact/checkout';
 import {
 	CALLBACK_PATH as MAIL_CALLBACK_PATH,
@@ -39,6 +38,7 @@ export const BUILT_IN_ROUTES = {
 	honeycrisp: builtInRoute('honeycrisp', 'Honeycrisp'),
 	capture: builtInRoute('capture', 'Capture'),
 	mail: builtInRoute('mail', 'Mail'),
+	todos: builtInRoute('todos', 'Todos'),
 	books: builtInRoute('books', 'Books'),
 } as const;
 
@@ -56,6 +56,7 @@ export const WHISPERING_ROUTE = BUILT_IN_ROUTES.whispering;
 export const HONEYCRISP_ROUTE = BUILT_IN_ROUTES.honeycrisp;
 export const CAPTURE_ROUTE = BUILT_IN_ROUTES.capture;
 export const MAIL_ROUTE = BUILT_IN_ROUTES.mail;
+export const TODOS_ROUTE = BUILT_IN_ROUTES.todos;
 export const BOOKS_ROUTE = BUILT_IN_ROUTES.books;
 /** What Home lists as launchable (ADR-0189). */
 export const APPLICATIONS_ROUTE = route('/api/apps');
@@ -82,8 +83,6 @@ export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
  * who is asking and the id leaves the URL entirely.
  */
 export const CHECKOUT_ROUTE = route(`${CHECKOUT_PATH}/:dataId`);
-/** Capture's file calls and event stream, gated by the host session. */
-export const CAPTURE_BRIDGE_ROUTE = route(CAPTURE_BRIDGE_PATH);
 /**
  * Where Google returns a person after Local Mail's consent screen.
  *

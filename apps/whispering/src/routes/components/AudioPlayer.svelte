@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FolderFiles } from '@epicenter/app/files';
+	import type { FolderFiles } from '@epicenter/folder';
 	import { onDestroy } from 'svelte';
 	import { type LoadedAudio, loadAudio } from '$lib/audio-source.js';
 

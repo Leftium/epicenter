@@ -11,11 +11,6 @@ import { type AiCatalog, createAiCatalog } from './ai-catalog.ts';
 
 import { join } from 'node:path';
 import { type BunBlobStore, createBunBlobStore } from '@epicenter/blobs/bun';
-import {
-	createCaptureBridge,
-	type CaptureBridge,
-	captureDefinition,
-} from '@epicenter/capture-app/native';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
 import OpenAI from 'openai';
 import { extractErrorMessage } from 'wellcrafted/error';
@@ -60,7 +55,6 @@ async function main(): Promise<void> {
 	let lifecycleOwnsResources = false;
 	let aiCatalog: AiCatalog | undefined;
 	let noAccountAiCatalog: AiCatalog | undefined;
-	let capture: CaptureBridge | undefined;
 
 	try {
 		const runtimeMode = parseRuntimeMode(Bun.argv);
@@ -124,10 +118,6 @@ async function main(): Promise<void> {
 				reservedIds: RESERVED_APPLICATION_IDS,
 			}),
 		);
-		const ownedCapture = createCaptureBridge({
-			root: join(boot.folderDir, captureDefinition.id),
-		});
-		capture = ownedCapture;
 		const origin = `http://127.0.0.1:${boot.port}`;
 		const { app, websocket } = createHomeServer({
 			folderRoot: boot.folderDir,
@@ -141,7 +131,6 @@ async function main(): Promise<void> {
 			appSecrets,
 			aiCatalog,
 			noAccountAiCatalog,
-			capture: ownedCapture,
 		});
 
 		server = Bun.serve({
@@ -164,7 +153,6 @@ async function main(): Promise<void> {
 						aiCatalog!.close(),
 						noAccountAiCatalog!.close(),
 						ownedHost[Symbol.asyncDispose](),
-						ownedCapture.close(),
 					]);
 				},
 			},
@@ -179,7 +167,6 @@ async function main(): Promise<void> {
 				aiCatalog?.close(),
 				noAccountAiCatalog?.close(),
 				host?.[Symbol.asyncDispose](),
-				capture?.close(),
 			]);
 			await parentPipe.cancel();
 		}

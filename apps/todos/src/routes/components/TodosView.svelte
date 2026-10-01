@@ -26,6 +26,10 @@
 		if (todos.unsaved) cancel();
 	});
 
+	const directory = $derived(
+		todos.folder.location.kind === 'directory' ? todos.folder.location.root : undefined,
+	);
+
 	/** The shared Modal's breakpoint: below it, the list, editor, and terminal take turns. */
 	const wide = new MediaQuery('(min-width: 768px)');
 	let filesPane = $state(true);
@@ -131,14 +135,14 @@
 			{#if terminalOpen}
 				<Resizable.Handle />
 				<Resizable.Pane id="terminal" order={2} defaultSize={32} minSize={15} maxSize={70}>
-					<FolderTerminal session={todos.terminal} onClose={() => void toggleTerminal()} />
+					<FolderTerminal session={todos.terminal} {directory} onClose={() => void toggleTerminal()} />
 				</Resizable.Pane>
 			{/if}
 		</Resizable.PaneGroup>
 	{:else}
 		<main class="min-h-0 flex-1">
 			{#if terminalOpen}
-				<FolderTerminal session={todos.terminal} onClose={() => void toggleTerminal()} />
+				<FolderTerminal session={todos.terminal} {directory} onClose={() => void toggleTerminal()} />
 			{:else if showingDetail}
 				{@render detail(back)}
 			{:else}

@@ -2,9 +2,12 @@
  * What the page may import.
  *
  * The page runs in a WebView and in a browser tab, so nothing under `src/` may
- * reach a native module: not the native folder opener, not Node or Bun, and
- * not a Tauri API. The recording workflow is file-backed, so it may not reach
- * the Yjs store either. This reads the sources, so a violation names its file.
+ * reach a native module: not the directory or desktop folder openers, not
+ * Node or Bun, and not a Tauri API. It names the folder contract through
+ * `@epicenter/folder`, and opens a folder only through the browser entry, in
+ * the browser workspace. The recording workflow is file-backed, so it may not
+ * reach the Yjs store either. This reads the sources, so a violation names
+ * its file.
  *
  * The same reading establishes who owns the folder: the app layout opens one
  * session, and pages only receive it.
@@ -56,10 +59,32 @@ test('the page imports no native module', () => {
 				specifier.startsWith('node:') ||
 				specifier.startsWith('bun') ||
 				specifier.startsWith('@tauri-apps/') ||
-				specifier === '@epicenter/app/files/native' ||
+				// The directory opener runs in Bun; the desktop one attaches to an
+				// owner this app's shell does not have.
+				specifier === '@epicenter/folder/bun' ||
+				specifier === '@epicenter/folder/tauri' ||
 				specifier.includes('/native/'),
 		),
 	).toEqual([]);
+});
+
+test('the page opens a folder only in the browser workspace, through the browser entry', () => {
+	// Every other file names the contract, which opens nothing.
+	expect(
+		importers((specifier) => specifier === '@epicenter/folder/browser'),
+	).toEqual(['lib/workspace/browser.ts imports @epicenter/folder/browser']);
+	expect(callers('openFolder')).toEqual(['lib/workspace/browser.ts']);
+	const folderEntries = importers((specifier) =>
+		specifier.startsWith('@epicenter/folder'),
+	).map((found) => found.split(' imports ')[1]);
+	expect([...new Set(folderEntries)].sort()).toEqual([
+		'@epicenter/folder',
+		'@epicenter/folder/browser',
+	]);
+	// The page is built against the browser entry, so no desktop adapter is emitted.
+	expect(
+		readFileSync(new URL('../../vite.config.ts', import.meta.url), 'utf8'),
+	).toContain('find: /^@epicenter\\/folder$/');
 });
 
 test('the page imports no Yjs store, sync, or account module', () => {
@@ -73,15 +98,10 @@ test('the page imports no Yjs store, sync, or account module', () => {
 				specifier.startsWith('@epicenter/auth') ||
 				specifier.startsWith('@epicenter/blobs') ||
 				specifier.startsWith('@epicenter/recorder') ||
-				[
-					'@epicenter/app/open',
-					'@epicenter/app/store',
-					'@epicenter/app/sync',
-					'@epicenter/app/data',
-					'@epicenter/app/memory',
-					'@epicenter/app/blobs',
-					'@epicenter/app/recorder',
-				].includes(specifier),
+				// The store package, by any entry. Folders and their declarations
+				// come from `@epicenter/folder` and `@epicenter/definition`.
+				specifier === '@epicenter/app' ||
+				specifier.startsWith('@epicenter/app/'),
 		),
 	).toEqual([]);
 });

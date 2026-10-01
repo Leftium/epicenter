@@ -14,10 +14,10 @@ import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { basename, extname, join, resolve, sep } from 'node:path';
-import type { DataDefinition } from '@epicenter/app/definition';
-import type { Folder } from '@epicenter/app/files';
-import { openNativeFolder } from '@epicenter/app/files/native';
+import type { DataDefinition } from '@epicenter/definition';
+import { type Folder, openFolder } from '@epicenter/folder/bun';
 import { audioMimeTypeOf } from '../src/lib/audio-format.js';
+import { InvalidBatchPlan } from '../src/lib/bridge/batch-plan.js';
 import { decode, encode } from '../src/lib/bridge/codec.js';
 import {
 	DEFAULT_TRANSCRIPTION_SETTINGS,
@@ -125,11 +125,14 @@ const describe = (cause: unknown) =>
 
 export async function createHost(options: HostOptions) {
 	await mkdir(options.root, { recursive: true });
-	const folder = await openNativeFolder({
+	const opened = await openFolder({
 		root: options.root,
 		definition: whisperingDefinition,
 		git: { author: { name: 'Whispering', email: 'whispering@localhost' } },
 	});
+	// A host with no folder serves nothing; the shell shows its failure page.
+	if (opened.error) throw new Error(opened.error.message);
+	const folder = opened.data;
 	// The folder resolved its root; use the same spelling everywhere after.
 	const root = await realpath(options.root);
 	const anyFolder = folder as unknown as Folder<DataDefinition>;
@@ -528,11 +531,10 @@ export async function createHost(options: HostOptions) {
 					!Array.isArray(args)
 				)
 					return json({ fault: 'A call needs a path and arguments' }, 400);
-				const intercepted = await injection?.intercept(path, args);
-				const result =
-					intercepted === undefined
-						? await callFolder(anyFolder, path, args)
-						: intercepted.value;
+				const call = () => callFolder(anyFolder, path, args);
+				const result = await (injection === undefined
+					? call()
+					: injection.around(path, args, call));
 				return json({ ok: encode(result) });
 			}
 			if (url.pathname === '/bridge/app') {
@@ -540,12 +542,13 @@ export async function createHost(options: HostOptions) {
 				return json({ ok: encode(await app(String(body.op), payload)) });
 			}
 		} catch (cause) {
-			if (!(cause instanceof UnknownFolderCall))
-				options.log(`Bridge call failed: ${describe(cause)}`);
-			return json(
-				{ fault: describe(cause) },
-				cause instanceof UnknownFolderCall ? 404 : 500,
-			);
+			if (cause instanceof UnknownFolderCall)
+				return json({ fault: describe(cause) }, 404);
+			// Refused at the boundary: nothing was asked of the folder.
+			if (cause instanceof InvalidBatchPlan)
+				return json({ fault: describe(cause) }, 400);
+			options.log(`Bridge call failed: ${describe(cause)}`);
+			return json({ fault: describe(cause) }, 500);
 		}
 		return json({ fault: 'Not found' }, 404);
 	}

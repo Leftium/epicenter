@@ -7,11 +7,12 @@
  *
  * Key behaviors:
  * - `#platform/folder` declares an Epicenter host leaf and a browser default
- * - The host leaf reaches its folder over the bridge only: the leaf that
- *   opens a browser folder and every native module are absent from its graph
- * - The browser leaf contains no bridge client and no desktop shell API
- * - The bridge the host mounts never reaches page-only code, and the contract
- *   the host's route table imports has no runtime imports at all
+ * - The host leaf opens through the desktop folder adapter only: the browser
+ *   leaf, the browser adapter and its IndexedDB store, any Git implementation,
+ *   the directory opener, and every Node module are absent from its bundle
+ * - The browser leaf carries the browser adapter and no desktop adapter, no
+ *   generated native bindings, and no shell quit protocol
+ * - The package exports nothing: no host mounts a part of this app
  * - The old store definition is reachable only from the recovery module
  */
 import { describe, expect, test } from 'bun:test';
@@ -23,10 +24,10 @@ const manifest = JSON.parse(
 	await readFile(join(appDir, 'package.json'), 'utf8'),
 ) as {
 	imports: Record<string, Record<string, string>>;
-	exports: Record<string, string>;
+	exports?: Record<string, string>;
 };
 
-/** Every module a bundle of `entry` pulls in, as paths. Built in its own process. */
+/** Every module that reaches a bundle of `entry`, as paths. Built in its own process. */
 async function inputs(
 	entry: string,
 	options: { target: 'browser' | 'bun'; conditions?: string[] },
@@ -52,6 +53,9 @@ async function inputs(
 
 const SEAM_ENTRY = 'src/lib/platform-selection.test-support.ts';
 
+/** The transport this app used before the shell owned its folder. */
+const RETIRED = /capture\/native\/|lib\/bridge\//;
+
 describe('#platform/folder', () => {
 	test('declares the Epicenter host leaf and the browser default', () => {
 		expect(manifest.imports['#platform/folder']).toEqual({
@@ -60,75 +64,59 @@ describe('#platform/folder', () => {
 		});
 	});
 
-	test('the host build resolves the bridge leaf and nothing that stores a folder', async () => {
+	test('the host build opens through the desktop adapter and carries nothing that stores a folder', async () => {
 		const modules = await inputs(SEAM_ENTRY, {
 			target: 'browser',
 			conditions: ['epicenter-host'],
 		});
+		for (const required of [
+			'platform/folder.epicenter-host.ts',
+			'platform/shell-lifetime.ts',
+			'folder/src/tauri.ts',
+			'folder/src/tauri-adapter.ts',
+			'folder/src/native/bindings.gen.ts',
+		])
+			expect(modules.filter((path) => path.endsWith(required))).toHaveLength(1);
 		expect(
-			modules.some((path) =>
-				path.endsWith('platform/folder.epicenter-host.ts'),
-			),
-		).toBe(true);
-		expect(modules.some((path) => path.endsWith('bridge/client.ts'))).toBe(
-			true,
-		);
-		expect(
-			modules.some((path) => path.endsWith('platform/shell-lifetime.ts')),
-		).toBe(true);
-		// The files package's browser entry is in the graph for its Markdown
-		// framing, which the document model uses. What must be absent is the
-		// leaf that opens a browser folder, and anything native.
-		expect(
-			modules.filter((path) =>
-				/platform\/folder\.browser\.ts$|files\/(native|native-store)\.ts$|^node:|capture\/native\//.test(
-					path,
-				),
+			modules.filter(
+				(path) =>
+					/platform\/folder\.browser\.ts$|folder\/src\/(browser|browser-adapter|browser-store|bun|native-store)\.ts$|folder\/src\/git\/(browser|native)-|isomorphic-git|^node:|^bun:/.test(
+						path,
+					) || RETIRED.test(path),
 			),
 		).toEqual([]);
 	});
 
-	test('the browser build resolves the browser leaf, no bridge, and no shell API', async () => {
+	test('the browser build opens through the browser adapter, with no desktop adapter and no shell protocol', async () => {
 		const modules = await inputs(SEAM_ENTRY, { target: 'browser' });
+		for (const required of [
+			'platform/folder.browser.ts',
+			'folder/src/browser.ts',
+			'folder/src/browser-adapter.ts',
+			'folder/src/browser-store.ts',
+		])
+			expect(modules.filter((path) => path.endsWith(required))).toHaveLength(1);
 		expect(
-			modules.some((path) => path.endsWith('platform/folder.browser.ts')),
-		).toBe(true);
-		expect(
-			modules.some((path) => path.endsWith('files/browser-store.ts')),
-		).toBe(true);
-		expect(
-			modules.filter((path) =>
-				/platform\/folder\.epicenter-host\.ts$|bridge\/client\.ts$|@tauri-apps|capture\/native\//.test(
-					path,
-				),
+			modules.filter(
+				(path) =>
+					// The browser adapter asks `isTauri()` so it can refuse there; that one
+					// module of the Tauri API is its only use of it.
+					/platform\/(folder\.epicenter-host|shell-lifetime)\.ts$|folder\/src\/(tauri|tauri-adapter|bun|native-store)\.ts$|folder\/src\/native\/|@tauri-apps\/api\/event|^bun:/.test(
+						path,
+					) || RETIRED.test(path),
 			),
 		).toEqual([]);
 	});
 });
 
-describe('@epicenter/capture-app/native', () => {
-	test('exports the bridge contract and the native bridge, without page code', async () => {
-		expect(manifest.exports).toEqual({
-			'./bridge': './src/lib/bridge/contract.ts',
-			'./native': './native/index.ts',
-		});
-		// The contract is what the host's route table imports: no runtime imports.
-		expect(
-			await inputs('src/lib/bridge/contract.ts', { target: 'bun' }),
-		).toEqual(['src/lib/bridge/contract.ts']);
-
-		const modules = await inputs('native/index.ts', { target: 'bun' });
-		expect(modules.some((path) => path.endsWith('files/native.ts'))).toBe(true);
-		expect(
-			modules.filter((path) =>
-				/\.svelte(\.ts)?$|bridge\/client\.ts$|platform\/|legacy\//.test(path),
-			),
-		).toEqual([]);
+describe('@epicenter/capture-app', () => {
+	test('exports nothing for a host to mount', () => {
+		expect(manifest.exports).toBeUndefined();
 	});
 });
 
 describe('the old store', () => {
-	test('is not in the folder leaf or the native bridge, only in recovery', async () => {
+	test('is not in either folder leaf, only in recovery', async () => {
 		for (const conditions of [[], ['epicenter-host']]) {
 			const modules = await inputs(SEAM_ENTRY, {
 				target: 'browser',

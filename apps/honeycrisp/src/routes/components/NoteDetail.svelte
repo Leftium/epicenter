@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/app/files';
+	import { readSource } from '@epicenter/folder';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
@@ -10,7 +10,8 @@
 	import { instantNow, type NoteEntry, type NoteFields } from '$lib/data.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import { missingFields } from '$lib/note-source.js';
-	import type { FileEditor, Notes } from '$lib/notes.svelte.js';
+	import type { FileSession } from '$lib/file-session.svelte.js';
+	import type { Notes } from '$lib/notes.svelte.js';
 	import DraftStatus from './DraftStatus.svelte';
 	import { confirmDelete } from './file-actions.js';
 	import NoteHistory from './NoteHistory.svelte';
@@ -18,31 +19,31 @@
 
 	let {
 		notes,
-		editor,
+		session,
 		entry,
 	}: {
 		notes: Notes;
-		editor: FileEditor;
+		session: FileSession;
 		/** The listed row, or undefined when the file left the folder. */
 		entry: NoteEntry | undefined;
 	} = $props();
 
 	/** The draft's interpretation, for the structured controls. */
-	const parsed = $derived(readSource(editor.buffer));
+	const parsed = $derived(readSource(session.buffer));
 	const values = $derived(parsed.values);
 	const title = $derived(typeof values?.title === 'string' ? values.title : '');
 	const pinned = $derived(values?.pinned === true);
 	const folderId = $derived(typeof values?.folderId === 'string' ? values.folderId : '');
 	const deleted = $derived(typeof values?.deletedAt === 'string');
 	const fieldsEditable = $derived(values !== undefined && parsed.body !== undefined);
-	const missing = $derived(missingFields(editor.buffer, instantNow()));
+	const missing = $derived(missingFields(session.buffer, instantNow()));
 
 	/** Which view of the one draft is showing. Switching saves nothing and discards nothing. */
 	let tab = $state<'rich' | 'source'>('rich');
 	let historyOpen = $state(false);
 
 	function patch(fields: Partial<NoteFields>) {
-		void notes.patchNote(editor.path, fields, { save: 'later' });
+		void notes.patchNote(session.path, fields, { save: 'later' });
 	}
 
 	const folderName = (id: string) =>
@@ -93,9 +94,10 @@
 	</div>
 
 	<DraftStatus
-		{editor}
-		onSaveAsNote={() => notes.saveDraftAsNote(editor.path)}
-		onDiscard={() => notes.discardDraft(editor.path)}
+		{session}
+		noun="note"
+		onRecover={() => notes.recoverDraft(session.path)}
+		onDiscard={() => notes.discardDraft(session.path)}
 	/>
 
 	{#if entry?.issues || parsed.issues.length > 0}
@@ -146,22 +148,22 @@
 	<!-- The rich-text view stays mounted while Source shows, so its undo history
 	     survives a look at the source that changes nothing. -->
 	<div class="min-h-0 flex-1" hidden={tab !== 'rich'}>
-		<RichEditor {editor} focusRequest={notes.focusRequest} onOpenSource={() => (tab = 'source')} />
+		<RichEditor {session} focusRequest={notes.focusRequest} onOpenSource={() => (tab = 'source')} />
 	</div>
 	{#if tab === 'source'}
 		<div class="flex min-h-0 flex-1 flex-col p-3">
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={editor.buffer}
+				value={session.buffer}
 				aria-label="Markdown source"
 				spellcheck={false}
-				oninput={(event) => editor.input(withFileNewlines(event.currentTarget.value, editor.buffer))}
+				oninput={(event) => session.input(withFileNewlines(event.currentTarget.value, session.buffer))}
 			/>
 		</div>
 	{/if}
 
 	<div class="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
-		<code class="font-mono">{editor.path}</code>
+		<code class="font-mono">{session.path}</code>
 		<div class="ml-auto flex items-center gap-1">
 			{#if deleted}
 				<Button
@@ -169,13 +171,13 @@
 					variant="outline"
 					disabled={!fieldsEditable}
 					onclick={async () => {
-						const problem = await notes.restoreNote(editor.path);
+						const problem = await notes.restoreNote(session.path);
 						if (problem) toast.error('Could not restore the note', { description: problem });
 					}}
 				>
 					Restore
 				</Button>
-				<Button size="sm" variant="ghost-destructive" onclick={() => void confirmDelete(notes, editor.path)}>
+				<Button size="sm" variant="ghost-destructive" onclick={() => void confirmDelete(notes, session.path)}>
 					Delete permanently
 				</Button>
 			{:else}
@@ -183,8 +185,8 @@
 					size="sm"
 					variant="ghost-destructive"
 					onclick={async () => {
-						if (!fieldsEditable) return void confirmDelete(notes, editor.path);
-						const problem = await notes.trashNote(editor.path);
+						if (!fieldsEditable) return void confirmDelete(notes, session.path);
+						const problem = await notes.trashNote(session.path);
 						if (problem) toast.error('Could not delete the note', { description: problem });
 					}}
 				>
@@ -196,5 +198,5 @@
 </section>
 
 {#if notes.host.history && historyOpen}
-	<NoteHistory history={notes.host.history} {editor} bind:open={historyOpen} />
+	<NoteHistory history={notes.host.history} {session} bind:open={historyOpen} />
 {/if}

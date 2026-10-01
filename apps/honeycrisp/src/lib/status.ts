@@ -6,7 +6,7 @@
  * on disk, and history is what Git has committed. A failed commit is a
  * history fact; it never makes a saved file look unsaved.
  */
-import type { CommitOutcome, GitSnapshot } from '@epicenter/app/files';
+import type { CommitOutcome, GitSnapshot } from '@epicenter/folder';
 
 export type Tone = 'neutral' | 'busy' | 'good' | 'warning' | 'error';
 export type StatusLine = {
@@ -32,17 +32,28 @@ const SEVERITY: Record<Tone, number> = {
 	good: 0,
 };
 
-/** Drafts: text in this window that is not in a file yet. */
+/**
+ * Drafts: text in this window that is not in a file yet. A change whose reply
+ * never came is neither: it is reported as not confirmed, never as not saved.
+ */
 export function draftsLine(state: {
 	saving: boolean;
-	problems: number;
+	notSaved: number;
+	unconfirmed: number;
 	unsettled: number;
 }): StatusLine {
-	if (state.problems > 0)
+	if (state.notSaved > 0)
 		return {
-			label: `${state.problems} ${state.problems === 1 ? 'draft' : 'drafts'} not saved`,
+			label: `${state.notSaved} ${state.notSaved === 1 ? 'draft' : 'drafts'} not saved`,
 			detail: 'Open the note to retry, compare, or choose a version.',
 			tone: 'error',
+		};
+	if (state.unconfirmed > 0)
+		return {
+			label: `${state.unconfirmed} ${state.unconfirmed === 1 ? 'change' : 'changes'} not confirmed`,
+			detail:
+				'Each may or may not have happened. Open the note, or see Not confirmed below.',
+			tone: 'warning',
 		};
 	if (state.saving) return { label: 'Saving…', tone: 'busy' };
 	if (state.unsettled > 0) return { label: 'Unsaved typing', tone: 'busy' };
@@ -144,6 +155,12 @@ function commitOutcomeLine(outcome: CommitOutcome): StatusLine {
 			};
 		case 'stoppedWaiting':
 			return { label: 'Commit may still be running', tone: 'neutral' };
+		case 'unconfirmed':
+			return {
+				label: 'Commit reply was lost',
+				detail: `${outcome.error}\nYour files are saved. Check history before committing again.`,
+				tone: 'warning',
+			};
 		case 'closed':
 			return { label: 'Closed', tone: 'neutral' };
 	}

@@ -1,75 +1,39 @@
 /**
- * The browser leaf: a logical folder in this browser's IndexedDB, with local
- * Git history and no remote. Nothing native is imported here.
+ * The browser leaf: a folder in this browser's IndexedDB, with local Git
+ * history and no remote. It opens through the browser entry only, which
+ * refuses inside the desktop app instead of opening storage there.
  *
- * Another tab of this app writes the same folder. Each tab announces its
- * saves on a `BroadcastChannel`, which is a hint to reread and carries no
- * file contents; the page also rereads when it regains focus.
+ * Another tab of this app writes the same folder. The folder tells each tab
+ * which paths the others saved, as a hint to reread; the page also rereads
+ * when it regains focus.
  */
-import { openBrowserFolder } from '@epicenter/app/files';
 import { captureDefinition } from '@epicenter/capture';
-import type { CaptureFolder, OpenCaptureHost } from './types.js';
-
-const CHANGES = 'epicenter.capture.files-changed';
+import { openFolder } from '@epicenter/folder/browser';
+import type { OpenCaptureHost } from './types.js';
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
-	const opened = await openBrowserFolder({
-		id: captureDefinition.id,
+	const opened = await openFolder({
 		definition: captureDefinition,
-		git: { author: { name: 'Capture', email: 'capture@localhost' } },
+		// History stays in this browser: a local author, a commit after each
+		// save, and no remote to push to.
+		browser: {
+			author: { name: 'Capture', email: 'capture@localhost' },
+			commitOnEdit: true,
+		},
 	});
-	const channel = new BroadcastChannel(CHANGES);
-	const listeners = new Set<() => void>();
-	channel.onmessage = () => {
-		for (const listener of listeners) listener();
-	};
-	/** Run a write, then tell other tabs to reread if it reached the folder. */
-	const announcing =
-		<TArgs extends unknown[], TResult extends { error: unknown }>(
-			write: (...args: TArgs) => Promise<TResult>,
-		) =>
-		async (...args: TArgs) => {
-			const result = await write(...args);
-			if (result.error === null) channel.postMessage(null);
-			return result;
-		};
-	const { captures } = opened.tables;
-	const folder: CaptureFolder = {
-		tables: {
-			captures: {
-				list: () => captures.list(),
-				get: (stem) => captures.get(stem),
-				create: announcing((input) => captures.create(input)),
-				writeSource: announcing((entry, source) =>
-					captures.writeSource(entry, source),
-				),
-				delete: announcing((entry) => captures.delete(entry)),
-			},
-		},
-		files: {
-			read: (path) => opened.files.read(path),
-			write: announcing((path, content, options) =>
-				opened.files.write(path, content, options),
-			),
-		},
-		git: opened.git,
-	};
+	if (opened.error)
+		throw new Error(opened.error.message, { cause: opened.error });
+	const folder = opened.data;
 	return {
 		folder,
-		location: { kind: 'browser' },
-		onExternalChange(listener) {
-			listeners.add(listener);
-			return () => listeners.delete(listener);
-		},
-		// A tab has no quit request and no host process; its leave warning
+		location: folder.location,
+		onExternalChange: (listener) => folder.onFilesChanged(() => listener()),
+		// A tab has no quit request and no desktop service; its leave warning
 		// covers a reload or a close.
 		onQuitRequested: () => () => {},
-		onHostStopped: () => () => {},
+		onServiceStopped: () => () => {},
 		quitProtectionProblem: undefined,
-		async close() {
-			channel.close();
-			await opened.close();
-		},
+		close: () => folder.close(),
 	};
 };

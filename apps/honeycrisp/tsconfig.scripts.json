@@ -1,10 +1,11 @@
 {
-	// The Bun folder host and build scripts. They import the bridge contract
-	// and the data declaration from `src/lib`, and nothing that needs SvelteKit.
+	// Build scripts and the native tests, which run under Bun outside
+	// SvelteKit. The native tests import the page's shell client and the notes
+	// state from `src/lib`.
 	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {
 		"types": ["bun"],
 		"noEmit": true
 	},
-	"include": ["host/**/*.ts", "scripts/**/*.ts"]
+	"include": ["scripts/**/*.ts", "native-tests/**/*.ts"]
 }

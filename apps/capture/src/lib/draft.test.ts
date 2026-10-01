@@ -19,7 +19,7 @@
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
-import { captureVersion } from '@epicenter/app/files';
+import { captureVersion } from '@epicenter/folder';
 import type {
 	CaptureEntry,
 	Current,
@@ -39,7 +39,6 @@ async function entryFor(source: string): Promise<CaptureEntry> {
 		stem: 'one',
 		source,
 		version: await captureVersion(new TextEncoder().encode(source)),
-		attachment: undefined,
 		fields: { capturedAt: '2026-10-01T02:30:00.000Z' as never },
 		body: '',
 		issues: undefined,

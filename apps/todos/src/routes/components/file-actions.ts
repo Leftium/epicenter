@@ -27,7 +27,7 @@ function describe(deletion: Deletion) {
 					: basename(entry.path);
 			return {
 				title: `Delete “${title}”?`,
-				description: `This deletes ${entry.path}${entry.attachment ? ` and its attachment ${entry.attachment}` : ''} from the folder. Committed versions stay in Git history.`,
+				description: `This deletes ${entry.path} from the folder. Committed versions stay in Git history.`,
 			};
 		}
 		case 'file':

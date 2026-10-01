@@ -1,7 +1,46 @@
 # Standalone desktop verification
 
-This file has two dated parts. The first records the restored pages and
-transformations. The second retains the earlier single-window acceptance.
+This file has three dated parts. The first records the adoption of the shared
+folder package, which has automated checks only. The second records the
+restored pages and transformations. The third retains the earlier
+single-window acceptance.
+
+## Shared folder adoption (October 1, 2026)
+
+Whispering now uses `@epicenter/folder` and `@epicenter/definition` in place of
+the folder code that lived in `@epicenter/app`. A recording names its audio in
+`audioPath`, a recording is published as one folder batch, and deleting a
+recording keeps its audio. The Bun folder host is still the desktop folder's
+only owner.
+
+**The desktop app was not launched for this change.** Claude Opus 5.5 made it
+in an isolated checkout whose sandbox allowed no window, no shell launch, and
+no network. Nothing below is native acceptance, and the native results in the
+later parts of this file were observed before this change: they do not
+establish how this build behaves in the desktop app.
+
+| Check | Result |
+| --- | --- |
+| `bun test --isolate` in `apps/whispering` | 192 passed, 0 failed, 16 files |
+| Page TypeScript (`svelte-check`) and host TypeScript (`tsc -p tsconfig.native.json`) | Zero errors and warnings |
+| `vite build` with `NODE_ENV=production` | Passed; the emitted page contains no desktop folder adapter |
+
+The tests run the real product state over a real directory and Git repository,
+and the host tests cross the real bridge encoding. Publication failures in them
+are the folder's own: a directory is put in the way of one step of the real
+batch. No test uses a window, a WebView, a microphone, or a provider.
+
+Not done, and needed before this can be called accepted on the desktop:
+
+- Launch `bun dev:whispering`, record, play, transcribe, transform, quit, and
+  reopen against a disposable folder.
+- Exercise both debug publication failures and **Try again** in the window.
+- Open a data folder written by the earlier build and confirm its recordings
+  show "Needs repair" with no audio, and that adding `audioPath` repairs one.
+- Build the compiled folder host (`bun run build:sidecar`) and the release
+  bundle. Neither was built here.
+- `cargo test --manifest-path src-tauri/Cargo.toml`. The shell was not changed
+  and its tests were not run.
 
 ## Pages and transformations (October 1, 2026)
 

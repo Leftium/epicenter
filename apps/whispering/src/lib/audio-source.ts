@@ -12,7 +12,7 @@ import {
 	type FileVersion,
 	type FolderFiles,
 	sameVersion,
-} from '@epicenter/app/files';
+} from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 import { audioMimeTypeOf } from './audio-format.js';
 

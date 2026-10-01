@@ -6,8 +6,9 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { openBrowserFolder } from '@epicenter/app/files';
+import { openFolder } from '@epicenter/folder/browser';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { expectOk } from 'wellcrafted/testing';
 import { todosDefinition } from '../src/lib/definition.js';
 import { createGitHandler, prepareGitSession } from './git-server.js';
 
@@ -56,20 +57,24 @@ test('browser push, native pull and push, then browser fast-forward through the 
 		await (await handle(new Request('http://127.0.0.1:5999/session'))).json(),
 	).toEqual(session);
 
-	const browser = await openBrowserFolder({
-		id: 'demo',
-		definition: todosDefinition,
-		git: {
-			author: { name: 'Todos', email: 'todos@localhost' },
-			remote: { url: session.remoteUrl, branch: 'main' },
-			commitOnEdit: false,
-		},
-		indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
-	});
-	await browser.tables.todos.create({
-		stem: 'milk',
-		fields: { title: 'Buy milk', done: false },
-	});
+	const browser = expectOk(
+		await openFolder({
+			id: 'demo',
+			definition: todosDefinition,
+			browser: {
+				author: { name: 'Todos', email: 'todos@localhost' },
+				remote: { url: session.remoteUrl, branch: 'main' },
+				commitOnEdit: false,
+				indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+			},
+		}),
+	);
+	expectOk(
+		await browser.tables.todos.create({
+			stem: 'milk',
+			fields: { title: 'Buy milk', done: false },
+		}),
+	);
 	const first = await browser.git.commitAndPush();
 	expect(first.commit.status).toBe('committed');
 	expect(first.push.status).toBe('pushed');

@@ -5,7 +5,7 @@
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
-import { FileError } from '@epicenter/app/files';
+import { FileError } from '@epicenter/folder/bun';
 import {
 	audioMimeTypeOf,
 	resolveAudioFormat,
@@ -25,8 +25,7 @@ test('undefined, bytes, maps, and results cross the bridge unchanged', () => {
 	const entry = {
 		path: 'recordings/a.md',
 		issues: undefined,
-		attachment: undefined,
-		fields: { title: 'A', durationMs: 5 },
+		fields: { title: 'A', durationMs: 5, audioPath: 'recordings/a.wav' },
 	};
 	const back = roundTrip(entry) as typeof entry;
 	expect(back).toEqual(entry);

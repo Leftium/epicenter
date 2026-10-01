@@ -12,7 +12,7 @@ import type {
 	PullError,
 	PullOutcome,
 	PushOutcome,
-} from '@epicenter/app/files';
+} from '@epicenter/folder';
 import type { Result } from 'wellcrafted/result';
 
 export type Tone = 'neutral' | 'busy' | 'good' | 'warning' | 'error';
@@ -261,7 +261,13 @@ function pushOutcomeLine(outcome: PushOutcome, git: GitSnapshot): StatusLine {
 }
 
 export function pushLine(git: GitSnapshot): StatusLine {
-	if (git.remote === undefined) return { label: 'No remote', tone: 'neutral' };
+	if (git.remote === undefined)
+		return {
+			label: 'No remote',
+			detail:
+				'This folder has no Git remote. Commits stay on this computer; nothing is pushed or pulled.',
+			tone: 'neutral',
+		};
 	if (git.activity.push.active) return { label: 'Pushing…', tone: 'busy' };
 	if (git.activity.fetch.active) return { label: 'Fetching…', tone: 'busy' };
 	if (git.activity.pull.active) return { label: 'Pulling…', tone: 'busy' };

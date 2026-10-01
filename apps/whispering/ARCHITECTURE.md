@@ -18,7 +18,7 @@ src/              the page      the UI; plain fetch, no native module
         │ spawns                │ window
         ▼                       ▼
 ┌── folder host (Bun) ──┐   ┌── page (WebView) ──┐
-│ openNativeFolder      │◄──│ fetch /bridge/*    │
+│ openFolder (bun)      │◄──│ fetch /bridge/*    │
 │ tables, kv, history   │   │ Bearer <token>     │
 │ shell, watch, HTTP    │──►│ event stream       │
 └──────────┬────────────┘   └────────────────────┘
@@ -30,18 +30,34 @@ The page calls no Tauri command, so the Rust crate registers none and the window
 has no capabilities. Everything native is in the host, which is ordinary
 TypeScript that tests run directly.
 
+The host is the folder's one owner on the desktop. It opens the directory with
+`@epicenter/folder/bun`. The shared package also has a desktop adapter
+(`@epicenter/folder/tauri`) over a Rust owner
+(`tauri-plugin-epicenter-folder`); this app does not use either yet. Moving the
+desktop folder to that owner replaces the host as owner and is separate work:
+the two must never hold the same directory.
+
 ## The data model
 
-`src/lib/definition.ts` declares the folder with `defineStore`: four tables and
-`kv`. `@epicenter/app/files` turns that into Markdown rows at
-`<table>/<stem>.md`, a same-stem attachment per row, and `kv.json`. The package's
-[README](../../packages/app/README.md) is the contract for entries, conditional
-writes, source-preserving patches, partial publication, and history.
+`src/lib/definition.ts` declares the folder with the shared vocabulary
+(`@epicenter/definition`): four tables and `kv`. `@epicenter/folder` turns that
+into Markdown rows at `<table>/<stem>.md` and `kv.json`. A table owns exactly
+one Markdown file per row; any other file is an ordinary file reached through
+`folder.files`. The package's [README](../../packages/folder/README.md) is the
+contract for entries, captures, conditional saves, batches, source-preserving
+patches, partial publication, and history.
 
 What Whispering adds on top:
 
 - A recording's identity is its stem. Results refer to it by `recordingId`, so
-  the app never renames a recording's files; the title is a field.
+  the app never renames a recording's row; the title is a field.
+- A recording names its audio in `audioPath`, a folder-relative path such as
+  `recordings/<id>.wav`. That field is the only link between the two files.
+  Nothing is inferred from a file that shares the row's stem. A row with no
+  `audioPath`, including one written before the field existed, is listed as
+  needing repair and has no audio the app will play or send; the app does not
+  fill the field in. Deleting a recording deletes its row and keeps the audio,
+  which is deleted from Files like any other file.
 - A transcription is a separate row, so a recording can have several and each is
   a readable file.
 - A transformation is a row in `transformations/`: title, model, and endpoint
@@ -63,20 +79,34 @@ implementation when the app layout mounts:
 
 | | Desktop (`desktop.ts`) | Browser (`browser.ts`) |
 | --- | --- | --- |
-| Folder | The real directory, through the bridge | A logical folder in IndexedDB (`openBrowserFolder`) |
-| Terminal | Your shell in the directory | The in-page shell from `@epicenter/app/files/terminal` |
+| Folder | The real directory, through the bridge | A folder in IndexedDB (`openFolder` from `@epicenter/folder/browser`) |
+| Terminal | Your shell in the directory | The folder's own in-page shell (`folder.terminal()`) |
 | Transcription | The host makes the request | The page makes the request |
 | Transformation | The host makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
 | Key | A file under `.git` | `localStorage` |
-| Outside changes | Watched and announced | None exist |
+| Outside changes | Watched and announced | Other tabs' saves, as hints to read again |
 | Reveal, failure injection | Yes | No |
 
 The desktop shell injects `window.__WHISPERING_BRIDGE__` before the page runs.
 Its presence selects the desktop workspace; there is no build flag. Everything
 above the seam (`library.svelte.ts`, the editors, the components) is the same
 code for both. `src/lib/page-boundary.test.ts` fails if anything under `src/`
-imports a Node, Bun, or Tauri module, the native folder opener, or the Yjs
-store.
+imports a Node, Bun, or Tauri module, the directory or desktop folder opener,
+or the Yjs store.
+
+Opening returns a `Result`, and a refusal is shown on the "Could not open the
+recordings folder" screen as it is. The two storages are never substitutes:
+
+- The browser opener refuses where there is no IndexedDB and inside any
+  desktop app (`InsideTauri`). A window in a desktop app with no bridge token,
+  such as this page inside the Epicenter desktop host, therefore opens
+  nothing and says so. It is not given the desktop adapter in its place.
+- A folder host that does not answer is `FolderHost`. The page does not open
+  browser storage in its place.
+
+Page code names types and helpers from `@epicenter/folder`. `vite.config.ts`
+aliases that exact specifier to `@epicenter/folder/browser`, so the built page
+carries no desktop adapter.
 
 ## The session and the pages
 
@@ -131,7 +161,22 @@ POST /bridge/app      { op, payload }   Whispering's own operations
 `src/lib/bridge/codec.ts` encodes what JSON cannot carry (`undefined`, bytes,
 maps, errors) so an entry's `issues: undefined` and a `Partial` error arrive
 intact. `src/lib/bridge/folder-client.ts` and `native/folder-rpc.ts` are the two
-ends and contain nothing specific to Whispering. [bridge proposal](./docs/bridge-proposal.txt) is
+ends and contain nothing specific to Whispering.
+
+`folder.batch` takes a callback, which cannot cross a process boundary. The
+page runs the callback once, synchronously, against a recorder that only
+writes down the mutations it names, and sends that list as one call:
+
+```text
+POST /bridge/call     { path: ["batch"], args: [[ { op: "files.create", path, content },
+                                                  { op: "tables.create", table, input } ]] }
+```
+
+`src/lib/bridge/batch-plan.ts` checks the list at the host (known mutations,
+argument shapes, declared tables; anything else is a `400`) and names the same
+mutations on the real folder's batch. The folder validates paths, stems,
+captures, and field values, serializes the row, and publishes: there is no
+second batch implementation. A lost reply leaves the whole batch `Unconfirmed`. [bridge proposal](./docs/bridge-proposal.txt) is
 the contract as proposed to the other file-folder apps.
 
 Every bridge request must carry the per-launch token. The host also refuses a
@@ -152,21 +197,67 @@ to the other. The saved extension comes from the container signature in the
 bytes (`src/lib/audio-format.ts`), and from the recorder's claimed MIME type
 only when the signature is not recognized.
 
-`src/lib/recordings/publish.ts` publishes a capture and recovers one that
-stopped partway. A native folder writes the audio and then the row as two
-filesystem steps, so a failure between them leaves audio with no row. The
-capture keeps its ID and bytes in the page, and each attempt starts from what is
+`src/lib/recordings/publish.ts` publishes a capture and finishes one that
+stopped partway. A capture is fixed when it ends: its ID, its bytes, and every
+field of its row, including the `audioPath` its audio is saved at. Both files
+are one `folder.batch`: the audio, then the row. A folder on disk applies those
+as ordered steps, so a failure between them leaves audio with no row
+(`Partial`), and a lost reply leaves the outcome unknown (`Unconfirmed`). The
+capture stays in the page through both, and each attempt starts from what is
 in the folder:
 
 | The folder has | The attempt |
 | --- | --- |
-| Neither file | Publishes both through the table. |
-| This capture's audio, byte for byte, and no row | Writes only the row, as an exclusive creation, then asks for a commit. |
-| This capture's row and audio | Reports it saved and writes nothing. |
-| Anything else at those paths | Refuses and writes nothing. |
+| Neither file | One batch: `files.create` the audio, then `tables.recordings.create` the row. |
+| Exactly this capture's audio, and no row | One batch: `files.replace` the audio that was read with the same bytes, then create the row. |
+| This capture's row and exactly its audio | Reports it saved and writes nothing. |
+| Another row, other audio (same size or not), or the row without its audio | Refuses and writes nothing. |
 
-So a retry keeps the recording's identity, cannot create a second recording, and
-never replaces a file it cannot show it wrote.
+The replacement in the second case writes bytes that are already there. Its
+purpose is its condition: the batch lands only if the audio is still exactly
+what was read, so a row is never created beside audio another writer changed in
+between. Nothing is ever saved with `overwrite`, and the row's source always
+comes from the table's own `create`.
+
+Only the two paths the capture names are looked at. A file that merely shares
+the stem, such as `recordings/<id>.m4a`, is not the recording's and does not
+block it.
+
+A complete batch receipt that names both writes, with the audio capture equal
+to the pending bytes, proves the recording was published. It is not a reading
+of the folder, and no entry or editor baseline is made from it. So after a
+successful batch the row is read as a new observation, to have a current entry
+to show. Publication and observation are separate facts:
+
+| After a confirmed receipt, the row | Outcome |
+| --- | --- |
+| Reads as this recording | `saved`. The capture leaves the window's list and that entry is shown. |
+| Cannot be read | `published`, problem `unreadable`. |
+| Is gone | `published`, problem `missing`: another writer removed it after publication. |
+| Is there and is not this recording | `published`, problem `foreign`: another writer changed it after publication. |
+
+"This recording" is a valid row with the capture's `recordedAt`, `durationMs`,
+`capture`, and `audioPath`. The title and notes are the person's to change and
+are not compared, so an edited row is still this recording and becomes the
+fresh baseline.
+
+A `published` capture is saved. It keeps its fixed ID and bytes and the
+receipt's two captures in `library.pending`, as state `published`, only so the
+notice can be shown and the row looked at again. It is not counted as unsaved:
+it does not hold the app open, and the status line reads "Saved · 1 recording
+to check". **Refresh** calls `observePublication`, which reads the row and
+nothing else. From a confirmed publication there is no path to another batch,
+a file write, or a request: a missing or foreign row is left as found and the
+notice says what the person can do.
+
+`Partial`, `Unconfirmed`, a receipt that does not cover both files, and a
+refusal before publication are not confirmed publications. They stay
+unresolved, are reported as not saved, hold the app open, and **Try again**
+starts from the table at the top of this section.
+
+So a retry keeps the recording's identity, cannot create a second recording,
+and never replaces a file it did not just read and recognize as its own. A
+save is reported on its own; the commit it requests is a separate outcome.
 
 ## Transformations
 
@@ -204,8 +295,9 @@ can produce at most one result file.
 A transformation only ever creates rows in `transformation_runs/`. No code path
 writes a transcription row from a transformation.
 
-Deleting a recording deletes its transcripts and the results made from them,
-so it must not race the work that writes those rows. `deletionFor` and `remove`
+Deleting a recording deletes its row, its transcripts, and the results made
+from them, and keeps its audio. It must not race the work that writes those
+rows. `deletionFor` and `remove`
 both refuse while a transcription or transformation of that recording is
 running, or its answer is received and unsaved, and `remove` also refuses when
 a result was saved after the person was asked. While `remove` runs, no request
@@ -297,7 +389,12 @@ The shell sets `WHISPERING_DEBUG=1` for the host when it is compiled with debug
 assertions and removes it otherwise, whatever the environment says. Only then
 does the host accept `WHISPERING_AUDIO_FIXTURE` and construct
 `native/failure-injection.ts`. Injected publication failures are counted, so a
-test can order failure and retry exactly. The injected commit failure is a real
+test can order failure and retry exactly. They are real failures of the real
+batch: the host puts an empty directory at the path of the step that should
+fail, runs the folder's batch, and removes the directory. The folder then
+reports its own `Partial` (row obstructed, audio saved) or its own refusal
+(audio obstructed, nothing saved). The host never answers in the folder's
+place. The injected commit failure is a real
 lock file on the branch ref, created exclusively and tagged with a marker unique
 to that host. The host removes only a lock carrying its own marker, so it never
 takes or clears a lock another Git process holds.
@@ -308,7 +405,7 @@ takes or clears a lock another Git process holds.
 | --- | --- |
 | `src/lib/definition.ts` | The inert folder declaration. |
 | `src/lib/workspace/` | The storage seam and its two implementations. |
-| `src/lib/bridge/` | Wire encoding, the remote `Folder`, and the HTTP transport. |
+| `src/lib/bridge/` | Wire encoding, the remote `Folder`, a batch as data, and the HTTP transport. |
 | `src/lib/session.svelte.ts` | The one session a mounted layout owns, and its context. |
 | `src/lib/library.svelte.ts` | Product state: lists, selections, retained editors, pending captures, transcription and transformation runs, settings. |
 | `src/lib/recordings/publish.ts` | Publication and recovery. |

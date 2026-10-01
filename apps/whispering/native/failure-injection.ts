@@ -3,9 +3,16 @@
  *
  * Publication failures are counted: arming "fail the next N row writes" makes
  * exactly the next N attempts fail and then publication works again, so a test
- * can exercise failure and retry in a fixed order. A failed row write lands
- * the audio file first, as a real native partial publication does, and answers
- * with the same `Partial` error the file boundary reports.
+ * can exercise failure and retry in a fixed order.
+ *
+ * A recording is published as one folder batch: the audio file, then the row.
+ * Nothing here answers for the folder. An armed failure puts an empty
+ * directory at the path of the step that should fail, lets the real batch
+ * run, and removes the directory afterward. The folder then fails that step
+ * itself: an obstructed row leaves the audio saved and reports its own
+ * `Partial`, and an obstructed audio file fails before anything is written.
+ * A path that is already occupied is left alone and the attempt is not
+ * counted, since the folder refuses it without help.
  *
  * Commit failures are real: a lock file is created on the branch ref, where an
  * interrupted Git process leaves one, so Git refuses to move the branch and
@@ -20,24 +27,31 @@
  * A release shell never constructs this.
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { DataDefinition } from '@epicenter/app/definition';
-import { ApplyError, FileError, type Folder } from '@epicenter/app/files';
-import { RECORDING_ROW, RECORDINGS } from '../src/lib/definition.js';
+import { mkdir, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import type { DataDefinition } from '@epicenter/definition';
+import {
+	type Folder,
+	pathProblem,
+	rowPath,
+	stemProblem,
+} from '@epicenter/folder/bun';
+import { RECORDINGS } from '../src/lib/definition.js';
 
 export type InjectionState = {
-	/** How many upcoming recording row writes fail. */
+	/** How many upcoming recording publications fail at the row, after the audio lands. */
 	rowWrites: number;
-	/** How many upcoming recording audio writes fail before anything lands. */
+	/** How many upcoming new recording publications fail at the audio, before anything lands. */
 	audioWrites: number;
 	/** Whether the branch ref is locked, so commits cannot be recorded. */
 	commitsBlocked: boolean;
 };
 
-type CreateInput = {
-	stem?: string;
-	attachment?: { extension: string; bytes: Uint8Array };
+/** The step of a recording's batch that an armed failure obstructs. */
+type Obstacle = {
+	readonly counter: 'rowWrites' | 'audioWrites';
+	/** The folder-relative path the step writes. */
+	readonly path: string;
 };
 
 /** Starts the content of every lock a debug host creates. */
@@ -67,8 +81,64 @@ export function createFailureInjection({
 		audioWrites: 0,
 		commitsBlocked: false,
 	};
-	const injected = (what: string) =>
-		new Error(`injected ${what} failure (debug)`);
+
+	/**
+	 * Which step of this call an armed failure applies to, if any. Only a batch
+	 * that creates a recording row is a recording's publication. The paths come
+	 * from the page, so each is checked before it is joined onto the root.
+	 */
+	function obstacleFor(
+		path: readonly string[],
+		args: readonly unknown[],
+	): Obstacle | undefined {
+		if (path.length !== 1 || path[0] !== 'batch' || !Array.isArray(args[0]))
+			return undefined;
+		const steps = args[0] as readonly Record<string, unknown>[];
+		const row = steps.find(
+			(step) => step?.op === 'tables.create' && step.table === RECORDINGS,
+		);
+		const stem = (row?.input as { stem?: unknown } | undefined)?.stem;
+		if (typeof stem !== 'string' || stemProblem(stem) !== undefined)
+			return undefined;
+		const audio = steps.find((step) => step?.op === 'files.create')?.path;
+		if (
+			state.audioWrites > 0 &&
+			typeof audio === 'string' &&
+			pathProblem(audio) === undefined
+		)
+			return { counter: 'audioWrites', path: audio };
+		if (state.rowWrites > 0)
+			return { counter: 'rowWrites', path: rowPath(RECORDINGS, stem) };
+		return undefined;
+	}
+
+	/**
+	 * Put an empty directory where the step writes. Returns how to remove it,
+	 * or undefined when something is already there.
+	 */
+	async function obstruct(
+		obstacle: Obstacle,
+	): Promise<(() => Promise<void>) | undefined> {
+		const target = join(root, ...obstacle.path.split('/'));
+		const parent = dirname(target);
+		const madeParent = await mkdir(parent, { recursive: true });
+		const removeParent = async () => {
+			// Only a directory this created, and only while it is still empty.
+			if (madeParent !== undefined) await rmdir(parent).catch(() => {});
+		};
+		try {
+			await mkdir(target);
+		} catch (cause) {
+			await removeParent();
+			if (codeOf(cause) === 'EEXIST') return undefined;
+			throw cause;
+		}
+		state[obstacle.counter] -= 1;
+		return async () => {
+			await rmdir(target).catch(() => {});
+			await removeParent();
+		};
+	}
 
 	/** What this host writes into a lock it creates. Git never writes this. */
 	const marker = `${LOCK_MARKER_PREFIX} ${randomUUID()}\n`;
@@ -130,94 +200,21 @@ export function createFailureInjection({
 			state.commitsBlocked = false;
 		},
 		/**
-		 * Answer a folder call with an armed failure, or return undefined to let
-		 * the real call run.
+		 * Run one bridged folder call, with an armed failure in its way when one
+		 * applies. The answer is always the folder's own.
 		 */
-		async intercept(
+		async around<T>(
 			path: readonly string[],
 			args: readonly unknown[],
-		): Promise<{ readonly value: unknown } | undefined> {
-			const call = path.join('.');
-			if (call === `tables.${RECORDINGS}.create`) {
-				const input = (args[0] ?? {}) as CreateInput;
-				if (input.stem === undefined) return undefined;
-				const row = `${RECORDINGS}/${input.stem}.md`;
-				const audio =
-					input.attachment === undefined
-						? undefined
-						: `${RECORDINGS}/${input.stem}.${input.attachment.extension}`;
-				if (audio !== undefined && state.audioWrites > 0) {
-					state.audioWrites -= 1;
-					return {
-						value: FileError.Io({
-							path: audio,
-							operation: 'create',
-							cause: injected('audio write'),
-						}),
-					};
-				}
-				if (state.rowWrites === 0) return undefined;
-				state.rowWrites -= 1;
-				const failure = FileError.Io({
-					path: row,
-					operation: 'create',
-					cause: injected('row write'),
-				});
-				if (audio === undefined || input.attachment === undefined)
-					return { value: failure };
-				// Use the folder boundary to validate the directory and literal path.
-				// Land bytes externally: a partial publication requests no history.
-				const directory = await folder.files.mkdir(RECORDINGS);
-				if (directory.error) return { value: directory };
-				const current = await folder.files.read(audio);
-				if (current.error && current.error.name !== 'NotFound')
-					return { value: current };
-				if (current.error === null)
-					return {
-						value: FileError.Conflict({
-							path: audio,
-							expected: 'absent',
-							actual: current.data.version,
-						}),
-					};
-				try {
-					await writeFile(join(root, audio), input.attachment.bytes, {
-						flag: 'wx',
-					});
-				} catch (cause) {
-					return {
-						value: FileError.Io({ path: audio, operation: 'create', cause }),
-					};
-				}
-				// The external write bypassed publication's status invalidation.
-				await folder.git.status();
-				return {
-					value: ApplyError.Partial({
-						applied: [{ kind: 'write', path: audio }],
-						failed: { kind: 'write', path: row },
-						error: failure.error,
-						notAttempted: [],
-					}),
-				};
+			call: () => Promise<T>,
+		): Promise<T> {
+			const obstacle = obstacleFor(path, args);
+			const clear = obstacle && (await obstruct(obstacle));
+			try {
+				return await call();
+			} finally {
+				await clear?.();
 			}
-			if (
-				call === 'files.write' &&
-				typeof args[0] === 'string' &&
-				RECORDING_ROW.test(args[0]) &&
-				(args[2] as { expected?: unknown } | undefined)?.expected ===
-					'absent' &&
-				state.rowWrites > 0
-			) {
-				state.rowWrites -= 1;
-				return {
-					value: FileError.Io({
-						path: args[0],
-						operation: 'create',
-						cause: injected('row write'),
-					}),
-				};
-			}
-			return undefined;
 		},
 	};
 }

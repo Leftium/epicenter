@@ -1,14 +1,16 @@
 <h1 align="center">Whispering</h1>
-<p align="center">Record → transcribe → keep it all as files.</p>
+<p align="center">Record → transcribe → transform → keep it all as files.</p>
 
-Whispering is a standalone desktop app. It records audio, transcribes it with an
-OpenAI-compatible endpoint you choose, and keeps every recording, transcript,
-and setting as an ordinary file in one Git-versioned folder. It needs no
-account, no Epicenter desktop, and no hosted API.
+Whispering is a standalone desktop app for voice notes. It records audio,
+transcribes it with an OpenAI-compatible endpoint you choose, turns a transcript
+into another text with prompts you write, and keeps every recording, transcript,
+prompt, result, and setting as an ordinary file in one Git-versioned folder. It
+needs no account, no Epicenter desktop, and no hosted API.
 
-This is a development milestone, not a release. It demonstrates one workflow end
-to end: launch, record, stop, save, play, transcribe, inspect files and history,
-quit, reopen. [What is not supported](#what-is-not-supported) lists the rest.
+This is a development milestone, not a release. It demonstrates the voice-note
+workflow end to end: launch, record, stop, save, play, transcribe, transform,
+inspect files and history, quit, reopen. Dictating into other apps is not part
+of it. [What is not supported](#what-is-not-supported) lists the rest.
 
 ## The data folder
 
@@ -20,8 +22,15 @@ quit, reopen. [What is not supported](#what-is-not-supported) lists the rest.
 │   └── <recording-id>.<extension>   the audio, with the extension its bytes call for
 ├── transcriptions/
 │   └── <result-id>.md               names its recording in frontmatter; transcript in the body
+├── transformations/
+│   └── <transformation-id>.md       title, model, endpoint in frontmatter; the prompt in the body
+├── transformation_runs/
+│   └── <run-id>.md                  what it was made from and with in frontmatter; the result in the body
 └── .git/                            ordinary Git: Markdown, kv.json, and audio bytes
 ```
+
+Nothing but `kv.json` exists until you make it: a folder has no
+`transformations/` until you create a transformation.
 
 These files are the data. The app, the embedded terminal, and any other program
 edit the same paths; there is no export step and no second copy. Set
@@ -71,25 +80,96 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | --- | --- |
 | `WHISPERING_DATA_ROOT` | The data folder. Default `~/Epicenter/local/so.epicenter.whispering`. Created when absent. |
 | `WHISPERING_TRANSCRIPTION_BASE_URL`, `WHISPERING_TRANSCRIPTION_MODEL` | Written to `kv.json` the first time a folder is opened. After that, `kv.json` decides. |
-| `WHISPERING_TRANSCRIPTION_API_KEY` | The transcription key for this launch. Overrides the key saved from Settings. |
+| `WHISPERING_TRANSCRIPTION_API_KEY` | The API key for this launch, used for transcription and for transformations. Overrides the key saved from Settings. |
 | `WHISPERING_AUDIO_FIXTURE` | Debug builds only. A file whose bytes answer every recording. See [Fixture audio](#fixture-audio). |
 | `WHISPERING_BUN` | Debug builds only. The Bun executable that runs the folder host, when `bun` is not on `PATH`. |
 
 ## Using it
 
-The header shows one status line, then Settings, Reveal folder, Files, and
-Terminal on the right.
+Whispering has three pages. The sidebar switches between them on a wide window
+(click the microphone, or press Ctrl+B or Command-B, to expand it), and a bar
+at the bottom does on a narrow one. Each page has its own address, so back,
+forward, and refresh work.
+
+| Page | Address | What it is for |
+| --- | --- | --- |
+| Home | `/` | The recorder, and the newest recording with its transcript. |
+| Recordings | `/recordings` | Every saved recording: filter, play, rename, transcribe, transform, write notes, edit source. |
+| Transformations | `/transformations` | The prompts you apply to transcripts, and the results they produced. |
+
+Changing pages keeps everything in progress: a recording keeps recording, a
+request keeps running, unsaved typing stays in its editor, and the terminal
+keeps its output, history, and directory. One folder is opened when the app
+starts and it stays open until the app closes.
+
+The header is the same on every page: the status line, a recorder control,
+Settings, Reveal folder, Files, and Terminal. Directly under it, also on every
+page, is anything that is not saved yet.
 
 | Control | What it does |
 | --- | --- |
-| Record / Stop | Records, then saves the audio and its row to `recordings/`. The new recording opens. |
-| A recording | Details: play the audio, change the title, transcribe, write notes. Source: the row's Markdown. Both edit one draft. |
-| Transcribe | Sends the saved audio to the endpoint in Settings and saves the answer as a row in `transcriptions/`. |
+| Start recording / Stop recording | On Home. Records, then saves the audio and its row to `recordings/`. On other pages the header has a microphone button to start, and while a recording runs it shows the elapsed time and Stop. |
+| Transcribe | Sends the saved audio to the endpoint in Settings and saves the answer as a row in `transcriptions/`. Nothing is transcribed until you press it. |
+| A recording | Details: play the audio, change the title, transcribe, transform a transcript, write notes. Source: the row's Markdown. Both edit one draft. |
+| Filter | On Recordings. Matches the title, notes, ID, and transcripts. A recording that needs repair is always listed. |
+| Transform | On a transcript. Applies one of your transformations and saves the answer as a new file under the transcript. |
 | Status | Saved files, uncommitted changes, the last commit attempt, and the folder path as separate lines, with Check again and Commit now. |
-| Settings | Endpoint and model (saved in `kv.json`) and the API key (kept on this device, outside history). |
+| Settings | Transcription endpoint and model (saved in `kv.json`) and the API key (kept on this device, outside history). |
 | Reveal folder | Opens the data folder in Finder. |
-| Files (Ctrl+B) | The folder's files. A recording row opens its details; an audio file opens a player; other text opens in a plain editor. |
-| Terminal (Ctrl+\`) | Commands in the data folder. Its output, history, typed command, and directory stay when it is hidden. |
+| Files (Ctrl+Shift+E) | The folder's files, beside any page. A recording row opens on Recordings and a transformation on Transformations; an audio file opens a player and other text a plain editor, both on Recordings. |
+| Terminal (Ctrl+\`) | Commands in the data folder, under any page. Its output, history, typed command, and directory stay when it is hidden. |
+
+### Transformations
+
+A transformation is a prompt you reuse: clean up dictation, summarize, draft an
+email. It is one Markdown file in `transformations/` with a title, a model, and
+an endpoint in its frontmatter and the prompt as its body.
+
+- **New** creates one. It offers three starters (Clean up, Summarize, Draft an
+  email) and an empty one. Nothing is created until you choose; the app never
+  adds files on its own.
+- Edit the title, prompt, endpoint, and model in Details, or the whole file in
+  Source. Edits save like any other file here, with the same conflict handling.
+  Fields the app does not know are kept as written.
+- The endpoint is an OpenAI-compatible base URL and the model is whatever that
+  endpoint calls it. Whispering keeps no list of providers or models. A new
+  transformation copies the endpoint and model of one you already have; the
+  first one starts with the transcription endpoint and no model.
+- Run one from a transcript's **Transform** menu on Recordings, or from the
+  transformation's own page by choosing a transcript and pressing **Run**.
+
+Running sends one request: `POST <endpoint>/chat/completions` with the model,
+the prompt as the system message, and the transcript as the user message. The
+answer is saved as a new file in `transformation_runs/`. The transcript's own
+file is never written, so the original text is always there.
+
+Each result file records the recording, transcription, and transformation it
+came from, when, the model and endpoint, and the exact prompt and transcript
+text that were sent. A result therefore still reads correctly after you edit or
+delete its transformation. Deleting a transformation keeps its results.
+Deleting a recording deletes its transcripts and the results made from them.
+A recording cannot be deleted while a transcription or transformation of it is
+running, or while an answer for it is waiting to be saved: finish it, save it
+again, or discard it in the notice under the header first.
+
+What is sent is always what the folder holds when you press the button. If the
+transcript's file was edited in Files, the terminal, or another program, the
+edited text is sent; if it or its recording is gone, or the file cannot be
+read, nothing is sent and the app says why.
+
+**The key.** Transformations use the same API key as transcription, the one in
+Settings. There is one key per device, sent to whichever endpoint a
+transformation names, so point transformations only at endpoints you would give
+that key to. In the desktop app the folder host sends the request and the key
+never reaches the window, the folder, or history. In a browser tab
+(`bun dev:whispering:ui`) the tab sends the request itself, so the endpoint
+must allow the page's origin (CORS). Most hosted providers refuse that; a local
+endpoint or the desktop app works.
+
+When a request fails, the notice under the header says why and offers **Try
+again**, which sends the same request. When the answer arrives but its file
+cannot be written, the text is kept in the window with **Save it again**, which
+writes the same file and does not call the endpoint a second time.
 
 ### Saved is not committed
 
@@ -110,19 +190,21 @@ outcomes and the status reports them separately.
 ### When a save does not finish
 
 Captured audio stays in the window until the folder has both files. If writing
-stops partway (the audio is saved and its row is not), the recording appears at
-the top of the list with what happened, a player for the audio held in the
-window, and **Try again**. Trying again keeps the recording's ID, writes only
-what is missing, and cannot create a second recording. If another file already
-occupies the recording's path and is not this recording, nothing is overwritten
-and the recording stays pending.
+stops partway (the audio is saved and its row is not), the recording appears in
+the notice under the header, on every page, with what happened, a player for
+the audio held in the window, and **Try again**. Trying again keeps the
+recording's ID, writes only what is missing, and cannot create a second
+recording. If another file already occupies the recording's path and is not
+this recording, nothing is overwritten and the recording stays pending.
 
-A transcript whose result file could not be written is kept the same way: the
-status says a transcription is not saved, and the recording offers "Save it
-again".
+A transcript or a transformation result whose file could not be written is kept
+the same way: the status says it is not saved, and the notice shows the text
+with **Save it again** and **Copy**. A transformation result keeps the file name
+it was given when the run began, so saving again cannot produce a second result,
+and if another file has taken that name it is left alone.
 
-Pending audio, an unsaved transcript, and unsaved typing live only in the open
-window. They are not written anywhere else.
+Pending audio, an unsaved transcript or result, and unsaved typing live only in
+the open window. They are not written anywhere else.
 
 ### Closing and quitting
 
@@ -132,10 +214,14 @@ the Whispering menu) both ask the window first:
 - When nothing is held, typing that can still be saved is saved and the app
   closes with no prompt.
 - When something is held (a recording in progress, a recording that is not in
-  the folder, a transcript whose file was not written, a running transcription,
-  or edits that cannot be saved), the app stays open and shows what would be
-  lost. **Keep working** closes the prompt and changes nothing. **Discard and
-  quit** closes the app and drops what was held.
+  the folder, a transcript or transformation result whose file was not written,
+  a running transcription or transformation, or edits that cannot be saved),
+  the app stays open and shows what would be lost. **Keep working** closes the
+  prompt and changes nothing. **Discard and quit** closes the app and drops
+  what was held.
+
+Only leaving the app asks. Moving between Home, Recordings, and
+Transformations never does, because nothing is lost by it.
 
 The app closes only on an explicit answer from the window. A window that is
 busy or slow keeps the app open until it answers; closing again only asks
@@ -168,9 +254,10 @@ The app notices changes to the folder from any program within about a second.
   yours and load the saved file, save yours over it, or **Keep both**, which
   writes your text to `conflicts/<name>-<time>.md` and loads the saved file.
 
-A recording row whose frontmatter cannot be read, or lacks a field, stays in the
-list marked "Needs repair" with its file untouched. Fix it in Source. Fields the
-app does not know are kept as written.
+A recording or transformation row whose frontmatter cannot be read, or lacks a
+field, stays in its list marked "Needs repair" with its file untouched. Fix it
+in Source. A transformation that needs repair cannot run until it is fixed.
+Fields the app does not know are kept as written.
 
 ### The terminal
 
@@ -198,10 +285,10 @@ WHISPERING_AUDIO_FIXTURE=/path/to/tone.wav \
 bun dev:whispering
 ```
 
-The header shows a "Fixture audio" badge and the Record button says the
-microphone is not used. Recordings made this way are saved with
-`capture: fixture` and labelled in the list and in details. A release build
-refuses the variable, says so beside the Record button, and records from the
+The header shows a "Fixture audio" badge on every page and the recorder on Home
+says the microphone is not used. Recordings made this way are saved with
+`capture: fixture` and labelled on Home, in the list, and in details. A release
+build refuses the variable, says so under the recorder, and records from the
 microphone.
 
 A fixture recording proves the save, playback, transcription, and history path.
@@ -246,11 +333,18 @@ These are absent, not hidden behind a setting:
   are local.
 - Git remotes, push, and pull from the app. Use `git` in the terminal.
 - Git LFS.
-- Global shortcuts, push-to-talk, voice-activated recording, and delivering text
-  to the cursor or clipboard automatically.
+- System-wide dictation: global shortcuts, push-to-talk, voice-activated
+  recording, and delivering text to the cursor or clipboard automatically. Copy
+  buttons are the only way text leaves the app.
+- Automatic transcription or transformation after a recording. Each is a button
+  you press, so nothing is sent to a paid endpoint on its own.
 - On-device transcription models. Transcription needs an endpoint.
-- Transcript cleanup, importing audio files, choosing an input device, and
-  recording overlays.
+- Transformations beyond one prompt and one request: chained steps, find and
+  replace rules, tools, running code, importing the earlier Whispering's
+  transformations or recipes, a provider or model catalog, and a separate key
+  per transformation or provider.
+- A settings page. Settings is the one popover in the header.
+- Importing audio files, choosing an input device, and recording overlays.
 - Windows and Linux are untested. The terminal needs a POSIX shell.
 - A release pipeline. `bun build:whispering` produces a locally signed bundle.
 - Running inside the Epicenter desktop host as a native app. `bun run
@@ -258,9 +352,12 @@ These are absent, not hidden behind a setting:
   browser page over a logical folder. The host's Whispering commands in
   `apps/epicenter/src-tauri` are no longer called by this app.
 
-The earlier Whispering stored recordings in a Yjs store. Nothing reads that
-data. There is no migration.
+The earlier Whispering stored recordings and transformations in a Yjs store.
+Nothing reads that data. There is no migration. The pages, sidebar, and
+recorder follow that app's layout; the code and the data underneath do not come
+from it.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit, and
 [desktop verification](./docs/desktop-verification.md) for native acceptance
-results, screenshots, and the microphone hardware limit.
+results, screenshots, the microphone hardware limit, and what has not been
+checked in the desktop app since the pages and transformations were added.

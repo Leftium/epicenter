@@ -10,6 +10,13 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
   Tauri module, or `@epicenter/app/files/native`. The page reaches the folder
   only through `src/lib/workspace/`. `src/lib/page-boundary.test.ts` enforces
   this; keep it passing and do not weaken it.
+- **One session per mounted layout.** `src/routes/+layout.svelte` opens the
+  session and `AppShell` puts it in context. A page or component takes it with
+  `getSession()`; it never opens a workspace, builds a library, or keeps
+  product state in a module-level variable. State that must survive a page
+  change belongs to the session. Only leaving the app is guarded, never a
+  navigation between routes. `src/lib/page-boundary.test.ts` enforces the
+  ownership.
 - **Native work belongs in `native/`.** The folder host is the only process that
   touches the data folder. Add a host operation there and expose it through the
   workspace type, with a browser implementation or an explicit `undefined`.
@@ -30,8 +37,16 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
 - **Fixture audio and failure injection are debug-only.** They are enabled by
   the shell's build, never by an environment variable alone, and the UI says so
   while they are active.
-- Do not rename a recording's files from the app: transcription rows refer to
-  the stem.
+- **A transformation never writes its transcript.** A result is a new row in
+  `transformation_runs/` with a stem fixed before the request is sent. Saving a
+  received result again must not call the endpoint or create a second file.
+- **The API key stays in the host.** It is never returned over the bridge,
+  logged, or written to the folder, including inside an error message.
+- **Nothing is sent or seeded on its own.** No request leaves at launch or
+  after a recording without the person asking, and no file is created in the
+  folder that they did not create, apart from `kv.json`.
+- Do not rename a recording's or a transformation's files from the app: other
+  rows refer to the stem.
 - Use wellcrafted `Result` types instead of try-catch for expected failures.
 
 ## Checks

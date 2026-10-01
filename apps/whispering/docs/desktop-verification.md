@@ -1,5 +1,93 @@
 # Standalone desktop verification
 
+This file has two dated parts. The first records what has and has not been
+checked since the pages and transformations were added. The second is the
+earlier native acceptance of the single-window app, kept as it was written.
+
+## Pages and transformations (October 1, 2026): not yet verified natively
+
+The app now has three pages (`/`, `/recordings`, `/transformations`) under one
+session, and transformations. Claude Opus 5.5 implemented this in an isolated
+checkout. Codex integrated it into the active branch, preserving concurrent
+folder lifecycle and publication changes, then reran the checks below.
+
+Established by automated checks in that checkout, with a fixture capture device
+and deterministic endpoint stubs (functions in place of `fetch`; no socket, no
+provider, no key):
+
+| Check | Result |
+| --- | --- |
+| Application tests in the implementation checkout | 143 passed, 840 assertions, across 14 files |
+| Application tests after integration (`bun test --isolate apps/whispering`) | 151 passed, 879 assertions, across 15 files |
+| Page TypeScript (`svelte-check`) and host TypeScript (`tsc -p tsconfig.native.json`) | Zero errors, zero warnings |
+| Page build (`vite build`) | Passed |
+| Standalone debug and release Tauri bundles, including compiled sidecar | Both passed |
+| Transformation request shape, answers, and errors | Covered by `src/lib/transformation.test.ts` |
+| Result publication, original transcript untouched, failed-save retry identity | Covered by `src/lib/transformations.test.ts` |
+| Host sends with the device key and returns none of it | Covered by `native/host.test.ts` |
+| One session per layout; page changes keep held work | Covered by `src/lib/session.test.ts` and `src/lib/page-boundary.test.ts` |
+
+GPT-6.1 also exercised a fresh browser profile with Playwright against
+`bun dev:whispering:ui --port 5518` and a deterministic loopback endpoint.
+Fixture recording survived all three routes; stopping, transcribing, creating
+and running a transformation, Back, reload, and narrow bottom navigation
+passed with no page errors. The original transcript stayed unchanged. This
+uses the logical IndexedDB folder and establishes browser behavior only.
+The dedicated browser and Vite process were closed afterward.
+
+Browser screenshots are retained in
+`/Users/braden/.codex/artifacts/whispering-ui-restore-20261001/screenshots/`.
+
+Not established:
+
+- **The desktop app has not been run with these changes.** Layout, navigation,
+  focus, and interactions on the three pages still need native checks. The earlier native
+  acceptance below was of a different screen and does not carry over.
+- **No real provider or key was used.** No request reached a chat or
+  transcription service.
+- **No real microphone was used.** The Mac this was built on has no audio input
+  device; that limit is unchanged from the earlier part.
+- The Rust shell was not changed and its tests were not rerun here.
+
+Integrated check logs and review evidence are retained in
+`/Users/braden/.codex/artifacts/whispering-ui-restore-20261001/source-checks/`.
+
+Native scenarios that should be checked before this is called accepted:
+
+1. Launch on `/`. Record with fixture audio, stop, and see the recording under
+   the recorder. Press Transcribe against the deterministic endpoint.
+2. With a recording running, visit Recordings and Transformations. The header
+   shows the elapsed time and Stop on both; stopping from there saves it.
+3. Open `/recordings` and `/transformations` by address and by refresh. Use back
+   and forward.
+4. Start typing a title with autosave paused, run a terminal command, visit the
+   other pages, and return: the typing, terminal output, history, typed command,
+   and directory are as they were.
+5. Create a transformation from a starter, set a model, and run it on a
+   transcript from both the Transform menu and the transformation's page. Check
+   the new file in `transformation_runs/`, that the transcription file's bytes
+   and hash are unchanged, and that both are committed.
+6. Make the endpoint refuse, then answer: the notice shows the failure with Try
+   again, on every page, and the retry lands in one file.
+7. Make the result write fail (for example, make `transformation_runs` a file
+   or read-only), then fix it: Save it again writes the file with no second
+   request to the endpoint, and the status and close prompt name the unsaved
+   result in between.
+8. Edit a transformation file from the terminal while its editor is clean, and
+   again while it is dirty: the first refreshes, the second shows the conflict
+   and Keep both. Break its frontmatter and repair it in Source.
+9. Delete a transformation and confirm its results remain.
+10. Command-W and Command-Q from each page while something is held, and after
+    stopping the host.
+11. Files and Terminal from each page; Reveal folder; the debug failure
+    controls. Files is now Ctrl+Shift+E, because Ctrl+B toggles the sidebar.
+12. A narrow window (under 768 pixels): bottom navigation, list and details
+    taking turns on both list pages.
+13. Confirm the device key is absent from the page's network responses, the
+    folder, and `git log -p`.
+
+## Standalone single-window app (October 1, 2026)
+
 Verified on October 1, 2026 on macOS. Claude Opus 5.5 implemented in an isolated checkout through the repository delegation workflow. GPT-6.1 independently operated the native Tauri app through CUA and inspected files and Git. Codex integrated the changes into the active file-folder branch, preserving concurrent Todos and Honeycrisp work.
 
 The fixture workflow passed end to end in the standalone native app: launch, record, stop, save, rename, play, transcribe, inspect files and history, quit, and reopen. Real microphone capture was attempted separately in the release app and failed because this Mac Studio exposed no audio input device. Actual microphone capture and its permission prompt remain unverified.

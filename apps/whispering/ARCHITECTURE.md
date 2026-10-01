@@ -32,7 +32,7 @@ TypeScript that tests run directly.
 
 ## The data model
 
-`src/lib/definition.ts` declares the folder with `defineStore`: two tables and
+`src/lib/definition.ts` declares the folder with `defineStore`: four tables and
 `kv`. `@epicenter/app/files` turns that into Markdown rows at
 `<table>/<stem>.md`, a same-stem attachment per row, and `kv.json`. The package's
 [README](../../packages/app/README.md) is the contract for entries, conditional
@@ -44,19 +44,29 @@ What Whispering adds on top:
   the app never renames a recording's files; the title is a field.
 - A transcription is a separate row, so a recording can have several and each is
   a readable file.
-- The transcription key is not folder data. On the desktop it is in
+- A transformation is a row in `transformations/`: title, model, and endpoint
+  in frontmatter, the prompt as its body. Its results refer to it by stem, so
+  the app never renames it either.
+- A transformation result is a row in `transformation_runs/`. A table name is
+  one bare identifier, which is why the folder is not `transformation-runs`.
+  The row names its recording, transcription, and transformation, and carries
+  the prompt and transcript text that were sent, so it can be read on its own
+  after any of the three changes or is deleted. Nothing mirrors it elsewhere.
+- The API key is not folder data. On the desktop it is in
   `<root>/.git/epicenter/whispering/device.json`, which Git never commits.
+  Transcription and transformations use the same key.
 
 ## The storage boundary
 
 `src/lib/workspace/types.ts` is the one seam. `openWorkspace()` picks an
-implementation when the page mounts:
+implementation when the app layout mounts:
 
 | | Desktop (`desktop.ts`) | Browser (`browser.ts`) |
 | --- | --- | --- |
 | Folder | The real directory, through the bridge | A logical folder in IndexedDB (`openBrowserFolder`) |
 | Terminal | Your shell in the directory | The in-page shell from `@epicenter/app/files/terminal` |
 | Transcription | The host makes the request | The page makes the request |
+| Transformation | The host makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
 | Key | A file under `.git` | `localStorage` |
 | Outside changes | Watched and announced | None exist |
 | Reveal, failure injection | Yes | No |
@@ -67,6 +77,40 @@ above the seam (`library.svelte.ts`, the editors, the components) is the same
 code for both. `src/lib/page-boundary.test.ts` fails if anything under `src/`
 imports a Node, Bun, or Tauri module, the native folder opener, or the Yjs
 store.
+
+## The session and the pages
+
+```text
+routes/+layout.svelte      opens one session on mount, closes it on destroy
+└── AppShell               sets the session in context; header, navigation,
+    │                      unsaved notices, Files, Terminal, close prompt
+    ├── /                  +page.svelte            recorder and latest recording
+    ├── /recordings        recordings/+page.svelte list, details, raw files
+    └── /transformations   transformations/+page.svelte
+```
+
+`src/lib/session.svelte.ts` is the owner. A session is the workspace, the
+product state over it (`library.svelte.ts`), the close guard, and what the
+shell is showing. The layout opens one and nothing else does: pages call
+`getSession()` and never open a workspace. There is no module-level store, so
+a session exists only while a layout holds it, and closing the layout releases
+the folder. `src/lib/page-boundary.test.ts` reads the sources and fails if
+anything but the layout opens a session.
+
+Because the pages are routes under that one layout, a page change is a
+re-render inside the same session. The live recording, pending captures,
+selections, running requests, drafts, and the terminal session are fields of
+the library, not of any page, so none of them is touched by navigation. What a
+page keeps in its own component (which tab is showing) is the only thing a page
+change resets.
+
+Leaving is guarded in one place, the shell. `beforeNavigate` holds a navigation
+only when it unloads the document and something is held; a navigation between
+routes is never held. The desktop close handshake below is answered by the
+session's guard, above the routes, for the same reason.
+
+The host serves `index.html` for any path that is not a file, so
+`/recordings` and `/transformations` open directly and survive a refresh.
 
 ## The bridge
 
@@ -95,7 +139,9 @@ request whose `Host` or `Origin` is not its own loopback address. The page is
 served with a content security policy that allows connections only to the host.
 
 `/bridge/app` operations: `info`, `terminal`, `reveal`, `transcribe`,
-`credential`, and, in a debug shell only, `fixture`, `inject`, and `injection`.
+`transform`, `credential`, `close`, and, in a debug shell only, `fixture`,
+`inject`, and `injection`. `transcribe` and `transform` take what to send and
+return a `Result`; the host adds the key and never returns it.
 
 ## Recording and publication
 
@@ -122,11 +168,57 @@ in the folder:
 So a retry keeps the recording's identity, cannot create a second recording, and
 never replaces a file it cannot show it wrote.
 
+## Transformations
+
+`src/lib/transformation.ts` is the request: `POST <base>/chat/completions` with
+the model, the prompt as the system message, and the transcript as the user
+message, reading `choices[0].message.content`. It is plain `fetch`, shared by
+the host and the browser workspace like the transcription request. An error
+never carries the key: an endpoint that echoes it has it removed.
+
+`library.transform` applies a saved transformation to a saved transcript, both
+named by path. Nothing is taken from a list entry, which may predate an edit or
+a deletion made outside. It saves open edits to either file (and refuses if
+they cannot be saved), then reads the transformation, the transcription row,
+and the recording that row names. A missing, malformed, or empty transcript, or
+a missing recording, refuses and nothing is sent. Then it fixes a run before
+anything is sent: the result's stem, and every field the result row will hold,
+including the prompt and transcript text. From there a run ends one of three
+ways:
+
+| The run | What is held | Trying again |
+| --- | --- | --- |
+| Saved | Nothing. The row is in `transformation_runs/`. | |
+| Failed: the endpoint refused, was unreachable, answered wrongly, or the transport threw | Nothing was received. The run is listed as failed. | Sends the same request, under the same stem, only while the folder still has that transcript text and its recording. Otherwise it stays failed and says why. |
+| Unsaved: the answer arrived and the row could not be written | The text, in the window. It blocks closing. | Writes the row. The endpoint is not called. |
+
+Saving a run looks at the folder first, as recording publication does. No file
+at the stem: the row is created exclusively. This run's own row already there
+(an earlier write landed and its answer was lost): it is recognized and nothing
+is written. Its own row means a valid row with the same body and every field
+of the run's snapshot; fields the app does not declare are ignored. Any other
+file there, including one that differs only in its prompt, model, endpoint,
+transcript, or source, is not overwritten and the run stays unsaved. So one run
+can produce at most one result file.
+
+A transformation only ever creates rows in `transformation_runs/`. No code path
+writes a transcription row from a transformation.
+
+Deleting a recording deletes its transcripts and the results made from them,
+so it must not race the work that writes those rows. `deletionFor` and `remove`
+both refuse while a transcription or transformation of that recording is
+running, or its answer is received and unsaved, and `remove` also refuses when
+a result was saved after the person was asked. While `remove` runs, no request
+starts for that recording. A failed run holds nothing; it is dropped with the
+recording.
+
 ## Drafts and conflicts
 
 `src/lib/editor.svelte.ts` holds one draft per open file: the text on screen
 and the saved file its next conditional save is checked against. A recording's
-Details and Source views read and write the same draft.
+Details and Source views read and write the same draft, and a transformation
+is edited through the same row editor, so its conflicts, repairs, and unknown
+fields behave identically.
 
 A refresh hands each open draft the file as it is now. A clean draft adopts it.
 A dirty draft keeps its text, stops saving, and holds both versions until the
@@ -152,7 +244,8 @@ shell   exits, then stops the host
 
 `src/lib/leave.svelte.ts` is the page's side, over the workspace's `closing`
 capability; a browser workspace has none and relies on the browser's leave
-warning. The page acknowledges every request with `asking` before it does
+warning. The session creates the guard, so it answers from every page and
+stops with the session. The page acknowledges every request with `asking` before it does
 anything else, and treats a failure to find out what is held as holding
 something.
 
@@ -216,12 +309,15 @@ takes or clears a lock another Git process holds.
 | `src/lib/definition.ts` | The inert folder declaration. |
 | `src/lib/workspace/` | The storage seam and its two implementations. |
 | `src/lib/bridge/` | Wire encoding, the remote `Folder`, and the HTTP transport. |
-| `src/lib/library.svelte.ts` | Product state: lists, selection, retained editors, pending captures, transcription runs, settings. |
+| `src/lib/session.svelte.ts` | The one session a mounted layout owns, and its context. |
+| `src/lib/library.svelte.ts` | Product state: lists, selections, retained editors, pending captures, transcription and transformation runs, settings. |
 | `src/lib/recordings/publish.ts` | Publication and recovery. |
-| `src/lib/capture.ts`, `audio-format.ts`, `transcription.ts` | Capture devices, container detection, the transcription request. |
+| `src/lib/capture.ts`, `audio-format.ts`, `transcription.ts`, `transformation.ts` | Capture devices, container detection, the transcription and transformation requests. |
 | `src/lib/audio-source.ts` | What a player holds, reloaded by content version on each folder refresh. |
 | `src/lib/editor.svelte.ts`, `status.ts`, `files.ts`, `terminal.svelte.ts` | Drafts, status lines, the file tree, the terminal session. |
-| `src/routes/components/` | Header, recording list and details, file browser and view, terminal. |
+| `src/routes/` | The layout that owns the session, and the three pages. |
+| `src/routes/components/` | The shell, navigation, header, unsaved notices, recorder, recording and transformation lists and details, file browser and view, terminal. |
+| `src/lib/assets/` | The microphone mark from the earlier Whispering. |
 | `native/` | The folder host: `main.ts`, `host.ts`, `folder-rpc.ts`, `terminal.ts`, `watch.ts`, `failure-injection.ts`. |
 | `src-tauri/` | The shell. `shell/index.html` is shown only when the host cannot start. |
 | [scripts/build-sidecar.ts](./scripts/build-sidecar.ts) | Compiles the host for the bundle. |

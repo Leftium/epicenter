@@ -42,7 +42,7 @@ export async function openNativeFolder<
 	definition,
 	git,
 }: NativeFolderOptions<TDefinition>): Promise<Folder<TDefinition>> {
-	compileFolderDefinition(definition);
+	const compiled = compileFolderDefinition(definition);
 	const resolved = await resolveNativeRoot(root);
 	await verifyNativeLayout(resolved);
 	const boundary = createNativeFileBoundary(resolved);
@@ -58,8 +58,8 @@ export async function openNativeFolder<
 		author: git.author,
 		commitOnEdit: git.commitOnEdit ?? true,
 	});
-	return assembleFolder({
-		definition,
+	return assembleFolder<TDefinition>({
+		compiled,
 		boundary,
 		history,
 		release: async () => {},

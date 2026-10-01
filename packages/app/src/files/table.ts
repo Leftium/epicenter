@@ -9,17 +9,16 @@
  */
 
 import { customAlphabet } from 'nanoid';
-import type { Static, TSchema } from 'typebox';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { ParsedTable } from '../data/definition/compile.js';
-import type { TableDeclaration } from '../data/definition/declaration.js';
-import type { FileBoundary, FileChange } from './boundary.js';
+import type { FileChange } from './boundary.js';
 import {
 	FileError,
 	TableError,
 	type TableReadError,
 	type TableWriteError,
 } from './errors.js';
+import type { FolderContext } from './folder.js';
 import { composeSource, patchSource, readSource } from './markdown.js';
 import {
 	attachmentStemOf,
@@ -32,12 +31,6 @@ import {
 	stemProblem,
 } from './paths.js';
 import { captureVersion, type FileVersion } from './version.js';
-
-export type FieldsOf<TTable extends TableDeclaration> = {
-	-readonly [K in keyof TTable['fields']]: TTable['fields'][K] extends TSchema
-		? Static<TTable['fields'][K]>
-		: never;
-};
 
 export type EntryIssue =
 	| { readonly kind: 'filename'; readonly message: string }
@@ -121,20 +114,6 @@ export type FileTable<TFields> = {
 	): Promise<Result<{ readonly removed: readonly string[] }, TableWriteError>>;
 };
 
-/** How a table publishes: through the folder's admitted file boundary. */
-export type TableContext = {
-	readonly boundary: FileBoundary;
-	/** Runs admitted work; refuses after the folder starts closing. */
-	admit<T, E>(
-		work: () => Promise<Result<T, E>>,
-	): Promise<Result<T, E | FileError>>;
-	/**
-	 * Publish a managed operation and invalidate observations for any landed
-	 * changes. Only a complete operation requests an automatic commit.
-	 */
-	publish: FileBoundary['apply'];
-};
-
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const encoder = new TextEncoder();
 const generateStem = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10);
@@ -165,12 +144,11 @@ function attachmentCandidates(
 	return result;
 }
 
-export function createFileTable<TTable extends TableDeclaration>(
+export function createFileTable<TFields>(
 	name: string,
 	parsed: ParsedTable,
-	context: TableContext,
-): FileTable<FieldsOf<TTable>> {
-	type TFields = FieldsOf<TTable>;
+	context: FolderContext,
+): FileTable<TFields> {
 	const { boundary } = context;
 	const declared = [...parsed.fields.keys()];
 

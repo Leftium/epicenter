@@ -3,7 +3,7 @@
  * bare repository served by `git http-backend`.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -146,6 +146,24 @@ describe('native folder', () => {
 		} finally {
 			await folder.close();
 		}
+	});
+
+	test('an unsupported definition is refused before a repository is initialized', async () => {
+		const root = await scratch('native-refused-');
+		const withReference = defineStore({
+			id: 'so.epicenter.references',
+			kv: {},
+			tables: {
+				lists: defineTable({ fields: { title: field.string() } }),
+				todos: defineTable({
+					fields: { title: field.string(), list: field.reference('lists') },
+				}),
+			},
+		});
+		await expect(
+			openNativeFolder({ root, definition: withReference, git: { author } }),
+		).rejects.toThrow("Field 'todos.list' is a reference");
+		expect(await readdir(root)).toEqual([]);
 	});
 
 	test('literal lookup: a stem does not alias a differently cased file', async () => {

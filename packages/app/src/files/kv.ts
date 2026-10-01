@@ -7,19 +7,13 @@
  * no comments; an update rewrites its whitespace as two-space indentation.
  */
 
-import type { Static } from 'typebox';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { ParsedTable } from '../data/definition/compile.js';
-import type { FieldMap } from '../data/definition/declaration.js';
 import { type FileError, TableError, type TableWriteError } from './errors.js';
-import type { TableContext } from './table.js';
+import type { FolderContext } from './folder.js';
 import { captureVersion, type FileVersion } from './version.js';
 
 export const KV_PATH = 'kv.json';
-
-export type KvValues<TKv extends FieldMap> = {
-	-readonly [K in keyof TKv]: Static<TKv[K]>;
-};
 
 export type KvIssue = {
 	readonly field: string | undefined;
@@ -53,7 +47,7 @@ const encoder = new TextEncoder();
 
 export function createFileKv<TValues>(
 	parsed: ParsedTable,
-	context: TableContext,
+	context: FolderContext,
 ): FileKv<TValues> {
 	const { boundary } = context;
 

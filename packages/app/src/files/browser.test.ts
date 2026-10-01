@@ -265,14 +265,17 @@ describe('browser folder tables', () => {
 				}),
 			},
 		});
+		const indexedDB = new IDBFactory();
 		await expect(
 			openBrowserFolder({
 				id: 'codec',
 				definition: withCodec,
 				git: { author },
-				indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+				indexedDb: { indexedDB, IDBKeyRange },
 			}),
 		).rejects.toThrow('Yjs body codec');
+		// Refused before any storage was acquired.
+		expect(await indexedDB.databases()).toEqual([]);
 	});
 
 	test('rejects reference fields it cannot repair on rename', async () => {
@@ -286,14 +289,16 @@ describe('browser folder tables', () => {
 				}),
 			},
 		});
+		const indexedDB = new IDBFactory();
 		await expect(
 			openBrowserFolder({
 				id: 'references',
 				definition: withReference,
 				git: { author },
-				indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+				indexedDb: { indexedDB, IDBKeyRange },
 			}),
 		).rejects.toThrow("Field 'todos.list' is a reference");
+		expect(await indexedDB.databases()).toEqual([]);
 	});
 
 	test('a todo with an unresolvable alias stays an entry and is repaired through its source', async () => {

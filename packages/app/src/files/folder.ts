@@ -8,11 +8,14 @@
  * commit passes, cancels outgoing network work, and then releases storage.
  */
 import { Ok, type Result } from 'wellcrafted/result';
-import { compileData } from '../data/definition/compile.js';
+import {
+	compileData,
+	type ParsedDataDefinition,
+} from '../data/definition/compile.js';
 import type {
+	CreateRowOf,
 	DataDefinition,
-	FieldMap,
-	TableDeclaration,
+	KvOf,
 } from '../data/definition/declaration.js';
 import type { FileBoundary, FileListing, FileRead } from './boundary.js';
 import { type ApplyError, FileError } from './errors.js';
@@ -30,13 +33,8 @@ import type {
 	PushOutcome,
 } from './git/history.js';
 import type { Author, CommitSummary } from './git/objects.js';
-import { createFileKv, type FileKv, type KvValues } from './kv.js';
-import {
-	createFileTable,
-	type FieldsOf,
-	type FileTable,
-	type TableContext,
-} from './table.js';
+import { createFileKv, type FileKv } from './kv.js';
+import { createFileTable, type FileTable } from './table.js';
 import {
 	captureVersion,
 	type FileExpectation,
@@ -123,13 +121,14 @@ export type FolderGit = {
 	log(depth: number): Promise<Result<CommitSummary[], GitError>>;
 };
 
+/** Borrowed data access; the object that acquired storage owns its lifetime. */
 export type FolderAccess<TDefinition extends DataDefinition> = {
 	readonly tables: {
 		readonly [K in keyof TDefinition['tables']]: FileTable<
-			FieldsOf<TDefinition['tables'][K] & TableDeclaration>
+			CreateRowOf<TDefinition['tables'][K]>
 		>;
 	};
-	readonly kv: FileKv<KvValues<TDefinition['kv'] & FieldMap>>;
+	readonly kv: FileKv<KvOf<TDefinition>>;
 	readonly files: FolderFiles;
 	readonly git: FolderGit;
 };
@@ -141,12 +140,28 @@ export type Folder<TDefinition extends DataDefinition> =
 		close(): Promise<void>;
 	};
 
+/** How content saves publish: through the folder's admitted file boundary. */
+export type FolderContext = {
+	readonly boundary: FileBoundary;
+	/** Runs admitted work; refuses after the folder starts closing. */
+	admit<T, E>(
+		work: () => Promise<Result<T, E>>,
+	): Promise<Result<T, E | FileError>>;
+	/**
+	 * Publish a content operation and invalidate observations for any landed
+	 * changes. Only a complete operation requests an automatic commit.
+	 */
+	publish: FileBoundary['apply'];
+};
+
 /**
  * Compile a definition for file storage. Declarations the file implementation
  * cannot honor are refused, not ignored: a Yjs body codec (the body is
  * Markdown text), and reference fields (rename repairs no references).
  */
-export function compileFolderDefinition(definition: DataDefinition) {
+export function compileFolderDefinition(
+	definition: DataDefinition,
+): ParsedDataDefinition {
 	const compiled = compileData(definition);
 	if (compiled.error !== null)
 		throw new Error(compiled.error.message, { cause: compiled.error });
@@ -167,19 +182,23 @@ export function compileFolderDefinition(definition: DataDefinition) {
 	return compiled.data;
 }
 
+/**
+ * Assemble the handle over acquired storage. `compiled` is the opener's
+ * `compileFolderDefinition` result, taken before it acquired anything. No
+ * argument carries `TDefinition`, so the opener names it.
+ */
 export function assembleFolder<TDefinition extends DataDefinition>({
-	definition,
+	compiled,
 	boundary,
 	history,
 	release,
 }: {
-	definition: TDefinition;
+	compiled: ParsedDataDefinition;
 	boundary: FileBoundary;
 	history: History;
 	/** Releases storage after all work settles. */
 	release: () => Promise<void>;
 }): Folder<TDefinition> {
-	const compiled = compileFolderDefinition(definition);
 	const controller = new AbortController();
 	const admitted = new Set<Promise<unknown>>();
 	let closing: Promise<void> | undefined;
@@ -190,11 +209,12 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 		if (controller.signal.aborted) return Promise.resolve(FileError.Closed());
 		const running = work();
 		admitted.add(running);
-		void running.finally(() => admitted.delete(running));
+		// The caller owns the rejection; cleanup must not create a second one.
+		void running.catch(() => {}).finally(() => admitted.delete(running));
 		return running;
 	}
 
-	const context: TableContext = {
+	const context: FolderContext = {
 		boundary,
 		admit,
 		async publish(changes) {
@@ -208,7 +228,7 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 
 	const tables: Record<string, FileTable<unknown>> = {};
 	for (const [name, parsed] of compiled.tables)
-		tables[name] = createFileTable(name, parsed, context) as FileTable<unknown>;
+		tables[name] = createFileTable<unknown>(name, parsed, context);
 
 	const encoder = new TextEncoder();
 

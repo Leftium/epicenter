@@ -56,7 +56,7 @@ export {
 } from './git/history.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
-export type { FileKv, KvSnapshot, KvValues } from './kv.js';
+export type { FileKv, KvSnapshot } from './kv.js';
 export {
 	frameSource,
 	patchSource,
@@ -68,7 +68,6 @@ export type {
 	CreateInput,
 	Entry,
 	EntryIssue,
-	FieldsOf,
 	FileTable,
 	InvalidEntry,
 	TableListing,
@@ -103,7 +102,7 @@ export async function openBrowserFolder<
 	git,
 	indexedDb,
 }: BrowserFolderOptions<TDefinition>): Promise<Folder<TDefinition>> {
-	compileFolderDefinition(definition);
+	const compiled = compileFolderDefinition(definition);
 	if (id.trim() === '')
 		throw new Error('A browser folder needs a nonempty id.');
 	const environment: IndexedDbEnvironment = indexedDb ?? {
@@ -126,8 +125,8 @@ export async function openBrowserFolder<
 			author: git.author,
 			commitOnEdit: git.commitOnEdit ?? true,
 		});
-		return assembleFolder({
-			definition,
+		return assembleFolder<TDefinition>({
+			compiled,
 			boundary,
 			history,
 			release: async () => db.close(),

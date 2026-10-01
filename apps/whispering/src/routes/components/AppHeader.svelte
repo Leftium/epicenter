@@ -1,0 +1,321 @@
+<script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
+	import { Input } from '@epicenter/ui/input';
+	import * as Popover from '@epicenter/ui/popover';
+	import { toast } from '@epicenter/ui/sonner';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import BugIcon from '@lucide/svelte/icons/bug';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
+	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
+	import type { Library } from '$lib/library.svelte.js';
+	import {
+		commitLine,
+		commitOutcomeLine,
+		filesLine,
+		headLine,
+		type StatusLine,
+		summaryLine,
+		uncommittedLine,
+	} from '$lib/status.js';
+	import type { InjectionState } from '$lib/workspace/index.js';
+
+	let {
+		library,
+		filesOpen,
+		terminalOpen,
+		onToggleFiles,
+		onToggleTerminal,
+	}: {
+		library: Library;
+		filesOpen: boolean;
+		terminalOpen: boolean;
+		onToggleFiles: () => void;
+		onToggleTerminal: () => void;
+	} = $props();
+
+	const workspace = $derived(library.workspace);
+	const files = $derived(
+		filesLine({
+			saving: library.saving,
+			problems: library.saveProblems,
+			unsaved: library.unsaved,
+			pendingCaptures: library.pending.length,
+			capturesSaving: library.pending.some((item) => item.state.kind === 'saving'),
+			unsavedResults: library.unsavedResults,
+		}),
+	);
+	const uncommitted = $derived(uncommittedLine(library.git));
+	const commit = $derived(commitLine(library.git));
+	const head = $derived(headLine(library.git));
+	const summary = $derived(summaryLine({ files, uncommitted, commit }));
+	const details = $derived<[string, string, StatusLine][]>([
+		['Files', 'status-files', files],
+		['Changes', 'status-history', uncommitted],
+		['Last commit', 'status-last-commit', commit],
+		['History', 'status-head', head],
+	]);
+
+	const tones: Record<StatusLine['tone'], string> = {
+		neutral: 'bg-muted-foreground/50',
+		busy: 'bg-primary animate-pulse',
+		good: 'bg-success',
+		warning: 'bg-warning',
+		error: 'bg-destructive',
+	};
+	const notify: Record<StatusLine['tone'], typeof toast.info> = {
+		good: toast.success,
+		neutral: toast.info,
+		busy: toast.info,
+		warning: toast.warning,
+		error: toast.error,
+	};
+
+	let committing = $state(false);
+	async function commitNow() {
+		committing = true;
+		try {
+			const line = commitOutcomeLine(await library.commit());
+			notify[line.tone](line.label, { description: line.detail });
+			await library.refreshAll();
+		} finally {
+			committing = false;
+		}
+	}
+
+	async function reveal() {
+		const problem = await workspace.reveal?.();
+		if (problem) toast.error('Could not open the folder', { description: problem });
+	}
+
+	// Settings: the endpoint and model are folder settings in kv.json; the key stays on this device.
+	let baseUrl = $derived(library.settings.transcriptionBaseUrl);
+	let model = $derived(library.settings.transcriptionModel);
+	let apiKey = $state('');
+	let savingSettings = $state(false);
+	async function saveSettings(event: SubmitEvent) {
+		event.preventDefault();
+		savingSettings = true;
+		try {
+			const problem = await library.saveSettings({
+				transcriptionBaseUrl: baseUrl.trim(),
+				transcriptionModel: model.trim(),
+			});
+			if (problem) {
+				toast.error('Could not save the settings', { description: problem });
+				return;
+			}
+			if (apiKey !== '') {
+				const keyProblem = await library.saveCredential(apiKey);
+				if (keyProblem) {
+					toast.error('Could not save the key', { description: keyProblem });
+					return;
+				}
+				apiKey = '';
+			}
+			toast.success('Settings saved');
+		} finally {
+			savingSettings = false;
+		}
+	}
+
+	// Debug controls: paused autosave everywhere they are offered, injected failures on the desktop.
+	let injection = $state<InjectionState | undefined>();
+	async function loadInjection() {
+		injection = await workspace.injection?.state().catch(() => undefined);
+	}
+	async function arm(change: Partial<InjectionState>) {
+		try {
+			injection = await workspace.injection?.arm(change);
+		} catch (cause) {
+			toast.error('Could not change the failure', {
+				description: cause instanceof Error ? cause.message : String(cause),
+			});
+		}
+	}
+</script>
+
+<header class="flex h-12 shrink-0 items-center gap-1.5 border-b px-2 sm:gap-2 sm:px-3">
+	<h1 class="text-sm font-semibold max-sm:sr-only">Whispering</h1>
+	{#if workspace.capture.source === 'fixture'}
+		<Badge variant="outline" class="shrink-0 border-warning text-warning" data-testid="fixture-badge">Fixture audio</Badge>
+	{/if}
+
+	<Popover.Root>
+		<Popover.Trigger>
+			{#snippet child({ props })}
+				<Button
+					{...props}
+					variant="ghost"
+					size="sm"
+					class="min-w-0 shrink font-normal text-muted-foreground"
+					aria-label="Status: {summary.label}. Show details"
+					data-testid="status-summary"
+				>
+					<span class="size-2 shrink-0 rounded-full {tones[summary.tone]}" aria-hidden="true"></span>
+					<span class="truncate sm:hidden">{summary.short ?? summary.label}</span>
+					<span class="truncate max-sm:hidden">{summary.label}</span>
+					<ChevronDownIcon class="text-muted-foreground max-sm:hidden" />
+				</Button>
+			{/snippet}
+		</Popover.Trigger>
+		<Popover.Content align="start" class="w-96 max-w-[calc(100vw-1rem)] p-0">
+			<dl class="divide-y text-sm">
+				{#each details as [name, testid, line] (name)}
+					<div class="grid grid-cols-[5.5rem_1fr] gap-x-3 px-3 py-2">
+						<dt class="text-xs text-muted-foreground">{name}</dt>
+						<dd class="min-w-0">
+							<span class="flex items-center gap-1.5 font-medium" data-testid={testid}>
+								<span class="size-2 shrink-0 rounded-full {tones[line.tone]}" aria-hidden="true"></span>
+								{line.label}
+							</span>
+							{#if line.detail}
+								<span class="mt-0.5 block text-xs break-words whitespace-pre-line text-muted-foreground">{line.detail}</span>
+							{/if}
+						</dd>
+					</div>
+				{/each}
+				<div class="grid grid-cols-[5.5rem_1fr] gap-x-3 px-3 py-2">
+					<dt class="text-xs text-muted-foreground">Folder</dt>
+					<dd class="min-w-0 font-mono text-xs break-all" data-testid="status-folder">{workspace.location}</dd>
+				</div>
+			</dl>
+			<div class="flex items-center gap-2 border-t px-3 py-2">
+				<Button variant="outline" size="sm" onclick={() => void library.refreshAll()}>Check again</Button>
+				<Button size="sm" disabled={committing || library.git.activity.commit.active} onclick={commitNow} data-testid="commit-now">
+					{#if committing}<Spinner class="size-3.5" />{/if}
+					Commit now
+				</Button>
+			</div>
+		</Popover.Content>
+	</Popover.Root>
+
+	<div class="ml-auto flex shrink-0 items-center gap-1">
+		{#if workspace.debugControls}
+			<Popover.Root onOpenChange={(open) => open && void loadInjection()}>
+				<Popover.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} variant="ghost" size="icon-sm" tooltip="Debug controls" aria-label="Debug controls" data-testid="debug-controls">
+							<BugIcon />
+						</Button>
+					{/snippet}
+				</Popover.Trigger>
+				<Popover.Content align="end" class="w-96 max-w-[calc(100vw-1rem)] text-sm">
+					<p class="mb-2 font-medium">Debug controls</p>
+					<p class="mb-3 text-xs text-muted-foreground">Only in a debug build. A release build has none of these.</p>
+					<div class="flex flex-col gap-2">
+						<Button
+							size="sm"
+							variant={library.autosave.paused ? 'secondary' : 'outline'}
+							aria-pressed={library.autosave.paused}
+							onclick={() => (library.autosave.paused = !library.autosave.paused)}
+							data-testid="toggle-autosave"
+						>
+							{library.autosave.paused ? 'Autosave is paused: resume' : 'Pause autosave (keep typing unsaved)'}
+						</Button>
+						{#if workspace.injection}
+							<Button size="sm" variant="outline" onclick={() => void arm({ rowWrites: (injection?.rowWrites ?? 0) + 1 })} data-testid="inject-row">
+								Fail the next recording file write (audio lands) · armed {injection?.rowWrites ?? 0}
+							</Button>
+							<Button size="sm" variant="outline" onclick={() => void arm({ audioWrites: (injection?.audioWrites ?? 0) + 1 })} data-testid="inject-audio">
+								Fail the next audio write (nothing lands) · armed {injection?.audioWrites ?? 0}
+							</Button>
+							<Button
+								size="sm"
+								variant={injection?.commitsBlocked ? 'secondary' : 'outline'}
+								aria-pressed={injection?.commitsBlocked ?? false}
+								onclick={() => void arm({ commitsBlocked: !(injection?.commitsBlocked ?? false) })}
+								data-testid="inject-commit"
+							>
+								{injection?.commitsBlocked ? 'Branch is locked: unlock so commits work' : 'Lock the branch so commits fail'}
+							</Button>
+							<Button size="sm" variant="ghost" onclick={() => void arm({ rowWrites: 0, audioWrites: 0, commitsBlocked: false })}>
+								Clear all
+							</Button>
+						{/if}
+					</div>
+				</Popover.Content>
+			</Popover.Root>
+		{/if}
+
+		<Popover.Root>
+			<Popover.Trigger>
+				{#snippet child({ props })}
+					<Button {...props} variant="ghost" size="icon-sm" tooltip="Transcription settings" aria-label="Settings" data-testid="settings">
+						<SettingsIcon />
+					</Button>
+				{/snippet}
+			</Popover.Trigger>
+			<Popover.Content align="end" class="w-96 max-w-[calc(100vw-1rem)]">
+				<form class="flex flex-col gap-3 text-sm" onsubmit={saveSettings}>
+					<p class="font-medium">Transcription</p>
+					<label class="flex flex-col gap-1">
+						<span class="text-xs text-muted-foreground">Endpoint (OpenAI-compatible base URL)</span>
+						<Input bind:value={baseUrl} autocomplete="off" spellcheck={false} data-testid="settings-base-url" />
+					</label>
+					<label class="flex flex-col gap-1">
+						<span class="text-xs text-muted-foreground">Model</span>
+						<Input bind:value={model} autocomplete="off" spellcheck={false} data-testid="settings-model" />
+					</label>
+					<p class="text-xs text-muted-foreground">Saved in <code class="font-mono">kv.json</code> in the folder, with its history.</p>
+					<label class="flex flex-col gap-1">
+						<span class="text-xs text-muted-foreground">
+							API key ({library.credentialPresent ? 'one is set' : 'none set'})
+						</span>
+						<Input
+							type="password"
+							bind:value={apiKey}
+							placeholder={library.credentialPresent ? 'Leave empty to keep the current key' : 'Optional for a local endpoint'}
+							autocomplete="off"
+							disabled={workspace.credential.readOnlyReason !== undefined}
+							data-testid="settings-api-key"
+						/>
+					</label>
+					<p class="text-xs text-muted-foreground">
+						{workspace.credential.readOnlyReason ?? `Kept in ${workspace.credential.storedIn}.`}
+					</p>
+					{#if library.settingsProblem}
+						<p class="text-xs text-destructive" role="alert">kv.json: {library.settingsProblem}</p>
+					{/if}
+					<Button type="submit" size="sm" disabled={savingSettings} data-testid="settings-save">
+						{#if savingSettings}<Spinner class="size-3.5" />{/if}
+						Save settings
+					</Button>
+				</form>
+			</Popover.Content>
+		</Popover.Root>
+
+		{#if workspace.reveal}
+			<Button variant="ghost" size="sm" tooltip={workspace.location} onclick={reveal} data-testid="reveal-folder">
+				<FolderOpenIcon />
+				<span class="max-md:sr-only">Reveal folder</span>
+			</Button>
+		{/if}
+		<Button
+			variant={filesOpen ? 'secondary' : 'ghost'}
+			size="sm"
+			tooltip={filesOpen ? 'Hide files (Ctrl+B)' : 'Show files (Ctrl+B)'}
+			aria-pressed={filesOpen}
+			onclick={onToggleFiles}
+			data-testid="toggle-files"
+		>
+			<FolderTreeIcon />
+			<span class="max-md:sr-only">Files</span>
+		</Button>
+		<Button
+			variant={terminalOpen ? 'secondary' : 'ghost'}
+			size="sm"
+			tooltip={terminalOpen ? 'Hide terminal (Ctrl+`)' : 'Show terminal (Ctrl+`)'}
+			aria-pressed={terminalOpen}
+			data-terminal-toggle
+			onclick={onToggleTerminal}
+			data-testid="toggle-terminal"
+		>
+			<SquareTerminalIcon />
+			<span class="max-md:sr-only">Terminal</span>
+		</Button>
+	</div>
+</header>

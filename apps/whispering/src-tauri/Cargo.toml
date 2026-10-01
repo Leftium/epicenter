@@ -1,0 +1,29 @@
+[package]
+name = "whispering"
+version = "7.11.1"
+description = "The Whispering desktop shell"
+authors = ["Epicenter"]
+repository = "https://github.com/EpicenterHQ/epicenter"
+edition = "2021"
+
+[package.metadata]
+cargo-target-macos-version = "10.15"
+
+[lib]
+name = "whispering_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+getrandom = "0.3"
+serde_json = "1"
+tauri = { version = "2.11", features = [] }
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+panic = "abort"
+strip = true

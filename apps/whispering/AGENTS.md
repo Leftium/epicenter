@@ -1,40 +1,46 @@
 # Whispering App
 
-Svelte 5 speech-to-text SPA served by the Epicenter desktop host, which owns its only native Tauri runtime. `bun dev:whispering` runs the same SPA in a browser tab for development.
+A standalone Tauri desktop app. Recordings, transcripts, and settings are files
+in one Git-versioned folder; those files are the data. Read `README.md` for
+behavior and `ARCHITECTURE.md` for structure before changing either.
 
-## Key Points
+## Constraints
 
-- Three-layer architecture: Service -> Query -> UI
-- Services are pure functions returning `Result<T, E>`
-- Load `platform-seams` when changing build selection. Native capabilities use an `epicenter-host` leaf and an actual browser implementation or explicit absence in `default`. Keep both targets typechecked and update `src/lib/platform-selection.test.ts`; a browser build must never invoke native APIs. Every build opens its own store. Use `resolve` from `$app/paths` for application paths.
-- Tauri-only capabilities live in `$lib/tauri.tauri.ts`; shared consumers go through `#platform/*`.
-- Query layer handles reactivity, caching, and error transformation
-- See `ARCHITECTURE.md` for detailed patterns
+- **The page stays native-free.** Nothing under `src/` imports a Node, Bun, or
+  Tauri module, or `@epicenter/app/files/native`. The page reaches the folder
+  only through `src/lib/workspace/`. `src/lib/page-boundary.test.ts` enforces
+  this; keep it passing and do not weaken it.
+- **Native work belongs in `native/`.** The folder host is the only process that
+  touches the data folder. Add a host operation there and expose it through the
+  workspace type, with a browser implementation or an explicit `undefined`.
+- **The shell registers no commands.** Do not add a Tauri command or capability
+  to give the page a native ability. Load the `tauri` skill before changing
+  `src-tauri/`.
+- **The shell never closes on its own judgement.** Every window close and exit
+  request goes through the close handshake (`ARCHITECTURE.md`, "Closing"). Do
+  not add a path that exits without the page's answer, and do not rely on the
+  browser's leave warning in the desktop app.
+- **Files are authoritative.** Do not add a cache, mirror, or second store of
+  recordings. Do not add Yjs, the `@epicenter/app` store, accounts, or sync to
+  this workflow.
+- **A save is never reported by its commit.** Keep saved-file state and history
+  state separate in code and in copy.
+- **Never overwrite to recover.** Recovery writes only what is missing, as an
+  exclusive creation, and refuses when a path holds something it did not write.
+- **Fixture audio and failure injection are debug-only.** They are enabled by
+  the shell's build, never by an environment variable alone, and the UI says so
+  while they are active.
+- Do not rename a recording's files from the app: transcription rows refer to
+  the stem.
+- Use wellcrafted `Result` types instead of try-catch for expected failures.
 
-## Don'ts
+## Checks
 
-- Don't put business logic in Svelte components
-- Don't access settings directly in services (pass as parameters)
-- Don't use try-catch; use wellcrafted Result types
+From `apps/whispering`: `bun run typecheck`, `bun test --isolate`,
+`bun run build`. For shell changes also
+`cargo test --manifest-path src-tauri/Cargo.toml`. Tests establish logic and
+what reaches disk; only running `bun dev:whispering` establishes that the
+desktop app works.
 
-## Tauri Commands
-
-Load `tauri` before adding or changing Tauri commands, permissions,
-capabilities, generated bindings, or platform filesystem behavior. Load
-the `tauri` skill's Rust command errors reference when a command changes Rust
-error payloads consumed by TypeScript.
-
-Every command change must keep `make_specta_builder()` in
-`../epicenter/src-tauri/src/lib.rs`, generated bindings, and
-`src/lib/tauri/commands.ts` in sync. The command boundary file is the only place
-in `src/lib/**` that may import `invoke` from `@tauri-apps/api/core` for app
-commands.
-
-## Specs and Docs
-
-- App-specific specs: `./specs/`
-- App-specific docs: `./docs/` (if needed)
-- Cross-cutting specs: `/specs/`
-- Cross-cutting docs: `/docs/`
-
-See root `AGENTS.md` for the full organization guide.
+`src/lib/tauri/bindings.gen.ts` is written by the Epicenter host's build and
+read by its Rust tests. Do not edit, import, or delete it from here.

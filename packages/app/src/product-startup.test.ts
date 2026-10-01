@@ -6,11 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 for (const [path, exported, required] of [
-	[
-		'apps/whispering/src/lib/whispering/resources.ts',
-		'openWhisperingResources',
-		3,
-	],
 	['apps/local-mail/ui/src/lib/resources.ts', 'openMailResources', 2],
 	['apps/vocab/src/lib/resources.ts', 'openVocabResources', 2],
 ] as const)
@@ -121,8 +116,6 @@ for (const [path, exported, required] of [
 			expect(acquired[0]!.signal.aborted).toBe(
 				exported === 'openMailResources',
 			);
-			if (exported === 'openWhisperingResources')
-				expect(acquired[2]!.signal.aborted).toBe(true);
 			if (exported === 'openMailResources')
 				expect(acquired.slice(1).every((handle) => handle.signal.aborted)).toBe(
 					true,

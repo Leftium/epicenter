@@ -32,6 +32,7 @@ import {
 } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
 import { captureVersion } from './version.js';
+import { useWebLocks } from './web-locks.test-support.js';
 
 const openNativeFolder = async <const TDefinition extends DataDefinition>(
 	options: DirectoryFolderOptions<TDefinition>,
@@ -66,16 +67,11 @@ afterAll(() => {
 		else process.env[key] = originalEnv[key];
 });
 
+/** Wait for the commit attempt a save started, and its push, to settle. */
 async function settled(folder: Todos) {
 	for (let index = 0; index < 400; index++) {
 		const { activity } = folder.git.snapshot;
-		if (
-			!activity.commit.active &&
-			!activity.commit.pending &&
-			!activity.push.active &&
-			!activity.push.pending
-		)
-			return;
+		if (!activity.commit.active && !activity.push.active) return;
 		await Bun.sleep(10);
 	}
 	throw new Error('Git work did not settle');
@@ -137,10 +133,7 @@ describe('native folder', () => {
 		try {
 			await writeFile(join(root, 'external.md'), 'external');
 			expect(folder.git.snapshot.lastCommit).toBeUndefined();
-			expect(folder.git.snapshot.activity.commit).toEqual({
-				active: false,
-				pending: false,
-			});
+			expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 			expectOk(await folder.files.create('saved.md', 'saved'));
 			await settled(folder);
 			expect(await git(root, 'show', 'HEAD:external.md')).toBe('external');
@@ -473,3 +466,6 @@ describe('browser and native exchange through a real bare repository', () => {
 		await browser.close();
 	});
 });
+
+// Automatic commits need the shared lock; this runtime has none of its own.
+useWebLocks();

@@ -16,6 +16,8 @@
  *   reply to a read is an ordinary failure
  * - An outcome the owner could not confirm stays `Unconfirmed` here
  * - A page built for another protocol version is refused at attach
+ * - A commit replies with its outcome alone, and a push names no pass to join
+ * - A caller that stops waiting during a commit starts no push afterward
  * - A terminal command runs under one lease, released however it ends
  * - Snapshot events replace the snapshot in order; a stale one is dropped
  * - Closing detaches this window once and does not shut the folder down
@@ -86,7 +88,7 @@ const wireSnapshot = (overrides: Record<string, unknown> = {}) => ({
 	activity: Object.fromEntries(
 		['scan', 'commit', 'push', 'fetch', 'pull'].map((name) => [
 			name,
-			{ active: false, pending: false },
+			{ active: false },
 		]),
 	),
 	lastCommit: null,
@@ -104,7 +106,16 @@ function emit(name: string, payload: unknown) {
 
 const sent = (cmd: string) => calls.filter((call) => call.cmd === cmd);
 
+/** Wait until the adapter has sent `count` of a command. */
+async function untilSent(cmd: string, count = 1) {
+	while (sent(cmd).length < count) await Bun.sleep(0);
+}
+
+/** The number the scripted owner gives the first request a test opens. */
+const FIRST_REQUEST = 100;
+
 async function attached() {
+	let nextRequest = FIRST_REQUEST;
 	replies = {
 		attach: () => ({
 			session: 7,
@@ -113,9 +124,11 @@ async function attached() {
 			snapshot: wireSnapshot(),
 		}),
 		detach: () => null,
+		open_request: () => nextRequest++,
+		withdraw_request: () => null,
 	};
 	const folder = expectOk(await openFolder({ id: 'notes', definition }));
-	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 1 });
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 2 });
 	expect(folder.location).toEqual({
 		kind: 'directory',
 		root: '/Users/someone/Epicenter/notes',
@@ -151,7 +164,7 @@ test("the folder opened is the definition's own ID unless another is named", asy
 	);
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.taurifoldertest',
-		protocol: 1,
+		protocol: 2,
 	});
 	expect(folder.git.snapshot.commitOnEdit).toBe(false);
 	await folder.close();
@@ -224,15 +237,22 @@ test.each([
 });
 
 test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
-	replies = {
-		attach: () => refuse({ name: 'Incompatible', host: 2, page: 1 }),
-	};
+	// This page speaks protocol 2. A shell still on protocol 1, which wrapped
+	// commit outcomes in passes, refuses it; so does one that has moved on.
+	for (const host of [1, 3]) {
+		calls = [];
+		replies = {
+			attach: () => refuse({ name: 'Incompatible', host, page: 2 }),
+		};
 
-	const refused = expectErr(await openFolder({ id: 'notes', definition }));
+		const refused = expectErr(await openFolder({ id: 'notes', definition }));
 
-	expect(refused.name).toBe('Incompatible');
-	expect(refused.message).toContain('Update the app');
-	expect(calls.map((call) => call.cmd)).toEqual(['attach']);
+		expect(refused.name).toBe('Incompatible');
+		expect(refused.message).toContain('Update the app');
+		expect(calls).toEqual([
+			{ cmd: 'attach', args: { scope: 'notes', protocol: 2 } },
+		]);
+	}
 });
 
 test('a save whose reply is lost is Unconfirmed and is sent exactly once', async () => {
@@ -353,8 +373,8 @@ test('an outcome the owner itself could not confirm is Unconfirmed, not a refusa
 	};
 	replies.apply = () => refuse(unknown);
 	replies.commit = () => ({
-		outcome: { status: 'unconfirmed', error: 'the worker stopped' },
-		followingPush: null,
+		status: 'unconfirmed',
+		error: 'the worker stopped',
 	});
 	replies.fetch = () =>
 		refuse({
@@ -753,16 +773,14 @@ function held<T>() {
 	return { reply: () => promise, settle: resolve };
 }
 
+/** The commit command's reply: the settled outcome itself. */
 const committed = {
-	outcome: {
-		status: 'committed',
-		oid: 'c'.repeat(40),
-		parent: null,
-		message: 'Add a.md',
-		changedPaths: 1,
-		indexWarning: null,
-	},
-	followingPush: null,
+	status: 'committed',
+	oid: 'c'.repeat(40),
+	parent: null,
+	message: 'Add a.md',
+	changedPaths: 1,
+	indexWarning: null,
 };
 
 test('closing waits for a Git call already running, then detaches, and later Git calls invoke nothing', async () => {
@@ -808,7 +826,7 @@ test('closing waits for a Git call already running, then detaches, and later Git
 	expect(calls).toEqual([]);
 });
 
-test("closing only stops this page waiting for a push; nothing cancels the owner's push", async () => {
+test('closing stops this page waiting for a push and a fetch and withdraws both requests before detaching', async () => {
 	const folder = await attached();
 	const push = held<{ status: string; oid: string }>();
 	replies.push = push.reply;
@@ -817,12 +835,33 @@ test("closing only stops this page waiting for a push; nothing cancels the owner
 
 	const pushing = folder.git.push();
 	const fetching = folder.git.fetch();
+	await untilSent('push');
+	await untilSent('fetch');
 	await folder.close();
 
 	expect(await pushing).toEqual({ status: 'stoppedWaiting' });
 	expect(expectErr(await fetching).name).toBe('StoppedWaiting');
-	// Only the detach followed: no command told the owner to stop its push.
-	expect(calls.map((call) => call.cmd)).toEqual(['push', 'fetch', 'detach']);
+	// Each command named a request the owner already knew, and closing
+	// withdrew each one while the session still existed. What the owner had
+	// not started, it will not start; the page does not learn which.
+	expect(calls.map((call) => call.cmd)).toEqual([
+		'open_request',
+		'open_request',
+		'push',
+		'fetch',
+		'withdraw_request',
+		'withdraw_request',
+		'detach',
+	]);
+	const requests = [FIRST_REQUEST, FIRST_REQUEST + 1];
+	expect(
+		[...sent('push'), ...sent('fetch')].map((call) => call.args.request).sort(),
+	).toEqual(requests);
+	expect(
+		sent('withdraw_request')
+			.map((call) => call.args)
+			.sort((a, b) => Number(a.request) - Number(b.request)),
+	).toEqual(requests.map((request) => ({ session: 7, request })));
 	push.settle({ status: 'pushed', oid: 'c'.repeat(40) });
 	fetch.settle({ oid: null });
 });
@@ -872,6 +911,47 @@ test('a commit whose outcome is unknown leaves the push unknown, not skipped', a
 		push: { status: 'unconfirmed', error: 'connection lost' },
 	});
 
+	// A commit that may not have happened is no reason to push.
+	expect(sent('push')).toHaveLength(0);
+});
+
+test('a caller that stops waiting during a commit starts no push, even after the commit lands', async () => {
+	const folder = await attached();
+	// A remote exists, so a commit that completes is normally followed by a push.
+	emit('folder-snapshot-changed', {
+		scope: 'notes',
+		sequence: 4,
+		snapshot: wireSnapshot({
+			remote: { url: 'https://example.com/notes.git', branch: 'main' },
+		}),
+	});
+	replies.push = () => ({ status: 'pushed', oid: committed.oid });
+	replies.commit = () => committed;
+	expect(await folder.git.commitAndPush()).toEqual({
+		commit: {
+			status: 'committed',
+			oid: committed.oid,
+			parent: undefined,
+			message: 'Add a.md',
+			changedPaths: 1,
+			indexWarning: undefined,
+		},
+		push: { status: 'pushed', oid: committed.oid },
+	});
+	// The explicit push names the request this session opened for it.
+	expect(calls.map((call) => call.cmd)).toEqual([
+		'commit',
+		'open_request',
+		'push',
+	]);
+	expect(sent('push')[0]?.args).toEqual({
+		session: 7,
+		request: FIRST_REQUEST,
+	});
+	// It had its answer, so there was nothing to withdraw.
+	expect(sent('withdraw_request')).toEqual([]);
+
+	calls = [];
 	const commit = held<typeof committed>();
 	replies.commit = commit.reply;
 	const waiting = new AbortController();
@@ -881,9 +961,121 @@ test('a commit whose outcome is unknown leaves the push unknown, not skipped', a
 		commit: { status: 'stoppedWaiting' },
 		push: { status: 'stoppedWaiting' },
 	});
+	// The commit the caller left lands afterward. Nothing pushes it.
 	commit.settle(committed);
-	// Neither case asked for a push of its own.
-	expect(sent('push')).toHaveLength(0);
+	await Bun.sleep(0);
+	expect(calls.map((call) => call.cmd)).toEqual(['commit']);
+
+	// A caller that had already stopped when it asked still sends the commit
+	// it asked for, and nothing after it.
+	calls = [];
+	replies.commit = () => committed;
+	const already = AbortSignal.abort();
+	expect(await folder.git.commitAndPush({ signal: already })).toEqual({
+		commit: { status: 'stoppedWaiting' },
+		push: { status: 'stoppedWaiting' },
+	});
+	await Bun.sleep(0);
+	expect(calls.map((call) => call.cmd)).toEqual(['commit']);
+});
+
+test('a caller that leaves a push or fetch asks for nothing, or withdraws exactly the request it opened', async () => {
+	const folder = await attached();
+	const push = held<{ status: string; oid: string | null }>();
+	replies.push = push.reply;
+	const fetch = held<{ oid: null }>();
+	replies.fetch = fetch.reply;
+
+	// Left before asking: no command reaches the owner at all.
+	const gone = AbortSignal.abort();
+	expect(await folder.git.push({ signal: gone })).toEqual({
+		status: 'stoppedWaiting',
+	});
+	expect(expectErr(await folder.git.fetch({ signal: gone })).name).toBe(
+		'StoppedWaiting',
+	);
+	expect(calls).toEqual([]);
+
+	// Left while the request was being opened: it is withdrawn the moment its
+	// number is known, and the push that would have named it is never sent.
+	const opening = held<number>();
+	const open = replies.open_request;
+	if (open === undefined) throw new Error('the request opener is configured');
+	replies.open_request = opening.reply;
+	const early = new AbortController();
+	const never = folder.git.push({ signal: early.signal });
+	early.abort();
+	expect(await never).toEqual({ status: 'stoppedWaiting' });
+	opening.settle(41);
+	await untilSent('withdraw_request');
+	expect(calls).toEqual([
+		{ cmd: 'open_request', args: { session: 7 } },
+		{ cmd: 'withdraw_request', args: { session: 7, request: 41 } },
+	]);
+
+	// Left after the commands were sent: each caller stops waiting, and each
+	// request is withdrawn once. The replies are still outstanding, so the
+	// page is told only that it stopped waiting.
+	calls = [];
+	replies.open_request = open;
+	const waiting = new AbortController();
+	const pushing = folder.git.push({ signal: waiting.signal });
+	const fetching = folder.git.fetch({ signal: waiting.signal });
+	await untilSent('push');
+	await untilSent('fetch');
+	const requests = [FIRST_REQUEST, FIRST_REQUEST + 1];
+	expect(
+		[sent('push')[0]?.args.request, sent('fetch')[0]?.args.request].sort(),
+	).toEqual(requests);
+	waiting.abort();
+	expect(await pushing).toEqual({ status: 'stoppedWaiting' });
+	expect(expectErr(await fetching).name).toBe('StoppedWaiting');
+	expect(
+		sent('withdraw_request')
+			.map((call) => call.args.request)
+			.sort(),
+	).toEqual(requests);
+
+	// The owner's late replies change nothing, and are not withdrawn again.
+	push.settle({ status: 'cancelled', oid: null });
+	fetch.settle({ oid: null });
+	await Bun.sleep(0);
+	expect(sent('withdraw_request')).toHaveLength(2);
+	await folder.close();
+	expect(sent('withdraw_request')).toHaveLength(2);
+});
+
+test('an unacknowledged push or fetch releases its opened request without retrying', async () => {
+	const folder = await attached();
+	replies.push = () => refuse('push not allowed');
+	replies.fetch = () => {
+		throw new Error('fetch reply lost');
+	};
+
+	expect(await folder.git.push()).toEqual({
+		status: 'unconfirmed',
+		error: 'push not allowed',
+	});
+	expect(expectErr(await folder.git.fetch()).name).toBe('Unconfirmed');
+	expect(sent('withdraw_request').map((call) => call.args)).toEqual([
+		{ session: 7, request: FIRST_REQUEST },
+		{ session: 7, request: FIRST_REQUEST + 1 },
+	]);
+	expect(sent('push')).toHaveLength(1);
+	expect(sent('fetch')).toHaveLength(1);
+	await folder.close();
+});
+
+test('a fetch the owner never started for a withdrawn caller is reported as stopped waiting', async () => {
+	const folder = await attached();
+	replies.fetch = () => refuse({ name: 'Withdrawn' });
+	replies.push = () => ({ status: 'cancelled', oid: null });
+
+	expect(expectErr(await folder.git.fetch()).name).toBe('StoppedWaiting');
+	expect(await folder.git.push()).toEqual({
+		status: 'cancelled',
+		oid: undefined,
+	});
 });
 
 test('a push the owner refuses before pinning a commit names no commit', async () => {

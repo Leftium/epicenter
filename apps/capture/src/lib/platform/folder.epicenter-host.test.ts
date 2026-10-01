@@ -76,7 +76,7 @@ const wireSnapshot = (overridden: Record<string, unknown> = {}) => ({
 	activity: Object.fromEntries(
 		['scan', 'commit', 'push', 'fetch', 'pull'].map((name) => [
 			name,
-			{ active: false, pending: false },
+			{ active: false },
 		]),
 	),
 	lastCommit: null,
@@ -159,10 +159,7 @@ function own({ cmd, args }: Call): unknown {
 			return null;
 		}
 		case 'commit':
-			return {
-				outcome: { status: 'unchanged', head: null, indexWarning: null },
-				followingPush: null,
-			};
+			return { status: 'unchanged', head: null, indexWarning: null };
 		default:
 			throw new Error(`the scripted owner has no ${cmd}`);
 	}
@@ -299,7 +296,7 @@ test('the page names the Capture scope and is told the directory', async () => {
 
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.capture',
-		protocol: 1,
+		protocol: 2,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
 	expect(host.quitProtectionProblem).toBeUndefined();

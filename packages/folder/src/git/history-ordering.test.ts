@@ -6,18 +6,20 @@
  * partly, and decides which commits push.
  *
  * Key behaviors:
- * - A pending checkpoint pins its parent and captures files inside the Git
- *   lock, so it cannot commit an older capture over a newer incoming head
+ * - A checkpoint waiting for the Git lock pins its parent and captures files
+ *   inside the lock, so it cannot commit an older capture over a newer
+ *   incoming head
  * - An external branch move between that pin and publication is refused
  * - `close()` waits for held `stage` and `commitStaged` work, including the
  *   staged commit's refresh, and starts no network work
  * - A pull whose files landed but whose index or branch did not never leaves
  *   a fresh clean observation behind
- * - Explicit `commit()` never pushes; only content-save requests and
- *   `commitAndPush()` do, once per pass
+ * - Explicit `commit()` never pushes; `commitAndPush()` does, once
+ * - An explicit request made during a pass waits and takes its own pass
  *
  * See also:
  * - `history.test.ts` for cancellation of outgoing work on close
+ * - `history-attempt.test.ts` for automatic attempts and lock failures
  */
 import { expect, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
@@ -43,11 +45,6 @@ function gate() {
 		open = resolve;
 	});
 	return { opened, open };
-}
-
-async function until(condition: () => boolean) {
-	for (let index = 0; index < 200 && !condition(); index++) await Bun.sleep(2);
-	expect(condition()).toBe(true);
 }
 
 async function setup(
@@ -226,6 +223,8 @@ test('close waits for a held stage and a held staged commit, including its refre
 	await second.write('a.txt', 'one');
 	expect((await second.history.stage(['a.txt'])).error).toBeNull();
 	const committing = second.history.commitStaged('Stage one file');
+	// Let it enter the Git protection: close refuses a request still outside it.
+	await Bun.sleep(5);
 	let lastCommitAtClose: unknown;
 	closing = second.history.close().then(() => {
 		lastCommitAtClose = second.history.snapshot.lastCommit;
@@ -315,7 +314,7 @@ for (const status of ['partial', 'indexFailed', 'branchMoved'] as const) {
 	});
 }
 
-test('explicit commit stays local; content-save requests and commitAndPush push once per pass', async () => {
+test('explicit commit stays local; a commit requested during a held pass waits and takes its own; commitAndPush pushes once', async () => {
 	const held = gate();
 	let holdNext = false;
 	const { db, history, write, pushes } = await setup((real) => ({
@@ -333,66 +332,37 @@ test('explicit commit stays local; content-save requests and commitAndPush push 
 	await Bun.sleep(20);
 	expect(pushes()).toBe(0);
 
-	await write('a.txt', 'two');
-	history.requestAutomaticCommit();
-	await until(() => pushes() === 1);
-
-	// An explicit pass is held; automatic and explicit requests coalesce into
-	// one pending pass, which pushes exactly once.
+	// An explicit pass is held after its capture. A second request waits for
+	// it and then captures what was saved meanwhile.
 	await write('a.txt', 'three');
 	holdNext = true;
 	const explicit = history.commit();
 	await Bun.sleep(5);
 	await write('a.txt', 'four');
-	history.requestAutomaticCommit();
-	history.requestAutomaticCommit();
-	const joined = history.commit();
+	const second = history.commit();
 	held.open();
 	expect((await explicit).status).toBe('committed');
-	expect((await joined).status).toBe('committed');
-	await until(() => pushes() === 2);
+	expect(await second).toMatchObject({
+		status: 'committed',
+		message: 'Update a.txt',
+	});
 	await Bun.sleep(20);
-	expect(pushes()).toBe(2);
+	expect(pushes()).toBe(0);
 
 	await write('a.txt', 'five');
 	const both = await history.commitAndPush();
 	expect(both.commit.status).toBe('committed');
 	expect(both.push.status).toBe('pushed');
-	expect(pushes()).toBe(3);
-	await history.close();
-	db.close();
-});
-
-test('a content save still pushes when an explicit pass already captured it', async () => {
-	const { db, real, history, write, pushes } = await setup();
-	await write('a.txt', 'one');
-	await history.commit();
-	const held = gate();
-	const entered = gate();
-	const owner = real.exclusive(async () => {
-		entered.open();
-		await held.opened;
-	});
-	await entered.opened;
-	const explicit = history.commit();
-	await write('a.txt', 'content save');
-	history.requestAutomaticCommit();
-	held.open();
-	await owner;
-	expect((await explicit).status).toBe('committed');
-	await until(() => pushes() === 1);
-	await until(() => history.snapshot.lastCommit?.status === 'unchanged');
 	expect(pushes()).toBe(1);
 	await history.close();
 	db.close();
 });
 
-test('with commitOnEdit false, automatic requests do nothing and commitAndPush still does both', async () => {
+test('with commitOnEdit false, nothing commits on its own and commitAndPush still does both', async () => {
 	const { db, history, write, pushes } = await setup(() => ({}), {
 		commitOnEdit: false,
 	});
 	await write('a.txt', 'one');
-	history.requestAutomaticCommit();
 	await Bun.sleep(20);
 	expect(history.snapshot.lastCommit).toBeUndefined();
 	const both = await history.commitAndPush();

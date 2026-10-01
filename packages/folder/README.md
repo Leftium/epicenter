@@ -105,7 +105,7 @@ is not the desktop adapter, and it does not watch the directory.
 | `location` | `{ kind: 'indexedDb', database }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
 | `onFilesChanged(listener)` | A hint that paths changed, so read again. Returns the function that stops listening. |
 | `terminal({ cwd })` | A shell over the folder's files and history. |
-| `signal`, `close()` | Closing fences new work and stops network work, lets admitted saves finish and commit, then releases storage. |
+| `signal`, `close()` | Closing fences new work and stops network work, lets admitted saves and Git work settle, then releases storage. It makes no final automatic commit. |
 
 ### Files
 
@@ -236,18 +236,37 @@ terminal ends with the folder.
 
 ## History
 
-A save returns once its files are published. With `commitOnEdit` (default
-`true` in a browser), complete table, KV, file, and batch saves request a
-background commit: one active pass and one pending pass, no timer. A pass pins
-the branch head, captures every source file, writes a commit with a subject
-derived from the tree difference, and moves the branch only with a
-compare-and-swap. A moved branch is reported and not retried. Commit and push
-failures never undo a save, and a save's result never waits for or reports a
-later Git failure.
+Browser handles, Bun directory handles, and the desktop app's Rust owner follow
+the same history rules. Where the desktop owner differs, this section says so.
 
-Only a pass that a content save requested pushes afterward. `commit()` stays
-local. `commitAndPush()` commits and then pushes. A caller `signal` on
-`commitAndPush`, `push`, or `fetch` only stops that caller waiting.
+A save returns once its files are published and never waits for Git. A commit
+pins the branch head, captures every source file, writes a commit with a
+subject derived from the tree difference, and moves the branch only with a
+compare-and-swap. A moved branch is reported and not retried. Commit and push
+failures never undo a save.
+
+With `commitOnEdit` (default `true`), each complete table, KV, file, or batch
+save this handle published makes one commit attempt in the background. The
+attempt runs only if the folder's Git work is free at that moment. If another
+tab, a pull, a staged command, or an earlier commit holds it, the attempt
+does not happen and is not made up later: the save stays uncommitted until
+the next save or an explicit `commit()`. An attempt that fails is reported in
+`git.snapshot.lastCommit` and is not retried. There is no timer and no commit
+when the folder closes, so the last save can stay uncommitted indefinitely.
+Browser attempts require Web Locks. Without that API, automatic attempts
+are skipped; explicit commits still run and use branch compare-and-swap.
+Edits made by another program or tab, and saves that stopped partway, make no
+attempt. `git.snapshot.files` turns `stale` when a save lands after the last
+capture, and `git.status()` lists what is uncommitted.
+
+After an attempt that ran, a push is attempted if a remote exists, the branch
+is ahead of it, and no push is running; a push that does not start or fails is
+not owed. `commit()` stays local. `commitAndPush()` commits and then pushes;
+a caller `signal` only stops that caller waiting, and a caller that stopped
+during the commit starts no push. An explicit request waits for the folder's
+Git work and then reads the folder, so it includes saves made while it
+waited. If the folder closes while it still waits, it is told `closed` and
+nothing runs.
 
 Source files are tracked files plus untracked files that `.gitignore` does not
 exclude; the root `index.sqlite3` and private Git state never are. Plain Git
@@ -257,13 +276,22 @@ format list, and no LFS.
 ### Closing
 
 `close()` fences new file work, stops hints, refuses new Git requests, and
-cancels pushes and fetches, all at once. Saves that were already admitted then
-finish and request their local commits. Those commit passes drain, without
-pushing, and storage is released last. A save in flight when `close()` is
-called is committed before `close()` resolves.
+cancels pushes and fetches. Already admitted saves finish. A Git request still
+waiting for admission is refused; work that already entered its protection
+settles before storage is released. No final commit is required, and saved
+files can remain uncommitted after close.
 
 In the desktop app, closing detaches this page. The owner keeps the folder,
-finishes and commits what the page saved, and serves every other window.
+finishes the saves, the commit, and any push or fetch it had already started
+for the page, and serves every other window. A push or fetch of the page that
+the owner had not started is withdrawn and never starts. The owner makes no
+commit because a page closed or the app quit: a save whose attempt was skipped
+stays uncommitted there too.
+
+One desktop difference follows from the owner being shared by every window: a
+save made by a terminal command is not committed on its own, because the
+command holds the folder for its run. `git commit` in that terminal, or the
+next save made with the folder free, commits it.
 
 ### Incoming changes
 

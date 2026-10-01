@@ -47,6 +47,7 @@ import {
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
 import { captureVersion } from './version.js';
+import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
 	id: 'so.epicenter.batchtest',
@@ -115,10 +116,10 @@ async function openDirectory(commitOnEdit = false) {
 	return { folder, root };
 }
 
+/** Wait for the commit attempt a save started to settle. */
 async function settled(folder: Opened) {
 	for (let index = 0; index < 400; index++) {
-		const { commit } = folder.git.snapshot.activity;
-		if (!commit.active && !commit.pending) return;
+		if (!folder.git.snapshot.activity.commit.active) return;
 		await Bun.sleep(5);
 	}
 	throw new Error('Git work did not settle');
@@ -293,7 +294,6 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 
 		// Each callback ran once, and none of them published or asked history.
 		expect(calls).toBe(4);
-		await settled(folder);
 		expect(await paths(folder)).toEqual([]);
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 	});
@@ -665,7 +665,6 @@ describe('a directory batch that stops partway', () => {
 		).toEqual(AUDIO);
 		expect(await readdir(root)).not.toContain('never.txt');
 		expect(heard).toEqual(['audio/take.webm']);
-		await settled(folder);
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 
 		// Recovery. The caller still holds the pending bytes and the ID. It
@@ -716,3 +715,6 @@ describe('a directory batch that stops partway', () => {
 		expect((await paths(folder)).sort()).toEqual(['audio/take.webm']);
 	});
 });
+
+// Automatic commits need the shared lock; this runtime has none of its own.
+useWebLocks();

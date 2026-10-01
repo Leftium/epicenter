@@ -11,8 +11,9 @@ export const commands = {
 	 */
 	attach: (scope: string, protocol: number) => typedError<Attached, AttachError>(__TAURI_INVOKE("plugin:epicenter-folder|attach", { scope, protocol })),
 	/**
-	 *  End this window's session. Saves it already made still land and are still
-	 *  committed, and every other window is unaffected.
+	 *  End this window's session. Saves it already made still land, a commit the
+	 *  owner already admitted still finishes, and every other window is
+	 *  unaffected.
 	 */
 	detach: (session: number) => __TAURI_INVOKE<void>("plugin:epicenter-folder|detach", { session }),
 	list: (session: number) => typedError<FileListing, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|list", { session })),
@@ -21,8 +22,9 @@ export const commands = {
 	/**  One result per requested path, in the order given. */
 	readMany: (session: number, paths: string[]) => typedError<(Settled<FileRead, FileError>)[], FileError>(__TAURI_INVOKE("plugin:epicenter-folder|read_many", { session, paths })),
 	/**
-	 *  Publish ordered changes. A complete batch requests an automatic commit
-	 *  before this returns.
+	 *  Publish ordered changes. Where the folder commits on edit, a complete
+	 *  batch makes one automatic commit attempt, which is skipped if the folder
+	 *  is busy.
 	 */
 	apply: (session: number, changes: FileChange[], lease: number | null) => typedError<null, ApplyError>(__TAURI_INVOKE("plugin:epicenter-folder|apply", { session, changes, lease })),
 	mkdir: (session: number, path: string, lease: number | null) => typedError<null, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|mkdir", { session, path, lease })),
@@ -35,11 +37,31 @@ export const commands = {
 	acquireLease: (session: number) => typedError<number, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|acquire_lease", { session })),
 	releaseLease: (session: number, lease: number) => __TAURI_INVOKE<void>("plugin:epicenter-folder|release_lease", { session, lease }),
 	status: (session: number, lease: number | null) => typedError<FilesObservation, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|status", { session, lease })),
-	/**  A commit pass always settles as an outcome, never as an error. */
-	commit: (session: number, lease: number | null) => typedError<CommitPass, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|commit", { session, lease })),
-	/**  Wait for the push pass `joining` names, or request one. */
-	push: (session: number, joining: number | null) => typedError<PushOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|push", { session, joining })),
-	fetch: (session: number) => typedError<FetchOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|fetch", { session })),
+	/**
+	 *  Commit the folder's current files. This waits for the folder and settles
+	 *  as an outcome, never as an error, once the session is accepted.
+	 */
+	commit: (session: number, lease: number | null) => typedError<CommitOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|commit", { session, lease })),
+	/**
+	 *  Announce a push or fetch this window is about to ask for, and get the
+	 *  number that names it. The request is this session's: only this session can
+	 *  use it or withdraw it, and it ends with the session.
+	 */
+	openRequest: (session: number) => typedError<number, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|open_request", { session })),
+	/**
+	 *  Withdraw a request this session opened. A push or fetch for it that the
+	 *  owner has not started never starts, and one that names it later is
+	 *  refused. A transport the owner already started runs to its end.
+	 *  Withdrawing a request that is gone does nothing.
+	 */
+	withdrawRequest: (session: number, request: number) => __TAURI_INVOKE<void>("plugin:epicenter-folder|withdraw_request", { session, request }),
+	/**
+	 *  Push for a request this session opened. It waits behind a running push and
+	 *  can be withdrawn until the owner starts its transport.
+	 */
+	push: (session: number, request: number) => typedError<PushOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|push", { session, request })),
+	/**  Fetch for a request this session opened, like `push`. */
+	fetch: (session: number, request: number) => typedError<FetchOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|fetch", { session, request })),
 	pullFastForward: (session: number, lease: number | null) => typedError<PullOutcome, PullError>(__TAURI_INVOKE("plugin:epicenter-folder|pull_fast_forward", { session, lease })),
 	paths: (session: number) => typedError<PathStatus[], GitError>(__TAURI_INVOKE("plugin:epicenter-folder|paths", { session })),
 	/**  Stage current contents of `paths`, including deletions; `null` stages everything. */
@@ -56,7 +78,7 @@ export const events = {
 };
 
 /* Constants */
-export const FOLDER_PROTOCOL = 1 as const;
+export const FOLDER_PROTOCOL = 2 as const;
 
 /* Types */
 export type Activities = {
@@ -69,7 +91,6 @@ export type Activities = {
 
 export type Activity = {
 	active: boolean,
-	pending: boolean,
 };
 
 export type ApplyError =
@@ -134,25 +155,15 @@ export type CommitAuthor = {
 export type CommitOutcome = { status: "committed"; oid: string; parent: string | null; message: string; changedPaths: number;
 /**  The branch moved, but the index could not be updated to match. */
 indexWarning: string | null } | { status: "unchanged"; head: string | null;
-/**  Index entries could not be reset to the head; the next pass retries. */
+/**  Index entries could not be reset to the head; the next commit retries. */
 indexWarning: string | null } |
 /**
  *  The branch named something else when the candidate was published. The
  *  candidate stays unreachable; there is no retry.
  */
 { status: "branchMoved"; candidate: string; expected: string | null; actual: string | null } | { status: "blocked"; reason: string } | { status: "failed"; error: string } |
-/**  The pass started and its outcome is unknown; inspect history first. */
+/**  The commit started and its outcome is unknown; inspect history first. */
 { status: "unconfirmed"; error: string } | { status: "closed" };
-
-/**
- *  One settled commit pass. `followingPush` numbers the push pass a
- *  save-requested commit started, so a caller can wait for that push instead
- *  of requesting another.
- */
-export type CommitPass = {
-	outcome: CommitOutcome,
-	followingPush: number | null,
-};
 
 export type CommitSummary = {
 	oid: string,
@@ -242,6 +253,11 @@ export type GitError =
  *  history. Inspect before trying again.
  */
 { name: "Unconfirmed"; operation: string; cause: string } | { name: "Failed"; operation: string; cause: string } | { name: "Closed" } |
+/**
+ *  The caller withdrew before the owner started the transport: nothing
+ *  was sent or received for this request.
+ */
+{ name: "Withdrawn" } |
 /**  The caller has no session for this folder, or names another window's. */
 { name: "Denied"; reason: string } | { name: "NoRemote" } | { name: "InvalidMessage"; reason: string } | { name: "NothingToCommit" } |
 /**  Staged authoring requires `commitOnEdit: false`. */

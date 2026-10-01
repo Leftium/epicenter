@@ -257,8 +257,6 @@ export function commitOutcomeLine(outcome: CommitOutcome): StatusLine {
 
 export function commitLine(git: GitSnapshot): StatusLine {
 	if (git.activity.commit.active) return { label: 'Committing…', tone: 'busy' };
-	if (git.activity.commit.pending)
-		return { label: 'Commit pending…', tone: 'busy' };
 	const last = git.lastCommit;
 	if (last === undefined)
 		return { label: 'No commit this session', tone: 'neutral' };

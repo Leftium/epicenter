@@ -361,7 +361,7 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 	// A partial publication requests no commit; the page rechecks status after one.
 	await remote.folder.git.status();
 	expect(await bridge.transport.call(['git', 'snapshot'], [])).toMatchObject({
-		activity: { commit: { active: false, pending: false } },
+		activity: { commit: { active: false } },
 		files: {
 			state: 'observed',
 			stale: false,

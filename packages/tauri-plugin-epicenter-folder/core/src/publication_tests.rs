@@ -7,7 +7,9 @@
 //! - Two saves conditional on the same version: exactly one lands.
 //! - Private Git state, traversal, and symbolic links are refused before
 //!   anything outside the folder is touched.
-//! - A batch that stops partway keeps its landed prefix and requests no commit.
+//! - A batch that stops partway keeps its landed prefix and attempts no commit.
+//! - A change made outside the owner marks history stale and tells listeners;
+//!   it starts no commit and no scan.
 //! - Exclusive creation and moves never replace an existing file.
 //! - A terminal lease holds every other publication out, for a bounded time.
 
@@ -20,10 +22,11 @@ use crate::history::{Observation, OwnerEvent};
 use crate::owner::{FolderConfig, FolderOwner};
 use crate::testing::{config, eventually, git, open, write, TempDir};
 
+/// Wait for the commit a save was admitted for, if it was. The save decided
+/// that before it returned, so nothing can start after this sees it idle.
 fn settled(owner: &FolderOwner) {
-    eventually("the commit queue to drain", || {
-        let activity = owner.snapshot().activity;
-        !activity.commit.active && !activity.commit.pending
+    eventually("the admitted commit to finish", || {
+        !owner.snapshot().activity.commit.active
     });
 }
 
@@ -222,7 +225,7 @@ fn a_linked_git_directory_or_scratch_directory_refuses_to_open() {
 }
 
 #[test]
-fn a_partial_batch_keeps_its_prefix_and_requests_no_commit_until_a_complete_save() {
+fn a_partial_batch_keeps_its_prefix_and_attempts_no_commit_until_a_complete_save() {
     let temp = TempDir::new("partial");
     let root = temp.folder("notes");
     let owner = open(&root);
@@ -231,7 +234,7 @@ fn a_partial_batch_keeps_its_prefix_and_requests_no_commit_until_a_complete_save
         .unwrap();
     settled(&owner);
     let head = git(&root, &["rev-parse", "HEAD"]);
-    owner.status().unwrap();
+    owner.status(None).unwrap();
 
     let result = owner.apply(
         &[
@@ -276,9 +279,9 @@ fn a_partial_batch_keeps_its_prefix_and_requests_no_commit_until_a_complete_save
         Err(FileError::NotFound { .. })
     ));
 
-    // The landed prefix invalidates the observation but is not committed.
-    std::thread::sleep(Duration::from_millis(150));
-    settled(&owner);
+    // The landed prefix invalidates the observation but is not committed: a
+    // partial batch makes no attempt, so there is nothing to wait for.
+    assert!(!owner.snapshot().activity.commit.active);
     assert_eq!(git(&root, &["rev-parse", "HEAD"]), head);
     let Observation::Observed { stale, .. } = &owner.snapshot().files else {
         panic!("the earlier status is still the observation");
@@ -387,7 +390,7 @@ fn a_differently_cased_name_never_overwrites_the_existing_file() {
 }
 
 #[test]
-fn directory_changes_and_reads_request_no_commit() {
+fn directory_changes_and_reads_attempt_no_commit() {
     let temp = TempDir::new("directories");
     let root = temp.folder("notes");
     let owner = open(&root);
@@ -414,10 +417,10 @@ fn directory_changes_and_reads_request_no_commit() {
             path: "nope.md".into()
         })
     );
-    std::thread::sleep(Duration::from_millis(100));
     let snapshot = owner.snapshot();
     assert!(snapshot.last_commit.is_none());
-    assert!(!snapshot.activity.commit.active && !snapshot.activity.commit.pending);
+    assert!(!snapshot.activity.commit.active);
+    assert!(!root.join(".git/refs/heads/main").exists());
 }
 
 #[test]
@@ -461,7 +464,7 @@ fn outside_changes_are_reported_and_own_saves_are_not_mistaken_for_them() {
     owner
         .apply(&[write("a.md", "a", FileExpectation::Absent)], None)
         .unwrap();
-    owner.status().unwrap();
+    owner.status(None).unwrap();
     let heard: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
     let listener = Arc::clone(&heard);
     let _subscription = owner.subscribe(move |event| {
@@ -495,6 +498,49 @@ fn outside_changes_are_reported_and_own_saves_are_not_mistaken_for_them() {
         1,
         "an unchanged folder reports nothing"
     );
+}
+
+#[test]
+fn an_outside_change_marks_history_stale_and_starts_no_commit_and_no_scan() {
+    let temp = TempDir::new("external-automatic");
+    let root = temp.folder("notes");
+    // This folder commits on edit. Only its own complete saves attempt that.
+    let owner = open(&root);
+    owner
+        .apply(&[write("a.md", "a", FileExpectation::Absent)], None)
+        .unwrap();
+    settled(&owner);
+    owner.status(None).unwrap();
+    let head = git(&root, &["rev-parse", "HEAD"]);
+    let committed = owner.snapshot().last_commit.clone();
+    let heard: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
+    let listener = Arc::clone(&heard);
+    let _subscription = owner.subscribe(move |event| {
+        if let OwnerEvent::FilesChanged { paths, .. } = event {
+            listener.lock().unwrap().push(paths.clone());
+        }
+    });
+
+    std::fs::write(root.join("outside.md"), "written by another program").unwrap();
+    owner.poll_external();
+
+    // The report is made on this thread, and it is all that happens.
+    assert_eq!(*heard.lock().unwrap(), vec![vec!["outside.md".to_string()]]);
+    let snapshot = owner.snapshot();
+    assert!(matches!(
+        snapshot.files,
+        Observation::Observed { stale: true, ref value, .. } if value.changes.is_empty()
+    ));
+    assert!(!snapshot.activity.commit.active && !snapshot.activity.scan.active);
+    assert_eq!(snapshot.last_commit, committed);
+    assert_eq!(git(&root, &["rev-parse", "HEAD"]), head);
+
+    // The outside file is still there for whoever commits next.
+    assert!(matches!(
+        owner.commit(None),
+        crate::history::CommitOutcome::Committed { ref message, changed_paths: 1, .. }
+            if message == "Add outside.md"
+    ));
 }
 
 #[test]
@@ -568,7 +614,7 @@ fn a_filesystem_event_reports_an_edit_that_left_size_and_time_unchanged() {
         modified
     );
     owner.poll_external();
-    owner.status().unwrap();
+    owner.status(None).unwrap();
     heard.lock().unwrap().clear();
     // What the watcher's callback does when the platform reports the path.
     owner.announce(&["a.md"]);

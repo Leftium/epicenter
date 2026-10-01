@@ -21,8 +21,8 @@
 //!
 //! The owner of a scope is opened on its first attach and kept until the app
 //! exits or the shell calls `Folders::shutdown`, which fences new work, lets
-//! admitted saves and their commits finish, and releases each folder's
-//! cross-process lock.
+//! admitted saves and admitted commits finish, and releases each folder's
+//! cross-process lock. It commits nothing on its own.
 
 use tauri::plugin::TauriPlugin;
 use tauri::webview::PageLoadEvent;
@@ -94,6 +94,8 @@ fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::release_lease::<tauri::Wry>,
             commands::status::<tauri::Wry>,
             commands::commit::<tauri::Wry>,
+            commands::open_request::<tauri::Wry>,
+            commands::withdraw_request::<tauri::Wry>,
             commands::push::<tauri::Wry>,
             commands::fetch::<tauri::Wry>,
             commands::pull_fast_forward::<tauri::Wry>,

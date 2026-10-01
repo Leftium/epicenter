@@ -16,8 +16,9 @@
  * is returned as the refusal it is. Nothing here opens browser storage.
  *
  * Closing the handle detaches this page. It does not close the folder: saves
- * the page already made still land and are still committed, and other windows
- * carry on.
+ * the page already made still land, a commit the owner already admitted still
+ * finishes, and other windows carry on. Closing commits nothing: a save whose
+ * automatic attempt the owner skipped stays uncommitted.
  *
  * An `invoke` that fails after it was sent leaves the outcome unknown. Reads
  * report that as an ordinary failure. Anything that could have changed files
@@ -51,6 +52,7 @@ import type { StatusCode } from './git/backend.js';
 import { GitError, PullError } from './git/errors.js';
 import type {
 	CommitOutcome,
+	FetchOutcome,
 	GitSnapshot,
 	PullOutcome,
 	PushOutcome,
@@ -180,6 +182,9 @@ function gitError(error: WireGitError, operation: string): GitError {
 			return GitError.Failed(error).error;
 		case 'Closed':
 			return GitError.Closed().error;
+		// The owner started nothing for a caller that had withdrawn.
+		case 'Withdrawn':
+			return GitError.StoppedWaiting({ operation }).error;
 		case 'Denied':
 			return GitError.Failed({ operation, cause: error.reason }).error;
 		case 'NoRemote':
@@ -510,8 +515,8 @@ function createBoundary(
 }
 
 /**
- * Stop this caller waiting when its signal aborts. The owner's passes are
- * shared by every window, so a caller's signal never stops the work itself.
+ * Stop this caller waiting when its signal aborts. The owner's work is shared
+ * by every window, so a caller's signal never stops the work itself.
  */
 function until<T>(
 	promise: Promise<T>,
@@ -531,8 +536,9 @@ function until<T>(
 }
 
 /**
- * History as the shell's owner reports it. The owner commits every save it
- * publishes, so `noteEdit` and `requestAutomaticCommit` have nothing to do.
+ * History as the shell's owner reports it. The owner marks its own saves and
+ * makes each one's single automatic commit attempt itself, so `noteEdit` and
+ * `requestAutomaticCommit` have nothing to do.
  */
 function createHistory(
 	session: number,
@@ -540,34 +546,61 @@ function createHistory(
 	client: Client,
 	lease: () => number | null,
 ): FolderHistory {
-	type Pass = { outcome: CommitOutcome; followingPush: number | undefined };
-	const pass = (outcome: CommitOutcome): Pass => ({
-		outcome,
-		followingPush: undefined,
-	});
 	const closed = () => GitError.Closed();
+	const closedCommit = (): CommitOutcome => ({ status: 'closed' });
 
-	async function commitPass(): Promise<Pass> {
+	/** An explicit commit: the owner waits for the folder, then reads it. */
+	async function commitNow(): Promise<CommitOutcome> {
 		const result = await call(commands.commit(session, lease()));
 		if (!result.sent)
-			return pass({ status: 'unconfirmed', error: describe(result.cause) });
+			return { status: 'unconfirmed', error: describe(result.cause) };
 		if (result.settled === 'refused')
-			return pass(
-				result.error.name === 'Closed'
-					? { status: 'closed' }
-					: {
-							status: 'failed',
-							error: gitError(result.error, 'commit').message,
-						},
-			);
-		return {
-			outcome: commitOutcome(result.data.outcome),
-			followingPush: orUndefined(result.data.followingPush),
-		};
+			return result.error.name === 'Closed'
+				? { status: 'closed' }
+				: {
+						status: 'failed',
+						error: gitError(result.error, 'commit').message,
+					};
+		return commitOutcome(result.data);
 	}
 
-	async function pushPass(joining: number | undefined): Promise<PushOutcome> {
-		const result = await call(commands.push(session, joining ?? null));
+	/**
+	 * Send one push or fetch on a request this session opens first. The owner
+	 * knows the request before the command names it, so a caller that leaves
+	 * can always withdraw it: the owner then starts no transport for it unless
+	 * it already had. `'left'` means the caller left before the command was
+	 * sent.
+	 */
+	async function requested<T>(
+		leaving: AbortSignal,
+		send: (request: number) => Promise<Wire<T, WireGitError>>,
+	): Promise<Reply<T, WireGitError> | 'left'> {
+		const opened = await call(commands.openRequest(session));
+		if (!opened.sent || opened.settled === 'refused') return opened;
+		const request = opened.data;
+		const withdraw = () =>
+			void commands.withdrawRequest(session, request).catch(() => {});
+		if (leaving.aborted) {
+			withdraw();
+			return 'left';
+		}
+		leaving.addEventListener('abort', withdraw, { once: true });
+		try {
+			const reply = await call(send(request));
+			// Without an acknowledged command, the owner may still hold the
+			// request we opened. Release it; admitted transport is unaffected.
+			if (!reply.sent && !leaving.aborted) withdraw();
+			return reply;
+		} finally {
+			leaving.removeEventListener('abort', withdraw);
+		}
+	}
+
+	async function pushNow(leaving: AbortSignal): Promise<PushOutcome> {
+		const result = await requested(leaving, (request) =>
+			commands.push(session, request),
+		);
+		if (result === 'left') return stoppedPush();
 		if (!result.sent)
 			return { status: 'unconfirmed', error: describe(result.cause) };
 		// The owner refused before it pinned a commit: nothing was attempted,
@@ -580,6 +613,21 @@ function createHistory(
 						reason: gitError(result.error, 'push').message,
 					};
 		return pushOutcome(result.data);
+	}
+
+	async function fetchNow(
+		leaving: AbortSignal,
+	): Promise<Result<FetchOutcome, GitError>> {
+		const result = await requested(leaving, (request) =>
+			commands.fetch(session, request),
+		);
+		if (result === 'left') return stoppedFetch();
+		// A lost reply may have moved the remote-tracking ref.
+		if (!result.sent)
+			return GitError.Unconfirmed({ operation: 'fetch', cause: result.cause });
+		if (result.settled === 'refused')
+			return Err(gitError(result.error, 'fetch'));
+		return Ok({ status: 'fetched', oid: orUndefined(result.data.oid) });
 	}
 
 	/** A command whose reply is a Git result, with nothing changed if it is lost. */
@@ -614,6 +662,7 @@ function createHistory(
 
 	const stoppedPush = (): PushOutcome => ({ status: 'stoppedWaiting' });
 	const closedPush = (): PushOutcome => ({ status: 'closed' });
+	const stoppedFetch = () => GitError.StoppedWaiting({ operation: 'fetch' });
 
 	return {
 		get snapshot() {
@@ -628,23 +677,19 @@ function createHistory(
 				() => commands.status(session, lease()),
 				(files) => ({ head: orUndefined(files.head), changes: files.changes }),
 			),
-		commit: async () =>
-			(await client.local(() => pass({ status: 'closed' }), commitPass))
-				.outcome,
+		commit: () => client.local(closedCommit, commitNow),
 		async commitAndPush({ signal } = {}) {
-			const settled = await until(
-				client.local(() => pass({ status: 'closed' }), commitPass),
+			const commit = await until(
+				client.local(closedCommit, commitNow),
 				signal,
-				() => pass({ status: 'stoppedWaiting' }),
+				(): CommitOutcome => ({ status: 'stoppedWaiting' }),
 			);
-			const commit = settled.outcome;
 			switch (commit.status) {
 				case 'committed':
 				case 'unchanged':
 					break;
-				// The commit's outcome is unknown or still pending, and a pass a
-				// save requested pushes on its own: the push cannot be called
-				// skipped.
+				// The commit's outcome is unknown, so whether there is anything
+				// to push is unknown too: the push cannot be called skipped.
 				case 'unconfirmed':
 					return {
 						commit,
@@ -662,31 +707,20 @@ function createHistory(
 			}
 			if (snapshots.current.remote === undefined)
 				return { commit, push: { status: 'noRemote' } };
-			// A save-requested pass already started a push: wait for that one.
-			const push = await client.network(closedPush, stoppedPush, signal, () =>
-				pushPass(settled.followingPush),
+			// The push is this caller's next step, not the commit's. A caller
+			// that stopped waiting asks for none; the commit it left still stands.
+			const push = await client.network(
+				closedPush,
+				stoppedPush,
+				signal,
+				pushNow,
 			);
 			return { commit, push };
 		},
 		push: ({ signal } = {}) =>
-			client.network(closedPush, stoppedPush, signal, () =>
-				pushPass(undefined),
-			),
+			client.network(closedPush, stoppedPush, signal, pushNow),
 		fetch: ({ signal } = {}) =>
-			client.network(
-				closed,
-				() => GitError.StoppedWaiting({ operation: 'fetch' }),
-				signal,
-				() =>
-					change(
-						'fetch',
-						() => commands.fetch(session),
-						(fetched) => ({
-							status: 'fetched' as const,
-							oid: orUndefined(fetched.oid),
-						}),
-					),
-			),
+			client.network(closed, stoppedFetch, signal, fetchNow),
 		pullFastForward: () =>
 			client.local(closed, async () => {
 				const result = await call(commands.pullFastForward(session, lease()));
@@ -746,9 +780,10 @@ function createHistory(
  * This page's use of the folder: one lifetime for its Git calls and its
  * terminals. `fence` refuses new ones all at once and stops this page waiting
  * for network work. `close` also waits for local work that was already
- * running, so the session is not detached under it. Network
- * work belongs to the owner and keeps running there; closing only stops this
- * page waiting for it.
+ * running, so the session is not detached under it. Network work is the
+ * owner's: closing stops this page waiting and withdraws its requests, so a
+ * push or fetch the owner has not started never starts, and one it has
+ * started runs to its end there.
  */
 type Client = {
 	/** Aborts when this page's folder starts closing. */
@@ -756,14 +791,18 @@ type Client = {
 	/** Local work: refused once closing, otherwise waited for by `close`. */
 	local<T>(closed: () => T, work: () => Promise<T>): Promise<T>;
 	/**
-	 * Network work: refused once closing. The caller's signal, or closing,
-	 * stops the wait and nothing else.
+	 * Network work: refused once closing, and not asked for on behalf of a
+	 * caller whose signal has already aborted. `work` is given the signal that
+	 * aborts when the caller leaves or the page closes, and withdraws its
+	 * request then. Leaving stops the wait at once. It says nothing about the
+	 * transport: the owner starts none for a request withdrawn in time, and
+	 * finishes one it had already started.
 	 */
 	network<T>(
 		closed: () => T,
 		stopped: () => T,
 		signal: AbortSignal | undefined,
-		work: () => Promise<T>,
+		work: (leaving: AbortSignal) => Promise<T>,
 	): Promise<T>;
 	fence(): void;
 	close(): Promise<void>;
@@ -784,13 +823,12 @@ function createClient(): Client {
 		},
 		network(closed, stopped, signal, work) {
 			if (controller.signal.aborted) return Promise.resolve(closed());
-			return until(
-				work(),
+			if (signal?.aborted) return Promise.resolve(stopped());
+			const leaving =
 				signal === undefined
 					? controller.signal
-					: AbortSignal.any([controller.signal, signal]),
-				stopped,
-			);
+					: AbortSignal.any([controller.signal, signal]);
+			return until(work(leaving), leaving, stopped);
 		},
 		fence: () => controller.abort(),
 		close() {
@@ -1023,8 +1061,9 @@ export const openFolder: OpenFolder = async ({
 			hints,
 			announcePublications: false,
 			terminal: (_shell, _signal, options) => terminal(options),
-			// Detaches this window only. The owner keeps the folder, finishes what
-			// this page saved, and serves every other window.
+			// Detaches this window only. The owner keeps the folder, finishes the
+			// work it already admitted for this page, and serves every other
+			// window.
 			release: async () => {
 				stop();
 				snapshots.clear();

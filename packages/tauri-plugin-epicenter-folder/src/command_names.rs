@@ -14,6 +14,8 @@ pub const COMMANDS: &[&str] = &[
     "release_lease",
     "status",
     "commit",
+    "open_request",
+    "withdraw_request",
     "push",
     "fetch",
     "pull_fast_forward",

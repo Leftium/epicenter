@@ -2,8 +2,9 @@
 //!
 //! Key behaviors:
 //! - A window attaches only to a scope the shell registered for it.
-//! - Detaching one window leaves the owner and every other window working.
-//! - Shutdown drains admitted saves and their commits, then releases the lock.
+//! - Detaching one window leaves the owner and every other window working,
+//!   and the commit the owner admitted for its save still finishes.
+//! - Shutdown drains admitted saves, starts no commit, then releases the lock.
 //! - The lock excludes another process, in both directions with the Bun
 //!   hosts' lock, and a killed process leaves nothing to recover.
 
@@ -77,7 +78,7 @@ fn a_window_attaches_only_to_a_scope_registered_for_it() {
 }
 
 #[test]
-fn detaching_one_window_leaves_the_other_and_the_queued_commit() {
+fn detaching_one_window_leaves_the_other_and_the_admitted_commit() {
     let temp = TempDir::new("detach");
     let root = temp.folder("notes");
     let registry = registry(&root, &["a", "b"]);
@@ -91,26 +92,47 @@ fn detaching_one_window_leaves_the_other_and_the_queued_commit() {
         }
     });
 
+    // Window A's save is admitted for its commit, held before it publishes,
+    // and then window A detaches.
+    let owner = b.authorize("b").unwrap();
+    let (reached, at_capture) = mpsc::channel::<()>();
+    let (release, gate) = mpsc::channel::<()>();
+    let gate = Mutex::new(gate);
+    owner.hooks().after_capture = Some(Arc::new(move || {
+        reached.send(()).unwrap();
+        gate.lock().unwrap().recv().unwrap();
+    }));
     a.authorize("a")
         .unwrap()
         .apply(&[write("from-a.md", "A", FileExpectation::Absent)], None)
         .unwrap();
+    at_capture.recv().unwrap();
+    owner.hooks().after_capture = None;
     drop(a);
 
-    let owner = b.authorize("b").unwrap();
     assert_eq!(
         owner.read("from-a.md").unwrap().bytes,
         b"A",
         "both windows share one owner"
     );
+    // The commit the owner admitted outlives the session that saved.
+    release.send(()).unwrap();
+    let idle = || {
+        eventually("the admitted commit to finish", || {
+            !owner.snapshot().activity.commit.active
+        })
+    };
+    idle();
+    assert_eq!(
+        git(&root, &["ls-tree", "-r", "--name-only", "HEAD"]),
+        "from-a.md"
+    );
+
     owner
         .apply(&[write("from-b.md", "B", FileExpectation::Absent)], None)
         .unwrap();
     assert_eq!(*heard.lock().unwrap(), vec!["from-a.md", "from-b.md"]);
-    eventually("both saves to be committed", || {
-        let activity = owner.snapshot().activity.commit;
-        !activity.active && !activity.pending
-    });
+    idle();
     assert_eq!(
         git(&root, &["ls-tree", "-r", "--name-only", "HEAD"]),
         "from-a.md\nfrom-b.md"
@@ -125,7 +147,7 @@ fn detaching_one_window_leaves_the_other_and_the_queued_commit() {
 }
 
 #[test]
-fn shutdown_drains_a_held_save_and_its_commit_then_releases_the_lock() {
+fn shutdown_drains_a_held_save_commits_nothing_and_releases_the_lock() {
     let temp = TempDir::new("registry-shutdown");
     let root = temp.folder("notes");
     let registry = Arc::new(registry(&root, &["main"]));
@@ -176,7 +198,13 @@ fn shutdown_drains_a_held_save_and_its_commit_then_releases_the_lock() {
     release.send(()).unwrap();
     held.join().unwrap().unwrap();
     shutdown.join().unwrap();
-    assert_eq!(git(&root, &["log", "--format=%s"]), "Add held.md");
+    // The save landed. It finished after the fence, so it was not committed.
+    assert_eq!(
+        std::fs::read_to_string(root.join("held.md")).unwrap(),
+        "admitted"
+    );
+    assert_eq!(owner.snapshot().last_commit, None);
+    assert!(!root.join(".git/refs/heads/main").exists());
     RootLock::acquire(&root).expect("shutdown released the lock");
 }
 

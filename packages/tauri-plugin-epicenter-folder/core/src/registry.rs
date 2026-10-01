@@ -8,7 +8,7 @@
 //! The registry opens a scope's owner on first attach, after taking the
 //! cross-process lock for the canonical root, and keeps it until `shutdown`.
 //! Detaching a window drops that window's session and nothing else: the owner,
-//! its queued commits, and every other window's session carry on.
+//! the work it already admitted, and every other window's session carry on.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -18,10 +18,10 @@ use epicenter_folder_core::files::{
 };
 use epicenter_folder_core::git::{CommitSummary, PathStatus};
 use epicenter_folder_core::history::{
-    CommitOutcome, CommitPass, FetchOutcome, FilesObservation, GitError, GitSnapshot, OwnerEvent,
-    PullError, PullOutcome, PushOutcome, Settled,
+    CommitOutcome, FetchOutcome, FilesObservation, GitError, GitSnapshot, OwnerEvent, PullError,
+    PullOutcome, PushOutcome, Settled,
 };
-use epicenter_folder_core::owner::FolderOwner;
+use epicenter_folder_core::owner::{Caller, FolderOwner};
 use epicenter_folder_core::registry::AttachError;
 use serde::Serialize;
 use specta::Type;
@@ -52,7 +52,11 @@ pub struct FolderFilesChanged {
 
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
-pub const PROTOCOL: u32 = 1;
+///
+/// Version 2: `commit` returns its outcome alone, `push` and `fetch` name a
+/// request the session opened and can withdraw, and snapshot activity reports
+/// `active` only.
+pub const PROTOCOL: u32 = 2;
 
 /// What a window receives when it attaches to a scope.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -341,6 +345,7 @@ pub async fn attach<R: Runtime>(
         Live {
             session,
             leases: BTreeMap::new(),
+            requests: BTreeMap::new(),
             _subscription: subscription,
         },
     );
@@ -364,8 +369,9 @@ pub async fn attach<R: Runtime>(
     })
 }
 
-/// End this window's session. Saves it already made still land and are still
-/// committed, and every other window is unaffected.
+/// End this window's session. Saves it already made still land, a commit the
+/// owner already admitted still finishes, and every other window is
+/// unaffected.
 #[tauri::command]
 #[specta::specta]
 pub fn detach<R: Runtime>(webview: Webview<R>, session: u32) {
@@ -427,8 +433,9 @@ pub async fn read_many<R: Runtime>(
     .await
 }
 
-/// Publish ordered changes. A complete batch requests an automatic commit
-/// before this returns.
+/// Publish ordered changes. Where the folder commits on edit, a complete
+/// batch makes one automatic commit attempt, which is skipped if the folder
+/// is busy.
 #[tauri::command]
 #[specta::specta]
 pub async fn apply<R: Runtime>(
@@ -521,66 +528,97 @@ pub async fn status<R: Runtime>(
     lease: Option<u64>,
 ) -> Result<FilesObservation, GitError> {
     let owner = leased_owner(&webview, session, lease).map_err(git_denied)?;
-    blocking(
-        move || {
-            let _waiting = owner.vouch(lease);
-            owner.status()
-        },
-        git_lost("status"),
-    )
-    .await
+    blocking(move || owner.status(lease), git_lost("status")).await
 }
 
-/// A commit pass always settles as an outcome, never as an error.
+/// Commit the folder's current files. This waits for the folder and settles
+/// as an outcome, never as an error, once the session is accepted.
 #[tauri::command]
 #[specta::specta]
 pub async fn commit<R: Runtime>(
     webview: Webview<R>,
     session: u32,
     lease: Option<u64>,
-) -> Result<CommitPass, GitError> {
+) -> Result<CommitOutcome, GitError> {
     let owner = leased_owner(&webview, session, lease).map_err(git_denied)?;
     Ok(blocking(
-        move || {
-            let _waiting = owner.vouch(lease);
-            owner.commit()
-        },
-        |error| CommitPass {
-            outcome: CommitOutcome::Unconfirmed { error },
-            following_push: None,
-        },
+        move || owner.commit(lease),
+        |error| CommitOutcome::Unconfirmed { error },
     )
     .await)
 }
 
-/// Wait for the push pass `joining` names, or request one.
+/// Announce a push or fetch this window is about to ask for, and get the
+/// number that names it. The request is this session's: only this session can
+/// use it or withdraw it, and it ends with the session.
+#[tauri::command]
+#[specta::specta]
+pub fn open_request<R: Runtime>(webview: Webview<R>, session: u32) -> Result<u64, GitError> {
+    let resource = self::session(&webview, session).map_err(git_denied)?;
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    resource.open_request(owner.request()).map_err(git_denied)
+}
+
+/// Withdraw a request this session opened. A push or fetch for it that the
+/// owner has not started never starts, and one that names it later is
+/// refused. A transport the owner already started runs to its end.
+/// Withdrawing a request that is gone does nothing.
+#[tauri::command]
+#[specta::specta]
+pub fn withdraw_request<R: Runtime>(webview: Webview<R>, session: u32, request: u64) {
+    if let Ok(resource) = self::session(&webview, session) {
+        resource.close_request(request);
+    }
+}
+
+/// The owner and the caller's way to withdraw, for the one push or fetch that
+/// `request` was opened for.
+fn requested<R: Runtime>(
+    webview: &Webview<R>,
+    rid: ResourceId,
+    request: u64,
+) -> Result<(Arc<SessionState>, FolderOwner, Caller), String> {
+    let session = session(webview, rid)?;
+    let owner = session.owner(webview.label())?;
+    let caller = session.use_request(request)?;
+    Ok((session, owner, caller))
+}
+
+/// Push for a request this session opened. It waits behind a running push and
+/// can be withdrawn until the owner starts its transport.
 #[tauri::command]
 #[specta::specta]
 pub async fn push<R: Runtime>(
     webview: Webview<R>,
     session: u32,
-    joining: Option<u32>,
+    request: u64,
 ) -> Result<PushOutcome, GitError> {
-    let owner = owner(&webview, session).map_err(git_denied)?;
-    Ok(blocking(
-        move || owner.push(joining.map(u64::from)),
+    let (resource, owner, caller) = requested(&webview, session, request).map_err(git_denied)?;
+    let outcome = blocking(
+        move || owner.push(Some(&caller)),
         |error| PushOutcome::Unconfirmed { error },
     )
-    .await)
+    .await;
+    resource.close_request(request);
+    Ok(outcome)
 }
 
+/// Fetch for a request this session opened, like `push`.
 #[tauri::command]
 #[specta::specta]
 pub async fn fetch<R: Runtime>(
     webview: Webview<R>,
     session: u32,
+    request: u64,
 ) -> Result<FetchOutcome, GitError> {
-    let owner = owner(&webview, session).map_err(git_denied)?;
-    blocking(
-        move || owner.fetch(),
+    let (resource, owner, caller) = requested(&webview, session, request).map_err(git_denied)?;
+    let outcome = blocking(
+        move || owner.fetch(Some(&caller)),
         |cause| Err(git_unconfirmed("fetch")(cause)),
     )
-    .await
+    .await;
+    resource.close_request(request);
+    outcome
 }
 
 #[tauri::command]
@@ -593,10 +631,7 @@ pub async fn pull_fast_forward<R: Runtime>(
     let owner = leased_owner(&webview, session, lease)
         .map_err(|reason| PullError::from(git_denied(reason)))?;
     blocking(
-        move || {
-            let _waiting = owner.vouch(lease);
-            owner.pull_fast_forward()
-        },
+        move || owner.pull_fast_forward(lease),
         |cause| Err(git_unconfirmed("pull")(cause).into()),
     )
     .await

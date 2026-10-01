@@ -25,6 +25,7 @@
 import { afterEach, expect, mock, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { useWebLocks } from './web-locks.test-support.js';
 
 let inShell = false;
 const invoked: string[] = [];
@@ -248,3 +249,6 @@ test('handles sharing browser storage hear each other, when the storage carries 
 	expect(heardBySecond).toEqual(['from-first.md']);
 	await first.close();
 });
+
+// Automatic commits need the shared lock; this runtime has none of its own.
+useWebLocks();

@@ -1,111 +1,129 @@
 /**
- * One active pass and at most one pending pass.
+ * One pass at a time, with three ways in.
  *
- * An idle runner starts a request immediately; there is no quiet-period timer.
- * A request made while a pass is active joins the single pending pass, which
- * starts when the active one settles. The active pass may already have read
- * its inputs, so a request never joins it. Coalescing bounds the backlog, not
- * the pass frequency.
+ * `attempt` is for work nobody is waiting on, such as the push after an
+ * automatic commit or a rescan after a partly landed pull: it starts
+ * a pass only when nothing is running or waiting, and otherwise does nothing.
+ * The runner keeps no record that it was called, so a skipped attempt never
+ * runs later.
+ *
+ * `request` is for a caller that awaits the result. It waits for the passes
+ * ahead of it and then runs its own, so its pass reads inputs no older than
+ * the request. Each waiting caller is one pass. A caller may leave before its
+ * turn: its pass then never starts.
+ *
+ * `follow` is for callers that only need a pass that starts after they asked.
+ * Everyone who asks before that pass starts shares it; nobody joins a pass
+ * that is already running, since it may have read its inputs. However many
+ * ask during a running pass, one pass follows it.
+ *
+ * A waiter whose turn comes after closing started gets the closed result
+ * without running.
  */
 
-export type PassRunner<T> = {
-	/** Resolves with the result of the pass that starts at or after this request. */
-	request(): Promise<T>;
-	readonly active: boolean;
-	readonly pending: boolean;
+/** A caller that may stop waiting, and the result it gets if it left before its turn. */
+export type Leaving<T> = {
+	readonly signal: AbortSignal;
+	readonly withdrawn: () => T;
+};
+
+export type PassRunner<TInput, T> = {
+	/** Starts a pass and returns its result, or `undefined` when one is running, waiting, or the runner is closed. */
+	attempt(input: TInput): Promise<T> | undefined;
 	/**
-	 * Fence new requests. `drain` lets the active and pending passes run.
-	 * `cancel` resolves the pending pass as cancelled without running it and
-	 * aborts the active pass's signal; the returned promise still waits for the
-	 * active pass to settle.
+	 * Runs a pass after those ahead of it. Resolves with the closed result once
+	 * closing started. With `leaving`, a signal already aborted when the turn
+	 * comes means the pass never starts; once started, the signal is ignored.
 	 */
-	close(mode: 'drain' | 'cancel'): Promise<void>;
+	request(input: TInput, leaving?: Leaving<T>): Promise<T>;
+	/** The result of the one pass that starts after this call and before any later `follow`. */
+	follow(input: TInput): Promise<T>;
+	readonly active: boolean;
+	/**
+	 * Refuse new passes, abort the active pass's signal, and wait for that
+	 * pass to settle. A pass that ignores its signal runs to its own end.
+	 * Callers still waiting for a turn get the closed result.
+	 */
+	close(): Promise<void>;
 };
 
-type Deferred<T> = {
-	promise: Promise<T>;
-	resolve: (value: T) => void;
-};
-
-function deferred<T>(): Deferred<T> {
-	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((settle) => {
-		resolve = settle;
-	});
-	return { promise, resolve };
-}
-
-export function createPassRunner<T>({
+export function createPassRunner<TInput, T>({
 	run,
 	failed,
 	closed,
-	cancelled,
 	onChange,
 }: {
-	run: (signal: AbortSignal) => Promise<T>;
+	run: (input: TInput, signal: AbortSignal) => Promise<T>;
 	/** Converts an unexpected throw into a result; a pass never rejects. */
 	failed: (cause: unknown) => T;
-	/** The result for a request made after closing started. */
+	/** The result for a request that closing reached before its turn. */
 	closed: () => T;
-	/** The result of a pending pass cancelled by `close('cancel')`. */
-	cancelled: () => T;
 	onChange?: () => void;
-}): PassRunner<T> {
-	let current: { promise: Promise<T>; controller: AbortController } | undefined;
-	let next: Deferred<T> | undefined;
+}): PassRunner<TInput, T> {
+	let controller: AbortController | undefined;
+	let waiting = 0;
 	let fenced = false;
-	let settled = Promise.resolve();
+	/** Settles when every pass and waiter so far is done. */
+	let tail = Promise.resolve();
+	/** The shared pass that has not started yet, if `follow` made one. */
+	let follower: Promise<T> | undefined;
 
-	function start(): Promise<T> {
-		const controller = new AbortController();
-		const promise = (async () => {
-			try {
-				return await run(controller.signal);
-			} catch (cause) {
-				return failed(cause);
-			}
-		})();
-		current = { promise, controller };
+	async function pass(input: TInput): Promise<T> {
+		controller = new AbortController();
 		onChange?.();
-		settled = promise.then(async () => {
-			current = undefined;
-			const waiting = next;
-			next = undefined;
-			if (waiting !== undefined) {
-				waiting.resolve(await start());
-				await settled;
-			} else onChange?.();
-		});
-		return promise;
+		try {
+			return await run(input, controller.signal);
+		} catch (cause) {
+			return failed(cause);
+		} finally {
+			controller = undefined;
+			onChange?.();
+		}
 	}
+
+	/** Queue one turn. `admit` decides, when the turn comes, whether it runs. */
+	function enqueue(input: TInput, admit: () => T | undefined): Promise<T> {
+		waiting++;
+		const result = tail.then(() => {
+			waiting--;
+			// Closing is the host's refusal and is reported before a caller's own.
+			if (fenced) return closed();
+			return admit() ?? pass(input);
+		});
+		tail = result.then(() => {});
+		return result;
+	}
+
+	const always = () => undefined;
 
 	return {
 		get active() {
-			return current !== undefined;
+			return controller !== undefined;
 		},
-		get pending() {
-			return next !== undefined;
+		attempt(input) {
+			if (fenced || controller !== undefined || waiting > 0) return undefined;
+			return enqueue(input, always);
 		},
-		request() {
+		request(input, leaving) {
 			if (fenced) return Promise.resolve(closed());
-			if (current === undefined) return start();
-			if (next === undefined) {
-				next = deferred<T>();
-				onChange?.();
-			}
-			return next.promise;
+			if (leaving === undefined) return enqueue(input, always);
+			return enqueue(input, () =>
+				leaving.signal.aborted ? leaving.withdrawn() : undefined,
+			);
 		},
-		async close(mode) {
+		follow(input) {
+			if (fenced) return Promise.resolve(closed());
+			follower ??= enqueue(input, () => {
+				// Starting now: whoever asks from here on needs the next pass.
+				follower = undefined;
+				return undefined;
+			});
+			return follower;
+		},
+		async close() {
 			fenced = true;
-			if (mode === 'cancel') {
-				const waiting = next;
-				next = undefined;
-				waiting?.resolve(cancelled());
-				current?.controller.abort();
-			}
-			// A pending pass started by the drain replaces `settled`; loop until idle.
-			while (current !== undefined || next !== undefined) await settled;
-			onChange?.();
+			controller?.abort();
+			await tail;
 		},
 	};
 }

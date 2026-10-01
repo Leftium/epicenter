@@ -27,6 +27,7 @@ import {
 import { createBrowserGitBackend } from './git/browser-backend.js';
 import { createGitSession, GITDIR } from './git/browser-fs.js';
 import { createHistory } from './git/history.js';
+import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
 	id: 'so.epicenter.todostest',
@@ -66,15 +67,11 @@ afterEach(async () => {
 });
 
 /** Wait for background commit work to settle. */
+/** Wait for the commit attempt a save started, and its push, to settle. */
 async function settled(folder: Folder<typeof definition>) {
-	for (let index = 0; index < 200; index++) {
+	for (let index = 0; index < 400; index++) {
 		const { activity } = folder.git.snapshot;
-		if (
-			!activity.commit.active &&
-			!activity.commit.pending &&
-			!activity.push.active
-		)
-			return;
+		if (!activity.commit.active && !activity.push.active) return;
 		await Bun.sleep(5);
 	}
 	throw new Error('Git work did not settle');
@@ -410,36 +407,12 @@ describe('browser folder persistence and history', () => {
 		expect(status.data!.changes).toEqual([]);
 	});
 
-	test('a save returns before its automatic commit; coalesced saves share the next pass', async () => {
-		const folder = await open();
-		const a = (
-			await folder.tables.todos.create({
-				stem: 'a',
-				fields: { title: 'A', done: false },
-			})
-		).data!;
-		// The save already returned; history is still running or pending.
-		expect(folder.git.snapshot.activity.commit.active).toBe(true);
-		await folder.tables.todos.create({
-			stem: 'b',
-			fields: { title: 'B', done: false },
-		});
-		await folder.tables.todos.update(a, { fields: { done: true } });
-		await settled(folder);
-		const log = (await folder.git.log(10)).data!.map((commit) =>
-			commit.message.trim(),
-		);
-		expect(log[log.length - 1]).toBe('Add todos/a.md');
-		expect(log.length).toBeLessThanOrEqual(3);
-		const status = await folder.git.status();
-		expect(status.data!.changes).toEqual([]);
-	});
-
 	test('file create, move, and remove request automatic history', async () => {
 		const folder = await open();
 		const created = expectOk(
 			await folder.files.create('notes/raw.txt', 'hello'),
 		);
+		// The save returned; its commit attempt is still running.
 		expect(folder.git.snapshot.activity.commit.active).toBe(true);
 		await settled(folder);
 		expect(folder.git.snapshot.lastCommit).toMatchObject({
@@ -470,10 +443,7 @@ describe('browser folder persistence and history', () => {
 		);
 		expect(conflict.name).toBe('Conflict');
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
-		expect(folder.git.snapshot.activity.commit).toEqual({
-			active: false,
-			pending: false,
-		});
+		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 	});
 
 	test('automatic mode refuses staging and a staged commit', async () => {
@@ -540,7 +510,7 @@ describe('browser folder persistence and history', () => {
 		expect(result.push.status).toBe('noRemote');
 	});
 
-	test('a stalled push blocks neither saves nor commits; close cancels pushes and settles', async () => {
+	test('a stalled push blocks neither saves nor commits; a commit made meanwhile stays local; close aborts the push and settles', async () => {
 		const originalFetch = globalThis.fetch;
 		let requests = 0;
 		globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -578,26 +548,19 @@ describe('browser folder persistence and history', () => {
 			});
 			expect(saved.error).toBeNull();
 			for (let index = 0; index < 200; index++) {
-				if (
-					folder.git.snapshot.lastCommit?.status === 'committed' &&
-					folder.git.snapshot.activity.push.pending
-				)
-					break;
+				if (!folder.git.snapshot.activity.commit.active) break;
 				await Bun.sleep(5);
 			}
 			const lastCommit = folder.git.snapshot.lastCommit;
 			expect(lastCommit?.status === 'committed' && lastCommit.message).toBe(
 				'Add todos/b.md',
 			);
+			// That commit is local: its push was not started behind the stalled one.
 			expect(folder.git.snapshot.activity.push.active).toBe(true);
-			expect(folder.git.snapshot.activity.push.pending).toBe(true);
 
 			await folder.close();
 			expect(folder.git.snapshot.lastPush?.status).toBe('cancelled');
-			expect(folder.git.snapshot.activity.push).toEqual({
-				active: false,
-				pending: false,
-			});
+			expect(folder.git.snapshot.activity.push).toEqual({ active: false });
 			expect(requests).toBe(1);
 			expect((await folder.tables.todos.list()).error?.name).toBe('Closed');
 		} finally {
@@ -684,6 +647,16 @@ describe('browser terminal', () => {
 				expectOk(await folder.files.read('typed.txt')).bytes,
 			),
 		).toBe('text\n');
+		// A redirect publishes the empty file and then its content, one attempt
+		// each. When the second finds the first still running, the content is
+		// saved and uncommitted until the next request.
+		const left = (await folder.git.status()).data?.changes;
+		expect(left?.map((change) => change.path) ?? ['?']).toEqual(
+			left?.length === 0 ? [] : ['typed.txt'],
+		);
+		expect((await folder.git.commit()).status).toBe(
+			left?.length === 0 ? 'unchanged' : 'committed',
+		);
 		expect((await folder.git.status()).data?.changes).toEqual([]);
 		const before = expectOk(await folder.git.log(10)).map(
 			(commit) => commit.oid,
@@ -775,3 +748,6 @@ describe('browser terminal', () => {
 		expect(terminal.cwd).toBe('/todos');
 	});
 });
+
+// Automatic commits need the shared lock; this runtime has none of its own.
+useWebLocks();

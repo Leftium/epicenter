@@ -18,6 +18,7 @@ import {
 } from '../browser-store.js';
 import { isAttributesPath, normalizingAttribute } from './attributes.js';
 import type {
+	Admitted,
 	CasResult,
 	FastForwardPlan,
 	GitBackend,
@@ -27,6 +28,7 @@ import type {
 } from './backend.js';
 import { createGitSession, GITDIR, WORKDIR } from './browser-fs.js';
 import { abortableHttp } from './http.js';
+import { createMutex } from './mutex.js';
 import {
 	commitTree,
 	logCommits,
@@ -41,18 +43,6 @@ const REMOTE_NAME = 'origin';
 
 class BranchMoved {
 	constructor(readonly actual: string | undefined) {}
-}
-
-function createMutex() {
-	let tail = Promise.resolve();
-	return <T>(work: () => Promise<T>): Promise<T> => {
-		const result = tail.then(work, work);
-		tail = result.then(
-			() => {},
-			() => {},
-		);
-		return result;
-	};
 }
 
 export async function createBrowserGitBackend({
@@ -122,12 +112,52 @@ export async function createBrowserGitBackend({
 			});
 		});
 
-	async function exclusive<T>(work: () => Promise<T>): Promise<T> {
-		return queue(async () => {
-			const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+	const webLocks = () => (globalThis.navigator as Navigator | undefined)?.locks;
+
+	async function exclusive<T>(
+		work: () => Promise<T>,
+		signal?: AbortSignal,
+	): Promise<T> {
+		// The signal reaches both waits: this tab's queue, then the Web Lock.
+		// Either one rejects a waiter that is aborted and never runs its work.
+		return queue.run(async () => {
+			const locks = webLocks();
+			// Without Web Locks a command someone asked for still runs, ordered in
+			// this tab only. Across tabs the branch compare-and-swap is what
+			// refuses a losing commit.
 			if (locks === undefined) return work();
-			return locks.request(lockName, work);
-		});
+			let entered = false;
+			try {
+				return await locks.request(lockName, { signal }, () => {
+					entered = true;
+					return work();
+				});
+			} catch (cause) {
+				// Normalize a refused wait even if the host uses its own AbortError.
+				if (!entered && signal?.aborted) throw signal.reason;
+				throw cause;
+			}
+		}, signal);
+	}
+
+	async function tryExclusive<T>(work: () => Promise<T>): Promise<Admitted<T>> {
+		// Without Web Locks nothing can say whether another tab holds the
+		// folder, so unattended work is refused. It is not let through on this
+		// tab's queue alone as if that were the shared lock.
+		const locks = webLocks();
+		if (locks === undefined) return { ran: false };
+		// Both layers are asked without waiting: this tab's queue first, then
+		// the Web Lock another tab may hold.
+		const attempt = queue.tryRun(
+			async (): Promise<Admitted<T>> =>
+				locks.request(
+					lockName,
+					{ ifAvailable: true },
+					async (lock): Promise<Admitted<T>> =>
+						lock === null ? { ran: false } : { ran: true, value: await work() },
+				),
+		);
+		return attempt ?? { ran: false };
 	}
 
 	async function casBranch(
@@ -240,6 +270,7 @@ export async function createBrowserGitBackend({
 		remote,
 		withObjects,
 		exclusive,
+		tryExclusive,
 		readBranch: () => readRef(branchKey),
 		readRemoteTracking: () => readRef(trackingKey),
 		casBranch,

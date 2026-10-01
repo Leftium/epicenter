@@ -23,6 +23,7 @@ import type {
 	PublishResult,
 	StatusCode,
 } from './backend.js';
+import { createMutex } from './mutex.js';
 import { nativeCheckpointProblem } from './native-checkpoint.js';
 import type { CommitSummary, ObjectAccess } from './objects.js';
 
@@ -149,15 +150,9 @@ export async function createNativeGitBackend({
 	if (!isRepository)
 		await run(['init', '--quiet', `--initial-branch=${branch}`]);
 
-	let tail = Promise.resolve();
-	function exclusive<T>(work: () => Promise<T>): Promise<T> {
-		const result = tail.then(work, work);
-		tail = result.then(
-			() => {},
-			() => {},
-		);
-		return result;
-	}
+	// This handle's own work only. Another process is met at Git's lock
+	// files, where a held lock fails the command instead of delaying it.
+	const queue = createMutex();
 
 	async function resolve(ref: string): Promise<string | undefined> {
 		const result = await run(
@@ -209,7 +204,14 @@ export async function createNativeGitBackend({
 		async withObjects(work) {
 			return work(access);
 		},
-		exclusive,
+		exclusive: queue.run,
+		async tryExclusive(work) {
+			const attempt = queue.tryRun(async () => ({
+				ran: true as const,
+				value: await work(),
+			}));
+			return attempt ?? { ran: false };
+		},
 		readBranch: () => resolve(branchRef),
 		readRemoteTracking: () => resolve(trackingRef),
 		async casBranch(expected, next) {

@@ -176,10 +176,7 @@ describe('native partial moves', () => {
 				expect(moved.error?.name).toBe('Partial');
 				const files = folder.git.snapshot.files;
 				expect(files.state === 'observed' && files.stale).toBe(true);
-				expect(folder.git.snapshot.activity.commit).toEqual({
-					active: false,
-					pending: false,
-				});
+				expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
 				expect(folder.git.snapshot.lastCommit).toBe(committed);
 			} finally {
 				await chmod(join(root, 'locked'), 0o755);

@@ -2,17 +2,21 @@
  * History Coordinator Close Tests
  *
  * Closing a folder's history must stop outgoing network work at once while
- * admitted local commit passes finish. A held local pass must not delay the
- * cancellation, and a commit that finishes during close must not start a push.
+ * the local commit pass already running finishes. A held local pass must not
+ * delay the cancellation, and a commit that finishes during close must not
+ * start a push.
  *
  * Key behaviors:
- * - `close()` aborts the active push and cancels the queued push synchronously
- * - An admitted local commit pass still completes, and `close()` waits for it
- * - A commit finishing during close requests no push
+ * - `close()` aborts the active push synchronously
+ * - A push requested while one is active waits, and is told the folder
+ *   closed when closing reaches it first
+ * - The active local commit pass still completes, and `close()` waits for it
+ * - A commit finishing during close starts no push
  * - A caller signal only stops that caller waiting (`stoppedWaiting`)
  *
  * See also:
- * - `runner.test.ts` for the generic one-active/one-pending runner
+ * - `runner.test.ts` for `attempt` and `request`
+ * - `history-attempt.test.ts` for automatic attempts and queued callers
  * - `browser.test.ts` for a folder-level stalled push
  */
 import { expect, test } from 'bun:test';
@@ -77,7 +81,7 @@ async function setup() {
 	return { db, boundary, backend, probe, write };
 }
 
-test('close cancels queued and active pushes at once while a held local pass drains', async () => {
+test('close aborts the active push at once while a held local pass finishes', async () => {
 	const { db, boundary, backend, probe, write } = await setup();
 	const history = createHistory({
 		backend,
@@ -87,14 +91,15 @@ test('close cancels queued and active pushes at once while a held local pass dra
 	});
 
 	await write('a.txt', 'a');
-	// A content save's automatic request commits and then pushes.
-	history.requestAutomaticCommit();
-	// The automatic push after that commit is now active and stalled.
+	const first = history.commitAndPush();
+	// The push after that commit is now active and stalled.
 	for (let index = 0; index < 100 && probe.pushStarts === 0; index++)
 		await Bun.sleep(1);
 	expect(history.snapshot.activity.push.active).toBe(true);
-	const queued = history.push();
-	expect(history.snapshot.activity.push.pending).toBe(true);
+	// A second push waits its turn behind the stalled one.
+	const waiting = history.push();
+	await Bun.sleep(5);
+	expect(probe.pushStarts).toBe(1);
 
 	let release!: () => void;
 	probe.hold = new Promise<void>((resolve) => {
@@ -111,16 +116,19 @@ test('close cancels queued and active pushes at once while a held local pass dra
 	});
 	// Cancellation happened synchronously, before any local work settled.
 	expect(probe.pushAborts).toBe(1);
-	expect(await queued).toEqual({ status: 'cancelled', oid: undefined });
+	expect((await history.commit()).status).toBe('closed');
+	// The aborted push reports that; the one still waiting never started.
+	expect((await first).push.status).toBe('cancelled');
+	expect(await waiting).toEqual({ status: 'closed' });
 
 	await Bun.sleep(10);
 	expect(closed).toBe(false);
 	release();
-	const drained = await local;
-	expect(drained.status).toBe('committed');
+	const finished = await local;
+	expect(finished.status).toBe('committed');
 	await closing;
 	expect(history.snapshot.lastPush?.status).toBe('cancelled');
-	// The commit that finished during close requested no push.
+	// The commit that finished during close started no push.
 	expect(probe.pushStarts).toBe(1);
 	expect(await history.push()).toEqual({ status: 'closed' });
 	db.close();

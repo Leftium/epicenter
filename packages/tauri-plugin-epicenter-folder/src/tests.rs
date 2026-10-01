@@ -10,7 +10,11 @@
 //! - A session belongs to the window that attached it; another window that
 //!   names it is denied, and a page never supplies a root.
 //! - Two windows share one owner: saves, conflicts, events, and history.
-//! - Detaching one window leaves the other and the queued commit.
+//! - Detaching one window leaves the other and the commit already admitted.
+//! - A page built for an older protocol is refused at attach.
+//! - A push request withdrawn before the owner starts its transport never
+//!   reaches the remote; one already started finishes, and ending a session
+//!   withdraws only what had not started.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -23,7 +27,7 @@ use tauri::utils::acl::ExecutionContext;
 use tauri::webview::InvokeRequest;
 use tauri::{App, Listener, Manager, WebviewWindow, WebviewWindowBuilder};
 
-use crate::{init, Author, FolderConfig, FolderExt, ScopeConfig, COMMANDS, PROTOCOL};
+use crate::{init, Author, FolderConfig, FolderExt, Remote, ScopeConfig, COMMANDS, PROTOCOL};
 
 const BINDINGS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -95,7 +99,15 @@ fn temp(label: &str) -> TempDirectory {
 /// An app whose windows may call every plugin command, with the scope
 /// `notes` registered for `windows`.
 fn fixture(label: &str, windows: &[&str], commit_on_edit: bool) -> Fixture {
-    let directory = temp(label);
+    fixture_in(temp(label), windows, commit_on_edit, None)
+}
+
+fn fixture_in(
+    directory: TempDirectory,
+    windows: &[&str],
+    commit_on_edit: bool,
+    remote: Option<Remote>,
+) -> Fixture {
     let root = directory.0.join("notes");
     std::fs::create_dir(&root).unwrap();
     let mut context = mock_context(noop_assets());
@@ -114,6 +126,7 @@ fn fixture(label: &str, windows: &[&str], commit_on_edit: bool) -> Fixture {
             scope: "notes".to_string(),
             folder: FolderConfig {
                 commit_on_edit,
+                remote,
                 watch_events: false,
                 watch_interval: None,
                 ..FolderConfig::new(
@@ -183,6 +196,13 @@ fn apply(
     )
 }
 
+/// Return once no commit the owner admitted is still running. `paths` takes
+/// the Git lock, which an admitted commit holds from before its save returned
+/// until it has recorded its outcome.
+fn idle(window: &WebviewWindow<MockRuntime>, session: u64) {
+    invoke(window, "paths", json!({ "session": session })).expect("paths");
+}
+
 fn git(root: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")
         .args(args)
@@ -225,6 +245,11 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         json!({ "state": "unknown", "error": null })
     );
     assert_eq!(attached["snapshot"]["closed"], false);
+    assert_eq!(
+        attached["snapshot"]["activity"]["commit"],
+        json!({ "active": false }),
+        "activity reports what is running and nothing else"
+    );
 
     apply(
         &main,
@@ -318,35 +343,45 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         status["changes"],
         json!([{ "path": "todos/a.md", "kind": "add" }, { "path": "todos/a.png", "kind": "add" }])
     );
-    let pass = invoke(
+    // The commit command replies with the settled outcome itself.
+    let committed = invoke(
         &main,
         "commit",
         json!({ "session": session, "lease": null }),
     )
     .unwrap();
-    assert_eq!(pass["outcome"]["status"], "committed");
-    assert_eq!(pass["outcome"]["message"], "Update 2 files");
-    assert_eq!(pass["outcome"]["changedPaths"], 2);
-    assert_eq!(pass["followingPush"], Value::Null);
+    assert_eq!(committed["status"], "committed");
+    assert_eq!(committed["message"], "Update 2 files");
+    assert_eq!(committed["changedPaths"], 2);
+    assert!(committed.get("outcome").is_none() && committed.get("followingPush").is_none());
     assert_eq!(
         git(&fixture.root, &["log", "--format=%s"]),
         "Update 2 files"
     );
     let log = invoke(&main, "log", json!({ "session": session, "depth": 5 })).unwrap();
-    assert_eq!(log[0]["oid"], pass["outcome"]["oid"]);
+    assert_eq!(log[0]["oid"], committed["oid"]);
     assert_eq!(log[0]["author"]["name"], "Test Author");
     assert_eq!(
-        invoke(
-            &main,
-            "push",
-            json!({ "session": session, "joining": null })
-        )
-        .unwrap(),
+        push(&main, session, open_request(&main, session)).unwrap(),
         json!({ "status": "noRemote" })
     );
-    assert_eq!(
-        invoke(&main, "fetch", json!({ "session": session })).unwrap_err(),
-        json!({ "name": "NoRemote" })
+    let fetching = open_request(&main, session);
+    let fetch = || {
+        invoke(
+            &main,
+            "fetch",
+            json!({ "session": session, "request": fetching }),
+        )
+        .unwrap_err()
+    };
+    assert_eq!(fetch(), json!({ "name": "NoRemote" }));
+    // A request serves one command. Once that command has its answer the
+    // request is gone, and naming it again starts nothing.
+    let gone = fetch();
+    assert_eq!(gone["name"], "Denied");
+    assert!(
+        gone["reason"].as_str().unwrap().contains("no such request"),
+        "{gone}"
     );
     assert_eq!(
         invoke(
@@ -388,13 +423,13 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         json!({ "session": session, "message": "Add b" }),
     )
     .unwrap();
-    assert_eq!(staged["parent"], pass["outcome"]["oid"]);
+    assert_eq!(staged["parent"], committed["oid"]);
     assert_eq!(
         git(&fixture.root, &["rev-parse", "HEAD"]),
         staged["oid"].as_str().unwrap()
     );
 
-    for response in [&status, &pass, &staged] {
+    for response in [&status, &committed, &staged] {
         assert!(response.to_string().len() < 1024, "{response}");
     }
 }
@@ -448,6 +483,17 @@ fn a_window_reaches_only_its_own_scopes_and_its_own_sessions() {
         )
         .unwrap_err(),
         json!({ "name": "Incompatible", "host": PROTOCOL, "page": PROTOCOL + 1 })
+    );
+    // A page built before commit passes and pending activity were removed
+    // speaks protocol 1. It is refused before it can send anything else.
+    assert_eq!(
+        invoke(&b, "attach", json!({ "scope": "notes", "protocol": 1 })).unwrap_err(),
+        json!({ "name": "Incompatible", "host": 2, "page": 1 })
+    );
+    let no_session = invoke(&b, "list", json!({ "session": 1 })).unwrap_err();
+    assert_eq!(
+        no_session["name"], "Denied",
+        "the refused page has no session"
     );
     let a_session = ignored["session"].as_u64().unwrap();
     assert!(
@@ -577,7 +623,11 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
         .iter()
         .all(|event| event["scope"] == "notes" && event["paths"] == json!(["a.md"])));
 
-    // Window A saves and goes away at once; the owner still commits it.
+    // Window A saves and goes away at once. The owner admitted the save's
+    // commit before the save returned, and finishes it without the window.
+    // The earlier saves' commits are let finish first: a save made while one
+    // of them held the Git lock would have its own attempt skipped.
+    idle(&a, a_session);
     apply(
         &a,
         a_session,
@@ -599,15 +649,18 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
     });
 
     // Window B is untouched: same session, same owner, same history.
+    idle(&b, b_session);
     apply(
         &b,
         b_session,
         json!([write("b.md", "after a left", json!({ "kind": "absent" }))]),
     )
     .unwrap();
-    eventually("window B's save to be committed", || {
-        git(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]) == "a.md\nb.md\nlast.md"
-    });
+    idle(&b, b_session);
+    assert_eq!(
+        git(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]),
+        "a.md\nb.md\nlast.md"
+    );
     let status = invoke(&b, "status", json!({ "session": b_session, "lease": null })).unwrap();
     assert_eq!(status["changes"], json!([]));
 
@@ -686,7 +739,9 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
             .unwrap();
     });
 
-    // Shutdown drains what was admitted and refuses what comes after.
+    // Shutdown drains what was admitted and refuses what comes after. The
+    // save that waited for the lease was admitted for its commit when it
+    // landed, with the folder free; that commit holds the leased save too.
     fixture.app.folders().shutdown();
     assert_eq!(
         apply(
@@ -709,8 +764,311 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
     assert_eq!(
         git(&fixture.root, &["status", "--porcelain"]),
         "",
-        "everything admitted was committed"
+        "the admitted commit finished before shutdown returned"
     );
+}
+
+/// A bare remote whose `pre-receive` hook holds every push that carries
+/// commits: the real `git push` the owner started stays in flight until the
+/// test releases it. Each held push records what it carries.
+#[cfg(unix)]
+struct HeldRemote {
+    bare: PathBuf,
+    gate: PathBuf,
+}
+
+#[cfg(unix)]
+impl HeldRemote {
+    fn new(directory: &Path) -> (Self, Remote) {
+        use std::os::unix::fs::PermissionsExt;
+        let bare = directory.join("remote.git");
+        let gate = directory.join("gate");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::create_dir(&gate).unwrap();
+        git(
+            &bare,
+            &["init", "--quiet", "--bare", "--initial-branch=main"],
+        );
+        // The update is written under another name first, so a file named
+        // `arrived-N` is always complete.
+        let script = [
+            "#!/bin/sh",
+            &format!("cd '{}' || exit 1", gate.display()),
+            "n=$(($(ls | grep -c '^arriv') + 1))",
+            "cat > \"arriving-$n\"",
+            "mv \"arriving-$n\" \"arrived-$n\"",
+            "while [ ! -e \"release-$n\" ]; do sleep 0.02; done",
+            "",
+        ]
+        .join("\n");
+        let hook = bare.join("hooks/pre-receive");
+        std::fs::write(&hook, script).unwrap();
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let remote = Remote {
+            url: bare.display().to_string(),
+            branch: "main".to_string(),
+        };
+        (Self { bare, gate }, remote)
+    }
+
+    /// Wait for the `n`th push to reach the remote, and say which commit it
+    /// carries. It stays held there.
+    fn arrived(&self, n: usize) -> String {
+        let arrived = self.gate.join(format!("arrived-{n}"));
+        eventually("a push to reach the remote", || arrived.is_file());
+        let update = std::fs::read_to_string(arrived).unwrap();
+        update.split_whitespace().nth(1).unwrap().to_string()
+    }
+
+    /// How many pushes have reached the remote so far.
+    fn arrivals(&self) -> usize {
+        std::fs::read_dir(&self.gate)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("arriv"))
+            .count()
+    }
+
+    fn release(&self, n: usize) {
+        std::fs::write(self.gate.join(format!("release-{n}")), "").unwrap();
+    }
+
+    fn head(&self) -> String {
+        git(&self.bare, &["rev-parse", "main"])
+    }
+}
+
+/// A folder that does not commit on edit, with a remote whose pushes are held.
+#[cfg(unix)]
+fn held_fixture(label: &str, windows: &[&str]) -> (Fixture, HeldRemote) {
+    let directory = temp(label);
+    let (held, remote) = HeldRemote::new(&directory.0);
+    (fixture_in(directory, windows, false, Some(remote)), held)
+}
+
+fn open_request(window: &WebviewWindow<MockRuntime>, session: u64) -> u64 {
+    invoke(window, "open_request", json!({ "session": session }))
+        .expect("open a request")
+        .as_u64()
+        .expect("a request number")
+}
+
+fn push(window: &WebviewWindow<MockRuntime>, session: u64, request: u64) -> Result<Value, Value> {
+    invoke(
+        window,
+        "push",
+        json!({ "session": session, "request": request }),
+    )
+}
+
+#[cfg(unix)]
+fn withdraw(window: &WebviewWindow<MockRuntime>, session: u64, request: u64) {
+    invoke(
+        window,
+        "withdraw_request",
+        json!({ "session": session, "request": request }),
+    )
+    .expect("withdrawing never fails");
+}
+
+/// Save one file and commit it; the commit's ID.
+#[cfg(unix)]
+fn commit_file(window: &WebviewWindow<MockRuntime>, session: u64, path: &str) -> String {
+    apply(
+        window,
+        session,
+        json!([write(path, path, json!({ "kind": "absent" }))]),
+    )
+    .unwrap();
+    let committed = invoke(
+        window,
+        "commit",
+        json!({ "session": session, "lease": null }),
+    )
+    .unwrap();
+    assert_eq!(committed["status"], "committed", "{committed}");
+    committed["oid"].as_str().unwrap().to_string()
+}
+
+/// What the owner replies for a push it never started: this request pinned
+/// no commit and sent nothing. A push that named a request the session no
+/// longer has is refused on arrival instead; that started nothing either.
+/// Which of the two a test sees depends on whether the push command had
+/// reached the owner when its request was withdrawn.
+#[cfg(unix)]
+fn assert_never_started(reply: Result<Value, Value>) {
+    match reply {
+        Ok(outcome) => assert_eq!(outcome, json!({ "status": "cancelled", "oid": null })),
+        Err(refused) => assert_eq!(refused["name"], "Denied", "{refused}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_push_withdrawn_before_its_transport_starts_never_reaches_the_remote() {
+    let (fixture, remote) = held_fixture("withdraw", &["a", "b"]);
+    let a = window(&fixture.app, "a");
+    let b = window(&fixture.app, "b");
+    let a_session = attach(&a);
+    let b_session = attach(&b);
+    let first = commit_file(&a, a_session, "one.md");
+    let (a, b) = (&a, &b);
+
+    std::thread::scope(|scope| {
+        // A's push is a real `git push`, held inside the remote.
+        let a_request = open_request(&a, a_session);
+        let a_pushing = scope.spawn(move || push(a, a_session, a_request));
+        assert_eq!(remote.arrived(1), first);
+        // Its request is in use: a second command cannot take it.
+        let duplicate = push(&a, a_session, a_request).unwrap_err();
+        assert_eq!(duplicate["name"], "Denied");
+        assert!(
+            duplicate["reason"]
+                .as_str()
+                .unwrap()
+                .contains("already in use"),
+            "{duplicate}"
+        );
+        // A second commit, so a push started for B would carry it.
+        let second = commit_file(&a, a_session, "two.md");
+
+        // Withdrawn before the push command arrives: refused, nothing queued.
+        let early = open_request(&a, a_session);
+        withdraw(&a, a_session, early);
+        let refused = push(&a, a_session, early).unwrap_err();
+        assert_eq!(refused["name"], "Denied");
+        assert!(
+            refused["reason"]
+                .as_str()
+                .unwrap()
+                .contains("nothing was started"),
+            "{refused}"
+        );
+
+        // B asks behind A and withdraws while A is still in flight.
+        let b_request = open_request(&a, a_session);
+        let b_pushing = scope.spawn(move || push(a, a_session, b_request));
+        withdraw(&a, a_session, b_request);
+        assert_never_started(b_pushing.join().unwrap());
+        // Withdrawing again, or using the request now, does nothing.
+        withdraw(&a, a_session, b_request);
+        assert_eq!(
+            push(&a, a_session, b_request).unwrap_err()["name"],
+            "Denied"
+        );
+
+        // A was admitted before any of this, and finishes.
+        remote.release(1);
+        assert_eq!(
+            a_pushing.join().unwrap().unwrap(),
+            json!({ "status": "pushed", "oid": first })
+        );
+        assert_eq!(remote.head(), first);
+
+        // The next push to reach the remote is P's, carrying the third
+        // commit. Had B's push started when A finished, it would have reached
+        // the remote first, carrying the second.
+        let third = commit_file(&a, a_session, "three.md");
+        let p_request = open_request(&a, a_session);
+        let p_pushing = scope.spawn(move || push(a, a_session, p_request));
+        assert_eq!(remote.arrived(2), third);
+        assert_ne!(second, third);
+
+        // C asks behind P from window A. Window B cannot withdraw or use it:
+        // it has neither A's session nor a request of that number.
+        let c_request = open_request(&a, a_session);
+        let c_pushing = scope.spawn(move || push(a, a_session, c_request));
+        withdraw(&b, a_session, c_request);
+        withdraw(&b, b_session, c_request);
+        for session in [a_session, b_session] {
+            assert_eq!(push(&b, session, c_request).unwrap_err()["name"], "Denied");
+        }
+        let fourth = commit_file(&b, b_session, "four.md");
+        remote.release(2);
+        assert_eq!(
+            p_pushing.join().unwrap().unwrap(),
+            json!({ "status": "pushed", "oid": third })
+        );
+        // C was not withdrawn: its push runs, once, after P.
+        assert_eq!(remote.arrived(3), fourth);
+        remote.release(3);
+        assert_eq!(
+            c_pushing.join().unwrap().unwrap(),
+            json!({ "status": "pushed", "oid": fourth })
+        );
+        assert_eq!(remote.head(), fourth);
+        assert_eq!(remote.arrivals(), 3, "A, P, and C; never B");
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn ending_a_session_withdraws_its_unstarted_push_and_keeps_the_one_in_flight() {
+    for ending in ["reload", "destroyed"] {
+        let (fixture, remote) = held_fixture(ending, &["a", "b"]);
+        let a = window(&fixture.app, "a");
+        let b = window(&fixture.app, "b");
+        let a_session = attach(&a);
+        let b_session = attach(&b);
+        let first = commit_file(&a, a_session, "one.md");
+        let (a, b) = (&a, &b);
+
+        std::thread::scope(|scope| {
+            // Window A has one push in flight at the remote and one behind it.
+            let a_request = open_request(&a, a_session);
+            let a_pushing = scope.spawn(move || push(a, a_session, a_request));
+            assert_eq!(remote.arrived(1), first, "{ending}");
+            commit_file(&b, b_session, "two.md");
+            let b_request = open_request(&a, a_session);
+            let b_pushing = scope.spawn(move || push(a, a_session, b_request));
+
+            // The page goes away, or its window does.
+            if ending == "reload" {
+                crate::commands::end_page(a.as_ref());
+            } else {
+                a.as_ref().close().unwrap();
+                crate::window_destroyed(fixture.app.handle(), "a");
+            }
+
+            // The push that had not started never will, and the ended
+            // session can neither use the request nor open another.
+            assert_never_started(b_pushing.join().unwrap());
+            assert_eq!(
+                push(&a, a_session, b_request).unwrap_err()["name"],
+                "Denied",
+                "{ending}"
+            );
+            assert_eq!(
+                invoke(&a, "open_request", json!({ "session": a_session })).unwrap_err()["name"],
+                "Denied",
+                "{ending}"
+            );
+
+            // The push the owner had already started is the owner's: it
+            // finishes without the session that asked.
+            remote.release(1);
+            assert_eq!(
+                a_pushing.join().unwrap().unwrap(),
+                json!({ "status": "pushed", "oid": first }),
+                "{ending}"
+            );
+            assert_eq!(remote.head(), first, "{ending}");
+
+            // The next push to reach the remote is window B's own, carrying
+            // a commit made after the session ended.
+            let third = commit_file(&b, b_session, "three.md");
+            let p_request = open_request(&b, b_session);
+            let p_pushing = scope.spawn(move || push(b, b_session, p_request));
+            assert_eq!(remote.arrived(2), third, "{ending}");
+            remote.release(2);
+            assert_eq!(
+                p_pushing.join().unwrap().unwrap(),
+                json!({ "status": "pushed", "oid": third }),
+                "{ending}"
+            );
+            assert_eq!(remote.arrivals(), 2, "{ending}");
+        });
+    }
 }
 
 #[test]
@@ -736,6 +1094,9 @@ fn a_page_reload_ends_that_pages_sessions_and_leases_and_nothing_else() {
         )]),
     )
     .unwrap();
+    // Let that save's commit finish, so window B's save below is not skipped
+    // for finding the Git lock held.
+    idle(&b, b_session);
     invoke(&a, "acquire_lease", json!({ "session": a_session })).unwrap();
     crate::commands::end_page(a.as_ref());
 
@@ -829,6 +1190,9 @@ fn a_destroyed_window_ends_its_sessions_after_the_manager_forgot_its_webview() {
         )]),
     )
     .unwrap();
+    // Let that save's commit finish, so window B's save below is not skipped
+    // for finding the Git lock held.
+    idle(&b, b_session);
     // The window is destroyed while one of its terminal commands holds the folder.
     invoke(&a, "acquire_lease", json!({ "session": a_session })).unwrap();
 
@@ -881,8 +1245,8 @@ fn a_destroyed_window_ends_its_sessions_after_the_manager_forgot_its_webview() {
         "Denied"
     );
     assert!(!fixture.root.join("late.md").exists());
-    // Window B keeps its session, and the save admitted before the window
-    // closed is still committed by the owner.
+    // Window B keeps its session, and the save made before the window closed
+    // is in the folder and in history.
     let read = invoke(
         &b,
         "read",
@@ -1007,6 +1371,7 @@ fn a_window_recreated_under_the_same_label_is_a_separate_instance() {
             Live {
                 session,
                 leases: Default::default(),
+                requests: Default::default(),
                 _subscription: subscription,
             },
         )

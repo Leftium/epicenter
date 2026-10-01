@@ -39,9 +39,10 @@
 //! by the sessions registered with it.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use epicenter_folder_core::owner::{FolderOwner, Lease, Subscription};
+use epicenter_folder_core::owner::{Caller, FolderOwner, Lease, Request, Subscription};
 use epicenter_folder_core::registry::Session;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -50,13 +51,28 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// What a live session holds. Dropping it stops the session's events and
-/// releases its terminal leases.
+/// What a live session holds. Dropping it stops the session's events,
+/// releases its terminal leases, and withdraws its pushes and fetches that
+/// the owner has not started.
 pub(crate) struct Live {
     pub session: Session,
     pub leases: BTreeMap<u64, Lease>,
+    /// The pushes and fetches this session opened and has not finished or
+    /// withdrawn. This map is the only record of them: removing an entry
+    /// drops its `Request`, which is what withdraws it.
+    pub requests: BTreeMap<u64, OpenRequest>,
     pub _subscription: Subscription,
 }
+
+/// One push or fetch a page announced, and whether a command has taken it.
+pub(crate) struct OpenRequest {
+    request: Request,
+    used: bool,
+}
+
+/// Request numbers are never reused, so a late withdrawal cannot name a newer
+/// request. A number means nothing outside the session that opened it.
+static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
 
 /// One window's session. The webview's resource table holds it strongly, for
 /// lookup by resource ID; its instance holds it weakly, to end it.
@@ -121,6 +137,56 @@ impl SessionState {
             .as_mut()
             .and_then(|live| live.leases.remove(&lease));
         drop(released);
+    }
+
+    /// Keep a request for as long as the session lives, under a new number. A
+    /// session that ended meanwhile drops it.
+    pub fn open_request(&self, request: Request) -> Result<u64, String> {
+        match &mut *lock(&self.live) {
+            Some(live) => {
+                let id = NEXT_REQUEST.fetch_add(1, Ordering::SeqCst);
+                live.requests.insert(
+                    id,
+                    OpenRequest {
+                        request,
+                        used: false,
+                    },
+                );
+                Ok(id)
+            }
+            None => Err(ENDED.to_string()),
+        }
+    }
+
+    /// Take a request for the one push or fetch it was opened for. A request
+    /// that was withdrawn, finished, or never opened by this session is
+    /// unknown here, and one already taken cannot be taken again.
+    pub fn use_request(&self, id: u64) -> Result<Caller, String> {
+        match lock(&self.live)
+            .as_mut()
+            .and_then(|live| live.requests.get_mut(&id))
+        {
+            Some(open) if !open.used => {
+                open.used = true;
+                Ok(open.request.caller())
+            }
+            Some(_) => Err("this request is already in use by another command".to_string()),
+            None => Err(
+                "this session has no such request: it was withdrawn, has finished, or was never opened; nothing was started for it"
+                    .to_string(),
+            ),
+        }
+    }
+
+    /// Forget a request: its command finished, or its caller withdrew. Safe
+    /// to call for a request that is already gone.
+    pub fn close_request(&self, id: u64) {
+        // Taken out under the lock, dropped outside it: dropping withdraws,
+        // which takes the owner's own locks.
+        let closed = lock(&self.live)
+            .as_mut()
+            .and_then(|live| live.requests.remove(&id));
+        drop(closed);
     }
 }
 

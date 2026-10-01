@@ -5,8 +5,13 @@
 //!
 //! Key behaviors:
 //! - A save is committed by the owner even after the handle that saved is gone.
-//! - A commit pass captures without the file gate: a save lands while a pass
-//!   is held, stays visible, and is committed by the pending pass.
+//! - A save makes one automatic commit attempt. When the Git lock or the file
+//!   gate is held, the attempt is dropped: nothing runs when the holder lets
+//!   go, and the save stays uncommitted until an explicit commit.
+//! - An explicit commit or fast-forward waits and then reads fresh inputs; a
+//!   terminal lease holder runs them inside its own lease.
+//! - A commit holds exactly what it snapshotted, however saves land after.
+//! - Shutdown waits for an admitted commit and starts none of its own.
 //! - A branch moved by another Git process is reported, never retried or
 //!   overwritten; held ref and index locks fail or warn without losing files.
 //! - Status writes nothing: no object, no index refresh, no lock file.
@@ -27,13 +32,45 @@ use crate::messages::{ChangeKind, PathChange};
 use crate::owner::{FolderConfig, FolderOwner};
 use crate::testing::{config, eventually, git, open, tree, write, TempDir};
 
+/// Wait for the commit a save was admitted for, if it was. The save decided
+/// that before it returned, so nothing can start after this sees it idle.
 fn settled(owner: &FolderOwner) {
-    eventually("the commit and push queues to drain", || {
+    eventually("the admitted commit and any scan to finish", || {
         let activity = owner.snapshot().activity;
-        ![activity.commit, activity.push, activity.scan]
-            .iter()
-            .any(|runner| runner.active || runner.pending)
+        !activity.commit.active && !activity.scan.active
     });
+}
+
+/// Wait until the branch head is on the remote and no push is running.
+fn pushed(owner: &FolderOwner, root: &Path) {
+    let head = git(root, &["rev-parse", "HEAD"]);
+    eventually("the head to be pushed", || {
+        let snapshot = owner.snapshot();
+        !snapshot.activity.push.active
+            && matches!(
+                snapshot.last_push.as_ref().map(|attempt| &attempt.result),
+                Some(PushOutcome::Pushed { oid }) if *oid == head
+            )
+    });
+}
+
+/// A hook that reports reaching it and then waits to be released, once.
+fn hold_once() -> (
+    Arc<dyn Fn() + Send + Sync>,
+    mpsc::Receiver<()>,
+    mpsc::Sender<()>,
+) {
+    let (reached, at_hook) = mpsc::channel::<()>();
+    let (release, gate) = mpsc::channel::<()>();
+    let gate = Mutex::new(gate);
+    let once = AtomicBool::new(true);
+    let hook: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        if once.swap(false, Ordering::SeqCst) {
+            reached.send(()).unwrap();
+            gate.lock().unwrap().recv().unwrap();
+        }
+    });
+    (hook, at_hook, release)
 }
 
 fn save(owner: &FolderOwner, path: &str, content: &str) {
@@ -104,52 +141,140 @@ fn a_save_is_committed_after_the_handle_that_saved_is_gone() {
 }
 
 #[test]
-fn a_save_lands_while_a_commit_pass_is_held_and_the_pending_pass_commits_it() {
-    let temp = TempDir::new("held-pass");
+fn a_save_made_while_the_git_lock_is_held_is_never_committed_on_its_own() {
+    let temp = TempDir::new("git-busy");
     let root = temp.folder("notes");
     let owner = open(&root);
-    let (captured, at_capture) = mpsc::channel::<()>();
-    let (release, gate) = mpsc::channel::<()>();
-    let gate = Mutex::new(gate);
-    let first = AtomicBool::new(true);
-    owner.hooks().after_capture = Some(Arc::new(move || {
-        if first.swap(false, Ordering::SeqCst) {
-            captured.send(()).unwrap();
-            gate.lock().unwrap().recv().unwrap();
-        }
-    }));
+    let (hook, at_capture, release) = hold_once();
+    owner.hooks().after_capture = Some(hook);
 
     save(&owner, "a.md", "A");
     at_capture.recv().unwrap();
-    // Pass A has captured the folder and is held before it publishes.
-    let started = Instant::now();
+    // A's commit released the file gate and holds the Git lock, before it
+    // publishes. B's save lands, and its one attempt finds the Git lock held.
     save(&owner, "b.md", "B");
-    assert!(
-        started.elapsed() < Duration::from_secs(2),
-        "the save did not wait for the held pass"
-    );
-    let snapshot = owner.snapshot();
-    assert!(snapshot.activity.commit.active, "pass A is still held");
-    assert!(
-        snapshot.activity.commit.pending,
-        "B's request is the pending pass"
-    );
-    assert_eq!(
-        owner.read("b.md").unwrap().bytes,
-        b"B",
-        "B is visible while A is held"
-    );
+    assert_eq!(owner.read("b.md").unwrap().bytes, b"B");
+    assert!(owner.snapshot().activity.commit.active, "A is still held");
 
     release.send(()).unwrap();
-    eventually("pass A to settle", || {
-        owner.snapshot().last_commit.is_some()
-    });
+    settled(&owner);
+    // Nothing ran when A released the lock: B's attempt was forgotten.
+    let first = git(&root, &["rev-parse", "HEAD"]);
+    assert_eq!(subjects(&root), vec!["Add a.md"]);
+    assert_eq!(git(&root, &["status", "--porcelain"]), "?? b.md");
+    let snapshot = owner.snapshot();
+    assert!(matches!(
+        &snapshot.last_commit.as_ref().unwrap().result,
+        CommitOutcome::Committed { oid, message, .. } if *oid == first && message == "Add a.md"
+    ));
+    assert!(
+        matches!(snapshot.files, Observation::Observed { stale: true, .. }),
+        "B landed after A's snapshot"
+    );
+
+    // An explicit commit finds B exactly as the skipped attempt left it. Had
+    // anything committed B meanwhile, this would have nothing to commit.
+    assert!(matches!(
+        owner.commit(None),
+        CommitOutcome::Committed { ref parent, ref message, changed_paths: 1, .. }
+            if parent.as_deref() == Some(first.as_str()) && message == "Add b.md"
+    ));
+    assert_eq!(subjects(&root), vec!["Add b.md", "Add a.md"]);
+}
+
+#[test]
+fn a_save_made_through_a_terminal_lease_is_never_committed_on_its_own() {
+    let temp = TempDir::new("gate-busy");
+    let root = temp.folder("notes");
+    let owner = open(&root);
+    let lease = owner.lease().unwrap();
+    owner
+        .apply(
+            &[write("a.md", "from the terminal", FileExpectation::Absent)],
+            Some(lease.id()),
+        )
+        .unwrap();
+    // The lease holds the file gate, so the save's one attempt was dropped
+    // before the save returned. The Git lock was free: it is not enough.
+    let untouched = |owner: &FolderOwner| {
+        let snapshot = owner.snapshot();
+        assert_eq!(snapshot.last_commit, None);
+        assert!(!snapshot.activity.commit.active);
+        assert!(!root.join(".git/refs/heads/main").exists());
+    };
+    untouched(&owner);
+
+    // Releasing the lease starts nothing.
+    drop(lease);
+    untouched(&owner);
+    assert!(matches!(
+        owner.commit(None),
+        CommitOutcome::Committed { parent: None, ref message, .. } if message == "Add a.md"
+    ));
+
+    // The next save, with the gate free, is committed by its own attempt.
+    save(&owner, "b.md", "B");
     settled(&owner);
     assert_eq!(subjects(&root), vec!["Add b.md", "Add a.md"]);
-    assert_eq!(
-        git(&root, &["show", "HEAD~1", "--format=", "--name-only"]),
-        "a.md"
+}
+
+#[test]
+fn an_explicit_commit_waits_for_the_git_lock_and_commits_what_landed_meanwhile() {
+    let temp = TempDir::new("explicit-wait");
+    let root = temp.folder("notes");
+    let owner = manual(&root);
+    save(&owner, "a.md", "A");
+    let (hook, at_hash, release) = hold_once();
+    owner.hooks().before_hash = Some(hook);
+
+    let first = {
+        let owner = owner.clone();
+        std::thread::spawn(move || owner.commit(None))
+    };
+    at_hash.recv().unwrap();
+    // The first commit holds the Git lock. A second is asked for: it takes
+    // the file gate, finds the Git lock held, and gives the gate back.
+    let second = {
+        let owner = owner.clone();
+        std::thread::spawn(move || owner.commit(None))
+    };
+    // So a save still lands while both commits are outstanding, wherever the
+    // second one is in its wait.
+    let (done, finished) = mpsc::channel();
+    let saver = owner.clone();
+    let saving = std::thread::spawn(move || {
+        save(&saver, "b.md", "B");
+        done.send(()).unwrap();
+    });
+    finished
+        .recv_timeout(Duration::from_secs(20))
+        .expect("a save is not stuck behind a commit that is itself waiting");
+    saving.join().unwrap();
+
+    release.send(()).unwrap();
+    let first = first.join().unwrap();
+    let second = second.join().unwrap();
+    let CommitOutcome::Committed {
+        oid: first_oid,
+        message,
+        changed_paths: 1,
+        ..
+    } = &first
+    else {
+        panic!("{first:?}");
+    };
+    assert_eq!(message, "Add a.md");
+    // The second read the folder only once it held both locks: it holds the
+    // save that landed while it waited, on top of the first commit.
+    assert!(
+        matches!(
+            second,
+            CommitOutcome::Committed { ref parent, ref message, changed_paths: 1, .. }
+                if parent.as_deref() == Some(first_oid.as_str()) && message == "Add b.md"
+        ),
+        "{second:?}"
     );
+    assert_eq!(subjects(&root), vec!["Add b.md", "Add a.md"]);
     assert!(matches!(
         owner.snapshot().files,
         Observation::Observed { stale: false, ref value, .. } if value.changes.is_empty()
@@ -163,7 +288,7 @@ fn a_rename_cannot_land_inside_a_snapshot_so_the_pass_never_commits_an_empty_tre
     let owner = manual(&root);
     save(&owner, "todos/old.md", "row");
     save(&owner, "todos/old.png", "image");
-    owner.commit();
+    owner.commit(None);
     assert_eq!(
         git(&root, &["ls-tree", "-r", "--name-only", "HEAD"]),
         "todos/old.md\ntodos/old.png"
@@ -203,7 +328,7 @@ fn a_rename_cannot_land_inside_a_snapshot_so_the_pass_never_commits_an_empty_tre
         );
     }));
 
-    let outcome = owner.commit().outcome;
+    let outcome = owner.commit(None);
     renamed.lock().unwrap().take().unwrap().join().unwrap();
     assert!(
         !landed_during.load(Ordering::SeqCst),
@@ -224,7 +349,7 @@ fn a_rename_cannot_land_inside_a_snapshot_so_the_pass_never_commits_an_empty_tre
     );
 
     assert!(matches!(
-        owner.commit().outcome,
+        owner.commit(None),
         CommitOutcome::Committed {
             changed_paths: 4,
             ..
@@ -245,24 +370,16 @@ fn a_rename_cannot_land_inside_a_snapshot_so_the_pass_never_commits_an_empty_tre
 }
 
 #[test]
-fn a_save_finishes_while_a_pass_is_held_at_hashing_and_the_pending_pass_covers_it() {
+fn a_commit_holds_exactly_what_it_snapshotted_while_later_saves_land() {
     let temp = TempDir::new("held-hash");
     let root = temp.folder("notes");
     let owner = open(&root);
-    let (reached, at_hash) = mpsc::channel::<()>();
-    let (release, gate) = mpsc::channel::<()>();
-    let gate = Mutex::new(gate);
-    let once = AtomicBool::new(true);
-    owner.hooks().before_hash = Some(Arc::new(move || {
-        if once.swap(false, Ordering::SeqCst) {
-            reached.send(()).unwrap();
-            gate.lock().unwrap().recv().unwrap();
-        }
-    }));
+    let (hook, at_hash, release) = hold_once();
+    owner.hooks().before_hash = Some(hook);
 
     save(&owner, "a.md", "A");
     at_hash.recv().unwrap();
-    // Pass A has its snapshot and is held before it hashes a byte.
+    // A's commit has its snapshot and is held before it hashes a byte.
     let (done, finished) = mpsc::channel();
     let saver = owner.clone();
     let saving = std::thread::spawn(move || {
@@ -273,19 +390,35 @@ fn a_save_finishes_while_a_pass_is_held_at_hashing_and_the_pending_pass_covers_i
     });
     finished
         .recv_timeout(Duration::from_secs(10))
-        .expect("saves finish while pass A is held at hashing");
+        .expect("saves finish while the commit is held at hashing");
     saving.join().unwrap();
-    let snapshot = owner.snapshot();
-    assert!(snapshot.activity.commit.active && snapshot.activity.commit.pending);
+    assert!(owner.snapshot().activity.commit.active);
 
     release.send(()).unwrap();
     settled(&owner);
-    assert_eq!(subjects(&root), vec!["Update 2 files", "Add a.md"]);
+    // The target, the message, and the count all come from the snapshot.
+    let head = git(&root, &["rev-parse", "HEAD"]);
+    assert!(matches!(
+        &owner.snapshot().last_commit.as_ref().unwrap().result,
+        CommitOutcome::Committed { oid, parent: None, message, changed_paths: 1, .. }
+            if *oid == head && message == "Add a.md"
+    ));
+    assert_eq!(subjects(&root), vec!["Add a.md"]);
     assert_eq!(
-        git(&root, &["show", "HEAD~1:a.md"]),
-        "A",
-        "pass A committed the bytes it snapshotted"
+        git(&root, &["ls-tree", "-r", "--name-only", "HEAD"]),
+        "a.md"
     );
+    assert_eq!(git(&root, &["show", "HEAD:a.md"]), "A");
+    // Both later saves were skipped while the Git lock was held, and stay
+    // uncommitted until someone asks.
+    assert!(matches!(
+        owner.snapshot().files,
+        Observation::Observed { stale: true, .. }
+    ));
+    assert!(matches!(
+        owner.commit(None),
+        CommitOutcome::Committed { ref message, changed_paths: 2, .. } if message == "Update 2 files"
+    ));
     assert_eq!(
         git(&root, &["show", "HEAD:a.md"]),
         "A, rewritten after the snapshot"
@@ -298,45 +431,69 @@ fn a_save_finishes_while_a_pass_is_held_at_hashing_and_the_pending_pass_covers_i
 }
 
 #[test]
-fn a_terminal_lease_holder_can_commit_without_waiting_for_its_own_lease() {
+fn a_terminal_lease_holder_runs_git_inside_its_own_lease() {
     let temp = TempDir::new("lease-commit");
     let root = temp.folder("notes");
-    let owner = manual(&root);
+    let bare = temp.folder("remote.git");
+    git(
+        &bare,
+        &["init", "--quiet", "--bare", "--initial-branch=main"],
+    );
+    let owner = with_remote(&root, &bare, false);
     let lease = owner.lease().unwrap();
+    let id = lease.id();
     owner
         .apply(
             &[write("a.md", "from the terminal", FileExpectation::Absent)],
-            Some(lease.id()),
+            Some(id),
         )
         .unwrap();
-    let started = Instant::now();
-    let outcome = {
-        let _waiting = owner.vouch(Some(lease.id()));
-        owner.commit().outcome
-    };
+    // Each call enters the gate through the lease it names. None of them
+    // waits behind the lease, which would wait for its own holder.
+    let outcome = owner.commit(Some(id));
     assert!(
-        matches!(outcome, CommitOutcome::Committed { .. }),
+        matches!(outcome, CommitOutcome::Committed { ref message, .. } if message == "Add a.md"),
         "{outcome:?}"
     );
-    {
-        let _waiting = owner.vouch(Some(lease.id()));
-        assert!(owner.status().unwrap().changes.is_empty());
-    }
-    assert!(
-        started.elapsed() < Duration::from_secs(20),
-        "the pass ran inside the lease"
+    assert!(owner.status(Some(id)).unwrap().changes.is_empty());
+    assert_eq!(
+        owner.pull_fast_forward(Some(id)),
+        Err(PullError::NoFetchedHead)
     );
     // The lease is still the holder: it can publish again.
     owner
         .apply(
             &[write("b.md", "still leased", FileExpectation::Absent)],
-            Some(lease.id()),
+            Some(id),
         )
         .unwrap();
+
+    // A lease that no longer holds the gate is refused, not waited for.
+    drop(lease);
+    let ended = "the terminal lease was released or reached its time limit";
+    assert_eq!(
+        owner.commit(Some(id)),
+        CommitOutcome::Failed {
+            error: ended.to_string()
+        }
+    );
+    assert_eq!(
+        owner.status(Some(id)),
+        Err(GitError::failed("status", ended))
+    );
+    assert_eq!(
+        owner.pull_fast_forward(Some(id)),
+        Err(PullError::Refused {
+            error: crate::files::FileError::LeaseEnded {
+                reason: ended.to_string()
+            }
+        })
+    );
+    assert_eq!(git(&root, &["status", "--porcelain"]), "?? b.md");
 }
 
 #[test]
-fn an_observation_captured_before_a_save_is_stale_until_a_later_pass() {
+fn an_observation_captured_before_a_save_is_stale_until_a_later_commit() {
     let temp = TempDir::new("stale");
     let root = temp.folder("notes");
     let owner = manual(&root);
@@ -349,9 +506,8 @@ fn an_observation_captured_before_a_save_is_stale_until_a_later_pass() {
         }
     }));
 
-    let pass = owner.commit();
     assert!(matches!(
-        pass.outcome,
+        owner.commit(None),
         CommitOutcome::Committed { ref message, .. } if message == "Add a.md"
     ));
     // A's commit is not rejected because a save landed after its capture, but
@@ -362,9 +518,8 @@ fn an_observation_captured_before_a_save_is_stale_until_a_later_pass() {
     ));
     assert_eq!(git(&root, &["status", "--porcelain"]), "?? b.md");
 
-    let pass = owner.commit();
     assert!(matches!(
-        pass.outcome,
+        owner.commit(None),
         CommitOutcome::Committed { ref message, .. } if message == "Add b.md"
     ));
     assert!(matches!(
@@ -379,7 +534,7 @@ fn a_branch_moved_by_another_git_process_is_reported_and_never_overwritten() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     save(&owner, "a.md", "A");
-    let base = match owner.commit().outcome {
+    let base = match owner.commit(None) {
         CommitOutcome::Committed { oid, .. } => oid,
         other => panic!("{other:?}"),
     };
@@ -396,7 +551,7 @@ fn a_branch_moved_by_another_git_process_is_reported_and_never_overwritten() {
     }));
     save(&owner, "b.md", "B");
     let outside;
-    match owner.commit().outcome {
+    match owner.commit(None) {
         CommitOutcome::BranchMoved {
             candidate,
             expected,
@@ -410,21 +565,30 @@ fn a_branch_moved_by_another_git_process_is_reported_and_never_overwritten() {
         }
         other => panic!("the lost compare-and-swap is reported: {other:?}"),
     }
+    // The commit returned its report and nothing tried again: the branch is
+    // where the other process left it, and the save is on disk, uncommitted.
     assert_eq!(subjects(&root), vec!["outside commit", "Add a.md"]);
+    assert_eq!(git(&root, &["status", "--porcelain"]), "?? b.md");
+    let snapshot = owner.snapshot();
+    assert!(matches!(
+        snapshot.last_commit.as_ref().unwrap().result,
+        CommitOutcome::BranchMoved { .. }
+    ));
+    assert!(!snapshot.activity.commit.active);
     assert_eq!(
         owner.read("b.md").unwrap().bytes,
         b"B",
         "the save is still on disk"
     );
 
-    match owner.commit().outcome {
+    match owner.commit(None) {
         CommitOutcome::Committed {
             parent, message, ..
         } => {
             assert_eq!(parent.as_deref(), Some(outside.as_str()));
             assert_eq!(message, "Add b.md");
         }
-        other => panic!("a fresh pass commits on top: {other:?}"),
+        other => panic!("a later commit lands on top: {other:?}"),
     }
 }
 
@@ -434,38 +598,42 @@ fn bytes_snapshotted_for_one_parent_are_never_committed_on_another() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     save(&owner, "a.md", "A");
-    owner.commit();
+    owner.commit(None);
 
-    // After the snapshot, and before this pass reaches the Git lock, the
-    // branch and the working file both move, as a fast-forward would do.
+    // After the snapshot, another program moves the branch and the working
+    // file together, as its own commit would.
     let outside_root = root.clone();
     let once = AtomicBool::new(true);
-    owner.hooks().after_snapshot = Some(Arc::new(move || {
+    owner.hooks().before_hash = Some(Arc::new(move || {
         if once.swap(false, Ordering::SeqCst) {
             std::fs::write(outside_root.join("a.md"), "A from the incoming commit").unwrap();
             git(&outside_root, &["commit", "--quiet", "-am", "incoming"]);
         }
     }));
     save(&owner, "b.md", "B");
-    let incoming_parent;
-    match owner.commit().outcome {
-        CommitOutcome::Committed {
-            parent, message, ..
-        } => {
-            assert_eq!(
-                message, "Add b.md",
-                "the pass started over with a fresh snapshot"
-            );
-            incoming_parent = parent.unwrap();
-        }
+    let incoming = match owner.commit(None) {
+        // The snapshot belongs to the parent it was taken on. It is not
+        // published on the new one, and the commit does not start over.
+        CommitOutcome::BranchMoved { actual, .. } => actual.unwrap(),
         other => panic!("{other:?}"),
-    }
-    assert_eq!(subjects(&root), vec!["Add b.md", "incoming", "Add a.md"]);
-    assert_eq!(git(&root, &["rev-parse", "HEAD~1"]), incoming_parent);
+    };
+    assert_eq!(subjects(&root), vec!["incoming", "Add a.md"]);
+    assert_eq!(git(&root, &["rev-parse", "HEAD"]), incoming);
     assert_eq!(
         git(&root, &["show", "HEAD:a.md"]),
         "A from the incoming commit",
         "the older snapshot did not undo the incoming change"
+    );
+
+    // Asked again, the commit pins the new parent and snapshots afresh.
+    assert!(matches!(
+        owner.commit(None),
+        CommitOutcome::Committed { ref parent, ref message, .. }
+            if parent.as_deref() == Some(incoming.as_str()) && message == "Add b.md"
+    ));
+    assert_eq!(
+        git(&root, &["show", "HEAD:a.md"]),
+        "A from the incoming commit"
     );
 }
 
@@ -475,7 +643,7 @@ fn a_held_ref_lock_fails_the_commit_and_leaves_the_saved_bytes() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     save(&owner, "a.md", "A");
-    owner.commit();
+    owner.commit(None);
     let head = git(&root, &["rev-parse", "HEAD"]);
     let audio: Vec<u8> = (0..200_000u32).map(|index| (index % 251) as u8).collect();
     owner
@@ -491,7 +659,7 @@ fn a_held_ref_lock_fails_the_commit_and_leaves_the_saved_bytes() {
     let ref_lock = root.join(".git/refs/heads/main.lock");
     std::fs::write(&ref_lock, "").unwrap();
 
-    let outcome = owner.commit().outcome;
+    let outcome = owner.commit(None);
     assert!(
         matches!(outcome, CommitOutcome::Failed { ref error } if error.contains("update-ref")),
         "{outcome:?}"
@@ -501,7 +669,7 @@ fn a_held_ref_lock_fails_the_commit_and_leaves_the_saved_bytes() {
 
     std::fs::remove_file(&ref_lock).unwrap();
     assert!(matches!(
-        owner.commit().outcome,
+        owner.commit(None),
         CommitOutcome::Committed { ref message, .. } if message == "Add rec/take.wav"
     ));
 }
@@ -512,7 +680,7 @@ fn a_held_index_lock_commits_with_a_warning_and_a_later_pass_reconciles() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     save(&owner, "a.md", "A");
-    owner.commit();
+    owner.commit(None);
     save(&owner, "a.md", "A2");
     // Staged content that differs from the working bytes, and a staged-only add.
     std::fs::write(root.join("staged-only.md"), "staged").unwrap();
@@ -522,7 +690,7 @@ fn a_held_index_lock_commits_with_a_warning_and_a_later_pass_reconciles() {
     let index_lock = root.join(".git/index.lock");
     std::fs::write(&index_lock, "").unwrap();
 
-    match owner.commit().outcome {
+    match owner.commit(None) {
         CommitOutcome::Committed {
             message,
             index_warning,
@@ -542,7 +710,7 @@ fn a_held_index_lock_commits_with_a_warning_and_a_later_pass_reconciles() {
 
     std::fs::remove_file(&index_lock).unwrap();
     assert_eq!(
-        owner.commit().outcome,
+        owner.commit(None),
         CommitOutcome::Unchanged {
             head: Some(git(&root, &["rev-parse", "HEAD"])),
             index_warning: None,
@@ -562,7 +730,7 @@ fn status_writes_nothing_into_the_folder_or_its_git_directory() {
     let owner = manual(&root);
     save(&owner, "a.md", "A");
     save(&owner, "keep/b.md", "B");
-    owner.commit();
+    owner.commit(None);
     // Uncommitted work of every kind, plus an index whose stat data is stale.
     save(&owner, "a.md", "A changed");
     save(&owner, "new.md", "untracked");
@@ -578,7 +746,7 @@ fn status_writes_nothing_into_the_folder_or_its_git_directory() {
     std::thread::sleep(Duration::from_millis(20));
     let before = tree(&root);
 
-    let observed = owner.status().unwrap();
+    let observed = owner.status(None).unwrap();
     assert_eq!(
         observed.changes,
         vec![
@@ -614,7 +782,7 @@ fn ignore_rules_narrow_untracked_files_and_tracked_files_survive_them() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     save(&owner, "keep.log", "tracked before the rule");
-    owner.commit();
+    owner.commit(None);
     save(&owner, ".gitignore", "*.log\nbuild/\n");
     save(&owner, "keep.log", "tracked and edited");
     save(&owner, "new.log", "ignored");
@@ -634,9 +802,9 @@ fn ignore_rules_narrow_untracked_files_and_tracked_files_survive_them() {
         change("keep.log", ChangeKind::Modify),
         change("sub/index.sqlite3", ChangeKind::Add),
     ];
-    assert_eq!(owner.status().unwrap().changes, expected);
+    assert_eq!(owner.status(None).unwrap().changes, expected);
     assert!(matches!(
-        owner.commit().outcome,
+        owner.commit(None),
         CommitOutcome::Committed { changed_paths: 3, ref message, .. } if message == "Update 3 files"
     ));
     assert_eq!(
@@ -644,7 +812,7 @@ fn ignore_rules_narrow_untracked_files_and_tracked_files_survive_them() {
         ".gitignore\nkeep.log\nsub/index.sqlite3"
     );
     assert_eq!(git(&root, &["show", "HEAD:keep.log"]), "tracked and edited");
-    assert!(owner.status().unwrap().changes.is_empty());
+    assert!(owner.status(None).unwrap().changes.is_empty());
 }
 
 #[cfg(unix)]
@@ -698,13 +866,13 @@ fn what_a_plain_file_commit_cannot_represent_blocks_the_pass_but_not_status() {
         let root = temp.folder("notes");
         let owner = manual(&root);
         save(&owner, "a.md", "A");
-        owner.commit();
+        owner.commit(None);
         let head = git(&root, &["rev-parse", "HEAD"]);
         arrange(&root);
         save(&owner, "b.md", "B");
 
         assert_eq!(
-            owner.commit().outcome,
+            owner.commit(None),
             CommitOutcome::Blocked {
                 reason: reason.to_string()
             },
@@ -712,7 +880,9 @@ fn what_a_plain_file_commit_cannot_represent_blocks_the_pass_but_not_status() {
         );
         assert_eq!(git(&root, &["rev-parse", "HEAD"]), head, "{label}");
         assert_eq!(owner.read("b.md").unwrap().bytes, b"B", "{label}");
-        let observed = owner.status().expect("status still observes the folder");
+        let observed = owner
+            .status(None)
+            .expect("status still observes the folder");
         assert!(
             observed.changes.contains(&change("b.md", ChangeKind::Add)),
             "{label}"
@@ -759,10 +929,10 @@ fn sixty_four_mebibytes_of_audio_commit_exactly_and_no_response_carries_a_byte()
             .unwrap();
     }
 
-    // Pass A hashes and stores 64 MiB. A short save must not wait for it.
+    // The commit hashes and stores 64 MiB. A short save must not wait for it.
     let committing = owner.clone();
-    let pass = std::thread::spawn(move || committing.commit());
-    eventually("pass A to start", || {
+    let commit = std::thread::spawn(move || committing.commit(None));
+    eventually("the commit to start", || {
         owner.snapshot().activity.commit.active
     });
     let started = Instant::now();
@@ -773,21 +943,21 @@ fn sixty_four_mebibytes_of_audio_commit_exactly_and_no_response_carries_a_byte()
     );
     let save_took = started.elapsed();
     let still_hashing = owner.snapshot().activity.commit.active;
-    let first = pass.join().unwrap();
+    let first = commit.join().unwrap();
     assert!(
         still_hashing,
-        "the save returned after {save_took:?}, while pass A was still running"
+        "the save returned after {save_took:?}, while the commit was still running"
     );
 
-    let CommitOutcome::Committed { changed_paths, .. } = &first.outcome else {
-        panic!("{:?}", first.outcome);
+    let CommitOutcome::Committed { changed_paths, .. } = &first else {
+        panic!("{first:?}");
     };
     assert!(
         *changed_paths == 16 || *changed_paths == 17,
         "{changed_paths}"
     );
-    let status = owner.status().unwrap();
-    let second = owner.commit();
+    let status = owner.status(None).unwrap();
+    let second = owner.commit(None);
     for (index, digest) in digests.iter().enumerate() {
         let blob = std::process::Command::new("git")
             .args(["cat-file", "blob", &format!("HEAD:rec/{index}.wav")])
@@ -924,16 +1094,14 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
     let first_root = temp.folder("first");
     let first = with_remote(&first_root, &bare, true);
     assert_eq!(
-        first.fetch().unwrap().oid,
+        first.fetch(None).unwrap().oid,
         None,
         "the remote has no branch yet"
     );
 
     save(&first, "a.md", "A");
-    eventually("the save to be pushed", || {
-        first.snapshot().last_push.is_some()
-    });
     settled(&first);
+    pushed(&first, &first_root);
     let head = git(&first_root, &["rev-parse", "HEAD"]);
     assert_eq!(
         first.snapshot().last_push.as_ref().unwrap().result,
@@ -950,12 +1118,15 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
 
     let second_root = temp.folder("second");
     let second = with_remote(&second_root, &bare, false);
-    assert_eq!(second.pull_fast_forward(), Err(PullError::NoFetchedHead));
+    assert_eq!(
+        second.pull_fast_forward(None),
+        Err(PullError::NoFetchedHead)
+    );
     std::fs::write(second_root.join(".git/info/exclude"), "ignored.md\n").unwrap();
     std::fs::write(second_root.join("ignored.md"), "kept").unwrap();
-    assert_eq!(second.fetch().unwrap().oid, Some(head.clone()));
+    assert_eq!(second.fetch(None).unwrap().oid, Some(head.clone()));
     assert_eq!(
-        second.pull_fast_forward(),
+        second.pull_fast_forward(None),
         Ok(PullOutcome::FastForwarded {
             from: None,
             to: head.clone(),
@@ -967,25 +1138,32 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
     assert_eq!(git(&second_root, &["rev-parse", "HEAD"]), head);
     assert_eq!(git(&second_root, &["status", "--porcelain"]), "");
     assert_eq!(
-        second.pull_fast_forward(),
+        second.pull_fast_forward(None),
         Ok(PullOutcome::UpToDate {
             head: Some(head.clone())
         })
     );
 
-    // An edit, a removal, and an addition travel as one fast-forward.
-    save(&first, "a.md", "A2");
-    save(&first, "dir/b.md", "B");
+    // An edit and an addition travel as one fast-forward. They are one save:
+    // a second save made while the first one's commit ran would be skipped.
+    first
+        .apply(
+            &[
+                write("a.md", "A2", FileExpectation::Any),
+                write("dir/b.md", "B", FileExpectation::Any),
+            ],
+            None,
+        )
+        .unwrap();
     settled(&first);
+    pushed(&first, &first_root);
     let next = git(&first_root, &["rev-parse", "HEAD"]);
-    eventually("the remote to hold the newest commit", || {
-        git(&bare, &["rev-parse", "main"]) == next
-    });
-    second.fetch().unwrap();
+    assert_eq!(git(&bare, &["rev-parse", "main"]), next);
+    second.fetch(None).unwrap();
     std::fs::write(second_root.join("a.md"), "local edit").unwrap();
     std::fs::write(second_root.join("untracked.md"), "new local work").unwrap();
     assert_eq!(
-        second.pull_fast_forward(),
+        second.pull_fast_forward(None),
         Err(PullError::Dirty {
             paths: vec!["a.md".to_string(), "untracked.md".to_string()]
         })
@@ -995,7 +1173,7 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
     std::fs::write(second_root.join(".git/info/exclude"), "ignored.md\ndir/\n").unwrap();
     save(&second, "dir/b.md", "an ignored file in the way");
     assert_eq!(
-        second.pull_fast_forward(),
+        second.pull_fast_forward(None),
         Err(PullError::Collision {
             paths: vec!["dir/b.md".to_string()]
         })
@@ -1006,7 +1184,7 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
     );
     std::fs::remove_dir_all(second_root.join("dir")).unwrap();
     assert!(matches!(
-        second.pull_fast_forward(),
+        second.pull_fast_forward(None),
         Ok(PullOutcome::FastForwarded { ref to, ref changed_paths, .. })
             if *to == next && *changed_paths == vec!["a.md".to_string(), "dir/b.md".to_string()]
     ));
@@ -1015,19 +1193,21 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
 
     // Local history the remote lacks is ahead; unrelated history has diverged.
     save(&second, "c.md", "C");
-    second.commit();
+    second.commit(None);
     assert!(matches!(
-        second.pull_fast_forward(),
+        second.pull_fast_forward(None),
         Ok(PullOutcome::Ahead { .. })
     ));
     save(&first, "d.md", "D");
     settled(&first);
-    eventually("the remote to move again", || {
-        git(&bare, &["rev-parse", "main"]) == git(&first_root, &["rev-parse", "HEAD"])
-    });
-    second.fetch().unwrap();
+    pushed(&first, &first_root);
+    assert_eq!(
+        git(&bare, &["rev-parse", "main"]),
+        git(&first_root, &["rev-parse", "HEAD"])
+    );
+    second.fetch(None).unwrap();
     assert!(matches!(
-        second.pull_fast_forward(),
+        second.pull_fast_forward(None),
         Err(PullError::Diverged { .. })
     ));
     assert!(
@@ -1037,8 +1217,8 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
 }
 
 #[test]
-fn a_fast_forward_queued_behind_a_snapshot_is_not_undone_by_that_pass() {
-    let temp = TempDir::new("queued-pull");
+fn a_fast_forward_asked_for_during_a_commit_waits_for_it_and_is_not_undone_by_it() {
+    let temp = TempDir::new("waiting-pull");
     let bare = temp.folder("remote.git");
     git(
         &bare,
@@ -1047,44 +1227,51 @@ fn a_fast_forward_queued_behind_a_snapshot_is_not_undone_by_that_pass() {
     let upstream_root = temp.folder("upstream");
     let upstream = with_remote(&upstream_root, &bare, false);
     save(&upstream, "shared.md", "one");
-    upstream.commit();
+    upstream.commit(None);
     assert!(matches!(upstream.push(None), PushOutcome::Pushed { .. }));
 
     let root = temp.folder("local");
     let owner = with_remote(&root, &bare, false);
-    owner.fetch().unwrap();
-    owner.pull_fast_forward().unwrap();
+    owner.fetch(None).unwrap();
+    owner.pull_fast_forward(None).unwrap();
     save(&upstream, "shared.md", "two, from upstream");
-    upstream.commit();
+    upstream.commit(None);
     assert!(matches!(upstream.push(None), PushOutcome::Pushed { .. }));
-    let incoming = owner.fetch().unwrap().oid.unwrap();
+    let incoming = owner.fetch(None).unwrap().oid.unwrap();
 
-    // The pass snapshots a clean folder at the old head. Before it reaches
-    // the Git lock, the fast-forward runs: files and branch move to `incoming`.
-    let puller = owner.clone();
-    let pulled: Arc<Mutex<Option<Result<PullOutcome, PullError>>>> = Arc::default();
-    let record = Arc::clone(&pulled);
-    let once = AtomicBool::new(true);
-    owner.hooks().after_snapshot = Some(Arc::new(move || {
-        if once.swap(false, Ordering::SeqCst) {
-            *record.lock().unwrap() = Some(puller.pull_fast_forward());
-        }
-    }));
+    let old = git(&root, &["rev-parse", "HEAD"]);
 
-    let outcome = owner.commit().outcome;
-    assert!(
-        matches!(pulled.lock().unwrap().as_ref(), Some(Ok(PullOutcome::FastForwarded { to, .. })) if *to == incoming),
-        "{:?}",
-        pulled.lock().unwrap()
-    );
-    // The pass did not commit its pre-pull snapshot as a child of the pulled
-    // head. It looked again and found nothing to commit.
+    // A commit snapshots the clean folder at the old head and is held under
+    // the Git lock. The fast-forward is asked for now.
+    let (hook, at_hash, release) = hold_once();
+    owner.hooks().before_hash = Some(hook);
+    let committing = {
+        let owner = owner.clone();
+        std::thread::spawn(move || owner.commit(None))
+    };
+    at_hash.recv().unwrap();
+    let pulling = {
+        let owner = owner.clone();
+        std::thread::spawn(move || owner.pull_fast_forward(None))
+    };
+    // It cannot move the files or the branch under the held commit: the
+    // commit pinned the old head, and it finds that head unchanged.
+    release.send(()).unwrap();
     assert_eq!(
-        outcome,
+        committing.join().unwrap(),
         CommitOutcome::Unchanged {
-            head: Some(incoming.clone()),
+            head: Some(old.clone()),
             index_warning: None
         }
+    );
+    // Then the fast-forward runs, on what it reads once it holds both locks.
+    assert_eq!(
+        pulling.join().unwrap(),
+        Ok(PullOutcome::FastForwarded {
+            from: Some(old),
+            to: incoming.clone(),
+            changed_paths: vec!["shared.md".to_string()],
+        })
     );
     assert_eq!(git(&root, &["rev-parse", "HEAD"]), incoming);
     assert_eq!(
@@ -1106,13 +1293,13 @@ fn a_fast_forward_never_overwrites_bytes_written_after_it_found_the_folder_clean
     let upstream = with_remote(&upstream_root, &bare, false);
     save(&upstream, "edited.md", "committed");
     save(&upstream, "removed.md", "committed");
-    upstream.commit();
+    upstream.commit(None);
     upstream.push(None);
 
     let root = temp.folder("local");
     let owner = with_remote(&root, &bare, false);
-    owner.fetch().unwrap();
-    owner.pull_fast_forward().unwrap();
+    owner.fetch(None).unwrap();
+    owner.pull_fast_forward(None).unwrap();
     let head = git(&root, &["rev-parse", "HEAD"]);
     save(&upstream, "edited.md", "incoming");
     upstream
@@ -1124,9 +1311,9 @@ fn a_fast_forward_never_overwrites_bytes_written_after_it_found_the_folder_clean
             None,
         )
         .unwrap();
-    upstream.commit();
+    upstream.commit(None);
     upstream.push(None);
-    owner.fetch().unwrap();
+    owner.fetch(None).unwrap();
 
     // The folder was clean when the fast-forward looked. Before it builds its
     // changes, another program writes both files it is about to touch.
@@ -1136,7 +1323,7 @@ fn a_fast_forward_never_overwrites_bytes_written_after_it_found_the_folder_clean
         std::fs::write(outside.join("removed.md"), "also written outside").unwrap();
     }));
 
-    let refused = owner.pull_fast_forward().unwrap_err();
+    let refused = owner.pull_fast_forward(None).unwrap_err();
     let PullError::Refused {
         error:
             crate::files::FileError::Conflict {
@@ -1280,18 +1467,15 @@ fn reading_the_repository_author_does_not_turn_on_its_remote() {
 
     // A save is committed locally, by the configured author, and goes nowhere.
     save(&owner, "a.md", "A");
-    eventually("the save to be committed", || {
-        owner.snapshot().last_commit.is_some()
-    });
+    // The commit decides about its push before it stops being active.
     settled(&owner);
-    std::thread::sleep(Duration::from_millis(200));
     let snapshot = owner.snapshot();
     assert!(matches!(
         snapshot.last_commit.as_ref().unwrap().result,
         CommitOutcome::Committed { .. }
     ));
-    assert_eq!(snapshot.last_push, None, "no push was scheduled");
-    assert!(!snapshot.activity.push.active && !snapshot.activity.push.pending);
+    assert_eq!(snapshot.last_push, None, "no push was attempted");
+    assert!(!snapshot.activity.push.active);
     assert_eq!(
         git(&root, &["log", "-1", "--format=%an <%ae> %s"]),
         "Ada Lovelace <ada@example.com> Add a.md"
@@ -1308,7 +1492,7 @@ fn reading_the_repository_author_does_not_turn_on_its_remote() {
     );
     // Asked directly, remote operations say there is no remote.
     assert_eq!(owner.push(None), PushOutcome::NoRemote);
-    assert_eq!(owner.fetch(), Err(GitError::NoRemote));
+    assert_eq!(owner.fetch(None), Err(GitError::NoRemote));
     owner.shutdown();
 
     // The origin alone: the remote is used, the supplied author commits.
@@ -1389,9 +1573,9 @@ fn incoming(label: &str) -> Incoming {
 
     let root = temp.folder("local");
     let owner = with_remote(&root, &bare, false);
-    owner.fetch().unwrap();
+    owner.fetch(None).unwrap();
     assert!(matches!(
-        owner.pull_fast_forward(),
+        owner.pull_fast_forward(None),
         Ok(PullOutcome::FastForwarded { .. })
     ));
     Incoming {
@@ -1408,7 +1592,7 @@ impl Incoming {
         git(&self.upstream, &["add", "--all"]);
         git(&self.upstream, &["commit", "--quiet", "-m", message]);
         git(&self.upstream, &["push", "--quiet", "origin", "main"]);
-        self.owner.fetch().unwrap().oid.unwrap()
+        self.owner.fetch(None).unwrap().oid.unwrap()
     }
 
     /// The fast-forward is refused for `path` and nothing at all changed:
@@ -1416,7 +1600,7 @@ impl Incoming {
     fn refused_untouched(&self, path: &str, reason_holds: &str) {
         let head = git(&self.root, &["rev-parse", "HEAD"]);
         let before = tree(&self.root);
-        let refused = self.owner.pull_fast_forward().unwrap_err();
+        let refused = self.owner.pull_fast_forward(None).unwrap_err();
         let PullError::Unrepresentable { paths, reason } = &refused else {
             panic!("the incoming commit is unrepresentable, not {refused:?}");
         };
@@ -1503,7 +1687,7 @@ fn an_incoming_normalizing_attribute_is_refused_even_when_it_only_selects_unchan
     std::fs::write(masked.upstream.join(".gitattributes"), "*.wav filter=lfs\n").unwrap();
     masked.publish("filter audio");
     std::fs::write(masked.root.join(".gitattributes"), "*.wav -filter\n").unwrap();
-    let refused = masked.owner.pull_fast_forward().unwrap_err();
+    let refused = masked.owner.pull_fast_forward(None).unwrap_err();
     assert!(
         matches!(refused, PullError::Unrepresentable { ref reason, .. } if reason.contains("filter=lfs")),
         "{refused:?}"
@@ -1529,7 +1713,7 @@ fn pointer_shaped_text_with_no_declared_filter_fast_forwards_byte_for_byte() {
     let head = plain.publish("keep a pointer as plain text");
 
     assert!(matches!(
-        plain.owner.pull_fast_forward(),
+        plain.owner.pull_fast_forward(None),
         Ok(PullOutcome::FastForwarded { ref to, ref changed_paths, .. })
             if *to == head && changed_paths.len() == 3
     ));
@@ -1544,15 +1728,162 @@ fn pointer_shaped_text_with_no_declared_filter_fast_forwards_byte_for_byte() {
     assert_eq!(git(&plain.root, &["status", "--porcelain"]), "");
 }
 
+/// A hook that counts every transport the owner admits and holds the first
+/// one, after reporting it, until released.
+fn count_and_hold_first() -> (
+    Arc<dyn Fn() + Send + Sync>,
+    Arc<std::sync::atomic::AtomicUsize>,
+    mpsc::Receiver<()>,
+    mpsc::Sender<()>,
+) {
+    let admitted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = Arc::clone(&admitted);
+    let (hold, at_hook, release) = hold_once();
+    let hook: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        hold();
+    });
+    (hook, admitted, at_hook, release)
+}
+
+#[test]
+fn a_push_withdrawn_before_its_transport_starts_never_runs_and_others_are_kept() {
+    let temp = TempDir::new("withdraw-push");
+    let bare = temp.folder("remote.git");
+    git(
+        &bare,
+        &["init", "--quiet", "--bare", "--initial-branch=main"],
+    );
+    let root = temp.folder("notes");
+    let owner = with_remote(&root, &bare, false);
+    save(&owner, "a.md", "A");
+    owner.commit(None);
+    let first = git(&root, &["rev-parse", "HEAD"]);
+    let (hook, admitted, at_hook, release) = count_and_hold_first();
+    owner.hooks().during_push = Some(hook);
+
+    // A's transport is admitted: it pinned the first commit and is held
+    // before `git push` starts. A itself then withdraws.
+    let a = owner.request();
+    let a_pushing = {
+        let (owner, caller) = (owner.clone(), a.caller());
+        std::thread::spawn(move || owner.push(Some(&caller)))
+    };
+    at_hook.recv().unwrap();
+    drop(a);
+    // A second commit, so a push that started for B or C would have work.
+    save(&owner, "b.md", "B");
+    owner.commit(None);
+    let second = git(&root, &["rev-parse", "HEAD"]);
+
+    // B and C ask while A is held. B withdraws; C does not.
+    let (b, c) = (owner.request(), owner.request());
+    let b_pushing = {
+        let (owner, caller) = (owner.clone(), b.caller());
+        std::thread::spawn(move || owner.push(Some(&caller)))
+    };
+    let c_pushing = {
+        let (owner, caller) = (owner.clone(), c.caller());
+        std::thread::spawn(move || owner.push(Some(&caller)))
+    };
+    drop(b);
+    // B hears at once that nothing was pinned or sent for it, whether it was
+    // already waiting behind A or had not yet asked.
+    assert_eq!(
+        b_pushing.join().unwrap(),
+        PushOutcome::Cancelled { oid: None }
+    );
+    assert_eq!(admitted.load(Ordering::SeqCst), 1, "only A was admitted");
+    assert!(
+        !bare.join("refs/heads/main").exists(),
+        "A is still held before its transport"
+    );
+
+    // The admitted transport outlives its caller's withdrawal and finishes.
+    release.send(()).unwrap();
+    assert_eq!(
+        a_pushing.join().unwrap(),
+        PushOutcome::Pushed { oid: first }
+    );
+    // C's push runs once, for C alone, and pins the head as it is then.
+    assert_eq!(
+        c_pushing.join().unwrap(),
+        PushOutcome::Pushed {
+            oid: second.clone()
+        }
+    );
+    assert_eq!(git(&bare, &["rev-parse", "main"]), second);
+    assert_eq!(
+        admitted.load(Ordering::SeqCst),
+        2,
+        "A and C; B's push never started"
+    );
+    // Nothing of B's is left behind: the next push is the third admitted.
+    assert_eq!(owner.push(None), PushOutcome::Pushed { oid: second });
+    assert_eq!(admitted.load(Ordering::SeqCst), 3);
+
+    // A request withdrawn before it asks is refused on arrival.
+    let early = owner.request();
+    let caller = early.caller();
+    drop(early);
+    assert_eq!(
+        owner.push(Some(&caller)),
+        PushOutcome::Cancelled { oid: None }
+    );
+    assert_eq!(owner.fetch(Some(&caller)), Err(GitError::Withdrawn));
+    assert_eq!(admitted.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn a_fetch_withdrawn_before_its_transport_starts_never_runs() {
+    let fetching = incoming("withdraw-fetch");
+    let owner = &fetching.owner;
+    let head = git(&fetching.root, &["rev-parse", "HEAD"]);
+    let (hook, admitted, at_hook, release) = count_and_hold_first();
+    owner.hooks().during_fetch = Some(hook);
+    let before = owner.snapshot().last_fetch.clone();
+
+    let a_fetching = {
+        let owner = owner.clone();
+        std::thread::spawn(move || owner.fetch(None))
+    };
+    at_hook.recv().unwrap();
+    // B asks while A's fetch is held, and withdraws.
+    let b = owner.request();
+    let b_fetching = {
+        let (owner, caller) = (owner.clone(), b.caller());
+        std::thread::spawn(move || owner.fetch(Some(&caller)))
+    };
+    drop(b);
+    assert_eq!(b_fetching.join().unwrap(), Err(GitError::Withdrawn));
+    assert_eq!(admitted.load(Ordering::SeqCst), 1, "only A was admitted");
+    assert_eq!(
+        owner.snapshot().last_fetch,
+        before,
+        "a withdrawn fetch is not an attempt"
+    );
+
+    release.send(()).unwrap();
+    assert_eq!(
+        a_fetching.join().unwrap(),
+        Ok(crate::history::FetchOutcome {
+            oid: Some(head.clone())
+        })
+    );
+    // B's fetch never started: the next one is the second ever admitted.
+    assert_eq!(owner.fetch(None).unwrap().oid, Some(head));
+    assert_eq!(admitted.load(Ordering::SeqCst), 2);
+}
+
 #[test]
 fn remote_operations_without_a_remote_say_so() {
     let temp = TempDir::new("no-remote");
     let root = temp.folder("notes");
     let owner = manual(&root);
     assert_eq!(owner.push(None), PushOutcome::NoRemote);
-    assert_eq!(owner.fetch(), Err(GitError::NoRemote));
+    assert_eq!(owner.fetch(None), Err(GitError::NoRemote));
     assert_eq!(
-        owner.pull_fast_forward(),
+        owner.pull_fast_forward(None),
         Err(PullError::Git {
             error: GitError::NoRemote
         })
@@ -1575,7 +1906,7 @@ fn an_unreachable_remote_fails_the_push_and_the_fetch_but_not_the_commit() {
         PushOutcome::Failed { .. }
     ));
     assert!(
-        matches!(owner.fetch(), Err(GitError::Failed { ref operation, .. }) if operation == "fetch")
+        matches!(owner.fetch(None), Err(GitError::Failed { ref operation, .. }) if operation == "fetch")
     );
 }
 
@@ -1584,7 +1915,53 @@ fn an_unreachable_remote_fails_the_push_and_the_fetch_but_not_the_commit() {
 // ============================================================================
 
 #[test]
-fn shutdown_fences_new_work_and_drains_a_held_save_and_its_commit() {
+fn shutdown_waits_for_an_admitted_commit_and_commits_nothing_of_its_own() {
+    let temp = TempDir::new("shutdown-commit");
+    let root = temp.folder("notes");
+    let owner = open(&root);
+    let (hook, at_capture, release) = hold_once();
+    owner.hooks().after_capture = Some(hook);
+
+    // A's commit is admitted and held before it publishes. B's attempt finds
+    // the Git lock held and is forgotten. The handle that saved is gone.
+    {
+        let page = owner.clone();
+        save(&page, "a.md", "A");
+        at_capture.recv().unwrap();
+        save(&page, "b.md", "B");
+    }
+
+    let closing = owner.clone();
+    let (closed, finished) = mpsc::channel();
+    let shutdown = std::thread::spawn(move || {
+        closing.shutdown();
+        closed.send(()).unwrap();
+    });
+    eventually("the fence", || owner.snapshot().closed);
+    assert_eq!(owner.commit(None), CommitOutcome::Closed);
+    assert!(
+        finished.recv_timeout(Duration::from_millis(150)).is_err(),
+        "shutdown waits for the admitted commit"
+    );
+    assert!(owner.snapshot().activity.commit.active);
+
+    release.send(()).unwrap();
+    shutdown.join().unwrap();
+    // Read with no waiting: shutdown returned only after A's commit landed.
+    assert_eq!(subjects(&root), vec!["Add a.md"]);
+    let snapshot = owner.snapshot();
+    assert!(!snapshot.activity.commit.active);
+    assert!(matches!(
+        &snapshot.last_commit.as_ref().unwrap().result,
+        CommitOutcome::Committed { message, .. } if message == "Add a.md"
+    ));
+    // There was no last commit for B: it is saved and uncommitted.
+    assert_eq!(git(&root, &["status", "--porcelain"]), "?? b.md");
+    assert_eq!(std::fs::read_to_string(root.join("b.md")).unwrap(), "B");
+}
+
+#[test]
+fn a_save_that_lands_after_the_fence_stays_saved_and_starts_no_commit() {
     let temp = TempDir::new("shutdown");
     let root = temp.folder("notes");
     let owner = open(&root);
@@ -1635,14 +2012,22 @@ fn shutdown_fences_new_work_and_drains_a_held_save_and_its_commit() {
     release.send(()).unwrap();
     held.join().unwrap().unwrap();
     shutdown.join().unwrap();
+    // The save was admitted before the fence, so it landed. Its commit
+    // attempt came after the fence, so it was not admitted.
     assert_eq!(
-        subjects(&root),
-        vec!["Add held.md"],
-        "the held save was committed before shutdown returned"
+        std::fs::read_to_string(root.join("held.md")).unwrap(),
+        "admitted before shutdown"
+    );
+    let snapshot = owner.snapshot();
+    assert_eq!(snapshot.last_commit, None);
+    assert!(!snapshot.activity.commit.active);
+    assert!(
+        !root.join(".git/refs/heads/main").exists(),
+        "nothing was committed"
     );
     assert!(!root.join("late.md").exists());
-    assert_eq!(owner.commit().outcome, CommitOutcome::Closed);
-    assert_eq!(owner.status(), Err(GitError::Closed));
+    assert_eq!(owner.commit(None), CommitOutcome::Closed);
+    assert_eq!(owner.status(None), Err(GitError::Closed));
     owner.shutdown();
 }
 
@@ -1656,7 +2041,7 @@ fn a_published_commit_survives_a_failed_observation_after_the_root_moves() {
     let moved_root = temp.path().join("notes-moved");
     let owner = manual(&root);
     save(&owner, "saved.md", "published bytes");
-    owner.status().unwrap();
+    owner.status(None).unwrap();
     // Plain Git invokes this after committing the ref transaction. Moving
     // the root then makes the owner's later Git process fail to start in its
     // recorded directory, while the ref and saved file already exist.
@@ -1667,7 +2052,7 @@ fn a_published_commit_survives_a_failed_observation_after_the_root_moves() {
     )
     .unwrap();
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let pass = owner.commit();
+    let outcome = owner.commit(None);
     let snapshot = owner.snapshot();
     assert!(
         moved_root.is_dir(),
@@ -1682,8 +2067,8 @@ fn a_published_commit_survives_a_failed_observation_after_the_root_moves() {
     std::fs::rename(&moved_root, &root).unwrap();
     owner.shutdown();
     assert!(
-        matches!(pass.outcome, CommitOutcome::Committed { ref oid, .. } if oid == &published),
-        "{pass:?}"
+        matches!(outcome, CommitOutcome::Committed { ref oid, .. } if oid == &published),
+        "{outcome:?}"
     );
     assert!(
         matches!(&snapshot.files, Observation::Observed { stale: true, error: Some(error), .. } if error.contains("could not start"))
@@ -1702,7 +2087,7 @@ fn a_published_fast_forward_survives_a_failed_observation_after_the_root_moves()
     let from = git(&incoming.root, &["rev-parse", "HEAD"]);
     std::fs::write(incoming.upstream.join("notes.md"), "incoming bytes").unwrap();
     let to = incoming.publish("update the notes");
-    incoming.owner.status().unwrap();
+    incoming.owner.status(None).unwrap();
     let moved_root = incoming.root.with_file_name("local-moved");
     let hook = incoming.root.join(".git/hooks/reference-transaction");
     std::fs::write(
@@ -1711,7 +2096,7 @@ fn a_published_fast_forward_survives_a_failed_observation_after_the_root_moves()
     )
     .unwrap();
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let outcome = incoming.owner.pull_fast_forward();
+    let outcome = incoming.owner.pull_fast_forward(None);
     let snapshot = incoming.owner.snapshot();
     assert!(
         moved_root.is_dir(),

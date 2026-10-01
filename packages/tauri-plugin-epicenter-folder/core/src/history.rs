@@ -27,6 +27,9 @@ pub enum GitError {
         cause: String,
     },
     Closed,
+    /// The caller withdrew before the owner started the transport: nothing
+    /// was sent or received for this request.
+    Withdrawn,
     /// The caller has no session for this folder, or names another window's.
     Denied {
         reason: String,
@@ -68,7 +71,7 @@ pub enum CommitOutcome {
     #[serde(rename_all = "camelCase")]
     Unchanged {
         head: Option<String>,
-        /// Index entries could not be reset to the head; the next pass retries.
+        /// Index entries could not be reset to the head; the next commit retries.
         index_warning: Option<String>,
     },
     /// The branch named something else when the candidate was published. The
@@ -84,21 +87,11 @@ pub enum CommitOutcome {
     Failed {
         error: String,
     },
-    /// The pass started and its outcome is unknown; inspect history first.
+    /// The commit started and its outcome is unknown; inspect history first.
     Unconfirmed {
         error: String,
     },
     Closed,
-}
-
-/// One settled commit pass. `followingPush` numbers the push pass a
-/// save-requested commit started, so a caller can wait for that push instead
-/// of requesting another.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitPass {
-    pub outcome: CommitOutcome,
-    pub following_push: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -258,7 +251,6 @@ pub struct SyncObservation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Type)]
 pub struct Activity {
     pub active: bool,
-    pub pending: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Type)]

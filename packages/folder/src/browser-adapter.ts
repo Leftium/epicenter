@@ -105,9 +105,6 @@ export const openFolder: OpenFolder = async ({
 			// A runtime that counts an open channel as pending work must not be
 			// kept alive by a folder nobody closed.
 			(channel as { unref?: () => void }).unref?.();
-			channel.onmessage = ({ data }) => {
-				if (Array.isArray(data)) hints.receive(data as string[]);
-			};
 			channelOpen = true;
 		}
 		const boundary = createBrowserFileBoundary(db, environment);
@@ -125,6 +122,14 @@ export const openFolder: OpenFolder = async ({
 			commitOnEdit,
 			landed: (paths) => hints.emit(paths),
 		});
+		if (channel !== undefined) {
+			channel.onmessage = ({ data }) => {
+				if (!channelOpen || history.snapshot.closed || !Array.isArray(data))
+					return;
+				history.noteEdit();
+				hints.receive(data as string[]);
+			};
+		}
 		return Ok(
 			assembleFolder<typeof definition>({
 				compiled: compiled.data,

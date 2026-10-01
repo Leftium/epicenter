@@ -439,6 +439,18 @@
           "markdownDescription": "Denies the mkdir command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-request",
+          "markdownDescription": "Enables the open_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-request",
+          "markdownDescription": "Denies the open_request command without any pre-configured scope."
+        },
+        {
           "description": "Enables the paths command without any pre-configured scope.",
           "type": "string",
           "const": "allow-paths",
@@ -547,10 +559,22 @@
           "markdownDescription": "Denies the status command without any pre-configured scope."
         },
         {
-          "description": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-acquire-lease`\n- `allow-release-lease`\n- `allow-status`\n- `allow-commit`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`",
+          "description": "Enables the withdraw_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-withdraw-request",
+          "markdownDescription": "Enables the withdraw_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the withdraw_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-withdraw-request",
+          "markdownDescription": "Denies the withdraw_request command without any pre-configured scope."
+        },
+        {
+          "description": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-acquire-lease`\n- `allow-release-lease`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-acquire-lease`\n- `allow-release-lease`\n- `allow-status`\n- `allow-commit`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`"
+          "markdownDescription": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-acquire-lease`\n- `allow-release-lease`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`"
         }
       ]
     }

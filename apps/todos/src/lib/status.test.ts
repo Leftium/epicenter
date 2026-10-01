@@ -23,7 +23,7 @@ import {
 	uncommittedLine,
 } from './status.js';
 
-const idle = { active: false, pending: false };
+const idle = { active: false };
 /** A past day, so the time includes its date. */
 const checkedAt = new Date(2020, 0, 2, 14, 32, 5).getTime();
 

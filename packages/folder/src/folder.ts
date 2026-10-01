@@ -2,12 +2,13 @@
  * The opened folder handle every opener returns (ADR-0471, ADR-0478).
  *
  * `tables`, `kv`, `files`, and `batch` publish through one file boundary.
- * `git` observes and records history. A complete content save requests an
- * automatic commit when the folder's history policy says so.
+ * `git` observes and records history. A complete content save makes one
+ * automatic commit attempt when the folder's history policy says so.
  *
- * Closing fences new file work and stops network work at once. Saves that
- * were already admitted then finish and request their local commits, the
- * local commit passes drain, and storage is released last.
+ * Closing fences new file work and history requests and stops network work
+ * at once. Saves that were already admitted then finish, without starting a
+ * commit. History work that was already running finishes, and storage is
+ * released last. Closing makes no last commit.
  */
 import type {
 	CreateRowOf,
@@ -134,14 +135,15 @@ export type FolderGit = {
 	status(): Promise<Result<FilesObservation, GitError>>;
 	/**
 	 * Commit current source files if they changed, and reset the index to the
-	 * head either way. Never requests a push; a pass it shares with a
-	 * save's automatic request pushes because of that request.
+	 * head either way. Never pushes.
 	 */
 	commit(): Promise<CommitOutcome>;
 	/**
-	 * `signal` only stops this caller waiting (`stoppedWaiting`): commit and
-	 * push passes are shared, so the transport keeps running. Closing the
-	 * folder is what aborts owned network work.
+	 * Commit, then push. `signal` only stops this caller waiting
+	 * (`stoppedWaiting`): a commit or transport that already started keeps
+	 * running, and closing the folder is what aborts owned network work. In a
+	 * browser or directory folder, a push or fetch that had not started when
+	 * its caller left is never started. The same holds for `push` and `fetch`.
 	 */
 	commitAndPush(options?: {
 		signal?: AbortSignal;
@@ -390,10 +392,19 @@ export function createFolderContext({
 			work: () => Promise<Result<T, E>>,
 		): Promise<Result<T, E | FileError>> {
 			if (signal.aborted) return Promise.resolve(FileError.Closed());
-			const running = work();
+			const completion = Promise.withResolvers<Result<T, E | FileError>>();
+			const running = completion.promise;
 			admitted.add(running);
 			// The caller owns the rejection; cleanup must not create a second one.
 			void running.catch(() => {}).finally(() => admitted.delete(running));
+			// Admitted before `work` is called. `work` runs up to its first wait
+			// right here, and that part may call back into code that closes the
+			// folder; closing must already find this work to wait for.
+			try {
+				work().then(completion.resolve, completion.reject);
+			} catch (cause) {
+				completion.reject(cause);
+			}
 			return running;
 		},
 		async publish(changes) {
@@ -672,8 +683,8 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 				controller.abort();
 				hints.close();
 				history.beginClose();
-				// Saves admitted before the fence finish and request their local
-				// commits; only then are the local commit passes drained.
+				// Saves admitted before the fence finish and start no commit; then
+				// history waits for whatever of its own work was already running.
 				await context.settled();
 				await history.close();
 				await release();

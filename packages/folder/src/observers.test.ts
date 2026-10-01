@@ -35,6 +35,7 @@ import { defineFolder, defineTable, type Folder, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
 import { captureVersion } from './version.js';
+import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
 	id: 'so.epicenter.observerstest',
@@ -63,10 +64,10 @@ afterEach(async () => {
 	for (const folder of opened.splice(0)) await folder.close();
 });
 
+/** Wait for the commit attempt a save started to settle. */
 async function settled(folder: Opened) {
 	for (let index = 0; index < 400; index++) {
-		const { commit } = folder.git.snapshot.activity;
-		if (!commit.active && !commit.pending) return;
+		if (!folder.git.snapshot.activity.commit.active) return;
 		await Bun.sleep(5);
 	}
 	throw new Error('Git work did not settle');
@@ -136,9 +137,13 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 			'audio/a.webm',
 			'notes/b.md',
 		]);
-		// And each save still asked for its commit: nothing is left uncommitted.
+		// And the saves still started commit passes. A save that landed while
+		// one was running may be uncommitted; one request commits what is left.
 		await settled(folder);
 		expect(expectOk(await folder.git.log(10)).length).toBeGreaterThan(0);
+		expect(['committed', 'unchanged']).toContain(
+			(await folder.git.commit()).status,
+		);
 		expect(expectOk(await folder.git.status()).changes).toEqual([]);
 	});
 
@@ -182,8 +187,13 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 		expect(created.path).toBe('note.txt');
 		expect(calls).toEqual([1]);
 		await closing;
-		// The save that was being announced when the folder closed was committed.
-		expect(folder.git.snapshot.lastCommit?.status).toBe('committed');
+		// The listener closed the folder in the same instant the save's attempt
+		// was made. A directory attempt is inside the protection at once, so
+		// closing waited for it. A browser attempt was still being granted the
+		// Web Lock, so it was refused and nothing was committed.
+		expect(folder.git.snapshot.lastCommit?.status).toBe(
+			kind === 'directory' ? 'committed' : undefined,
+		);
 		expect(calls).toEqual([1]);
 	});
 
@@ -360,7 +370,11 @@ describe('browser channel', () => {
 			expectOk(
 				await openBrowserFolder({
 					definition,
-					browser: { author, commitOnEdit: false, indexedDb: environment },
+					browser: {
+						author,
+						commitOnEdit: false,
+						indexedDb: environment,
+					},
 				}),
 			);
 		const writer = await open();
@@ -379,3 +393,46 @@ describe('browser channel', () => {
 		expect(heard).toEqual([]);
 	});
 });
+
+test('a cross-tab file hint marks history stale without requesting an automatic commit', async () => {
+	const environment = {
+		indexedDB: new IDBFactory(),
+		IDBKeyRange,
+		BroadcastChannel,
+	};
+	const open = async (commitOnEdit: boolean) =>
+		expectOk(
+			await openBrowserFolder({
+				definition,
+				browser: { author, commitOnEdit, indexedDb: environment },
+			}),
+		);
+	const reader = await open(true);
+	const writer = await open(false);
+	opened.push(reader, writer);
+	expectOk(await reader.git.status());
+	expect(reader.git.snapshot.files).toMatchObject({
+		state: 'observed',
+		stale: false,
+		value: { changes: [] },
+	});
+	const heard = Promise.withResolvers<readonly string[]>();
+	reader.onFilesChanged(heard.resolve);
+	expectOk(
+		await writer.files.create('external.txt', 'saved by another handle'),
+	);
+	expect(await heard.promise).toContain('external.txt');
+	expect(reader.git.snapshot.files).toMatchObject({
+		state: 'observed',
+		stale: true,
+	});
+	expect(reader.git.snapshot.lastCommit).toBeUndefined();
+	expect(reader.git.snapshot.activity.commit.active).toBe(false);
+	expect(expectOk(await reader.git.status()).changes).toEqual([
+		{ path: 'external.txt', kind: 'add' },
+	]);
+	expect(reader.git.snapshot.lastCommit).toBeUndefined();
+});
+
+// Automatic commits need the shared lock; this runtime has none of its own.
+useWebLocks();

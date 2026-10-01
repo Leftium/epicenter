@@ -17,12 +17,16 @@
  * Key behaviors:
  * - A window attaches only to a scope registered for it, and learns the root
  * - Tables, raw files, and Git work through the adapter, and the owner
- *   commits a save on its own
+ *   commits a save on its own when the folder is free
+ * - A save made through a terminal lease is not committed on its own; the
+ *   next save made with the folder free commits both
+ * - A page built for the previous protocol is refused at attach
  * - Two windows saving over one version: one lands, one conflicts
  * - A row another window changed after a table's directory read is still an
  *   exact-version conflict
  * - A terminal command holds the folder against another window for its run
- * - Closing one window's folder leaves the other window and the owner working
+ * - Closing one window's folder leaves the other window and the owner working,
+ *   and the commit the owner admitted for its last save still finishes
  *
  * See also:
  * - `tauri.test.ts` for what the adapter decides on its own
@@ -201,7 +205,7 @@ mock.module('@tauri-apps/api/event', () => ({
 }));
 
 const { openFolder } = await import('./tauri.js');
-const { commands } = await import('./native/bindings.gen.js');
+const { commands, FOLDER_PROTOCOL } = await import('./native/bindings.gen.js');
 
 const definition = defineFolder({
 	id: 'so.epicenter.taurinativetest',
@@ -246,15 +250,20 @@ async function setup(options: { manual?: boolean } = {}) {
 			const listed = await a(() => folder.files.children('todos'));
 			return listed.error ? [] : listed.data.files;
 		},
-		/** Wait until the owner has committed and has no pass running or queued. */
+		/**
+		 * Return once no commit the owner admitted is still running. `paths`
+		 * takes the owner's Git lock, which an admitted commit holds from before
+		 * its save returned until it has recorded its outcome.
+		 */
 		async settled() {
+			expectOk(await b(() => other.git.paths()));
+			// Its last snapshot event may still be on its way to this window.
 			for (let waited = 0; waited < 600; waited++) {
 				const { activity, lastCommit } = folder.git.snapshot;
-				if (!activity.commit.active && !activity.commit.pending && lastCommit)
-					return;
+				if (!activity.commit.active && lastCommit) return;
 				await Bun.sleep(10);
 			}
-			throw new Error('the commit queue did not drain');
+			throw new Error('no settled commit reached the snapshot');
 		},
 	};
 }
@@ -295,6 +304,15 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		});
 		expect(folder.location).toEqual({ kind: 'directory', root });
 		expect(folder.git.snapshot.branch).toBe('main');
+		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
+
+		// A page built for the previous protocol is refused by the real owner.
+		const old = await a(() => commands.attach('notes', FOLDER_PROTOCOL - 1));
+		expect(old.error).toEqual({
+			name: 'Incompatible',
+			host: FOLDER_PROTOCOL,
+			page: FOLDER_PROTOCOL - 1,
+		});
 	});
 
 	test('a batch of audio and its row is one publication the owner commits once, and the snapshot says so', async () => {
@@ -475,16 +493,22 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const status = await a(() => terminal.exec('git status'));
 		expect(status.exitCode).toBe(0);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
+		// One commit holds both saves. The terminal's save made no commit of its
+		// own while the lease held the folder; window B's save, made with the
+		// folder free, committed everything that was there.
+		expect(await git(root, 'log', '--format=%s')).toBe('Update 2 files');
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
 			'from-b.md\nnotes/a.md',
 		);
 	});
 
-	test('closing one window leaves the other, and a save made just before closing is still committed', async () => {
+	test('closing one window leaves the other, and the commit admitted for its last save still finishes', async () => {
 		const { folder, other, root } = await setup();
 		const heard: (readonly string[])[] = [];
 		other.onFilesChanged((paths) => heard.push(paths));
 
+		// The folder is free, so the owner admits this save's commit before the
+		// save returns. The page closes without waiting for it.
 		expectOk(
 			await a(() => folder.files.create('last.md', 'saved as the page closed')),
 		);
@@ -497,15 +521,15 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const session = await a(() => commands.list(1));
 		expect(session.error?.name).toBe('Denied');
 
+		// Window B waits on the owner's Git lock: the admitted commit finished
+		// without the page that saved. Closing committed nothing itself.
+		expectOk(await b(() => other.git.paths()));
+		expect(await git(root, 'log', '--format=%s')).toBe('Add last.md');
+
 		expectOk(
 			await b(() => other.files.create('after.md', 'window b carries on')),
 		);
-		for (let waited = 0; waited < 600; waited++) {
-			const { activity, lastCommit } = other.git.snapshot;
-			if (!activity.commit.active && !activity.commit.pending && lastCommit)
-				break;
-			await Bun.sleep(10);
-		}
+		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
 			'after.md\nlast.md',
 		);

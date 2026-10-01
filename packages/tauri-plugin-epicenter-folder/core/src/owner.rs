@@ -1,9 +1,9 @@
 //! The one owner of a native folder.
 //!
 //! Every window of a shell shares one `FolderOwner` per root, so they share
-//! one ordering of saves, one Git snapshot, and one queue of commit passes.
-//! The owner outlives any window: a save it admitted lands and is committed
-//! whether or not the page that asked is still there.
+//! one ordering of saves and one Git snapshot. The owner outlives any window:
+//! a save it admitted lands, and a commit it admitted finishes, whether or
+//! not the page that asked is still there.
 //!
 //! Two independent gates order its work, and they are never held together in
 //! the wrong order:
@@ -11,27 +11,35 @@
 //! - The **file gate** admits one publication at a time: a complete `apply`
 //!   batch, a directory change, or a fast-forward's file changes. A terminal
 //!   lease holds it across several calls, for at most `lease_limit`.
-//! - The **Git lock** serializes work on the index and the branch: commit
-//!   passes, staging, staged commits, and a fast-forward's ref update.
+//! - The **Git lock** serializes work on the index and the branch: commits,
+//!   staging, staged commits, and a fast-forward's ref update.
 //!
-//! A commit pass pins the branch head, takes the file gate just long enough
-//! to enumerate the folder and hard-link every file into a snapshot, and
-//! releases it. Only then does it wait for the Git lock, where it checks the
-//! head is still the one it pinned, hashes the snapshot, and publishes. So a
-//! save never waits for hashing or for other Git work, and no batch of this
-//! owner is ever seen half applied. A save that lands after the snapshot is
-//! simply newer than it: the observation is marked stale and the save's own
-//! request starts another pass after this one. If the head moved before the
-//! pass reached the Git lock, the pass starts over with a fresh snapshot
-//! rather than commit old bytes on a new parent.
+//! A commit holds both: the file gate, then the Git lock. Under them it pins
+//! the branch head, enumerates the folder, and hard-links every file into a
+//! snapshot. It then releases the file gate and, still under the Git lock,
+//! hashes the snapshot and publishes with a compare-and-swap. So a save never
+//! waits for hashing, and no batch of this owner is ever seen half applied. A
+//! save that lands after the snapshot is simply newer than it: the
+//! observation is marked stale. A branch another Git process moved fails the
+//! compare-and-swap and is reported; there is no retry.
+//!
+//! With `commit_on_edit`, a complete save makes one attempt at that commit:
+//! it takes the file gate and then the Git lock only if each is free right
+//! now. If either is held, by a terminal lease, another save, or other Git
+//! work, the attempt did not happen and nothing remembers it. The save can
+//! stay uncommitted until a later save or an explicit commit. There is no
+//! timer, no queue, and no commit at shutdown.
+//!
+//! An explicit commit or fast-forward waits. It takes the file gate, through
+//! the caller's own terminal lease when it names one, and then tries the Git
+//! lock. If the Git lock is held it gives the gate back, waits for the Git
+//! lock to be released, and starts over, so it reads the folder as it is once
+//! it holds both. Nothing takes the two in the other order, and nothing waits
+//! for either while it holds the other.
 //!
 //! The snapshot is exact against this owner's own writes, which replace files
 //! by rename or link. A program that edits a file in place can still change
 //! bytes the snapshot links to: that stays best effort.
-//!
-//! A fast-forward takes the file gate, then the Git lock. Nothing takes them
-//! in the other order, and nothing waits for the Git lock while it holds the
-//! file gate.
 //!
 //! Network work runs outside both. Listeners are called with a copy of the
 //! listener list; the plugin's listener only queues the event.
@@ -39,7 +47,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, TryLockError, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use unicode_normalization::UnicodeNormalization;
@@ -50,17 +58,12 @@ use crate::files::{
 };
 use crate::git::{Author, Capture, Cas, CommitSummary, Git, IndexCommit, PathStatus, Remote};
 use crate::history::{
-    Activities, Activity, Attempt, CommitOutcome, CommitPass, FetchOutcome, FilesObservation,
-    GitError, GitSnapshot, Observation, OwnerEvent, PullError, PullOutcome, PushOutcome,
-    SyncObservation,
+    Activities, Activity, Attempt, CommitOutcome, FetchOutcome, FilesObservation, GitError,
+    GitSnapshot, Observation, OwnerEvent, PullError, PullOutcome, PushOutcome, SyncObservation,
 };
 use crate::messages::{commit_subject, message_problem, ChangeKind};
 use crate::paths::{ancestors, is_portable_path, path_problem};
-use crate::runner::{CloseMode, Endings, PassRunner};
-
-/// How many fresh snapshots one commit pass takes when the branch keeps
-/// moving underneath it.
-const CAPTURE_ATTEMPTS: usize = 3;
+use crate::runner::{CloseMode, Endings, Leaving, PassRunner};
 
 #[derive(Debug, Clone)]
 pub struct FolderConfig {
@@ -72,7 +75,8 @@ pub struct FolderConfig {
     /// Author and committer for automatic and staged commits.
     pub author: Author,
     pub remote: Option<Remote>,
-    /// Whether complete content saves request automatic commits and pushes.
+    /// Whether a complete content save attempts an automatic commit, and a
+    /// push after it. The attempt is skipped when the folder is busy.
     pub commit_on_edit: bool,
     /// Whether the repository's own `user.name` and `user.email` decide who
     /// commits. They are read once, when the folder opens, after its lock is
@@ -260,33 +264,10 @@ impl Gate {
         }
     }
 
-    /// Enter for a shared pass. A pass has no caller of its own, so it runs
-    /// inside a lease only while the lease holder is the one waiting for it:
-    /// `vouched` names that lease. Otherwise it waits like any publication.
-    fn enter_pass(&self, vouched: &dyn Fn() -> Option<u64>) -> Permit<'_> {
-        loop {
-            if let Some(lease) = vouched() {
-                if let Ok(permit) = self.enter(Some(lease)) {
-                    return permit;
-                }
-            }
-            let mut holder = lock(&self.holder);
-            if matches!(*holder, Holder::Free) {
-                *holder = Holder::Batch;
-                return Permit::Batch(self);
-            }
-            // Wake for a freed gate, and look again for a lease that now vouches.
-            drop(
-                self.changed
-                    .wait_timeout(holder, Duration::from_millis(20))
-                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
-            );
-            // An expired lease is ended by whoever waits on it.
-            self.end_expired_lease();
-        }
-    }
-
-    fn end_expired_lease(&self) {
+    /// Enter for one publication only if nothing holds the gate right now. A
+    /// live lease holds it, and so does an ended one whose calls are still in
+    /// flight.
+    fn try_enter(&self) -> Option<Permit<'_>> {
         let mut holder = lock(&self.holder);
         if let Holder::Lease {
             deadline,
@@ -302,6 +283,11 @@ impl Gate {
                 *holder = Holder::Free;
             }
         }
+        if !matches!(*holder, Holder::Free) {
+            return None;
+        }
+        *holder = Holder::Batch;
+        Some(Permit::Batch(self))
     }
 
     fn lease(&self, limit: Duration) -> u64 {
@@ -376,12 +362,6 @@ struct HistoryState {
     last_fetch: Option<Attempt<Result<FetchOutcome, GitError>>>,
     last_pull: Option<Attempt<Result<PullOutcome, PullError>>>,
     remote_sequence: u64,
-    /// Whether the next commit pass was requested by a content save. Consumed
-    /// when a pass starts; only such passes push afterward.
-    automatic_queued: bool,
-    /// The terminal lease whose holder is waiting on a pass, if any. A pass
-    /// that needs the file gate runs inside that lease instead of behind it.
-    waiting_lease: Option<u64>,
 }
 
 type Listener = Arc<dyn Fn(&OwnerEvent) + Send + Sync>;
@@ -396,21 +376,23 @@ struct Emitted {
 pub(crate) struct Hooks {
     /// Runs inside an admitted `apply`, before the file gate.
     pub before_apply: Option<Arc<dyn Fn() + Send + Sync>>,
-    /// Runs inside a commit pass while it holds the file gate, before it
-    /// snapshots the folder.
+    /// Runs inside a commit while it holds the file gate and the Git lock,
+    /// before it snapshots the folder.
     pub during_snapshot: Option<Arc<dyn Fn() + Send + Sync>>,
-    /// Runs inside a commit pass after the gate is released, before the pass
-    /// takes the Git lock.
-    pub after_snapshot: Option<Arc<dyn Fn() + Send + Sync>>,
-    /// Runs inside a commit pass under the Git lock, once the parent is
-    /// confirmed, before the snapshot is hashed.
+    /// Runs inside a commit under the Git lock, after the file gate was
+    /// released, before the snapshot is hashed.
     pub before_hash: Option<Arc<dyn Fn() + Send + Sync>>,
-    /// Runs inside a commit pass under the Git lock, after the snapshot was
+    /// Runs inside a commit under the Git lock, after the snapshot was
     /// hashed, before the commit is published.
     pub after_capture: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Runs inside a fast-forward after the folder was found clean, before
     /// its file changes are built.
     pub during_pull: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Runs inside an admitted push, once its commit is pinned, before the
+    /// transport starts.
+    pub during_push: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Runs inside an admitted fetch, before the transport starts.
+    pub during_fetch: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 struct Inner {
@@ -424,14 +406,18 @@ struct Inner {
     emitted: Mutex<Emitted>,
     listeners: Mutex<Vec<(u64, Listener)>>,
     next_listener: AtomicU64,
-    /// Counts admitted file and explicit Git operations still running.
+    /// Counts admitted file and Git operations still running, automatic
+    /// commits included.
     admitted: Mutex<usize>,
     settled: Condvar,
     /// New work is refused.
     closing: AtomicBool,
-    /// Admitted work has drained; saves no longer request commits.
-    finishing: AtomicBool,
     shutdown: Mutex<bool>,
+    /// Commits, fast-forwards, and leased scans that were admitted and have
+    /// not settled, for the snapshot's activity.
+    commits: AtomicUsize,
+    pulls: AtomicUsize,
+    leased_scans: AtomicUsize,
     revision: AtomicU64,
     own_in_flight: AtomicUsize,
     own_done: AtomicU64,
@@ -444,10 +430,8 @@ struct Inner {
     /// Why filesystem events are not being watched, when they are not.
     watch_diagnostic: Mutex<Option<String>>,
     scan: PassRunner<Result<FilesObservation, GitError>>,
-    commit: PassRunner<CommitPass>,
     push: PassRunner<PushOutcome>,
     fetch: PassRunner<Result<FetchOutcome, GitError>>,
-    pull: PassRunner<Result<PullOutcome, PullError>>,
     #[cfg(test)]
     hooks: Mutex<Hooks>,
     /// How many relevant announcements arrived, for telling "no event came"
@@ -465,19 +449,16 @@ impl Drop for Admission<'_> {
     }
 }
 
-struct Waiting<'a>(&'a Inner, u64);
+/// One admitted commit, fast-forward, or leased scan, counted as active from
+/// its admission, including any wait for the gates, until it settles.
+struct Running<'a>(&'a Inner, &'a AtomicUsize);
 
-impl Drop for Waiting<'_> {
+impl Drop for Running<'_> {
     fn drop(&mut self) {
-        let mut state = lock(&self.0.state);
-        if state.waiting_lease == Some(self.1) {
-            state.waiting_lease = None;
-        }
+        self.1.fetch_sub(1, Ordering::SeqCst);
+        self.0.emit();
     }
 }
-
-/// A lease holder's wait on a shared pass; see `FolderOwner::vouch`.
-pub struct Vouched<'a>(#[allow(dead_code)] Option<Waiting<'a>>);
 
 /// Stops listening when dropped.
 pub struct Subscription {
@@ -513,9 +494,53 @@ impl Drop for Lease {
     }
 }
 
+/// One caller's push or fetch, from before it asks until it has its answer.
+/// Dropping it withdraws the caller: a push or fetch still waiting behind
+/// another never starts for it, and one that names it later is refused. A
+/// transport the owner already started is not affected and runs to its end.
+pub struct Request {
+    owner: Weak<Inner>,
+    caller: Caller,
+}
+
+/// How `push` and `fetch` know the request they run for. A push and a fetch
+/// are ordered by different runners, so each has its own way to leave, read
+/// and written only under its own runner's lock. Withdrawing the push side
+/// says nothing to a waiting fetch, and the other way round: a fetch is told
+/// it was withdrawn only by the lock that also took it out of the queue.
+#[derive(Clone)]
+pub struct Caller {
+    push: Arc<Leaving>,
+    fetch: Arc<Leaving>,
+}
+
+impl Request {
+    /// What `push` or `fetch` is given to run on this request's behalf.
+    pub fn caller(&self) -> Caller {
+        self.caller.clone()
+    }
+}
+
+impl Drop for Request {
+    fn drop(&mut self) {
+        if let Some(owner) = self.owner.upgrade() {
+            owner.push.withdraw(&self.caller.push);
+            owner.fetch.withdraw(&self.caller.fetch);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct FolderOwner {
     inner: Arc<Inner>,
+}
+
+/// Why a call that named a terminal lease could not enter the file gate.
+fn refusal(error: FileError) -> String {
+    match error {
+        FileError::LeaseEnded { reason } => reason,
+        other => format!("{other:?}"),
+    }
 }
 
 fn pass<T: Clone + Send + 'static>(
@@ -590,8 +615,6 @@ impl FolderOwner {
                 last_fetch: None,
                 last_pull: None,
                 remote_sequence: 0,
-                automatic_queued: false,
-                waiting_lease: None,
             }),
             emitted: Mutex::new(Emitted {
                 sequence: 0,
@@ -614,8 +637,10 @@ impl FolderOwner {
             admitted: Mutex::new(0),
             settled: Condvar::new(),
             closing: AtomicBool::new(false),
-            finishing: AtomicBool::new(false),
             shutdown: Mutex::new(false),
+            commits: AtomicUsize::new(0),
+            pulls: AtomicUsize::new(0),
+            leased_scans: AtomicUsize::new(0),
             revision: AtomicU64::new(0),
             own_in_flight: AtomicUsize::new(0),
             own_done: AtomicU64::new(0),
@@ -632,28 +657,9 @@ impl FolderOwner {
                     failed: |cause| Err(GitError::failed("status", cause)),
                     closed: || Err(GitError::Closed),
                     cancelled: || Err(GitError::Closed),
+                    withdrawn: || Err(GitError::Withdrawn),
                 },
-                |inner, _| inner.run_scan(),
-            ),
-            commit: pass(
-                "commit",
-                owner,
-                Endings {
-                    // A pass that panicked may already have moved the branch.
-                    failed: |error| CommitPass {
-                        outcome: CommitOutcome::Unconfirmed { error },
-                        following_push: None,
-                    },
-                    closed: || CommitPass {
-                        outcome: CommitOutcome::Closed,
-                        following_push: None,
-                    },
-                    cancelled: || CommitPass {
-                        outcome: CommitOutcome::Closed,
-                        following_push: None,
-                    },
-                },
-                |inner, _| inner.run_commit(),
+                |inner, _| inner.run_scan(None),
             ),
             push: pass(
                 "push",
@@ -663,6 +669,8 @@ impl FolderOwner {
                     failed: |error| PushOutcome::Unconfirmed { error },
                     closed: || PushOutcome::Closed,
                     cancelled: || PushOutcome::Cancelled { oid: None },
+                    // No commit was pinned and nothing was sent.
+                    withdrawn: || PushOutcome::Cancelled { oid: None },
                 },
                 Inner::run_push,
             ),
@@ -673,18 +681,9 @@ impl FolderOwner {
                     failed: |cause| Err(GitError::failed("fetch", cause)),
                     closed: || Err(GitError::Closed),
                     cancelled: || Err(GitError::Closed),
+                    withdrawn: || Err(GitError::Withdrawn),
                 },
                 Inner::run_fetch,
-            ),
-            pull: pass(
-                "pull",
-                owner,
-                Endings {
-                    failed: |cause| Err(GitError::failed("pull", cause).into()),
-                    closed: || Err(GitError::Closed.into()),
-                    cancelled: || Err(GitError::Closed.into()),
-                },
-                |inner, _| inner.run_pull(),
             ),
             #[cfg(test)]
             hooks: Mutex::new(Hooks::default()),
@@ -821,8 +820,9 @@ impl FolderOwner {
             .collect())
     }
 
-    /// Publish ordered changes. A complete batch requests an automatic commit
-    /// before this returns; a partial one only marks observations stale.
+    /// Publish ordered changes. A complete batch makes its one automatic
+    /// commit attempt before this returns; a partial one only marks
+    /// observations stale.
     pub fn apply(&self, changes: &[FileChange], lease: Option<u64>) -> Result<(), ApplyError> {
         let refused = |error| ApplyError::Refused { error };
         let _admitted = self.inner.admit().map_err(refused)?;
@@ -837,7 +837,7 @@ impl FolderOwner {
             Ok(()) => {
                 let steps: Vec<FileStep> = changes.iter().map(FileChange::step).collect();
                 self.inner.edited(&steps);
-                self.inner.request_automatic_commit();
+                self.inner.commit_if_free();
             }
             Err(ApplyError::Partial { applied, .. }) => self.inner.edited(applied),
             // The owner itself always knows what it published; `Unconfirmed`
@@ -875,40 +875,81 @@ impl FolderOwner {
     // Git
     // ------------------------------------------------------------------
 
-    /// A fresh, read-only inspection of uncommitted changes.
-    pub fn status(&self) -> Result<FilesObservation, GitError> {
-        self.inner.scan.request_and_wait()
+    /// A fresh, read-only inspection of uncommitted changes. A caller that
+    /// holds a terminal lease names it and is scanned inside it; every other
+    /// caller shares the scan runner.
+    pub fn status(&self, lease: Option<u64>) -> Result<FilesObservation, GitError> {
+        if lease.is_none() {
+            return self.inner.scan.request_and_wait(None);
+        }
+        let Ok(_admitted) = self.inner.admit() else {
+            return Err(GitError::Closed);
+        };
+        let _running = self.inner.running(&self.inner.leased_scans);
+        self.inner.run_scan(lease)
     }
 
     /// Commit current source files if they changed, and reset the index to
-    /// the head either way. Never requests a push.
-    pub fn commit(&self) -> CommitPass {
-        self.inner.commit.request_and_wait()
+    /// the head either way. Waits for the file gate and the Git lock, then
+    /// reads the folder, so it sees every save that landed while it waited.
+    /// Never requests a push.
+    pub fn commit(&self, lease: Option<u64>) -> CommitOutcome {
+        let inner = &self.inner;
+        let Ok(_admitted) = inner.admit() else {
+            return CommitOutcome::Closed;
+        };
+        let _running = inner.running(&inner.commits);
+        let (permit, git) = match inner.enter_both(lease) {
+            Ok(held) => held,
+            Err(error) => {
+                return CommitOutcome::Failed {
+                    error: refusal(error),
+                }
+            }
+        };
+        // Shutdown began while this waited: nothing ran, nothing is recorded.
+        if inner.closing.load(Ordering::SeqCst) {
+            return CommitOutcome::Closed;
+        }
+        inner.commit_with(permit, git)
     }
 
-    /// Say that the holder of `lease` is about to wait on `status`, `commit`,
-    /// or `pull_fast_forward`, until the returned value is dropped. Those
-    /// passes need the file gate for a moment; without this they would wait
-    /// behind the very lease whose holder is waiting for them.
-    pub fn vouch(&self, lease: Option<u64>) -> Vouched<'_> {
-        Vouched(self.inner.waiting(lease))
-    }
-
-    /// Wait for the push pass `joining` names, or request one.
-    pub fn push(&self, joining: Option<u64>) -> PushOutcome {
-        match joining {
-            Some(pass) => self.inner.push.wait(pass),
-            None => self.inner.push.request_and_wait(),
+    /// A caller that may withdraw its push or fetch before the transport
+    /// starts. See `Request`.
+    pub fn request(&self) -> Request {
+        Request {
+            owner: Arc::downgrade(&self.inner),
+            caller: Caller {
+                push: self.inner.push.leaving(),
+                fetch: self.inner.fetch.leaving(),
+            },
         }
     }
 
-    pub fn fetch(&self) -> Result<FetchOutcome, GitError> {
-        self.inner.fetch.request_and_wait()
+    /// Request a push, after the active one if there is one, and wait for it.
+    /// With `caller`, the request can be withdrawn until the push starts;
+    /// without it the push is owed and runs.
+    pub fn push(&self, caller: Option<&Caller>) -> PushOutcome {
+        self.inner
+            .push
+            .request_and_wait(caller.map(|caller| &caller.push))
     }
 
-    /// Apply the fetched remote head only as a clean fast-forward.
-    pub fn pull_fast_forward(&self) -> Result<PullOutcome, PullError> {
-        self.inner.pull.request_and_wait()
+    /// Request a fetch and wait for it, like `push`.
+    pub fn fetch(&self, caller: Option<&Caller>) -> Result<FetchOutcome, GitError> {
+        self.inner
+            .fetch
+            .request_and_wait(caller.map(|caller| &caller.fetch))
+    }
+
+    /// Apply the fetched remote head only as a clean fast-forward. Waits for
+    /// the file gate and the Git lock like `commit`.
+    pub fn pull_fast_forward(&self, lease: Option<u64>) -> Result<PullOutcome, PullError> {
+        let Ok(_admitted) = self.inner.admit() else {
+            return Err(GitError::Closed.into());
+        };
+        let _running = self.inner.running(&self.inner.pulls);
+        self.inner.run_pull(lease)
     }
 
     /// Per-path staged and unstaged state, as `git status` reports it.
@@ -966,8 +1007,10 @@ impl FolderOwner {
     }
 
     /// Fence new work, cancel network work, and return once every admitted
-    /// save and every local pass it requested has settled. A save admitted
-    /// before this call still lands and is still committed; it is not pushed.
+    /// operation has settled. A save admitted before this call still lands,
+    /// and a commit admitted before it still finishes. Nothing is committed
+    /// because of shutdown: a save whose attempt was skipped, or which lands
+    /// after the fence, stays uncommitted.
     pub fn shutdown(&self) {
         let inner = &self.inner;
         let mut done = lock(&inner.shutdown);
@@ -999,10 +1042,7 @@ impl FolderOwner {
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
             }
             drop(admitted);
-            inner.finishing.store(true, Ordering::SeqCst);
-            // A fast-forward may request a scan, and a commit pass may too.
-            inner.pull.close(CloseMode::Drain);
-            inner.commit.close(CloseMode::Drain);
+            // An admitted fast-forward or commit may have requested a scan.
             inner.scan.close(CloseMode::Drain);
         });
         inner.emit();
@@ -1037,16 +1077,41 @@ impl Inner {
         Ok(Admission(self))
     }
 
-    /// Record that the holder of `lease` is waiting on a pass, until dropped.
-    fn waiting(&self, lease: Option<u64>) -> Option<Waiting<'_>> {
-        let lease = lease?;
-        lock(&self.state).waiting_lease = Some(lease);
-        self.gate.changed.notify_all();
-        Some(Waiting(self, lease))
+    /// Count one admitted operation as active and say so. The caller holds
+    /// its admission already, so shutdown waits for what listeners hear of.
+    fn running<'a>(&'a self, count: &'a AtomicUsize) -> Running<'a> {
+        count.fetch_add(1, Ordering::SeqCst);
+        self.emit();
+        Running(self, count)
     }
 
-    fn enter_pass(&self) -> Permit<'_> {
-        self.gate.enter_pass(&|| lock(&self.state).waiting_lease)
+    fn try_git(&self) -> Option<MutexGuard<'_, ()>> {
+        match self.git_lock.try_lock() {
+            Ok(git) => Some(git),
+            Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
+    }
+
+    /// Wait for the file gate, then the Git lock: the only order anything
+    /// takes both in. `lease` names the terminal lease the caller holds, and
+    /// is entered directly; it is refused if it does not hold the gate. The
+    /// Git lock is only tried while the gate is held. When it is busy the
+    /// gate is given back first, so saves are never stuck behind a caller
+    /// that is itself waiting, and the caller starts over once the Git lock
+    /// was released.
+    fn enter_both(
+        &self,
+        lease: Option<u64>,
+    ) -> Result<(Permit<'_>, MutexGuard<'_, ()>), FileError> {
+        loop {
+            let permit = self.gate.enter(lease)?;
+            if let Some(git) = self.try_git() {
+                return Ok((permit, git));
+            }
+            drop(permit);
+            drop(lock(&self.git_lock));
+        }
     }
 
     /// Admit one explicit Git operation for its whole lifetime.
@@ -1076,20 +1141,29 @@ impl Inner {
     }
 
     /// Publish the snapshot if it changed. Deliveries are ordered: the lock
-    /// that numbers a snapshot is held until its listeners have run.
+    /// that numbers a snapshot is held until its listeners have run. Activity
+    /// is read under that lock too, so the snapshot of the last change to it
+    /// is never replaced by one read before that change.
     fn emit(&self) {
-        let activity = |runner_active: bool, pending: bool| Activity {
-            active: runner_active,
-            pending,
-        };
-        let activity = Activities {
-            scan: activity(self.scan.active(), self.scan.pending()),
-            commit: activity(self.commit.active(), self.commit.pending()),
-            push: activity(self.push.active(), self.push.pending()),
-            fetch: activity(self.fetch.active(), self.fetch.pending()),
-            pull: activity(self.pull.active(), self.pull.pending()),
-        };
         let mut emitted = lock(&self.emitted);
+        let counted = |count: &AtomicUsize| count.load(Ordering::SeqCst) > 0;
+        let activity = Activities {
+            scan: Activity {
+                active: self.scan.active() || counted(&self.leased_scans),
+            },
+            commit: Activity {
+                active: counted(&self.commits),
+            },
+            push: Activity {
+                active: self.push.active(),
+            },
+            fetch: Activity {
+                active: self.fetch.active(),
+            },
+            pull: Activity {
+                active: counted(&self.pulls),
+            },
+        };
         let snapshot = {
             let state = lock(&self.state);
             GitSnapshot {
@@ -1201,18 +1275,51 @@ impl Inner {
     /// observation stale and ask for a fresh scan. This requests no commit.
     fn landed(&self, steps: &[FileStep]) {
         self.edited(steps);
-        if !self.finishing.load(Ordering::SeqCst) {
-            self.scan.request();
-        }
+        self.scan.request();
     }
 
-    /// The implicit request after a content save; never awaited by the save.
-    fn request_automatic_commit(&self) {
-        if !self.config.commit_on_edit || self.finishing.load(Ordering::SeqCst) {
+    /// The one attempt a complete save makes. It is admitted only if the
+    /// owner is not shutting down and the file gate and then the Git lock are
+    /// both free right now: no terminal lease, no other save, no other Git
+    /// work. Otherwise the attempt did not happen: nothing is recorded,
+    /// nothing is pushed, and nothing runs when the holder lets go.
+    ///
+    /// The save waits only for that decision, never for the commit, which
+    /// runs on its own thread with the admission and both locks it took.
+    fn commit_if_free(self: &Arc<Self>) {
+        if !self.config.commit_on_edit {
             return;
         }
-        lock(&self.state).automatic_queued = true;
-        self.commit.request();
+        let (decided, decision) = mpsc::channel::<()>();
+        let inner = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name("folder-commit".to_string())
+            .spawn(move || {
+                let Ok(_admitted) = inner.admit() else {
+                    return;
+                };
+                let Some(permit) = inner.gate.try_enter() else {
+                    return;
+                };
+                let Some(git) = inner.try_git() else {
+                    return;
+                };
+                let _running = inner.running(&inner.commits);
+                drop(decided);
+                inner.commit_with(permit, git);
+                // A push that cannot start now is not owed later.
+                let ahead = matches!(
+                    &lock(&inner.state).sync,
+                    Observation::Observed { value, stale: false, .. } if value.ahead > 0
+                );
+                if ahead && inner.git.remote.is_some() && !inner.closing.load(Ordering::SeqCst) {
+                    inner.push.attempt();
+                }
+            });
+        if spawned.is_ok() {
+            // Settles when the attempt was admitted or dropped.
+            let _ = decision.recv();
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1313,15 +1420,16 @@ impl Inner {
             return;
         }
         self.mark_files_stale();
-        if !self.finishing.load(Ordering::SeqCst) {
-            self.scan.request();
-        }
+        self.scan.request();
     }
 
-    fn run_scan(&self) -> Result<FilesObservation, GitError> {
+    fn run_scan(&self, lease: Option<u64>) -> Result<FilesObservation, GitError> {
         // The snapshot is taken under the file gate; hashing it is not.
         let (captured_at, snapshot) = {
-            let _permit = self.enter_pass();
+            let _permit = self
+                .gate
+                .enter(lease)
+                .map_err(|error| GitError::failed("status", refusal(error)))?;
             (self.tick(), self.git.snapshot())
         };
         let result = match snapshot.and_then(|snapshot| self.git.observe(&snapshot)) {
@@ -1517,7 +1625,7 @@ impl Inner {
     }
 
     // ------------------------------------------------------------------
-    // Commit passes
+    // Commits
     // ------------------------------------------------------------------
 
     #[cfg(test)]
@@ -1530,55 +1638,30 @@ impl Inner {
         }
     }
 
-    fn checkpoint(&self) -> Result<CommitOutcome, String> {
-        // A fast-forward or staged commit can move the branch and the files
-        // between this pass's snapshot and its turn at the Git lock. Bytes
-        // snapshotted for one parent are never committed on another: the pass
-        // starts over with a fresh snapshot instead.
-        for _ in 0..CAPTURE_ATTEMPTS {
-            if let Some(outcome) = self.checkpoint_once()? {
-                return Ok(outcome);
-            }
-        }
-        Ok(CommitOutcome::Failed {
-            error: "the branch kept moving while the folder was being captured".to_string(),
-        })
-    }
-
-    /// One attempt. `None` means the branch moved after the snapshot was
-    /// taken and nothing was published.
-    fn checkpoint_once(&self) -> Result<Option<CommitOutcome>, String> {
+    /// One whole-folder commit. The caller holds the file gate and the Git
+    /// lock. The gate is released as soon as the folder is snapshotted.
+    fn checkpoint(&self, permit: Permit<'_>) -> Result<CommitOutcome, String> {
         if let Some(reason) = self.git.blocked()? {
-            return Ok(Some(CommitOutcome::Blocked { reason }));
+            return Ok(CommitOutcome::Blocked { reason });
         }
+        // The parent is pinned and the folder snapshotted under both locks,
+        // so no fast-forward or staged commit of this owner falls between
+        // them: bytes snapshotted for one parent are never committed on
+        // another. Another Git process can still move the branch; that fails
+        // the compare-and-swap below.
         let parent = self.git.read_branch()?;
-        // The file gate is held only to enumerate and link the folder, and is
-        // released before this pass waits for the Git lock, so a save waits
-        // for neither hashing nor other Git work.
-        let (captured_at, snapshot) = {
-            let _permit = self.enter_pass();
-            #[cfg(test)]
-            self.hook(|hooks| &hooks.during_snapshot);
-            (self.tick(), self.git.snapshot()?)
-        };
-        // From here saves proceed. One that lands now is newer than
-        // `captured_at`: this pass still commits what it snapshotted, and the
-        // observation it records is stale until that save's own pass.
         #[cfg(test)]
-        self.hook(|hooks| &hooks.after_snapshot);
-
-        let _git = lock(&self.git_lock);
-        if let Some(reason) = self.git.blocked()? {
-            return Ok(Some(CommitOutcome::Blocked { reason }));
-        }
-        // Nothing is hashed or written for a parent the branch has left.
-        if self.git.read_branch()? != parent {
-            return Ok(None);
-        }
+        self.hook(|hooks| &hooks.during_snapshot);
+        let captured_at = self.tick();
+        let snapshot = self.git.snapshot()?;
+        // From here saves proceed. One that lands now is newer than
+        // `captured_at`: this commit still holds what it snapshotted, and the
+        // observation it records is stale.
+        drop(permit);
         #[cfg(test)]
         self.hook(|hooks| &hooks.before_hash);
         let captured = match self.git.capture(&snapshot, parent.as_deref())? {
-            Capture::Blocked(reason) => return Ok(Some(CommitOutcome::Blocked { reason })),
+            Capture::Blocked(reason) => return Ok(CommitOutcome::Blocked { reason }),
             Capture::Captured(captured) => captured,
         };
         drop(snapshot);
@@ -1596,14 +1679,13 @@ impl Inner {
                     &message,
                     &self.config.author,
                 )?;
-                // Another Git process can still move the branch after the
-                // check above. That is reported, never retried.
+                // Reported, never retried.
                 if let Cas::Lost { actual } = self.git.cas_branch(parent.as_deref(), &oid)? {
-                    return Ok(Some(CommitOutcome::BranchMoved {
+                    return Ok(CommitOutcome::BranchMoved {
                         candidate: oid,
                         expected: parent,
                         actual,
-                    }));
+                    });
                 }
                 Some((oid, message))
             }
@@ -1620,7 +1702,7 @@ impl Inner {
             .as_deref()
             .and_then(|head| self.git.reconcile_index(head).err());
         self.observe_committed(captured_at, head.as_deref());
-        Ok(Some(match built {
+        Ok(match built {
             Some((oid, message)) => CommitOutcome::Committed {
                 oid,
                 parent,
@@ -1632,36 +1714,23 @@ impl Inner {
                 head: parent,
                 index_warning,
             },
-        }))
+        })
     }
 
-    fn run_commit(&self) -> CommitPass {
-        let automatic = std::mem::take(&mut lock(&self.state).automatic_queued);
+    /// Commit with both locks held, and record what happened and what is now
+    /// known of the remote. The Git lock is kept until the attempt is
+    /// recorded, so attempts are recorded in the order they ran.
+    fn commit_with(&self, permit: Permit<'_>, _git: MutexGuard<'_, ()>) -> CommitOutcome {
         let outcome = self
-            .checkpoint()
+            .checkpoint(permit)
             .unwrap_or_else(|error| CommitOutcome::Failed { error });
         lock(&self.state).last_commit = Some(Attempt {
             result: outcome.clone(),
             at: now_ms(),
         });
         self.refresh_sync();
-        // Only a pass a content save requested pushes afterward; an explicit
-        // commit stays local, and commits finishing during close do not push.
-        let following_push = (automatic
-            && self.config.commit_on_edit
-            && !self.closing.load(Ordering::SeqCst)
-            && self.git.remote.is_some()
-            && matches!(
-                outcome,
-                CommitOutcome::Committed { .. } | CommitOutcome::Unchanged { .. }
-            ))
-        .then(|| self.push.request())
-        .flatten();
         self.emit();
-        CommitPass {
-            outcome,
-            following_push: following_push.map(|pass| pass as u32),
-        }
+        outcome
     }
 
     fn commit_staged(&self, message: &str) -> Result<(String, Option<String>), GitError> {
@@ -1734,6 +1803,8 @@ impl Inner {
             state.remote_sequence += 1;
             state.remote_sequence
         };
+        #[cfg(test)]
+        self.hook(|hooks| &hooks.during_push);
         let outcome = match self.git.push(&oid, cancel) {
             Ok(()) => PushOutcome::Pushed { oid },
             Err(_) if cancel.load(Ordering::SeqCst) => PushOutcome::Cancelled { oid: Some(oid) },
@@ -1760,6 +1831,8 @@ impl Inner {
             state.remote_sequence += 1;
             state.remote_sequence
         };
+        #[cfg(test)]
+        self.hook(|hooks| &hooks.during_fetch);
         let result = self
             .git
             .fetch(cancel)
@@ -1776,10 +1849,20 @@ impl Inner {
         result
     }
 
-    fn run_pull(&self) -> Result<PullOutcome, PullError> {
-        let result = self
-            .pull()
-            .unwrap_or_else(|cause| Err(GitError::failed("pull", cause).into()));
+    fn run_pull(&self, lease: Option<u64>) -> Result<PullOutcome, PullError> {
+        let result = if self.git.remote.is_none() {
+            Err(GitError::NoRemote.into())
+        } else {
+            let (permit, git) = self
+                .enter_both(lease)
+                .map_err(|error| PullError::Refused { error })?;
+            // Shutdown began while this waited: nothing ran, nothing is recorded.
+            if self.closing.load(Ordering::SeqCst) {
+                return Err(GitError::Closed.into());
+            }
+            self.pull(permit, git)
+                .unwrap_or_else(|cause| Err(GitError::failed("pull", cause).into()))
+        };
         if !matches!(
             result,
             Err(PullError::Git {
@@ -1797,29 +1880,13 @@ impl Inner {
     }
 
     /// The outer error is an unexpected Git failure; the inner one is a
-    /// reported outcome.
-    fn pull(&self) -> Result<Result<PullOutcome, PullError>, String> {
-        if self.git.remote.is_none() {
-            return Ok(Err(GitError::NoRemote.into()));
-        }
-        // The file gate first, then the Git lock: the only order anything
-        // takes both in. A commit pass can hold the Git lock for as long as it
-        // hashes, so the gate is given back while this waits; saves are never
-        // stuck behind a fast-forward that is itself waiting. Both are then
-        // held until the files and the branch agree.
-        let (_permit, _git) = loop {
-            let permit = self.enter_pass();
-            match self.git_lock.try_lock() {
-                Ok(git) => break (permit, git),
-                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                    break (permit, poisoned.into_inner())
-                }
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    drop(permit);
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            }
-        };
+    /// reported outcome. The file gate and the Git lock are both held until
+    /// the files and the branch agree.
+    fn pull(
+        &self,
+        _permit: Permit<'_>,
+        _git: MutexGuard<'_, ()>,
+    ) -> Result<Result<PullOutcome, PullError>, String> {
         if let Some(reason) = self.git.blocked()? {
             return Ok(Err(PullError::Blocked { reason }));
         }
@@ -1999,5 +2066,265 @@ impl Inner {
 impl Drop for Inner {
     fn drop(&mut self) {
         self.watching.store(false, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_nonwaiting_entry_is_refused_while_anything_holds_the_gate() {
+        let gate = Gate::new();
+        let batch = gate.try_enter().expect("a free gate is entered");
+        assert!(gate.try_enter().is_none(), "a publication holds the gate");
+        drop(batch);
+
+        // A live terminal lease holds it, whether or not a call is in flight.
+        let lease = gate.lease(Duration::from_secs(60));
+        assert!(gate.try_enter().is_none());
+        let call = gate.enter(Some(lease)).expect("the lease holder enters");
+        assert!(gate.try_enter().is_none());
+
+        // Released while its call is in flight: the lease admits no new call
+        // and still holds the gate until that call settles.
+        gate.end_lease(Some(lease));
+        assert!(gate.enter(Some(lease)).is_err());
+        assert!(gate.try_enter().is_none());
+        drop(call);
+        drop(
+            gate.try_enter()
+                .expect("the settled lease gave the gate back"),
+        );
+
+        // Past its limit while its call is in flight: the same.
+        *lock(&gate.holder) = Holder::Lease {
+            id: lease + 1,
+            deadline: Instant::now(),
+            ended: false,
+            in_flight: 1,
+        };
+        let call = Permit::Leased(&gate);
+        assert!(gate.try_enter().is_none());
+        drop(call);
+        drop(
+            gate.try_enter()
+                .expect("the expired lease gave the gate back"),
+        );
+        assert!(gate.try_enter().is_some(), "and the gate is free again");
+    }
+
+    use crate::files::FileExpectation;
+    use crate::testing::{config, git, write, TempDir};
+
+    /// A folder whose one commit is on its bare remote, so a push and a
+    /// fetch both have a real remote to reach.
+    fn pushed(temp: &TempDir) -> (FolderOwner, String) {
+        let bare = temp.folder("remote.git");
+        git(
+            &bare,
+            &["init", "--quiet", "--bare", "--initial-branch=main"],
+        );
+        let root = temp.folder("notes");
+        let owner = FolderOwner::open(FolderConfig {
+            commit_on_edit: false,
+            remote: Some(Remote {
+                url: bare.display().to_string(),
+                branch: "main".to_string(),
+            }),
+            ..config(&root)
+        })
+        .unwrap();
+        owner
+            .apply(&[write("a.md", "A", FileExpectation::Absent)], None)
+            .unwrap();
+        owner.commit(None);
+        let head = git(&root, &["rev-parse", "HEAD"]);
+        assert_eq!(owner.push(None), PushOutcome::Pushed { oid: head.clone() });
+        (owner, head)
+    }
+
+    /// A transport hook that counts every admission and holds the first one,
+    /// after reporting it, until released.
+    fn count_and_hold_first() -> (
+        Arc<dyn Fn() + Send + Sync>,
+        Arc<AtomicUsize>,
+        mpsc::Receiver<()>,
+        mpsc::Sender<()>,
+    ) {
+        let admitted = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&admitted);
+        let (reached, at_hook) = mpsc::channel::<()>();
+        let (release, gate) = mpsc::channel::<()>();
+        let gate = Mutex::new(gate);
+        let hook: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                reached.send(()).unwrap();
+                gate.lock().unwrap().recv().unwrap();
+            }
+        });
+        (hook, admitted, at_hook, release)
+    }
+
+    // A request is withdrawn from the push runner and then from the fetch
+    // runner. These two tests stop between those steps, with the request
+    // waiting in the runner that has not been told yet, and wake its waiter.
+    // The waiter must not report a withdrawal that its own runner has not
+    // made: it is still queued there, and its transport will start.
+
+    #[test]
+    fn a_fetch_is_not_told_it_was_withdrawn_by_the_push_half_of_a_withdrawal() {
+        let temp = TempDir::new("half-withdraw-fetch");
+        let (owner, head) = pushed(&temp);
+        let (hook, admitted, at_hook, release) = count_and_hold_first();
+        owner.hooks().during_fetch = Some(hook);
+        let inner = &owner.inner;
+
+        let a_fetching = {
+            let owner = owner.clone();
+            std::thread::spawn(move || owner.fetch(None))
+        };
+        at_hook.recv().unwrap();
+        let b = owner.request();
+        let caller = b.caller();
+        let b_fetching = {
+            let (owner, caller) = (owner.clone(), caller.clone());
+            std::thread::spawn(move || owner.fetch(Some(&caller)))
+        };
+        while !inner.fetch.pending(&caller.fetch) {
+            std::thread::yield_now();
+        }
+
+        // The first half of dropping `b`, and then a wake of every fetch
+        // waiter, as any other caller's withdrawal causes.
+        inner.push.withdraw(&caller.push);
+        inner.fetch.withdraw(&inner.fetch.leaving());
+        assert!(
+            inner.fetch.pending(&caller.fetch),
+            "B is still waiting for its fetch"
+        );
+
+        // B was never withdrawn from the fetch runner, so its fetch is
+        // admitted when A's finishes, and B hears how it ended.
+        release.send(()).unwrap();
+        let fetched = Ok(FetchOutcome {
+            oid: Some(head.clone()),
+        });
+        assert_eq!(a_fetching.join().unwrap(), fetched);
+        assert_eq!(b_fetching.join().unwrap(), fetched);
+        assert_eq!(admitted.load(Ordering::SeqCst), 2);
+
+        // The second half arrives after the transport ran: nothing to undo.
+        drop(b);
+        assert_eq!(owner.fetch(Some(&caller)), Err(GitError::Withdrawn));
+        assert_eq!(admitted.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_push_is_not_told_it_was_withdrawn_by_the_fetch_half_of_a_withdrawal() {
+        let temp = TempDir::new("half-withdraw-push");
+        let (owner, head) = pushed(&temp);
+        let (hook, admitted, at_hook, release) = count_and_hold_first();
+        owner.hooks().during_push = Some(hook);
+        let inner = &owner.inner;
+
+        let a_pushing = {
+            let owner = owner.clone();
+            std::thread::spawn(move || owner.push(None))
+        };
+        at_hook.recv().unwrap();
+        let b = owner.request();
+        let caller = b.caller();
+        let b_pushing = {
+            let (owner, caller) = (owner.clone(), caller.clone());
+            std::thread::spawn(move || owner.push(Some(&caller)))
+        };
+        while !inner.push.pending(&caller.push) {
+            std::thread::yield_now();
+        }
+
+        // Only the fetch side has been told, and every push waiter is woken.
+        inner.fetch.withdraw(&caller.fetch);
+        inner.push.withdraw(&inner.push.leaving());
+        assert!(
+            inner.push.pending(&caller.push),
+            "B is still waiting for its push"
+        );
+
+        release.send(()).unwrap();
+        let pushed = PushOutcome::Pushed { oid: head };
+        assert_eq!(a_pushing.join().unwrap(), pushed);
+        assert_eq!(b_pushing.join().unwrap(), pushed);
+        assert_eq!(admitted.load(Ordering::SeqCst), 2);
+
+        drop(b);
+        assert_eq!(
+            owner.push(Some(&caller)),
+            PushOutcome::Cancelled { oid: None }
+        );
+        assert_eq!(admitted.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn dropping_a_request_withdraws_it_where_it_waits_and_nowhere_reports_early() {
+        let temp = TempDir::new("whole-withdraw");
+        let (owner, head) = pushed(&temp);
+        let (push_hook, pushes, at_push, release_push) = count_and_hold_first();
+        let (fetch_hook, fetches, at_fetch, release_fetch) = count_and_hold_first();
+        owner.hooks().during_push = Some(push_hook);
+        owner.hooks().during_fetch = Some(fetch_hook);
+        let inner = &owner.inner;
+
+        // One push and one fetch are admitted and held. Two requests wait
+        // behind them: B for a fetch, C for a push.
+        let a_pushing = {
+            let owner = owner.clone();
+            std::thread::spawn(move || owner.push(None))
+        };
+        let a_fetching = {
+            let owner = owner.clone();
+            std::thread::spawn(move || owner.fetch(None))
+        };
+        at_push.recv().unwrap();
+        at_fetch.recv().unwrap();
+        let (b, c) = (owner.request(), owner.request());
+        let (b_caller, c_caller) = (b.caller(), c.caller());
+        let b_fetching = {
+            let (owner, caller) = (owner.clone(), b_caller.clone());
+            std::thread::spawn(move || owner.fetch(Some(&caller)))
+        };
+        let c_pushing = {
+            let (owner, caller) = (owner.clone(), c_caller.clone());
+            std::thread::spawn(move || owner.push(Some(&caller)))
+        };
+        while !(inner.fetch.pending(&b_caller.fetch) && inner.push.pending(&c_caller.push)) {
+            std::thread::yield_now();
+        }
+
+        // Each whole withdrawal takes its request out of the runner it waits
+        // in, and that runner is the one that tells its waiter.
+        drop(b);
+        assert_eq!(b_fetching.join().unwrap(), Err(GitError::Withdrawn));
+        assert!(inner.push.pending(&c_caller.push), "C was not touched");
+        drop(c);
+        assert_eq!(
+            c_pushing.join().unwrap(),
+            PushOutcome::Cancelled { oid: None }
+        );
+
+        // The admitted transports finish, and no other ever started.
+        release_push.send(()).unwrap();
+        release_fetch.send(()).unwrap();
+        assert_eq!(
+            a_pushing.join().unwrap(),
+            PushOutcome::Pushed { oid: head.clone() }
+        );
+        assert_eq!(
+            a_fetching.join().unwrap(),
+            Ok(FetchOutcome { oid: Some(head) })
+        );
+        owner.shutdown();
+        assert_eq!(pushes.load(Ordering::SeqCst), 1);
+        assert_eq!(fetches.load(Ordering::SeqCst), 1);
     }
 }

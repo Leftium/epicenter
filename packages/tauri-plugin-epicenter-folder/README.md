@@ -3,8 +3,8 @@
 One native owner per folder, shared by every window of a Tauri shell.
 
 A shell registers a directory under a scope ID and names the windows that may
-use it. The Rust owner publishes files, records Git history, and tells every
-attached window what changed. A page names the scope and nothing else: it
+use it. The Rust owner publishes files, records Git history when the folder is
+free, and tells every attached window what changed. A page names the scope and nothing else: it
 never supplies a root, an author, a remote, or a commit policy.
 
 ## Layout
@@ -66,7 +66,7 @@ once registered.
 | `branch` | `main` | The local branch, and the remote branch when a remote exists. |
 | `author` | required | Who commits. With `use_repository_author`, the fallback for whichever of name and email the repository does not configure. |
 | `remote` | none | Where to push and fetch. |
-| `commit_on_edit` | `true` | Whether a complete save requests a commit, and a push when a remote exists. |
+| `commit_on_edit` | `true` | Whether a complete save attempts a commit, and a push after it when a remote exists. The attempt is skipped when the folder is busy; see "Automatic commits". |
 | `use_repository_author` | `false` | Read `user.name` and `user.email` when the folder opens. |
 | `use_repository_origin` | `false` | Read `remote.origin.url` when the folder opens and use it as the remote. |
 | `watch_events` | `true` | Watch filesystem events for changes made outside the owner. |
@@ -74,8 +74,8 @@ once registered.
 | `lease_limit` | 60 s | The longest one terminal command may hold the folder. |
 
 The two `use_repository_*` options are separate because a remote changes what
-a save does: with a remote and `commit_on_edit`, every automatic commit is
-pushed. A folder that should record history locally under the person's own
+a save does: with a remote and `commit_on_edit`, an automatic commit is
+followed by a push attempt. A folder that should record history locally under the person's own
 identity sets `use_repository_author` and leaves `use_repository_origin` off;
 an `origin` configured in that directory is then never read or contacted. A
 `remote` given in `FolderConfig` is used either way, and is the fallback when
@@ -104,7 +104,10 @@ await folder.close();           // detaches this page only
 
 `openFolder` returns its refusals: an unknown scope, a window the scope does
 not list, a folder another process holds, a shell without this plugin, and a
-desktop app built for another protocol version. It never opens browser
+desktop app built for another protocol version. The protocol is version 2:
+`commit` replies with its outcome alone, `push` and `fetch` name a request the
+session opened and can withdraw, and snapshot activity reports `active` only. A page built for version 1 is refused
+at attach. It never opens browser
 storage instead. `@epicenter/folder/tauri` is the same opener without the
 browser adapter in the build.
 
@@ -112,19 +115,25 @@ browser adapter in the build.
 
 - **The owner** opens on a scope's first attach and stays open until the app
   exits or the shell calls `app.folders().shutdown()`. Shutdown refuses new
-  work, lets admitted saves and their commits finish, cancels pushes and
-  fetches, and releases the lock.
+  work, lets admitted saves and admitted commits finish, cancels pushes and
+  fetches, and releases the lock. It commits nothing of its own: a save whose
+  automatic attempt was skipped, or which lands after shutdown began, stays
+  saved and uncommitted. A commit or fast-forward still waiting for the
+  folder when shutdown begins is refused as closed.
 - **A session** belongs to the window that attached it. Another window that
   names it is denied. A session ends on `detach`, when its page reloads, and
-  when its window is destroyed. Ending a session never cancels a save or a
-  commit the owner already accepted, and never affects another window.
+  when its window is destroyed. Ending a session never cancels a save, a
+  commit, or a push or fetch the owner already started, and never affects
+  another window. It withdraws the session's pushes and fetches that the
+  owner had not started.
 - **`folder.close()`** in a page refuses that page's new file, Git, and
   terminal calls without invoking anything, waits for its local calls and its
-  running terminal command, stops waiting for its pushes and fetches (the
-  owner keeps running them), and then detaches.
+  running terminal command, stops waiting for its pushes and fetches and
+  withdraws them, and then detaches. It commits nothing.
 - **A terminal lease** is held for one command and can be used only by the
   session that acquired it. It ends when the command ends, when its session
-  ends, or at `lease_limit`.
+  ends, or at `lease_limit`. A call already running inside a lease that ends
+  keeps the folder until it settles.
 
 Each webview keeps its own lifecycle identity in its resource table. The plugin
 holds a weak index so it can end sessions after Tauri removes a destroyed
@@ -142,12 +151,84 @@ removes only ended sessions, so an attachment from the new page survives it.
 - **The file gate** admits one publication at a time: an `apply` batch, a
   directory change, a fast-forward's file changes, or a terminal lease.
 - **The Git lock** orders commits, staging, and ref updates.
-- A commit pass pins the branch head, takes the file gate only long enough to
-  hard-link the folder into a snapshot, releases it, and then waits for the
-  Git lock. A save never waits for hashing. If the head moved before the pass
-  reached the Git lock, it starts over with a fresh snapshot.
+- A commit takes the file gate and then the Git lock. Under both it pins the
+  branch head and hard-links the folder into a snapshot. It then releases the
+  file gate and, still under the Git lock, hashes the snapshot and moves the
+  branch with a compare-and-swap. A save never waits for hashing.
+- An explicit commit, fast-forward, or status waits for the file gate. A
+  terminal command's own Git calls name its lease and enter through it; a
+  lease that has ended is refused. With the gate held, a commit or
+  fast-forward tries the Git lock. If it is busy it gives the gate back,
+  waits for the Git lock to be released, and starts over, so it reads the
+  folder as it is once it holds both.
 - Nothing waits for the Git lock while holding the file gate, and nothing
   takes the file gate while holding the Git lock.
+
+## Automatic commits
+
+With `commit_on_edit`, a complete `apply` batch makes one automatic commit
+attempt. The owner takes the file gate and then the Git lock only if each is
+free at that moment, and decides before the save returns.
+
+- If either is held, the attempt did not happen. A terminal lease, another
+  save, a commit, a fast-forward, or a staging call can be the holder.
+  Nothing is recorded, nothing runs when the holder lets go, and no timer
+  tries again.
+- A skipped save stays uncommitted until a later save's attempt or an
+  explicit commit includes it. It can stay uncommitted indefinitely.
+- A save made through a terminal lease is always skipped, because the lease
+  holds the file gate. `git commit` in that terminal, or the next save made
+  with the folder free, commits it.
+- A partial, refused, or unconfirmed batch makes no attempt.
+- After an attempt that ran, the owner starts a push if the branch is ahead
+  of the remote and no push is running. A push it could not start is not
+  owed later.
+- A page is never told that an attempt was skipped and has nothing to retry.
+  `snapshot.activity.commit.active` is true while a commit runs, and the
+  files observation is stale after any save the last commit did not cover.
+
+An explicit `commit` waits for the folder instead, reads it once it holds both
+locks, and replies with what it did. It never pushes; `commitAndPush` in a
+page sends the push as its own command, and only while that caller is still
+waiting.
+
+## Pushes and fetches
+
+The owner runs one push at a time and one fetch at a time. A request that
+arrives while one is running waits, and every request that arrives during
+that run shares the one that follows it. Receiving a command is not starting
+its transport: the owner starts a waiting push or fetch only when the running
+one has finished, and until that moment its callers can withdraw.
+
+A page asks in two steps. `open_request` registers a request in the page's
+session and returns its number; `push` or `fetch` then names it. Because the
+owner knows the request before any command names it, `withdraw_request` can
+never arrive too early to matter.
+
+- A page asks for nothing on behalf of a caller whose signal has already
+  aborted.
+- Withdrawing a request, or ending its session, removes that caller from the
+  waiting push or fetch. If no other caller is waiting for it, it never
+  starts. Other callers sharing it keep it, and it runs once for them.
+- A `push` or `fetch` naming a request that was withdrawn, has finished, or
+  was never opened by that session is refused and starts nothing. A request
+  serves one command; a second command naming it is refused.
+- A transport the owner has already started is the owner's. Withdrawing its
+  request, or ending its session, does not stop it, and it runs to its end.
+- A request belongs to the session that opened it. Another window cannot use
+  or withdraw it, even with the number.
+- Pushes and fetches are ordered separately. A request is withdrawn from each
+  in turn, and a waiting push or fetch is told it was withdrawn only by the
+  step that also takes it out of its own queue. It is never told so while it
+  can still start.
+- A page whose caller left is told `stoppedWaiting` at once. That says the
+  caller stopped waiting; whether the transport had started is not known to
+  the page at that moment.
+- Shutdown stops the running push and fetch and settles the waiting ones as
+  cancelled or closed without running them.
+
+The automatic push after an automatic commit has no caller to withdraw. It
+starts only when no push is running or waiting, and is otherwise not owed.
 
 ## Noticing outside changes
 
@@ -159,8 +240,9 @@ its size and time are unchanged. Events inside `.git` are ignored except
 An event cannot say who wrote the file, so the owner reports every announced
 path, its own writes included. A window may therefore hear `filesChanged` for
 a file it just saved, and the Git snapshot's file observation turns stale
-until the next status or commit pass. A report requests no scan and no
-commit, so the owner's own events do not feed themselves. The periodic
+until the next status or commit. A report requests no scan and no commit, so
+the owner's own events do not feed themselves, and a change made outside the
+app is never committed until a save or an explicit commit includes it. The periodic
 comparison does know the owner's writes and stays quiet about them.
 
 Where the platform cannot watch the directory, the owner
@@ -181,7 +263,11 @@ time.
   snapshot links to while it is being hashed.
 - A fast-forward that stops partway leaves the landed files in place and the
   branch unmoved, and reports it. Nothing records it for replay; a later
-  commit pass may commit those bytes.
+  commit may commit those bytes.
+- A commit whose compare-and-swap lost to another Git process is reported as
+  `branchMoved` and is not retried. A commit whose branch update landed is
+  reported as committed even if the owner could not read the branch back
+  afterward; the observation is marked stale instead.
 - An outcome the owner or the transport could not confirm is reported as
   `Unconfirmed` and is never retried. Look at the folder before trying again.
 - File bytes cross IPC as JSON number arrays. That is acceptable for Markdown

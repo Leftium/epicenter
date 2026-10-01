@@ -17,6 +17,8 @@ Attach to the folders the shell registered for this window, then read, publish, 
 - `allow-release-lease`
 - `allow-status`
 - `allow-commit`
+- `allow-open-request`
+- `allow-withdraw-request`
 - `allow-push`
 - `allow-fetch`
 - `allow-pull-fast-forward`
@@ -350,6 +352,32 @@ Denies the mkdir command without any pre-configured scope.
 <tr>
 <td>
 
+`epicenter-folder:allow-open-request`
+
+</td>
+<td>
+
+Enables the open_request command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`epicenter-folder:deny-open-request`
+
+</td>
+<td>
+
+Denies the open_request command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `epicenter-folder:allow-paths`
 
 </td>
@@ -577,6 +605,32 @@ Enables the status command without any pre-configured scope.
 <td>
 
 Denies the status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`epicenter-folder:allow-withdraw-request`
+
+</td>
+<td>
+
+Enables the withdraw_request command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`epicenter-folder:deny-withdraw-request`
+
+</td>
+<td>
+
+Denies the withdraw_request command without any pre-configured scope.
 
 </td>
 </tr>

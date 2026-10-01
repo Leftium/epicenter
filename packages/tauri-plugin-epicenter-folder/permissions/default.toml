@@ -18,6 +18,8 @@ permissions = [
   "allow-release-lease",
   "allow-status",
   "allow-commit",
+  "allow-open-request",
+  "allow-withdraw-request",
   "allow-push",
   "allow-fetch",
   "allow-pull-fast-forward",

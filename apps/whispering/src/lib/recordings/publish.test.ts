@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { FileError } from '@epicenter/app/files';
 import { openNativeFolder } from '@epicenter/app/files/native';
 import { toneWav } from '../capture.js';
 import { type RecordingFields, whisperingDefinition } from '../definition.js';
@@ -190,6 +191,41 @@ test('a same-stem file with another extension blocks publication', async () => {
 	expect(outcome.status).toBe('unexpected');
 	expect(await readdir(join(root, 'recordings'))).toEqual([
 		`${pending.id}.m4a`,
+	]);
+	await folder.close();
+});
+
+test('a lost publication reply retries under the same identity without duplicating files', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
+	const target = {
+		files: folder.files,
+		tables: {
+			recordings: {
+				...folder.tables.recordings,
+				async create(
+					...args: Parameters<typeof folder.tables.recordings.create>
+				) {
+					const result = await folder.tables.recordings.create(...args);
+					return result.error
+						? result
+						: FileError.Unconfirmed({
+								path: `recordings/${pending.id}.md`,
+								operation: 'create',
+								cause: 'reply lost after publication',
+							});
+				},
+			},
+		},
+	};
+	const first = await publishRecording(target, pending);
+	expect(first.status).toBe('failed');
+	const retry = await publishRecording(folder, pending);
+	expect(retry.status).toBe('saved');
+	if (retry.status === 'saved') expect(retry.recovered).toBe(true);
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
+		`${pending.id}.md`,
+		`${pending.id}.wav`,
 	]);
 	await folder.close();
 });

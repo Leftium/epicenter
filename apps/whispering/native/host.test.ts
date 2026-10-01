@@ -67,7 +67,7 @@ async function start(overrides: Partial<HostOptions> = {}) {
 	});
 	const remote = await connectFolder(whisperingDefinition, bridge.transport);
 	cleanups.push(async () => {
-		await remote.folder.close();
+		await remote.close();
 		await host.close();
 		await rm(directory, { recursive: true, force: true });
 	});

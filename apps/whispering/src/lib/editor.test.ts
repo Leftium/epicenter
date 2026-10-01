@@ -4,8 +4,8 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileError, type FolderFiles } from '@epicenter/app/files';
 import type { InstantString } from '@epicenter/app/field';
+import { FileError, type FolderFiles } from '@epicenter/app/files';
 import { openNativeFolder } from '@epicenter/app/files/native';
 import { expectOk } from 'wellcrafted/testing';
 import { whisperingDefinition } from './definition.js';
@@ -167,3 +167,62 @@ test('a rejected save leaves the draft failed and retryable', async () => {
 	expect(editor.saveState.kind).toBe('saved');
 	expect(editor.dirty).toBe(false);
 });
+
+for (const readFailure of [false, true]) {
+	test(`an unacknowledged saved draft reconciles without a false conflict${readFailure ? ' after a failed confirmation read' : ''}`, async () => {
+		const folder = await open();
+		const original = expectOk(
+			await folder.files.write('note.md', 'original', { expected: 'absent' }),
+		);
+		let confirmationFails = readFailure;
+		const files: FolderFiles = {
+			...folder.files,
+			async write(path, source, options) {
+				const result = await folder.files.write(path, source, options);
+				return result.error
+					? result
+					: FileError.Unconfirmed({
+							path,
+							operation: 'write',
+							cause: 'reply lost after saving',
+						});
+			},
+			read: (path) =>
+				confirmationFails
+					? Promise.resolve(
+							FileError.Io({
+								path,
+								operation: 'read',
+								cause: 'confirmation unavailable',
+							}),
+						)
+					: folder.files.read(path),
+		};
+		let saved = 0;
+		const editor = createTextFileEditor(
+			files,
+			{ path: 'note.md', source: 'original', version: original },
+			{ paused: true },
+			() => {
+				saved++;
+			},
+		);
+		editor.input('desired');
+		await editor.save();
+		if (readFailure) {
+			expect(editor.saveState.kind).toBe('failed');
+			expect(editor.buffer).toBe('desired');
+			confirmationFails = false;
+			await editor.save();
+		}
+		expect(editor.saveState.kind).toBe('saved');
+		expect(editor.dirty).toBe(false);
+		expect(saved).toBe(1);
+		expect(
+			new TextDecoder().decode(
+				expectOk(await folder.files.read('note.md')).bytes,
+			),
+		).toBe('desired');
+		editor.dispose();
+	});
+}

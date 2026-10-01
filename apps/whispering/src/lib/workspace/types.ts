@@ -6,7 +6,7 @@
  * same code for both. Capabilities a storage cannot offer are `undefined`
  * here, not emulated: a browser folder has no directory to reveal.
  */
-import type { Folder } from '@epicenter/app/files';
+import type { FolderAccess } from '@epicenter/app/files';
 import type { FolderTerminal } from '@epicenter/app/files/terminal';
 import type { Result } from 'wellcrafted/result';
 import type { CaptureDevice } from '../capture.js';
@@ -17,7 +17,7 @@ import type {
 import type { TranscriptionError } from '../transcription.js';
 import type { TransformationError } from '../transformation.js';
 
-export type WhisperingFolder = Folder<typeof whisperingDefinition>;
+export type WhisperingFolder = FolderAccess<typeof whisperingDefinition>;
 
 /** Repeatable failures a debug desktop shell can arm. */
 export type InjectionState = {

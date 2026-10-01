@@ -123,7 +123,7 @@ export type FolderGit = {
 	log(depth: number): Promise<Result<CommitSummary[], GitError>>;
 };
 
-export type Folder<TDefinition extends DataDefinition> = {
+export type FolderAccess<TDefinition extends DataDefinition> = {
 	readonly tables: {
 		readonly [K in keyof TDefinition['tables']]: FileTable<
 			FieldsOf<TDefinition['tables'][K] & TableDeclaration>
@@ -132,10 +132,14 @@ export type Folder<TDefinition extends DataDefinition> = {
 	readonly kv: FileKv<KvValues<TDefinition['kv'] & FieldMap>>;
 	readonly files: FolderFiles;
 	readonly git: FolderGit;
-	/** Aborts when closing starts. */
-	readonly signal: AbortSignal;
-	close(): Promise<void>;
 };
+
+export type Folder<TDefinition extends DataDefinition> =
+	FolderAccess<TDefinition> & {
+		/** Aborts when closing starts. */
+		readonly signal: AbortSignal;
+		close(): Promise<void>;
+	};
 
 /**
  * Compile a definition for file storage. Declarations the file implementation

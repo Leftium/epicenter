@@ -163,6 +163,6 @@ export async function openDesktopWorkspace(
 					arm: (change) => bridge.app<InjectionState>('inject', change),
 				}
 			: undefined,
-		close: () => remote.folder.close(),
+		close: () => remote.close(),
 	};
 }

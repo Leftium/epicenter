@@ -38,6 +38,17 @@ import { createPassRunner } from './runner.js';
 import { sourceFiles } from './scope.js';
 
 export const GitError = defineErrors({
+	Unconfirmed: ({
+		operation,
+		cause,
+	}: {
+		operation: string;
+		cause: unknown;
+	}) => ({
+		message: `The folder host did not confirm Git ${operation}; the operation may have completed: ${describe(cause)}`,
+		operation,
+		cause,
+	}),
 	Failed: ({ operation, cause }: { operation: string; cause: unknown }) => ({
 		message: `Git ${operation} failed: ${describe(cause)}`,
 		operation,
@@ -143,6 +154,7 @@ export const PullError = defineErrors({
 export type PullError = InferErrors<typeof PullError>;
 
 export type CommitOutcome =
+	| { readonly status: 'unconfirmed'; readonly error: string }
 	| {
 			readonly status: 'committed';
 			readonly oid: string;
@@ -171,6 +183,7 @@ export type CommitOutcome =
 	| { readonly status: 'closed' };
 
 export type PushOutcome =
+	| { readonly status: 'unconfirmed'; readonly error: string }
 	| { readonly status: 'pushed'; readonly oid: string }
 	| { readonly status: 'noRemote' }
 	| { readonly status: 'nothingToPush' }

@@ -33,6 +33,7 @@ export {
 } from './errors.js';
 export type {
 	Folder,
+	FolderAccess,
 	FolderFiles,
 	FolderGit,
 	FolderGitOptions,

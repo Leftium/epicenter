@@ -224,6 +224,12 @@ export function commitOutcomeLine(outcome: CommitOutcome): StatusLine {
 				detail: `${outcome.error}\nYour files are still saved. Commit now tries again.`,
 				tone: 'error',
 			};
+		case 'unconfirmed':
+			return {
+				label: 'Commit not confirmed',
+				detail: outcome.error,
+				tone: 'warning',
+			};
 		case 'stoppedWaiting':
 			return { label: 'Commit may still be running', tone: 'neutral' };
 		case 'closed':

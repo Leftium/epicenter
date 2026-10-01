@@ -61,20 +61,30 @@ export function createHttpBridge({
 				if (!response.ok || response.body === null)
 					throw new Error(`The folder host answered ${response.status}`);
 				const reader = response.body.getReader();
+				const stop = () => {
+					void reader.cancel().catch(() => {});
+				};
+				signal.addEventListener('abort', stop, { once: true });
+				if (signal.aborted) stop();
 				const decoder = new TextDecoder();
 				let pending = '';
-				for (;;) {
-					const { done, value } = await reader.read();
-					if (done) return;
-					pending += decoder.decode(value, { stream: true });
-					let newline = pending.indexOf('\n');
-					while (newline >= 0) {
-						const line = pending.slice(0, newline);
-						pending = pending.slice(newline + 1);
-						if (line.trim() !== '')
-							onEvent(decode(JSON.parse(line)) as BridgeEvent);
-						newline = pending.indexOf('\n');
+				try {
+					for (;;) {
+						const { done, value } = await reader.read();
+						if (done) return;
+						pending += decoder.decode(value, { stream: true });
+						let newline = pending.indexOf('\n');
+						while (newline >= 0) {
+							const line = pending.slice(0, newline);
+							pending = pending.slice(newline + 1);
+							if (line.trim() !== '')
+								onEvent(decode(JSON.parse(line)) as BridgeEvent);
+							newline = pending.indexOf('\n');
+						}
 					}
+				} finally {
+					signal.removeEventListener('abort', stop);
+					reader.releaseLock();
 				}
 			},
 		},

@@ -188,6 +188,12 @@ function commitOutcomeLine(outcome: CommitOutcome): StatusLine {
 				detail: `${outcome.error}\nYour files are still saved.`,
 				tone: 'error',
 			};
+		case 'unconfirmed':
+			return {
+				label: 'Commit not confirmed',
+				detail: outcome.error,
+				tone: 'warning',
+			};
 		case 'stoppedWaiting':
 			return { label: 'Commit may still be running', tone: 'neutral' };
 		case 'closed':
@@ -231,6 +237,12 @@ function pushOutcomeLine(outcome: PushOutcome, git: GitSnapshot): StatusLine {
 					};
 		case 'noRemote':
 			return { label: 'No remote configured', tone: 'neutral' };
+		case 'unconfirmed':
+			return {
+				label: 'Push not confirmed',
+				detail: outcome.error,
+				tone: 'warning',
+			};
 		case 'nothingToPush':
 			return { label: 'Nothing to push yet', tone: 'neutral' };
 		case 'skipped':

@@ -64,6 +64,20 @@ export const FileError = defineErrors({
 		operation,
 		cause,
 	}),
+	Unconfirmed: ({
+		path,
+		operation,
+		cause,
+	}: {
+		path: string;
+		operation: string;
+		cause: unknown;
+	}) => ({
+		message: `The folder host did not confirm ${operation} '${path}'; the operation may have completed: ${describe(cause)}`,
+		path,
+		operation,
+		cause,
+	}),
 	Closed: () => ({ message: 'The folder is closed' }),
 });
 export type FileError = InferErrors<typeof FileError>;

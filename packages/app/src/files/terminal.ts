@@ -563,6 +563,8 @@ async function runGit(
 					return error(
 						`error: failed to push ${short(pushed.oid)}: ${pushed.error}`,
 					);
+				case 'unconfirmed':
+					return error(`error: push not confirmed: ${pushed.error}`);
 				case 'cancelled':
 				case 'closed':
 				case 'skipped':

@@ -1,5 +1,5 @@
 /**
- * A `Folder` whose files live in another process.
+ * Borrowed folder access whose files live in another process.
  *
  * Every folder method takes data and answers with data, so the client forwards
  * each call as its path and arguments and returns the host's `Result`
@@ -14,7 +14,7 @@
 import type { DataDefinition } from '@epicenter/app/definition';
 import {
 	FileError,
-	type Folder,
+	type FolderAccess,
 	type FolderFiles,
 	type FolderGit,
 	GitError,
@@ -40,7 +40,7 @@ export type FolderTransport = {
 };
 
 export type RemoteFolder<TDefinition extends DataDefinition> = {
-	readonly folder: Folder<TDefinition>;
+	readonly folder: FolderAccess<TDefinition>;
 	/** Files changed outside this page: another program, the terminal, or Git. */
 	onExternalChange(listener: () => void): () => void;
 	/** The host's owner asks to close; the page answers through its own channel. */
@@ -48,6 +48,8 @@ export type RemoteFolder<TDefinition extends DataDefinition> = {
 	/** Whether the event stream is currently connected. */
 	readonly connected: boolean;
 	onConnection(listener: (connected: boolean) => void): () => void;
+	/** Fence calls, end events, and settle this client's admitted calls. */
+	close(): Promise<void>;
 };
 
 const TABLE_METHODS = [
@@ -72,7 +74,6 @@ const FILE_METHODS = [
 ] as const;
 const GIT_RESULT_METHODS = [
 	'status',
-	'fetch',
 	'pullFastForward',
 	'paths',
 	'stage',
@@ -82,9 +83,6 @@ const GIT_RESULT_METHODS = [
 ] as const;
 
 const RECONNECT_MS = 500;
-
-const describe = (cause: unknown) =>
-	cause instanceof Error ? cause.message : String(cause);
 
 export async function connectFolder<const TDefinition extends DataDefinition>(
 	definition: TDefinition,
@@ -96,36 +94,71 @@ export async function connectFolder<const TDefinition extends DataDefinition>(
 	const closeListeners = new Set<() => void>();
 	const connectionListeners = new Set<(connected: boolean) => void>();
 	let connected = false;
+	const inFlight = new Set<Promise<unknown>>();
+	let closing: Promise<void> | undefined;
 
-	/** A file, table, or KV call: an unreachable host is an `Io` failure. */
+	function call(path: readonly string[], args: readonly unknown[]) {
+		if (controller.signal.aborted)
+			return Promise.reject(new Error('The folder client is closed'));
+		const running = Promise.resolve().then(() => transport.call(path, args));
+		inFlight.add(running);
+		void running.catch(() => {}).finally(() => inFlight.delete(running));
+		return running;
+	}
+
+	/** Stop one caller waiting; the host still owns the shared operation. */
+	function until<T>(
+		running: Promise<T>,
+		signal: AbortSignal | undefined,
+		stopped: () => T,
+	): Promise<T> {
+		if (signal === undefined) return running;
+		if (signal.aborted) return Promise.resolve(stopped());
+		return new Promise((resolve, reject) => {
+			const stop = () => resolve(stopped());
+			signal.addEventListener('abort', stop, { once: true });
+			void running
+				.then(resolve, reject)
+				.finally(() => signal.removeEventListener('abort', stop));
+		});
+	}
+
+	/** An unacknowledged mutation may have completed at the host. */
 	async function fileCall<T>(
 		path: readonly string[],
 		args: readonly unknown[],
 	): Promise<T> {
 		if (controller.signal.aborted) return FileError.Closed() as T;
 		try {
-			return (await transport.call(path, args)) as T;
+			return (await call(path, args)) as T;
 		} catch (cause) {
-			return FileError.Io({
-				path: path.join('.'),
-				operation: 'reach the folder host for',
-				cause,
-			}) as T;
+			const method = path.at(-1)!;
+			const failure = ['list', 'children', 'get', 'read', 'open'].includes(
+				method,
+			)
+				? FileError.Io
+				: FileError.Unconfirmed;
+			return failure({ path: path.join('.'), operation: method, cause }) as T;
 		}
 	}
 
 	async function gitCall<T>(method: string, args: readonly unknown[]) {
 		if (controller.signal.aborted) return GitError.Closed() as T;
 		try {
-			return (await transport.call(['git', method], args)) as T;
+			return (await call(['git', method], args)) as T;
 		} catch (cause) {
-			return GitError.Failed({ operation: method, cause }) as T;
+			return (
+				['status', 'paths', 'diff', 'log'].includes(method)
+					? GitError.Failed({ operation: method, cause })
+					: GitError.Unconfirmed({ operation: method, cause })
+			) as T;
 		}
 	}
 
-	let snapshot = (await transport.call(['git', 'snapshot'], [])) as GitSnapshot;
+	let snapshot = (await call(['git', 'snapshot'], [])) as GitSnapshot;
 
 	function setSnapshot(next: GitSnapshot) {
+		if (controller.signal.aborted) return;
 		snapshot = next;
 		for (const listener of snapshotListeners) listener(next);
 	}
@@ -138,19 +171,18 @@ export async function connectFolder<const TDefinition extends DataDefinition>(
 
 	// One stream for the folder's lifetime. A dropped stream reconnects, then
 	// rereads the snapshot and reports a change, since events were missed.
-	void (async () => {
+	const events = (async () => {
 		let first = true;
 		while (!controller.signal.aborted) {
 			try {
 				if (!first) {
-					setSnapshot(
-						(await transport.call(['git', 'snapshot'], [])) as GitSnapshot,
-					);
+					setSnapshot((await call(['git', 'snapshot'], [])) as GitSnapshot);
 					for (const listener of changeListeners) listener();
 				}
 				first = false;
 				setConnected(true);
 				await transport.events((event) => {
+					if (controller.signal.aborted) return;
 					if (event.type === 'git') setSnapshot(event.snapshot);
 					else if (event.type === 'files')
 						for (const listener of changeListeners) listener();
@@ -162,7 +194,15 @@ export async function connectFolder<const TDefinition extends DataDefinition>(
 			}
 			setConnected(false);
 			if (controller.signal.aborted) return;
-			await new Promise((resolve) => setTimeout(resolve, RECONNECT_MS));
+			await new Promise<void>((resolve) => {
+				const done = () => {
+					clearTimeout(timer);
+					controller.signal.removeEventListener('abort', done);
+					resolve();
+				};
+				const timer = setTimeout(done, RECONNECT_MS);
+				controller.signal.addEventListener('abort', done, { once: true });
+			});
 		}
 	})();
 
@@ -204,60 +244,93 @@ export async function connectFolder<const TDefinition extends DataDefinition>(
 		},
 	};
 	for (const method of GIT_RESULT_METHODS)
-		git[method] = (...args: unknown[]) =>
-			// A caller's AbortSignal stays on its side; the host owns network work.
-			gitCall(method, method === 'fetch' ? [] : args);
+		git[method] = (...args: unknown[]) => gitCall(method, args);
 	const commit: FolderGit['commit'] = async () => {
 		if (controller.signal.aborted) return { status: 'closed' };
 		try {
-			return (await transport.call(['git', 'commit'], [])) as Awaited<
+			return (await call(['git', 'commit'], [])) as Awaited<
 				ReturnType<FolderGit['commit']>
 			>;
 		} catch (cause) {
-			return { status: 'failed', error: describe(cause) };
-		}
-	};
-	const push: FolderGit['push'] = async () => {
-		if (controller.signal.aborted) return { status: 'closed' };
-		try {
-			return (await transport.call(['git', 'push'], [])) as Awaited<
-				ReturnType<FolderGit['push']>
-			>;
-		} catch (cause) {
-			return { status: 'skipped', reason: describe(cause) };
-		}
-	};
-	const commitAndPush: FolderGit['commitAndPush'] = async () => {
-		if (controller.signal.aborted)
-			return { commit: { status: 'closed' }, push: { status: 'closed' } };
-		try {
-			return (await transport.call(['git', 'commitAndPush'], [])) as Awaited<
-				ReturnType<FolderGit['commitAndPush']>
-			>;
-		} catch (cause) {
 			return {
-				commit: { status: 'failed', error: describe(cause) },
-				push: { status: 'skipped', reason: 'the commit did not complete' },
+				status: 'unconfirmed',
+				error: GitError.Unconfirmed({ operation: 'commit', cause }).error
+					.message,
 			};
 		}
 	};
-	Object.assign(git, { commit, push, commitAndPush });
+	const push: FolderGit['push'] = async ({ signal } = {}) => {
+		if (controller.signal.aborted) return { status: 'closed' };
+		try {
+			return await until(
+				call(['git', 'push'], []) as ReturnType<FolderGit['push']>,
+				signal,
+				() => ({ status: 'stoppedWaiting' }),
+			);
+		} catch (cause) {
+			return {
+				status: 'unconfirmed',
+				error: GitError.Unconfirmed({ operation: 'push', cause }).error.message,
+			};
+		}
+	};
+	const commitAndPush: FolderGit['commitAndPush'] = async ({ signal } = {}) => {
+		if (controller.signal.aborted)
+			return { commit: { status: 'closed' }, push: { status: 'closed' } };
+		try {
+			return await until(
+				call(['git', 'commitAndPush'], []) as ReturnType<
+					FolderGit['commitAndPush']
+				>,
+				signal,
+				() => ({
+					commit: { status: 'stoppedWaiting' },
+					push: { status: 'stoppedWaiting' },
+				}),
+			);
+		} catch (cause) {
+			return {
+				commit: {
+					status: 'unconfirmed',
+					error: GitError.Unconfirmed({ operation: 'commitAndPush', cause })
+						.error.message,
+				},
+				push: {
+					status: 'unconfirmed',
+					error: GitError.Unconfirmed({ operation: 'commitAndPush', cause })
+						.error.message,
+				},
+			};
+		}
+	};
+	const fetch: FolderGit['fetch'] = ({ signal } = {}) =>
+		until(
+			gitCall<Awaited<ReturnType<FolderGit['fetch']>>>('fetch', []),
+			signal,
+			() => GitError.StoppedWaiting({ operation: 'fetch' }),
+		);
+	Object.assign(git, { commit, push, commitAndPush, fetch });
 
 	const folder = Object.freeze({
 		tables: Object.freeze(tables),
 		kv: Object.freeze(kv),
 		files: Object.freeze(files),
 		git: Object.freeze(git),
-		signal: controller.signal,
-		// The host keeps the directory open for its own lifetime; closing here
-		// only stops this page's calls and its event stream.
-		async close() {
-			controller.abort();
-		},
-	}) as unknown as Folder<TDefinition>;
+	}) as unknown as FolderAccess<TDefinition>;
 
 	return {
 		folder,
+		close() {
+			closing ??= (async () => {
+				controller.abort();
+				await Promise.allSettled([...inFlight, events]);
+				snapshotListeners.clear();
+				changeListeners.clear();
+				closeListeners.clear();
+				connectionListeners.clear();
+			})();
+			return closing;
+		},
 		onExternalChange(listener) {
 			changeListeners.add(listener);
 			return () => changeListeners.delete(listener);

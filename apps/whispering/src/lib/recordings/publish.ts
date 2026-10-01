@@ -54,7 +54,7 @@ export type PublishOutcome =
 			readonly landed: readonly string[];
 			readonly message: string;
 	  }
-	/** Nothing was written by this attempt. Retry repeats it. */
+	/** Publication was not confirmed. Retry reconciles the saved files first. */
 	| { readonly status: 'failed'; readonly message: string }
 	/** A file this capture did not write occupies its path. Nothing was written. */
 	| {

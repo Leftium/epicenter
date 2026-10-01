@@ -120,19 +120,30 @@ function createDraft<T extends SavedText>(
 				onSaved();
 				return;
 			}
-			if (result.error.name === 'Conflict') {
+			if (
+				result.error.name === 'Conflict' ||
+				result.error.name === 'Unconfirmed'
+			) {
 				const current = await store.read(observed.path);
-				saveState = current.error
-					? {
-							kind: 'failed',
-							message: `This file changed elsewhere, and the saved version cannot be shown: ${current.error.message}`,
-						}
-					: {
-							kind: 'conflict',
-							message: result.error.message,
-							current: current.data,
-						};
-				return;
+				if (current.error === null && current.data?.source === captured) {
+					baseline = current.data;
+					saveState = { kind: 'saved' };
+					onSaved();
+					return;
+				}
+				if (result.error.name === 'Conflict') {
+					saveState = current.error
+						? {
+								kind: 'failed',
+								message: `This file changed elsewhere, and the saved version cannot be shown: ${current.error.message}`,
+							}
+						: {
+								kind: 'conflict',
+								message: result.error.message,
+								current: current.data,
+							};
+					return;
+				}
 			}
 			saveState = { kind: 'failed', message: result.error.message };
 		} catch (cause) {

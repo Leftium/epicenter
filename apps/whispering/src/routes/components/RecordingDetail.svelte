@@ -159,7 +159,7 @@
 						<Button
 							class="ml-auto"
 							size="sm"
-							disabled={entry === undefined || audioPath === undefined || run?.kind === 'running'}
+							disabled={entry === undefined || audioPath === undefined || run?.kind === 'running' || run?.kind === 'unsaved'}
 							onclick={() => entry && void library.transcribe(entry)}
 							data-testid="transcribe"
 						>
@@ -177,9 +177,17 @@
 						</p>
 					{:else if run?.kind === 'unsaved'}
 						<div class="rounded border border-destructive/40 p-2 text-sm" role="alert">
-							<p class="text-destructive">The transcript arrived but its file was not saved: {run.message}</p>
+							<p class="text-destructive">The transcript arrived, but its file is not confirmed as saved: {run.message}</p>
 							<p class="my-2 whitespace-pre-wrap">{run.text}</p>
-							<Button size="xs" onclick={() => void library.retrySaveResult(id)}>Save it again</Button>
+							<p class="mb-2 text-xs text-muted-foreground">
+								Saving again writes <code class="font-mono">transcriptions/{run.id}.md</code>, or finds it there from an
+								earlier attempt, and does not call the endpoint again. Nothing new is transcribed until this is saved, or
+								discarded in the notice under the header.
+							</p>
+							<Button size="xs" disabled={run.saving} onclick={() => void library.retrySaveResult(id)}>
+								{#if run.saving}<Spinner class="size-3" />{/if}
+								Save it again
+							</Button>
 						</div>
 					{/if}
 					{#each results as result (result.path)}

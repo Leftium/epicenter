@@ -171,17 +171,36 @@ export type RecorderState =
 	| { readonly phase: 'recording'; readonly startedAt: number }
 	| { readonly phase: 'stopping' };
 
+/**
+ * A transcript the endpoint returned. `id` is the result row's stem, `fields`
+ * is exactly what the row will hold, and `body` is exactly the row's body;
+ * all are fixed when the answer arrives, so every save lands in the same file
+ * and never makes a second result.
+ */
+type ReceivedTranscript = {
+	readonly id: string;
+	readonly fields: TranscriptionFields;
+	/** The answer as received: what is shown and copied. */
+	readonly text: string;
+	readonly body: string;
+};
+
 /** One transcription request for a recording, until its result row is saved. */
 export type TranscriptionRun =
+	/** The request is out, or its answer is being written for the first time. */
 	| { readonly kind: 'running' }
 	| { readonly kind: 'failed'; readonly message: string }
-	/** The endpoint answered, but the result row could not be written. */
-	| {
+	/**
+	 * The endpoint answered, and the result row is not known to be in the
+	 * folder: the write was refused, or its reply was lost after it may have
+	 * landed. `saving` is true while a save of it is under way; no second save
+	 * starts until that one ends.
+	 */
+	| (ReceivedTranscript & {
 			readonly kind: 'unsaved';
 			readonly message: string;
-			readonly text: string;
-			readonly fields: TranscriptionFields;
-	  };
+			readonly saving: boolean;
+	  });
 
 /**
  * One application of a transformation to a transcript, until its result row
@@ -245,21 +264,24 @@ function describeWriteError(error: TableWriteError): string {
 	return error.message;
 }
 
+/** A received answer as its row's body: the text, ending in one newline of its own. */
+const resultBody = (text: string) => (text.endsWith('\n') ? text : `${text}\n`);
+
 /**
- * Whether a row already at a run's path is that run's own result: a valid row
- * with the same body and every field of the run's snapshot. A row that differs
+ * Whether a row already at a result's path is that result's own: a valid row
+ * with the same body and every field that was fixed for it. A row that differs
  * in any of them (another prompt, model, endpoint, transcript, or source) is
- * someone else's file. Fields the app does not declare are not part of the
- * snapshot, so extra ones do not make it a different result.
+ * someone else's file. Fields the app does not declare are not part of what
+ * was fixed, so extra ones do not make it a different result.
  */
-function isThisResult(
-	existing: TransformationRunEntry,
-	run: TransformationRun,
+function isThisResult<TFields extends object>(
+	existing: Entry<TFields>,
+	fields: TFields,
 	body: string,
 ): boolean {
 	if (existing.issues !== undefined || existing.body !== body) return false;
 	const saved: Readonly<Record<string, unknown>> = existing.fields;
-	return Object.entries(run.fields).every(([key, value]) => saved[key] === value);
+	return Object.entries(fields).every(([key, value]) => saved[key] === value);
 }
 
 export function createLibrary(workspace: Workspace) {
@@ -292,6 +314,13 @@ export function createLibrary(workspace: Workspace) {
 	let credentialPresent = $state(false);
 	let active: ActiveCapture | undefined;
 	let refreshSequence = 0;
+	/**
+	 * Transcripts whose publication was confirmed and that no applied listing
+	 * has accounted for yet, by path. `transcriptions` is an observation and
+	 * lags a save, or misses it when the read fails; a deletion counts these
+	 * as the recording's results from the moment they are saved.
+	 */
+	const unlistedResults = new Map<string, TranscriptionEntry>();
 	/** Counts completed folder refreshes; audio players recheck their file on each. */
 	let generation = $state(0);
 	const autosave = $state<Autosave>({ paused: false });
@@ -407,6 +436,8 @@ export function createLibrary(workspace: Workspace) {
 
 	async function refresh() {
 		const sequence = ++refreshSequence;
+		// Published before this read began, so this read's listing accounts for them.
+		const published = new Map(unlistedResults);
 		const [rows, found, files, kvRead, profileRows, outputRows] =
 			await Promise.all([
 				table.list(),
@@ -462,7 +493,11 @@ export function createLibrary(workspace: Workspace) {
 				else editor.observeRemoved();
 			}
 		}
-		if (found.error === null) transcriptions = [...found.data.entries];
+		if (found.error === null) {
+			transcriptions = [...found.data.entries];
+			for (const [path, entry] of published)
+				if (unlistedResults.get(path) === entry) unlistedResults.delete(path);
+		}
 		if (kvRead.error) settingsError = kvRead.error.message;
 		else {
 			settingsError = undefined;
@@ -820,29 +855,73 @@ export function createLibrary(workspace: Workspace) {
 
 	// --- transcription ------------------------------------------------------
 
+	/**
+	 * Transcript rows being written now, by result id, each naming its
+	 * recording. A discard drops the text but cannot stop a write already
+	 * begun, so the recording is not deleted under one.
+	 */
+	const writingResults = new Map<string, string>();
+
+	/**
+	 * Write a received transcript as `transcriptions/<transcript.id>.md`. The
+	 * folder is read first: with no file there the row is created, never
+	 * overwritten; this transcript's own row, left by an earlier write whose
+	 * reply was lost, is recognized and not written twice; any other file there
+	 * is left as it is.
+	 *
+	 * `admitted` is the run this save was let in under. Its outcome is applied
+	 * only while that run still stands, so a save that ends after its
+	 * transcript was discarded, or after a newer run began, restores nothing
+	 * and removes nothing.
+	 */
 	async function saveResult(
 		recording: string,
-		fields: TranscriptionFields,
-		text: string,
+		transcript: ReceivedTranscript,
+		admitted: TranscriptionRun,
 	) {
-		const unsaved = (message: string) =>
-			runs.set(recording, { kind: 'unsaved', message, text, fields });
-		// A write that throws (the folder host went away) must not lose the text.
-		let created: Awaited<ReturnType<typeof results.create>>;
+		const { id, fields, text, body } = transcript;
+		/** The row as the folder has it, or why it is not known to be there. */
+		let published: Result<TranscriptionEntry, string>;
+		writingResults.set(id, recording);
+		// A read or write that throws (the folder host went away) must not lose the text.
 		try {
-			created = await results.create({
-				fields,
-				body: text.endsWith('\n') ? text : `${text}\n`,
-			});
+			const existing = await results.get(id);
+			if (existing.error) published = Err(existing.error.message);
+			else if (existing.data === undefined) {
+				const created = await results.create({ stem: id, fields, body });
+				published = created.error
+					? Err(describeWriteError(created.error))
+					: Ok(created.data);
+			} else
+				published = isThisResult(existing.data, fields, body)
+					? Ok(existing.data)
+					: Err(
+							`${existing.data.path} already exists and is not this transcript. Nothing was overwritten.`,
+						);
 		} catch (cause) {
-			unsaved(describe(cause));
+			published = Err(describe(cause));
+		} finally {
+			writingResults.delete(id);
+		}
+		const stands = runs.get(recording) === admitted;
+		if (published.error !== null) {
+			if (stands)
+				runs.set(recording, {
+					kind: 'unsaved',
+					id,
+					fields,
+					text,
+					body,
+					message: published.error,
+					saving: false,
+				});
 			return;
 		}
-		if (created.error) {
-			unsaved(describeWriteError(created.error));
-			return;
-		}
-		runs.delete(recording);
+		// Saved, whatever the listing below reports. There is no await between
+		// the write ending and this, so the recording is never without a run, a
+		// write, or this row standing in the way of a deletion confirmed earlier.
+		unlistedResults.set(published.data.path, published.data);
+		if (stands) runs.delete(recording);
 		await refreshAll();
 	}
 
@@ -860,7 +939,7 @@ export function createLibrary(workspace: Workspace) {
 				...run,
 				state: { kind: 'unsaved', message, text },
 			});
-		const body = text.endsWith('\n') ? text : `${text}\n`;
+		const body = resultBody(text);
 		try {
 			const existing = await outputs.get(run.id);
 			if (existing.error) {
@@ -877,7 +956,7 @@ export function createLibrary(workspace: Workspace) {
 					unsaved(describeWriteError(created.error));
 					return;
 				}
-			} else if (!isThisResult(existing.data, run, body)) {
+			} else if (!isThisResult(existing.data, run.fields, body)) {
 				unsaved(
 					`${existing.data.path} already exists and is not this result. Nothing was overwritten.`,
 				);
@@ -898,8 +977,9 @@ export function createLibrary(workspace: Workspace) {
 	/**
 	 * Why a recording cannot be deleted now, or undefined. A request still
 	 * running, or an answer that is not saved yet, would otherwise write a row
-	 * that names a recording that is gone. A failed run holds nothing and does
-	 * not block; it is dropped with the recording.
+	 * that names a recording that is gone. So would the write of a transcript
+	 * that was discarded while it was being saved. A failed run holds nothing
+	 * and does not block; it is dropped with the recording.
 	 */
 	function recordingBusy(id: string): string | undefined {
 		const transcript = runs.get(id);
@@ -907,6 +987,8 @@ export function createLibrary(workspace: Workspace) {
 			return 'A transcription of this recording is still running. Wait for it to finish, then delete the recording.';
 		if (transcript?.kind === 'unsaved')
 			return 'A transcript of this recording arrived but its file is not saved. Save it again or discard it in the notice under the header, then delete the recording.';
+		if ([...writingResults.values()].includes(id))
+			return 'A transcript of this recording is still being written to the folder. Wait for it to finish, then delete the recording.';
 		const own = [...transformationRuns.values()].filter(
 			(run) => run.fields.recordingId === id,
 		);
@@ -1285,7 +1367,11 @@ export function createLibrary(workspace: Workspace) {
 
 		async transcribe(entry: RecordingEntry) {
 			const id = entry.stem;
-			if (id === undefined || runs.get(id)?.kind === 'running') return;
+			if (id === undefined) return;
+			// A received transcript is held until it is saved or discarded: a new
+			// request never replaces it.
+			const current = runs.get(id)?.kind;
+			if (current === 'running' || current === 'unsaved') return;
 			// Its transcript would name a recording that is on its way out.
 			if (deleting.has(id)) return;
 			// Only the path the row names is sent. No file is guessed from its stem.
@@ -1299,7 +1385,8 @@ export function createLibrary(workspace: Workspace) {
 				return;
 			}
 			const used = settings;
-			runs.set(id, { kind: 'running' });
+			const running: TranscriptionRun = { kind: 'running' };
+			runs.set(id, running);
 			// A run always ends: a transport that throws is a failure to retry,
 			// never a request left running.
 			let answered: Awaited<ReturnType<Workspace['transcribe']>>;
@@ -1320,28 +1407,48 @@ export function createLibrary(workspace: Workspace) {
 				runs.set(id, { kind: 'failed', message: answered.error.message });
 				return;
 			}
+			// Fixed here, once: every save of this answer writes this stem, these
+			// fields, and this body.
+			const at = new Date();
 			await saveResult(
 				id,
 				{
-					recordingId: id,
-					createdAt: new Date().toISOString(),
-					model: used.transcriptionModel,
-					endpoint: used.transcriptionBaseUrl,
-				} as TranscriptionFields,
-				answered.data.text,
+					id: recordingId(at),
+					fields: {
+						recordingId: id,
+						createdAt: at.toISOString(),
+						model: used.transcriptionModel,
+						endpoint: used.transcriptionBaseUrl,
+					} as TranscriptionFields,
+					text: answered.data.text,
+					body: resultBody(answered.data.text),
+				},
+				running,
 			);
 		},
-		/** Write a received transcript whose row could not be saved the first time. */
+		/**
+		 * Save a received transcript whose row is not known to be in the folder.
+		 * The endpoint is not called and the file keeps the name it was given.
+		 * While one save of it is under way, another does not start.
+		 */
 		async retrySaveResult(id: string) {
 			const run = runs.get(id);
-			if (run?.kind !== 'unsaved') return;
-			await saveResult(id, run.fields, run.text);
+			if (run?.kind !== 'unsaved' || run.saving) return;
+			const admitted: TranscriptionRun = { ...run, saving: true };
+			runs.set(id, admitted);
+			await saveResult(id, run, admitted);
 		},
+		/**
+		 * Drop a run that is not running. A received transcript that was not
+		 * saved is lost from this window; a write of it already begun may still
+		 * reach the folder, and whatever it wrote stays there.
+		 */
 		dismissRun(id: string) {
 			if (runs.get(id)?.kind !== 'running') runs.delete(id);
 		},
 		async deleteResult(entry: TranscriptionEntry): Promise<string | undefined> {
 			const removed = await results.delete(entry);
+			if (removed.error === null) unlistedResults.delete(entry.path);
 			await refreshAll();
 			return removed.error ? describeWriteError(removed.error) : undefined;
 		},
@@ -1573,12 +1680,18 @@ export function createLibrary(workspace: Workspace) {
 				const id = recordingIdOf(path);
 				const busy = id === undefined ? undefined : recordingBusy(id);
 				if (busy !== undefined) return Err(busy);
+				// A transcript saved since the last listing is named from its
+				// publication; once listed, the listed row is the one named.
+				const listed = new Set(transcriptions.map((result) => result.path));
 				return Ok({
 					kind: 'recording',
 					entry: entry.data,
-					results: transcriptions.filter(
-						(result) => result.fields.recordingId === id,
-					),
+					results: [
+						...transcriptions,
+						...[...unlistedResults.values()].filter(
+							(result) => !listed.has(result.path),
+						),
+					].filter((result) => result.fields.recordingId === id),
 					outputs: transformationResults.filter(
 						(result) => result.fields.recordingId === id,
 					),
@@ -1647,7 +1760,12 @@ export function createLibrary(workspace: Workspace) {
 			const confirmed = new Set(
 				[...deletion.results, ...deletion.outputs].map((row) => row.path),
 			);
-			const unconfirmed = [...transcriptions, ...transformationResults].some(
+			// A transcript saved since the last listing counts from its publication.
+			const unconfirmed = [
+				...transcriptions,
+				...unlistedResults.values(),
+				...transformationResults,
+			].some(
 				(row) => row.fields.recordingId === id && !confirmed.has(row.path),
 			);
 			if (unconfirmed)
@@ -1673,6 +1791,7 @@ export function createLibrary(workspace: Workspace) {
 				for (const result of deletion.results) {
 					const gone = await results.delete(result);
 					if (gone.error) leftovers.push(result.path);
+					else unlistedResults.delete(result.path);
 				}
 				for (const output of deletion.outputs) {
 					const gone = await outputs.delete(output);

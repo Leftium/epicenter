@@ -79,7 +79,7 @@
 			description:
 				item.state.kind === 'partial'
 					? `The audio held in this window is dropped. ${item.state.landed.join(', ')} stays in the folder without a recording file.`
-					: 'The audio held in this window is dropped. It cannot be recovered.',
+					: `The copy of the audio held in this window is dropped. Files already written to the folder stay there. This recording’s save is not resolved, so check the folder for ${item.capture.fields.audioPath} and recordings/${item.capture.id}.md to see what it holds.`,
 			confirm: { text: 'Discard', variant: 'destructive' },
 			onConfirm: () => library.discardPending(item.capture.id),
 		});
@@ -88,7 +88,8 @@
 	function discardTranscript(id: string) {
 		confirmationDialog.open({
 			title: 'Discard this transcript?',
-			description: 'The text held in this window is dropped. Transcribing again sends the audio to the endpoint again.',
+			description:
+				'The text held in this window is dropped. A file an earlier save already wrote stays in the folder. Transcribing again sends the audio to the endpoint again.',
 			confirm: { text: 'Discard', variant: 'destructive' },
 			onConfirm: () => library.dismissRun(id),
 		});
@@ -151,12 +152,19 @@
 				{#if run?.kind === 'unsaved'}
 					<li class="flex flex-col gap-2 px-3 py-3 sm:px-4" data-testid="unsaved-transcript">
 						<p class="font-medium">
-							The transcript of {entry ? `“${recordingTitle(entry)}”` : id} arrived, but its file was not saved.
+							The transcript of {entry ? `“${recordingTitle(entry)}”` : id} arrived, but its file is not confirmed as saved.
 						</p>
 						<p class="text-xs text-muted-foreground" role="alert">{run.message}</p>
 						<p class="max-h-24 overflow-y-auto rounded border bg-background p-2 whitespace-pre-wrap">{run.text}</p>
+						<p class="text-xs text-muted-foreground">
+							Saving again writes <code class="font-mono">transcriptions/{run.id}.md</code>, or finds it there from an earlier
+							attempt, and does not call the endpoint again.
+						</p>
 						<div class="flex items-center gap-2">
-							<Button size="sm" onclick={() => void library.retrySaveResult(id)} data-testid="retry-transcript">Save it again</Button>
+							<Button size="sm" disabled={run.saving} onclick={() => void library.retrySaveResult(id)} data-testid="retry-transcript">
+								{#if run.saving}<Spinner class="size-3.5" />{/if}
+								Save it again
+							</Button>
 							<Button size="sm" variant="outline" onclick={() => void copyText(run.text, 'the transcript')}>Copy</Button>
 							{#if entry}
 								<Button size="sm" variant="ghost" onclick={() => onOpenRecording(entry.path)}>Open the recording</Button>

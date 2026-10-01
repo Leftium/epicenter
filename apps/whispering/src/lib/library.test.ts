@@ -16,6 +16,11 @@
  * - A malformed row stays listed and its source is untouched
  * - A transcription result is its own row naming the recording
  * - Reopening the folder shows the same recordings and results
+ * - A received transcript has one file name: saving it again never calls the
+ *   endpoint, recognizes a save that landed with its reply lost, leaves
+ *   another file at that name alone, and cannot write a second result
+ * - A held transcript refuses a new request, and a save that finishes late
+ *   restores nothing that was discarded and replaces nothing newer
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
@@ -61,6 +66,8 @@ type Options = {
 	failRowWrites?: number;
 	/** Fail this many transcription result row writes. */
 	failResultWrites?: number;
+	/** Report this many transcription result row writes as unconfirmed after the file landed. */
+	loseResultReplies?: number;
 	/** Replace the stubbed transcription answer. */
 	transcribe?: Workspace['transcribe'];
 	root?: string;
@@ -69,6 +76,7 @@ type Options = {
 async function open({
 	failRowWrites = 0,
 	failResultWrites = 0,
+	loseResultReplies = 0,
 	transcribe,
 	root,
 }: Options = {}) {
@@ -77,19 +85,30 @@ async function open({
 		(await realpath(await mkdtemp(join(tmpdir(), 'whispering-library-'))));
 	if (root === undefined) roots.push(directory);
 	const folder = await openTestFolder(directory);
-	let remainingResults = failResultWrites;
+	/** Result row writes still to fail. A test may arm more after opening. */
+	const failures = { resultWrites: failResultWrites };
+	let remainingLostReplies = loseResultReplies;
 	const transcriptions = folder.tables.transcriptions;
 	const tables = {
 		...folder.tables,
 		transcriptions: {
 			...transcriptions,
 			create: async (input: Parameters<typeof transcriptions.create>[0]) => {
-				if (remainingResults === 0) return transcriptions.create(input);
-				remainingResults -= 1;
-				return FileError.Io({
-					path: 'transcriptions/result.md',
+				if (failures.resultWrites > 0) {
+					failures.resultWrites -= 1;
+					return FileError.Io({
+						path: 'transcriptions/result.md',
+						operation: 'create',
+						cause: new Error('disk refused the result'),
+					});
+				}
+				const created = await transcriptions.create(input);
+				if (remainingLostReplies === 0 || created.error) return created;
+				remainingLostReplies -= 1;
+				return FileError.Unconfirmed({
+					path: created.data.path,
 					operation: 'create',
-					cause: new Error('disk refused the result'),
+					cause: 'reply lost after the write',
 				});
 			},
 		},
@@ -146,7 +165,7 @@ async function open({
 	const library = createLibrary(workspace);
 	opened.push(library);
 	await library.start();
-	return { library, root: directory, transcribed };
+	return { library, root: directory, transcribed, failures };
 }
 
 afterEach(async () => {
@@ -983,4 +1002,492 @@ test('a late observation does not replace a file selected while it was reading',
 	expect(library.pending).toHaveLength(0);
 	expect(library.selectedPath).toBe('other.txt');
 	expect(seen.batches).toBe(1);
+});
+
+// ============================================================================
+// A received transcript and its one file
+// ============================================================================
+
+const transcripts = (root: string) =>
+	readdir(join(root, 'transcriptions')).catch(() => [] as string[]);
+
+/** The transcript held for a recording. */
+function heldTranscript(library: Library, recording: string) {
+	const run = library.transcriptionRun(recording);
+	if (run?.kind !== 'unsaved')
+		throw new Error(`Expected a held transcript, got ${run?.kind}`);
+	return run;
+}
+
+/** Record and transcribe once, with the answer received and its row not confirmed. */
+async function held(options: Options) {
+	const opened = await open(options);
+	await record(opened.library);
+	const entry = opened.library.entries[0]!;
+	await opened.library.transcribe(entry);
+	return {
+		...opened,
+		entry,
+		id: entry.stem!,
+		held: heldTranscript(opened.library, entry.stem!),
+	};
+}
+
+/**
+ * Hold the next transcription row write until the test releases it. The write
+ * then goes to the folder, or is refused before anything is written.
+ */
+function holdNextResultWrite(library: Library) {
+	const table = library.folder.tables.transcriptions;
+	const create = table.create;
+	const started = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<'write' | 'refuse'>();
+	Object.assign(table, {
+		create: async (input: Parameters<typeof create>[0]) => {
+			Object.assign(table, { create });
+			started.resolve();
+			return (await release.promise) === 'write'
+				? create(input)
+				: FileError.Io({
+						path: `transcriptions/${input.stem}.md`,
+						operation: 'create',
+						cause: new Error('disk refused the result late'),
+					});
+		},
+	});
+	return { started: started.promise, release: release.resolve };
+}
+
+test('a transcript save that landed with its reply lost is recognized on saving again: one file, one request', async () => {
+	const {
+		library,
+		root,
+		transcribed,
+		id,
+		held: first,
+	} = await held({ loseResultReplies: 1 });
+	expect(await transcripts(root)).toHaveLength(1);
+	// The write was not confirmed, and nothing claims that it wrote nothing.
+	expect(first.message).toContain('may have completed');
+	expect(library.holdsUnsavedWork).toBe(true);
+
+	await library.retrySaveResult(id);
+
+	expect(await transcripts(root)).toEqual([`${first.id}.md`]);
+	expect(first).toMatchObject({
+		text: 'a steady tone',
+		body: 'a steady tone\n',
+		saving: false,
+	});
+	expect(transcribed).toHaveLength(1);
+	expect(library.transcriptionRun(id)).toBeUndefined();
+	expect(library.unsaved).toBe(false);
+	expect(library.holdsUnsavedWork).toBe(false);
+	const results = library.resultsFor(id);
+	expect(results.map((result) => result.stem)).toEqual([first.id]);
+	expect(results[0]!.fields).toEqual(first.fields);
+	expect(results[0]!.body).toBe(first.body);
+});
+
+test('two simultaneous saves of a held transcript write one file and leave nothing unsaved', async () => {
+	const {
+		library,
+		root,
+		transcribed,
+		id,
+		held: first,
+	} = await held({ failResultWrites: 1 });
+	expect(await transcripts(root)).toEqual([]);
+
+	await Promise.all([library.retrySaveResult(id), library.retrySaveResult(id)]);
+
+	expect(await transcripts(root)).toEqual([`${first.id}.md`]);
+	expect(transcribed).toHaveLength(1);
+	expect(library.transcriptionRun(id)).toBeUndefined();
+	expect(library.unsavedResults).toBe(0);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(library.resultsFor(id).map((result) => result.body)).toEqual([
+		'a steady tone\n',
+	]);
+});
+
+test('another file at a held transcript’s path is left as it is, and the transcript stays held', async () => {
+	const {
+		library,
+		root,
+		transcribed,
+		id,
+		held: first,
+	} = await held({ failResultWrites: 1 });
+	const path = join(root, 'transcriptions', `${first.id}.md`);
+	await mkdir(join(root, 'transcriptions'), { recursive: true });
+	const squatter =
+		'---\ntitle: not a transcript\n---\nSomeone else wrote this\n';
+	await writeFile(path, squatter);
+
+	await library.retrySaveResult(id);
+
+	expect(await transcripts(root)).toEqual([`${first.id}.md`]);
+	expect(await readFile(path, 'utf8')).toBe(squatter);
+	const still = heldTranscript(library, id);
+	expect(still).toMatchObject({
+		id: first.id,
+		fields: first.fields,
+		text: 'a steady tone',
+		saving: false,
+	});
+	expect(still.message).toContain('Nothing was overwritten');
+	expect(library.holdsUnsavedWork).toBe(true);
+
+	// The same fields with other text is another row too, not this transcript.
+	await rm(path);
+	const edited = await library.folder.tables.transcriptions.create({
+		stem: first.id,
+		fields: first.fields,
+		body: 'a steady tone, edited since\n',
+	});
+	expect(edited.error).toBeNull();
+	const theirs = await readFile(path, 'utf8');
+
+	await library.retrySaveResult(id);
+
+	expect(await readFile(path, 'utf8')).toBe(theirs);
+	expect(heldTranscript(library, id).text).toBe('a steady tone');
+	expect(transcribed).toHaveLength(1);
+});
+
+test('a held transcript refuses a new transcription request: the endpoint is not called and the text is kept', async () => {
+	const {
+		library,
+		root,
+		transcribed,
+		entry,
+		id,
+		held: first,
+	} = await held({ failResultWrites: 1 });
+
+	await library.transcribe(entry);
+
+	expect(transcribed).toHaveLength(1);
+	expect(library.transcriptionRun(id)).toEqual(first);
+
+	await library.retrySaveResult(id);
+
+	expect(transcribed).toHaveLength(1);
+	expect(await transcripts(root)).toEqual([`${first.id}.md`]);
+	expect(library.resultsFor(id)[0]!.body).toBe('a steady tone\n');
+});
+
+test('a save that fails after its transcript was discarded does not bring the transcript back', async () => {
+	const { library, root, id } = await held({ failResultWrites: 1 });
+	const write = holdNextResultWrite(library);
+	const saving = library.retrySaveResult(id);
+	await write.started;
+	expect(heldTranscript(library, id).saving).toBe(true);
+
+	library.dismissRun(id);
+	write.release('refuse');
+	await saving;
+
+	expect(library.transcriptionRun(id)).toBeUndefined();
+	expect(library.unsavedResults).toBe(0);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(await transcripts(root)).toEqual([]);
+});
+
+test('a save that lands after its transcript was discarded leaves a newer held transcript as it is', async () => {
+	let answers = 0;
+	const {
+		library,
+		root,
+		transcribed,
+		failures,
+		entry,
+		id,
+		held: first,
+	} = await held({
+		failResultWrites: 1,
+		transcribe: async () => {
+			answers += 1;
+			return Ok({ text: answers === 1 ? 'first answer' : 'second answer' });
+		},
+	});
+	const write = holdNextResultWrite(library);
+	const saving = library.retrySaveResult(id);
+	await write.started;
+	library.dismissRun(id);
+	// A new request is answered and its own write is refused: a newer transcript is held.
+	failures.resultWrites = 1;
+	await library.transcribe(entry);
+	const second = heldTranscript(library, id);
+	expect(second.text).toBe('second answer');
+	expect(second.id).not.toBe(first.id);
+
+	write.release('write');
+	await saving;
+
+	// The discarded transcript's write reached the folder, and its file stays there.
+	expect(await transcripts(root)).toEqual([`${first.id}.md`]);
+	expect(library.transcriptionRun(id)).toEqual(second);
+	expect(library.unsavedResults).toBe(1);
+
+	await library.retrySaveResult(id);
+
+	expect(transcribed).toHaveLength(2);
+	expect(library.transcriptionRun(id)).toBeUndefined();
+	expect((await transcripts(root)).sort()).toEqual(
+		[`${first.id}.md`, `${second.id}.md`].sort(),
+	);
+	expect(
+		library
+			.resultsFor(id)
+			.map((result) => result.body)
+			.sort(),
+	).toEqual(['first answer\n', 'second answer\n']);
+});
+
+test('a transcript already in the folder is acknowledged as saved even when the folder cannot then be listed', async () => {
+	const {
+		library,
+		root,
+		transcribed,
+		id,
+		held: first,
+	} = await held({ loseResultReplies: 1 });
+	const table = library.folder.tables.transcriptions;
+	const { get, list } = table;
+	const unreadable = (operation: string) =>
+		Promise.resolve(
+			FileError.Io({
+				path: 'transcriptions',
+				operation,
+				cause: new Error('the folder could not be read'),
+			}),
+		);
+
+	// The row cannot be read, so nothing is known: the transcript stays held and nothing is written.
+	Object.assign(table, { get: () => unreadable('read') });
+	await library.retrySaveResult(id);
+	const still = heldTranscript(library, id);
+	expect(still).toMatchObject({
+		id: first.id,
+		text: 'a steady tone',
+		saving: false,
+	});
+	expect(still.message).toContain('the folder could not be read');
+	expect(await transcripts(root)).toEqual([`${first.id}.md`]);
+
+	// The row reads as this transcript. The list read that follows fails on its own.
+	Object.assign(table, { get, list: () => unreadable('list') });
+	await library.retrySaveResult(id);
+	expect(library.transcriptionRun(id)).toBeUndefined();
+	expect(library.unsaved).toBe(false);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(status(library).files.label).not.toContain('not saved');
+	expect(library.resultsFor(id)).toHaveLength(0);
+
+	Object.assign(table, { list });
+	await library.refresh();
+	expect(library.resultsFor(id).map((result) => result.stem)).toEqual([
+		first.id,
+	]);
+	expect(transcribed).toHaveLength(1);
+	expect(await transcripts(root)).toEqual([`${first.id}.md`]);
+});
+
+test('while a held transcript is being written its recording cannot be deleted and the app stays held', async () => {
+	const { library, root, entry, id } = await held({ failResultWrites: 1 });
+	const write = holdNextResultWrite(library);
+	const saving = library.retrySaveResult(id);
+	await write.started;
+
+	expect(heldTranscript(library, id).saving).toBe(true);
+	expect((await library.deletionFor(entry.path)).error).toContain(
+		'Save it again or discard it',
+	);
+	expect(library.unsavedWork).toEqual([
+		'1 transcript arrived but its file is not saved.',
+	]);
+	expect(await library.prepareToLeave()).toBe(false);
+
+	// Discarding drops the text. The write already begun is still on its way to the folder.
+	library.dismissRun(id);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect((await library.deletionFor(entry.path)).error).toContain(
+		'still being written',
+	);
+	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
+
+	write.release('write');
+	await saving;
+
+	// The transcript that landed is named to the person before it is deleted.
+	const deletion = await library.deletionFor(entry.path);
+	if (deletion.data?.kind !== 'recording')
+		throw new Error('expected a recording deletion');
+	expect(deletion.data.results).toHaveLength(1);
+	expect(await library.remove(deletion.data)).toBeUndefined();
+	expect(await transcripts(root)).toEqual([]);
+});
+
+test('the first write of a transcript keeps its run running: it cannot be dismissed or asked for again', async () => {
+	const { library, root, transcribed } = await open();
+	await record(library);
+	const entry = library.entries[0]!;
+	const id = entry.stem!;
+	const write = holdNextResultWrite(library);
+	const transcribing = library.transcribe(entry);
+	await write.started;
+
+	expect(library.transcriptionRun(id)?.kind).toBe('running');
+	library.dismissRun(id);
+	await library.transcribe(entry);
+	expect(library.transcriptionRun(id)?.kind).toBe('running');
+	expect((await library.deletionFor(entry.path)).error).toContain(
+		'still running',
+	);
+	expect(library.holdsUnsavedWork).toBe(true);
+
+	write.release('refuse');
+	await transcribing;
+
+	// The answer is held with its file name fixed, and nothing was sent twice.
+	const kept = heldTranscript(library, id);
+	expect(kept.text).toBe('a steady tone');
+	expect(transcribed).toHaveLength(1);
+	await library.retrySaveResult(id);
+	expect(await transcripts(root)).toEqual([`${kept.id}.md`]);
+});
+
+// ============================================================================
+// A saved transcript and a deletion confirmed before it
+// ============================================================================
+
+/** Hold every listing of the transcriptions table until the test releases them. */
+function holdResultLists(library: Library) {
+	const table = library.folder.tables.transcriptions;
+	const list = table.list;
+	const started = Promise.withResolvers<void>();
+	const released = Promise.withResolvers<void>();
+	Object.assign(table, {
+		list: async () => {
+			started.resolve();
+			await released.promise;
+			return list();
+		},
+	});
+	return {
+		started: started.promise,
+		release() {
+			Object.assign(table, { list });
+			released.resolve();
+		},
+	};
+}
+
+test('a transcript saved after a deletion was confirmed refuses that deletion before any listing shows it', async () => {
+	const { library, root } = await open();
+	await record(library);
+	const entry = library.entries[0]!;
+	const id = entry.stem!;
+	// The person is asked, and agrees, while the recording has no results.
+	const confirmed = await library.deletionFor(entry.path);
+	if (confirmed.data?.kind !== 'recording')
+		throw new Error('expected a recording deletion');
+	expect(confirmed.data.results).toEqual([]);
+	const lists = holdResultLists(library);
+
+	const transcribing = library.transcribe(entry);
+	await lists.started;
+
+	// The row is written and nothing is held; only the listing has not arrived.
+	expect(library.transcriptionRun(id)).toBeUndefined();
+	expect(library.unsaved).toBe(false);
+	expect(library.resultsFor(id)).toEqual([]);
+	const [name] = await transcripts(root);
+	const saved = await readFile(join(root, 'transcriptions', name!), 'utf8');
+
+	expect(await library.remove(confirmed.data)).toContain(
+		'after you were asked',
+	);
+
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
+		`${id}.md`,
+		`${id}.wav`,
+	]);
+	expect(await transcripts(root)).toEqual([name!]);
+	expect(await readFile(join(root, 'transcriptions', name!), 'utf8')).toBe(
+		saved,
+	);
+
+	lists.release();
+	await transcribing;
+
+	// Asked again, the person is told about the transcript, and it goes with the recording.
+	const again = await library.deletionFor(entry.path);
+	if (again.data?.kind !== 'recording')
+		throw new Error('expected a recording deletion');
+	expect(again.data.results.map((result) => result.path)).toEqual([
+		`transcriptions/${name}`,
+	]);
+	expect(await library.remove(again.data)).toBeUndefined();
+	expect(await transcripts(root)).toEqual([]);
+	expect(await readdir(join(root, 'recordings'))).toEqual([`${id}.wav`]);
+	expect(
+		new Uint8Array(await readFile(join(root, 'recordings', `${id}.wav`))),
+	).toEqual(new Uint8Array(toneWav()));
+});
+
+test('a transcript saved when the listing after it fails stays saved, and still refuses an earlier deletion', async () => {
+	const { library, root, transcribed } = await open();
+	await record(library);
+	const entry = library.entries[0]!;
+	const id = entry.stem!;
+	const confirmed = await library.deletionFor(entry.path);
+	if (confirmed.data?.kind !== 'recording')
+		throw new Error('expected a recording deletion');
+	const table = library.folder.tables.transcriptions;
+	const list = table.list;
+	Object.assign(table, {
+		list: async () =>
+			FileError.Io({
+				path: 'transcriptions',
+				operation: 'list',
+				cause: new Error('the folder could not be listed'),
+			}),
+	});
+
+	await library.transcribe(entry);
+
+	// Saved: nothing is held, nothing is offered again, and the view claims nothing it did not read.
+	expect(library.transcriptionRun(id)).toBeUndefined();
+	expect(library.unsaved).toBe(false);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(library.resultsFor(id)).toEqual([]);
+	const [name] = await transcripts(root);
+	await library.retrySaveResult(id);
+	expect(transcribed).toHaveLength(1);
+	expect(await transcripts(root)).toEqual([name!]);
+
+	expect(await library.remove(confirmed.data)).toContain(
+		'after you were asked',
+	);
+	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
+	expect(await transcripts(root)).toEqual([name!]);
+
+	// A new confirmation names the transcript from its publication, with the listing still failing.
+	const again = await library.deletionFor(entry.path);
+	if (again.data?.kind !== 'recording')
+		throw new Error('expected a recording deletion');
+	expect(again.data.results.map((result) => result.path)).toEqual([
+		`transcriptions/${name}`,
+	]);
+	expect(await library.remove(again.data)).toBeUndefined();
+	expect(await transcripts(root)).toEqual([]);
+	expect(await readdir(join(root, 'recordings'))).toEqual([`${id}.wav`]);
+
+	Object.assign(table, { list });
+	await library.refresh();
+	expect(library.entries).toEqual([]);
+	expect(library.resultsFor(id)).toEqual([]);
 });

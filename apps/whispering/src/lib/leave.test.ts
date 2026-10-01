@@ -5,8 +5,9 @@
  * Key behaviors:
  * - Nothing held: the page answers `proceed` with no prompt
  * - Typing that can be saved is saved first, then `proceed`
- * - A pending capture, an unsaved transcript, a live recording, or typing that
- *   cannot be saved: the page answers `asking` and shows its prompt
+ * - A pending capture, an unsaved transcript or transformation result, a live
+ *   recording, or typing that cannot be saved: the page answers `asking` and
+ *   shows its prompt
  * - "Keep working" answers `cancel` and every held byte is still there
  * - "Discard and quit" answers `proceed`
  */
@@ -25,7 +26,7 @@ import type { CloseDecision, Workspace } from './workspace/types.js';
 
 const { createLibrary } = await import('./library.svelte.ts');
 const { createLeaveGuard } = await import('./leave.svelte.ts');
-const { patchRecording } = await import('./editor.svelte.ts');
+const { patchRow } = await import('./editor.svelte.ts');
 
 const opened: Library[] = [];
 const roots: string[] = [];
@@ -39,10 +40,13 @@ afterEach(async () => {
 async function open({
 	failAudioWrites = 0,
 	failResultWrites = 0,
+	failOutputWrites = 0,
 	failPrepare = false,
 }: {
 	failAudioWrites?: number;
 	failResultWrites?: number;
+	/** Fail this many transformation result writes. */
+	failOutputWrites?: number;
 	/** Make finding out what is held throw. */
 	failPrepare?: boolean;
 } = {}) {
@@ -57,10 +61,22 @@ async function open({
 	});
 	let audioFailures = failAudioWrites;
 	let resultFailures = failResultWrites;
-	const { recordings, transcriptions } = folder.tables;
+	let outputFailures = failOutputWrites;
+	const { recordings, transcriptions, transformation_runs } = folder.tables;
 	const refused = (path: string) =>
 		FileError.Io({ path, operation: 'create', cause: new Error('disk full') });
 	const tables = {
+		...folder.tables,
+		transformation_runs: {
+			...transformation_runs,
+			create: async (
+				input: Parameters<typeof transformation_runs.create>[0],
+			) => {
+				if (outputFailures === 0) return transformation_runs.create(input);
+				outputFailures -= 1;
+				return refused(`transformation_runs/${input.stem}.md`);
+			},
+		},
 		recordings: {
 			...recordings,
 			// The acceptance case: the audio write fails, so no file reaches the folder.
@@ -100,6 +116,8 @@ async function open({
 		onExternalChange: () => () => {},
 		reveal: undefined,
 		transcribe: async () => Ok({ text: 'a steady tone' }),
+		transform: async ({ input }) => Ok({ text: `Cleaned: ${input.trim()}` }),
+		transformNote: 'test',
 		closing: {
 			onRequest(listener) {
 				requestListeners.add(listener);
@@ -199,7 +217,7 @@ test('typing that can be saved is saved first, then the close proceeds', async (
 	await record(library);
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
-	patchRecording(selection.editor, { fields: { title: 'Typed just now' } });
+	patchRow(selection.editor, { fields: { title: 'Typed just now' } });
 	expect(selection.editor.dirty).toBe(true);
 
 	await ask();
@@ -295,13 +313,61 @@ test('a transcript whose file was not saved blocks the close', async () => {
 	if (run?.kind === 'unsaved') expect(run.text).toBe('a steady tone');
 });
 
+test('a transformation result whose file was not saved blocks the close and is kept', async () => {
+	const { library, guard, answers, ask } = await open({ failOutputWrites: 1 });
+	await record(library);
+	await library.transcribe(library.entries[0]!);
+	expect(
+		await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' }),
+	).toBeUndefined();
+	const profile = library.selectedTransformation!;
+	patchRow(profile.editor, { fields: { model: 'chat-model' } });
+	const transcript = library.resultsFor(library.entries[0]!.stem!)[0]!;
+	expect(
+		await library.transform(transcript.path, profile.editor.path),
+	).toBeUndefined();
+
+	await ask();
+
+	expect(answers).toEqual(['asking']);
+	expect(guard.held.join(' ')).toContain(
+		'1 transformation result arrived but its file is not saved.',
+	);
+	await guard.stay();
+	const run = library.transformationRuns[0]!;
+	expect(run.state.kind).toBe('unsaved');
+	if (run.state.kind === 'unsaved')
+		expect(run.state.text).toBe('Cleaned: a steady tone');
+
+	// Once it is saved, nothing is held and the close proceeds without a prompt.
+	await library.retryTransformation(run.id);
+	await ask();
+	expect(answers).toEqual(['asking', 'cancel', 'asking', 'proceed']);
+});
+
+test('a transformation draft that cannot be saved blocks the close and stays in the editor', async () => {
+	const { library, guard, answers, ask } = await open();
+	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
+	const { editor } = library.selectedTransformation!;
+	library.autosave.paused = true;
+	patchRow(editor, { body: 'A prompt typed and not saved.\n' });
+
+	await ask();
+
+	expect(answers).toEqual(['asking']);
+	expect(guard.held).toContain(`${editor.path} has unsaved edits.`);
+	await guard.stay();
+	expect(editor.buffer).toContain('A prompt typed and not saved.');
+	expect(editor.dirty).toBe(true);
+});
+
 test('typing that cannot be saved blocks the close and stays in the editor', async () => {
 	const { library, guard, answers, ask } = await open();
 	await record(library);
 	const selection = library.selection;
 	if (selection?.kind !== 'recording') throw new Error('expected a recording');
 	library.autosave.paused = true;
-	patchRecording(selection.editor, { fields: { title: 'Held back' } });
+	patchRow(selection.editor, { fields: { title: 'Held back' } });
 
 	await ask();
 

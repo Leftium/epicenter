@@ -54,6 +54,8 @@ export function filesLine(state: {
 	capturesSaving: boolean;
 	/** Transcripts received whose result file could not be written. */
 	unsavedResults: number;
+	/** Transformation results received whose file could not be written. */
+	unsavedTransformations: number;
 }): StatusLine {
 	if (state.pendingCaptures > 0 && !state.capturesSaving)
 		return {
@@ -68,7 +70,15 @@ export function filesLine(state: {
 			label: `${state.unsavedResults} ${state.unsavedResults === 1 ? 'transcription' : 'transcriptions'} not saved`,
 			short: 'Transcription not saved',
 			detail:
-				'The transcript is kept in this window. Open the recording and use Save it again.',
+				'The transcript is kept in this window. Use Save it again in the notice under the header.',
+			tone: 'error',
+		};
+	if (state.unsavedTransformations > 0)
+		return {
+			label: `${state.unsavedTransformations} transformation ${state.unsavedTransformations === 1 ? 'result' : 'results'} not saved`,
+			short: 'Result not saved',
+			detail:
+				'The text is kept in this window. Use Save it again in the notice under the header; the endpoint is not called again.',
 			tone: 'error',
 		};
 	if (state.problems > 0)
@@ -83,6 +93,28 @@ export function filesLine(state: {
 	if (state.unsaved)
 		return { label: 'Unsaved typing', short: 'Unsaved', tone: 'busy' };
 	return { label: 'All changes saved to files', short: 'Saved', tone: 'good' };
+}
+
+/** The files line for the product state, as the header shows it. */
+export function filesLineOf(library: {
+	readonly saving: boolean;
+	readonly saveProblems: number;
+	readonly unsaved: boolean;
+	readonly pending: readonly { readonly state: { readonly kind: string } }[];
+	readonly unsavedResults: number;
+	readonly unsavedTransformations: number;
+}): StatusLine {
+	return filesLine({
+		saving: library.saving,
+		problems: library.saveProblems,
+		unsaved: library.unsaved,
+		pendingCaptures: library.pending.length,
+		capturesSaving: library.pending.some(
+			(item) => item.state.kind === 'saving',
+		),
+		unsavedResults: library.unsavedResults,
+		unsavedTransformations: library.unsavedTransformations,
+	});
 }
 
 function changesLabel(count: number) {

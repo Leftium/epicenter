@@ -14,8 +14,9 @@
  * kept beside it for review. Nothing is overwritten until the person chooses
  * to keep theirs, take the saved one, or keep both.
  *
- * A recording's details and its Source view are two views of one draft, so an
- * edit in either is the same unsaved text.
+ * A row's details and its Source view are two views of one draft, so an edit
+ * in either is the same unsaved text. Recordings and transformations both edit
+ * this way.
  */
 import {
 	type Entry,
@@ -27,7 +28,11 @@ import {
 	sameVersion,
 } from '@epicenter/app/files';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { RECORDINGS, type RecordingFields } from './definition.js';
+import {
+	RECORDINGS,
+	type RecordingFields,
+	type TransformationFields,
+} from './definition.js';
 import { readTextFile } from './files.js';
 
 export type RecordingEntry = Entry<RecordingFields>;
@@ -71,7 +76,9 @@ export type Autosave = { paused: boolean };
 const TYPING_BATCH_MS = 400;
 
 export type Draft<T extends SavedText> = ReturnType<typeof createDraft<T>>;
-export type RecordingEditor = Draft<RecordingEntry>;
+export type RowEditor<TFields> = Draft<Entry<TFields>>;
+export type RecordingEditor = RowEditor<RecordingFields>;
+export type TransformationEditor = RowEditor<TransformationFields>;
 export type TextFileEditor = Draft<SavedText>;
 
 function createDraft<T extends SavedText>(
@@ -301,17 +308,23 @@ function copyKeeper(files: FolderFiles): DraftStore<SavedText>['keepCopy'] {
 	};
 }
 
-export function createRecordingEditor(
-	table: FileTable<RecordingFields>,
+/**
+ * An editor over one table row's Markdown source: a recording or a
+ * transformation. Saves are conditional writes of the whole source through the
+ * row's table, so fields the app does not know are kept as written.
+ */
+export function createRowEditor<TFields>(
+	table: FileTable<TFields>,
 	files: FolderFiles,
-	entry: RecordingEntry,
+	entry: Entry<TFields>,
 	autosave: Autosave,
 	onSaved: () => void,
-): RecordingEditor {
-	return createDraft<RecordingEntry>(
+): RowEditor<TFields> {
+	return createDraft<Entry<TFields>>(
 		{
 			write: (baseline, source) => table.writeSource(baseline, source),
-			read: (path) => table.get(stemOf(path)),
+			read: (path) =>
+				table.get(path.slice(table.name.length + 1, -'.md'.length)),
 			keepCopy: copyKeeper(files),
 		},
 		entry,
@@ -360,8 +373,8 @@ export function createTextFileEditor(
  * Change frontmatter fields or the body with the preparation table updates
  * use. Source the preparation cannot change safely is refused and kept as typed.
  */
-export function patchRecording(
-	editor: RecordingEditor,
+export function patchRow(
+	editor: Pick<TextFileEditor, 'buffer' | 'input' | 'refuse'>,
 	change: SourceChange,
 ): boolean {
 	const patched = patchSource(editor.buffer, change);

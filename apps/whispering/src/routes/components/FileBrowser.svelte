@@ -16,13 +16,18 @@
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
 	import MicIcon from '@lucide/svelte/icons/mic';
+	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { tick } from 'svelte';
 	import { basename, dirname, joinPath, type TreeRow, visibleRows } from '$lib/files.js';
 	import { audioMimeTypeOf } from '$lib/audio-format.js';
 	import type { Library } from '$lib/library.svelte.js';
 	import { confirmDelete, copyPath } from './file-actions.js';
 
-	let { library, onOpen }: { library: Library; onOpen?: () => void } = $props();
+	let { library, onOpen }: {
+		library: Library;
+		/** Called once a file is selected, so the shell can show the page it opens on. */
+		onOpen: (path: string) => void;
+	} = $props();
 
 	const rows = $derived(library.listing ? visibleRows(library.listing, library.expanded) : []);
 
@@ -51,8 +56,7 @@
 			else library.expanded.add(row.path);
 			return;
 		}
-		void library.open(row.path);
-		onOpen?.();
+		void library.open(row.path).then(() => onOpen(row.path));
 	}
 
 	function startCreate(directory: string, type: 'file' | 'folder') {
@@ -168,7 +172,7 @@
 			return;
 		}
 		editing = undefined;
-		if (current.kind === 'create' && current.type === 'file') onOpen?.();
+		if (current.kind === 'create' && current.type === 'file') onOpen(joinPath(directory, name));
 		await tick();
 		focusRow(joinPath(directory, name));
 	}
@@ -269,7 +273,7 @@
 			<Sidebar.Menu bind:ref={tree} class="gap-0.5" onkeydown={navigate}>
 				{@render createField('', 0)}
 				{#each rows as row (row.path)}
-					{@const selected = library.selectedPath === row.path}
+					{@const selected = library.selectedPath === row.path || library.selectedTransformationPath === row.path}
 					{@const open = row.kind === 'directory' && library.expanded.has(row.path)}
 					<Sidebar.MenuItem>
 						{#if editing?.kind === 'rename' && editing.path === row.path}
@@ -293,6 +297,8 @@
 												{#if open}<FolderOpenIcon />{:else}<FolderIcon />{/if}
 											{:else if library.isRecording(row.path)}
 												<MicIcon />
+											{:else if library.isTransformation(row.path)}
+												<WandSparklesIcon />
 										{:else if audioMimeTypeOf(row.path) !== undefined}
 											<AudioLinesIcon />
 											{:else if /\.(md|txt|json|ya?ml|csv)$/i.test(row.name) || row.name.startsWith('.')}

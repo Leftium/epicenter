@@ -10,7 +10,7 @@ import { openNativeFolder } from '@epicenter/app/files/native';
 import { expectOk } from 'wellcrafted/testing';
 import { whisperingDefinition } from './definition.js';
 
-const { createTextFileEditor, createRecordingEditor } = await import(
+const { createTextFileEditor, createRowEditor } = await import(
 	'./editor.svelte.ts'
 );
 const cleanup: (() => Promise<void>)[] = [];
@@ -102,7 +102,7 @@ test('a recording conflict read failure preserves typing instead of reporting re
 		}),
 	);
 	let blocked = true;
-	const editor = createRecordingEditor(
+	const editor = createRowEditor(
 		{
 			...table,
 			get: (stem) =>

@@ -10,12 +10,17 @@
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import SquareIcon from '@lucide/svelte/icons/square';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { Library } from '$lib/library.svelte.js';
+	import RecorderClock from './RecorderClock.svelte';
 	import {
 		commitLine,
 		commitOutcomeLine,
-		filesLine,
+		filesLineOf,
 		headLine,
 		type StatusLine,
 		summaryLine,
@@ -38,16 +43,10 @@
 	} = $props();
 
 	const workspace = $derived(library.workspace);
-	const files = $derived(
-		filesLine({
-			saving: library.saving,
-			problems: library.saveProblems,
-			unsaved: library.unsaved,
-			pendingCaptures: library.pending.length,
-			capturesSaving: library.pending.some((item) => item.state.kind === 'saving'),
-			unsavedResults: library.unsavedResults,
-		}),
-	);
+	const files = $derived(filesLineOf(library));
+	const recorder = $derived(library.recorder);
+	/** The home page has the large recorder; every other page gets this compact one. */
+	const onHome = $derived(page.route.id === '/');
 	const uncommitted = $derived(uncommittedLine(library.git));
 	const commit = $derived(commitLine(library.git));
 	const head = $derived(headLine(library.git));
@@ -139,9 +138,31 @@
 </script>
 
 <header class="flex h-12 shrink-0 items-center gap-1.5 border-b px-2 sm:gap-2 sm:px-3">
-	<h1 class="text-sm font-semibold max-sm:sr-only">Whispering</h1>
+	<!-- The sidebar names the app on a wide window; here it is the way home on a narrow one. -->
+	<a href={resolve('/')} class="rounded-sm text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring md:sr-only">Whispering</a>
 	{#if workspace.capture.source === 'fixture'}
 		<Badge variant="outline" class="shrink-0 border-warning text-warning" data-testid="fixture-badge">Fixture audio</Badge>
+	{/if}
+
+	<!-- A live recording is visible and stoppable from every page. -->
+	{#if recorder.phase === 'recording'}
+		<Button variant="destructive" size="sm" class="shrink-0" onclick={() => void library.stopRecording()} data-testid="header-stop-recording">
+			<SquareIcon class="fill-current" />
+			<span class="max-sm:sr-only">Stop</span>
+			<RecorderClock startedAt={recorder.startedAt} />
+		</Button>
+	{:else if recorder.phase !== 'idle'}
+		<span class="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" role="status">
+			<Spinner class="size-3.5" />
+			{recorder.phase === 'starting' ? 'Starting…' : 'Finishing…'}
+		</span>
+	{:else if !onHome}
+		<Button variant="ghost" size="icon-sm" tooltip="Start recording" aria-label="Start recording" onclick={() => void library.startRecording()} data-testid="header-start-recording">
+			<MicIcon />
+		</Button>
+	{/if}
+	{#if library.recorderError && !onHome}
+		<span class="min-w-0 truncate text-xs text-destructive" role="alert" title={library.recorderError}>{library.recorderError}</span>
 	{/if}
 
 	<Popover.Root>
@@ -276,6 +297,7 @@
 					</label>
 					<p class="text-xs text-muted-foreground">
 						{workspace.credential.readOnlyReason ?? `Kept in ${workspace.credential.storedIn}.`}
+						Transformations send this same key to the endpoint each one names.
 					</p>
 					{#if library.settingsProblem}
 						<p class="text-xs text-destructive" role="alert">kv.json: {library.settingsProblem}</p>
@@ -297,7 +319,7 @@
 		<Button
 			variant={filesOpen ? 'secondary' : 'ghost'}
 			size="sm"
-			tooltip={filesOpen ? 'Hide files (Ctrl+B)' : 'Show files (Ctrl+B)'}
+			tooltip={filesOpen ? 'Hide files (Ctrl+Shift+E)' : 'Show files (Ctrl+Shift+E)'}
 			aria-pressed={filesOpen}
 			onclick={onToggleFiles}
 			data-testid="toggle-files"

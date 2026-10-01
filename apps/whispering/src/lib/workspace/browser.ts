@@ -19,6 +19,10 @@ import {
 	whisperingDefinition,
 } from '../definition.js';
 import { requestTranscription, TranscriptionError } from '../transcription.js';
+import {
+	requestTransformation,
+	TransformationError,
+} from '../transformation.js';
 import type { Workspace } from './types.js';
 
 const KEY_STORAGE = 'whispering.transcriptionApiKey';
@@ -75,6 +79,21 @@ export async function openBrowserWorkspace(): Promise<Workspace> {
 				},
 			});
 		},
+		async transform(request) {
+			const answered = await requestTransformation({
+				...request,
+				apiKey: localStorage.getItem(KEY_STORAGE) ?? '',
+			});
+			// A browser reports a refused cross-origin request only as a failed
+			// fetch, so say what a tab needs that the desktop app does not.
+			if (answered.error?.name === 'Unreachable')
+				return TransformationError.Unreachable({
+					url: answered.error.url,
+					reason: `${answered.error.reason}. In a browser tab the endpoint must allow requests from ${location.origin} (CORS). The desktop app sends from its folder host and has no such limit`,
+				});
+			return answered;
+		},
+		transformNote: `Requests are sent from this browser tab with the same API key as transcription, so the endpoint must allow requests from ${location.origin} (CORS). Most hosted providers refuse that; a local endpoint or the desktop app works.`,
 		closing: undefined,
 		credential: {
 			storedIn: 'this browser’s local storage for this site',

@@ -2,15 +2,16 @@
  * The Whispering product state over one opened workspace.
  *
  * Everything shown is an observation of the folder's current files: the
- * recording rows, their transcription results, the settings in `kv.json`, and
- * the listing the file browser shows. They refresh together after saves,
- * terminal commands, window focus, and any change another program makes. The
- * selection is a path; editors are retained per path so a selection change
- * never discards a draft.
+ * recording rows, their transcription results, the transformations and their
+ * results, the settings in `kv.json`, and the listing the file browser shows.
+ * They refresh together after saves, terminal commands, window focus, and any
+ * change another program makes. A selection is a path; editors are retained
+ * per path so a selection change never discards a draft.
  *
- * Two things live only in this window until they reach the folder: unsaved
- * typing, and captured audio that has not been fully published. Both are kept
- * across failures and both block leaving the page.
+ * Three things live only in this window until they reach the folder: unsaved
+ * typing, captured audio that has not been fully published, and text an
+ * endpoint returned whose file is not written yet. All are kept across
+ * failures and all block leaving the app.
  *
  * Git status comes from the folder's shared snapshot; this module adds no
  * status cache of its own. A save and its commit are separate outcomes.
@@ -35,17 +36,23 @@ import {
 	RECORDINGS,
 	type RecordingFields,
 	recordingIdOf,
+	TRANSCRIPTION_ROW,
+	TRANSCRIPTIONS,
+	TRANSFORMATION_ROW,
 	type TranscriptionFields,
 	type TranscriptionSettings,
+	type TransformationFields,
+	type TransformationRunFields,
 } from './definition.js';
 import {
 	type Autosave,
-	createRecordingEditor,
+	createRowEditor,
 	createTextFileEditor,
 	type RecordingEditor,
 	type RecordingEntry,
 	stemOf,
 	type TextFileEditor,
+	type TransformationEditor,
 } from './editor.svelte.js';
 import {
 	ancestorsOf,
@@ -65,8 +72,10 @@ import type { Workspace } from './workspace/index.js';
 
 export type Library = ReturnType<typeof createLibrary>;
 export type TranscriptionEntry = Entry<TranscriptionFields>;
+export type TransformationEntry = Entry<TransformationFields>;
+export type TransformationRunEntry = Entry<TransformationRunFields>;
 
-/** A raw file the person opened. Recording rows open as recording editors instead. */
+/** A raw file the person opened. Recording and transformation rows open as row editors instead. */
 export type OpenFile =
 	| { readonly kind: 'loading' }
 	| { readonly kind: 'failed'; readonly message: string }
@@ -89,6 +98,14 @@ export type Deletion =
 			readonly kind: 'recording';
 			readonly entry: RecordingEntry;
 			readonly results: readonly TranscriptionEntry[];
+			/** Transformation results made from this recording's transcripts. */
+			readonly outputs: readonly TransformationRunEntry[];
+	  }
+	| {
+			readonly kind: 'transformation';
+			readonly entry: TransformationEntry;
+			/** How many saved results name it. They are kept. */
+			readonly results: number;
 	  }
 	| {
 			readonly kind: 'file';
@@ -138,11 +155,37 @@ export type TranscriptionRun =
 			readonly fields: TranscriptionFields;
 	  };
 
+/**
+ * One application of a transformation to a transcript, until its result row
+ * is saved. `id` is the result row's stem and `fields` is exactly what the row
+ * will hold; both are fixed when the run starts, so a retry of either the
+ * request or the save lands in the same file and never makes a second result.
+ */
+export type TransformationRun = {
+	readonly id: string;
+	readonly fields: TransformationRunFields;
+	readonly state:
+		| { readonly kind: 'running' }
+		/** Nothing was received. Trying again sends the same request. */
+		| { readonly kind: 'failed'; readonly message: string }
+		/** The endpoint answered, but the result row could not be written. */
+		| {
+				readonly kind: 'unsaved';
+				readonly message: string;
+				readonly text: string;
+		  };
+};
+
 const UNSETTLED = 'Save or discard the open edits first.';
 const RECORDING_NAME =
 	'A recording’s files are named by its ID, which its transcription results refer to. Change the title instead.';
+const TRANSFORMATION_NAME =
+	'A transformation’s file is named by its ID, which its saved results refer to. Change the title instead.';
 
 const suffix = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 4);
+
+const describe = (cause: unknown) =>
+	cause instanceof Error ? cause.message : String(cause);
 
 /** A sortable id from the capture time: `20260102-030405-k3f9`. */
 export function recordingId(at: Date): string {
@@ -172,15 +215,41 @@ function describeWriteError(error: TableWriteError): string {
 	return error.message;
 }
 
+/**
+ * Whether a row already at a run's path is that run's own result: a valid row
+ * with the same body and every field of the run's snapshot. A row that differs
+ * in any of them (another prompt, model, endpoint, transcript, or source) is
+ * someone else's file. Fields the app does not declare are not part of the
+ * snapshot, so extra ones do not make it a different result.
+ */
+function isThisResult(
+	existing: TransformationRunEntry,
+	run: TransformationRun,
+	body: string,
+): boolean {
+	if (existing.issues !== undefined || existing.body !== body) return false;
+	const saved: Readonly<Record<string, unknown>> = existing.fields;
+	return Object.entries(run.fields).every(([key, value]) => saved[key] === value);
+}
+
 export function createLibrary(workspace: Workspace) {
 	const { folder } = workspace;
 	const table = folder.tables.recordings;
 	const results = folder.tables.transcriptions;
+	const profiles = folder.tables.transformations;
+	const outputs = folder.tables.transformation_runs;
 
 	let entries = $state.raw<RecordingEntry[]>([]);
 	let transcriptions = $state.raw<TranscriptionEntry[]>([]);
 	let unreadable = $state.raw<{ path: string; message: string }[]>([]);
 	let listError = $state<string | undefined>();
+	let transformations = $state.raw<TransformationEntry[]>([]);
+	let transformationResults = $state.raw<TransformationRunEntry[]>([]);
+	let unreadableTransformations = $state.raw<
+		{ path: string; message: string }[]
+	>([]);
+	let transformationsError = $state<string | undefined>();
+	let selectedTransformationPath = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
 	let git = $state.raw<GitSnapshot>(folder.git.snapshot);
@@ -202,8 +271,14 @@ export function createLibrary(workspace: Workspace) {
 	const recordingEditors = new SvelteMap<string, RecordingEditor>();
 	const openFiles = new SvelteMap<string, OpenFile>();
 	const runs = new SvelteMap<string, TranscriptionRun>();
+	const transformationEditors = new SvelteMap<string, TransformationEditor>();
+	/** Keyed by the result row's stem. */
+	const transformationRuns = new SvelteMap<string, TransformationRun>();
 
 	const rowPaths = $derived(new Set(entries.map((entry) => entry.path)));
+	const transformationPaths = $derived(
+		new Set(transformations.map((entry) => entry.path)),
+	);
 	const settings = $derived<TranscriptionSettings>({
 		...workspace.initialSettings,
 		...kv?.values,
@@ -232,10 +307,13 @@ export function createLibrary(workspace: Workspace) {
 		return file?.kind === 'text' ? file.editor : undefined;
 	}
 
-	function allEditors(): (RecordingEditor | TextFileEditor)[] {
-		const editors: (RecordingEditor | TextFileEditor)[] = [
-			...recordingEditors.values(),
-		];
+	function allEditors(): (
+		| RecordingEditor
+		| TransformationEditor
+		| TextFileEditor
+	)[] {
+		const editors: (RecordingEditor | TransformationEditor | TextFileEditor)[] =
+			[...recordingEditors.values(), ...transformationEditors.values()];
 		for (const file of openFiles.values())
 			if (file.kind === 'text') editors.push(file.editor);
 		return editors;
@@ -284,15 +362,54 @@ export function createLibrary(workspace: Workspace) {
 		}
 	}
 
+	/** By title; a row whose title cannot be read sorts by its file name. */
+	function sortTransformations(list: readonly TransformationEntry[]) {
+		const key = (entry: TransformationEntry) =>
+			typeof entry.fields.title === 'string' && entry.fields.title !== ''
+				? entry.fields.title
+				: entry.path;
+		return [...list].sort(
+			(a, b) =>
+				key(a).localeCompare(key(b), undefined, { sensitivity: 'base' }) ||
+				(a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+		);
+	}
+
 	async function refresh() {
 		const sequence = ++refreshSequence;
-		const [rows, found, files, kvRead] = await Promise.all([
-			table.list(),
-			results.list(),
-			folder.files.list(),
-			folder.kv.get(),
-		]);
+		const [rows, found, files, kvRead, profileRows, outputRows] =
+			await Promise.all([
+				table.list(),
+				results.list(),
+				folder.files.list(),
+				folder.kv.get(),
+				profiles.list(),
+				outputs.list(),
+			]);
 		if (sequence !== refreshSequence) return;
+		if (profileRows.error) {
+			transformationsError = profileRows.error.message;
+		} else {
+			transformationsError = undefined;
+			transformations = sortTransformations(profileRows.data.entries);
+			unreadableTransformations = profileRows.data.unreadable.map((item) => ({
+				path: item.path,
+				message: item.error.message,
+			}));
+			for (const entry of profileRows.data.entries)
+				transformationEditors.get(entry.path)?.observe(entry);
+			const present = new Set([
+				...profileRows.data.entries.map((entry) => entry.path),
+				...profileRows.data.unreadable.map((entry) => entry.path),
+			]);
+			for (const [path, editor] of transformationEditors) {
+				if (present.has(path)) continue;
+				if (!editor.dirty && editor.saveState.kind === 'saved') forget(path);
+				else editor.observeRemoved();
+			}
+		}
+		if (outputRows.error === null)
+			transformationResults = [...outputRows.data.entries];
 		if (rows.error) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
 			listError = rows.error.message;
@@ -338,7 +455,7 @@ export function createLibrary(workspace: Workspace) {
 	function editorFor(entry: RecordingEntry): RecordingEditor {
 		let editor = recordingEditors.get(entry.path);
 		if (editor === undefined) {
-			editor = createRecordingEditor(
+			editor = createRowEditor(
 				table,
 				folder.files,
 				entry,
@@ -350,10 +467,45 @@ export function createLibrary(workspace: Workspace) {
 		return editor;
 	}
 
-	/** Select a path: a recording row opens its editor, audio opens a player, other files open as text or details. */
+	function transformationEditorFor(
+		entry: TransformationEntry,
+	): TransformationEditor {
+		let editor = transformationEditors.get(entry.path);
+		if (editor === undefined) {
+			editor = createRowEditor(
+				profiles,
+				folder.files,
+				entry,
+				autosave,
+				() => void refresh(),
+			);
+			transformationEditors.set(entry.path, editor);
+		}
+		return editor;
+	}
+
+	/**
+	 * Select a path: a recording or transformation row opens its editor, audio
+	 * opens a player, other files open as text or details. A transformation has
+	 * its own selection, so opening one leaves the selected recording alone.
+	 */
 	async function open(path: string) {
-		selectedPath = path;
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
+		if (TRANSFORMATION_ROW.test(path)) {
+			let profile = transformations.find((item) => item.path === path);
+			if (profile === undefined && !transformationEditors.has(path)) {
+				// The list may predate a row written by the terminal or another program.
+				await refresh();
+				profile = transformations.find((item) => item.path === path);
+			}
+			if (profile !== undefined) transformationEditorFor(profile);
+			if (transformationEditors.has(path)) {
+				selectedTransformationPath = path;
+				return;
+			}
+			// Not a readable row: fall through and show it as a raw file.
+		}
+		selectedPath = path;
 		const known = openFiles.get(path);
 		if (
 			recordingEditors.has(path) ||
@@ -400,6 +552,10 @@ export function createLibrary(workspace: Workspace) {
 	function forget(path: string) {
 		recordingEditors.get(path)?.dispose();
 		recordingEditors.delete(path);
+		transformationEditors.get(path)?.dispose();
+		transformationEditors.delete(path);
+		if (selectedTransformationPath === path)
+			selectedTransformationPath = undefined;
 		const file = openFiles.get(path);
 		if (file?.kind === 'text') file.editor.dispose();
 		openFiles.delete(path);
@@ -472,6 +628,18 @@ export function createLibrary(workspace: Workspace) {
 			);
 		if (transcripts.some((run) => run.kind === 'running'))
 			held.push('A transcription is still running; its result would be lost.');
+		const transforming = [...transformationRuns.values()];
+		const unsavedOutputs = transforming.filter(
+			(run) => run.state.kind === 'unsaved',
+		).length;
+		if (unsavedOutputs > 0)
+			held.push(
+				unsavedOutputs === 1
+					? '1 transformation result arrived but its file is not saved.'
+					: `${unsavedOutputs} transformation results arrived but their files are not saved.`,
+			);
+		if (transforming.some((run) => run.state.kind === 'running'))
+			held.push('A transformation is still running; its result would be lost.');
 		const unsettled = allEditors().filter(
 			(editor) => editor.dirty || editor.saveState.kind !== 'saved',
 		);
@@ -560,21 +728,197 @@ export function createLibrary(workspace: Workspace) {
 		fields: TranscriptionFields,
 		text: string,
 	) {
-		const created = await results.create({
-			fields,
-			body: text.endsWith('\n') ? text : `${text}\n`,
-		});
-		if (created.error) {
-			runs.set(recording, {
-				kind: 'unsaved',
-				message: describeWriteError(created.error),
-				text,
+		const unsaved = (message: string) =>
+			runs.set(recording, { kind: 'unsaved', message, text, fields });
+		// A write that throws (the folder host went away) must not lose the text.
+		let created: Awaited<ReturnType<typeof results.create>>;
+		try {
+			created = await results.create({
 				fields,
+				body: text.endsWith('\n') ? text : `${text}\n`,
 			});
+		} catch (cause) {
+			unsaved(describe(cause));
+			return;
+		}
+		if (created.error) {
+			unsaved(describeWriteError(created.error));
 			return;
 		}
 		runs.delete(recording);
 		await refreshAll();
+	}
+
+	// --- transformations ----------------------------------------------------
+
+	/**
+	 * Write a received result as `transformation_runs/<run.id>.md`. The row is
+	 * created, never updated, so the transcript it came from is untouched. If an
+	 * earlier attempt already wrote this exact result, it is recognized and not
+	 * written twice; any other file at that path is left as it is.
+	 */
+	async function saveRun(run: TransformationRun, text: string) {
+		const unsaved = (message: string) =>
+			transformationRuns.set(run.id, {
+				...run,
+				state: { kind: 'unsaved', message, text },
+			});
+		const body = text.endsWith('\n') ? text : `${text}\n`;
+		try {
+			const existing = await outputs.get(run.id);
+			if (existing.error) {
+				unsaved(existing.error.message);
+				return;
+			}
+			if (existing.data === undefined) {
+				const created = await outputs.create({
+					stem: run.id,
+					fields: run.fields,
+					body,
+				});
+				if (created.error) {
+					unsaved(describeWriteError(created.error));
+					return;
+				}
+			} else if (!isThisResult(existing.data, run, body)) {
+				unsaved(
+					`${existing.data.path} already exists and is not this result. Nothing was overwritten.`,
+				);
+				return;
+			}
+		} catch (cause) {
+			unsaved(describe(cause));
+			return;
+		}
+		transformationRuns.delete(run.id);
+		await refreshAll();
+	}
+
+	/** Recordings whose deletion is under way. No request starts for one. */
+	const deleting = new Set<string>();
+	const BEING_DELETED = 'This recording is being deleted.';
+
+	/**
+	 * Why a recording cannot be deleted now, or undefined. A request still
+	 * running, or an answer that is not saved yet, would otherwise write a row
+	 * that names a recording that is gone. A failed run holds nothing and does
+	 * not block; it is dropped with the recording.
+	 */
+	function recordingBusy(id: string): string | undefined {
+		const transcript = runs.get(id);
+		if (transcript?.kind === 'running')
+			return 'A transcription of this recording is still running. Wait for it to finish, then delete the recording.';
+		if (transcript?.kind === 'unsaved')
+			return 'A transcript of this recording arrived but its file is not saved. Save it again or discard it in the notice under the header, then delete the recording.';
+		const own = [...transformationRuns.values()].filter(
+			(run) => run.fields.recordingId === id,
+		);
+		if (own.some((run) => run.state.kind === 'running'))
+			return 'A transformation of this recording’s transcript is still running. Wait for it to finish, then delete the recording.';
+		if (own.some((run) => run.state.kind === 'unsaved'))
+			return 'A transformation result for this recording arrived but its file is not saved. Save it again or discard it in the notice under the header, then delete the recording.';
+		return undefined;
+	}
+
+	/**
+	 * What a transformation is made from, read from the folder now: the
+	 * transcript's saved text and the recording it names. A list entry a caller
+	 * holds may predate an edit or a deletion, so nothing is taken from one.
+	 * Open edits to the transcript's file are saved first; edits that cannot be
+	 * saved refuse, so what is sent is never text the folder does not have.
+	 */
+	async function transformationSource(
+		transcriptionPath: string,
+	): Promise<
+		Result<{ transcriptionId: string; recordingId: string; input: string }, string>
+	> {
+		const transcriptionId = TRANSCRIPTION_ROW.exec(transcriptionPath)?.[1];
+		if (transcriptionId === undefined)
+			return Err(`${transcriptionPath} is not a transcript.`);
+		const editor = textEditorAt(transcriptionPath);
+		if (editor !== undefined && !(await editor.settle()))
+			return Err(
+				`${transcriptionPath} has edits that are not saved. Resolve them in its file, then run this again.`,
+			);
+		const read = await results.get(transcriptionId);
+		if (read.error) return Err(read.error.message);
+		const transcription = read.data;
+		if (transcription === undefined)
+			return Err('This transcript is no longer in the folder.');
+		if (transcription.issues !== undefined)
+			return Err(
+				`${transcription.path} needs repair before it can be transformed. Fix it from Files.`,
+			);
+		if (transcription.body.trim() === '')
+			return Err('This transcript has no text to transform.');
+		const { recordingId } = transcription.fields;
+		const recording = await table.get(recordingId);
+		if (recording.error) return Err(recording.error.message);
+		if (recording.data === undefined)
+			return Err(
+				'The recording this transcript was made from is no longer in the folder.',
+			);
+		if (deleting.has(recordingId)) return Err(BEING_DELETED);
+		return Ok({ transcriptionId, recordingId, input: transcription.body });
+	}
+
+	/** One request for a run. It always ends: saved, unsaved with its text, or failed. */
+	async function sendRun(run: TransformationRun) {
+		transformationRuns.set(run.id, { ...run, state: { kind: 'running' } });
+		const failed = (message: string) =>
+			transformationRuns.set(run.id, {
+				...run,
+				state: { kind: 'failed', message },
+			});
+		let answered: Awaited<ReturnType<Workspace['transform']>>;
+		try {
+			answered = await workspace.transform({
+				baseUrl: run.fields.endpoint,
+				model: run.fields.model,
+				prompt: run.fields.prompt,
+				input: run.fields.input,
+			});
+		} catch (cause) {
+			failed(
+				`The transformation request could not be made: ${describe(cause)}`,
+			);
+			return;
+		}
+		if (answered.error) {
+			failed(answered.error.message);
+			return;
+		}
+		await saveRun(run, answered.data.text);
+	}
+
+	/** Settle input, then read the saved transformation an operation acts on. */
+	async function transformationForOperation(
+		path: string,
+	): Promise<Result<TransformationEntry, string>> {
+		const editor = transformationEditors.get(path);
+		if (editor !== undefined && !(await editor.settle())) return Err(UNSETTLED);
+		const stem = TRANSFORMATION_ROW.exec(path)?.[1];
+		if (stem === undefined) return Err(`${path} is not a transformation.`);
+		const read = await profiles.get(stem);
+		if (read.error) return Err(read.error.message);
+		if (read.data === undefined)
+			return Err('This transformation is no longer in the folder.');
+		if (
+			editor !== undefined &&
+			!sameVersion(read.data.version, editor.baseline.version)
+		)
+			return Err('The file changed after it was read. Check it and try again.');
+		return Ok(read.data);
+	}
+
+	function byNewest<TEntry extends { fields: { createdAt?: unknown } }>(
+		list: readonly TEntry[],
+	): TEntry[] {
+		return [...list].sort((a, b) =>
+			String(b.fields.createdAt ?? '').localeCompare(
+				String(a.fields.createdAt ?? ''),
+			),
+		);
 	}
 
 	return {
@@ -639,16 +983,76 @@ export function createLibrary(workspace: Workspace) {
 		},
 		/** Results made from one recording, newest first. */
 		resultsFor(id: string): TranscriptionEntry[] {
-			return transcriptions
-				.filter((entry) => entry.fields.recordingId === id)
-				.sort((a, b) =>
-					String(b.fields.createdAt ?? '').localeCompare(
-						String(a.fields.createdAt ?? ''),
-					),
-				);
+			return byNewest(
+				transcriptions.filter((entry) => entry.fields.recordingId === id),
+			);
 		},
 		transcriptionRun(id: string) {
 			return runs.get(id);
+		},
+		/** Recordings waiting on a transcript whose file is not saved, by recording ID. */
+		get unsavedTranscripts(): string[] {
+			return [...runs]
+				.filter(([, run]) => run.kind === 'unsaved')
+				.map(([id]) => id);
+		},
+
+		/** Saved transformations, by title. Rows that need repair are included. */
+		get transformations() {
+			return transformations;
+		},
+		get transformationsError() {
+			return transformationsError;
+		},
+		get unreadableTransformations() {
+			return unreadableTransformations;
+		},
+		isTransformation(path: string) {
+			return transformationPaths.has(path) || transformationEditors.has(path);
+		},
+		get selectedTransformationPath() {
+			return selectedTransformationPath;
+		},
+		/** The transformation being edited, with its listed row when it is still in the folder. */
+		get selectedTransformation() {
+			const path = selectedTransformationPath;
+			if (path === undefined) return undefined;
+			const editor = transformationEditors.get(path);
+			return (
+				editor && {
+					editor,
+					entry: transformations.find((entry) => entry.path === path),
+				}
+			);
+		},
+		/** Every saved transformation result, newest first. */
+		get transformationResults() {
+			return byNewest(transformationResults);
+		},
+		/** Saved results made from one transcription, newest first. */
+		outputsFor(transcriptionId: string): TransformationRunEntry[] {
+			return byNewest(
+				transformationResults.filter(
+					(entry) => entry.fields.transcriptionId === transcriptionId,
+				),
+			);
+		},
+		/** Saved results one transformation produced, newest first. They outlive it. */
+		outputsOf(transformationId: string): TransformationRunEntry[] {
+			return byNewest(
+				transformationResults.filter(
+					(entry) => entry.fields.transformationId === transformationId,
+				),
+			);
+		},
+		/** Runs that are not saved results yet: running, failed, or received and unsaved. */
+		get transformationRuns(): TransformationRun[] {
+			return [...transformationRuns.values()];
+		},
+		get unsavedTransformations() {
+			return [...transformationRuns.values()].filter(
+				(run) => run.state.kind === 'unsaved',
+			).length;
 		},
 		/** Rises once per completed folder refresh. */
 		get generation() {
@@ -662,6 +1066,9 @@ export function createLibrary(workspace: Workspace) {
 		get unsaved() {
 			return (
 				[...runs.values()].some((run) => run.kind === 'unsaved') ||
+				[...transformationRuns.values()].some(
+					(run) => run.state.kind === 'unsaved',
+				) ||
 				allEditors().some(
 					(editor) => editor.dirty || editor.saveState.kind !== 'saved',
 				)
@@ -712,7 +1119,10 @@ export function createLibrary(workspace: Workspace) {
 		},
 		/** Explicitly discard a retained conflict whose saved file is gone. */
 		discardRemoved(path: string) {
-			const editor = recordingEditors.get(path) ?? textEditorAt(path);
+			const editor =
+				recordingEditors.get(path) ??
+				transformationEditors.get(path) ??
+				textEditorAt(path);
 			if (
 				editor?.saveState.kind === 'conflict' &&
 				editor.saveState.current === undefined
@@ -767,6 +1177,8 @@ export function createLibrary(workspace: Workspace) {
 		async transcribe(entry: RecordingEntry) {
 			const id = entry.stem;
 			if (id === undefined || runs.get(id)?.kind === 'running') return;
+			// Its transcript would name a recording that is on its way out.
+			if (deleting.has(id)) return;
 			if (entry.attachment === undefined) {
 				runs.set(id, {
 					kind: 'failed',
@@ -822,6 +1234,131 @@ export function createLibrary(workspace: Workspace) {
 			return removed.error ? describeWriteError(removed.error) : undefined;
 		},
 
+		/**
+		 * A new transformation file. The endpoint and model are copied from a
+		 * transformation already in the folder. With none, the endpoint is the
+		 * transcription endpoint and the model is left empty, since only the
+		 * person knows which chat model that endpoint serves.
+		 */
+		async createTransformation({
+			title,
+			prompt,
+		}: {
+			title: string;
+			prompt: string;
+		}): Promise<string | undefined> {
+			const like = transformations.find((entry) => entry.issues === undefined);
+			const created = await profiles.create({
+				fields: {
+					title,
+					model: like?.fields.model ?? '',
+					endpoint: like?.fields.endpoint ?? settings.transcriptionBaseUrl,
+				},
+				body: prompt,
+			});
+			if (created.error) return describeWriteError(created.error);
+			await refreshAll();
+			transformationEditorFor(created.data);
+			selectedTransformationPath = created.data.path;
+			return undefined;
+		},
+		/**
+		 * Apply a saved transformation to a saved transcript, both named by path.
+		 * What is sent is each file as the folder has it now, read here: the
+		 * transformation's prompt and the transcript's text. The answer becomes a
+		 * new row; the transcript row is never written. A reason is returned when
+		 * nothing was sent.
+		 */
+		async transform(
+			transcriptionPath: string,
+			transformationPath: string,
+		): Promise<string | undefined> {
+			const read = await transformationForOperation(transformationPath);
+			if (read.error !== null) return read.error;
+			const profile = read.data;
+			if (profile.issues !== undefined)
+				return 'This transformation needs repair before it can run. Fix it in Source.';
+			if (profile.fields.endpoint.trim() === '')
+				return 'This transformation has no endpoint. Add one, then run it.';
+			if (profile.fields.model.trim() === '')
+				return 'This transformation has no model. Add one, then run it.';
+			if (profile.body.trim() === '')
+				return 'This transformation has no prompt. Write one, then run it.';
+			const source = await transformationSource(transcriptionPath);
+			if (source.error !== null) return source.error;
+			// From this check to the run being listed there is no await, so a
+			// deletion either sees this run or is seen here.
+			if (deleting.has(source.data.recordingId)) return BEING_DELETED;
+			const at = new Date();
+			await sendRun({
+				id: recordingId(at),
+				fields: {
+					recordingId: source.data.recordingId,
+					transcriptionId: source.data.transcriptionId,
+					transformationId: profile.stem,
+					transformationTitle: profile.fields.title,
+					createdAt: at.toISOString(),
+					model: profile.fields.model.trim(),
+					endpoint: profile.fields.endpoint.trim(),
+					prompt: profile.body,
+					input: source.data.input,
+				} as TransformationRunFields,
+				state: { kind: 'running' },
+			});
+			return undefined;
+		},
+		/**
+		 * Finish a run that did not end as a saved result. A failed request is
+		 * sent again as it was, but only while the folder still has what it was
+		 * made from: the same transcript text, for a recording that is still
+		 * there. Otherwise it stays failed and says why. A received result is
+		 * only saved again: the endpoint is not called, and the file keeps the
+		 * name it was given.
+		 */
+		async retryTransformation(id: string) {
+			const run = transformationRuns.get(id);
+			if (run === undefined) return;
+			if (run.state.kind === 'unsaved') {
+				await saveRun(run, run.state.text);
+				return;
+			}
+			if (run.state.kind !== 'failed') return;
+			const refuse = (message: string) =>
+				transformationRuns.set(id, {
+					...run,
+					state: { kind: 'failed', message },
+				});
+			const source = await transformationSource(
+				`${TRANSCRIPTIONS}/${run.fields.transcriptionId}.md`,
+			);
+			if (source.error !== null) {
+				refuse(`${source.error} Dismiss this run.`);
+				return;
+			}
+			if (
+				source.data.input !== run.fields.input ||
+				source.data.recordingId !== run.fields.recordingId
+			) {
+				refuse(
+					'The transcript changed after this run started, so the same request was not sent again. Dismiss this run and run the transformation again.',
+				);
+				return;
+			}
+			await sendRun(run);
+		},
+		/** Drop a run that is not running. A received result that was not saved is lost. */
+		discardTransformationRun(id: string) {
+			if (transformationRuns.get(id)?.state.kind !== 'running')
+				transformationRuns.delete(id);
+		},
+		async deleteTransformationResult(
+			entry: TransformationRunEntry,
+		): Promise<string | undefined> {
+			const removed = await outputs.delete(entry);
+			await refreshAll();
+			return removed.error ? describeWriteError(removed.error) : undefined;
+		},
+
 		/** Save folder settings to `kv.json`; a file changed elsewhere is reread once. */
 		async saveSettings(
 			values: Partial<TranscriptionSettings>,
@@ -860,6 +1397,8 @@ export function createLibrary(workspace: Workspace) {
 			if (to === path) return undefined;
 			if (rowPaths.has(path) || recordingEditors.has(path))
 				return RECORDING_NAME;
+			if (transformationPaths.has(path) || transformationEditors.has(path))
+				return TRANSFORMATION_NAME;
 			const owner = entries.find((entry) => entry.attachment === path);
 			if (owner !== undefined) return RECORDING_NAME;
 			return renameFile(path, to);
@@ -921,12 +1460,29 @@ export function createLibrary(workspace: Workspace) {
 				const entry = await recordingForOperation(path);
 				if (entry.error !== null) return entry;
 				const id = recordingIdOf(path);
+				const busy = id === undefined ? undefined : recordingBusy(id);
+				if (busy !== undefined) return Err(busy);
 				return Ok({
 					kind: 'recording',
 					entry: entry.data,
 					results: transcriptions.filter(
 						(result) => result.fields.recordingId === id,
 					),
+					outputs: transformationResults.filter(
+						(result) => result.fields.recordingId === id,
+					),
+				});
+			}
+			if (transformationEditors.has(path) || transformationPaths.has(path)) {
+				const entry = await transformationForOperation(path);
+				if (entry.error !== null) return entry;
+				const id = entry.data.stem;
+				return Ok({
+					kind: 'transformation',
+					entry: entry.data,
+					results: transformationResults.filter(
+						(result) => result.fields.transformationId === id,
+					).length,
 				});
 			}
 			const text = textEditorAt(path);
@@ -945,31 +1501,77 @@ export function createLibrary(workspace: Workspace) {
 				await refresh();
 				return removed.error ? describeWriteError(removed.error) : undefined;
 			}
-			const path =
-				deletion.kind === 'recording' ? deletion.entry.path : deletion.path;
+			const path = deletion.kind === 'file' ? deletion.path : deletion.entry.path;
 			// The confirmation is modal, but a save may have started or failed since the capture.
-			const editor = recordingEditors.get(path) ?? textEditorAt(path);
+			const editor =
+				recordingEditors.get(path) ??
+				transformationEditors.get(path) ??
+				textEditorAt(path);
 			if (editor && (editor.dirty || editor.saveState.kind !== 'saved'))
 				return UNSETTLED;
-			const removed =
-				deletion.kind === 'recording'
-					? await table.delete(deletion.entry)
-					: await folder.files.remove(path, { expected: deletion.version });
-			if (removed.error) {
+			if (deletion.kind !== 'recording') {
+				// A transformation's saved results are separate files and stay.
+				const removed =
+					deletion.kind === 'transformation'
+						? await profiles.delete(deletion.entry)
+						: await folder.files.remove(path, { expected: deletion.version });
+				if (removed.error) {
+					await refreshAll();
+					return describeWriteError(removed.error);
+				}
+				forget(path);
 				await refreshAll();
-				return describeWriteError(removed.error);
+				return undefined;
 			}
-			forget(path);
-			const leftovers: string[] = [];
-			if (deletion.kind === 'recording')
+
+			// Work may have started or finished since the person was asked. A
+			// request that is running, or an answer not saved yet, would write a
+			// row naming this recording after it is gone; a result saved since is
+			// one the person did not agree to delete.
+			const id = recordingIdOf(path);
+			if (id === undefined) return `${path} is not a recording.`;
+			if (deleting.has(id)) return BEING_DELETED;
+			const busy = recordingBusy(id);
+			if (busy !== undefined) return busy;
+			const confirmed = new Set(
+				[...deletion.results, ...deletion.outputs].map((row) => row.path),
+			);
+			const unconfirmed = [...transcriptions, ...transformationResults].some(
+				(row) => row.fields.recordingId === id && !confirmed.has(row.path),
+			);
+			if (unconfirmed)
+				return 'A new result was saved for this recording after you were asked. Check it, then delete the recording again.';
+			// From here until the rows are gone, nothing new starts for it: there
+			// is no await between the checks above and this.
+			deleting.add(id);
+			try {
+				const removed = await table.delete(deletion.entry);
+				if (removed.error) {
+					await refreshAll();
+					return describeWriteError(removed.error);
+				}
+				forget(path);
+				// What failed for this recording held nothing, and has nothing left to retry against.
+				if (runs.get(id)?.kind === 'failed') runs.delete(id);
+				for (const run of [...transformationRuns.values()])
+					if (run.fields.recordingId === id && run.state.kind === 'failed')
+						transformationRuns.delete(run.id);
+				const leftovers: string[] = [];
 				for (const result of deletion.results) {
 					const gone = await results.delete(result);
 					if (gone.error) leftovers.push(result.path);
 				}
-			await refreshAll();
-			return leftovers.length > 0
-				? `The recording was deleted, but these results could not be: ${leftovers.join(', ')}`
-				: undefined;
+				for (const output of deletion.outputs) {
+					const gone = await outputs.delete(output);
+					if (gone.error) leftovers.push(output.path);
+				}
+				await refreshAll();
+				return leftovers.length > 0
+					? `The recording was deleted, but these results could not be: ${leftovers.join(', ')}`
+					: undefined;
+			} finally {
+				deleting.delete(id);
+			}
 		},
 		/** Commit current saved files. Unsaved editor input is not included. */
 		commit(): Promise<CommitOutcome> {

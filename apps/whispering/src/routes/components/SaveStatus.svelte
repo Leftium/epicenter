@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { toast } from '@epicenter/ui/sonner';
-	import type { RecordingEditor, TextFileEditor } from '$lib/editor.svelte.js';
+	import type { RecordingEditor, TextFileEditor, TransformationEditor } from '$lib/editor.svelte.js';
 
 	let { editor, autosavePaused, onDiscardRemoved }: {
-		editor: RecordingEditor | TextFileEditor;
+		editor: RecordingEditor | TransformationEditor | TextFileEditor;
 		autosavePaused: boolean;
 		onDiscardRemoved: () => void;
 	} = $props();

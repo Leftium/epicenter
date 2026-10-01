@@ -1,0 +1,187 @@
+/**
+ * A workspace for tests: a real directory and Git repository opened with the
+ * native folder, a fixture capture device, and stubbed endpoints. Nothing here
+ * reaches a network, a microphone, or a provider.
+ *
+ * The endpoint stubs are plain functions, so a test decides each answer and
+ * counts each request.
+ */
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { FileError } from '@epicenter/app/files';
+import { openNativeFolder } from '@epicenter/app/files/native';
+import { Ok } from 'wellcrafted/result';
+import { createFixtureDevice, toneWav } from './capture.js';
+import { whisperingDefinition } from './definition.js';
+import type { CloseDecision, Workspace } from './workspace/types.js';
+
+type TransformRequest = Parameters<Workspace['transform']>[0];
+
+export type TestWorkspaceOptions = {
+	/** Replace the stubbed transcription answer. */
+	transcribe?: Workspace['transcribe'];
+	/** Replace the stubbed transformation answer. */
+	transform?: Workspace['transform'];
+	/** Fail this many recording saves before any file is written, so the capture stays pending. */
+	failAudioWrites?: number;
+	/** Fail this many transformation result writes before any byte is written. */
+	failRunWrites?: number;
+	/** Report this many transformation result writes as failed after the file landed. */
+	loseRunWriteAnswers?: number;
+};
+
+export async function openTestWorkspace({
+	transcribe,
+	transform,
+	failAudioWrites = 0,
+	failRunWrites = 0,
+	loseRunWriteAnswers = 0,
+}: TestWorkspaceOptions = {}) {
+	const root = await realpath(
+		await mkdtemp(join(tmpdir(), 'whispering-workspace-')),
+	);
+	const folder = await openNativeFolder({
+		root,
+		definition: whisperingDefinition,
+		git: { author: { name: 'Test', email: 'test@localhost' } },
+	});
+	let remainingFailures = failRunWrites;
+	let remainingLostAnswers = loseRunWriteAnswers;
+	const runs = folder.tables.transformation_runs;
+	const refused = (stem: string | undefined) =>
+		FileError.Io({
+			path: `transformation_runs/${stem}.md`,
+			operation: 'create',
+			cause: new Error('disk refused the result'),
+		});
+	let remainingAudioFailures = failAudioWrites;
+	const recordings = folder.tables.recordings;
+	const tables = {
+		...folder.tables,
+		recordings: {
+			...recordings,
+			create: async (input: Parameters<typeof recordings.create>[0]) => {
+				if (remainingAudioFailures === 0) return recordings.create(input);
+				remainingAudioFailures -= 1;
+				return FileError.Io({
+					path: `recordings/${input.stem}.wav`,
+					operation: 'create',
+					cause: new Error('disk refused the audio'),
+				});
+			},
+		},
+		transformation_runs: {
+			...runs,
+			create: async (input: Parameters<typeof runs.create>[0]) => {
+				if (remainingFailures > 0) {
+					remainingFailures -= 1;
+					return refused(input.stem);
+				}
+				const created = await runs.create(input);
+				if (remainingLostAnswers > 0 && created.error === null) {
+					remainingLostAnswers -= 1;
+					return refused(input.stem);
+				}
+				return created;
+			},
+		},
+	};
+
+	const transformed: TransformRequest[] = [];
+	const answers: CloseDecision[] = [];
+	const closeListeners = new Set<() => void>();
+	const terminalRuns: string[] = [];
+	let cwd = '/';
+	let opens = 0;
+	let closes = 0;
+
+	const workspace: Workspace = {
+		kind: 'native',
+		folder: { ...folder, tables } as Workspace['folder'],
+		location: root,
+		terminal: {
+			get cwd() {
+				return cwd;
+			},
+			async exec(command) {
+				terminalRuns.push(command);
+				if (command.startsWith('cd ')) cwd = `/${command.slice(3)}`;
+				return { stdout: `ran ${command}\n`, stderr: '', exitCode: 0 };
+			},
+		},
+		terminalNote: 'test',
+		capture: createFixtureDevice({
+			name: 'tone.wav',
+			load: async () => ({ name: 'tone.wav', bytes: toneWav() }),
+		}),
+		captureNotice: undefined,
+		onExternalChange: () => () => {},
+		reveal: undefined,
+		transcribe: transcribe ?? (async () => Ok({ text: 'um so a steady tone' })),
+		async transform(request) {
+			transformed.push(request);
+			if (transform !== undefined) return transform(request);
+			return Ok({ text: `Transformed: ${request.input.trim()}` });
+		},
+		transformNote: 'test',
+		closing: {
+			onRequest(listener) {
+				closeListeners.add(listener);
+				return () => closeListeners.delete(listener);
+			},
+			async answer(decision) {
+				answers.push(decision);
+			},
+			onRequestWithoutHost: () => () => {},
+			quitWithoutHost() {},
+		},
+		credential: {
+			storedIn: 'test',
+			readOnlyReason: undefined,
+			present: async () => false,
+			set: async () => undefined,
+		},
+		initialSettings: {
+			transcriptionBaseUrl: 'http://127.0.0.1:18080/v1',
+			transcriptionModel: 'verification-model',
+		},
+		debugControls: true,
+		injection: undefined,
+		async close() {
+			closes += 1;
+			await folder.close();
+		},
+	};
+
+	return {
+		root,
+		workspace,
+		/** What `openSession` is given: it counts how many times a folder was opened. */
+		open: async () => {
+			opens += 1;
+			return workspace;
+		},
+		/** Every transformation request the endpoint stub received, in order. */
+		transformed,
+		answers,
+		closeListeners,
+		terminalRuns,
+		get opens() {
+			return opens;
+		},
+		get closes() {
+			return closes;
+		},
+		remove: () => rm(root, { recursive: true, force: true }),
+	};
+}
+
+/** A promise a test settles by hand, to hold a request open. */
+export function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((settle) => {
+		resolve = settle;
+	});
+	return { promise, resolve };
+}

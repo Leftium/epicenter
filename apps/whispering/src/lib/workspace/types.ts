@@ -15,6 +15,7 @@ import type {
 	whisperingDefinition,
 } from '../definition.js';
 import type { TranscriptionError } from '../transcription.js';
+import type { TransformationError } from '../transformation.js';
 
 export type WhisperingFolder = Folder<typeof whisperingDefinition>;
 
@@ -48,6 +49,18 @@ export type Workspace = {
 		readonly baseUrl: string;
 		readonly model: string;
 	}): Promise<Result<{ text: string }, TranscriptionError>>;
+	/**
+	 * Send a prompt and a transcript to a chat endpoint and return its text.
+	 * Uses the same device key as transcription. Nothing is written by this.
+	 */
+	transform(request: {
+		readonly baseUrl: string;
+		readonly model: string;
+		readonly prompt: string;
+		readonly input: string;
+	}): Promise<Result<{ text: string }, TransformationError>>;
+	/** Where transformation requests leave from, and what that requires of the endpoint. */
+	readonly transformNote: string;
 	readonly credential: {
 		/** Where the key is kept, for the settings form. */
 		readonly storedIn: string;

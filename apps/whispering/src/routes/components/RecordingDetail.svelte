@@ -7,14 +7,19 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { patchRecording, type RecordingEditor, type RecordingEntry, stemOf } from '$lib/editor.svelte.js';
+	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { patchRow, type RecordingEditor, type RecordingEntry, stemOf } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
-	import type { Library } from '$lib/library.svelte.js';
+	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete } from './file-actions.js';
+	import { confirmDelete, copyText } from './file-actions.js';
 	import SaveStatus from './SaveStatus.svelte';
+	import TransformationOutput from './TransformationOutput.svelte';
 
 	let {
 		library,
@@ -52,13 +57,13 @@
 		return typeof value === 'number' ? `${(value / 1000).toFixed(1)} s` : 'Unknown';
 	}
 
-	async function copy(text: string) {
-		try {
-			await navigator.clipboard.writeText(text);
-			toast.success('Copied the transcript');
-		} catch {
-			toast.error('Could not copy the transcript');
-		}
+	/** Transformations that can run; one that needs repair is fixed on its own page first. */
+	const runnable = $derived(library.transformations.filter((item) => item.issues === undefined));
+
+	/** Apply a transformation to one transcript. The result is a new file; the transcript is not changed. */
+	async function transform(result: TranscriptionEntry, path: string) {
+		const problem = await library.transform(result.path, path);
+		if (problem) toast.error('The transformation did not run', { description: problem });
 	}
 </script>
 
@@ -75,7 +80,7 @@
 			placeholder="Title"
 			aria-label="Recording title"
 			disabled={!fieldsEditable}
-			oninput={(event) => patchRecording(editor, { fields: { title: event.currentTarget.value } })}
+			oninput={(event) => patchRow(editor, { fields: { title: event.currentTarget.value } })}
 		/>
 		{#if history === 'uncommitted'}
 			<Badge variant="outline" data-testid="recording-history">Saved · not in history yet</Badge>
@@ -172,15 +177,48 @@
 						</div>
 					{/if}
 					{#each results as result (result.path)}
-						<article class="rounded border p-3 text-sm" data-testid="transcription-result">
-							<p class="whitespace-pre-wrap">{result.body?.trim() || '(empty transcript)'}</p>
-							<footer class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+						{@const outputs = result.stem ? library.outputsFor(result.stem) : []}
+						{@const transforming = library.transformationRuns.some(
+							(item) => item.fields.transcriptionId === result.stem && item.state.kind === 'running',
+						)}
+						<article class="flex flex-col gap-2 rounded border p-3 text-sm" data-testid="transcription-result">
+							<p class="whitespace-pre-wrap" data-testid="transcript-text">{result.body?.trim() || '(empty transcript)'}</p>
+							<footer class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
 								<span>{when(result.fields.createdAt)} · {result.fields.model ?? 'unknown model'}</span>
 								<Button size="xs" variant="ghost" onclick={() => void library.open(result.path)}>
 									<code class="font-mono">{result.path}</code>
 								</Button>
-								<Button size="xs" variant="ghost" class="ml-auto" onclick={() => void copy(result.body ?? '')}>Copy</Button>
+								<span class="ml-auto flex items-center gap-1">
+									<DropdownMenu.Root>
+										<DropdownMenu.Trigger>
+											{#snippet child({ props })}
+												<Button {...props} size="xs" variant="outline" disabled={!result.body?.trim()} data-testid="transform">
+													{#if transforming}<Spinner class="size-3" />{:else}<WandSparklesIcon />{/if}
+													Transform
+												</Button>
+											{/snippet}
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content align="end" class="min-w-52">
+											<DropdownMenu.Label>Make a new text from this transcript</DropdownMenu.Label>
+											{#each runnable as item (item.path)}
+												<DropdownMenu.Item onSelect={() => void transform(result, item.path)}>
+													{item.fields.title || item.stem}
+												</DropdownMenu.Item>
+											{:else}
+												<DropdownMenu.Item disabled>No transformations yet</DropdownMenu.Item>
+											{/each}
+											<DropdownMenu.Separator />
+											<DropdownMenu.Item onSelect={() => void goto(resolve('/transformations'))}>
+												Manage transformations…
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
+									<Button size="xs" variant="ghost" onclick={() => void copyText(result.body ?? '', 'the transcript')}>Copy</Button>
+								</span>
 							</footer>
+							{#each outputs as output (output.path)}
+								<TransformationOutput {library} {output} naming="transformation" onOpenFile={(path) => void library.open(path)} />
+							{/each}
 						</article>
 					{:else}
 						{#if run === undefined}
@@ -198,7 +236,7 @@
 						aria-label="Notes"
 						disabled={parsed.body === undefined}
 						oninput={(event) =>
-							patchRecording(editor, { body: withFileNewlines(event.currentTarget.value, parsed.body ?? '') })}
+							patchRow(editor, { body: withFileNewlines(event.currentTarget.value, parsed.body ?? '') })}
 					/>
 				</div>
 			</div>

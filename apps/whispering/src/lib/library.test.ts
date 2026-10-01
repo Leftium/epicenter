@@ -37,14 +37,14 @@ import { whisperingDefinition } from './definition.js';
 import type { Library } from './library.svelte.js';
 import {
 	commitLine,
-	filesLine,
+	filesLineOf,
 	summaryLine,
 	uncommittedLine,
 } from './status.js';
 import type { Workspace } from './workspace/types.js';
 
 const { createLibrary } = await import('./library.svelte.ts');
-const { patchRecording } = await import('./editor.svelte.ts');
+const { patchRow } = await import('./editor.svelte.ts');
 
 const opened: Library[] = [];
 const roots: string[] = [];
@@ -144,6 +144,8 @@ async function open({
 			if (transcribe !== undefined) return transcribe(request);
 			return Ok({ text: 'a steady tone' });
 		},
+		transform: async ({ input }) => Ok({ text: input }),
+		transformNote: 'test',
 		closing: undefined,
 		credential: {
 			storedIn: 'test',
@@ -252,7 +254,7 @@ test('renaming in details and editing the source are one draft, saved to the row
 	await record(library);
 	const editor = recordingEditor(library);
 
-	expect(patchRecording(editor, { fields: { title: 'Standup notes' } })).toBe(
+	expect(patchRow(editor, { fields: { title: 'Standup notes' } })).toBe(
 		true,
 	);
 	// The Source view shows the same unsaved text the details changed.
@@ -299,7 +301,7 @@ test('a dirty editor keeps both versions when the file changes outside, until a 
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
 	library.autosave.paused = true;
-	patchRecording(editor, { fields: { title: 'Mine' } });
+	patchRow(editor, { fields: { title: 'Mine' } });
 	expect(editor.dirty).toBe(true);
 
 	const outside = (await readFile(path, 'utf8')).replace(
@@ -335,7 +337,7 @@ test('choosing mine saves over the reviewed outside version', async () => {
 	const editor = recordingEditor(library);
 	const path = join(root, editor.path);
 	library.autosave.paused = true;
-	patchRecording(editor, { fields: { title: 'Mine' } });
+	patchRow(editor, { fields: { title: 'Mine' } });
 	await writeFile(
 		path,
 		(await readFile(path, 'utf8')).replace(/title: .*/, 'title: Theirs'),
@@ -364,7 +366,7 @@ test('a malformed row stays listed and its bytes are not rewritten', async () =>
 	const editor = recordingEditor(library);
 	expect(editor.buffer).toBe(broken);
 	// A structured edit is refused; only the source can repair it.
-	expect(patchRecording(editor, { fields: { title: 'x' } })).toBe(false);
+	expect(patchRow(editor, { fields: { title: 'x' } })).toBe(false);
 	expect(await readFile(join(root, 'recordings', 'broken.md'), 'utf8')).toBe(
 		broken,
 	);
@@ -444,18 +446,67 @@ test('deleting a recording removes its row, audio, and results', async () => {
 	expect(await readdir(join(root, 'transcriptions'))).toEqual([]);
 });
 
-/** The header's lines, computed the way AppHeader computes them. */
-function status(library: Library) {
-	const files = filesLine({
-		saving: library.saving,
-		problems: library.saveProblems,
-		unsaved: library.unsaved,
-		pendingCaptures: library.pending.length,
-		capturesSaving: library.pending.some(
-			(item) => item.state.kind === 'saving',
-		),
-		unsavedResults: library.unsavedResults,
+test('a recording cannot be deleted while its transcription runs, including one started after confirming', async () => {
+	let answer!: (value: Awaited<ReturnType<Workspace['transcribe']>>) => void;
+	const { library, root } = await open({
+		transcribe: () => new Promise((resolve) => (answer = resolve)),
 	});
+	await record(library);
+	const entry = library.entries[0]!;
+	// The person is asked, and agrees, before any request exists.
+	const confirmed = await library.deletionFor(entry.path);
+	expect(confirmed.error).toBeNull();
+
+	const transcribing = library.transcribe(entry);
+	expect(library.transcriptionRun(entry.stem!)?.kind).toBe('running');
+
+	expect((await library.deletionFor(entry.path)).error).toContain(
+		'still running',
+	);
+	expect(await library.remove(confirmed.data!)).toContain('still running');
+	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
+
+	answer(Ok({ text: 'arrived late' }));
+	await transcribing;
+
+	// The transcript saved since was never named to the person, so they are asked again.
+	expect(await library.remove(confirmed.data!)).toContain(
+		'after you were asked',
+	);
+	expect(await readdir(join(root, 'transcriptions'))).toHaveLength(1);
+	const again = await library.deletionFor(entry.path);
+	expect(await library.remove(again.data!)).toBeUndefined();
+	expect(await readdir(join(root, 'recordings'))).toEqual([]);
+	expect(await readdir(join(root, 'transcriptions'))).toEqual([]);
+});
+
+test('a recording cannot be deleted while a received transcript is unsaved; discarding it allows the deletion', async () => {
+	const { library, root } = await open({ failResultWrites: 1 });
+	await record(library);
+	const entry = library.entries[0]!;
+	await library.transcribe(entry);
+	expect(library.transcriptionRun(entry.stem!)?.kind).toBe('unsaved');
+
+	const refused = await library.deletionFor(entry.path);
+	expect(refused.error).toContain('Save it again or discard it');
+	expect(await readdir(join(root, 'recordings'))).toHaveLength(2);
+	const run = library.transcriptionRun(entry.stem!);
+	if (run?.kind !== 'unsaved') throw new Error('expected the transcript held');
+	expect(run.text).toBe('a steady tone');
+
+	library.dismissRun(entry.stem!);
+	const deletion = await library.deletionFor(entry.path);
+	expect(await library.remove(deletion.data!)).toBeUndefined();
+
+	expect(await readdir(join(root, 'recordings'))).toEqual([]);
+	expect(
+		await readdir(join(root, 'transcriptions')).catch(() => [] as string[]),
+	).toEqual([]);
+});
+
+/** The header's lines, from the same function AppHeader calls. */
+function status(library: Library) {
+	const files = filesLineOf(library);
 	return {
 		files,
 		summary: summaryLine({

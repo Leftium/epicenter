@@ -95,6 +95,10 @@ export async function requestTranscription({
 	form.append('model', model.trim());
 	form.append('response_format', 'json');
 
+	// An endpoint that echoes the key in a refusal must not carry it to the page.
+	const redact = (text: string) =>
+		apiKey === '' ? text : text.split(apiKey).join('[key removed]');
+
 	let response: Response;
 	try {
 		response = await send(url, {
@@ -104,14 +108,17 @@ export async function requestTranscription({
 			signal,
 		});
 	} catch (cause) {
-		return TranscriptionError.Unreachable({ url, reason: describe(cause) });
+		return TranscriptionError.Unreachable({
+			url,
+			reason: redact(describe(cause)),
+		});
 	}
 	const body = await response.text().catch(() => '');
 	if (!response.ok)
 		return TranscriptionError.Rejected({
 			url,
 			status: response.status,
-			detail: body.slice(0, 300).trim(),
+			detail: redact(body).slice(0, 300).trim(),
 		});
 	try {
 		const parsed: unknown = JSON.parse(body);

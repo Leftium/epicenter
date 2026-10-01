@@ -13,6 +13,7 @@ import {
 } from '../capture.js';
 import { whisperingDefinition } from '../definition.js';
 import { TranscriptionError } from '../transcription.js';
+import { TransformationError } from '../transformation.js';
 import type { InjectionState, Workspace } from './types.js';
 
 /** What the host reports about itself. Mirrors `HostInfo` in `native/host.ts`. */
@@ -107,6 +108,18 @@ export async function openDesktopWorkspace(
 				return TranscriptionError.HostUnavailable({ reason: describe(cause) });
 			}
 		},
+		async transform(request) {
+			try {
+				return await bridge.app<Awaited<ReturnType<Workspace['transform']>>>(
+					'transform',
+					request,
+				);
+			} catch (cause) {
+				return TransformationError.HostUnavailable({ reason: describe(cause) });
+			}
+		},
+		transformNote:
+			'Requests are sent by Whispering’s folder host, not by this window, with the same API key as transcription. The key is never given to the window or written to the folder.',
 		closing: {
 			onRequest: remote.onCloseRequested,
 			// An answer that cannot be delivered leaves the window open, which is

@@ -5,6 +5,9 @@
  * reach a native module: not the native folder opener, not Node or Bun, and
  * not a Tauri API. The recording workflow is file-backed, so it may not reach
  * the Yjs store either. This reads the sources, so a violation names its file.
+ *
+ * The same reading establishes who owns the folder: the app layout opens one
+ * session, and pages only receive it.
  */
 import { expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -81,6 +84,37 @@ test('the page imports no Yjs store, sync, or account module', () => {
 				].includes(specifier),
 		),
 	).toEqual([]);
+});
+
+/** Files whose source calls `name(`, ignoring its own declaration. */
+function callers(name: string) {
+	const call = new RegExp(`(?<!function )\\b${name}\\(`);
+	return files.filter((file) => call.test(file.text)).map((file) => file.path);
+}
+
+test('the app layout is the only place a session is opened', () => {
+	// One folder for the mounted layout, kept across its routes: no page or
+	// component opens a workspace or builds product state of its own.
+	expect(callers('openSession')).toEqual(['routes/+layout.svelte']);
+	expect(callers('createSession')).toEqual(['lib/session.svelte.ts']);
+	expect(callers('createLibrary')).toEqual(['lib/session.svelte.ts']);
+	expect(callers('createLeaveGuard')).toEqual(['lib/session.svelte.ts']);
+	// `openSession` takes the opener as a value; nothing else calls it.
+	expect(callers('openWorkspace')).toEqual([]);
+});
+
+test('every page takes the session from context, and only the shell guards navigation', () => {
+	const pages = files.filter((file) => /\+page\.svelte$/.test(file.path));
+	expect(pages.map((file) => file.path).sort()).toEqual([
+		'routes/+page.svelte',
+		'routes/recordings/+page.svelte',
+		'routes/transformations/+page.svelte',
+	]);
+	for (const file of pages) expect(file.text).toContain('getSession()');
+	expect(callers('setSession')).toEqual(['routes/components/AppShell.svelte']);
+	expect(callers('beforeNavigate')).toEqual([
+		'routes/components/AppShell.svelte',
+	]);
 });
 
 test('nothing imports the generated host bindings', () => {

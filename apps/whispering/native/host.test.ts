@@ -399,6 +399,128 @@ test('transcription reads the saved audio and sends it to the configured endpoin
 	);
 });
 
+test('a transcription refusal that echoes the key reaches the page without it', async () => {
+	const { remote, host } = await start({
+		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
+		fetch: async (input, init) =>
+			Response.json(
+				{
+					error: `Bad credential: ${new Request(input, init).headers.get('authorization')}`,
+				},
+				{ status: 401 },
+			),
+	});
+	const pending = capture();
+	await publishRecording(remote.folder, pending);
+
+	const answered = await host.handle(
+		new Request(`${ORIGIN}/bridge/app`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${TOKEN}`,
+			},
+			body: JSON.stringify({
+				op: 'transcribe',
+				payload: {
+					path: `recordings/${pending.id}.wav`,
+					baseUrl: 'http://127.0.0.1:18080/v1',
+					model: 'verification-model',
+				},
+			}),
+		}),
+	);
+	const answer = await answered.text();
+
+	expect(JSON.parse(answer)).toMatchObject({
+		ok: { data: null, error: { name: 'Rejected', status: 401 } },
+	});
+	expect(answer).toContain('Bad credential');
+	expect(answer).not.toContain('local-test-key');
+});
+
+test('a transformation is sent by the host with the device key, which never reaches the page', async () => {
+	const requests: {
+		url: string;
+		authorization: string | null;
+		body: unknown;
+	}[] = [];
+	let refuse = false;
+	const { remote, bridge, host } = await start({
+		fetch: async (input, init) => {
+			const request = new Request(input, init);
+			const authorization = request.headers.get('authorization');
+			requests.push({
+				url: request.url,
+				authorization,
+				body: await request.json(),
+			});
+			// A deterministic local endpoint; a refusal echoes the credential it was sent.
+			if (refuse)
+				return Response.json(
+					{ error: { message: `Bad credential: ${authorization}` } },
+					{ status: 401 },
+				);
+			return Response.json({
+				choices: [{ message: { role: 'assistant', content: 'A steady tone.' } }],
+			});
+		},
+	});
+	await bridge.app('credential', { key: 'device-secret-key' });
+	const send = () =>
+		host.handle(
+			new Request(`${ORIGIN}/bridge/app`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${TOKEN}`,
+				},
+				body: JSON.stringify({
+					op: 'transform',
+					payload: {
+						baseUrl: 'http://127.0.0.1:18080/v1/',
+						model: 'chat-model',
+						prompt: 'Fix the punctuation.',
+						input: 'um so a steady tone',
+					},
+				}),
+			}),
+		);
+
+	const answered = await send();
+	const answer = await answered.text();
+
+	expect(answered.status).toBe(200);
+	expect(JSON.parse(answer)).toMatchObject({
+		ok: { data: { text: 'A steady tone.' }, error: null },
+	});
+	expect(requests).toEqual([
+		{
+			url: 'http://127.0.0.1:18080/v1/chat/completions',
+			authorization: 'Bearer device-secret-key',
+			body: {
+				model: 'chat-model',
+				messages: [
+					{ role: 'system', content: 'Fix the punctuation.' },
+					{ role: 'user', content: 'um so a steady tone' },
+				],
+			},
+		},
+	]);
+	// The page's copy of the answer has the text and nothing of the key.
+	expect(answer).not.toContain('device-secret-key');
+
+	refuse = true;
+	const refused = await (await send()).text();
+	expect(JSON.parse(refused)).toMatchObject({
+		ok: { data: null, error: { name: 'Rejected', status: 401 } },
+	});
+	expect(refused).not.toContain('device-secret-key');
+
+	// A request is not a save: the host wrote nothing to the folder for either.
+	expect((await remote.folder.files.list()).data!.files).toEqual([]);
+});
+
 test('fixture audio and failure injection exist only in a debug shell', async () => {
 	const fixtureDirectory = await mkdtemp(join(tmpdir(), 'whispering-fixture-'));
 	cleanups.push(() => rm(fixtureDirectory, { recursive: true, force: true }));
@@ -467,6 +589,12 @@ test('the page is served with the token only in standalone mode, and paths stay 
 	expect(index.status).toBe(200);
 	expect(await index.text()).not.toContain(TOKEN);
 	expect((await get(shell.host, '/recordings/anything')).status).toBe(200);
+	// A deep link or a refresh on a page of the app gets the app, not a 404.
+	for (const route of ['/recordings', '/transformations']) {
+		const deep = await get(shell.host, route);
+		expect(deep.status).toBe(200);
+		expect(deep.headers.get('content-type')).toContain('text/html');
+	}
 	expect((await get(shell.host, '/_app/missing.js')).status).toBe(404);
 	expect((await get(shell.host, '/%2e%2e/outside-secret.txt')).status).toBe(
 		404,

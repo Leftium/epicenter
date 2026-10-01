@@ -27,6 +27,7 @@ import {
 	requestTranscription,
 	TranscriptionError,
 } from '../src/lib/transcription.js';
+import { requestTransformation } from '../src/lib/transformation.js';
 import {
 	createFailureInjection,
 	type FailureInjection,
@@ -57,7 +58,7 @@ export type HostOptions = {
 	 * The entry point tells the shell.
 	 */
 	readonly onCloseApproved?: () => void;
-	/** Injected in tests; transcription requests leave through it. */
+	/** Injected in tests; transcription and transformation requests leave through it. */
 	readonly fetch?: (input: string, init?: RequestInit) => Promise<Response>;
 };
 
@@ -344,6 +345,18 @@ export async function createHost(options: HostOptions) {
 		});
 	}
 
+	/** The device key is added here and never returned, logged, or written to the folder. */
+	async function transform(payload: Record<string, unknown>) {
+		return requestTransformation({
+			baseUrl: String(payload.baseUrl ?? ''),
+			model: String(payload.model ?? ''),
+			prompt: String(payload.prompt ?? ''),
+			input: String(payload.input ?? ''),
+			apiKey: await apiKey(),
+			fetch: options.fetch,
+		});
+	}
+
 	async function setCredential(payload: Record<string, unknown>) {
 		if (environmentKey !== undefined)
 			throw new Error(
@@ -381,6 +394,8 @@ export async function createHost(options: HostOptions) {
 				return reveal();
 			case 'transcribe':
 				return transcribe(payload);
+			case 'transform':
+				return transform(payload);
 			case 'credential':
 				return setCredential(payload);
 			case 'close':

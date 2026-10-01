@@ -24,6 +24,12 @@
  *   editors adopt the saved text, and a dirty draft keeps its input
  * - A draft that cannot save is dropped only by an explicit discard
  * - A folder with contents is never deleted from the browser
+ * - Closing fences the app at once: later calls issue no folder or terminal
+ *   work, a held open, listing, create, or rename retains nothing new, and
+ *   every close call shares one completion
+ * - Close waits only for operations that own a path. A read, fetch, or folder
+ *   creation that answers late starts no further folder work and changes no
+ *   state, and a fetch still on the network is cancelled by the folder
  *
  * Fixtures write with the verb that states their intent: `create` for a new
  * file, `overwrite` for another writer landing on whatever is there, and a
@@ -33,6 +39,7 @@ import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { ApplyError, FileError, openFolder } from '@epicenter/folder/browser';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { todosDefinition } from './definition.js';
 import type { TodosFolder } from './platform/types.js';
@@ -45,13 +52,16 @@ const opened: Todos[] = [];
 let count = 0;
 
 const ROW = '---\ntitle: Note\ndone: false\n---\n';
+const ROW_PATH = /^todos\/[^/]+\.md$/;
 const UNSETTLED = 'Save or discard the open edits first.';
+const CLOSING = 'Todos is closing, so nothing was changed.';
 const BUSY =
 	'Another change to this file is still in progress. Try again when it finishes.';
 
 /** `adapt` wraps the folder the app sees, so a test can act inside an awaited file operation. */
 async function open(
 	adapt: (folder: TodosFolder) => TodosFolder = (folder) => folder,
+	remote?: { url: string; branch: string },
 ) {
 	const folder = adapt(
 		expectOk(
@@ -61,6 +71,7 @@ async function open(
 				browser: {
 					author: { name: 'Test', email: 'test@example.test' },
 					commitOnEdit: false,
+					remote,
 					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
 				},
 			}),
@@ -1150,5 +1161,438 @@ test('a hint that arrives after the app closed changes nothing', async () => {
 		expect(todos.isTodo('todos/late.md')).toBe(false);
 	} finally {
 		await other.close();
+	}
+});
+
+// ============================================================================
+// Closing
+// ============================================================================
+
+/**
+ * A folder that names every file, table, Git, and terminal call the app makes
+ * in `calls`, and sends no hints unless `hints` is set. While `gate.hold` is set, a raw read or
+ * listing really finishes and then keeps its reply back until the test calls
+ * the release that `held()` answers.
+ */
+function recordingFolder({ hints = false } = {}) {
+	const calls: string[] = [];
+	const gate: { hold: boolean; replies: (() => void)[] } = {
+		hold: false,
+		replies: [],
+	};
+	async function reply<T>(result: T): Promise<T> {
+		if (gate.hold)
+			await new Promise<void>((resolve) => gate.replies.push(resolve));
+		return result;
+	}
+	function recorded<T extends object>(name: string, target: T): T {
+		const copy = { ...target } as Record<string, unknown>;
+		for (const [key, value] of Object.entries(target))
+			if (typeof value === 'function')
+				copy[key] = (...args: unknown[]) => {
+					calls.push(`${name}.${key}`);
+					return value.apply(target, args);
+				};
+		return copy as T;
+	}
+	const adapt = (folder: TodosFolder): TodosFolder => {
+		const files = recorded('files', folder.files);
+		return {
+			...(hints ? folder : withoutHints(folder)),
+			files: {
+				...files,
+				read: async (path) => reply(await files.read(path)),
+				list: async () => reply(await files.list()),
+			},
+			tables: { todos: recorded('table', folder.tables.todos) },
+			git: {
+				...recorded('git', folder.git),
+				get snapshot() {
+					return folder.git.snapshot;
+				},
+			},
+			terminal(options) {
+				const terminal = folder.terminal(options);
+				return {
+					get cwd() {
+						return terminal.cwd;
+					},
+					exec(command, options) {
+						calls.push('terminal.exec');
+						return terminal.exec(command, options);
+					},
+				};
+			},
+			close() {
+				calls.push('close');
+				return folder.close();
+			},
+		};
+	};
+	/** Resolves once a reply is held, and stops holding later ones. */
+	async function held() {
+		while (gate.replies.length === 0) await Bun.sleep(1);
+		gate.hold = false;
+		return () => {
+			for (const release of gate.replies.splice(0)) release();
+		};
+	}
+	return { calls, gate, adapt, held };
+}
+
+/** Close now; `afterEach` then has nothing left to close. */
+function close(todos: Todos) {
+	opened.splice(opened.indexOf(todos), 1);
+	return todos.close();
+}
+
+test('a raw open whose read answers after close retains no editor', async () => {
+	const { gate, adapt, held } = recordingFolder();
+	const todos = await open(adapt);
+	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
+
+	gate.hold = true;
+	const opening = todos.open('notes.txt');
+	const release = await held();
+	await close(todos);
+	release();
+	await opening;
+	// `selection` is first read here; see `reselect`.
+	expect(todos.selection).toBeUndefined();
+});
+
+test('a row open whose listing answers after close retains no editor', async () => {
+	const { gate, adapt, held } = recordingFolder();
+	const todos = await open(adapt);
+	// Written without a hint, so the open has to list before it finds the row.
+	expectOk(await todos.folder.files.create('todos/late.md', ROW));
+
+	gate.hold = true;
+	const opening = todos.open('todos/late.md');
+	const release = await held();
+	await close(todos);
+	release();
+	await opening;
+	expect(todos.selection).toBeUndefined();
+	expect(todos.entries).toEqual([]);
+});
+
+test('a listing that answers after close changes neither the rows nor a clean editor', async () => {
+	const { gate, adapt, held } = recordingFolder();
+	const todos = await open(adapt);
+	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
+	await todos.open('notes.txt');
+	const editor = textEditor(todos);
+	const listing = todos.listing;
+	expectOk(await todos.folder.files.create('todos/late.md', ROW));
+	expectOk(await todos.folder.files.overwrite('notes.txt', 'theirs'));
+
+	gate.hold = true;
+	const refreshing = todos.refresh();
+	const release = await held();
+	await close(todos);
+	release();
+	await refreshing;
+	expect(todos.entries).toEqual([]);
+	expect(todos.listing).toBe(listing);
+	expect(editor.buffer).toBe('saved');
+});
+
+test('a create that answers after close wrote its row and retains no editor', async () => {
+	const { adapt } = recordingFolder();
+	const todos = await open(adapt);
+	const table = todos.folder.tables.todos;
+	const create = table.create;
+	let release: (() => void) | undefined;
+	table.create = async (...args) => {
+		const created = await create(...args);
+		await new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		return created;
+	};
+
+	const creating = todos.create('Milk');
+	while (release === undefined) await Bun.sleep(1);
+	const written = expectOk(await todos.folder.files.list()).files;
+	expect(written.some((file) => ROW_PATH.test(file.path))).toBe(true);
+	await close(todos);
+	release();
+	expect(await creating).toBeUndefined();
+	expect(todos.selection).toBeUndefined();
+	expect(todos.selectedPath).toBeUndefined();
+});
+
+test('close waits for a held rename, which moves the file and opens nothing at the destination', async () => {
+	const { during, adapt, held } = interceptingFileOperations();
+	const todos = await open(adapt);
+	expectOk(await todos.folder.files.create('todos/note.txt', ROW));
+	await todos.refresh();
+	await todos.open('todos/note.txt');
+
+	during.hold = true;
+	const renaming = todos.rename('todos/note.txt', 'note.md');
+	const release = await held();
+	expect(await text(todos, 'todos/note.md')).toBe(ROW);
+	let closed = false;
+	const closing = close(todos).then(() => {
+		closed = true;
+	});
+	await Bun.sleep(5);
+	expect(closed).toBe(false);
+
+	release();
+	expect(await renaming).toBeUndefined();
+	await closing;
+	// The clean raw editor gave way, and the row's todo editor never opens.
+	expect(todos.selection).toBeUndefined();
+	expect(todos.selectedPath).toBeUndefined();
+});
+
+test('every close call shares one completion, and the folder closes once', async () => {
+	const { during, adapt, held } = interceptingFileOperations();
+	const recording = recordingFolder();
+	let reentrant: Promise<void> | undefined;
+	const todos: Todos = await open((folder) => {
+		const adapted = recording.adapt(adapt(folder));
+		return {
+			...adapted,
+			files: {
+				...adapted.files,
+				// The save that close settles calls close again from inside it.
+				replace(file, content) {
+					reentrant = todos.close();
+					return adapted.files.replace(file, content);
+				},
+			},
+		};
+	});
+	expectOk(await todos.folder.files.create('a.txt', 'saved'));
+	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
+	await todos.open('notes.txt');
+	textEditor(todos).input('typed');
+
+	during.hold = true;
+	const renaming = todos.rename('a.txt', 'b.txt');
+	const release = await held();
+	const first = close(todos);
+	// A call while the admitted rename is still held.
+	expect(todos.close()).toBe(first);
+	release();
+	expect(await renaming).toBeUndefined();
+	await first;
+	expect(reentrant).toBe(first);
+	expect(todos.close()).toBe(first);
+	expect(recording.calls.filter((call) => call === 'close')).toEqual(['close']);
+});
+
+test('calls made after close began are refused without folder or terminal work', async () => {
+	const { during, adapt, held } = interceptingFileOperations();
+	const recording = recordingFolder();
+	const todos = await open((folder) => recording.adapt(adapt(folder)));
+	expectOk(await todos.folder.files.create('a.txt', 'saved'));
+	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
+	expect(await todos.create('Milk')).toBeUndefined();
+	const entry = todos.entries[0]!;
+	const deletion = expectOk(await todos.deletionFor('notes.txt'));
+
+	// A held rename keeps close pending while the folder itself is still open.
+	during.hold = true;
+	const renaming = todos.rename('a.txt', 'b.txt');
+	const release = await held();
+	const closing = close(todos);
+	recording.calls.length = 0;
+
+	await todos.open('notes.txt');
+	await todos.refresh();
+	await todos.refreshAll();
+	expect(await todos.create('Bread')).toBe(CLOSING);
+	expect(await todos.toggle(entry)).toBe(CLOSING);
+	expect(await todos.rename('notes.txt', 'renamed.txt')).toBe(CLOSING);
+	expect(await todos.createFile('', 'new.txt')).toBe(CLOSING);
+	expect(await todos.createFolder('', 'docs')).toBe(CLOSING);
+	expect((await todos.deletionFor('notes.txt')).error).toBe(CLOSING);
+	expect(await todos.remove(deletion)).toBe(CLOSING);
+	expect(await todos.commitAndPush()).toEqual({
+		commit: { status: 'closed' },
+		push: { status: 'closed' },
+	});
+	expect((await todos.pull()).error?.name).toBe('Closed');
+	todos.terminal.command = 'touch shell.txt';
+	await todos.terminal.run();
+	expect(todos.terminal.runs.at(-1)?.result?.exitCode).toBe(1);
+	expect(recording.calls).toEqual([]);
+	expect(todos.selectedPath).toBe(entry.path);
+
+	release();
+	expect(await renaming).toBeUndefined();
+	await closing;
+	// The admitted rename finished without a listing; only the close followed.
+	expect(recording.calls).toEqual(['close']);
+});
+
+test('a hinted listing still held when the app closes neither delays close nor changes state', async () => {
+	const { calls, gate, adapt, held } = recordingFolder({ hints: true });
+	const todos = await open(adapt);
+	const { entries, listing } = todos;
+
+	// The save hints, and the reread it starts lists the folder.
+	gate.hold = true;
+	expectOk(await todos.folder.files.create('todos/late.md', ROW));
+	const release = await held();
+	let closed = false;
+	void close(todos).then(() => {
+		closed = true;
+	});
+	await Bun.sleep(20);
+	expect(closed).toBe(true);
+
+	calls.length = 0;
+	release();
+	await Bun.sleep(5);
+	expect(todos.entries).toBe(entries);
+	expect(todos.listing).toBe(listing);
+	expect(calls).toEqual([]);
+});
+
+test('a refresh stops reading open editors once a read closes the app', async () => {
+	const recording = recordingFolder();
+	const reads: string[] = [];
+	let closeOnRead = false;
+	const todos: Todos = await open((folder) => {
+		const adapted = recording.adapt(folder);
+		return {
+			...adapted,
+			files: {
+				...adapted.files,
+				read(path) {
+					if (closeOnRead) {
+						reads.push(path);
+						void close(todos);
+					}
+					return adapted.files.read(path);
+				},
+			},
+		};
+	});
+	const editors = [];
+	for (const path of ['a.txt', 'b.txt']) {
+		expectOk(await todos.folder.files.create(path, 'saved'));
+		await todos.open(path);
+		editors.push(textEditor(todos));
+		expectOk(await todos.folder.files.overwrite(path, 'theirs'));
+	}
+
+	closeOnRead = true;
+	await todos.refresh();
+	expect(reads).toEqual(['a.txt']);
+	expect(editors.map((editor) => editor.buffer)).toEqual(['saved', 'saved']);
+});
+
+test('a refresh reads no further editor once an observation closes the app', async () => {
+	const recording = recordingFolder();
+	const todos = await open(recording.adapt);
+	for (const path of ['a.txt', 'b.txt'])
+		expectOk(await todos.folder.files.create(path, 'saved'));
+	await todos.open('a.txt');
+	const first = textEditor(todos);
+	await todos.open('b.txt');
+	// The first editor's observation closes the app before the loop moves on.
+	const observe = first.observe;
+	first.observe = (next) => {
+		observe(next);
+		void todos.close();
+	};
+
+	recording.calls.length = 0;
+	await todos.refresh();
+	await close(todos);
+	expect(recording.calls.filter((call) => call === 'files.read')).toEqual([
+		'files.read',
+	]);
+});
+
+test('a folder creation that answers after close expands nothing', async () => {
+	const { adapt } = recordingFolder();
+	const todos = await open(adapt);
+	expect(await todos.createFolder('', 'docs')).toBeUndefined();
+	const { files } = todos.folder;
+	const mkdir = files.mkdir;
+	let release: (() => void) | undefined;
+	files.mkdir = async (path) => {
+		const made = await mkdir(path);
+		await new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		return made;
+	};
+
+	const creating = todos.createFolder('docs', 'inner');
+	while (release === undefined) await Bun.sleep(1);
+	await close(todos);
+	release();
+	expect(await creating).toBeUndefined();
+	expect(todos.expanded.has('docs')).toBe(false);
+});
+
+test('a fetch that answers after close began does not start the fast-forward', async () => {
+	const { calls, adapt } = recordingFolder();
+	const todos = await open(adapt);
+	const { git } = todos.folder;
+	const fetch = git.fetch;
+	let release: (() => void) | undefined;
+	// This folder has no remote, so its real fetch refuses. The reply delivered
+	// late in its place is the success a remote would have answered.
+	git.fetch = async (options) => {
+		await fetch(options);
+		await new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		return Ok({ status: 'fetched', oid: undefined });
+	};
+
+	const pulling = todos.pull();
+	while (release === undefined) await Bun.sleep(1);
+	await close(todos);
+	calls.length = 0;
+	release();
+	expect((await pulling).error?.name).toBe('Closed');
+	expect(calls).toEqual([]);
+});
+
+test('close cancels a pull whose fetch is still on the network, and nothing is fast-forwarded', async () => {
+	const originalFetch = globalThis.fetch;
+	let requests = 0;
+	// The request ends only when the folder aborts it.
+	globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+		requests++;
+		return new Promise<Response>((_resolve, reject) =>
+			init?.signal?.addEventListener('abort', () =>
+				reject(new DOMException('The fetch was cancelled', 'AbortError')),
+			),
+		);
+	}) as typeof fetch;
+	try {
+		const { calls, adapt } = recordingFolder();
+		const todos = await open(adapt, {
+			url: 'http://stall.test/remote.git',
+			branch: 'main',
+		});
+		const pulling = todos.pull();
+		for (let waited = 0; waited < 400 && requests === 0; waited++)
+			await Bun.sleep(5);
+		expect(requests).toBe(1);
+
+		await close(todos);
+		// The folder aborted the request: the refusal carries the abort's reason.
+		expect((await pulling).error).toMatchObject({
+			name: 'Failed',
+			operation: 'fetch',
+			message: 'Git fetch failed: The fetch was cancelled',
+		});
+		expect(requests).toBe(1);
+		expect(calls).not.toContain('git.pullFastForward');
+	} finally {
+		globalThis.fetch = originalFetch;
 	}
 });

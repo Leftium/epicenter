@@ -15,19 +15,21 @@
  * reports changed paths as hints; a hint rereads through the same refresh and
  * never replaces what an editor holds. The terminal is the folder's own and
  * ends with it.
+ *
+ * Closing fences the app from its first call: no action or terminal command
+ * starts folder work after it, and nothing new is retained.
  */
 import type {
 	CommitAndPushResult,
 	FileCapture,
 	FileListing,
 	FileVersion,
-	GitError,
 	GitSnapshot,
 	PullError,
 	PullOutcome,
 	TableWriteError,
 } from '@epicenter/folder';
-import { sameVersion } from '@epicenter/folder';
+import { GitError, sameVersion } from '@epicenter/folder';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -85,6 +87,7 @@ const ROW_PATH = /^todos\/[^/]+\.md$/;
 const UNSETTLED = 'Save or discard the open edits first.';
 const BUSY =
 	'Another change to this file is still in progress. Try again when it finishes.';
+const CLOSING = 'Todos is closing, so nothing was changed.';
 
 function editorOf(item: Retained | undefined) {
 	return item?.kind === 'todo' || item?.kind === 'text'
@@ -126,8 +129,16 @@ export function createTodos(folder: TodosFolder) {
 	 * its first await. What is retained there belongs to that operation until
 	 * it releases: refreshes and opens leave it alone, and an overlapping
 	 * operation on any of the same paths is refused. Other paths are unaffected.
+	 * Each path maps to the promise its operation resolves on release, which is
+	 * what `close` waits for.
 	 */
-	const reserved = new Set<string>();
+	const reserved = new Map<string, Promise<void>>();
+	/**
+	 * The one completion every `close` call shares, set before anything else
+	 * runs. Once set, no action starts, no path retains anything new, and a
+	 * listing that answers late touches nothing.
+	 */
+	let closing: Promise<void> | undefined;
 	const rowPaths = $derived(new Set(entries.map((entry) => entry.path)));
 	const selection = $derived.by((): Selection | undefined => {
 		const path = selectedPath;
@@ -141,7 +152,24 @@ export function createTodos(folder: TodosFolder) {
 				}
 			: { kind: 'file', path, file: item };
 	});
-	const terminal = createTerminalSession(folder.terminal(), refreshAll);
+	const shell = folder.terminal();
+	const terminal = createTerminalSession(
+		{
+			get cwd() {
+				return shell.cwd;
+			},
+			// A command entered after close began answers as the closed folder does.
+			exec: (command, options) =>
+				closing === undefined
+					? shell.exec(command, options)
+					: Promise.resolve({
+							stdout: '',
+							stderr: 'The folder is closed\n',
+							exitCode: 1,
+						}),
+		},
+		refreshAll,
+	);
 	const unsubscribe = folder.git.subscribe((snapshot) => {
 		git = snapshot;
 	});
@@ -156,6 +184,7 @@ export function createTodos(folder: TodosFolder) {
 	 * last change is always read.
 	 */
 	function reread(): Promise<void> {
+		if (closing !== undefined) return Promise.resolve();
 		if (rereading !== undefined) {
 			rereadAgain = true;
 			return rereading;
@@ -182,9 +211,13 @@ export function createTodos(folder: TodosFolder) {
 	/** Claim paths for one operation; undefined when another operation holds any of them. */
 	function reserve(...paths: string[]) {
 		if (paths.some((path) => reserved.has(path))) return undefined;
-		for (const path of paths) reserved.add(path);
+		const released = Promise.withResolvers<void>();
+		for (const path of paths) reserved.set(path, released.promise);
 		return () => {
-			for (const path of paths) reserved.delete(path);
+			// A release frees only the paths this operation still owns.
+			for (const path of paths)
+				if (reserved.get(path) === released.promise) reserved.delete(path);
+			released.resolve();
 		};
 	}
 
@@ -210,20 +243,22 @@ export function createTodos(folder: TodosFolder) {
 	}
 
 	/**
-	 * One listing pass. A stale pass stops before it touches state, and a pass
-	 * speaks only for what was retained when it was requested and is not
-	 * reserved by an operation now. Clean editors adopt newer saved text, and a
-	 * path whose file left the folder is forgotten unless its editor still
-	 * holds input.
+	 * One listing pass. A stale pass, or one that answers after close began,
+	 * stops before it touches state, and a pass speaks only for what was
+	 * retained when it was requested and is not reserved by an operation now.
+	 * Clean editors adopt newer saved text, and a path whose file left the
+	 * folder is forgotten unless its editor still holds input.
 	 */
 	async function refresh() {
+		if (closing !== undefined) return;
 		const sequence = ++refreshSequence;
+		const stale = () => closing !== undefined || sequence !== refreshSequence;
 		const requested = new Map(retained);
 		const [rows, files] = await Promise.all([
 			table.list(),
 			folder.files.list(),
 		]);
-		if (sequence !== refreshSequence) return;
+		if (stale()) return;
 		if (rows.error) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
 			listError = rows.error.message;
@@ -248,6 +283,9 @@ export function createTodos(folder: TodosFolder) {
 		const current = (path: string, item: Retained) =>
 			retained.get(path) === item && !reserved.has(path);
 		for (const [path, item] of requested) {
+			// An editor's observation may have closed the app or started a newer
+			// pass; nothing after that is forgotten, observed, or read.
+			if (stale()) return;
 			if (item.kind === 'loading' || !current(path, item)) continue;
 			if (present && !present.has(path)) {
 				forgetIdle(path);
@@ -260,13 +298,14 @@ export function createTodos(folder: TodosFolder) {
 			}
 			if (item.kind !== 'text' || !present) continue;
 			const read = await readTextFile(folder.files, path);
-			if (sequence !== refreshSequence) return;
+			if (stale()) return;
 			if (read.data?.kind === 'text' && current(path, item))
 				item.editor.observe(read.data.file);
 		}
 	}
 
 	async function refreshAll() {
+		if (closing !== undefined) return;
 		await Promise.all([refresh(), folder.git.status()]);
 	}
 
@@ -282,6 +321,7 @@ export function createTodos(folder: TodosFolder) {
 
 	/** Select a path: a todo row opens its editor, any other file opens as raw text or details. */
 	async function open(path: string) {
+		if (closing !== undefined) return;
 		selectedPath = path;
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
 		const known = retained.get(path);
@@ -292,10 +332,10 @@ export function createTodos(folder: TodosFolder) {
 			reserved.has(path)
 		)
 			return;
-		// This exact item is the claim on the path. A rename, delete, or newer
-		// open forgets or replaces it, and a result that arrives after is dropped.
-		// A result that arrives while an operation holds the path gives the
-		// claim up: the operation decides what is retained there.
+		// This exact item is the claim on the path. A rename, delete, close, or
+		// newer open forgets or replaces it, and a result that arrives after is
+		// dropped. A result that arrives while an operation holds the path gives
+		// the claim up: the operation decides what is retained there.
 		const loading: Retained = { kind: 'loading' };
 		retained.set(path, loading);
 		const claimed = () => {
@@ -444,7 +484,7 @@ export function createTodos(folder: TodosFolder) {
 		 * editor is saving or its file is being renamed or deleted.
 		 */
 		discard(path: string) {
-			if (reserved.has(path)) return;
+			if (closing !== undefined || reserved.has(path)) return;
 			const state = editorOf(retained.get(path))?.saveState;
 			if (
 				state?.kind === 'failed' ||
@@ -453,18 +493,22 @@ export function createTodos(folder: TodosFolder) {
 				forget(path);
 		},
 		async create(title: string): Promise<string | undefined> {
+			if (closing !== undefined) return CLOSING;
 			const created = await table.create({
 				fields: { title, done: false },
 				body: '',
 			});
 			if (created.error) return describeWriteError(created.error);
 			await refresh();
+			// The row was written; a closing app opens no editor for it.
+			if (closing !== undefined) return undefined;
 			selectedPath = created.data.path;
 			retainTodo(created.data);
 			return undefined;
 		},
 		/** Toggle completion. An open editor receives it in its buffer instead of racing it. */
 		async toggle(entry: TodoEntry): Promise<string | undefined> {
+			if (closing !== undefined) return CLOSING;
 			const release = reserve(entry.path);
 			if (release === undefined) return BUSY;
 			try {
@@ -501,6 +545,7 @@ export function createTodos(folder: TodosFolder) {
 		 * saving again.
 		 */
 		async rename(path: string, name: string): Promise<string | undefined> {
+			if (closing !== undefined) return CLOSING;
 			const directory = dirname(path);
 			const problem = nameProblem(directory, name);
 			if (problem !== undefined) return problem;
@@ -568,6 +613,7 @@ export function createTodos(folder: TodosFolder) {
 			directory: string,
 			name: string,
 		): Promise<string | undefined> {
+			if (closing !== undefined) return CLOSING;
 			const problem = nameProblem(directory, name);
 			if (problem !== undefined) return problem;
 			const path = joinPath(directory, name);
@@ -585,6 +631,7 @@ export function createTodos(folder: TodosFolder) {
 			directory: string,
 			name: string,
 		): Promise<string | undefined> {
+			if (closing !== undefined) return CLOSING;
 			const problem = nameProblem(directory, name);
 			if (problem !== undefined) return problem;
 			const path = joinPath(directory, name);
@@ -595,7 +642,7 @@ export function createTodos(folder: TodosFolder) {
 				return `"${name}" already exists here.`;
 			const made = await folder.files.mkdir(path);
 			if (made.error) return describeWriteError(made.error);
-			if (directory !== '') expanded.add(directory);
+			if (directory !== '' && closing === undefined) expanded.add(directory);
 			await refresh();
 			return undefined;
 		},
@@ -605,6 +652,7 @@ export function createTodos(folder: TodosFolder) {
 		 * deletion discards input. Only empty folders can be deleted.
 		 */
 		async deletionFor(path: string): Promise<Result<Deletion, string>> {
+			if (closing !== undefined) return Err(CLOSING);
 			if (listing?.directories.includes(path)) {
 				const prefix = `${path}/`;
 				const occupied =
@@ -640,6 +688,7 @@ export function createTodos(folder: TodosFolder) {
 		},
 		/** Delete exactly what was confirmed; a file that changed since is refused. */
 		async remove(deletion: Deletion): Promise<string | undefined> {
+			if (closing !== undefined) return CLOSING;
 			if (deletion.kind === 'folder') {
 				const removed = await folder.files.rmdir(deletion.path);
 				await refresh();
@@ -669,13 +718,18 @@ export function createTodos(folder: TodosFolder) {
 			return problem;
 		},
 		/** Commit current saved files and push. Unsaved editor input is not included. */
-		commitAndPush(): Promise<CommitAndPushResult> {
+		async commitAndPush(): Promise<CommitAndPushResult> {
+			if (closing !== undefined)
+				return { commit: { status: 'closed' }, push: { status: 'closed' } };
 			return folder.git.commitAndPush();
 		},
 		/** Fetch, then apply the remote only as a clean fast-forward. Never runs on its own. */
 		async pull(): Promise<Result<PullOutcome, PullError | GitError>> {
+			if (closing !== undefined) return GitError.Closed();
 			const fetched = await folder.git.fetch();
 			if (fetched.error) return Err(fetched.error);
+			// A fetch that answers after close began applies nothing.
+			if (closing !== undefined) return GitError.Closed();
 			const pulled = await folder.git.pullFastForward();
 			await refresh();
 			return pulled;
@@ -684,16 +738,34 @@ export function createTodos(folder: TodosFolder) {
 		 * Save what can still be saved, then release the folder. A draft that
 		 * cannot save (a conflict or failure) ends with the page; the view asks
 		 * before the page is left while any draft is unsaved.
+		 *
+		 * Every call answers the same completion. From the first call no action
+		 * starts, hints stop, and nothing new is retained. A rename, toggle, or
+		 * delete that already owns its paths finishes first, so its editor
+		 * settles where the operation left it. Reads, single saves, terminal
+		 * commands, and Git work already running are the folder's: it drains or
+		 * cancels them when it closes, and what they answer late is dropped here.
 		 */
-		async close() {
-			for (const editor of editors()) {
-				await editor.settle();
-				editor.dispose();
-			}
+		close() {
+			if (closing !== undefined) return closing;
+			const completion = Promise.withResolvers<void>();
+			// A save settled below may call close again; it gets this completion.
+			closing = completion.promise;
 			stopListening();
 			unsubscribe();
-			await rereading;
-			await folder.close();
+			// An open that is still reading finds its claim gone and retains nothing.
+			for (const [path, item] of retained)
+				if (item.kind === 'loading') retained.delete(path);
+			void (async () => {
+				// The fence stops new reservations, so these are all there will be.
+				await Promise.all(reserved.values());
+				for (const editor of editors()) {
+					await editor.settle();
+					editor.dispose();
+				}
+				await folder.close();
+			})().then(completion.resolve, completion.reject);
+			return closing;
 		},
 	};
 }

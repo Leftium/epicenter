@@ -470,3 +470,39 @@ export async function resolveNativeRoot(root: string): Promise<string> {
 		throw new Error(`The native folder root '${root}' is not a directory.`);
 	return resolved;
 }
+
+/**
+ * Refuse a root whose private Git state would send writes somewhere else:
+ * `.git` as a symbolic link or a `gitdir:` file (a linked worktree or
+ * submodule), and a linked `.git/epicenter` or scratch directory. Scratch
+ * files are renamed into the folder, so they must live inside it.
+ *
+ * This inspects the layout once, when the folder opens. It does not defend
+ * against a program that swaps a link in afterward.
+ */
+export async function verifyNativeLayout(root: string): Promise<void> {
+	for (const [relative, label] of [
+		['.git', '.git'],
+		[join('.git', 'epicenter'), '.git/epicenter'],
+		[join('.git', 'epicenter', 'scratch'), '.git/epicenter/scratch'],
+	] as const) {
+		let stats: Awaited<ReturnType<typeof lstat>>;
+		try {
+			stats = await lstat(join(root, relative));
+		} catch (cause) {
+			// Nothing below an absent directory exists yet; opening creates it.
+			if (codeOf(cause) === 'ENOENT') return;
+			throw cause;
+		}
+		if (stats.isSymbolicLink())
+			throw new Error(
+				`The native folder '${root}' cannot be opened: ${label} is a symbolic link.`,
+			);
+		if (!stats.isDirectory())
+			throw new Error(
+				relative === '.git'
+					? `The native folder '${root}' cannot be opened: .git is a file that points at another Git directory.`
+					: `The native folder '${root}' cannot be opened: ${label} is not a directory.`,
+			);
+	}
+}

@@ -9,6 +9,7 @@
  * SPA reaches domain code.
  */
 
+import { BRIDGE_PATH as CAPTURE_BRIDGE_PATH } from '@epicenter/capture-app/bridge';
 import { CHECKOUT_PATH } from '@epicenter/app/artifact/checkout';
 import {
 	CALLBACK_PATH as MAIL_CALLBACK_PATH,
@@ -81,6 +82,8 @@ export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
  * who is asking and the id leaves the URL entirely.
  */
 export const CHECKOUT_ROUTE = route(`${CHECKOUT_PATH}/:dataId`);
+/** Capture's file calls and event stream, gated by the host session. */
+export const CAPTURE_BRIDGE_ROUTE = route(CAPTURE_BRIDGE_PATH);
 /**
  * Where Google returns a person after Local Mail's consent screen.
  *

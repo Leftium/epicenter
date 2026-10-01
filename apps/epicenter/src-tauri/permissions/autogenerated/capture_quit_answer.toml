@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-capture-quit-answer"
+description = "Enables the capture_quit_answer command without any pre-configured scope."
+commands.allow = ["capture_quit_answer"]
+
+[[permission]]
+identifier = "deny-capture-quit-answer"
+description = "Denies the capture_quit_answer command without any pre-configured scope."
+commands.deny = ["capture_quit_answer"]

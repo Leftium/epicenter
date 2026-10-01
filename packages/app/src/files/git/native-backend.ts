@@ -12,7 +12,7 @@
 import { spawn } from 'node:child_process';
 import * as nodeFs from 'node:fs';
 import { rename, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type * as git from 'isomorphic-git';
 import type { FileBoundary } from '../boundary.js';
 import type {
@@ -52,12 +52,38 @@ export type GitRun = (
 	},
 ) => Promise<{ code: number | null; stdout: Uint8Array; stderr: string }>;
 
+/**
+ * Inherited variables that would point Git at another repository, index, or
+ * object store: the names `git rev-parse --local-env-vars` lists, plus the
+ * ref namespace. Each command addresses the repository in its working
+ * directory, whatever the parent process had set. The ceiling stops discovery
+ * at the root, so a root whose `.git` is missing never resolves to a
+ * repository in a directory above it. `GIT_OPTIONAL_LOCKS=0` keeps read-only
+ * commands such as `status` and `diff` from taking `index.lock` to refresh
+ * the index, so observing the folder never looks like a change to it.
+ */
+const REPOSITORY_ENV =
+	/^GIT_(DIR|WORK_TREE|IMPLICIT_WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|COMMON_DIR|NAMESPACE|PREFIX|GRAFT_FILE|SHALLOW_FILE|NO_REPLACE_OBJECTS|REPLACE_REF_BASE|CONFIG|CONFIG_PARAMETERS|CONFIG_COUNT|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/;
+
+function gitEnvironment(root: string): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = {};
+	for (const [name, value] of Object.entries(process.env))
+		if (!REPOSITORY_ENV.test(name)) env[name] = value;
+	return {
+		...env,
+		GIT_CEILING_DIRECTORIES: dirname(root),
+		GIT_OPTIONAL_LOCKS: '0',
+		GIT_TERMINAL_PROMPT: '0',
+		LC_ALL: 'C',
+	};
+}
+
 export function createGitRunner(root: string): GitRun {
 	return (args, options = {}) =>
 		new Promise((resolve, reject) => {
 			const child = spawn('git', [...args], {
 				cwd: root,
-				env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+				env: gitEnvironment(root),
 				stdio: ['pipe', 'pipe', 'pipe'],
 				signal: options.signal,
 			});

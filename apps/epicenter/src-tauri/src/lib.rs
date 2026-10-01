@@ -32,6 +32,7 @@ use tauri_specta::Event as _;
 mod command_names;
 
 pub mod app_data;
+mod capture_lifetime;
 mod device_owner;
 mod sqlite;
 
@@ -606,22 +607,6 @@ fn launch_application(
     launch_on_main_thread(&app, application, port, &token, true).map_err(|error| format!("{error:#}"))
 }
 
-/// Whispering may prepare Capture in the background or reveal it after an
-/// acknowledged promotion. The command cannot launch another application.
-#[tauri::command(async)]
-fn set_capture_window_visible(
-    app: DesktopAppHandle,
-    state: State<'_, HostState>,
-    reveal: bool,
-) -> std::result::Result<(), String> {
-    let Some(token) = state.active_token() else {
-        return Err("the Epicenter host is not ready".to_string());
-    };
-    let port = state.port().map_err(|error| format!("{error:#}"))?;
-    launch_on_main_thread(&app, Application::Compiled(BuiltInApp::Capture), port, &token, reveal)
-        .map_err(|error| format!("{error:#}"))
-}
-
 /// Create or reveal the window on the main thread and report what happened.
 ///
 /// Mirrors `create_windows_on_main_thread`: hand the work over, wait for the
@@ -763,7 +748,7 @@ pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler = tauri::generate_handler![encode_recording_for_upload, launch_application, set_capture_window_visible]
+    let native_handler = tauri::generate_handler![encode_recording_for_upload, launch_application, capture_lifetime::capture_quit_answer]
         as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
@@ -800,18 +785,26 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(HostState::new(port))
+        .manage(capture_lifetime::CaptureLifetime::default())
         .manage(GlobalShortcutRegistry::default())
         .manage(Mutex::new(Recorder::new()))
         .manage(DownloadManager::default());
 
     #[cfg(target_os = "macos")]
-    let builder = builder.plugin(tauri_nspanel::init());
+    let builder = builder
+        .plugin(tauri_nspanel::init())
+        .menu(capture_lifetime::menu)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == capture_lifetime::QUIT_MENU_ID {
+                app.exit(0);
+            }
+        });
 
     builder
         .invoke_handler(move |invoke| {
             if matches!(
                 invoke.message.command(),
-                "encode_recording_for_upload" | "launch_application" | "set_capture_window_visible"
+                "encode_recording_for_upload" | "launch_application" | "capture_quit_answer"
             ) {
                 native_handler(invoke)
             } else {
@@ -869,6 +862,12 @@ pub fn run() {
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
             RunEvent::Reopen { .. } => request_window(app, BuiltInApp::Home),
+            RunEvent::ExitRequested { api, code, .. }
+                if code != Some(tauri::RESTART_EXIT_CODE)
+                    && capture_lifetime::request_quit(app, code.unwrap_or(0)) =>
+            {
+                api.prevent_exit();
+            }
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
@@ -1803,6 +1802,10 @@ fn invalidate_windows(app: &DesktopAppHandle) {
     let _ = app.clone().run_on_main_thread(move || {
         for built_in in BuiltInApp::ALL {
             if let Some(window) = app.get_webview_window(built_in.id()) {
+                if built_in == BuiltInApp::Capture {
+                    capture_lifetime::host_stopped(&window);
+                    continue;
+                }
                 if window.destroy().is_err() {
                     let _ = window.hide();
                 }
@@ -2457,7 +2460,7 @@ mod tests {
     /// (raw bytes) or are host-owned rather than part of the app contract.
     #[test]
     fn generated_bindings_cover_every_declared_command() {
-        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload", "launch_application", "set_capture_window_visible"];
+        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload", "launch_application", "capture_quit_answer"];
         for bindings in [
             include_str!("../../../whispering/src/lib/tauri/bindings.gen.ts"),
             include_str!("../../src/ui/bindings.gen.ts"),

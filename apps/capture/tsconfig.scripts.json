@@ -1,0 +1,10 @@
+{
+	// Bun entrypoints: the folder bridge the Epicenter host mounts, and the
+	// harness scripts.
+	"extends": "../../tsconfig.dom.json",
+	"compilerOptions": {
+		"types": ["bun"],
+		"noEmit": true
+	},
+	"include": ["scripts/**/*.ts", "native/**/*.ts"]
+}

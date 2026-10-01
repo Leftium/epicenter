@@ -34,6 +34,7 @@
 		"@epicenter/device": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",
+		"@epicenter/capture-app": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/local-mail": "workspace:*",

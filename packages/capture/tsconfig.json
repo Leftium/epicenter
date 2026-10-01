@@ -1,5 +1,5 @@
 {
-	"extends": "../../tsconfig.base.json",
+	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {
 		"types": ["bun"],
 		"noUnusedLocals": true,

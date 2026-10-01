@@ -10,7 +10,8 @@
 				"home-launch-application-development",
 				"trusted-app-windows-development",
 				"trusted-whispering-native-development",
-				"trusted-whispering-overlay-development"
+				"trusted-whispering-overlay-development",
+				"capture-drafts-development"
 			]
 		}
 	}

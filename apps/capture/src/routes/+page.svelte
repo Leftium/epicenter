@@ -1,25 +1,41 @@
 <script lang="ts">
-  import { AppBoot, SignInScreen } from '@epicenter/app-shell/boot-screens';
-  import { auth } from '#platform/auth';
-  import { openCapture } from '$lib/open.js';
-  import CaptureView from '$lib/CaptureView.svelte';
-  import { resolve } from '$app/paths';
+	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
+	import { Loading } from '@epicenter/ui/loading';
+	import { onDestroy } from 'svelte';
+	import { openCaptureHost } from '#platform/folder';
+	import { createCaptures } from '$lib/captures.svelte.js';
+	import CaptureApp from '$lib/components/CaptureApp.svelte';
 
-  const params = new URLSearchParams(location.search);
-  const connecting = !params.has('stopped') && (!auth.getState().account || params.has('connect'));
-  const account = auth.getState().account;
-  const open = !connecting && account && !params.has('stopped')
-    ? (signal: AbortSignal) => openCapture(account, signal)
-    : undefined;
+	// The mounted page acquires the folder; importing modules opens nothing.
+	// Which folder is the build's choice: a browser folder, or the desktop
+	// host's directory. There is no sign-in on this path.
+	const opening = openCaptureHost().then(async (host) => {
+		const captures = createCaptures(host);
+		await captures.refresh();
+		return { host, captures };
+	});
+
+	onDestroy(() => {
+		void opening
+			.then(({ host, captures }) => {
+				captures.close();
+				return host.close();
+			})
+			.catch(() => {});
+	});
 </script>
 
-{#if connecting}
-  <SignInScreen {auth} appName="Capture" noun="captures" />
-{:else}
-  <AppBoot {auth} {open} appName="Capture" noun="captures"
-    signInHref="{resolve('/')}?connect" signedOutHref={resolve('/')}>
-    {#snippet children(store)}
-      <CaptureView {store} account={account!} />
-    {/snippet}
-  </AppBoot>
-{/if}
+{#await opening}
+	<Loading class="h-dvh" label="Opening your captures…" />
+{:then { host, captures }}
+	<CaptureApp {host} {captures} />
+{:catch error}
+	<Empty.Root class="h-dvh">
+		<Empty.Header>
+			<Empty.Title>Could not open the captures folder</Empty.Title>
+			<Empty.Description role="alert">{error instanceof Error ? error.message : String(error)}</Empty.Description>
+		</Empty.Header>
+		<Empty.Content><Button variant="outline" size="sm" onclick={() => location.reload()}>Try again</Button></Empty.Content>
+	</Empty.Root>
+{/await}

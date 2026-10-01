@@ -1,0 +1,19 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "capture-drafts-production",
+	"description": "Capture answers host quit requests after saving or explicit draft discard.",
+	"local": false,
+	"windows": [
+		"capture"
+	],
+	"remote": {
+		"urls": [
+			"http://127.0.0.1:39130"
+		]
+	},
+	"permissions": [
+		"core:event:allow-listen",
+		"core:event:allow-unlisten",
+		"allow-capture-quit-answer"
+	]
+}

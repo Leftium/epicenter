@@ -4,7 +4,8 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./legacy": "./src/legacy/index.ts"
 	},
 	"license": "AGPL-3.0-or-later",
 	"scripts": {
@@ -13,10 +14,13 @@
 	},
 	"dependencies": {
 		"@epicenter/app": "workspace:*",
-		"@y/y": "14.0.0-rc.26"
+		"markdown-it": "^14.0.0"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
-		"typescript": "catalog:"
+		"@types/markdown-it": "^14.0.0",
+		"@y/y": "14.0.0-rc.26",
+		"typescript": "catalog:",
+		"wellcrafted": "catalog:"
 	}
 }

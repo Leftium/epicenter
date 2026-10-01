@@ -17,7 +17,12 @@ import { createHistory } from './git/history.js';
 import { createNativeGitBackend } from './git/native-backend.js';
 import { createNativeFileBoundary, resolveNativeRoot } from './native-store.js';
 
-export { GitCommandError } from './git/native-backend.js';
+export {
+	createGitRunner,
+	GitCommandError,
+	type GitRun,
+} from './git/native-backend.js';
+export { verifyNativeLayout } from './native-store.js';
 
 export type NativeFolderOptions<TDefinition extends DataDefinition> = {
 	/** The folder's directory. A Git repository is initialized there if absent. */

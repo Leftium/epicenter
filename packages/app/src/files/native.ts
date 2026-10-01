@@ -15,7 +15,11 @@ import {
 } from './folder.js';
 import { createHistory } from './git/history.js';
 import { createNativeGitBackend } from './git/native-backend.js';
-import { createNativeFileBoundary, resolveNativeRoot } from './native-store.js';
+import {
+	createNativeFileBoundary,
+	resolveNativeRoot,
+	verifyNativeLayout,
+} from './native-store.js';
 
 export {
 	createGitRunner,
@@ -40,6 +44,7 @@ export async function openNativeFolder<
 }: NativeFolderOptions<TDefinition>): Promise<Folder<TDefinition>> {
 	compileFolderDefinition(definition);
 	const resolved = await resolveNativeRoot(root);
+	await verifyNativeLayout(resolved);
 	const boundary = createNativeFileBoundary(resolved);
 	const backend = await createNativeGitBackend({
 		root: resolved,

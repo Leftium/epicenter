@@ -6,7 +6,10 @@
  * operating-system-wide compare-and-swap against other programs. Exclusive
  * creation and moves use hard links, which fail rather than overwrite an
  * existing destination. Replacement writes a scratch file under
- * `.git/epicenter/scratch` and renames it into place.
+ * `.git/epicenter/scratch`, checks the expected version again, and renames the
+ * scratch file into place. The second check catches a writer that landed while
+ * the bytes were being staged; a writer that lands between that check and the
+ * rename is still overwritten.
  *
  * One boundary applies its batches one at a time, so two saves through the
  * same opened folder never share that window: the later one checks against
@@ -191,6 +194,14 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 				});
 			}
 			try {
+				// Staging and parent creation took time. Check the version again so
+				// the only unchecked window left is this read to the rename below.
+				if (change.expected !== 'any' && change.expected !== 'absent') {
+					const now = await readCurrent(change.path);
+					if (now.error) return now;
+					if (!satisfies(now.data?.version, change.expected))
+						return conflict(change.path, change.expected, now.data?.version);
+				}
 				if (found.data === undefined && change.expected !== 'any') {
 					// Exclusive creation: link fails instead of replacing a newcomer.
 					try {
@@ -254,6 +265,13 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		}
 		const parent = await ensureParent(change.to);
 		if (parent.error) return parent;
+		if (change.expected !== 'any') {
+			// The destination checks took time; the link must carry the bytes checked.
+			const now = await readCurrent(change.from);
+			if (now.error) return now;
+			if (!satisfies(now.data?.version, change.expected))
+				return conflict(change.from, change.expected, now.data?.version);
+		}
 		try {
 			await link(absolute(change.from), absolute(change.to));
 		} catch (cause) {

@@ -56,8 +56,10 @@ type DraftStore<T extends SavedText> = {
 		baseline: T,
 		source: string,
 	): Promise<Result<T, { readonly name: string; readonly message: string }>>;
-	/** The saved file now, or undefined when it is gone or no longer text. */
-	read(path: string): Promise<T | undefined>;
+	/** Undefined means absent; an unreadable saved file remains a failure. */
+	read(
+		path: string,
+	): Promise<Result<T | undefined, { readonly message: string }>>;
 	/** Save text as a new file beside the conflict; returns the path it wrote. */
 	keepCopy(path: string, source: string): Promise<Result<string, string>>;
 };
@@ -103,22 +105,35 @@ function createDraft<T extends SavedText>(
 		const captured = buffer;
 		const observed = baseline;
 		saveState = { kind: 'saving' };
-		const result = await store.write(observed, captured);
-		if (result.error === null) {
-			baseline = result.data;
-			saveState = { kind: 'saved' };
-			onSaved();
-			return;
-		}
-		if (result.error.name === 'Conflict') {
+		try {
+			const result = await store.write(observed, captured);
+			if (result.error === null) {
+				baseline = result.data;
+				saveState = { kind: 'saved' };
+				onSaved();
+				return;
+			}
+			if (result.error.name === 'Conflict') {
+				const current = await store.read(observed.path);
+				saveState = current.error
+					? {
+							kind: 'failed',
+							message: `This file changed elsewhere, and the saved version cannot be shown: ${current.error.message}`,
+						}
+					: {
+							kind: 'conflict',
+							message: result.error.message,
+							current: current.data,
+						};
+				return;
+			}
+			saveState = { kind: 'failed', message: result.error.message };
+		} catch (cause) {
 			saveState = {
-				kind: 'conflict',
-				message: result.error.message,
-				current: await store.read(observed.path),
+				kind: 'failed',
+				message: cause instanceof Error ? cause.message : String(cause),
 			};
-			return;
 		}
-		saveState = { kind: 'failed', message: result.error.message };
 	}
 
 	/** Save the current generation now. Resolves when no save is running. */
@@ -296,10 +311,7 @@ export function createRecordingEditor(
 	return createDraft<RecordingEntry>(
 		{
 			write: (baseline, source) => table.writeSource(baseline, source),
-			async read(path) {
-				const current = await table.get(stemOf(path));
-				return current.data ?? undefined;
-			},
+			read: (path) => table.get(stemOf(path)),
 			keepCopy: copyKeeper(files),
 		},
 		entry,
@@ -326,7 +338,15 @@ export function createTextFileEditor(
 			},
 			async read(path) {
 				const read = await readTextFile(files, path);
-				return read.data?.kind === 'text' ? read.data.file : undefined;
+				if (read.error)
+					return read.error.name === 'NotFound' ? Ok(undefined) : read;
+				if (read.data.kind === 'text') return Ok(read.data.file);
+				return Err({
+					message:
+						read.data.kind === 'binary'
+							? 'the saved file is not text'
+							: 'the saved file is larger than 1 MB',
+				});
 			},
 			keepCopy: copyKeeper(files),
 		},

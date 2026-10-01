@@ -154,7 +154,6 @@ export const PullError = defineErrors({
 export type PullError = InferErrors<typeof PullError>;
 
 export type CommitOutcome =
-	| { readonly status: 'unconfirmed'; readonly error: string }
 	| {
 			readonly status: 'committed';
 			readonly oid: string;
@@ -178,16 +177,19 @@ export type CommitOutcome =
 	  }
 	| { readonly status: 'blocked'; readonly reason: string }
 	| { readonly status: 'failed'; readonly error: string }
+	/** The host did not acknowledge the operation; inspect history before retrying. */
+	| { readonly status: 'unconfirmed'; readonly error: string }
 	/** The caller's signal aborted; the shared pass may still complete. */
 	| { readonly status: 'stoppedWaiting' }
 	| { readonly status: 'closed' };
 
 export type PushOutcome =
-	| { readonly status: 'unconfirmed'; readonly error: string }
 	| { readonly status: 'pushed'; readonly oid: string }
 	| { readonly status: 'noRemote' }
 	| { readonly status: 'nothingToPush' }
 	| { readonly status: 'failed'; readonly oid: string; readonly error: string }
+	/** The host did not acknowledge the push; no commit identity is known. */
+	| { readonly status: 'unconfirmed'; readonly error: string }
 	| { readonly status: 'cancelled'; readonly oid: string | undefined }
 	| { readonly status: 'skipped'; readonly reason: string }
 	/** The caller's signal aborted; the shared push may still complete. */

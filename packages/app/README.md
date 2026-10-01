@@ -104,6 +104,17 @@ await folder.close();
 | `git` | A shared status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, and terminal-level `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `signal`, `close()` | Closing fences new work and immediately cancels queued pushes and fetches and aborts the active transport. It then waits for admitted file operations, local commit passes, explicit Git operations (status, staging, a staged commit and its refresh, diff, log), and the cancelled transport to settle before releasing storage. |
 
+`FolderAccess` contains the borrowed `tables`, `kv`, `files`, and `git`
+namespaces. `Folder` adds the owner's `signal` and `close()`. A remote client
+owns its connection lifetime, not the host folder; closing that connection
+fences new calls and waits for its admitted calls, without shutting down the
+host. Caller cancellation stops waiting for shared Git work.
+
+A lost mutation reply is `FileError.Unconfirmed`, `GitError.Unconfirmed`, or an
+`unconfirmed` commit or push outcome. The host may have completed the operation.
+Editors and capture retries reread the saved files before retrying; an
+unconfirmed result does not mean that nothing was written.
+
 `update` patches the captured source: it replaces only the touched frontmatter
 value spans or appends new keys, and refuses rather than rewriting YAML it
 cannot patch safely. Comments, quoting, key order, a byte-order mark, and CRLF
@@ -159,6 +170,11 @@ files, index, and branch in one IndexedDB transaction. A native folder applies
 ordered file steps, updates the index with `git reset`, and moves the branch
 last; a failure reports the steps that completed.
 
+A partial native pull is repairable filesystem and Git state. A later save can
+checkpoint that state, which can diverge from the remote. Inspect the affected
+files and use ordinary Git operations to finish or undo the update. The folder
+keeps no durable replay marker and promises no automatic resume or target pin.
+
 A pull whose files landed but whose index or branch step failed
 (`Partial`, `IndexFailed`, or `BranchMoved` with files applied) marks the
 saved-files observation stale and requests a fresh scan; it requests no commit.
@@ -190,17 +206,13 @@ containing a path separator, and entry operations refuse a nested path such as
 listable and editable. Rename and delete refuse when the current same-stem
 attachments differ from the one the entry captured.
 
-Create, rename, and delete depend on the other filenames in the table
-directory: an occupied or case-colliding destination, a same-stem file the new
-row would adopt, and the attachment the entry captured. Each operation checks
-those filenames once to refuse early, and the folder checks them again where
-the files are published, before it writes anything. A browser folder runs that
-check in the same IndexedDB transaction as the writes, so a write from another
-tab lands wholly before or after it. A native folder runs it in the queue that
-orders the folder's own saves; another program can still add a file after the
-check. A refusal names the condition (`Exists`, `Collision`, or
-`AmbiguousAttachment`), writes nothing, and requests no history. Unrelated
-files appearing in the directory refuse nothing.
+Create, rename, and delete check the observed table directory once for
+occupied or case-colliding destinations, unexpected attachment adoption, and
+ambiguous ownership. Those checks do not guarantee a coherent row-and-attachment
+layout during concurrent edits. Per-file conditions still protect row versions
+and exclusive destinations. A native race or interruption can leave an orphan
+or ambiguous attachment; inspect and repair the files directly. A browser batch
+remains atomic, but its preflight observation can be stale.
 
 A native checkpoint enumerates and reads the folder in that same queue, so it
 never captures one of the folder's own multi-file saves half applied. It makes

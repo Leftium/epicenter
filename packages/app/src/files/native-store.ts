@@ -10,10 +10,9 @@
  *
  * One boundary applies its batches one at a time, so two saves through the
  * same opened folder never share that window: the later one checks against
- * what the earlier one left. A batch's directory guard and a capture's
- * enumeration and reads take the same turn, so a guard sees what the earlier
- * batch left and a capture never sees one of this boundary's batches half
- * applied. This orders this boundary's own batches and captures only. It is
+ * what the earlier one left. A capture's enumeration and reads take the same
+ * turn, so it never sees one of this boundary's batches half applied. This
+ * orders this boundary's own batches and captures only. It is
  * not a file lock, and another program or a second boundary on the same
  * directory still races as described above. Other reads are not ordered.
  *
@@ -376,7 +375,7 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			if (read.error) return read;
 			return Ok(new Blob([read.data.bytes as Uint8Array<ArrayBuffer>]));
 		},
-		async apply(changes, guard) {
+		async apply(changes) {
 			for (const change of changes) {
 				const paths =
 					change.kind === 'move' ? [change.from, change.to] : [change.path];
@@ -386,13 +385,6 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 				}
 			}
 			return inOrder(async () => {
-				if (guard !== undefined) {
-					// Checked in this batch's turn, so it sees every earlier batch.
-					const found = await children(guard.directory);
-					if (found.error && found.error.name !== 'NotFound') return found;
-					const checked = guard.check(found.data?.files ?? []);
-					if (checked.error) return checked;
-				}
 				const applied: FileStep[] = [];
 				for (let index = 0; index < changes.length; index++) {
 					const change = changes[index]!;

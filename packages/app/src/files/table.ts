@@ -6,8 +6,6 @@
  * conformance issues. Writes receive the whole entry and publish only if the
  * file still has that exact version (ADR-0464). A row owns zero or one
  * same-stem attachment (ADR-0456); ambiguity refuses app deletion and rename.
- * Create, rename, and delete depend on sibling filenames, so they pass that
- * condition to the boundary, which checks it where the batch publishes.
  */
 
 import { customAlphabet } from 'nanoid';
@@ -298,45 +296,6 @@ export function createFileTable<TTable extends TableDeclaration>(
 		return Ok(undefined);
 	}
 
-	/**
-	 * Refuse a stem whose row or attachment destination is occupied or
-	 * collides, or that would adopt an existing same-stem file.
-	 */
-	function checkVacant(
-		files: readonly string[],
-		stem: string,
-		attachment: string | undefined,
-		ignore: readonly string[],
-	): Result<undefined, TableError> {
-		const row = checkDestination(files, rowPath(name, stem), ignore);
-		if (row.error) return row;
-		// An existing same-stem file would become this row's attachment.
-		const orphan = attachmentCandidates(name, files).get(stem);
-		if (orphan !== undefined && orphan.length > 0)
-			return TableError.Exists({ path: orphan[0]! });
-		return attachment === undefined
-			? Ok(undefined)
-			: checkDestination(files, attachment, ignore);
-	}
-
-	/**
-	 * A condition on this directory's filenames, run twice. `preflight` reads
-	 * the directory to refuse early with a useful error. The boundary runs the
-	 * same check again where the batch publishes, before any change, and that
-	 * run decides: a file that lands between the two cannot be missed.
-	 */
-	type DirectoryCheck = (
-		files: readonly string[],
-	) => Result<undefined, TableError>;
-
-	async function preflight(
-		check: DirectoryCheck,
-	): Promise<Result<undefined, TableError | FileError>> {
-		const found = await directory();
-		if (found.error) return found;
-		return check(found.data.files);
-	}
-
 	async function publishSource(
 		entry: Entry<TFields>,
 		source: string,
@@ -390,7 +349,7 @@ export function createFileTable<TTable extends TableDeclaration>(
 	function checkOwnership(
 		entry: Entry<TFields>,
 		stem: string,
-		files: readonly string[],
+		candidates: Candidates,
 	): Result<undefined, TableError> {
 		const captured = entry.issues?.find((item) => item.kind === 'attachment');
 		if (captured?.kind === 'attachment')
@@ -398,7 +357,7 @@ export function createFileTable<TTable extends TableDeclaration>(
 				path: entry.path,
 				candidates: captured.candidates,
 			});
-		const current = attachmentCandidates(name, files).get(stem) ?? [];
+		const current = candidates.get(stem) ?? [];
 		const expected = entry.attachment === undefined ? [] : [entry.attachment];
 		if (
 			current.length !== expected.length ||
@@ -518,14 +477,14 @@ export function createFileTable<TTable extends TableDeclaration>(
 								'the attachment extension must be one ASCII alphanumeric segment other than md',
 						});
 					const path = rowPath(name, stem);
-					const attachment =
-						input.attachment === undefined
-							? undefined
-							: `${name}/${stem}.${input.attachment.extension}`;
-					const check: DirectoryCheck = (files) =>
-						checkVacant(files, stem, attachment, []);
-					const vacant = await preflight(check);
-					if (vacant.error) return vacant;
+					const found = await directory();
+					if (found.error) return found;
+					const destination = checkDestination(found.data.files, path, []);
+					if (destination.error) return destination;
+					// An existing same-stem file would become this row's attachment.
+					const orphan = found.data.candidates.get(stem);
+					if (orphan !== undefined && orphan.length > 0)
+						return TableError.Exists({ path: orphan[0]! });
 					const ordered: Record<string, unknown> = {};
 					for (const key of declared) ordered[key] = values[key];
 					const composed = composeSource(ordered, input.body ?? '');
@@ -537,7 +496,15 @@ export function createFileTable<TTable extends TableDeclaration>(
 					const source = composed.data;
 					const bytes = encoder.encode(source);
 					const changes: FileChange[] = [];
-					if (attachment !== undefined) {
+					let attachment: string | undefined;
+					if (input.attachment) {
+						attachment = `${name}/${stem}.${input.attachment.extension}`;
+						const collision = checkDestination(
+							found.data.files,
+							attachment,
+							[],
+						);
+						if (collision.error) return collision;
 						const bytes = attachmentBytes!;
 						changes.push({
 							kind: 'write',
@@ -556,10 +523,7 @@ export function createFileTable<TTable extends TableDeclaration>(
 						version,
 						expected: 'absent',
 					});
-					const applied = await context.publish(changes, {
-						directory: name,
-						check,
-					});
+					const applied = await context.publish(changes);
 					if (applied.error) return Err(applied.error);
 					return Ok(
 						interpret(
@@ -612,23 +576,27 @@ export function createFileTable<TTable extends TableDeclaration>(
 						return TableError.InvalidStem({ stem: nextStem, reason: problem });
 					const path = rowPath(name, nextStem);
 					if (path === entry.path) return Ok(entry);
+					const found = await directory();
+					if (found.error) return found;
+					const ownership = checkOwnership(
+						entry,
+						owned.data,
+						found.data.candidates,
+					);
+					if (ownership.error) return ownership;
 					const retiring =
 						entry.attachment === undefined
 							? [entry.path]
 							: [entry.path, entry.attachment];
-					const attachment =
-						entry.attachment === undefined
-							? undefined
-							: `${name}/${nextStem}.${entry.attachment.slice(
-									entry.attachment.lastIndexOf('.') + 1,
-								)}`;
-					const check: DirectoryCheck = (files) => {
-						const ownership = checkOwnership(entry, owned.data, files);
-						if (ownership.error) return ownership;
-						return checkVacant(files, nextStem, attachment, retiring);
-					};
-					const movable = await preflight(check);
-					if (movable.error) return movable;
+					const destination = checkDestination(
+						found.data.files,
+						path,
+						retiring,
+					);
+					if (destination.error) return destination;
+					const orphan = found.data.candidates.get(nextStem);
+					if (orphan !== undefined && orphan.length > 0)
+						return TableError.Exists({ path: orphan[0]! });
 					// Move the row first: a stale entry refuses before anything moves.
 					const changes: FileChange[] = [
 						{
@@ -638,17 +606,26 @@ export function createFileTable<TTable extends TableDeclaration>(
 							expected: entry.version,
 						},
 					];
-					if (entry.attachment !== undefined && attachment !== undefined)
+					let attachment: string | undefined;
+					if (entry.attachment !== undefined) {
+						const extension = entry.attachment.slice(
+							entry.attachment.lastIndexOf('.') + 1,
+						);
+						attachment = `${name}/${nextStem}.${extension}`;
+						const collision = checkDestination(
+							found.data.files,
+							attachment,
+							retiring,
+						);
+						if (collision.error) return collision;
 						changes.push({
 							kind: 'move',
 							from: entry.attachment,
 							to: attachment,
 							expected: 'any',
 						});
-					const applied = await context.publish(changes, {
-						directory: name,
-						check,
-					});
+					}
+					const applied = await context.publish(changes);
 					if (applied.error) return Err(applied.error);
 					return Ok(
 						interpret(
@@ -668,9 +645,13 @@ export function createFileTable<TTable extends TableDeclaration>(
 				> => {
 					const owned = ownsPath(entry);
 					if (owned.error) return owned;
-					const check: DirectoryCheck = (files) =>
-						checkOwnership(entry, owned.data, files);
-					const ownership = await preflight(check);
+					const found = await directory();
+					if (found.error) return found;
+					const ownership = checkOwnership(
+						entry,
+						owned.data,
+						found.data.candidates,
+					);
 					if (ownership.error) return ownership;
 					const changes: Extract<FileChange, { kind: 'remove' }>[] = [
 						{ kind: 'remove', path: entry.path, expected: entry.version },
@@ -681,10 +662,7 @@ export function createFileTable<TTable extends TableDeclaration>(
 							path: entry.attachment,
 							expected: 'any',
 						});
-					const applied = await context.publish(changes, {
-						directory: name,
-						check,
-					});
+					const applied = await context.publish(changes);
 					if (applied.error) return Err(applied.error);
 					return Ok({
 						removed: changes.map((change) => change.path),

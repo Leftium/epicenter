@@ -617,7 +617,7 @@ async function runGit(
 		case 'help':
 		case '--help':
 			return ok(
-				'Supported: git status, git diff [--cached] [paths], git log [-n N] [--oneline], git add <paths>|-A, git commit -m <message>, git push, git fetch, git pull --ff-only\n',
+				`Supported: git status, git diff [--cached] [paths], git log [-n N] [--oneline]${folder.git.snapshot.commitOnEdit ? '' : ', git add <paths>|-A, git commit -m <message>'}, git push, git fetch, git pull --ff-only\n`,
 			);
 		default:
 			return error(

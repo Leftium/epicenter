@@ -47,7 +47,7 @@ export async function openBrowserWorkspace(): Promise<Workspace> {
 		location: 'This browser’s storage for this site (IndexedDB)',
 		terminal: createFolderTerminal(folder),
 		terminalNote:
-			'An in-page shell over the browser folder: common file commands, and git status, add, commit -m, diff, log.',
+			'An in-page shell over the browser folder: common file commands and git status, diff, log. Saves request history.',
 		capture: wantsToneFixture()
 			? createFixtureDevice({
 					name: 'generated tone',

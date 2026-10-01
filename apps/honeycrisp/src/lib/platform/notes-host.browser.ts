@@ -22,7 +22,7 @@ export const openNotesHost: OpenNotesHost = async () => {
 				return terminal.cwd;
 			},
 			description:
-				'The same files as the app · git status, add, commit -m, diff, log',
+				'The same files as the app · git status, diff, log; saves request history',
 			exec: (command) => terminal.exec(command),
 		},
 		location: 'This browser',

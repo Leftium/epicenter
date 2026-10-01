@@ -14,7 +14,7 @@
  * Git is reported beside saving, never as part of it: a file that saved is
  * saved whether or not its commit worked.
  */
-import type { FileCapture, GitSnapshot } from '@epicenter/folder';
+
 import {
 	CAPTURES_TABLE,
 	type CaptureDocument,
@@ -23,6 +23,11 @@ import {
 	excerpt,
 	parseCapture,
 } from '@epicenter/capture';
+import {
+	type FileCapture,
+	type GitSnapshot,
+	sameVersion,
+} from '@epicenter/folder';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	type CaptureEntry,
@@ -125,26 +130,24 @@ export function createCaptures(
 		return { kind: 'present', entry: found.data };
 	}
 
-	/** Write exact source at a path that must be absent, and read it back as an entry. */
+	/**
+	 * Write exact source at a path that must be absent. Resolves the version
+	 * the folder admitted, which is the acknowledgment. The entry beside it is
+	 * that same file read back, and is absent when the path no longer held it:
+	 * what another program did afterwards is never taken for what was written.
+	 */
 	async function createExact(path: string, source: string) {
-		const written = await writing(() =>
-			folder.files.create(path, source),
-		);
+		const written = await writing(() => folder.files.create(path, source));
 		if (written.error !== null)
 			return { data: null, error: written.error } as const;
-		const current = await read(path);
-		if (current.kind === 'present')
-			return { data: current.entry, error: null } as const;
-		return {
-			data: null,
-			error: {
-				name: 'Io',
-				message:
-					current.kind === 'removed'
-						? 'The file was saved and then removed.'
-						: current.message,
-			},
-		} as const;
+		const { version } = written.data;
+		// The write is confirmed; a read that fails or throws cannot undo that.
+		const current = await read(path).catch(() => undefined);
+		const entry =
+			current?.kind === 'present' && sameVersion(current.entry.version, version)
+				? current.entry
+				: undefined;
+		return { data: { version, entry }, error: null } as const;
 	}
 
 	const store: DraftStore = {
@@ -384,7 +387,9 @@ export function createCaptures(
 					const created = await writing(() =>
 						table.create({
 							stem: newStem(now),
-							fields: { capturedAt: now.toISOString() as CaptureFields['capturedAt'] },
+							fields: {
+								capturedAt: now.toISOString() as CaptureFields['capturedAt'],
+							},
 							body,
 						}),
 					);
@@ -408,10 +413,14 @@ export function createCaptures(
 		 * Save a draft's source as a new capture and let go of the draft. For a
 		 * draft whose own file changed, was removed, or cannot be read.
 		 *
-		 * The copy is the source only. Text typed but not yet in the source (a
-		 * new thought, a thought being edited, capture text that was refused)
-		 * would be dropped with the draft, so the copy is refused while any
-		 * exists, and nothing is written.
+		 * The copy is the source only, as it was when this was called. Text typed
+		 * but not yet in the source (a new thought, a thought being edited,
+		 * capture text that was refused) would be dropped with the draft, so the
+		 * copy is refused while any exists, and nothing is written.
+		 *
+		 * The draft is let go only if the copy holds all of it. Input that
+		 * arrived while the copy was being written is not in the copy, so the
+		 * draft stays, unsettled, beside it. The copy is saved either way.
 		 */
 		async saveCopy(
 			draft: Draft,
@@ -422,13 +431,20 @@ export function createCaptures(
 					message:
 						'A copy holds the capture as it is in Source. This capture also has text you typed that is not in it yet: a new thought, a thought you are editing, or capture text that could not be applied. Add it, or copy it somewhere and clear it, then save the copy.',
 				};
+			const source = draft.buffer;
 			try {
 				const stem = `${newStem(new Date())}-copy`;
-				const created = await createExact(pathOf(stem), draft.buffer);
+				const created = await createExact(pathOf(stem), source);
 				if (created.error !== null)
 					return { ok: false, message: created.error.message };
-				noteSaved(created.data);
-				drop(draft.path);
+				if (created.data.entry !== undefined) noteSaved(created.data.entry);
+				// Another draft may have been opened at the path since; it is not this one.
+				if (
+					drafts.get(draft.path) === draft &&
+					draft.buffer === source &&
+					!draft.hasUnsentInput
+				)
+					drop(draft.path);
 				void refresh();
 				return { ok: true, stem };
 			} catch (cause) {

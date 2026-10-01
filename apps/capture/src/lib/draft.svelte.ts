@@ -24,7 +24,7 @@
  * edited, and capture text that could not be applied. `unsettled` counts all
  * of it, so leaving the page asks first.
  */
-import { type Entry, sameVersion } from '@epicenter/folder';
+
 import {
 	addThought,
 	type CaptureDocument,
@@ -38,6 +38,7 @@ import {
 	swapThoughts,
 	type Thought,
 } from '@epicenter/capture';
+import { type Entry, type FileVersion, sameVersion } from '@epicenter/folder';
 
 export type CaptureEntry = Entry<CaptureFields>;
 
@@ -58,18 +59,28 @@ export type SaveState =
 	  };
 
 type Failure = { readonly name: string; readonly message: string };
-type Written =
-	| { readonly data: CaptureEntry; readonly error: null }
+type Result<T> =
+	| { readonly data: T; readonly error: null }
 	| { readonly data: null; readonly error: Failure };
+
+/**
+ * A confirmed write: the version the folder admitted, and that file as an
+ * entry. There is no entry when another program changed the file before the
+ * store could read it back. The write is confirmed all the same.
+ */
+type Admitted = {
+	readonly version: FileVersion;
+	readonly entry: CaptureEntry | undefined;
+};
 
 /** Where a draft saves and rereads. Any method may throw; the draft keeps its input. */
 export type DraftStore = {
 	/** One conditional write of exact source against a captured file. */
-	write(baseline: CaptureEntry, source: string): Promise<Written>;
+	write(baseline: CaptureEntry, source: string): Promise<Result<CaptureEntry>>;
 	/** The saved file now. */
 	read(path: string): Promise<Current>;
 	/** Write the source at a path that must be absent. */
-	recreate(path: string, source: string): Promise<Written>;
+	recreate(path: string, source: string): Promise<Result<Admitted>>;
 };
 
 /** Typing batches for this long before a save. */
@@ -164,16 +175,26 @@ export function createDraft(
 		}
 	}
 
-	async function saveOnce() {
+	/**
+	 * One write of the buffer as it is now. Success advances the baseline to
+	 * exactly what was admitted, that source at that version, whatever the path
+	 * holds by now. That is a separate observation, and the reread takes it.
+	 */
+	async function saveOnce(
+		write: (source: string) => Promise<Result<Admitted>>,
+	) {
 		const captured = buffer;
-		const observed = baseline;
 		saveState = { kind: 'saving' };
 		try {
-			const result = await store.write(observed, captured);
+			const result = await write(captured);
 			if (result.error === null) {
-				baseline = result.data;
+				const { version, entry } = result.data;
+				// Without the entry, the fields, body, and issues stay as last read at
+				// this path until the reread, or the choice after it, reads them again.
+				baseline = entry ?? { ...baseline, version, source: captured };
 				saveState = { kind: 'saved' };
-				hooks.onSaved(result.data);
+				if (entry !== undefined) hooks.onSaved(entry);
+				else recheck = true;
 			} else if (result.error.name !== 'Conflict') {
 				saveState = { kind: 'failed', message: result.error.message };
 				return;
@@ -184,11 +205,37 @@ export function createDraft(
 			saveState = { kind: 'failed', message: describe(cause) };
 			return;
 		}
+		// The file was not what the write expected, or the folder hinted while
+		// it ran: what was written is acknowledged, and the file as it is now
+		// decides the rest.
 		if (recheck) {
 			recheck = false;
 			if (saveState.kind === 'saving') saveState = { kind: 'saved' };
 			await reread();
 		}
+	}
+
+	/** Run one save to its end. Typing that arrived during it batches again. */
+	async function run(write: (source: string) => Promise<Result<Admitted>>) {
+		saving = saveOnce(write);
+		try {
+			await saving;
+		} finally {
+			saving = undefined;
+		}
+		if (dirty() && isSaved()) schedule();
+	}
+
+	/** The conditional write against the baseline, as the folder admitted it. */
+	async function writeAgainstBaseline(
+		source: string,
+	): Promise<Result<Admitted>> {
+		const written = await store.write(baseline, source);
+		if (written.error !== null) return written;
+		return {
+			data: { version: written.data.version, entry: written.data },
+			error: null,
+		};
 	}
 
 	/** Run saves until nothing admitted is left. Stops at a conflict or a failure. */
@@ -199,14 +246,7 @@ export function createDraft(
 			return dirty() && saveState.kind === 'saved' ? drain() : undefined;
 		}
 		if (saveState.kind === 'conflict' || !dirty() || gone) return;
-		saving = saveOnce();
-		try {
-			await saving;
-		} finally {
-			saving = undefined;
-		}
-		// Typing that arrived during the save is still dirty; batch it again.
-		if (dirty() && saveState.kind === 'saved') schedule();
+		await run(writeAgainstBaseline);
 	}
 
 	async function save(): Promise<void> {
@@ -382,38 +422,7 @@ export function createDraft(
 				await save();
 				return;
 			}
-			const captured = buffer;
-			saveState = { kind: 'saving' };
-			saving = (async () => {
-				try {
-					const result = await store.recreate(baseline.path, captured);
-					if (result.error === null) {
-						baseline = result.data;
-						saveState = { kind: 'saved' };
-						hooks.onSaved(result.data);
-					} else if (result.error.name === 'Conflict') recheck = true;
-					else {
-						saveState = { kind: 'failed', message: result.error.message };
-						return;
-					}
-				} catch (cause) {
-					saveState = { kind: 'failed', message: describe(cause) };
-					return;
-				}
-				// The path was taken, or the folder hinted while this ran: what was
-				// written is acknowledged, and the file as it is now decides the rest.
-				if (recheck) {
-					recheck = false;
-					saveState = { kind: 'saved' };
-					await reread();
-				}
-			})();
-			try {
-				await saving;
-			} finally {
-				saving = undefined;
-			}
-			if (dirty() && isSaved()) schedule();
+			await run((source) => store.recreate(baseline.path, source));
 		},
 		async retry() {
 			if (saveState.kind === 'failed') saveState = { kind: 'saved' };

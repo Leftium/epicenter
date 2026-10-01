@@ -13,6 +13,10 @@
  * - A clean draft adopts an outside change and writes nothing; a dirty one
  *   keeps its buffer and pauses saving
  * - Removed and unreadable are different conflicts with different choices
+ * - Writing a draft back to a removed file is acknowledged as exactly what was
+ *   written, even when the file is replaced, removed, or unreadable before it
+ *   is read back; that later state is a conflict or a refresh, never a
+ *   failed save
  * - A failed save and a store that throws both keep the buffer for a retry
  * - Unsent thought text and refused capture text count as unsettled
  * - A thought edit begun before the buffer changed is refused, text kept
@@ -59,6 +63,8 @@ async function setup(initial = A) {
 	let unreadable: string | undefined;
 	let hold: ReturnType<typeof gate> | undefined;
 	let failure: { name: string; message: string } | Error | undefined;
+	/** What another program does at a fixed point, once. */
+	const elsewhere: { afterRecreate?: () => void; beforeRead?: () => void } = {};
 	const writes: { against: string; source: string }[] = [];
 	const store: DraftStore = {
 		async write(baseline, source) {
@@ -75,6 +81,8 @@ async function setup(initial = A) {
 			return { data: await entryFor(source), error: null };
 		},
 		async read(): Promise<Current> {
+			elsewhere.beforeRead?.();
+			elsewhere.beforeRead = undefined;
 			if (unreadable !== undefined)
 				return { kind: 'unreadable', message: unreadable };
 			return disk === undefined
@@ -85,8 +93,17 @@ async function setup(initial = A) {
 			await hold?.opened;
 			if (disk !== undefined)
 				return { data: null, error: { name: 'Conflict', message: 'exists' } };
+			const entry = await entryFor(source);
 			disk = source;
-			return { data: await entryFor(source), error: null };
+			elsewhere.afterRecreate?.();
+			elsewhere.afterRecreate = undefined;
+			// Like the folder: the version is what was written, and the entry is
+			// there only if the file still holds it when read back.
+			const intact = disk === source && unreadable === undefined;
+			return {
+				data: { version: entry.version, entry: intact ? entry : undefined },
+				error: null,
+			};
 		},
 	};
 	const saved: string[] = [];
@@ -113,6 +130,14 @@ async function setup(initial = A) {
 		},
 		unreadable(message: string | undefined) {
 			unreadable = message;
+		},
+		/** Once a write back has landed, before the store reads it back. */
+		afterRecreate(act: () => void) {
+			elsewhere.afterRecreate = act;
+		},
+		/** Before the store's next read. */
+		beforeNextRead(act: () => void) {
+			elsewhere.beforeRead = act;
 		},
 	};
 }
@@ -422,12 +447,12 @@ test('writing a removed draft back: B acknowledged, typing C kept, outside D sho
 	const held = file.holdWrites();
 	const writing = file.draft.saveMine();
 	file.draft.inputSource(C);
-	// The folder hints while the write is running.
+	// The folder hints while the write is running, and another program
+	// replaces B once it has been read back, before the draft rereads.
 	file.draft.observe({ kind: 'removed' });
+	file.beforeNextRead(() => file.outside(D));
 	held.open();
-	const outside = store_settled(file, D);
 	await writing;
-	await outside;
 
 	expect(file.saved).toEqual([B]);
 	expect(file.draft.baseline.source).toBe(B);
@@ -439,6 +464,110 @@ test('writing a removed draft back: B acknowledged, typing C kept, outside D sho
 			state.current.kind === 'present' &&
 			state.current.entry.source,
 	).toBe(D);
+});
+
+test('writing back B, replaced by D before it is read back: B is the baseline, typing C kept, D shown', async () => {
+	const file = await setup();
+	file.draft.inputSource(B);
+	file.outside(undefined);
+	await file.draft.save();
+
+	const held = file.holdWrites();
+	const writing = file.draft.saveMine();
+	file.draft.inputSource(C);
+	file.afterRecreate(() => file.outside(D));
+	held.open();
+	await writing;
+
+	// B was admitted at its own version. D is an observation, not a baseline.
+	expect(file.draft.baseline.source).toBe(B);
+	expect(file.draft.baseline.version).toEqual((await entryFor(B)).version);
+	expect(file.draft.buffer).toBe(C);
+	const state = file.draft.saveState;
+	expect(
+		state.kind === 'conflict' &&
+			state.current.kind === 'present' &&
+			state.current.entry.source,
+	).toBe(D);
+	// The store had no entry for B to list, and nothing saves over D unasked.
+	expect(file.saved).toEqual([]);
+	await file.draft.save();
+	expect(await file.draft.settle()).toBe(false);
+	expect(file.writes).toHaveLength(1);
+	expect(file.disk).toBe(D);
+
+	// Saving mine is then checked against D, the version that was shown.
+	await file.draft.saveMine();
+	expect(file.writes[1]).toEqual({ against: D, source: C });
+	expect(file.disk).toBe(C);
+});
+
+test('writing back B with nothing more typed, replaced by D before it is read back, shows D and writes nothing', async () => {
+	const file = await setup();
+	file.draft.inputSource(B);
+	file.outside(undefined);
+	await file.draft.save();
+	file.afterRecreate(() => file.outside(D));
+	await file.draft.saveMine();
+
+	expect(file.draft.saveState.kind).toBe('saved');
+	expect(file.draft.baseline.source).toBe(D);
+	expect(file.draft.buffer).toBe(D);
+	await file.draft.save();
+	expect(file.writes).toHaveLength(1);
+	expect(file.disk).toBe(D);
+});
+
+test.each([
+	[
+		'removed',
+		(file: Awaited<ReturnType<typeof setup>>) => file.outside(undefined),
+	],
+	[
+		'unreadable',
+		(file: Awaited<ReturnType<typeof setup>>) =>
+			file.unreadable('not valid UTF-8 text'),
+	],
+] as const)('writing back B that is %s before it is read back is still a confirmed write, not a failed one', async (kind, act) => {
+	const file = await setup();
+	file.draft.inputSource(B);
+	file.outside(undefined);
+	await file.draft.save();
+
+	const held = file.holdWrites();
+	const writing = file.draft.saveMine();
+	file.draft.inputSource(C);
+	file.afterRecreate(() => act(file));
+	held.open();
+	await writing;
+
+	expect(file.draft.baseline.source).toBe(B);
+	expect(file.draft.baseline.version).toEqual((await entryFor(B)).version);
+	expect(file.draft.buffer).toBe(C);
+	const state = file.draft.saveState;
+	expect(state.kind === 'conflict' && state.current.kind).toBe(kind);
+	expect(file.draft.unsettled).toBe(true);
+});
+
+test('writing back B that is unreadable before it is read back keeps B as saved, with the file to check', async () => {
+	const file = await setup();
+	file.draft.inputSource(B);
+	file.outside(undefined);
+	await file.draft.save();
+	file.afterRecreate(() => file.unreadable('not valid UTF-8 text'));
+	await file.draft.saveMine();
+
+	expect(file.draft.baseline.source).toBe(B);
+	expect(file.draft.dirty).toBe(false);
+	const state = file.draft.saveState;
+	expect(state.kind === 'conflict' && state.current.kind).toBe('unreadable');
+
+	// It reads again as what was written: the draft is simply saved.
+	file.unreadable(undefined);
+	await file.draft.check();
+	expect(file.draft.saveState.kind).toBe('saved');
+	expect(file.saved).toEqual([]);
+	expect(file.draft.unsettled).toBe(false);
 });
 
 test('writing back to a path that was taken meanwhile shows what is there', async () => {

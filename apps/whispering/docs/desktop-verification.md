@@ -1,90 +1,93 @@
 # Standalone desktop verification
 
-This file has two dated parts. The first records what has and has not been
-checked since the pages and transformations were added. The second is the
-earlier native acceptance of the single-window app, kept as it was written.
+This file has two dated parts. The first records the restored pages and
+transformations. The second retains the earlier single-window acceptance.
 
-## Pages and transformations (October 1, 2026): not yet verified natively
+## Pages and transformations (October 1, 2026)
 
-The app now has three pages (`/`, `/recordings`, `/transformations`) under one
-session, and transformations. Claude Opus 5.5 implemented this in an isolated
-checkout. Codex integrated it into the active branch, preserving concurrent
-folder lifecycle and publication changes, then reran the checks below.
+Claude Opus 5.5 implemented the recorder home, `/recordings`, and
+`/transformations` in an isolated checkout. Codex reviewed and integrated the
+work while preserving concurrent storage changes. GPT-6.1 independently
+reviewed the recovery corrections and exercised the browser and native UI.
 
-Established by automated checks in that checkout, with a fixture capture device
-and deterministic endpoint stubs (functions in place of `fetch`; no socket, no
-provider, no key):
+Native fixture checks passed through recording, transcription, transformation,
+conflict handling, and retry recovery. Native acceptance is incomplete: the Mac
+locked before the final resize, reload, and quit/reopen checks. No lock bypass
+or forced quit was attempted. The app was left open with its managed work saved.
+
+### Automated and browser checks
 
 | Check | Result |
 | --- | --- |
-| Application tests in the implementation checkout | 143 passed, 840 assertions, across 14 files |
-| Application tests after integration (`bun test --isolate apps/whispering`) | 151 passed, 879 assertions, across 15 files |
-| Page TypeScript (`svelte-check`) and host TypeScript (`tsc -p tsconfig.native.json`) | Zero errors, zero warnings |
-| Page build (`vite build`) | Passed |
-| Standalone debug and release Tauri bundles, including compiled sidecar | Both passed |
-| Transformation request shape, answers, and errors | Covered by `src/lib/transformation.test.ts` |
-| Result publication, original transcript untouched, failed-save retry identity | Covered by `src/lib/transformations.test.ts` |
-| Host sends with the device key and returns none of it | Covered by `native/host.test.ts` |
-| One session per layout; page changes keep held work | Covered by `src/lib/session.test.ts` and `src/lib/page-boundary.test.ts` |
+| Implementation checkout tests | 143 passed, 840 assertions, 14 files |
+| Combined checkout tests, including subsequent shared storage changes | 152 passed, 883 assertions, 15 files |
+| Page and native TypeScript | Zero errors and warnings |
+| Standalone debug and release builds, including page and compiled sidecar | Both passed |
+| Independent browser workflow | Recording across routes, explicit transcription and transformation, unchanged original transcript, Back, reload, and narrow navigation passed with no page errors |
 
-GPT-6.1 also exercised a fresh browser profile with Playwright against
-`bun dev:whispering:ui --port 5518` and a deterministic loopback endpoint.
-Fixture recording survived all three routes; stopping, transcribing, creating
-and running a transformation, Back, reload, and narrow bottom navigation
-passed with no page errors. The original transcript stayed unchanged. This
-uses the logical IndexedDB folder and establishes browser behavior only.
-The dedicated browser and Vite process were closed afterward.
+The browser used a fresh disposable IndexedDB profile, fixture audio, and a
+real deterministic loopback endpoint. That evidence does not establish native
+filesystem, shell, or microphone behavior. Its browser and Vite process were
+closed afterward.
 
-Browser screenshots are retained in
-`/Users/braden/.codex/artifacts/whispering-ui-restore-20261001/screenshots/`.
+### Native checks performed
 
-Not established:
+GPT-6.1 launched the exact active debug `.app` with a fresh
+`/tmp/whispering-ui-restore-evidence/native-root`, a labeled three-second tone,
+and endpoint `http://127.0.0.1:18081/v1`. The debug shell runs `native/main.ts`
+from the checkout and serves the built page. This was not a compiled release
+UI acceptance run. Observation-time source, page, executable hashes, process
+start times, and checkout revision are recorded in the runtime evidence.
 
-- **The desktop app has not been run with these changes.** Layout, navigation,
-  focus, and interactions on the three pages still need native checks. The earlier native
-  acceptance below was of a different screen and does not carry over.
-- **No real provider or key was used.** No request reached a chat or
-  transcription service.
-- **No real microphone was used.** The Mac this was built on has no audio input
-  device; that limit is unchanged from the earlier part.
-- The Rust shell was not changed and its tests were not rerun here.
+| Check | Observed result |
+| --- | --- |
+| Three pages and shared live capture | Native document URLs changed between all three routes; capture and timer continued; stopping saved one recording |
+| Rename, playback, transcription | Saved title changed; native playback reached three seconds; explicit transcription sent exact fixture bytes |
+| Transformation | Saved prompt and model produced a separate linked result; exact request matched its saved snapshots |
+| Original transcript | Byte-for-byte unchanged after both transformations and result-save recovery |
+| Draft and external conflict | Source draft and unknown metadata survived routes; both versions remained visible; Keep both preserved the draft in a separate file |
+| Terminal lifetime | Working directory, output, history, and half-typed command survived hiding and route changes |
+| Running and received unsaved results | Cmd-W and Cmd-Q warned; cancellation preserved the work across routes |
+| Recording deletion | Refused while its transformation was running or its received output was unsaved |
+| Result-save retry | Kept result ID `20261001-064741-43u4`, wrote exactly one file, and made no second provider call |
+| Pending audio | Publication failure retained 96,044 bytes and ID across routes; retry saved one row/audio pair with that ID |
+| Files | Saved result opened as ordinary Markdown with source relationships, prompt/input snapshots, and output body |
+| Native files and Git | Ten ordinary files tracked; clean status and `git fsck --full`; separate HEAD restoration reproduced all files |
+| Audio restoration | Both current and restored WAVs decoded as three-second mono 16 kHz PCM with the fixture hash |
+| Credential | Dummy test key absent from all saved files; authorization headers omitted from endpoint logs |
 
-Integrated check logs and review evidence are retained in
-`/Users/braden/.codex/artifacts/whispering-ui-restore-20261001/source-checks/`.
+The unchanged original is `transcriptions/nebf1x7wzd.md`, SHA256
+`44c45f8ab97acbe5b1a82123a00d032a7f0c8d9e779a375d7b4cc49381a1a69d`.
+Its recording is `20261001-064425-s22q` and the reusable profile is `9g4wgnkhv9`.
+Both results retain those links. Native endpoint sequences 8 through 10 are
+separate from browser requests 5 through 7 and tooling self-checks 1 through 4.
 
-Native scenarios that should be checked before this is called accepted:
+Evidence and thirteen native screenshots are retained in
+`/Users/braden/.codex/artifacts/whispering-ui-restore-20261001/`:
 
-1. Launch on `/`. Record with fixture audio, stop, and see the recording under
-   the recorder. Press Transcribe against the deterministic endpoint.
-2. With a recording running, visit Recordings and Transformations. The header
-   shows the elapsed time and Stop on both; stopping from there saves it.
-3. Open `/recordings` and `/transformations` by address and by refresh. Use back
-   and forward.
-4. Start typing a title with autosave paused, run a terminal command, visit the
-   other pages, and return: the typing, terminal output, history, typed command,
-   and directory are as they were.
-5. Create a transformation from a starter, set a model, and run it on a
-   transcript from both the Transform menu and the transformation's page. Check
-   the new file in `transformation_runs/`, that the transcription file's bytes
-   and hash are unchanged, and that both are committed.
-6. Make the endpoint refuse, then answer: the notice shows the failure with Try
-   again, on every page, and the retry lands in one file.
-7. Make the result write fail (for example, make `transformation_runs` a file
-   or read-only), then fix it: Save it again writes the file with no second
-   request to the endpoint, and the status and close prompt name the unsaved
-   result in between.
-8. Edit a transformation file from the terminal while its editor is clean, and
-   again while it is dirty: the first refreshes, the second shows the conflict
-   and Keep both. Break its frontmatter and repair it in Source.
-9. Delete a transformation and confirm its results remain.
-10. Command-W and Command-Q from each page while something is held, and after
-    stopping the host.
-11. Files and Terminal from each page; Reveal folder; the debug failure
-    controls. Files is now Ctrl+Shift+E, because Ctrl+B toggles the sidebar.
-12. A narrow window (under 768 pixels): bottom navigation, list and details
-    taking turns on both list pages.
-13. Confirm the device key is absent from the page's network responses, the
-    folder, and `git log -p`.
+- `independent-acceptance.md`: independent report, commands, and limits.
+- `screenshots/native-01-home.png` and `native-02-recordings.png`: restored layout.
+- `screenshots/native-10-transformations-top.png` and `native-11-transformations-results.png`: prompt editor and complete result bodies.
+- `screenshots/native-04` through `native-09`: draft, conflict, terminal, and close/retry recovery.
+- `screenshots/native-12-pending-audio-navigation.png` and `native-13-output-source-files.png`: audio recovery and Files source.
+- `logs/native-filesystem-git.json`, `native-provider-assertions.json`, `unsaved-output-retry.json`, `privacy-assertions.json`, and `native-runtime-provenance.json`: assertions and runtime provenance.
+- `source-checks/`: automated checks, build logs, and source reviews.
+
+### Remaining checks
+
+The locked Mac blocked new native narrow resizing/navigation, direct route
+startup, history back/forward, successful reload, saved quit/relaunch and replay,
+Finder reveal, malformed profile/result repair, and explicit transformation
+discard/quit. Cmd-[ did not navigate in the shell. Cmd-R and resize returned the
+Mac-lock error, so neither is claimed successful. Browser Back, reload, and
+narrow layout passed separately.
+
+No real provider or microphone was used in this pass. The earlier release
+microphone attempt found zero input devices. Fixture audio proves state,
+playback, saved bytes, request contents, and history; it does not prove speech
+capture or transcription accuracy. The unchanged Rust shell tests were not
+rerun for this UI slice. Global dictation and the other unsupported features
+remain listed in `README.md`.
 
 ## Standalone single-window app (October 1, 2026)
 

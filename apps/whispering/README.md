@@ -7,9 +7,9 @@ into another text with prompts you write, and keeps every recording, transcript,
 prompt, result, and setting as an ordinary file in one Git-versioned folder. It
 needs no account, no Epicenter desktop, and no hosted API.
 
-This is a development milestone, not a release. It demonstrates the voice-note
-workflow end to end: launch, record, stop, save, play, transcribe, transform,
-inspect files and history, quit, reopen. Dictating into other apps is not part
+This is a development milestone, not a release. Its voice-note workflow is launch, record,
+stop, save, play, transcribe, transform, inspect files and history, quit, reopen.
+Native verification results and remaining checks are recorded below. Dictating into other apps is not part
 of it. [What is not supported](#what-is-not-supported) lists the rest.
 
 ## The data folder
@@ -29,7 +29,8 @@ of it. [What is not supported](#what-is-not-supported) lists the rest.
 └── .git/                            ordinary Git: Markdown, kv.json, and audio bytes
 ```
 
-Nothing but `kv.json` exists until you make it: a folder has no
+Opening the folder creates `kv.json` and Git metadata. Recording, transcript,
+prompt, and result files are created by explicit actions. A folder has no
 `transformations/` until you create a transformation.
 
 These files are the data. The app, the embedded terminal, and any other program

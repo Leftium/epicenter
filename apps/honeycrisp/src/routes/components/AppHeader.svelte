@@ -7,6 +7,7 @@
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
+	import { getAbortSignal } from 'svelte';
 	import type { Notes, PendingChange } from '$lib/notes.svelte.js';
 	import {
 		draftsLine,
@@ -62,11 +63,14 @@
 	$effect(() => {
 		if (!open) return;
 		notes.git.lastCommit;
+		const signal = getAbortSignal();
 		void notes.host.folder.git.log(8).then(
 			(result) => {
+				if (signal.aborted) return;
 				log = result.error ? result.error.message : result.data;
 			},
 			(cause) => {
+				if (signal.aborted) return;
 				log = cause instanceof Error ? cause.message : String(cause);
 			},
 		);

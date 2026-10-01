@@ -8,6 +8,12 @@
  * existing destination. Replacement writes a scratch file under
  * `.git/epicenter/scratch` and renames it into place.
  *
+ * One boundary applies its batches one at a time, so two saves through the
+ * same opened folder never share that window: the later one checks against
+ * what the earlier one left. This orders this boundary's own batches only. It
+ * is not a file lock, and another program or a second boundary on the same
+ * directory still races as described above.
+ *
  * A multi-file batch applies ordered steps. When a step fails, the result
  * reports which steps reached the folder; nothing is rolled back.
  */
@@ -265,6 +271,15 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		return Ok(undefined);
 	}
 
+	// Batches from this boundary run in arrival order. A batch that fails or
+	// throws releases the next one.
+	let tail: Promise<unknown> = Promise.resolve();
+	function inOrder<T>(work: () => Promise<T>): Promise<T> {
+		const result = tail.then(work, work);
+		tail = result.catch(() => {});
+		return result;
+	}
+
 	function toStep(change: FileChange): FileStep {
 		return change.kind === 'move'
 			? { kind: 'move', from: change.from, to: change.to }
@@ -361,29 +376,31 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 					if (refused) return refused;
 				}
 			}
-			const applied: FileStep[] = [];
-			for (let index = 0; index < changes.length; index++) {
-				const change = changes[index]!;
-				const landed: FileStep[] = [];
-				const result = await step(change, landed);
-				if (result.error) {
-					const reached = [...applied, ...landed];
-					// A refusal before anything landed wrote nothing; report it directly.
-					if (reached.length === 0) return Err(result.error);
-					return ApplyError.Partial({
-						applied: reached,
-						// A move whose destination landed failed at retiring its source.
-						failed:
-							landed.length > 0 && change.kind === 'move'
-								? { kind: 'remove', path: change.from }
-								: toStep(change),
-						error: result.error,
-						notAttempted: changes.slice(index + 1).map(toStep),
-					});
+			return inOrder(async () => {
+				const applied: FileStep[] = [];
+				for (let index = 0; index < changes.length; index++) {
+					const change = changes[index]!;
+					const landed: FileStep[] = [];
+					const result = await step(change, landed);
+					if (result.error) {
+						const reached = [...applied, ...landed];
+						// A refusal before anything landed wrote nothing; report it directly.
+						if (reached.length === 0) return Err(result.error);
+						return ApplyError.Partial({
+							applied: reached,
+							// A move whose destination landed failed at retiring its source.
+							failed:
+								landed.length > 0 && change.kind === 'move'
+									? { kind: 'remove', path: change.from }
+									: toStep(change),
+							error: result.error,
+							notAttempted: changes.slice(index + 1).map(toStep),
+						});
+					}
+					applied.push(toStep(change));
 				}
-				applied.push(toStep(change));
-			}
-			return Ok(undefined);
+				return Ok(undefined);
+			});
 		},
 		async mkdir(path) {
 			const refused = invalid(path);

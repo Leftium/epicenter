@@ -164,8 +164,12 @@ A pull whose files landed but whose index or branch step failed
 saved-files observation stale and requests a fresh scan; it requests no commit.
 
 Native index and ref mutations use the `git` CLI, whose lock files other Git
-processes respect; isomorphic-git writes only immutable objects there. Native
-version checks are best effort against other programs. Multi-file native
+processes respect; isomorphic-git writes only immutable objects there. One
+opened native folder applies its own batches one at a time, so two saves of the
+same version through that handle cannot silently replace each other: a later
+save checks the bytes left by the earlier batch.
+That ordering covers the handle only: version checks stay best effort against
+other programs and against a second handle on the same directory. Multi-file native
 operations report `Partial` results instead of rolling back, including a move
 whose destination landed but whose source could not be removed. A partial
 content operation marks observations stale without requesting a commit.

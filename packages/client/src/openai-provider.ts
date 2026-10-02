@@ -130,6 +130,63 @@ function parseArguments(args: string): JsonValue {
 	}
 }
 
+type FinishReason =
+	OpenAI.Chat.Completions.ChatCompletionChunk.Choice['finish_reason'];
+
+/**
+ * Why a stream that ended without a transport error is still not a whole
+ * answer, or `undefined` when it is one.
+ *
+ * `stop` and `tool_calls` are the two finishes that complete an answer. `stop`
+ * may carry tool calls: Gemini's compat endpoint finishes `stop` while calling
+ * tools. Everything else is cut short or unreadable, so its text is not saved
+ * and its accumulated calls never run.
+ */
+function incompleteFinish(
+	reason: FinishReason | undefined,
+	callCount: number,
+): { message: string; code: string } | undefined {
+	switch (reason) {
+		case 'stop':
+			return undefined;
+		case 'tool_calls':
+			return callCount > 0
+				? undefined
+				: {
+						message: 'The model announced tool calls and sent none.',
+						code: 'incomplete-stream',
+					};
+		case 'length':
+			return {
+				message: 'The model reached its output limit before finishing.',
+				code: 'length',
+			};
+		case 'content_filter':
+			return {
+				message: 'The provider withheld part of the answer.',
+				code: 'content_filter',
+			};
+		case 'function_call':
+			return {
+				message: 'The model used a legacy function call, which is not read.',
+				code: 'function_call',
+			};
+		case null:
+		case undefined:
+			return {
+				message: 'The model stream ended before the answer finished.',
+				code: 'incomplete-stream',
+			};
+		default:
+			// A provider outside the SDK's vocabulary. Its meaning is unknown, so
+			// the answer is not treated as whole.
+			return {
+				message: `The model stopped for an unrecognized reason: ${String(reason satisfies never)}`,
+				code: 'incomplete-stream',
+			};
+	}
+}
+
 /** Use SDK framing and cancellation while retaining the agent's tool-call reducer. */
 export function createOpenAiAgentEngine({
 	data,
@@ -139,6 +196,7 @@ export function createOpenAiAgentEngine({
 	return async function* (request, signal) {
 		const byIndex = new Map<number, PendingToolCall>();
 		const indexless: PendingToolCall[] = [];
+		let finishReason: FinishReason | undefined;
 		try {
 			const { client, model, systemPrompts } = data();
 			const stream = await client.chat.completions.create(
@@ -165,7 +223,11 @@ export function createOpenAiAgentEngine({
 			);
 			for await (const chunk of stream) {
 				if (signal.aborted) return;
-				const delta = chunk.choices?.[0]?.delta;
+				// A usage-only frame has no choice and says nothing about the finish.
+				const choice = chunk.choices?.[0];
+				if (!choice) continue;
+				if (choice.finish_reason != null) finishReason = choice.finish_reason;
+				const delta = choice.delta;
 				if (!delta) continue;
 				if (typeof delta.content === 'string' && delta.content.length > 0) {
 					yield { type: 'text-delta', delta: delta.content };
@@ -193,10 +255,19 @@ export function createOpenAiAgentEngine({
 			return;
 		}
 		if (signal.aborted) return;
-		// Failed or cancelled streams never execute their partially accumulated calls.
+		// Failed, cancelled, or cut-short streams never execute their partially
+		// accumulated calls.
 		const ordered = [...byIndex.entries()]
 			.sort((a, b) => a[0] - b[0])
 			.map((entry) => entry[1]);
+		const incomplete = incompleteFinish(
+			finishReason,
+			ordered.length + indexless.length,
+		);
+		if (incomplete) {
+			yield { type: 'run-error', ...incomplete };
+			return;
+		}
 		for (const call of [...ordered, ...indexless]) {
 			yield {
 				type: 'tool-call',

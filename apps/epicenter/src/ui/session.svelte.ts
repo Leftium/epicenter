@@ -29,6 +29,9 @@ export function createSession({ ready }: { ready: Promise<void> }) {
 		isThinking: false,
 		isGenerating: false,
 		error: null,
+		unsaved: [],
+		isSaving: false,
+		saveError: null,
 	});
 	let pendingApprovals = $state.raw<PendingApproval[]>([]);
 	let invocations = $state.raw<HomeInvocation[]>([]);

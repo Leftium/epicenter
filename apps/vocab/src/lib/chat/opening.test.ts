@@ -18,7 +18,12 @@ test('empty tutor opening supplies model content without storing a learner messa
 		yield { type: 'text-delta', delta: 'Welcome!' };
 	});
 	const options = () => ({
-		store: createChatMessageStore(db.tables.messages, 'account-a', 'chat-a'),
+		store: createChatMessageStore(
+			db.tables.messages,
+			db.persistence,
+			'account-a',
+			'chat-a',
+		),
 		engine,
 		generateId: () => crypto.randomUUID(),
 	});
@@ -59,7 +64,12 @@ test('stopped opening saves no partial answer and retries from empty history', a
 		}
 	});
 	const options = () => ({
-		store: createChatMessageStore(db.tables.messages, 'account-a', 'chat-a'),
+		store: createChatMessageStore(
+			db.tables.messages,
+			db.persistence,
+			'account-a',
+			'chat-a',
+		),
 		engine,
 		generateId: () => crypto.randomUUID(),
 	});

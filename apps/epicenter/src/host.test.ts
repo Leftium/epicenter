@@ -240,6 +240,69 @@ describe('createHomeHost', () => {
 		expect(results[0]!.content).toContain('Acme | 4200.00');
 	});
 
+	test('send settles once the session holds the message, and a live turn refuses a second send but still takes stop', async () => {
+		const release = Promise.withResolvers<void>();
+		let calls = 0;
+		const engine: AgentEngine = async function* () {
+			calls += 1;
+			yield { type: 'text-delta', delta: 'partial' };
+			await release.promise;
+		};
+		await using host = await createTestHost({ engine });
+		try {
+			expect(await host.handleCommand({ type: 'send', content: 'first' })).toBe(
+				true,
+			);
+			// The command settled with the turn still streaming behind it.
+			expect(host.snapshot().conversation).toMatchObject({
+				isGenerating: true,
+				unsaved: [],
+				saveError: null,
+			});
+			expect(
+				host.snapshot().conversation.messages.map((message) => message.role),
+			).toEqual(['user']);
+
+			expect(
+				await host.handleCommand({ type: 'send', content: 'second' }),
+			).toBe(false);
+			expect(await host.handleCommand({ type: 'send', content: '  ' })).toBe(
+				false,
+			);
+			expect(await host.handleCommand({ type: 'stop' })).toBe(true);
+			release.resolve();
+			await settle(host);
+
+			expect(calls).toBe(1);
+			expect(
+				host.snapshot().conversation.messages.map((message) => message.role),
+			).toEqual(['user']);
+		} finally {
+			release.resolve();
+		}
+	});
+
+	test('a finished turn is held in the session transcript with nothing unsaved, and clear drops it', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[{ type: 'text-delta', delta: 'Done.' }]]),
+		});
+		await host.handleCommand({ type: 'send', content: 'hello' });
+		await waitFor(
+			() => host.snapshot().conversation.messages.length === 2,
+			'the answer',
+		);
+		await settle(host);
+		expect(host.snapshot().conversation).toMatchObject({
+			unsaved: [],
+			isSaving: false,
+			saveError: null,
+			error: null,
+		});
+
+		expect(await host.handleCommand({ type: 'clear' })).toBe(true);
+		expect(host.snapshot().conversation.messages).toEqual([]);
+	});
+
 	test('a pending approval dies with the host that raised it', async () => {
 		{
 			await using host = await createTestHost({

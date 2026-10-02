@@ -37,20 +37,39 @@
 	let focusOpen = $state(false);
 	let openingId = $state<string | null>(null);
 	const selectedChat = $derived(chats.find((chat) => chat.id === selectedChatId));
+	let conversation = $state<ConversationView>();
+	// A chat switch held back because the open chat has an unsaved message.
+	let heldSwitch = $state<(() => void) | null>(null);
 
+	/** Switching chats disposes the open one, so an unsaved message needs a yes first. */
+	function switchChat(next: () => void) {
+		if (conversation?.hasUnsaved()) heldSwitch = next;
+		else next();
+	}
 	function begin(focus: { entryId: string; text: string }[]) {
-		const chat = startChat(local.tables.chats, accountKey, focus);
-		selectedChatId = chat.id;
-		openingId = chat.id;
-		view = 'chat';
+		switchChat(() => {
+			// The opening this requests waits for storage to take the focus first.
+			const chat = startChat(local.tables.chats, accountKey, focus);
+			selectedChatId = chat.id;
+			openingId = chat.id;
+			view = 'chat';
+		});
 	}
 	function openChat(id: string) {
-		selectedChatId = id;
-		openingId = null;
-		historyOpen = false;
-		view = 'chat';
+		if (id === selectedChatId) {
+			historyOpen = false;
+			view = 'chat';
+			return;
+		}
+		switchChat(() => {
+			selectedChatId = id;
+			openingId = null;
+			historyOpen = false;
+			view = 'chat';
+		});
 	}
 	onDestroy(() => { entries[Symbol.dispose](); selections[Symbol.dispose](); });
+
 </script>
 
 <PersistenceNotice persistence={personal.persistence} />
@@ -60,6 +79,15 @@
 		<div class="flex items-center gap-2"><h1 class="text-lg font-semibold">Vocab</h1><Button size="sm" variant={view === 'words' ? 'default' : 'ghost'} onclick={() => view = 'words'}>Words</Button><Button size="sm" variant={view === 'chat' ? 'default' : 'ghost'} disabled={chats.length === 0} onclick={() => { view = 'chat'; historyOpen = true; }}>Chat</Button></div>
 		<div class="flex items-center gap-1"><LightSwitch variant="ghost" /><AccountPopover {auth} syncNoun="entries" /></div>
 	</header>
+	{#if heldSwitch}
+		<div role="alert" class="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs text-destructive">
+			<span>The open chat has a message that is not saved on this device. Leaving it now can lose that message.</span>
+			<div class="flex gap-1">
+				<Button variant="ghost" size="sm" onclick={() => { heldSwitch = null; view = 'chat'; }}>Stay</Button>
+				<Button variant="ghost" size="sm" onclick={() => { const leave = heldSwitch; heldSwitch = null; leave?.(); }}>Leave anyway</Button>
+			</div>
+		</div>
+	{/if}
 	<div class="min-h-0 flex-1" class:hidden={view !== 'words'}><WordsView {entries} onStart={begin} /></div>
 	<div class="flex min-h-0 flex-1" class:hidden={view !== 'chat'}>
 		<aside class="hidden w-56 shrink-0 overflow-y-auto border-r p-3 md:block" aria-label="Chat history">
@@ -72,7 +100,7 @@
 			{#if focusOpen && selectedChat}<div class="border-b p-3 md:hidden"><FocusWords focus={selectedChat.focus} {entries} /></div>{/if}
 			{#if !selectedChatId}<p class="m-auto text-center text-muted-foreground">Choose a chat from history.</p>{/if}
 			{#if selectedChatId && selectedChat}
-				{#key selectedChatId}<ConversationView conversationId={selectedChatId} messages={local.tables.messages} {accountKey} {catalog} {selections} {entries} focus={selectedChat.focus} visible={view === 'chat'} startOpening={openingId === selectedChatId} onOpeningStarted={() => openingId = null} />{/key}
+				{#key selectedChatId}<ConversationView bind:this={conversation} conversationId={selectedChatId} messages={local.tables.messages} persistence={local.persistence} {accountKey} {catalog} {selections} {entries} focus={selectedChat.focus} visible={view === 'chat'} startOpening={openingId === selectedChatId} onOpeningStarted={() => openingId = null} />{/key}
 			{/if}
 		</div>
 		<aside class="hidden w-60 shrink-0 overflow-y-auto border-l p-3 md:block" aria-label="Focus words">

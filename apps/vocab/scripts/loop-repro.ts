@@ -15,7 +15,8 @@ import {
 } from '@epicenter/agent';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
 import OpenAI from 'openai';
-import { VOCAB_SYSTEM_PROMPT } from '../vocab.js';
+import { Ok } from 'wellcrafted/result';
+import { VOCAB_SYSTEM_PROMPT } from '../src/lib/data.js';
 
 const model = process.argv[2] ?? 'qwen3:30b-a3b-instruct-2507-q4_K_M';
 const baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1';
@@ -25,9 +26,10 @@ function inMemoryStore(): AgentMessageStore {
 	const map = new Map<string, AgentMessage>();
 	const handlers = new Set<() => void>();
 	return {
-		set: (key, value) => {
+		set: async (key, value) => {
 			map.set(key, value);
 			for (const handler of handlers) handler();
+			return Ok(undefined);
 		},
 		*entries() {
 			for (const [key, val] of map) yield { key, val };
@@ -55,20 +57,23 @@ function loggingEngine(inner: AgentEngine): AgentEngine {
 }
 
 /**
- * Send a turn and resolve when it finishes. `send` synchronously starts the turn
- * (isGenerating true) before returning, so we subscribe AFTER send and wait for
- * it to go false again. Subscribing before send would race on send's user-message
- * write and resolve immediately.
+ * Send a turn and resolve when it finishes. `send` resolves once the user
+ * message is saved and the turn has started (isGenerating true), so we subscribe
+ * AFTER it and wait for the turn and the answer's save to end. Subscribing
+ * before send would race on send's user-message write and resolve immediately.
  */
-function sendAndWait(
+async function sendAndWait(
 	convo: ReturnType<typeof createConversation>,
 	text: string,
 ): Promise<void> {
-	convo.send(text);
-	if (!convo.snapshot().isGenerating) return Promise.resolve();
-	return new Promise((resolve) => {
+	const isActive = () =>
+		convo.snapshot().isGenerating || convo.snapshot().isSaving;
+	const { error } = await convo.send(text);
+	if (error !== null) throw new Error(error.message, { cause: error });
+	if (!isActive()) return;
+	await new Promise<void>((resolve) => {
 		const unsub = convo.subscribe(() => {
-			if (!convo.snapshot().isGenerating) {
+			if (!isActive()) {
 				unsub();
 				resolve();
 			}

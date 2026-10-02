@@ -460,7 +460,7 @@ test('SDK decodes CRLF and multiline SSE data and stops at DONE', async () => {
 	const response = new Response(
 		[
 			'data: {"choices": [\r\n',
-			'data: {"delta": {"content": "hello"}}]}\r\n\r\n',
+			'data: {"delta": {"content": "hello"}, "finish_reason": "stop"}]}\r\n\r\n',
 			'data: [DONE]\r\n\r\n',
 			'data: {"choices":[{"delta":{"content":"ignored"}}]}\r\n\r\n',
 		].join(''),
@@ -571,4 +571,108 @@ test('abort after a text delta cancels the body and emits no pending tools', asy
 	}
 	expect(chunks).toEqual([{ type: 'text-delta', delta: 'before' }]);
 	expect(cancelled).toBe(true);
+});
+
+// Finish reasons: only a finished answer is a successful stream
+
+async function drainFrames(frames: object[]) {
+	const { fetch } = capturingFetch(openAiSse(frames));
+	const client = new OpenAI({ fetch, baseURL: GATEWAY, apiKey: 'test' });
+	const engine = createOpenAiAgentEngine({
+		data: () => ({ client, model: 'model', systemPrompts: [] }),
+	});
+	return drain(
+		engine({ messages: [], tools: [] }, new AbortController().signal),
+	);
+}
+
+const writeCall = {
+	tool_calls: [
+		{ index: 0, id: 'call', function: { name: 'write', arguments: '{}' } },
+	],
+};
+
+test('an answer cut off at the output limit fails the run after its text', async () => {
+	expect(
+		await drainFrames([
+			{ choices: [{ delta: { content: 'cut off' }, finish_reason: 'length' }] },
+		]),
+	).toEqual([
+		{ type: 'text-delta', delta: 'cut off' },
+		{
+			type: 'run-error',
+			message: 'The model reached its output limit before finishing.',
+			code: 'length',
+		},
+	]);
+});
+
+test('a filtered answer fails the run', async () => {
+	const chunks = await drainFrames([
+		{ choices: [{ delta: { content: 'partial' }, finish_reason: null }] },
+		{ choices: [{ delta: {}, finish_reason: 'content_filter' }] },
+	]);
+	expect(chunks.at(-1)).toMatchObject({
+		type: 'run-error',
+		code: 'content_filter',
+	});
+});
+
+test('a stream that ends without a finish reason fails the run, even after a usage frame', async () => {
+	const chunks = await drainFrames([
+		{ choices: [{ delta: { content: 'half' }, finish_reason: null }] },
+		{ usage: { total_tokens: 5 }, choices: [] },
+	]);
+	expect(chunks).toEqual([
+		{ type: 'text-delta', delta: 'half' },
+		{
+			type: 'run-error',
+			message: 'The model stream ended before the answer finished.',
+			code: 'incomplete-stream',
+		},
+	]);
+});
+
+test('a usage frame after the finish does not undo it', async () => {
+	expect(
+		await drainFrames([
+			{ choices: [{ delta: { content: 'done' }, finish_reason: null }] },
+			{ choices: [{ delta: {}, finish_reason: 'stop' }] },
+			{ usage: { total_tokens: 5 }, choices: [] },
+		]),
+	).toEqual([{ type: 'text-delta', delta: 'done' }]);
+});
+
+test('tool calls cut off at the output limit or left unfinished never run', async () => {
+	for (const finish_reason of ['length', 'content_filter', null]) {
+		const chunks = await drainFrames([
+			{ choices: [{ delta: writeCall, finish_reason }] },
+		]);
+		expect(toolCalls(chunks)).toEqual([]);
+		expect(chunks.map((chunk) => chunk.type)).toEqual(['run-error']);
+	}
+});
+
+test('a tool_calls finish with no call fails the run', async () => {
+	expect(
+		await drainFrames([
+			{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+		]),
+	).toEqual([
+		{
+			type: 'run-error',
+			message: 'The model announced tool calls and sent none.',
+			code: 'incomplete-stream',
+		},
+	]);
+});
+
+test('a finish reason outside the SDK vocabulary fails the run', async () => {
+	const chunks = await drainFrames([
+		{ choices: [{ delta: { content: 'text' }, finish_reason: 'recitation' }] },
+	]);
+	expect(chunks.at(-1)).toMatchObject({
+		type: 'run-error',
+		code: 'incomplete-stream',
+	});
 });

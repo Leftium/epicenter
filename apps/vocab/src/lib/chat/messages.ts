@@ -1,21 +1,67 @@
 import {
 	type AgentMessage,
 	type AgentMessageStore,
+	AgentMessageStoreError,
 	agentMessageText,
 } from '@epicenter/agent';
 import { InstantString } from '@epicenter/app/field';
+import type { PersistenceCapability } from '@epicenter/app/store';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { ChatHistoryData } from '../data.js';
 
 type MessagesTable = ChatHistoryData['tables']['messages'];
 
+export const ChatHistoryError = defineErrors({
+	/** The rows are in the live document, and a restart would lose them. */
+	NotSaved: () => ({
+		message: "This device's storage did not save the chat history.",
+	}),
+	/** Storage could not be asked at all, as when its store has closed. */
+	StorageThrew: ({ cause }: { cause: unknown }) => ({
+		message: `This device's storage could not be asked to save the chat history: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type ChatHistoryError = InferErrors<typeof ChatHistoryError>;
+
+/**
+ * Ask this device's storage to take everything the chat tables have accepted,
+ * and answer with what it did.
+ *
+ * A table write only accepts a row into the live document. `flush` resolves
+ * after a failed attempt as well as a successful one, and newer accepted work
+ * can start another attempt, so the settled status is the answer. Calling this
+ * again is the explicit retry: it writes nothing new to the document.
+ */
+export async function saveChatHistory(
+	persistence: PersistenceCapability,
+): Promise<Result<void, ChatHistoryError>> {
+	const { data: status, error } = await tryAsync({
+		try: async () => {
+			do await persistence.flush();
+			while (persistence.get() === 'pending');
+			return persistence.get();
+		},
+		catch: (cause) => ChatHistoryError.StorageThrew({ cause }),
+	});
+	if (error !== null) return Err(error);
+	return status === 'saved' ? Ok(undefined) : ChatHistoryError.NotSaved();
+}
+
 /** Present one account's one conversation to the tutor loop. */
 export function createChatMessageStore(
 	messages: MessagesTable,
+	persistence: PersistenceCapability,
 	accountKey: string,
 	conversationId: string,
 ): AgentMessageStore {
 	return {
-		set(key, value) {
+		async set(key, value) {
 			const existing = messages.rows
 				.filter(
 					(row) =>
@@ -24,17 +70,26 @@ export function createChatMessageStore(
 						row.messageId === key,
 				)
 				.sort((left, right) => left.id.localeCompare(right.id))[0];
-			if (existing) {
-				const written = messages.update(existing.id, { message: value });
-				if (written.error !== null) throw written.error;
-			} else {
+			// A row accepted by an earlier attempt is the same message: saving it
+			// again must reach storage without adding a second row.
+			if (!existing) {
 				messages.create({
 					accountKey,
 					conversationId,
 					messageId: key,
 					message: value,
 				});
+			} else if (JSON.stringify(existing.message) !== JSON.stringify(value)) {
+				const written = messages.update(existing.id, { message: value });
+				if (written.error !== null) {
+					return AgentMessageStoreError.WriteFailed({ cause: written.error });
+				}
 			}
+			const { error } = await saveChatHistory(persistence);
+			if (error !== null) {
+				return AgentMessageStoreError.WriteFailed({ cause: error });
+			}
+			return Ok(undefined);
 		},
 		*entries() {
 			const byId = new Map<string, { id: string; message: AgentMessage }>();
@@ -61,7 +116,10 @@ export function createChatMessageStore(
 	};
 }
 
-/** Persist the learner's focus before requesting the tutor opening. */
+/**
+ * Accept the learner's focus as a new chat. The tutor opening waits for
+ * {@link saveChatHistory} to confirm it, like every other tutor turn.
+ */
 export function startChat(
 	chats: ChatHistoryData['tables']['chats'],
 	accountKey: string,

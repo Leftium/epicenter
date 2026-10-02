@@ -5,6 +5,7 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import { Markdown } from '@epicenter/ui/markdown';
 	import { Button } from '@epicenter/ui/button';
+	import { CopyButton } from '@epicenter/ui/copy-button';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SendIcon from '@lucide/svelte/icons/send';
@@ -14,6 +15,7 @@
 	import { auth } from '$lib/auth.svelte.js';
 	import { createVocabChat } from '$lib/chat/session.svelte.js';
 	import type { ChatHistoryData } from '$lib/data.js';
+	import type { PersistenceCapability } from '@epicenter/app/store';
 	import type { createEntriesState } from '$lib/entries.svelte.js';
 	import type { InferenceCatalog } from '@epicenter/app-shell/inference-picker';
 	import type { InferenceSelections } from '@epicenter/app-shell/inference-selections';
@@ -30,6 +32,7 @@
 	let {
 		conversationId,
 		messages,
+		persistence,
 		accountKey,
 		catalog,
 		selections,
@@ -41,6 +44,7 @@
 	}: {
 		conversationId: string;
 		messages: ChatHistoryData['tables']['messages'];
+		persistence: PersistenceCapability;
 		accountKey: string;
 		catalog: InferenceCatalog;
 		selections: InferenceSelections;
@@ -54,7 +58,15 @@
 	// The parent keys this component by conversation ID. Its loop and draft
 	// end when another chat is selected; dictation ends sooner when Chat hides.
 	/* svelte-ignore state_referenced_locally */
-	const chat = createVocabChat({ messages, accountKey, conversationId, focus, catalog, selections });
+	const chat = createVocabChat({ messages, persistence, accountKey, conversationId, focus, catalog, selections });
+
+	/**
+	 * Whether leaving this chat would drop a message its storage has not
+	 * confirmed. The shell asks before it switches chats.
+	 */
+	export function hasUnsaved() {
+		return chat.unsaved.length > 0;
+	}
 
 	let saveAffordance = $state.raw<{
 		text: string;
@@ -71,6 +83,7 @@
 			return;
 		}
 
+		if (persistence.get() !== 'saved') { saveAffordance = null; return; }
 		const text = selection.toString().trim();
 		if (!text) {
 			saveAffordance = null;
@@ -100,6 +113,7 @@
 
 	function saveSelectedEntry() {
 		if (!saveAffordance) return;
+		if (persistence.get() !== 'saved') return;
 		entries.save(saveAffordance.text);
 		document.getSelection()?.removeAllRanges();
 		saveAffordance = null;
@@ -119,7 +133,10 @@
 		chat.inputValue = draft ? `${draft} ${text}` : text;
 	}
 	const lastMessage = $derived(chat.messages.at(-1));
+	const unsavedIds = $derived(new Set(chat.unsaved.map((unsaved) => unsaved.id)));
 </script>
+
+<svelte:window onbeforeunload={(event) => { if (hasUnsaved()) event.preventDefault(); }} />
 
 <svelte:document onselectionchange={handleSelectionChange} />
 
@@ -135,12 +152,14 @@
 	</button>
 {/if}
 
+
+
 {#snippet message(msg: AgentMessage, streaming: boolean)}
 			{#if msg.role === 'user' || streaming}
 					<!-- Render Markdown only after the answer settles. -->
 				<div class="whitespace-pre-wrap">{agentMessageText(msg)}</div>
 			{:else}
-				<div data-entry-source>
+				<div data-entry-source={!unsavedIds.has(msg.id) && persistence.get() === 'saved' ? msg.id : undefined}>
 						<Markdown content={agentMessageText(msg)} />
 				</div>
 
@@ -167,9 +186,9 @@
 				{:else if chat.isThinking}
 					<Chat.Bubble variant="received"><Chat.BubbleMessage typing /></Chat.Bubble>
 				{/if}
-					{#if lastMessage?.role === 'user' && !chat.isGenerating}
+					{#if lastMessage?.role === 'user' && !chat.isGenerating && chat.unsaved.length === 0}
 						<div class="flex justify-start px-2 py-1">
-							<Button variant="ghost" class="text-muted-foreground" disabled={!chat.canServe} onclick={() => chat.retry()}>
+							<Button variant="ghost" class="text-muted-foreground" disabled={!chat.canAsk} onclick={() => chat.retry()}>
 								<RotateCcwIcon class="size-3" />
 								Retry answer
 						</Button>
@@ -179,7 +198,30 @@
 		{/if}
 	</div>
 	{#if chat.messages.length === 0 && focus.length > 0 && !chat.isGenerating}
-		<div class="flex justify-center border-t p-2"><Button variant="outline" disabled={!chat.canServe} onclick={() => chat.retry()}><RotateCcwIcon class="size-3" />Retry opening</Button></div>
+		<div class="flex justify-center border-t p-2"><Button variant="outline" disabled={!chat.canAsk} onclick={() => chat.retry()}><RotateCcwIcon class="size-3" />Retry opening</Button></div>
+	{/if}
+
+	{#if chat.saveError}
+		<!-- A storage failure, kept apart from tutor failures below: saving again never asks the tutor. -->
+		<div role="alert" class="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs text-destructive">
+			<span>
+				{#if chat.isSaving}
+					Saving again...
+				{:else if chat.unsaved[0]?.role === 'user'}
+					Your message is not saved on this device, so the tutor has not been asked. It can be lost if Vocab closes.
+				{:else if chat.unsaved.length > 0}
+					The tutor's answer is not saved on this device. It can be lost if Vocab closes.
+				{:else}
+					This chat is not saved on this device, so the tutor has not been asked. Save it, then ask the tutor.
+				{/if}
+			</span>
+			<div class="flex gap-1">
+				<Button variant="ghost" size="sm" disabled={chat.isSaving} onclick={() => chat.saveAgain()}>Save again</Button>
+				{#if chat.unsaved.length > 0}
+					<CopyButton variant="ghost" size="sm" tabindex={0} text={chat.unsaved.map(agentMessageText).join('\n\n')}>Copy</CopyButton>
+				{/if}
+			</div>
+		</div>
 	{/if}
 
 	{#if chat.error?.code === 'Unauthorized'}
@@ -198,7 +240,7 @@
 		<div role="alert" class="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs text-destructive">
 			<span>{chat.visibleError.message}</span>
 			<div class="flex gap-1">
-				<Button variant="ghost" size="sm" disabled={!chat.canServe} onclick={() => chat.retry()}>Retry</Button>
+				<Button variant="ghost" size="sm" disabled={!chat.canAsk} onclick={() => chat.retry()}>Retry</Button>
 				<Button variant="ghost" size="sm" onclick={() => chat.dismissError()}>Dismiss</Button>
 			</div>
 		</div>
@@ -210,7 +252,7 @@
 	{#if !chat.canServe}
 		<p class="px-3 pb-1 text-xs text-muted-foreground">Choose an available model to chat.</p>
 	{/if}
-	<form class="flex items-end gap-1.5 border-t bg-background px-2 py-1.5" aria-label="Chat message" onsubmit={(event) => { event.preventDefault(); chat.sendMessage(); }}>
+	<form class="flex items-end gap-1.5 border-t bg-background px-2 py-1.5" aria-label="Chat message" aria-busy={chat.isSaving} onsubmit={(event) => { event.preventDefault(); void chat.sendMessage(); }}>
 		{#if visible}<DictationButton {catalog} disabled={chat.isGenerating} onTranscript={appendTranscript} />{/if}
 		<Textarea
 			class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
@@ -221,7 +263,7 @@
 			onkeydown={(event: KeyboardEvent) => {
 				if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 					event.preventDefault();
-					chat.sendMessage();
+					void chat.sendMessage();
 				}
 			}}
 		/>

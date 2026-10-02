@@ -192,7 +192,7 @@ fn apply(
     invoke(
         window,
         "apply",
-        json!({ "session": session, "changes": changes, "lease": null }),
+        json!({ "session": session, "changes": changes }),
     )
 }
 
@@ -333,23 +333,13 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         "second"
     );
 
-    let status = invoke(
-        &main,
-        "status",
-        json!({ "session": session, "lease": null }),
-    )
-    .unwrap();
+    let status = invoke(&main, "status", json!({ "session": session })).unwrap();
     assert_eq!(
         status["changes"],
         json!([{ "path": "todos/a.md", "kind": "add" }, { "path": "todos/a.png", "kind": "add" }])
     );
     // The commit command replies with the settled outcome itself.
-    let committed = invoke(
-        &main,
-        "commit",
-        json!({ "session": session, "lease": null }),
-    )
-    .unwrap();
+    let committed = invoke(&main, "commit", json!({ "session": session })).unwrap();
     assert_eq!(committed["status"], "committed");
     assert_eq!(committed["message"], "Update 2 files");
     assert_eq!(committed["changedPaths"], 2);
@@ -384,12 +374,7 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         "{gone}"
     );
     assert_eq!(
-        invoke(
-            &main,
-            "pull_fast_forward",
-            json!({ "session": session, "lease": null })
-        )
-        .unwrap_err(),
+        invoke(&main, "pull_fast_forward", json!({ "session": session })).unwrap_err(),
         json!({ "name": "Git", "error": { "name": "NoRemote" } })
     );
 
@@ -484,11 +469,15 @@ fn a_window_reaches_only_its_own_scopes_and_its_own_sessions() {
         .unwrap_err(),
         json!({ "name": "Incompatible", "host": PROTOCOL, "page": PROTOCOL + 1 })
     );
-    // A page built before commit passes and pending activity were removed
-    // speaks protocol 1. It is refused before it can send anything else.
+    // A page built for the previous protocol is refused before other calls.
     assert_eq!(
-        invoke(&b, "attach", json!({ "scope": "notes", "protocol": 1 })).unwrap_err(),
-        json!({ "name": "Incompatible", "host": 2, "page": 1 })
+        invoke(
+            &b,
+            "attach",
+            json!({ "scope": "notes", "protocol": PROTOCOL - 1 })
+        )
+        .unwrap_err(),
+        json!({ "name": "Incompatible", "host": PROTOCOL, "page": PROTOCOL - 1 })
     );
     let no_session = invoke(&b, "list", json!({ "session": 1 })).unwrap_err();
     assert_eq!(
@@ -531,29 +520,27 @@ fn a_window_reaches_only_its_own_scopes_and_its_own_sessions() {
             .unwrap_err(),
             json!({ "name": "Refused", "error": denied })
         );
+        for command in ["commit", "status"] {
+            assert_eq!(
+                invoke(window, command, json!({ "session": a_session })).unwrap_err(),
+                denied
+            );
+        }
         assert_eq!(
             invoke(
                 window,
-                "commit",
-                json!({ "session": a_session, "lease": null })
+                "mkdir",
+                json!({ "session": a_session, "path": "made" })
             )
             .unwrap_err(),
             denied
         );
         assert_eq!(
-            invoke(
-                window,
-                "pull_fast_forward",
-                json!({ "session": a_session, "lease": null })
-            )
-            .unwrap_err(),
+            invoke(window, "pull_fast_forward", json!({ "session": a_session })).unwrap_err(),
             json!({ "name": "Git", "error": denied })
         );
-        assert_eq!(
-            invoke(window, "acquire_lease", json!({ "session": a_session })).unwrap_err(),
-            denied
-        );
     }
+    assert!(!fixture.root.join("made").exists());
     assert_eq!(
         std::fs::read_to_string(fixture.root.join("a.md")).unwrap(),
         "from a"
@@ -661,87 +648,26 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
         git(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]),
         "a.md\nb.md\nlast.md"
     );
-    let status = invoke(&b, "status", json!({ "session": b_session, "lease": null })).unwrap();
+    let status = invoke(&b, "status", json!({ "session": b_session })).unwrap();
     assert_eq!(status["changes"], json!([]));
 
-    // A terminal lease in B holds A's new session out until it is released.
+    // The commands a page built for the terminal lease would send are gone.
+    // One is refused before the plugin sees it, and holds nothing.
+    for command in ["acquire_lease", "release_lease"] {
+        let refused = invoke(&b, command, json!({ "session": b_session, "lease": 1 })).unwrap_err();
+        assert!(refused.is_string(), "{command}: {refused}");
+    }
+    // A new session of window A saves at once: nothing of B's holds it out.
     let a_again = attach(&a);
-    let lease = invoke(&b, "acquire_lease", json!({ "session": b_session })).unwrap();
-    invoke(
-        &b,
-        "apply",
-        json!({
-            "session": b_session,
-            "changes": [write("leased.md", "from the terminal", json!({ "kind": "absent" }))],
-            "lease": lease,
-        }),
+    apply(
+        &a,
+        a_again,
+        json!([write("again.md", "x", json!({ "kind": "absent" }))]),
     )
     .unwrap();
-    // Window A is permitted on this scope and knows the number, but the lease
-    // belongs to window B's session: A cannot join B's command with it.
-    let not_held = json!({
-        "name": "Denied",
-        "reason": "this session does not hold that terminal lease",
-    });
-    assert_eq!(
-        invoke(
-            &a,
-            "apply",
-            json!({
-                "session": a_again,
-                "changes": [write("stolen.md", "joined b's command", json!({ "kind": "absent" }))],
-                "lease": lease,
-            }),
-        )
-        .unwrap_err(),
-        json!({ "name": "Refused", "error": not_held })
-    );
-    for command in ["commit", "status"] {
-        assert_eq!(
-            invoke(&a, command, json!({ "session": a_again, "lease": lease })).unwrap_err(),
-            not_held
-        );
-    }
-    assert_eq!(
-        invoke(
-            &a,
-            "mkdir",
-            json!({ "session": a_again, "path": "made", "lease": lease })
-        )
-        .unwrap_err(),
-        not_held
-    );
-    assert!(!fixture.root.join("stolen.md").exists() && !fixture.root.join("made").exists());
 
-    let (done, finished) = std::sync::mpsc::channel();
-    std::thread::scope(|scope| {
-        scope.spawn(|| {
-            let result = apply(
-                &a,
-                a_again,
-                json!([write("waiting.md", "x", json!({ "kind": "absent" }))]),
-            );
-            done.send(result).unwrap();
-        });
-        assert!(
-            finished.recv_timeout(Duration::from_millis(200)).is_err(),
-            "the save waits for the lease"
-        );
-        invoke(
-            &b,
-            "release_lease",
-            json!({ "session": b_session, "lease": lease }),
-        )
-        .unwrap();
-        finished
-            .recv_timeout(Duration::from_secs(20))
-            .unwrap()
-            .unwrap();
-    });
-
-    // Shutdown drains what was admitted and refuses what comes after. The
-    // save that waited for the lease was admitted for its commit when it
-    // landed, with the folder free; that commit holds the leased save too.
+    // Shutdown drains what was admitted and refuses what comes after. That
+    // save was admitted for its commit when it landed, with the folder free.
     fixture.app.folders().shutdown();
     assert_eq!(
         apply(
@@ -880,12 +806,7 @@ fn commit_file(window: &WebviewWindow<MockRuntime>, session: u64, path: &str) ->
         json!([write(path, path, json!({ "kind": "absent" }))]),
     )
     .unwrap();
-    let committed = invoke(
-        window,
-        "commit",
-        json!({ "session": session, "lease": null }),
-    )
-    .unwrap();
+    let committed = invoke(window, "commit", json!({ "session": session })).unwrap();
     assert_eq!(committed["status"], "committed", "{committed}");
     committed["oid"].as_str().unwrap().to_string()
 }
@@ -1071,8 +992,79 @@ fn ending_a_session_withdraws_its_unstarted_push_and_keeps_the_one_in_flight() {
     }
 }
 
+#[cfg(unix)]
 #[test]
-fn a_page_reload_ends_that_pages_sessions_and_leases_and_nothing_else() {
+fn a_push_in_flight_at_the_remote_holds_no_window_save_or_commit_back() {
+    // This folder commits on edit, and its remote holds every push.
+    let directory = temp("network-held");
+    let (remote, configured) = HeldRemote::new(&directory.0);
+    let fixture = fixture_in(directory, &["a", "b"], true, Some(configured));
+    let a = window(&fixture.app, "a");
+    let b = window(&fixture.app, "b");
+    let a_session = attach(&a);
+    let b_session = attach(&b);
+    let head = || git(&fixture.root, &["rev-parse", "HEAD"]);
+    let subjects = || git(&fixture.root, &["log", "--format=%s"]);
+    let (a, b) = (&a, &b);
+
+    // Window A saves. The owner commits it and starts a push, which is now a
+    // real `git push` held inside the remote.
+    apply(
+        a,
+        a_session,
+        json!([write("one.md", "one", json!({ "kind": "absent" }))]),
+    )
+    .unwrap();
+    let first = remote.arrived(1);
+    assert_eq!(first, head());
+
+    std::thread::scope(|scope| {
+        // A's terminal runs `git push`: a request it opened, waiting behind
+        // the push in flight. Nothing of it holds the folder.
+        let request = open_request(a, a_session);
+        let pushing = scope.spawn(move || push(a, a_session, request));
+
+        // Window B saves, and both windows' terminals make directories and
+        // save, while one push is in flight and another waits. Every call
+        // returns, and each complete save is committed by its own attempt.
+        apply(
+            b,
+            b_session,
+            json!([write("two.md", "two", json!({ "kind": "absent" }))]),
+        )
+        .unwrap();
+        idle(b, b_session);
+        assert_eq!(subjects(), "Add two.md\nAdd one.md");
+        invoke(a, "mkdir", json!({ "session": a_session, "path": "made" })).unwrap();
+        apply(
+            a,
+            a_session,
+            json!([write("made/three.md", "three", json!({ "kind": "absent" }))]),
+        )
+        .unwrap();
+        idle(a, a_session);
+        assert_eq!(subjects(), "Add made/three.md\nAdd two.md\nAdd one.md");
+        let third = head();
+        let status = invoke(b, "status", json!({ "session": b_session })).unwrap();
+        assert_eq!(status["changes"], json!([]));
+        assert_eq!(remote.arrivals(), 1, "the first push is still in flight");
+
+        // The held push finishes with the commit it carried. A's waiting
+        // push then starts, and carries everything committed meanwhile.
+        remote.release(1);
+        assert_eq!(remote.arrived(2), third);
+        assert_eq!(remote.head(), first);
+        remote.release(2);
+        assert_eq!(
+            pushing.join().unwrap().unwrap(),
+            json!({ "status": "pushed", "oid": third })
+        );
+        assert_eq!(remote.head(), third);
+    });
+}
+
+#[test]
+fn a_page_reload_ends_that_pages_sessions_and_nothing_else() {
     let fixture = fixture("reload", &["a", "b"], true);
     let a = window(&fixture.app, "a");
     let b = window(&fixture.app, "b");
@@ -1083,7 +1075,7 @@ fn a_page_reload_ends_that_pages_sessions_and_leases_and_nothing_else() {
     impl tauri::Resource for Unrelated {}
     let unrelated = a.as_ref().resources_table().add(Unrelated);
 
-    // The old page saved, and holds a terminal lease, when it is replaced.
+    // The old page saved before it is replaced.
     apply(
         &a,
         a_session,
@@ -1097,10 +1089,9 @@ fn a_page_reload_ends_that_pages_sessions_and_leases_and_nothing_else() {
     // Let that save's commit finish, so window B's save below is not skipped
     // for finding the Git lock held.
     idle(&b, b_session);
-    invoke(&a, "acquire_lease", json!({ "session": a_session })).unwrap();
     crate::commands::end_page(a.as_ref());
 
-    // Its session is gone, so its lease no longer holds the folder.
+    // Its session is gone.
     assert_eq!(
         invoke(
             &a,
@@ -1193,8 +1184,6 @@ fn a_destroyed_window_ends_its_sessions_after_the_manager_forgot_its_webview() {
     // Let that save's commit finish, so window B's save below is not skipped
     // for finding the Git lock held.
     idle(&b, b_session);
-    // The window is destroyed while one of its terminal commands holds the folder.
-    invoke(&a, "acquire_lease", json!({ "session": a_session })).unwrap();
 
     // What Tauri does before any plugin hears `Destroyed`: the manager drops
     // the webview. From here the plugin cannot look the webview up by label,
@@ -1207,26 +1196,17 @@ fn a_destroyed_window_ends_its_sessions_after_the_manager_forgot_its_webview() {
     // The plugin's `Destroyed` handler, in that order.
     crate::window_destroyed(fixture.app.handle(), "a");
 
-    // The session ended: its lease is released, so window B's save does not wait.
-    let (done, finished) = std::sync::mpsc::channel();
-    std::thread::scope(|scope| {
-        scope.spawn(|| {
-            done.send(apply(
-                &b,
-                b_session,
-                json!([write(
-                    "b.md",
-                    "window b carried on",
-                    json!({ "kind": "absent" })
-                )]),
-            ))
-            .unwrap();
-        });
-        finished
-            .recv_timeout(Duration::from_secs(10))
-            .expect("the destroyed window's lease no longer holds the folder")
-            .unwrap();
-    });
+    // The session ended, and window B carries on.
+    apply(
+        &b,
+        b_session,
+        json!([write(
+            "b.md",
+            "window b carried on",
+            json!({ "kind": "absent" })
+        )]),
+    )
+    .unwrap();
     // A request that still reaches the old webview finds no live session.
     let ended = invoke(
         &a,
@@ -1370,7 +1350,6 @@ fn a_window_recreated_under_the_same_label_is_a_separate_instance() {
             instance,
             Live {
                 session,
-                leases: Default::default(),
                 requests: Default::default(),
                 _subscription: subscription,
             },
@@ -1584,6 +1563,7 @@ fn a_session_the_new_page_attaches_during_reload_cleanup_survives_it() {
 /// line `FOLDER_BRIDGE { id, ok | err }`. Events a window receives are printed
 /// as `FOLDER_BRIDGE { event, window, payload }`. Requests run concurrently,
 /// as a page's would. Closing stdin shuts the folders down.
+/// `FOLDER_BRIDGE_REMOTE` names the URL the folder pushes to and fetches from.
 #[test]
 #[ignore = "run through packages/app/src/files/tauri-native.test.ts"]
 fn invoke_bridge() {
@@ -1614,6 +1594,12 @@ fn invoke_bridge() {
             scope: "notes".to_string(),
             folder: FolderConfig {
                 commit_on_edit: std::env::var_os("FOLDER_BRIDGE_MANUAL").is_none(),
+                remote: std::env::var("FOLDER_BRIDGE_REMOTE")
+                    .ok()
+                    .map(|url| Remote {
+                        url,
+                        branch: "main".to_string(),
+                    }),
                 watch_events: false,
                 watch_interval: None,
                 ..FolderConfig::new(

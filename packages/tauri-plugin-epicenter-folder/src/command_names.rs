@@ -10,8 +10,6 @@ pub const COMMANDS: &[&str] = &[
     "apply",
     "mkdir",
     "rmdir",
-    "acquire_lease",
-    "release_lease",
     "status",
     "commit",
     "open_request",

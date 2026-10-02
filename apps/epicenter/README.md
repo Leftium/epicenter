@@ -170,7 +170,7 @@ A window close hides the loaded page and preserves its drafts. Quitting or
 replacing the page loses unsaved typing. Native shutdown drains accepted saves
 and commits; forced termination can leave saved files uncommitted. Two native
 processes cannot open the same directory. See Todos' [README](../todos/README.md)
-for version checks, terminal leases, and external-edit limits.
+for version checks, terminal interleaving, and external-edit limits.
 
 ## The Capture folder
 

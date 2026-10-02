@@ -47,7 +47,6 @@ import { openNativeFolder } from './directory.test-support.js';
 import {
 	assembleFolder,
 	createFileHints,
-	createLocalTerminal,
 	type FolderHistory,
 } from './folder.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
@@ -372,7 +371,6 @@ describe('a save never reads its bytes back', () => {
 			location: { kind: 'indexedDb', database: 'epicenter-folder:reread' },
 			hints: createFileHints(),
 			announcePublications: true,
-			terminal: createLocalTerminal,
 			release: async () => db.close(),
 		});
 		opened.push(folder);

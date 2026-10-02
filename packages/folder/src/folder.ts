@@ -425,7 +425,7 @@ export function createFolderContext({
 	};
 }
 
-export function createFolderGit(history: FolderHistory): FolderGit {
+function createFolderGit(history: FolderHistory): FolderGit {
 	return Object.freeze({
 		get snapshot() {
 			return history.snapshot;
@@ -445,10 +445,7 @@ export function createFolderGit(history: FolderHistory): FolderGit {
 	} satisfies FolderGit);
 }
 
-export function createShellAccess(
-	context: FolderContext,
-	git: FolderGit,
-): ShellAccess {
+function createShellAccess(context: FolderContext, git: FolderGit): ShellAccess {
 	const { boundary, admit } = context;
 	return {
 		files: {
@@ -477,11 +474,13 @@ export function createShellAccess(
 }
 
 /**
- * A terminal over shell access in this process. The shell implementation is
- * loaded when the first command runs. Commands run one at a time and stop at
- * their next step once `signal` aborts.
+ * The terminal every folder has, over its own shell access. The shell
+ * implementation is loaded when the first command runs. Commands run one at
+ * a time and stop at their next step once `signal` aborts. A command holds
+ * nothing between its steps: each is admitted like any other file or Git
+ * call, so other writers can land in between.
  */
-export function createLocalTerminal(
+function createLocalTerminal(
 	shell: ShellAccess,
 	signal: AbortSignal,
 	{ cwd = '/' }: { cwd?: string } = {},
@@ -525,7 +524,6 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 	location,
 	hints,
 	announcePublications,
-	terminal,
 	release,
 }: {
 	compiled: ParsedDataDefinition;
@@ -538,12 +536,6 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 	 * the storage owner announces every change itself.
 	 */
 	announcePublications: boolean;
-	/** Builds a terminal over this folder's shell access. */
-	terminal: (
-		shell: ShellAccess,
-		signal: AbortSignal,
-		options?: { cwd?: string },
-	) => FolderTerminal;
 	/** Releases storage after all work settles. */
 	release: () => Promise<void>;
 }): Folder<TDefinition> {
@@ -670,7 +662,8 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 			),
 		location: Object.freeze(location),
 		onFilesChanged: (listener) => hints.subscribe(listener),
-		terminal: (options) => terminal(shell, controller.signal, options),
+		terminal: (options) =>
+			createLocalTerminal(shell, controller.signal, options),
 		signal: controller.signal,
 		close() {
 			if (closing !== undefined) return closing;

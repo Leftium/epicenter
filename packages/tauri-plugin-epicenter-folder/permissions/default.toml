@@ -14,8 +14,6 @@ permissions = [
   "allow-apply",
   "allow-mkdir",
   "allow-rmdir",
-  "allow-acquire-lease",
-  "allow-release-lease",
   "allow-status",
   "allow-commit",
   "allow-open-request",

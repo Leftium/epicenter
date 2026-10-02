@@ -31,8 +31,9 @@
 //!   every instance recorded for that window. An ended instance never
 //!   accepts a session again.
 //! - Ending a page or an instance drops its sessions' subscriptions and
-//!   leases. It never touches the folder owner: saves the owner admitted
-//!   still land, and every other window's sessions carry on.
+//!   withdraws their unstarted pushes and fetches. It never touches the
+//!   folder owner: saves the owner admitted still land, and every other
+//!   window's sessions carry on.
 //!
 //! No webview or window handle is stored here. The index holds labels and
 //! weak references; an instance is owned by its webview's resource table and
@@ -42,7 +43,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use epicenter_folder_core::owner::{Caller, FolderOwner, Lease, Request, Subscription};
+use epicenter_folder_core::owner::{Caller, FolderOwner, Request, Subscription};
 use epicenter_folder_core::registry::Session;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -51,12 +52,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// What a live session holds. Dropping it stops the session's events,
-/// releases its terminal leases, and withdraws its pushes and fetches that
-/// the owner has not started.
+/// What a live session holds. Dropping it stops the session's events and
+/// withdraws its pushes and fetches that the owner has not started.
 pub(crate) struct Live {
     pub session: Session,
-    pub leases: BTreeMap<u64, Lease>,
     /// The pushes and fetches this session opened and has not finished or
     /// withdrawn. This map is the only record of them: removing an entry
     /// drops its `Request`, which is what withdraws it.
@@ -94,8 +93,8 @@ impl SessionState {
 
     /// End the session. Safe to call more than once.
     pub fn end(&self) {
-        // Taken out under the lock, dropped outside it: dropping releases
-        // leases and a subscription, which take the owner's own locks.
+        // Taken out under the lock, dropped outside it: dropping withdraws
+        // requests and ends a subscription, which take the owner's own locks.
         let live = lock(&self.live).take();
         drop(live);
     }
@@ -111,32 +110,6 @@ impl SessionState {
             Some(live) => live.session.authorize(window).cloned(),
             None => Err(ENDED.to_string()),
         }
-    }
-
-    pub fn holds_lease(&self, lease: u64) -> bool {
-        lock(&self.live)
-            .as_ref()
-            .is_some_and(|live| live.leases.contains_key(&lease))
-    }
-
-    /// Keep a lease for as long as the session lives. A session that ended
-    /// meanwhile drops the lease, which releases it at once.
-    pub fn keep_lease(&self, lease: Lease) -> Result<u64, String> {
-        match &mut *lock(&self.live) {
-            Some(live) => {
-                let id = lease.id();
-                live.leases.insert(id, lease);
-                Ok(id)
-            }
-            None => Err(ENDED.to_string()),
-        }
-    }
-
-    pub fn release_lease(&self, lease: u64) {
-        let released = lock(&self.live)
-            .as_mut()
-            .and_then(|live| live.leases.remove(&lease));
-        drop(released);
     }
 
     /// Keep a request for as long as the session lives, under a new number. A

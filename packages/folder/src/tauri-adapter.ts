@@ -20,6 +20,11 @@
  * finishes, and other windows carry on. Closing commits nothing: a save whose
  * automatic attempt the owner skipped stays uncommitted.
  *
+ * Nothing holds the folder between two commands. The terminal is the same
+ * one every folder has: each step is an ordinary command, other windows'
+ * saves land between its steps, and a rewrite of a file it read is refused
+ * if the file changed since.
+ *
  * An `invoke` that fails after it was sent leaves the outcome unknown. Reads
  * report that as an ordinary failure. Anything that could have changed files
  * or history reports `Unconfirmed` and is never retried here.
@@ -42,9 +47,6 @@ import {
 import {
 	assembleFolder,
 	createFileHints,
-	createFolderContext,
-	createFolderGit,
-	createShellAccess,
 	type FolderBoundary,
 	type FolderHistory,
 } from './folder.js';
@@ -74,7 +76,6 @@ import {
 	type PushOutcome as WirePushOutcome,
 } from './native/bindings.gen.js';
 import { callObserver } from './observer.js';
-import type { FolderTerminal, TerminalResult } from './terminal.js';
 import type { FileExpectation } from './version.js';
 
 type Wire<T, E> = { data: T; error: null } | { data: null; error: E };
@@ -151,9 +152,8 @@ function fileError(error: WireFileError): FileError {
 			return FileError.Closed().error;
 		case 'Unconfirmed':
 			return FileError.Unconfirmed(error).error;
-		// Both are refusals before any write: the session or lease the call
-		// named is not one the owner accepts.
-		case 'LeaseEnded':
+		// A refusal before any write: the session the call named is not one
+		// the owner accepts.
 		case 'Denied':
 			return FileError.Io({
 				path: '',
@@ -396,14 +396,7 @@ function changeToWire(change: FileChange): WireFileChange {
 	}
 }
 
-/**
- * `lease` names the terminal lease the caller holds while it runs one
- * command, or `null` for ordinary calls.
- */
-function createBoundary(
-	session: number,
-	lease: () => number | null,
-): FolderBoundary {
+function createBoundary(session: number): FolderBoundary {
 	const unsent = (path: string, operation: string, cause: unknown) =>
 		FileError.Io({ path, operation, cause });
 
@@ -472,7 +465,7 @@ function createBoundary(
 		async apply(changes) {
 			const first = changes[0];
 			const result = await call(
-				commands.apply(session, changes.map(changeToWire), lease()),
+				commands.apply(session, changes.map(changeToWire)),
 			);
 			// No reply: the batch may have been published. It is sent once.
 			if (!result.sent)
@@ -490,7 +483,7 @@ function createBoundary(
 			return Ok(undefined);
 		},
 		async mkdir(path) {
-			const result = await call(commands.mkdir(session, path, lease()));
+			const result = await call(commands.mkdir(session, path));
 			if (!result.sent)
 				return FileError.Unconfirmed({
 					path,
@@ -501,7 +494,7 @@ function createBoundary(
 			return Ok(undefined);
 		},
 		async rmdir(path) {
-			const result = await call(commands.rmdir(session, path, lease()));
+			const result = await call(commands.rmdir(session, path));
 			if (!result.sent)
 				return FileError.Unconfirmed({
 					path,
@@ -544,14 +537,13 @@ function createHistory(
 	session: number,
 	snapshots: Snapshots,
 	client: Client,
-	lease: () => number | null,
 ): FolderHistory {
 	const closed = () => GitError.Closed();
 	const closedCommit = (): CommitOutcome => ({ status: 'closed' });
 
 	/** An explicit commit: the owner waits for the folder, then reads it. */
 	async function commitNow(): Promise<CommitOutcome> {
-		const result = await call(commands.commit(session, lease()));
+		const result = await call(commands.commit(session));
 		if (!result.sent)
 			return { status: 'unconfirmed', error: describe(result.cause) };
 		if (result.settled === 'refused')
@@ -674,7 +666,7 @@ function createHistory(
 		status: () =>
 			observe(
 				'status',
-				() => commands.status(session, lease()),
+				() => commands.status(session),
 				(files) => ({ head: orUndefined(files.head), changes: files.changes }),
 			),
 		commit: () => client.local(closedCommit, commitNow),
@@ -723,7 +715,7 @@ function createHistory(
 			client.network(closed, stoppedFetch, signal, fetchNow),
 		pullFastForward: () =>
 			client.local(closed, async () => {
-				const result = await call(commands.pullFastForward(session, lease()));
+				const result = await call(commands.pullFastForward(session));
 				if (!result.sent)
 					return GitError.Unconfirmed({
 						operation: 'pull',
@@ -777,8 +769,8 @@ function createHistory(
 }
 
 /**
- * This page's use of the folder: one lifetime for its Git calls and its
- * terminals. `fence` refuses new ones all at once and stops this page waiting
+ * This page's Git calls: one lifetime for all of them, a terminal's
+ * included. `fence` refuses new ones all at once and stops this page waiting
  * for network work. `close` also waits for local work that was already
  * running, so the session is not detached under it. Network work is the
  * owner's: closing stops this page waiting and withdraws its requests, so a
@@ -786,8 +778,6 @@ function createHistory(
  * started runs to its end there.
  */
 type Client = {
-	/** Aborts when this page's folder starts closing. */
-	readonly signal: AbortSignal;
 	/** Local work: refused once closing, otherwise waited for by `close`. */
 	local<T>(closed: () => T, work: () => Promise<T>): Promise<T>;
 	/**
@@ -813,7 +803,6 @@ function createClient(): Client {
 	const running = new Set<Promise<unknown>>();
 	let closing: Promise<void> | undefined;
 	return {
-		signal: controller.signal,
 		local(closed, work) {
 			if (controller.signal.aborted) return Promise.resolve(closed());
 			const settling = work();
@@ -872,8 +861,6 @@ function createSnapshots(initial: GitSnapshot): Snapshots {
 		clear: () => listeners.clear(),
 	};
 }
-
-const NO_LEASE = () => null;
 
 /**
  * Open the folder the shell registered under `id`, which defaults to the
@@ -965,102 +952,17 @@ export const openFolder: OpenFolder = async ({
 
 	const client = createClient();
 
-	/**
-	 * Each command holds the folder for its whole run, so no other window's
-	 * save lands between its reads and writes; other saves wait, and the owner
-	 * ends the hold after 60 seconds. A command still running then fails at
-	 * its next file operation.
-	 */
-	function terminal({ cwd = '/' }: { cwd?: string } = {}): FolderTerminal {
-		// The lease this terminal's running command holds, if one is running.
-		let held: number | null = null;
-		const lease = () => held;
-		// The same files and history, with every call naming the held lease so
-		// the owner lets it through the gate the lease closed to everyone else.
-		const leasedHistory = createHistory(session, snapshots, client, lease);
-		const leased = createShellAccess(
-			createFolderContext({
-				boundary: createBoundary(session, lease),
-				history: leasedHistory,
-				signal: client.signal,
-				landed: () => {},
-			}),
-			createFolderGit(leasedHistory),
-		);
-		let shell: FolderTerminal | undefined;
-		let tail: Promise<unknown> = Promise.resolve();
-		const refused = (reason: string): TerminalResult => ({
-			stdout: '',
-			stderr: `${reason}\n`,
-			exitCode: 1,
-		});
-
-		async function run(
-			command: string,
-			options?: { signal?: AbortSignal },
-		): Promise<TerminalResult> {
-			// Closing the folder stops a running command at its next step, the
-			// same as the caller's own signal, so it cannot carry on with later
-			// steps after a wait it was told to stop.
-			const signal =
-				options?.signal === undefined
-					? client.signal
-					: AbortSignal.any([client.signal, options.signal]);
-			const acquired = await call(commands.acquireLease(session));
-			if (!acquired.sent)
-				return refused(
-					`The folder could not be held for this command: ${describe(acquired.cause)}`,
-				);
-			if (acquired.settled === 'refused')
-				return refused(fileError(acquired.error).message);
-			held = acquired.data;
-			try {
-				shell ??= (await import('./terminal.js')).createFolderTerminal(leased, {
-					cwd,
-				});
-				return await shell.exec(command, { signal });
-			} finally {
-				// Completed, cancelled, or cut off by the owner's time limit: the
-				// folder is given back either way.
-				const ended = held;
-				held = null;
-				await commands.releaseLease(session, ended).catch(() => {});
-			}
-		}
-
-		return {
-			get cwd() {
-				return shell?.cwd ?? cwd;
-			},
-			// One command at a time: a lease belongs to exactly one command. A
-			// command is this page's local work: refused once the folder is
-			// closing, and waited for by `close` so its lease is released
-			// before the session is detached.
-			exec(command, options) {
-				const running = tail.then(() =>
-					client.local(
-						() => refused('The folder is closed'),
-						() => run(command, options),
-					),
-				);
-				tail = running.catch(() => {});
-				return running;
-			},
-		};
-	}
-
 	return Ok(
 		assembleFolder<typeof definition>({
 			compiled: compiled.data,
-			boundary: createBoundary(session, NO_LEASE),
+			boundary: createBoundary(session),
 			// Closing the folder fences `client` through this history: Git calls
-			// and terminals are refused, and running local ones are waited for,
-			// before `release` detaches the session they use.
-			history: createHistory(session, snapshots, client, NO_LEASE),
+			// are refused, and running local ones are waited for, before
+			// `release` detaches the session they use.
+			history: createHistory(session, snapshots, client),
 			location: { kind: 'directory', root },
 			hints,
 			announcePublications: false,
-			terminal: (_shell, _signal, options) => terminal(options),
 			// Detaches this window only. The owner keeps the folder, finishes the
 			// work it already admitted for this page, and serves every other
 			// window.

@@ -257,7 +257,6 @@ fn repository_author_is_used_for_local_history_without_adopting_origin() {
             "session": attached["session"],
             "changes": [{ "kind": "write", "path": "kv.json", "bytes": b"{}\n",
                 "expected": { "kind": "absent" } }],
-            "lease": null,
         }),
     )
     .unwrap();
@@ -317,7 +316,7 @@ fn look(window: &WebviewWindow<MockRuntime>, session: &Value) {
     invoke(
         window,
         "plugin:epicenter-folder|status",
-        json!({ "session": session, "lease": null }),
+        json!({ "session": session }),
     )
     .unwrap();
 }
@@ -445,7 +444,7 @@ fn a_new_folder_is_set_up_through_the_owner_and_its_settings_are_the_first_commi
         invoke(
             &main,
             "plugin:epicenter-folder|mkdir",
-            json!({ "session": session, "path": table, "lease": null }),
+            json!({ "session": session, "path": table }),
         )
         .unwrap();
         assert!(fixture.root.join(table).is_dir());
@@ -462,7 +461,6 @@ fn a_new_folder_is_set_up_through_the_owner_and_its_settings_are_the_first_commi
                     "bytes": text.as_bytes(),
                     "expected": { "kind": "absent" },
                 }],
-                "lease": null,
             }),
         )
     };
@@ -528,7 +526,6 @@ fn a_save_that_cannot_be_written_fails_alone_and_a_commit_that_cannot_be_recorde
                     "bytes": text.as_bytes(),
                     "expected": { "kind": "any" },
                 }],
-                "lease": null,
             }),
         )
     };
@@ -536,7 +533,7 @@ fn a_save_that_cannot_be_written_fails_alone_and_a_commit_that_cannot_be_recorde
         invoke(
             &main,
             "plugin:epicenter-folder|commit",
-            json!({ "session": session, "lease": null }),
+            json!({ "session": session }),
         )
         .unwrap()["outcome"]["status"]
             .clone()

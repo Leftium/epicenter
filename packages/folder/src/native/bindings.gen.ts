@@ -26,22 +26,15 @@ export const commands = {
 	 *  batch makes one automatic commit attempt, which is skipped if the folder
 	 *  is busy.
 	 */
-	apply: (session: number, changes: FileChange[], lease: number | null) => typedError<null, ApplyError>(__TAURI_INVOKE("plugin:epicenter-folder|apply", { session, changes, lease })),
-	mkdir: (session: number, path: string, lease: number | null) => typedError<null, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|mkdir", { session, path, lease })),
-	rmdir: (session: number, path: string, lease: number | null) => typedError<null, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|rmdir", { session, path, lease })),
-	/**
-	 *  Hold the folder's file gate for one terminal command. Every other
-	 *  publication waits, so the owner ends the lease at its time limit, and the
-	 *  lease ends with this window's session.
-	 */
-	acquireLease: (session: number) => typedError<number, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|acquire_lease", { session })),
-	releaseLease: (session: number, lease: number) => __TAURI_INVOKE<void>("plugin:epicenter-folder|release_lease", { session, lease }),
-	status: (session: number, lease: number | null) => typedError<FilesObservation, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|status", { session, lease })),
+	apply: (session: number, changes: FileChange[]) => typedError<null, ApplyError>(__TAURI_INVOKE("plugin:epicenter-folder|apply", { session, changes })),
+	mkdir: (session: number, path: string) => typedError<null, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|mkdir", { session, path })),
+	rmdir: (session: number, path: string) => typedError<null, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|rmdir", { session, path })),
+	status: (session: number) => typedError<FilesObservation, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|status", { session })),
 	/**
 	 *  Commit the folder's current files. This waits for the folder and settles
 	 *  as an outcome, never as an error, once the session is accepted.
 	 */
-	commit: (session: number, lease: number | null) => typedError<CommitOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|commit", { session, lease })),
+	commit: (session: number) => typedError<CommitOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|commit", { session })),
 	/**
 	 *  Announce a push or fetch this window is about to ask for, and get the
 	 *  number that names it. The request is this session's: only this session can
@@ -62,7 +55,7 @@ export const commands = {
 	push: (session: number, request: number) => typedError<PushOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|push", { session, request })),
 	/**  Fetch for a request this session opened, like `push`. */
 	fetch: (session: number, request: number) => typedError<FetchOutcome, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|fetch", { session, request })),
-	pullFastForward: (session: number, lease: number | null) => typedError<PullOutcome, PullError>(__TAURI_INVOKE("plugin:epicenter-folder|pull_fast_forward", { session, lease })),
+	pullFastForward: (session: number) => typedError<PullOutcome, PullError>(__TAURI_INVOKE("plugin:epicenter-folder|pull_fast_forward", { session })),
 	paths: (session: number) => typedError<PathStatus[], GitError>(__TAURI_INVOKE("plugin:epicenter-folder|paths", { session })),
 	/**  Stage current contents of `paths`, including deletions; `null` stages everything. */
 	stage: (session: number, paths: string[] | null) => typedError<null, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|stage", { session, paths })),
@@ -191,8 +184,6 @@ export type FileError = { name: "InvalidPath"; path: string; reason: string } | 
  *  the folder. Look before trying again.
  */
 { name: "Unconfirmed"; path: string; operation: string; cause: string } |
-/**  The terminal lease this call named does not hold the folder. */
-{ name: "LeaseEnded"; reason: string } |
 /**  The caller has no session for this folder, or names another window's. */
 { name: "Denied"; reason: string };
 

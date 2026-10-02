@@ -13,8 +13,6 @@ Attach to the folders the shell registered for this window, then read, publish, 
 - `allow-apply`
 - `allow-mkdir`
 - `allow-rmdir`
-- `allow-acquire-lease`
-- `allow-release-lease`
 - `allow-status`
 - `allow-commit`
 - `allow-open-request`
@@ -36,32 +34,6 @@ Attach to the folders the shell registered for this window, then read, publish, 
 <th>Description</th>
 </tr>
 
-
-<tr>
-<td>
-
-`epicenter-folder:allow-acquire-lease`
-
-</td>
-<td>
-
-Enables the acquire_lease command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`epicenter-folder:deny-acquire-lease`
-
-</td>
-<td>
-
-Denies the acquire_lease command without any pre-configured scope.
-
-</td>
-</tr>
 
 <tr>
 <td>
@@ -501,32 +473,6 @@ Enables the read_many command without any pre-configured scope.
 <td>
 
 Denies the read_many command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`epicenter-folder:allow-release-lease`
-
-</td>
-<td>
-
-Enables the release_lease command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`epicenter-folder:deny-release-lease`
-
-</td>
-<td>
-
-Denies the release_lease command without any pre-configured scope.
 
 </td>
 </tr>

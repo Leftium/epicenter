@@ -71,7 +71,6 @@ once registered.
 | `use_repository_origin` | `false` | Read `remote.origin.url` when the folder opens and use it as the remote. |
 | `watch_events` | `true` | Watch filesystem events for changes made outside the owner. |
 | `watch_interval` | 2 s | Also compare file sizes and times this often. |
-| `lease_limit` | 60 s | The longest one terminal command may hold the folder. |
 
 The two `use_repository_*` options are separate because a remote changes what
 a save does: with a remote and `commit_on_edit`, an automatic commit is
@@ -104,11 +103,10 @@ await folder.close();           // detaches this page only
 
 `openFolder` returns its refusals: an unknown scope, a window the scope does
 not list, a folder another process holds, a shell without this plugin, and a
-desktop app built for another protocol version. The protocol is version 2:
-`commit` replies with its outcome alone, `push` and `fetch` name a request the
-session opened and can withdraw, and snapshot activity reports `active` only. A page built for version 1 is refused
-at attach. It never opens browser
-storage instead. `@epicenter/folder/tauri` is the same opener without the
+desktop app built for another protocol version. The unreleased protocol is
+version 2. No command holds the folder across calls or names a terminal lease.
+A page built for a different version is refused at attach. It never opens
+browser storage instead. `@epicenter/folder/tauri` is the same opener without the
 browser adapter in the build.
 
 ## Lifetimes
@@ -127,13 +125,15 @@ browser adapter in the build.
   another window. It withdraws the session's pushes and fetches that the
   owner had not started.
 - **`folder.close()`** in a page refuses that page's new file, Git, and
-  terminal calls without invoking anything, waits for its local calls and its
-  running terminal command, stops waiting for its pushes and fetches and
-  withdraws them, and then detaches. It commits nothing.
-- **A terminal lease** is held for one command and can be used only by the
-  session that acquired it. It ends when the command ends, when its session
-  ends, or at `lease_limit`. A call already running inside a lease that ends
-  keeps the folder until it settles.
+  terminal calls without invoking anything, waits for the calls it already
+  sent, stops waiting for its pushes and fetches and withdraws them, and then
+  detaches. A terminal command running then sends no later step; the step
+  the owner already admitted settles first. It commits nothing.
+- **A terminal command** holds nothing. Each of its steps is an ordinary
+  command of its session, so other windows' saves land between its steps. A
+  rewrite of a file the command read names the version it read and is
+  refused as a `Conflict` if the file changed since. A command that stops
+  partway leaves its earlier steps landed.
 
 Each webview keeps its own lifecycle identity in its resource table. The plugin
 holds a weak index so it can end sessions after Tauri removes a destroyed
@@ -149,16 +149,17 @@ removes only ended sessions, so an attachment from the new page survives it.
   releases it when the process ends, however it ends. It is unreliable on
   some network filesystems.
 - **The file gate** admits one publication at a time: an `apply` batch, a
-  directory change, a fast-forward's file changes, or a terminal lease.
+  directory change, or a fast-forward's file changes. It is held for that
+  one publication and never across commands.
 - **The Git lock** orders commits, staging, and ref updates.
+- Pushes and fetches run outside both. A transport in flight delays no save
+  and no commit.
 - A commit takes the file gate and then the Git lock. Under both it pins the
   branch head and hard-links the folder into a snapshot. It then releases the
   file gate and, still under the Git lock, hashes the snapshot and moves the
   branch with a compare-and-swap. A save never waits for hashing.
-- An explicit commit, fast-forward, or status waits for the file gate. A
-  terminal command's own Git calls name its lease and enter through it; a
-  lease that has ended is refused. With the gate held, a commit or
-  fast-forward tries the Git lock. If it is busy it gives the gate back,
+- An explicit commit, fast-forward, or status waits for the file gate. With
+  the gate held, a commit or fast-forward tries the Git lock. If it is busy it gives the gate back,
   waits for the Git lock to be released, and starts over, so it reads the
   folder as it is once it holds both.
 - Nothing waits for the Git lock while holding the file gate, and nothing
@@ -170,15 +171,15 @@ With `commit_on_edit`, a complete `apply` batch makes one automatic commit
 attempt. The owner takes the file gate and then the Git lock only if each is
 free at that moment, and decides before the save returns.
 
-- If either is held, the attempt did not happen. A terminal lease, another
-  save, a commit, a fast-forward, or a staging call can be the holder.
+- If either is held, the attempt did not happen. Another save, a commit, a
+  fast-forward, or a staging call can be the holder.
   Nothing is recorded, nothing runs when the holder lets go, and no timer
   tries again.
 - A skipped save stays uncommitted until a later save's attempt or an
   explicit commit includes it. It can stay uncommitted indefinitely.
-- A save made through a terminal lease is always skipped, because the lease
-  holds the file gate. `git commit` in that terminal, or the next save made
-  with the folder free, commits it.
+- A terminal's save makes the same attempt as any other save. A redirection
+  publishes the empty file and then its content, so its second attempt can
+  find the first still running and be skipped.
 - A partial, refused, or unconfirmed batch makes no attempt.
 - After an attempt that ran, the owner starts a push if the branch is ahead
   of the remote and no push is running. A push it could not start is not

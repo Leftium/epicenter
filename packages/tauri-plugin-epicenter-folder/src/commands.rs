@@ -53,9 +53,9 @@ pub struct FolderFilesChanged {
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
 ///
-/// Version 2: `commit` returns its outcome alone, `push` and `fetch` name a
-/// request the session opened and can withdraw, and snapshot activity reports
-/// `active` only.
+/// Version 2 is the unreleased command contract. Push and fetch name a
+/// session-owned request that can withdraw before transport admission. No
+/// command holds the folder across calls or names a terminal lease.
 pub const PROTOCOL: u32 = 2;
 
 /// What a window receives when it attaches to a scope.
@@ -138,8 +138,8 @@ fn instance<R: Runtime>(webview: &Webview<R>) -> Option<Arc<Instance>> {
 
 /// A page is going away: a reload or a navigation. A webview's resource table
 /// outlives its pages, so the sessions the old page attached are ended here,
-/// which stops its events and releases its leases, and an attach still in
-/// flight for the old page is fenced. Only this plugin's resources are
+/// which stops its events and withdraws its unstarted pushes and fetches,
+/// and an attach still in flight for the old page is fenced. Only this plugin's resources are
 /// touched. The owner, what it already admitted, and every other window
 /// carry on.
 pub(crate) fn end_page<R: Runtime>(webview: &Webview<R>) {
@@ -184,22 +184,6 @@ fn session<R: Runtime>(webview: &Webview<R>, rid: ResourceId) -> Result<Arc<Sess
 
 fn owner<R: Runtime>(webview: &Webview<R>, rid: ResourceId) -> Result<FolderOwner, String> {
     session(webview, rid)?.owner(webview.label())
-}
-
-/// The owner for a call that may run inside a terminal lease. A lease is
-/// usable only by the session that acquired it: another window that learned
-/// its number cannot join that window's command.
-fn leased_owner<R: Runtime>(
-    webview: &Webview<R>,
-    rid: ResourceId,
-    lease: Option<u64>,
-) -> Result<FolderOwner, String> {
-    let session = session(webview, rid)?;
-    let owner = session.owner(webview.label())?;
-    if lease.is_some_and(|lease| !session.holds_lease(lease)) {
-        return Err("this session does not hold that terminal lease".to_string());
-    }
-    Ok(owner)
 }
 
 fn file_denied(reason: String) -> FileError {
@@ -344,7 +328,6 @@ pub async fn attach<R: Runtime>(
         &instance,
         Live {
             session,
-            leases: BTreeMap::new(),
             requests: BTreeMap::new(),
             _subscription: subscription,
         },
@@ -442,9 +425,8 @@ pub async fn apply<R: Runtime>(
     webview: Webview<R>,
     session: u32,
     changes: Vec<FileChange>,
-    lease: Option<u64>,
 ) -> Result<(), ApplyError> {
-    let owner = leased_owner(&webview, session, lease).map_err(|reason| ApplyError::Refused {
+    let owner = owner(&webview, session).map_err(|reason| ApplyError::Refused {
         error: file_denied(reason),
     })?;
     let path = changes
@@ -452,7 +434,7 @@ pub async fn apply<R: Runtime>(
         .map(|change| change.step().paths()[0].to_string())
         .unwrap_or_default();
     blocking(
-        move || owner.apply(&changes, lease),
+        move || owner.apply(&changes),
         // Not a refusal: some of the batch may have landed.
         |cause| {
             Err(ApplyError::Unconfirmed {
@@ -471,11 +453,10 @@ pub async fn mkdir<R: Runtime>(
     webview: Webview<R>,
     session: u32,
     path: String,
-    lease: Option<u64>,
 ) -> Result<(), FileError> {
-    let owner = leased_owner(&webview, session, lease).map_err(file_denied)?;
+    let owner = owner(&webview, session).map_err(file_denied)?;
     let lost = file_unconfirmed("creating", path.clone());
-    blocking(move || owner.mkdir(&path, lease), |cause| Err(lost(cause))).await
+    blocking(move || owner.mkdir(&path), |cause| Err(lost(cause))).await
 }
 
 #[tauri::command]
@@ -484,36 +465,10 @@ pub async fn rmdir<R: Runtime>(
     webview: Webview<R>,
     session: u32,
     path: String,
-    lease: Option<u64>,
 ) -> Result<(), FileError> {
-    let owner = leased_owner(&webview, session, lease).map_err(file_denied)?;
-    let lost = file_unconfirmed("removing", path.clone());
-    blocking(move || owner.rmdir(&path, lease), |cause| Err(lost(cause))).await
-}
-
-/// Hold the folder's file gate for one terminal command. Every other
-/// publication waits, so the owner ends the lease at its time limit, and the
-/// lease ends with this window's session.
-#[tauri::command]
-#[specta::specta]
-pub async fn acquire_lease<R: Runtime>(
-    webview: Webview<R>,
-    session: u32,
-) -> Result<u64, FileError> {
-    let resource = self::session(&webview, session).map_err(file_denied)?;
     let owner = owner(&webview, session).map_err(file_denied)?;
-    let lease = blocking(move || owner.lease(), file_lost("lease")).await?;
-    // A session that ended while the lease was being acquired drops it here,
-    // which gives the folder back at once.
-    resource.keep_lease(lease).map_err(file_denied)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn release_lease<R: Runtime>(webview: Webview<R>, session: u32, lease: u64) {
-    if let Ok(resource) = self::session(&webview, session) {
-        resource.release_lease(lease);
-    }
+    let lost = file_unconfirmed("removing", path.clone());
+    blocking(move || owner.rmdir(&path), |cause| Err(lost(cause))).await
 }
 
 // ============================================================================
@@ -525,10 +480,9 @@ pub fn release_lease<R: Runtime>(webview: Webview<R>, session: u32, lease: u64) 
 pub async fn status<R: Runtime>(
     webview: Webview<R>,
     session: u32,
-    lease: Option<u64>,
 ) -> Result<FilesObservation, GitError> {
-    let owner = leased_owner(&webview, session, lease).map_err(git_denied)?;
-    blocking(move || owner.status(lease), git_lost("status")).await
+    let owner = owner(&webview, session).map_err(git_denied)?;
+    blocking(move || owner.status(), git_lost("status")).await
 }
 
 /// Commit the folder's current files. This waits for the folder and settles
@@ -538,11 +492,10 @@ pub async fn status<R: Runtime>(
 pub async fn commit<R: Runtime>(
     webview: Webview<R>,
     session: u32,
-    lease: Option<u64>,
 ) -> Result<CommitOutcome, GitError> {
-    let owner = leased_owner(&webview, session, lease).map_err(git_denied)?;
+    let owner = owner(&webview, session).map_err(git_denied)?;
     Ok(blocking(
-        move || owner.commit(lease),
+        move || owner.commit(),
         |error| CommitOutcome::Unconfirmed { error },
     )
     .await)
@@ -626,12 +579,10 @@ pub async fn fetch<R: Runtime>(
 pub async fn pull_fast_forward<R: Runtime>(
     webview: Webview<R>,
     session: u32,
-    lease: Option<u64>,
 ) -> Result<PullOutcome, PullError> {
-    let owner = leased_owner(&webview, session, lease)
-        .map_err(|reason| PullError::from(git_denied(reason)))?;
+    let owner = owner(&webview, session).map_err(|reason| PullError::from(git_denied(reason)))?;
     blocking(
-        move || owner.pull_fast_forward(lease),
+        move || owner.pull_fast_forward(),
         |cause| Err(git_unconfirmed("pull")(cause).into()),
     )
     .await

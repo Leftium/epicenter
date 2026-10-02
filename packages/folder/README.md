@@ -230,9 +230,11 @@ its first command runs. Its `git` command supports `status`, `diff [--cached]`,
 `log`, `add`, `commit -m`, `push`, `fetch`, and `pull --ff-only`. A redirection
 is a deliberate overwrite; a rewrite of a file the same command read is
 conditional on what it read. `add` and staged `commit -m` need
-`commitOnEdit: false`. In the desktop app each command holds the folder for its
-run, so no other window's save lands between its reads and writes. The
-terminal ends with the folder.
+`commitOnEdit: false`. A command holds nothing between its steps, in the
+browser or the desktop app: another tab's or window's save can land between
+them, and a command that stops partway leaves its earlier steps saved. Each
+save follows the folder's automatic history policy. The terminal ends with
+the folder: closing stops a running command at its next step.
 
 ## History
 
@@ -287,11 +289,6 @@ for the page, and serves every other window. A push or fetch of the page that
 the owner had not started is withdrawn and never starts. The owner makes no
 commit because a page closed or the app quit: a save whose attempt was skipped
 stays uncommitted there too.
-
-One desktop difference follows from the owner being shared by every window: a
-save made by a terminal command is not committed on its own, because the
-command holds the folder for its run. `git commit` in that terminal, or the
-next save made with the folder free, commits it.
 
 ### Incoming changes
 

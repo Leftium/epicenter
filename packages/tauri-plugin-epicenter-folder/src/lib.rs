@@ -90,8 +90,6 @@ fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::apply::<tauri::Wry>,
             commands::mkdir::<tauri::Wry>,
             commands::rmdir::<tauri::Wry>,
-            commands::acquire_lease::<tauri::Wry>,
-            commands::release_lease::<tauri::Wry>,
             commands::status::<tauri::Wry>,
             commands::commit::<tauri::Wry>,
             commands::open_request::<tauri::Wry>,

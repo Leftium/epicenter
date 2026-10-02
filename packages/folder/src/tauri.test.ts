@@ -18,7 +18,10 @@
  * - A page built for another protocol version is refused at attach
  * - A commit replies with its outcome alone, and a push names no pass to join
  * - A caller that stops waiting during a commit starts no push afterward
- * - A terminal command runs under one lease, released however it ends
+ * - A terminal command's steps are the same commands any save sends: nothing
+ *   holds the folder around them, and a rewrite names the version it read
+ * - Closing stops a terminal command's later steps and waits for the one
+ *   already sent
  * - Snapshot events replace the snapshot in order; a stale one is dropped
  * - Closing detaches this window once and does not shut the folder down
  *
@@ -237,8 +240,7 @@ test.each([
 });
 
 test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
-	// This page speaks protocol 2. A shell still on protocol 1, which wrapped
-	// commit outcomes in passes, refuses it; so does one that has moved on.
+	// A shell on another protocol refuses this page before other calls.
 	for (const host of [1, 3]) {
 		calls = [];
 		replies = {
@@ -276,7 +278,6 @@ test('a save whose reply is lost is Unconfirmed and is sent exactly once', async
 				expected: { kind: 'absent' },
 			},
 		],
-		lease: null,
 	});
 });
 
@@ -412,7 +413,7 @@ test("a table save changes exactly its row file, under that file's exact conditi
 	const { changes, ...rest } = sent('apply')[0]?.args as {
 		changes: { kind: string; path: string; expected: unknown }[];
 	};
-	expect(rest).toEqual({ session: 7, lease: null });
+	expect(rest).toEqual({ session: 7 });
 	expect(
 		changes.map(({ kind, path, expected }) => ({ kind, path, expected })),
 	).toEqual([
@@ -502,7 +503,7 @@ test('a batch is one apply: ordered changes, exact conditions, and a receipt fro
 	const { changes, ...rest } = sent('apply')[0]?.args as {
 		changes: Record<string, unknown>[];
 	};
-	expect(rest).toEqual({ session: 7, lease: null });
+	expect(rest).toEqual({ session: 7 });
 	expect(changes).toEqual([
 		{
 			kind: 'write',
@@ -588,59 +589,91 @@ test('a batch the owner stopped partway keeps its applied steps, and a lost repl
 	expect(sent('apply')).toHaveLength(1);
 });
 
-test('a terminal command holds one lease for its whole run and releases it when it ends', async () => {
+/**
+ * How a terminal command failed. A file step the folder refused ends the
+ * command, either as a failed result or as the folder's own error thrown
+ * out of a redirection; both say the same thing to a person.
+ */
+const failure = (running: Promise<{ exitCode: number; stderr: string }>) =>
+	running.then(
+		(result) => {
+			expect(result.exitCode).not.toBe(0);
+			return result.stderr;
+		},
+		(error: Error) => error.message,
+	);
+
+test("a terminal command's steps are the commands any save sends, and nothing holds the folder around them", async () => {
 	const folder = await attached();
-	replies.acquire_lease = () => 41;
-	replies.release_lease = () => null;
-	replies.list = () => ({ files: [], directories: [] });
-	replies.children = () => ({ files: [], directories: [] });
+	const original = new TextEncoder().encode('first\n');
+	const version = await captureVersion(original);
+	replies.list = () => ({
+		files: [{ path: 'note.md', size: original.byteLength }],
+		directories: [],
+	});
+	replies.read = () => ({ bytes: [...original], version });
 	replies.apply = () => null;
 	const terminal = folder.terminal();
 
-	const result = await terminal.exec('echo held > note.md');
+	// A redirection overwrites; an append rewrites what the command read.
+	const result = await terminal.exec(
+		'echo fresh > other.md && echo second >> note.md',
+	);
 
 	expect(result).toEqual({ stdout: '', stderr: '', exitCode: 0 });
-	const order = calls.map((call) => call.cmd);
-	expect(order[0]).toBe('acquire_lease');
-	expect(order.at(-1)).toBe('release_lease');
-	expect(sent('acquire_lease')).toHaveLength(1);
-	expect(sent('release_lease')).toEqual([
-		{ cmd: 'release_lease', args: { session: 7, lease: 41 } },
+	// Listings, a read, and two saves: no command acquires or releases
+	// anything, before, between, or after them.
+	expect([...new Set(calls.map((call) => call.cmd))].sort()).toEqual([
+		'apply',
+		'list',
+		'read',
 	]);
-	// Every write the command made named the lease it ran under.
-	expect(sent('apply').length).toBeGreaterThan(0);
-	for (const call of sent('apply')) expect(call.args.lease).toBe(41);
+	const applied = sent('apply').flatMap((call) => {
+		const { changes, ...rest } = call.args as {
+			changes: { kind: string; path: string; expected: unknown }[];
+		};
+		// The same arguments a page's own save sends.
+		expect(rest).toEqual({ session: 7 });
+		return changes;
+	});
+	const firstTo = (path: string) =>
+		applied.find((change) => change.path === path)?.expected;
+	expect(firstTo('other.md')).toEqual({ kind: 'any' });
+	// The owner refuses this if another writer replaced the file since.
+	expect(firstTo('note.md')).toEqual({ kind: 'version', ...version });
 
-	// The folder's ordinary calls never borrow a terminal's lease.
+	// The owner's refusal of that rewrite reaches the command as a failure.
 	calls = [];
-	expectOk(await folder.files.overwrite('b.md', 'x'));
-	expect(sent('apply')[0]?.args.lease).toBeNull();
+	replies.apply = () =>
+		refuse({
+			name: 'Refused',
+			error: {
+				name: 'Conflict',
+				path: 'note.md',
+				expected: { kind: 'version', ...version },
+				actual: { sha256: 'e'.repeat(64), size: 9 },
+			},
+		});
+	const stale = await failure(
+		terminal.exec('echo third >> note.md && echo x > c.md'),
+	);
+	expect(stale).toContain("The file at 'note.md' changed after it was read");
+	// The step after the refused one never ran.
+	expect(sent('apply')).toHaveLength(1);
 });
 
-test('a terminal command that fails or cannot get the lease still leaves no lease held', async () => {
+test('a terminal command whose listing is lost fails and sends nothing else', async () => {
 	const folder = await attached();
-	let leases = 0;
-	replies.acquire_lease = () =>
-		leases++ === 0 ? refuse({ name: 'Closed' }) : 42;
-	replies.release_lease = () => null;
 	replies.list = () => {
 		throw new Error('connection lost');
 	};
-	const terminal = folder.terminal({ cwd: '/' });
 
-	const unheld = await terminal.exec('ls');
-	expect(unheld).toEqual({
-		stdout: '',
-		stderr: 'The folder is closed\n',
-		exitCode: 1,
-	});
-	expect(sent('release_lease')).toHaveLength(0);
+	const failed = await failure(
+		folder.terminal({ cwd: '/' }).exec('echo x > a.md'),
+	);
 
-	const failed = await terminal.exec('ls');
-	expect(failed.exitCode).not.toBe(0);
-	expect(sent('release_lease')).toEqual([
-		{ cmd: 'release_lease', args: { session: 7, lease: 42 } },
-	]);
+	expect(failed).toContain('connection lost');
+	expect(calls.map((call) => call.cmd)).toEqual(['list']);
 });
 
 test('snapshot events replace the snapshot in order and a stale one is dropped', async () => {
@@ -866,38 +899,42 @@ test('closing stops this page waiting for a push and a fetch and withdraws both 
 	fetch.settle({ oid: null });
 });
 
-test('closing stops a running terminal command and releases its lease before detaching', async () => {
+test("closing waits for a terminal command's save already sent, and its later steps send nothing", async () => {
 	const folder = await attached();
-	replies.acquire_lease = () => 43;
-	replies.release_lease = () => null;
-	const listing = held<{ files: never[]; directories: never[] }>();
-	replies.list = listing.reply;
-	replies.apply = () => null;
+	replies.list = () => ({ files: [], directories: [] });
+	const saving = held<null>();
+	replies.apply = saving.reply;
 	const terminal = folder.terminal();
 
-	const running = terminal.exec('echo one > a.md && echo two > b.md');
+	const running = failure(
+		terminal.exec('echo one > a.md && echo two > b.md'),
+	);
 	const queued = terminal.exec('echo three > c.md');
-	await Bun.sleep(20);
+	await untilSent('apply');
 	const closing = folder.close();
 	await Bun.sleep(20);
+	// The first step's save is with the owner. The session it was sent on is
+	// still attached, so its reply has somewhere to land.
 	expect(sent('detach')).toHaveLength(0);
-	listing.settle({ files: [], directories: [] });
+	saving.settle(null);
 	await closing;
-	await running;
 
-	const order = calls.map((call) => call.cmd);
-	expect(order.indexOf('release_lease')).toBeGreaterThan(-1);
-	expect(order.indexOf('release_lease')).toBeLessThan(order.indexOf('detach'));
-	expect(order.at(-1)).toBe('detach');
-	// The command stopped: its later steps wrote nothing after the close.
-	expect(sent('apply')).toHaveLength(0);
+	// The save that was sent landed; nothing of the command followed it.
+	expect(await running).toContain('The folder is closed');
+	expect(sent('apply')).toHaveLength(1);
+	expect(
+		(sent('apply')[0]?.args.changes as { path: string }[]).map(
+			(change) => change.path,
+		),
+	).toEqual(['a.md']);
+	expect(calls.at(-1)?.cmd).toBe('detach');
+	expect(sent('detach')).toHaveLength(1);
 	// The command queued behind it never started.
 	expect(await queued).toEqual({
 		stdout: '',
 		stderr: 'The folder is closed\n',
 		exitCode: 1,
 	});
-	expect(sent('acquire_lease')).toHaveLength(1);
 });
 
 test('a commit whose outcome is unknown leaves the push unknown, not skipped', async () => {

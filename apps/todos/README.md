@@ -124,10 +124,10 @@ conflict, a failed save, or text typed in the last moment.
 - A page reload or explicit client close ends that page's access. The shared
   owner remains open for sibling windows and finishes accepted work. The
   client's network wait can end while the native operation continues.
-- A terminal command takes a native lease over its file operations, so another
-  page cannot interleave a save with the command. The lease lasts at most sixty
-  seconds. Git work has a separate queue; a save does not wait for hashing or
-  network traffic.
+- A terminal command holds nothing between its steps. Other pages can save
+  while it runs. A rewrite of a file the command read checks that captured
+  version. Terminal writes make the same immediate automatic commit attempt
+  as other saves. Git hashing and network traffic do not block saves.
 
 ### How it is wired
 

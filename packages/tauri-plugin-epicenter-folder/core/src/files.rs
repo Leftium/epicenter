@@ -200,10 +200,6 @@ pub enum FileError {
         operation: String,
         cause: String,
     },
-    /// The terminal lease this call named does not hold the folder.
-    LeaseEnded {
-        reason: String,
-    },
     /// The caller has no session for this folder, or names another window's.
     Denied {
         reason: String,

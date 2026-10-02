@@ -18,13 +18,18 @@
  * - A window attaches only to a scope registered for it, and learns the root
  * - Tables, raw files, and Git work through the adapter, and the owner
  *   commits a save on its own when the folder is free
- * - A save made through a terminal lease is not committed on its own; the
- *   next save made with the folder free commits both
  * - A page built for the previous protocol is refused at attach
  * - Two windows saving over one version: one lands, one conflicts
  * - A row another window changed after a table's directory read is still an
  *   exact-version conflict
- * - A terminal command holds the folder against another window for its run
+ * - A terminal command holds nothing: another window saves, and runs a whole
+ *   terminal command of its own, between its steps, and the owner commits a
+ *   terminal's save like any other
+ * - A terminal's rewrite of a file it read is refused when another window
+ *   wrote between its steps, and the steps before it stay landed
+ * - A terminal `git fetch` in flight at the remote delays no save and no commit
+ * - Closing a page mid-command stops the command's later steps; the save the
+ *   owner already admitted lands and is committed without the page
  * - Closing one window's folder leaves the other window and the owner working,
  *   and the commit the owner admitted for its last save still finishes
  *
@@ -34,12 +39,18 @@
  */
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { realpath, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FileSink } from 'bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineFolder, defineTable, field } from './contract.js';
-import { git, scratch } from './git-http.test-support.js';
+import {
+	createBareRemote,
+	git,
+	gitHttpFetch,
+	scratch,
+} from './git-http.test-support.js';
 import { captureVersion } from './version.js';
 
 const enabled = process.env.EPICENTER_FOLDER_BRIDGE === '1';
@@ -68,7 +79,9 @@ class Bridge {
 		readonly root: string,
 	) {}
 
-	static async start(options: { manual?: boolean } = {}): Promise<Bridge> {
+	static async start(
+		options: { manual?: boolean; remote?: string } = {},
+	): Promise<Bridge> {
 		const root = await realpath(await scratch('tauri-folder-'));
 		const harness = [
 			'tests::invoke_bridge',
@@ -103,6 +116,7 @@ class Bridge {
 					...process.env,
 					FOLDER_BRIDGE_ROOT: root,
 					...(options.manual ? { FOLDER_BRIDGE_MANUAL: '1' } : {}),
+					...(options.remote ? { FOLDER_BRIDGE_REMOTE: options.remote } : {}),
 				},
 			},
 		);
@@ -227,7 +241,7 @@ const as =
 const a = as('a');
 const b = as('b');
 
-async function setup(options: { manual?: boolean } = {}) {
+async function setup(options: { manual?: boolean; remote?: string } = {}) {
 	bridge = await Bridge.start(options);
 	const running = bridge;
 	const attach = (window: ReturnType<typeof as>) =>
@@ -272,6 +286,97 @@ afterEach(async () => {
 	await bridge?.stop();
 	bridge = undefined;
 });
+
+/**
+ * How a terminal command failed. A file step the folder refused ends the
+ * command, as a failed result or as the folder's own error thrown out of a
+ * redirection.
+ */
+const failure = (running: Promise<{ exitCode: number; stderr: string }>) =>
+	running.then(
+		(result) => {
+			expect(result.exitCode).not.toBe(0);
+			return result.stderr;
+		},
+		(error: Error) => error.message,
+	);
+
+/**
+ * A bare remote with one commit, served over real Git smart HTTP on a local
+ * port. Every request waits until `release`, so a `git fetch` the owner
+ * started stays in flight for as long as the test needs.
+ */
+class HeldRemote {
+	private constructor(
+		private readonly server: ReturnType<typeof Bun.serve>,
+		private readonly directory: string,
+		private readonly gate: PromiseWithResolvers<void>,
+		private readonly counts: { answered: number },
+		readonly url: string,
+		/** The remote branch's commit. */
+		readonly head: string,
+		/** Resolves when the first request has reached the remote. */
+		readonly arrived: Promise<void>,
+	) {}
+
+	static async start(): Promise<HeldRemote> {
+		const directory = await realpath(await scratch('tauri-folder-remote-'));
+		const bare = await createBareRemote(directory);
+		const seed = join(directory, 'seed');
+		await git(directory, 'init', '--quiet', '--initial-branch=main', seed);
+		await writeFile(join(seed, 'upstream.md'), 'from the remote\n');
+		await git(seed, 'add', '--all');
+		await git(seed, 'commit', '--quiet', '-m', 'upstream');
+		await git(seed, 'push', '--quiet', bare, 'main');
+		const head = await git(seed, 'rev-parse', 'HEAD');
+
+		const backend = await gitHttpFetch(directory);
+		const gate = Promise.withResolvers<void>();
+		const arrived = Promise.withResolvers<void>();
+		const counts = { answered: 0 };
+		const server = Bun.serve({
+			hostname: '127.0.0.1',
+			port: 0,
+			idleTimeout: 255,
+			async fetch(request) {
+				arrived.resolve();
+				const body =
+					request.method === 'GET' ? undefined : await request.arrayBuffer();
+				await gate.promise;
+				counts.answered++;
+				const { pathname, search } = new URL(request.url);
+				return backend(`http://git.test${pathname}${search}`, {
+					method: request.method,
+					headers: request.headers,
+					body,
+				});
+			},
+		});
+		return new HeldRemote(
+			server,
+			directory,
+			gate,
+			counts,
+			`http://127.0.0.1:${server.port}/remote.git`,
+			head,
+			arrived.promise,
+		);
+	}
+
+	/** How many requests the remote has answered. */
+	answered() {
+		return this.counts.answered;
+	}
+
+	release() {
+		this.gate.resolve();
+	}
+
+	async stop() {
+		await this.server.stop(true);
+		await rm(this.directory, { recursive: true, force: true });
+	}
+}
 
 const row = (stem: string) => ({
 	stem,
@@ -460,45 +565,201 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(await files()).toEqual(['take.md', 'take.png']);
 	});
 
-	test('a terminal command holds the folder against another window until it ends', async () => {
+	test('a terminal command holds nothing: another window saves and runs its own terminal between its steps', async () => {
 		const { folder, other, root, settled } = await setup();
 		const terminal = folder.terminal();
-		// Hold the lease open from inside the command: its first listing waits.
-		const { promise: release, resolve: finish } = Promise.withResolvers<void>();
-		const running = active();
-		running.afterListing = () => release;
-
+		// Window A's command is stopped mid-run, inside its first listing.
+		const reached = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		active().afterListing = () => {
+			reached.resolve();
+			return release.promise;
+		};
 		const command = a(() =>
 			terminal.exec('mkdir notes && echo "from the terminal" > notes/a.md'),
 		);
-		const save = b(() =>
-			other.files.create('from-b.md', 'waited for the terminal'),
-		);
-		const first = await Promise.race([
-			save.then(() => 'save'),
-			Bun.sleep(300).then(() => 'still waiting'),
-		]);
-		finish();
-		const result = await command;
-		expectOk(await save);
-		await settled();
+		await reached.promise;
 
-		expect(first).toBe('still waiting');
-		expect(result).toEqual({ stdout: '', stderr: '', exitCode: 0 });
+		// Window B does not wait for it: a save lands and the owner commits it,
+		// and a whole terminal command of B's own runs to its end.
+		expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
+		await settled();
+		expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md');
+		const theirs = await b(() =>
+			other.terminal().exec('echo "b ran" > b.md && cat b.md'),
+		);
+		expect(theirs).toEqual({ stdout: 'b ran\n', stderr: '', exitCode: 0 });
+		// A's next save should find the gates free. A save made while B's
+		// commit is still running would correctly skip its automatic attempt.
+		await settled();
+		const before = await git(root, 'rev-parse', 'HEAD');
+
+		release.resolve();
+		expect(await command).toEqual({ stdout: '', stderr: '', exitCode: 0 });
 		expect(
 			decoder.decode(
 				expectOk(await a(() => folder.files.read('notes/a.md'))).bytes,
 			),
 		).toBe('from the terminal\n');
-		const status = await a(() => terminal.exec('git status'));
-		expect(status.exitCode).toBe(0);
+
+		// A terminal's save follows the folder's ordinary history policy: the
+		// owner committed it on its own, with no explicit commit from anyone.
+		await settled();
+		const tracked = await git(root, 'ls-tree', '-r', '--name-only', 'HEAD');
+		expect(tracked.split('\n')).toEqual(
+			expect.arrayContaining(['b.md', 'from-b.md', 'notes/a.md']),
+		);
+		// That checkpoint may also contain B's content write if B's second
+		// attempt was skipped. Its subject describes all captured changes.
+		expect(await git(root, 'rev-parse', 'HEAD')).not.toBe(before);
+		// A redirection publishes the empty file and then its content, one
+		// attempt each. A second that found the first still running stays
+		// uncommitted until the next commit, as it would from any page.
+		expect((await a(() => terminal.exec('git status'))).exitCode).toBe(0);
+		expect(['committed', 'unchanged']).toContain(
+			(await a(() => folder.git.commit())).status,
+		);
 		expect(await git(root, 'status', '--porcelain')).toBe('');
-		// One commit holds both saves. The terminal's save made no commit of its
-		// own while the lease held the folder; window B's save, made with the
-		// folder free, committed everything that was there.
-		expect(await git(root, 'log', '--format=%s')).toBe('Update 2 files');
+		expect(await git(root, 'show', 'HEAD:notes/a.md')).toBe(
+			'from the terminal',
+		);
+	});
+
+	test('a terminal rewrite of a file it read is refused when another window wrote between its steps', async () => {
+		const { folder, other, root } = await setup({ manual: true });
+		expectOk(await a(() => folder.files.create('note.md', 'first\n')));
+		const terminal = folder.terminal();
+		const running = active();
+		// After the command has read the file and made its directory, window B
+		// replaces the file. The command's next step is its rewrite.
+		const interleave = async () => {
+			if (!existsSync(join(root, 'made'))) {
+				running.afterListing = interleave;
+				return;
+			}
+			await b(async () => {
+				expectOk(await other.files.overwrite('note.md', 'from window b\n'));
+			});
+		};
+		running.afterListing = interleave;
+
+		const refused = await failure(
+			a(() =>
+				terminal.exec(
+					'cat note.md && mkdir made && echo replaced > note.md && echo late > late.md',
+				),
+			),
+		);
+
+		// The rewrite named the version the command read, and the owner
+		// refused it. Nothing was merged or retried.
+		expect(refused).toContain("The file at 'note.md' changed after it was read");
+		expect(
+			decoder.decode(
+				expectOk(await a(() => folder.files.read('note.md'))).bytes,
+			),
+		).toBe('from window b\n');
+		// The step before it landed and stays; the step after it never ran.
+		expect(existsSync(join(root, 'made'))).toBe(true);
+		expect(existsSync(join(root, 'late.md'))).toBe(false);
+		// A command that reads again builds on what is there now.
+		expect(
+			(await a(() => terminal.exec('cat note.md && echo next > note.md')))
+				.exitCode,
+		).toBe(0);
+		expect(
+			decoder.decode(
+				expectOk(await b(() => other.files.read('note.md'))).bytes,
+			),
+		).toBe('next\n');
+	});
+
+	test('a terminal fetch in flight at the remote holds no save and no commit back', async () => {
+		const remote = await HeldRemote.start();
+		try {
+			const { folder, other, root, settled } = await setup({
+				remote: remote.url,
+			});
+			const terminal = folder.terminal();
+
+			// The owner starts a real `git fetch`, and the remote does not answer.
+			const fetching = a(() => terminal.exec('git fetch'));
+			await remote.arrived;
+
+			// With that transport in flight, both windows save, the owner commits
+			// each save on its own, and explicit Git work runs.
+			expectOk(await b(() => other.files.create('from-b.md', 'did not wait')));
+			await settled();
+			expect(await git(root, 'log', '--format=%s')).toBe('Add from-b.md');
+			expectOk(await a(() => folder.files.create('from-a.md', 'nor did this')));
+			await settled();
+			expect((await git(root, 'log', '--format=%s')).split('\n')[0]).toBe(
+				'Add from-a.md',
+			);
+			expect(expectOk(await a(() => folder.git.status())).changes).toEqual([]);
+			expect(remote.answered()).toBe(0);
+			let settledEarly = false;
+			void fetching.then(() => {
+				settledEarly = true;
+			});
+			await Bun.sleep(50);
+			expect(settledEarly).toBe(false);
+
+			// The remote answers, and the fetch brings in its commit.
+			remote.release();
+			const fetched = await fetching;
+			expect(fetched.exitCode).toBe(0);
+			expect(fetched.stdout).toContain(remote.head.slice(0, 7));
+			expect(await git(root, 'rev-parse', 'refs/remotes/origin/main')).toBe(
+				remote.head,
+			);
+		} finally {
+			remote.release();
+			await bridge?.stop();
+			bridge = undefined;
+			await remote.stop();
+		}
+	});
+
+	test('closing a page mid-command stops its later steps; the save already admitted lands and is committed', async () => {
+		const { folder, other, root } = await setup();
+		const terminal = folder.terminal();
+		const running = active();
+		// Close window A's folder once the command's first file has landed,
+		// from inside the listing that follows that save.
+		let closing: Promise<void> | undefined;
+		const closeAfterFirstSave = async () => {
+			if (!existsSync(join(root, 'one.md'))) {
+				running.afterListing = closeAfterFirstSave;
+				return;
+			}
+			// Not awaited here: closing waits for this very listing.
+			closing = a(() => folder.close());
+		};
+		running.afterListing = closeAfterFirstSave;
+
+		const stopped = await failure(
+			a(() => terminal.exec('echo one > one.md && echo two > two.md')),
+		);
+		await closing;
+
+		expect(stopped).toMatch(/The folder is closed|execution aborted/);
+		// The save the owner had admitted is in the folder; nothing after it is.
+		expect(existsSync(join(root, 'one.md'))).toBe(true);
+		expect(existsSync(join(root, 'two.md'))).toBe(false);
+		expect(
+			await a(() => terminal.exec('echo late > late.md')),
+		).toEqual({ stdout: '', stderr: 'The folder is closed\n', exitCode: 1 });
+		expect(existsSync(join(root, 'late.md'))).toBe(false);
+
+		// The owner finished that save's commit without the page, and window B
+		// carries on.
+		expectOk(await b(() => other.git.paths()));
+		expect(await git(root, 'log', '--format=%s')).toBe('Add one.md');
+		expectOk(await b(() => other.files.create('after.md', 'b carries on')));
+		expectOk(await b(() => other.git.paths()));
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
-			'from-b.md\nnotes/a.md',
+			'after.md\none.md',
 		);
 	});
 

@@ -9,8 +9,8 @@
 //! the wrong order:
 //!
 //! - The **file gate** admits one publication at a time: a complete `apply`
-//!   batch, a directory change, or a fast-forward's file changes. A terminal
-//!   lease holds it across several calls, for at most `lease_limit`.
+//!   batch, a directory change, or a fast-forward's file changes. It is held
+//!   for that one publication and never across calls.
 //! - The **Git lock** serializes work on the index and the branch: commits,
 //!   staging, staged commits, and a fast-forward's ref update.
 //!
@@ -25,24 +25,29 @@
 //!
 //! With `commit_on_edit`, a complete save makes one attempt at that commit:
 //! it takes the file gate and then the Git lock only if each is free right
-//! now. If either is held, by a terminal lease, another save, or other Git
-//! work, the attempt did not happen and nothing remembers it. The save can
-//! stay uncommitted until a later save or an explicit commit. There is no
-//! timer, no queue, and no commit at shutdown.
+//! now. If either is held, by another save or other Git work, the attempt did
+//! not happen and nothing remembers it. The save can stay uncommitted until a
+//! later save or an explicit commit. There is no timer, no queue, and no
+//! commit at shutdown.
 //!
-//! An explicit commit or fast-forward waits. It takes the file gate, through
-//! the caller's own terminal lease when it names one, and then tries the Git
-//! lock. If the Git lock is held it gives the gate back, waits for the Git
-//! lock to be released, and starts over, so it reads the folder as it is once
-//! it holds both. Nothing takes the two in the other order, and nothing waits
-//! for either while it holds the other.
+//! An explicit commit or fast-forward waits. It takes the file gate and then
+//! tries the Git lock. If the Git lock is held it gives the gate back, waits
+//! for the Git lock to be released, and starts over, so it reads the folder
+//! as it is once it holds both. Nothing takes the two in the other order, and
+//! nothing waits for either while it holds the other.
+//!
+//! Neither gate spans calls. One caller's commands interleave with every
+//! other caller's, a terminal command's steps included. A write that depends
+//! on an earlier read carries the version it read and is refused if the file
+//! changed since.
 //!
 //! The snapshot is exact against this owner's own writes, which replace files
 //! by rename or link. A program that edits a file in place can still change
 //! bytes the snapshot links to: that stays best effort.
 //!
-//! Network work runs outside both. Listeners are called with a copy of the
-//! listener list; the plugin's listener only queues the event.
+//! Network work runs outside both: a push or fetch in flight delays no save
+//! and no commit. Listeners are called with a copy of the listener list; the
+//! plugin's listener only queues the event.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -101,8 +106,6 @@ pub struct FolderConfig {
     /// outside it, whether or not an event announced them. `None` disables
     /// the periodic check; `poll_external` still works.
     pub watch_interval: Option<Duration>,
-    /// The longest a terminal lease may hold the file gate.
-    pub lease_limit: Duration,
 }
 
 impl FolderConfig {
@@ -117,7 +120,6 @@ impl FolderConfig {
             use_repository_origin: false,
             watch_events: true,
             watch_interval: Some(Duration::from_secs(2)),
-            lease_limit: Duration::from_secs(60),
         }
     }
 }
@@ -141,186 +143,12 @@ fn collision_key(path: &str) -> String {
     path.nfc().collect::<String>().to_lowercase()
 }
 
-// ============================================================================
-// The file gate
-// ============================================================================
-
-enum Holder {
-    Free,
-    /// One publication.
-    Batch,
-    /// A terminal lease, across several of its own calls.
-    Lease {
-        id: u64,
-        deadline: Instant,
-        /// Released, expired, or revoked: no new call may use it, and the
-        /// gate frees once its calls in flight settle.
-        ended: bool,
-        in_flight: usize,
-    },
-}
-
-struct Gate {
-    holder: Mutex<Holder>,
-    changed: Condvar,
-    next_lease: AtomicU64,
-}
-
-enum Permit<'a> {
-    Batch(&'a Gate),
-    Leased(&'a Gate),
-}
-
-impl Drop for Permit<'_> {
-    fn drop(&mut self) {
-        match self {
-            Permit::Batch(gate) => *lock(&gate.holder) = Holder::Free,
-            Permit::Leased(gate) => {
-                if let Holder::Lease { in_flight, .. } = &mut *lock(&gate.holder) {
-                    *in_flight -= 1;
-                }
-            }
-        }
-        let (Permit::Batch(gate) | Permit::Leased(gate)) = self;
-        gate.changed.notify_all();
-    }
-}
-
-impl Gate {
-    fn new() -> Self {
-        Self {
-            holder: Mutex::new(Holder::Free),
-            changed: Condvar::new(),
-            next_lease: AtomicU64::new(1),
-        }
-    }
-
-    /// Wait until no batch or live lease holds the gate, then leave it free.
-    fn wait_free<'a>(&'a self, mut holder: MutexGuard<'a, Holder>) -> MutexGuard<'a, Holder> {
-        loop {
-            let wait = match &mut *holder {
-                Holder::Free => return holder,
-                Holder::Batch => None,
-                Holder::Lease {
-                    deadline,
-                    ended,
-                    in_flight,
-                    ..
-                } => {
-                    let now = Instant::now();
-                    if now >= *deadline {
-                        *ended = true;
-                    }
-                    if *ended && *in_flight == 0 {
-                        // Fall through to free the gate below.
-                        Some(Duration::ZERO)
-                    } else {
-                        // An ended lease frees when its calls settle, which notifies.
-                        (!*ended).then(|| *deadline - now)
-                    }
-                }
-            };
-            holder = match wait {
-                Some(Duration::ZERO) => {
-                    *holder = Holder::Free;
-                    return holder;
-                }
-                None => self
-                    .changed
-                    .wait(holder)
-                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
-                Some(until_deadline) => {
-                    self.changed
-                        .wait_timeout(holder, until_deadline)
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .0
-                }
-            };
-        }
-    }
-
-    /// Enter for one publication. A call that names the lease holding the
-    /// gate runs inside it; a call that names any other lease is refused.
-    fn enter(&self, lease: Option<u64>) -> Result<Permit<'_>, FileError> {
-        let mut holder = lock(&self.holder);
-        let Some(lease) = lease else {
-            let mut holder = self.wait_free(holder);
-            *holder = Holder::Batch;
-            return Ok(Permit::Batch(self));
-        };
-        match &mut *holder {
-            Holder::Lease {
-                id,
-                deadline,
-                ended,
-                in_flight,
-            } if *id == lease && !*ended && Instant::now() < *deadline => {
-                *in_flight += 1;
-                Ok(Permit::Leased(self))
-            }
-            _ => Err(FileError::LeaseEnded {
-                reason: "the terminal lease was released or reached its time limit".to_string(),
-            }),
-        }
-    }
-
-    /// Enter for one publication only if nothing holds the gate right now. A
-    /// live lease holds it, and so does an ended one whose calls are still in
-    /// flight.
-    fn try_enter(&self) -> Option<Permit<'_>> {
-        let mut holder = lock(&self.holder);
-        if let Holder::Lease {
-            deadline,
-            ended,
-            in_flight,
-            ..
-        } = &mut *holder
-        {
-            if Instant::now() >= *deadline {
-                *ended = true;
-            }
-            if *ended && *in_flight == 0 {
-                *holder = Holder::Free;
-            }
-        }
-        if !matches!(*holder, Holder::Free) {
-            return None;
-        }
-        *holder = Holder::Batch;
-        Some(Permit::Batch(self))
-    }
-
-    fn lease(&self, limit: Duration) -> u64 {
-        let mut holder = self.wait_free(lock(&self.holder));
-        let id = self.next_lease.fetch_add(1, Ordering::SeqCst);
-        *holder = Holder::Lease {
-            id,
-            deadline: Instant::now() + limit,
-            ended: false,
-            in_flight: 0,
-        };
-        id
-    }
-
-    /// End a lease. `None` ends whichever lease holds the gate.
-    fn end_lease(&self, lease: Option<u64>) {
-        let mut holder = lock(&self.holder);
-        if let Holder::Lease {
-            id,
-            ended,
-            in_flight,
-            ..
-        } = &mut *holder
-        {
-            if lease.is_none_or(|lease| lease == *id) {
-                *ended = true;
-                if *in_flight == 0 {
-                    *holder = Holder::Free;
-                }
-            }
-        }
-        drop(holder);
-        self.changed.notify_all();
+/// Take a lock only if nothing holds it right now.
+fn try_lock(mutex: &Mutex<()>) -> Option<MutexGuard<'_, ()>> {
+    match mutex.try_lock() {
+        Ok(held) => Some(held),
+        Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+        Err(TryLockError::WouldBlock) => None,
     }
 }
 
@@ -400,7 +228,9 @@ struct Inner {
     root: PathBuf,
     files: Files,
     git: Git,
-    gate: Gate,
+    /// Held by one publication at a time, and by a commit or a scan while it
+    /// snapshots the folder.
+    file_gate: Mutex<()>,
     git_lock: Mutex<()>,
     state: Mutex<HistoryState>,
     emitted: Mutex<Emitted>,
@@ -413,11 +243,10 @@ struct Inner {
     /// New work is refused.
     closing: AtomicBool,
     shutdown: Mutex<bool>,
-    /// Commits, fast-forwards, and leased scans that were admitted and have
-    /// not settled, for the snapshot's activity.
+    /// Commits and fast-forwards that were admitted and have not settled, for
+    /// the snapshot's activity.
     commits: AtomicUsize,
     pulls: AtomicUsize,
-    leased_scans: AtomicUsize,
     revision: AtomicU64,
     own_in_flight: AtomicUsize,
     own_done: AtomicU64,
@@ -449,8 +278,8 @@ impl Drop for Admission<'_> {
     }
 }
 
-/// One admitted commit, fast-forward, or leased scan, counted as active from
-/// its admission, including any wait for the gates, until it settles.
+/// One admitted commit or fast-forward, counted as active from its admission,
+/// including any wait for the gates, until it settles.
 struct Running<'a>(&'a Inner, &'a AtomicUsize);
 
 impl Drop for Running<'_> {
@@ -470,26 +299,6 @@ impl Drop for Subscription {
     fn drop(&mut self) {
         if let Some(owner) = self.owner.upgrade() {
             lock(&owner.listeners).retain(|(id, _)| *id != self.id);
-        }
-    }
-}
-
-/// A held terminal lease. Dropping it releases the file gate.
-pub struct Lease {
-    owner: Weak<Inner>,
-    id: u64,
-}
-
-impl Lease {
-    pub fn id(&self) -> u64 {
-        self.id
-    }
-}
-
-impl Drop for Lease {
-    fn drop(&mut self) {
-        if let Some(owner) = self.owner.upgrade() {
-            owner.gate.end_lease(Some(self.id));
         }
     }
 }
@@ -533,14 +342,6 @@ impl Drop for Request {
 #[derive(Clone)]
 pub struct FolderOwner {
     inner: Arc<Inner>,
-}
-
-/// Why a call that named a terminal lease could not enter the file gate.
-fn refusal(error: FileError) -> String {
-    match error {
-        FileError::LeaseEnded { reason } => reason,
-        other => format!("{other:?}"),
-    }
 }
 
 fn pass<T: Clone + Send + 'static>(
@@ -602,7 +403,7 @@ impl FolderOwner {
         let watching = Arc::new(AtomicBool::new(true));
         let inner = Arc::new_cyclic(|owner: &Weak<Inner>| Inner {
             files: Files::new(&root),
-            gate: Gate::new(),
+            file_gate: Mutex::new(()),
             git_lock: Mutex::new(()),
             state: Mutex::new(HistoryState {
                 clock: 0,
@@ -640,7 +441,6 @@ impl FolderOwner {
             shutdown: Mutex::new(false),
             commits: AtomicUsize::new(0),
             pulls: AtomicUsize::new(0),
-            leased_scans: AtomicUsize::new(0),
             revision: AtomicU64::new(0),
             own_in_flight: AtomicUsize::new(0),
             own_done: AtomicU64::new(0),
@@ -659,7 +459,7 @@ impl FolderOwner {
                     cancelled: || Err(GitError::Closed),
                     withdrawn: || Err(GitError::Withdrawn),
                 },
-                |inner, _| inner.run_scan(None),
+                |inner, _| inner.run_scan(),
             ),
             push: pass(
                 "push",
@@ -823,14 +623,14 @@ impl FolderOwner {
     /// Publish ordered changes. A complete batch makes its one automatic
     /// commit attempt before this returns; a partial one only marks
     /// observations stale.
-    pub fn apply(&self, changes: &[FileChange], lease: Option<u64>) -> Result<(), ApplyError> {
+    pub fn apply(&self, changes: &[FileChange]) -> Result<(), ApplyError> {
         let refused = |error| ApplyError::Refused { error };
         let _admitted = self.inner.admit().map_err(refused)?;
         Files::validate(changes).map_err(refused)?;
         #[cfg(test)]
         self.inner.hook(|hooks| &hooks.before_apply);
         let result = {
-            let _permit = self.inner.gate.enter(lease).map_err(refused)?;
+            let _files = lock(&self.inner.file_gate);
             self.inner.publish(changes)
         };
         match &result {
@@ -848,70 +648,44 @@ impl FolderOwner {
     }
 
     /// Directory changes are not content: they request no commit.
-    pub fn mkdir(&self, path: &str, lease: Option<u64>) -> Result<(), FileError> {
+    pub fn mkdir(&self, path: &str) -> Result<(), FileError> {
         let _admitted = self.inner.admit()?;
-        let _permit = self.inner.gate.enter(lease)?;
+        let _files = lock(&self.inner.file_gate);
         self.inner.files.mkdir(path)
     }
 
-    pub fn rmdir(&self, path: &str, lease: Option<u64>) -> Result<(), FileError> {
+    pub fn rmdir(&self, path: &str) -> Result<(), FileError> {
         let _admitted = self.inner.admit()?;
-        let _permit = self.inner.gate.enter(lease)?;
+        let _files = lock(&self.inner.file_gate);
         self.inner.files.rmdir(path)
-    }
-
-    /// Hold the file gate across several calls, so a terminal command's reads
-    /// and writes see no other publication in between. Every other window's
-    /// saves wait, so the lease ends on its own after `lease_limit`.
-    pub fn lease(&self) -> Result<Lease, FileError> {
-        let _admitted = self.inner.admit()?;
-        Ok(Lease {
-            owner: Arc::downgrade(&self.inner),
-            id: self.inner.gate.lease(self.inner.config.lease_limit),
-        })
     }
 
     // ------------------------------------------------------------------
     // Git
     // ------------------------------------------------------------------
 
-    /// A fresh, read-only inspection of uncommitted changes. A caller that
-    /// holds a terminal lease names it and is scanned inside it; every other
-    /// caller shares the scan runner.
-    pub fn status(&self, lease: Option<u64>) -> Result<FilesObservation, GitError> {
-        if lease.is_none() {
-            return self.inner.scan.request_and_wait(None);
-        }
-        let Ok(_admitted) = self.inner.admit() else {
-            return Err(GitError::Closed);
-        };
-        let _running = self.inner.running(&self.inner.leased_scans);
-        self.inner.run_scan(lease)
+    /// A fresh, read-only inspection of uncommitted changes. Callers that ask
+    /// while one is running share the scan that follows it.
+    pub fn status(&self) -> Result<FilesObservation, GitError> {
+        self.inner.scan.request_and_wait(None)
     }
 
     /// Commit current source files if they changed, and reset the index to
     /// the head either way. Waits for the file gate and the Git lock, then
     /// reads the folder, so it sees every save that landed while it waited.
     /// Never requests a push.
-    pub fn commit(&self, lease: Option<u64>) -> CommitOutcome {
+    pub fn commit(&self) -> CommitOutcome {
         let inner = &self.inner;
         let Ok(_admitted) = inner.admit() else {
             return CommitOutcome::Closed;
         };
         let _running = inner.running(&inner.commits);
-        let (permit, git) = match inner.enter_both(lease) {
-            Ok(held) => held,
-            Err(error) => {
-                return CommitOutcome::Failed {
-                    error: refusal(error),
-                }
-            }
-        };
+        let (files, git) = inner.enter_both();
         // Shutdown began while this waited: nothing ran, nothing is recorded.
         if inner.closing.load(Ordering::SeqCst) {
             return CommitOutcome::Closed;
         }
-        inner.commit_with(permit, git)
+        inner.commit_with(files, git)
     }
 
     /// A caller that may withdraw its push or fetch before the transport
@@ -944,12 +718,12 @@ impl FolderOwner {
 
     /// Apply the fetched remote head only as a clean fast-forward. Waits for
     /// the file gate and the Git lock like `commit`.
-    pub fn pull_fast_forward(&self, lease: Option<u64>) -> Result<PullOutcome, PullError> {
+    pub fn pull_fast_forward(&self) -> Result<PullOutcome, PullError> {
         let Ok(_admitted) = self.inner.admit() else {
             return Err(GitError::Closed.into());
         };
         let _running = self.inner.running(&self.inner.pulls);
-        self.inner.run_pull(lease)
+        self.inner.run_pull()
     }
 
     /// Per-path staged and unstaged state, as `git status` reports it.
@@ -1029,8 +803,6 @@ impl FolderOwner {
         drop(watcher);
         inner.hinted.notify_all();
         inner.emit();
-        // A lease no call can use any more must not hold admitted saves back.
-        inner.gate.end_lease(None);
         std::thread::scope(|scope| {
             scope.spawn(|| inner.push.close(CloseMode::Cancel));
             scope.spawn(|| inner.fetch.close(CloseMode::Cancel));
@@ -1085,31 +857,18 @@ impl Inner {
         Running(self, count)
     }
 
-    fn try_git(&self) -> Option<MutexGuard<'_, ()>> {
-        match self.git_lock.try_lock() {
-            Ok(git) => Some(git),
-            Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
-            Err(TryLockError::WouldBlock) => None,
-        }
-    }
-
     /// Wait for the file gate, then the Git lock: the only order anything
-    /// takes both in. `lease` names the terminal lease the caller holds, and
-    /// is entered directly; it is refused if it does not hold the gate. The
-    /// Git lock is only tried while the gate is held. When it is busy the
-    /// gate is given back first, so saves are never stuck behind a caller
-    /// that is itself waiting, and the caller starts over once the Git lock
-    /// was released.
-    fn enter_both(
-        &self,
-        lease: Option<u64>,
-    ) -> Result<(Permit<'_>, MutexGuard<'_, ()>), FileError> {
+    /// takes both in. The Git lock is only tried while the gate is held. When
+    /// it is busy the gate is given back first, so saves are never stuck
+    /// behind a caller that is itself waiting, and the caller starts over
+    /// once the Git lock was released.
+    fn enter_both(&self) -> (MutexGuard<'_, ()>, MutexGuard<'_, ()>) {
         loop {
-            let permit = self.gate.enter(lease)?;
-            if let Some(git) = self.try_git() {
-                return Ok((permit, git));
+            let files = lock(&self.file_gate);
+            if let Some(git) = try_lock(&self.git_lock) {
+                return (files, git);
             }
-            drop(permit);
+            drop(files);
             drop(lock(&self.git_lock));
         }
     }
@@ -1149,7 +908,7 @@ impl Inner {
         let counted = |count: &AtomicUsize| count.load(Ordering::SeqCst) > 0;
         let activity = Activities {
             scan: Activity {
-                active: self.scan.active() || counted(&self.leased_scans),
+                active: self.scan.active(),
             },
             commit: Activity {
                 active: counted(&self.commits),
@@ -1280,9 +1039,9 @@ impl Inner {
 
     /// The one attempt a complete save makes. It is admitted only if the
     /// owner is not shutting down and the file gate and then the Git lock are
-    /// both free right now: no terminal lease, no other save, no other Git
-    /// work. Otherwise the attempt did not happen: nothing is recorded,
-    /// nothing is pushed, and nothing runs when the holder lets go.
+    /// both free right now: no other save, no other Git work. Otherwise the
+    /// attempt did not happen: nothing is recorded, nothing is pushed, and
+    /// nothing runs when the holder lets go.
     ///
     /// The save waits only for that decision, never for the commit, which
     /// runs on its own thread with the admission and both locks it took.
@@ -1298,15 +1057,15 @@ impl Inner {
                 let Ok(_admitted) = inner.admit() else {
                     return;
                 };
-                let Some(permit) = inner.gate.try_enter() else {
+                let Some(files) = try_lock(&inner.file_gate) else {
                     return;
                 };
-                let Some(git) = inner.try_git() else {
+                let Some(git) = try_lock(&inner.git_lock) else {
                     return;
                 };
                 let _running = inner.running(&inner.commits);
                 drop(decided);
-                inner.commit_with(permit, git);
+                inner.commit_with(files, git);
                 // A push that cannot start now is not owed later.
                 let ahead = matches!(
                     &lock(&inner.state).sync,
@@ -1423,13 +1182,10 @@ impl Inner {
         self.scan.request();
     }
 
-    fn run_scan(&self, lease: Option<u64>) -> Result<FilesObservation, GitError> {
+    fn run_scan(&self) -> Result<FilesObservation, GitError> {
         // The snapshot is taken under the file gate; hashing it is not.
         let (captured_at, snapshot) = {
-            let _permit = self
-                .gate
-                .enter(lease)
-                .map_err(|error| GitError::failed("status", refusal(error)))?;
+            let _files = lock(&self.file_gate);
             (self.tick(), self.git.snapshot())
         };
         let result = match snapshot.and_then(|snapshot| self.git.observe(&snapshot)) {
@@ -1640,7 +1396,7 @@ impl Inner {
 
     /// One whole-folder commit. The caller holds the file gate and the Git
     /// lock. The gate is released as soon as the folder is snapshotted.
-    fn checkpoint(&self, permit: Permit<'_>) -> Result<CommitOutcome, String> {
+    fn checkpoint(&self, files: MutexGuard<'_, ()>) -> Result<CommitOutcome, String> {
         if let Some(reason) = self.git.blocked()? {
             return Ok(CommitOutcome::Blocked { reason });
         }
@@ -1657,7 +1413,7 @@ impl Inner {
         // From here saves proceed. One that lands now is newer than
         // `captured_at`: this commit still holds what it snapshotted, and the
         // observation it records is stale.
-        drop(permit);
+        drop(files);
         #[cfg(test)]
         self.hook(|hooks| &hooks.before_hash);
         let captured = match self.git.capture(&snapshot, parent.as_deref())? {
@@ -1720,9 +1476,9 @@ impl Inner {
     /// Commit with both locks held, and record what happened and what is now
     /// known of the remote. The Git lock is kept until the attempt is
     /// recorded, so attempts are recorded in the order they ran.
-    fn commit_with(&self, permit: Permit<'_>, _git: MutexGuard<'_, ()>) -> CommitOutcome {
+    fn commit_with(&self, files: MutexGuard<'_, ()>, _git: MutexGuard<'_, ()>) -> CommitOutcome {
         let outcome = self
-            .checkpoint(permit)
+            .checkpoint(files)
             .unwrap_or_else(|error| CommitOutcome::Failed { error });
         lock(&self.state).last_commit = Some(Attempt {
             result: outcome.clone(),
@@ -1849,18 +1605,16 @@ impl Inner {
         result
     }
 
-    fn run_pull(&self, lease: Option<u64>) -> Result<PullOutcome, PullError> {
+    fn run_pull(&self) -> Result<PullOutcome, PullError> {
         let result = if self.git.remote.is_none() {
             Err(GitError::NoRemote.into())
         } else {
-            let (permit, git) = self
-                .enter_both(lease)
-                .map_err(|error| PullError::Refused { error })?;
+            let (files, git) = self.enter_both();
             // Shutdown began while this waited: nothing ran, nothing is recorded.
             if self.closing.load(Ordering::SeqCst) {
                 return Err(GitError::Closed.into());
             }
-            self.pull(permit, git)
+            self.pull(files, git)
                 .unwrap_or_else(|cause| Err(GitError::failed("pull", cause).into()))
         };
         if !matches!(
@@ -1884,7 +1638,7 @@ impl Inner {
     /// the files and the branch agree.
     fn pull(
         &self,
-        _permit: Permit<'_>,
+        _files: MutexGuard<'_, ()>,
         _git: MutexGuard<'_, ()>,
     ) -> Result<Result<PullOutcome, PullError>, String> {
         if let Some(reason) = self.git.blocked()? {
@@ -2073,49 +1827,45 @@ impl Drop for Inner {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_nonwaiting_entry_is_refused_while_anything_holds_the_gate() {
-        let gate = Gate::new();
-        let batch = gate.try_enter().expect("a free gate is entered");
-        assert!(gate.try_enter().is_none(), "a publication holds the gate");
-        drop(batch);
-
-        // A live terminal lease holds it, whether or not a call is in flight.
-        let lease = gate.lease(Duration::from_secs(60));
-        assert!(gate.try_enter().is_none());
-        let call = gate.enter(Some(lease)).expect("the lease holder enters");
-        assert!(gate.try_enter().is_none());
-
-        // Released while its call is in flight: the lease admits no new call
-        // and still holds the gate until that call settles.
-        gate.end_lease(Some(lease));
-        assert!(gate.enter(Some(lease)).is_err());
-        assert!(gate.try_enter().is_none());
-        drop(call);
-        drop(
-            gate.try_enter()
-                .expect("the settled lease gave the gate back"),
-        );
-
-        // Past its limit while its call is in flight: the same.
-        *lock(&gate.holder) = Holder::Lease {
-            id: lease + 1,
-            deadline: Instant::now(),
-            ended: false,
-            in_flight: 1,
-        };
-        let call = Permit::Leased(&gate);
-        assert!(gate.try_enter().is_none());
-        drop(call);
-        drop(
-            gate.try_enter()
-                .expect("the expired lease gave the gate back"),
-        );
-        assert!(gate.try_enter().is_some(), "and the gate is free again");
-    }
-
     use crate::files::FileExpectation;
-    use crate::testing::{config, git, write, TempDir};
+    use crate::testing::{config, eventually, git, open, write, TempDir};
+
+    #[test]
+    fn an_automatic_attempt_is_dropped_while_either_gate_is_held_and_never_made_up() {
+        let temp = TempDir::new("attempt-dropped");
+        let root = temp.folder("notes");
+        let owner = open(&root);
+        let inner = &owner.inner;
+        let untouched = || {
+            let snapshot = owner.snapshot();
+            assert_eq!(snapshot.last_commit, None);
+            assert!(!snapshot.activity.commit.active);
+            assert!(!root.join(".git/refs/heads/main").exists());
+        };
+        std::fs::write(root.join("a.md"), "A").unwrap();
+
+        // The attempt a save makes, while a publication holds the file gate.
+        // It returns at once, and the holder letting go starts nothing.
+        let files = lock(&inner.file_gate);
+        inner.commit_if_free();
+        untouched();
+        drop(files);
+        untouched();
+
+        // The same while only the Git lock is held: a free gate is not enough.
+        let git_held = lock(&inner.git_lock);
+        inner.commit_if_free();
+        drop(git_held);
+        untouched();
+
+        // With both free, the attempt runs.
+        inner.commit_if_free();
+        eventually("the admitted commit to finish", || {
+            let snapshot = owner.snapshot();
+            snapshot.last_commit.is_some() && !snapshot.activity.commit.active
+        });
+        assert_eq!(git(&root, &["log", "--format=%s"]), "Add a.md");
+    }
 
     /// A folder whose one commit is on its bare remote, so a push and a
     /// fetch both have a real remote to reach.
@@ -2136,9 +1886,9 @@ mod tests {
         })
         .unwrap();
         owner
-            .apply(&[write("a.md", "A", FileExpectation::Absent)], None)
+            .apply(&[write("a.md", "A", FileExpectation::Absent)])
             .unwrap();
-        owner.commit(None);
+        owner.commit();
         let head = git(&root, &["rev-parse", "HEAD"]);
         assert_eq!(owner.push(None), PushOutcome::Pushed { oid: head.clone() });
         (owner, head)

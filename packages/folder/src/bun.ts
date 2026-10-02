@@ -21,7 +21,6 @@ import { OpenFolderError } from './errors.js';
 import {
 	assembleFolder,
 	createFileHints,
-	createLocalTerminal,
 	type Folder,
 	type FolderGitOptions,
 } from './folder.js';
@@ -93,7 +92,6 @@ export async function openFolder<const TDefinition extends DataDefinition>({
 				location: { kind: 'directory', root: resolved },
 				hints,
 				announcePublications: true,
-				terminal: createLocalTerminal,
 				release: async () => {},
 			}),
 		);

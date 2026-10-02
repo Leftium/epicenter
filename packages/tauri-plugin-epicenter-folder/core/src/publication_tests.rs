@@ -11,11 +11,11 @@
 //! - A change made outside the owner marks history stale and tells listeners;
 //!   it starts no commit and no scan.
 //! - Exclusive creation and moves never replace an existing file.
-//! - A terminal lease holds every other publication out, for a bounded time.
+//! - Nothing holds the folder between one caller's calls: a write built on an
+//!   earlier read is refused once another caller wrote in between.
 
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::files::{ApplyError, FileChange, FileError, FileExpectation, FileStep, FileVersion};
 use crate::history::{Observation, OwnerEvent};
@@ -44,7 +44,7 @@ fn two_saves_conditional_on_one_version_land_exactly_once() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     owner
-        .apply(&[write("a.md", "base", FileExpectation::Absent)], None)
+        .apply(&[write("a.md", "base", FileExpectation::Absent)])
         .unwrap();
     let base = owner.read("a.md").unwrap().version;
 
@@ -54,7 +54,7 @@ fn two_saves_conditional_on_one_version_land_exactly_once() {
             .map(|content| {
                 let window = owner.clone();
                 let expected = FileExpectation::version(&base);
-                scope.spawn(move || window.apply(&[write("a.md", content, expected)], None))
+                scope.spawn(move || window.apply(&[write("a.md", content, expected)]))
             })
             .collect();
         saves.into_iter().map(|save| save.join().unwrap()).collect()
@@ -110,7 +110,7 @@ fn private_git_traversal_and_links_are_refused_and_outside_files_untouched() {
             },
         ] {
             assert_eq!(
-                owner.apply(&[change], None),
+                owner.apply(&[change]),
                 Err(ApplyError::Refused {
                     error: FileError::InvalidPath {
                         path: path.to_string(),
@@ -125,11 +125,11 @@ fn private_git_traversal_and_links_are_refused_and_outside_files_untouched() {
             "{path}"
         );
         assert!(
-            matches!(owner.mkdir(path, None), Err(FileError::InvalidPath { .. })),
+            matches!(owner.mkdir(path), Err(FileError::InvalidPath { .. })),
             "{path}"
         );
         assert!(
-            matches!(owner.rmdir(path, None), Err(FileError::InvalidPath { .. })),
+            matches!(owner.rmdir(path), Err(FileError::InvalidPath { .. })),
             "{path}"
         );
     };
@@ -151,7 +151,7 @@ fn private_git_traversal_and_links_are_refused_and_outside_files_untouched() {
     let through_link = "the path passes through a symbolic link";
     for path in ["link/sentinel.txt", "link/new.txt", "alias.txt"] {
         let error = owner
-            .apply(&[write(path, "x", FileExpectation::Any)], None)
+            .apply(&[write(path, "x", FileExpectation::Any)])
             .unwrap_err();
         assert_eq!(
             error,
@@ -172,7 +172,7 @@ fn private_git_traversal_and_links_are_refused_and_outside_files_untouched() {
         Err(FileError::InvalidPath { .. })
     ));
     assert!(matches!(
-        owner.mkdir("link/sub", None),
+        owner.mkdir("link/sub"),
         Err(FileError::InvalidPath { .. })
     ));
 
@@ -230,20 +230,17 @@ fn a_partial_batch_keeps_its_prefix_and_attempts_no_commit_until_a_complete_save
     let root = temp.folder("notes");
     let owner = open(&root);
     owner
-        .apply(&[write("b.md", "theirs", FileExpectation::Absent)], None)
+        .apply(&[write("b.md", "theirs", FileExpectation::Absent)])
         .unwrap();
     settled(&owner);
     let head = git(&root, &["rev-parse", "HEAD"]);
-    owner.status(None).unwrap();
+    owner.status().unwrap();
 
-    let result = owner.apply(
-        &[
-            write("a.md", "first", FileExpectation::Absent),
-            write("b.md", "mine", FileExpectation::Absent),
-            write("c.md", "never", FileExpectation::Absent),
-        ],
-        None,
-    );
+    let result = owner.apply(&[
+        write("a.md", "first", FileExpectation::Absent),
+        write("b.md", "mine", FileExpectation::Absent),
+        write("c.md", "never", FileExpectation::Absent),
+    ]);
     let Err(ApplyError::Partial {
         applied,
         failed,
@@ -289,7 +286,7 @@ fn a_partial_batch_keeps_its_prefix_and_attempts_no_commit_until_a_complete_save
     assert!(*stale);
 
     owner
-        .apply(&[write("c.md", "complete", FileExpectation::Absent)], None)
+        .apply(&[write("c.md", "complete", FileExpectation::Absent)])
         .unwrap();
     settled(&owner);
     assert_eq!(git(&root, &["log", "-1", "--format=%s"]), "Update 2 files");
@@ -302,26 +299,23 @@ fn exclusive_creation_and_moves_never_replace_an_existing_file() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     owner
-        .apply(&[write("a.md", "a", FileExpectation::Absent)], None)
+        .apply(&[write("a.md", "a", FileExpectation::Absent)])
         .unwrap();
     owner
-        .apply(&[write("b.md", "b", FileExpectation::Absent)], None)
+        .apply(&[write("b.md", "b", FileExpectation::Absent)])
         .unwrap();
 
-    let again = owner.apply(&[write("a.md", "again", FileExpectation::Absent)], None);
+    let again = owner.apply(&[write("a.md", "again", FileExpectation::Absent)]);
     assert!(matches!(
         again,
         Err(ApplyError::Refused { error: FileError::Conflict { ref actual, .. } })
             if *actual == Some(FileVersion::of(b"a"))
     ));
-    let moved = owner.apply(
-        &[FileChange::Move {
-            from: "a.md".into(),
-            to: "b.md".into(),
-            expected: FileExpectation::Any,
-        }],
-        None,
-    );
+    let moved = owner.apply(&[FileChange::Move {
+        from: "a.md".into(),
+        to: "b.md".into(),
+        expected: FileExpectation::Any,
+    }]);
     assert!(matches!(
         moved,
         Err(ApplyError::Refused { error: FileError::Conflict { ref path, .. } }) if path == "b.md"
@@ -330,14 +324,11 @@ fn exclusive_creation_and_moves_never_replace_an_existing_file() {
     assert_eq!(owner.read("b.md").unwrap().bytes, b"b");
 
     owner
-        .apply(
-            &[FileChange::Move {
-                from: "a.md".into(),
-                to: "deep/er/c.md".into(),
-                expected: FileExpectation::version(&FileVersion::of(b"a")),
-            }],
-            None,
-        )
+        .apply(&[FileChange::Move {
+            from: "a.md".into(),
+            to: "deep/er/c.md".into(),
+            expected: FileExpectation::version(&FileVersion::of(b"a")),
+        }])
         .unwrap();
     assert!(matches!(
         owner.read("a.md"),
@@ -345,13 +336,10 @@ fn exclusive_creation_and_moves_never_replace_an_existing_file() {
     ));
     assert_eq!(owner.read("deep/er/c.md").unwrap().bytes, b"a");
     assert_eq!(
-        owner.apply(
-            &[FileChange::Remove {
-                path: "missing.md".into(),
-                expected: FileExpectation::Any,
-            }],
-            None
-        ),
+        owner.apply(&[FileChange::Remove {
+            path: "missing.md".into(),
+            expected: FileExpectation::Any,
+        }]),
         Err(ApplyError::Refused {
             error: FileError::NotFound {
                 path: "missing.md".into()
@@ -366,9 +354,9 @@ fn a_differently_cased_name_never_overwrites_the_existing_file() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     owner
-        .apply(&[write("Note.md", "upper", FileExpectation::Absent)], None)
+        .apply(&[write("Note.md", "upper", FileExpectation::Absent)])
         .unwrap();
-    let lower = owner.apply(&[write("note.md", "lower", FileExpectation::Absent)], None);
+    let lower = owner.apply(&[write("note.md", "lower", FileExpectation::Absent)]);
     assert_eq!(owner.read("Note.md").unwrap().bytes, b"upper");
     match lower {
         // A case-sensitive filesystem holds both names.
@@ -394,17 +382,17 @@ fn directory_changes_and_reads_attempt_no_commit() {
     let temp = TempDir::new("directories");
     let root = temp.folder("notes");
     let owner = open(&root);
-    owner.mkdir("a/b", None).unwrap();
-    owner.mkdir("a/b", None).unwrap();
+    owner.mkdir("a/b").unwrap();
+    owner.mkdir("a/b").unwrap();
     assert_eq!(owner.children("a").unwrap().directories, vec!["b"]);
     assert_eq!(owner.list().unwrap().directories, vec!["a", "a/b"]);
     assert_eq!(
-        owner.rmdir("a", None),
+        owner.rmdir("a"),
         Err(FileError::DirectoryNotEmpty { path: "a".into() })
     );
-    owner.rmdir("a/b", None).unwrap();
+    owner.rmdir("a/b").unwrap();
     assert_eq!(
-        owner.rmdir("a/b", None),
+        owner.rmdir("a/b"),
         Err(FileError::NotFound { path: "a/b".into() })
     );
     let many = owner
@@ -441,13 +429,13 @@ fn every_listener_hears_a_save_made_through_any_handle() {
         .collect();
     owner
         .clone()
-        .apply(&[write("a.md", "a", FileExpectation::Absent)], None)
+        .apply(&[write("a.md", "a", FileExpectation::Absent)])
         .unwrap();
     assert_eq!(*heard.lock().unwrap(), vec![vec!["a.md".to_string()]; 2]);
 
     drop(subscriptions);
     owner
-        .apply(&[write("b.md", "b", FileExpectation::Absent)], None)
+        .apply(&[write("b.md", "b", FileExpectation::Absent)])
         .unwrap();
     assert_eq!(
         heard.lock().unwrap().len(),
@@ -462,9 +450,9 @@ fn outside_changes_are_reported_and_own_saves_are_not_mistaken_for_them() {
     let root = temp.folder("notes");
     let owner = manual(&root);
     owner
-        .apply(&[write("a.md", "a", FileExpectation::Absent)], None)
+        .apply(&[write("a.md", "a", FileExpectation::Absent)])
         .unwrap();
-    owner.status(None).unwrap();
+    owner.status().unwrap();
     let heard: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
     let listener = Arc::clone(&heard);
     let _subscription = owner.subscribe(move |event| {
@@ -507,10 +495,10 @@ fn an_outside_change_marks_history_stale_and_starts_no_commit_and_no_scan() {
     // This folder commits on edit. Only its own complete saves attempt that.
     let owner = open(&root);
     owner
-        .apply(&[write("a.md", "a", FileExpectation::Absent)], None)
+        .apply(&[write("a.md", "a", FileExpectation::Absent)])
         .unwrap();
     settled(&owner);
-    owner.status(None).unwrap();
+    owner.status().unwrap();
     let head = git(&root, &["rev-parse", "HEAD"]);
     let committed = owner.snapshot().last_commit.clone();
     let heard: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
@@ -537,7 +525,7 @@ fn an_outside_change_marks_history_stale_and_starts_no_commit_and_no_scan() {
 
     // The outside file is still there for whoever commits next.
     assert!(matches!(
-        owner.commit(None),
+        owner.commit(),
         crate::history::CommitOutcome::Committed { ref message, changed_paths: 1, .. }
             if message == "Add outside.md"
     ));
@@ -586,7 +574,7 @@ fn a_filesystem_event_reports_an_edit_that_left_size_and_time_unchanged() {
         "this platform can watch the folder"
     );
     owner
-        .apply(&[write("a.md", "first", FileExpectation::Absent)], None)
+        .apply(&[write("a.md", "first", FileExpectation::Absent)])
         .unwrap();
     let heard: Arc<Mutex<Vec<String>>> = Arc::default();
     let listener = Arc::clone(&heard);
@@ -614,7 +602,7 @@ fn a_filesystem_event_reports_an_edit_that_left_size_and_time_unchanged() {
         modified
     );
     owner.poll_external();
-    owner.status(None).unwrap();
+    owner.status().unwrap();
     heard.lock().unwrap().clear();
     // What the watcher's callback does when the platform reports the path.
     owner.announce(&["a.md"]);
@@ -679,89 +667,60 @@ fn the_platform_watcher_announces_an_outside_write() {
 }
 
 #[test]
-fn a_terminal_lease_holds_other_saves_out_until_it_is_released() {
-    let temp = TempDir::new("lease");
+fn a_write_built_on_an_earlier_read_is_refused_once_another_caller_wrote_between_them() {
+    let temp = TempDir::new("interleaved");
     let root = temp.folder("notes");
     let owner = manual(&root);
-    let lease = owner.lease().unwrap();
     owner
-        .apply(
-            &[write("a.md", "from the terminal", FileExpectation::Absent)],
-            Some(lease.id()),
-        )
+        .apply(&[write("a.md", "base", FileExpectation::Absent)])
         .unwrap();
-    owner.mkdir("made", Some(lease.id())).unwrap();
 
-    let (done, finished) = mpsc::channel();
+    // One caller's command reads, and makes a directory, as a terminal's
+    // steps do. Nothing holds the folder between its calls.
+    let command = owner.clone();
+    let read = command.read("a.md").unwrap().version;
+    command.mkdir("made").unwrap();
+
+    // Another caller's save lands between that command's steps.
     let other = owner.clone();
-    let waiting = std::thread::spawn(move || {
-        let result = other.apply(
-            &[write("b.md", "from a window", FileExpectation::Absent)],
-            None,
-        );
-        done.send(()).unwrap();
-        result
-    });
-    assert!(
-        finished.recv_timeout(Duration::from_millis(200)).is_err(),
-        "another window's save waits for the lease"
-    );
-    assert_eq!(
-        owner.read("a.md").unwrap().bytes,
-        b"from the terminal",
-        "reads never wait"
-    );
-
-    let id = lease.id();
-    drop(lease);
-    waiting.join().unwrap().unwrap();
-    assert_eq!(
-        owner.apply(&[write("c.md", "late", FileExpectation::Absent)], Some(id)),
-        Err(ApplyError::Refused {
-            error: FileError::LeaseEnded {
-                reason: "the terminal lease was released or reached its time limit".into()
-            }
-        })
-    );
-    assert_eq!(
-        owner.mkdir("late", Some(id + 1)).unwrap_err(),
-        FileError::LeaseEnded {
-            reason: "the terminal lease was released or reached its time limit".into()
-        }
-    );
-}
-
-#[test]
-fn a_lease_ends_on_its_own_at_the_limit() {
-    let temp = TempDir::new("lease-limit");
-    let root = temp.folder("notes");
-    let owner = FolderOwner::open(FolderConfig {
-        commit_on_edit: false,
-        lease_limit: Duration::from_millis(150),
-        ..config(&root)
-    })
-    .unwrap();
-    let lease = owner.lease().unwrap();
-    let started = Instant::now();
-    owner
-        .apply(&[write("a.md", "a", FileExpectation::Absent)], None)
+    other
+        .apply(&[write("a.md", "from another window", FileExpectation::Any)])
         .unwrap();
-    let waited = started.elapsed();
-    assert!(
-        waited >= Duration::from_millis(100),
-        "the save waited for the limit: {waited:?}"
-    );
-    assert!(
-        waited < Duration::from_secs(5),
-        "the limit freed the gate: {waited:?}"
-    );
-    assert!(matches!(
-        owner.apply(
-            &[write("b.md", "b", FileExpectation::Absent)],
-            Some(lease.id())
-        ),
-        Err(ApplyError::Refused {
-            error: FileError::LeaseEnded { .. }
+    let theirs = owner.read("a.md").unwrap().version;
+
+    // The command's rewrite carries the version it read, and is refused. The
+    // step before it landed and is reported; nothing is rolled back.
+    assert_eq!(
+        command.apply(&[
+            write("b.md", "its unconditional step lands", FileExpectation::Any),
+            write("a.md", "built on the read", FileExpectation::version(&read)),
+            write("c.md", "never attempted", FileExpectation::Absent),
+        ]),
+        Err(ApplyError::Partial {
+            applied: vec![FileStep::Write {
+                path: "b.md".into()
+            }],
+            failed: FileStep::Write {
+                path: "a.md".into()
+            },
+            error: FileError::Conflict {
+                path: "a.md".into(),
+                expected: FileExpectation::version(&read),
+                actual: Some(theirs.clone()),
+            },
+            not_attempted: vec![FileStep::Write {
+                path: "c.md".into()
+            }],
         })
-    ));
+    );
+    assert_eq!(owner.read("a.md").unwrap().bytes, b"from another window");
+    // Built on what is there now, it lands.
+    command
+        .apply(&[write(
+            "a.md",
+            "built on theirs",
+            FileExpectation::version(&theirs),
+        )])
+        .unwrap();
+    assert_eq!(owner.read("a.md").unwrap().bytes, b"built on theirs");
 }

@@ -24,11 +24,7 @@ import { ensureBufferGlobal } from './buffer-global.js';
 import type { OpenFolder } from './contract.js';
 import { compileFolderDefinition } from './definition.js';
 import { OpenFolderError } from './errors.js';
-import {
-	assembleFolder,
-	createFileHints,
-	createLocalTerminal,
-} from './folder.js';
+import { assembleFolder, createFileHints } from './folder.js';
 import { createBrowserGitBackend } from './git/browser-backend.js';
 import { createHistory } from './git/history.js';
 import type { Author } from './git/objects.js';
@@ -138,7 +134,6 @@ export const openFolder: OpenFolder = async ({
 				location: { kind: 'indexedDb', database },
 				hints,
 				announcePublications: true,
-				terminal: createLocalTerminal,
 				release: async () => release(),
 			}),
 		);

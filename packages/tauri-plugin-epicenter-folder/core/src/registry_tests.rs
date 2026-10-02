@@ -104,7 +104,7 @@ fn detaching_one_window_leaves_the_other_and_the_admitted_commit() {
     }));
     a.authorize("a")
         .unwrap()
-        .apply(&[write("from-a.md", "A", FileExpectation::Absent)], None)
+        .apply(&[write("from-a.md", "A", FileExpectation::Absent)])
         .unwrap();
     at_capture.recv().unwrap();
     owner.hooks().after_capture = None;
@@ -129,7 +129,7 @@ fn detaching_one_window_leaves_the_other_and_the_admitted_commit() {
     );
 
     owner
-        .apply(&[write("from-b.md", "B", FileExpectation::Absent)], None)
+        .apply(&[write("from-b.md", "B", FileExpectation::Absent)])
         .unwrap();
     assert_eq!(*heard.lock().unwrap(), vec!["from-a.md", "from-b.md"]);
     idle();
@@ -168,10 +168,7 @@ fn shutdown_drains_a_held_save_commits_nothing_and_releases_the_lock() {
     }));
     let saver = owner.clone();
     let held = std::thread::spawn(move || {
-        saver.apply(
-            &[write("held.md", "admitted", FileExpectation::Absent)],
-            None,
-        )
+        saver.apply(&[write("held.md", "admitted", FileExpectation::Absent)])
     });
     at_admission.recv().unwrap();
     // The page that asked is gone before its save lands.
@@ -189,7 +186,7 @@ fn shutdown_drains_a_held_save_commits_nothing_and_releases_the_lock() {
         "still draining"
     );
     assert!(matches!(
-        owner.apply(&[write("late.md", "x", FileExpectation::Absent)], None),
+        owner.apply(&[write("late.md", "x", FileExpectation::Absent)]),
         Err(ApplyError::Refused {
             error: FileError::Closed
         })

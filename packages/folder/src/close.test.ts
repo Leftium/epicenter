@@ -40,7 +40,6 @@ import {
 	assembleFolder,
 	createFileHints,
 	createFolderContext,
-	createLocalTerminal,
 } from './folder.js';
 import type { GitBackend } from './git/backend.js';
 import { createBrowserGitBackend } from './git/browser-backend.js';
@@ -206,7 +205,6 @@ async function held() {
 		location: { kind: 'indexedDb', database: 'epicenter-folder:close' },
 		hints: createFileHints(),
 		announcePublications: true,
-		terminal: createLocalTerminal,
 		release: async () => {
 			order.push('released');
 			db.close();

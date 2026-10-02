@@ -295,18 +295,6 @@
       "type": "string",
       "oneOf": [
         {
-          "description": "Enables the acquire_lease command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-acquire-lease",
-          "markdownDescription": "Enables the acquire_lease command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the acquire_lease command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-acquire-lease",
-          "markdownDescription": "Denies the acquire_lease command without any pre-configured scope."
-        },
-        {
           "description": "Enables the apply command without any pre-configured scope.",
           "type": "string",
           "const": "allow-apply",
@@ -511,18 +499,6 @@
           "markdownDescription": "Denies the read_many command without any pre-configured scope."
         },
         {
-          "description": "Enables the release_lease command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-release-lease",
-          "markdownDescription": "Enables the release_lease command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the release_lease command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-release-lease",
-          "markdownDescription": "Denies the release_lease command without any pre-configured scope."
-        },
-        {
           "description": "Enables the rmdir command without any pre-configured scope.",
           "type": "string",
           "const": "allow-rmdir",
@@ -571,10 +547,10 @@
           "markdownDescription": "Denies the withdraw_request command without any pre-configured scope."
         },
         {
-          "description": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-acquire-lease`\n- `allow-release-lease`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`",
+          "description": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-acquire-lease`\n- `allow-release-lease`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`"
+          "markdownDescription": "Attach to the folders the shell registered for this window, then read, publish, and record history through them.\n#### This default permission set includes:\n\n- `allow-attach`\n- `allow-detach`\n- `allow-list`\n- `allow-children`\n- `allow-read`\n- `allow-read-many`\n- `allow-apply`\n- `allow-mkdir`\n- `allow-rmdir`\n- `allow-status`\n- `allow-commit`\n- `allow-open-request`\n- `allow-withdraw-request`\n- `allow-push`\n- `allow-fetch`\n- `allow-pull-fast-forward`\n- `allow-paths`\n- `allow-stage`\n- `allow-commit-staged`\n- `allow-diff`\n- `allow-log`"
         }
       ]
     }

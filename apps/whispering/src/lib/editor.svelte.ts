@@ -285,12 +285,6 @@ function createDraft<T extends SavedText>(
 			await save();
 			return !dirty() && saveState.kind === 'saved';
 		},
-		/** After a rename, continue with the accepted file at its new path. */
-		moved(next: T) {
-			const wasDirty = dirty();
-			baseline = next;
-			if (!wasDirty) buffer = next.source;
-		},
 		dispose() {
 			clearTimeout(timer);
 		},

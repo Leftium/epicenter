@@ -208,9 +208,9 @@ test('racing current-row updates return a conflict without retrying', async () =
 				? { title: 'Renamed', done: false }
 				: { title: 'One', done: true },
 		);
-		// The refused edit was not lost silently: its caller rereads and reapplies.
+		// The caller explicitly resubmits; update performs its own current read.
 		const retried = expectOk(
-			await opened.tables.todos.update(current.stem!, {
+			await opened.tables.todos.update('one', {
 				fields: firstWon ? { done: true } : { title: 'Renamed' },
 			}),
 		);

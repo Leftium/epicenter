@@ -301,11 +301,6 @@ export function createFileTable<TFields>(
 	}
 
 	const directory = () => tableFilenames(boundary, name);
-	const checkDestination = (
-		files: readonly string[],
-		destination: string,
-		ignore: string | undefined,
-	) => destinationProblem(name, files, destination, ignore);
 
 	async function publishSource(
 		entry: FileCapture,
@@ -424,7 +419,12 @@ export function createFileTable<TFields>(
 					const { path, source, bytes } = prepared.data;
 					const found = await directory();
 					if (found.error) return found;
-					const destination = checkDestination(found.data, path, undefined);
+					const destination = destinationProblem(
+						name,
+						found.data,
+						path,
+						undefined,
+					);
 					if (destination.error) return destination;
 					const version = await captureVersion(bytes);
 					const applied = await context.publish([
@@ -492,7 +492,12 @@ export function createFileTable<TFields>(
 					if (path === captured.path) return Ok(entry);
 					const found = await directory();
 					if (found.error) return found;
-					const destination = checkDestination(found.data, path, captured.path);
+					const destination = destinationProblem(
+						name,
+						found.data,
+						path,
+						captured.path,
+					);
 					if (destination.error) return destination;
 					const applied = await context.publish([
 						{

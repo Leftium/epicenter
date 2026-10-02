@@ -13,12 +13,11 @@ import {
 	createBrowserFileBoundary,
 	openFolderDatabase,
 } from './browser-store.js';
+import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { compileFolderDefinition } from './definition.js';
 import { FileError } from './errors.js';
-import { createFolderContext } from './folder.js';
-import { createFileTable } from './table.js';
-import { hashBytes } from './capture.js';
+import { createTable } from './table.js';
 
 const definition = defineFolder({
 	id: 'table.commands',
@@ -64,20 +63,18 @@ async function setup() {
 			return result;
 		},
 	};
-	const context = createFolderContext({
-		boundary,
-		history: { noteEdit() {}, requestAutomaticCommit() {} },
-		signal: new AbortController().signal,
-		landed() {},
-	});
-	const table = createFileTable<{
+	const table = createTable<{
 		title: string;
 		done: boolean;
 		tags: string[];
 	}>(
-		'todos',
-		expectOk(compileFolderDefinition(definition)).tables.get('todos')!,
-		context,
+		{ storage: boundary },
+		{
+			name: 'todos',
+			definition: expectOk(compileFolderDefinition(definition)).tables.get(
+				'todos',
+			)!,
+		},
 	);
 	const entry = expectOk(
 		await table.create({
@@ -92,7 +89,7 @@ async function setup() {
 		table,
 		entry,
 		base,
-		context,
+		storage: boundary,
 		counts: () => ({ reads, applications }),
 		beforeRead(fn: () => void) {
 			beforeRead = fn;
@@ -178,8 +175,8 @@ test('caller mutation during the read does not change submitted arrays or body',
 
 test('unknown publication is returned once without replaying a landed command', async () => {
 	const s = await setup();
-	const publish = s.context.publish;
-	s.context.publish = async (changes) => {
+	const publish = s.storage.apply;
+	s.storage.apply = async (changes) => {
 		expectOk(await publish(changes));
 		return FileError.Unconfirmed({
 			path: s.entry.path,

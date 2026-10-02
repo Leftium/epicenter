@@ -23,7 +23,12 @@ import {
 	excerpt,
 	parseCapture,
 } from '@epicenter/capture';
-import { type FileCapture, type GitSnapshot } from '@epicenter/folder';
+import {
+	type ImportReport,
+	type LegacyBundle,
+	runLegacyImport,
+} from '@epicenter/capture/legacy';
+import type { FileCapture, GitSnapshot } from '@epicenter/folder';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	type CaptureEntry,
@@ -109,6 +114,22 @@ export function createCaptures(
 
 	/** Moves when a write starts and when it ends. */
 	let writes = 0;
+	let creating = $state.raw<
+		| Promise<{ ok: true; stem: string } | { ok: false; message: string }>
+		| undefined
+	>();
+	let importing = $state.raw<Promise<ImportReport> | undefined>();
+	let copying = $state.raw<
+		| Promise<{ ok: true; stem: string } | { ok: false; message: string }>
+		| undefined
+	>();
+	let removing = $state.raw<
+		| Promise<{ ok: true } | { ok: false; changed: boolean; message: string }>
+		| undefined
+	>();
+	let discarding: Promise<void> | undefined;
+	let closing: Promise<void> | undefined;
+	let settling: Promise<number> | undefined;
 	async function writing<T>(work: () => Promise<T>): Promise<T> {
 		writes++;
 		try {
@@ -168,9 +189,10 @@ export function createCaptures(
 		return draft;
 	}
 
-	function drop(path: string) {
-		drafts.get(path)?.dispose();
+	function drop(path: string): Promise<void> {
+		const draft = drafts.get(path);
 		drafts.delete(path);
+		return draft?.dispose() ?? Promise.resolve();
 	}
 
 	let refreshing: Promise<void> | undefined;
@@ -213,7 +235,7 @@ export function createCaptures(
 							? { kind: 'unreadable', message }
 							: { kind: 'removed' },
 				);
-				if (draft.gone) drop(path);
+				if (draft.gone) await drop(path);
 			}
 			return;
 		}
@@ -221,6 +243,7 @@ export function createCaptures(
 
 	/** Reread the folder. Calls made while one is running share one more pass. */
 	function refresh(): Promise<void> {
+		if (closing) return refreshing ?? Promise.resolve();
 		if (refreshing) {
 			again = true;
 			return refreshing;
@@ -298,6 +321,24 @@ export function createCaptures(
 		});
 	});
 
+	function settleAll(): Promise<number> {
+		if (settling) return settling;
+		settling = (async () => {
+			await Promise.allSettled([
+				creating,
+				importing,
+				copying,
+				removing,
+				discarding,
+			]);
+			await Promise.all([...drafts.values()].map((draft) => draft.settle()));
+			return unsettledDrafts().length + (newCapture === '' ? 0 : 1);
+		})().finally(() => {
+			settling = undefined;
+		});
+		return settling;
+	}
+
 	const unsettledDrafts = () =>
 		[...drafts.values()].filter((draft) => draft.unsettled);
 
@@ -339,11 +380,17 @@ export function createCaptures(
 			newCapture = value;
 		},
 		/**
-		 * How many things would be lost by leaving: drafts with unsaved or unsent
-		 * input, and the new-capture text.
+		 * How many things leaving could interrupt: drafts with unsaved or unsent
+		 * input, the new-capture text, and unfinished actions.
 		 */
 		get unsettled() {
-			return unsettledDrafts().length + (newCapture === '' ? 0 : 1);
+			return (
+				unsettledDrafts().length +
+				(newCapture === '' ? (creating ? 1 : 0) : 1) +
+				(importing ? 1 : 0) +
+				(copying ? 1 : 0) +
+				(removing ? 1 : 0)
+			);
 		},
 		refresh,
 
@@ -371,37 +418,47 @@ export function createCaptures(
 		async create(): Promise<
 			{ ok: true; stem: string } | { ok: false; message: string }
 		> {
-			const text = newCapture;
-			// Blank text is refused, and stays in the form: only the person clears it.
-			if (text.trim() === '')
-				return { ok: false, message: 'Write something first.' };
-			const now = new Date();
-			const { body } = composeBody(text);
-			try {
-				for (let attempt = 0; ; attempt++) {
-					const created = await writing(() =>
-						table.create({
-							stem: newStem(now),
-							fields: {
-								capturedAt: now.toISOString() as CaptureFields['capturedAt'],
-							},
-							body,
-						}),
-					);
-					if (created.error === null) {
-						noteSaved(created.data);
-						if (newCapture === text) newCapture = '';
-						return { ok: true, stem: stemOf(created.data.path) };
+			if (closing || settling)
+				return { ok: false, message: 'Capture is finishing its saves.' };
+			if (creating) return creating;
+			creating = (async (): Promise<
+				{ ok: true; stem: string } | { ok: false; message: string }
+			> => {
+				const text = newCapture;
+				// Blank text is refused, and stays in the form: only the person clears it.
+				if (text.trim() === '')
+					return { ok: false, message: 'Write something first.' };
+				const now = new Date();
+				const { body } = composeBody(text);
+				try {
+					for (let attempt = 0; ; attempt++) {
+						const created = await writing(() =>
+							table.create({
+								stem: newStem(now),
+								fields: {
+									capturedAt: now.toISOString() as CaptureFields['capturedAt'],
+								},
+								body,
+							}),
+						);
+						if (created.error === null) {
+							noteSaved(created.data);
+							if (newCapture === text) newCapture = '';
+							return { ok: true, stem: stemOf(created.data.path) };
+						}
+						const taken =
+							created.error.name === 'Exists' ||
+							created.error.name === 'Collision';
+						if (!taken || attempt >= 3)
+							return { ok: false, message: created.error.message };
 					}
-					const taken =
-						created.error.name === 'Exists' ||
-						created.error.name === 'Collision';
-					if (!taken || attempt >= 3)
-						return { ok: false, message: created.error.message };
+				} catch (cause) {
+					return { ok: false, message: describe(cause) };
 				}
-			} catch (cause) {
-				return { ok: false, message: describe(cause) };
-			}
+			})().finally(() => {
+				creating = undefined;
+			});
+			return creating;
 		},
 
 		/**
@@ -420,37 +477,53 @@ export function createCaptures(
 		async saveCopy(
 			draft: Draft,
 		): Promise<{ ok: true; stem: string } | { ok: false; message: string }> {
-			if (draft.hasUnsentInput)
-				return {
-					ok: false,
-					message:
-						'A copy holds the capture as it is in Source. This capture also has text you typed that is not in it yet: a new thought, a thought you are editing, or capture text that could not be applied. Add it, or copy it somewhere and clear it, then save the copy.',
-				};
-			const source = draft.buffer;
-			try {
-				const stem = `${newStem(new Date())}-copy`;
-				const created = await createExact(pathOf(stem), source);
-				if (created.error !== null)
-					return { ok: false, message: created.error.message };
-				if (created.data.entry !== undefined) noteSaved(created.data.entry);
-				// Another draft may have been opened at the path since; it is not this one.
-				if (
-					drafts.get(draft.path) === draft &&
-					draft.buffer === source &&
-					!draft.hasUnsentInput
-				)
-					drop(draft.path);
-				void refresh();
-				return { ok: true, stem };
-			} catch (cause) {
-				return { ok: false, message: describe(cause) };
-			}
+			if (closing || settling)
+				return { ok: false, message: 'Capture is finishing its saves.' };
+			if (copying)
+				return { ok: false, message: 'A copy is already being saved.' };
+			copying = (async (): Promise<
+				{ ok: true; stem: string } | { ok: false; message: string }
+			> => {
+				if (draft.hasUnsentInput)
+					return {
+						ok: false,
+						message:
+							'A copy holds the capture as it is in Source. This capture also has text you typed that is not in it yet: a new thought, a thought you are editing, or capture text that could not be applied. Add it, or copy it somewhere and clear it, then save the copy.',
+					};
+				const source = draft.buffer;
+				try {
+					const stem = `${newStem(new Date())}-copy`;
+					const created = await createExact(pathOf(stem), source);
+					if (created.error !== null)
+						return { ok: false, message: created.error.message };
+					if (created.data.entry !== undefined) noteSaved(created.data.entry);
+					// Another draft may have been opened at the path since; it is not this one.
+					if (
+						drafts.get(draft.path) === draft &&
+						draft.buffer === source &&
+						!draft.hasUnsentInput
+					)
+						await drop(draft.path);
+					void refresh();
+					return { ok: true, stem };
+				} catch (cause) {
+					return { ok: false, message: describe(cause) };
+				}
+			})().finally(() => {
+				copying = undefined;
+			});
+			return copying;
 		},
 
 		/** Let go of a draft and its input without writing anything. */
-		discard(draft: Draft) {
-			drop(draft.path);
-			void refresh();
+		discard(draft: Draft): Promise<void> {
+			const completion = Promise.all([discarding, drop(draft.path)])
+				.then(() => refresh())
+				.finally(() => {
+					if (discarding === completion) discarding = undefined;
+				});
+			discarding = completion;
+			return completion;
 		},
 
 		/** The saved file as it is now, to review before deleting it. */
@@ -483,43 +556,95 @@ export function createCaptures(
 		): Promise<
 			{ ok: true } | { ok: false; changed: boolean; message: string }
 		> {
-			try {
-				const removed = await writing(() => table.delete(reviewed));
-				if (removed.error !== null)
-					return {
-						ok: false,
-						changed: removed.error.name === 'Conflict',
-						message: removed.error.message,
-					};
-				drop(reviewed.path);
-				entries = entries.filter((entry) => entry.path !== reviewed.path);
-				return { ok: true };
-			} catch (cause) {
-				return { ok: false, changed: false, message: describe(cause) };
-			}
+			if (closing || settling)
+				return {
+					ok: false,
+					changed: false,
+					message: 'Capture is finishing its saves.',
+				};
+			if (removing)
+				return {
+					ok: false,
+					changed: false,
+					message: 'A capture is already being deleted.',
+				};
+			removing = (async (): Promise<
+				{ ok: true } | { ok: false; changed: boolean; message: string }
+			> => {
+				try {
+					const removed = await writing(() => table.delete(reviewed));
+					if (removed.error !== null)
+						return {
+							ok: false,
+							changed: removed.error.name === 'Conflict',
+							message: removed.error.message,
+						};
+					await drop(reviewed.path);
+					entries = entries.filter((entry) => entry.path !== reviewed.path);
+					return { ok: true };
+				} catch (cause) {
+					return { ok: false, changed: false, message: describe(cause) };
+				}
+			})().finally(() => {
+				removing = undefined;
+			});
+			return removing;
 		},
 
-		/** Raw file access for the import, counted as this page's writes. */
-		importFiles: {
-			read: (path: string) => folder.files.read(path),
-			create: (path: string, content: string | Uint8Array) =>
-				writing(() => folder.files.create(path, content)),
-			replace: (file: FileCapture, content: string | Uint8Array) =>
-				writing(() => folder.files.replace(file, content)),
+		/** Import the whole export, including its report, receipt, and fresh listing. */
+		importLegacy(bundle: LegacyBundle): Promise<ImportReport> {
+			if (closing || settling)
+				return Promise.reject(new Error('Capture is finishing its saves.'));
+			if (importing) return importing;
+			importing = (async () => {
+				const report = await runLegacyImport(
+					{
+						read: (path: string) => folder.files.read(path),
+						create: (path: string, content: string | Uint8Array) =>
+							writing(() => folder.files.create(path, content)),
+						replace: (file: FileCapture, content: string | Uint8Array) =>
+							writing(() => folder.files.replace(file, content)),
+					},
+					bundle,
+				);
+				await refresh();
+				return report;
+			})().finally(() => {
+				importing = undefined;
+			});
+			return importing;
 		},
 		commit: () => folder.git.commit(),
 
 		/**
-		 * Save every draft that can be saved. Resolves how many things are still
+		 * Wait for submitted actions and save every draft that can be saved.
+		 * Resolves how many things are still
 		 * unsettled, which is what quitting would lose.
 		 */
-		async settleAll(): Promise<number> {
-			await Promise.all([...drafts.values()].map((draft) => draft.settle()));
-			return unsettledDrafts().length + (newCapture === '' ? 0 : 1);
-		},
-		close() {
-			stopGit();
-			for (const draft of drafts.values()) draft.dispose();
+		settleAll,
+		/** Finish intended saves before the page releases its folder. Explicit
+		 * discard waits only for submitted actions and drops later draft input. */
+		close(options: { discard?: boolean } = {}): Promise<void> {
+			if (closing) return closing;
+			closing = (async () => {
+				try {
+					if (options.discard) {
+						await Promise.allSettled([
+							creating,
+							importing,
+							copying,
+							removing,
+							discarding,
+							...[...drafts.values()].map((draft) => draft.dispose()),
+						]);
+					} else await settleAll();
+					await refreshing;
+				} finally {
+					stopGit();
+					for (const draft of drafts.values()) draft.dispose();
+				}
+			})();
+			return closing;
 		},
 	};
 }

@@ -6,9 +6,10 @@
  * automatic commit attempt when the folder's history policy says so.
  *
  * Closing fences new file work and history requests and stops network work
- * at once. Saves that were already admitted then finish, without starting a
- * commit. History work that was already running finishes, and storage is
- * released last. Closing makes no last commit.
+ * at once. Each file operation owns its completion promise. Closing does not wait
+ * for file helpers; storage applications already started return their actual
+ * outcome. History work drains before storage is released. Closing makes no
+ * last commit.
  */
 import type {
 	CreateRowOf,
@@ -18,28 +19,17 @@ import type {
 } from '@epicenter/definition';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
-	type BatchReceipt,
 	type BatchChange,
+	type BatchReceipt,
 	checkRowDestinations,
 	collectBatch,
 	type FolderBatch,
 	receiptOf,
 	toChange,
 } from './batch.js';
-import type {
-	FileBoundary,
-	FileChange,
-	FileWriteIntent,
-	FileListing,
-	FileRead,
-} from './boundary.js';
-import {
-	type ApplyError,
-	type BatchError,
-	FileError,
-	type FileStep,
-	type TableWriteError,
-} from './errors.js';
+import type { FolderStorage } from './boundary.js';
+import { type BatchError, FileError, type TableWriteError } from './errors.js';
+import { createFiles, type FolderFiles } from './files.js';
 import type { GitRemote, PathStatus } from './git/backend.js';
 import type {
 	CommitAndPushResult,
@@ -48,24 +38,16 @@ import type {
 	FilesObservation,
 	GitError,
 	GitSnapshot,
-	History,
 	PullError,
 	PullOutcome,
 	PushOutcome,
 } from './git/history.js';
 import type { Author, CommitSummary } from './git/objects.js';
-import { createFileKv, type FileKv } from './kv.js';
+import { createKv, type FileKv } from './kv.js';
 import { callObserver } from './observer.js';
-import { createFileTable, type FileTable } from './table.js';
-import type { FolderTerminal, TerminalResult } from './terminal.js';
-import {
-	type CapturedFile,
-	captureProblem,
-	hashBytes,
-	type FileCapture,
-	fileCapture,
-	ownBytes,
-} from './capture.js';
+import { fenceStorage } from './storage.js';
+import { createTable, type FileTable } from './table.js';
+import type { FolderTerminal } from './terminal.js';
 
 /** History settings for a folder whose history this process records. */
 export type FolderGitOptions = {
@@ -78,53 +60,6 @@ export type FolderGitOptions = {
 	 * a remote is configured. Fixed for this handle's lifetime. Default `true`.
 	 */
 	readonly commitOnEdit?: boolean;
-};
-
-/**
- * Ordinary files at literal folder-relative paths (ADR-0479).
- *
- * The verb states the condition a save publishes under. Strings are saved as
- * UTF-8 with nothing added or normalized; byte arrays are copied when the
- * method is called and saved exactly. A successful save returns a new
- * capture of the bytes it was given: nothing is read back, and the capture
- * that was passed in never changes.
- */
-export type FolderFiles = {
-	list(): Promise<Result<FileListing, FileError>>;
-	children(
-		directory: string,
-	): Promise<Result<{ files: string[]; directories: string[] }, FileError>>;
-	/** The file's bytes, detached from storage, with the capture that identifies them. */
-	read(path: string): Promise<Result<CapturedFile, FileError>>;
-	/** Stable bytes for consumption (ADR-0466). */
-	open(path: string): Promise<Result<Blob, FileError>>;
-	/** Save a new file. Refused when anything is already at the path. */
-	create(
-		path: string,
-		content: string | Uint8Array,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
-	/** Save over the captured file. Refused when its bytes are no longer the captured ones. */
-	replace(
-		file: FileCapture,
-		content: string | Uint8Array,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
-	/** Remove the captured file. Refused when its bytes are no longer the captured ones. */
-	remove(file: FileCapture): Promise<Result<undefined, FileError | ApplyError>>;
-	/**
-	 * Move the captured file to an unoccupied path. The returned capture is the
-	 * same content hash at the destination.
-	 */
-	move(
-		file: FileCapture,
-		destination: string,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
-	/** Save at the path whatever is there, as a shell redirection does. */
-	overwrite(
-		path: string,
-		content: string | Uint8Array,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
-	mkdir(path: string): Promise<Result<undefined, FileError>>;
-	rmdir(path: string): Promise<Result<undefined, FileError>>;
 };
 
 export type FolderGit = {
@@ -180,7 +115,7 @@ export type FolderAccess<TDefinition extends DataDefinition> = {
 	readonly files: FolderFiles;
 	readonly git: FolderGit;
 	/**
-	 * Publish several mutations as one admission, one application, and one
+	 * Publish several mutations as one application and one
 	 * history request (ADR-0482).
 	 *
 	 * The callback runs once, synchronously, and returns `undefined`. It only
@@ -231,85 +166,16 @@ export type Folder<TDefinition extends DataDefinition> =
 		terminal(options?: { cwd?: string }): FolderTerminal;
 		/** Aborts when closing starts. */
 		readonly signal: AbortSignal;
+		/**
+		 * Fence the next storage call and drain owned Git work before release.
+		 * Await each file operation that must finish before closing; close does
+		 * not wait for file helpers or their publication replies.
+		 */
 		close(): Promise<void>;
 	};
 
-/**
- * The file access a folder's tables, KV, and raw files need. `capture` is not
- * part of it: only a history that builds commits in this process captures.
- */
-export type FolderBoundary = Omit<FileBoundary, 'capture'>;
-
-/**
- * What a folder needs from its history. `createHistory` provides it for a
- * browser or Bun folder. A folder whose owner records history itself provides
- * the same observations and requests with `noteEdit` and
- * `requestAutomaticCommit` doing nothing, because that owner already knows
- * about every save it publishes.
- */
-export type FolderHistory = Pick<
-	History,
-	| 'snapshot'
-	| 'subscribe'
-	| 'noteEdit'
-	| 'requestAutomaticCommit'
-	| 'status'
-	| 'commit'
-	| 'commitAndPush'
-	| 'push'
-	| 'fetch'
-	| 'pullFastForward'
-	| 'paths'
-	| 'stage'
-	| 'commitStaged'
-	| 'diff'
-	| 'log'
-	| 'beginClose'
-	| 'close'
->;
-
-/** How content saves publish: through the folder's admitted file boundary. */
-export type FolderContext = {
-	readonly boundary: FolderBoundary;
-	/** Runs admitted work; refuses after the folder starts closing. */
-	admit<T, E>(
-		work: () => Promise<Result<T, E>>,
-	): Promise<Result<T, E | FileError>>;
-	/**
-	 * Publish a content operation and invalidate observations for any landed
-	 * changes. Only a complete operation requests an automatic commit.
-	 */
-	publish: FileBoundary['apply'];
-};
-
-/**
- * What the shell is given: the same files and history as the app, with the
- * condition of each save chosen by the shell. A redirection overwrites and
- * `rm` removes whatever is there, which the public file verbs never do
- * without a capture.
- */
-export type ShellAccess = {
-	readonly files: {
-		list: FolderFiles['list'];
-		children: FolderFiles['children'];
-		read(path: string): Promise<Result<FileRead, FileError>>;
-		write(
-			change: FileWriteIntent,
-		): Promise<Result<string, FileError | ApplyError>>;
-		remove(
-			path: string,
-			expectedSha256?: string,
-		): Promise<Result<undefined, FileError | ApplyError>>;
-		move(
-			from: string,
-			to: string,
-			expectedSha256?: string,
-		): Promise<Result<undefined, FileError | ApplyError>>;
-		mkdir: FolderFiles['mkdir'];
-		rmdir: FolderFiles['rmdir'];
-	};
-	readonly git: FolderGit;
-};
+/** The history observations and requests the handle exposes. */
+export type FolderHistory = FolderGit & { close(): Promise<void> };
 
 /** File-change hints for one opened folder. */
 export type FileHints = {
@@ -364,65 +230,6 @@ export function createFileHints(
 	};
 }
 
-const stepPaths = (step: FileStep | FileChange): string[] =>
-	step.kind === 'move' ? [step.from, step.to] : [step.path];
-
-/**
- * Admission and publication over one boundary and history. `signal` fences
- * new work; `settled` resolves once everything admitted before then finished.
- */
-export function createFolderContext({
-	boundary,
-	history,
-	signal,
-	landed,
-}: {
-	boundary: FolderBoundary;
-	history: Pick<FolderHistory, 'noteEdit' | 'requestAutomaticCommit'>;
-	signal: AbortSignal;
-	/** Paths a publication reached, whether it completed or stopped partway. */
-	landed: (paths: readonly string[]) => void;
-}): FolderContext & { settled(): Promise<void> } {
-	const admitted = new Set<Promise<unknown>>();
-	return {
-		boundary,
-		admit<T, E>(
-			work: () => Promise<Result<T, E>>,
-		): Promise<Result<T, E | FileError>> {
-			if (signal.aborted) return Promise.resolve(FileError.Closed());
-			const completion = Promise.withResolvers<Result<T, E | FileError>>();
-			const running = completion.promise;
-			admitted.add(running);
-			// The caller owns the rejection; cleanup must not create a second one.
-			void running.catch(() => {}).finally(() => admitted.delete(running));
-			// Admitted before `work` is called. `work` runs up to its first wait
-			// right here, and that part may call back into code that closes the
-			// folder; closing must already find this work to wait for.
-			try {
-				work().then(completion.resolve, completion.reject);
-			} catch (cause) {
-				completion.reject(cause);
-			}
-			return running;
-		},
-		async publish(changes) {
-			const result = await boundary.apply(changes);
-			if (result.error === null) {
-				history.noteEdit();
-				history.requestAutomaticCommit();
-				landed(changes.flatMap(stepPaths));
-			} else if (result.error.name === 'Partial') {
-				history.noteEdit();
-				landed(result.error.applied.flatMap(stepPaths));
-			}
-			return result;
-		},
-		async settled() {
-			await Promise.allSettled([...admitted]);
-		},
-	};
-}
-
 function createFolderGit(history: FolderHistory): FolderGit {
 	return Object.freeze({
 		get snapshot() {
@@ -443,74 +250,35 @@ function createFolderGit(history: FolderHistory): FolderGit {
 	} satisfies FolderGit);
 }
 
-function createShellAccess(
-	context: FolderContext,
-	git: FolderGit,
-): ShellAccess {
-	const { boundary, admit } = context;
-	return {
-		files: {
-			list: () => admit(() => boundary.list()),
-			children: (directory) => admit(() => boundary.children(directory)),
-			read: (path) => admit(() => boundary.read(path)),
-			write: (change) => {
-				const intent = { ...change, bytes: ownBytes(change.bytes) };
-				return admit(async () => {
-					const sha256 = await hashBytes(intent.bytes);
-					const applied = await context.publish([{ ...intent, sha256 }]);
-					return applied.error ? applied : Ok(sha256);
-				});
-			},
-			remove: (path, expectedSha256) =>
-				admit(() =>
-					context.publish([{ kind: 'remove', path, expectedSha256 }]),
-				),
-			move: (from, to, expectedSha256) =>
-				admit(() =>
-					context.publish([{ kind: 'move', from, to, expectedSha256 }]),
-				),
-			mkdir: (path) => admit(() => boundary.mkdir(path)),
-			rmdir: (path) => admit(() => boundary.rmdir(path)),
-		},
-		git,
-	};
-}
-
-/**
- * The terminal every folder has, over its own shell access. The shell
- * implementation is loaded when the first command runs. Commands run one at
- * a time and stop at their next step once `signal` aborts. A command holds
- * nothing between its steps: each is admitted like any other file or Git
- * call, so other writers can land in between.
- */
+/** Load one terminal per caller; the terminal owns command ordering. */
 function createLocalTerminal(
-	shell: ShellAccess,
-	signal: AbortSignal,
+	{
+		storage,
+		git,
+		signal,
+	}: { storage: FolderStorage; git: FolderGit; signal: AbortSignal },
 	{ cwd = '/' }: { cwd?: string } = {},
 ): FolderTerminal {
 	let terminal: FolderTerminal | undefined;
-	let tail: Promise<unknown> = Promise.resolve();
+	let loading: Promise<FolderTerminal> | undefined;
 	return {
 		get cwd() {
 			return terminal?.cwd ?? cwd;
 		},
-		exec(command, options) {
-			const running = tail.then(async (): Promise<TerminalResult> => {
-				if (signal.aborted)
-					return { stdout: '', stderr: 'The folder is closed\n', exitCode: 1 };
-				terminal ??= (await import('./terminal.js')).createFolderTerminal(
-					shell,
-					{ cwd },
-				);
-				return terminal.exec(command, {
-					signal:
-						options?.signal === undefined
-							? signal
-							: AbortSignal.any([signal, options.signal]),
-				});
+		async exec(command, options) {
+			if (signal.aborted)
+				return { stdout: '', stderr: 'The folder is closed\n', exitCode: 1 };
+			loading ??= import('./terminal.js').then(({ createTerminal }) => {
+				terminal = createTerminal({ storage, git }, { cwd });
+				return terminal;
 			});
-			tail = running.catch(() => {});
-			return running;
+			const loaded = await loading;
+			return loaded.exec(command, {
+				signal:
+					options?.signal === undefined
+						? signal
+						: AbortSignal.any([signal, options.signal]),
+			});
 		},
 	};
 }
@@ -522,154 +290,57 @@ function createLocalTerminal(
  */
 export function assembleFolder<TDefinition extends DataDefinition>({
 	compiled,
-	boundary,
+	storage: suppliedStorage,
 	history,
 	location,
 	hints,
-	announcePublications,
 	release,
 }: {
 	compiled: ParsedDataDefinition;
-	boundary: FolderBoundary;
+	storage: FolderStorage;
 	history: FolderHistory;
 	location: FolderLocation;
 	hints: FileHints;
-	/**
-	 * Whether this handle announces the paths its own saves reach. False when
-	 * the storage owner announces every change itself.
-	 */
-	announcePublications: boolean;
-	/** Releases storage after all work settles. */
+	/** Releases this attachment after owned Git work settles. */
 	release: () => Promise<void>;
 }): Folder<TDefinition> {
 	const controller = new AbortController();
 	let closing: Promise<void> | undefined;
 
-	const context = createFolderContext({
-		boundary,
-		history,
-		signal: controller.signal,
-		landed: announcePublications ? (paths) => hints.emit(paths) : () => {},
-	});
-	const { admit } = context;
-
+	const storage = fenceStorage(suppliedStorage, controller.signal);
 	const tables: Record<string, FileTable<unknown>> = {};
-	for (const [name, parsed] of compiled.tables)
-		tables[name] = createFileTable<unknown>(name, parsed, context);
-
-	/** Publish one write and return the capture of the bytes that were given. */
-	function save(
-		intent: FileWriteIntent,
-	): Promise<Result<FileCapture, FileError | ApplyError>> {
-		return admit(async () => {
-			const sha256 = await hashBytes(intent.bytes);
-			const applied = await context.publish([{ ...intent, sha256 }]);
-			return applied.error ? applied : Ok(fileCapture(intent.path, sha256));
-		});
-	}
-
-	function refusedCapture(file: FileCapture) {
-		const problem = captureProblem(file);
-		return problem === undefined
-			? undefined
-			: FileError.InvalidPath({
-					path: String((file as { path?: unknown } | null)?.path ?? ''),
-					reason: problem,
-				});
-	}
-
-	const files: FolderFiles = {
-		list: () => admit(() => boundary.list()),
-		children: (directory) => admit(() => boundary.children(directory)),
-		read: (path) =>
-			admit(async () => {
-				const read = await boundary.read(path);
-				if (read.error) return read;
-				return Ok(
-					Object.freeze({
-						...fileCapture(path, read.data.sha256),
-						bytes: read.data.bytes,
-					}),
-				);
-			}),
-		open: (path) => admit(() => boundary.open(path)),
-		create: (path, content) =>
-			save({ kind: 'create', path, bytes: ownBytes(content) }),
-		replace: (file, content) => {
-			const refused = refusedCapture(file);
-			if (refused) return Promise.resolve(refused);
-			// The baseline is fixed here: the capture's own hash, copied.
-			const { path, sha256 } = fileCapture(file.path, file.sha256);
-			return save({
-				kind: 'replace',
-				path,
-				bytes: ownBytes(content),
-				expectedSha256: sha256,
-			});
-		},
-		remove: (file) => {
-			const refused = refusedCapture(file);
-			if (refused) return Promise.resolve(refused);
-			const { path, sha256 } = fileCapture(file.path, file.sha256);
-			return admit(() =>
-				context.publish([{ kind: 'remove', path, expectedSha256: sha256 }]),
-			);
-		},
-		move: (file, destination) => {
-			const refused = refusedCapture(file);
-			if (refused) return Promise.resolve(refused);
-			const { path, sha256 } = fileCapture(file.path, file.sha256);
-			return admit(async () => {
-				const applied = await context.publish([
-					{ kind: 'move', from: path, to: destination, expectedSha256: sha256 },
-				]);
-				// A move carries the captured bytes, so their hash is the capture's.
-				return applied.error ? applied : Ok(fileCapture(destination, sha256));
-			});
-		},
-		overwrite: (path, content) =>
-			save({ kind: 'overwrite', path, bytes: ownBytes(content) }),
-		mkdir: (path) => admit(() => boundary.mkdir(path)),
-		rmdir: (path) => admit(() => boundary.rmdir(path)),
-	};
-
+	for (const [name, definition] of compiled.tables)
+		tables[name] = createTable<unknown>({ storage }, { name, definition });
+	const files = createFiles({ storage });
 	const git = createFolderGit(history);
-	const shell = createShellAccess(context, git);
 
 	return Object.freeze({
 		tables: Object.freeze(tables) as Folder<TDefinition>['tables'],
-		kv: createFileKv(compiled.kv, context) as Folder<TDefinition>['kv'],
-		files: Object.freeze(files),
+		kv: createKv(
+			{ storage },
+			{ definition: compiled.kv },
+		) as Folder<TDefinition>['kv'],
+		files,
 		git,
-		batch: (collect) =>
-			// The callback runs here, inside the one admission, before anything
-			// is awaited. A closed folder never calls it.
-			admit(
-				async (): Promise<
-					Result<BatchReceipt, BatchError | TableWriteError>
-				> => {
-					const collected = collectBatch<TDefinition>(compiled, collect);
-					if (collected.error) return collected;
-					if (collected.data.length === 0) return Ok(receiptOf([]));
-					// Typed rows are checked against their directories before
-					// anything is published, so a refusal here wrote nothing.
-					const destinations = await checkRowDestinations(
-						collected.data,
-						boundary,
-					);
-					if (destinations.error) return destinations;
-					const changes: BatchChange[] = [];
-					for (const intent of collected.data)
-						changes.push(await toChange(intent));
-					const applied = await context.publish(changes);
-					if (applied.error) return applied;
-					return Ok(receiptOf(changes));
-				},
-			),
+		async batch(collect) {
+			if (controller.signal.aborted) return FileError.Closed();
+			const collected = collectBatch<TDefinition>(compiled, collect);
+			if (collected.error) return collected;
+			if (collected.data.length === 0) return Ok(receiptOf([]));
+			// Typed rows are checked against their directories before
+			// anything is published, so a refusal here wrote nothing.
+			const destinations = await checkRowDestinations(collected.data, storage);
+			if (destinations.error) return destinations;
+			const changes: BatchChange[] = [];
+			for (const intent of collected.data) changes.push(await toChange(intent));
+			const applied = await storage.apply(changes);
+			if (applied.error) return applied;
+			return Ok(receiptOf(changes));
+		},
 		location: Object.freeze(location),
 		onFilesChanged: (listener) => hints.subscribe(listener),
 		terminal: (options) =>
-			createLocalTerminal(shell, controller.signal, options),
+			createLocalTerminal({ storage, git, signal: controller.signal }, options),
 		signal: controller.signal,
 		close() {
 			if (closing !== undefined) return closing;
@@ -681,10 +352,6 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 				// Fence new file work, stop hints, and cancel network work now.
 				controller.abort();
 				hints.close();
-				history.beginClose();
-				// Saves admitted before the fence finish and start no commit; then
-				// history waits for whatever of its own work was already running.
-				await context.settled();
 				await history.close();
 				await release();
 			})().then(completion.resolve, completion.reject);

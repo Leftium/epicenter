@@ -21,7 +21,9 @@ import {
 	type IFileSystem,
 } from 'just-bash';
 import type { ApplyError, FileError } from './errors.js';
-import type { ShellAccess } from './folder.js';
+import type { FolderStorage } from './boundary.js';
+import { hashBytes, ownBytes } from './capture.js';
+import type { FolderGit } from './folder.js';
 
 export type TerminalResult = {
 	readonly stdout: string;
@@ -102,8 +104,8 @@ function fail(error: FileError | ApplyError): never {
 	throw new ShellFailure(error.message, code);
 }
 
-export function createFolderTerminal(
-	folder: ShellAccess,
+export function createTerminal(
+	{ storage, git }: { storage: FolderStorage; git: FolderGit },
 	{ cwd: initialCwd = '/' }: { cwd?: string } = {},
 ): FolderTerminal {
 	let cwd = initialCwd;
@@ -113,7 +115,7 @@ export function createFolderTerminal(
 	const observed = new Map<string, string>();
 
 	async function refresh() {
-		const listing = await folder.files.list();
+		const listing = await storage.list();
 		if (listing.error) fail(listing.error);
 		files = new Map(listing.data.files.map((file) => [file.path, file.size]));
 		directories = new Set(['', ...listing.data.directories]);
@@ -139,7 +141,7 @@ export function createFolderTerminal(
 
 	async function readBytes(path: string): Promise<Uint8Array> {
 		const name = relative(path);
-		const read = await folder.files.read(name);
+		const read = await storage.read(name);
 		if (read.error) fail(read.error);
 		observed.set(name, read.data.sha256);
 		return read.data.bytes;
@@ -147,18 +149,18 @@ export function createFolderTerminal(
 
 	async function writeBytes(path: string, content: string | Uint8Array) {
 		const name = relative(path);
-		const bytes =
-			typeof content === 'string' ? new TextEncoder().encode(content) : content;
+		const bytes = ownBytes(content);
 		// A rewrite of bytes this command read is conditional; otherwise the
 		// shell deliberately overwrites or creates the path.
 		const expectedSha256 = observed.get(name);
-		const written = await folder.files.write(
+		const sha256 = await hashBytes(bytes);
+		const written = await storage.apply([
 			expectedSha256 === undefined
-				? { kind: 'overwrite', path: name, bytes }
-				: { kind: 'replace', path: name, bytes, expectedSha256 },
-		);
+				? { kind: 'overwrite', path: name, bytes, sha256 }
+				: { kind: 'replace', path: name, bytes, sha256, expectedSha256 },
+		]);
 		if (written.error) fail(written.error);
-		observed.set(name, written.data);
+		observed.set(name, sha256);
 		await refresh();
 	}
 
@@ -222,21 +224,21 @@ export function createFolderTerminal(
 				if (options?.recursive) return;
 				throw new ShellFailure(`File exists: ${path}`, 'EEXIST');
 			}
-			const made = await folder.files.mkdir(name);
+			const made = await storage.mkdir(name);
 			if (made.error) fail(made.error);
 			await refresh();
 		},
 		async readdir(path) {
 			if (!isDirectory(path))
 				throw new ShellFailure(`Not a directory: ${path}`, 'ENOTDIR');
-			const listed = await folder.files.children(relative(path));
+			const listed = await storage.children(relative(path));
 			if (listed.error) fail(listed.error);
 			return [...listed.data.directories, ...listed.data.files].sort();
 		},
 		async rm(path, options) {
 			const name = relative(path);
 			if (isFile(path)) {
-				const removed = await folder.files.remove(name, observed.get(name));
+				const removed = await storage.apply([{ kind: 'remove', path: name, expectedSha256: observed.get(name) }]);
 				if (removed.error) fail(removed.error);
 				observed.delete(name);
 				await refresh();
@@ -259,11 +261,11 @@ export function createFolderTerminal(
 			)
 				throw new ShellFailure(`Directory not empty: ${path}`, 'ENOTEMPTY');
 			for (const file of nestedFiles) {
-				const removed = await folder.files.remove(file, observed.get(file));
+				const removed = await storage.apply([{ kind: 'remove', path: file, expectedSha256: observed.get(file) }]);
 				if (removed.error) fail(removed.error);
 			}
 			for (const directory of [...nestedDirectories, name]) {
-				const removed = await folder.files.rmdir(directory);
+				const removed = await storage.rmdir(directory);
 				// Directories derived only from files disappear with their files.
 				if (removed.error && removed.error.name !== 'NotFound')
 					fail(removed.error);
@@ -293,7 +295,7 @@ export function createFolderTerminal(
 			const from = relative(source);
 			const to = relative(destination);
 			if (isFile(source)) {
-				const moved = await folder.files.move(from, to, observed.get(from));
+				const moved = await storage.apply([{ kind: 'move', from, to, expectedSha256: observed.get(from) }]);
 				if (moved.error) fail(moved.error);
 				await refresh();
 				return;
@@ -327,7 +329,7 @@ export function createFolderTerminal(
 	};
 
 	const gitCommand = defineCommand('git', async (args, context) =>
-		runGit(folder, args, (path) =>
+		runGit(git, args, (path) =>
 			relative(context.fs.resolvePath(context.cwd, path)),
 		),
 	);
@@ -377,7 +379,7 @@ const short = (oid: string | undefined) =>
 	oid === undefined ? '(none)' : oid.slice(0, 7);
 
 async function runGit(
-	folder: ShellAccess,
+	git: FolderGit,
 	args: string[],
 	toPath: (path: string) => string,
 ): Promise<TerminalResult> {
@@ -400,9 +402,9 @@ async function runGit(
 			);
 			if (unsupported.length > 0)
 				return error(`git status: unsupported option ${unsupported[0]}`, 129);
-			const paths = await folder.git.paths();
+			const paths = await git.paths();
 			if (paths.error) return error(paths.error.message);
-			const snapshot = folder.git.snapshot;
+			const snapshot = git.snapshot;
 			const sync =
 				snapshot.sync.state === 'observed' ? snapshot.sync.value : undefined;
 			let header = `## ${snapshot.branch}`;
@@ -433,7 +435,7 @@ async function runGit(
 					return error(`git diff: unsupported option ${arg}`, 129);
 				else paths.push(toPath(arg));
 			}
-			const diff = await folder.git.diff({
+			const diff = await git.diff({
 				staged,
 				paths: paths.map((path) => path || '.'),
 			});
@@ -455,11 +457,11 @@ async function runGit(
 			}
 			if (!Number.isInteger(depth) || depth < 1)
 				return error('git log: invalid count', 129);
-			const log = await folder.git.log(depth);
+			const log = await git.log(depth);
 			if (log.error) return error(log.error.message);
 			if (log.data.length === 0)
 				return error(
-					`fatal: your current branch '${folder.git.snapshot.branch}' does not have any commits yet`,
+					`fatal: your current branch '${git.snapshot.branch}' does not have any commits yet`,
 					128,
 				);
 			if (oneline)
@@ -500,7 +502,7 @@ async function runGit(
 				else paths.push(toPath(arg));
 			}
 			const target = all || paths.includes('') ? 'all' : paths;
-			const staged = await folder.git.stage(target);
+			const staged = await git.stage(target);
 			if (staged.error) return error(`fatal: ${staged.error.message}`, 128);
 			return ok('');
 		}
@@ -528,7 +530,7 @@ async function runGit(
 					'git commit: a message is required: git commit -m <message>',
 					129,
 				);
-			const committed = await folder.git.commitStaged(messages.join('\n\n'));
+			const committed = await git.commitStaged(messages.join('\n\n'));
 			if (committed.error) {
 				if (committed.error.name === 'NothingToCommit')
 					return error('nothing added to commit', 1);
@@ -536,7 +538,7 @@ async function runGit(
 			}
 			const subject = messages[0]!.split('\n')[0];
 			return ok(
-				`[${folder.git.snapshot.branch} ${short(committed.data.oid)}] ${subject}\n`,
+				`[${git.snapshot.branch} ${short(committed.data.oid)}] ${subject}\n`,
 			);
 		}
 		case 'push': {
@@ -545,11 +547,11 @@ async function runGit(
 					'git push: arguments are not supported; the folder pushes its branch to its configured remote',
 					129,
 				);
-			const pushed = await folder.git.push();
+			const pushed = await git.push();
 			switch (pushed.status) {
 				case 'pushed':
 					return ok(
-						`To ${folder.git.snapshot.remote?.url}\n   ${short(pushed.oid)} -> ${folder.git.snapshot.remote?.branch}\n`,
+						`To ${git.snapshot.remote?.url}\n   ${short(pushed.oid)} -> ${git.snapshot.remote?.branch}\n`,
 					);
 				case 'noRemote':
 					return error('fatal: No configured push destination.', 128);
@@ -576,9 +578,9 @@ async function runGit(
 					'git fetch: arguments are not supported; the folder fetches its configured remote branch',
 					129,
 				);
-			const fetched = await folder.git.fetch();
+			const fetched = await git.fetch();
 			if (fetched.error) return error(fetched.error.message);
-			const remote = folder.git.snapshot.remote;
+			const remote = git.snapshot.remote;
 			if (fetched.data.oid === undefined)
 				return ok(`The remote has no ${remote?.branch} branch yet\n`);
 			return ok(
@@ -591,9 +593,9 @@ async function runGit(
 				rest.some((arg) => arg !== '--ff-only')
 			)
 				return error('git pull: only `git pull --ff-only` is supported', 129);
-			const fetched = await folder.git.fetch();
+			const fetched = await git.fetch();
 			if (fetched.error) return error(fetched.error.message);
-			const pulled = await folder.git.pullFastForward();
+			const pulled = await git.pullFastForward();
 			if (pulled.error) return error(`fatal: ${pulled.error.message}`, 128);
 			switch (pulled.data.status) {
 				case 'upToDate':
@@ -617,7 +619,7 @@ async function runGit(
 		case 'help':
 		case '--help':
 			return ok(
-				`Supported: git status, git diff [--cached] [paths], git log [-n N] [--oneline]${folder.git.snapshot.commitOnEdit ? '' : ', git add <paths>|-A, git commit -m <message>'}, git push, git fetch, git pull --ff-only\n`,
+				`Supported: git status, git diff [--cached] [paths], git log [-n N] [--oneline]${git.snapshot.commitOnEdit ? '' : ', git add <paths>|-A, git commit -m <message>'}, git push, git fetch, git pull --ff-only\n`,
 			);
 		default:
 			return error(

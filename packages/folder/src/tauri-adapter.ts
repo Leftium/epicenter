@@ -15,9 +15,8 @@
  * window without permission, an unknown folder, or another protocol version
  * is returned as the refusal it is. Nothing here opens browser storage.
  *
- * Closing the handle detaches this page. It does not close the folder: saves
- * the page already made still land, a commit the owner already admitted still
- * finishes, and other windows carry on. Closing commits nothing: a save whose
+ * Closing the handle detaches this page. File operations return their own
+ * outcomes. A commit the owner already admitted finishes, and other windows carry on. Closing commits nothing: a save whose
  * automatic attempt the owner skipped stays uncommitted.
  *
  * Nothing holds the folder between two commands. The terminal is the same
@@ -34,7 +33,7 @@
 
 import { isTauri } from '@tauri-apps/api/core';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { FileChange, FileRead } from './boundary.js';
+import type { FileChange, FileRead, FolderStorage } from './boundary.js';
 import type { OpenFolder } from './contract.js';
 import { compileFolderDefinition } from './definition.js';
 import {
@@ -47,7 +46,6 @@ import {
 import {
 	assembleFolder,
 	createFileHints,
-	type FolderBoundary,
 	type FolderHistory,
 } from './folder.js';
 import type { StatusCode } from './git/backend.js';
@@ -391,7 +389,7 @@ function changeToWire(change: FileChange): WireFileChange {
 	}
 }
 
-function createBoundary(session: number): FolderBoundary {
+function createBoundary(session: number): FolderStorage {
 	const unsent = (path: string, operation: string, cause: unknown) =>
 		FileError.Io({ path, operation, cause });
 
@@ -525,8 +523,8 @@ function until<T>(
 
 /**
  * History as the shell's owner reports it. The owner marks its own saves and
- * makes each one's single automatic commit attempt itself, so `noteEdit` and
- * `requestAutomaticCommit` have nothing to do.
+ * makes each one's single automatic commit attempt itself. The page exposes
+ * history commands without repeating the owner's save accounting.
  */
 function createHistory(
 	session: number,
@@ -656,8 +654,6 @@ function createHistory(
 			return snapshots.current;
 		},
 		subscribe: (listener) => snapshots.subscribe(listener),
-		noteEdit() {},
-		requestAutomaticCommit() {},
 		status: () =>
 			observe(
 				'status',
@@ -758,7 +754,6 @@ function createHistory(
 				() => commands.log(session, depth),
 				(log) => log,
 			),
-		beginClose: () => client.fence(),
 		close: () => client.close(),
 	};
 }
@@ -789,7 +784,6 @@ type Client = {
 		signal: AbortSignal | undefined,
 		work: (leaving: AbortSignal) => Promise<T>,
 	): Promise<T>;
-	fence(): void;
 	close(): Promise<void>;
 };
 
@@ -814,7 +808,6 @@ function createClient(): Client {
 					: AbortSignal.any([controller.signal, signal]);
 			return until(work(leaving), leaving, stopped);
 		},
-		fence: () => controller.abort(),
 		close() {
 			closing ??= (async () => {
 				controller.abort();
@@ -950,14 +943,13 @@ export const openFolder: OpenFolder = async ({
 	return Ok(
 		assembleFolder<typeof definition>({
 			compiled: compiled.data,
-			boundary: createBoundary(session),
+			storage: createBoundary(session),
 			// Closing the folder fences `client` through this history: Git calls
 			// are refused, and running local ones are waited for, before
 			// `release` detaches the session they use.
 			history: createHistory(session, snapshots, client),
 			location: { kind: 'directory', root },
 			hints,
-			announcePublications: false,
 			// Detaches this window only. The owner keeps the folder, finishes the
 			// work it already admitted for this page, and serves every other
 			// window.

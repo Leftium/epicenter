@@ -16,13 +16,20 @@
 import type { ParsedTable } from '@epicenter/definition';
 import { customAlphabet } from 'nanoid';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import type { FolderStorage } from './boundary.js';
+import {
+	captureProblem,
+	type FileCapture,
+	fileCapture,
+	hashBytes,
+	type TextCapture,
+} from './capture.js';
 import {
 	FileError,
 	TableError,
 	type TableReadError,
 	type TableWriteError,
 } from './errors.js';
-import type { FolderContext } from './folder.js';
 import { composeSource, patchSource, readSource } from './markdown.js';
 import {
 	collisionKey,
@@ -32,13 +39,6 @@ import {
 	rowStemOf,
 	stemProblem,
 } from './paths.js';
-import {
-	captureProblem,
-	hashBytes,
-	type FileCapture,
-	type TextCapture,
-	fileCapture,
-} from './capture.js';
 
 export type EntryIssue =
 	| { readonly kind: 'filename'; readonly message: string }
@@ -195,10 +195,10 @@ export function prepareRow(
 
 /** The filenames directly in a table's directory; none when it does not exist yet. */
 export async function tableFilenames(
-	boundary: Pick<FolderContext['boundary'], 'children'>,
+	storage: Pick<FolderStorage, 'children'>,
 	table: string,
 ): Promise<Result<string[], FileError>> {
-	const children = await boundary.children(table);
+	const children = await storage.children(table);
 	if (children.error) {
 		if (children.error.name === 'NotFound') return Ok([]);
 		return children;
@@ -231,12 +231,10 @@ export function destinationProblem(
 		: TableError.Collision({ path: destination, existing: collision });
 }
 
-export function createFileTable<TFields>(
-	name: string,
-	parsed: ParsedTable,
-	context: FolderContext,
+export function createTable<TFields>(
+	{ storage }: { storage: FolderStorage },
+	{ name, definition: parsed }: { name: string; definition: ParsedTable },
 ): FileTable<TFields> {
-	const { boundary } = context;
 	const declared = [...parsed.fields.keys()];
 
 	function interpret(
@@ -294,7 +292,7 @@ export function createFileTable<TFields>(
 		});
 	}
 
-	const directory = () => tableFilenames(boundary, name);
+	const directory = () => tableFilenames(storage, name);
 
 	async function publishSource(
 		entry: FileCapture,
@@ -303,7 +301,7 @@ export function createFileTable<TFields>(
 		const captured = fileCapture(entry.path, entry.sha256);
 		const bytes = encoder.encode(source);
 		const sha256 = await hashBytes(bytes);
-		const applied = await context.publish([
+		const applied = await storage.apply([
 			{
 				kind: 'replace',
 				path: captured.path,
@@ -350,7 +348,7 @@ export function createFileTable<TFields>(
 				stem,
 				reason: 'the stem contains a path separator',
 			});
-		const read = await boundary.read(path);
+		const read = await storage.read(path);
 		if (read.error) {
 			if (read.error.name === 'NotFound') return Ok(undefined);
 			return read;
@@ -363,164 +361,133 @@ export function createFileTable<TFields>(
 	return {
 		name,
 		async list() {
-			return context.admit(
-				async (): Promise<Result<TableListing<TFields>, TableReadError>> => {
-					const found = await directory();
-					if (found.error) return found;
-					const rows = found.data.filter((file) =>
-						file.endsWith(ROW_EXTENSION),
-					);
-					const reads = await boundary.readMany(
-						rows.map((file) => `${name}/${file}`),
-					);
-					if (reads.error) return reads;
-					const entries: Entry<TFields>[] = [];
-					const unreadable: {
-						path: string;
-						error: TableReadError | TableError;
-					}[] = [];
-					for (const [path, read] of reads.data) {
-						if (read.error) {
-							unreadable.push({ path, error: read.error });
-							continue;
-						}
-						const source = decode(read.data.bytes);
-						if (source === undefined) {
-							unreadable.push({
-								path,
-								error: TableError.InvalidUtf8({ path }).error,
-							});
-							continue;
-						}
-						entries.push(interpret(path, read.data.sha256, source));
-					}
-					return Ok({ entries, unreadable });
-				},
+			const found = await directory();
+			if (found.error) return found;
+			const rows = found.data.filter((file) => file.endsWith(ROW_EXTENSION));
+			const reads = await storage.readMany(
+				rows.map((file) => `${name}/${file}`),
 			);
+			if (reads.error) return reads;
+			const entries: Entry<TFields>[] = [];
+			const unreadable: {
+				path: string;
+				error: TableReadError | TableError;
+			}[] = [];
+			for (const [path, read] of reads.data) {
+				if (read.error) {
+					unreadable.push({ path, error: read.error });
+					continue;
+				}
+				const source = decode(read.data.bytes);
+				if (source === undefined) {
+					unreadable.push({
+						path,
+						error: TableError.InvalidUtf8({ path }).error,
+					});
+					continue;
+				}
+				entries.push(interpret(path, read.data.sha256, source));
+			}
+			return Ok({ entries, unreadable });
 		},
 		async get(stem) {
-			return context.admit(() => readEntry(stem));
+			return readEntry(stem);
 		},
 		async create(input) {
-			return context.admit(
-				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
-					const prepared = prepareRow(name, parsed, {
-						stem: input.stem ?? generateStem(),
-						fields: input.fields,
-						body: input.body,
-					});
-					if (prepared.error) return prepared;
-					const { path, source, bytes } = prepared.data;
-					const found = await directory();
-					if (found.error) return found;
-					const destination = destinationProblem(
-						name,
-						found.data,
-						path,
-						undefined,
-					);
-					if (destination.error) return destination;
-					const sha256 = await hashBytes(bytes);
-					const applied = await context.publish([
-						{ kind: 'create', path, bytes, sha256 },
-					]);
-					if (applied.error) return Err(applied.error);
-					return Ok(interpret(path, sha256, source));
-				},
-			);
+			const prepared = prepareRow(name, parsed, {
+				stem: input.stem ?? generateStem(),
+				fields: input.fields,
+				body: input.body,
+			});
+			if (prepared.error) return prepared;
+			const { path, source, bytes } = prepared.data;
+			const found = await directory();
+			if (found.error) return found;
+			const destination = destinationProblem(name, found.data, path, undefined);
+			if (destination.error) return destination;
+			const sha256 = await hashBytes(bytes);
+			const applied = await storage.apply([
+				{ kind: 'create', path, bytes, sha256 },
+			]);
+			if (applied.error) return Err(applied.error);
+			return Ok(interpret(path, sha256, source));
 		},
 		async update(stem, change) {
-			return context.admit(
-				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
-					let values = (change.fields ?? {}) as Record<string, unknown>;
-					const valid = invalidValues(parsed, values, false);
-					if (valid.error) return valid;
-					// Own nested JSON/array values before the first asynchronous read.
-					try {
-						values = structuredClone(values);
-					} catch {
-						return TableError.UnsupportedSource({
-							path: rowPath(name, stem),
-							reason: 'the supplied fields cannot be copied',
-						});
-					}
-					const body = change.body;
-					const read = await readEntry(stem);
-					if (read.error) return read;
-					const entry = read.data;
-					if (entry === undefined)
-						return FileError.NotFound({ path: rowPath(name, stem) });
-					const patched = patchSource(entry.source, {
-						fields: values,
-						body,
-					});
-					if (patched.error)
-						return TableError.UnsupportedSource({
-							path: entry.path,
-							reason: patched.error.reason,
-						});
-					return publishSource(entry, patched.data);
-				},
-			);
+			let values = (change.fields ?? {}) as Record<string, unknown>;
+			const valid = invalidValues(parsed, values, false);
+			if (valid.error) return valid;
+			// Own nested JSON/array values before the first asynchronous read.
+			try {
+				values = structuredClone(values);
+			} catch {
+				return TableError.UnsupportedSource({
+					path: rowPath(name, stem),
+					reason: 'the supplied fields cannot be copied',
+				});
+			}
+			const body = change.body;
+			const read = await readEntry(stem);
+			if (read.error) return read;
+			const entry = read.data;
+			if (entry === undefined)
+				return FileError.NotFound({ path: rowPath(name, stem) });
+			const patched = patchSource(entry.source, {
+				fields: values,
+				body,
+			});
+			if (patched.error)
+				return TableError.UnsupportedSource({
+					path: entry.path,
+					reason: patched.error.reason,
+				});
+			return publishSource(entry, patched.data);
 		},
 		async replace(entry, source) {
-			return context.admit(
-				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
-					const owned = ownsPath(entry);
-					if (owned.error) return owned;
-					return publishSource(entry, source);
-				},
-			);
+			const owned = ownsPath(entry);
+			if (owned.error) return owned;
+			return publishSource(entry, source);
 		},
 		async rename(entry, nextStem) {
-			return context.admit(
-				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
-					const owned = ownsPath(entry);
-					if (owned.error) return owned;
-					const captured = fileCapture(entry.path, entry.sha256);
-					const source = entry.source;
-					const problem = stemProblem(nextStem);
-					if (problem !== undefined)
-						return TableError.InvalidStem({ stem: nextStem, reason: problem });
-					const path = rowPath(name, nextStem);
-					if (path === captured.path) return Ok(entry);
-					const found = await directory();
-					if (found.error) return found;
-					const destination = destinationProblem(
-						name,
-						found.data,
-						path,
-						captured.path,
-					);
-					if (destination.error) return destination;
-					const applied = await context.publish([
-						{
-							kind: 'move',
-							from: captured.path,
-							to: path,
-							expectedSha256: captured.sha256,
-						},
-					]);
-					if (applied.error) return Err(applied.error);
-					return Ok(interpret(path, captured.sha256, source));
-				},
+			const owned = ownsPath(entry);
+			if (owned.error) return owned;
+			const captured = fileCapture(entry.path, entry.sha256);
+			const source = entry.source;
+			const problem = stemProblem(nextStem);
+			if (problem !== undefined)
+				return TableError.InvalidStem({ stem: nextStem, reason: problem });
+			const path = rowPath(name, nextStem);
+			if (path === captured.path) return Ok(entry);
+			const found = await directory();
+			if (found.error) return found;
+			const destination = destinationProblem(
+				name,
+				found.data,
+				path,
+				captured.path,
 			);
+			if (destination.error) return destination;
+			const applied = await storage.apply([
+				{
+					kind: 'move',
+					from: captured.path,
+					to: path,
+					expectedSha256: captured.sha256,
+				},
+			]);
+			if (applied.error) return Err(applied.error);
+			return Ok(interpret(path, captured.sha256, source));
 		},
 		async delete(entry) {
-			return context.admit(
-				async (): Promise<Result<undefined, TableWriteError>> => {
-					const owned = ownsPath(entry);
-					if (owned.error) return owned;
-					const captured = fileCapture(entry.path, entry.sha256);
-					return context.publish([
-						{
-							kind: 'remove',
-							path: captured.path,
-							expectedSha256: captured.sha256,
-						},
-					]);
+			const owned = ownsPath(entry);
+			if (owned.error) return owned;
+			const captured = fileCapture(entry.path, entry.sha256);
+			return storage.apply([
+				{
+					kind: 'remove',
+					path: captured.path,
+					expectedSha256: captured.sha256,
 				},
-			);
+			]);
 		},
 	};
 }

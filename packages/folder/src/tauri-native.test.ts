@@ -44,6 +44,7 @@ import { realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FileSink } from 'bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import {
 	createBareRemote,
@@ -51,7 +52,6 @@ import {
 	gitHttpFetch,
 	scratch,
 } from './git-http.test-support.js';
-import { hashBytes } from './capture.js';
 
 const enabled = process.env.EPICENTER_FOLDER_BRIDGE === '1';
 const MANIFEST = join(
@@ -73,6 +73,9 @@ class Bridge {
 	private readonly listeners = new Map<string, Set<Listener>>();
 	/** Runs once, after the next directory listing returns and before the caller sees it. */
 	afterListing: (() => Promise<void>) | undefined;
+	/** Hold delivery to the owner, or hold its actual reply before the page sees it. */
+	beforeApply: (() => Promise<void>) | undefined;
+	afterApply: (() => Promise<void>) | undefined;
 
 	private constructor(
 		private readonly child: ReturnType<typeof Bun.spawn>,
@@ -162,6 +165,11 @@ class Bridge {
 	}
 
 	async invoke(window: string, cmd: string, args: unknown): Promise<unknown> {
+		if (cmd === 'plugin:epicenter-folder|apply') {
+			const hook = this.beforeApply;
+			this.beforeApply = undefined;
+			await hook?.();
+		}
 		const id = this.next++;
 		const { promise, resolve, reject } = Promise.withResolvers<unknown>();
 		this.waiting.set(id, { resolve, reject });
@@ -169,6 +177,11 @@ class Bridge {
 		stdin.write(`${JSON.stringify({ id, window, cmd, args })}\n`);
 		await stdin.flush();
 		const reply = await promise;
+		if (cmd === 'plugin:epicenter-folder|apply') {
+			const hook = this.afterApply;
+			this.afterApply = undefined;
+			await hook?.();
+		}
 		if (
 			cmd === 'plugin:epicenter-folder|children' ||
 			cmd === 'plugin:epicenter-folder|list'
@@ -725,6 +738,45 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		}
 	});
 
+	test('close detaches before a landed native save replies, and that save returns success', async () => {
+		const { folder, other } = await setup({ manual: true });
+		const reached = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		active().afterApply = async () => {
+			reached.resolve();
+			await release.promise;
+		};
+		const saving = a(() => folder.files.create('late-reply.txt', 'landed'));
+		await reached.promise;
+		await a(() => folder.close());
+		const detached = await a(() => commands.list(1));
+		expect(detached.error?.name).toBe('Denied');
+		release.resolve();
+		expectOk(await saving);
+		const current = expectOk(await b(() => other.files.read('late-reply.txt')));
+		expect(decoder.decode(current.bytes)).toBe('landed');
+	});
+
+	test('an apply delivered after detach returns the owner refusal without writing or replay', async () => {
+		const { folder, other } = await setup({ manual: true });
+		const reached = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		active().beforeApply = async () => {
+			reached.resolve();
+			await release.promise;
+		};
+		const saving = a(() =>
+			folder.files.create('after-detach.txt', 'not delivered yet'),
+		);
+		await reached.promise;
+		await a(() => folder.close());
+		release.resolve();
+		expect(expectErr(await saving).name).toBe('Io');
+		expect(
+			expectErr(await b(() => other.files.read('after-detach.txt'))).name,
+		).toBe('NotFound');
+	});
+
 	test('closing a page mid-command stops its later steps; the save already admitted lands and is committed', async () => {
 		const { folder, other, root } = await setup();
 		const terminal = folder.terminal();
@@ -737,7 +789,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 				running.afterListing = closeAfterFirstSave;
 				return;
 			}
-			// Not awaited here: closing waits for this very listing.
+			// Closing fences the next step without waiting for this listing.
 			closing = a(() => folder.close());
 		};
 		running.afterListing = closeAfterFirstSave;

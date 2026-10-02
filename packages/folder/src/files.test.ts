@@ -35,6 +35,7 @@ import {
 	createBrowserFileBoundary,
 	openFolderDatabase,
 } from './browser-store.js';
+import { hashBytes } from './capture.js';
 import {
 	defineFolder,
 	defineTable,
@@ -50,7 +51,6 @@ import {
 	type FolderHistory,
 } from './folder.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
-import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
 	id: 'so.epicenter.filestest',
@@ -381,8 +381,6 @@ describe('a save never reads its bytes back', () => {
 		const history: FolderHistory = {
 			snapshot: undefined as never,
 			subscribe: () => () => {},
-			noteEdit() {},
-			requestAutomaticCommit() {},
 			status: unused,
 			commit: unused,
 			commitAndPush: unused,
@@ -394,16 +392,14 @@ describe('a save never reads its bytes back', () => {
 			commitStaged: unused,
 			diff: unused,
 			log: unused,
-			beginClose() {},
 			close: async () => {},
 		};
 		const folder = assembleFolder<typeof definition>({
 			compiled: expectOk(compileFolderDefinition(definition)),
-			boundary,
+			storage: boundary,
 			history,
 			location: { kind: 'indexedDb', database: 'epicenter-folder:reread' },
 			hints: createFileHints(),
-			announcePublications: true,
 			release: async () => db.close(),
 		});
 		opened.push(folder);

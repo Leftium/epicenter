@@ -21,8 +21,8 @@
 
 	onDestroy(() => {
 		void opening
-			.then(({ host, captures }) => {
-				captures.close();
+			.then(async ({ host, captures }) => {
+				await captures.close();
 				return host.close();
 			})
 			.catch(() => {});

@@ -17,18 +17,17 @@ import type {
 	ParsedDataDefinition,
 } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { FileWriteIntent } from './boundary.js';
-import { BatchError, FileError, TableError } from './errors.js';
-import type { FolderBoundary } from './folder.js';
-import { pathProblem } from './paths.js';
-import { destinationProblem, prepareRow, tableFilenames } from './table.js';
+import type { FileWriteIntent, FolderStorage } from './boundary.js';
 import {
 	captureProblem,
-	hashBytes,
 	type FileCapture,
 	fileCapture,
+	hashBytes,
 	ownBytes,
 } from './capture.js';
+import { BatchError, FileError, TableError } from './errors.js';
+import { pathProblem } from './paths.js';
+import { destinationProblem, prepareRow, tableFilenames } from './table.js';
 
 /** The file verbs of `folder.files`, as intents. Each returns nothing. */
 export type BatchFiles = {
@@ -110,7 +109,7 @@ export type BatchChange =
  */
 export async function checkRowDestinations(
 	intents: readonly BatchIntent[],
-	boundary: Pick<FolderBoundary, 'children'>,
+	boundary: Pick<FolderStorage, 'children'>,
 ): Promise<Result<undefined, FileError | TableError>> {
 	const names = new Map<string, Set<string>>();
 	for (const intent of intents) {

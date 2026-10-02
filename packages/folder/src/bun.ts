@@ -14,6 +14,7 @@
  * does not watch the directory: `onFilesChanged` reports this handle's own
  * saves and incoming updates, not edits made by other programs.
  */
+
 import type { DataDefinition } from '@epicenter/definition';
 import { Ok, type Result } from 'wellcrafted/result';
 import { compileFolderDefinition } from './definition.js';
@@ -31,6 +32,7 @@ import {
 	resolveNativeRoot,
 	verifyNativeLayout,
 } from './native-store.js';
+import { withPublication } from './storage.js';
 
 export * from './contract.js';
 export {
@@ -87,11 +89,14 @@ export async function openFolder<const TDefinition extends DataDefinition>({
 		return Ok(
 			assembleFolder<TDefinition>({
 				compiled: compiled.data,
-				boundary,
+				storage: withPublication({
+					storage: boundary,
+					history,
+					landed: (paths) => hints.emit(paths),
+				}),
 				history,
 				location: { kind: 'directory', root: resolved },
 				hints,
-				announcePublications: true,
 				release: async () => {},
 			}),
 		);

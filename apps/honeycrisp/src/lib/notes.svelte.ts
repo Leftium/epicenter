@@ -1131,6 +1131,8 @@ export function createNotes(host: NotesHost) {
 			return unaccounted();
 		},
 		async close() {
+			fenced = true;
+			await Promise.all(working.keys());
 			for (const session of allSessions()) {
 				await session.settle();
 				session.dispose();

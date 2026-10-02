@@ -1,10 +1,10 @@
 /**
- * The one file boundary per opened folder.
+ * Domain methods share one storage API. Openers attach local-save accounting
+ * before assembly gives it to files, tables, KV, batches, and the terminal.
+ * Git keeps raw storage for its own publication sequence and captures.
  *
- * Tables, KV, raw file access, the shell adapter, and incoming Git changes all
- * publish through `apply`. A browser adapter applies a batch in one IndexedDB
- * transaction. A native adapter applies ordered filesystem steps and reports
- * the steps that completed when a later one fails.
+ * Browser applications use one IndexedDB transaction. Native applications
+ * use ordered filesystem steps and report completed steps on later failure.
  */
 import type { Result } from 'wellcrafted/result';
 import type { ApplyError, FileError } from './errors.js';
@@ -44,7 +44,8 @@ export type CapturedFiles = {
 	}[];
 };
 
-export type FileBoundary = {
+/** Storage used by domain methods; apply includes content-save accounting. */
+export type FolderStorage = {
 	list(): Promise<Result<FileListing, FileError>>;
 	/** Immediate children of a directory: files and subdirectories by name. */
 	children(
@@ -62,6 +63,9 @@ export type FileBoundary = {
 	): Promise<Result<undefined, FileError | ApplyError>>;
 	mkdir(path: string): Promise<Result<undefined, FileError>>;
 	rmdir(path: string): Promise<Result<undefined, FileError>>;
-	/** All portable files, for commits and status. */
+};
+
+/** Raw storage also captures portable files for history. */
+export type FileBoundary = FolderStorage & {
 	capture(): Promise<Result<CapturedFiles, FileError>>;
 };

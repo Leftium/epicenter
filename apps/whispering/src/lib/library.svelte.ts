@@ -16,13 +16,13 @@
  * Git status comes from the folder's shared snapshot; this module adds no
  * status cache of its own. A save and its commit are separate outcomes.
  */
-import {
-	type CommitOutcome,
-	type Entry,
-	type FileListing,
-	type GitSnapshot,
-	type KvSnapshot,
-	type TableWriteError,
+import type {
+	CommitOutcome,
+	Entry,
+	FileListing,
+	GitSnapshot,
+	KvSnapshot,
+	TableWriteError,
 } from '@epicenter/folder';
 import { customAlphabet } from 'nanoid';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -286,6 +286,21 @@ function isThisResult<TFields extends object>(
 
 export function createLibrary(workspace: Workspace) {
 	const { folder } = workspace;
+	let closing = false;
+	/** Each caller owns its result; this promise joins accepted file commands. */
+	let fileChanges: Promise<void> = Promise.resolve();
+	function submitFileChange<TArgs extends unknown[]>(
+		work: (...args: TArgs) => Promise<string | undefined>,
+	) {
+		return (...args: TArgs): Promise<string | undefined> => {
+			if (closing) return Promise.resolve('The library is closing.');
+			const submitted = structuredClone(args);
+			const running = work(...submitted);
+			fileChanges = Promise.allSettled([fileChanges, running]).then(() => {});
+			return running;
+		};
+	}
+
 	const table = folder.tables.recordings;
 	const results = folder.tables.transcriptions;
 	const profiles = folder.tables.transformations;
@@ -1274,9 +1289,13 @@ export function createLibrary(workspace: Workspace) {
 		 * anything is still held only in this window. Nothing is discarded here.
 		 */
 		async prepareToLeave(): Promise<boolean> {
-			if (!autosave.paused)
-				await Promise.all(allEditors().map((editor) => editor.settle()));
-			return unsavedWork().length === 0;
+			for (;;) {
+				const accepted = fileChanges;
+				await accepted;
+				if (!autosave.paused)
+					await Promise.all(allEditors().map((editor) => editor.settle()));
+				if (accepted === fileChanges) return unsavedWork().length === 0;
+			}
 		},
 		refresh,
 		refreshAll,
@@ -1444,12 +1463,14 @@ export function createLibrary(workspace: Workspace) {
 		dismissRun(id: string) {
 			if (runs.get(id)?.kind !== 'running') runs.delete(id);
 		},
-		async deleteResult(entry: TranscriptionEntry): Promise<string | undefined> {
-			const removed = await results.delete(entry);
-			if (removed.error === null) unlistedResults.delete(entry.path);
-			await refreshAll();
-			return removed.error ? describeWriteError(removed.error) : undefined;
-		},
+		deleteResult: submitFileChange(
+			async (entry: TranscriptionEntry): Promise<string | undefined> => {
+				const removed = await results.delete(entry);
+				if (removed.error === null) unlistedResults.delete(entry.path);
+				await refreshAll();
+				return removed.error ? describeWriteError(removed.error) : undefined;
+			},
+		),
 
 		/**
 		 * A new transformation file. The endpoint and model are copied from a
@@ -1457,28 +1478,32 @@ export function createLibrary(workspace: Workspace) {
 		 * transcription endpoint and the model is left empty, since only the
 		 * person knows which chat model that endpoint serves.
 		 */
-		async createTransformation({
-			title,
-			prompt,
-		}: {
-			title: string;
-			prompt: string;
-		}): Promise<string | undefined> {
-			const like = transformations.find((entry) => entry.issues === undefined);
-			const created = await profiles.create({
-				fields: {
-					title,
-					model: like?.fields.model ?? '',
-					endpoint: like?.fields.endpoint ?? settings.transcriptionBaseUrl,
-				},
-				body: prompt,
-			});
-			if (created.error) return describeWriteError(created.error);
-			await refreshAll();
-			transformationEditorFor(created.data);
-			selectedTransformationPath = created.data.path;
-			return undefined;
-		},
+		createTransformation: submitFileChange(
+			async ({
+				title,
+				prompt,
+			}: {
+				title: string;
+				prompt: string;
+			}): Promise<string | undefined> => {
+				const like = transformations.find(
+					(entry) => entry.issues === undefined,
+				);
+				const created = await profiles.create({
+					fields: {
+						title,
+						model: like?.fields.model ?? '',
+						endpoint: like?.fields.endpoint ?? settings.transcriptionBaseUrl,
+					},
+					body: prompt,
+				});
+				if (created.error) return describeWriteError(created.error);
+				await refreshAll();
+				transformationEditorFor(created.data);
+				selectedTransformationPath = created.data.path;
+				return undefined;
+			},
+		),
 		/**
 		 * Apply a saved transformation to a saved transcript, both named by path.
 		 * What is sent is each file as the folder has it now, read here: the
@@ -1568,33 +1593,35 @@ export function createLibrary(workspace: Workspace) {
 			if (transformationRuns.get(id)?.state.kind !== 'running')
 				transformationRuns.delete(id);
 		},
-		async deleteTransformationResult(
-			entry: TransformationRunEntry,
-		): Promise<string | undefined> {
-			const removed = await outputs.delete(entry);
-			await refreshAll();
-			return removed.error ? describeWriteError(removed.error) : undefined;
-		},
+		deleteTransformationResult: submitFileChange(
+			async (entry: TransformationRunEntry): Promise<string | undefined> => {
+				const removed = await outputs.delete(entry);
+				await refreshAll();
+				return removed.error ? describeWriteError(removed.error) : undefined;
+			},
+		),
 
 		/** Save folder settings to `kv.json`; a file changed elsewhere is reread once. */
-		async saveSettings(
-			values: Partial<TranscriptionSettings>,
-		): Promise<string | undefined> {
-			for (let attempt = 0; attempt < 2; attempt++) {
-				const read = await folder.kv.get();
-				if (read.error) return read.error.message;
-				const written = await folder.kv.update(read.data, values);
-				if (written.error === null) {
-					kv = written.data;
-					settingsError = undefined;
-					await refreshAll();
-					return undefined;
+		saveSettings: submitFileChange(
+			async (
+				values: Partial<TranscriptionSettings>,
+			): Promise<string | undefined> => {
+				for (let attempt = 0; attempt < 2; attempt++) {
+					const read = await folder.kv.get();
+					if (read.error) return read.error.message;
+					const written = await folder.kv.update(read.data, values);
+					if (written.error === null) {
+						kv = written.data;
+						settingsError = undefined;
+						await refreshAll();
+						return undefined;
+					}
+					if (written.error.name !== 'Conflict')
+						return describeWriteError(written.error);
 				}
-				if (written.error.name !== 'Conflict')
-					return describeWriteError(written.error);
-			}
-			return 'kv.json keeps changing while it is being saved. Try again.';
-		},
+				return 'kv.json keeps changing while it is being saved. Try again.';
+			},
+		),
 		async saveCredential(key: string): Promise<string | undefined> {
 			const problem = await workspace.credential.set(key);
 			if (problem === undefined) credentialPresent = key !== '';
@@ -1606,55 +1633,55 @@ export function createLibrary(workspace: Workspace) {
 		 * other file moves as exact bytes, checked against the sha256 its editor
 		 * saw or the sha256 read now.
 		 */
-		async rename(path: string, name: string): Promise<string | undefined> {
-			const directory = dirname(path);
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const to = joinPath(directory, name);
-			if (to === path) return undefined;
-			if (rowPaths.has(path) || recordingEditors.has(path))
-				return RECORDING_NAME;
-			if (transformationPaths.has(path) || transformationEditors.has(path))
-				return TRANSFORMATION_NAME;
-			// Nothing repairs a row's `audioPath` when the file it names moves.
-			if (entries.some((entry) => audioPathIn(entry.fields) === path))
-				return RECORDING_AUDIO_NAME;
-			return renameFile(path, to);
-		},
+		rename: submitFileChange(
+			async (path: string, name: string): Promise<string | undefined> => {
+				const directory = dirname(path);
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const to = joinPath(directory, name);
+				if (to === path) return undefined;
+				if (rowPaths.has(path) || recordingEditors.has(path))
+					return RECORDING_NAME;
+				if (transformationPaths.has(path) || transformationEditors.has(path))
+					return TRANSFORMATION_NAME;
+				// Nothing repairs a row's `audioPath` when the file it names moves.
+				if (entries.some((entry) => audioPathIn(entry.fields) === path))
+					return RECORDING_AUDIO_NAME;
+				return renameFile(path, to);
+			},
+		),
 		/** A new empty text file; it never replaces an existing one. */
-		async createFile(
-			directory: string,
-			name: string,
-		): Promise<string | undefined> {
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const path = joinPath(directory, name);
-			if (listing?.directories.includes(path))
-				return `"${name}" already exists here.`;
-			const written = await folder.files.create(path, '');
-			if (written.error) return describeWriteError(written.error);
-			await refreshAll();
-			await open(path);
-			return undefined;
-		},
-		async createFolder(
-			directory: string,
-			name: string,
-		): Promise<string | undefined> {
-			const problem = nameProblem(directory, name);
-			if (problem !== undefined) return problem;
-			const path = joinPath(directory, name);
-			if (
-				listing?.directories.includes(path) ||
-				listing?.files.some((file) => file.path === path)
-			)
-				return `"${name}" already exists here.`;
-			const made = await folder.files.mkdir(path);
-			if (made.error) return describeWriteError(made.error);
-			if (directory !== '') expanded.add(directory);
-			await refresh();
-			return undefined;
-		},
+		createFile: submitFileChange(
+			async (directory: string, name: string): Promise<string | undefined> => {
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const path = joinPath(directory, name);
+				if (listing?.directories.includes(path))
+					return `"${name}" already exists here.`;
+				const written = await folder.files.create(path, '');
+				if (written.error) return describeWriteError(written.error);
+				await refreshAll();
+				await open(path);
+				return undefined;
+			},
+		),
+		createFolder: submitFileChange(
+			async (directory: string, name: string): Promise<string | undefined> => {
+				const problem = nameProblem(directory, name);
+				if (problem !== undefined) return problem;
+				const path = joinPath(directory, name);
+				if (
+					listing?.directories.includes(path) ||
+					listing?.files.some((file) => file.path === path)
+				)
+					return `"${name}" already exists here.`;
+				const made = await folder.files.mkdir(path);
+				if (made.error) return describeWriteError(made.error);
+				if (directory !== '') expanded.add(directory);
+				await refresh();
+				return undefined;
+			},
+		),
 		/**
 		 * Capture what deleting `path` would remove, for the person to confirm.
 		 * Pending typing is saved first; a draft that cannot save refuses, so no
@@ -1717,93 +1744,95 @@ export function createLibrary(workspace: Workspace) {
 			return Ok({ kind: 'file', path, sha256: read.data.sha256 });
 		},
 		/** Delete exactly what was confirmed; a file that changed since is refused. */
-		async remove(deletion: Deletion): Promise<string | undefined> {
-			if (deletion.kind === 'folder') {
-				const removed = await folder.files.rmdir(deletion.path);
-				await refresh();
-				return removed.error ? describeWriteError(removed.error) : undefined;
-			}
-			const path =
-				deletion.kind === 'file' ? deletion.path : deletion.entry.path;
-			// The confirmation is modal, but a save may have started or failed since the capture.
-			const editor =
-				recordingEditors.get(path) ??
-				transformationEditors.get(path) ??
-				textEditorAt(path);
-			if (editor && (editor.dirty || editor.saveState.kind !== 'saved'))
-				return UNSETTLED;
-			if (deletion.kind !== 'recording') {
-				// A transformation's saved results are separate files and stay.
-				const removed =
-					deletion.kind === 'transformation'
-						? await profiles.delete(deletion.entry)
-						: await folder.files.remove({ path, sha256: deletion.sha256 });
-				if (removed.error) {
-					await refreshAll();
-					return describeWriteError(removed.error);
+		remove: submitFileChange(
+			async (deletion: Deletion): Promise<string | undefined> => {
+				if (deletion.kind === 'folder') {
+					const removed = await folder.files.rmdir(deletion.path);
+					await refresh();
+					return removed.error ? describeWriteError(removed.error) : undefined;
 				}
-				forget(path);
-				await refreshAll();
-				return undefined;
-			}
+				const path =
+					deletion.kind === 'file' ? deletion.path : deletion.entry.path;
+				// The confirmation is modal, but a save may have started or failed since the capture.
+				const editor =
+					recordingEditors.get(path) ??
+					transformationEditors.get(path) ??
+					textEditorAt(path);
+				if (editor && (editor.dirty || editor.saveState.kind !== 'saved'))
+					return UNSETTLED;
+				if (deletion.kind !== 'recording') {
+					// A transformation's saved results are separate files and stay.
+					const removed =
+						deletion.kind === 'transformation'
+							? await profiles.delete(deletion.entry)
+							: await folder.files.remove({ path, sha256: deletion.sha256 });
+					if (removed.error) {
+						await refreshAll();
+						return describeWriteError(removed.error);
+					}
+					forget(path);
+					await refreshAll();
+					return undefined;
+				}
 
-			// Work may have started or finished since the person was asked. A
-			// request that is running, or an answer not saved yet, would write a
-			// row naming this recording after it is gone; a result saved since is
-			// one the person did not agree to delete.
-			const id = recordingIdOf(path);
-			if (id === undefined) return `${path} is not a recording.`;
-			if (deleting.has(id)) return BEING_DELETED;
-			const busy = recordingBusy(id);
-			if (busy !== undefined) return busy;
-			const confirmed = new Set(
-				[...deletion.results, ...deletion.outputs].map((row) => row.path),
-			);
-			// A transcript saved since the last listing counts from its publication.
-			const unconfirmed = [
-				...transcriptions,
-				...unlistedResults.values(),
-				...transformationResults,
-			].some(
-				(row) => row.fields.recordingId === id && !confirmed.has(row.path),
-			);
-			if (unconfirmed)
-				return 'A new result was saved for this recording after you were asked. Check it, then delete the recording again.';
-			// From here until the rows are gone, nothing new starts for it: there
-			// is no await between the checks above and this.
-			deleting.add(id);
-			try {
-				// The table removes the row file and nothing else. The audio the row
-				// names is an ordinary file; it stays, and Files can delete it.
-				const removed = await table.delete(deletion.entry);
-				if (removed.error) {
+				// Work may have started or finished since the person was asked. A
+				// request that is running, or an answer not saved yet, would write a
+				// row naming this recording after it is gone; a result saved since is
+				// one the person did not agree to delete.
+				const id = recordingIdOf(path);
+				if (id === undefined) return `${path} is not a recording.`;
+				if (deleting.has(id)) return BEING_DELETED;
+				const busy = recordingBusy(id);
+				if (busy !== undefined) return busy;
+				const confirmed = new Set(
+					[...deletion.results, ...deletion.outputs].map((row) => row.path),
+				);
+				// A transcript saved since the last listing counts from its publication.
+				const unconfirmed = [
+					...transcriptions,
+					...unlistedResults.values(),
+					...transformationResults,
+				].some(
+					(row) => row.fields.recordingId === id && !confirmed.has(row.path),
+				);
+				if (unconfirmed)
+					return 'A new result was saved for this recording after you were asked. Check it, then delete the recording again.';
+				// From here until the rows are gone, nothing new starts for it: there
+				// is no await between the checks above and this.
+				deleting.add(id);
+				try {
+					// The table removes the row file and nothing else. The audio the row
+					// names is an ordinary file; it stays, and Files can delete it.
+					const removed = await table.delete(deletion.entry);
+					if (removed.error) {
+						await refreshAll();
+						return describeWriteError(removed.error);
+					}
+					forget(path);
+					// What failed for this recording held nothing, and has nothing left to retry against.
+					if (runs.get(id)?.kind === 'failed') runs.delete(id);
+					for (const run of [...transformationRuns.values()])
+						if (run.fields.recordingId === id && run.state.kind === 'failed')
+							transformationRuns.delete(run.id);
+					const leftovers: string[] = [];
+					for (const result of deletion.results) {
+						const gone = await results.delete(result);
+						if (gone.error) leftovers.push(result.path);
+						else unlistedResults.delete(result.path);
+					}
+					for (const output of deletion.outputs) {
+						const gone = await outputs.delete(output);
+						if (gone.error) leftovers.push(output.path);
+					}
 					await refreshAll();
-					return describeWriteError(removed.error);
+					return leftovers.length > 0
+						? `The recording was deleted, but these results could not be: ${leftovers.join(', ')}`
+						: undefined;
+				} finally {
+					deleting.delete(id);
 				}
-				forget(path);
-				// What failed for this recording held nothing, and has nothing left to retry against.
-				if (runs.get(id)?.kind === 'failed') runs.delete(id);
-				for (const run of [...transformationRuns.values()])
-					if (run.fields.recordingId === id && run.state.kind === 'failed')
-						transformationRuns.delete(run.id);
-				const leftovers: string[] = [];
-				for (const result of deletion.results) {
-					const gone = await results.delete(result);
-					if (gone.error) leftovers.push(result.path);
-					else unlistedResults.delete(result.path);
-				}
-				for (const output of deletion.outputs) {
-					const gone = await outputs.delete(output);
-					if (gone.error) leftovers.push(output.path);
-				}
-				await refreshAll();
-				return leftovers.length > 0
-					? `The recording was deleted, but these results could not be: ${leftovers.join(', ')}`
-					: undefined;
-			} finally {
-				deleting.delete(id);
-			}
-		},
+			},
+		),
 		/** Commit current saved files. Unsaved editor input is not included. */
 		commit(): Promise<CommitOutcome> {
 			return folder.git.commit();
@@ -1814,6 +1843,8 @@ export function createLibrary(workspace: Workspace) {
 		 * the view asks before the page is left while either exists.
 		 */
 		async close() {
+			closing = true;
+			await fileChanges;
 			active?.cancel();
 			for (const editor of allEditors()) {
 				await editor.settle();

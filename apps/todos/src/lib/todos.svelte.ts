@@ -495,10 +495,16 @@ export function createTodos(folder: TodosFolder) {
 		},
 		async create(title: string): Promise<string | undefined> {
 			if (closing !== undefined) return CLOSING;
-			const created = await table.create({
-				fields: { title, done: false },
-				body: '',
-			});
+			const stem = crypto.randomUUID();
+			const release = reserve(`todos/${stem}.md`);
+			if (release === undefined) return BUSY;
+			const created = await table
+				.create({
+					stem,
+					fields: { title, done: false },
+					body: '',
+				})
+				.finally(release);
 			if (created.error) return describeWriteError(created.error);
 			await refresh();
 			// The row was written; a closing app opens no editor for it.
@@ -641,7 +647,9 @@ export function createTodos(folder: TodosFolder) {
 				listing?.files.some((file) => file.path === path)
 			)
 				return `"${name}" already exists here.`;
-			const made = await folder.files.mkdir(path);
+			const release = reserve(path);
+			if (release === undefined) return BUSY;
+			const made = await folder.files.mkdir(path).finally(release);
 			if (made.error) return describeWriteError(made.error);
 			if (directory !== '' && closing === undefined) expanded.add(directory);
 			await refresh();
@@ -691,7 +699,11 @@ export function createTodos(folder: TodosFolder) {
 		async remove(deletion: Deletion): Promise<string | undefined> {
 			if (closing !== undefined) return CLOSING;
 			if (deletion.kind === 'folder') {
-				const removed = await folder.files.rmdir(deletion.path);
+				const release = reserve(deletion.path);
+				if (release === undefined) return BUSY;
+				const removed = await folder.files
+					.rmdir(deletion.path)
+					.finally(release);
 				await refresh();
 				return removed.error ? describeWriteError(removed.error) : undefined;
 			}
@@ -743,9 +755,10 @@ export function createTodos(folder: TodosFolder) {
 		 * Every call answers the same completion. From the first call no action
 		 * starts, hints stop, and nothing new is retained. A rename, toggle, or
 		 * delete that already owns its paths finishes first, so its editor
-		 * settles where the operation left it. Reads, single saves, terminal
-		 * commands, and Git work already running are the folder's: it drains or
-		 * cancels them when it closes, and what they answer late is dropped here.
+		 * settles where the operation left it. Editors finish their saves before
+		 * the folder closes. Reads and preparation already running may finish
+		 * later; their replies retain nothing. The folder closes its Git and
+		 * storage resources.
 		 */
 		close() {
 			if (closing !== undefined) return closing;

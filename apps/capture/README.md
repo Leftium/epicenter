@@ -89,8 +89,9 @@ spaces included, until you add it or clear it.
 - Reloading, closing the tab, or leaving the app asks first while any of it
   exists. The reload shortcut is refused with a message.
 - On the desktop, closing the Capture window hides it; the page and its text
-  stay loaded. Using the Quit menu or Cmd-Q asks the window first. If everything saves,
-  it quits. Otherwise it offers **Keep working** or **Discard and quit**.
+  stay loaded. Using the Quit menu or Cmd-Q asks the window first. It waits
+  for actions already in progress and for every saveable draft. If everything
+  saves, it quits. Otherwise it offers **Keep working** or **Discard and quit**.
 - If Epicenter closes the folder, the window says saving cannot be
   confirmed. Your text stays so you can copy or download it, and reloads are
   held back.
@@ -210,7 +211,7 @@ shows the reason.
 
 | Event | What happens |
 | --- | --- |
-| The page is destroyed or reloaded | `close()` stops the quit listeners and the change hints, and detaches this page's session. Saves it already sent still land and are still committed. The folder stays open in the shell for its other windows. |
+| The page is destroyed or reloaded | `captures.close()` finishes the page's create, import, copy, delete, and draft saves before `host.close()` stops the quit listeners and change hints and detaches this page's session. Teardown does not overwrite failed or conflicted drafts. An explicit discard cancels later draft saves while waiting for saves already submitted. The folder stays open in the shell for its other windows. |
 | The Capture window is closed | The shell hides it. The page, its session, and its drafts stay loaded. |
 | The shell closes the folder | The folder's Git snapshot arrives with `closed`. The window says saving cannot be confirmed, keeps every draft, and holds reloads back. |
 | Epicenter's Bun service stops (`capture-host-stopped`) | A notice. The folder is the shell's, so saving carries on. The service served this page, so a reload may fail until Epicenter restarts. |
@@ -247,7 +248,7 @@ and shows the failure.
 | --- | --- |
 | `src/lib/platform/` | The `#platform/folder` seam: `types.ts` is its contract, `folder.browser.ts` opens the IndexedDB folder, `folder.epicenter-host.ts` attaches to the shell's directory, and `shell-lifetime.ts` is the quit protocol. `auth.*.ts` is used only by the old-data export. |
 | `src/lib/draft.svelte.ts` | One capture's draft: buffer, baseline, save queue, conflict choices, and unsent input. |
-| `src/lib/captures.svelte.ts` | The listing, the open drafts, and every write. |
+| `src/lib/captures.svelte.ts` | The listing, the open drafts, and completion of create, import, copy, delete, and draft saves. |
 | `src/lib/recovery/` | Opens the old account store for an export. Loaded only from the recovery screen. |
 | `src/lib/components/` | The timeline, a capture, the conflict choices, and the recovery screen, composed from `@epicenter/ui`. |
 

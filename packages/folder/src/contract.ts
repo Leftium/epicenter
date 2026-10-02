@@ -33,6 +33,12 @@ export type {
 } from './batch.js';
 export type { FileListing } from './boundary.js';
 export type { IndexedDbEnvironment } from './browser-store.js';
+export {
+	type CapturedFile,
+	type FileCapture,
+	hashBytes,
+	type TextCapture,
+} from './capture.js';
 export { defineFolder, type FolderTable } from './definition.js';
 export {
 	ApplyError,
@@ -44,10 +50,10 @@ export {
 	type TableReadError,
 	type TableWriteError,
 } from './errors.js';
+export type { FolderFiles } from './files.js';
 export type {
 	Folder,
 	FolderAccess,
-	FolderFiles,
 	FolderGit,
 	FolderGitOptions,
 	FolderLocation,
@@ -87,12 +93,6 @@ export type {
 	ValidEntry,
 } from './table.js';
 export type { FolderTerminal, TerminalResult } from './terminal.js';
-export {
-	type CapturedFile,
-	hashBytes,
-	type FileCapture,
-	type TextCapture,
-} from './capture.js';
 
 /**
  * Settings for a folder kept in this browser's own storage. They apply to a

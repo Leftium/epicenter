@@ -100,12 +100,12 @@ is not the desktop adapter, and it does not watch the directory.
 | `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `sha256`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a captured entry. They refuse if the file changed. Each changes exactly one Markdown file. |
 | `kv` | Root `kv.json`, read and conditionally replaced like an entry. |
 | `files` | Ordinary files at literal paths. See below. |
-| `batch(collect)` | Several mutations under one admission, one application, and one history request. See below. |
+| `batch(collect)` | Several mutations in one application with one history request. See below. |
 | `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
 | `location` | `{ kind: 'indexedDb', database }` or `{ kind: 'directory', root }`. For showing to a person. File paths are never joined onto it. |
 | `onFilesChanged(listener)` | A hint that paths changed, so read again. Returns the function that stops listening. |
 | `terminal({ cwd })` | A shell over the folder's files and history. |
-| `signal`, `close()` | Closing fences new work and stops network work, lets admitted saves and Git work settle, then releases storage. It makes no final automatic commit. |
+| `signal`, `close()` | Closing fences the next storage call and stops network work. Git work drains before storage is released; file operations own their completion promises. It makes no final automatic commit. |
 
 ### Files
 
@@ -332,14 +332,29 @@ format list, and no LFS.
 ### Closing
 
 `close()` fences new file work, stops hints, refuses new Git requests, and
-cancels pushes and fetches. Already admitted saves finish. A Git request still
-waiting for admission is refused; work that already entered its protection
+cancels pushes and fetches. It does not await file helpers or publication
+replies. Await a save that must finish before closing:
+
+```ts
+const saved = await folder.files.create('note.md', 'Saved before leaving');
+if (saved.error) return show(saved.error.message);
+await folder.close();
+```
+
+A helper still reading or hashing can be refused at its next storage call. An
+already-started application returns its actual Result, including `Partial` or
+`Unconfirmed`. Closing never relabels that outcome. A browser transaction can
+finish after close returns, although its cross-tab hint can be lost once the
+notification channel closes.
+
+A Git request still waiting for admission is refused; work that already
+entered its protection
 settles before storage is released. No final commit is required, and saved
 files can remain uncommitted after close.
 
 In the desktop app, closing detaches this page. The owner keeps the folder,
-finishes the saves, the commit, and any push or fetch it had already started
-for the page, and serves every other window. A push or fetch of the page that
+finishes operations it already accepted, the commit, and any push or fetch it
+had already started for the page, and serves every other window. A push or fetch of the page that
 the owner had not started is withdrawn and never starts. The owner makes no
 commit because a page closed or the app quit: a save whose attempt was skipped
 stays uncommitted there too.
@@ -412,3 +427,27 @@ rewrites `kv.json` whitespace. Browser bytes are stored whole, and every commit
 or status check reads the whole folder. Version checks on disk are best effort
 against other programs. File bytes cross the desktop bridge as JSON number
 arrays, which is slow for large audio.
+
+
+## Internal composition
+
+Files, tables, KV, batches, and the terminal use one storage API. Its `apply`
+accounts for content changes, so a domain method cannot accidentally choose a
+write that skips history or change hints.
+
+```ts
+createFiles({ storage })
+createTable({ storage }, { name, definition })
+createKv({ storage }, { definition })
+createTerminal({ storage, git }, options)
+```
+
+Browser and Bun openers wrap raw storage with publication accounting. The
+Tauri owner already performs that accounting. Assembly fences the resulting
+storage with the handle's close signal. These wrappers retain no file-operation
+collection.
+
+Git keeps raw storage because incoming fast-forwards update files and history
+under their own policy. They must not trigger an automatic commit as a new
+local save. A batch uses one `apply`; the terminal uses a separate application
+for each file mutation.

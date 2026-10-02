@@ -9,9 +9,9 @@
 
 import type { ParsedTable } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { type FileError, TableError, type TableWriteError } from './errors.js';
-import type { FolderContext } from './folder.js';
+import type { FolderStorage } from './boundary.js';
 import { hashBytes } from './capture.js';
+import { type FileError, TableError, type TableWriteError } from './errors.js';
 
 export const KV_PATH = 'kv.json';
 
@@ -45,12 +45,10 @@ export type FileKv<TValues> = {
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const encoder = new TextEncoder();
 
-export function createFileKv<TValues>(
-	parsed: ParsedTable,
-	context: FolderContext,
+export function createKv<TValues>(
+	{ storage }: { storage: FolderStorage },
+	{ definition: parsed }: { definition: ParsedTable },
 ): FileKv<TValues> {
-	const { boundary } = context;
-
 	function interpret(
 		source: string | undefined,
 		sha256: string | undefined,
@@ -101,94 +99,85 @@ export function createFileKv<TValues>(
 		snapshot: KvSnapshot<TValues>,
 		source: string,
 	): Promise<Result<KvSnapshot<TValues>, TableWriteError>> {
+		const expectedSha256 = snapshot.sha256;
 		const bytes = encoder.encode(source);
 		const sha256 = await hashBytes(bytes);
 		const change =
-			snapshot.sha256 === undefined
+			expectedSha256 === undefined
 				? { kind: 'create' as const, path: KV_PATH, bytes, sha256 }
 				: {
 						kind: 'replace' as const,
 						path: KV_PATH,
 						bytes,
 						sha256,
-						expectedSha256: snapshot.sha256,
+						expectedSha256,
 					};
-		const applied = await context.publish([change]);
+		const applied = await storage.apply([change]);
 		if (applied.error) return Err(applied.error);
 		return Ok(interpret(source, sha256));
 	}
 
 	return {
 		async get() {
-			return context.admit(
-				async (): Promise<
-					Result<KvSnapshot<TValues>, FileError | TableError>
-				> => {
-					const read = await boundary.read(KV_PATH);
-					if (read.error) {
-						if (read.error.name === 'NotFound')
-							return Ok(interpret(undefined, undefined));
-						return read;
-					}
-					let source: string;
-					try {
-						source = utf8.decode(read.data.bytes);
-					} catch {
-						return TableError.InvalidUtf8({ path: KV_PATH });
-					}
-					return Ok(interpret(source, read.data.sha256));
-				},
-			);
+			const read = await storage.read(KV_PATH);
+			if (read.error) {
+				if (read.error.name === 'NotFound')
+					return Ok(interpret(undefined, undefined));
+				return read;
+			}
+			let source: string;
+			try {
+				source = utf8.decode(read.data.bytes);
+			} catch {
+				return TableError.InvalidUtf8({ path: KV_PATH });
+			}
+			return Ok(interpret(source, read.data.sha256));
 		},
 		async update(snapshot, values) {
-			return context.admit(
-				async (): Promise<Result<KvSnapshot<TValues>, TableWriteError>> => {
-					const issues: { field: string; message: string }[] = [];
-					for (const [key, value] of Object.entries(
-						values as Record<string, unknown>,
-					)) {
-						const field = parsed.fields.get(key);
-						if (field === undefined)
-							issues.push({ field: key, message: 'The key is not declared' });
-						else if (!field.check(value))
-							issues.push({
-								field: key,
-								message: `The value does not conform to its ${field.kind} field`,
-							});
-					}
-					if (issues.length > 0) return TableError.InvalidValues({ issues });
-					let object: Record<string, unknown> = {};
-					if (snapshot.source !== undefined) {
-						try {
-							const parsedJson: unknown = JSON.parse(
-								snapshot.source.replace(/^﻿/, ''),
-							);
-							if (
-								typeof parsedJson !== 'object' ||
-								parsedJson === null ||
-								Array.isArray(parsedJson)
-							)
-								return TableError.UnsupportedSource({
-									path: KV_PATH,
-									reason: 'kv.json is not a JSON object',
-								});
-							object = parsedJson as Record<string, unknown>;
-						} catch {
-							return TableError.UnsupportedSource({
-								path: KV_PATH,
-								reason:
-									'kv.json is not valid JSON; edit the complete source instead',
-							});
-						}
-					}
-					const bom = snapshot.source?.startsWith('﻿') ? '﻿' : '';
-					const next = `${bom}${JSON.stringify({ ...object, ...values }, null, 2)}\n`;
-					return publish(snapshot, next);
-				},
-			);
+			const issues: { field: string; message: string }[] = [];
+			for (const [key, value] of Object.entries(
+				values as Record<string, unknown>,
+			)) {
+				const field = parsed.fields.get(key);
+				if (field === undefined)
+					issues.push({ field: key, message: 'The key is not declared' });
+				else if (!field.check(value))
+					issues.push({
+						field: key,
+						message: `The value does not conform to its ${field.kind} field`,
+					});
+			}
+			if (issues.length > 0) return TableError.InvalidValues({ issues });
+			let object: Record<string, unknown> = {};
+			if (snapshot.source !== undefined) {
+				try {
+					const parsedJson: unknown = JSON.parse(
+						snapshot.source.replace(/^﻿/, ''),
+					);
+					if (
+						typeof parsedJson !== 'object' ||
+						parsedJson === null ||
+						Array.isArray(parsedJson)
+					)
+						return TableError.UnsupportedSource({
+							path: KV_PATH,
+							reason: 'kv.json is not a JSON object',
+						});
+					object = parsedJson as Record<string, unknown>;
+				} catch {
+					return TableError.UnsupportedSource({
+						path: KV_PATH,
+						reason:
+							'kv.json is not valid JSON; edit the complete source instead',
+					});
+				}
+			}
+			const bom = snapshot.source?.startsWith('﻿') ? '﻿' : '';
+			const next = `${bom}${JSON.stringify({ ...object, ...values }, null, 2)}\n`;
+			return publish(snapshot, next);
 		},
 		async writeSource(snapshot, source) {
-			return context.admit(() => publish(snapshot, source));
+			return publish(snapshot, source);
 		},
 	};
 }

@@ -27,6 +27,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
 	mkdtemp,
+	readdir,
 	readFile,
 	realpath,
 	rm,
@@ -1800,4 +1801,28 @@ test('an uncertain recovery destination remains owned by the original draft', as
 	expect(state.sessionAt(note.path)).toBe(session);
 	expect(session.buffer).toContain('Recovery typing');
 	expect(await readFile(join(root, target), 'utf8')).toBe(attempt.source);
+});
+
+test('close fences new changes and waits for a note creation already sent', async () => {
+	const { state, folder, host, root } = await product();
+	const held = holdNext(folder, 'create');
+	const creating = state.createNote();
+	await held.asked;
+	let detached = false;
+	const detach = host.close;
+	host.close = async () => {
+		detached = true;
+		await detach();
+	};
+	const closing = state.close();
+	expect(await state.createNote()).toContain('closing');
+	await Promise.resolve();
+	expect(detached).toBe(false);
+	held.release();
+	expect(await creating).toBeUndefined();
+	await closing;
+	expect(detached).toBe(true);
+	expect(
+		(await readdir(join(root, 'notes'))).filter((path) => path.endsWith('.md')),
+	).toHaveLength(1);
 });

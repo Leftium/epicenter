@@ -27,9 +27,9 @@
  * - Closing fences the app at once: later calls issue no folder or terminal
  *   work, a held open, listing, create, or rename retains nothing new, and
  *   every close call shares one completion
- * - Close waits only for operations that own a path. A read, fetch, or folder
- *   creation that answers late starts no further folder work and changes no
- *   state, and a fetch still on the network is cancelled by the folder
+ * - Close waits for mutations that own a path. A read or fetch that answers
+ *   late starts no further folder work and changes no state. The folder
+ *   cancels a fetch still on the network
  *
  * Fixtures write with the verb that states their intent: `create` for a new
  * file, `overwrite` for another writer landing on whatever is there, and a
@@ -1285,8 +1285,8 @@ test('a listing that answers after close changes neither the rows nor a clean ed
 	expect(editor.buffer).toBe('saved');
 });
 
-test('a create that answers after close wrote its row and retains no editor', async () => {
-	const { adapt } = recordingFolder();
+test('close waits for a create reply and retains no editor', async () => {
+	const { calls, adapt } = recordingFolder();
 	const todos = await open(adapt);
 	const table = todos.folder.tables.todos;
 	const create = table.create;
@@ -1303,8 +1303,15 @@ test('a create that answers after close wrote its row and retains no editor', as
 	while (release === undefined) await Bun.sleep(1);
 	const written = expectOk(await todos.folder.files.list()).files;
 	expect(written.some((file) => ROW_PATH.test(file.path))).toBe(true);
-	await close(todos);
+	let closed = false;
+	const closing = close(todos).then(() => {
+		closed = true;
+	});
+	await Promise.resolve();
+	expect(closed).toBe(false);
+	expect(calls).not.toContain('close');
 	release();
+	await closing;
 	expect(await creating).toBeUndefined();
 	expect(todos.selection).toBeUndefined();
 	expect(todos.selectedPath).toBeUndefined();
@@ -1499,8 +1506,8 @@ test('a refresh reads no further editor once an observation closes the app', asy
 	]);
 });
 
-test('a folder creation that answers after close expands nothing', async () => {
-	const { adapt } = recordingFolder();
+test('close waits for folder creation and expands nothing', async () => {
+	const { calls, adapt } = recordingFolder();
 	const todos = await open(adapt);
 	expect(await todos.createFolder('', 'docs')).toBeUndefined();
 	const { files } = todos.folder;
@@ -1516,8 +1523,15 @@ test('a folder creation that answers after close expands nothing', async () => {
 
 	const creating = todos.createFolder('docs', 'inner');
 	while (release === undefined) await Bun.sleep(1);
-	await close(todos);
+	let closed = false;
+	const closing = close(todos).then(() => {
+		closed = true;
+	});
+	await Promise.resolve();
+	expect(closed).toBe(false);
+	expect(calls).not.toContain('close');
 	release();
+	await closing;
 	expect(await creating).toBeUndefined();
 	expect(todos.expanded.has('docs')).toBe(false);
 });
@@ -1582,4 +1596,29 @@ test('close cancels a pull whose fetch is still on the network, and nothing is f
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
+});
+
+test('close waits for folder removal before releasing the folder', async () => {
+	const { calls, adapt } = recordingFolder();
+	const todos = await open(adapt);
+	expect(await todos.createFolder('', 'docs')).toBeUndefined();
+	const files = todos.folder.files;
+	const rmdir = files.rmdir;
+	const started = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	files.rmdir = async (path) => {
+		started.resolve();
+		await release.promise;
+		return rmdir(path);
+	};
+	const removing = todos.remove({ kind: 'folder', path: 'docs' });
+	await started.promise;
+	const closing = close(todos);
+	await Promise.resolve();
+	expect(calls).not.toContain('close');
+	release.resolve();
+	expect(await removing).toBeUndefined();
+	await closing;
+	expect(calls).toContain('files.rmdir');
+	expect(calls).toContain('close');
 });

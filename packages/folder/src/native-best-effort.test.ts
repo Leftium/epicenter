@@ -10,7 +10,7 @@ import { defineFolder, defineTable, field } from './contract.js';
 import { compileFolderDefinition } from './definition.js';
 import { scratch } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
-import { createFileTable } from './table.js';
+import { createTable } from './table.js';
 
 const definition = defineFolder({
 	id: 'so.epicenter.bestefforttest',
@@ -40,11 +40,10 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 			'todos',
 		);
 		if (parsed === undefined) throw new Error('Missing test declaration');
-		const table = createFileTable<{ title: string }>('todos', parsed, {
-			boundary,
-			admit: (work) => work(),
-			publish: (changes) => boundary.apply(changes),
-		});
+		const table = createTable<{ title: string }>(
+			{ storage: boundary },
+			{ name: 'todos', definition: parsed },
+		);
 		const results = await Promise.all([
 			table.create({ stem: 'take', fields: { title: 'First' } }),
 			table.create({ stem: 'take', fields: { title: 'Second' } }),

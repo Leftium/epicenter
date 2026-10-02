@@ -63,7 +63,8 @@ export type CaptureHost = {
 	 */
 	readonly quitProtectionProblem: string | undefined;
 	/**
-	 * Let go of this page's use of the folder. Saves already made still land.
+	 * Let go of this page's use of the folder after the collection has finished
+	 * its intended saves. Calls that reach storage after this are refused.
 	 * On the desktop the folder stays open for the shell and its other windows.
 	 */
 	close(): Promise<void>;

@@ -29,7 +29,7 @@
 import '../svelte-modules.test-support.js';
 import { afterEach, expect, mock, test } from 'bun:test';
 import { captureDefinition } from '@epicenter/capture';
-import { readLegacyBundle, runLegacyImport } from '@epicenter/capture/legacy';
+import { readLegacyBundle } from '@epicenter/capture/legacy';
 import type { FileChange as Change } from '../../../../../packages/folder/src/native/bindings.gen.js';
 import fixture from '../../../fixtures/legacy-bundle.json';
 import {
@@ -409,7 +409,7 @@ test('a save sends the exact Markdown, checked against the version this page rea
 		},
 	]);
 	expect(draft.saveState.kind).toBe('saved');
-	captures.close();
+	await captures.close();
 	await host.close();
 });
 
@@ -428,7 +428,7 @@ test('a stale save is refused, the file stays as the other writer left it, and t
 	expect(draft.saveState.kind).toBe('conflict');
 	expect(draft.buffer).toBe(`${SAVED}- mine\n`);
 	expect(captures.unsettled).toBe(1);
-	captures.close();
+	await captures.close();
 	await host.close();
 });
 
@@ -464,7 +464,7 @@ test('a save whose reply is lost keeps the draft, is sent once, and is reconcile
 		current: { kind: 'present', entry: { source: mine } },
 	});
 	expect(draft.buffer).toBe(mine);
-	captures.close();
+	await captures.close();
 	await host.close();
 });
 
@@ -495,7 +495,7 @@ test('a hint rereads: a clean draft follows the file, a dirty one is kept and no
 	expect(dirty.saveState.kind).toBe('conflict');
 	expect(sent('apply')).toEqual([]);
 	expect(text('captures/two.md')).toBe(outside);
-	captures.close();
+	await captures.close();
 	await host.close();
 });
 
@@ -527,7 +527,7 @@ test('a failed commit is reported beside a saved file, and retried without rewri
 	expect((await captures.commit()).status).toBe('unchanged');
 	expect(calls.map((call) => call.cmd)).toEqual(['commit']);
 	expect(text(`captures/${created.stem}.md`)).toBe(saved);
-	captures.close();
+	await captures.close();
 	await host.close();
 });
 
@@ -552,7 +552,7 @@ test('a folder its owner closed is reported as stopped; a stopped service is not
 	const created = await captures.create();
 	expect(created.ok).toBe(false);
 	expect(captures.newCapture).toBe('typed after the folder closed');
-	captures.close();
+	await captures.close();
 	await host.close();
 });
 
@@ -568,9 +568,9 @@ test('an import whose first save lost its reply is finished by a retry, and repe
 	};
 
 	// The export landed, but its reply did not: nothing is claimed.
-	await expect(
-		runLegacyImport(captures.importFiles, read.bundle),
-	).rejects.toThrow('Nothing was imported');
+	await expect(captures.importLegacy(read.bundle)).rejects.toThrow(
+		'Nothing was imported',
+	);
 	expect(lost).toBe(1);
 	const exported = [...files.keys()].filter((path) =>
 		path.startsWith('recovery/legacy-export-'),
@@ -579,7 +579,7 @@ test('an import whose first save lost its reply is finished by a retry, and repe
 	const original = text(exported[0] as string);
 
 	delete overrides.apply;
-	const retry = await runLegacyImport(captures.importFiles, read.bundle);
+	const retry = await captures.importLegacy(read.bundle);
 	expect(retry.complete).toBe(true);
 	expect(retry.documents.map((document) => document.status)).toEqual(
 		Array.from({ length: 6 }, () => 'created'),
@@ -588,7 +588,7 @@ test('an import whose first save lost its reply is finished by a retry, and repe
 	expect(text(exported[0] as string)).toBe(original);
 
 	calls = [];
-	const again = await runLegacyImport(captures.importFiles, read.bundle);
+	const again = await captures.importLegacy(read.bundle);
 	expect(again.documents).toEqual([]);
 	expect(again.alreadyImported).toHaveLength(6);
 	// The export and the report are found identical; nothing is replaced.
@@ -596,6 +596,6 @@ test('an import whose first save lost its reply is finished by a retry, and repe
 	expect(
 		[...files.keys()].filter((path) => path.startsWith('captures/')),
 	).toHaveLength(6);
-	captures.close();
+	await captures.close();
 	await host.close();
 });

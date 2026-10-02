@@ -4,9 +4,8 @@
  * opens through the desktop entry only, which refuses outside the shell.
  *
  * The page names the folder by its ID and nothing else; the shell chose the
- * directory, the author, the history policy, and which windows may use it. Closing detaches this page: saves it
- * already made still land and are still committed, and the folder stays open
- * for the shell and its other windows.
+ * directory, the author, the history policy, and which windows may use it. The collection finishes its intended saves before closing detaches this
+ * page. The folder stays open for the shell and its other windows.
  *
  * A refused or missing plugin fails the open with its reason. There is no
  * browser folder to fall back to in this build.

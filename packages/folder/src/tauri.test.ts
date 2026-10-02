@@ -31,8 +31,8 @@
 import { afterEach, expect, mock, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { defineFolder, defineTable, field } from './contract.js';
 import { hashBytes } from './capture.js';
+import { defineFolder, defineTable, field } from './contract.js';
 
 type Call = { cmd: string; args: Record<string, unknown> };
 type Reply = (call: Call) => unknown;
@@ -891,7 +891,7 @@ test('closing stops this page waiting for a push and a fetch and withdraws both 
 	fetch.settle({ oid: null });
 });
 
-test("closing waits for a terminal command's save already sent, and its later steps send nothing", async () => {
+test('closing detaches while a terminal save is awaiting its reply, and its later steps send nothing', async () => {
 	const folder = await attached();
 	replies.list = () => ({ files: [], directories: [] });
 	const saving = held<null>();
@@ -903,9 +903,8 @@ test("closing waits for a terminal command's save already sent, and its later st
 	await untilSent('apply');
 	const closing = folder.close();
 	await Bun.sleep(20);
-	// The first step's save is with the owner. The session it was sent on is
-	// still attached, so its reply has somewhere to land.
-	expect(sent('detach')).toHaveLength(0);
+	// The sent apply owns its outcome; detaching does not wait for its reply.
+	expect(sent('detach')).toHaveLength(1);
 	saving.settle(null);
 	await closing;
 

@@ -119,6 +119,7 @@ export function createDraft(
 
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let saving: Promise<void> | undefined;
+	let disposed = false;
 	/** An observation arrived mid-save; reread once the save settles. */
 	let recheck = false;
 	const batchMs = hooks.batchMs ?? TYPING_BATCH_MS;
@@ -129,7 +130,7 @@ export function createDraft(
 
 	function schedule() {
 		clearTimeout(timer);
-		if (saveState.kind === 'conflict') return;
+		if (disposed || saveState.kind === 'conflict') return;
 		timer = setTimeout(() => void save(), batchMs);
 	}
 
@@ -217,6 +218,7 @@ export function createDraft(
 
 	/** Run one save to its end. Typing that arrived during it batches again. */
 	async function run(write: (source: string) => Promise<Result<Admitted>>) {
+		if (disposed) return;
 		saving = saveOnce(write);
 		try {
 			await saving;
@@ -243,9 +245,11 @@ export function createDraft(
 		clearTimeout(timer);
 		if (saving) {
 			await saving;
-			return dirty() && saveState.kind === 'saved' ? drain() : undefined;
+			return !disposed && dirty() && saveState.kind === 'saved'
+				? drain()
+				: undefined;
 		}
-		if (saveState.kind === 'conflict' || !dirty() || gone) return;
+		if (disposed || saveState.kind === 'conflict' || !dirty() || gone) return;
 		await run(writeAgainstBaseline);
 	}
 
@@ -444,8 +448,11 @@ export function createDraft(
 				gone || (!dirty() && saveState.kind === 'saved' && !hasUnsentInput())
 			);
 		},
-		dispose() {
+		/** Stop future saves and await only the save already submitted. */
+		async dispose() {
+			disposed = true;
 			clearTimeout(timer);
+			await saving;
 		},
 	};
 }

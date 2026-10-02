@@ -69,7 +69,10 @@
 					: 'Some text could not be saved, or was typed and not added yet. Quitting now discards it. Keep working to finish, resolve, or copy it.',
 				confirm: { text: 'Discard and quit', variant: 'destructive' },
 				cancel: { text: 'Keep working' },
-				onConfirm: () => answer('proceed'),
+				onConfirm: async () => {
+					await captures.close({ discard: true });
+					await answer('proceed');
+				},
 				onCancel: () => void answer('cancel'),
 			});
 		}),

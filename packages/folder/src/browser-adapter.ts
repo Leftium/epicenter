@@ -13,6 +13,7 @@
  *
  * Importing this module opens nothing.
  */
+
 import { isTauri } from '@tauri-apps/api/core';
 import { Ok } from 'wellcrafted/result';
 import {
@@ -28,6 +29,7 @@ import { assembleFolder, createFileHints } from './folder.js';
 import { createBrowserGitBackend } from './git/browser-backend.js';
 import { createHistory } from './git/history.js';
 import type { Author } from './git/objects.js';
+import { withPublication } from './storage.js';
 
 /** Who records history that never leaves this browser. */
 const LOCAL_AUTHOR: Author = { name: 'Local', email: 'local@localhost' };
@@ -129,11 +131,14 @@ export const openFolder: OpenFolder = async ({
 		return Ok(
 			assembleFolder<typeof definition>({
 				compiled: compiled.data,
-				boundary,
+				storage: withPublication({
+					storage: boundary,
+					history,
+					landed: (paths) => hints.emit(paths),
+				}),
 				history,
 				location: { kind: 'indexedDb', database },
 				hints,
-				announcePublications: true,
 				release: async () => release(),
 			}),
 		);

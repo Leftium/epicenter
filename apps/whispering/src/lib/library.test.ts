@@ -71,6 +71,7 @@ type Options = {
 	/** Replace the stubbed transcription answer. */
 	transcribe?: Workspace['transcribe'];
 	root?: string;
+	beforeFileCreate?: () => Promise<void>;
 };
 
 async function open({
@@ -78,6 +79,7 @@ async function open({
 	failResultWrites = 0,
 	loseResultReplies = 0,
 	transcribe,
+	beforeFileCreate,
 	root,
 }: Options = {}) {
 	const directory =
@@ -123,7 +125,18 @@ async function open({
 	const changeListeners = new Set<() => void>();
 	const workspace: Workspace = {
 		kind: 'native',
-		folder: { ...folder, tables, batch } as Workspace['folder'],
+		folder: {
+			...folder,
+			tables,
+			batch,
+			files: {
+				...folder.files,
+				async create(path, content) {
+					await beforeFileCreate?.();
+					return folder.files.create(path, content);
+				},
+			},
+		} as Workspace['folder'],
 		location: directory,
 		terminal: {
 			cwd: '/',
@@ -1490,4 +1503,99 @@ test('a transcript saved when the listing after it fails stays saved, and still 
 	await library.refresh();
 	expect(library.entries).toEqual([]);
 	expect(library.resultsFor(id)).toEqual([]);
+});
+
+test('quit preparation awaits a file command through publication before approving', async () => {
+	const reached = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	const { library, root } = await open({
+		beforeFileCreate: async () => {
+			reached.resolve();
+			await release.promise;
+		},
+	});
+	const creating = library.createFile('', 'created.txt');
+	await reached.promise;
+	let approved = false;
+	const preparing = library.prepareToLeave().then((safe) => {
+		approved = safe;
+		return safe;
+	});
+	await Bun.sleep(10);
+	expect(approved).toBe(false);
+	release.resolve();
+	expect(await creating).toBeUndefined();
+	expect(await preparing).toBe(true);
+	expect(await readFile(join(root, 'created.txt'), 'utf8')).toBe('');
+});
+
+test('quit preparation includes a command accepted while it awaits another', async () => {
+	const reached = [
+		Promise.withResolvers<void>(),
+		Promise.withResolvers<void>(),
+	];
+	const release = [
+		Promise.withResolvers<void>(),
+		Promise.withResolvers<void>(),
+	];
+	let calls = 0;
+	const { library } = await open({
+		beforeFileCreate: async () => {
+			const index = calls++;
+			reached[index]!.resolve();
+			await release[index]!.promise;
+		},
+	});
+	const first = library.createFile('', 'first.txt');
+	await reached[0]!.promise;
+	let approved = false;
+	const preparing = library.prepareToLeave().then((safe) => {
+		approved = safe;
+		return safe;
+	});
+	const second = library.createFile('', 'second.txt');
+	await reached[1]!.promise;
+	release[0]!.resolve();
+	expect(await first).toBeUndefined();
+	await Bun.sleep(10);
+	expect(approved).toBe(false);
+	release[1]!.resolve();
+	expect(await second).toBeUndefined();
+	expect(await preparing).toBe(true);
+});
+
+test('close drains independent accepted commands and refuses a new command', async () => {
+	const reached = [
+		Promise.withResolvers<void>(),
+		Promise.withResolvers<void>(),
+	];
+	const release = [
+		Promise.withResolvers<void>(),
+		Promise.withResolvers<void>(),
+	];
+	let calls = 0;
+	const { library, root } = await open({
+		beforeFileCreate: async () => {
+			const index = calls++;
+			reached[index]!.resolve();
+			await release[index]!.promise;
+		},
+	});
+	const first = library.createFile('', 'first.txt');
+	const second = library.createFile('', 'second.txt');
+	await Promise.all(reached.map((command) => command.promise));
+	let closed = false;
+	const closing = library.close().then(() => {
+		closed = true;
+	});
+	expect(await library.createFile('', 'late.txt')).toContain('closing');
+	release[1]!.resolve();
+	expect(await second).toBeUndefined();
+	await Bun.sleep(10);
+	expect(closed).toBe(false);
+	release[0]!.resolve();
+	expect(await first).toBeUndefined();
+	await closing;
+	expect(await readFile(join(root, 'first.txt'), 'utf8')).toBe('');
+	expect(await readFile(join(root, 'second.txt'), 'utf8')).toBe('');
 });

@@ -85,6 +85,12 @@ What Whispering adds on top:
   `<root>/.git/epicenter/whispering/device.json`, which Git never commits.
   Transcription and transformations use the same key.
 
+Short file commands, including settings saves and file creation or deletion,
+start independently. The library joins their completion promises. Quit
+preparation awaits those accepted
+commands and the editors' saves before deciding what remains unsaved. Recording
+publication and provider work keep their own pending states and discard choices.
+
 ## The storage boundary
 
 `src/lib/workspace/types.ts` is the one seam. `openWorkspace()` picks an

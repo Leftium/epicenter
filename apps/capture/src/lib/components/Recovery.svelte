@@ -3,7 +3,6 @@
 		type ImportReport,
 		type LegacyBundle,
 		readLegacyBundle,
-		runLegacyImport,
 		serializeLegacyBundle,
 	} from '@epicenter/capture/legacy';
 	import * as Alert from '@epicenter/ui/alert';
@@ -98,9 +97,8 @@
 		if (!bundle) return;
 		working = 'Importing…';
 		try {
-			report = await runLegacyImport(captures.importFiles, bundle);
+			report = await captures.importLegacy(bundle);
 			problems = [];
-			await captures.refresh();
 		} catch (cause) {
 			report = undefined;
 			problems = [cause instanceof Error ? cause.message : String(cause)];

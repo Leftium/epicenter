@@ -233,14 +233,17 @@ describe('undo history', () => {
 		expect(undoDepth(session.state)).toBe(depth);
 	});
 
-	test('is reset when Source changed the body, and new edits are undoable', () => {
+	test('a changed draft body resets history without writing, and new edits are undoable', () => {
 		const { type, run, draft, session, body, end } = open('one\n');
 		end();
 		type('!');
 		draft.input(`${HEAD}from source\n`);
+		const inputs = draft.inputs;
 		const replaced = session.sync();
 		expect(replaced).toBeDefined();
 		expect(session.state.doc.textContent).toBe('from source');
+		expect(draft.inputs).toBe(inputs);
+		expect(session.inSync).toBe(true);
 		expect(undoDepth(session.state)).toBe(0);
 		// Undo does not bring back text from before the replacement.
 		run(undo);
@@ -250,16 +253,6 @@ describe('undo history', () => {
 		expect(body()).toBe('from source?\n');
 		run(undo);
 		expect(body()).toBe('from source\n');
-	});
-
-	test('a file adopted from disk replaces the document without writing', () => {
-		const { draft, session } = open('one\n');
-		const inputs = draft.inputs;
-		// Adoption sets the buffer directly; it is not an edit.
-		draft.buffer = `${HEAD}changed on disk\n`;
-		expect(session.sync()?.doc.textContent).toBe('changed on disk');
-		expect(draft.inputs).toBe(inputs);
-		expect(session.inSync).toBe(true);
 	});
 
 	test('the cursor stays where it still fits after a replacement', () => {

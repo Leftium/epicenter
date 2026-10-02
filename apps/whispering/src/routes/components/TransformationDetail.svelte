@@ -119,13 +119,16 @@
 
 	{#if draft.parseError}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
-			<p class="mb-1 flex items-center gap-2 font-medium">
+			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
-				{draft.parseError.message}. Edit the source to fix it; the text is saved as written.
+				{draft.parseError.message}. Edit the source to fix it.
+				{#if tab !== 'source'}
+					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
+				{/if}
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
 				{#each draft.parseError.diagnostics as diagnostic, index (index)}
-					<li>{diagnostic.message}</li>
+					{#if diagnostic.message !== draft.parseError.message}<li>{diagnostic.message}</li>{/if}
 				{/each}
 			</ul>
 		</div>

@@ -24,6 +24,10 @@ import { isJsonSafe, type ParsedTable } from '@epicenter/definition';
  * keeps what the parser said. Both are written for a person repairing the
  * source: neither the wording nor the number of diagnostics is a machine
  * contract.
+ *
+ * A failure the parser said nothing more about has one diagnostic, and it
+ * repeats `message`. An interface that shows both leaves out a diagnostic
+ * equal to `message`, so the sentence is not shown twice.
  */
 export type ParseError = {
 	readonly message: string;

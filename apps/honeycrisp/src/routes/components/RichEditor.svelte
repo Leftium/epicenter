@@ -333,7 +333,8 @@
 		</div>
 		<div bind:this={element} class="honeycrisp-editor min-h-0 flex-1 overflow-y-auto p-6"></div>
 	</div>
-{:else}
+{:else if inspect(session.buffer).parseError === undefined}
+	<!-- A draft that does not parse is the note's own banner to explain; this one is for text that parses. -->
 	<div class="flex h-full flex-col items-start gap-3 overflow-y-auto p-6 text-sm" role="status">
 		<p class="font-medium">This note opens in Source only</p>
 		<p class="text-muted-foreground">

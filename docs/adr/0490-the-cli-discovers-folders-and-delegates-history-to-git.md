@@ -2,11 +2,12 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-02
-- **Unbuilt:** every account command below. The existing `epicenter` script exposes `validate`; these examples do not run today.
+- **Implemented:** Local discovery, interactive Git passthrough, and source CLI `login`, `accounts`, and `logout`; `validate` remains available.
+- **Unbuilt:** hosted callback deployment, real OS credential acceptance, account-folder discovery, hosted Git credentials, `get`, and `create`. Account folder and transfer examples below remain proposals.
 
 ## Context
 
-A fresh laptop needs to discover account folders and clone one into its expected directory. Once that directory is a Git repository, Git already supplies status, staging, commits, transfers, history inspection, integrity checks, and reconciliation. Separate Epicenter versions of those commands would introduce another semantic surface for the same repository.
+A fresh laptop can discover account folders and download one, or start editing a selected account folder locally before cloud setup. Once that directory is a Git repository, Git already supplies status, staging, commits, transfers, history inspection, integrity checks, and reconciliation. Separate Epicenter versions of those commands would introduce another semantic surface for the same repository.
 
 Standalone applications such as Whispering still need their own download and upload controls. They cannot depend on the CLI being installed.
 
@@ -19,7 +20,7 @@ Standalone applications such as Whispering still need their own download and upl
 | `epicenter login`, `epicenter logout` | Start or end this tool's session; transfer no folder content. |
 | `epicenter folders` | Compare the account's live repository listing with local directories and their origins. |
 | `epicenter get <folder-id>` | Clone the selected repository into its expected absent directory. |
-| `epicenter create <folder-id>` | Explicitly allocate a new repository, then use the get setup path. |
+| `epicenter create <folder-id>` | Explicitly allocate a new empty cloud repository and report its immutable URL. |
 | `epicenter git <folder-id> <git-arguments...>` | Resolve and lock the directory, then invoke Git there. |
 
 `--account` selects the session and is required when more than one account is signed in. `--root` selects a root other than `~/Epicenter`. Epicenter options precede `git`; the explicit folder ID precedes all Git arguments. Account folders follow [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md). An arbitrary or moved clone can be operated on through raw Git at its explicit path; it is not silently registered.
@@ -38,9 +39,23 @@ so.epicenter.archive       absent   directory    configured
 
 A directory without a usable Git repository is still a found directory, not an installed app or a healthy clone. Offline, cloud presence and current origin agreement are unknown; any cached observation is labeled with its age. A matching origin proves neither ancestry nor integrity. Listing verifies the native layout before reading configuration, executes no repository hooks, contacts no configured origins, and performs no repair. It ignores dot-prefixed staging and non-folder-ID names. Matching compares the configured origin URL against the canonical service URL, not its spelling after Git rewrite rules; configured push URLs are reported separately because they may send pushes elsewhere.
 
-**`get` and `create` report setup phases.** Get uses staged clone and no-clobber publication from [ADR-0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md). An existing directory is reported and never overwritten or retargeted. Create requires a new cloud folder name; if cloud creation succeeds but download fails, it reports that the repository exists and that get can finish setup. Retrying must not silently allocate a second repository for the same folder.
+**`get` restores; `create` allocates a destination.** Get uses staged download and no-clobber publication from [ADR-0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md), including explicit local `main` setup for an empty repository. An existing directory is reported and never overwritten or retargeted. Create requires an available cloud folder name and leaves any local folder unchanged. It reports the allocated URL; setting origin is an explicit Git operation. Retrying must not silently allocate a second repository for the same folder. With no local data yet, get can install the empty repository. With local data already saved, configure origin and then fetch, reconcile if needed, and push.
 
-**The Git command is a passthrough with an initial selected directory.** Forward arguments as a process argument vector, not shell text. Inherit interactive standard input and output and preserve Git's exit code. Bind the initial Git directory and worktree explicitly to the selected canonical paths, scrub inherited repository-location variables, and acquire the folder ownership lock. Reject direct global selection flags `-C`, `--git-dir`, and `--work-tree`; leave remaining command semantics to Git. Explicit worktree selection overrides `core.worktree` configuration ([Git options](https://git-scm.com/docs/git)). Aliases, hooks, submodules, and subprocesses are ordinary executable Git behavior outside the initial-target coordination guarantee. The CLI does not claim to sandbox them or lock every path they touch. The current engine runner pipes output and disables prompts, so it cannot be reused unchanged for this interactive command.
+**The Git command is a passthrough with an initial selected directory.** Forward arguments as a process argument vector, not shell text. Inherit interactive standard input and output and preserve Git's exit code. Bind the initial Git directory and worktree explicitly to the selected canonical paths, scrub inherited repository-location variables, and acquire the folder ownership lock. Reject direct global selection flags `-C`, `--bare`, `--git-dir`, and `--work-tree`; leave remaining command semantics to Git. Explicit worktree selection overrides `core.worktree` configuration ([Git options](https://git-scm.com/docs/git)). Aliases, hooks, submodules, and subprocesses are ordinary executable Git behavior outside the initial-target coordination guarantee. The CLI does not claim to sandbox them or lock every path they touch. The current engine runner pipes output and disables prompts, so it cannot be reused unchanged for this interactive command.
+
+The Local milestone is runnable from the repository root:
+
+```sh
+bun run epicenter --local folders
+bun run epicenter --local git so.epicenter.notes status
+bun run epicenter --local git so.epicenter.notes init
+bun run epicenter --local git so.epicenter.notes add notes/n8.md
+bun run epicenter --local git so.epicenter.notes commit -m "Update note"
+```
+
+These commands operate on an existing `~/Epicenter/local/<folder-id>` directory. `--root` can select another Epicenter root. Discovery takes no lock, creates nothing, and reads no Git configuration. Its `git: directory` observation means only that a `.git` directory exists; it does not certify repository health. Git initialization is an explicit Git command and retains Git's configured default branch. No remote is required. Inherited `GIT_CONFIG` is cleared because it selects a configuration file directly; ordinary runtime configuration overrides remain available.
+
+The CLI forwards SIGINT, SIGTERM, and SIGHUP and keeps the lock until the direct Git child exits. SIGKILL or SIGQUIT can terminate the CLI while Git survives. Detached descendants, including background Git maintenance, can outlive that child and are outside the lock's lifetime. This is cooperative ownership coordination, not a process sandbox.
 
 An invocation-scoped credential mechanism supplies the captured account's credential only to trusted service requests, without leaving a persistent helper in the repository or globally installing one. Isolate it from repository-configured helpers and scope it to the actual request destination after rewrites. A mismatching origin is reported by discovery; Git passthrough does not automatically retarget it. The server still decides whether the account may access the addressed repository. The credential implementation must satisfy ADR-0488's feasibility gate before these commands ship. Raw Git network commands need separately configured authentication; the Epicenter session does not automatically authenticate them.
 
@@ -65,7 +80,42 @@ epicenter git so.epicenter.notes fetch
 epicenter git so.epicenter.notes merge --ff-only origin/main
 ```
 
-Applications can instead present Download folder, Upload changes, and Get updates through shared setup and transport code. A deliberate Upload changes action may combine commit and push while reporting each outcome. Automatic local history remains separate from explicit outgoing publication. The current engine needs that policy separation before account remotes are enabled.
+**A person who recorded before cloud setup uses the existing repository.** The following account commands remain proposed. The folder engine already initialized local `main`; setup does not create another history or replace `.git`.
+
+```sh
+# Fully exit Whispering before wrapped Git operations.
+epicenter folders
+epicenter git so.epicenter.whispering status
+
+# Preserve any outstanding authored files before merging.
+# Stage selected data paths, inspect them, and commit if needed.
+
+# Use the immutable URL reported by the authenticated listing.
+# Add origin only when absent; inspect an existing origin before changing it.
+epicenter git so.epicenter.whispering remote add origin <repository-url>
+epicenter git so.epicenter.whispering fetch origin
+epicenter git so.epicenter.whispering log --graph --oneline --all
+
+# For independently started histories, explicitly permit joining them.
+epicenter git so.epicenter.whispering merge --allow-unrelated-histories origin/main
+
+# Resolve conflicts, finish the merge, and inspect the recordings before pushing.
+epicenter git so.epicenter.whispering push -u origin main
+```
+
+This is a reconciliation example, not an automatic recipe for every folder. Related history may fast-forward or need a regular merge; an empty cloud repository has no incoming commit to merge. Git requires a configured author for new commits. A conflict can be completed or aborted through ordinary Git commands. Neither merge success nor abort protects ignored bytes that Git already replaced. The passthrough preserves Git semantics rather than adding a no-data-loss guarantee. An app offering managed reconciliation would need the stronger checks in ADR-0489.
+
+Get remains an absent-directory operation. It refuses an existing directory even if that directory has no commits. A pristine existing account folder uses guarded in-place adoption; a folder with local data preserves and reconciles it. No separate `epicenter connect` command, clone-and-swap operation, or local installation record is added.
+
+Applications can instead present Download folder, Upload changes, and Get updates through shared setup and transport code. A deliberate Upload changes action may combine commit and push while reporting each outcome. The engine already exposes these mechanisms under `folder.git`; automatic local history is separate from explicit outgoing publication. Account folder setup and hosted Git credentials remain unbuilt. Signing in reports a derived account path without downloading or configuring a remote.
+
+## Private account sessions
+
+The source CLI's session owner follows [ADR-0492](0492-the-source-cli-keeps-sessions-in-one-operating-system-credential.md). Login, cached account listing, and logout do not require a cloud repository listing. The account-key function belongs to `@epicenter/principal`; account paths use its exact-byte contract from ADR-0461.
+
+The CLI binds `http://127.0.0.1:39132/_epicenter/cli/callback` before opening the browser. This callback is separate from desktop development's default port. The hosted allowlist source admits the exact destination. Hosted login requires deployment of that change; this implementation does not deploy it.
+
+The next folder wave adds account directory selection and origin-based app opening. Cloud listing, staged get, allocation, and hosted Git credentials follow it. Existing-folder reconciliation remains explicit Git; it does not wait for an app-owned merge engine. Browser history reconciliation remains separate from the native Git passthrough.
 
 ## Consequences
 
@@ -74,6 +124,7 @@ Applications can instead present Download folder, Upload changes, and Get update
 - Every passthrough call refuses while an application owns the folder, including status and log. Close the application, use its controls, or run raw Git with Git's own concurrency guarantees.
 - Git status reports local files and refs, not current cloud state. Fetch refreshes remote refs. Neither a clean working tree nor matching origin means all current saved data is in the cloud.
 - Git commands can explicitly merge, rebase, restore, or change a remote. Their consequences are ordinary Git behavior, not Epicenter repair or adoption policy.
+- Get is not required for local account editing. Creating a cloud destination and configuring origin later do not guarantee that existing histories agree.
 
 ## Considered alternatives
 

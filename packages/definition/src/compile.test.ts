@@ -509,6 +509,23 @@ test('nullability is whether the compiled field admits null', () => {
 	expect(kv.fields.get('plain')?.check({ a: '1' })).toBe(false);
 });
 
+test('hidden validation keywords prevent nullable editor read-through', () => {
+	const root = Type.Union([field.select(['a']), Type.Null()]);
+	Object.defineProperty(root, 'type', { value: 'number' });
+	const member = Type.Null();
+	Object.defineProperty(member, 'enum', { value: [1] });
+	const union = Type.Union([field.select(['a']), member]);
+	const kv = expectOk(compileKv({ root, union })).kv;
+
+	for (const [name, schema] of Object.entries({ root, union })) {
+		const compiled = kv.fields.get(name);
+		const native = Compile(schema);
+		expect(compiled?.editor).toEqual({ kind: 'json', nullable: false });
+		for (const value of ['a', null, 1])
+			expect(compiled?.check(value)).toBe(native.Check(value));
+	}
+});
+
 // ============================================================================
 // Native validation
 // ============================================================================

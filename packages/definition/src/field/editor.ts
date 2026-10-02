@@ -143,7 +143,7 @@ const ANNOTATIONS: readonly string[] = [
 
 /** The keywords of a node that could constrain a value, TypeBox's `~` ones aside. */
 function constraints(schema: Keywords): string[] {
-	return Object.keys(schema).filter(
+	return Object.getOwnPropertyNames(schema).filter(
 		(keyword) => !keyword.startsWith('~') && !ANNOTATIONS.includes(keyword),
 	);
 }

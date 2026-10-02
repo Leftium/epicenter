@@ -737,3 +737,4 @@ When you add an ADR, add its row here.
 | [0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) | The CLI discovers folders and delegates history to Git | Proposed (unbuilt; account setup and Git passthrough) |
 | [0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) | Field helpers build native TypeBox schemas with UI metadata | Proposed |
 | [0493](0493-whispering-runs-as-one-application-in-three-deployment-forms.md) | Whispering runs as one application in three deployment forms | Proposed (Epicenter integration, remaining shared native services, and release distribution unbuilt) |
+| [0495](0495-the-ark-community-profiles-use-at-handle-paths.md) | The Ark community profiles use at-handle paths | Proposed (community routing and stable profile identity unbuilt; custom domains open) |

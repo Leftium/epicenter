@@ -11,7 +11,7 @@
  * - Unsafe patches (aliases, flow maps, unresolvable values) are refused
  *
  * See also:
- * - `browser.test.ts` for table updates and repair through `writeSource`
+ * - `browser.test.ts` for table updates and repair through `replace`
  */
 import { describe, expect, test } from 'bun:test';
 import {

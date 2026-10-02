@@ -131,7 +131,7 @@ try {
 				print({ error: entry.error?.message ?? `No todo named ${stem}` });
 				break;
 			}
-			const updated = await folder.tables.todos.update(entry.data, {
+			const updated = await folder.tables.todos.update(entry.data.stem!, {
 				fields: { done: true },
 			});
 			if (updated.error) {

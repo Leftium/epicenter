@@ -3,8 +3,9 @@
  *
  * An entry is one captured observation of a row file: its exact source, the
  * version of those bytes, the interpretation of its fields and body, and
- * conformance issues. Writes receive the whole entry and publish only if the
- * file still has that exact version (ADR-0464).
+ * conformance issues. Structured updates read current source once; complete
+ * replacements use the supplied entry's baseline. Both conditionally publish
+ * once and return a conflict without retrying (ADR-0464).
  *
  * A table reads and writes exactly one Markdown file per row (ADR-0480). A
  * sibling that shares a row's stem is an ordinary file: it is not part of the
@@ -91,11 +92,13 @@ export type FileTable<TFields> = {
 	create(
 		input: CreateInput<TFields>,
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
+	/** Assign fields/body on current source. A publication race returns Conflict; nothing retries. */
 	update(
-		entry: Entry<TFields>,
+		stem: string,
 		change: { readonly fields?: Partial<TFields>; readonly body?: string },
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
-	writeSource(
+	/** Save complete text against this entry's baseline, including invalid frontmatter for repair. */
+	replace(
 		entry: Entry<TFields>,
 		source: string,
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
@@ -332,6 +335,29 @@ export function createFileTable<TFields>(
 		return Ok(stem);
 	}
 
+	async function readEntry(
+		stem: string,
+	): Promise<Result<Entry<TFields> | undefined, TableReadError | TableError>> {
+		const path = rowPath(name, stem);
+		const problem = pathProblem(path);
+		if (problem !== undefined)
+			return FileError.InvalidPath({ path, reason: problem });
+		// Existing external filenames need not conform to creation's naming rules.
+		if (rowStemOf(name, path) !== stem)
+			return TableError.InvalidStem({
+				stem,
+				reason: 'the stem contains a path separator',
+			});
+		const read = await boundary.read(path);
+		if (read.error) {
+			if (read.error.name === 'NotFound') return Ok(undefined);
+			return read;
+		}
+		const source = decode(read.data.bytes);
+		if (source === undefined) return TableError.InvalidUtf8({ path });
+		return Ok(interpret(path, read.data.version, source));
+	}
+
 	return {
 		name,
 		async list() {
@@ -371,30 +397,7 @@ export function createFileTable<TFields>(
 			);
 		},
 		async get(stem) {
-			return context.admit(
-				async (): Promise<
-					Result<Entry<TFields> | undefined, TableReadError | TableError>
-				> => {
-					const path = rowPath(name, stem);
-					const problem = pathProblem(path);
-					if (problem !== undefined)
-						return FileError.InvalidPath({ path, reason: problem });
-					// A stem is one literal filename segment, never a nested path.
-					if (rowStemOf(name, path) !== stem)
-						return TableError.InvalidStem({
-							stem,
-							reason: 'the stem contains a path separator',
-						});
-					const read = await boundary.read(path);
-					if (read.error) {
-						if (read.error.name === 'NotFound') return Ok(undefined);
-						return read;
-					}
-					const source = decode(read.data.bytes);
-					if (source === undefined) return TableError.InvalidUtf8({ path });
-					return Ok(interpret(path, read.data.version, source));
-				},
-			);
+			return context.admit(() => readEntry(stem));
 		},
 		async create(input) {
 			return context.admit(
@@ -419,17 +422,30 @@ export function createFileTable<TFields>(
 				},
 			);
 		},
-		async update(entry, change) {
+		async update(stem, change) {
 			return context.admit(
 				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
-					const owned = ownsPath(entry);
-					if (owned.error) return owned;
-					const values = (change.fields ?? {}) as Record<string, unknown>;
+					let values = (change.fields ?? {}) as Record<string, unknown>;
 					const valid = invalidValues(parsed, values, false);
 					if (valid.error) return valid;
+					// Own nested JSON/array values before the first asynchronous read.
+					try {
+						values = structuredClone(values);
+					} catch {
+						return TableError.UnsupportedSource({
+							path: rowPath(name, stem),
+							reason: 'the supplied fields cannot be copied',
+						});
+					}
+					const body = change.body;
+					const read = await readEntry(stem);
+					if (read.error) return read;
+					const entry = read.data;
+					if (entry === undefined)
+						return FileError.NotFound({ path: rowPath(name, stem) });
 					const patched = patchSource(entry.source, {
 						fields: values,
-						body: change.body,
+						body,
 					});
 					if (patched.error)
 						return TableError.UnsupportedSource({
@@ -440,7 +456,7 @@ export function createFileTable<TFields>(
 				},
 			);
 		},
-		async writeSource(entry, source) {
+		async replace(entry, source) {
 			return context.admit(
 				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
 					const owned = ownsPath(entry);

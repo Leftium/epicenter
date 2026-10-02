@@ -119,7 +119,22 @@ async function typedValues(
 	>();
 	// A table entry is a capture of its row file.
 	const entry = await folder.tables.todos.get('milk');
-	if (entry.data) folder.files.replace(entry.data, entry.data.source);
+	folder.tables.todos.update('milk', {
+		fields: { title: 'Next' },
+		body: 'body',
+	});
+	// @ts-expect-error Updates name an ID, not a captured baseline.
+	folder.tables.todos.update(entry.data, { fields: { title: 'Next' } });
+	// @ts-expect-error Structured commands still validate the supplied field types.
+	folder.tables.todos.update('milk', { fields: { title: 12 } });
+	if (entry.data) {
+		folder.files.replace(entry.data, entry.data.source);
+		folder.tables.todos.replace(entry.data, entry.data.source);
+		// @ts-expect-error Complete replacements require a captured baseline.
+		folder.tables.todos.replace('milk', entry.data.source);
+		// @ts-expect-error The old source-write spelling is removed.
+		folder.tables.todos.writeSource(entry.data, entry.data.source);
+	}
 	// @ts-expect-error A path alone is not a capture: `overwrite` says that.
 	folder.files.replace('a.md', 'next');
 	// @ts-expect-error The old single write verb is gone.

@@ -423,7 +423,9 @@ describe('a save never reads its bytes back', () => {
 		const row = expectOk(
 			await folder.tables.todos.create({ stem: 'r', fields: { title: 'R' } }),
 		);
-		expectOk(await folder.tables.todos.update(row, { fields: { title: 'S' } }));
+		expectOk(
+			await folder.tables.todos.replace(row, row.source.replace('R', 'S')),
+		);
 		expect(reads).toEqual([]);
 	});
 
@@ -470,7 +472,10 @@ describe('a save never reads its bytes back', () => {
 		expect(current?.fields).toEqual({ title: 'Theirs' });
 		expect(
 			expectErr(
-				await folder.tables.todos.update(row, { fields: { title: 'Again' } }),
+				await folder.tables.todos.replace(
+					row,
+					row.source.replace('Mine', 'Again'),
+				),
 			).name,
 		).toBe('Conflict');
 	});

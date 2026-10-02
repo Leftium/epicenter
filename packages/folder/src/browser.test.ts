@@ -96,7 +96,7 @@ describe('browser folder tables', () => {
 		);
 		expect(raw.data!.version).toEqual(created.data!.version);
 
-		const completed = await folder.tables.todos.update(created.data!, {
+		const completed = await folder.tables.todos.update('milk', {
 			fields: { done: true },
 		});
 		expect(completed.data!.fields).toEqual({ title: 'Buy milk', done: true });
@@ -117,7 +117,7 @@ describe('browser folder tables', () => {
 		expect((await folder.tables.todos.list()).data!.entries).toEqual([]);
 	});
 
-	test('a stale captured entry is refused and the file is unchanged', async () => {
+	test('updates preserve current unrelated fields while replacements refuse stale baselines', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const first = (
 			await folder.tables.todos.create({
@@ -126,18 +126,21 @@ describe('browser folder tables', () => {
 			})
 		).data!;
 		const newer = (
-			await folder.tables.todos.update(first, { fields: { title: 'Newer' } })
+			await folder.tables.todos.update('a', { fields: { title: 'Newer' } })
 		).data!;
-		const stale = await folder.tables.todos.update(first, {
-			fields: { done: true },
-		});
+		const completed = expectOk(
+			await folder.tables.todos.update('a', {
+				fields: { done: true },
+			}),
+		);
+		expect(completed.fields).toEqual({ title: 'Newer', done: true });
+		expect(first.fields).toEqual({ title: 'A', done: false });
+		const stale = await folder.tables.todos.replace(first, first.source);
 		expect(stale.error?.name).toBe('Conflict');
 		expect((await folder.tables.todos.get('a')).data!.source).toBe(
-			newer.source,
+			completed.source,
 		);
-		// An unchanged write still checks its precondition.
-		const same = await folder.tables.todos.writeSource(first, first.source);
-		expect(same.error?.name).toBe('Conflict');
+		expect(newer.fields.title).toBe('Newer');
 	});
 
 	test('create is exclusive and refuses case-insensitive collisions', async () => {
@@ -201,7 +204,7 @@ describe('browser folder tables', () => {
 		expect(odd.stem).toBe('odd');
 
 		// A typed update of the valid-in-isolation field replaces only that span.
-		const fixed = await folder.tables.todos.update(odd, {
+		const fixed = await folder.tables.todos.update('odd', {
 			fields: { done: true },
 		});
 		expect(fixed.data!.source).toBe(
@@ -214,10 +217,10 @@ describe('browser folder tables', () => {
 		)!;
 		expect(broken.issues?.[0]?.kind).toBe('frontmatter');
 		expect(
-			(await folder.tables.todos.update(broken, { fields: { done: true } }))
+			(await folder.tables.todos.update('broken', { fields: { done: true } }))
 				.error?.name,
 		).toBe('UnsupportedSource');
-		const repaired = await folder.tables.todos.writeSource(
+		const repaired = await folder.tables.todos.replace(
 			broken,
 			'---\ntitle: Repaired\ndone: false\n---\n',
 		);
@@ -349,13 +352,13 @@ describe('browser folder tables', () => {
 		expect(entry.issues?.[0]?.message).toContain('Unresolved alias');
 
 		// A structured edit, as the editor's title field makes, is refused safely.
-		const edited = await folder.tables.todos.update(entry, {
+		const edited = await folder.tables.todos.update(entry.stem!, {
 			fields: { title: 'Fixed' },
 		});
 		expect(edited.error?.name).toBe('UnsupportedSource');
 		expect((await folder.tables.todos.get('alias')).data!.source).toBe(source);
 
-		const repaired = await folder.tables.todos.writeSource(
+		const repaired = await folder.tables.todos.replace(
 			entry,
 			source.replace('*missing', 'Fixed'),
 		);

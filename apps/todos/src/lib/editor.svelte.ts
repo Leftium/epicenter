@@ -287,7 +287,7 @@ export function createTodoEditor(
 ): TodoEditor {
 	return createDraft<TodoEntry>(
 		{
-			write: (baseline, source) => table.writeSource(baseline, source),
+			write: (baseline, source) => table.replace(baseline, source),
 			read: (path) => table.get(stemOf(path)),
 		},
 		entry,

@@ -151,8 +151,7 @@ export function createCaptures(
 	}
 
 	const store: DraftStore = {
-		write: (baseline, source) =>
-			writing(() => table.writeSource(baseline, source)),
+		write: (baseline, source) => writing(() => table.replace(baseline, source)),
 		read,
 		recreate: createExact,
 	};

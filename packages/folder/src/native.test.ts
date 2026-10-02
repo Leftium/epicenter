@@ -97,21 +97,18 @@ describe('native folder', () => {
 		expect(await git(root, 'log', '--format=%s')).toBe('Add todos/walk.md');
 		expect(await git(root, 'status', '--porcelain')).toBe('');
 
-		// An external editor changes the file; the stale entry is refused.
+		// An external edit is preserved when a command updates current content.
 		await writeFile(
 			join(root, 'todos/walk.md'),
 			created.data!.source.replace('Walk', 'Run'),
 		);
-		const stale = await folder.tables.todos.update(created.data!, {
-			fields: { done: true },
-		});
-		expect(stale.error?.name).toBe('Conflict');
 		const current = (await folder.tables.todos.get('walk')).data!;
 		expect(current.fields.title).toBe('Run');
-		const done = await folder.tables.todos.update(current, {
+		const done = await folder.tables.todos.update('walk', {
 			fields: { done: true },
 		});
 		expect(done.error).toBeNull();
+		expect(done.data!.fields).toEqual({ title: 'Run', done: true });
 		await settled(folder);
 		expect(await git(root, 'log', '-1', '--format=%s')).toBe(
 			'Update todos/walk.md',
@@ -379,7 +376,9 @@ describe('browser and native exchange through a real bare repository', () => {
 		const nativeEntry = (await native.tables.todos.get('first')).data!;
 		expect(nativeEntry.fields.title).toBe('First');
 
-		await native.tables.todos.update(nativeEntry, { fields: { done: true } });
+		await native.tables.todos.update(nativeEntry.stem!, {
+			fields: { done: true },
+		});
 		await settled(native);
 		expect(native.git.snapshot.lastPush?.status).toBe('pushed');
 		expect(await git(bare, 'log', '-1', '--format=%s', 'main')).toBe(
@@ -395,10 +394,9 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect((await browser.git.paths()).data).toEqual([]);
 
 		// A dirty folder refuses the next fast-forward before writing anything.
-		await native.tables.todos.update(
-			(await native.tables.todos.get('first')).data!,
-			{ fields: { title: 'Native edit' } },
-		);
+		await native.tables.todos.update('first', {
+			fields: { title: 'Native edit' },
+		});
 		await settled(native);
 		// Another writer publishes without a save request on this handle.
 		const externalDb = await openFolderDatabase(

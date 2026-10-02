@@ -114,7 +114,9 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 		const row = expectOk(
 			await folder.tables.notes.create({ stem: 'a', fields: { title: 'A' } }),
 		);
-		expectOk(await folder.tables.notes.update(row, { fields: { title: 'B' } }));
+		expectOk(
+			await folder.tables.notes.update(row.stem!, { fields: { title: 'B' } }),
+		);
 		expectOk(
 			await folder.kv.update(expectOk(await folder.kv.get()), {
 				theme: 'dark',

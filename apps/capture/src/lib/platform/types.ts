@@ -5,20 +5,21 @@
  * to a real directory the desktop shell owns; the browser leaf opens a logical
  * folder in IndexedDB. Neither leaf imports the other's storage.
  */
+
+import type { CaptureFields } from '@epicenter/capture';
 import type {
 	FileTable,
 	FolderFiles,
 	FolderGit,
 	FolderLocation,
 } from '@epicenter/folder';
-import type { CaptureFields } from '@epicenter/capture';
 
 /** The folder surface Capture uses. */
 export type CaptureFolder = {
 	readonly tables: {
 		readonly captures: Pick<
 			FileTable<CaptureFields>,
-			'list' | 'get' | 'create' | 'writeSource' | 'delete'
+			'list' | 'get' | 'create' | 'replace' | 'delete'
 		>;
 	};
 	/**

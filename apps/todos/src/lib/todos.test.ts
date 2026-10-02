@@ -1116,7 +1116,9 @@ test('a hint never replaces a dirty draft, and its next save reports the other w
 
 		const theirs = expectOk(await other.tables.todos.get(stemOf(path)));
 		expectOk(
-			await other.tables.todos.update(theirs!, { fields: { done: true } }),
+			await other.tables.todos.update(theirs!.stem!, {
+				fields: { done: true },
+			}),
 		);
 		await eventually(() => todos.entries[0]?.fields.done === true);
 		// The list shows the other tab's save; the editor still holds the input.

@@ -62,7 +62,7 @@ async function entryFor(source: string): Promise<Entry<TodoFields>> {
 function recordingTable(release?: Promise<void>) {
 	const writes: { baseline: string; source: string }[] = [];
 	const table = {
-		async writeSource(baseline: Entry<TodoFields>, source: string) {
+		async replace(baseline: Entry<TodoFields>, source: string) {
 			writes.push({ baseline: baseline.source, source });
 			await release;
 			return { data: await entryFor(source), error: null };
@@ -237,7 +237,7 @@ function conflictingTable(theirs: Entry<TodoFields>, saved: TodoRead) {
 	const writes: { baseline: string; source: string }[] = [];
 	const state = { saved };
 	const table = {
-		async writeSource(baseline: Entry<TodoFields>, source: string) {
+		async replace(baseline: Entry<TodoFields>, source: string) {
 			writes.push({ baseline: baseline.source, source });
 			return sameVersion(baseline.version, theirs.version)
 				? Ok(await entryFor(source))

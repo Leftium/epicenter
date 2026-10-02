@@ -359,9 +359,7 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 		'um so a steady tone\n',
 	);
 
-	expect(
-		await library.transform(transcript.path, editor.path),
-	).toBeUndefined();
+	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
 
 	expect(transformed).toHaveLength(1);
 	expect(transformed[0]!.input).toBe('A steady tone, corrected by hand.\n');
@@ -431,12 +429,12 @@ test('unsaved edits to the transcript’s file are saved first, then sent', asyn
 	const editor = await cleanupProfile(library);
 	const source = await transcriptEditor(library, transcript.path);
 	library.autosave.paused = true;
-	source.input(transcript.source.replace(transcript.body!, 'Typed in Files.\n'));
+	source.input(
+		transcript.source.replace(transcript.body!, 'Typed in Files.\n'),
+	);
 	expect(source.dirty).toBe(true);
 
-	expect(
-		await library.transform(transcript.path, editor.path),
-	).toBeUndefined();
+	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
 
 	expect(source.dirty).toBe(false);
 	expect(await readFile(join(root, transcript.path), 'utf8')).toContain(
@@ -728,7 +726,8 @@ test('a transport that throws is a failed run that can be retried, never one lef
 });
 
 test('a running transformation is reported as held until it answers', async () => {
-	const answer = deferred<Awaited<ReturnType<Library['workspace']['transform']>>>();
+	const answer =
+		deferred<Awaited<ReturnType<Library['workspace']['transform']>>>();
 	const { library, root } = await open({ transform: () => answer.promise });
 	const { transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
@@ -816,7 +815,9 @@ test('a save that landed but was reported failed is recognized, not written twic
 	expect(transformed).toHaveLength(1);
 	expect(library.transformationRuns).toHaveLength(0);
 	expect(await names(root, RUNS)).toEqual([`${held.id}.md`]);
-	expect(await readFile(join(root, RUNS, `${held.id}.md`), 'utf8')).toBe(landed);
+	expect(await readFile(join(root, RUNS, `${held.id}.md`), 'utf8')).toBe(
+		landed,
+	);
 	expect(library.outputsFor(transcript.stem!)).toHaveLength(1);
 });
 
@@ -910,7 +911,7 @@ test('this run’s exact row is recognized even with fields the app does not kno
 		'---\n',
 		'---\n# reviewed\nreviewedBy: someone\n',
 	);
-	expect((await table.writeSource(mine.data!, annotated)).error).toBeNull();
+	expect((await table.replace(mine.data!, annotated)).error).toBeNull();
 
 	await library.retryTransformation(held.id);
 

@@ -524,7 +524,7 @@ export function createTodos(folder: TodosFolder) {
 						return editor.saveState.message;
 					return undefined;
 				}
-				const updated = await table.update(entry, {
+				const updated = await table.update(stemOf(entry.path), {
 					fields: { done } satisfies Partial<TodoFields>,
 				});
 				await refresh();

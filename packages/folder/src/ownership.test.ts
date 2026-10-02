@@ -164,7 +164,9 @@ describe('row files', () => {
 				fields: { title: 'Row', done: false },
 			}),
 		);
-		expectOk(await folder.tables.todos.update(row, { fields: { done: true } }));
+		expectOk(
+			await folder.tables.todos.update(row.stem!, { fields: { done: true } }),
+		);
 		expect((await folder.tables.todos.rename(row, 'next')).error?.name).toBe(
 			'Conflict',
 		);
@@ -194,13 +196,13 @@ describe('row files', () => {
 			})
 		).data!;
 		const forged = { ...real, path: 'todos/a/b.md' };
+		expect((await folder.tables.todos.replace(forged, 'x')).error?.name).toBe(
+			'InvalidPath',
+		);
 		expect(
-			(await folder.tables.todos.writeSource(forged, 'x')).error?.name,
-		).toBe('InvalidPath');
-		expect(
-			(await folder.tables.todos.update(forged, { fields: { done: true } }))
+			(await folder.tables.todos.update('a/b', { fields: { done: true } }))
 				.error?.name,
-		).toBe('InvalidPath');
+		).toBe('InvalidStem');
 		expect((await folder.tables.todos.delete(forged)).error?.name).toBe(
 			'InvalidPath',
 		);

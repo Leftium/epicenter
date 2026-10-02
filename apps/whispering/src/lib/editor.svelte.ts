@@ -333,7 +333,7 @@ export function createRowEditor<TFields>(
 ): RowEditor<TFields> {
 	return createDraft<Entry<TFields>>(
 		{
-			write: (baseline, source) => table.writeSource(baseline, source),
+			write: (baseline, source) => table.replace(baseline, source),
 			read: (path) =>
 				table.get(path.slice(table.name.length + 1, -'.md'.length)),
 			keepCopy: copyKeeper(files),

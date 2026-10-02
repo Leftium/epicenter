@@ -175,7 +175,7 @@ test('two raw writes of one version through an opened folder save once', async (
 	}
 });
 
-test('two updates of one captured entry save once and the loser can retry', async () => {
+test('racing current-row updates return a conflict without retrying', async () => {
 	const folder = await root('native-same-owner-update-');
 	const opened = await openNativeFolder({
 		root: folder,
@@ -192,8 +192,10 @@ test('two updates of one captured entry save once and the loser can retry', asyn
 		holdFirstRename();
 
 		const results = await Promise.all([
-			opened.tables.todos.update(captured, { fields: { title: 'Renamed' } }),
-			opened.tables.todos.update(captured, { fields: { done: true } }),
+			opened.tables.todos.update(captured.stem!, {
+				fields: { title: 'Renamed' },
+			}),
+			opened.tables.todos.update(captured.stem!, { fields: { done: true } }),
 		]);
 
 		const firstWon = results[0].error === null;
@@ -208,7 +210,7 @@ test('two updates of one captured entry save once and the loser can retry', asyn
 		);
 		// The refused edit was not lost silently: its caller rereads and reapplies.
 		const retried = expectOk(
-			await opened.tables.todos.update(current, {
+			await opened.tables.todos.update(current.stem!, {
 				fields: firstWon ? { done: true } : { title: 'Renamed' },
 			}),
 		);

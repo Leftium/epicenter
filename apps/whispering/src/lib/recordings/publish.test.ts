@@ -270,7 +270,7 @@ test('a published recording whose title was edited since is still this recording
 	const first = await publishRecording(folder, pending);
 	if (first.status !== 'saved') throw new Error('expected the capture saved');
 	expectOk(
-		await folder.tables.recordings.update(first.entry, {
+		await folder.tables.recordings.update(first.entry.stem!, {
 			fields: { title: 'Renamed by its owner' },
 		}),
 	);
@@ -577,7 +577,7 @@ test('observing a published recording whose title and notes were edited returns 
 	const first = await publishRecording(folder, pending);
 	if (first.status !== 'saved') throw new Error('expected the capture saved');
 	const edited = expectOk(
-		await folder.tables.recordings.update(first.entry, {
+		await folder.tables.recordings.update(first.entry.stem!, {
 			fields: { title: 'Renamed' },
 			body: 'Notes written later\n',
 		}),

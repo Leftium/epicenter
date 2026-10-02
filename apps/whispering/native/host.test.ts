@@ -514,9 +514,10 @@ test('a terminal edit is an outside write: the owner’s next read sees it, and 
 	const reread = (await folder.tables.recordings.get(pending.id)).data!;
 	expect(reread.fields.title).toBe('Renamed in the shell');
 	// The page's older observation no longer matches: its save is refused, not applied.
-	const stale = await folder.tables.recordings.update(entry, {
-		fields: { title: 'Lost update' },
-	});
+	const stale = await folder.tables.recordings.replace(
+		entry,
+		entry.source.replace('First take', 'Lost update'),
+	);
 	expect(stale.error?.name).toBe('Conflict');
 	expect(
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),

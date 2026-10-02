@@ -418,14 +418,9 @@ test('append exclusively creates a missing file and preserves a competing create
 			},
 		},
 	});
-	const result = await terminal
-		.exec('echo appended >> late.txt')
-		.catch((error: Error) => ({
-			exitCode: 1,
-			stdout: '',
-			stderr: error.message,
-		}));
-	expect(result.exitCode).toBe(1);
+	await expect(terminal.exec('echo appended >> late.txt')).rejects.toThrow(
+		'EEXIST',
+	);
 	expect(expectOk(await folder.files.read('late.txt')).bytes).toEqual(
 		new TextEncoder().encode('other writer'),
 	);

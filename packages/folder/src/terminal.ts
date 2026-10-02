@@ -134,6 +134,16 @@ export function createTerminal(
 		return directories.has(relative(path));
 	}
 
+	/** Snapshot descendants before a tree operation starts changing storage. */
+	function descendantsOf(name: string) {
+		const prefix = `${name}/`;
+		return {
+			prefix,
+			files: [...files.keys()].filter((path) => path.startsWith(prefix)),
+			directories: [...directories].filter((path) => path.startsWith(prefix)),
+		};
+	}
+
 	async function readBytes(path: string): Promise<Uint8Array> {
 		const name = relative(path);
 		const read = await storage.read(name);
@@ -166,6 +176,7 @@ export function createTerminal(
 						change.kind !== 'remove' &&
 						change.path === step.path,
 				);
+				// A native move can publish its destination before retiring its source fails.
 				const move = changes.find(
 					(change) => change.kind === 'move' && change.to === step.path,
 				);
@@ -327,13 +338,9 @@ export function createTerminal(
 				if (options?.force) return;
 				throw failure(`No such file or directory: ${path}`, 'ENOENT');
 			}
-			const prefix = `${name}/`;
-			const nestedFiles = [...files.keys()].filter((file) =>
-				file.startsWith(prefix),
-			);
-			const nestedDirectories = [...directories]
-				.filter((directory) => directory.startsWith(prefix))
-				.sort((a, b) => b.length - a.length);
+			const { files: nestedFiles, directories: nestedDirectories } =
+				descendantsOf(name);
+			nestedDirectories.sort((a, b) => b.length - a.length);
 			if (
 				(nestedFiles.length > 0 || nestedDirectories.length > 0) &&
 				!options?.recursive
@@ -355,13 +362,11 @@ export function createTerminal(
 			}
 			if (!options?.recursive)
 				throw failure(`Copying a directory requires -r: ${source}`, 'EISDIR');
-			const prefix = `${relative(source)}/`;
-			const sourceFiles = [...files.keys()].filter((path) =>
-				path.startsWith(prefix),
-			);
-			const sourceDirectories = [...directories].filter((path) =>
-				path.startsWith(prefix),
-			);
+			const {
+				prefix,
+				files: sourceFiles,
+				directories: sourceDirectories,
+			} = descendantsOf(relative(source));
 			for (const path of [relative(source), ...sourceDirectories]) {
 				const target =
 					path === relative(source)
@@ -388,13 +393,11 @@ export function createTerminal(
 				throw failure(`No such file or directory: ${source}`, 'ENOENT');
 			if (isFile(destination) || isDirectory(destination))
 				throw failure(`File exists: ${destination}`, 'EEXIST');
-			const prefix = `${from}/`;
-			const sourceFiles = [...files.keys()].filter((path) =>
-				path.startsWith(prefix),
-			);
-			const sourceDirectories = [...directories].filter((path) =>
-				path.startsWith(prefix),
-			);
+			const {
+				prefix,
+				files: sourceFiles,
+				directories: sourceDirectories,
+			} = descendantsOf(from);
 			for (const path of [from, ...sourceDirectories]) {
 				const target =
 					path === from ? to : `${to}/${path.slice(prefix.length)}`;

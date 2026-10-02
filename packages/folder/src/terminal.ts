@@ -2,9 +2,8 @@
  * A just-bash shell over an opened folder, reached through `folder.terminal()`.
  *
  * The shell reads and writes the same files as the app through the folder's
- * file boundary; there is no scratch copy. It is given shell access, not the
- * public file verbs, because a redirection and `rm` act on whatever is at a
- * path. Each successful content write
+ * accounted storage; there is no scratch copy. Redirection and `rm` act on
+ * whatever is at a path. Each successful content write
  * follows the folder's automatic history policy. A command that
  * rewrites a file it read in the same command writes against the sha256 it
  * read, so an intervening replacement is refused; a plain redirection is a
@@ -14,15 +13,16 @@
  * commit -m, push, fetch, and pull --ff-only. Staged authoring requires
  * `commitOnEdit: false`. Other Git commands are refused.
  */
+import { Buffer } from 'buffer/';
 import {
 	Bash,
 	type CommandName,
 	defineCommand,
 	type IFileSystem,
 } from 'just-bash';
-import type { ApplyError, FileError } from './errors.js';
-import type { FolderStorage } from './boundary.js';
+import type { FileChange, FolderStorage } from './boundary.js';
 import { hashBytes, ownBytes } from './capture.js';
+import type { ApplyError, FileError } from './errors.js';
 import type { FolderGit } from './folder.js';
 
 export type TerminalResult = {
@@ -77,14 +77,9 @@ const COMMANDS: CommandName[] = [
 	'clear',
 ];
 
-class ShellFailure extends Error {
-	constructor(
-		message: string,
-		readonly code: string,
-	) {
-		super(message);
-	}
-}
+/** Just Bash recognizes filesystem codes in the message, not an error property. */
+const failure = (message: string, code: string) =>
+	new Error(`${code}: ${message}`);
 
 function fail(error: FileError | ApplyError): never {
 	const code =
@@ -101,7 +96,7 @@ function fail(error: FileError | ApplyError): never {
 							: error.name === 'Conflict'
 								? 'ESTALE'
 								: 'EIO';
-	throw new ShellFailure(error.message, code);
+	throw failure(error.message, code);
 }
 
 export function createTerminal(
@@ -147,6 +142,62 @@ export function createTerminal(
 		return read.data.bytes;
 	}
 
+	/** Maintain command observations for every confirmed step, including partial progress. */
+	async function applyChanges(changes: readonly FileChange[]) {
+		if (changes.length === 0) return;
+		const result = await storage.apply(changes);
+		const applied =
+			result.error === null
+				? changes
+				: result.error.name === 'Partial'
+					? result.error.applied
+					: [];
+		for (const step of applied) {
+			if (step.kind === 'remove') observed.delete(step.path);
+			else if (step.kind === 'move') {
+				const sha256 = observed.get(step.from);
+				observed.delete(step.from);
+				if (sha256 === undefined) observed.delete(step.to);
+				else observed.set(step.to, sha256);
+			} else {
+				const write = changes.find(
+					(change) =>
+						change.kind !== 'move' &&
+						change.kind !== 'remove' &&
+						change.path === step.path,
+				);
+				const move = changes.find(
+					(change) => change.kind === 'move' && change.to === step.path,
+				);
+				const sha256 =
+					write && 'sha256' in write
+						? write.sha256
+						: move?.kind === 'move'
+							? observed.get(move.from)
+							: undefined;
+				if (sha256 === undefined) observed.delete(step.path);
+				else observed.set(step.path, sha256);
+			}
+		}
+		if (result.error) {
+			if (applied.length > 0 || result.error.name === 'Unconfirmed')
+				await refresh().catch(() => {});
+			fail(result.error);
+		}
+		await refresh();
+	}
+
+	async function removeDirectories(paths: readonly string[]) {
+		for (const path of paths) {
+			const removed = await storage.rmdir(path);
+			if (removed.error && removed.error.name !== 'NotFound')
+				fail(removed.error);
+			// Derived directories can disappear with their last file.
+			directories.delete(path);
+		}
+		await refresh();
+	}
+
 	async function writeBytes(path: string, content: string | Uint8Array) {
 		const name = relative(path);
 		const bytes = ownBytes(content);
@@ -154,21 +205,11 @@ export function createTerminal(
 		// shell deliberately overwrites or creates the path.
 		const expectedSha256 = observed.get(name);
 		const sha256 = await hashBytes(bytes);
-		const written = await storage.apply([
+		await applyChanges([
 			expectedSha256 === undefined
 				? { kind: 'overwrite', path: name, bytes, sha256 }
 				: { kind: 'replace', path: name, bytes, sha256, expectedSha256 },
 		]);
-		if (written.error) fail(written.error);
-		observed.set(name, sha256);
-		await refresh();
-	}
-
-	function latin1(bytes: Uint8Array): string {
-		let value = '';
-		for (let offset = 0; offset < bytes.length; offset += 16384)
-			value += String.fromCharCode(...bytes.subarray(offset, offset + 16384));
-		return value;
 	}
 
 	const fs: IFileSystem = {
@@ -182,32 +223,59 @@ export function createTerminal(
 			const bytes = await readBytes(path);
 			const encoding =
 				typeof options === 'string' ? options : options?.encoding;
-			if (encoding === 'binary' || encoding === 'latin1') return latin1(bytes);
-			return new TextDecoder().decode(bytes);
+			return Buffer.from(bytes).toString(encoding ?? 'utf8');
 		},
 		readFileBuffer: readBytes,
-		writeFile: async (path, content) => writeBytes(path, content),
-		async appendFile(path, content) {
-			const prior = isFile(path) ? await readBytes(path) : new Uint8Array();
+		writeFile: async (path, content, options) => {
+			const encoding =
+				typeof options === 'string' ? options : options?.encoding;
+			await writeBytes(
+				path,
+				typeof content === 'string'
+					? Buffer.from(content, encoding ?? 'utf8')
+					: content,
+			);
+		},
+		async appendFile(path, content, options) {
+			const encoding =
+				typeof options === 'string' ? options : options?.encoding;
 			const addition =
 				typeof content === 'string'
-					? new TextEncoder().encode(content)
-					: content;
-			const next = new Uint8Array(prior.length + addition.length);
-			next.set(prior);
-			next.set(addition, prior.length);
+					? Buffer.from(content, encoding ?? 'utf8')
+					: ownBytes(content);
+			const name = relative(path);
+			const read = await storage.read(name);
+			if (read.error) {
+				if (read.error.name !== 'NotFound') fail(read.error);
+				await applyChanges([
+					{
+						kind: 'create',
+						path: name,
+						bytes: addition,
+						sha256: await hashBytes(addition),
+					},
+				]);
+				return;
+			}
+			observed.set(name, read.data.sha256);
+			if (addition.length === 0) return;
+			const next = new Uint8Array(read.data.bytes.length + addition.length);
+			next.set(read.data.bytes);
+			next.set(addition, read.data.bytes.length);
 			await writeBytes(path, next);
 		},
 		exists: async (path) => isFile(path) || isDirectory(path),
 		async stat(path) {
 			const file = isFile(path);
 			if (!file && !isDirectory(path))
-				throw new ShellFailure(`No such file or directory: ${path}`, 'ENOENT');
+				throw failure(`No such file or directory: ${path}`, 'ENOENT');
 			return {
+				// Identity belongs to a literal Folder entry, not a native inode.
+				identity: resolvePath('/', path),
 				isFile: file,
 				isDirectory: !file,
 				isSymbolicLink: false,
-				mode: file ? 0o100644 : 0o40755,
+				mode: file ? 0o644 : 0o755,
 				size: file ? (files.get(relative(path)) ?? 0) : 0,
 				mtime: new Date(0),
 			};
@@ -215,38 +283,49 @@ export function createTerminal(
 		lstat: (path) => fs.stat(path),
 		async realpath(path) {
 			if (!(await fs.exists(path)))
-				throw new ShellFailure(`No such file or directory: ${path}`, 'ENOENT');
+				throw failure(`No such file or directory: ${path}`, 'ENOENT');
 			return resolvePath('/', path);
 		},
 		async mkdir(path, options) {
 			const name = relative(path);
-			if (isDirectory(path)) {
-				if (options?.recursive) return;
-				throw new ShellFailure(`File exists: ${path}`, 'EEXIST');
-			}
+			if (isDirectory(path) && options?.recursive) return;
+			if (isFile(path) || isDirectory(path))
+				throw failure(`File exists: ${path}`, 'EEXIST');
+			const parent = resolvePath(path, '..');
+			if (isFile(parent))
+				throw failure(`Not a directory: ${parent}`, 'ENOTDIR');
+			if (!options?.recursive && !isDirectory(parent))
+				throw failure(`No such file or directory: ${parent}`, 'ENOENT');
 			const made = await storage.mkdir(name);
 			if (made.error) fail(made.error);
 			await refresh();
 		},
 		async readdir(path) {
 			if (!isDirectory(path))
-				throw new ShellFailure(`Not a directory: ${path}`, 'ENOTDIR');
-			const listed = await storage.children(relative(path));
-			if (listed.error) fail(listed.error);
-			return [...listed.data.directories, ...listed.data.files].sort();
+				throw isFile(path)
+					? failure(`Not a directory: ${path}`, 'ENOTDIR')
+					: failure(`No such file or directory: ${path}`, 'ENOENT');
+			const name = relative(path);
+			const prefix = name === '' ? '' : `${name}/`;
+			return [
+				...new Set(
+					[...directories, ...files.keys()]
+						.filter((entry) => entry !== name && entry.startsWith(prefix))
+						.map((entry) => entry.slice(prefix.length).split('/')[0]!),
+				),
+			].sort();
 		},
 		async rm(path, options) {
 			const name = relative(path);
 			if (isFile(path)) {
-				const removed = await storage.apply([{ kind: 'remove', path: name, expectedSha256: observed.get(name) }]);
-				if (removed.error) fail(removed.error);
-				observed.delete(name);
-				await refresh();
+				await applyChanges([
+					{ kind: 'remove', path: name, expectedSha256: observed.get(name) },
+				]);
 				return;
 			}
 			if (!isDirectory(path)) {
 				if (options?.force) return;
-				throw new ShellFailure(`No such file or directory: ${path}`, 'ENOENT');
+				throw failure(`No such file or directory: ${path}`, 'ENOENT');
 			}
 			const prefix = `${name}/`;
 			const nestedFiles = [...files.keys()].filter((file) =>
@@ -259,80 +338,107 @@ export function createTerminal(
 				(nestedFiles.length > 0 || nestedDirectories.length > 0) &&
 				!options?.recursive
 			)
-				throw new ShellFailure(`Directory not empty: ${path}`, 'ENOTEMPTY');
-			for (const file of nestedFiles) {
-				const removed = await storage.apply([{ kind: 'remove', path: file, expectedSha256: observed.get(file) }]);
-				if (removed.error) fail(removed.error);
-			}
-			for (const directory of [...nestedDirectories, name]) {
-				const removed = await storage.rmdir(directory);
-				// Directories derived only from files disappear with their files.
-				if (removed.error && removed.error.name !== 'NotFound')
-					fail(removed.error);
-			}
-			await refresh();
+				throw failure(`Directory not empty: ${path}`, 'ENOTEMPTY');
+			await applyChanges(
+				nestedFiles.map((path) => ({
+					kind: 'remove',
+					path,
+					expectedSha256: observed.get(path),
+				})),
+			);
+			await removeDirectories([...nestedDirectories, name]);
 		},
 		async cp(source, destination, options) {
-			if (isDirectory(source)) {
-				if (!options?.recursive)
-					throw new ShellFailure(
-						`Copying a directory requires -r: ${source}`,
-						'EISDIR',
-					);
-				const prefix = `${relative(source)}/`;
-				for (const file of [...files.keys()].filter((path) =>
-					path.startsWith(prefix),
-				))
-					await writeBytes(
-						resolvePath('/', `${destination}/${file.slice(prefix.length)}`),
-						await readBytes(`/${file}`),
-					);
+			if (!isDirectory(source)) {
+				await writeBytes(destination, await readBytes(source));
 				return;
 			}
-			await writeBytes(destination, await readBytes(source));
+			if (!options?.recursive)
+				throw failure(`Copying a directory requires -r: ${source}`, 'EISDIR');
+			const prefix = `${relative(source)}/`;
+			const sourceFiles = [...files.keys()].filter((path) =>
+				path.startsWith(prefix),
+			);
+			const sourceDirectories = [...directories].filter((path) =>
+				path.startsWith(prefix),
+			);
+			for (const path of [relative(source), ...sourceDirectories]) {
+				const target =
+					path === relative(source)
+						? destination
+						: `${destination}/${path.slice(prefix.length)}`;
+				await fs.mkdir(target, { recursive: true });
+			}
+			for (const file of sourceFiles)
+				await writeBytes(
+					resolvePath('/', `${destination}/${file.slice(prefix.length)}`),
+					await readBytes(`/${file}`),
+				);
 		},
 		async mv(source, destination) {
 			const from = relative(source);
 			const to = relative(destination);
 			if (isFile(source)) {
-				const moved = await storage.apply([{ kind: 'move', from, to, expectedSha256: observed.get(from) }]);
-				if (moved.error) fail(moved.error);
-				await refresh();
+				await applyChanges([
+					{ kind: 'move', from, to, expectedSha256: observed.get(from) },
+				]);
 				return;
 			}
-			await fs.cp(source, destination, { recursive: true });
-			await fs.rm(source, { recursive: true });
+			if (!isDirectory(source))
+				throw failure(`No such file or directory: ${source}`, 'ENOENT');
+			if (isFile(destination) || isDirectory(destination))
+				throw failure(`File exists: ${destination}`, 'EEXIST');
+			const prefix = `${from}/`;
+			const sourceFiles = [...files.keys()].filter((path) =>
+				path.startsWith(prefix),
+			);
+			const sourceDirectories = [...directories].filter((path) =>
+				path.startsWith(prefix),
+			);
+			for (const path of [from, ...sourceDirectories]) {
+				const target =
+					path === from ? to : `${to}/${path.slice(prefix.length)}`;
+				await fs.mkdir(`/${target}`, { recursive: true });
+			}
+			await applyChanges(
+				sourceFiles.map((path) => ({
+					kind: 'move',
+					from: path,
+					to: `${to}/${path.slice(prefix.length)}`,
+					expectedSha256: observed.get(path),
+				})),
+			);
+			await removeDirectories([
+				...sourceDirectories.sort((a, b) => b.length - a.length),
+				from,
+			]);
 		},
 		async chmod(path) {
 			if (!(await fs.exists(path)))
-				throw new ShellFailure(`No such file or directory: ${path}`, 'ENOENT');
+				throw failure(`No such file or directory: ${path}`, 'ENOENT');
 		},
 		async utimes(path) {
 			if (!(await fs.exists(path)))
-				throw new ShellFailure(`No such file or directory: ${path}`, 'ENOENT');
+				throw failure(`No such file or directory: ${path}`, 'ENOENT');
 		},
 		async symlink() {
-			throw new ShellFailure(
-				'Symbolic links are not portable folder files',
-				'EPERM',
-			);
+			throw failure('Symbolic links are not portable folder files', 'EPERM');
 		},
 		async link() {
-			throw new ShellFailure(
-				'Hard links are not portable folder files',
-				'EPERM',
-			);
+			throw failure('Hard links are not portable folder files', 'EPERM');
 		},
 		async readlink(path) {
-			throw new ShellFailure(`Not a symbolic link: ${path}`, 'EINVAL');
+			throw failure(`Not a symbolic link: ${path}`, 'EINVAL');
 		},
 	};
 
-	const gitCommand = defineCommand('git', async (args, context) =>
-		runGit(git, args, (path) =>
+	const gitCommand = defineCommand('git', async (args, context) => {
+		const result = await runGit(git, args, (path) =>
 			relative(context.fs.resolvePath(context.cwd, path)),
-		),
-	);
+		);
+		if (args[0] === 'pull' && result.exitCode === 0) await refresh();
+		return result;
+	});
 
 	const bash = new Bash({
 		fs,

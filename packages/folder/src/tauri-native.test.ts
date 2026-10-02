@@ -25,6 +25,7 @@
  * - A terminal command holds nothing: another window saves, and runs a whole
  *   terminal command of its own, between its steps, and the owner commits a
  *   terminal's save like any other
+ * - Binary pipelines and directory tree moves use the real owner's file commands
  * - A terminal's rewrite of a file it read is refused when another window
  *   wrote between its steps, and the steps before it stay landed
  * - A terminal `git fetch` in flight at the remote delays no save and no commit
@@ -638,6 +639,27 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(await git(root, 'show', 'HEAD:notes/a.md')).toBe(
 			'from the terminal',
 		);
+	});
+
+	test('the terminal preserves binary pipelines and moves a directory tree through the real owner', async () => {
+		const { folder, other } = await setup({ manual: true });
+		const bytes = Uint8Array.from({ length: 256 }, (_, index) => index);
+		expectOk(await a(() => folder.files.create('raw.bin', bytes)));
+		const result = await a(() =>
+			folder
+				.terminal()
+				.exec(
+					'mkdir -p source/empty/deep && cat raw.bin | tee source/a.bin >/dev/null && cp source/a.bin source/b.bin && mv source moved',
+				),
+		);
+		expect(result).toEqual({ stdout: '', stderr: '', exitCode: 0 });
+		for (const path of ['moved/a.bin', 'moved/b.bin'])
+			expect(expectOk(await b(() => other.files.read(path))).bytes).toEqual(
+				bytes,
+			);
+		const listing = expectOk(await b(() => other.files.list()));
+		expect(listing.directories).toContain('moved/empty/deep');
+		expect(listing.directories).not.toContain('source');
 	});
 
 	test('a terminal rewrite of a file it read is refused when another window wrote between its steps', async () => {

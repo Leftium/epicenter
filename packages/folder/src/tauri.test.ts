@@ -921,7 +921,7 @@ test('closing detaches while a terminal save is awaiting its reply, and its late
 	// The command queued behind it never started.
 	expect(await queued).toEqual({
 		stdout: '',
-		stderr: 'The folder is closed\n',
+		stderr: 'EIO: The folder is closed\n',
 		exitCode: 1,
 	});
 });

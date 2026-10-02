@@ -290,6 +290,23 @@ them, and a command that stops partway leaves its earlier steps saved. Each
 save follows the folder's automatic history policy. The terminal ends with
 the folder: closing stops a running command at its next step.
 
+The filesystem adapter maps reads to `storage.read`, file mutations to
+`storage.apply`, and directory changes to `storage.mkdir` and `storage.rmdir`.
+File and directory metadata share an inventory read at command start and
+refreshed after the command's own changes and a successful Git pull. Reads
+fetch current bytes. Append reads the destination before saving, uses exclusive
+creation for a missing file, and replaces an existing file conditionally.
+Binary pipelines and redirection preserve bytes. Recursive copies preserve
+empty directories; directory moves relocate captured paths without reading
+file contents. A file added to the source during a move stays there and can
+prevent the source directory from being removed.
+
+This is a virtual filesystem over literal Folder entries. Move destinations
+must be unoccupied, including directory destinations; moves refuse existing
+files instead of overwriting them. Content writes and directory moves can
+create missing parent directories. Permissions and timestamps are synthetic,
+and entry identity does not expose native hard-link aliases.
+
 ## History
 
 Browser handles, Bun directory handles, and the desktop app's Rust owner follow
@@ -449,5 +466,5 @@ collection.
 
 Git keeps raw storage because incoming fast-forwards update files and history
 under their own policy. They must not trigger an automatic commit as a new
-local save. A batch uses one `apply`; the terminal uses a separate application
-for each file mutation.
+local save. A batch uses one `apply`. Terminal writes apply separately; a
+recursive removal or directory move applies its captured file steps together.

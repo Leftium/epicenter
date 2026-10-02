@@ -176,8 +176,6 @@ export function createKv<TValues>(
 			const next = `${bom}${JSON.stringify({ ...object, ...values }, null, 2)}\n`;
 			return publish(snapshot, next);
 		},
-		async writeSource(snapshot, source) {
-			return publish(snapshot, source);
-		},
+		writeSource: publish,
 	};
 }

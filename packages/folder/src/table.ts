@@ -384,9 +384,7 @@ export function createTable<TFields>(
 			}
 			return Ok({ entries, unreadable });
 		},
-		async get(stem) {
-			return readEntry(stem);
-		},
+		get: readEntry,
 		async create(input) {
 			const prepared = prepareRow(name, parsed, {
 				stem: input.stem ?? generateStem(),

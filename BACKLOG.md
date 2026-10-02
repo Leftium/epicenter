@@ -34,6 +34,54 @@ instruction to execute every item in file order.
 Use one session per outcome. Recheck current source and dirty work before
 starting: a prior session may already have completed it.
 
+## Build Whispering's recordings table with an optional detail pane
+
+- Desired result: Keep recordings manageable as a collection with search,
+  sorting, selection, and bulk actions. Selecting a recording opens playback,
+  transcript editing, copying, and transformation in an optional detail pane;
+  narrow windows use a full detail view. Put technical metadata in secondary
+  details and include transcript excerpts for discovery.
+- Grounding: On 2026-10-02 the user accepted the hybrid recommendation from
+  `01a0f752-5a4f-7ff0-95b2-9123832d75d8`. Continuation: Whispering
+  implementation chat `01a0fd21-5251-7201-a40b-1aa104733d90`.
+- Code milestone: Implemented in `40cf833314`. The live checkout passed 316
+  tests, typecheck, and build. Supervision independently passed the 18 focused
+  recordings tests with 129 assertions. Shared transcript drafts, close
+  admission guards, visible-only bulk actions, and the optional pane are
+  accepted as code. This does not complete the graphical desktop outcome.
+- Remaining acceptance: Desktop and narrow-window visuals, keyboard and
+  focus behavior, and actual transcript editing while listening. Automatic
+  approval review rejected preview access under its browser URL policy;
+  screenshots and live listening were not verified. Use ordinary manual
+  app/browser access when available; do not widen permissions or work around
+  the restriction.
+- Manual inspection: Start from the repository root with
+  `bun dev:whispering:ui` and open the printed URL yourself. For native
+  inspection, run `WHISPERING_DATA_ROOT=/tmp/whispering-ui-acceptance-20261002 bun dev:whispering`. Use disposable recording history and
+  a test endpoint for bulk transcription.
+
+  1. On Recordings, search words from an older transcript and check the
+     matching excerpt. Sort columns, select rows, and hide some with search;
+     counts and bulk actions must apply only to the selected rows shown.
+  2. Open a recording, play it, edit its transcript, and copy the text.
+     Playback must continue while typing. Close details, verify the table
+     regains its width, then reopen and check the draft and saved text.
+  3. At narrow widths such as 320 and 390 pixels, check table readability,
+     full-detail Back navigation, popups, scrolling, and focus returning to
+     the recording. Use keyboard activation and confirm checkbox clicks
+     select without opening details. File details should remain secondary.
+  4. Select several untranscribed recordings and use the test endpoint.
+     Confirm progress and saved results, explicit skips/refusals, no silent
+     retry, and collection state retained when changing pages.
+- Separate Home draft: The lower-right desktop icon row, with the centered
+  row below on mobile, remains isolated and uncommitted. Its patch is
+  `/Users/braden/.codex/artifacts/whispering-home-controls-20261002/lower-right-placement-draft.patch`.
+  Inspect its desktop and narrow placement separately before integrating it;
+  the recordings commit does not include it.
+- Revisit when: Normal visual inspection is available. Record observed
+  results and fix reproducible gaps. Keep this item until those checks pass;
+  automated tests alone do not complete it.
+
 ## Complete Mail acceptance and triage edge cases
 
 - Desired result: Desktop sign-in and Gmail consent lead to readable local mail;

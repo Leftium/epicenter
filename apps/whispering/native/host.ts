@@ -3,26 +3,28 @@
  *
  * It serves the built page on loopback and answers the operations a page
  * cannot do itself: the terminal, revealing the folder, transcription and
- * transformation requests with the device key, fixture audio, and the close
- * handshake with the shell.
+ * transformation requests with the device key, the microphone chosen on this
+ * device, fixture audio, and the close handshake with the shell.
  *
  * It does not own the data folder. The desktop shell's Rust owner opens the
  * directory, publishes files, and records history, and the page reaches it
  * through Tauri. This process is given the same directory by the shell and is
  * an ordinary program beside that owner: the terminal writes the directory
  * the way any shell does, transcription reads one audio file out of it, and
- * the device key is a file under its `.git`. It takes no folder lock, opens no
- * folder, initializes no Git, and watches nothing.
+ * the device key and chosen microphone are one file under its `.git`. It
+ * takes no folder lock, opens no folder, initializes no Git, and watches
+ * nothing.
  *
  * `handle` is a plain `Request -> Response` function. `main.ts` binds it to a
  * port; tests call it directly.
  */
 import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { audioMimeTypeOf } from '../src/lib/audio-format.js';
 import { decode, encode } from '../src/lib/bridge/codec.js';
+import type { MicrophonePreference } from '../src/lib/capture.js';
 import { DEFAULT_TRANSCRIPTION_SETTINGS } from '../src/lib/definition.js';
 import {
 	requestTranscription,
@@ -30,6 +32,12 @@ import {
 } from '../src/lib/transcription.js';
 import { requestTransformation } from '../src/lib/transformation.js';
 import { readAudio } from './audio.js';
+import {
+	createDeviceFile,
+	keyIn,
+	microphoneIn,
+	readMicrophone,
+} from './device-file.js';
 import {
 	createFailureInjection,
 	type FailureInjection,
@@ -77,6 +85,12 @@ export type HostInfo = {
 	readonly credentialPresent: boolean;
 	/** Whether the key comes from the environment and cannot be changed here. */
 	readonly credentialFromEnvironment: boolean;
+};
+
+/** What `preferences` and `set-preferences` answer. Never the key. */
+export type DevicePreferences = {
+	/** The microphone chosen on this device, or null for the system default. */
+	readonly microphone: MicrophonePreference | null;
 };
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -138,12 +152,8 @@ export async function createHost(options: HostOptions) {
 			`The data folder '${root}' is not the existing, resolved directory the desktop shell selects. This host does not choose or create one.`,
 		);
 	const terminal = createShellTerminal(root);
-	const deviceFile = join(
-		root,
-		'.git',
-		'epicenter',
-		'whispering',
-		'device.json',
+	const device = createDeviceFile(
+		join(root, '.git', 'epicenter', 'whispering', 'device.json'),
 	);
 	const encoder = new TextEncoder();
 
@@ -175,21 +185,8 @@ export async function createHost(options: HostOptions) {
 		}
 	}
 
-	async function storedKey(): Promise<string> {
-		try {
-			const parsed: unknown = JSON.parse(await readFile(deviceFile, 'utf8'));
-			if (
-				typeof parsed === 'object' &&
-				parsed !== null &&
-				'transcriptionApiKey' in parsed &&
-				typeof parsed.transcriptionApiKey === 'string'
-			)
-				return parsed.transcriptionApiKey;
-		} catch {
-			// No device file yet, or one that is not ours to read.
-		}
-		return '';
-	}
+	/** The saved key, or '' when there is none or the device file cannot be read. */
+	const storedKey = () => device.read().then(keyIn, () => '');
 
 	const environmentKey = options.env.WHISPERING_TRANSCRIPTION_API_KEY;
 	const apiKey = async () => environmentKey ?? (await storedKey());
@@ -364,13 +361,36 @@ export async function createHost(options: HostOptions) {
 				'The transcription key comes from WHISPERING_TRANSCRIPTION_API_KEY and cannot be changed here.',
 			);
 		const key = String(payload.key ?? '');
-		await mkdir(join(deviceFile, '..'), { recursive: true });
-		await writeFile(
-			deviceFile,
-			`${JSON.stringify({ transcriptionApiKey: key }, null, 2)}\n`,
-			{ mode: 0o600 },
-		);
+		await device.setKey(key);
 		return { present: key !== '' };
+	}
+
+	/**
+	 * What this device remembers that is not a secret. The reply is built from
+	 * the named preferences only, so the key in the same file is never in it.
+	 */
+	async function preferences(): Promise<DevicePreferences> {
+		return { microphone: microphoneIn(await device.read()) ?? null };
+	}
+
+	/**
+	 * Remember the chosen microphone, or with `null` forget it. Only that
+	 * field of the device file changes: the key stays as it is, including when
+	 * the key in use comes from the environment.
+	 */
+	async function setPreferences(
+		payload: Record<string, unknown>,
+	): Promise<DevicePreferences> {
+		const microphone =
+			payload.microphone === null
+				? undefined
+				: readMicrophone(payload.microphone);
+		if (payload.microphone !== null && microphone === undefined)
+			throw new Error(
+				'A microphone preference is null, or a device ID and the name it was chosen under.',
+			);
+		await device.setMicrophone(microphone);
+		return { microphone: microphone ?? null };
 	}
 
 	async function fixture() {
@@ -405,6 +425,10 @@ export async function createHost(options: HostOptions) {
 				return transform(payload);
 			case 'credential':
 				return setCredential(payload);
+			case 'preferences':
+				return preferences();
+			case 'set-preferences':
+				return setPreferences(payload);
 			case 'close':
 				return closeAnswered(payload);
 			case 'fixture':

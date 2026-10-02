@@ -14,7 +14,7 @@ import type {
 } from '@epicenter/folder';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { CaptureDevice } from '../capture.js';
+import type { CaptureDevice, MicrophonePreference } from '../capture.js';
 import type {
 	TranscriptionSettings,
 	whisperingDefinition,
@@ -140,6 +140,18 @@ export type Workspace = {
 		readonly readOnlyReason: string | undefined;
 		present(): Promise<boolean>;
 		set(key: string): Promise<string | undefined>;
+	};
+	/**
+	 * What this device remembers that is neither folder data nor a secret. It
+	 * is never written to `kv.json`, so it does not travel with the folder.
+	 */
+	readonly preferences: {
+		/** The saved microphone, or undefined for the system default. Rejects when it cannot be read. */
+		microphone(): Promise<MicrophonePreference | undefined>;
+		/** Save the choice, or with undefined forget it. A problem is returned as text. */
+		setMicrophone(
+			microphone: MicrophonePreference | undefined,
+		): Promise<string | undefined>;
 	};
 	/**
 	 * The desktop shell asks before it closes the window or quits, because only

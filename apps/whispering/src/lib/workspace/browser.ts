@@ -15,13 +15,14 @@ import { Ok, type Result } from 'wellcrafted/result';
 import { audioMimeTypeOf } from '../audio-format.js';
 import {
 	createFixtureDevice,
-	createMicrophoneDevice,
+	type MicrophonePreference,
 	toneWav,
 } from '../capture.js';
 import {
 	DEFAULT_TRANSCRIPTION_SETTINGS,
 	whisperingDefinition,
 } from '../definition.js';
+import { createMicrophoneDevice } from '../microphone.js';
 import { requestTranscription, TranscriptionError } from '../transcription.js';
 import {
 	requestTransformation,
@@ -30,6 +31,29 @@ import {
 import { type Workspace, WorkspaceError } from './types.js';
 
 const KEY_STORAGE = 'whispering.transcriptionApiKey';
+const MICROPHONE_STORAGE = 'whispering.microphone';
+
+/** The microphone saved in this browser, or undefined when none is or it does not read as one. */
+function savedMicrophone(): MicrophonePreference | undefined {
+	try {
+		const saved: unknown = JSON.parse(
+			localStorage.getItem(MICROPHONE_STORAGE) ?? 'null',
+		);
+		if (
+			typeof saved === 'object' &&
+			saved !== null &&
+			'deviceId' in saved &&
+			typeof saved.deviceId === 'string' &&
+			saved.deviceId !== '' &&
+			'label' in saved &&
+			typeof saved.label === 'string'
+		)
+			return { deviceId: saved.deviceId, label: saved.label };
+	} catch {
+		// Not ours to read.
+	}
+	return undefined;
+}
 
 /**
  * A development build opened with `?fixture=tone` records a generated tone
@@ -114,6 +138,23 @@ export async function openBrowserWorkspace(): Promise<
 				if (key === '') localStorage.removeItem(KEY_STORAGE);
 				else localStorage.setItem(KEY_STORAGE, key);
 				return undefined;
+			},
+		},
+		preferences: {
+			microphone: async () => savedMicrophone(),
+			async setMicrophone(microphone) {
+				try {
+					if (microphone === undefined)
+						localStorage.removeItem(MICROPHONE_STORAGE);
+					else
+						localStorage.setItem(
+							MICROPHONE_STORAGE,
+							JSON.stringify(microphone),
+						);
+					return undefined;
+				} catch (cause) {
+					return cause instanceof Error ? cause.message : String(cause);
+				}
 			},
 		},
 		initialSettings: DEFAULT_TRANSCRIPTION_SETTINGS,

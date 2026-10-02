@@ -9,8 +9,9 @@
  *
  * The host that serves this page does the rest: the terminal is the person's
  * shell in that directory, transcription and transformation requests leave
- * from the host with the device key, and the shell's close question arrives
- * on the host's event stream. The host holds no folder; what its terminal
+ * from the host with the device key, the microphone chosen on this device is
+ * kept beside that key, and the shell's close question arrives on the host's
+ * event stream. The host holds no folder; what its terminal
  * writes reaches this page as the owner's hints, like any other program's.
  *
  * Both are required to open. A host that does not answer, an owner that
@@ -35,9 +36,10 @@ import {
 import {
 	type CaptureDevice,
 	createFixtureDevice,
-	createMicrophoneDevice,
+	type MicrophonePreference,
 } from '../capture.js';
 import { whisperingDefinition } from '../definition.js';
+import { createMicrophoneDevice } from '../microphone.js';
 import { TranscriptionError } from '../transcription.js';
 import { TransformationError } from '../transformation.js';
 import {
@@ -59,6 +61,11 @@ type HostInfo = {
 	};
 	readonly credentialPresent: boolean;
 	readonly credentialFromEnvironment: boolean;
+};
+
+/** What the host remembers for this device. Mirrors `DevicePreferences` in `native/host.ts`. */
+type DevicePreferences = {
+	readonly microphone: MicrophonePreference | null;
 };
 
 type ShellRun = {
@@ -310,6 +317,23 @@ export async function openDesktopWorkspace(
 			async set(key) {
 				try {
 					await bridge.app('credential', { key });
+					return undefined;
+				} catch (cause) {
+					return describe(cause);
+				}
+			},
+		},
+		// The page is served from a new port on every launch, so its own storage
+		// does not last. The host keeps the choice in the device file instead.
+		preferences: {
+			microphone: async () =>
+				(await bridge.app<DevicePreferences>('preferences')).microphone ??
+				undefined,
+			async setMicrophone(microphone) {
+				try {
+					await bridge.app('set-preferences', {
+						microphone: microphone ?? null,
+					});
 					return undefined;
 				} catch (cause) {
 					return describe(cause);

@@ -181,6 +181,10 @@ async function open({
 			present: async () => false,
 			set: async () => undefined,
 		},
+		preferences: {
+			microphone: async () => undefined,
+			setMicrophone: async () => undefined,
+		},
 		initialSettings: {
 			transcriptionBaseUrl: 'http://127.0.0.1:18080/v1',
 			transcriptionModel: 'verification-model',

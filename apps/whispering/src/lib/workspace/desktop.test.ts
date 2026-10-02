@@ -691,6 +691,71 @@ test('a failed transformation call is a Result, and the next call still works', 
 });
 
 // ============================================================================
+// The chosen microphone
+// ============================================================================
+
+test('the chosen microphone is kept by the host beside the key, survives a new window, and never brings the key back', async () => {
+	const served = await realHost();
+	attachable(served.root);
+	const usb = { deviceId: 'usb-id', label: 'USB Microphone' };
+	const replies: string[] = [];
+	const fetch = async (input: string, init?: RequestInit) => {
+		const response = await served.fetch(input, init);
+		if (!input.endsWith('/bridge/events'))
+			replies.push(await response.clone().text());
+		return response;
+	};
+	const first = expectOk(await openDesktopWorkspace({ ...CONNECTION, fetch }));
+	expect(await first.credential.set('device-secret-key')).toBeUndefined();
+
+	expect(await first.preferences.microphone()).toBeUndefined();
+	expect(await first.preferences.setMicrophone(usb)).toBeUndefined();
+	await first.close();
+
+	// The page's own storage would be gone: a new launch serves a new origin.
+	const second = expectOk(await openDesktopWorkspace({ ...CONNECTION, fetch }));
+	expect(await second.preferences.microphone()).toEqual(usb);
+	expect(await second.credential.present()).toBe(true);
+	expect(await second.preferences.setMicrophone(undefined)).toBeUndefined();
+	expect(await second.preferences.microphone()).toBeUndefined();
+	expect(await second.credential.present()).toBe(true);
+	expect(replies.join('\n')).not.toContain('device-secret-key');
+	await second.close();
+});
+
+test('a choice the host cannot save is returned as the reason, and one it cannot read rejects', async () => {
+	attachable();
+	const served = host();
+	const workspace = expectOk(
+		await openDesktopWorkspace({ ...CONNECTION, fetch: served.fetch }),
+	);
+
+	expect(
+		await workspace.preferences.setMicrophone({ deviceId: 'x', label: 'X' }),
+	).toBe('unexpected call');
+	await expect(workspace.preferences.microphone()).rejects.toThrow(
+		'unexpected call',
+	);
+	await workspace.close();
+});
+
+test('with fixture audio the workspace has no microphone input to list, ask for, or test', async () => {
+	attachable();
+	const served = host(
+		{},
+		info({ debug: true, fixture: { name: 'tone.wav', size: 44 } }),
+	);
+
+	const workspace = expectOk(
+		await openDesktopWorkspace({ ...CONNECTION, fetch: served.fetch }),
+	);
+
+	expect(workspace.capture.source).toBe('fixture');
+	expect(workspace.capture.inputs).toBeUndefined();
+	await workspace.close();
+});
+
+// ============================================================================
 // Debug failure injection
 // ============================================================================
 

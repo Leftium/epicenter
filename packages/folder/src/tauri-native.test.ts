@@ -653,7 +653,9 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 
 		// The rewrite named the version the command read, and the owner
 		// refused it. Nothing was merged or retried.
-		expect(refused).toContain("The file at 'note.md' changed after it was read");
+		expect(refused).toContain(
+			"The file at 'note.md' does not match the expected content version",
+		);
 		expect(
 			decoder.decode(
 				expectOk(await a(() => folder.files.read('note.md'))).bytes,
@@ -747,9 +749,11 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		// The save the owner had admitted is in the folder; nothing after it is.
 		expect(existsSync(join(root, 'one.md'))).toBe(true);
 		expect(existsSync(join(root, 'two.md'))).toBe(false);
-		expect(
-			await a(() => terminal.exec('echo late > late.md')),
-		).toEqual({ stdout: '', stderr: 'The folder is closed\n', exitCode: 1 });
+		expect(await a(() => terminal.exec('echo late > late.md'))).toEqual({
+			stdout: '',
+			stderr: 'The folder is closed\n',
+			exitCode: 1,
+		});
 		expect(existsSync(join(root, 'late.md'))).toBe(false);
 
 		// The owner finished that save's commit without the page, and window B

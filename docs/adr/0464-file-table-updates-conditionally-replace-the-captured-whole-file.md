@@ -54,6 +54,12 @@ returns `Conflict`. Changes since an editor captured an entry can refuse its
 `replace`. A conflict wrote nothing. An application can narrow the error by
 `error.name` and decide whether to reread, ask for review, or issue a new command.
 
+`Conflict` names a failed publication expectation; `NotFound` names absence.
+For an update, absence at its read is `NotFound`; disappearance between read
+and publication is `Conflict` with `actual: undefined`. These names do not
+assert which writer acted or when. Missing-source removal and movement retain
+their existing `NotFound` behavior. Unknown outcomes remain `Unconfirmed`.
+
 No operation silently substitutes another baseline after conflict. An unchanged
 write still checks its condition. `Unconfirmed`, partial progress, I/O failures,
 and thrown calls never trigger automatic replay. No retry count or transform
@@ -73,6 +79,12 @@ best effort against arbitrary external programs: a hash check followed by
 rename is not an operating-system-wide compare-and-swap. The table adds source
 preparation and receipt interpretation to the same condition used by
 `files.replace(capture, content)`.
+
+Both replacement methods take a capture containing its path. The table helper
+also checks that it identifies a row of this table and returns interpreted
+fields, body, and issues for the submitted text. Capture's draft UI consumes
+that interpretation; replacing the helper with raw files would transfer
+parsing into the application or require a racing post-save observation.
 
 File-save success remains independent of Git history. Commit and push failures
 do not undo a save or change its returned entry. No editor flush or pending-ref

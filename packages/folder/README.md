@@ -229,11 +229,22 @@ when they concern other parts. A race after the read returns `Conflict`;
 there is no automatic retry. A missing row returns `NotFound` and is never
 created by an update. The caller may inspect `error.name` and decide what to do.
 
+For `update`, `NotFound` means the row was absent at its initial read;
+`Conflict` means the publication condition failed, including removal between
+read and save (`actual === undefined`). `Unconfirmed` means the outcome is
+unknown. These are common outcomes, not the entire error union: validation,
+unsupported source, and I/O can also fail. No outcome triggers automatic replay.
+
 `replace(entry, source)` saves complete text against the entry's captured
 baseline. It uses the entry's path, accepts invalid frontmatter for repair,
 and returns an entry interpreted from the submitted bytes. It does not merge
 fields, normalize text, or reread afterward. Neither method mutates captured
 entries; each returns a new one on success.
+
+An entry is already a file capture, so `files.replace(entry, source)` also
+works. The table helper additionally checks row membership and returns parsed
+fields, body, and issues for the submitted text. The raw file helper returns
+only the new capture. Neither requires a separate path argument.
 
 A successful receipt describes the submitted content, not newer typing or a
 later observation. An `Unconfirmed` result leaves the operation's outcome

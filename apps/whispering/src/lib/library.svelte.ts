@@ -258,7 +258,9 @@ function describeWriteError(error: TableWriteError): string {
 	if (error.name === 'Conflict')
 		return error.expected === 'absent'
 			? `"${basename(error.path)}" already exists here.`
-			: 'The file changed after it was read, so nothing was changed. Check it and try again.';
+			: error.actual === undefined
+				? 'The file is no longer here. Nothing was changed. Check it and try again.'
+				: 'The file has different content now. Nothing was changed. Check it and try again.';
 	if (error.name === 'DirectoryNotEmpty')
 		return 'The folder is not empty, so nothing was deleted.';
 	return error.message;
@@ -772,18 +774,18 @@ export function createLibrary(workspace: Workspace) {
 							checking: false,
 						}
 					: outcome.status === 'partial'
-					? {
-							kind: 'partial',
-							message: outcome.message,
-							landed: outcome.landed,
-						}
-					: outcome.status === 'unexpected'
 						? {
-								kind: 'unexpected',
+								kind: 'partial',
 								message: outcome.message,
-								path: outcome.path,
+								landed: outcome.landed,
 							}
-						: { kind: 'failed', message: outcome.message },
+						: outcome.status === 'unexpected'
+							? {
+									kind: 'unexpected',
+									message: outcome.message,
+									path: outcome.path,
+								}
+							: { kind: 'failed', message: outcome.message },
 		});
 		// A partial or complete publication changed the folder; show what is there now.
 		await refreshAll();
@@ -1013,7 +1015,10 @@ export function createLibrary(workspace: Workspace) {
 	async function transformationSource(
 		transcriptionPath: string,
 	): Promise<
-		Result<{ transcriptionId: string; recordingId: string; input: string }, string>
+		Result<
+			{ transcriptionId: string; recordingId: string; input: string },
+			string
+		>
 	> {
 		const transcriptionId = TRANSCRIPTION_ROW.exec(transcriptionPath)?.[1];
 		if (transcriptionId === undefined)
@@ -1729,7 +1734,8 @@ export function createLibrary(workspace: Workspace) {
 				await refresh();
 				return removed.error ? describeWriteError(removed.error) : undefined;
 			}
-			const path = deletion.kind === 'file' ? deletion.path : deletion.entry.path;
+			const path =
+				deletion.kind === 'file' ? deletion.path : deletion.entry.path;
 			// The confirmation is modal, but a save may have started or failed since the capture.
 			const editor =
 				recordingEditors.get(path) ??

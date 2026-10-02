@@ -344,7 +344,7 @@ test('typed refusals from the owner become the shared file errors', async () => 
 	expect(conflict.expected).toEqual(version);
 	expect(conflict.actual).toBeUndefined();
 	expect(conflict.message).toBe(
-		"The file at 'a.md' was removed after it was read",
+		"No file exists at 'a.md' to match the expected content version",
 	);
 
 	replies.apply = () =>
@@ -657,7 +657,9 @@ test("a terminal command's steps are the commands any save sends, and nothing ho
 	const stale = await failure(
 		terminal.exec('echo third >> note.md && echo x > c.md'),
 	);
-	expect(stale).toContain("The file at 'note.md' changed after it was read");
+	expect(stale).toContain(
+		"The file at 'note.md' does not match the expected content version",
+	);
 	// The step after the refused one never ran.
 	expect(sent('apply')).toHaveLength(1);
 });
@@ -906,9 +908,7 @@ test("closing waits for a terminal command's save already sent, and its later st
 	replies.apply = saving.reply;
 	const terminal = folder.terminal();
 
-	const running = failure(
-		terminal.exec('echo one > a.md && echo two > b.md'),
-	);
+	const running = failure(terminal.exec('echo one > a.md && echo two > b.md'));
 	const queued = terminal.exec('echo three > c.md');
 	await untilSent('apply');
 	const closing = folder.close();

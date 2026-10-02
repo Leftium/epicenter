@@ -105,7 +105,9 @@ function describeWriteError(error: TableWriteError): string {
 	if (error.name === 'Conflict')
 		return error.expected === 'absent'
 			? `"${basename(error.path)}" already exists here.`
-			: 'The file changed after it was read, so nothing was changed. Check it and try again.';
+			: error.actual === undefined
+				? 'The file is no longer here. Nothing was changed. Check it and try again.'
+				: 'The file has different content now. Nothing was changed. Check it and try again.';
 	if (error.name === 'DirectoryNotEmpty')
 		return 'The folder is not empty, so nothing was deleted.';
 	return error.message;

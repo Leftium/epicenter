@@ -429,7 +429,7 @@ test('a raw delete removes only the version that was confirmed', async () => {
 
 	await todos.folder.files.overwrite('notes.txt', 'second');
 	const problem = await todos.remove(deletion.data!);
-	expect(problem).toContain('changed after it was read');
+	expect(problem).toContain('different content now');
 	expect(await text(todos, 'notes.txt')).toBe('second');
 });
 

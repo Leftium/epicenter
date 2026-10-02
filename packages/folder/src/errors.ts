@@ -15,10 +15,12 @@ export const FileError = defineErrors({
 		path,
 		reason,
 	}),
+	/** The addressed file is absent. */
 	NotFound: ({ path }: { path: string }) => ({
 		message: `No file exists at '${path}'`,
 		path,
 	}),
+	/** A publication expectation did not hold; this refusal wrote nothing. */
 	Conflict: ({
 		path,
 		expected,
@@ -32,8 +34,8 @@ export const FileError = defineErrors({
 			expected === 'absent'
 				? `A file already exists at '${path}'`
 				: actual === undefined
-					? `The file at '${path}' was removed after it was read`
-					: `The file at '${path}' changed after it was read`,
+					? `No file exists at '${path}' to match the expected content version`
+					: `The file at '${path}' does not match the expected content version`,
 		path,
 		expected,
 		actual,

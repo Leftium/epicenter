@@ -2,9 +2,9 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-28
-- **Amends:** [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) at mandatory shared desktop packaging; [ADR-0209](0209-epicenter-is-the-raw-view-beside-its-applications-not-a-shell-above-them.md) at separate windows for hosted personal tools; [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) at the refusal of standalone desktop products; [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md) at machine-wide engine ownership; [ADR-0323](0323-background-work-runs-in-the-host-and-a-window-is-for-looking-at.md) at Epicenter hosting other products' background work.
+- **Amends:** [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) at mandatory shared desktop packaging; [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) at the refusal of standalone desktop products; [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md) at machine-wide engine ownership; [ADR-0323](0323-background-work-runs-in-the-host-and-a-window-is-for-looking-at.md) at mandatory Epicenter ownership of standalone products' background work.
 - **Relates:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) preserves client-owned replicas and authority synchronization; [ADR-0334](0334-a-deployed-app-is-a-trusted-app-because-deploying-it-was-the-consent.md) preserves explicit deployment as trust in the code.
-- **Unbuilt:** standalone product packaging, personal-tool installation and switching, a verified local save barrier, replica addressing for concurrent products, and the synchronized-data inspector described below.
+- **Unbuilt:** general installed-tool folder registration and access to multiple folders, a verified local save barrier for every tool, replica addressing for concurrent products, and the synchronized-data inspector described below.
 
 ## Context
 
@@ -22,10 +22,12 @@ Epicenter's data workspace has a purpose even without a personal-tool runner:
 > your own tools.
 
 Today `apps/epicenter` packages a Tauri core and Bun sidecar. Its
-`src/applications.ts` declares a fixed application list. Product windows share
-native capabilities. Arbitrary personal-tool installation and standalone
-packaging are not established by the README's obsolete `catalog:publish`
-instructions.
+`src/applications.ts` combines compiled applications and an admitted catalog.
+The local installer accepts built releases. Product windows share native
+capabilities. Todos and Capture already register separate native folder owners;
+the registry lets each scope authorize several windows and each window attach
+to several scopes. General folder registration for installed tools remains
+unbuilt.
 
 The shared native core reduces distribution work, but couples product releases
 and native failures. A useful personal tool need not become a native product
@@ -34,14 +36,15 @@ to participate in the same data ecosystem.
 
 ## Decision
 
-**Focused products run independently; Epicenter desktop manages shared personal
-data and runs one personal tool at a time.**
+**Applications can run standalone or together in Epicenter. Epicenter desktop
+manages shared personal data and runs trusted SPAs concurrently in separate
+windows.**
 
 | Product | Execution and ownership |
 | --- | --- |
 | Standalone applications, including Whispering | Own installation, native runtime, updates, credentials, persistent replicas, and any background work. They can run concurrently and do not require Epicenter desktop to remain open. |
-| Epicenter desktop | Browses authorized synchronized datasets, manages synchronized preferences and its own device settings, and runs one personal tool session. |
-| Personal tool | An explicitly installed, trusted SPA that runs while selected in Epicenter. It has no hidden page, persistent global shortcuts, or background execution after leaving it. |
+| Epicenter desktop | Browses authorized synchronized datasets, manages synchronized preferences and its own device settings, and hosts concurrent application windows and shared native folder owners. |
+| Personal tool | An explicitly installed, trusted SPA with its own window. Its session can remain open while other tools or Home are in use. It uses capabilities compiled into the host. |
 | Shared packages and Rust crates | Reuse data contracts and native implementation across products. Importing code does not share running processes or loaded models. |
 
 **The data workspace connects synchronized datasets to explicit file workflows.**
@@ -85,8 +88,8 @@ from demand for hosted applications. A person can customize their workflow with
 an editor, script, or agent before building an SPA. The personal-tool runner
 extends this workspace; it is not its sole reason to exist.
 
-A tool needing residency or additional native capabilities can become a
-standalone application. Browser, hosted, and standalone builds may share source
+A tool needing an independent runtime or additional native capabilities can
+become a standalone application. Browser, hosted, and standalone builds may share source
 when their capability requirements are satisfied. Each build must state its
 supported capabilities; arbitrary native code is not portable through an SPA
 bundle. Packaging still requires app identity, permissions, and update choices.
@@ -113,32 +116,49 @@ The intended project shape keeps UI and data logic in `src/`; an optional
 binary, not the running Epicenter host. A custom command makes a build dependent
 on that capability unless another target supplies an alternative implementation.
 
-Changing packaging preserves the logical dataset identity. The standalone
-application opens its own persistent replica of that dataset. Unsynchronized
+Changing packaging preserves the logical dataset identity. For synchronized
+data, the standalone application opens its own persistent replica. Unsynchronized
 hosted edits require either synchronization before transfer or an explicit local
-export/import path; a packaging command does not move the data. The first proof
-must run one SPA both hosted and standalone without rewriting application logic.
+export/import path; a packaging command does not move the data. For file-backed
+data, either shell can reopen the same selected folder after the previous native
+process releases it. The first proof must run one SPA both hosted and standalone
+without rewriting application logic.
 
-**A personal-tool switch ends the previous session before opening the next.**
+**Each application keeps its own window and session.**
 
-Epicenter's data/settings page and its tool page alternate. Native administration
-and tool execution retain distinct labels and command grants; only one page is
-alive. The inactive page is destroyed, not retained as a hidden replica. A
-stateless native navigation control can survive both.
+Home and tool windows can remain open together, preserving ADR-0209's separate
+windows. Focusing another window does not close stores, release folder handles,
+or cancel work. Native administration and tool execution retain distinct labels
+and command grants. A page can continue using its admitted capabilities while
+another application is focused; durable background work needs an explicit host
+service rather than relying on a background WebView timer.
 
-A controlled switch stops admitting edits and new operations, settles or
-cancels native work, confirms local persistence, closes the old stores, and
-releases their claims before opening the next page. Confirmation includes native
-artifacts and their document references where relevant. It does not wait for
-remote synchronization. Failure keeps the old session available for recovery;
-discarding unsaved work requires an explicit choice. Full navigation supplies
-the page boundary, not the durability guarantee. Native operations and late
-callbacks need their own acknowledged termination before handoff.
-
-Current `packages/app/src/data/store/store.ts` attempts a flush during close and
-then destroys the document. That is not the save barrier promised here.
+Before destroying or replacing a page, its lifecycle must resolve unsaved drafts
+and confirm local persistence. Failure keeps the page available for recovery;
+discarding unsaved work requires an explicit choice. Ending a folder session
+does not cancel work its native owner already admitted or close another window's
+session. Host shutdown drains admitted folder work and releases the locks.
 Crashes and forced termination remain bounded by the most recent successful
 durable write.
+
+**Applications may reference several folders, and several applications may
+write through the same folder owner.**
+
+The host registers each canonical folder once under a shared scope and grants
+that scope to the windows allowed to use it. An app can attach to several scopes
+under `~/Epicenter`; folder identity is independent of the app displaying it.
+Two apps referencing the same folder reuse its native owner through separate
+sessions. They do not create competing owners or private copies of the files.
+Different, non-overlapping folder roots have independent owners and locks.
+
+The owner coordinates file mutations and Git operations and publishes changes
+to attached windows. Apps can edit different files concurrently. When edits
+target the same file, a replacement based on a read must name the source hash;
+a stale save reports a conflict so the app can preserve and resolve its draft.
+An explicit overwrite remains an intentional operation. Sharing an owner does
+not merge simultaneous typing or make unrelated folder writes transactional.
+A second native process attempting to own the same folder is refused by the
+cross-process lock.
 
 **Each product owns a stable local replica independently of the synchronized
 dataset identity.**
@@ -147,9 +167,10 @@ Physical cache identity includes the installation's storage namespace, account
 identity when applicable, and dataset identity. It remains stable across
 launches. Outbox, cursor, and persistence claims belong to that replica. Separate
 products do not open the same physical database merely because they synchronize
-the same dataset. Sequential tools inside Epicenter can reopen its local copy;
-two consumers in one session reuse an opened handle rather than competing for
-the same claim.
+the same dataset. Concurrent synchronized tools need distinct persistent
+replicas or an explicitly shared store owner; they cannot independently claim
+the same physical database. A shared native folder owner addresses file-backed
+concurrency and does not establish Yjs replica coordination.
 
 Every active consumer of a synchronized dataset retains its live in-memory
 replica. The inspector opens an authorized replica in its page using a compatible
@@ -189,17 +210,21 @@ process owns its loaded model and active-model setting. Shared file deletion
 needs an explicit administration policy. A shared inference service remains a
 separate decision justified by measured resource or setup costs.
 
-One active personal-tool session removes the need for simultaneous hosted
-replicas, local peer delivery, owner election, and tool background scheduling.
-It does not solve synchronization between standalone apps or browser origins.
-Recording or long-running work must finish or cancel before a tool switch;
-applications that must keep working belong in a standalone runtime.
+Native folder ownership removes the need for page-level owner election for
+file-backed tools. Several tools can work on the same source files through that
+owner while tools using other folders proceed independently. Synchronized
+replicas still require their own persistence identities and delivery model.
+Neither concurrent windows nor shared folders promises offline convergence
+between independent Yjs replicas.
 
-The initial implementation proof is one installed tool that edits offline,
-switches to inspection, and reopens with its edits intact. Injecting a storage
-failure must refuse the switch without destroying the old session. A standalone
-build must keep working after Epicenter quits and converge through the same
-authority when connected. Native work must not deliver into the next tool.
+The initial implementation proof is two installed tools open beside Home. One
+tool opens two folders; both tools attach to one shared folder. Edits to different
+files must survive reopening, and competing saves to one file must report a
+conflict without losing either draft. Closing one session must leave the other
+usable. Injecting a storage failure must preserve the affected draft for recovery.
+A standalone build must keep working after Epicenter quits; concurrent native
+processes targeting the same folder must receive a busy refusal. Native work
+and callbacks must remain associated with the session that admitted them.
 
 The product proof is a repeated cross-app task that improves on manual
 export/import. A candidate is a tool that reads Whispering transcripts and
@@ -230,8 +255,9 @@ treating all deployment targets as simultaneous launch commitments.
 - **Every application lives in the Epicenter host.** Saves per-product packaging
   but couples native releases and failures and requires concurrent hosted
   lifecycle coordination.
-- **Only one application can run anywhere.** Removes useful standalone
-  concurrency to solve a problem confined to the personal-tool environment.
+- **One hosted personal tool at a time.** Avoids concurrent page-owned replicas
+  by ending one session before opening another. Withdrawn: shared native folder
+  owners coordinate file-backed tools without imposing that limit on windows.
 - **Every personal tool is immediately a native product.** Requires native
   packaging before a small local experiment can be useful.
 - **A mandatory shared daemon owns documents, shortcuts, and inference.** Adds

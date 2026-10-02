@@ -140,30 +140,54 @@ function todoEditor(todos: Todos) {
 
 type Move = TodosFolder['files']['move'];
 
+/** Holds the next finished reply after arming, until the test releases it. */
+function createGate() {
+	let pending:
+		| {
+				entered: PromiseWithResolvers<void>;
+				released: PromiseWithResolvers<void>;
+		  }
+		| undefined;
+	return {
+		arm() {
+			const entered = Promise.withResolvers<void>();
+			const released = Promise.withResolvers<void>();
+			pending = { entered, released };
+			return async () => {
+				await entered.promise;
+				return released.resolve;
+			};
+		},
+		async reply<TResult>(result: TResult): Promise<TResult> {
+			const held = pending;
+			pending = undefined;
+			if (held !== undefined) {
+				held.entered.resolve();
+				await held.released.promise;
+			}
+			return result;
+		},
+	};
+}
+
 /**
  * A folder whose raw move and remove really land before the app hears back.
- * Once one has landed it calls `during.act`, and while `during.hold` is set
- * it keeps the result back until `during.release()`: the window in which a
- * person types, saves, or starts something else. `during.refuse` answers a
- * move instead of performing it. Raw saves (`create`, `replace`, and
- * `overwrite`) are recorded by path.
+ * Once one has landed it calls `during.act`. Arming the gate keeps the next
+ * result back: the window in which a person types, saves, or starts something
+ * else. `during.refuse` answers a move instead of performing it. Raw saves
+ * (`create`, `replace`, and `overwrite`) are recorded by path.
  */
 function interceptingFileOperations() {
+	const gate = createGate();
 	const during: {
 		act?: () => void;
-		hold: boolean;
-		release?: () => void;
 		refuse?: (from: string, to: string) => ReturnType<Move>;
 		moves: number;
 		writes: string[];
-	} = { hold: false, moves: 0, writes: [] };
+	} = { moves: 0, writes: [] };
 	async function landed<T>(result: T): Promise<T> {
 		during.act?.();
-		if (during.hold)
-			await new Promise<void>((resolve) => {
-				during.release = resolve;
-			});
-		return result;
+		return gate.reply(result);
 	}
 	const adapt = (folder: TodosFolder): TodosFolder => ({
 		...folder,
@@ -193,15 +217,7 @@ function interceptingFileOperations() {
 			},
 		},
 	});
-	/** Resolves once a held operation has landed and is waiting to answer. */
-	async function held() {
-		while (during.release === undefined) await Bun.sleep(1);
-		const release = during.release;
-		during.release = undefined;
-		during.hold = false;
-		return release;
-	}
-	return { during, adapt, held };
+	return { during, adapt, arm: gate.arm };
 }
 
 // ============================================================================
@@ -598,7 +614,7 @@ test('typing during a rename into a todo row keeps the raw editor until it is cl
 // ============================================================================
 
 test('typing and saving after the bytes moved, before the rename answers, wait and then save at the destination', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { during, adapt, arm } = interceptingFileOperations();
 	const todos = await open(adapt);
 	await todos.folder.files.create('todos/draft.txt', 'saved');
 	await todos.refresh();
@@ -606,7 +622,7 @@ test('typing and saving after the bytes moved, before the rename answers, wait a
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('todos/draft.txt', 'renamed.txt');
 	const release = await held();
 	expect(await text(todos, 'todos/renamed.txt')).toBe('saved');
@@ -634,7 +650,7 @@ test('typing and saving after the bytes moved, before the rename answers, wait a
 });
 
 test('closing during a rename waits for it, then saves the held typing at the destination', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { during, adapt, arm } = interceptingFileOperations();
 	const todos = await open(adapt);
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
@@ -642,7 +658,7 @@ test('closing during a rename waits for it, then saves the held typing at the de
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('notes.txt', 'renamed.txt');
 	const release = await held();
 	editor.input('new typing');
@@ -664,7 +680,7 @@ test('closing during a rename waits for it, then saves the held typing at the de
 });
 
 test('a refresh that finds the source gone during a rename leaves its editor to the rename', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { during, adapt, arm } = interceptingFileOperations();
 	const todos = await open(adapt);
 	await todos.folder.files.create('notes.txt', 'saved');
 	await todos.refresh();
@@ -672,7 +688,7 @@ test('a refresh that finds the source gone during a rename leaves its editor to 
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('notes.txt', 'renamed.txt');
 	const release = await held();
 	await todos.refresh();
@@ -691,7 +707,7 @@ test('a refresh that finds the source gone during a rename leaves its editor to 
 });
 
 test('operations on either path of a rename in progress are refused, and other paths are not', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { during, adapt, arm } = interceptingFileOperations();
 	const todos = await open(adapt);
 	for (const path of ['a.txt', 'b.txt', 'other.txt'])
 		await todos.folder.files.create(path, path);
@@ -700,7 +716,7 @@ test('operations on either path of a rename in progress are refused, and other p
 	const editor = textEditor(todos);
 
 	during.writes.length = 0;
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('a.txt', 'c.txt');
 	const release = await held();
 	expect(await todos.rename('a.txt', 'd.txt')).toBe(BUSY);
@@ -792,7 +808,7 @@ test('a rename never lands on an open editor, clean or holding a removed draft',
 });
 
 test('an open of the destination that resolves after the bytes moved gives up its claim to the rename', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { during, adapt, arm } = interceptingFileOperations();
 	let gate: Promise<void> | undefined;
 	const todos = await open((folder) => {
 		const adapted = adapt(folder);
@@ -818,7 +834,7 @@ test('an open of the destination that resolves after the bytes moved gives up it
 	});
 	const opening = todos.open('c.txt');
 	during.writes.length = 0;
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('a.txt', 'c.txt');
 	const release = await held();
 	gate = undefined;
@@ -1223,21 +1239,12 @@ test('a hint that arrives after the app closed changes nothing', async () => {
 
 /**
  * A folder that names every file, table, Git, and terminal call the app makes
- * in `calls`, and sends no hints unless `hints` is set. While `gate.hold` is set, a raw read or
- * listing really finishes and then keeps its reply back until the test calls
- * the release that `held()` answers.
+ * in `calls`, and sends no hints unless `hints` is set. Arming the gate holds
+ * the next finished raw read or listing reply until the test releases it.
  */
 function recordingFolder({ hints = false } = {}) {
 	const calls: string[] = [];
-	const gate: { hold: boolean; replies: (() => void)[] } = {
-		hold: false,
-		replies: [],
-	};
-	async function reply<T>(result: T): Promise<T> {
-		if (gate.hold)
-			await new Promise<void>((resolve) => gate.replies.push(resolve));
-		return result;
-	}
+	const gate = createGate();
 	function recorded<T extends object>(name: string, target: T): T {
 		const copy = { ...target } as Record<string, unknown>;
 		for (const [key, value] of Object.entries(target))
@@ -1254,8 +1261,8 @@ function recordingFolder({ hints = false } = {}) {
 			...(hints ? folder : withoutHints(folder)),
 			files: {
 				...files,
-				read: async (path) => reply(await files.read(path)),
-				list: async () => reply(await files.list()),
+				read: async (path) => gate.reply(await files.read(path)),
+				list: async () => gate.reply(await files.list()),
 			},
 			tables: { todos: recorded('table', folder.tables.todos) },
 			git: {
@@ -1282,15 +1289,7 @@ function recordingFolder({ hints = false } = {}) {
 			},
 		};
 	};
-	/** Resolves once a reply is held, and stops holding later ones. */
-	async function held() {
-		while (gate.replies.length === 0) await Bun.sleep(1);
-		gate.hold = false;
-		return () => {
-			for (const release of gate.replies.splice(0)) release();
-		};
-	}
-	return { calls, gate, adapt, held };
+	return { calls, adapt, arm: gate.arm };
 }
 
 /** Close now; `afterEach` then has nothing left to close. */
@@ -1300,11 +1299,11 @@ function close(todos: Todos) {
 }
 
 test('a raw open whose read answers after close retains no editor', async () => {
-	const { gate, adapt, held } = recordingFolder();
+	const { adapt, arm } = recordingFolder();
 	const todos = await open(adapt);
 	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
 
-	gate.hold = true;
+	const held = arm();
 	const opening = todos.open('notes.txt');
 	const release = await held();
 	await close(todos);
@@ -1315,12 +1314,12 @@ test('a raw open whose read answers after close retains no editor', async () => 
 });
 
 test('a row open whose listing answers after close retains no editor', async () => {
-	const { gate, adapt, held } = recordingFolder();
+	const { adapt, arm } = recordingFolder();
 	const todos = await open(adapt);
 	// Written without a hint, so the open has to list before it finds the row.
 	expectOk(await todos.folder.files.create('todos/late.md', ROW));
 
-	gate.hold = true;
+	const held = arm();
 	const opening = todos.open('todos/late.md');
 	const release = await held();
 	await close(todos);
@@ -1331,7 +1330,7 @@ test('a row open whose listing answers after close retains no editor', async () 
 });
 
 test('a listing that answers after close changes neither the rows nor a clean editor', async () => {
-	const { gate, adapt, held } = recordingFolder();
+	const { adapt, arm } = recordingFolder();
 	const todos = await open(adapt);
 	expectOk(await todos.folder.files.create('notes.txt', 'saved'));
 	await todos.open('notes.txt');
@@ -1340,7 +1339,7 @@ test('a listing that answers after close changes neither the rows nor a clean ed
 	expectOk(await todos.folder.files.create('todos/late.md', ROW));
 	expectOk(await todos.folder.files.overwrite('notes.txt', 'theirs'));
 
-	gate.hold = true;
+	const held = arm();
 	const refreshing = todos.refresh();
 	const release = await held();
 	await close(todos);
@@ -1384,13 +1383,13 @@ test('close waits for a create reply and retains no editor', async () => {
 });
 
 test('close waits for a held rename, which moves the file and opens nothing at the destination', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { adapt, arm } = interceptingFileOperations();
 	const todos = await open(adapt);
 	expectOk(await todos.folder.files.create('todos/note.txt', ROW));
 	await todos.refresh();
 	await todos.open('todos/note.txt');
 
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('todos/note.txt', 'note.md');
 	const release = await held();
 	expect(await text(todos, 'todos/note.md')).toBe(ROW);
@@ -1410,7 +1409,7 @@ test('close waits for a held rename, which moves the file and opens nothing at t
 });
 
 test('every close call shares one completion, and the folder closes once', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { adapt, arm } = interceptingFileOperations();
 	const recording = recordingFolder();
 	let reentrant: Promise<void> | undefined;
 	const todos: Todos = await open((folder) => {
@@ -1432,7 +1431,7 @@ test('every close call shares one completion, and the folder closes once', async
 	await todos.open('notes.txt');
 	textEditor(todos).input('typed');
 
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('a.txt', 'b.txt');
 	const release = await held();
 	const first = close(todos);
@@ -1447,7 +1446,7 @@ test('every close call shares one completion, and the folder closes once', async
 });
 
 test('calls made after close began are refused without folder or terminal work', async () => {
-	const { during, adapt, held } = interceptingFileOperations();
+	const { adapt, arm } = interceptingFileOperations();
 	const recording = recordingFolder();
 	const todos = await open((folder) => recording.adapt(adapt(folder)));
 	expectOk(await todos.folder.files.create('a.txt', 'saved'));
@@ -1457,7 +1456,7 @@ test('calls made after close began are refused without folder or terminal work',
 	const deletion = expectOk(await todos.deletionFor('notes.txt'));
 
 	// A held rename keeps close pending while the folder itself is still open.
-	during.hold = true;
+	const held = arm();
 	const renaming = todos.rename('a.txt', 'b.txt');
 	const release = await held();
 	const closing = close(todos);
@@ -1492,12 +1491,12 @@ test('calls made after close began are refused without folder or terminal work',
 });
 
 test('a hinted listing still held when the app closes neither delays close nor changes state', async () => {
-	const { calls, gate, adapt, held } = recordingFolder({ hints: true });
+	const { calls, adapt, arm } = recordingFolder({ hints: true });
 	const todos = await open(adapt);
 	const { entries, listing } = todos;
 
 	// The save hints, and the reread it starts lists the folder.
-	gate.hold = true;
+	const held = arm();
 	expectOk(await todos.folder.files.create('todos/late.md', ROW));
 	const release = await held();
 	let closed = false;

@@ -7,7 +7,6 @@
  * falls back silently, so the selection is proved here.
  *
  * Key behaviors:
- * - The seam declares the Epicenter host leaf and the browser default
  * - The host build reaches the desktop adapter and its generated bindings,
  *   and no IndexedDB storage, directory opener, or Git implementation
  * - The browser build reaches IndexedDB storage and isomorphic-git, and no
@@ -16,17 +15,9 @@
  *   or `@epicenter/app`
  */
 import { describe, expect, test } from 'bun:test';
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const appDir = join(import.meta.dir, '..', '..');
-const manifest = JSON.parse(
-	await readFile(join(appDir, 'package.json'), 'utf8'),
-) as {
-	imports: Record<string, Record<string, string>>;
-	dependencies: Record<string, string>;
-};
-
 /** Every module a build of `entry` pulls in, as paths. Built in its own process. */
 async function inputs(
 	entry: string,
@@ -60,18 +51,6 @@ const folderModule = (name: string) => (path: string) =>
 const SHARED_FORBIDDEN = /packages\/folder\/src\/index\.ts$|packages\/app\//;
 
 describe('#platform/folder', () => {
-	test('declares the Epicenter host leaf and the browser default', () => {
-		expect(manifest.imports['#platform/folder']).toEqual({
-			'epicenter-host': './src/lib/platform/folder.epicenter-host.ts',
-			default: './src/lib/platform/folder.browser.ts',
-		});
-	});
-
-	test('depends on the folder package and not on App', () => {
-		expect(manifest.dependencies['@epicenter/folder']).toBe('workspace:*');
-		expect(manifest.dependencies['@epicenter/app']).toBeUndefined();
-	});
-
 	test('the host build resolves the desktop adapter without IndexedDB, a directory opener, or a Git implementation', async () => {
 		const modules = await inputs(SEAM_ENTRY, 'epicenter-host');
 

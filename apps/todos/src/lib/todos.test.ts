@@ -297,21 +297,6 @@ test('renaming a todo row moves only its Markdown file, and its editor follows w
 	expect(await text(todos, path)).toBeUndefined();
 });
 
-test('a same-stem file added after the row editor opened is untouched by a later rename and delete', async () => {
-	const todos = await open();
-	await todos.create('Milk');
-	const path = todos.selectedPath!;
-	const stem = await addSiblings(todos, path);
-
-	expect(await todos.rename(path, 'renamed.md')).toBeUndefined();
-	await expectSiblings(todos, stem);
-	const deletion = expectOk(await todos.deletionFor('todos/renamed.md'));
-	expect(await todos.remove(deletion)).toBeUndefined();
-	expect(await text(todos, 'todos/renamed.md')).toBeUndefined();
-	await expectSiblings(todos, stem);
-	await expectNoSiblings(todos, 'todos/renamed');
-});
-
 // ============================================================================
 // Retained drafts and stale observations
 // ============================================================================

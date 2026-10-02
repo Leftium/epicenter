@@ -231,7 +231,7 @@ export function destinationProblem(
 
 export function createTable<TFields>(
 	{ storage }: { storage: FolderStorage },
-	{ definition: parsed }: { definition: ParsedTable },
+	parsed: ParsedTable,
 ): FileTable<TFields> {
 	const { name } = parsed;
 	const declared = [...parsed.fields.keys()];

@@ -69,11 +69,7 @@ async function setup() {
 		tags: string[];
 	}>(
 		{ storage: boundary },
-		{
-			definition: expectOk(compileFolderDefinition(definition)).tables.get(
-				'todos',
-			)!,
-		},
+		expectOk(compileFolderDefinition(definition)).tables.get('todos')!,
 	);
 	const entry = expectOk(
 		await table.create({

@@ -310,7 +310,7 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 	const storage = fenceStorage(suppliedStorage, controller.signal);
 	const tables: Record<string, FileTable<unknown>> = {};
 	for (const definition of compiled.tables.values())
-		tables[definition.name] = createTable<unknown>({ storage }, { definition });
+		tables[definition.name] = createTable<unknown>({ storage }, definition);
 	const files = createFiles({ storage });
 	const git = createFolderGit(history);
 

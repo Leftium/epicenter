@@ -40,10 +40,7 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 			'todos',
 		);
 		if (parsed === undefined) throw new Error('Missing test declaration');
-		const table = createTable<{ title: string }>(
-			{ storage: boundary },
-			{ definition: parsed },
-		);
+		const table = createTable<{ title: string }>({ storage: boundary }, parsed);
 		const results = await Promise.all([
 			table.create({ stem: 'take', fields: { title: 'First' } }),
 			table.create({ stem: 'take', fields: { title: 'Second' } }),

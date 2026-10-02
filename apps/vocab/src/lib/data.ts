@@ -86,17 +86,11 @@ const chatsTable = defineTable({
 	},
 });
 
-/**
- * Device-local chats own chosen focus; messages own finished turns.
- *
- * `showPinyin` is this device's one reading preference: whether Han text is
- * shown with pinyin above it. It changes display only. Read it with a `false`
- * fallback, since a device that never set it has stored nothing.
- */
+/** Device-local chats own chosen focus; messages own finished turns. */
 export const chatHistoryDefinition = defineStore({
 	id: APPS.VOCAB.id,
 	title: 'Vocab chats on this device',
-	kv: { showPinyin: field.boolean() },
+	kv: {},
 	tables: {
 		messages: chatMessagesTable,
 		chats: chatsTable,

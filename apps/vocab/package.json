@@ -30,8 +30,7 @@
 		"mode-watcher": "^1.1.0",
 		"svelte-sonner": "catalog:",
 		"typebox": "catalog:",
-		"wellcrafted": "catalog:",
-		"pinyin-pro": "3.29.4"
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@epicenter/vite-config": "workspace:*",

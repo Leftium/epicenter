@@ -2,6 +2,10 @@
 
 Vocab helps a learner collect English expressions and practice using them in tutor-led conversations. Words is the starting view. Each saved expression has an exact text, a learner-owned note, and one self-reported stage: New, Recognize, Understand, or Use. Only the learner changes the stage.
 
+All tutor instructions are in English. SAT vocabulary is one expected use case;
+saved expressions and phrase capture preserve ordinary Unicode text without
+restricting it to a word list or script.
+
 ## Learner flow
 
 Add an expression directly, paste one expression per line, or browse the small built-in starter list. Paste and starter lists use the same review: blanks, repeated exact text, and already-saved text are skipped; eligible expressions are selected by default. Confirmed additions have empty notes and the New stage. Words provides search, stage filtering, note editing, and stage controls.
@@ -14,12 +18,6 @@ A phrase comes from one line of one finished tutor answer that this device has s
 
 The phrase becomes one entry with an empty note and the New stage. "Saved to your words" appears once this device's Personal storage confirms the entry, not when the row is merely accepted. A phrase storage refused stays in the list and can be saved again without a second row. An exact text that is already stored is reported as already in the list.
 
-### Pinyin
-
-The Pinyin switch in the header is one device-wide preference. While it is on, Han text is drawn with pinyin above it wherever vocabulary or conversation text is read: words, import review, notes, focus words, chat titles, finished messages, and the phrase preview. A character is read as part of its line, so 银行 is yín háng even when Markdown emphasis splits it. Input fields and a reply that is still arriving show plain text.
-
-Readings are display only. They are derived from the text on screen and are never stored in an entry, a note, or a transcript, and never sent to a tutor. Selecting or copying text leaves them out. English text has no readings and is unchanged, as are the starter list and the tutor's prompt.
-
 ### Chat history
 
 Chat history stays on this device. Desktop Chat shows history, conversation, and focus words side by side; narrow Chat offers history and focus controls above the conversation. Returning to Words keeps the selected chat's draft and stream, but closes dictation and discards speech not yet inserted. Switching chats disposes the previous loop and its unsent draft. Focus text stays visible if its saved entry is deleted; its stage control then disappears. Earlier message-only chats remain readable, with their first learner question as the title.
@@ -28,7 +26,6 @@ Chat history stays on this device. Desktop Chat shows history, conversation, and
 
 ```text
 openLocal(chatHistoryDefinition)              This device
-  kv.showPinyin                            The reading preference; unset reads as off
   chats                                    Account key, creation time, fixed focus snapshot
   messages                                 Account key, conversation ID, finished message
 

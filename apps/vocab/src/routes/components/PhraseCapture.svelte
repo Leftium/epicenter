@@ -5,8 +5,7 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import { tick, untrack } from 'svelte';
 	import type { createEntriesState } from '$lib/entries.svelte.js';
-	import { capturePhrase, sourceHoldsPhrase } from '$lib/readings.js';
-	import ReadingText from './ReadingText.svelte';
+	import { capturePhrase, sourceHoldsPhrase } from '$lib/phrase-capture.js';
 
 	// Saving a phrase from one saved tutor message. The conversation binds
 	// `root` to its message list; this component owns every listener and the
@@ -133,9 +132,8 @@
 		if (outcome === 'added') added = submitted;
 	}
 
-	// The conversation moved on: an answer stopped or arrived, or readings were
-	// switched and the messages rebuilt. A candidate from before does not come
-	// back, and neither does the selection it was read from.
+	// The conversation moved on: an answer stopped or arrived. A candidate from
+	// before does not come back, and neither does the selection it was read from.
 	$effect(() => {
 		void resetKey;
 		untrack(() => {
@@ -325,7 +323,7 @@
 			</div>
 		{/if}
 		{#if valid}
-			<p class="text-lg font-medium break-words"><ReadingText text={phrase} /></p>
+			<p class="text-lg font-medium break-words">{phrase}</p>
 		{/if}
 		{#if problem}
 			<p role="alert" class="text-sm text-destructive">{problem}</p>

@@ -6,20 +6,15 @@
 	import { toHostedCatalog } from '@epicenter/constants/ai-providers';
 	import { fromData } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
-	import { Label } from '@epicenter/ui/label';
 	import { LightSwitch } from '@epicenter/ui/light-switch';
-	import { Switch } from '@epicenter/ui/switch';
 	import { onDestroy } from 'svelte';
 	import { auth } from '$lib/auth.svelte.js';
 	import { listChats, startChat } from '$lib/chat/messages.js';
 	import { VOCAB_MODEL } from '$lib/data.js';
 	import { createEntriesState } from '$lib/entries.svelte.js';
-	import { provideReading } from '$lib/reading-preference.js';
-	import { selectionBaseText } from '$lib/readings.js';
 	import type { openVocabResources } from '$lib/resources.js';
 	import ConversationView from './ConversationView.svelte';
 	import FocusWords from './FocusWords.svelte';
-	import ReadingText from './ReadingText.svelte';
 	import WordsView from './WordsView.svelte';
 
 	let { data: opened }: { data: Awaited<ReturnType<typeof openVocabResources>> } = $props();
@@ -35,10 +30,6 @@
 	const selections = createBrowserInferenceSelections('vocab', opened.account);
 	/* svelte-ignore state_referenced_locally */
 	const accountKey = JSON.stringify([opened.account.authorityId, opened.account.principalId]);
-	// One reading preference for the whole app, kept on this device. It only
-	// changes what is drawn: nothing stored or sent to a tutor carries a reading.
-	const showPinyin = $derived(local.kv.get('showPinyin') ?? false);
-	provideReading(() => showPinyin);
 	const chats = $derived(listChats(local.tables.chats.rows, local.tables.messages.rows, accountKey));
 	let selectedChatId = $state<string | null>(null);
 	let view = $state<'words' | 'chat'>('words');
@@ -78,20 +69,7 @@
 		});
 	}
 	onDestroy(() => selections[Symbol.dispose]());
-
-	/** Copy the text a learner selected, without the readings drawn above it. */
-	function copyBaseText(event: ClipboardEvent) {
-		// A field copies its own text; a page selection may linger beside it.
-		const target = event.target;
-		if (target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea'))) return;
-		const text = selectionBaseText(document.getSelection());
-		if (text === undefined || !event.clipboardData) return;
-		event.clipboardData.setData('text/plain', text);
-		event.preventDefault();
-	}
 </script>
-
-<svelte:document oncopy={copyBaseText} />
 
 <PersistenceNotice persistence={personal.persistence} />
 <PersistenceNotice persistence={local.persistence} />
@@ -99,7 +77,7 @@
 	<!-- Wraps on a narrow screen: the controls move under the views, right-aligned, and nothing is clipped. -->
 	<header class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b px-4 py-2">
 		<div class="flex items-center gap-2"><h1 class="text-lg font-semibold">Vocab</h1><Button size="sm" variant={view === 'words' ? 'default' : 'ghost'} onclick={() => view = 'words'}>Words</Button><Button size="sm" variant={view === 'chat' ? 'default' : 'ghost'} disabled={chats.length === 0} onclick={() => { view = 'chat'; historyOpen = true; }}>Chat</Button></div>
-		<div class="ml-auto flex items-center gap-1"><Label class="mr-2"><Switch size="sm" checked={showPinyin} onCheckedChange={(checked) => local.kv.update({ showPinyin: checked })} />Pinyin</Label><LightSwitch variant="ghost" /><AccountPopover {auth} syncNoun="entries" /></div>
+		<div class="ml-auto flex items-center gap-1"><LightSwitch variant="ghost" /><AccountPopover {auth} syncNoun="entries" /></div>
 	</header>
 	{#if heldSwitch}
 		<div role="alert" class="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs text-destructive">
@@ -114,11 +92,11 @@
 	<div class="flex min-h-0 flex-1" class:hidden={view !== 'chat'}>
 		<aside class="hidden w-56 shrink-0 overflow-y-auto border-r p-3 md:block" aria-label="Chat history">
 			<h2 class="mb-2 text-sm font-semibold">Chats on this device</h2>
-			{#each chats as chat (chat.id)}<Button class="mb-1 h-auto min-h-9 w-full justify-start truncate" variant={chat.id === selectedChatId ? 'secondary' : 'ghost'} onclick={() => openChat(chat.id)}><ReadingText text={chat.title} /></Button>{/each}
+			{#each chats as chat (chat.id)}<Button class="mb-1 w-full justify-start truncate" variant={chat.id === selectedChatId ? 'secondary' : 'ghost'} onclick={() => openChat(chat.id)}>{chat.title}</Button>{/each}
 		</aside>
 		<div class="flex min-w-0 flex-1 flex-col">
 			<div class="flex items-center gap-2 border-b px-3 py-2 md:hidden"><Button size="sm" variant="outline" onclick={() => historyOpen = !historyOpen}>History</Button><Button size="sm" variant="outline" onclick={() => focusOpen = !focusOpen}>Focus</Button></div>
-			{#if historyOpen || !selectedChatId}<nav class="max-h-44 overflow-y-auto border-b p-2 md:hidden" aria-label="Chat history">{#each chats as chat (chat.id)}<Button class="h-auto min-h-9 w-full justify-start" variant="ghost" onclick={() => openChat(chat.id)}><ReadingText text={chat.title} /></Button>{/each}</nav>{/if}
+			{#if historyOpen || !selectedChatId}<nav class="max-h-44 overflow-y-auto border-b p-2 md:hidden" aria-label="Chat history">{#each chats as chat (chat.id)}<Button class="w-full justify-start" variant="ghost" onclick={() => openChat(chat.id)}>{chat.title}</Button>{/each}</nav>{/if}
 			{#if focusOpen && selectedChat}<div class="border-b p-3 md:hidden"><FocusWords focus={selectedChat.focus} {entries} /></div>{/if}
 			{#if !selectedChatId}<p class="m-auto text-center text-muted-foreground">Choose a chat from history.</p>{/if}
 			{#if selectedChatId && selectedChat}

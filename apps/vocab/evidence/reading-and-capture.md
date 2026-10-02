@@ -1,4 +1,28 @@
-# Reading and phrase capture verification
+# Reading and phrase capture verification (historical milestone)
+
+**Scope correction, 2026-10-03.** Vocab is for English vocabulary practice,
+including SAT words, with all instructions in English. The pinyin features this
+record describes have been removed: the header switch, the stored reading
+preference, the reading components, the annotation code, the copy handling, and
+the `pinyin-pro` dependency. Phrase capture remains as exact-text selection from
+a saved tutor answer, in a module renamed `phrase-capture`. It accepts whatever
+characters the answer has and does not judge language or script.
+
+Everything below this section records the earlier milestone as it was tested.
+The pinyin observations and the screenshot no longer describe the product. The
+phrase-capture and publication observations were made on code that has since
+changed in the ways listed above, and the changed code has not been checked in a
+browser. After removal, the shared checkout passed 133 focused tests with 539
+assertions across 18 files. Vocab typecheck reported zero errors and warnings;
+production build, UI boundary check, and diff check passed. Capture regressions
+cover English phrases across Markdown, single-line and saved-source boundaries,
+exact Unicode, duplicate saves, storage refusal, retry, and preserved notes and
+stages. Browser automation timed out on three recovery attempts before the
+corrected interface could be observed. Post-removal visual, pointer, keyboard,
+and native-copy acceptance remains pending. These results do not replace live
+provider, touch, or second-device acceptance.
+
+## Historical record
 
 On 2026-10-03 the actual Vocab components were exercised in Chrome over
 synthetic memory stores and a scripted tutor. The fixture mounted `VocabShell`
@@ -7,9 +31,9 @@ Its source remains in the task artifact at
 `/private/tmp/epicenter-vocab-publication-20261002/apps/vocab/.task-harness/`.
 The temporary copy in the shared checkout was removed and its server stopped.
 
-![Contextual pinyin and a confirmed phrase save](reading-and-capture.jpg)
+![Historical milestone: contextual pinyin, since removed, and a confirmed phrase save](reading-and-capture.jpg)
 
-Observed behavior:
+Observed behavior at that milestone:
 
 - Pinyin appears across words, notes, chat titles, focus, and completed messages.
   Banks and music receive contextual readings across Markdown formatting.
@@ -37,7 +61,11 @@ entry tests with 158 assertions.
 These checks do not establish real-provider behavior, touch selection, or
 second-device synchronization. A phrase's saved state confirms this device's
 Personal storage; it does not confirm account synchronization. English tutoring
-remains unchanged while language intent is pending.
+remains unchanged. The user clarified on 2026-10-03 that Vocab is for English
+vocabulary practice, including SAT words, with all instructions in English.
+The Chinese-specific pinyin UI in this evidence was outside that intended
+workflow and has been removed, as the scope correction at the top states. This
+screenshot records the tested milestone, not the final product scope.
 
 Local Mail's saved-query synchronization also remains unverified across real
 devices. The pending user action is to make a second device signed into the same

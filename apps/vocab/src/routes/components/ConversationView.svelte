@@ -5,6 +5,7 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import { Button } from '@epicenter/ui/button';
 	import { CopyButton } from '@epicenter/ui/copy-button';
+	import { Markdown } from '@epicenter/ui/markdown';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SendIcon from '@lucide/svelte/icons/send';
@@ -18,11 +19,8 @@
 	import type { createEntriesState } from '$lib/entries.svelte.js';
 	import type { InferenceCatalog } from '@epicenter/app-shell/inference-picker';
 	import type { InferenceSelections } from '@epicenter/app-shell/inference-selections';
-	import { useReading } from '$lib/reading-preference.js';
 	import DictationButton from './DictationButton.svelte';
 	import PhraseCapture from './PhraseCapture.svelte';
-	import ReadingMarkdown from './ReadingMarkdown.svelte';
-	import ReadingText from './ReadingText.svelte';
 
 	const accountManagementUrl = auth.accountManagementUrl;
 	const openConnection = getConnectionScreen();
@@ -71,7 +69,6 @@
 		return chat.unsaved.length > 0;
 	}
 
-	const reading = useReading();
 	// The element holding the messages; phrase capture listens inside it.
 	let list = $state<HTMLElement | null>(null);
 	// A reopened chat can contain rows accepted before a failed save. The
@@ -98,20 +95,18 @@
 
 <svelte:window onbeforeunload={(event) => { if (hasUnsaved()) event.preventDefault(); }} />
 
-<PhraseCapture root={list} {entries} {historyStored} resetKey={`${reading.showPinyin}:${chat.messages.length}:${chat.isGenerating}`} />
+<PhraseCapture root={list} {entries} {historyStored} resetKey={`${chat.messages.length}:${chat.isGenerating}`} />
 
 {#snippet message(msg: AgentMessage, streaming: boolean)}
-	{#if streaming}
-		<!-- Render Markdown and readings only after the answer settles. -->
+	{#if msg.role === 'user' || streaming}
+		<!-- Render Markdown only after the answer settles. -->
 		<div class="whitespace-pre-wrap">{agentMessageText(msg)}</div>
-	{:else if msg.role === 'user'}
-		<div class="whitespace-pre-wrap"><ReadingText text={agentMessageText(msg)} /></div>
 	{:else}
 		<!-- A tutor answer is a phrase source only once storage has confirmed it:
 		     an unsaved one stays readable and copyable without the marker. -->
 		{@const saved = !unsavedIds.has(msg.id)}
 		<div data-phrase-source={saved && historyStored ? msg.id : undefined}>
-			<ReadingMarkdown content={agentMessageText(msg)} />
+			<Markdown content={agentMessageText(msg)} />
 		</div>
 		{#if saved}
 			<Button class="mt-1" variant="ghost" size="xs" disabled={!historyStored} data-capture-skip data-save-phrase={msg.id}>Save a phrase</Button>

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import type { createEntriesState } from '$lib/entries.svelte.js';
-	import ReadingText from './ReadingText.svelte';
 
 	let { focus, entries }: {
 		focus: readonly { entryId: string; text: string }[];
@@ -19,7 +18,7 @@
 {#each focus as item (item.entryId)}
 	{@const entry = entries.entries.find((entry) => entry.id === item.entryId)}
 	<div class="mb-4">
-		<p class="font-medium"><ReadingText text={item.text} /></p>
+		<p class="font-medium">{item.text}</p>
 		{#if entry}
 			<div class="mt-1 flex flex-wrap gap-1" aria-label="Your stage for {item.text}">
 				{#each stages as stage}

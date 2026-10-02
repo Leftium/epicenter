@@ -12,7 +12,7 @@ test('chat is device-owned while saved entries are account-owned', () => {
 		'messages',
 		'chats',
 	]);
-	expect(Object.keys(chatHistoryDefinition.kv)).toEqual(['showPinyin']);
+	expect(Object.keys(chatHistoryDefinition.kv)).toEqual([]);
 	expect(Object.keys(vocabDefinition.tables)).toEqual(['entries']);
 	expect(Object.keys(vocabDefinition.kv)).toEqual([]);
 });

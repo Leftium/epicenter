@@ -42,8 +42,9 @@ This direction does not make The Ark the host for unrelated personal apps.
 Its profile routes and custom-domain support require their own implementation.
 
 ADR-0473 records the intended personal addresses at `username.epicenter.so` and
-trusted workspace app paths at `username.epicenter.so/myapp`, subject to a safe hosting design
-before launch. Purchasing the software alias does not select a hosting suffix.
+published app addresses at `myapp.username.epicenter.so`, subject to a safe
+hosting design before launch. Purchasing the software alias does not select a
+hosting suffix.
 Product addresses, hosted app addresses, and data identifiers have different jobs.
 
 ## Consequences

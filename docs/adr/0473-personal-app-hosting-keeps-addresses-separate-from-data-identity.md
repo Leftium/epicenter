@@ -2,98 +2,137 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-30
-- **Amends:** [ADR-0335](0335-a-person-is-an-origin-and-an-app-is-a-path-under-it.md) at the intended hosting suffix and the assumption that every app in a person's space has blanket trust. App paths remain; arbitrary executable apps need a separate isolation decision.
-- **Amends:** [ADR-0246](0246-an-app-is-named-by-its-full-reverse-domain-id-everywhere-including-the-ones-epicenter-ships.md) at public hosted paths: readable slugs may resolve full app IDs; internal host routes, deep links, and on-disk IDs keep the full identifier.
+- **Amends:** [ADR-0335](0335-a-person-is-an-origin-and-an-app-is-a-path-under-it.md) at mandatory app paths, shared browser state, blanket trust between apps, and the required hosting suffix. Independently published apps have separate origins.
+- **Amends:** [ADR-0246](0246-an-app-is-named-by-its-full-reverse-domain-id-everywhere-including-the-ones-epicenter-ships.md) at public hosted addresses: readable hostname labels may resolve full app IDs; internal host routes, deep links, and on-disk IDs keep the full identifier.
 - **Relates:** [Independent applications](0449-epicenter-connects-independent-applications-through-personal-data.md), [publisher identity](0460-vocab-and-whispering-are-braden-wongs-apps-built-on-epicenter.md), and [portable folder scopes](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md).
 - **Unbuilt:** all personal bundle hosting, username allocation, certificates, custom-domain bindings, and authenticated cross-origin data access.
 
 ## Context
 
-Epicenter's intended hosted experience gives each person a home containing
-several apps. Opening Whispering and then Notes selects tools within that space.
-It should not require a new hostname for each tool.
+Epicenter helps people make, remix, and publish independent applications over
+portable data. A maker can also be the first user, but publishing software does
+not make the maker the owner of everyone else's data.
 
-The desktop host already lists applications by ID and title in
-`apps/epicenter/src/applications.ts` and serves their built assets through
-`apps/epicenter/src/server.ts`. This supports separating the app list from app
-files; it does not establish an implemented personal hosting service.
+App paths under one personal origin suit a collection of mutually trusted tools.
+They do not match the intended publishing model: Alice can remix Whispering,
+release her version independently, and let other people use it with their own
+folders. Her app needs a separate identity and execution boundary even when it
+understands the same files as Braden's app.
 
-A publisher's public app home and a user's personal workspace have different
-jobs. An app published by Braden can serve many people's data. A personal
-hostname selects a space; it does not identify the visitor or grant access.
+The desktop host lists applications by ID and title in
+`apps/epicenter/src/applications.ts` and serves built assets through
+`apps/epicenter/src/server.ts`. This separates the app index from app builds;
+it does not implement personal browser hosting or cross-origin folder access.
 
 ## Decision
 
-**Epicenter's default personal address is `<handle>.epicenter.so`, and trusted
-workspace apps use top-level paths beneath that address.**
+**A maker's default home is `<handle>.epicenter.so`, and independently published
+apps run at `<app>.<handle>.epicenter.so`.**
 
-| Address | Purpose |
-| --- | --- |
-| `braden.epicenter.so/` | Braden's home and app launcher |
-| `braden.epicenter.so/whispering` | Whispering in Braden's space |
-| `braden.epicenter.so/notes` | Notes in Braden's space |
+| Address | Purpose | Application ID |
+| --- | --- | --- |
+| `alice.epicenter.so` | Alice's home and index of her published apps | No app ID implied |
+| `whispering.alice.epicenter.so` | Alice's independently published Whispering remix | `so.epicenter.alice.whispering` |
+| `whispering.bradenwong.com` | Braden's publisher-domain home for Whispering | `com.bradenwong.whispering` |
 
-The root belongs to the launcher. Apps may have internal routes beneath their
-own paths, but another app is never mounted there. Platform routes such as
-`/.well-known/` are reserved. App assets support their mount paths; service
-workers must not control sibling apps or the launcher.
+A publisher-owned domain can present an app through the same app-subdomain
+convention. The publisher address serves software or its public product home;
+it does not identify the person currently using it. Braden and Bob can both use
+Alice's published app with separate account-scoped data.
 
-**App paths belong to one trusted workspace, not to an arbitrary-code hosting
-service.** Paths share an origin and provide no security boundary between apps.
-Independent publishers and person-authored executable apps need an explicit
-trust and isolation design before running in that space. This record grants no
-deployed bundle blanket access to a visitor's credentials.
+**Each independently published browser app has its own origin.** The maker's
+index links to apps rather than running all their code on its origin. Separate
+origins keep apps' browser storage and execution contexts distinct; portable
+folder access connects apps through explicit authorization instead of shared
+ambient browser state. Arbitrary app code receives no vendor-wide or
+visitor-wide account credential merely because someone opens its URL.
 
-**Addresses remain separate from software and data identity.** A handle, app
-slug, or domain change must not rename stable account, application, or data
-identifiers. Requests check access independently of the hostname. Publicly
-serving an SPA does not publish its users' files.
+**Application IDs use stable publisher-qualified reverse-domain names.** An
+Epicenter publisher namespace can use `so.epicenter.alice`; a publisher with
+an owned domain can use `com.bradenwong`. Their apps add a final name such as
+`whispering`. These are durable identifiers, not repeated computations from
+the current URL. Changing a handle, serving domain, or hostname label must not
+rename the app or existing data. Domain-like spelling is neither proof of domain
+control nor an access grant.
 
-Public app slugs resolve to full app IDs through the personal app list. Slugs
-must be unique within that space; two apps named Notes need distinct slugs.
-This is a mapping for addresses people read, not a rename of internal host
-routes, deep links, or folder namespaces.
+Hosted publisher namespaces must stay bound to the same publisher. A handle
+change preserves existing IDs; handle reuse must never transfer an old
+publisher namespace. Hostname bindings must also protect visitors' existing
+origin-scoped data and permissions before any address can be reassigned.
+Public hostname labels resolve full app IDs; internal host routes, deep links,
+and on-disk identifiers retain their full-ID contracts.
 
-**Custom-domain addresses remain undecided.** Neither app subdomains such as
-`whispering.bradenwong.com` nor workspace paths such as
-`apps.bradenwong.com/whispering` are selected here. Publisher app homes,
-personal runtime addresses, public writing domains, and domain-based social
-handles need separate treatment.
+**An app defaults to one portable folder bearing its app ID, and can explicitly
+open other compatible folders.** Tables and settings stay inside the folder;
+table segmentation alone does not create suffix IDs such as a speech-specific
+folder. Local or account scope identifies whose dataset is opened.
 
-The intended `epicenter.so` suffix requires a verified hosting and
-authentication isolation design. This proposal revisits ADR-0335's required
-separate registrable hosting domain; it does not claim that subdomains alone
-protect vendor authentication from person-controlled code. Revisit the suffix
-before launch if safe hosting requires a different serving domain.
+| Application ID | Opened folder ID | Relationship |
+| --- | --- | --- |
+| `com.bradenwong.whispering` | `com.bradenwong.whispering` | Braden's app uses its default folder |
+| `so.epicenter.alice.whispering` | `com.bradenwong.whispering` | Alice's compatible remix uses the existing folder |
+| `so.epicenter.alice.whispering` | `so.epicenter.alice.whispering` | Alice's remix uses its own dataset |
+
+The person using the app selects and authorizes the folder. Naming a compatible
+folder ID alone grants no access. Reusing a folder must preserve its format and
+source data through the folder's read and write contract.
+
+**Copying into a remix's own folder creates an independent dataset.** An explicit
+copy preserves the source and creates destination files under the destination
+scope. Copy compatible authored content; use an explicit conversion when the
+formats differ. A copy does not establish ongoing synchronization or transfer
+credentials and private device state. Reusing the same source folder and
+creating a copy are separate choices, not automatic effects of remixing code.
+
+The intended `epicenter.so` suffix still requires a verified hosting and
+authentication isolation design. Separate app origins alone do not settle
+parent-domain cookies, vendor authentication, or safe person-controlled hosting.
+Revisit the serving suffix before launch if those guarantees require a separate
+registrable domain or Public Suffix List treatment.
+
+This record selects publisher app subdomains. Personal-domain private workspaces,
+custom-domain alias and migration behavior, and The Ark's publication domains
+or domain-based social handles remain separate decisions.
 
 ## Consequences
 
-Adding a trusted app adds a path and launcher entry rather than another personal
-hostname, browser origin, or certificate. A deployed SPA build can serve many
-personal spaces; a person's app list references software instead of copying it.
-Apps may keep independent builds and release schedules while sharing an origin.
+The public address and durable app namespace express the same publisher/app
+relationship without making the current URL the owner of saved data. A remix
+has its own deployment and ID while remaining able to use compatible existing
+files. Publishing a remix does not publish the maker's or its users' data.
 
-Apps in one space share browser storage boundaries, origin-scoped permissions,
-and exposure to a compromised sibling. They still choose their data contracts
-and resource lifetimes. Sharing an origin does not automatically connect their
-data or require one application shell.
+Each app can have its own release schedule, browser cache, service worker, and
+local storage. A new deployment adds a hostname and certificate coverage rather
+than only a path. Ordinary `*.epicenter.so` coverage does not cover
+`whispering.alice.epicenter.so`; deeper certificate provisioning is required.
+A deployed SPA build can serve many users without per-user copies of its assets.
 
-Switching a handle or domain changes the browser origin. Existing local-only
-work does not follow automatically. Hosting must settle local-data preservation,
-handle reservation and reuse, authenticated access, certificate provisioning,
-and domain ownership checks before launch. These addresses describe a planned
-experience, not an available service.
+The browser does not automatically share IndexedDB across app origins, even if
+two apps declare the same folder ID. Browser folder selection, authorization,
+and transfer must establish the portable-data promise explicitly. A custom
+address or handle change also needs preservation of existing local-only work.
+Several users of one published app need account-scoped data separation; its
+publisher hostname supplies no user isolation.
+
+Hosting remains unbuilt. Before launch, prove namespace and hostname lifetime,
+certificate provisioning, authentication boundaries, compatible folder access,
+explicit copying, and local-data preservation. The product proof is Alice
+remixing an app, reopening existing data through it, then making an independent
+copy that survives reopening without changing the source.
 
 ## Considered alternatives
 
-- `whispering.braden.epicenter.so`: introduces a separate origin and deeper
-  hostname per app without a required boundary in the trusted workspace.
-  Independent executable apps may still need separate origins.
-- `epicenter.so/braden/whispering`: places all personal spaces on one browser
-  origin and presents the person as a route inside the vendor application.
-- One canonical private runtime with personal addresses only for publishing:
-  avoids per-person origin migrations, but gives up opening tools inside one's
-  personal space.
+- `alice.epicenter.so/whispering`: cheaper routing for mutually trusted tools,
+  but independently authored apps share one browser origin. Connecting portable
+  data should not require collapsing their execution boundaries.
+- `epicenter.so/alice/whispering`: shares a browser origin across publishers
+  and puts their executable code beside the vendor application.
+- Give every remix a new data format and require copying: prevents replacing
+  an interface while retaining compatible existing files.
+- Require a remix to retain the original app ID: confuses independent software
+  identity with compatibility with the original folder.
+- Give every table a reverse-domain folder ID: restores segmentation that one
+  portable app folder no longer needs.
 
 ## References
 

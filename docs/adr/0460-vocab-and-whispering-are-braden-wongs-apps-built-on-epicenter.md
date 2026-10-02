@@ -4,7 +4,7 @@
 - **Date:** 2026-09-29
 - **Amends:** [ADR-0246](0246-an-app-is-named-by-its-full-reverse-domain-id-everywhere-including-the-ones-epicenter-ships.md) at the prefix assigned to Whispering. Its full-ID rule remains.
 - **Relates:** [ADR-0445](0445-vocab-saves-local-chats-and-syncs-saved-entries.md) (Vocab's synced entries and local chats)
-- **Unbuilt:** Personal-domain homes for Vocab and Whispering; Vocab's URL, authentication, and Local chat transition; Whispering's app and store ID change, migration of data written under the current IDs, and a compatibility decision for data from the released standalone app.
+- **Unbuilt:** Personal-domain homes for Vocab and Whispering; Vocab's URL, authentication, and Local chat transition; Whispering's app and folder ID change, migration of data written under previous IDs and formats, and a compatibility decision for data from the released standalone app.
 
 ## Context
 
@@ -15,9 +15,12 @@ runs through Epicenter desktop. Epicenter's Tauri bundle ID is `so.epicenter`.
 
 The released standalone Whispering app used the Tauri bundle ID
 `com.bradenwong.whispering`, including at the `v7.11.0` tag. Tauri used that ID
-to resolve its application-data directory. The current Whispering Local
-recording store is `so.epicenter.whispering`; its Personal speech-profile store
-is `so.epicenter.whispering.speech`. These IDs name existing data.
+to resolve its application-data directory. The current file-backed definition
+in `apps/whispering/src/lib/definition.ts` uses `so.epicenter.whispering` for
+one folder containing recordings, transcriptions, transformations, their runs,
+and portable settings. Earlier Yjs-backed designs separated Local recordings
+from Personal speech profiles under `so.epicenter.whispering.speech`.
+That old identifier is migration history, not the target folder layout.
 
 The public address tells people who presents an app. A durable app ID names its
 data and runtime addresses. Epicenter can provide storage, accounts, inference,
@@ -38,17 +41,20 @@ third party follows its own publisher's public home.
 | Vocab | `vocab.bradenwong.com` serves the browser app; `bradenwong.com` introduces and links to it. | The current `so.epicenter.vocab` app ID stays. Moving a web address does not itself rename existing data. |
 | Whispering | `whispering.bradenwong.com` introduces the app and explains how to get its available build. | The app ID becomes `com.bradenwong.whispering`, the ID of the released standalone bundle. |
 
-Whispering uses `com.bradenwong.whispering` in its application catalog, routes,
-deep links, and window identity under ADR-0246. Its Local recording store uses
-that ID, and its Personal speech-profile store uses
-`com.bradenwong.whispering.speech`. Epicenter's Tauri bundle stays
-`so.epicenter` while hosting Whispering. A future standalone Whispering shell
+**Whispering's app and default portable folder use the single ID
+`com.bradenwong.whispering`.** The application catalog, internal host routes,
+deep links, and window identity use that ID under ADR-0246. Tables and settings
+inside the folder do not receive separate reverse-domain IDs. Local and
+account scopes distinguish whose dataset is opened without suffixing the ID.
+Epicenter's Tauri bundle stays `so.epicenter` while hosting Whispering.
+A future standalone Whispering shell
 uses `com.bradenwong.whispering` as its Tauri bundle ID.
 
 The Whispering ID change ships only with an explicit treatment of current
-Local recordings and Personal speech-profile data under the `so.epicenter.*`
-IDs. The implementation also decides whether and how to read compatible data
-from the released standalone app's `com.bradenwong.whispering` directory.
+file-backed data under `so.epicenter.whispering` and any retained recordings or
+speech profiles from previous Yjs-backed formats. The implementation also
+decides whether and how to read compatible data from the released standalone
+app's `com.bradenwong.whispering` directory.
 Reusing that bundle ID does not make an old data format readable by a new build.
 
 Moving Vocab's URL needs a separate treatment of device-local chats and
@@ -65,12 +71,13 @@ origin.
   bundle.
 - Vocab's app ID stays stable, but its URL and authentication callbacks change.
   Local browser data needs a preservation decision before the origin changes.
-- Whispering's current Local and Personal data need a migration or stated
-  preservation path before the new IDs replace the live ones. A future
+- Whispering's current folder and any retained legacy data need a migration or
+  stated preservation path before the new ID replaces the live one. A future
   standalone release can reuse the old OS-level identity without renaming
   Epicenter's host.
-- ADR-0246 still requires one full app ID everywhere. Its `so.epicenter.*`
-  prefix no longer applies to Whispering.
+- Internal host routes, deep links, and on-disk identifiers keep ADR-0246's
+  full-ID rule. Public addresses follow the publisher hosting convention;
+  Whispering's durable prefix becomes `com.bradenwong`.
 
 ## Considered alternatives
 

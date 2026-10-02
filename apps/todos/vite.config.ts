@@ -32,7 +32,7 @@ export default defineConfig(
 				},
 				// isomorphic-git and its SHA-1 dependency expect Node's Buffer.
 				{
-					find: 'buffer',
+					find: /^buffer$/,
 					replacement: fileURLToPath(import.meta.resolve('buffer/')),
 				},
 				// just-bash's browser bundle imports gzip helpers the terminal never enables.

@@ -26,12 +26,12 @@ use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
-use crate::files::{FileChange, FileExpectation};
+use crate::files::{sha256, FileChange};
 use crate::git::Remote;
 use crate::history::{CommitOutcome, GitError, Observation, PullError, PullOutcome, PushOutcome};
 use crate::messages::{ChangeKind, PathChange};
 use crate::owner::{FolderConfig, FolderOwner};
-use crate::testing::{config, eventually, git, open, tree, write, TempDir};
+use crate::testing::{config, create, eventually, git, open, overwrite, replace, tree, TempDir};
 
 /// Wait for the commit a save was admitted for, if it was. The save decided
 /// that before it returned, so nothing can start after this sees it idle.
@@ -75,9 +75,7 @@ fn hold_once() -> (
 }
 
 fn save(owner: &FolderOwner, path: &str, content: &str) {
-    owner
-        .apply(&[write(path, content, FileExpectation::Any)])
-        .unwrap();
+    owner.apply(&[overwrite(path, content)]).unwrap();
 }
 
 fn manual(root: &Path) -> FolderOwner {
@@ -280,7 +278,7 @@ fn a_rename_cannot_land_inside_a_snapshot_so_the_pass_never_commits_an_empty_tre
                 .map(|extension| FileChange::Move {
                     from: format!("todos/old.{extension}"),
                     to: format!("todos/new.{extension}"),
-                    expected: FileExpectation::Any,
+                    expected_sha256: None,
                 })
                 .collect();
             renamer.apply(&moves).unwrap();
@@ -550,10 +548,9 @@ fn a_held_ref_lock_fails_the_commit_and_leaves_the_saved_bytes() {
     let head = git(&root, &["rev-parse", "HEAD"]);
     let audio: Vec<u8> = (0..200_000u32).map(|index| (index % 251) as u8).collect();
     owner
-        .apply(&[FileChange::Write {
+        .apply(&[FileChange::Create {
             path: "rec/take.wav".into(),
             bytes: audio.clone(),
-            expected: FileExpectation::Absent,
         }])
         .unwrap();
     let ref_lock = root.join(".git/refs/heads/main.lock");
@@ -637,7 +634,7 @@ fn status_writes_nothing_into_the_folder_or_its_git_directory() {
     owner
         .apply(&[FileChange::Remove {
             path: "keep/b.md".into(),
-            expected: FileExpectation::Any,
+            expected_sha256: None,
         }])
         .unwrap();
     std::thread::sleep(Duration::from_millis(20));
@@ -807,16 +804,11 @@ fn sixty_four_mebibytes_of_audio_commit_exactly_and_no_response_carries_a_byte()
         digests.push(Sha256::digest(&bytes));
         owner
             .apply(&[
-                FileChange::Write {
+                FileChange::Create {
                     path: format!("rec/{index}.wav"),
                     bytes,
-                    expected: FileExpectation::Absent,
                 },
-                write(
-                    &format!("rec/{index}.md"),
-                    "---\ntitle: take\n---\n",
-                    FileExpectation::Absent,
-                ),
+                create(&format!("rec/{index}.md"), "---\ntitle: take\n---\n"),
             ])
             .unwrap();
     }
@@ -1036,10 +1028,7 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
     // An edit and an addition travel as one fast-forward. They are one save:
     // a second save made while the first one's commit ran would be skipped.
     first
-        .apply(&[
-            write("a.md", "A2", FileExpectation::Any),
-            write("dir/b.md", "B", FileExpectation::Any),
-        ])
+        .apply(&[overwrite("a.md", "A2"), overwrite("dir/b.md", "B")])
         .unwrap();
     settled(&first);
     pushed(&first, &first_root);
@@ -1191,7 +1180,7 @@ fn a_fast_forward_never_overwrites_bytes_written_after_it_found_the_folder_clean
     upstream
         .apply(&[FileChange::Remove {
             path: "removed.md".into(),
-            expected: FileExpectation::Any,
+            expected_sha256: None,
         }])
         .unwrap();
     upstream.commit();
@@ -1211,8 +1200,8 @@ fn a_fast_forward_never_overwrites_bytes_written_after_it_found_the_folder_clean
         error:
             crate::files::FileError::Conflict {
                 path,
-                expected,
-                actual,
+                expected_sha256,
+                actual_sha256,
             },
     } = refused
     else {
@@ -1220,14 +1209,8 @@ fn a_fast_forward_never_overwrites_bytes_written_after_it_found_the_folder_clean
     };
     // Removals are applied first; the baseline is the committed bytes.
     assert_eq!(path, "removed.md");
-    assert_eq!(
-        expected,
-        FileExpectation::version(&crate::files::FileVersion::of(b"committed"))
-    );
-    assert_eq!(
-        actual,
-        Some(crate::files::FileVersion::of(b"also written outside"))
-    );
+    assert_eq!(expected_sha256, sha256(b"committed"));
+    assert_eq!(actual_sha256, Some(sha256(b"also written outside")));
     assert_eq!(
         std::fs::read_to_string(root.join("edited.md")).unwrap(),
         "written by another program"
@@ -1814,19 +1797,15 @@ fn a_fetch_and_a_push_in_flight_hold_no_save_and_no_commit_back() {
     assert!(snapshot.activity.fetch.active && snapshot.activity.push.active);
 
     // With both in flight: a second save is committed by its own attempt, a
-    // write over a stale version is still refused, and explicit work runs.
-    let read = owner.read("a.md").unwrap().version;
+    // replacement over a stale hash is still refused, and explicit work runs.
+    let read = owner.read("a.md").unwrap().sha256;
     save(&owner, "b.md", "B");
     settled(&owner);
     assert_eq!(subjects(&root)[..2], ["Add b.md", "Add a.md"]);
     save(&owner, "a.md", "A, from another window");
     settled(&owner);
     assert!(matches!(
-        owner.apply(&[write(
-            "a.md",
-            "built on the stale read",
-            FileExpectation::version(&read)
-        )]),
+        owner.apply(&[replace("a.md", "built on the stale read", &read)]),
         Err(crate::files::ApplyError::Refused {
             error: crate::files::FileError::Conflict { .. }
         })
@@ -1965,13 +1944,8 @@ fn a_save_that_lands_after_the_fence_stays_saved_and_starts_no_commit() {
         gate.lock().unwrap().recv().unwrap();
     }));
     let saver = owner.clone();
-    let held = std::thread::spawn(move || {
-        saver.apply(&[write(
-            "held.md",
-            "admitted before shutdown",
-            FileExpectation::Absent,
-        )])
-    });
+    let held =
+        std::thread::spawn(move || saver.apply(&[create("held.md", "admitted before shutdown")]));
     at_admission.recv().unwrap();
 
     let closing = owner.clone();
@@ -1983,7 +1957,7 @@ fn a_save_that_lands_after_the_fence_stays_saved_and_starts_no_commit() {
     eventually("the fence", || owner.snapshot().closed);
     owner.hooks().before_apply = None;
     assert!(matches!(
-        owner.apply(&[write("late.md", "refused", FileExpectation::Absent)]),
+        owner.apply(&[create("late.md", "refused")]),
         Err(crate::files::ApplyError::Refused {
             error: crate::files::FileError::Closed
         })

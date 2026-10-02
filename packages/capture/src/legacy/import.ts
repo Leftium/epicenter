@@ -490,7 +490,7 @@ async function createExclusive(
 	try {
 		const written = await files.create(path, source);
 		if (written.error === null) return { status: 'created' };
-		if (written.error.name !== 'Conflict')
+		if (written.error.name !== 'Exists')
 			return { status: 'failed', message: written.error.message };
 		const existing = await files.read(path);
 		if (existing.error !== null)
@@ -561,7 +561,7 @@ async function readReceipt(
 		return {
 			ok: true,
 			receipt: value,
-			file: { path: read.data.path, version: read.data.version },
+			file: { path: read.data.path, sha256: read.data.sha256 },
 		};
 	} catch (cause) {
 		return {
@@ -687,7 +687,11 @@ export async function runLegacyImport(
 					break;
 				}
 				receipt = { status: 'failed', message: written.error.message };
-				if (written.error.name !== 'Conflict') break;
+				if (
+					written.error.name !==
+					(current.file === undefined ? 'Exists' : 'Conflict')
+				)
+					break;
 				const reread = await readReceipt(files, receiptPath, account);
 				if (!reread.ok) {
 					receipt = { status: 'failed', message: reread.message };

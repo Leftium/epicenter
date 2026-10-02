@@ -48,6 +48,6 @@ export async function setUpFolder(
 	if (current.error.name !== 'NotFound') throw refused(current.error);
 	const created = await files.create(KV_PATH, '{}\n');
 	// Another writer created it first: theirs stands.
-	if (created.error && created.error.name !== 'Conflict')
+	if (created.error && created.error.name !== 'Exists')
 		throw refused(created.error);
 }

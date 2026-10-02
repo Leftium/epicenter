@@ -31,7 +31,7 @@ import {
 	scratch,
 } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const openNativeFolder = async <const TDefinition extends DataDefinition>(
@@ -407,11 +407,10 @@ describe('browser and native exchange through a real bare repository', () => {
 		expectOk(
 			await createBrowserFileBoundary(externalDb, environment).apply([
 				{
-					kind: 'write',
+					kind: 'create',
 					path: 'scratch.txt',
 					bytes,
-					version: await captureVersion(bytes),
-					expected: 'absent',
+					sha256: await hashBytes(bytes),
 				},
 			]),
 		);

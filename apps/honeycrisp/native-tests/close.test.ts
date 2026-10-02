@@ -21,7 +21,7 @@
  */
 import '../src/lib/svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
-import { captureVersion, readSource } from '@epicenter/folder';
+import { hashBytes, readSource } from '@epicenter/folder';
 import { undoDepth } from 'prosemirror-history';
 import { createRichSession } from '../src/lib/editor/rich-session.js';
 import {
@@ -78,12 +78,12 @@ function folder() {
 	let moves = 0;
 	let closed = 0;
 
-	const version = (source: string) => captureVersion(encoder.encode(source));
+	const sha256 = (source: string) => hashBytes(encoder.encode(source));
 	const note = async (source: string) => ({
 		path: NOTE_PATH,
 		stem: 'a',
 		source,
-		version: await version(source),
+		sha256: await sha256(source),
 		fields: { title: 'A' },
 		body: readSource(source).body ?? '',
 	});
@@ -102,7 +102,7 @@ function folder() {
 				data: null,
 				error: { name: 'Unconfirmed', message: 'The reply was lost' },
 			};
-		return { data: { path, version: await version(source) }, error: null };
+		return { data: { path, sha256: await sha256(source) }, error: null };
 	}
 
 	const host = {
@@ -144,18 +144,18 @@ function folder() {
 					}
 					const bytes = encoder.encode(files.get(path));
 					return {
-						data: { path, bytes, version: await captureVersion(bytes) },
+						data: { path, bytes, sha256: await hashBytes(bytes) },
 						error: null,
 					};
 				},
 				create: write,
 				replace: (file: { path: string }, source: string) =>
 					write(file.path, source),
-				move: async (file: { path: string; version: unknown }, to: string) => {
+				move: async (file: { path: string; sha256: unknown }, to: string) => {
 					moves += 1;
 					files.set(to, files.get(file.path) as string);
 					files.delete(file.path);
-					return { data: { path: to, version: file.version }, error: null };
+					return { data: { path: to, sha256: file.sha256 }, error: null };
 				},
 			},
 			git: {
@@ -402,7 +402,7 @@ test('a rich-text draft in conflict with the file is kept when the person keeps 
 					{
 						...row,
 						source: theirs,
-						version: await captureVersion(encoder.encode(theirs)),
+						sha256: await hashBytes(encoder.encode(theirs)),
 					},
 				],
 			},

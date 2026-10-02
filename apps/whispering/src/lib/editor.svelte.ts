@@ -20,12 +20,11 @@
  */
 import {
 	type Entry,
+	type TextCapture,
 	type FileTable,
-	type FileVersion,
 	type FolderFiles,
 	patchSource,
 	type SourceChange,
-	sameVersion,
 } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
@@ -38,11 +37,7 @@ import { readTextFile } from './files.js';
 export type RecordingEntry = Entry<RecordingFields>;
 
 /** One saved text file as its draft last accepted it. */
-export type SavedText = {
-	readonly path: string;
-	readonly source: string;
-	readonly version: FileVersion;
-};
+export type SavedText = TextCapture;
 
 export type SaveState<T> =
 	| { readonly kind: 'saved' }
@@ -207,7 +202,7 @@ function createDraft<T extends SavedText>(
 		 */
 		observe(next: T) {
 			if (next.path !== baseline.path) return;
-			if (sameVersion(next.version, baseline.version)) {
+			if (next.sha256 === baseline.sha256) {
 				baseline = next;
 				return;
 			}
@@ -349,14 +344,14 @@ export function createTextFileEditor(
 		{
 			async write(baseline, source) {
 				const written = await files.replace(
-					{ path: baseline.path, version: baseline.version },
+					{ path: baseline.path, sha256: baseline.sha256 },
 					source,
 				);
 				if (written.error) return Err(written.error);
 				return Ok({
 					path: baseline.path,
 					source,
-					version: written.data.version,
+					sha256: written.data.sha256,
 				});
 			},
 			async read(path) {

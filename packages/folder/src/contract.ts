@@ -89,12 +89,10 @@ export type {
 export type { FolderTerminal, TerminalResult } from './terminal.js';
 export {
 	type CapturedFile,
-	captureVersion,
+	hashBytes,
 	type FileCapture,
-	type FileExpectation,
-	type FileVersion,
-	sameVersion,
-} from './version.js';
+	type TextCapture,
+} from './capture.js';
 
 /**
  * Settings for a folder kept in this browser's own storage. They apply to a

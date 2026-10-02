@@ -17,20 +17,18 @@ import type {
 	ParsedDataDefinition,
 } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { FileChange } from './boundary.js';
+import type { FileWriteIntent } from './boundary.js';
 import { BatchError, FileError, TableError } from './errors.js';
 import type { FolderBoundary } from './folder.js';
 import { pathProblem } from './paths.js';
 import { destinationProblem, prepareRow, tableFilenames } from './table.js';
 import {
 	captureProblem,
-	captureVersion,
+	hashBytes,
 	type FileCapture,
-	type FileExpectation,
-	type FileVersion,
 	fileCapture,
 	ownBytes,
-} from './version.js';
+} from './capture.js';
 
 /** The file verbs of `folder.files`, as intents. Each returns nothing. */
 export type BatchFiles = {
@@ -82,21 +80,20 @@ export type BatchLanded =
 /**
  * What a complete batch published, in the order it was collected. Each
  * capture is computed from the collected bytes, or from the moved file's
- * captured version; none is read back from the folder.
+ * captured hash; none is read back from the folder.
  */
 export type BatchReceipt = { readonly steps: readonly BatchLanded[] };
 
-/** A collected intent: a file change whose write version is not yet computed. */
+/** A collected intent: a file change whose write hash is not yet computed. */
 export type BatchIntent =
-	| {
-			readonly kind: 'write';
-			readonly path: string;
-			readonly bytes: Uint8Array;
-			readonly expected: FileExpectation;
-			/** The table this write creates a typed row in; absent for a file verb. */
-			readonly row?: string;
-	  }
-	| Extract<FileChange, { kind: 'remove' | 'move' }>;
+	| (FileWriteIntent & { row?: string })
+	| { kind: 'remove'; path: string; expectedSha256: string }
+	| { kind: 'move'; from: string; to: string; expectedSha256: string };
+
+/** Prepared batch operations retain the captured hash for move receipts. */
+export type BatchChange =
+	| (FileWriteIntent & { sha256: string })
+	| Extract<BatchIntent, { kind: 'remove' | 'move' }>;
 
 /**
  * Check every typed row creation the way a standalone `create` checks its
@@ -117,7 +114,12 @@ export async function checkRowDestinations(
 ): Promise<Result<undefined, FileError | TableError>> {
 	const names = new Map<string, Set<string>>();
 	for (const intent of intents) {
-		if (intent.kind !== 'write' || intent.row === undefined) continue;
+		if (
+			intent.kind === 'remove' ||
+			intent.kind === 'move' ||
+			intent.row === undefined
+		)
+			continue;
 		if (names.has(intent.row)) continue;
 		const found = await tableFilenames(boundary, intent.row);
 		if (found.error) return found;
@@ -132,7 +134,7 @@ export async function checkRowDestinations(
 			: { table, filename: path.slice(slash + 1) };
 	};
 	for (const intent of intents) {
-		if (intent.kind === 'write') {
+		if (intent.kind !== 'remove' && intent.kind !== 'move') {
 			if (intent.row !== undefined) {
 				const refused = destinationProblem(
 					intent.row,
@@ -157,29 +159,29 @@ export async function checkRowDestinations(
 }
 
 /** The file change an intent becomes once its bytes are hashed. */
-export async function toChange(intent: BatchIntent): Promise<FileChange> {
-	if (intent.kind !== 'write') return intent;
-	const { kind, path, bytes, expected } = intent;
-	return { kind, path, bytes, expected, version: await captureVersion(bytes) };
+export async function toChange(intent: BatchIntent): Promise<BatchChange> {
+	if (intent.kind === 'remove' || intent.kind === 'move') return intent;
+	const { row, ...change } = intent;
+	return { ...change, sha256: await hashBytes(intent.bytes) };
 }
 
-export function receiptOf(changes: readonly FileChange[]): BatchReceipt {
+export function receiptOf(changes: readonly BatchChange[]): BatchReceipt {
 	return Object.freeze({
 		steps: Object.freeze(
 			changes.map((change): BatchLanded => {
-				if (change.kind === 'write')
+				if (change.kind !== 'remove' && change.kind !== 'move')
 					return Object.freeze({
 						kind: 'write',
 						path: change.path,
-						file: fileCapture(change.path, change.version),
+						file: fileCapture(change.path, change.sha256),
 					});
 				if (change.kind === 'move')
 					return Object.freeze({
 						kind: 'move',
 						from: change.from,
 						to: change.to,
-						// A batch only moves a captured file, so its version is known.
-						file: fileCapture(change.to, change.expected as FileVersion),
+						// A batch only moves a captured file, so its hash is known.
+						file: fileCapture(change.to, change.expectedSha256),
 					});
 				return Object.freeze({ kind: 'remove', path: change.path });
 			}),
@@ -230,28 +232,27 @@ export function collectBatch<TDefinition extends DataDefinition>(
 			);
 			return undefined;
 		}
-		return checked(file.path)
-			? fileCapture(file.path, file.version)
-			: undefined;
+		return checked(file.path) ? fileCapture(file.path, file.sha256) : undefined;
 	}
-	function write(
-		path: string,
-		content: string | Uint8Array,
-		expected: FileExpectation,
-	) {
-		if (checked(path))
-			intents.push({ kind: 'write', path, bytes: ownBytes(content), expected });
+	function write(change: FileWriteIntent) {
+		if (checked(change.path)) intents.push(change);
 	}
 
 	const files: BatchFiles = {
 		create(path, content) {
 			open();
-			write(path, content, 'absent');
+			write({ kind: 'create', path, bytes: ownBytes(content) });
 		},
 		replace(file, content) {
 			open();
 			const target = captured(file);
-			if (target !== undefined) write(target.path, content, target.version);
+			if (target !== undefined)
+				write({
+					kind: 'replace',
+					path: target.path,
+					bytes: ownBytes(content),
+					expectedSha256: target.sha256,
+				});
 		},
 		remove(file) {
 			open();
@@ -260,7 +261,7 @@ export function collectBatch<TDefinition extends DataDefinition>(
 				intents.push({
 					kind: 'remove',
 					path: target.path,
-					expected: target.version,
+					expectedSha256: target.sha256,
 				});
 		},
 		move(file, destination) {
@@ -271,12 +272,12 @@ export function collectBatch<TDefinition extends DataDefinition>(
 					kind: 'move',
 					from: target.path,
 					to: destination,
-					expected: target.version,
+					expectedSha256: target.sha256,
 				});
 		},
 		overwrite(path, content) {
 			open();
-			write(path, content, 'any');
+			write({ kind: 'overwrite', path, bytes: ownBytes(content) });
 		},
 	};
 
@@ -301,10 +302,9 @@ export function collectBatch<TDefinition extends DataDefinition>(
 				}
 				// `prepareRow` encoded these bytes itself; no caller holds them.
 				intents.push({
-					kind: 'write',
+					kind: 'create',
 					path: prepared.data.path,
 					bytes: prepared.data.bytes,
-					expected: 'absent',
 					row: name,
 				});
 			},

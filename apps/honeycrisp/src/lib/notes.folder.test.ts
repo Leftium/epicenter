@@ -623,7 +623,7 @@ describe('kept sessions', () => {
 		const deletion = expectOk(await state.deletionFor('scratch.txt'));
 		expect(deletion).toEqual({
 			kind: 'file',
-			file: { path: 'scratch.txt', version: session.saved.version },
+			file: { path: 'scratch.txt', sha256: session.saved.sha256 },
 			title: undefined,
 		});
 		expect(await readFile(join(root, 'scratch.txt'), 'utf8')).toBe(
@@ -661,7 +661,7 @@ describe('kept sessions', () => {
 			// The dialog names the note the person was looking at.
 			expect(deletion).toMatchObject({
 				kind: 'file',
-				file: { path: note.path, version: note.version },
+				file: { path: note.path, sha256: note.sha256 },
 				title: note.fields.title,
 			});
 			await writeFile(join(root, note.path), outside(note));
@@ -790,7 +790,7 @@ describe('kept sessions', () => {
 		await refreshing;
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		stop();
-		expect(session.saved.version).toEqual(saved.version);
+		expect(session.saved.sha256).toEqual(saved.sha256);
 		expect(session.buffer).toBe(saved.source);
 		expect(session.external).toBeUndefined();
 		// A second old value means the screen actually rolled back, even if the
@@ -1040,7 +1040,7 @@ async function removedNoteDraft({
 	const created: { path: string; content: string | Uint8Array }[] = [];
 	folder.files.create = async (path, content) => {
 		const result = await create(path, content);
-		if (result.error?.name === 'Conflict') afterRefusal({ session });
+		if (result.error?.name === 'Exists') afterRefusal({ session });
 		if (result.error === null) {
 			created.push({ path, content });
 			if (created.length === 1) await afterCreate({ session, file });
@@ -1173,7 +1173,7 @@ describe("a removed note's draft", () => {
 		expect(session.attempt).toMatchObject({
 			path,
 			source: admitted,
-			expected: 'absent',
+			kind: 'create',
 			state: 'unconfirmed',
 		});
 		expect(state.notSaved).toBe(0);
@@ -1184,7 +1184,7 @@ describe("a removed note's draft", () => {
 		expect(session.saved.source).toBe(admitted);
 		expect(session.buffer).toBe(b);
 		// The first creation arrives late and is refused by its own condition.
-		expect((await land()).error?.name).toBe('Conflict');
+		expect((await land()).error?.name).toBe('Exists');
 		expect(await session.settle()).toBe(true);
 		expect(await readFile(file, 'utf8')).toBe(b);
 		expect(await notePaths()).toEqual([path]);
@@ -1223,14 +1223,14 @@ describe("a removed note's draft", () => {
 		expect(session.attempt).toMatchObject({
 			path,
 			source: admitted,
-			expected: 'absent',
+			kind: 'create',
 			state: 'unconfirmed',
 		});
 		expect(session.buffer).toBe(admitted);
 		expect(await readFile(file, 'utf8')).toBe(OUTSIDE);
 		expect(await notePaths()).toEqual([path]);
 		// The first creation cannot land while the path is not empty.
-		expect((await land()).error?.name).toBe('Conflict');
+		expect((await land()).error?.name).toBe('Exists');
 		expect(await readFile(file, 'utf8')).toBe(OUTSIDE);
 	});
 });
@@ -1266,7 +1266,8 @@ describe('a save whose reply is lost', () => {
 		expect(session.attempt).toMatchObject({
 			path: note.path,
 			source: a,
-			expected: note.version,
+			kind: 'replace',
+			expectedSha256: note.sha256,
 			state: 'unconfirmed',
 		});
 		expect(session.failure).toBeUndefined();
@@ -1357,7 +1358,8 @@ describe('a save whose reply is lost', () => {
 		expect(session.status).toBe('unconfirmed');
 		expect(session.attempt).toMatchObject({
 			source: a,
-			expected: note.version,
+			kind: 'replace',
+			expectedSha256: note.sha256,
 			state: 'unconfirmed',
 		});
 		expect(session.external).toMatchObject({ current: { source: OUTSIDE } });
@@ -1395,7 +1397,7 @@ describe('a rename or delete of an open file whose reply is lost', () => {
 		expect(state.selectedPath).toBe(note.path);
 		expect(session.pathChange).toMatchObject({
 			kind: 'move',
-			from: { path: note.path, version: note.version },
+			from: { path: note.path, sha256: note.sha256 },
 			to: 'notes/renamed.md',
 			state: 'unconfirmed',
 		});
@@ -1435,7 +1437,7 @@ describe('a rename or delete of an open file whose reply is lost', () => {
 			expect(state.sessionAt(note.path)).toBe(session);
 			expect(session.pathChange).toMatchObject({
 				kind: 'remove',
-				from: { path: note.path, version: note.version },
+				from: { path: note.path, sha256: note.sha256 },
 				state: 'unconfirmed',
 			});
 			await state.refresh();
@@ -1502,7 +1504,7 @@ describe('a change with no open file whose reply is lost', () => {
 		expect(state.pending).toEqual([]);
 		expect(await notePaths()).toEqual([change.path]);
 		expect(await readFile(join(root, change.path), 'utf8')).toBe(change.source);
-		expect((await land()).error?.name).toBe('Conflict');
+		expect((await land()).error?.name).toBe('Exists');
 		expect(await notePaths()).toEqual([change.path]);
 	});
 
@@ -1519,7 +1521,7 @@ describe('a change with no open file whose reply is lost', () => {
 		expect(state.pending).toMatchObject([
 			{
 				kind: 'replace',
-				base: { path: note.path, version: note.version },
+				base: { path: note.path, sha256: note.sha256 },
 				source: pinned,
 				state: 'unconfirmed',
 			},

@@ -5,7 +5,6 @@
 import {
 	type FileError,
 	type FileListing,
-	type FileVersion,
 	type FolderFiles,
 	pathProblem,
 } from '@epicenter/folder';
@@ -131,7 +130,7 @@ export type OpenedFile =
 			readonly file: {
 				readonly path: string;
 				readonly source: string;
-				readonly version: FileVersion;
+				readonly sha256: string;
 			};
 	  }
 	/** Not UTF-8 text, or text with NUL bytes: shown as details, never saved as text. */
@@ -151,14 +150,14 @@ export async function readTextFile(
 ): Promise<Result<OpenedFile, FileError>> {
 	const read = await files.read(path);
 	if (read.error) return read;
-	const { bytes, version } = read.data;
+	const { bytes, sha256 } = read.data;
 	if (bytes.byteLength > EDITABLE_TEXT_LIMIT)
 		return Ok({ kind: 'tooLarge', size: bytes.byteLength });
 	if (bytes.includes(0)) return Ok({ kind: 'binary', size: bytes.byteLength });
 	try {
 		return Ok({
 			kind: 'text',
-			file: { path, source: utf8.decode(bytes), version },
+			file: { path, source: utf8.decode(bytes), sha256 },
 		});
 	} catch {
 		return Ok({ kind: 'binary', size: bytes.byteLength });

@@ -23,7 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { captureVersion, FileError } from '@epicenter/folder/bun';
+import { hashBytes, FileError } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { toneWav } from '../capture.js';
 import type { RecordingFields } from '../definition.js';
@@ -487,11 +487,11 @@ test('a row that cannot be read back after a confirmed publication is published,
 	// The receipt's captures are of the bytes that were submitted, exactly.
 	expect(first.publication.audio).toEqual({
 		path: pending.fields.audioPath,
-		version: await captureVersion(pending.bytes),
+		sha256: await hashBytes(pending.bytes),
 	});
 	expect(first.publication.row).toEqual({
 		path: `recordings/${pending.id}.md`,
-		version: await captureVersion(
+		sha256: await hashBytes(
 			await bytesAt(root, 'recordings', `${pending.id}.md`),
 		),
 	});
@@ -592,7 +592,7 @@ test('observing a published recording whose title and notes were edited returns 
 	// An edit is not evidence of a failed save: this is the recording, as it is now.
 	expect(observed.status).toBe('present');
 	if (observed.status !== 'present') return;
-	expect(observed.entry.version).toEqual(edited.version);
+	expect(observed.entry.sha256).toEqual(edited.sha256);
 	expect(observed.entry.fields.title).toBe('Renamed');
 	expect(observed.entry.body).toBe('Notes written later\n');
 	expect(

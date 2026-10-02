@@ -36,7 +36,7 @@ import type { FileBoundary, FileChange } from '../boundary.js';
 import { describe } from '../errors.js';
 import { callObserver } from '../observer.js';
 import { ancestors, collisionKey, pathProblem } from '../paths.js';
-import { captureVersion } from '../version.js';
+import { hashBytes } from '../capture.js';
 import type { GitBackend, GitRemote, PathStatus } from './backend.js';
 import { GitError, PullError } from './errors.js';
 import { commitSubject, messageProblem, type PathChange } from './messages.js';
@@ -708,24 +708,33 @@ export function createHistory({
 			const writes: FileChange[] = [];
 			for (const change of changes) {
 				const bytes = current.get(change.path);
-				const expected =
-					bytes === undefined
-						? ('absent' as const)
-						: await captureVersion(bytes);
 				if (change.kind === 'delete') {
-					removals.push({ kind: 'remove', path: change.path, expected });
+					if (bytes === undefined)
+						return PullError.Dirty({ paths: [change.path] });
+					removals.push({
+						kind: 'remove',
+						path: change.path,
+						expectedSha256: await hashBytes(bytes),
+					});
 					continue;
 				}
 				const next = await backend.withObjects((access) =>
 					readBlob(access, incoming.get(change.path)!.oid),
 				);
-				writes.push({
-					kind: 'write',
+				const write = {
 					path: change.path,
 					bytes: next,
-					version: await captureVersion(next),
-					expected,
-				});
+					sha256: await hashBytes(next),
+				};
+				writes.push(
+					bytes === undefined
+						? { kind: 'create', ...write }
+						: {
+								kind: 'replace',
+								...write,
+								expectedSha256: await hashBytes(bytes),
+							},
+				);
 			}
 			const changedPaths = changes.map((change) => change.path);
 			const published = await backend.publishFastForward({

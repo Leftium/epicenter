@@ -38,7 +38,7 @@ import {
 	swapThoughts,
 	type Thought,
 } from '@epicenter/capture';
-import { type Entry, type FileVersion, sameVersion } from '@epicenter/folder';
+import { type Entry } from '@epicenter/folder';
 
 export type CaptureEntry = Entry<CaptureFields>;
 
@@ -64,12 +64,12 @@ type Result<T> =
 	| { readonly data: null; readonly error: Failure };
 
 /**
- * A confirmed write: the version the folder admitted, and that file as an
+ * A confirmed write: the content the folder admitted, and that file as an
  * entry. There is no entry when another program changed the file before the
  * store could read it back. The write is confirmed all the same.
  */
 type Admitted = {
-	readonly version: FileVersion;
+	readonly sha256: string;
 	readonly entry: CaptureEntry | undefined;
 };
 
@@ -141,7 +141,7 @@ export function createDraft(
 	/** Take what is at the path now, as a reread reported it. */
 	function accept(current: Current) {
 		if (current.kind === 'present') {
-			if (sameVersion(current.entry.version, baseline.version)) {
+			if (current.entry.sha256 === baseline.sha256) {
 				baseline = current.entry;
 				if (saveState.kind === 'conflict') {
 					// The file is back to what this draft was based on.
@@ -177,7 +177,7 @@ export function createDraft(
 
 	/**
 	 * One write of the buffer as it is now. Success advances the baseline to
-	 * exactly what was admitted, that source at that version, whatever the path
+	 * exactly what was admitted, that source with that hash, whatever the path
 	 * holds by now. That is a separate observation, and the reread takes it.
 	 */
 	async function saveOnce(
@@ -188,10 +188,10 @@ export function createDraft(
 		try {
 			const result = await write(captured);
 			if (result.error === null) {
-				const { version, entry } = result.data;
+				const { sha256, entry } = result.data;
 				// Without the entry, the fields, body, and issues stay as last read at
 				// this path until the reread, or the choice after it, reads them again.
-				baseline = entry ?? { ...baseline, version, source: captured };
+				baseline = entry ?? { ...baseline, sha256, source: captured };
 				saveState = { kind: 'saved' };
 				if (entry !== undefined) hooks.onSaved(entry);
 				else recheck = true;
@@ -233,7 +233,7 @@ export function createDraft(
 		const written = await store.write(baseline, source);
 		if (written.error !== null) return written;
 		return {
-			data: { version: written.data.version, entry: written.data },
+			data: { sha256: written.data.sha256, entry: written.data },
 			error: null,
 		};
 	}

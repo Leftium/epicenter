@@ -16,12 +16,12 @@
  */
 import {
 	type Entry,
+	type TextCapture,
 	type FileCapture,
 	type FileTable,
 	type FolderFiles,
 	patchSource,
 	type SourceChange,
-	sameVersion,
 } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -33,7 +33,7 @@ export type TodoEntry = Entry<TodoFields>;
  * One saved text file as its draft last accepted it: the capture the next
  * conditional save is checked against, with the text those bytes decode to.
  */
-export type SavedText = FileCapture & { readonly source: string };
+export type SavedText = TextCapture;
 
 export type SaveState<T> =
 	| { readonly kind: 'saved' }
@@ -193,11 +193,11 @@ function createDraft<T extends SavedText>(
 		/**
 		 * Same-byte observations adopt the newer observation without replacing input.
 		 * Changed bytes are adopted only by a clean, idle draft; a dirty draft
-		 * keeps its version so its next save detects the other writer.
+		 * keeps its sha256 so its next save detects the other writer.
 		 */
 		observe(next: T) {
 			if (next.path !== baseline.path) return;
-			if (sameVersion(next.version, baseline.version)) {
+			if (next.sha256 === baseline.sha256) {
 				baseline = next;
 				return;
 			}

@@ -8,11 +8,10 @@
  */
 import type { Result } from 'wellcrafted/result';
 import type { ApplyError, FileError } from './errors.js';
-import type { FileExpectation, FileVersion } from './version.js';
 
 export type FileRead = {
 	readonly bytes: Uint8Array;
-	readonly version: FileVersion;
+	readonly sha256: string;
 };
 
 export type FileListing = {
@@ -22,27 +21,18 @@ export type FileListing = {
 	readonly directories: readonly string[];
 };
 
-/** One conditional step. Write versions are computed before publication starts. */
+/** A write owns its bytes before the asynchronous hash is computed. */
+export type FileWriteIntent = { path: string; bytes: Uint8Array } & (
+	| { kind: 'create' }
+	| { kind: 'overwrite' }
+	| { kind: 'replace'; expectedSha256: string }
+);
+
+/** The operation states its publication condition. Move destinations must be absent. */
 export type FileChange =
-	| {
-			readonly kind: 'write';
-			readonly path: string;
-			readonly bytes: Uint8Array;
-			readonly version: FileVersion;
-			readonly expected: FileExpectation;
-	  }
-	| {
-			readonly kind: 'remove';
-			readonly path: string;
-			readonly expected: FileExpectation;
-	  }
-	| {
-			/** Moves exact bytes; the destination must be absent. */
-			readonly kind: 'move';
-			readonly from: string;
-			readonly to: string;
-			readonly expected: FileExpectation;
-	  };
+	| (FileWriteIntent & { sha256: string })
+	| { kind: 'remove'; path: string; expectedSha256?: string }
+	| { kind: 'move'; from: string; to: string; expectedSha256?: string };
 
 /** Every portable file's bytes, captured for a commit or status observation. */
 export type CapturedFiles = {

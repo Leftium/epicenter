@@ -31,7 +31,7 @@ for (const failure of ['unreachable', 'binary'] as const) {
 	test(`a conflict read that is ${failure} keeps input and allows a later reread`, async () => {
 		const folder = await open();
 		const saved = expectOk(await folder.files.create('note.md', 'original'));
-		const { version } = saved;
+		const { sha256 } = saved;
 		let blocked = true;
 		const files: FolderFiles = {
 			...folder.files,
@@ -48,7 +48,7 @@ for (const failure of ['unreachable', 'binary'] as const) {
 		};
 		const editor = createTextFileEditor(
 			files,
-			{ path: 'note.md', source: 'original', version },
+			{ path: 'note.md', source: 'original', sha256 },
 			{ paused: true },
 			() => {},
 		);
@@ -63,7 +63,7 @@ for (const failure of ['unreachable', 'binary'] as const) {
 		await editor.save();
 		expect(editor.saveState.kind).toBe('failed');
 		expect(editor.buffer).toBe('my typing');
-		expect(editor.baseline.version).toEqual(version);
+		expect(editor.baseline.sha256).toEqual(sha256);
 		blocked = false;
 		expectOk(await folder.files.overwrite('note.md', 'outside'));
 		await editor.retry();
@@ -129,9 +129,7 @@ test('a recording conflict read failure preserves typing instead of reporting re
 
 test('a rejected save leaves the draft failed and retryable', async () => {
 	const folder = await open();
-	const { version } = expectOk(
-		await folder.files.create('note.md', 'original'),
-	);
+	const { sha256 } = expectOk(await folder.files.create('note.md', 'original'));
 	let blocked = true;
 	const editor = createTextFileEditor(
 		{
@@ -141,7 +139,7 @@ test('a rejected save leaves the draft failed and retryable', async () => {
 				return folder.files.replace(...args);
 			},
 		},
-		{ path: 'note.md', source: 'original', version },
+		{ path: 'note.md', source: 'original', sha256 },
 		{ paused: true },
 		() => {},
 	);
@@ -162,7 +160,7 @@ test('a rejected save leaves the draft failed and retryable', async () => {
 for (const readFailure of [false, true]) {
 	test(`an unacknowledged saved draft reconciles without a false conflict${readFailure ? ' after a failed confirmation read' : ''}`, async () => {
 		const folder = await open();
-		const { version: original } = expectOk(
+		const { sha256: original } = expectOk(
 			await folder.files.create('note.md', 'original'),
 		);
 		let confirmationFails = readFailure;
@@ -192,7 +190,7 @@ for (const readFailure of [false, true]) {
 		let saved = 0;
 		const editor = createTextFileEditor(
 			files,
-			{ path: 'note.md', source: 'original', version: original },
+			{ path: 'note.md', source: 'original', sha256: original },
 			{ paused: true },
 			() => {
 				saved++;

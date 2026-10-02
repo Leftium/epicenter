@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Once;
 use std::time::Duration;
 
-use crate::files::{FileChange, FileExpectation};
+use crate::files::FileChange;
 use crate::git::Author;
 use crate::owner::{FolderConfig, FolderOwner};
 
@@ -95,11 +95,26 @@ pub fn git(root: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-pub fn write(path: &str, content: &str, expected: FileExpectation) -> FileChange {
-    FileChange::Write {
+pub fn create(path: &str, content: &str) -> FileChange {
+    FileChange::Create {
         path: path.to_string(),
         bytes: content.as_bytes().to_vec(),
-        expected,
+    }
+}
+
+pub fn overwrite(path: &str, content: &str) -> FileChange {
+    FileChange::Overwrite {
+        path: path.to_string(),
+        bytes: content.as_bytes().to_vec(),
+    }
+}
+
+/// A replacement conditional on the hash a read returned.
+pub fn replace(path: &str, content: &str, expected_sha256: &str) -> FileChange {
+    FileChange::Replace {
+        path: path.to_string(),
+        bytes: content.as_bytes().to_vec(),
+        expected_sha256: expected_sha256.to_string(),
     }
 }
 

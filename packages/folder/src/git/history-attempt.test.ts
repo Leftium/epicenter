@@ -39,7 +39,7 @@ import {
 import { defineFolder, field } from '../contract.js';
 import { openNativeFolder } from '../directory.test-support.js';
 import { GIT_ENV, git, scratch } from '../git-http.test-support.js';
-import { captureVersion } from '../version.js';
+import { hashBytes } from '../capture.js';
 import {
 	installWebLocks,
 	useWebLocks,
@@ -191,13 +191,7 @@ async function tab(
 	async function land(path: string, text: string) {
 		const bytes = encoder.encode(text);
 		const applied = await boundary.apply([
-			{
-				kind: 'write',
-				path,
-				bytes,
-				version: await captureVersion(bytes),
-				expected: 'any',
-			},
+			{ kind: 'overwrite', path, bytes, sha256: await hashBytes(bytes) },
 		]);
 		expect(applied.error).toBeNull();
 	}

@@ -18,7 +18,7 @@ import { compileFolderDefinition } from './definition.js';
 import { FileError } from './errors.js';
 import { createFolderContext } from './folder.js';
 import { createFileTable } from './table.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
 	id: 'table.commands',
@@ -108,11 +108,10 @@ async function setup() {
 			expectOk(
 				await base.apply([
 					{
-						kind: 'write',
+						kind: 'overwrite',
 						path: entry.path,
 						bytes,
-						version: await captureVersion(bytes),
-						expected: 'any',
+						sha256: await hashBytes(bytes),
 					},
 				]),
 			);
@@ -155,7 +154,7 @@ test('a missing or concurrently removed row is never recreated', async () => {
 	s.beforeApply(async () => {
 		expectOk(
 			await s.base.apply([
-				{ kind: 'remove', path: s.entry.path, expected: s.entry.version },
+				{ kind: 'remove', path: s.entry.path, expectedSha256: s.entry.sha256 },
 			]),
 		);
 	});
@@ -204,7 +203,7 @@ test('replacement saves invalid frontmatter exactly and returns a submitted entr
 	const next = expectOk(await s.table.replace(s.entry, source));
 	expect(next.source).toBe(source);
 	expect(next.issues?.some((issue) => issue.kind === 'frontmatter')).toBe(true);
-	expect(next.version).toEqual(await captureVersion(encoder.encode(source)));
+	expect(next.sha256).toEqual(await hashBytes(encoder.encode(source)));
 	expect(s.entry.source).not.toBe(source);
 	expect(s.counts()).toEqual({ reads: 0, applications: 1 });
 	expect(
@@ -220,7 +219,7 @@ test('existing odd filenames remain editable and supplied field values remain va
 				kind: 'move',
 				from: s.entry.path,
 				to: 'todos/bad .md',
-				expected: s.entry.version,
+				expectedSha256: s.entry.sha256,
 			},
 		]),
 	);

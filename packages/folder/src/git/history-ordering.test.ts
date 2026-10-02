@@ -30,7 +30,7 @@ import {
 	openFolderDatabase,
 } from '../browser-store.js';
 import { FileError } from '../errors.js';
-import { captureVersion } from '../version.js';
+import { hashBytes } from '../capture.js';
 import type { GitBackend, PublishResult } from './backend.js';
 import { createBrowserGitBackend } from './browser-backend.js';
 import { createHistory } from './history.js';
@@ -83,13 +83,7 @@ async function setup(
 	async function write(path: string, text: string) {
 		const bytes = encoder.encode(text);
 		const applied = await base.apply([
-			{
-				kind: 'write',
-				path,
-				bytes,
-				version: await captureVersion(bytes),
-				expected: 'any',
-			},
+			{ kind: 'overwrite', path, bytes, sha256: await hashBytes(bytes) },
 		]);
 		expect(applied.error).toBeNull();
 	}

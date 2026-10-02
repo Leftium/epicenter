@@ -25,7 +25,7 @@ import {
 	createBrowserFileBoundary,
 	openFolderDatabase,
 } from '../browser-store.js';
-import { captureVersion } from '../version.js';
+import { hashBytes } from '../capture.js';
 import type { GitBackend } from './backend.js';
 import { createBrowserGitBackend } from './browser-backend.js';
 import { createHistory } from './history.js';
@@ -68,13 +68,7 @@ async function setup() {
 	async function write(path: string, text: string) {
 		const bytes = new TextEncoder().encode(text);
 		const applied = await boundary.apply([
-			{
-				kind: 'write',
-				path,
-				bytes,
-				version: await captureVersion(bytes),
-				expected: 'any',
-			},
+			{ kind: 'overwrite', path, bytes, sha256: await hashBytes(bytes) },
 		]);
 		expect(applied.error).toBeNull();
 	}

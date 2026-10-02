@@ -33,7 +33,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureDefinition } from '@epicenter/capture';
-import { type CommitOutcome, captureVersion } from '@epicenter/folder';
+import { type CommitOutcome, hashBytes } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import type { Draft } from './draft.svelte.ts';
 
@@ -138,7 +138,7 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 }
 
 const versionOf = (source: string) =>
-	captureVersion(new TextEncoder().encode(source));
+	hashBytes(new TextEncoder().encode(source));
 
 test('creating writes exact Markdown; listing and opening write nothing', async () => {
 	const { captures, create, text, file, folder } = await setup();
@@ -439,7 +439,7 @@ test('typing during a write back stays against what was written when another pro
 	await writing;
 
 	expect(draft.baseline.source).toBe(mine);
-	expect(draft.baseline.version).toEqual(await versionOf(mine));
+	expect(draft.baseline.sha256).toEqual(await versionOf(mine));
 	expect(draft.buffer).toBe(typed);
 	const state = draft.saveState;
 	expect(
@@ -475,7 +475,7 @@ test.each([
 
 	// What was written is the baseline; what became of the file is a conflict.
 	expect(draft.baseline.source).toBe(mine);
-	expect(draft.baseline.version).toEqual(await versionOf(mine));
+	expect(draft.baseline.sha256).toEqual(await versionOf(mine));
 	expect(draft.buffer).toBe(typed);
 	const state = draft.saveState;
 	expect(state.kind === 'conflict' && state.current.kind).toBe(kind);
@@ -493,7 +493,7 @@ test('a write back that landed and was then removed lets go of a draft with noth
 
 	expect(draft.saveState.kind).toBe('saved');
 	expect(draft.baseline.source).toBe(mine);
-	expect(draft.baseline.version).toEqual(await versionOf(mine));
+	expect(draft.baseline.sha256).toEqual(await versionOf(mine));
 	expect(draft.gone).toBe(true);
 	expect(t.captures.unsettled).toBe(0);
 	t.captures.close();

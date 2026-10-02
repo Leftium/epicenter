@@ -7,7 +7,6 @@
  * that stopped after some steps reached the folder.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import type { FileExpectation, FileVersion } from './version.js';
 
 export const FileError = defineErrors({
 	InvalidPath: ({ path, reason }: { path: string; reason: string }) => ({
@@ -20,25 +19,28 @@ export const FileError = defineErrors({
 		message: `No file exists at '${path}'`,
 		path,
 	}),
-	/** A publication expectation did not hold; this refusal wrote nothing. */
+	/** The create target or move destination is occupied. */
+	Exists: ({ path }: { path: string }) => ({
+		message: `The destination '${path}' is already occupied`,
+		path,
+	}),
+	/** The current bytes differ from the captured baseline. This refusal wrote nothing. */
 	Conflict: ({
 		path,
-		expected,
-		actual,
+		expectedSha256,
+		actualSha256,
 	}: {
 		path: string;
-		expected: FileExpectation;
-		actual: FileVersion | undefined;
+		expectedSha256: string;
+		actualSha256: string | undefined;
 	}) => ({
 		message:
-			expected === 'absent'
-				? `A file already exists at '${path}'`
-				: actual === undefined
-					? `No file exists at '${path}' to match the expected content version`
-					: `The file at '${path}' does not match the expected content version`,
+			actualSha256 === undefined
+				? `No file exists at '${path}' to match the captured SHA-256`
+				: `The file at '${path}' does not match the captured SHA-256`,
 		path,
-		expected,
-		actual,
+		expectedSha256,
+		actualSha256,
 	}),
 	NotAFile: ({ path }: { path: string }) => ({
 		message: `'${path}' is a directory, not a file`,

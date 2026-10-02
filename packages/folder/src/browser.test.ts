@@ -94,7 +94,7 @@ describe('browser folder tables', () => {
 		expect(new TextDecoder().decode(raw.data!.bytes)).toBe(
 			created.data!.source,
 		);
-		expect(raw.data!.version).toEqual(created.data!.version);
+		expect(raw.data!.sha256).toEqual(created.data!.sha256);
 
 		const completed = await folder.tables.todos.update('milk', {
 			fields: { done: true },
@@ -246,9 +246,9 @@ describe('browser folder tables', () => {
 			'fields',
 			'issues',
 			'path',
+			'sha256',
 			'source',
 			'stem',
-			'version',
 		]);
 		// Two siblings are not an ambiguity; the listed row is as valid as it was.
 		const listed = expectOk(await folder.tables.todos.list());
@@ -270,7 +270,7 @@ describe('browser folder tables', () => {
 		]);
 		const kept = expectOk(await folder.files.read('todos/rec.opus'));
 		expect(kept.bytes).toEqual(audio);
-		expect(kept.version).toEqual(opus.version);
+		expect(kept.sha256).toEqual(opus.sha256);
 
 		// `rec.take.md` is its own row, not something `rec.md` owns.
 		expectOk(
@@ -369,10 +369,10 @@ describe('browser folder tables', () => {
 	test('kv.json is conditional and preserves unknown keys', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const empty = (await folder.kv.get()).data!;
-		expect(empty.version).toBeUndefined();
+		expect(empty.sha256).toBeUndefined();
 		await folder.files.create('kv.json', '{"other": 1}');
 		expect((await folder.kv.update(empty, { theme: 'dark' })).error?.name).toBe(
-			'Conflict',
+			'Exists',
 		);
 		const current = (await folder.kv.get()).data!;
 		const updated = await folder.kv.update(current, { theme: 'dark' });
@@ -440,7 +440,7 @@ describe('browser folder persistence and history', () => {
 		expectOk(await folder.files.rmdir('empty'));
 		const conflict = expectErr(
 			await folder.files.replace(
-				{ path: 'missing.txt', version: { sha256: '0'.repeat(64), size: 1 } },
+				{ path: 'missing.txt', sha256: '0'.repeat(64) },
 				'x',
 			),
 		);
@@ -615,15 +615,11 @@ describe('browser folder persistence and history', () => {
 		}
 		await boundary.apply([
 			{
-				kind: 'write',
+				kind: 'create',
 				path: 'a.txt',
 				bytes: new TextEncoder().encode('a'),
-				version: {
-					sha256:
-						'ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb',
-					size: 1,
-				},
-				expected: 'absent',
+				sha256:
+					'ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb',
 			},
 		]);
 		const outcome = await history.commit();

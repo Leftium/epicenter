@@ -6,7 +6,7 @@
  * public file verbs, because a redirection and `rm` act on whatever is at a
  * path. Each successful content write
  * follows the folder's automatic history policy. A command that
- * rewrites a file it read in the same command writes against the version it
+ * rewrites a file it read in the same command writes against the sha256 it
  * read, so an intervening replacement is refused; a plain redirection is a
  * deliberate overwrite.
  *
@@ -22,7 +22,6 @@ import {
 } from 'just-bash';
 import type { ApplyError, FileError } from './errors.js';
 import type { ShellAccess } from './folder.js';
-import type { FileExpectation, FileVersion } from './version.js';
 
 export type TerminalResult = {
 	readonly stdout: string;
@@ -95,9 +94,11 @@ function fail(error: FileError | ApplyError): never {
 					? 'ENOTDIR'
 					: error.name === 'DirectoryNotEmpty'
 						? 'ENOTEMPTY'
-						: error.name === 'Conflict'
-							? 'ESTALE'
-							: 'EIO';
+						: error.name === 'Exists'
+							? 'EEXIST'
+							: error.name === 'Conflict'
+								? 'ESTALE'
+								: 'EIO';
 	throw new ShellFailure(error.message, code);
 }
 
@@ -109,7 +110,7 @@ export function createFolderTerminal(
 	let files = new Map<string, number>();
 	let directories = new Set<string>(['']);
 	/** Versions read during the current command, by folder-relative path. */
-	const observed = new Map<string, FileVersion>();
+	const observed = new Map<string, string>();
 
 	async function refresh() {
 		const listing = await folder.files.list();
@@ -140,7 +141,7 @@ export function createFolderTerminal(
 		const name = relative(path);
 		const read = await folder.files.read(name);
 		if (read.error) fail(read.error);
-		observed.set(name, read.data.version);
+		observed.set(name, read.data.sha256);
 		return read.data.bytes;
 	}
 
@@ -150,8 +151,12 @@ export function createFolderTerminal(
 			typeof content === 'string' ? new TextEncoder().encode(content) : content;
 		// A rewrite of bytes this command read is conditional; otherwise the
 		// shell deliberately overwrites or creates the path.
-		const expected: FileExpectation = observed.get(name) ?? 'any';
-		const written = await folder.files.write(name, bytes, expected);
+		const expectedSha256 = observed.get(name);
+		const written = await folder.files.write(
+			expectedSha256 === undefined
+				? { kind: 'overwrite', path: name, bytes }
+				: { kind: 'replace', path: name, bytes, expectedSha256 },
+		);
 		if (written.error) fail(written.error);
 		observed.set(name, written.data);
 		await refresh();
@@ -231,10 +236,7 @@ export function createFolderTerminal(
 		async rm(path, options) {
 			const name = relative(path);
 			if (isFile(path)) {
-				const removed = await folder.files.remove(
-					name,
-					observed.get(name) ?? 'any',
-				);
+				const removed = await folder.files.remove(name, observed.get(name));
 				if (removed.error) fail(removed.error);
 				observed.delete(name);
 				await refresh();
@@ -257,10 +259,7 @@ export function createFolderTerminal(
 			)
 				throw new ShellFailure(`Directory not empty: ${path}`, 'ENOTEMPTY');
 			for (const file of nestedFiles) {
-				const removed = await folder.files.remove(
-					file,
-					observed.get(file) ?? 'any',
-				);
+				const removed = await folder.files.remove(file, observed.get(file));
 				if (removed.error) fail(removed.error);
 			}
 			for (const directory of [...nestedDirectories, name]) {
@@ -294,11 +293,7 @@ export function createFolderTerminal(
 			const from = relative(source);
 			const to = relative(destination);
 			if (isFile(source)) {
-				const moved = await folder.files.move(
-					from,
-					to,
-					observed.get(from) ?? 'any',
-				);
+				const moved = await folder.files.move(from, to, observed.get(from));
 				if (moved.error) fail(moved.error);
 				await refresh();
 				return;

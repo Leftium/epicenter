@@ -2,7 +2,7 @@
  * File-backed tables: Markdown rows at `<table>/<stem>.md` (ADR-0457, ADR-0462).
  *
  * An entry is one captured observation of a row file: its exact source, the
- * version of those bytes, the interpretation of its fields and body, and
+ * sha256 of those bytes, the interpretation of its fields and body, and
  * conformance issues. Structured updates read current source once; complete
  * replacements use the supplied entry's baseline. Both conditionally publish
  * once and return a conflict without retrying (ADR-0464).
@@ -34,11 +34,11 @@ import {
 } from './paths.js';
 import {
 	captureProblem,
-	captureVersion,
+	hashBytes,
 	type FileCapture,
-	type FileVersion,
+	type TextCapture,
 	fileCapture,
-} from './version.js';
+} from './capture.js';
 
 export type EntryIssue =
 	| { readonly kind: 'filename'; readonly message: string }
@@ -49,20 +49,14 @@ export type EntryIssue =
 			readonly message: string;
 	  };
 
-type EntryBase = {
-	readonly path: string;
-	readonly version: FileVersion;
-	readonly source: string;
-};
-
-export type ValidEntry<TFields> = EntryBase & {
+export type ValidEntry<TFields> = TextCapture & {
 	readonly stem: string;
 	readonly fields: Readonly<TFields>;
 	readonly body: string;
 	readonly issues: undefined;
 };
 
-export type InvalidEntry<TFields> = EntryBase & {
+export type InvalidEntry<TFields> = TextCapture & {
 	readonly stem: string | undefined;
 	/** Only declared fields that validated independently. */
 	readonly fields: Readonly<Partial<TFields>>;
@@ -105,7 +99,7 @@ export type FileTable<TFields> = {
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
 	/** Save complete text against this entry's baseline, including invalid frontmatter for repair. */
 	replace(
-		entry: Entry<TFields>,
+		entry: FileCapture,
 		source: string,
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
 	/** Move the row file to another stem. No other file moves with it. */
@@ -114,7 +108,7 @@ export type FileTable<TFields> = {
 		nextStem: string,
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
 	/** Remove the row file. No other file is removed with it. */
-	delete(entry: Entry<TFields>): Promise<Result<undefined, TableWriteError>>;
+	delete(entry: FileCapture): Promise<Result<undefined, TableWriteError>>;
 };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -247,7 +241,7 @@ export function createFileTable<TFields>(
 
 	function interpret(
 		path: string,
-		version: FileVersion,
+		sha256: string,
 		source: string,
 	): Entry<TFields> {
 		const stem = path.slice(name.length + 1, -ROW_EXTENSION.length);
@@ -279,7 +273,7 @@ export function createFileTable<TFields>(
 					});
 			}
 		}
-		const base = { path, version, source };
+		const base = { path, sha256, source };
 		if (issues.length === 0 && reading.body !== undefined)
 			return Object.freeze({
 				...base,
@@ -306,20 +300,20 @@ export function createFileTable<TFields>(
 		entry: FileCapture,
 		source: string,
 	): Promise<Result<Entry<TFields>, TableWriteError>> {
-		const captured = fileCapture(entry.path, entry.version);
+		const captured = fileCapture(entry.path, entry.sha256);
 		const bytes = encoder.encode(source);
-		const version = await captureVersion(bytes);
+		const sha256 = await hashBytes(bytes);
 		const applied = await context.publish([
 			{
-				kind: 'write',
+				kind: 'replace',
 				path: captured.path,
 				bytes,
-				version,
-				expected: captured.version,
+				sha256,
+				expectedSha256: captured.sha256,
 			},
 		]);
 		if (applied.error) return Err(applied.error);
-		return Ok(interpret(captured.path, version, source));
+		return Ok(interpret(captured.path, sha256, source));
 	}
 
 	/**
@@ -327,7 +321,7 @@ export function createFileTable<TFields>(
 	 * nested path such as `todos/a/b.md` is not a row. Stems that violate the
 	 * naming rules are still rows here, so external files stay editable.
 	 */
-	function ownsPath(entry: Entry<TFields>): Result<string, FileError> {
+	function ownsPath(entry: FileCapture): Result<string, FileError> {
 		const problem = captureProblem(entry);
 		if (problem !== undefined)
 			return FileError.InvalidPath({
@@ -363,7 +357,7 @@ export function createFileTable<TFields>(
 		}
 		const source = decode(read.data.bytes);
 		if (source === undefined) return TableError.InvalidUtf8({ path });
-		return Ok(interpret(path, read.data.version, source));
+		return Ok(interpret(path, read.data.sha256, source));
 	}
 
 	return {
@@ -398,7 +392,7 @@ export function createFileTable<TFields>(
 							});
 							continue;
 						}
-						entries.push(interpret(path, read.data.version, source));
+						entries.push(interpret(path, read.data.sha256, source));
 					}
 					return Ok({ entries, unreadable });
 				},
@@ -426,12 +420,12 @@ export function createFileTable<TFields>(
 						undefined,
 					);
 					if (destination.error) return destination;
-					const version = await captureVersion(bytes);
+					const sha256 = await hashBytes(bytes);
 					const applied = await context.publish([
-						{ kind: 'write', path, bytes, version, expected: 'absent' },
+						{ kind: 'create', path, bytes, sha256 },
 					]);
 					if (applied.error) return Err(applied.error);
-					return Ok(interpret(path, version, source));
+					return Ok(interpret(path, sha256, source));
 				},
 			);
 		},
@@ -483,7 +477,7 @@ export function createFileTable<TFields>(
 				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
 					const owned = ownsPath(entry);
 					if (owned.error) return owned;
-					const captured = fileCapture(entry.path, entry.version);
+					const captured = fileCapture(entry.path, entry.sha256);
 					const source = entry.source;
 					const problem = stemProblem(nextStem);
 					if (problem !== undefined)
@@ -504,11 +498,11 @@ export function createFileTable<TFields>(
 							kind: 'move',
 							from: captured.path,
 							to: path,
-							expected: captured.version,
+							expectedSha256: captured.sha256,
 						},
 					]);
 					if (applied.error) return Err(applied.error);
-					return Ok(interpret(path, captured.version, source));
+					return Ok(interpret(path, captured.sha256, source));
 				},
 			);
 		},
@@ -517,9 +511,13 @@ export function createFileTable<TFields>(
 				async (): Promise<Result<undefined, TableWriteError>> => {
 					const owned = ownsPath(entry);
 					if (owned.error) return owned;
-					const captured = fileCapture(entry.path, entry.version);
+					const captured = fileCapture(entry.path, entry.sha256);
 					return context.publish([
-						{ kind: 'remove', path: captured.path, expected: captured.version },
+						{
+							kind: 'remove',
+							path: captured.path,
+							expectedSha256: captured.sha256,
+						},
 					]);
 				},
 			);

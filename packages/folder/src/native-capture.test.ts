@@ -133,13 +133,11 @@ const renameOldToNew: FileChange[] = [
 		kind: 'move',
 		from: 'todos/old.md',
 		to: 'todos/new.md',
-		expected: 'any',
 	},
 	{
 		kind: 'move',
 		from: 'todos/old.png',
 		to: 'todos/new.png',
-		expected: 'any',
 	},
 ];
 

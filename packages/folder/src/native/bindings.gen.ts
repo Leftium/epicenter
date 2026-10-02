@@ -71,7 +71,7 @@ export const events = {
 };
 
 /* Constants */
-export const FOLDER_PROTOCOL = 2 as const;
+export const FOLDER_PROTOCOL = 3 as const;
 
 /* Types */
 export type Activities = {
@@ -171,14 +171,36 @@ export type FetchOutcome = {
 };
 
 /**
- *  One conditional step. The new version is computed here, never accepted
- *  from the caller.
+ *  One ordered step. `expected_sha256` is the hash the caller captured from a
+ *  read. The hash of new bytes is computed here, never accepted from the
+ *  caller.
  */
-export type FileChange = { kind: "write"; path: string; bytes: number[]; expected: FileExpectation } | { kind: "remove"; path: string; expected: FileExpectation } |
-/**  Moves exact bytes; the destination must be absent. */
-{ kind: "move"; from: string; to: string; expected: FileExpectation };
+export type FileChange =
+/**  Exclusive creation: the path must be absent. */
+{ kind: "create"; path: string; bytes: number[] } |
+/**  The current bytes must hash to `expected_sha256`. */
+{ kind: "replace"; path: string; bytes: number[]; expectedSha256: string } |
+/**  A deliberate overwrite, whether or not the path holds a file. */
+{ kind: "overwrite"; path: string; bytes: number[] } |
+/**
+ *  The file must exist. Without `expected_sha256` the removal is a
+ *  deliberate unguarded one.
+ */
+{ kind: "remove"; path: string; expectedSha256?: string | null } |
+/**
+ *  Moves exact bytes. The source must exist and the destination must be
+ *  absent. Without `expected_sha256` the source bytes are not checked.
+ */
+{ kind: "move"; from: string; to: string; expectedSha256?: string | null };
 
-export type FileError = { name: "InvalidPath"; path: string; reason: string } | { name: "NotFound"; path: string } | { name: "Conflict"; path: string; expected: FileExpectation; actual: FileVersion | null } | { name: "NotAFile"; path: string } | { name: "NotADirectory"; path: string } | { name: "DirectoryNotEmpty"; path: string } | { name: "Io"; path: string; operation: string; cause: string } | { name: "Closed" } |
+export type FileError = { name: "InvalidPath"; path: string; reason: string } | { name: "NotFound"; path: string } |
+/**  A creation target or a move destination already holds a file. */
+{ name: "Exists"; path: string } |
+/**
+ *  The current bytes do not hash to what the caller captured. A missing
+ *  replace target has no `actual_sha256`.
+ */
+{ name: "Conflict"; path: string; expectedSha256: string; actualSha256: string | null } | { name: "NotAFile"; path: string } | { name: "NotADirectory"; path: string } | { name: "DirectoryNotEmpty"; path: string } | { name: "Io"; path: string; operation: string; cause: string } | { name: "Closed" } |
 /**
  *  The operation started and its outcome is unknown: it may have reached
  *  the folder. Look before trying again.
@@ -186,15 +208,6 @@ export type FileError = { name: "InvalidPath"; path: string; reason: string } | 
 { name: "Unconfirmed"; path: string; operation: string; cause: string } |
 /**  The caller has no session for this folder, or names another window's. */
 { name: "Denied"; reason: string };
-
-/**  The condition a write checks at its publication point. */
-export type FileExpectation =
-/**  No file at the path (exclusive creation). */
-{ kind: "absent" } |
-/**  A deliberate overwrite. */
-{ kind: "any" } |
-/**  The current bytes are exactly these. */
-{ kind: "version"; sha256: string; size: number };
 
 export type FileListing = {
 	/**  Every regular file, including files outside portable scope. */
@@ -205,17 +218,11 @@ export type FileListing = {
 
 export type FileRead = {
 	bytes: number[],
-	version: FileVersion,
+	sha256: string,
 };
 
 /**  A step that reached, or failed to reach, the folder. */
 export type FileStep = { kind: "write"; path: string } | { kind: "remove"; path: string } | { kind: "move"; from: string; to: string };
-
-/**  SHA-256 plus byte length of one file's exact bytes. */
-export type FileVersion = {
-	sha256: string,
-	size: number,
-};
 
 export type FilesObservation = {
 	head: string | null,

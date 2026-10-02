@@ -14,11 +14,11 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use crate::files::{ApplyError, FileError, FileExpectation};
+use crate::files::{ApplyError, FileError};
 use crate::history::OwnerEvent;
 use crate::lock::{LockError, RootLock};
 use crate::registry::{AttachError, Registry, ScopeConfig};
-use crate::testing::{config, eventually, git, write, TempDir};
+use crate::testing::{config, create, eventually, git, TempDir};
 
 fn registry(root: &Path, windows: &[&str]) -> Registry {
     let registry = Registry::new();
@@ -104,7 +104,7 @@ fn detaching_one_window_leaves_the_other_and_the_admitted_commit() {
     }));
     a.authorize("a")
         .unwrap()
-        .apply(&[write("from-a.md", "A", FileExpectation::Absent)])
+        .apply(&[create("from-a.md", "A")])
         .unwrap();
     at_capture.recv().unwrap();
     owner.hooks().after_capture = None;
@@ -128,9 +128,7 @@ fn detaching_one_window_leaves_the_other_and_the_admitted_commit() {
         "from-a.md"
     );
 
-    owner
-        .apply(&[write("from-b.md", "B", FileExpectation::Absent)])
-        .unwrap();
+    owner.apply(&[create("from-b.md", "B")]).unwrap();
     assert_eq!(*heard.lock().unwrap(), vec!["from-a.md", "from-b.md"]);
     idle();
     assert_eq!(
@@ -167,9 +165,7 @@ fn shutdown_drains_a_held_save_commits_nothing_and_releases_the_lock() {
         gate.lock().unwrap().recv().unwrap();
     }));
     let saver = owner.clone();
-    let held = std::thread::spawn(move || {
-        saver.apply(&[write("held.md", "admitted", FileExpectation::Absent)])
-    });
+    let held = std::thread::spawn(move || saver.apply(&[create("held.md", "admitted")]));
     at_admission.recv().unwrap();
     // The page that asked is gone before its save lands.
     drop(session);
@@ -186,7 +182,7 @@ fn shutdown_drains_a_held_save_commits_nothing_and_releases_the_lock() {
         "still draining"
     );
     assert!(matches!(
-        owner.apply(&[write("late.md", "x", FileExpectation::Absent)]),
+        owner.apply(&[create("late.md", "x")]),
         Err(ApplyError::Refused {
             error: FileError::Closed
         })

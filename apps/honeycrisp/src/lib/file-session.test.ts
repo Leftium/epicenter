@@ -25,12 +25,9 @@ import { afterEach, expect, jest, test } from 'bun:test';
 import {
 	ApplyError,
 	type CapturedFile,
-	captureVersion,
+	hashBytes,
 	type FileCapture,
 	FileError,
-	type FileExpectation,
-	type FileVersion,
-	sameVersion,
 } from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { FileSession, Observed } from './file-session.svelte.ts';
@@ -41,7 +38,7 @@ const encoder = new TextEncoder();
 const PATH = 'notes/a.md';
 const ELSEWHERE = 'notes/b.md';
 
-const versionOf = (source: string) => captureVersion(encoder.encode(source));
+const versionOf = (source: string) => hashBytes(encoder.encode(source));
 
 /** What the next change does instead of answering plainly. */
 type Plan =
@@ -57,9 +54,9 @@ type Plan =
 /** One change exactly as the session asked for it. */
 type Request =
 	| { create: string; source: string }
-	| { replace: string; source: string; expected: FileVersion }
-	| { move: string; to: string; expected: FileVersion }
-	| { remove: string; expected: FileVersion };
+	| { replace: string; source: string; expected: string }
+	| { move: string; to: string; expected: string }
+	| { remove: string; expected: string };
 
 type Changed<T> = Promise<Result<T, FileError | ApplyError>>;
 
@@ -89,15 +86,14 @@ function disk(initial: string | undefined) {
 
 	async function refusal(
 		path: string,
-		expected: FileExpectation,
+		expectedSha256: string,
 	): Promise<Result<never, FileError> | undefined> {
 		const source = stored.get(path);
-		const actual = source === undefined ? undefined : await versionOf(source);
-		const holds =
-			expected === 'absent'
-				? actual === undefined
-				: expected !== 'any' && sameVersion(actual, expected);
-		return holds ? undefined : FileError.Conflict({ path, expected, actual });
+		const actualSha256 =
+			source === undefined ? undefined : await versionOf(source);
+		return actualSha256 === expectedSha256
+			? undefined
+			: FileError.Conflict({ path, expectedSha256, actualSha256 });
 	}
 
 	/** Run one change the way the folder does: wait, then end as planned. */
@@ -121,16 +117,22 @@ function disk(initial: string | undefined) {
 	}
 
 	function write(
-		path: string,
-		source: string,
-		expected: FileVersion | 'absent',
+		sent: { path: string; source: string } & (
+			| { kind: 'create' }
+			| { kind: 'replace'; expectedSha256: string }
+		),
 	): Changed<FileCapture> {
+		const { path, source } = sent;
 		return change(path, async () => {
-			const refused = await refusal(path, expected);
-			if (refused) return refused;
+			if (sent.kind === 'create') {
+				if (stored.has(path)) return FileError.Exists({ path });
+			} else {
+				const refused = await refusal(path, sent.expectedSha256);
+				if (refused) return refused;
+			}
 			stored.set(path, source);
 			notText.delete(path);
-			return Ok({ path, version: await versionOf(source) });
+			return Ok({ path, sha256: await versionOf(source) });
 		});
 	}
 
@@ -183,7 +185,7 @@ function disk(initial: string | undefined) {
 				return { kind: 'unreadable', message: 'The file is no longer text.' };
 			return {
 				kind: 'present',
-				file: { path, source, version: await versionOf(source) },
+				file: { path, source, sha256: await versionOf(source) },
 			};
 		},
 		files: {
@@ -193,28 +195,33 @@ function disk(initial: string | undefined) {
 				const bytes = notText.has(path)
 					? new Uint8Array([0])
 					: encoder.encode(source);
-				return Ok({ path, version: await captureVersion(bytes), bytes });
+				return Ok({ path, sha256: await hashBytes(bytes), bytes });
 			},
 			create(path: string, content: string | Uint8Array) {
 				const source = content as string;
 				requests.push({ create: path, source });
-				return write(path, source, 'absent');
+				return write({ kind: 'create', path, source });
 			},
 			replace(file: FileCapture, content: string | Uint8Array) {
 				const source = content as string;
-				requests.push({ replace: file.path, source, expected: file.version });
-				return write(file.path, source, file.version);
+				requests.push({ replace: file.path, source, expected: file.sha256 });
+				return write({
+					kind: 'replace',
+					path: file.path,
+					source,
+					expectedSha256: file.sha256,
+				});
 			},
 			move(file: FileCapture, to: string): Changed<FileCapture> {
-				requests.push({ move: file.path, to, expected: file.version });
+				requests.push({ move: file.path, to, expected: file.sha256 });
 				const planned = plan;
 				return change(file.path, async () => {
 					const source = stored.get(file.path);
 					if (source === undefined)
 						return FileError.NotFound({ path: file.path });
 					const refused =
-						(await refusal(file.path, file.version)) ??
-						(await refusal(to, 'absent'));
+						(await refusal(file.path, file.sha256)) ??
+						(stored.has(to) ? FileError.Exists({ path: to }) : undefined);
 					if (refused) return refused;
 					stored.set(to, source);
 					if (planned?.kind === 'partial')
@@ -229,15 +236,15 @@ function disk(initial: string | undefined) {
 							notAttempted: [],
 						});
 					stored.delete(file.path);
-					return Ok({ path: to, version: file.version });
+					return Ok({ path: to, sha256: file.sha256 });
 				});
 			},
 			remove(file: FileCapture): Changed<undefined> {
-				requests.push({ remove: file.path, expected: file.version });
+				requests.push({ remove: file.path, expected: file.sha256 });
 				return change(file.path, async () => {
 					if (!stored.has(file.path))
 						return FileError.NotFound({ path: file.path });
-					const refused = await refusal(file.path, file.version);
+					const refused = await refusal(file.path, file.sha256);
 					if (refused) return refused;
 					stored.delete(file.path);
 					return Ok(undefined);
@@ -258,7 +265,7 @@ async function open(source: string, admits: () => boolean = () => true) {
 	const files = disk(source);
 	const session = createFileSession(
 		files.files,
-		{ path: PATH, source, version: await versionOf(source) },
+		{ path: PATH, source, sha256: await versionOf(source) },
 		{ admits },
 	);
 	sessions.push(session);
@@ -279,11 +286,16 @@ async function conflicted(theirs: string | undefined) {
 /** An open session whose save of `A` got no reply. `landed` says whether the file has it. */
 async function unconfirmed({ landed }: { landed: boolean }) {
 	const { files, session } = await open('one\n');
-	const base = session.saved.version;
+	const base = session.saved.sha256;
 	session.input('A\n');
 	files.next({ kind: landed ? 'lose' : 'defer' });
 	await session.save();
-	const sent = { path: PATH, source: 'A\n', expected: base };
+	const sent = {
+		kind: 'replace' as const,
+		path: PATH,
+		source: 'A\n',
+		expectedSha256: base,
+	};
 	expect(session.attempt).toEqual({
 		...sent,
 		state: 'unconfirmed',
@@ -394,7 +406,7 @@ test('a save takes the text as it is when it is asked for: typing in the same ti
 	expect(session.saved).toEqual({
 		path: PATH,
 		source: 'A\n',
-		version: await versionOf('A\n'),
+		sha256: await versionOf('A\n'),
 	});
 	expect(session.buffer).toBe('A and B\n');
 	expect(session.dirty).toBe(true);
@@ -691,7 +703,7 @@ test('a retry that is refused because the text is already there reconciles on th
 	expect(session.saved).toEqual({
 		path: PATH,
 		source: 'A\n',
-		version: await versionOf('A\n'),
+		sha256: await versionOf('A\n'),
 	});
 	expect(session.attempt).toBeUndefined();
 	expect(session.external).toBeUndefined();
@@ -834,7 +846,7 @@ test('a retry is not taken while input is not admitted', async () => {
 	const files = disk('one\n');
 	const session = createFileSession(
 		files.files,
-		{ path: PATH, source: 'one\n', version: await versionOf('one\n') },
+		{ path: PATH, source: 'one\n', sha256: await versionOf('one\n') },
 		{ admits: () => admitted },
 	);
 	sessions.push(session);
@@ -865,7 +877,7 @@ test('a removed file leaves a dirty draft, which is saved back as it was capture
 	expect(session.saved).toEqual({
 		path: PATH,
 		source: 'mine\n',
-		version: await versionOf('mine\n'),
+		sha256: await versionOf('mine\n'),
 	});
 	expect(session.external).toBeUndefined();
 	expect(session.buffer).toBe('mine and more\n');
@@ -910,9 +922,9 @@ test('an unconfirmed save back is retried at its own path, reconciles there, and
 	await session.saveMine(reviewed, elsewhere);
 	expect(session.status).toBe('unconfirmed');
 	expect(session.attempt).toMatchObject({
+		kind: 'create' as const,
 		path: PATH,
 		source: 'mine\n',
-		expected: 'absent',
 	});
 	session.input('mine and more\n');
 	await session.retry();
@@ -946,14 +958,14 @@ test('an unconfirmed save back whose path then holds other text stays as it was 
 	expect(files.paths()).toEqual([PATH]);
 	expect(files.at()).toBe('other\n');
 	expect(session.attempt).toMatchObject({
+		kind: 'create' as const,
 		path: PATH,
 		source: 'mine\n',
-		expected: 'absent',
 		state: 'unconfirmed',
 	});
 	expect(session.external).toMatchObject({ current: { source: 'other\n' } });
 	// The first creation cannot land while the path is not empty.
-	expect((await files.land()).error?.name).toBe('Conflict');
+	expect((await files.land()).error?.name).toBe('Exists');
 });
 
 // ============================================================================
@@ -962,7 +974,7 @@ test('an unconfirmed save back whose path then holds other text stays as it was 
 
 test('a move carries the saved capture, and typing during it is saved at the new path', async () => {
 	const { files, session } = await open('one\n');
-	const version = session.saved.version;
+	const sha256 = session.saved.sha256;
 	const asked = files.hold();
 	const moving = session.move(ELSEWHERE);
 	await asked;
@@ -970,7 +982,7 @@ test('a move carries the saved capture, and typing during it is saved at the new
 	files.release();
 	expect((await moving).kind).toBe('done');
 	expect(files.requests).toEqual([
-		{ move: PATH, to: ELSEWHERE, expected: version },
+		{ move: PATH, to: ELSEWHERE, expected: sha256 },
 	]);
 	expect(session.path).toBe(ELSEWHERE);
 	expect(files.paths()).toEqual([ELSEWHERE]);
@@ -1002,7 +1014,7 @@ test('a move onto a path that exists is refused and moves nothing', async () => 
 
 test('a draft that cannot be saved is neither moved nor removed', async () => {
 	const { files, session } = await open('one\n');
-	const confirmed = { path: PATH, version: session.saved.version };
+	const confirmed = { path: PATH, sha256: session.saved.sha256 };
 	session.input('mine\n');
 	files.next({ kind: 'fail', message: 'disk full' });
 	expect((await session.move(ELSEWHERE)).kind).toBe('unsettled');
@@ -1028,7 +1040,7 @@ async function expectBlocked(
 	expect(await session.settle()).toBe(false);
 	expect((await session.move('notes/c.md')).kind).toBe('unsettled');
 	expect(
-		(await session.remove({ path, version: session.saved.version })).kind,
+		(await session.remove({ path, sha256: session.saved.sha256 })).kind,
 	).toBe('unsettled');
 	// No read concludes anything, whatever it finds, and the session is not forgotten.
 	expect(session.observe({ kind: 'removed' })).toBe('same');
@@ -1042,14 +1054,14 @@ async function expectBlocked(
 
 test('a move that could not remove the original is kept as it is: nothing resumes it or cleans it up', async () => {
 	const { files, session } = await open('one\n');
-	const version = session.saved.version;
+	const sha256 = session.saved.sha256;
 	files.next({ kind: 'partial' });
 	expect((await session.move(ELSEWHERE)).kind).toBe('partial');
 	expect(files.paths()).toEqual([PATH, ELSEWHERE]);
 	expect(session.path).toBe(PATH);
 	expect(session.pathChange).toMatchObject({
 		kind: 'move',
-		from: { path: PATH, version },
+		from: { path: PATH, sha256 },
 		to: ELSEWHERE,
 		state: 'partial',
 	});
@@ -1060,14 +1072,14 @@ test('a move that could not remove the original is kept as it is: nothing resume
 
 test('a move whose reply is lost after it landed keeps the session, its path, and what was asked', async () => {
 	const { files, session } = await open('one\n');
-	const version = session.saved.version;
+	const sha256 = session.saved.sha256;
 	files.next({ kind: 'lose' });
 	expect((await session.move(ELSEWHERE)).kind).toBe('unconfirmed');
 	expect(files.paths()).toEqual([ELSEWHERE]);
 	expect(session.path).toBe(PATH);
 	expect(session.pathChange).toMatchObject({
 		kind: 'move',
-		from: { path: PATH, version },
+		from: { path: PATH, sha256 },
 		to: ELSEWHERE,
 		state: 'unconfirmed',
 	});
@@ -1091,11 +1103,11 @@ test('a move whose reply is lost before it landed is not sent again, and stays u
 
 test('a removal names the capture that was confirmed, and a file that changed since is kept', async () => {
 	const { files, session } = await open('one\n');
-	const confirmed = { path: PATH, version: session.saved.version };
+	const confirmed = { path: PATH, sha256: session.saved.sha256 };
 	files.external('theirs\n');
 	expect((await session.remove(confirmed)).kind).toBe('refused');
 	expect(files.requests).toEqual([
-		{ remove: PATH, expected: confirmed.version },
+		{ remove: PATH, expected: confirmed.sha256 },
 	]);
 	expect(files.at()).toBe('theirs\n');
 	// The clean session follows the file that is there.
@@ -1105,7 +1117,7 @@ test('a removal names the capture that was confirmed, and a file that changed si
 
 test('a removal that is confirmed leaves nothing outstanding', async () => {
 	const { files, session } = await open('one\n');
-	const confirmed = { path: PATH, version: session.saved.version };
+	const confirmed = { path: PATH, sha256: session.saved.sha256 };
 	expect((await session.remove(confirmed)).kind).toBe('done');
 	expect(files.paths()).toEqual([]);
 	expect(session.pathChange).toBeUndefined();
@@ -1114,7 +1126,7 @@ test('a removal that is confirmed leaves nothing outstanding', async () => {
 test('a removal whose reply is lost is kept whether or not the file is gone, and nothing writes the old path again', async () => {
 	for (const landed of [true, false]) {
 		const { files, session } = await open('one\n');
-		const confirmed = { path: PATH, version: session.saved.version };
+		const confirmed = { path: PATH, sha256: session.saved.sha256 };
 		files.next({ kind: landed ? 'lose' : 'defer' });
 		expect((await session.remove(confirmed)).kind).toBe('unconfirmed');
 		expect(files.paths()).toEqual(landed ? [] : [PATH]);
@@ -1138,7 +1150,7 @@ test('a buffer typed back to the saved text does not let other text become the b
 	expect(session.dirty).toBe(false);
 	const kept = () => {
 		expect(session.attempt).toMatchObject({ ...sent, state: 'unconfirmed' });
-		expect(session.saved).toMatchObject({ source: 'one\n', version: base });
+		expect(session.saved).toMatchObject({ source: 'one\n', sha256: base });
 		expect(session.buffer).toBe('one\n');
 	};
 

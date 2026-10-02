@@ -30,8 +30,12 @@ import '../svelte-modules.test-support.js';
 import { afterEach, expect, mock, test } from 'bun:test';
 import { captureDefinition } from '@epicenter/capture';
 import { readLegacyBundle, runLegacyImport } from '@epicenter/capture/legacy';
+import type { FileChange as Change } from '../../../../../packages/folder/src/native/bindings.gen.js';
 import fixture from '../../../fixtures/legacy-bundle.json';
-import { QUIT_REQUESTED_EVENT, SERVICE_STOPPED_EVENT } from './shell-lifetime.js';
+import {
+	QUIT_REQUESTED_EVENT,
+	SERVICE_STOPPED_EVENT,
+} from './shell-lifetime.js';
 
 const ROOT = '/Users/someone/Epicenter/so.epicenter.capture';
 const PLUGIN = 'plugin:epicenter-folder|';
@@ -39,15 +43,6 @@ const FILES_CHANGED = 'plugin:epicenter-folder:folder-files-changed';
 const SNAPSHOT_CHANGED = 'plugin:epicenter-folder:folder-snapshot-changed';
 
 type Call = { cmd: string; args: Record<string, unknown> };
-type Version = { sha256: string; size: number };
-type Expected =
-	| { kind: 'absent' }
-	| { kind: 'any' }
-	| ({ kind: 'version' } & Version);
-type Change =
-	| { kind: 'write'; path: string; bytes: number[]; expected: Expected }
-	| { kind: 'remove'; path: string; expected: Expected };
-
 let inShell = true;
 let calls: Call[] = [];
 /** Replaces the owner's reply to one command. Throw an `Error` to lose the reply. */
@@ -62,10 +57,8 @@ const files = new Map<string, Uint8Array>();
 const sessions = new Set<number>();
 let nextSession = 1;
 
-const versionOf = (bytes: Uint8Array): Version => ({
-	sha256: new Bun.CryptoHasher('sha256').update(bytes).digest('hex'),
-	size: bytes.length,
-});
+const hashOf = (bytes: Uint8Array): string =>
+	new Bun.CryptoHasher('sha256').update(bytes).digest('hex');
 
 const wireSnapshot = (overridden: Record<string, unknown> = {}) => ({
 	branch: 'main',
@@ -92,19 +85,11 @@ const refuse = (error: unknown): never => {
 	throw error;
 };
 
-function matches(expected: Expected, current: Uint8Array | undefined) {
-	if (expected.kind === 'any') return true;
-	if (expected.kind === 'absent') return current === undefined;
-	if (current === undefined) return false;
-	const actual = versionOf(current);
-	return actual.sha256 === expected.sha256 && actual.size === expected.size;
-}
-
 function own({ cmd, args }: Call): unknown {
 	const read = (path: string) => {
 		const bytes = files.get(path);
 		if (bytes === undefined) return undefined;
-		return { bytes: Array.from(bytes), version: versionOf(bytes) };
+		return { bytes: Array.from(bytes), sha256: hashOf(bytes) };
 	};
 	switch (cmd) {
 		case 'attach': {
@@ -139,22 +124,41 @@ function own({ cmd, args }: Call): unknown {
 		case 'apply': {
 			const changes = args.changes as Change[];
 			for (const change of changes) {
+				if (change.kind === 'move')
+					throw new Error('this fixture does not move files');
 				const current = files.get(change.path);
-				if (!matches(change.expected, current))
+				if (change.kind === 'create' && current !== undefined)
 					return refuse({
 						name: 'Refused',
-						error: {
-							name: 'Conflict',
-							path: change.path,
-							expected: change.expected,
-							actual: current === undefined ? null : versionOf(current),
-						},
+						error: { name: 'Exists', path: change.path },
 					});
+				if (change.kind === 'remove' && current === undefined)
+					return refuse({
+						name: 'Refused',
+						error: { name: 'NotFound', path: change.path },
+					});
+				if (
+					(change.kind === 'replace' || change.kind === 'remove') &&
+					change.expectedSha256 != null
+				) {
+					const actualSha256 = current === undefined ? null : hashOf(current);
+					if (actualSha256 !== change.expectedSha256)
+						return refuse({
+							name: 'Refused',
+							error: {
+								name: 'Conflict',
+								path: change.path,
+								expectedSha256: change.expectedSha256,
+								actualSha256,
+							},
+						});
+				}
 			}
 			for (const change of changes) {
-				if (change.kind === 'write')
-					files.set(change.path, Uint8Array.from(change.bytes));
-				else files.delete(change.path);
+				if (change.kind === 'move')
+					throw new Error('this fixture does not move files');
+				if (change.kind === 'remove') files.delete(change.path);
+				else files.set(change.path, Uint8Array.from(change.bytes));
 			}
 			return null;
 		}
@@ -296,7 +300,7 @@ test('the page names the Capture scope and is told the directory', async () => {
 
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.capture',
-		protocol: 2,
+		protocol: 3,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
 	expect(host.quitProtectionProblem).toBeUndefined();
@@ -310,13 +314,25 @@ test('a change event for this scope is a hint to reread, and only for this scope
 	const hints: unknown[][] = [];
 	const stop = host.onExternalChange((...args: unknown[]) => hints.push(args));
 
-	emit(FILES_CHANGED, { scope: 'so.epicenter.todos', revision: 1, paths: [PATH] });
+	emit(FILES_CHANGED, {
+		scope: 'so.epicenter.todos',
+		revision: 1,
+		paths: [PATH],
+	});
 	expect(hints).toEqual([]);
-	emit(FILES_CHANGED, { scope: captureDefinition.id, revision: 2, paths: [PATH] });
+	emit(FILES_CHANGED, {
+		scope: captureDefinition.id,
+		revision: 2,
+		paths: [PATH],
+	});
 	expect(hints).toEqual([[]]);
 
 	stop();
-	emit(FILES_CHANGED, { scope: captureDefinition.id, revision: 3, paths: [PATH] });
+	emit(FILES_CHANGED, {
+		scope: captureDefinition.id,
+		revision: 3,
+		paths: [PATH],
+	});
 	expect(hints).toHaveLength(1);
 	await host.close();
 });
@@ -360,7 +376,11 @@ test('closing detaches this page once, and a sibling page keeps saving', async (
 	expect(text(PATH)).toBe(SAVED);
 	let hints = 0;
 	second.onExternalChange(() => hints++);
-	emit(FILES_CHANGED, { scope: captureDefinition.id, revision: 1, paths: [PATH] });
+	emit(FILES_CHANGED, {
+		scope: captureDefinition.id,
+		revision: 1,
+		paths: [PATH],
+	});
 	expect(hints).toBe(1);
 	await second.close();
 	expect(listening()).toBe(0);
@@ -382,10 +402,10 @@ test('a save sends the exact Markdown, checked against the version this page rea
 	expect(sent('apply')).toHaveLength(1);
 	expect(sent('apply')[0]?.args.changes).toEqual([
 		{
-			kind: 'write',
+			kind: 'replace',
 			path: PATH,
 			bytes: Array.from(new TextEncoder().encode(expected)),
-			expected: { kind: 'version', ...versionOf(new TextEncoder().encode(SAVED)) },
+			expectedSha256: hashOf(new TextEncoder().encode(SAVED)),
 		},
 	]);
 	expect(draft.saveState.kind).toBe('saved');
@@ -526,7 +546,8 @@ test('a folder its owner closed is reported as stopped; a stopped service is not
 	});
 	expect(captures.folderStopped).toBe(true);
 
-	overrides.apply = () => refuse({ name: 'Refused', error: { name: 'Closed' } });
+	overrides.apply = () =>
+		refuse({ name: 'Refused', error: { name: 'Closed' } });
 	captures.newCapture = 'typed after the folder closed';
 	const created = await captures.create();
 	expect(created.ok).toBe(false);

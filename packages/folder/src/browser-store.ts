@@ -8,7 +8,7 @@
  * incoming fast-forward publishes both in one transaction.
  *
  * Bytes are hashed before a transaction opens. Inside a transaction there are
- * only IndexedDB requests, so the stored-version comparison and the write
+ * only IndexedDB requests, so the stored-sha256 comparison and the write
  * happen atomically.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -21,7 +21,6 @@ import type {
 } from './boundary.js';
 import { FileError } from './errors.js';
 import { ancestors, isPortablePath, pathProblem } from './paths.js';
-import { type FileVersion, satisfies } from './version.js';
 
 export type IndexedDbEnvironment = {
 	readonly indexedDB: IDBFactory;
@@ -142,14 +141,6 @@ export function writeStamp(): Pick<InventoryRecord, 'mtimeMs' | 'ino'> {
 	};
 }
 
-function toVersion(
-	record: InventoryRecord | undefined,
-): FileVersion | undefined {
-	return record === undefined
-		? undefined
-		: { sha256: record.sha256, size: record.size };
-}
-
 /**
  * Apply file changes inside an already open transaction over the inventory,
  * contents, and directories stores. Throws `Refusal` on a failed condition.
@@ -180,47 +171,52 @@ export async function applyInTransaction(
 	function check(
 		path: string,
 		found: InventoryRecord | undefined,
-		expected: FileChange['expected'],
+		expectedSha256: string | undefined,
 	) {
-		if (!satisfies(toVersion(found), expected))
+		if (expectedSha256 !== undefined && found?.sha256 !== expectedSha256)
 			throw new Refusal(
-				FileError.Conflict({ path, expected, actual: toVersion(found) }).error,
+				FileError.Conflict({
+					path,
+					expectedSha256,
+					actualSha256: found?.sha256,
+				}).error,
 			);
 	}
 
 	for (const change of changes) {
-		if (change.kind === 'write') {
+		if (
+			change.kind === 'create' ||
+			change.kind === 'replace' ||
+			change.kind === 'overwrite'
+		) {
 			const found = await current(change.path);
-			check(change.path, found, change.expected);
+			if (change.kind === 'create' && found !== undefined)
+				throw new Refusal(FileError.Exists({ path: change.path }).error);
+			if (change.kind === 'replace')
+				check(change.path, found, change.expectedSha256);
 			if (found === undefined) await requireWritable(change.path);
 			const record: InventoryRecord = {
-				sha256: change.version.sha256,
-				size: change.version.size,
+				sha256: change.sha256,
+				size: change.bytes.byteLength,
 				...writeStamp(),
 			};
 			inventory.put(record, change.path);
 			contents.put(change.bytes, change.path);
 		} else if (change.kind === 'remove') {
 			const found = await current(change.path);
-			if (found === undefined && change.expected !== 'absent')
+			if (found === undefined)
 				throw new Refusal(FileError.NotFound({ path: change.path }).error);
-			check(change.path, found, change.expected);
+			check(change.path, found, change.expectedSha256);
 			inventory.delete(change.path);
 			contents.delete(change.path);
 		} else {
 			const found = await current(change.from);
 			if (found === undefined)
 				throw new Refusal(FileError.NotFound({ path: change.from }).error);
-			check(change.from, found, change.expected);
+			check(change.from, found, change.expectedSha256);
 			const destination = await current(change.to);
 			if (destination !== undefined)
-				throw new Refusal(
-					FileError.Conflict({
-						path: change.to,
-						expected: 'absent',
-						actual: toVersion(destination),
-					}).error,
-				);
+				throw new Refusal(FileError.Exists({ path: change.to }).error);
 			await requireWritable(change.to);
 			const bytes = (await request(contents.get(change.from))) as Uint8Array;
 			inventory.put({ ...found, ...writeStamp() }, change.to);
@@ -287,7 +283,7 @@ export function createBrowserFileBoundary(
 					'Stored bytes are missing or do not match their recorded size',
 				),
 			});
-		return Ok({ bytes, version: { sha256: record.sha256, size: record.size } });
+		return Ok({ bytes, sha256: record.sha256 });
 	}
 
 	return {

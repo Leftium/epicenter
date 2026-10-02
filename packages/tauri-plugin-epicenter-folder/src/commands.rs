@@ -53,10 +53,12 @@ pub struct FolderFilesChanged {
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
 ///
-/// Version 2 is the unreleased command contract. Push and fetch name a
+/// Version 3 is the unreleased command contract. Push and fetch name a
 /// session-owned request that can withdraw before transport admission. No
-/// command holds the folder across calls or names a terminal lease.
-pub const PROTOCOL: u32 = 2;
+/// command holds the folder across calls or names a terminal lease. A read
+/// returns its bytes and their SHA-256, and a file change is one of create,
+/// replace, overwrite, remove, or move, guarded by `expectedSha256`.
+pub const PROTOCOL: u32 = 3;
 
 /// What a window receives when it attaches to a scope.
 #[derive(Debug, Clone, Serialize, Type)]

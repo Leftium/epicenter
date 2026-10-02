@@ -31,10 +31,9 @@ import type {
 	FolderFiles,
 } from '@epicenter/folder';
 import {
-	captureVersion,
+	hashBytes,
 	FileError,
 	readSource,
-	sameVersion,
 	TableError,
 } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -52,7 +51,7 @@ async function entryFor(source: string): Promise<Entry<TodoFields>> {
 		path: 'todos/milk.md',
 		stem: 'milk',
 		source,
-		version: await captureVersion(encoder.encode(source)),
+		sha256: await hashBytes(encoder.encode(source)),
 		fields: { title: 'Milk', done: false },
 		body: '',
 		issues: undefined,
@@ -230,7 +229,7 @@ test('a move does not run while the input cannot be saved, and a failed move ado
 type TodoRead = Awaited<ReturnType<FileTable<TodoFields>['get']>>;
 
 /**
- * A table holding `theirs`: a write checked against any other version
+ * A table holding `theirs`: a write checked against any other sha256
  * conflicts, and the fresh read for review answers whatever `saved` is now.
  */
 function conflictingTable(theirs: Entry<TodoFields>, saved: TodoRead) {
@@ -239,12 +238,12 @@ function conflictingTable(theirs: Entry<TodoFields>, saved: TodoRead) {
 	const table = {
 		async replace(baseline: Entry<TodoFields>, source: string) {
 			writes.push({ baseline: baseline.source, source });
-			return sameVersion(baseline.version, theirs.version)
+			return baseline.sha256 === theirs.sha256
 				? Ok(await entryFor(source))
 				: FileError.Conflict({
 						path: baseline.path,
-						expected: baseline.version,
-						actual: theirs.version,
+						expectedSha256: baseline.sha256,
+						actualSha256: theirs.sha256,
 					});
 		},
 		get: async () => state.saved,
@@ -339,7 +338,7 @@ test('a raw save replaces the captured baseline and adopts the capture the folde
 			replaces.push({ file, content });
 			return Ok({
 				path: file.path,
-				version: await captureVersion(encoder.encode(content)),
+				sha256: await hashBytes(encoder.encode(content)),
 			});
 		},
 		async read(): Promise<never> {
@@ -349,18 +348,18 @@ test('a raw save replaces the captured baseline and adopts the capture the folde
 	const file = {
 		path: 'notes.txt',
 		source: 'saved',
-		version: await captureVersion(encoder.encode('saved')),
+		sha256: await hashBytes(encoder.encode('saved')),
 	};
 	const editor = createTextFileEditor(files, file, () => {});
 
 	editor.input('first');
 	await editor.save();
 	expect(replaces).toEqual([{ file, content: 'first' }]);
-	const first = await captureVersion(encoder.encode('first'));
+	const first = await hashBytes(encoder.encode('first'));
 	expect(editor.baseline).toEqual({
 		path: 'notes.txt',
 		source: 'first',
-		version: first,
+		sha256: first,
 	});
 	expect(editor.saveState).toEqual({ kind: 'saved' });
 	expect(editor.dirty).toBe(false);
@@ -370,7 +369,7 @@ test('a raw save replaces the captured baseline and adopts the capture the folde
 	await editor.save();
 	expect(replaces[1]?.file).toMatchObject({
 		path: 'notes.txt',
-		version: first,
+		sha256: first,
 	});
 	expect(replaces[1]?.content).toBe('second');
 	editor.dispose();
@@ -382,11 +381,11 @@ function conflictingFiles(saved: Result<CapturedFile, FileError>) {
 	const state = { saved };
 	const files = {
 		async replace(file: FileCapture, content: string) {
-			writes.push({ path: file.path, version: file.version, content });
+			writes.push({ path: file.path, sha256: file.sha256, content });
 			return FileError.Conflict({
 				path: file.path,
-				expected: file.version,
-				actual: undefined,
+				expectedSha256: file.sha256,
+				actualSha256: undefined,
 			});
 		},
 		read: async () => state.saved,
@@ -397,7 +396,7 @@ function conflictingFiles(saved: Result<CapturedFile, FileError>) {
 async function fileRead(
 	bytes: Uint8Array,
 ): Promise<Result<CapturedFile, FileError>> {
-	return Ok({ path: 'notes.txt', bytes, version: await captureVersion(bytes) });
+	return Ok({ path: 'notes.txt', bytes, sha256: await hashBytes(bytes) });
 }
 
 const unreadable: [
@@ -428,11 +427,11 @@ const unreadable: [
 for (const [name, saved, message] of unreadable)
 	test(`a raw conflict review that reads ${name} fails the save and keeps the draft`, async () => {
 		const original = encoder.encode('saved');
-		const version = await captureVersion(original);
-		const file = { path: 'notes.txt', source: 'saved', version };
+		const sha256 = await hashBytes(original);
+		const file = { path: 'notes.txt', source: 'saved', sha256 };
 		const { files, writes } = conflictingFiles(await saved());
 		const editor = createTextFileEditor(files, file, () => {});
-		const attempt = { path: 'notes.txt', version, content: 'mine' };
+		const attempt = { path: 'notes.txt', sha256, content: 'mine' };
 
 		editor.input('mine');
 		await editor.save();
@@ -454,11 +453,11 @@ for (const [name, saved, message] of unreadable)
 	});
 
 test('a raw conflict reads as removed only when the file is absent', async () => {
-	const version = await captureVersion(encoder.encode('saved'));
+	const sha256 = await hashBytes(encoder.encode('saved'));
 	const { files } = conflictingFiles(FileError.NotFound({ path: 'notes.txt' }));
 	const editor = createTextFileEditor(
 		files,
-		{ path: 'notes.txt', source: 'saved', version },
+		{ path: 'notes.txt', source: 'saved', sha256 },
 		() => {},
 	);
 
@@ -473,11 +472,11 @@ test('a raw conflict reads as removed only when the file is absent', async () =>
 });
 
 test('a retry after a failed raw review reaches the saved file for the conflict choice', async () => {
-	const version = await captureVersion(encoder.encode('saved'));
+	const sha256 = await hashBytes(encoder.encode('saved'));
 	const { files, state } = conflictingFiles(FileError.Closed());
 	const editor = createTextFileEditor(
 		files,
-		{ path: 'notes.txt', source: 'saved', version },
+		{ path: 'notes.txt', source: 'saved', sha256 },
 		() => {},
 	);
 
@@ -496,9 +495,7 @@ test('a retry after a failed raw review reaches the saved file for the conflict 
 
 	editor.loadSaved();
 	expect(editor.buffer).toBe('theirs');
-	expect(
-		sameVersion(editor.baseline.version, await captureVersion(theirs)),
-	).toBe(true);
+	expect(editor.baseline.sha256 === (await hashBytes(theirs))).toBe(true);
 	expect(editor.saveState.kind).toBe('saved');
 	editor.dispose();
 });

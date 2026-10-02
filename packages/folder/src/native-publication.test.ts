@@ -24,7 +24,7 @@ import { join, sep } from 'node:path';
 import { expectErr } from 'wellcrafted/testing';
 import { defineFolder, defineTable, field } from './contract.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 const real = { ...realFs };
 const {
@@ -111,11 +111,11 @@ async function root(prefix: string) {
 async function replace(path: string, expectedText: string, text: string) {
 	const bytes = encoder.encode(text);
 	return {
-		kind: 'write' as const,
+		kind: 'replace' as const,
 		path,
 		bytes,
-		version: await captureVersion(bytes),
-		expected: await captureVersion(encoder.encode(expectedText)),
+		sha256: await hashBytes(bytes),
+		expectedSha256: await hashBytes(encoder.encode(expectedText)),
 	};
 }
 
@@ -135,8 +135,8 @@ test('a writer that lands while the bytes are staged is a conflict', async () =>
 
 	expect(applied.error?.name).toBe('Conflict');
 	if (applied.error?.name !== 'Conflict') return;
-	expect(applied.error.actual).toEqual(
-		await captureVersion(encoder.encode('external')),
+	expect(applied.error.actualSha256).toEqual(
+		await hashBytes(encoder.encode('external')),
 	);
 	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('external');
 	expect(await scratchFiles(folder)).toEqual([]);
@@ -154,7 +154,7 @@ test('a file removed while the bytes are staged is a conflict, not a creation', 
 
 	expect(applied.error?.name).toBe('Conflict');
 	if (applied.error?.name !== 'Conflict') return;
-	expect(applied.error.actual).toBeUndefined();
+	expect(applied.error.actualSha256).toBeUndefined();
 	expect(
 		await stat(join(folder, 'note.md')).then(
 			() => true,
@@ -191,16 +191,10 @@ test('an exclusive creation never replaces a file that appeared while staging', 
 	const bytes = encoder.encode('mine');
 
 	const applied = await boundary.apply([
-		{
-			kind: 'write',
-			path: 'note.md',
-			bytes,
-			version: await captureVersion(bytes),
-			expected: 'absent',
-		},
+		{ kind: 'create', path: 'note.md', bytes, sha256: await hashBytes(bytes) },
 	]);
 
-	expect(applied.error?.name).toBe('Conflict');
+	expect(applied.error?.name).toBe('Exists');
 	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('external');
 });
 
@@ -221,7 +215,7 @@ test('a move rechecks its source after preparing the destination', async () => {
 			kind: 'move',
 			from: 'a.md',
 			to: 'moved/b.md',
-			expected: await captureVersion(encoder.encode('read')),
+			expectedSha256: await hashBytes(encoder.encode('read')),
 		},
 	]);
 

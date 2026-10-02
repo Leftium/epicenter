@@ -45,14 +45,12 @@
  */
 import {
 	type BatchReceipt,
-	captureVersion,
+	hashBytes,
 	type Entry,
 	type FileCapture,
 	type FileTable,
-	type FileVersion,
 	type FolderFiles,
 	rowPath,
-	sameVersion,
 } from '@epicenter/folder';
 import { RECORDINGS, type RecordingFields } from '../definition.js';
 import type {
@@ -162,7 +160,7 @@ function isThisRecording(entry: RecordingEntry, capture: PendingCapture) {
 function confirmedBy(
 	receipt: BatchReceipt,
 	audioPath: string,
-	audio: FileVersion,
+	audio: string,
 	row: string,
 ): ConfirmedPublication | undefined {
 	const [first, second] = receipt.steps;
@@ -170,7 +168,7 @@ function confirmedBy(
 		receipt.steps.length !== 2 ||
 		first?.kind !== 'write' ||
 		first.path !== audioPath ||
-		!sameVersion(first.file.version, audio) ||
+		!(first.file.sha256 === audio) ||
 		second?.kind !== 'write' ||
 		second.path !== row
 	)
@@ -192,7 +190,7 @@ export async function publishRecording(
 	const table = target.tables.recordings;
 	const { audioPath } = capture.fields;
 	const row = rowPath(RECORDINGS, capture.id);
-	const pendingVersion = await captureVersion(capture.bytes);
+	const pendingVersion = await hashBytes(capture.bytes);
 
 	const existing = await table.get(capture.id);
 	if (existing.error)
@@ -204,10 +202,7 @@ export async function publishRecording(
 	if (audio.error && audio.error.name !== 'NotFound')
 		return { status: 'failed', message: audio.error.message };
 	const observedAudio = audio.error ? undefined : audio.data;
-	if (
-		observedAudio !== undefined &&
-		!sameVersion(observedAudio.version, pendingVersion)
-	)
+	if (observedAudio !== undefined && !(observedAudio.sha256 === pendingVersion))
 		return occupied(audioPath);
 
 	if (existing.data !== undefined) {
@@ -233,7 +228,7 @@ export async function publishRecording(
 				// over exactly what was read makes the row's creation conditional on it.
 				else
 					batch.files.replace(
-						{ path: observedAudio.path, version: observedAudio.version },
+						{ path: observedAudio.path, sha256: observedAudio.sha256 },
 						capture.bytes,
 					);
 				batch.tables.recordings.create({

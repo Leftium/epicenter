@@ -23,11 +23,7 @@ import {
 	excerpt,
 	parseCapture,
 } from '@epicenter/capture';
-import {
-	type FileCapture,
-	type GitSnapshot,
-	sameVersion,
-} from '@epicenter/folder';
+import { type FileCapture, type GitSnapshot } from '@epicenter/folder';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	type CaptureEntry,
@@ -131,7 +127,7 @@ export function createCaptures(
 	}
 
 	/**
-	 * Write exact source at a path that must be absent. Resolves the version
+	 * Write exact source at a path that must be absent. Resolves the sha256
 	 * the folder admitted, which is the acknowledgment. The entry beside it is
 	 * that same file read back, and is absent when the path no longer held it:
 	 * what another program did afterwards is never taken for what was written.
@@ -140,14 +136,14 @@ export function createCaptures(
 		const written = await writing(() => folder.files.create(path, source));
 		if (written.error !== null)
 			return { data: null, error: written.error } as const;
-		const { version } = written.data;
+		const { sha256 } = written.data;
 		// The write is confirmed; a read that fails or throws cannot undo that.
 		const current = await read(path).catch(() => undefined);
 		const entry =
-			current?.kind === 'present' && sameVersion(current.entry.version, version)
+			current?.kind === 'present' && current.entry.sha256 === sha256
 				? current.entry
 				: undefined;
-		return { data: { version, entry }, error: null } as const;
+		return { data: { sha256, entry }, error: null } as const;
 	}
 
 	const store: DraftStore = {

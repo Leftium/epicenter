@@ -6,7 +6,7 @@
  * operating-system-wide compare-and-swap against other programs. Exclusive
  * creation and moves use hard links, which fail rather than overwrite an
  * existing destination. Replacement writes a scratch file under
- * `.git/epicenter/scratch`, checks the expected version again, and renames the
+ * `.git/epicenter/scratch`, checks the expected sha256 again, and renames the
  * scratch file into place. The second check catches a writer that landed while
  * the bytes were being staged; a writer that lands between that check and the
  * rename is still overwritten.
@@ -45,7 +45,7 @@ import type {
 } from './boundary.js';
 import { ApplyError, FileError, type FileStep } from './errors.js';
 import { ancestors, isPortablePath, pathProblem } from './paths.js';
-import { captureVersion, type FileVersion, satisfies } from './version.js';
+import { hashBytes } from './capture.js';
 
 type Code = { code?: string };
 const codeOf = (cause: unknown) => (cause as Code | undefined)?.code;
@@ -122,7 +122,7 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		if (kind.data === 'directory') return FileError.NotAFile({ path });
 		try {
 			const bytes = new Uint8Array(await readFile(absolute(path)));
-			return Ok({ bytes, version: await captureVersion(bytes) });
+			return Ok({ bytes, sha256: await hashBytes(bytes) });
 		} catch (cause) {
 			if (codeOf(cause) === 'ENOENT') return Ok(undefined);
 			return FileError.Io({ path, operation: 'read', cause });
@@ -161,10 +161,10 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 
 	function conflict(
 		path: string,
-		expected: FileChange['expected'],
-		actual: FileVersion | undefined,
+		expectedSha256: string,
+		actualSha256: string | undefined,
 	) {
-		return FileError.Conflict({ path, expected, actual });
+		return FileError.Conflict({ path, expectedSha256, actualSha256 });
 	}
 
 	/**
@@ -176,11 +176,20 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		change: FileChange,
 		landed: FileStep[],
 	): Promise<Result<undefined, FileError>> {
-		if (change.kind === 'write') {
+		if (
+			change.kind === 'create' ||
+			change.kind === 'replace' ||
+			change.kind === 'overwrite'
+		) {
 			const found = await readCurrent(change.path);
 			if (found.error) return found;
-			if (!satisfies(found.data?.version, change.expected))
-				return conflict(change.path, change.expected, found.data?.version);
+			if (change.kind === 'create' && found.data !== undefined)
+				return FileError.Exists({ path: change.path });
+			if (
+				change.kind === 'replace' &&
+				found.data?.sha256 !== change.expectedSha256
+			)
+				return conflict(change.path, change.expectedSha256, found.data?.sha256);
 			const parent = await ensureParent(change.path);
 			if (parent.error) return parent;
 			let temporary: string;
@@ -194,22 +203,25 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 				});
 			}
 			try {
-				// Staging and parent creation took time. Check the version again so
+				// Staging and parent creation took time. Check the sha256 again so
 				// the only unchecked window left is this read to the rename below.
-				if (change.expected !== 'any' && change.expected !== 'absent') {
+				if (change.kind === 'replace') {
 					const now = await readCurrent(change.path);
 					if (now.error) return now;
-					if (!satisfies(now.data?.version, change.expected))
-						return conflict(change.path, change.expected, now.data?.version);
+					if (now.data?.sha256 !== change.expectedSha256)
+						return conflict(
+							change.path,
+							change.expectedSha256,
+							now.data?.sha256,
+						);
 				}
-				if (found.data === undefined && change.expected !== 'any') {
+				if (change.kind === 'create') {
 					// Exclusive creation: link fails instead of replacing a newcomer.
 					try {
 						await link(temporary, absolute(change.path));
 					} catch (cause) {
 						if (codeOf(cause) === 'EEXIST') {
-							const now = await readCurrent(change.path);
-							return conflict(change.path, change.expected, now.data?.version);
+							return FileError.Exists({ path: change.path });
 						}
 						return FileError.Io({
 							path: change.path,
@@ -238,8 +250,11 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 			if (found.error) return found;
 			if (found.data === undefined)
 				return FileError.NotFound({ path: change.path });
-			if (!satisfies(found.data.version, change.expected))
-				return conflict(change.path, change.expected, found.data.version);
+			if (
+				change.expectedSha256 !== undefined &&
+				found.data.sha256 !== change.expectedSha256
+			)
+				return conflict(change.path, change.expectedSha256, found.data.sha256);
 			try {
 				await unlink(absolute(change.path));
 			} catch (cause) {
@@ -253,31 +268,32 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 		if (found.error) return found;
 		if (found.data === undefined)
 			return FileError.NotFound({ path: change.from });
-		if (!satisfies(found.data.version, change.expected))
-			return conflict(change.from, change.expected, found.data.version);
+		if (
+			change.expectedSha256 !== undefined &&
+			found.data.sha256 !== change.expectedSha256
+		)
+			return conflict(change.from, change.expectedSha256, found.data.sha256);
 		const destination = await verifyLiteral(change.to);
 		if (destination.error) return destination;
 		if (destination.data === 'directory')
 			return FileError.NotAFile({ path: change.to });
 		if (destination.data === 'file') {
-			const now = await readCurrent(change.to);
-			return conflict(change.to, 'absent', now.data?.version);
+			return FileError.Exists({ path: change.to });
 		}
 		const parent = await ensureParent(change.to);
 		if (parent.error) return parent;
-		if (change.expected !== 'any') {
+		if (change.expectedSha256 !== undefined) {
 			// The destination checks took time; the link must carry the bytes checked.
 			const now = await readCurrent(change.from);
 			if (now.error) return now;
-			if (!satisfies(now.data?.version, change.expected))
-				return conflict(change.from, change.expected, now.data?.version);
+			if (now.data?.sha256 !== change.expectedSha256)
+				return conflict(change.from, change.expectedSha256, now.data?.sha256);
 		}
 		try {
 			await link(absolute(change.from), absolute(change.to));
 		} catch (cause) {
 			if (codeOf(cause) === 'EEXIST') {
-				const now = await readCurrent(change.to);
-				return conflict(change.to, 'absent', now.data?.version);
+				return FileError.Exists({ path: change.to });
 			}
 			return FileError.Io({ path: change.to, operation: 'move to', cause });
 		}
@@ -303,7 +319,10 @@ export function createNativeFileBoundary(root: string): FileBoundary {
 	function toStep(change: FileChange): FileStep {
 		return change.kind === 'move'
 			? { kind: 'move', from: change.from, to: change.to }
-			: { kind: change.kind, path: change.path };
+			: {
+					kind: change.kind === 'remove' ? 'remove' : 'write',
+					path: change.path,
+				};
 	}
 
 	async function walk(

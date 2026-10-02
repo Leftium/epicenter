@@ -1,7 +1,7 @@
 /**
  * Root `kv.json` settings for a file folder.
  *
- * A snapshot carries the exact source and version like a table entry. An
+ * A snapshot carries the exact source and sha256 like a table entry. An
  * update merges declared values into the parsed object, preserving unknown
  * keys and key order, and conditionally replaces the captured file. JSON has
  * no comments; an update rewrites its whitespace as two-space indentation.
@@ -11,7 +11,7 @@ import type { ParsedTable } from '@epicenter/definition';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type FileError, TableError, type TableWriteError } from './errors.js';
 import type { FolderContext } from './folder.js';
-import { captureVersion, type FileVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 export const KV_PATH = 'kv.json';
 
@@ -23,7 +23,7 @@ export type KvIssue = {
 export type KvSnapshot<TValues> = {
 	readonly path: typeof KV_PATH;
 	/** Undefined when `kv.json` does not exist. */
-	readonly version: FileVersion | undefined;
+	readonly sha256: string | undefined;
 	readonly source: string | undefined;
 	/** Declared values that validated independently. */
 	readonly values: Readonly<Partial<TValues>>;
@@ -53,7 +53,7 @@ export function createFileKv<TValues>(
 
 	function interpret(
 		source: string | undefined,
-		version: FileVersion | undefined,
+		sha256: string | undefined,
 	): KvSnapshot<TValues> {
 		const issues: KvIssue[] = [];
 		const values: Record<string, unknown> = {};
@@ -90,7 +90,7 @@ export function createFileKv<TValues>(
 		}
 		return Object.freeze({
 			path: KV_PATH,
-			version,
+			sha256,
 			source,
 			values: Object.freeze(values) as Partial<TValues>,
 			issues: issues.length === 0 ? undefined : Object.freeze(issues),
@@ -102,18 +102,20 @@ export function createFileKv<TValues>(
 		source: string,
 	): Promise<Result<KvSnapshot<TValues>, TableWriteError>> {
 		const bytes = encoder.encode(source);
-		const version = await captureVersion(bytes);
-		const applied = await context.publish([
-			{
-				kind: 'write',
-				path: KV_PATH,
-				bytes,
-				version,
-				expected: snapshot.version ?? 'absent',
-			},
-		]);
+		const sha256 = await hashBytes(bytes);
+		const change =
+			snapshot.sha256 === undefined
+				? { kind: 'create' as const, path: KV_PATH, bytes, sha256 }
+				: {
+						kind: 'replace' as const,
+						path: KV_PATH,
+						bytes,
+						sha256,
+						expectedSha256: snapshot.sha256,
+					};
+		const applied = await context.publish([change]);
 		if (applied.error) return Err(applied.error);
-		return Ok(interpret(source, version));
+		return Ok(interpret(source, sha256));
 	}
 
 	return {
@@ -134,7 +136,7 @@ export function createFileKv<TValues>(
 					} catch {
 						return TableError.InvalidUtf8({ path: KV_PATH });
 					}
-					return Ok(interpret(source, read.data.version));
+					return Ok(interpret(source, read.data.sha256));
 				},
 			);
 		},

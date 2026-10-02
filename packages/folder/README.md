@@ -97,7 +97,7 @@ is not the desktop adapter, and it does not watch the directory.
 
 | Member | Contract |
 | --- | --- |
-| `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `version`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace`, `rename`, and `delete` take a captured entry and refuse if the file changed. Each changes exactly one Markdown file. |
+| `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `sha256`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a captured entry. They refuse if the file changed. Each changes exactly one Markdown file. |
 | `kv` | Root `kv.json`, read and conditionally replaced like an entry. |
 | `files` | Ordinary files at literal paths. See below. |
 | `batch(collect)` | Several mutations under one admission, one application, and one history request. See below. |
@@ -111,7 +111,7 @@ is not the desktop adapter, and it does not watch the directory.
 
 ```ts
 const made = await folder.files.create('audio/take.webm', bytes);   // refused if anything is there
-const read = await folder.files.read('notes/a.md');                 // { path, version, bytes }
+const read = await folder.files.read('notes/a.md');                 // { path, sha256, bytes }
 const next = await folder.files.replace(read.data!, 'new text');    // refused if it changed since
 const moved = await folder.files.move(next.data!, 'notes/b.md');    // refused if either end changed
 await folder.files.remove(moved.data!);
@@ -119,8 +119,8 @@ await folder.files.overwrite('settings.txt', 'on');                 // whatever 
 ```
 
 The verb states the condition. `replace`, `remove`, and `move` act on a
-**capture**: a plain, frozen `{ path, version }`, where `version` is the
-SHA-256 and size of the bytes it was captured from. A capture holds nothing
+**capture**: a plain, frozen `{ path, sha256 }`. The hash identifies the exact
+bytes captured; byte length remains inventory metadata. A capture holds nothing
 open, can be serialized, and never changes. A successful save returns a new
 capture; the one passed in stays what it was. A table entry is a capture of
 its row file, and so is a `read` result.
@@ -132,9 +132,15 @@ its row file, and so is a `read` result.
   back. If another writer lands right behind the save, the capture still names
   what this save wrote, and the next `replace` with it is a `Conflict`. Read
   the file to observe what is there now.
-- A moved file's capture is the captured version at the new path.
-- `create` refuses an occupied path even when the bytes are identical.
+- A moved file's capture is the captured hash at the new path.
+- `create` reports `Exists` for an occupied path even when the bytes are identical.
 - A stale capture is a `Conflict`. Nothing is merged, replayed, or retried.
+
+Internally, the same intention reaches each backend as `create`, `replace`,
+`overwrite`, `remove`, or `move`. Only `replace` requires `expectedSha256`;
+removal and movement carry it when acting on a capture. Shell operations may
+omit that guard, but still require a source, and moves require an empty
+destination. There is no sentinel union mixing hashes with `'absent'` or `'any'`.
 
 `list()` inventories the whole folder; `children(directory)` lists one level
 and accepts `''` for the root. `open(path)` returns a stable `Blob` for
@@ -184,7 +190,7 @@ nothing. Bytes are copied when each mutation is collected.
 The batch is published through one application of the file boundary and
 requests history once. On success the receipt lists the landed steps in order,
 each with the capture it left (`remove` leaves none). Those captures come from
-the collected bytes and from a moved file's captured version, never from a
+the collected bytes and from a moved file's captured hash, never from a
 read. Reading afterward is a separate observation and may see another writer's
 bytes.
 

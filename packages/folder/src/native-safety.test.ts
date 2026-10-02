@@ -35,7 +35,7 @@ import { defineFolder, defineTable, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
 	id: 'so.epicenter.todostest',
@@ -63,11 +63,10 @@ afterAll(() => {
 async function writeChange(path: string, text: string) {
 	const bytes = encoder.encode(text);
 	return {
-		kind: 'write' as const,
+		kind: 'create' as const,
 		path,
 		bytes,
-		version: await captureVersion(bytes),
-		expected: 'absent' as const,
+		sha256: await hashBytes(bytes),
 	};
 }
 
@@ -118,12 +117,7 @@ describe('native partial moves', () => {
 				const boundary = createNativeFileBoundary(root);
 				const applied = await boundary.apply([
 					await writeChange('x.txt', 'X'),
-					{
-						kind: 'move',
-						from: 'locked/a.txt',
-						to: 'open/a.txt',
-						expected: 'any',
-					},
+					{ kind: 'move', from: 'locked/a.txt', to: 'open/a.txt' },
 					await writeChange('y.txt', 'Y'),
 				]);
 				expect(applied.error?.name).toBe('Partial');

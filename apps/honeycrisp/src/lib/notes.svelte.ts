@@ -166,7 +166,7 @@ function saveProblem(session: FileSession): string | undefined {
 		case 'failed':
 			return session.failure;
 		case 'conflict':
-			return 'The file changed elsewhere. Open it to choose which version to keep.';
+			return 'The file changed elsewhere. Open it to choose which sha256 to keep.';
 		case 'unconfirmed':
 			return session.pathChange !== undefined
 				? 'A rename or delete of this file was not confirmed. Open it to see where it stands.'
@@ -176,10 +176,10 @@ function saveProblem(session: FileSession): string | undefined {
 	}
 }
 
-const captureOf = ({ path, source, version }: Capture): Capture => ({
+const captureOf = ({ path, source, sha256 }: Capture): Capture => ({
 	path,
 	source,
-	version,
+	sha256,
 });
 
 export function createNotes(host: NotesHost) {
@@ -527,7 +527,7 @@ export function createNotes(host: NotesHost) {
 		}
 		const listed = notes.find((entry) => entry.path === path);
 		if (listed !== undefined) {
-			// The row already holds the file's exact text and version.
+			// The row already holds the file's exact text and sha256.
 			sessionFor(captureOf(listed));
 			return;
 		}
@@ -591,7 +591,7 @@ export function createNotes(host: NotesHost) {
 		if (listed === undefined) return 'This file is no longer in the folder.';
 		const patched = applyFields(listed.source, fields);
 		if (patched.error !== null) return patched.error;
-		const base: FileCapture = { path, version: listed.version };
+		const base: FileCapture = { path, sha256: listed.sha256 };
 		const change = {
 			kind: 'replace',
 			base,
@@ -833,7 +833,7 @@ export function createNotes(host: NotesHost) {
 				if (problem !== undefined)
 					return `A note could not be moved out of the folder: ${problem}`;
 			}
-			const from: FileCapture = { path: entry.path, version: entry.version };
+			const from: FileCapture = { path: entry.path, sha256: entry.sha256 };
 			const change = {
 				kind: 'remove',
 				from,
@@ -935,7 +935,7 @@ export function createNotes(host: NotesHost) {
 			const reply = await reserve([path, to], async () => {
 				const read = await folder.files.read(path);
 				if (read.error) return read.error.message;
-				const from: FileCapture = { path, version: read.data.version };
+				const from: FileCapture = { path, sha256: read.data.sha256 };
 				const change = {
 					kind: 'move',
 					from,
@@ -1065,7 +1065,7 @@ export function createNotes(host: NotesHost) {
 			}
 			return Ok({
 				kind: 'file',
-				file: { path, version: captured.version },
+				file: { path, sha256: captured.sha256 },
 				title,
 			});
 		},

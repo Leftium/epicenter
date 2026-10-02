@@ -3,22 +3,17 @@
  *
  * A player keeps a Blob, so it goes stale when the file is replaced. Size and
  * modification time cannot say whether that happened: a replacement can have
- * the same length. The folder's content version can, so a reload compares
+ * the same length. The folder's content hash can, so a reload compares
  * versions and hands back the same object when the bytes are the same, which
  * lets a player keep playing instead of restarting.
  */
-import {
-	type FileError,
-	type FileVersion,
-	type FolderFiles,
-	sameVersion,
-} from '@epicenter/folder';
+import { type FileError, type FolderFiles } from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 import { audioMimeTypeOf } from './audio-format.js';
 
 export type LoadedAudio = {
 	readonly path: string;
-	readonly version: FileVersion;
+	readonly sha256: string;
 	readonly blob: Blob;
 };
 
@@ -36,12 +31,12 @@ export async function loadAudio(
 	if (
 		current !== undefined &&
 		current.path === path &&
-		sameVersion(current.version, read.data.version)
+		current.sha256 === read.data.sha256
 	)
 		return Ok(current);
 	return Ok({
 		path,
-		version: read.data.version,
+		sha256: read.data.sha256,
 		// The folder returns untyped bytes; a player needs the container's type.
 		blob: new Blob([read.data.bytes as Uint8Array<ArrayBuffer>], {
 			type: audioMimeTypeOf(path) ?? '',

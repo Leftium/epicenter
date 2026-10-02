@@ -64,9 +64,9 @@ same-stem attachment candidates contribute an attachment issue and leave
 `attachment` undefined; the entry does not choose one.
 
 **An entry is one immutable observation of its row file.** Its `source` and
-`version` come from the same captured bytes. `version` is content identity:
-SHA-256 plus byte length. A table write receives the whole entry; UI callers
-do not separately fetch or assemble a version token. The publisher still
+`sha256` come from the same captured bytes. The hash identifies their content.
+A table replacement or deletion receives the file capture; UI callers can pass
+the whole entry without separately fetching or assembling a token. The publisher still
 checks the current file because another writer may have changed it.
 
 An entry is already a snapshot. An editor calls the entry it last accepted its
@@ -81,7 +81,7 @@ The workflow consumes those bytes independently of later changes to the row.
 ```ts
 type Entry<TFields> = {
   readonly path: string;
-  readonly version: { readonly sha256: string; readonly size: number };
+  readonly sha256: string;
   readonly source: string;
   readonly attachment: string | undefined;
 } & (

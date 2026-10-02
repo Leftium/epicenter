@@ -12,7 +12,7 @@
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
-import { captureVersion } from '@epicenter/folder';
+import { hashBytes } from '@epicenter/folder';
 import type { NotesHost } from './platform/types.js';
 
 const { createNotes } = await import('./notes.svelte.ts');
@@ -28,12 +28,12 @@ async function open() {
 		path: 'notes/a.md',
 		stem: 'a',
 		source: NOTE,
-		version: await captureVersion(encoder.encode(NOTE)),
+		sha256: await hashBytes(encoder.encode(NOTE)),
 		fields: { title: 'A' },
 		body: 'body\n',
 	};
 	const bytes = encoder.encode(RAW);
-	const version = await captureVersion(bytes);
+	const sha256 = await hashBytes(bytes);
 	let release = () => {};
 	let reads = 0;
 	const host = {
@@ -68,7 +68,7 @@ async function open() {
 					await new Promise<void>((resolve) => {
 						release = resolve;
 					});
-					return { data: { bytes, version }, error: null };
+					return { data: { bytes, sha256 }, error: null };
 				},
 			},
 			git: {
@@ -181,9 +181,9 @@ test('an externally removed binary file keeps the selected missing-file screen',
 	const { notes } = await open();
 	const files = notes.host.folder.files;
 	const bytes = new Uint8Array([0]);
-	const version = await captureVersion(bytes);
+	const sha256 = await hashBytes(bytes);
 	files.read = async (path) => ({
-		data: { path, bytes, version },
+		data: { path, bytes, sha256 },
 		error: null,
 	});
 	await notes.open('kv.json');

@@ -19,6 +19,7 @@ import type {
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	type BatchReceipt,
+	type BatchChange,
 	checkRowDestinations,
 	collectBatch,
 	type FolderBatch,
@@ -28,6 +29,7 @@ import {
 import type {
 	FileBoundary,
 	FileChange,
+	FileWriteIntent,
 	FileListing,
 	FileRead,
 } from './boundary.js';
@@ -59,13 +61,11 @@ import type { FolderTerminal, TerminalResult } from './terminal.js';
 import {
 	type CapturedFile,
 	captureProblem,
-	captureVersion,
+	hashBytes,
 	type FileCapture,
-	type FileExpectation,
-	type FileVersion,
 	fileCapture,
 	ownBytes,
-} from './version.js';
+} from './capture.js';
 
 /** History settings for a folder whose history this process records. */
 export type FolderGitOptions = {
@@ -112,7 +112,7 @@ export type FolderFiles = {
 	remove(file: FileCapture): Promise<Result<undefined, FileError | ApplyError>>;
 	/**
 	 * Move the captured file to an unoccupied path. The returned capture is the
-	 * same content version at the destination.
+	 * same content hash at the destination.
 	 */
 	move(
 		file: FileCapture,
@@ -294,18 +294,16 @@ export type ShellAccess = {
 		children: FolderFiles['children'];
 		read(path: string): Promise<Result<FileRead, FileError>>;
 		write(
-			path: string,
-			bytes: Uint8Array,
-			expected: FileExpectation,
-		): Promise<Result<FileVersion, FileError | ApplyError>>;
+			change: FileWriteIntent,
+		): Promise<Result<string, FileError | ApplyError>>;
 		remove(
 			path: string,
-			expected: FileExpectation,
+			expectedSha256?: string,
 		): Promise<Result<undefined, FileError | ApplyError>>;
 		move(
 			from: string,
 			to: string,
-			expected: FileExpectation,
+			expectedSha256?: string,
 		): Promise<Result<undefined, FileError | ApplyError>>;
 		mkdir: FolderFiles['mkdir'];
 		rmdir: FolderFiles['rmdir'];
@@ -445,27 +443,32 @@ function createFolderGit(history: FolderHistory): FolderGit {
 	} satisfies FolderGit);
 }
 
-function createShellAccess(context: FolderContext, git: FolderGit): ShellAccess {
+function createShellAccess(
+	context: FolderContext,
+	git: FolderGit,
+): ShellAccess {
 	const { boundary, admit } = context;
 	return {
 		files: {
 			list: () => admit(() => boundary.list()),
 			children: (directory) => admit(() => boundary.children(directory)),
 			read: (path) => admit(() => boundary.read(path)),
-			write: (path, content, expected) => {
-				const bytes = ownBytes(content);
+			write: (change) => {
+				const intent = { ...change, bytes: ownBytes(change.bytes) };
 				return admit(async () => {
-					const version = await captureVersion(bytes);
-					const applied = await context.publish([
-						{ kind: 'write', path, bytes, version, expected },
-					]);
-					return applied.error ? applied : Ok(version);
+					const sha256 = await hashBytes(intent.bytes);
+					const applied = await context.publish([{ ...intent, sha256 }]);
+					return applied.error ? applied : Ok(sha256);
 				});
 			},
-			remove: (path, expected) =>
-				admit(() => context.publish([{ kind: 'remove', path, expected }])),
-			move: (from, to, expected) =>
-				admit(() => context.publish([{ kind: 'move', from, to, expected }])),
+			remove: (path, expectedSha256) =>
+				admit(() =>
+					context.publish([{ kind: 'remove', path, expectedSha256 }]),
+				),
+			move: (from, to, expectedSha256) =>
+				admit(() =>
+					context.publish([{ kind: 'move', from, to, expectedSha256 }]),
+				),
 			mkdir: (path) => admit(() => boundary.mkdir(path)),
 			rmdir: (path) => admit(() => boundary.rmdir(path)),
 		},
@@ -556,16 +559,12 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 
 	/** Publish one write and return the capture of the bytes that were given. */
 	function save(
-		path: string,
-		bytes: Uint8Array,
-		expected: FileExpectation,
+		intent: FileWriteIntent,
 	): Promise<Result<FileCapture, FileError | ApplyError>> {
 		return admit(async () => {
-			const version = await captureVersion(bytes);
-			const applied = await context.publish([
-				{ kind: 'write', path, bytes, version, expected },
-			]);
-			return applied.error ? applied : Ok(fileCapture(path, version));
+			const sha256 = await hashBytes(intent.bytes);
+			const applied = await context.publish([{ ...intent, sha256 }]);
+			return applied.error ? applied : Ok(fileCapture(intent.path, sha256));
 		});
 	}
 
@@ -588,41 +587,48 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 				if (read.error) return read;
 				return Ok(
 					Object.freeze({
-						...fileCapture(path, read.data.version),
+						...fileCapture(path, read.data.sha256),
 						bytes: read.data.bytes,
 					}),
 				);
 			}),
 		open: (path) => admit(() => boundary.open(path)),
-		create: (path, content) => save(path, ownBytes(content), 'absent'),
+		create: (path, content) =>
+			save({ kind: 'create', path, bytes: ownBytes(content) }),
 		replace: (file, content) => {
 			const refused = refusedCapture(file);
 			if (refused) return Promise.resolve(refused);
-			// The baseline is fixed here: the capture's own version, copied.
-			const { path, version } = fileCapture(file.path, file.version);
-			return save(path, ownBytes(content), version);
+			// The baseline is fixed here: the capture's own hash, copied.
+			const { path, sha256 } = fileCapture(file.path, file.sha256);
+			return save({
+				kind: 'replace',
+				path,
+				bytes: ownBytes(content),
+				expectedSha256: sha256,
+			});
 		},
 		remove: (file) => {
 			const refused = refusedCapture(file);
 			if (refused) return Promise.resolve(refused);
-			const { path, version } = fileCapture(file.path, file.version);
+			const { path, sha256 } = fileCapture(file.path, file.sha256);
 			return admit(() =>
-				context.publish([{ kind: 'remove', path, expected: version }]),
+				context.publish([{ kind: 'remove', path, expectedSha256: sha256 }]),
 			);
 		},
 		move: (file, destination) => {
 			const refused = refusedCapture(file);
 			if (refused) return Promise.resolve(refused);
-			const { path, version } = fileCapture(file.path, file.version);
+			const { path, sha256 } = fileCapture(file.path, file.sha256);
 			return admit(async () => {
 				const applied = await context.publish([
-					{ kind: 'move', from: path, to: destination, expected: version },
+					{ kind: 'move', from: path, to: destination, expectedSha256: sha256 },
 				]);
-				// A move carries the captured bytes, so their version is the capture's.
-				return applied.error ? applied : Ok(fileCapture(destination, version));
+				// A move carries the captured bytes, so their hash is the capture's.
+				return applied.error ? applied : Ok(fileCapture(destination, sha256));
 			});
 		},
-		overwrite: (path, content) => save(path, ownBytes(content), 'any'),
+		overwrite: (path, content) =>
+			save({ kind: 'overwrite', path, bytes: ownBytes(content) }),
 		mkdir: (path) => admit(() => boundary.mkdir(path)),
 		rmdir: (path) => admit(() => boundary.rmdir(path)),
 	};
@@ -652,7 +658,7 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 						boundary,
 					);
 					if (destinations.error) return destinations;
-					const changes: FileChange[] = [];
+					const changes: BatchChange[] = [];
 					for (const intent of collected.data)
 						changes.push(await toChange(intent));
 					const applied = await context.publish(changes);

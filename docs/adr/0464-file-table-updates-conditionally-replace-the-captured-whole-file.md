@@ -23,14 +23,14 @@ storage mechanism, a target-dependent overload, or retry settings.
 
 | Method | Preparation and baseline |
 | --- | --- |
-| `update(stem, { fields?, body? })` | Read current source once, validate supplied fields, and patch only requested fields/body. Publish against that read's content version. |
-| `replace(entry, source)` | Encode complete supplied UTF-8 text and publish against the entry's content version. Invalid frontmatter is saved and reported in the returned entry's issues. |
+| `update(stem, { fields?, body? })` | Read current source once, validate supplied fields, and patch only requested fields/body. Publish against that read's SHA-256. |
+| `replace(entry, source)` | Encode complete supplied UTF-8 text and publish against the entry's SHA-256. Invalid frontmatter is saved and reported in the returned entry's issues. |
 
 The stem is one literal filename segment under the table's directory, not a
 path. Updates accept existing external names under the same addressing rules
 as `get`, even when they violate creation's naming rules. A missing row returns
 `NotFound`; an update never creates a row. An entry supplies its literal path
-and content version to `replace`, so no separate path is required. Neither
+and SHA-256 to `replace`, so no separate path is required. Neither
 method changes the row stem or moves other files.
 
 `update` captures supplied field values and body before its first wait. It
@@ -47,7 +47,7 @@ An editor adapter owns the mapping from its widget to the text being submitted.
 
 **Each call makes one conditional publication attempt and never retries.**
 
-Both methods use one publisher. Its whole-file byte-version check is the
+Both methods use one publisher. Its whole-file SHA-256 check is the
 publication condition, even for a single-field assignment. A change before an
 update's read is incorporated; a change between that read and publication
 returns `Conflict`. Changes since an editor captured an entry can refuse its
@@ -56,7 +56,7 @@ returns `Conflict`. Changes since an editor captured an entry can refuse its
 
 `Conflict` names a failed publication expectation; `NotFound` names absence.
 For an update, absence at its read is `NotFound`; disappearance between read
-and publication is `Conflict` with `actual: undefined`. These names do not
+and publication is `Conflict` with `actualSha256: undefined`. These names do not
 assert which writer acted or when. Missing-source removal and movement retain
 their existing `NotFound` behavior. Unknown outcomes remain `Unconfirmed`.
 
@@ -66,7 +66,7 @@ and thrown calls never trigger automatic replay. No retry count or transform
 callback is exposed.
 
 Success returns a new immutable entry interpreted from the exact submitted
-bytes and their version. It is not a later reread and does not mutate an entry
+bytes and their hash. It is not a later reread and does not mutate an entry
 passed by the caller. Table updates and replacements check no sibling filenames
 and infer no attachment ownership. Creation and rename own destination layout
 preflight under

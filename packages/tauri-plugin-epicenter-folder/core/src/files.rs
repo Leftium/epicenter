@@ -1,13 +1,13 @@
 //! Ordinary files in a native folder.
 //!
-//! The Rust owner of what `packages/app/src/files/native-store.ts` does for a
-//! Bun process. Current files are the source. A conditional write hashes the
-//! current bytes and replaces them only when they match; this is a best-effort
-//! check, not an operating-system-wide compare-and-swap against other
-//! programs. Exclusive creation and moves use hard links, which fail rather
-//! than overwrite an existing destination. Replacement writes a scratch file
-//! under `.git/epicenter/scratch`, checks the expected version again, and
-//! renames the scratch file into place.
+//! The Rust owner of what `packages/folder/src/native-store.ts` does for a
+//! Bun process. Current files are the source. A replacement hashes the
+//! current bytes and replaces them only when they match the SHA-256 the caller
+//! captured; this is a best-effort check, not an operating-system-wide
+//! compare-and-swap against other programs. Creation and moves use hard links,
+//! which fail rather than overwrite an existing destination. Replacement
+//! writes a scratch file under `.git/epicenter/scratch`, checks the expected
+//! hash again, and renames the scratch file into place.
 //!
 //! A multi-file batch applies ordered steps. When a step fails, the result
 //! reports which steps reached the folder; nothing is rolled back.
@@ -26,60 +26,19 @@ use specta::Type;
 
 use crate::paths::{ancestors, path_problem};
 
-/// SHA-256 plus byte length of one file's exact bytes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub struct FileVersion {
-    pub sha256: String,
-    pub size: u64,
-}
-
-impl FileVersion {
-    pub fn of(bytes: &[u8]) -> Self {
-        Self {
-            sha256: Sha256::digest(bytes)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect(),
-            size: bytes.len() as u64,
-        }
-    }
-}
-
-/// The condition a write checks at its publication point.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum FileExpectation {
-    /// No file at the path (exclusive creation).
-    Absent,
-    /// A deliberate overwrite.
-    Any,
-    /// The current bytes are exactly these.
-    Version { sha256: String, size: u64 },
-}
-
-impl FileExpectation {
-    pub fn version(version: &FileVersion) -> Self {
-        Self::Version {
-            sha256: version.sha256.clone(),
-            size: version.size,
-        }
-    }
-
-    fn satisfied_by(&self, current: Option<&FileVersion>) -> bool {
-        match self {
-            Self::Any => true,
-            Self::Absent => current.is_none(),
-            Self::Version { sha256, size } => {
-                current.is_some_and(|current| current.sha256 == *sha256 && current.size == *size)
-            }
-        }
-    }
+/// Lowercase hex SHA-256 of one file's exact bytes. Always computed here from
+/// bytes, never accepted from a caller as the hash of new content.
+pub fn sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct FileRead {
     pub bytes: Vec<u8>,
-    pub version: FileVersion,
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -102,39 +61,59 @@ pub struct Children {
     pub directories: Vec<String>,
 }
 
-/// One conditional step. The new version is computed here, never accepted
-/// from the caller.
+/// One ordered step. `expected_sha256` is the hash the caller captured from a
+/// read. The hash of new bytes is computed here, never accepted from the
+/// caller.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FileChange {
-    Write {
+    /// Exclusive creation: the path must be absent.
+    Create { path: String, bytes: Vec<u8> },
+    /// The current bytes must hash to `expected_sha256`.
+    #[serde(rename_all = "camelCase")]
+    Replace {
         path: String,
         bytes: Vec<u8>,
-        expected: FileExpectation,
+        expected_sha256: String,
     },
+    /// A deliberate overwrite, whether or not the path holds a file.
+    Overwrite { path: String, bytes: Vec<u8> },
+    /// The file must exist. Without `expected_sha256` the removal is a
+    /// deliberate unguarded one.
+    #[serde(rename_all = "camelCase")]
     Remove {
         path: String,
-        expected: FileExpectation,
+        #[serde(default)]
+        expected_sha256: Option<String>,
     },
-    /// Moves exact bytes; the destination must be absent.
+    /// Moves exact bytes. The source must exist and the destination must be
+    /// absent. Without `expected_sha256` the source bytes are not checked.
+    #[serde(rename_all = "camelCase")]
     Move {
         from: String,
         to: String,
-        expected: FileExpectation,
+        #[serde(default)]
+        expected_sha256: Option<String>,
     },
 }
 
 impl FileChange {
     fn paths(&self) -> Vec<&str> {
         match self {
-            Self::Write { path, .. } | Self::Remove { path, .. } => vec![path],
+            Self::Create { path, .. }
+            | Self::Replace { path, .. }
+            | Self::Overwrite { path, .. }
+            | Self::Remove { path, .. } => vec![path],
             Self::Move { from, to, .. } => vec![from, to],
         }
     }
 
+    /// The landed action this change reports: every kind of write is a write.
     pub fn step(&self) -> FileStep {
         match self {
-            Self::Write { path, .. } => FileStep::Write { path: path.clone() },
+            Self::Create { path, .. }
+            | Self::Replace { path, .. }
+            | Self::Overwrite { path, .. } => FileStep::Write { path: path.clone() },
             Self::Remove { path, .. } => FileStep::Remove { path: path.clone() },
             Self::Move { from, to, .. } => FileStep::Move {
                 from: from.clone(),
@@ -173,10 +152,17 @@ pub enum FileError {
     NotFound {
         path: String,
     },
+    /// A creation target or a move destination already holds a file.
+    Exists {
+        path: String,
+    },
+    /// The current bytes do not hash to what the caller captured. A missing
+    /// replace target has no `actual_sha256`.
+    #[serde(rename_all = "camelCase")]
     Conflict {
         path: String,
-        expected: FileExpectation,
-        actual: Option<FileVersion>,
+        expected_sha256: String,
+        actual_sha256: Option<String>,
     },
     NotAFile {
         path: String,
@@ -354,16 +340,16 @@ impl Files {
         }
         match fs::read(self.absolute(path)) {
             Ok(bytes) => {
-                let version = FileVersion::of(&bytes);
-                Ok(Some(FileRead { bytes, version }))
+                let sha256 = sha256(&bytes);
+                Ok(Some(FileRead { bytes, sha256 }))
             }
             Err(cause) if cause.kind() == ErrorKind::NotFound => Ok(None),
             Err(cause) => Err(io(path, "read", &cause)),
         }
     }
 
-    fn current_version(&self, path: &str) -> Result<Option<FileVersion>, FileError> {
-        Ok(self.read_current(path)?.map(|read| read.version))
+    fn current_sha256(&self, path: &str) -> Result<Option<String>, FileError> {
+        Ok(self.read_current(path)?.map(|read| read.sha256))
     }
 
     fn ensure_parent(&self, path: &str) -> Result<(), FileError> {
@@ -407,63 +393,80 @@ impl Files {
         Ok(file)
     }
 
-    fn conflict(
-        &self,
-        path: &str,
-        expected: &FileExpectation,
-        actual: Option<FileVersion>,
-    ) -> FileError {
-        FileError::Conflict {
+    /// Refuse unless the bytes found hash to what the caller captured.
+    fn expect(path: &str, expected: &str, actual: Option<String>) -> Result<(), FileError> {
+        if actual.as_deref() == Some(expected) {
+            return Ok(());
+        }
+        Err(FileError::Conflict {
             path: path.to_string(),
-            expected: expected.clone(),
-            actual,
+            expected_sha256: expected.to_string(),
+            actual_sha256: actual,
+        })
+    }
+
+    fn exists(path: &str) -> FileError {
+        FileError::Exists {
+            path: path.to_string(),
         }
     }
 
-    fn write(&self, path: &str, bytes: &[u8], expected: &FileExpectation) -> Result<(), FileError> {
-        let found = self.current_version(path)?;
-        if !expected.satisfied_by(found.as_ref()) {
-            return Err(self.conflict(path, expected, found));
-        }
+    /// Stage the bytes in scratch, publish them with `publish`, and drop the
+    /// scratch file whichever way that went.
+    fn stage(
+        &self,
+        path: &str,
+        bytes: &[u8],
+        publish: impl FnOnce(&Path) -> Result<(), FileError>,
+    ) -> Result<(), FileError> {
         self.ensure_parent(path)?;
         let temporary = self
             .scratch_file(bytes)
             .map_err(|cause| io(path, "stage bytes for", &cause))?;
-        let published = (|| {
-            // Staging and parent creation took time. Check the version again so
-            // the only unchecked window left is this read to the rename below.
-            if let FileExpectation::Version { .. } = expected {
-                let now = self.current_version(path)?;
-                if !expected.satisfied_by(now.as_ref()) {
-                    return Err(self.conflict(path, expected, now));
-                }
-            }
-            if found.is_none() && *expected != FileExpectation::Any {
-                // Exclusive creation: a link fails instead of replacing a newcomer.
-                match fs::hard_link(&temporary, self.absolute(path)) {
-                    Ok(()) => Ok(()),
-                    Err(cause) if cause.kind() == ErrorKind::AlreadyExists => {
-                        let now = self.current_version(path).ok().flatten();
-                        Err(self.conflict(path, expected, now))
-                    }
-                    Err(cause) => Err(io(path, "create", &cause)),
-                }
-            } else {
-                fs::rename(&temporary, self.absolute(path))
-                    .map_err(|cause| io(path, "replace", &cause))
-            }
-        })();
+        let published = publish(&temporary);
         let _ = fs::remove_file(&temporary);
         published
     }
 
-    fn remove(&self, path: &str, expected: &FileExpectation) -> Result<(), FileError> {
+    fn create(&self, path: &str, bytes: &[u8]) -> Result<(), FileError> {
+        if self.read_current(path)?.is_some() {
+            return Err(Self::exists(path));
+        }
+        self.stage(path, bytes, |temporary| {
+            // Exclusive creation: a link fails instead of replacing a newcomer.
+            match fs::hard_link(temporary, self.absolute(path)) {
+                Ok(()) => Ok(()),
+                Err(cause) if cause.kind() == ErrorKind::AlreadyExists => Err(Self::exists(path)),
+                Err(cause) => Err(io(path, "create", &cause)),
+            }
+        })
+    }
+
+    fn replace(&self, path: &str, bytes: &[u8], expected: &str) -> Result<(), FileError> {
+        Self::expect(path, expected, self.current_sha256(path)?)?;
+        self.stage(path, bytes, |temporary| {
+            // Staging and parent creation took time. Check the hash again so
+            // the only unchecked window left is this read to the rename below.
+            Self::expect(path, expected, self.current_sha256(path)?)?;
+            fs::rename(temporary, self.absolute(path)).map_err(|cause| io(path, "replace", &cause))
+        })
+    }
+
+    fn overwrite(&self, path: &str, bytes: &[u8]) -> Result<(), FileError> {
+        // A directory or a link at the path is refused; a file there is replaced.
+        self.read_current(path)?;
+        self.stage(path, bytes, |temporary| {
+            fs::rename(temporary, self.absolute(path)).map_err(|cause| io(path, "replace", &cause))
+        })
+    }
+
+    fn remove(&self, path: &str, expected: Option<&str>) -> Result<(), FileError> {
         let not_found = || FileError::NotFound {
             path: path.to_string(),
         };
-        let found = self.current_version(path)?.ok_or_else(not_found)?;
-        if !expected.satisfied_by(Some(&found)) {
-            return Err(self.conflict(path, expected, Some(found)));
+        let found = self.current_sha256(path)?.ok_or_else(not_found)?;
+        if let Some(expected) = expected {
+            Self::expect(path, expected, Some(found))?;
         }
         match fs::remove_file(self.absolute(path)) {
             Ok(()) => Ok(()),
@@ -479,14 +482,14 @@ impl Files {
         &self,
         from: &str,
         to: &str,
-        expected: &FileExpectation,
+        expected: Option<&str>,
         landed: &mut Vec<FileStep>,
     ) -> Result<(), FileError> {
-        let found = self.current_version(from)?.ok_or(FileError::NotFound {
+        let found = self.current_sha256(from)?.ok_or(FileError::NotFound {
             path: from.to_string(),
         })?;
-        if !expected.satisfied_by(Some(&found)) {
-            return Err(self.conflict(from, expected, Some(found)));
+        if let Some(expected) = expected {
+            Self::expect(from, expected, Some(found))?;
         }
         match self.verify_literal(to)? {
             Kind::Directory => {
@@ -494,25 +497,18 @@ impl Files {
                     path: to.to_string(),
                 })
             }
-            Kind::File => {
-                let now = self.current_version(to).ok().flatten();
-                return Err(self.conflict(to, &FileExpectation::Absent, now));
-            }
+            Kind::File => return Err(Self::exists(to)),
             Kind::Absent => {}
         }
         self.ensure_parent(to)?;
-        if *expected != FileExpectation::Any {
+        if let Some(expected) = expected {
             // The destination checks took time; the link must carry the bytes checked.
-            let now = self.current_version(from)?;
-            if !expected.satisfied_by(now.as_ref()) {
-                return Err(self.conflict(from, expected, now));
-            }
+            Self::expect(from, expected, self.current_sha256(from)?)?;
         }
         match fs::hard_link(self.absolute(from), self.absolute(to)) {
             Ok(()) => {}
             Err(cause) if cause.kind() == ErrorKind::AlreadyExists => {
-                let now = self.current_version(to).ok().flatten();
-                return Err(self.conflict(to, &FileExpectation::Absent, now));
+                return Err(Self::exists(to));
             }
             Err(cause) => return Err(io(to, "move to", &cause)),
         }
@@ -525,13 +521,22 @@ impl Files {
 
     fn step(&self, change: &FileChange, landed: &mut Vec<FileStep>) -> Result<(), FileError> {
         match change {
-            FileChange::Write {
+            FileChange::Create { path, bytes } => self.create(path, bytes),
+            FileChange::Replace {
                 path,
                 bytes,
-                expected,
-            } => self.write(path, bytes, expected),
-            FileChange::Remove { path, expected } => self.remove(path, expected),
-            FileChange::Move { from, to, expected } => self.rename(from, to, expected, landed),
+                expected_sha256,
+            } => self.replace(path, bytes, expected_sha256),
+            FileChange::Overwrite { path, bytes } => self.overwrite(path, bytes),
+            FileChange::Remove {
+                path,
+                expected_sha256,
+            } => self.remove(path, expected_sha256.as_deref()),
+            FileChange::Move {
+                from,
+                to,
+                expected_sha256,
+            } => self.rename(from, to, expected_sha256.as_deref(), landed),
         }
     }
 

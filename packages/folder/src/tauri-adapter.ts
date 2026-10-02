@@ -67,7 +67,6 @@ import {
 	type CommitOutcome as WireCommitOutcome,
 	type FileChange as WireFileChange,
 	type FileError as WireFileError,
-	type FileExpectation as WireFileExpectation,
 	type FileStep as WireFileStep,
 	type GitError as WireGitError,
 	type GitSnapshot as WireGitSnapshot,
@@ -76,7 +75,6 @@ import {
 	type PushOutcome as WirePushOutcome,
 } from './native/bindings.gen.js';
 import { callObserver } from './observer.js';
-import type { FileExpectation } from './version.js';
 
 type Wire<T, E> = { data: T; error: null } | { data: null; error: E };
 
@@ -117,28 +115,19 @@ async function call<W extends Wire<unknown, unknown>>(
 const orUndefined = <T>(value: T | null): T | undefined =>
 	value === null ? undefined : value;
 
-function expectationFromWire(expected: WireFileExpectation): FileExpectation {
-	if (expected.kind === 'version')
-		return { sha256: expected.sha256, size: expected.size };
-	return expected.kind;
-}
-
-function expectationToWire(expected: FileExpectation): WireFileExpectation {
-	if (expected === 'absent' || expected === 'any') return { kind: expected };
-	return { kind: 'version', sha256: expected.sha256, size: expected.size };
-}
-
 function fileError(error: WireFileError): FileError {
 	switch (error.name) {
 		case 'InvalidPath':
 			return FileError.InvalidPath(error).error;
 		case 'NotFound':
 			return FileError.NotFound(error).error;
+		case 'Exists':
+			return FileError.Exists(error).error;
 		case 'Conflict':
 			return FileError.Conflict({
 				path: error.path,
-				expected: expectationFromWire(error.expected),
-				actual: orUndefined(error.actual),
+				expectedSha256: error.expectedSha256,
+				actualSha256: orUndefined(error.actualSha256),
 			}).error;
 		case 'NotAFile':
 			return FileError.NotAFile(error).error;
@@ -372,26 +361,32 @@ const sorted = (names: readonly string[]) => [...names].sort();
 
 function changeToWire(change: FileChange): WireFileChange {
 	switch (change.kind) {
-		case 'write':
+		case 'create':
+		case 'overwrite':
 			return {
-				kind: 'write',
+				kind: change.kind,
 				path: change.path,
-				// The owner hashes these bytes itself; it takes no version on trust.
 				bytes: Array.from(change.bytes),
-				expected: expectationToWire(change.expected),
+			};
+		case 'replace':
+			return {
+				kind: 'replace',
+				path: change.path,
+				bytes: Array.from(change.bytes),
+				expectedSha256: change.expectedSha256,
 			};
 		case 'remove':
 			return {
 				kind: 'remove',
 				path: change.path,
-				expected: expectationToWire(change.expected),
+				expectedSha256: change.expectedSha256 ?? null,
 			};
 		case 'move':
 			return {
 				kind: 'move',
 				from: change.from,
 				to: change.to,
-				expected: expectationToWire(change.expected),
+				expectedSha256: change.expectedSha256 ?? null,
 			};
 	}
 }
@@ -402,10 +397,10 @@ function createBoundary(session: number): FolderBoundary {
 
 	const toRead = (read: {
 		bytes: number[];
-		version: FileRead['version'];
+		sha256: FileRead['sha256'];
 	}): FileRead => ({
 		bytes: Uint8Array.from(read.bytes),
-		version: read.version,
+		sha256: read.sha256,
 	});
 
 	async function children(directory: string) {

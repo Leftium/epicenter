@@ -305,7 +305,7 @@ test("a save's commit attempt running when the folder closes finishes and stays 
 test('a save refused while closing changes nothing, and close still settles', async () => {
 	const { folder, order, reached, release } = await held();
 	const refused = folder.files.replace(
-		{ path: 'missing.md', version: { sha256: '0'.repeat(64), size: 1 } },
+		{ path: 'missing.md', sha256: '0'.repeat(64) },
 		'x',
 	);
 	await reached;

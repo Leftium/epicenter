@@ -2,7 +2,7 @@
  * Native Same-Owner Concurrency Tests
  *
  * One opened native folder applies its own batches one at a time. Two saves
- * that both observed the same version must not both pass their checks and
+ * that both observed the same sha256 must not both pass their checks and
  * then replace each other; the later one checks what the earlier one left.
  * This covers the handle only: another program still races the check.
  *
@@ -24,7 +24,7 @@ import { join, sep } from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineFolder, defineTable, field } from './contract.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 const real = { ...realFs };
 const { readdir, readFile, realpath, rm, writeFile } = real;
@@ -83,11 +83,11 @@ async function root(prefix: string) {
 async function replace(path: string, expectedText: string, text: string) {
 	const bytes = encoder.encode(text);
 	return {
-		kind: 'write' as const,
+		kind: 'replace' as const,
 		path,
 		bytes,
-		version: await captureVersion(bytes),
-		expected: await captureVersion(encoder.encode(expectedText)),
+		sha256: await hashBytes(bytes),
+		expectedSha256: await hashBytes(encoder.encode(expectedText)),
 	};
 }
 
@@ -97,7 +97,7 @@ async function scratchFiles(folder: string) {
 
 /**
  * Hold the first rename until a second publication reaches its own rename, so
- * both have passed their version checks before either lands. A boundary that
+ * both have passed their sha256 checks before either lands. A boundary that
  * runs one batch at a time never sends the second one there, so the timer
  * releases the first. `fail` makes that first rename throw once released.
  */
@@ -141,7 +141,9 @@ test('two saves of one version through one boundary give one success and one con
 	const refused = expectErr(second);
 	expect(refused.name).toBe('Conflict');
 	if (refused.name !== 'Conflict') return;
-	expect(refused.actual).toEqual(await captureVersion(encoder.encode('first')));
+	expect(refused.actualSha256).toEqual(
+		await hashBytes(encoder.encode('first')),
+	);
 	expect(await readFile(join(folder, 'note.md'), 'utf8')).toBe('first');
 	expect(await scratchFiles(folder)).toEqual([]);
 });
@@ -166,7 +168,7 @@ test('two raw writes of one version through an opened folder save once', async (
 		const saved = expectOk(firstWon ? results[0] : results[1]);
 		expect(expectErr(firstWon ? results[1] : results[0]).name).toBe('Conflict');
 		const current = expectOk(await opened.files.read('note.md'));
-		expect(current.version).toEqual(saved.version);
+		expect(current.sha256).toEqual(saved.sha256);
 		expect(new TextDecoder().decode(current.bytes)).toBe(
 			firstWon ? 'first' : 'second',
 		);
@@ -250,11 +252,10 @@ test('a save queued behind a partial batch still publishes', async () => {
 		boundary.apply([
 			// An exclusive creation links instead of renaming, so it lands.
 			{
-				kind: 'write',
+				kind: 'create',
 				path: 'new.md',
 				bytes: created,
-				version: await captureVersion(created),
-				expected: 'absent',
+				sha256: await hashBytes(created),
 			},
 			await replace('note.md', 'read', 'first'),
 		]),

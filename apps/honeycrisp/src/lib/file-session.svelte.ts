@@ -5,7 +5,7 @@
  * A session keeps these facts apart:
  *
  * - `saved` is the capture this session last agreed is in the file: its path,
- *   the version of its bytes, and the text those bytes are. It is the
+ *   the sha256 of its bytes, and the text those bytes are. It is the
  *   baseline the next replace, move, or remove is conditional on.
  * - `buffer` is the text on screen, including unsaved typing. The rich-text
  *   view, the Source view, and the metadata controls all edit this one string.
@@ -50,9 +50,7 @@ import {
 	type ApplyError,
 	type FileCapture,
 	type FileError,
-	type FileVersion,
 	type FolderFiles,
-	sameVersion,
 } from '@epicenter/folder';
 import type { Result } from 'wellcrafted/result';
 import { type Capture, readTextFile } from './files.js';
@@ -99,11 +97,11 @@ async function ask<T>(
 	}
 	if (result.error === null) return { kind: 'done', value: result.data };
 	const { error } = result;
-	if (error.name === 'Conflict')
+	if (error.name === 'Conflict' || error.name === 'Exists')
 		return {
 			kind: 'refused',
 			message: error.message,
-			occupied: error.expected === 'absent' ? error.path : undefined,
+			occupied: error.name === 'Exists' ? error.path : undefined,
 		};
 	return {
 		kind:
@@ -194,12 +192,10 @@ export type External =
 	| { readonly kind: 'unreadable'; readonly message: string };
 
 /** One submitted write: where, what text, and on what condition. */
-type Submission = {
-	readonly path: string;
-	readonly source: string;
-	/** The version the file must still hold, or `absent` for a new file. */
-	readonly expected: FileVersion | 'absent';
-};
+type Submission = { readonly path: string; readonly source: string } & (
+	| { readonly kind: 'create' }
+	| { readonly kind: 'replace'; readonly expectedSha256: string }
+);
 
 export type Attempt = Submission &
 	(
@@ -351,7 +347,7 @@ export function createFileSession(
 				attempt = undefined;
 				return 'reconciled';
 			}
-			if (sameVersion(next.version, saved.version)) {
+			if (next.sha256 === saved.sha256) {
 				// A conflict whose other side went back to what was agreed is over.
 				if (external !== undefined) {
 					external = undefined;
@@ -373,7 +369,7 @@ export function createFileSession(
 			if (
 				!(
 					external?.kind === 'changed' &&
-					sameVersion(external.current.version, next.version)
+					external.current.sha256 === next.sha256
 				)
 			)
 				external = { kind: 'changed', current: next };
@@ -399,11 +395,11 @@ export function createFileSession(
 	function send(sent: Submission) {
 		failure = undefined;
 		attempt = { ...sent, state: 'sent' };
-		const { path, source, expected } = sent;
+		const { path, source } = sent;
 		return ask(() =>
-			expected === 'absent'
+			sent.kind === 'create'
 				? files.create(path, source)
-				: files.replace({ path, version: expected }, source),
+				: files.replace({ path, sha256: sent.expectedSha256 }, source),
 		);
 	}
 
@@ -456,7 +452,7 @@ export function createFileSession(
 				agree(now.file);
 				attempt = undefined;
 				onSaved();
-			} else if (alternate !== undefined && sent.expected === 'absent') {
+			} else if (alternate !== undefined && sent.kind === 'create') {
 				const elsewhere = { ...sent, path: alternate() };
 				await conclude(elsewhere, await send(elsewhere));
 				return;
@@ -488,9 +484,10 @@ export function createFileSession(
 	async function saveText(source: string, typed: object) {
 		if (!idle() || typed !== typedOver || source === saved.source) return;
 		const sent: Submission = {
+			kind: 'replace',
 			path: saved.path,
 			source,
-			expected: saved.version,
+			expectedSha256: saved.sha256,
 		};
 		await conclude(sent, await send(sent));
 	}
@@ -519,7 +516,7 @@ export function createFileSession(
 		return exclusive(async () => {
 			await saveText(source, typed);
 			if (unsettled()) return { kind: 'unsettled' } as const;
-			const sent = step({ path: saved.path, version: saved.version });
+			const sent = step({ path: saved.path, sha256: saved.sha256 });
 			pathChange = { ...sent, state: 'sent' };
 			const answer = await run(sent.from);
 			if (answer.kind === 'unconfirmed' || answer.kind === 'partial') {
@@ -627,8 +624,15 @@ export function createFileSession(
 			return exclusive(async () => {
 				if (pathChange !== undefined) return;
 				if (attempt?.state === 'unconfirmed') {
-					const { path, source, expected } = attempt;
-					const sent: Submission = { path, source, expected };
+					const sent: Submission =
+						attempt.kind === 'create'
+							? { kind: 'create', path: attempt.path, source: attempt.source }
+							: {
+									kind: 'replace',
+									path: attempt.path,
+									source: attempt.source,
+									expectedSha256: attempt.expectedSha256,
+								};
 					await conclude(sent, await send(sent), { reissued: true });
 				} else await saveText(typedText, typed);
 			});
@@ -636,7 +640,7 @@ export function createFileSession(
 		/**
 		 * Report a fresh read of this path. A clean session adopts changed bytes
 		 * without writing; a dirty one keeps its buffer and records the other
-		 * version. An unconfirmed write is ended only by a read of exactly its
+		 * sha256. An unconfirmed write is ended only by a read of exactly its
 		 * text, and an unknown move or removal by no read at all.
 		 */
 		observe,
@@ -670,18 +674,21 @@ export function createFileSession(
 					pathChange !== undefined
 				)
 					return false;
-				const sent: Submission = {
-					path: saved.path,
-					source,
-					expected:
-						reviewed.kind === 'changed' ? reviewed.current.version : 'absent',
-				};
+				const sent: Submission =
+					reviewed.kind === 'changed'
+						? {
+								kind: 'replace',
+								path: saved.path,
+								source,
+								expectedSha256: reviewed.current.sha256,
+							}
+						: { kind: 'create', path: saved.path, source };
 				await conclude(sent, await send(sent), { alternate });
 				return true;
 			});
 		},
 		/**
-		 * Conflict choice: discard my text and take exactly the version I
+		 * Conflict choice: discard my text and take exactly the sha256 I
 		 * reviewed. Returns false when it is no longer the current one or
 		 * something is still outstanding.
 		 */

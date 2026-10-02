@@ -180,8 +180,22 @@ fn attach(window: &WebviewWindow<MockRuntime>) -> u64 {
     attached["session"].as_u64().expect("a session resource ID")
 }
 
-fn write(path: &str, content: &str, expected: Value) -> Value {
-    json!({ "kind": "write", "path": path, "bytes": content.as_bytes(), "expected": expected })
+fn create(path: &str, content: &str) -> Value {
+    json!({ "kind": "create", "path": path, "bytes": content.as_bytes() })
+}
+
+fn overwrite(path: &str, content: &str) -> Value {
+    json!({ "kind": "overwrite", "path": path, "bytes": content.as_bytes() })
+}
+
+/// A replacement conditional on the hash a read returned.
+fn replace(path: &str, content: &str, expected_sha256: &Value) -> Value {
+    json!({
+        "kind": "replace",
+        "path": path,
+        "bytes": content.as_bytes(),
+        "expectedSha256": expected_sha256,
+    })
 }
 
 fn apply(
@@ -255,8 +269,8 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
         &main,
         session,
         json!([
-            write("todos/a.md", "first", json!({ "kind": "absent" })),
-            write("todos/a.png", "image", json!({ "kind": "absent" })),
+            create("todos/a.md", "first"),
+            create("todos/a.png", "image"),
         ]),
     )
     .unwrap();
@@ -267,8 +281,13 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
     )
     .unwrap();
     assert_eq!(read["bytes"], json!("first".as_bytes()));
-    assert_eq!(read["version"]["size"], 5);
-    let version = read["version"].clone();
+    // A read is its bytes and their hash, computed by the owner.
+    assert_eq!(
+        read["sha256"],
+        "a7937b64b8caa58f03721bb6bacf5c78cb235febe0e70b1b84cd99541461a08e"
+    );
+    assert_eq!(read.as_object().unwrap().len(), 2);
+    let sha256 = read["sha256"].clone();
     assert_eq!(
         invoke(
             &main,
@@ -299,39 +318,100 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
     );
 
     // A typed refusal crosses as the rejection, with nothing written.
-    let conflict = apply(
-        &main,
-        session,
-        json!([write("todos/a.md", "again", json!({ "kind": "absent" }))]),
-    )
-    .unwrap_err();
-    assert_eq!(conflict["name"], "Refused");
-    assert_eq!(conflict["error"]["name"], "Conflict");
-    assert_eq!(conflict["error"]["actual"], version);
-    let escaped = apply(
-        &main,
-        session,
-        json!([write("../outside.md", "x", json!({ "kind": "any" }))]),
-    )
-    .unwrap_err();
+    let occupied = apply(&main, session, json!([create("todos/a.md", "again")])).unwrap_err();
+    assert_eq!(
+        occupied,
+        json!({ "name": "Refused", "error": { "name": "Exists", "path": "todos/a.md" } })
+    );
+    let escaped = apply(&main, session, json!([overwrite("../outside.md", "x")])).unwrap_err();
     assert_eq!(escaped["error"]["name"], "InvalidPath");
     assert!(!fixture.root.parent().unwrap().join("outside.md").exists());
 
-    // A save over the exact version that was read replaces it.
+    // A replacement naming a hash the file does not have is a conflict, and
+    // one for a missing file reports no actual hash.
+    let stale = "0".repeat(64);
+    for (path, actual) in [("todos/a.md", sha256.clone()), ("missing.md", Value::Null)] {
+        let conflict = apply(
+            &main,
+            session,
+            json!([replace(path, "never lands", &json!(stale))]),
+        )
+        .unwrap_err();
+        assert_eq!(
+            conflict["error"],
+            json!({
+                "name": "Conflict",
+                "path": path,
+                "expectedSha256": stale,
+                "actualSha256": actual,
+            })
+        );
+    }
+
+    // A replacement naming the exact hash that was read replaces the file.
     apply(
         &main,
         session,
-        json!([write(
-            "todos/a.md",
-            "second",
-            json!({ "kind": "version", "sha256": version["sha256"], "size": 5 })
-        )]),
+        json!([replace("todos/a.md", "second", &sha256)]),
     )
     .unwrap();
     assert_eq!(
         std::fs::read_to_string(fixture.root.join("todos/a.md")).unwrap(),
         "second"
     );
+
+    // A move and a removal name the hash as `expectedSha256`, or omit it.
+    // The earlier `write` shape with an `expected` object is not a change.
+    assert!(apply(
+        &main,
+        session,
+        json!([{
+            "kind": "write",
+            "path": "old.md",
+            "bytes": [],
+            "expected": { "kind": "any" },
+        }]),
+    )
+    .is_err());
+    assert!(!fixture.root.join("old.md").exists());
+    apply(&main, session, json!([create("scratch.md", "first")])).unwrap();
+    let guarded = apply(
+        &main,
+        session,
+        json!([{ "kind": "move", "from": "scratch.md", "to": "moved.md", "expectedSha256": stale }]),
+    )
+    .unwrap_err();
+    assert_eq!(guarded["error"]["name"], "Conflict");
+    assert_eq!(guarded["error"]["actualSha256"], sha256);
+    apply(
+        &main,
+        session,
+        json!([
+            { "kind": "move", "from": "scratch.md", "to": "moved.md", "expectedSha256": sha256 },
+            create("other.md", "other"),
+        ]),
+    )
+    .unwrap();
+    let occupied = apply(
+        &main,
+        session,
+        json!([{ "kind": "move", "from": "other.md", "to": "moved.md" }]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        occupied["error"],
+        json!({ "name": "Exists", "path": "moved.md" })
+    );
+    apply(
+        &main,
+        session,
+        json!([
+            { "kind": "remove", "path": "moved.md", "expectedSha256": sha256 },
+            { "kind": "remove", "path": "other.md" },
+        ]),
+    )
+    .unwrap();
+    assert!(!fixture.root.join("moved.md").exists() && !fixture.root.join("other.md").exists());
 
     let status = invoke(&main, "status", json!({ "session": session })).unwrap();
     assert_eq!(
@@ -379,12 +459,7 @@ fn a_window_attaches_reads_publishes_and_commits_through_invoke() {
     );
 
     // Manual staging through invoke, since this scope does not commit on edit.
-    apply(
-        &main,
-        session,
-        json!([write("b.md", "B", json!({ "kind": "absent" }))]),
-    )
-    .unwrap();
+    apply(&main, session, json!([create("b.md", "B")])).unwrap();
     invoke(
         &main,
         "stage",
@@ -489,12 +564,7 @@ fn a_window_reaches_only_its_own_scopes_and_its_own_sessions() {
         fixture.root.join(".git/HEAD").is_file(),
         "the registered root was opened"
     );
-    apply(
-        &a,
-        a_session,
-        json!([write("a.md", "from a", json!({ "kind": "absent" }))]),
-    )
-    .unwrap();
+    apply(&a, a_session, json!([create("a.md", "from a")])).unwrap();
 
     // Another window naming A's session is denied on every kind of call.
     let denied = json!({
@@ -512,12 +582,7 @@ fn a_window_reaches_only_its_own_scopes_and_its_own_sessions() {
             denied
         );
         assert_eq!(
-            apply(
-                window,
-                a_session,
-                json!([write("a.md", "stolen", json!({ "kind": "any" }))])
-            )
-            .unwrap_err(),
+            apply(window, a_session, json!([overwrite("a.md", "stolen")])).unwrap_err(),
             json!({ "name": "Refused", "error": denied })
         );
         for command in ["commit", "status"] {
@@ -566,24 +631,22 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
     let a_session = attach(&a);
     let b_session = attach(&b);
 
-    apply(
-        &a,
-        a_session,
-        json!([write("a.md", "base", json!({ "kind": "absent" }))]),
-    )
-    .unwrap();
+    apply(&a, a_session, json!([create("a.md", "base")])).unwrap();
     let base = invoke(&b, "read", json!({ "session": b_session, "path": "a.md" })).unwrap()
-        ["version"]
+        ["sha256"]
         .clone();
-    let expected = json!({ "kind": "version", "sha256": base["sha256"], "size": base["size"] });
 
-    // Both windows save over the version they both read: exactly one lands.
+    // Both windows replace the bytes they both read: exactly one lands.
     let results: Vec<Result<Value, Value>> = std::thread::scope(|scope| {
         let saves = [(&a, a_session, "from a"), (&b, b_session, "from b")].map(
             |(window, session, content)| {
-                let expected = expected.clone();
+                let expected = base.clone();
                 scope.spawn(move || {
-                    apply(window, session, json!([write("a.md", content, expected)]))
+                    apply(
+                        window,
+                        session,
+                        json!([replace("a.md", content, &expected)]),
+                    )
                 })
             },
         );
@@ -599,6 +662,8 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
         .find_map(|result| result.as_ref().err())
         .unwrap();
     assert_eq!(lost["error"]["name"], "Conflict");
+    assert_eq!(lost["error"]["expectedSha256"], base);
+    assert!(lost["error"]["actualSha256"].is_string());
 
     // Each attached window heard the saves, whichever window made them.
     eventually("both windows to hear both saves", || {
@@ -618,11 +683,7 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
     apply(
         &a,
         a_session,
-        json!([write(
-            "last.md",
-            "saved as the page closed",
-            json!({ "kind": "absent" })
-        )]),
+        json!([create("last.md", "saved as the page closed")]),
     )
     .unwrap();
     invoke(&a, "detach", json!({ "session": a_session })).unwrap();
@@ -637,12 +698,7 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
 
     // Window B is untouched: same session, same owner, same history.
     idle(&b, b_session);
-    apply(
-        &b,
-        b_session,
-        json!([write("b.md", "after a left", json!({ "kind": "absent" }))]),
-    )
-    .unwrap();
+    apply(&b, b_session, json!([create("b.md", "after a left")])).unwrap();
     idle(&b, b_session);
     assert_eq!(
         git(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]),
@@ -659,23 +715,13 @@ fn two_windows_share_one_owner_and_detaching_one_leaves_the_other() {
     }
     // A new session of window A saves at once: nothing of B's holds it out.
     let a_again = attach(&a);
-    apply(
-        &a,
-        a_again,
-        json!([write("again.md", "x", json!({ "kind": "absent" }))]),
-    )
-    .unwrap();
+    apply(&a, a_again, json!([create("again.md", "x")])).unwrap();
 
     // Shutdown drains what was admitted and refuses what comes after. That
     // save was admitted for its commit when it landed, with the folder free.
     fixture.app.folders().shutdown();
     assert_eq!(
-        apply(
-            &b,
-            b_session,
-            json!([write("late.md", "x", json!({ "kind": "absent" }))])
-        )
-        .unwrap_err(),
+        apply(&b, b_session, json!([create("late.md", "x")])).unwrap_err(),
         json!({ "name": "Refused", "error": { "name": "Closed" } })
     );
     assert_eq!(
@@ -800,12 +846,7 @@ fn withdraw(window: &WebviewWindow<MockRuntime>, session: u64, request: u64) {
 /// Save one file and commit it; the commit's ID.
 #[cfg(unix)]
 fn commit_file(window: &WebviewWindow<MockRuntime>, session: u64, path: &str) -> String {
-    apply(
-        window,
-        session,
-        json!([write(path, path, json!({ "kind": "absent" }))]),
-    )
-    .unwrap();
+    apply(window, session, json!([create(path, path)])).unwrap();
     let committed = invoke(window, "commit", json!({ "session": session })).unwrap();
     assert_eq!(committed["status"], "committed", "{committed}");
     committed["oid"].as_str().unwrap().to_string()
@@ -1009,12 +1050,7 @@ fn a_push_in_flight_at_the_remote_holds_no_window_save_or_commit_back() {
 
     // Window A saves. The owner commits it and starts a push, which is now a
     // real `git push` held inside the remote.
-    apply(
-        a,
-        a_session,
-        json!([write("one.md", "one", json!({ "kind": "absent" }))]),
-    )
-    .unwrap();
+    apply(a, a_session, json!([create("one.md", "one")])).unwrap();
     let first = remote.arrived(1);
     assert_eq!(first, head());
 
@@ -1027,21 +1063,11 @@ fn a_push_in_flight_at_the_remote_holds_no_window_save_or_commit_back() {
         // Window B saves, and both windows' terminals make directories and
         // save, while one push is in flight and another waits. Every call
         // returns, and each complete save is committed by its own attempt.
-        apply(
-            b,
-            b_session,
-            json!([write("two.md", "two", json!({ "kind": "absent" }))]),
-        )
-        .unwrap();
+        apply(b, b_session, json!([create("two.md", "two")])).unwrap();
         idle(b, b_session);
         assert_eq!(subjects(), "Add two.md\nAdd one.md");
         invoke(a, "mkdir", json!({ "session": a_session, "path": "made" })).unwrap();
-        apply(
-            a,
-            a_session,
-            json!([write("made/three.md", "three", json!({ "kind": "absent" }))]),
-        )
-        .unwrap();
+        apply(a, a_session, json!([create("made/three.md", "three")])).unwrap();
         idle(a, a_session);
         assert_eq!(subjects(), "Add made/three.md\nAdd two.md\nAdd one.md");
         let third = head();
@@ -1079,11 +1105,7 @@ fn a_page_reload_ends_that_pages_sessions_and_nothing_else() {
     apply(
         &a,
         a_session,
-        json!([write(
-            "before.md",
-            "saved before the reload",
-            json!({ "kind": "absent" })
-        )]),
+        json!([create("before.md", "saved before the reload")]),
     )
     .unwrap();
     // Let that save's commit finish, so window B's save below is not skipped
@@ -1108,11 +1130,7 @@ fn a_page_reload_ends_that_pages_sessions_and_nothing_else() {
     apply(
         &b,
         b_session,
-        json!([write(
-            "b.md",
-            "window b never waited",
-            json!({ "kind": "absent" })
-        )]),
+        json!([create("b.md", "window b never waited")]),
     )
     .unwrap();
 
@@ -1174,11 +1192,7 @@ fn a_destroyed_window_ends_its_sessions_after_the_manager_forgot_its_webview() {
     apply(
         &a,
         a_session,
-        json!([write(
-            "before.md",
-            "saved before the window closed",
-            json!({ "kind": "absent" })
-        )]),
+        json!([create("before.md", "saved before the window closed")]),
     )
     .unwrap();
     // Let that save's commit finish, so window B's save below is not skipped
@@ -1200,11 +1214,7 @@ fn a_destroyed_window_ends_its_sessions_after_the_manager_forgot_its_webview() {
     apply(
         &b,
         b_session,
-        json!([write(
-            "b.md",
-            "window b carried on",
-            json!({ "kind": "absent" })
-        )]),
+        json!([create("b.md", "window b carried on")]),
     )
     .unwrap();
     // A request that still reaches the old webview finds no live session.
@@ -1216,12 +1226,7 @@ fn a_destroyed_window_ends_its_sessions_after_the_manager_forgot_its_webview() {
     .unwrap_err();
     assert_eq!(ended["name"], "Denied");
     assert_eq!(
-        apply(
-            &a,
-            a_session,
-            json!([write("late.md", "x", json!({ "kind": "any" }))])
-        )
-        .unwrap_err()["error"]["name"],
+        apply(&a, a_session, json!([overwrite("late.md", "x")])).unwrap_err()["error"]["name"],
         "Denied"
     );
     assert!(!fixture.root.join("late.md").exists());
@@ -1263,11 +1268,7 @@ fn a_stale_webview_handle_neither_joins_nor_ends_another_webviews_sessions() {
     apply(
         &successor,
         session,
-        json!([write(
-            "new.md",
-            "from the new window",
-            json!({ "kind": "absent" })
-        )]),
+        json!([create("new.md", "from the new window")]),
     )
     .unwrap();
 
@@ -1532,11 +1533,7 @@ fn a_session_the_new_page_attaches_during_reload_cleanup_survives_it() {
     apply(
         &page,
         new_session,
-        json!([write(
-            "new.md",
-            "from the new page",
-            json!({ "kind": "absent" })
-        )]),
+        json!([create("new.md", "from the new page")]),
     )
     .expect("the cleanup of the old page did not close the new page's session");
     // The old page's session ended and its entry is gone.

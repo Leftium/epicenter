@@ -46,7 +46,7 @@ import {
 } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
@@ -153,7 +153,7 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 				path: 'audio/take.webm',
 				file: {
 					path: 'audio/take.webm',
-					version: await captureVersion(AUDIO),
+					sha256: await hashBytes(AUDIO),
 				},
 			},
 			{
@@ -161,7 +161,7 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 				path: 'recordings/take.md',
 				file: {
 					path: 'recordings/take.md',
-					version: await captureVersion(encoder.encode(rowSource('take'))),
+					sha256: await hashBytes(encoder.encode(rowSource('take'))),
 				},
 			},
 		]);
@@ -186,7 +186,7 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 		const step = receipt.steps[1];
 		if (step?.kind !== 'write' || row === undefined)
 			throw new Error('expected the row write');
-		expect(step.file.version).toEqual(row.version);
+		expect(step.file.sha256).toEqual(row.sha256);
 	});
 
 	test('every file verb is an intent: conditions hold, a removal leaves no capture, a move keeps its baseline', async () => {
@@ -210,14 +210,14 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 				path: 'draft.md',
 				file: {
 					path: 'draft.md',
-					version: await captureVersion(encoder.encode('v2')),
+					sha256: await hashBytes(encoder.encode('v2')),
 				},
 			},
 			{
 				kind: 'move',
 				from: 'old.bin',
 				to: 'kept/old.bin',
-				file: { path: 'kept/old.bin', version: old.version },
+				file: { path: 'kept/old.bin', sha256: old.sha256 },
 			},
 			{ kind: 'remove', path: 'loose.txt' },
 			{
@@ -225,7 +225,7 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 				path: 'settings.txt',
 				file: {
 					path: 'settings.txt',
-					version: await captureVersion(encoder.encode('on')),
+					sha256: await hashBytes(encoder.encode('on')),
 				},
 			},
 		]);
@@ -255,8 +255,8 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 			new Uint8Array(AUDIO.length),
 		);
 		const first = receipt.steps[0];
-		expect(first?.kind === 'write' && first.file.version).toEqual(
-			await captureVersion(AUDIO),
+		expect(first?.kind === 'write' && first.file.sha256).toEqual(
+			await hashBytes(AUDIO),
 		);
 	});
 
@@ -402,9 +402,9 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 		const [audioStep, rowStep] = receipt.steps;
 		if (audioStep?.kind !== 'write' || rowStep?.kind !== 'write')
 			throw new Error('expected two writes');
-		expect(audioStep.file.version).toEqual(await captureVersion(AUDIO));
-		expect(rowStep.file.version).toEqual(
-			await captureVersion(encoder.encode(rowSource('take'))),
+		expect(audioStep.file.sha256).toEqual(await hashBytes(AUDIO));
+		expect(rowStep.file.sha256).toEqual(
+			await hashBytes(encoder.encode(rowSource('take'))),
 		);
 		// An explicit get observes the other writer's row, not this batch's.
 		const observed = expectOk(await folder.tables.recordings.get('take'));
@@ -412,7 +412,7 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 			title: 'Theirs',
 			audioPath: 'audio/other.webm',
 		});
-		expect(observed?.version).not.toEqual(rowStep.file.version);
+		expect(observed?.sha256).not.toEqual(rowStep.file.sha256);
 		// So the receipt cannot be used to overwrite what it never saw.
 		expect(
 			expectErr(await folder.files.replace(rowStep.file, rowSource('take')))
@@ -558,7 +558,7 @@ describe.each([
 		const collides = expectErr(
 			await folder.batch((batch) => {
 				batch.files.move(
-					{ path: 'recordings/Archived.md', version: current.version },
+					{ path: 'recordings/Archived.md', sha256: current.sha256 },
 					'recordings/Kept.md',
 				);
 				batch.tables.recordings.create(recording('kept'));
@@ -574,7 +574,7 @@ describe.each([
 				batch.tables.recordings.create(recording('archived'));
 				batch.files.remove({
 					path: 'recordings/Archived.md',
-					version: current.version,
+					sha256: current.sha256,
 				});
 			}),
 		);
@@ -617,7 +617,7 @@ test('a browser batch lands whole or not at all', async () => {
 	// are not in the folder either.
 	const stale = {
 		path: 'recordings/take.md',
-		version: { sha256: '0'.repeat(64), size: 1 },
+		sha256: '0'.repeat(64),
 	};
 	const refused = expectErr(
 		await folder.batch((batch) => {
@@ -629,7 +629,7 @@ test('a browser batch lands whole or not at all', async () => {
 	expect(refused).toMatchObject({
 		name: 'Conflict',
 		path: 'recordings/take.md',
-		expected: stale.version,
+		expectedSha256: stale.sha256,
 	});
 	await settled(folder);
 	expect(await paths(folder)).toEqual(['recordings/take.md']);
@@ -673,7 +673,7 @@ describe('a directory batch that stops partway', () => {
 		// it observed, and the row is created with them in the same batch.
 		await rmdir(join(root, 'recordings', 'take.md'));
 		const observed = expectOk(await folder.files.read('audio/take.webm'));
-		expect(observed.version).toEqual(await captureVersion(pending));
+		expect(observed.sha256).toEqual(await hashBytes(pending));
 		const recovered = expectOk(
 			await folder.batch((batch) => {
 				batch.files.replace(observed, pending);
@@ -707,7 +707,7 @@ describe('a directory batch that stops partway', () => {
 		expect(refused).toMatchObject({
 			name: 'Conflict',
 			path: 'audio/take.webm',
-			expected: observed.version,
+			expectedSha256: observed.sha256,
 		});
 		expect(await readFile(join(root, 'audio/take.webm'), 'utf8')).toBe(
 			'someone else',

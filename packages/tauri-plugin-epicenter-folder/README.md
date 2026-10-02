@@ -104,10 +104,41 @@ await folder.close();           // detaches this page only
 `openFolder` returns its refusals: an unknown scope, a window the scope does
 not list, a folder another process holds, a shell without this plugin, and a
 desktop app built for another protocol version. The unreleased protocol is
-version 2. No command holds the folder across calls or names a terminal lease.
+version 3. No command holds the folder across calls or names a terminal lease.
 A page built for a different version is refused at attach. It never opens
 browser storage instead. `@epicenter/folder/tauri` is the same opener without the
 browser adapter in the build.
+
+## File changes
+
+A read returns `{ bytes, sha256 }`. The owner computes the hash from the bytes
+it read. `apply` takes ordered changes, each one of:
+
+| Change | Fields | Lands when |
+| --- | --- | --- |
+| `create` | `path`, `bytes` | Nothing is at the path. |
+| `replace` | `path`, `bytes`, `expectedSha256` | The file's bytes hash to `expectedSha256`. |
+| `overwrite` | `path`, `bytes` | Always, whether or not a file is there. |
+| `remove` | `path`, `expectedSha256?` | The file exists and, when a hash is named, its bytes match. |
+| `move` | `from`, `to`, `expectedSha256?` | The source exists, matches a named hash, and nothing is at `to`. |
+
+- No change carries the hash of its new bytes. The owner hashes what it reads
+  from the folder and never trusts a hash a page computed for new content.
+- A `remove` or `move` without `expectedSha256` is a deliberate unguarded
+  operation, for a shell acting on whatever is there. Changes built from a read
+  name the hash.
+- `Conflict` is `{ path, expectedSha256, actualSha256 }`: the bytes differ from
+  the named hash. `actualSha256` is `null` when a `replace` target is missing.
+- `Exists` is `{ path }`: a `create` target or a `move` destination already
+  holds a file.
+- A missing `remove` or `move` source is `NotFound`.
+- The steps reported in a partial batch are `write`, `remove`, and `move`:
+  they say what landed, not which kind of change asked for it.
+
+A fast-forward publishes through the same changes: `create` for an added path,
+`replace` and a guarded `remove` conditional on the committed bytes. It never
+removes or replaces a file without that guard, and refuses before writing
+anything if it cannot name one.
 
 ## Lifetimes
 
@@ -131,7 +162,7 @@ browser adapter in the build.
   the owner already admitted settles first. It commits nothing.
 - **A terminal command** holds nothing. Each of its steps is an ordinary
   command of its session, so other windows' saves land between its steps. A
-  rewrite of a file the command read names the version it read and is
+  rewrite of a file the command read names the hash it read and is
   refused as a `Conflict` if the file changed since. A command that stops
   partway leaves its earlier steps landed.
 
@@ -253,9 +284,9 @@ time.
 
 ## What is best effort
 
-- A conditional write hashes the current bytes and replaces them only when
-  they match. Another program can still write between that check and the
-  rename. The owner orders its own windows; it does not lock files against
+- A `replace` hashes the current bytes and replaces them only when they match
+  `expectedSha256`, checking once before staging and again before the rename.
+  Another program can still write between that second check and the rename. The owner orders its own windows; it does not lock files against
   other programs.
 - A multi-file batch is ordered steps. A failure partway reports which steps
   landed; nothing is rolled back.

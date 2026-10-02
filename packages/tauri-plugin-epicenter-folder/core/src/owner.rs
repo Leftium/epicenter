@@ -38,7 +38,7 @@
 //!
 //! Neither gate spans calls. One caller's commands interleave with every
 //! other caller's, a terminal command's steps included. A write that depends
-//! on an earlier read carries the version it read and is refused if the file
+//! on an earlier read carries the SHA-256 it read and is refused if the file
 //! changed since.
 //!
 //! The snapshot is exact against this owner's own writes, which replace files
@@ -58,8 +58,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::files::{
-    resolve_root, verify_layout, ApplyError, Children, FileChange, FileError, FileExpectation,
-    FileListing, FileRead, FileStep, FileVersion, Files,
+    resolve_root, sha256, verify_layout, ApplyError, Children, FileChange, FileError, FileListing,
+    FileRead, FileStep, Files,
 };
 use crate::git::{Author, Capture, Cas, CommitSummary, Git, IndexCommit, PathStatus, Remote};
 use crate::history::{
@@ -1765,23 +1765,36 @@ impl Inner {
             // step is conditional on. Reading the working file again here
             // would authorize overwriting whatever another program wrote
             // since the snapshot.
-            let expected = match committed.get(&change.path) {
-                Some((_, oid)) => {
-                    FileExpectation::version(&FileVersion::of(&self.git.read_blob(oid)?))
-                }
-                None => FileExpectation::Absent,
+            let path = change.path.clone();
+            let baseline = match committed.get(&path) {
+                Some((_, oid)) => Some(sha256(&self.git.read_blob(oid)?)),
+                None => None,
             };
-            if change.kind == ChangeKind::Delete {
-                removals.push(FileChange::Remove {
-                    path: change.path.clone(),
-                    expected,
-                });
-            } else {
-                writes.push(FileChange::Write {
-                    path: change.path.clone(),
-                    bytes: self.git.read_blob(&incoming_oids[&change.path])?,
-                    expected,
-                });
+            let fetched_bytes = |path: &str| self.git.read_blob(&incoming_oids[path]);
+            match (change.kind, baseline) {
+                (ChangeKind::Add, None) => writes.push(FileChange::Create {
+                    bytes: fetched_bytes(&path)?,
+                    path,
+                }),
+                (ChangeKind::Modify, Some(expected_sha256)) => writes.push(FileChange::Replace {
+                    bytes: fetched_bytes(&path)?,
+                    path,
+                    expected_sha256,
+                }),
+                // Always guarded: a fast-forward never removes bytes it did
+                // not prove were the committed ones.
+                (ChangeKind::Delete, Some(expected_sha256)) => removals.push(FileChange::Remove {
+                    path,
+                    expected_sha256: Some(expected_sha256),
+                }),
+                // A change whose kind disagrees with the committed tree has no
+                // step that keeps the guarantee above. Nothing is published.
+                (kind, baseline) => {
+                    return Err(format!(
+                        "the fast-forward computed {kind:?} for '{path}', whose committed baseline is {}",
+                        if baseline.is_some() { "present" } else { "absent" }
+                    ))
+                }
             }
         }
         let paths: Vec<String> = changes.iter().map(|change| change.path.clone()).collect();
@@ -1827,8 +1840,7 @@ impl Drop for Inner {
 mod tests {
     use super::*;
 
-    use crate::files::FileExpectation;
-    use crate::testing::{config, eventually, git, open, write, TempDir};
+    use crate::testing::{config, create, eventually, git, open, TempDir};
 
     #[test]
     fn an_automatic_attempt_is_dropped_while_either_gate_is_held_and_never_made_up() {
@@ -1885,9 +1897,7 @@ mod tests {
             ..config(&root)
         })
         .unwrap();
-        owner
-            .apply(&[write("a.md", "A", FileExpectation::Absent)])
-            .unwrap();
+        owner.apply(&[create("a.md", "A")]).unwrap();
         owner.commit();
         let head = git(&root, &["rev-parse", "HEAD"]);
         assert_eq!(owner.push(None), PushOutcome::Pushed { oid: head.clone() });

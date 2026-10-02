@@ -135,6 +135,15 @@ async function typedValues(
 		// @ts-expect-error The old source-write spelling is removed.
 		folder.tables.todos.writeSource(entry.data, entry.data.source);
 	}
+	folder.tables.todos.replace(replaced.data, 'next');
+	folder.tables.todos.delete(replaced.data);
+	// @ts-expect-error A captured hash is required for removal.
+	folder.files.remove({ path: 'a.md' });
+	folder.files.replace(
+		// @ts-expect-error Captures carry a flat hash, not a version wrapper.
+		{ path: 'a.md', version: { sha256: 'a'.repeat(64) } },
+		'next',
+	);
 	// @ts-expect-error A path alone is not a capture: `overwrite` says that.
 	folder.files.replace('a.md', 'next');
 	// @ts-expect-error The old single write verb is gone.

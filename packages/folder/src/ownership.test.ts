@@ -28,7 +28,7 @@ import {
 	field,
 	openFolder,
 } from './browser.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
 	id: 'so.epicenter.todostest',
@@ -65,32 +65,28 @@ afterEach(async () => {
 describe('byte ownership', () => {
 	test('create, replace, and overwrite each own their bytes before the caller can mutate them', async () => {
 		const folder = await open();
-		const first = await captureVersion(encoder.encode('AAAA'));
+		const first = await hashBytes(encoder.encode('AAAA'));
 
 		const content = encoder.encode('AAAA');
 		const creating = folder.files.create('bytes.txt', content);
 		content.set(encoder.encode('BBBB'));
 		const created = expectOk(await creating);
-		expect(created).toEqual({ path: 'bytes.txt', version: first });
+		expect(created).toEqual({ path: 'bytes.txt', sha256: first });
 		const read = expectOk(await folder.files.read('bytes.txt'));
 		expect(new TextDecoder().decode(read.bytes)).toBe('AAAA');
-		expect(read.version).toEqual(first);
+		expect(read.sha256).toEqual(first);
 
 		const next = encoder.encode('CCCC');
 		const replacing = folder.files.replace(created, next);
 		next.set(encoder.encode('DDDD'));
 		const replaced = expectOk(await replacing);
-		expect(replaced.version).toEqual(
-			await captureVersion(encoder.encode('CCCC')),
-		);
+		expect(replaced.sha256).toEqual(await hashBytes(encoder.encode('CCCC')));
 
 		const last = encoder.encode('EEEE');
 		const overwriting = folder.files.overwrite('bytes.txt', last);
 		last.set(encoder.encode('FFFF'));
 		const overwritten = expectOk(await overwriting);
-		expect(overwritten.version).toEqual(
-			await captureVersion(encoder.encode('EEEE')),
-		);
+		expect(overwritten.sha256).toEqual(await hashBytes(encoder.encode('EEEE')));
 		expect(
 			new TextDecoder().decode(
 				expectOk(await folder.files.read('bytes.txt')).bytes,
@@ -104,8 +100,8 @@ describe('byte ownership', () => {
 		const view = backing.subarray(2, 8);
 		const saving = folder.files.create('view.txt', view);
 		backing.fill(0x21);
-		expect(expectOk(await saving).version).toEqual(
-			await captureVersion(encoder.encode('middle')),
+		expect(expectOk(await saving).sha256).toEqual(
+			await hashBytes(encoder.encode('middle')),
 		);
 
 		const buffer = Buffer.from('buffer bytes');
@@ -136,7 +132,7 @@ describe('row files', () => {
 		expectOk(await folder.files.create('todos/plain.flac', 'x'));
 		const moved = expectOk(await folder.tables.todos.rename(plain, 'moved'));
 		expect(moved.path).toBe('todos/moved.md');
-		expect(moved.version).toEqual(plain.version);
+		expect(moved.sha256).toEqual(plain.sha256);
 
 		// A sibling changes its extension and is rewritten between capture and delete.
 		const renamedAudio = expectOk(
@@ -156,7 +152,7 @@ describe('row files', () => {
 		).toBe('rewritten');
 	});
 
-	test('a stale entry is refused by its own version, and nothing else decides', async () => {
+	test('a stale entry is refused by its own sha256, and nothing else decides', async () => {
 		const folder = await open();
 		const row = expectOk(
 			await folder.tables.todos.create({

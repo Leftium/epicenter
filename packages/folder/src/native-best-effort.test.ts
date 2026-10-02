@@ -55,11 +55,7 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 		// refusal, not a partial publication.
 		expect(
 			results.find((result) => result.error !== null)?.error,
-		).toMatchObject({
-			name: 'Conflict',
-			path: 'todos/take.md',
-			expected: 'absent',
-		});
+		).toMatchObject({ name: 'Exists', path: 'todos/take.md' });
 		expect((await readdir(join(root, 'todos'))).sort()).toEqual([
 			'take.md',
 			'take.wav',
@@ -72,7 +68,7 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 		).toEqual(new Uint8Array([7, 7]));
 		const entry = expectOk(await table.get('take'));
 		expect(entry?.issues).toBeUndefined();
-		expect(entry?.version).toEqual(landed[0]!.data!.version);
+		expect(entry?.sha256).toEqual(landed[0]!.data!.sha256);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

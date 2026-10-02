@@ -23,13 +23,12 @@ import type {
 	CommitAndPushResult,
 	FileCapture,
 	FileListing,
-	FileVersion,
 	GitSnapshot,
 	PullError,
 	PullOutcome,
 	TableWriteError,
 } from '@epicenter/folder';
-import { GitError, sameVersion } from '@epicenter/folder';
+import { GitError } from '@epicenter/folder';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -102,12 +101,12 @@ function isIdle(editor: TodoEditor | TextFileEditor) {
 
 /** Library errors state failures precisely; these are the ones a person acts on. */
 function describeWriteError(error: TableWriteError): string {
+	if (error.name === 'Exists')
+		return `"${basename(error.path)}" already exists here.`;
 	if (error.name === 'Conflict')
-		return error.expected === 'absent'
-			? `"${basename(error.path)}" already exists here.`
-			: error.actual === undefined
-				? 'The file is no longer here. Nothing was changed. Check it and try again.'
-				: 'The file has different content now. Nothing was changed. Check it and try again.';
+		return error.actualSha256 === undefined
+			? 'The file is no longer here. Nothing was changed. Check it and try again.'
+			: 'The file has different content now. Nothing was changed. Check it and try again.';
 	if (error.name === 'DirectoryNotEmpty')
 		return 'The folder is not empty, so nothing was deleted.';
 	return error.message;
@@ -388,13 +387,13 @@ export function createTodos(folder: TodosFolder) {
 	 */
 	async function currentRow(
 		path: string,
-		settled: FileVersion | undefined,
+		settled: string | undefined,
 	): Promise<Result<TodoEntry, string>> {
 		const read = await table.get(stemOf(path));
 		if (read.error) return Err(read.error.message);
 		if (read.data === undefined)
 			return Err('This todo is no longer in the folder.');
-		if (settled !== undefined && !sameVersion(read.data.version, settled))
+		if (settled !== undefined && !(read.data.sha256 === settled))
 			return Err('The file changed after it was read. Check it and try again.');
 		return Ok(read.data);
 	}
@@ -405,7 +404,7 @@ export function createTodos(folder: TodosFolder) {
 		to: string,
 		settled?: SavedText,
 	): Promise<Result<TodoEntry, string>> {
-		const row = await currentRow(path, settled?.version);
+		const row = await currentRow(path, settled?.sha256);
 		if (row.error !== null) return row;
 		const renamed = await table.rename(row.data, stemOf(to));
 		return renamed.error ? Err(describeWriteError(renamed.error)) : renamed;
@@ -674,16 +673,16 @@ export function createTodos(folder: TodosFolder) {
 				if (editor !== undefined && !(await editor.settle()))
 					return Err(UNSETTLED);
 				if (row) {
-					const entry = await currentRow(path, editor?.baseline.version);
+					const entry = await currentRow(path, editor?.baseline.sha256);
 					return entry.error !== null
 						? entry
 						: Ok({ kind: 'todo', entry: entry.data });
 				}
 				if (editor !== undefined)
-					return Ok({ kind: 'file', path, version: editor.baseline.version });
+					return Ok({ kind: 'file', path, sha256: editor.baseline.sha256 });
 				const read = await folder.files.read(path);
 				if (read.error) return Err(read.error.message);
-				return Ok({ kind: 'file', path, version: read.data.version });
+				return Ok({ kind: 'file', path, sha256: read.data.sha256 });
 			} finally {
 				release();
 			}

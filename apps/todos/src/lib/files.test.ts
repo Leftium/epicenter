@@ -11,7 +11,7 @@
  * - Only UTF-8 without NUL bytes opens as text, and a byte order mark survives
  */
 import { expect, test } from 'bun:test';
-import { captureVersion, type FolderFiles } from '@epicenter/folder';
+import { hashBytes, type FolderFiles } from '@epicenter/folder';
 import { Ok } from 'wellcrafted/result';
 import { EDITABLE_TEXT_LIMIT, readTextFile, visibleRows } from './files.js';
 
@@ -52,7 +52,7 @@ test('folders list before files, and only expanded folders show children', () =>
 function filesWith(bytes: Uint8Array) {
 	return {
 		async read(path: string) {
-			return Ok({ path, bytes, version: await captureVersion(bytes) });
+			return Ok({ path, bytes, sha256: await hashBytes(bytes) });
 		},
 	} as unknown as FolderFiles;
 }

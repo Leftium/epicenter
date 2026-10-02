@@ -19,7 +19,7 @@
  * - A commit replies with its outcome alone, and a push names no pass to join
  * - A caller that stops waiting during a commit starts no push afterward
  * - A terminal command's steps are the same commands any save sends: nothing
- *   holds the folder around them, and a rewrite names the version it read
+ *   holds the folder around them, and a rewrite names the sha256 it read
  * - Closing stops a terminal command's later steps and waits for the one
  *   already sent
  * - Snapshot events replace the snapshot in order; a stale one is dropped
@@ -32,7 +32,7 @@ import { afterEach, expect, mock, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineFolder, defineTable, field } from './contract.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 type Call = { cmd: string; args: Record<string, unknown> };
 type Reply = (call: Call) => unknown;
@@ -131,7 +131,7 @@ async function attached() {
 		withdraw_request: () => null,
 	};
 	const folder = expectOk(await openFolder({ id: 'notes', definition }));
-	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 2 });
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 3 });
 	expect(folder.location).toEqual({
 		kind: 'directory',
 		root: '/Users/someone/Epicenter/notes',
@@ -167,7 +167,7 @@ test("the folder opened is the definition's own ID unless another is named", asy
 	);
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.taurifoldertest',
-		protocol: 2,
+		protocol: 3,
 	});
 	expect(folder.git.snapshot.commitOnEdit).toBe(false);
 	await folder.close();
@@ -252,7 +252,7 @@ test('a desktop app that speaks another protocol is refused at attach, before an
 		expect(refused.name).toBe('Incompatible');
 		expect(refused.message).toContain('Update the app');
 		expect(calls).toEqual([
-			{ cmd: 'attach', args: { scope: 'notes', protocol: 2 } },
+			{ cmd: 'attach', args: { scope: 'notes', protocol: 3 } },
 		]);
 	}
 });
@@ -271,12 +271,7 @@ test('a save whose reply is lost is Unconfirmed and is sent exactly once', async
 	expect(sent('apply')[0]?.args).toEqual({
 		session: 7,
 		changes: [
-			{
-				kind: 'write',
-				path: 'notes/a.md',
-				bytes: [116, 101, 120, 116],
-				expected: { kind: 'absent' },
-			},
+			{ kind: 'create', path: 'notes/a.md', bytes: [116, 101, 120, 116] },
 		],
 	});
 });
@@ -323,28 +318,28 @@ test('a primitive rejection of a change remains Unconfirmed and is not retried',
 
 test('typed refusals from the owner become the shared file errors', async () => {
 	const folder = await attached();
-	const version = { sha256: 'a'.repeat(64), size: 4 };
+	const sha256 = 'a'.repeat(64);
 	replies.apply = () =>
 		refuse({
 			name: 'Refused',
 			error: {
 				name: 'Conflict',
 				path: 'a.md',
-				expected: { kind: 'version', ...version },
-				actual: null,
+				expectedSha256: sha256,
+				actualSha256: null,
 			},
 		});
 
 	const conflict = expectErr(
-		await folder.files.replace({ path: 'a.md', version }, 'next'),
+		await folder.files.replace({ path: 'a.md', sha256 }, 'next'),
 	);
 
 	expect(conflict.name).toBe('Conflict');
 	if (conflict.name !== 'Conflict') return;
-	expect(conflict.expected).toEqual(version);
-	expect(conflict.actual).toBeUndefined();
+	expect(conflict.expectedSha256).toEqual(sha256);
+	expect(conflict.actualSha256).toBeUndefined();
 	expect(conflict.message).toBe(
-		"No file exists at 'a.md' to match the expected content version",
+		"No file exists at 'a.md' to match the captured SHA-256",
 	);
 
 	replies.apply = () =>
@@ -356,7 +351,7 @@ test('typed refusals from the owner become the shared file errors', async () => 
 			notAttempted: [],
 		});
 	const partial = expectErr(
-		await folder.files.move({ path: 'a.md', version }, 'b.md'),
+		await folder.files.move({ path: 'a.md', sha256 }, 'b.md'),
 	);
 	expect(partial.name).toBe('Partial');
 	if (partial.name !== 'Partial') return;
@@ -411,13 +406,11 @@ test("a table save changes exactly its row file, under that file's exact conditi
 
 	expect(sent('apply')).toHaveLength(1);
 	const { changes, ...rest } = sent('apply')[0]?.args as {
-		changes: { kind: string; path: string; expected: unknown }[];
+		changes: { kind: string; path: string; expectedSha256?: string }[];
 	};
 	expect(rest).toEqual({ session: 7 });
-	expect(
-		changes.map(({ kind, path, expected }) => ({ kind, path, expected })),
-	).toEqual([
-		{ kind: 'write', path: 'todos/take.md', expected: { kind: 'absent' } },
+	expect(changes.map(({ kind, path }) => ({ kind, path }))).toEqual([
+		{ kind: 'create', path: 'todos/take.md' },
 	]);
 
 	calls = [];
@@ -429,43 +422,37 @@ test("a table save changes exactly its row file, under that file's exact conditi
 				kind: 'move',
 				from: 'todos/take.md',
 				to: 'todos/next.md',
-				expected: { kind: 'version', ...created.version },
+				expectedSha256: created.sha256,
 			},
 		],
-		[
-			{
-				kind: 'remove',
-				path: 'todos/take.md',
-				expected: { kind: 'version', ...created.version },
-			},
-		],
+		[{ kind: 'remove', path: 'todos/take.md', expectedSha256: created.sha256 }],
 	]);
 });
 
 test('a save returns the capture of the bytes it sent, without reading them back', async () => {
 	const folder = await attached();
 	replies.apply = () => null;
-	const sentVersion = await captureVersion(new TextEncoder().encode('mine'));
+	const sentVersion = await hashBytes(new TextEncoder().encode('mine'));
 
 	const created = expectOk(await folder.files.create('a.md', 'mine'));
 	const moved = expectOk(await folder.files.move(created, 'b.md'));
 
 	// The owner was asked to publish and nothing else: no read followed.
 	expect(calls.map((call) => call.cmd)).toEqual(['apply', 'apply']);
-	expect(created).toEqual({ path: 'a.md', version: sentVersion });
-	expect(moved).toEqual({ path: 'b.md', version: sentVersion });
+	expect(created).toEqual({ path: 'a.md', sha256: sentVersion });
+	expect(moved).toEqual({ path: 'b.md', sha256: sentVersion });
 
 	// Another writer replaced the file right after the save was acknowledged.
 	// Reading is a new observation; the save's capture is still what was saved.
 	const raced = new TextEncoder().encode('someone else');
 	replies.read = () => ({
 		bytes: [...raced],
-		version: { sha256: 'e'.repeat(64), size: raced.byteLength },
+		sha256: 'e'.repeat(64),
 	});
 	const observed = expectOk(await folder.files.read('b.md'));
-	expect(observed.version).toEqual({ sha256: 'e'.repeat(64), size: 12 });
-	expect(moved.version).toEqual(sentVersion);
-	expect(Object.isFrozen(moved) && Object.isFrozen(moved.version)).toBe(true);
+	expect(observed.sha256).toEqual('e'.repeat(64));
+	expect(moved.sha256).toEqual(sentVersion);
+	expect(Object.isFrozen(moved) && Object.isFrozen(moved.sha256)).toBe(true);
 });
 
 const ROW_SOURCE = '---\ntitle: Take\ndone: false\n---\n';
@@ -481,7 +468,7 @@ test('a batch is one apply: ordered changes, exact conditions, and a receipt fro
 	const audio = new Uint8Array([1, 2, 3]);
 	const observed = {
 		path: 'audio/old.webm',
-		version: { sha256: 'a'.repeat(64), size: 9 },
+		sha256: 'a'.repeat(64),
 	};
 
 	const receipt = expectOk(
@@ -506,43 +493,42 @@ test('a batch is one apply: ordered changes, exact conditions, and a receipt fro
 	expect(rest).toEqual({ session: 7 });
 	expect(changes).toEqual([
 		{
-			kind: 'write',
+			kind: 'replace',
 			path: 'audio/old.webm',
 			bytes: [1, 2, 3],
-			expected: { kind: 'version', ...observed.version },
+			expectedSha256: observed.sha256,
 		},
 		{
-			kind: 'write',
+			kind: 'create',
 			path: 'todos/take.md',
 			bytes: [...new TextEncoder().encode(ROW_SOURCE)],
-			expected: { kind: 'absent' },
 		},
 		{
 			kind: 'move',
 			from: 'audio/old.webm',
 			to: 'audio/kept.webm',
-			expected: { kind: 'version', ...observed.version },
+			expectedSha256: observed.sha256,
 		},
 	]);
 	expect(receipt.steps).toEqual([
 		{
 			kind: 'write',
 			path: 'audio/old.webm',
-			file: { path: 'audio/old.webm', version: await captureVersion(audio) },
+			file: { path: 'audio/old.webm', sha256: await hashBytes(audio) },
 		},
 		{
 			kind: 'write',
 			path: 'todos/take.md',
 			file: {
 				path: 'todos/take.md',
-				version: await captureVersion(new TextEncoder().encode(ROW_SOURCE)),
+				sha256: await hashBytes(new TextEncoder().encode(ROW_SOURCE)),
 			},
 		},
 		{
 			kind: 'move',
 			from: 'audio/old.webm',
 			to: 'audio/kept.webm',
-			file: { path: 'audio/kept.webm', version: observed.version },
+			file: { path: 'audio/kept.webm', sha256: observed.sha256 },
 		},
 	]);
 });
@@ -606,12 +592,12 @@ const failure = (running: Promise<{ exitCode: number; stderr: string }>) =>
 test("a terminal command's steps are the commands any save sends, and nothing holds the folder around them", async () => {
 	const folder = await attached();
 	const original = new TextEncoder().encode('first\n');
-	const version = await captureVersion(original);
+	const sha256 = await hashBytes(original);
 	replies.list = () => ({
 		files: [{ path: 'note.md', size: original.byteLength }],
 		directories: [],
 	});
-	replies.read = () => ({ bytes: [...original], version });
+	replies.read = () => ({ bytes: [...original], sha256 });
 	replies.apply = () => null;
 	const terminal = folder.terminal();
 
@@ -630,17 +616,19 @@ test("a terminal command's steps are the commands any save sends, and nothing ho
 	]);
 	const applied = sent('apply').flatMap((call) => {
 		const { changes, ...rest } = call.args as {
-			changes: { kind: string; path: string; expected: unknown }[];
+			changes: { kind: string; path: string; expectedSha256?: string }[];
 		};
 		// The same arguments a page's own save sends.
 		expect(rest).toEqual({ session: 7 });
 		return changes;
 	});
 	const firstTo = (path: string) =>
-		applied.find((change) => change.path === path)?.expected;
-	expect(firstTo('other.md')).toEqual({ kind: 'any' });
+		applied.find((change) => change.path === path)?.expectedSha256;
+	expect(applied.find((change) => change.path === 'other.md')?.kind).toBe(
+		'overwrite',
+	);
 	// The owner refuses this if another writer replaced the file since.
-	expect(firstTo('note.md')).toEqual({ kind: 'version', ...version });
+	expect(firstTo('note.md')).toEqual(sha256);
 
 	// The owner's refusal of that rewrite reaches the command as a failure.
 	calls = [];
@@ -650,15 +638,15 @@ test("a terminal command's steps are the commands any save sends, and nothing ho
 			error: {
 				name: 'Conflict',
 				path: 'note.md',
-				expected: { kind: 'version', ...version },
-				actual: { sha256: 'e'.repeat(64), size: 9 },
+				expectedSha256: sha256,
+				actualSha256: 'e'.repeat(64),
 			},
 		});
 	const stale = await failure(
 		terminal.exec('echo third >> note.md && echo x > c.md'),
 	);
 	expect(stale).toContain(
-		"The file at 'note.md' does not match the expected content version",
+		"The file at 'note.md' does not match the captured SHA-256",
 	);
 	// The step after the refused one never ran.
 	expect(sent('apply')).toHaveLength(1);
@@ -1143,7 +1131,7 @@ test('closing detaches this window once and later work is refused as closed', as
 	const folder = await attached();
 	replies.read = () => ({
 		bytes: [1],
-		version: { sha256: 'b'.repeat(64), size: 1 },
+		sha256: 'b'.repeat(64),
 	});
 	expectOk(await folder.files.read('a.md'));
 

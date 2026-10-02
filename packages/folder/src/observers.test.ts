@@ -34,7 +34,7 @@ import type { IndexedDbEnvironment } from './browser-store.js';
 import { defineFolder, defineTable, type Folder, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
@@ -109,7 +109,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 		);
 		expect(created).toEqual({
 			path: 'note.txt',
-			version: await captureVersion(encoder.encode('submitted')),
+			sha256: await hashBytes(encoder.encode('submitted')),
 		});
 		const row = expectOk(
 			await folder.tables.notes.create({ stem: 'a', fields: { title: 'A' } }),

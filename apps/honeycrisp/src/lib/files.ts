@@ -3,7 +3,7 @@
  * for editing. Paths are the folder's literal paths; nothing here writes.
  */
 import {
-	type FileCapture,
+	type TextCapture,
 	type FileError,
 	type FileListing,
 	type FolderFiles,
@@ -130,7 +130,7 @@ export const EDITABLE_TEXT_LIMIT = 1024 * 1024;
  * and bytes, with the exact text those bytes are. It is the baseline a later
  * replace, move, or remove is conditional on.
  */
-export type Capture = FileCapture & { readonly source: string };
+export type Capture = TextCapture;
 
 export type OpenedFile =
 	| { readonly kind: 'text'; readonly file: Capture }
@@ -151,14 +151,14 @@ export async function readTextFile(
 ): Promise<Result<OpenedFile, FileError>> {
 	const read = await files.read(path);
 	if (read.error) return read;
-	const { bytes, version } = read.data;
+	const { bytes, sha256 } = read.data;
 	if (bytes.byteLength > EDITABLE_TEXT_LIMIT)
 		return Ok({ kind: 'tooLarge', size: bytes.byteLength });
 	if (bytes.includes(0)) return Ok({ kind: 'binary', size: bytes.byteLength });
 	try {
 		return Ok({
 			kind: 'text',
-			file: { path, source: utf8.decode(bytes), version },
+			file: { path, source: utf8.decode(bytes), sha256 },
 		});
 	} catch {
 		return Ok({ kind: 'binary', size: bytes.byteLength });

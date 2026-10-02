@@ -23,7 +23,7 @@
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
-import { captureVersion } from '@epicenter/folder';
+import { hashBytes } from '@epicenter/folder';
 import type {
 	CaptureEntry,
 	Current,
@@ -42,7 +42,7 @@ async function entryFor(source: string): Promise<CaptureEntry> {
 		path: PATH,
 		stem: 'one',
 		source,
-		version: await captureVersion(new TextEncoder().encode(source)),
+		sha256: await hashBytes(new TextEncoder().encode(source)),
 		fields: { capturedAt: '2026-10-01T02:30:00.000Z' as never },
 		body: '',
 		issues: undefined,
@@ -97,11 +97,11 @@ async function setup(initial = A) {
 			disk = source;
 			elsewhere.afterRecreate?.();
 			elsewhere.afterRecreate = undefined;
-			// Like the folder: the version is what was written, and the entry is
+			// Like the folder: the sha256 is what was written, and the entry is
 			// there only if the file still holds it when read back.
 			const intact = disk === source && unreadable === undefined;
 			return {
-				data: { version: entry.version, entry: intact ? entry : undefined },
+				data: { sha256: entry.sha256, entry: intact ? entry : undefined },
 				error: null,
 			};
 		},
@@ -479,9 +479,9 @@ test('writing back B, replaced by D before it is read back: B is the baseline, t
 	held.open();
 	await writing;
 
-	// B was admitted at its own version. D is an observation, not a baseline.
+	// B was admitted at its own sha256. D is an observation, not a baseline.
 	expect(file.draft.baseline.source).toBe(B);
-	expect(file.draft.baseline.version).toEqual((await entryFor(B)).version);
+	expect(file.draft.baseline.sha256).toEqual((await entryFor(B)).sha256);
 	expect(file.draft.buffer).toBe(C);
 	const state = file.draft.saveState;
 	expect(
@@ -496,7 +496,7 @@ test('writing back B, replaced by D before it is read back: B is the baseline, t
 	expect(file.writes).toHaveLength(1);
 	expect(file.disk).toBe(D);
 
-	// Saving mine is then checked against D, the version that was shown.
+	// Saving mine is then checked against D, the sha256 that was shown.
 	await file.draft.saveMine();
 	expect(file.writes[1]).toEqual({ against: D, source: C });
 	expect(file.disk).toBe(C);
@@ -542,7 +542,7 @@ test.each([
 	await writing;
 
 	expect(file.draft.baseline.source).toBe(B);
-	expect(file.draft.baseline.version).toEqual((await entryFor(B)).version);
+	expect(file.draft.baseline.sha256).toEqual((await entryFor(B)).sha256);
 	expect(file.draft.buffer).toBe(C);
 	const state = file.draft.saveState;
 	expect(state.kind === 'conflict' && state.current.kind).toBe(kind);

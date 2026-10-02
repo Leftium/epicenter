@@ -20,10 +20,8 @@ import {
 	type CommitOutcome,
 	type Entry,
 	type FileListing,
-	type FileVersion,
 	type GitSnapshot,
 	type KvSnapshot,
-	sameVersion,
 	type TableWriteError,
 } from '@epicenter/folder';
 import { customAlphabet } from 'nanoid';
@@ -114,7 +112,7 @@ export type Deletion =
 	| {
 			readonly kind: 'file';
 			readonly path: string;
-			readonly version: FileVersion;
+			readonly sha256: string;
 	  }
 	| { readonly kind: 'folder'; readonly path: string };
 
@@ -255,12 +253,12 @@ function defaultTitle(at: Date): string {
 
 /** Library errors state failures precisely; these are the ones a person acts on. */
 function describeWriteError(error: TableWriteError): string {
+	if (error.name === 'Exists')
+		return `"${basename(error.path)}" already exists here.`;
 	if (error.name === 'Conflict')
-		return error.expected === 'absent'
-			? `"${basename(error.path)}" already exists here.`
-			: error.actual === undefined
-				? 'The file is no longer here. Nothing was changed. Check it and try again.'
-				: 'The file has different content now. Nothing was changed. Check it and try again.';
+		return error.actualSha256 === undefined
+			? 'The file is no longer here. Nothing was changed. Check it and try again.'
+			: 'The file has different content now. Nothing was changed. Check it and try again.';
 	if (error.name === 'DirectoryNotEmpty')
 		return 'The folder is not empty, so nothing was deleted.';
 	return error.message;
@@ -639,10 +637,7 @@ export function createLibrary(workspace: Workspace) {
 		if (read.error) return Err(read.error.message);
 		if (read.data === undefined)
 			return Err('This recording is no longer in the folder.');
-		if (
-			editor !== undefined &&
-			!sameVersion(read.data.version, editor.baseline.version)
-		)
+		if (editor !== undefined && !(read.data.sha256 === editor.baseline.sha256))
 			return Err('The file changed after it was read. Check it and try again.');
 		return Ok(read.data);
 	}
@@ -652,19 +647,16 @@ export function createLibrary(workspace: Workspace) {
 		to: string,
 	): Promise<string | undefined> {
 		const editor = textEditorAt(from);
-		let expected: FileVersion;
+		let expected: string;
 		if (editor !== undefined) {
 			if (!(await editor.settle())) return UNSETTLED;
-			expected = editor.baseline.version;
+			expected = editor.baseline.sha256;
 		} else {
 			const read = await folder.files.read(from);
 			if (read.error) return read.error.message;
-			expected = read.data.version;
+			expected = read.data.sha256;
 		}
-		const moved = await folder.files.move(
-			{ path: from, version: expected },
-			to,
-		);
+		const moved = await folder.files.move({ path: from, sha256: expected }, to);
 		if (moved.error) {
 			await refreshAll();
 			return describeWriteError(moved.error);
@@ -1091,10 +1083,7 @@ export function createLibrary(workspace: Workspace) {
 		if (read.error) return Err(read.error.message);
 		if (read.data === undefined)
 			return Err('This transformation is no longer in the folder.');
-		if (
-			editor !== undefined &&
-			!sameVersion(read.data.version, editor.baseline.version)
-		)
+		if (editor !== undefined && !(read.data.sha256 === editor.baseline.sha256))
 			return Err('The file changed after it was read. Check it and try again.');
 		return Ok(read.data);
 	}
@@ -1295,7 +1284,7 @@ export function createLibrary(workspace: Workspace) {
 		/** First read after opening: settings exist in `kv.json` from the first launch on. */
 		async start() {
 			await refreshAll();
-			if (kv !== undefined && kv.version === undefined && !kv.issues) {
+			if (kv !== undefined && kv.sha256 === undefined && !kv.issues) {
 				const written = await folder.kv.update(kv, workspace.initialSettings);
 				if (written.error === null) kv = written.data;
 				else settingsError = describeWriteError(written.error);
@@ -1614,8 +1603,8 @@ export function createLibrary(workspace: Workspace) {
 
 		/**
 		 * Rename a file within its folder. Recording files keep their names; any
-		 * other file moves as exact bytes, checked against the version its editor
-		 * saw or the version read now.
+		 * other file moves as exact bytes, checked against the sha256 its editor
+		 * saw or the sha256 read now.
 		 */
 		async rename(path: string, name: string): Promise<string | undefined> {
 			const directory = dirname(path);
@@ -1721,11 +1710,11 @@ export function createLibrary(workspace: Workspace) {
 			const text = textEditorAt(path);
 			if (text !== undefined) {
 				if (!(await text.settle())) return Err(UNSETTLED);
-				return Ok({ kind: 'file', path, version: text.baseline.version });
+				return Ok({ kind: 'file', path, sha256: text.baseline.sha256 });
 			}
 			const read = await folder.files.read(path);
 			if (read.error) return Err(read.error.message);
-			return Ok({ kind: 'file', path, version: read.data.version });
+			return Ok({ kind: 'file', path, sha256: read.data.sha256 });
 		},
 		/** Delete exactly what was confirmed; a file that changed since is refused. */
 		async remove(deletion: Deletion): Promise<string | undefined> {
@@ -1748,7 +1737,7 @@ export function createLibrary(workspace: Workspace) {
 				const removed =
 					deletion.kind === 'transformation'
 						? await profiles.delete(deletion.entry)
-						: await folder.files.remove({ path, version: deletion.version });
+						: await folder.files.remove({ path, sha256: deletion.sha256 });
 				if (removed.error) {
 					await refreshAll();
 					return describeWriteError(removed.error);

@@ -21,7 +21,7 @@
  * - A page built for the previous protocol is refused at attach
  * - Two windows saving over one version: one lands, one conflicts
  * - A row another window changed after a table's directory read is still an
- *   exact-version conflict
+ *   exact-sha256 conflict
  * - A terminal command holds nothing: another window saves, and runs a whole
  *   terminal command of its own, between its steps, and the owner commits a
  *   terminal's save like any other
@@ -51,7 +51,7 @@ import {
 	gitHttpFetch,
 	scratch,
 } from './git-http.test-support.js';
-import { captureVersion } from './version.js';
+import { hashBytes } from './capture.js';
 
 const enabled = process.env.EPICENTER_FOLDER_BRIDGE === '1';
 const MANIFEST = join(
@@ -451,14 +451,14 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		if (reread === undefined) throw new Error('the row is missing');
 		expect(rowStep?.kind === 'write' && rowStep.file).toEqual({
 			path: 'todos/take.md',
-			version: reread.version,
+			sha256: reread.sha256,
 		});
 		const image = expectOk(await a(() => folder.files.read('todos/take.png')));
 		const imageStep = receipt.steps[0];
-		expect(imageStep?.kind === 'write' && imageStep.file.version).toEqual(
-			image.version,
+		expect(imageStep?.kind === 'write' && imageStep.file.sha256).toEqual(
+			image.sha256,
 		);
-		expect(image.version).toEqual(await captureVersion(IMAGE));
+		expect(image.sha256).toEqual(await hashBytes(IMAGE));
 
 		// Deleting the row leaves the image: the owner removes one file.
 		expectOk(await a(() => todos.delete(reread)));
@@ -474,7 +474,7 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		);
 	});
 
-	test('raw bytes round-trip exactly and the returned version is the content version', async () => {
+	test('raw bytes round-trip exactly and the returned sha256 is the content hash', async () => {
 		const { folder, other } = await setup({ manual: true });
 		const bytes = Uint8Array.from({ length: 4096 }, (_, index) => index % 256);
 
@@ -485,9 +485,9 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 
 		expect(created).toEqual({
 			path: 'audio/take.wav',
-			version: await captureVersion(bytes),
+			sha256: await hashBytes(bytes),
 		});
-		expect(read.version).toEqual(created.version);
+		expect(read.sha256).toEqual(created.sha256);
 		expect(read.bytes).toEqual(bytes);
 		expect(
 			expectErr(await a(() => folder.files.overwrite('../outside.md', 'x')))
@@ -503,12 +503,13 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		);
 
 		// The save's capture did not follow the file. It is still the save.
-		expect(mine.version).toEqual(await captureVersion(encoder.encode('mine')));
+		expect(mine.sha256).toEqual(await hashBytes(encoder.encode('mine')));
 		const stale = expectErr(
 			await a(() => folder.files.replace(mine, 'built on mine')),
 		);
 		expect(stale.name).toBe('Conflict');
-		if (stale.name === 'Conflict') expect(stale.actual).toEqual(theirs.version);
+		if (stale.name === 'Conflict')
+			expect(stale.actualSha256).toEqual(theirs.sha256);
 		expect(expectErr(await a(() => folder.files.remove(mine))).name).toBe(
 			'Conflict',
 		);
@@ -522,8 +523,8 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const next = expectOk(
 			await a(() => folder.files.replace(observed, 'built on theirs')),
 		);
-		expect(expectOk(await b(() => other.files.read('a.md'))).version).toEqual(
-			next.version,
+		expect(expectOk(await b(() => other.files.read('a.md'))).sha256).toEqual(
+			next.sha256,
 		);
 	});
 
@@ -541,10 +542,11 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expect(lost?.name).toBe('Conflict');
 		const now = expectOk(await a(() => folder.files.read('a.md')));
 		expect(['from a', 'from b']).toContain(decoder.decode(now.bytes));
-		if (lost?.name === 'Conflict') expect(lost.actual).toEqual(now.version);
+		if (lost?.name === 'Conflict')
+			expect(lost.actualSha256).toEqual(now.sha256);
 	});
 
-	test('a row another window changed after the directory read is an exact-version conflict', async () => {
+	test('a row another window changed after the directory read is an exact-sha256 conflict', async () => {
 		const { folder, todos, interleave, files } = await setup({ manual: true });
 		expectOk(await a(() => folder.files.create('todos/take.png', IMAGE)));
 		const entry = expectOk(await a(() => todos.create(row('take'))));
@@ -552,15 +554,15 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		interleave('todos/take.md', changed);
 
 		// A rename reads the directory for its destination check, then moves
-		// the row under the version the entry captured.
+		// the row under the sha256 the entry captured.
 		const refused = expectErr(await a(() => todos.rename(entry, 'next')));
 
 		expect(refused.name).toBe('Conflict');
 		if (refused.name !== 'Conflict') return;
 		expect(refused.path).toBe('todos/take.md');
-		expect(refused.expected).toEqual(entry.version);
-		expect(refused.actual).toEqual(
-			await captureVersion(encoder.encode(changed)),
+		expect(refused.expectedSha256).toEqual(entry.sha256);
+		expect(refused.actualSha256).toEqual(
+			await hashBytes(encoder.encode(changed)),
 		);
 		expect(await files()).toEqual(['take.md', 'take.png']);
 	});
@@ -651,10 +653,10 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 			),
 		);
 
-		// The rewrite named the version the command read, and the owner
+		// The rewrite named the sha256 the command read, and the owner
 		// refused it. Nothing was merged or retried.
 		expect(refused).toContain(
-			"The file at 'note.md' does not match the expected content version",
+			"The file at 'note.md' does not match the captured SHA-256",
 		);
 		expect(
 			decoder.decode(

@@ -1,4 +1,3 @@
-import { accountWorkflow } from './accounts.test-support.js';
 /**
  * The one way a pass starts, and what happens when it is asked for twice.
  *
@@ -13,6 +12,8 @@ import { accountWorkflow } from './accounts.test-support.js';
  */
 
 import { expect, test } from 'bun:test';
+import { expectOk } from 'wellcrafted/testing';
+import { accountWorkflow } from './accounts.test-support.js';
 import type { MailSession } from './accounts.ts';
 import {
 	type AccountWorkflow,
@@ -302,7 +303,9 @@ test('a pass that throws does not leave the account unable to try again', async 
 	try {
 		gmail.says('throw');
 		await archive(session);
-		expect(reconcileNow(app, SUB)).rejects.toThrow('the cache owner failed');
+		await expect(reconcileNow(app, SUB)).rejects.toThrow(
+			'the cache owner failed',
+		);
 
 		// The entry is cleared on the way out either way, so the next gesture is a
 		// real pass rather than a rejected promise handed out again forever.
@@ -332,7 +335,7 @@ test('removing an account waits for the pass in flight before deleting anything'
 
 		// A removal that did not wait would have counted the still-owed assertion
 		// and refused with `OwesWork`, so this passing is the wait.
-		expect(removed.error).toBeNull();
+		expectOk(removed);
 		expect(forgotten).toEqual([SUB]);
 		expect(app.activity.get(SUB)?.session).toBeUndefined();
 		expect(gmail.modifyCalls).toEqual(['m1']);

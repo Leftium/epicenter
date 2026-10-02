@@ -1,11 +1,21 @@
+/**
+ * Stem query tests.
+ * SQL shapes preserve filters, ordering, and ranked search. Real SQLite
+ * projections verify matching rows and escaping of quoted search terms.
+ */
 import { Database } from 'bun:sqlite';
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
 import { classifyRows } from './conformance';
 import { validateContract } from './contract';
 import type { Row } from './parse';
 import { buildStemQuery } from './query';
 import { projectToSqlite } from './sqlite';
+
+const connections: Database[] = [];
+afterEach(() => {
+	for (const db of connections.splice(0)) db.close();
+});
 
 describe('buildStemQuery (the SQL shapes)', () => {
 	test('no controls is a plain select of every stem', () => {
@@ -84,8 +94,9 @@ describe('buildStemQuery (executed against a real projection in bun:sqlite)', ()
 		},
 	];
 
-	function freshDb(): Database {
+	function setup() {
 		const conn = new Database(':memory:');
+		connections.push(conn);
 		const {
 			schema,
 			insert,
@@ -94,7 +105,7 @@ describe('buildStemQuery (executed against a real projection in bun:sqlite)', ()
 		conn.exec(schema);
 		const stmt = conn.prepare(insert);
 		for (const tuple of tuples) stmt.run(...tuple);
-		return conn;
+		return { db: conn };
 	}
 
 	const run = (conn: Database, query: Parameters<typeof buildStemQuery>[1]) =>
@@ -103,12 +114,14 @@ describe('buildStemQuery (executed against a real projection in bun:sqlite)', ()
 		).map((r) => r.stem);
 
 	test('no controls returns every stem', () => {
-		expect(run(freshDb(), {}).sort()).toEqual(['dune', 'hobbit', 'sky']);
+		const { db } = setup();
+		expect(run(db, {}).sort()).toEqual(['dune', 'hobbit', 'sky']);
 	});
 
 	test('filter plus sort returns the matching stems in order', () => {
+		const { db } = setup();
 		expect(
-			run(freshDb(), {
+			run(db, {
 				where: "status = 'reading'",
 				sort: { column: 'rating', dir: 'desc' },
 			}),
@@ -116,14 +129,16 @@ describe('buildStemQuery (executed against a real projection in bun:sqlite)', ()
 	});
 
 	test('match searches the body; the where clause still narrows', () => {
-		expect(run(freshDb(), { match: 'spice' }).sort()).toEqual(['dune', 'sky']);
-		expect(
-			run(freshDb(), { match: 'spice', where: "status = 'reading'" }),
-		).toEqual(['sky']);
+		const { db } = setup();
+		expect(run(db, { match: 'spice' }).sort()).toEqual(['dune', 'sky']);
+		expect(run(db, { match: 'spice', where: "status = 'reading'" })).toEqual([
+			'sky',
+		]);
 	});
 
 	test('a search term with quotes is escaped, not a syntax error or injection', () => {
+		const { db } = setup();
 		// "don't" carries an apostrophe (SQL string char) and FTS5 would otherwise choke on a bare one.
-		expect(run(freshDb(), { match: "don't" })).toEqual(['hobbit']);
+		expect(run(db, { match: "don't" })).toEqual(['hobbit']);
 	});
 });

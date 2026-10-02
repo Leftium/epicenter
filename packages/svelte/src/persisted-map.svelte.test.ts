@@ -111,6 +111,7 @@ test('a write that succeeds again makes the key re-readable', () => {
 
 	// Storage has caught up, so the key stops being held back from re-reads.
 	expect(storage.items.get('test.theme')).toBe('"dark"');
+	storage.items.set('test.theme', '"light"');
 	win.fire('focus');
-	expect(settings.get('theme')).toBe('dark');
+	expect(settings.get('theme')).toBe('light');
 });

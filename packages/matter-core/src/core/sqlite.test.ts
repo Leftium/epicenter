@@ -1,5 +1,10 @@
+/**
+ * SQLite projection tests.
+ * Schemas and tuples preserve field order, storage classes, missing and invalid
+ * cells. Real SQLite verifies full-text indexing, index retirement, and joins.
+ */
 import { Database } from 'bun:sqlite';
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { expectOk } from 'wellcrafted/testing';
@@ -8,6 +13,17 @@ import { classifyRows } from './conformance';
 import { validateContract } from './contract';
 import type { Row } from './parse';
 import { projectToSqlite } from './sqlite';
+
+const connections: Database[] = [];
+afterEach(() => {
+	for (const db of connections.splice(0)) db.close();
+});
+
+function setup() {
+	const db = new Database(':memory:');
+	connections.push(db);
+	return { db };
+}
 
 /** Resolve the bundled example vault by walking up from this file until it appears, so the path holds
  *  wherever in the repo this test lives, not at a fixed offset from `import.meta.dir`. */
@@ -229,7 +245,7 @@ describe('FTS5 block (emitted when the contract is searchable)', () => {
 	});
 
 	test('losing searchability drops the stale index, so no old word matches a new row (bun:sqlite)', () => {
-		const db = new Database(':memory:');
+		const { db } = setup();
 
 		// First projection: searchable, with a distinctive body word.
 		const searchable = projectToSqlite(
@@ -289,7 +305,7 @@ describe('FTS5 block (emitted when the contract is searchable)', () => {
 			m,
 			classifyRows(m.fields, [withBody]),
 		);
-		const db = new Database(':memory:');
+		const { db } = setup();
 		db.exec(schema);
 		const stmt = db.prepare(insert);
 		for (const row of rows) stmt.run(...row);
@@ -320,7 +336,7 @@ describe('projects a vault into one db whose tables JOIN', () => {
 		// Load the fixture and project every typed table into one in-memory db, exactly as the Vault
 		// fills its shared .matter db (each folder -> a table named for the folder).
 		const tables = await loadPath(exampleVault);
-		const db = new Database(':memory:');
+		const { db } = setup();
 		for (const table of tables) {
 			if (table.status !== 'readable' || table.read.view.mode !== 'typed')
 				continue;

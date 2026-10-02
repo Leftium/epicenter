@@ -89,7 +89,7 @@ test('a WAV reports its own length', () => {
 	expect(wavDurationMs(new Uint8Array(64))).toBeUndefined();
 });
 
-test('recording ids sort by capture time and conflict copies name their source', () => {
+test('recording ids encode capture time and conflict copies name their source', () => {
 	const id = recordingId(new Date('2026-01-02T03:04:05.678Z'));
 	expect(id).toMatch(/^20260102-030405-[0-9a-z]{4}$/);
 	expect(

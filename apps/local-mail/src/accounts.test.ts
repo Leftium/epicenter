@@ -1,4 +1,3 @@
-import { accountWorkflow } from './accounts.test-support.js';
 /**
  * Connecting and removing, and what happens when the secret owner refuses.
  *
@@ -12,6 +11,8 @@ import { accountWorkflow } from './accounts.test-support.js';
 import { expect, test } from 'bun:test';
 import type { AppSqliteDatabase, SecretStore } from '@epicenter/device';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
+import { accountWorkflow } from './accounts.test-support.js';
 import {
 	assertAccountLabel,
 	discardPending,
@@ -167,8 +168,9 @@ test('reconnecting one Google subject lands on the row it already has', async ()
 	const tokenUrl = `http://127.0.0.1:${server.port}/token`;
 	opened.app.config = { ...DEFAULT_MAIL_CONFIG, tokenUrl };
 	try {
-		const first = await finishConnect(opened.app, authorization(tokenUrl));
-		if (first.error !== null) throw first.error;
+		const first = expectOk(
+			await finishConnect(opened.app, authorization(tokenUrl)),
+		);
 
 		// The person's address changed at Google; the subject did not.
 		server.stop(true);
@@ -181,20 +183,21 @@ test('reconnecting one Google subject lands on the row it already has', async ()
 			...DEFAULT_MAIL_CONFIG,
 			tokenUrl: `http://127.0.0.1:${second.port}/token`,
 		};
-		const again = await finishConnect(
-			opened.app,
-			authorization(`http://127.0.0.1:${second.port}/token`),
+		const again = expectOk(
+			await finishConnect(
+				opened.app,
+				authorization(`http://127.0.0.1:${second.port}/token`),
+			),
 		);
 		second.stop(true);
-		if (again.error !== null) throw again.error;
 
 		// One row, not two, and the key is Google's subject rather than anything
 		// this application allocated, so a second row is not expressible.
-		expect(again.data.sub).toBe(first.data.sub);
-		expect(again.data.sub).toBe('google-sub-1');
+		expect(again.sub).toBe(first.sub);
+		expect(again.sub).toBe('google-sub-1');
 		expect(await listAccounts(opened.app)).toHaveLength(1);
 		expect((await listAccounts(opened.app))[0]?.email).toBe('new@example.com');
-		expect(opened.held.get(first.data.sub)).toBe('refresh-2');
+		expect(opened.held.get(first.sub)).toBe('refresh-2');
 	} finally {
 		opened.close();
 	}
@@ -224,9 +227,11 @@ test('a credential that would not delete stops the removal', async () => {
 	const tokenUrl = `http://127.0.0.1:${server.port}/token`;
 	opened.app.config = { ...DEFAULT_MAIL_CONFIG, tokenUrl };
 	try {
-		const connected = await finishConnect(opened.app, authorization(tokenUrl));
-		if (connected.error !== null) throw connected.error;
-		const { sub } = connected.data;
+		const connected = expectOk(
+			await finishConnect(opened.app, authorization(tokenUrl)),
+		);
+
+		const { sub } = connected;
 
 		// There is no `secrets.list`, so the row is the only thing that knows this
 		// credential exists. Removing it after a failed delete would strand the
@@ -240,7 +245,7 @@ test('a credential that would not delete stops the removal', async () => {
 		refusing.close();
 
 		const gone = await removeAccount(opened.app, sub);
-		expect(gone.error).toBeNull();
+		expectOk(gone);
 		expect(await listAccounts(opened.app)).toEqual([]);
 		expect(opened.held.size).toBe(0);
 		expect(opened.deleted).toEqual(['mail-google-sub-1']);
@@ -256,9 +261,11 @@ test('removal refuses while Gmail has not been told, and deletes nothing', async
 	const tokenUrl = `http://127.0.0.1:${server.port}/token`;
 	opened.app.config = { ...DEFAULT_MAIL_CONFIG, tokenUrl };
 	try {
-		const connected = await finishConnect(opened.app, authorization(tokenUrl));
-		if (connected.error !== null) throw connected.error;
-		const { sub } = connected.data;
+		const connected = expectOk(
+			await finishConnect(opened.app, authorization(tokenUrl)),
+		);
+
+		const { sub } = connected;
 
 		await withMailbox(opened.app, sub, async (mailbox) => {
 			await mailbox.ingestFullPullPage(
@@ -301,7 +308,7 @@ test('removal refuses while Gmail has not been told, and deletes nothing', async
 		// The person chose to abandon the work rather than deliver it.
 		expect(await discardPending(opened.app, sub)).toBe(1);
 		const gone = await removeAccount(opened.app, sub);
-		expect(gone.error).toBeNull();
+		expectOk(gone);
 		expect(await listAccounts(opened.app)).toEqual([]);
 		expect(opened.held.size).toBe(0);
 		expect(opened.deleted).toEqual(['mail-google-sub-1']);
@@ -379,13 +386,15 @@ test('a removed account cannot reopen its mailbox', async () => {
 	const tokenUrl = `http://127.0.0.1:${server.port}/token`;
 	opened.app.config = { ...DEFAULT_MAIL_CONFIG, tokenUrl };
 	try {
-		const connected = await finishConnect(opened.app, authorization(tokenUrl));
-		if (connected.error !== null) throw connected.error;
-		const { sub } = connected.data;
+		const connected = expectOk(
+			await finishConnect(opened.app, authorization(tokenUrl)),
+		);
+
+		const { sub } = connected;
 		await withMailbox(opened.app, sub, async () => undefined);
 
 		const gone = await removeAccount(opened.app, sub);
-		expect(gone.error).toBeNull();
+		expectOk(gone);
 
 		// Holding one past the removal would be a mailbox over a file that is
 		// gone, and on the desktop a write through it would recreate that file.

@@ -1,3 +1,9 @@
+/**
+ * Durable address grammar tests.
+ *
+ * Row, table, and reverse-domain data names reject unsafe segments and honor
+ * their own size ceilings. Reserved sibling names cannot become data IDs.
+ */
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -22,7 +28,16 @@ describe('the durable name grammars (ADR-0206)', () => {
 	});
 
 	test('a table name is a bare SQL identifier', () => {
-		for (const bad of ['no/tes', '_internal', '1notes', 'order', '']) {
+		for (const bad of [
+			'no/tes',
+			'_internal',
+			'1notes',
+			'order',
+			'ORDER',
+			'sqlite_notes',
+			'SQLITE_notes',
+			'',
+		]) {
 			expect(isTableName(bad, DATA_ADDRESS_CEILINGS)).toBe(false);
 		}
 		expect(isTableName('notes', DATA_ADDRESS_CEILINGS)).toBe(true);
@@ -47,12 +62,14 @@ describe('the durable name grammars (ADR-0206)', () => {
 		}
 	});
 
-	test('every grammar is bounded in bytes, not characters', () => {
+	test('each ASCII grammar admits its ceiling and refuses a longer name', () => {
 		const ceilings = { dataIdBytes: 4, tableNameBytes: 4, rowIdBytes: 4 };
 		expect(isRowId('aaaa', ceilings)).toBe(true);
 		expect(isRowId('aaaaa', ceilings)).toBe(false);
-		// One emoji is four UTF-8 bytes, and is not admitted by the grammar
-		// anyway; a two-byte character is, and counts as two.
+		// These grammars admit ASCII only, so an admitted character is one byte.
+		expect(isTableName('aaaa', ceilings)).toBe(true);
 		expect(isTableName('aaaaa', ceilings)).toBe(false);
+		expect(isDataId('a.bc', ceilings)).toBe(true);
+		expect(isDataId('a.bcd', ceilings)).toBe(false);
 	});
 });

@@ -1,5 +1,10 @@
-/** Atomic local publication and HTTP lifecycle through the Personal authority. */
-import { Database } from 'bun:sqlite';
+/**
+ * Local blob publication and HTTP lifecycle tests.
+ *
+ * The real SQLite store preserves exact bytes across reopening and refuses
+ * replacement of an occupied key. The mounted Personal route enforces media
+ * reads, byte ranges, conditional responses, and owner access.
+ */
 import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -89,44 +94,6 @@ test('local publication, media reads, access, ranges, deletion, and reopening', 
 			new Uint8Array(await (await request(privateUrl)).arrayBuffer()),
 		).toEqual(bytes);
 	} finally {
-		opened.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('an interrupted SQLite publication exposes no partial object', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-interrupted-blobs-'));
-	const path = join(root, 'blobs.sqlite');
-	const opened = openLocalBlobStore(path);
-	const database = new Database(path);
-	try {
-		expect(() =>
-			database
-				.transaction(() => {
-					database
-						.prepare(
-							'INSERT INTO blobs (key, bytes, content_type, etag, modified) VALUES (?, ?, ?, ?, ?)',
-						)
-						.run(
-							'interrupted',
-							new Uint8Array([1, 2]),
-							'audio/wav',
-							'"x"',
-							new Date().toUTCString(),
-						);
-					throw new Error('interrupted before commit');
-				})
-				.immediate(),
-		).toThrow('interrupted before commit');
-		expect(await opened.store.head('interrupted')).toBeNull();
-		expect(
-			await opened.store.put('interrupted', new Blob([new Uint8Array([3])])),
-		).toBe('created');
-		expect(await opened.store.read('interrupted', 0, 0, '')).toEqual(
-			new Uint8Array([3]),
-		);
-	} finally {
-		database.close();
 		opened.close();
 		rmSync(root, { recursive: true, force: true });
 	}

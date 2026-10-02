@@ -5,9 +5,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-for (const [path, exported, required] of [
-	['apps/local-mail/ui/src/lib/resources.ts', 'openMailResources', 2],
-	['apps/vocab/src/lib/resources.ts', 'openVocabResources', 2],
+for (const [path, exported, required, optionalFailures] of [
+	['apps/local-mail/ui/src/lib/resources.ts', 'openMailResources', 2, 3],
+	['apps/vocab/src/lib/resources.ts', 'openVocabResources', 2, 2],
 ] as const)
 	test(`${exported} retains roots after required failure and fences departure independently`, async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'product-startup-'));
@@ -78,7 +78,7 @@ for (const [path, exported, required] of [
 							build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
 								loader: 'js',
 								contents:
-									"const definition={id:'test.startup'}; export {definition as whisperingDefinition,definition as honeycrispDefinition,definition as mailDefinition,definition as vocabDefinition};",
+									"const definition={id:'test.startup'}; export {definition as whisperingDefinition,definition as honeycrispDefinition,definition as mailDefinition,definition as vocabDefinition,definition as chatHistoryDefinition};",
 							}));
 						},
 					},
@@ -138,7 +138,9 @@ for (const [path, exported, required] of [
 			optionalPending = false;
 			const failedOptional = await open({}, new AbortController().signal);
 			if (failedOptional.inference)
-				expect((await failedOptional.inference).errors).toHaveLength(3);
+				expect((await failedOptional.inference).errors).toHaveLength(
+					optionalFailures,
+				);
 		} finally {
 			delete globals[key];
 			await rm(directory, { recursive: true, force: true });

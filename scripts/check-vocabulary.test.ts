@@ -87,7 +87,10 @@ test('the plural and the capital both count', () => {
 		write(dir, 'packages/app/src/data/a.ts', '// the scalars\n');
 		write(dir, 'packages/app/src/data/b.ts', '// Scalar fields\n');
 		commitAll(dir);
-		expect(run(dir).code).toBe(1);
+		const { code, out } = run(dir);
+		expect(code).toBe(1);
+		expect(out).toContain('packages/app/src/data/a.ts:1');
+		expect(out).toContain('packages/app/src/data/b.ts:1');
 	});
 });
 

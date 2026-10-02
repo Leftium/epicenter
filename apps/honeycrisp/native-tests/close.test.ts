@@ -416,7 +416,9 @@ test('a rich-text draft in conflict with the file is kept when the person keeps 
 	expect(await gate.close()).toBe('held');
 	await until(() => prompts.length === 1, 'the prompt');
 	// Nothing is chosen for the person while the close is being answered.
-	expect(reviewed !== undefined && draft.takeTheirs(reviewed)).toBe(false);
+	if (reviewed === undefined)
+		throw new Error('Expected the reviewed external file');
+	expect(draft.takeTheirs(reviewed)).toBe(false);
 	prompts[0]?.choose(false);
 	await until(() => gate.accepted('decline').length === 1, 'the decline');
 	expect(draft.buffer).toBe(mine);

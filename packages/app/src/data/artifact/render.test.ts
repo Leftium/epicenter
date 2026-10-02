@@ -1,3 +1,8 @@
+/**
+ * Artifact rendering tests.
+ * Rows emit deterministic frontmatter and codec text, removed rows signal unlink,
+ * and whole-store rendering preserves undeclared values while isolating failures.
+ */
 import { describe, expect, test } from 'bun:test';
 import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 import { compileData } from '@epicenter/app/definition';
@@ -5,7 +10,7 @@ import * as Y from '@y/y';
 import * as delta from 'lib0/delta';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
-import { type RenderedRow, renderArtifact, renderRow } from './render.js';
+import { renderArtifact, renderRow } from './render.js';
 
 const store = defineStore({
 	id: 'so.epicenter.honeycrisp',
@@ -37,12 +42,11 @@ function type(
 
 /** Collect the stream into a map, which is what an assertion wants. */
 async function collect(
-	stream: AsyncIterable<{ data: RenderedRow | null; error: unknown }>,
+	stream: ReturnType<typeof renderArtifact>,
 ): Promise<ReadonlyMap<string, string>> {
 	const files = new Map<string, string>();
 	for await (const rendered of stream) {
-		if (rendered.error !== null) throw rendered.error;
-		const { path, contents } = rendered.data as RenderedRow;
+		const { path, contents } = expectOk(rendered);
 		if (contents !== undefined) files.set(path, contents);
 	}
 	return files;

@@ -1,4 +1,3 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 /**
  * The client half of sync: what a replica owes the authority, and what it has
  * read from it.
@@ -11,9 +10,10 @@ import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import type { Result } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 
 import { copyBytes } from './log.js';
 import { openAccountStore, syncEngineOf } from './store.js';
@@ -54,22 +54,6 @@ async function open() {
 	};
 }
 
-function expectOk<TValue, TError>(
-	result: Result<TValue, TError> | TValue,
-): TValue {
-	if (
-		typeof result === 'object' &&
-		result !== null &&
-		'data' in result &&
-		'error' in result
-	) {
-		const outcome = result as Result<TValue, TError>;
-		if (outcome.error !== null) throw outcome.error;
-		return outcome.data as TValue;
-	}
-	return result as TValue;
-}
-
 function titles(replica: Awaited<ReturnType<typeof open>>): string[] {
 	return replica.db.tables.notes.rows.map((row) => row.title).sort();
 }
@@ -83,7 +67,7 @@ describe('the local log holds each update once', () => {
 		// Neither copy was wrong on its own, so no verb could see it.
 		const author = await open();
 		const reader = await open();
-		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
+		author.db.tables.notes.create({ title: 'Groceries' });
 		const update = author.store.encodeStateSince();
 
 		expectOk(syncEngineOf(reader.store).applyRemote(update));
@@ -100,7 +84,7 @@ describe('the local log holds each update once', () => {
 		// back and forth between them forever.
 		const author = await open();
 		const reader = await open();
-		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
+		author.db.tables.notes.create({ title: 'Groceries' });
 		expectOk(
 			syncEngineOf(reader.store).applyRemote(author.store.encodeStateSince()),
 		);
@@ -116,9 +100,7 @@ describe('the local log holds each update once', () => {
 		// rather than through a store verb, so it is the one local write that
 		// could plausibly be missed.
 		const author = await open();
-		const note = expectOk(
-			author.db.tables.notes.create({ title: 'Groceries' }),
-		);
+		const note = author.db.tables.notes.create({ title: 'Groceries' });
 		await author.store.persistence.flush();
 		const before = author.outbox().length;
 		const text = author.db.tables.notes.body(note.id);
@@ -135,7 +117,7 @@ describe('coalesce merges only what this replica authored', () => {
 		const author = await open();
 		const reader = await open();
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(author.db.tables.notes.create({ title: `note ${index}` }));
+			author.db.tables.notes.create({ title: `note ${index}` });
 		}
 		await author.store.persistence.flush();
 		expect(author.outbox()).toHaveLength(20);
@@ -157,7 +139,7 @@ describe('coalesce merges only what this replica authored', () => {
 		expect(syncEngineOf(reader.store).hasUnresolvedDependencies()).toBe(false);
 	});
 
-	test('CONTROL: the last entry ALONE carries one note and leaves a gap', async () => {
+	test('the last entry alone carries only the newest note', async () => {
 		// Without this the test above passes when `coalesce` simply returns the
 		// newest entry and silently drops nineteen, which is the exact failure the
 		// merge exists to prevent. The single entry has to be visibly insufficient
@@ -165,7 +147,7 @@ describe('coalesce merges only what this replica authored', () => {
 		const author = await open();
 		const lastOnly = await open();
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(author.db.tables.notes.create({ title: `note ${index}` }));
+			author.db.tables.notes.create({ title: `note ${index}` });
 		}
 		await author.store.persistence.flush();
 		const last = author.outbox().at(-1);
@@ -183,8 +165,8 @@ describe('coalesce merges only what this replica authored', () => {
 
 	test('coalescing twice is a no-op rather than a re-merge', async () => {
 		const author = await open();
-		expectOk(author.db.tables.notes.create({ title: 'a' }));
-		expectOk(author.db.tables.notes.create({ title: 'b' }));
+		author.db.tables.notes.create({ title: 'a' });
+		author.db.tables.notes.create({ title: 'b' });
 		await author.store.persistence.flush();
 		const first = syncEngineOf(author.store).coalesce();
 		await author.store.persistence.flush();
@@ -198,13 +180,11 @@ describe('coalesce merges only what this replica authored', () => {
 		// The ack names a position rather than "everything", because work authored
 		// while a submission was in flight has been acknowledged by nobody.
 		const author = await open();
-		expectOk(author.db.tables.notes.create({ title: 'sent' }));
+		author.db.tables.notes.create({ title: 'sent' });
 		await author.store.persistence.flush();
 		const inFlight = syncEngineOf(author.store).coalesce();
 		if (inFlight === undefined) throw new Error('nothing to send');
-		expectOk(
-			author.db.tables.notes.create({ title: 'authored while in flight' }),
-		);
+		author.db.tables.notes.create({ title: 'authored while in flight' });
 
 		syncEngineOf(author.store).acknowledge(inFlight.id, 1);
 
@@ -218,7 +198,7 @@ describe('coalesce merges only what this replica authored', () => {
 		// The ack drops the OBLIGATION, never the data. A store that confused the
 		// two would empty itself every time sync succeeded.
 		const author = await open();
-		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
+		author.db.tables.notes.create({ title: 'Groceries' });
 		await author.store.persistence.flush();
 		const sent = syncEngineOf(author.store).coalesce();
 		if (sent === undefined) throw new Error('nothing to send');
@@ -238,7 +218,7 @@ describe('the cursor is a log position, and never a state vector', () => {
 	test('a position survives a reopen, carried by the bytes that reached it', async () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		const first = await openAccountStore({ definition: database, sqlite });
-		expectOk(first.tables.notes.create({ title: 'owed' }));
+		first.tables.notes.create({ title: 'owed' });
 		await first.persistence.flush();
 		const sent = syncEngineOf(first).coalesce();
 		if (sent === undefined) throw new Error('nothing to send');
@@ -281,9 +261,7 @@ describe("a row's body node is one type both devices edit", () => {
 		// creating device ever minted one.
 		const author = await open();
 		const other = await open();
-		const note = expectOk(
-			author.db.tables.notes.create({ title: 'Groceries' }),
-		);
+		const note = author.db.tables.notes.create({ title: 'Groceries' });
 		expectOk(
 			syncEngineOf(other.store).applyRemote(author.store.encodeStateSince()),
 		);

@@ -12,7 +12,6 @@
  *   nothing written down about the failure itself.
  * - An act made mid-delivery wins, because retirement matches the revision that
  *   was actually proved.
- * - Read-only skips delivery entirely.
  *
  * The pull phase is `sync.ts`, tested there; the fake client below returns an
  * empty history so a pass ends quickly.
@@ -190,7 +189,7 @@ async function setup(
  * One pass over one account's session.
  *
  * Production reaches this through `reconcileNow`, which adds only the joining
- * of a second caller to a pass already in flight; that is `accounts.test.ts`'
+ * of a second caller to a pass already in flight; that is `reconcile-now.test.ts`'
  * subject, and everything below is about what a single pass does.
  */
 const pass = (deps: MailSession) => reconcileAccount(deps);

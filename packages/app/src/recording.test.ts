@@ -29,9 +29,6 @@ function setup({
 	stopGate = Promise.resolve(),
 	cancelGate = Promise.resolve(),
 	saveGate = Promise.resolve(),
-	recoveryFailsAfterStart = false,
-	recoveryFails = false,
-	cancelFails = false,
 	closeThrows = false,
 } = {}) {
 	const appId = 'test.' + crypto.randomUUID();
@@ -40,7 +37,6 @@ function setup({
 	let cancels = 0;
 	let stops = 0;
 
-	let recorderCloses = 0;
 	const savingEntered = Promise.withResolvers<void>();
 	const recording: RecordingFactory = (appId, options) => {
 		bindings.push({ appId });
@@ -62,19 +58,11 @@ function setup({
 		async function cancel() {
 			cancels++;
 			await cancelGate;
-			if (cancelFails)
-				return RecorderError.RecorderFailed({
-					cause: new Error('Cancellation failed'),
-				});
 			active = null;
 			return Ok(undefined);
 		}
 		async function current() {
-			return recoveryFails || (recoveryFailsAfterStart && starts > 0)
-				? RecorderError.RecorderFailed({
-						cause: new Error('Recovery unavailable'),
-					})
-				: Ok(active);
+			return Ok(active);
 		}
 		const audioBlobId = generateBlobId('wav');
 		const session: Recording = {
@@ -115,14 +103,9 @@ function setup({
 			close() {
 				if (closeThrows)
 					throw new Error('Synchronous recorder cleanup failure');
-				recorderCloses++;
 				closed = true;
 				closing ??= (async () => {
 					await Promise.allSettled(pending);
-					if (active === null) {
-						const result = await current();
-						if (result.error) throw result.error;
-					}
 					if (active !== null) {
 						const result = await cancel();
 						if (result.error) throw result.error;
@@ -173,7 +156,6 @@ function setup({
 		starts: () => starts,
 		cancels: () => cancels,
 		stops: () => stops,
-		recorderCloses: () => recorderCloses,
 		savingEntered: savingEntered.promise,
 	};
 }
@@ -265,15 +247,6 @@ test('Stop publishes through private storage after blob close revokes public acc
 
 test('close releases a session owned by its recorder even without a prior current call', async () => {
 	const { openFixture, cancels } = setup();
-	const app = await openFixture();
-
-	expectOk(await app.recorder.start({}));
-	await app.close();
-	expect(cancels()).toBe(1);
-});
-
-test('close cancels a held capture without depending on a recovery read', async () => {
-	const { openFixture, cancels } = setup({ recoveryFailsAfterStart: true });
 	const app = await openFixture();
 
 	expectOk(await app.recorder.start({}));

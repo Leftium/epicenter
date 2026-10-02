@@ -8,7 +8,9 @@ const definition = defineStore({
 	kv: {},
 });
 test('the declaration exposes one identity and the schema without implementation options', () => {
-	const titledDefinition = defineStore({ ...definition, title: 'Notes' });
+	const input = { ...definition, title: 'Notes', runtime: 'discarded option' };
+	// @ts-expect-error Inert declarations accept no implementation options.
+	const titledDefinition = defineStore(input);
 	expect(titledDefinition.id).toBe(definition.id);
 	expect(titledDefinition.title).toBe('Notes');
 	expect(titledDefinition.tables).toBe(definition.tables);

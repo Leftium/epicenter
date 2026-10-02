@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { booksDbFile, openBooksDb } from '../db.ts';
 import { queryBooks } from './query.ts';
 
@@ -35,31 +36,42 @@ function fixtureMirror() {
 describe('queryBooks', () => {
 	test('runs a read-only SELECT and returns the live rows, bounded', () => {
 		const { mirror, cleanup } = fixtureMirror();
-		const { data, error } = queryBooks({
-			mirror,
-			sql: 'SELECT id, total_amt FROM invoices WHERE deleted = 0',
-		});
-		expect(error).toBeNull();
+		const data = expectOk(
+			queryBooks({
+				mirror,
+				sql: 'SELECT id, total_amt FROM invoices WHERE deleted = 0',
+			}),
+		);
+
 		expect(data).toMatchObject({ rowCount: 1, truncated: false });
-		expect(data?.rows).toEqual([{ id: 'i1', total_amt: 100 }]);
+		expect(data.rows).toEqual([{ id: 'i1', total_amt: 100 }]);
 		cleanup();
 	});
 
 	test('rejects a write: the read-only connection is the boundary', () => {
 		const { mirror, cleanup } = fixtureMirror();
-		const { error } = queryBooks({
-			mirror,
-			sql: "DELETE FROM invoices WHERE id = 'i1'",
-		});
-		expect(error).not.toBeNull();
+		const error = expectErr(
+			queryBooks({
+				mirror,
+				sql: "DELETE FROM invoices WHERE id = 'i1'",
+			}),
+		);
+
+		expect(error.name).toBe('QueryFailed');
+		const remaining = expectOk(
+			queryBooks({ mirror, sql: "SELECT id FROM invoices WHERE id = 'i1'" }),
+		);
+		expect(remaining.rows).toEqual([{ id: 'i1' }]);
 		cleanup();
 	});
 
 	test('errors clearly when no mirror exists yet', () => {
-		const { error } = queryBooks({
-			mirror: booksDbFile(join(tmpdir(), 'local-books-absent'), 'realm'),
-			sql: 'SELECT 1',
-		});
-		expect(error?.message).toContain('No QuickBooks mirror');
+		const error = expectErr(
+			queryBooks({
+				mirror: booksDbFile(join(tmpdir(), 'local-books-absent'), 'realm'),
+				sql: 'SELECT 1',
+			}),
+		);
+		expect(error.message).toContain('No QuickBooks mirror');
 	});
 });

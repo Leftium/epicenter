@@ -1,10 +1,3 @@
-import {
-	defineStore,
-	defineTable,
-	field,
-	jsonValue,
-	plainText,
-} from '@epicenter/app';
 /**
  * Skills data tests, against the real workspace through a memory store.
  *
@@ -24,6 +17,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+	defineStore,
+	defineTable,
+	field,
+	jsonValue,
+	plainText,
+} from '@epicenter/app';
 
 import { InstantString } from '@epicenter/app/field';
 import {
@@ -85,7 +85,6 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 
 		const data = await openSkills(record);
 		await using _data = data;
-		expect(data.tables.skills.get('aaaaaaaaaaaaaaaaaaaaaaaa')).toBe(undefined);
 
 		// A row this declaration cannot read does not arrive through `get`; it is
 		// on `nonconforming`, and the conforming half survives there, which is

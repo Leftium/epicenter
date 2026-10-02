@@ -1,4 +1,3 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 /**
  * The browser's dial, handed to the server's gate, with no header a test author
  * typed.
@@ -18,6 +17,7 @@ import { defineStore, defineTable, field, plainText } from '@epicenter/app';
  */
 
 import { expect, test } from 'bun:test';
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { openMemory } from '@epicenter/app/memory';
 import { attachStoreSync } from '@epicenter/app/sync';
@@ -53,7 +53,7 @@ const definition = defineStore({
 type Opening = { url: string; protocols: string[] };
 
 /**
- * The signed-in browser client Honeycrisp boots with: a persisted cell holding
+ * A signed-in browser client with a persisted cell holding
  * a live session, `/api/session` confirming the same principal, and a `WebSocket`
  * that records instead of connecting.
  */
@@ -126,10 +126,6 @@ function createServer(
 		resolveStore: () => ({
 			authority: () => authority,
 			ledger: () => ({
-				initial: () => 1,
-				allocate: () => 1,
-				admit() {},
-				holds: () => true,
 				list: () => [],
 			}),
 		}),

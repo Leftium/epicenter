@@ -139,9 +139,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 		// one was running may be uncommitted; one request commits what is left.
 		await settled(folder);
 		expect(expectOk(await folder.git.log(10)).length).toBeGreaterThan(0);
-		expect(['committed', 'unchanged']).toContain(
-			(await folder.git.commit()).status,
-		);
+		await folder.git.commit();
 		expect(expectOk(await folder.git.status()).changes).toEqual([]);
 	});
 

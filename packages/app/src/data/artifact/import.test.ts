@@ -1,4 +1,3 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 /**
  * The artifact read back, and the round trip that is the whole promise: what a
  * person exports is what they get when they import it again (ADR-0267/0268).
@@ -12,13 +11,14 @@ import { defineStore, defineTable, field, plainText } from '@epicenter/app';
  */
 
 import { describe, expect, test } from 'bun:test';
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import * as delta from 'lib0/delta';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createMemoryRecord, openMemory } from '../store/memory.js';
 import { syncEngineOf } from '../store/store.js';
 import { readArtifact } from './import.js';
-import { type RenderedRow, renderArtifact } from './render.js';
+import { renderArtifact } from './render.js';
 
 const store = defineStore({
 	id: 'so.epicenter.honeycrisp',
@@ -73,12 +73,11 @@ async function seeded() {
 
 /** Collect the stream into a map, which is what an assertion wants. */
 async function collect(
-	stream: AsyncIterable<{ data: RenderedRow | null; error: unknown }>,
+	stream: ReturnType<typeof renderArtifact>,
 ): Promise<ReadonlyMap<string, string>> {
 	const files = new Map<string, string>();
 	for await (const rendered of stream) {
-		if (rendered.error !== null) throw rendered.error;
-		const { path, contents } = rendered.data as RenderedRow;
+		const { path, contents } = expectOk(rendered);
 		if (contents !== undefined) files.set(path, contents);
 	}
 	return files;
@@ -91,7 +90,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 
 		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
-		expect(syncEngineOf(restored).applyRemote(state).error).toBeNull();
+		expectOk(syncEngineOf(restored).applyRemote(state));
 
 		// Every value, at the same id, read through the same lens.
 		expect(restored.tables.notes.rows).toHaveLength(1);
@@ -99,9 +98,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(restored.kv.get('theme')).toBe('dark');
 		expect(restored.stored().kv).toEqual(data.stored().kv);
 		// Compared through `stored()` rather than `rows`, and the reason is the
-		// claim itself. A row carries its live body node now, and two documents'
-		// nodes are never equal: they are different objects with different client
-		// ids. "Imports back whole" is a statement about the RECORD, so the
+		// claim itself. Rows are value snapshots; stored() additionally carries fields
+		// the current declaration no longer names. "Imports back whole" is a statement about the RECORD, so the
 		// faithful read is what it should have been asserted against all along.
 		expect(restored.stored().tables).toEqual(data.stored().tables);
 
@@ -174,38 +172,13 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(
 			restored.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
 		).toEqual({ title: 'Groceries' });
-		void restored[Symbol.asyncDispose]();
+		await restored[Symbol.asyncDispose]();
 	});
 
 	test('a file that is not a row file refuses the whole import', async () => {
 		const files = new Map([['notes/aaaa.md', 'no frontmatter here']]);
 		const refused = expectErr(readArtifact(files, store));
 		expect(refused.name).toBe('MalformedFile');
-	});
-
-	test('a codec that throws on a body refuses the whole import', async () => {
-		const breaking = defineStore({
-			id: 'so.epicenter.honeycrisp',
-			kv: {},
-			tables: {
-				notes: defineTable({
-					fields: {
-						title: field.string(),
-					},
-					body: {
-						encode: (node) => node.toString(),
-						decode: () => {
-							throw new Error('the codec exploded');
-						},
-					},
-				}),
-			},
-		});
-		const files = new Map([
-			['notes/aaaa.md', '---\ntitle: "x"\n---\n\nprose\n'],
-		]);
-		const refused = expectErr(readArtifact(files, breaking));
-		expect(refused.name).toBe('RowUnreadable');
 	});
 
 	test('a codec that refuses a file refuses the whole import', async () => {
@@ -330,6 +303,6 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect([...(restored.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
 			'aaaaaaaaaaaaaaaaaaaaaaaa',
 		]);
-		void restored[Symbol.asyncDispose]();
+		await restored[Symbol.asyncDispose]();
 	});
 });

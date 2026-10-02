@@ -129,8 +129,6 @@ describe('the palette catalog', () => {
 			'url',
 		];
 		expect([...KINDS].sort()).toEqual(expected.sort());
-		expect(KINDS).toContain('json');
-		expect(KINDS).toContain('reference');
 	});
 });
 

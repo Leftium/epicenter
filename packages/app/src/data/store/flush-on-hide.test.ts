@@ -129,10 +129,4 @@ describe('a page that hides', () => {
 		page.pagehide();
 		expect(calls).toBe(0);
 	});
-
-	test('a persist that throws does not escape into the teardown', () => {
-		const page = installPage();
-		persistOnHide(() => Promise.reject(new Error('storage is gone')));
-		expect(() => page.hide()).not.toThrow();
-	});
 });

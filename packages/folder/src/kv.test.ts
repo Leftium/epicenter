@@ -354,7 +354,7 @@ test.each([
 	const updated = expectOk(await kv.update({ theme: 'dark', size: 2 }));
 	expect(updated.source).toBe(after);
 	expect(await source()).toBe(after);
-	expect(JSON.parse(after)).toMatchObject({ theme: 'dark', size: 2 });
+	expect(JSON.parse(updated.source)).toMatchObject({ theme: 'dark', size: 2 });
 	expect(updated.values).toEqual({ theme: 'dark', size: 2 });
 });
 

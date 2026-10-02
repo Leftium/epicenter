@@ -24,8 +24,8 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openFolder } from '@epicenter/folder/bun';
 import { openMemory } from '@epicenter/app/memory';
+import { openFolder } from '@epicenter/folder/bun';
 import * as Y from '@y/y';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { captureDefinition, parseCapture } from '../index.js';
@@ -210,13 +210,13 @@ test('a capture imports as its exact text and its thoughts in position order', a
 	expect(report.diagnostics.emptyThoughts).toEqual(['t3']);
 
 	// The folder's table reads it as a valid capture.
-	const listed = await folder.tables.captures.list();
-	expect(listed.data?.entries).toHaveLength(1);
-	expect(listed.data?.entries[0]?.issues).toBeUndefined();
-	expect(String(listed.data?.entries[0]?.fields.capturedAt)).toBe(
+	const listed = expectOk(await folder.tables.captures.list());
+	expect(listed.entries).toHaveLength(1);
+	expect(listed.entries[0]?.issues).toBeUndefined();
+	expect(String(listed.entries[0]?.fields.capturedAt)).toBe(
 		'2026-01-01T00:00:00.000Z',
 	);
-	const document = parseCapture(listed.data?.entries[0]?.source ?? '');
+	const document = parseCapture(listed.entries[0]?.source ?? '');
 	expect(document.text).toBe('  Dinner\nFriday  \n');
 	expect(document.thoughts.map((thought) => thought.text)).toEqual([
 		'first',
@@ -402,7 +402,7 @@ test('a differing destination is reported, left alone, and not recorded', async 
 	expect(report.complete).toBe(false);
 	expect(report.receipt.status).toBe('unchanged');
 	expect(await text(destination)).toBe('someone else wrote this');
-	expect((await folder.files.read(report.receiptPath)).error?.name).toBe(
+	expect(expectErr(await folder.files.read(report.receiptPath)).name).toBe(
 		'NotFound',
 	);
 	await folder.close();
@@ -416,7 +416,7 @@ test('an unreadable receipt stops the import before anything is written', async 
 		'Nothing was imported',
 	);
 	expect(await captureFiles()).toEqual([]);
-	expect((await folder.files.read(plan.bundlePath)).error?.name).toBe(
+	expect(expectErr(await folder.files.read(plan.bundlePath)).name).toBe(
 		'NotFound',
 	);
 	await folder.close();

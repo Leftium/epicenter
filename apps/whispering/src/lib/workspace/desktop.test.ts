@@ -294,6 +294,7 @@ test('a browser folder that is refused is returned as that refusal', async () =>
 	// Inside a desktop app the browser opener refuses, even where storage exists.
 	inShell = true;
 	const inside = expectErr(await openBrowserWorkspace());
+	expect(inside.name).toBe('BrowserFolder');
 	if (inside.name === 'BrowserFolder')
 		expect(inside.refusal.name).toBe('InsideTauri');
 	expect(inside.message).toContain('Browser storage is not used');

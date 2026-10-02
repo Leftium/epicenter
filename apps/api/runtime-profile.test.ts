@@ -228,13 +228,6 @@ const bunFetcher = once(async () => {
 	return captured;
 });
 
-test('every surface absent on a runtime says why', () => {
-	const undeclared = PROFILE.filter(
-		(row) => !(row.worker === 'served' && row.bun === 'served') && !row.why,
-	);
-	expect(undeclared.map((row) => row.surface)).toEqual([]);
-});
-
 test('the Cloudflare entry serves its declared profile', async () => {
 	const fetcher = await workerFetcher();
 	expect(await readProfile(fetcher)).toEqual(

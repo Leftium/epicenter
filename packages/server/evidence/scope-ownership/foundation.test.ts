@@ -90,7 +90,7 @@ test('independent device caches choose one initial generation and retain it offl
 		for (const result of results) {
 			expect(result.offline).toBe(result.first);
 			expect(result.caches.map((cache) => cache.name)).toContain(
-				`epicenter/so.epicenter.notes/accounts/test-authority/alice/data/so.epicenter.firstopen/personal/current`,
+				`epicenter/so.epicenter.firstopen/accounts/test-authority/alice/data/so.epicenter.firstopen/personal/current`,
 			);
 		}
 	} finally {

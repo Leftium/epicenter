@@ -1,4 +1,3 @@
-import { epicenterCloud } from '@epicenter/auth';
 /**
  * Home Server Tests
  *
@@ -10,13 +9,13 @@ import { epicenterCloud } from '@epicenter/auth';
  * Key behaviors:
  * - The launch token is accepted only by the bootstrap route
  * - Home APIs and WebSockets require an HttpOnly browser session
- * - Home and Whispering serve their builds; Mail and Books stay placeholders
+ * - Home and each compiled application serve their builds; Books stays a placeholder
  * - Unknown, non-canonical, and traversal-shaped app paths stay closed
  * - Host, Origin, CSP, frame, and referrer policies are enforced
  * - Malformed WebSocket frames drop silently without killing the socket
  * - The real vite build emits one document with no external asset references
  * - The spawned `main.ts` sidecar announces versioned readiness, serves the
- *   built SPA, and drives a tool-calling turn against an OpenAI-compatible endpoint
+ *   built SPA, and drives a streamed turn against an OpenAI-compatible endpoint
  *
  * See also:
  * - `host.test.ts` for tool catalog composition and turn execution
@@ -37,6 +36,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentEngine, EngineChunk } from '@epicenter/agent';
 import { CHECKOUT_PATH } from '@epicenter/app/artifact/checkout';
+import { epicenterCloud } from '@epicenter/auth';
 import { generateBlobId } from '@epicenter/blobs';
 import { type BunBlobStore, createBunBlobStore } from '@epicenter/blobs/bun';
 import { createDesktopSqliteOwner } from '@epicenter/device/desktop';
@@ -516,9 +516,9 @@ describe('loadStaticAssets', () => {
 				applicationPage: ({ title }) => applicationPage(title),
 			});
 			rmSync(join(root, absent.id), { recursive: true });
-			expect(loadStaticAssets(root, COMPILED_APPLICATIONS)).rejects.toThrow(
-				new RegExp(`${absent.title} asset root is missing`),
-			);
+			await expect(
+				loadStaticAssets(root, COMPILED_APPLICATIONS),
+			).rejects.toThrow(new RegExp(`${absent.title} asset root is missing`));
 		}
 
 		const missingHome = writeAppsDist({
@@ -526,7 +526,7 @@ describe('loadStaticAssets', () => {
 			applicationPage: ({ title }) => applicationPage(title),
 		});
 		rmSync(join(missingHome, 'home'), { recursive: true });
-		expect(
+		await expect(
 			loadStaticAssets(missingHome, COMPILED_APPLICATIONS),
 		).rejects.toThrow(/Home index is missing/);
 	});
@@ -1717,17 +1717,24 @@ describe('local blob routes', () => {
 		}
 	});
 
-	test('path-hostile and foreign ids are rejected before filesystem access', async () => {
+	test('malformed and former blob ids are rejected before filesystem access', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		const server = await serveHost(host);
 		try {
-			const response = await fetch(
-				`${server.url.origin}/api/apps/so.epicenter.whispering/blobs/not-a-blob-id`,
-				{ headers: authenticatedHeaders(server) },
-			);
-			expect(response.status).toBe(400);
+			for (const id of [
+				'not-a-blob-id',
+				'blob_abcdefghijklmnopqrstu',
+				'take.wav',
+				'blob_abcdefghijklmnopqrstu.wav%00',
+			]) {
+				const response = await fetch(
+					`${server.url.origin}/api/apps/so.epicenter.whispering/blobs/${id}`,
+					{ headers: authenticatedHeaders(server) },
+				);
+				expect(response.status).toBe(400);
+			}
 		} finally {
 			await server.stop(true);
 		}
@@ -2351,11 +2358,11 @@ describe('checkout routes (ADR-0337)', () => {
 		const origin = server.url.origin;
 		try {
 			const refused = [
-				`${CHECKOUT_PATH}/so.epicenter.honeycrisp/notes/abc.md`,
-				`${CHECKOUT_PATH}/..%2F..%2Fetc`,
-				`${CHECKOUT_PATH}/not_an_app_id`,
-			];
-			for (const path of refused) {
+				[`${CHECKOUT_PATH}/so.epicenter.honeycrisp/notes/abc.md`, 404],
+				[`${CHECKOUT_PATH}/..%2F..%2Fetc`, 400],
+				[`${CHECKOUT_PATH}/not_an_app_id`, 400],
+			] as const;
+			for (const [path, status] of refused) {
 				const response = await fetch(`${origin}${path}`, {
 					method: 'PUT',
 					body: checkout([{ path: 'notes/abc.md', contents: 'x' }]),
@@ -2363,7 +2370,7 @@ describe('checkout routes (ADR-0337)', () => {
 					// anything else, so this never reaches the folder's identity.
 					headers: { ...authenticatedHeaders(server), 'if-match': '"x"' },
 				});
-				expect([400, 404]).toContain(response.status);
+				expect(response.status).toBe(status);
 			}
 			// A file inside the checkout that would climb out is refused by the
 			// host without costing the checkout its other files.

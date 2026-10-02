@@ -9,8 +9,9 @@
  * - Ordinary text is followed by the section, with thoughts when given
  * - Text with its own Thoughts list, then an open fence, gets one visible
  *   heading before it: two headings, refused on reopening, bytes intact
- * - Text with only an open fence is not marked, and has no thoughts
  * - The legacy import writes the same file and reports it as source-only
+ *
+ * See `document.test.ts` for an open fence absorbing the appended section.
  */
 import { afterAll, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -67,15 +68,6 @@ test('its own Thoughts list then an open fence: marked, refused on reopening, by
 	expect(unmarked.thoughts.map((thought) => thought.text)).toEqual([
 		'This belongs to the original article',
 	]);
-});
-
-test('an open fence alone is not marked and reads as no thoughts', () => {
-	const composed = composeBody('```\nnever closed');
-	expect(composed.body).toBe('\n```\nnever closed\n\n## Thoughts\n');
-	const reopened = parseCapture(HEAD + composed.body);
-	expect(reopened.refusal).toBeUndefined();
-	expect(reopened.hasSection).toBe(false);
-	expect(reopened.thoughts).toEqual([]);
 });
 
 test('the legacy import writes the marked file and reports it as source-only', async () => {

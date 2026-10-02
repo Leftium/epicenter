@@ -1,6 +1,14 @@
+/**
+ * Account-bound hosted blob tests.
+ *
+ * Publication sends the captured owner and visibility, validates the returned
+ * URL, and reports another owner's URL as unconfirmed. Downloads and deletion
+ * use the same account while foreign-owner deletion is refused before fetch.
+ */
 import { expect, test } from 'bun:test';
 import type { Account } from '@epicenter/auth';
 import { mintPersonalBlobUrl } from '@epicenter/blobs';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createPersonalHostedBlobs } from './hosted-blobs.js';
 
 const baseURL = 'https://api.test';
@@ -32,8 +40,7 @@ test('publication captures owner and visibility, then validates the returned URL
 	const result = await blobs.publishPrivate(
 		new Blob(['audio'], { type: 'audio/webm' }),
 	);
-	expect(result.error).toBeNull();
-	expect(result.data).toBe(url);
+	expect(expectOk(result)).toBe(url);
 	expect(requests[0]!.url).toBe(`${baseURL}/api/blobs/personal/alice/private`);
 	expect(requests[0]!.method).toBe('POST');
 	expect(await requests[0]!.text()).toBe('audio');
@@ -45,7 +52,8 @@ test('publication captures owner and visibility, then validates the returned URL
 			),
 		),
 	);
-	expect((await wrong.publishPrivate(new Blob(['audio']))).error?.name).toBe(
+	const refused = await wrong.publishPrivate(new Blob(['audio']));
+	expect(expectErr<NonNullable<typeof refused.error>>(refused).name).toBe(
 		'PublicationUnconfirmed',
 	);
 });
@@ -61,10 +69,11 @@ test('download accepts a known URL and delete refuses a foreign owner', async ()
 			});
 		}),
 	);
-	expect((await blobs.download(url)).data).toBeInstanceOf(Blob);
-	expect((await blobs.delete(url)).error).toBeNull();
+	expect(expectOk(await blobs.download(url))).toBeInstanceOf(Blob);
+	expectOk(await blobs.delete(url));
 	expect(requests.map((request) => request.method)).toEqual(['GET', 'DELETE']);
-	expect(() =>
+	await expect(
 		blobs.delete(mintPersonalBlobUrl(baseURL, 'bob', 'public')),
-	).toThrow();
+	).rejects.toThrow('another principal');
+	expect(requests).toHaveLength(2);
 });

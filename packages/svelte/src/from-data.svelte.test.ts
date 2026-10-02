@@ -18,6 +18,7 @@ type SubscriberControl = {
 	 * still looks correct. This counts the call the getter is supposed to make.
 	 */
 	tracked: number;
+	updates: number;
 };
 
 const subscriberControls: SubscriberControl[] = [];
@@ -38,13 +39,16 @@ mock.module('svelte/reactivity', () => ({
 		let stop: (() => void) | undefined;
 		const control = {
 			activate() {
-				stop ??= start(() => {});
+				stop ??= start(() => {
+					control.updates += 1;
+				});
 			},
 			deactivate() {
 				stop?.();
 				stop = undefined;
 			},
 			tracked: 0,
+			updates: 0,
 		};
 		subscriberControls.push(control);
 		// These tests read getters imperatively, outside a Svelte effect. The
@@ -310,12 +314,16 @@ test('point reads answer from the current projection', () => {
 });
 
 test('kv get passes through and reflects writes', () => {
-	const { kv, reactive } = setup();
+	const { kv, reactive, kvControl } = setup();
+	kvControl.activate();
 	expect(reactive.kv.get('theme')).toBe('dark');
 	kv.set({ theme: 'light' });
 	expect(reactive.kv.get('theme')).toBe('light');
+	expect(kvControl.updates).toBe(1);
 	reactive.kv.update({ theme: 'dark' });
 	expect(reactive.kv.get('theme')).toBe('dark');
+	expect(kvControl.updates).toBe(2);
+	kvControl.deactivate();
 });
 
 test('persistence status reads through, and tracks only once something reads it', () => {
@@ -336,12 +344,14 @@ test('persistence status reads through, and tracks only once something reads it'
 	expect(persistence.calls.subscribe).toBe(1);
 	persistence.set('blocked');
 	expect(reactive.persistence.get()).toBe('blocked');
+	expect(persistenceControl.updates).toBe(1);
 	expect(persistence.calls.get).toBe(2);
 
 	// The read ANNOUNCED itself both times. This is the assertion that fails if
 	// the getter stops calling its subscriber, which is the whole of what this
 	// wrapper adds: without it the value is still correct and never re-renders.
 	expect(persistenceControl.tracked).toBe(2);
+	persistenceControl.deactivate();
 });
 
 test('flush passes through untouched', async () => {

@@ -16,7 +16,7 @@
 
 import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import { expectErr } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { type AccountWorkflow, reconcileNow } from './accounts.ts';
 import type { MailConfig } from './config.ts';
 import { createGmailClient } from './gmail-client.ts';
@@ -81,7 +81,7 @@ test('modifyMessage sends POST body and accepts a slim message response', async 
 			removeLabelIds: ['UNREAD'],
 		});
 
-		expect(result.error).toBeNull();
+		expectOk(result);
 		expect(result.data).toEqual({
 			id: 'm1',
 			threadId: 't-m1',
@@ -136,7 +136,7 @@ test('trashMessage POSTs to the trash endpoint with no body and folds labelIds',
 
 		const result = await client.trashMessage('m1');
 
-		expect(result.error).toBeNull();
+		expectOk(result);
 		expect(result.data).toEqual({
 			id: 'm1',
 			threadId: 't-m1',
@@ -183,7 +183,7 @@ test('untrashMessage POSTs to the untrash endpoint with no body', async () => {
 
 		const result = await client.untrashMessage('m1');
 
-		expect(result.error).toBeNull();
+		expectOk(result);
 		expect(result.data).toEqual({
 			id: 'm1',
 			threadId: 't-m1',
@@ -240,14 +240,10 @@ test('fetching a message spends exactly one format=full call and nothing else', 
 
 		const result = await client.getMessage('m1');
 
-		expect(result.error).toBeNull();
+		expectOk(result);
 		expect(requests).toEqual([
 			{ pathname: '/gmail/v1/users/me/messages/m1', format: 'full' },
 		]);
-		expect(requests.some((r) => r.format === 'raw')).toBe(false);
-		expect(requests.some((r) => r.pathname.includes('/attachments/'))).toBe(
-			false,
-		);
 		// The client has no attachment surface at all, so no caller can add the
 		// second call by accident.
 		expect(Object.keys(client).some((name) => /attachment/i.test(name))).toBe(

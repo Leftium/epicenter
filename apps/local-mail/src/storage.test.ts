@@ -50,13 +50,12 @@ const version = async (database: AppSqliteDatabase): Promise<number> => {
 	const rows = await database.all<{ user_version: number }>(
 		'PRAGMA user_version',
 	);
-	if (rows.error !== null) throw rows.error;
-	return rows.data[0]?.user_version ?? 0;
+	return expectOk(rows)[0]?.user_version ?? 0;
 };
 
 const stamp = async (database: AppSqliteDatabase, at: number) => {
 	const set = await database.run(`PRAGMA user_version = ${at}`);
-	if (set.error !== null) throw set.error;
+	expectOk(set);
 };
 
 test('a first open creates the durable file and stamps its version', async () => {
@@ -79,13 +78,15 @@ test('a first open creates the durable file and stamps its version', async () =>
 
 test('the durable file refuses a shape written by a newer build', async () => {
 	const owner = testOwner();
-	const opened = await owner.device.sqlite.open('local');
-	if (opened.error !== null) throw opened.error;
-	await stamp(opened.data, LOCAL_SCHEMA_VERSION + 1);
+	const opened = expectOk(await owner.device.sqlite.open('local'));
+
+	await stamp(opened, LOCAL_SCHEMA_VERSION + 1);
 
 	// Writing through it would lose the columns this build does not know about,
 	// and these bytes cannot be fetched again.
-	expect(openLocalMailStorage(owner.device)).rejects.toThrow(/newer version/);
+	await expect(openLocalMailStorage(owner.device)).rejects.toThrow(
+		/newer version/,
+	);
 	expect(owner.deleted).toEqual([]);
 });
 
@@ -95,11 +96,11 @@ test('a mail file at the wrong shape is demolished, in either direction', async 
 		const storage = await openLocalMailStorage(owner.device);
 		const name = requireAccountFiling('sub-one').database;
 
-		const stale = await owner.device.sqlite.open(name);
-		if (stale.error !== null) throw stale.error;
-		await stale.data.run('CREATE TABLE gone (id TEXT)');
-		await stale.data.run(`INSERT INTO gone VALUES ('row')`);
-		await stamp(stale.data, wrong);
+		const stale = expectOk(await owner.device.sqlite.open(name));
+
+		await stale.run('CREATE TABLE gone (id TEXT)');
+		await stale.run(`INSERT INTO gone VALUES ('row')`);
+		await stamp(stale, wrong);
 
 		const mail = await storage.mail('sub-one');
 		expect(owner.deleted).toEqual([name]);

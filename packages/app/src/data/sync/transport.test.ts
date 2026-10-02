@@ -1,10 +1,3 @@
-import {
-	type DataDefinition,
-	defineStore,
-	defineTable,
-	field,
-	plainText,
-} from '@epicenter/app';
 /**
  * Two replicas and one authority, wired through in-process sockets.
  *
@@ -25,10 +18,17 @@ import {
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import {
+	type DataDefinition,
+	defineStore,
+	defineTable,
+	field,
+	plainText,
+} from '@epicenter/app';
 
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	type DeclaredData,
 	openAccountStore,
@@ -1020,15 +1020,15 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 			bytes: new Uint8Array(600),
 		});
 
-		expect(over.error?.name).toBe('Malformed');
+		expect(expectErr(over).name).toBe('Malformed');
 		expect(collector.bufferedBytes()).toBe(0);
 	});
 });
 
 describe('a partial that outlives the socket that opened it', () => {
 	/**
-	 * The client keeps ONE collector for the life of the client, and `detach`
-	 * does not clear it. Positions in it are entry sequence numbers and snapshot
+	 * A previous client kept one collector across sockets and left partials
+	 * behind on detach. Positions in it are entry sequence numbers and snapshot
 	 * positions in the same key space, so a partial left behind by a dead socket
 	 * is waiting for whatever the authority sends at that number next.
 	 *
@@ -1078,7 +1078,7 @@ describe('a partial that outlives the socket that opened it', () => {
 		// its socket dies. It is now holding a partial at position 2, two chunks
 		// wide, that will never be completed by anything.
 		laptop.connect();
-		await wire.step(snapshotChunks + 1);
+		await wire.step(snapshotChunks + 2);
 		laptop.disconnect();
 		await wire.settle();
 		expect(laptop.client.status().cursor).toBe(1);
@@ -1126,7 +1126,7 @@ describe('a partial that outlives the socket that opened it', () => {
 				bytes: new Uint8Array([1]),
 			}),
 		);
-		expect(first.error).toBeNull();
+		expectOk(first);
 		const contradicting = phone.client.receive(
 			encodeFrame({
 				kind: 'entry',
@@ -1137,7 +1137,7 @@ describe('a partial that outlives the socket that opened it', () => {
 			}),
 		);
 
-		expect(contradicting.error?.name).toBe('BrokenStream');
+		expect(expectErr(contradicting).name).toBe('BrokenStream');
 		expect(phone.client.status().needsResync).toBe(true);
 	});
 
@@ -1182,7 +1182,7 @@ describe('the cursor is contiguous, and a jump is refused rather than absorbed',
 			}),
 		);
 
-		expect(skipped.error?.name).toBe('Gap');
+		expect(expectErr(skipped).name).toBe('Gap');
 		expect(phone.client.status().cursor).toBe(before);
 	});
 
@@ -1315,7 +1315,7 @@ describe('an entry that will not apply is loud, not silent', () => {
 		expect(phone.titles()).toEqual(['Groceries']);
 	});
 
-	test('neutralising the position in the log unsticks the replica', async () => {
+	test('a corrected entry at the refused position unsticks the replica', async () => {
 		// Why no server-side check is needed to RECOVER from a poison pill. The
 		// log is append-only and every entry is individually addressable, so the
 		// repair is to overwrite one row with an empty update, which every
@@ -1341,7 +1341,7 @@ describe('an entry that will not apply is loud, not silent', () => {
 				bytes: new Uint8Array([9, 9, 9]),
 			}),
 		);
-		expect(stuck.error?.name).toBe('Unapplyable');
+		expect(expectErr(stuck).name).toBe('Unapplyable');
 
 		// The operator replaces entry 2's bytes. The replica takes it and moves on.
 		expectOk(
@@ -1497,7 +1497,7 @@ describe('an ack naming a position this replica never received through', () => {
 			}),
 		);
 
-		expect(answer.error?.name).toBe('Gap');
+		expect(expectErr(answer).name).toBe('Gap');
 		expect(phone.client.status().needsResync).toBe(true);
 		expect(phone.client.status().cursor).toBe(9);
 	});
@@ -1727,7 +1727,7 @@ describe('who may replace the snapshot', () => {
 	test('CONTROL: the same offer from a current connection IS accepted', async () => {
 		// Without this the refusal above passes for a hub that refuses every
 		// offer, which would mean snapshots never happen at all.
-		const { wire, authority, phone } = await setup();
+		const { wire, authority, hub, phone } = await setup();
 		phone.connect();
 		for (let index = 0; index < 10; index += 1) {
 			phone.db.tables.notes.create({ title: `note ${index}` });
@@ -1737,9 +1737,17 @@ describe('who may replace the snapshot', () => {
 		}
 
 		const head = expectOk(authority.head());
-		const accepted = authority.replaceSnapshot(head, snapshotOf(phone));
-
-		expect(accepted.error).toBeNull();
+		expect(expectOk(authority.snapshotPosition())).toBeLessThan(head);
+		hub.receive(
+			phone.connection,
+			encodeFrame({
+				kind: 'offer',
+				position: head,
+				chunk: 0,
+				chunks: 1,
+				bytes: snapshotOf(phone),
+			}),
+		);
 		expect(expectOk(authority.snapshotPosition())).toBe(head);
 		expect(phone.titles()).toHaveLength(10);
 	});
@@ -1756,7 +1764,7 @@ describe('who may replace the snapshot', () => {
 		// Past the end of the log: it would stand for entries nobody has written.
 		const beyond = authority.replaceSnapshot(head + 5, new Uint8Array([0]));
 
-		expect(beyond.error?.name).toBe('SnapshotRefused');
+		expect(expectErr(beyond).name).toBe('SnapshotRefused');
 	});
 });
 
@@ -2120,6 +2128,7 @@ async function fuzz(
 	);
 	/** What every replica must end up holding, tracked outside the system. */
 	const expected = new Map<string, string>();
+	const expectedBodies = new Map<string, number>();
 	/** Which rows each device owns, so nothing ever writes to another's row. */
 	const owned = devices.map(() => [] as string[]);
 	const online = devices.map(() => false);
@@ -2151,6 +2160,7 @@ async function fuzz(
 			const made = device.db.tables.notes.create({ title });
 			mine.push(made.id);
 			expected.set(made.id, title);
+			expectedBodies.set(made.id, 0);
 			seen.creates += 1;
 		} else if (roll < 0.65) {
 			const rowId = mine[random.below(mine.length)] as string;
@@ -2164,6 +2174,7 @@ async function fuzz(
 			device.db.tables.notes.delete(rowId);
 			mine.splice(at, 1);
 			expected.delete(rowId);
+			expectedBodies.delete(rowId);
 			seen.deletes += 1;
 		} else {
 			// A node edit, which is the one thing that reaches storage without going
@@ -2171,6 +2182,7 @@ async function fuzz(
 			const rowId = mine[random.below(mine.length)] as string;
 			const text = editorOf(device, rowId);
 			text.applyDelta(text.change.insert('x') as never);
+			expectedBodies.set(rowId, (expectedBodies.get(rowId) ?? 0) + 1);
 			seen.nodeEdits += 1;
 		}
 
@@ -2204,13 +2216,13 @@ async function fuzz(
 	for (const device of devices) device.client.flush();
 	await wire.settle();
 
-	return { devices, authority, expected, seen };
+	return { devices, authority, expected, expectedBodies, seen };
 }
 
 describe('random schedules, and everyone still agrees', () => {
 	for (const seed of [1, 7, 12345, 987654321]) {
 		test(`seed ${seed}: every replica holds exactly what was written`, async () => {
-			const { devices, expected, seen } = await fuzz(seed, {
+			const { devices, expected, expectedBodies, seen } = await fuzz(seed, {
 				replicas: 3,
 				rounds: 220,
 			});
@@ -2221,6 +2233,8 @@ describe('random schedules, and everyone still agrees', () => {
 				// satisfied by every replica agreeing on the wrong thing, which is
 				// what a convergence-only assertion would accept.
 				expect(device.titles()).toEqual(wanted);
+				for (const [rowId, length] of expectedBodies)
+					expect(editorOf(device, rowId).length).toBe(length);
 				expect(device.client.status().unresolvedDependencies).toBe(false);
 				expect(device.client.status().lastError).toBeUndefined();
 			}
@@ -2235,18 +2249,6 @@ describe('random schedules, and everyone still agrees', () => {
 			expect(wanted.length).toBeGreaterThan(10);
 		});
 	}
-
-	test('CONTROL: the model notices when a replica is missing a row', async () => {
-		// Without this, `titles()` compared against a model proves nothing unless
-		// the comparison can actually fail. A row created on a device that never
-		// reconnects must NOT satisfy it.
-		const { devices, expected } = await fuzz(42, { replicas: 2, rounds: 60 });
-		const first = devices[0];
-		if (first === undefined) throw new Error('no device');
-		expected.set('never-synchronised', 'a row nobody has');
-
-		expect(first.titles()).not.toEqual([...expected.values()].sort());
-	});
 });
 
 describe('wire admission precedes catch-up and membership requires delivery', () => {

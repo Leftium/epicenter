@@ -32,11 +32,6 @@ async function setup() {
 		secret,
 		database: memoryAdapter(db),
 		plugins: authPlugins(baseURL),
-		session: {
-			expiresIn: 30 * 86400,
-			updateAge: 86400,
-			cookieCache: { enabled: false },
-		},
 	});
 	const ctx = await auth.$context;
 	async function issue(email: string) {

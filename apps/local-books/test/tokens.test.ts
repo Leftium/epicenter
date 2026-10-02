@@ -1,4 +1,13 @@
+/**
+ * QuickBooks token-grant validation and expiry decisions.
+ *
+ * Key behaviors:
+ * - Bearer grants become absolute timestamps and invalid grants are refused
+ * - Refresh rotation can retain the prior token when no replacement is supplied
+ * - Access-token skew and refresh-token expiry govern credential lifetime
+ */
 import { describe, expect, test } from 'bun:test';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	accessTokenTtlMs,
 	isAccessTokenExpired,
@@ -18,55 +27,65 @@ const validGrant = {
 
 describe('tokenSetFromGrant', () => {
 	test('converts relative expiries into absolute timestamps', () => {
-		const { data, error } = tokenSetFromGrant(validGrant, {
-			realmId: '123',
-			environment: 'sandbox',
-			now: NOW,
-		});
-		expect(error).toBeNull();
-		expect(data?.accessToken).toBe('access-abc');
-		expect(data?.refreshToken).toBe('refresh-xyz');
-		expect(Date.parse(data!.accessTokenExpiresAt)).toBe(NOW + 3600 * 1000);
-		expect(Date.parse(data!.refreshTokenExpiresAt)).toBe(NOW + 8726400 * 1000);
+		const data = expectOk(
+			tokenSetFromGrant(validGrant, {
+				realmId: '123',
+				environment: 'sandbox',
+				now: NOW,
+			}),
+		);
+
+		expect(data.accessToken).toBe('access-abc');
+		expect(data.refreshToken).toBe('refresh-xyz');
+		expect(Date.parse(data.accessTokenExpiresAt)).toBe(NOW + 3600 * 1000);
+		expect(Date.parse(data.refreshTokenExpiresAt)).toBe(NOW + 8726400 * 1000);
 	});
 
 	test('rejects a non-bearer token type', () => {
-		const { error } = tokenSetFromGrant(
-			{ ...validGrant, token_type: 'mac' },
-			{ realmId: '1', environment: 'sandbox', now: NOW },
+		const error = expectErr(
+			tokenSetFromGrant(
+				{ ...validGrant, token_type: 'mac' },
+				{ realmId: '1', environment: 'sandbox', now: NOW },
+			),
 		);
-		expect(error?.name).toBe('InvalidGrant');
+		expect(error.name).toBe('InvalidGrant');
 	});
 
 	test('falls back to the prior refresh token during rotation', () => {
-		const { data, error } = tokenSetFromGrant(
-			{ ...validGrant, refresh_token: undefined },
-			{
-				realmId: '1',
-				environment: 'sandbox',
-				now: NOW,
-				fallbackRefreshToken: 'old-refresh',
-			},
+		const data = expectOk(
+			tokenSetFromGrant(
+				{ ...validGrant, refresh_token: undefined },
+				{
+					realmId: '1',
+					environment: 'sandbox',
+					now: NOW,
+					fallbackRefreshToken: 'old-refresh',
+				},
+			),
 		);
-		expect(error).toBeNull();
-		expect(data?.refreshToken).toBe('old-refresh');
+
+		expect(data.refreshToken).toBe('old-refresh');
 	});
 
 	test('rejects a missing access token', () => {
-		const { error } = tokenSetFromGrant(
-			{ ...validGrant, access_token: undefined },
-			{ realmId: '1', environment: 'sandbox', now: NOW },
+		const error = expectErr(
+			tokenSetFromGrant(
+				{ ...validGrant, access_token: undefined },
+				{ realmId: '1', environment: 'sandbox', now: NOW },
+			),
 		);
-		expect(error?.name).toBe('InvalidGrant');
+		expect(error.name).toBe('InvalidGrant');
 	});
 });
 
 describe('expiry helpers', () => {
-	const token = tokenSetFromGrant(validGrant, {
-		realmId: '1',
-		environment: 'sandbox',
-		now: NOW,
-	}).data!;
+	const token = expectOk(
+		tokenSetFromGrant(validGrant, {
+			realmId: '1',
+			environment: 'sandbox',
+			now: NOW,
+		}),
+	);
 
 	test('access token is live right after issue', () => {
 		expect(isAccessTokenExpired(token, NOW, 0)).toBe(false);

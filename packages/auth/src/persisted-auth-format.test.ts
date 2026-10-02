@@ -4,13 +4,19 @@
  */
 import { expect, test } from 'bun:test';
 import { PersistedAuth } from './auth-types.js';
-import { parsePersistedAuth } from './persisted-auth-storage.js';
+import {
+	parsePersistedAuth,
+	serializePersistedAuth,
+} from './persisted-auth-storage.js';
 
 test('the direct-session cell round-trips without grant metadata', () => {
-	const cell = { token: 'signed-session', principalId: 'alice' };
-	expect(
-		JSON.stringify(PersistedAuth.assert(JSON.parse(JSON.stringify(cell)))),
-	).toBe(JSON.stringify(cell));
+	const cell = PersistedAuth.assert({
+		token: 'signed-session',
+		principalId: 'alice',
+	});
+	const serialized = serializePersistedAuth(cell);
+	expect(serialized).toBe('{"token":"signed-session","principalId":"alice"}');
+	expect(parsePersistedAuth(serialized)).toEqual(cell);
 });
 
 test('missing fields, empty tokens, old grants and extra fields are refused', () => {

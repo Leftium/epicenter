@@ -1732,8 +1732,8 @@ describe('a change with no open file whose reply is lost', () => {
 	});
 });
 
-// Parent counterexample: an editor must not bypass a retained noneditor intent.
-test('a file opened during a noneditor write cannot publish after that write becomes uncertain', async () => {
+// A pending file mutation blocks acquiring a competing editor.
+test('opening a file during a noneditor write refuses an editor before the reply is lost', async () => {
 	const { state, folder, seedNote } = await product();
 	const note = await seedNote();
 	await state.refresh();
@@ -1758,11 +1758,11 @@ test('a file opened during a noneditor write cannot publish after that write bec
 	await asked.promise;
 	await state.open(note.path);
 	const session = state.sessionAt(note.path);
-	if (session !== undefined)
-		session.input(note.source.replace('Hello', 'Newer typing'));
+	expect(session).toBeUndefined();
 	reply.resolve();
 	expect(await changing).toContain('not confirmed');
-	if (session !== undefined) await session.save();
+	await state.open(note.path);
+	expect(state.sessionAt(note.path)).toBeUndefined();
 	expect(calls).toBe(1);
 });
 

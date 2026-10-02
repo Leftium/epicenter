@@ -1,14 +1,20 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Input } from '@epicenter/ui/input';
+	import { Label } from '@epicenter/ui/label';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { reviewImport, STARTER_LIST } from '$lib/import.js';
 	import type { Entry } from '$lib/data.js';
 	import type { createEntriesState } from '$lib/entries.svelte.js';
+	import { useReading } from '$lib/reading-preference.js';
+	import { hasHan } from '$lib/readings.js';
+	import ReadingText from './ReadingText.svelte';
 	let { entries, onStart }: {
 		entries: ReturnType<typeof createEntriesState>;
 		onStart: (focus: { entryId: string; text: string }[]) => void;
 	} = $props();
+	const reading = useReading();
 	const stages = ['new', 'recognized', 'understood', 'usable'] as const;
 	const labels: Record<Entry['stage'], string> = { new: 'New', recognized: 'Recognize', understood: 'Understand', usable: 'Use' };
 	let search = $state('');
@@ -61,7 +67,7 @@
 			<h3 class="font-semibold">Review expressions</h3>
 			<p class="text-sm text-muted-foreground">{review.eligible.length} available; {review.repeated} repeated; {review.alreadySaved} already saved.</p>
 			{#each review.eligible as text (text)}
-				<label class="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selected.includes(text)} onchange={() => selected = selected.includes(text) ? selected.filter((item) => item !== text) : [...selected, text]} />{text}</label>
+				<Label class="min-h-11 leading-normal font-normal select-text"><Checkbox checked={selected.includes(text)} onCheckedChange={(checked) => selected = checked ? [...selected, text] : selected.filter((item) => item !== text)} /><span><ReadingText {text} /></span></Label>
 			{/each}
 			<div class="flex gap-2"><Button disabled={!selected.length} onclick={confirmImport}>Add selected</Button><Button variant="ghost" onclick={() => review = null}>Cancel</Button></div>
 		</section>
@@ -81,10 +87,14 @@
 			{#each shown as entry (entry.id)}
 				<article class="rounded-lg border p-4">
 					<div class="flex items-center justify-between gap-2">
-						<label class="flex min-h-11 items-center gap-2 font-medium"><input type="checkbox" aria-label="Choose {entry.text} for chat" checked={focusIds.includes(entry.id)} disabled={!focusIds.includes(entry.id) && selectedFocus.length >= 3} onchange={() => toggleFocus(entry.id)} />{entry.text}</label>
+						<Label class="min-h-11 text-base leading-normal select-text"><Checkbox aria-label="Choose {entry.text} for chat" checked={focusIds.includes(entry.id)} disabled={!focusIds.includes(entry.id) && selectedFocus.length >= 3} onCheckedChange={() => toggleFocus(entry.id)} /><span><ReadingText text={entry.text} /></span></Label>
 						<Button size="sm" variant="ghost" onclick={() => entries.remove(entry.id)}>Delete</Button>
 					</div>
-					<textarea class="min-h-20 w-full rounded-md border bg-background p-2 text-sm" aria-label="Your note for {entry.text}" placeholder="Your note" value={entry.note} onblur={(event) => { if (event.currentTarget.value !== entry.note) entries.setNote(entry.id, event.currentTarget.value); }}></textarea>
+					{#if reading.showPinyin && hasHan(entry.note)}
+						<!-- The note as reading text. The field below stays the exact text. -->
+						<p class="mb-2 text-sm whitespace-pre-wrap text-muted-foreground"><ReadingText text={entry.note} /></p>
+					{/if}
+					<Textarea class="min-h-20" aria-label="Your note for {entry.text}" placeholder="Your note" value={entry.note} onblur={(event) => { if (event.currentTarget.value !== entry.note) entries.setNote(entry.id, event.currentTarget.value); }} />
 					<div class="mt-2 flex flex-wrap gap-1" aria-label="Your stage for {entry.text}">
 						{#each stages as option}<Button size="sm" variant={entry.stage === option ? 'default' : 'outline'} aria-pressed={entry.stage === option} onclick={() => entries.setStage(entry.id, option)}>{labels[option]}</Button>{/each}
 					</div>

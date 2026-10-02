@@ -3,7 +3,6 @@
 	import { getConnectionScreen } from '@epicenter/app-shell/boot-screens';
 	import { InferencePicker } from '@epicenter/app-shell/inference-picker';
 	import * as Chat from '@epicenter/ui/chat';
-	import { Markdown } from '@epicenter/ui/markdown';
 	import { Button } from '@epicenter/ui/button';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import { Textarea } from '@epicenter/ui/textarea';
@@ -19,7 +18,11 @@
 	import type { createEntriesState } from '$lib/entries.svelte.js';
 	import type { InferenceCatalog } from '@epicenter/app-shell/inference-picker';
 	import type { InferenceSelections } from '@epicenter/app-shell/inference-selections';
+	import { useReading } from '$lib/reading-preference.js';
 	import DictationButton from './DictationButton.svelte';
+	import PhraseCapture from './PhraseCapture.svelte';
+	import ReadingMarkdown from './ReadingMarkdown.svelte';
+	import ReadingText from './ReadingText.svelte';
 
 	const accountManagementUrl = auth.accountManagementUrl;
 	const openConnection = getConnectionScreen();
@@ -68,56 +71,13 @@
 		return chat.unsaved.length > 0;
 	}
 
-	let saveAffordance = $state.raw<{
-		text: string;
-		x: number;
-		y: number;
-	} | null>(
-		null,
-	);
-
-	function handleSelectionChange() {
-		const selection = document.getSelection();
-		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-			saveAffordance = null;
-			return;
-		}
-
-		if (persistence.get() !== 'saved') { saveAffordance = null; return; }
-		const text = selection.toString().trim();
-		if (!text) {
-			saveAffordance = null;
-			return;
-		}
-
-		const anchorElement =
-			selection.anchorNode instanceof Element
-				? selection.anchorNode
-				: selection.anchorNode?.parentElement;
-		const focusElement =
-			selection.focusNode instanceof Element
-				? selection.focusNode
-				: selection.focusNode?.parentElement;
-		// Same container required, not just any two: a drag from one message
-		// across the gap into another would otherwise save the whole span.
-		const anchorSource = anchorElement?.closest('[data-entry-source]');
-		const focusSource = focusElement?.closest('[data-entry-source]');
-		if (!anchorSource || anchorSource !== focusSource) {
-			saveAffordance = null;
-			return;
-		}
-
-		const rect = selection.getRangeAt(0).getBoundingClientRect();
-		saveAffordance = { text, x: rect.left + rect.width / 2, y: rect.top };
-	}
-
-	function saveSelectedEntry() {
-		if (!saveAffordance) return;
-		if (persistence.get() !== 'saved') return;
-		entries.save(saveAffordance.text);
-		document.getSelection()?.removeAllRanges();
-		saveAffordance = null;
-	}
+	const reading = useReading();
+	// The element holding the messages; phrase capture listens inside it.
+	let list = $state<HTMLElement | null>(null);
+	// A reopened chat can contain rows accepted before a failed save. The
+	// current loop cannot mark those rows, so storage confirms the history
+	// before any message in it is a phrase source.
+	const historyStored = $derived(persistence.get() === 'saved');
 
 	onMount(() => {
 		if (startOpening) {
@@ -138,36 +98,29 @@
 
 <svelte:window onbeforeunload={(event) => { if (hasUnsaved()) event.preventDefault(); }} />
 
-<svelte:document onselectionchange={handleSelectionChange} />
-
-{#if saveAffordance}
-	<button
-		type="button"
-		class="fixed z-50 -translate-x-1/2 -translate-y-full rounded border bg-popover px-2 py-1 text-xs shadow-sm"
-		style="left: {saveAffordance.x}px; top: {saveAffordance.y - 6}px;"
-		onpointerdown={(event) => event.preventDefault()}
-		onclick={saveSelectedEntry}
-	>
-		Save entry
-	</button>
-{/if}
-
-
+<PhraseCapture root={list} {entries} {historyStored} resetKey={`${reading.showPinyin}:${chat.messages.length}:${chat.isGenerating}`} />
 
 {#snippet message(msg: AgentMessage, streaming: boolean)}
-			{#if msg.role === 'user' || streaming}
-					<!-- Render Markdown only after the answer settles. -->
-				<div class="whitespace-pre-wrap">{agentMessageText(msg)}</div>
-			{:else}
-				<div data-entry-source={!unsavedIds.has(msg.id) && persistence.get() === 'saved' ? msg.id : undefined}>
-						<Markdown content={agentMessageText(msg)} />
-				</div>
-
-			{/if}
-		{/snippet}
+	{#if streaming}
+		<!-- Render Markdown and readings only after the answer settles. -->
+		<div class="whitespace-pre-wrap">{agentMessageText(msg)}</div>
+	{:else if msg.role === 'user'}
+		<div class="whitespace-pre-wrap"><ReadingText text={agentMessageText(msg)} /></div>
+	{:else}
+		<!-- A tutor answer is a phrase source only once storage has confirmed it:
+		     an unsaved one stays readable and copyable without the marker. -->
+		{@const saved = !unsavedIds.has(msg.id)}
+		<div data-phrase-source={saved && historyStored ? msg.id : undefined}>
+			<ReadingMarkdown content={agentMessageText(msg)} />
+		</div>
+		{#if saved}
+			<Button class="mt-1" variant="ghost" size="xs" disabled={!historyStored} data-capture-skip data-save-phrase={msg.id}>Save a phrase</Button>
+		{/if}
+	{/if}
+{/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
-	<div class="min-h-0 flex-1 overflow-y-auto">
+	<div class="min-h-0 flex-1 overflow-y-auto" bind:this={list}>
 		{#if chat.messages.length === 0 && !chat.streaming && !chat.isThinking}
 			<div class="flex h-full items-center justify-center px-4 text-center text-muted-foreground">
 				<p>The tutor is ready to open this conversation.</p>

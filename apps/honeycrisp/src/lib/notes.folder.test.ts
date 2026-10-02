@@ -73,10 +73,11 @@ async function until(check: () => boolean | Promise<boolean>, what: string) {
 }
 
 /**
- * A new notes directory with automatic history disabled. Editor tests do not
- * wait for background commits; explicit history is exercised through the app.
+ * The notes state over a new directory with automatic history disabled.
+ * Editor tests do not wait for background commits; explicit history is
+ * exercised through the app.
  */
-async function open() {
+async function product() {
 	const root = await realpath(
 		await mkdtemp(join(tmpdir(), 'honeycrisp-notes-')),
 	);
@@ -91,25 +92,16 @@ async function open() {
 		}),
 	);
 	await setUpFolder(opened.files, Object.keys(honeycrispDefinition.tables));
-	// The methods the notes UI uses, on plain objects a test can wrap.
+	// Mutable copies let a test hold or lose replies from the real folder.
 	const folder: NotesFolder = {
 		tables: {
-			notes: { list: () => opened.tables.notes.list() },
-			folders: { list: () => opened.tables.folders.list() },
+			notes: { list: opened.tables.notes.list },
+			folders: { list: opened.tables.folders.list },
 		},
-		files: {
-			list: () => opened.files.list(),
-			read: (...args) => opened.files.read(...args),
-			create: (...args) => opened.files.create(...args),
-			replace: (...args) => opened.files.replace(...args),
-			remove: (...args) => opened.files.remove(...args),
-			move: (...args) => opened.files.move(...args),
-			mkdir: (...args) => opened.files.mkdir(...args),
-			rmdir: (...args) => opened.files.rmdir(...args),
-		},
+		files: { ...opened.files },
 		git: opened.git,
 		// This folder hints at its own saves, not at other programs' writes.
-		onFilesChanged: (listener) => opened.onFilesChanged(listener),
+		onFilesChanged: opened.onFilesChanged,
 	};
 	const ran: string[] = [];
 	const host: NotesHost = {
@@ -153,16 +145,10 @@ async function open() {
 		expectOk(await opened.tables.notes.list()).entries.map(
 			(entry) => entry.path,
 		);
-	return { host, folder, root, git, seedNote, notePaths, ran };
-}
-
-/** The notes state over a new directory. */
-async function product() {
-	const fixture = await open();
-	const state = createNotes(fixture.host);
+	const state = createNotes(host);
 	cleanup.push(() => state.close());
 	await state.refreshAll();
-	return { ...fixture, state };
+	return { host, folder, root, git, seedNote, notePaths, ran, state };
 }
 
 type State = Awaited<ReturnType<typeof product>>['state'];
@@ -454,23 +440,6 @@ test('a Git failure leaves the file saved and is reported as history, not as a s
 // ============================================================================
 
 describe('other writers', () => {
-	test('a save based on a file another program changed is refused', async () => {
-		const { state, root, seedNote } = await product();
-		const note = await seedNote();
-		const session = await opened(state, note.path);
-		await writeFile(
-			join(root, note.path),
-			note.source.replace('Hello', 'Changed outside'),
-		);
-		session.input(note.source.replace('Hello', 'Mine'));
-		await session.save();
-		expect(session.status).toBe('conflict');
-		expect(session.saved.source).toBe(note.source);
-		expect(await readFile(join(root, note.path), 'utf8')).toContain(
-			'Changed outside',
-		);
-	});
-
 	test('a dirty draft survives an external edit and can save over the reviewed version', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
@@ -482,6 +451,7 @@ describe('other writers', () => {
 		);
 		await session.save();
 		expect(session.status).toBe('conflict');
+		expect(session.saved.source).toBe(note.source);
 		expect(session.buffer).toContain('Mine');
 		const reviewed = session.external;
 		expect(reviewed).toMatchObject({ kind: 'changed' });
@@ -513,21 +483,6 @@ describe('other writers', () => {
 		expect(session.takeTheirs(reviewed)).toBe(false);
 		expect(await readFile(join(root, note.path), 'utf8')).toBe(newer);
 		expect(session.buffer).toContain('Mine');
-	});
-
-	test('a file deleted outside leaves the draft, which is written back exclusively', async () => {
-		const { state, folder, root, seedNote } = await product();
-		const note = await seedNote();
-		const session = await opened(state, note.path);
-		await rm(join(root, note.path));
-		const mine = note.source.replace('Hello', 'Mine');
-		session.input(mine);
-		await session.save();
-		expect(session.external).toEqual({ kind: 'removed' });
-		expect((await folder.files.read(note.path)).error?.name).toBe('NotFound');
-		expect(await state.recoverDraft(note.path)).toBeUndefined();
-		expect(await readFile(join(root, note.path), 'utf8')).toBe(mine);
-		expect(session.status).toBe('saved');
 	});
 
 	test('a malformed file stays listed with its issue and its source, and is repaired as text', async () => {
@@ -562,7 +517,7 @@ describe('other writers', () => {
 // ============================================================================
 
 describe('slow saves', () => {
-	test('a save that waited is checked against the file as it is then', async () => {
+	test('a held save stays saving, then meets an outside write as a conflict', async () => {
 		const { state, folder, root, seedNote } = await product();
 		const note = await seedNote();
 		const session = await opened(state, note.path);

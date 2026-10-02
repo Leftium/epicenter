@@ -154,8 +154,7 @@ function invalidValues(
 }
 
 /** The exact file a new row is: its path, its source text, and that text's bytes. */
-export type PreparedRow = {
-	readonly stem: string;
+type PreparedRow = {
 	readonly path: string;
 	readonly source: string;
 	readonly bytes: Uint8Array;
@@ -190,7 +189,6 @@ export function prepareRow(
 			reason: composed.error.reason,
 		});
 	return Ok({
-		stem: input.stem,
 		path,
 		source: composed.data,
 		bytes: encoder.encode(composed.data),

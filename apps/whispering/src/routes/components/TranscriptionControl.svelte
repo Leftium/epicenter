@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Popover from '@epicenter/ui/popover';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import { getSession } from '$lib/session.svelte.js';
 	import { returnFocusToTrigger } from './option-popover-focus.js';
 	import TranscriptionSettingsForm from './TranscriptionSettingsForm.svelte';
@@ -19,27 +19,33 @@
 
 	const { library } = getSession();
 	const model = $derived(library.settings.transcriptionModel);
+	let hinting = $state(false);
 </script>
 
 <Popover.Root bind:open>
-	<Popover.Trigger>
-		{#snippet child({ props })}
-			<Button
-				{...props}
-				bind:ref={trigger}
-				variant="ghost"
-				size="sm"
-				class="w-full min-w-0 px-1.5 font-normal text-muted-foreground sm:w-auto sm:max-w-44 sm:px-2.5"
-				tooltip="Transcription model"
-				aria-label="Transcription model: {model || 'none set'}, at {library.settings.transcriptionBaseUrl || 'no endpoint'}"
-				data-testid="transcription-control"
-			>
-				<AudioLinesIcon />
-				<span class="truncate">{model || 'No model'}</span>
-				<ChevronDownIcon class="opacity-60 max-sm:hidden" />
-			</Button>
-		{/snippet}
-	</Popover.Trigger>
+	<!-- The hint is composed here, not through the button's own tooltip, so it can be held shut while the popover is open and never takes its Escape. -->
+	<Tooltip.Root disabled={open} bind:open={() => hinting && !open, (next) => (hinting = next)}>
+		<Tooltip.Trigger>
+			{#snippet child({ props: hint })}
+				<Popover.Trigger {...hint}>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							bind:ref={trigger}
+							variant="outline"
+							size="icon"
+							class="text-muted-foreground"
+							aria-label="Transcription model: {model || 'none set'}, at {library.settings.transcriptionBaseUrl || 'no endpoint'}"
+							data-testid="transcription-control"
+						>
+							<AudioLinesIcon />
+						</Button>
+					{/snippet}
+				</Popover.Trigger>
+			{/snippet}
+		</Tooltip.Trigger>
+		<Tooltip.Content side="bottom" class="max-w-xs text-center">Transcription model: {model || 'none set'}</Tooltip.Content>
+	</Tooltip.Root>
 	<Popover.Content
 		bind:ref={content}
 		onCloseAutoFocus={(event) => returnFocusToTrigger(event, trigger, content)}

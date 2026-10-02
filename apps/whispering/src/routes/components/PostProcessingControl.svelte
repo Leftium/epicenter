@@ -5,8 +5,8 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import * as RadioGroup from '@epicenter/ui/radio-group';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { cn } from '@epicenter/ui/utils';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { resolve } from '$app/paths';
 	import { canRun, resolvePostProcessing, transformationName } from '$lib/post-processing.js';
@@ -31,32 +31,44 @@
 		choice.kind === 'none' ? 'None' : choice.kind === 'missing' ? 'Not in the folder' : transformationName(choice.entry),
 	);
 
+	/** The trigger is an icon, so this is its whole name: what it is, what is chosen, and what is wrong. */
+	const summary = $derived(
+		`Post-processing: ${name}${choice.kind === 'repair' ? '. It needs repair before it can run.' : choice.kind === 'missing' ? '. The chosen transformation was deleted or moved.' : ''}`,
+	);
+	let hinting = $state(false);
+
 	// A row path always has a slash, so it never equals None's value.
 	const NONE = 'none';
 </script>
 
 <Popover.Root bind:open>
-	<Popover.Trigger>
-		{#snippet child({ props })}
-			<Button
-				{...props}
-				bind:ref={trigger}
-				variant="ghost"
-				size="sm"
-				class={cn(
-					'w-full min-w-0 px-1.5 font-normal text-muted-foreground sm:w-auto sm:max-w-44 sm:px-2.5',
-					(choice.kind === 'missing' || choice.kind === 'repair') && 'text-warning',
-				)}
-				tooltip="Post-processing"
-				aria-label="Post-processing: {name}{choice.kind === 'repair' ? ', needs repair' : ''}"
-				data-testid="post-processing-control"
-			>
-				<WandSparklesIcon />
-				<span class="truncate">{name}</span>
-				<ChevronDownIcon class="opacity-60 max-sm:hidden" />
-			</Button>
-		{/snippet}
-	</Popover.Trigger>
+	<!-- The hint is composed here, not through the button's own tooltip, so it can be held shut while the popover is open and never takes its Escape. -->
+	<Tooltip.Root disabled={open} bind:open={() => hinting && !open, (next) => (hinting = next)}>
+		<Tooltip.Trigger>
+			{#snippet child({ props: hint })}
+				<Popover.Trigger {...hint}>
+					{#snippet child({ props })}
+						<!-- A transformation that can run reads as on; one that cannot, or is gone, as a warning; None as the other two controls do. -->
+						<Button
+							{...props}
+							bind:ref={trigger}
+							variant={choice.kind === 'ready' ? 'secondary' : 'outline'}
+							size="icon"
+							class={cn(
+								choice.kind === 'none' && 'text-muted-foreground',
+								(choice.kind === 'missing' || choice.kind === 'repair') && 'text-warning',
+							)}
+							aria-label={summary}
+							data-testid="post-processing-control"
+						>
+							<WandSparklesIcon />
+						</Button>
+					{/snippet}
+				</Popover.Trigger>
+			{/snippet}
+		</Tooltip.Trigger>
+		<Tooltip.Content side="bottom" class="max-w-xs text-center">{summary}</Tooltip.Content>
+	</Tooltip.Root>
 	<Popover.Content
 		bind:ref={content}
 		onCloseAutoFocus={(event) => returnFocusToTrigger(event, trigger, content)}

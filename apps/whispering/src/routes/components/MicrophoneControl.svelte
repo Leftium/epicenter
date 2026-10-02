@@ -5,7 +5,8 @@
 	import { Progress } from '@epicenter/ui/progress';
 	import * as RadioGroup from '@epicenter/ui/radio-group';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import { cn } from '@epicenter/ui/utils';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { untrack } from 'svelte';
@@ -38,6 +39,26 @@
 		!input.available ? 'Fixture audio' : input.choice === undefined ? 'System default' : input.choice.label || 'Chosen microphone',
 	);
 
+	/**
+	 * What is wrong with the choice, for the trigger. An input that is not
+	 * listed counts only once inputs are listed by name: before access is
+	 * allowed nothing is listed, and that says nothing about the choice.
+	 */
+	const warning = $derived(
+		!input.available
+			? undefined
+			: input.denied
+				? 'Microphone access was denied'
+				: input.choiceListed === false
+					? 'This input is not listed'
+					: input.preferenceProblem
+						? input.preferenceProblem
+						: undefined,
+	);
+	/** The trigger is an icon, so this is its whole name: what it is, what is chosen, and what is wrong. */
+	const summary = $derived(`Microphone input: ${name}${warning ? `. ${warning}.` : ''}`);
+	let hinting = $state(false);
+
 	// Radio values: a listed ID never equals the system default's value.
 	const SYSTEM = 'system';
 	const valueOf = (deviceId: string) => `device:${deviceId}`;
@@ -60,24 +81,29 @@
 </script>
 
 <Popover.Root bind:open>
-	<Popover.Trigger>
-		{#snippet child({ props })}
-			<Button
-				{...props}
-				bind:ref={trigger}
-				variant="ghost"
-				size="sm"
-				class="w-full min-w-0 px-1.5 font-normal text-muted-foreground sm:w-auto sm:max-w-44 sm:px-2.5"
-				tooltip="Microphone input"
-				aria-label="Microphone input: {name}"
-				data-testid="microphone-control"
-			>
-				<MicIcon />
-				<span class="truncate">{name}</span>
-				<ChevronDownIcon class="opacity-60 max-sm:hidden" />
-			</Button>
-		{/snippet}
-	</Popover.Trigger>
+	<!-- The hint is composed here, not through the button's own tooltip, so it can be held shut while the popover is open and never takes its Escape. -->
+	<Tooltip.Root disabled={open} bind:open={() => hinting && !open, (next) => (hinting = next)}>
+		<Tooltip.Trigger>
+			{#snippet child({ props: hint })}
+				<Popover.Trigger {...hint}>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							bind:ref={trigger}
+							variant="outline"
+							size="icon"
+							class={cn('text-muted-foreground', warning && 'text-warning')}
+							aria-label={summary}
+							data-testid="microphone-control"
+						>
+							<MicIcon />
+						</Button>
+					{/snippet}
+				</Popover.Trigger>
+			{/snippet}
+		</Tooltip.Trigger>
+		<Tooltip.Content side="bottom" class="max-w-xs text-center">{summary}</Tooltip.Content>
+	</Tooltip.Root>
 	<Popover.Content
 		bind:ref={content}
 		onCloseAutoFocus={(event) => returnFocusToTrigger(event, trigger, content)}

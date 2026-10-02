@@ -100,14 +100,10 @@
 </p>
 
 <!--
-	What the recorder uses, small and close to it: each opens its own popover, one at a time.
-	On a narrow window they are three equal columns, so none is left alone on a second line and a long name truncates in its own.
+	What the recorder uses, small and close to it: three icon buttons in one row at every width.
+	Each names itself and its current value in its label and tooltip, and opens its own popover, one at a time.
 -->
-<div
-	class="grid w-full max-w-sm grid-cols-3 gap-1 sm:flex sm:w-auto sm:max-w-full sm:flex-wrap sm:items-center sm:justify-center"
-	role="group"
-	aria-label="Recording options"
->
+<div class="flex items-center justify-center gap-1.5" role="group" aria-label="Recording options">
 	<MicrophoneControl bind:open={() => openOption === 'microphone', (open) => setOpen('microphone', open)} />
 	<TranscriptionControl bind:open={() => openOption === 'transcription', (open) => setOpen('transcription', open)} />
 	<PostProcessingControl bind:open={() => openOption === 'post-processing', (open) => setOpen('post-processing', open)} />

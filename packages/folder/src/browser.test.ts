@@ -459,7 +459,7 @@ describe('browser folder persistence and history', () => {
 			status: 'committed',
 			message: 'Add kv.json',
 		});
-		expectOk(await folder.kv.writeSource(saved, '{"theme":"light"}'));
+		expectOk(await folder.kv.replace(saved, '{"theme":"light"}'));
 		await settled(folder);
 		expect(folder.git.snapshot.lastCommit).toMatchObject({
 			status: 'committed',
@@ -490,9 +490,7 @@ describe('browser folder persistence and history', () => {
 			fields: { title: 'M', done: false },
 		});
 		expectOk(await folder.files.create('manual.txt', 'x'));
-		expectOk(
-			await folder.kv.writeSource(expectOk(await folder.kv.get()), '{}'),
-		);
+		expectOk(await folder.kv.replace(expectOk(await folder.kv.get()), '{}'));
 		await Bun.sleep(20);
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 		const result = await folder.git.commitAndPush();

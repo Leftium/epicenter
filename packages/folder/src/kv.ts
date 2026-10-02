@@ -36,7 +36,8 @@ export type FileKv<TValues> = {
 		snapshot: KvSnapshot<TValues>,
 		values: Partial<TValues>,
 	): Promise<Result<KvSnapshot<TValues>, TableWriteError>>;
-	writeSource(
+	/** Save complete source against the snapshot, creating exclusively when absent. */
+	replace(
 		snapshot: KvSnapshot<TValues>,
 		source: string,
 	): Promise<Result<KvSnapshot<TValues>, TableWriteError>>;
@@ -176,6 +177,6 @@ export function createKv<TValues>(
 			const next = `${bom}${JSON.stringify({ ...object, ...values }, null, 2)}\n`;
 			return publish(snapshot, next);
 		},
-		writeSource: publish,
+		replace: publish,
 	};
 }

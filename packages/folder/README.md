@@ -98,7 +98,7 @@ is not the desktop adapter, and it does not watch the directory.
 | Member | Contract |
 | --- | --- |
 | `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `sha256`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a captured entry. They refuse if the file changed. Each changes exactly one Markdown file. |
-| `kv` | Root `kv.json`, read and conditionally replaced like an entry. |
+| `kv` | Root `kv.json`. `get()` reads a snapshot; `update(snapshot, values)` merges declared values, preserving unknown fields; `replace(snapshot, source)` saves the complete text. Both writes check the captured version, or create exclusively when the snapshot represents absence. |
 | `files` | Ordinary files at literal paths. See below. |
 | `batch(collect)` | Several mutations in one application with one history request. See below. |
 | `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |

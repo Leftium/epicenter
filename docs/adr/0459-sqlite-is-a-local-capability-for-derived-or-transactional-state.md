@@ -73,6 +73,11 @@ transactions internally without becoming authoritative.
 
 Account scoping selects local ownership; it does not synchronize the database.
 Neither database files nor their WAL/journal companions enter data folder sync.
+[ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md)
+proposes one native app/account address shared by standalone and hosted shells,
+with cross-process admission. [ADR-0497](0497-browser-folders-use-opfs-with-recoverable-publication.md)
+proposes OPFS-backed browser folders with the same logical separation. Both
+require implementation and migration before current storage paths change.
 Private databases remain in runtime-managed storage outside data folder contents;
 this includes browser-managed storage on browser targets. A `.gitignore` entry
 does not establish this boundary.

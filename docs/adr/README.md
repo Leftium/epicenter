@@ -739,3 +739,5 @@ When you add an ADR, add its row here.
 | [0492](0492-the-source-cli-keeps-sessions-in-one-operating-system-credential.md) | The source CLI keeps sessions in one operating system credential | Proposed (source commands implemented; OS acceptance and hosted callback deployment pending) |
 | [0493](0493-whispering-runs-as-one-application-in-three-deployment-forms.md) | Whispering runs as one application in three deployment forms | Proposed (Epicenter integration, remaining shared native services, and release distribution unbuilt) |
 | [0495](0495-the-ark-community-profiles-use-at-handle-paths.md) | The Ark community profiles use at-handle paths | Proposed (community routing and stable profile identity unbuilt; custom domains open) |
+| [0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) | Native app runtime storage is independent of the shell | Proposed (shared root, cross-process admission, credentials, and migration unbuilt) |
+| [0497](0497-browser-folders-use-opfs-with-recoverable-publication.md) | Browser folders use OPFS with recoverable publication | Proposed (OPFS Folder adapter, recovery, admission, and migration unbuilt) |

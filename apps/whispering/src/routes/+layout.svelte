@@ -7,7 +7,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onDestroy } from 'svelte';
-	import { openSession } from '$lib/session.svelte.js';
+	import { mountSession } from '$lib/session.svelte.js';
 	import AppShell from './components/AppShell.svelte';
 	import '@epicenter/ui/app.css';
 	// Whispering's brand overrides, layered after the shared theme so they win.
@@ -17,12 +17,11 @@
 
 	// The mounted layout acquires the folder, once, and every page below shares
 	// it: a route change renders another page inside the same session. Importing
-	// modules opens nothing, and no page opens a folder of its own.
-	const opening = openSession();
+	// modules opens nothing, and no page opens a folder of its own. If the
+	// folder cannot be opened, the same holder lets the window be closed.
+	const { opening, release } = mountSession();
 
-	onDestroy(() => {
-		void opening.then((opened) => opened.data?.close()).catch(() => {});
-	});
+	onDestroy(release);
 </script>
 
 {#snippet failed(message: string)}

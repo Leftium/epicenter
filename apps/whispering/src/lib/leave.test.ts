@@ -414,6 +414,80 @@ test('with the host gone, a close attempt keeps the window and the pending audio
 	expect(answers).toEqual([]);
 });
 
+test('with the host gone the folder still saves: what is held shrinks as it is saved, and quitting stays an explicit choice', async () => {
+	const started = await open({ failAudioWrites: 1 });
+	const { library, guard, answers, root } = started;
+	// A capture that reached no file, and typing that is not saved.
+	await record(library);
+	const pending = library.pending[0]!;
+	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
+	const { editor } = library.selectedTransformation!;
+	library.autosave.paused = true;
+	patchRow(editor, { body: 'Typed after the host stopped.\n' });
+
+	started.askWithoutHost();
+
+	expect(guard.hostGone).toBe(true);
+	expect(guard.held).toContain(`${editor.path} has unsaved edits.`);
+	expect(guard.held.join(' ')).toContain('1 recording is not saved');
+	await guard.stay();
+
+	// The folder is not the host's. Both are saved through it now.
+	library.autosave.paused = false;
+	expect(await library.prepareToLeave()).toBe(false);
+	expect(editor.dirty).toBe(false);
+	expect(await Bun.file(join(root, editor.path)).text()).toContain(
+		'Typed after the host stopped.',
+	);
+	await library.retryPending(pending.capture.id);
+	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
+		`${pending.capture.id}.md`,
+		`${pending.capture.id}.wav`,
+	]);
+	expect(guard.held).toEqual([]);
+
+	// Nothing is held any more, and the window still does not close by itself:
+	// with no host to relay an answer, quitting is the person's own choice.
+	started.askWithoutHost();
+	expect(guard.asking).toBe(true);
+	expect(started.quitSignals).toBe(0);
+	await guard.discardAndQuit();
+	expect(started.quitSignals).toBe(1);
+	expect(answers).toEqual([]);
+});
+
+test('a guard disposed while it is finding out what is held approves nothing', async () => {
+	const answers: CloseDecision[] = [];
+	const listeners = new Set<() => void>();
+	const prepared = Promise.withResolvers<boolean>();
+	const guard = createLeaveGuard(
+		{ prepareToLeave: () => prepared.promise, unsavedWork: [] },
+		{
+			onRequest(listener) {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			},
+			async answer(decision) {
+				answers.push(decision);
+			},
+			onRequestWithoutHost: () => () => {},
+			quitWithoutHost() {},
+		},
+	);
+
+	for (const listener of listeners) listener();
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	expect(answers).toEqual(['asking']);
+
+	// The session closes while the guard is still waiting on its saves.
+	guard.dispose();
+	prepared.resolve(true);
+	await new Promise((resolve) => setTimeout(resolve, 10));
+
+	expect(answers).toEqual(['asking']);
+	expect(guard.asking).toBe(false);
+});
+
 test('the guard stops listening when the view goes away', async () => {
 	const { guard, listeners } = await open();
 	expect(listeners.size).toBe(1);

@@ -1,11 +1,18 @@
 /**
- * The Whispering folder host: the one native process that touches the data
- * folder.
+ * The Whispering host: the page's server and its application services.
  *
- * It opens the directory as a file folder, serves the built page, and answers
- * the page's bridge calls on loopback. The page reaches recordings, settings,
- * history, the terminal, and transcription only through here, so no Node or
- * Bun module is in the page bundle.
+ * It serves the built page on loopback and answers the operations a page
+ * cannot do itself: the terminal, revealing the folder, transcription and
+ * transformation requests with the device key, fixture audio, and the close
+ * handshake with the shell.
+ *
+ * It does not own the data folder. The desktop shell's Rust owner opens the
+ * directory, publishes files, and records history, and the page reaches it
+ * through Tauri. This process is given the same directory by the shell and is
+ * an ordinary program beside that owner: the terminal writes the directory
+ * the way any shell does, transcription reads one audio file out of it, and
+ * the device key is a file under its `.git`. It takes no folder lock, opens no
+ * folder, initializes no Git, and watches nothing.
  *
  * `handle` is a plain `Request -> Response` function. `main.ts` binds it to a
  * port; tests call it directly.
@@ -13,31 +20,29 @@
 import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
-import { basename, extname, join, resolve, sep } from 'node:path';
-import type { DataDefinition } from '@epicenter/definition';
-import { type Folder, openFolder } from '@epicenter/folder/bun';
+import { basename, extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { audioMimeTypeOf } from '../src/lib/audio-format.js';
-import { InvalidBatchPlan } from '../src/lib/bridge/batch-plan.js';
 import { decode, encode } from '../src/lib/bridge/codec.js';
-import {
-	DEFAULT_TRANSCRIPTION_SETTINGS,
-	whisperingDefinition,
-} from '../src/lib/definition.js';
+import { DEFAULT_TRANSCRIPTION_SETTINGS } from '../src/lib/definition.js';
 import {
 	requestTranscription,
 	TranscriptionError,
 } from '../src/lib/transcription.js';
 import { requestTransformation } from '../src/lib/transformation.js';
+import { readAudio } from './audio.js';
 import {
 	createFailureInjection,
 	type FailureInjection,
 } from './failure-injection.js';
-import { callFolder, UnknownFolderCall } from './folder-rpc.js';
 import { createShellTerminal } from './terminal.js';
-import { watchFolder } from './watch.js';
 
 export type HostOptions = {
-	/** The data folder. Created when absent. */
+	/**
+	 * The data folder, as the shell resolved it. The shell chooses, creates,
+	 * and canonicalizes it once and registers the same directory with the
+	 * folder's owner; this host uses exactly that spelling and never picks or
+	 * creates one.
+	 */
 	readonly root: string;
 	/** The per-launch credential every bridge request must carry. */
 	readonly token: string;
@@ -46,11 +51,6 @@ export type HostOptions = {
 	/** Set by a debug shell. Enables fixture audio and failure injection. */
 	readonly debug: boolean;
 	readonly fixturePath: string | undefined;
-	/**
-	 * Write the token into the served page. Only for running the host without
-	 * the desktop shell, which otherwise injects it.
-	 */
-	readonly inlineToken: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly log: (message: string) => void;
 	/**
@@ -94,10 +94,13 @@ const CONTENT_TYPES: Record<string, string> = {
 	'.txt': 'text/plain; charset=utf-8',
 };
 
-/** The page talks only to this host; transcription requests leave from the host. */
+/**
+ * The page talks to this host and to the shell's own commands, which is how it
+ * reaches the folder. Transcription requests leave from the host.
+ */
 const PAGE_POLICY = [
 	"default-src 'self'",
-	"connect-src 'self'",
+	"connect-src 'self' ipc: http://ipc.localhost",
 	"img-src 'self' data: blob:",
 	"media-src 'self' blob:",
 	"font-src 'self' data:",
@@ -124,18 +127,16 @@ const describe = (cause: unknown) =>
 	cause instanceof Error ? cause.message : String(cause);
 
 export async function createHost(options: HostOptions) {
-	await mkdir(options.root, { recursive: true });
-	const opened = await openFolder({
-		root: options.root,
-		definition: whisperingDefinition,
-		git: { author: { name: 'Whispering', email: 'whispering@localhost' } },
-	});
-	// A host with no folder serves nothing; the shell shows its failure page.
-	if (opened.error) throw new Error(opened.error.message);
-	const folder = opened.data;
-	// The folder resolved its root; use the same spelling everywhere after.
-	const root = await realpath(options.root);
-	const anyFolder = folder as unknown as Folder<DataDefinition>;
+	const root = options.root;
+	// A host given anything but the shell's resolved directory serves nothing;
+	// the shell shows its failure page.
+	const resolved = isAbsolute(root)
+		? await realpath(root).catch(() => undefined)
+		: undefined;
+	if (resolved !== root || !(await stat(root)).isDirectory())
+		throw new Error(
+			`The data folder '${root}' is not the existing, resolved directory the desktop shell selects. This host does not choose or create one.`,
+		);
 	const terminal = createShellTerminal(root);
 	const deviceFile = join(
 		root,
@@ -146,19 +147,20 @@ export async function createHost(options: HostOptions) {
 	);
 	const encoder = new TextEncoder();
 
-	let injection: FailureInjection | undefined;
-	if (options.debug) {
-		injection = createFailureInjection({ root, folder: anyFolder });
-		const initial = {
-			rowWrites: Number(options.env.WHISPERING_DEBUG_FAIL_ROW_WRITES ?? 0),
-			audioWrites: Number(options.env.WHISPERING_DEBUG_FAIL_AUDIO_WRITES ?? 0),
-			commitsBlocked: options.env.WHISPERING_DEBUG_BLOCK_COMMITS === '1',
-		};
-		// A lock someone else holds is theirs; start without the injected one.
-		await injection
-			.arm(initial)
-			.catch((cause) => options.log(`Failure injection: ${describe(cause)}`));
-	}
+	// Arming at launch touches nothing: the counters are numbers, and the branch
+	// lock waits until the page says the owner has opened the folder.
+	const injection: FailureInjection | undefined = options.debug
+		? createFailureInjection({
+				root,
+				launch: {
+					rowWrites: Number(options.env.WHISPERING_DEBUG_FAIL_ROW_WRITES ?? 0),
+					audioWrites: Number(
+						options.env.WHISPERING_DEBUG_FAIL_AUDIO_WRITES ?? 0,
+					),
+					commitsBlocked: options.env.WHISPERING_DEBUG_BLOCK_COMMITS === '1',
+				},
+			})
+		: undefined;
 
 	async function fixtureInfo(): Promise<HostInfo['fixture']> {
 		if (!options.debug || options.fixturePath === undefined) return null;
@@ -200,16 +202,9 @@ export async function createHost(options: HostOptions) {
 		const line = `${JSON.stringify(encode(event))}\n`;
 		for (const listener of listeners) listener(line);
 	};
-	const unsubscribe = folder.git.subscribe((snapshot) =>
-		broadcast({ type: 'git', snapshot }),
-	);
-	const unwatch = watchFolder(
-		root,
-		() => broadcast({ type: 'files' }),
-		(cause) => options.log(`Folder watching stopped: ${describe(cause)}`),
-	);
 	const ping = setInterval(() => broadcast({ type: 'ping' }), PING_MS);
 
+	/** The close question and pings. Folder changes reach the page from its owner. */
 	function events(): Response {
 		let listener: Listener | undefined;
 		const stream = new ReadableStream<Uint8Array>({
@@ -222,9 +217,6 @@ export async function createHost(options: HostOptions) {
 					}
 				};
 				listeners.add(listener);
-				listener(
-					`${JSON.stringify(encode({ type: 'git', snapshot: folder.git.snapshot }))}\n`,
-				);
 				// A close asked while the stream was down is still waiting for an answer.
 				if (closePending)
 					listener(`${JSON.stringify({ type: 'close-requested' })}\n`);
@@ -247,10 +239,10 @@ export async function createHost(options: HostOptions) {
 	// can say whether closing loses anything. The shell asks through here before
 	// it closes the window or quits, and closes only when this approves.
 
-	// Approval is never inferred, from anything. A page can be using the folder
-	// and holding unsaved work while its event stream is slow, dropped, or has
-	// not connected yet, so whether a stream is or ever was open says nothing
-	// about what the page holds. The host approves a close only on the page's
+	// Approval is never inferred, from anything. A page can be saving through
+	// the folder's owner and holding unsaved work while its event stream is
+	// slow, dropped, or has not connected yet, so whether a stream is or ever
+	// was open says nothing about what the page holds. The host approves a close only on the page's
 	// own authenticated `proceed`. A request with no stream to carry it waits
 	// and is delivered when one connects.
 
@@ -327,9 +319,15 @@ export async function createHost(options: HostOptions) {
 		return { revealed: root };
 	}
 
+	/**
+	 * Send the audio at a folder-relative path. The file is read here, once,
+	 * as it is at that moment, and those bytes are what is sent: nothing is
+	 * read again and the page carries no audio. A path that cannot be read
+	 * sends nothing.
+	 */
 	async function transcribe(payload: Record<string, unknown>) {
 		const path = String(payload.path ?? '');
-		const read = await folder.files.read(path);
+		const read = await readAudio(root, path);
 		if (read.error)
 			return TranscriptionError.AudioUnreadable({
 				path,
@@ -341,7 +339,7 @@ export async function createHost(options: HostOptions) {
 			apiKey: await apiKey(),
 			fetch: options.fetch,
 			audio: {
-				bytes: read.data.bytes,
+				bytes: read.data,
 				filename: basename(path),
 				mimeType: audioMimeTypeOf(path) ?? 'application/octet-stream',
 			},
@@ -384,6 +382,12 @@ export async function createHost(options: HostOptions) {
 		};
 	}
 
+	function debugInjection(): FailureInjection {
+		if (injection === undefined)
+			throw new Error('Failure injection is only available in a debug shell.');
+		return injection;
+	}
+
 	async function app(op: string, payload: Record<string, unknown>) {
 		switch (op) {
 			case 'info':
@@ -406,17 +410,22 @@ export async function createHost(options: HostOptions) {
 			case 'fixture':
 				return fixture();
 			case 'inject':
-				if (injection === undefined)
-					throw new Error(
-						'Failure injection is only available in a debug shell.',
-					);
-				return injection.arm(payload);
+				return debugInjection().arm(payload);
 			case 'injection':
-				if (injection === undefined)
-					throw new Error(
-						'Failure injection is only available in a debug shell.',
-					);
-				return injection.state;
+				return debugInjection().state;
+			// The page opened the folder, so Git exists: take a lock asked for at launch.
+			case 'injection-launch':
+				return debugInjection().armLaunch();
+			case 'obstruct':
+				return {
+					obstacle: await debugInjection().obstruct({
+						stem: payload.stem,
+						audioPath: payload.audioPath,
+					}),
+				};
+			case 'unobstruct':
+				await debugInjection().clear(payload.obstacle);
+				return {};
 			default:
 				throw new Error(`'${op}' is not a Whispering host operation`);
 		}
@@ -459,13 +468,8 @@ export async function createHost(options: HostOptions) {
 				{ status: 503 },
 			);
 		}
+		// The token is never in what is served: the shell gives it to the page.
 		const html = extname(file) === '.html';
-		if (html && options.inlineToken) {
-			const script = `<script>window.__WHISPERING_BRIDGE__=${JSON.stringify({ token: options.token })};</script>`;
-			bytes = encoder.encode(
-				new TextDecoder().decode(bytes).replace('<head>', `<head>${script}`),
-			);
-		}
 		return new Response(bytes as Uint8Array<ArrayBuffer>, {
 			headers: {
 				'content-type':
@@ -521,55 +525,34 @@ export async function createHost(options: HostOptions) {
 		} catch {
 			return json({ fault: 'The request body is not JSON' }, 400);
 		}
+		// The one route. There is no folder route: the page's folder is the shell's.
+		if (url.pathname !== '/bridge/app')
+			return json({ fault: 'Not found' }, 404);
 		try {
-			if (url.pathname === '/bridge/call') {
-				const path = body.path;
-				const args = decode(body.args);
-				if (
-					!Array.isArray(path) ||
-					!path.every((part) => typeof part === 'string') ||
-					!Array.isArray(args)
-				)
-					return json({ fault: 'A call needs a path and arguments' }, 400);
-				const call = () => callFolder(anyFolder, path, args);
-				const result = await (injection === undefined
-					? call()
-					: injection.around(path, args, call));
-				return json({ ok: encode(result) });
-			}
-			if (url.pathname === '/bridge/app') {
-				const payload = decode(body.payload ?? {}) as Record<string, unknown>;
-				return json({ ok: encode(await app(String(body.op), payload)) });
-			}
+			const payload = decode(body.payload ?? {}) as Record<string, unknown>;
+			return json({ ok: encode(await app(String(body.op), payload)) });
 		} catch (cause) {
-			if (cause instanceof UnknownFolderCall)
-				return json({ fault: describe(cause) }, 404);
-			// Refused at the boundary: nothing was asked of the folder.
-			if (cause instanceof InvalidBatchPlan)
-				return json({ fault: describe(cause) }, 400);
 			options.log(`Bridge call failed: ${describe(cause)}`);
 			return json({ fault: describe(cause) }, 500);
 		}
-		return json({ fault: 'Not found' }, 404);
 	}
 
 	return {
 		root,
-		folder,
 		handle,
 		closeRequested,
 		/** The bound port, so requests under another host name are refused. */
 		listening(bound: number) {
 			port = bound;
 		},
-		/** Settle admitted saves and the running commit pass, then release. */
+		/**
+		 * Stop the event stream and remove what a debug host put in the folder.
+		 * The folder is the shell's to close; nothing here saves or commits.
+		 */
 		async close() {
 			clearInterval(ping);
-			unwatch();
-			unsubscribe();
 			listeners.clear();
 			await injection?.release();
-			await folder.close();
 		},
 	};
 }

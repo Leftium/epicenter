@@ -1,17 +1,126 @@
 # Standalone desktop verification
 
-This file has three dated parts. The first records the adoption of the shared
-folder package, which has automated checks only. The second records the
-restored pages and transformations. The third retains the earlier
-single-window acceptance.
+This file has four dated parts. The first records moving the desktop folder to
+the shell's Rust owner, which has TypeScript checks only and an uncompiled
+shell. The second records the adoption of the shared folder package, which has
+automated checks only. The third records the restored pages and
+transformations. The fourth retains the earlier single-window acceptance.
+
+## Desktop folder moved to the shell's owner (October 2, 2026)
+
+The desktop folder now has one owner: `tauri-plugin-epicenter-folder`, in the
+shell. The page attaches to it through `@epicenter/folder/tauri`. The Bun host
+no longer opens the folder; it serves the page and keeps the terminal, the
+provider requests, the device key, fixture audio, and the close relay. The
+generic folder call, the batch sent as data, the Git snapshot stream, and the
+host's file watcher are deleted.
+
+**The desktop app was not launched for this change.** Claude Opus 5.5 made it
+in an isolated checkout, in three revisions. Its sandbox allowed no window and
+no local server, its permission rules refused every `cargo` invocation that
+sets `CARGO_HOME`, and `bun build` could not read the sandboxed parent
+directories. So the implementer compiled no Rust and built no sidecar. Codex
+ran those outside the sandbox. Nothing below is native acceptance, and the
+native results in the later parts of this file were observed with the Bun
+host as owner: they do not establish how this build behaves.
+
+Run by the implementer, on the final sources:
+
+| Check | Result |
+| --- | --- |
+| `bun test --isolate` in `apps/whispering` | 234 passed, 0 failed, 1573 assertions, 15 files |
+| Page TypeScript (`svelte-check`) | 1793 files, zero errors and warnings |
+| Host TypeScript (`tsc -p tsconfig.native.json`) | Zero errors |
+| `vite build` with `NODE_ENV=production` | Passed. The desktop adapter is in one chunk, loaded by a dynamic import that runs only inside a desktop app |
+| `rustfmt --check` and `cargo fmt --check` on the shell | Clean |
+| `cargo check`, `cargo test` on the shell | Not run: refused by the session's permission rules |
+| `bun run build:sidecar` | Not run: `bun build` could not read the sandboxed parent directories |
+
+Reported by Codex for the first revision, before the later revisions' changes
+to the page, the host-reply wording, and the docs. The shell's Rust source did
+not change after the first. These are to be rerun on the final sources:
+
+| Check | Reported result |
+| --- | --- |
+| Shell `cargo check` and `cargo test`, with the regenerated `Cargo.lock` | 14 passed |
+| Compiled host (`bun run build:sidecar`) and page build | Passed |
+| Core `history_tests::what_a_plain_file_commit_cannot_represent_blocks_the_pass_but_not_status` | 1 passed: an executable file blocks the commit, the branch does not move, and the bytes are saved |
+| App tests and typecheck | 216 passed; zero errors and warnings |
+
+What the TypeScript tests establish, and with what:
+
+- **The host**, against a real directory through its real request handler: no
+  folder route or operation exists, starting and stopping it writes nothing
+  into the directory, it works beside a held folder lock without asking for
+  it, and it refuses any root but the resolved one it is given.
+- **The audio read**, against real files: exact bytes at any depth, every
+  refusal listed in `ARCHITECTURE.md` (traversal, absolute, `.git`, control
+  characters, wrong spelling, links inside and outside the folder on the last
+  component and on the way, a missing file, a directory, a pipe), zero
+  provider requests for each, and bytes that survive the file changing during
+  the request.
+- **The debug failures**, against a real repository: the row and audio
+  obstacles make the folder fail its own step, retry completes one recording,
+  an occupied path is left alone, and the branch lock is taken only after Git
+  exists and never from another holder. The folder publishing in these tests
+  is the Bun directory opener, standing in for the Rust owner.
+- **The desktop workspace**, against scripted shell replies: it attaches by ID
+  with no path, returns each refusal without opening anything else, sends
+  folder calls to the shell and not to the host, hears the owner's change
+  hints, and carries the close question across a reconnect.
+- **Closing after a failed opening**, against the real host's handler and
+  scripted shell replies: a refused attach leaves no session; a close asked
+  while opening waits and one asked after is answered `proceed`, each only on
+  request; a failed opening by itself approves nothing; with the host gone the
+  shell's event is answered with the quit address; and with a session open
+  that holds a pending recording, only the session's guard answers and it
+  does not approve.
+- **Closing while the session is starting**, over the Bun directory opener
+  with the first `kv.json` read, and separately the first `kv.json` write,
+  held open: a close asked then gets no answer, not even `asking`, and no
+  guard is listening; when the start finishes the kept request reaches the
+  guard, which answers; when the start fails nothing answers until the
+  workspace has finished closing; and a layout released mid-start leaves
+  nothing listening, lets the admitted write land, and answers nothing. A
+  guard disposed mid-request approves nothing.
+- **A stopped host**, over the Bun directory opener: with the host gone, a
+  draft and a pending recording are still saved through the folder, the held
+  list empties, and quitting is still the explicit choice.
+- **A lost host reply**, against the real host with a counted local stand-in
+  for the endpoint: the endpoint is called once, the reply is dropped, the
+  page reports an unknown outcome, and no second request is made.
+
+Not done, and needed before this can be called accepted on the desktop:
+
+- Rerun the shell's `cargo check` and `cargo test` and the sidecar build on
+  the final sources. The shell's lock pins Tauri 2.12.1; the plugin's own
+  workspace builds against 2.11.5.
+- Launch `bun dev:whispering` and confirm the page, served from loopback, can
+  invoke the owner at all: that Tauri's IPC is reachable under the page's
+  content security policy, and that the owner's events arrive.
+- Record, play, transcribe, transform, quit, and reopen against a disposable
+  folder. Confirm a recording's audio saves in acceptable time: file bytes
+  cross Tauri's IPC as JSON number arrays.
+- Exercise both debug publication failures and **Try again** in the window,
+  confirming the Rust owner reports `Partial` for an obstructed row.
+- Edit a file from the terminal while a draft of it is open, and confirm the
+  conflict; confirm a terminal edit refreshes a clean view.
+- Close and quit with drafts, pending audio, and a running request; stop the
+  host process, confirm a draft still saves, and confirm the explicit quit.
+- Make the folder unopenable (hold its lock from another process) and confirm
+  the window showing the refusal closes on Command-W and Command-Q, and that a
+  close attempted while it is still opening is honored once opening fails.
+- Build the release bundle.
+
+No Windows run, no microphone, and no real provider were used by anyone.
 
 ## Shared folder adoption (October 1, 2026)
 
 Whispering now uses `@epicenter/folder` and `@epicenter/definition` in place of
 the folder code that lived in `@epicenter/app`. A recording names its audio in
 `audioPath`, a recording is published as one folder batch, and deleting a
-recording keeps its audio. The Bun folder host is still the desktop folder's
-only owner.
+recording keeps its audio. At that point the Bun host was still the desktop
+folder's only owner; the part above records what replaced it.
 
 **The desktop app was not launched for this change.** Claude Opus 5.5 made it
 in an isolated checkout whose sandbox allowed no window, no shell launch, and

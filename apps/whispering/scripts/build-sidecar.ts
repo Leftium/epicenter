@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-/** Compile the Whispering folder host where Tauri expects its external binary. */
+/** Compile the Whispering host where Tauri expects its external binary. */
 
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -34,6 +34,6 @@ const outfile = join(
 );
 await mkdir(dirname(outfile), { recursive: true });
 
-console.error(`Compiling the Whispering folder host -> ${outfile}`);
+console.error(`Compiling the Whispering host -> ${outfile}`);
 await $`bun build --compile --outfile ${outfile} ${join(appDir, 'native', 'main.ts')}`;
-console.error('Whispering folder host compiled.');
+console.error('Whispering host compiled.');

@@ -4,9 +4,13 @@
 
 	/**
 	 * Shown when the desktop shell asks to close while something is held only
-	 * in this window, or when the folder host has stopped and closing can no
-	 * longer be checked. Dismissing it any way other than the quit button keeps
-	 * the window open and everything in it.
+	 * in this window, or when Whispering's host has stopped and the shell can no
+	 * longer ask through it. Dismissing it any way other than the quit button
+	 * keeps the window open and everything in it.
+	 *
+	 * A stopped host does not stop saving: the folder is the shell's and stays
+	 * open. The copy says what is actually unavailable, and promises nothing
+	 * about a save, which can still fail for its own reasons.
 	 */
 	let { guard }: { guard: LeaveGuard } = $props();
 </script>
@@ -20,12 +24,14 @@
 	<AlertDialog.Content data-testid="leave-prompt" data-host-gone={guard.hostGone}>
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				{guard.hostGone ? 'Whispering can no longer save. Quit anyway?' : 'Quit and lose unsaved work?'}
+				{guard.hostGone ? 'Part of Whispering has stopped. Quit?' : 'Quit and lose unsaved work?'}
 			</AlertDialog.Title>
 			<AlertDialog.Description>
 				{#if guard.hostGone}
-					The part of Whispering that reads and writes your folder has stopped, so nothing more can be
-					saved in this session. Files already in the folder are safe.
+					The part of Whispering that runs the terminal and sends transcription and transformation
+					requests has stopped, so those are unavailable until you restart, and Whispering could not
+					check what is unsaved before closing. Your folder is still open: changes to recordings and
+					transcripts can still be saved to it.
 					{#if guard.held.length > 0}
 						This is only in this window and will be lost when you quit:
 					{:else}
@@ -47,7 +53,8 @@
 		{/if}
 		{#if guard.hostGone && guard.held.length > 0}
 			<p class="text-sm text-muted-foreground">
-				Keep working lets you play a pending recording or copy unsaved text out before you quit.
+				Keep working lets you save what can still be saved, play a pending recording, or copy unsaved
+				text out before you quit.
 			</p>
 		{/if}
 		<AlertDialog.Footer>

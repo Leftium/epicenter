@@ -1,10 +1,18 @@
 //! The Whispering desktop shell.
 //!
-//! The shell owns a window and one child process. The child is the Bun folder
-//! host (`native/main.ts`): it opens the data folder, serves the page, and
-//! answers the page's folder calls on loopback. The shell starts it, waits for
-//! the port it reports, loads the page from it, and stops it on exit. The page
-//! calls no Tauri command, so this crate registers none.
+//! The shell owns a window, the data folder, and one child process.
+//!
+//! The folder has one owner, `tauri-plugin-epicenter-folder`, in this process.
+//! The shell chooses the folder's directory once, registers it with that owner
+//! for the main window, and lets that window's page call the owner's commands.
+//! The page names the folder and never a path. This crate registers no command
+//! of its own.
+//!
+//! The child is the Bun host (`native/main.ts`): it serves the page on loopback
+//! and does what a page cannot, such as running the terminal and sending
+//! transcription requests. The shell starts it with the directory it chose,
+//! waits for the port it reports, loads the page from it, and stops it on
+//! exit. The host is told where the folder is; it is never asked.
 //!
 //! Work that is not saved yet lives only in the page, so the shell never closes
 //! on its own judgement. A window close, Command-Q, or any other exit request
@@ -18,20 +26,26 @@
 //! refuses to load and reads as the person's choice to quit. The one exit
 //! without any answer is when no app page was ever opened.
 //!
+//! On exit the folder's owner refuses new work, lets the saves and commits it
+//! had admitted finish, and releases the folder. It commits nothing of its own.
+//!
 //! A debug shell tells the host it may use fixture audio and failure
 //! injection. A release shell never does, whatever the environment says.
 
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use tauri::ipc::CapabilityBuilder;
 use tauri::{
-    App, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    App, AppHandle, Manager, RunEvent, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_epicenter_folder::{Author, FolderConfig, FolderExt, ScopeConfig};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -40,8 +54,14 @@ const CLOSE_REQUEST: &str = "{\"type\":\"close-requested\"}";
 #[cfg(target_os = "macos")]
 const QUIT_MENU_ID: &str = "quit";
 
-/// The running folder host. Its standard input is held open for as long as the
-/// shell lives; the host stops when that pipe closes.
+/// The one window. The folder is registered for this label and no other.
+const MAIN_WINDOW: &str = "main";
+/// The folder's ID, which is all the page names. Also its default directory name.
+const FOLDER_SCOPE: &str = "so.epicenter.whispering";
+const FOLDER_CAPABILITY: &str = "whispering-main-folder";
+
+/// The running host. Its standard input is held open for as long as the shell
+/// lives; the host stops when that pipe closes.
 struct HostProcess {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -67,8 +87,16 @@ struct HostState {
     page_opened: AtomicBool,
 }
 
+/// The app's embedded configuration and permissions. One expansion, shared by
+/// the shell and by the tests that drive it on the mock runtime.
+fn context<R: Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
 pub fn run() {
     tauri::Builder::default()
+        // Shuts the folder down when the app exits; see the module comment.
+        .plugin(tauri_plugin_epicenter_folder::init())
         .manage(HostState::default())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -82,16 +110,16 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             install_menu(app)?;
-            match start_host(app) {
+            match start(app) {
                 Ok(started) => open_app_window(app, started.port, &started.token)?,
                 Err(error) => {
-                    eprintln!("[whispering] could not start the folder host: {error}");
+                    eprintln!("[whispering] could not start: {error}");
                     open_failure_window(app, &error)?;
                 }
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context())
         .expect("failed to build Whispering")
         .run(|app, event| match event {
             // Command-Q, the Dock, and a system shutdown all arrive here.
@@ -104,6 +132,114 @@ pub fn run() {
             RunEvent::Exit => stop_host(app),
             _ => {}
         });
+}
+
+/// Everything the page depends on, settled before the page exists: where the
+/// folder is, the host that serves the page, the folder registered for the
+/// main window, and that window's page allowed to call the owner.
+///
+/// When any of it fails the host is stopped and no window is granted anything.
+/// The window that opens then is the failure page, which can reach no folder.
+fn start(app: &App) -> Result<StartedHost, String> {
+    let root = data_root(app)?;
+    let started = start_host(app, &root)?;
+    let granted = register_folder(app.handle(), root).and_then(|()| {
+        app.add_capability(folder_capability(started.port))
+            .map_err(|error| format!("let the window use the folder: {error}"))
+    });
+    if let Err(error) = granted {
+        stop_host(app.handle());
+        return Err(error);
+    }
+    Ok(started)
+}
+
+/// The data folder, chosen here and nowhere else: `WHISPERING_DATA_ROOT` when
+/// it is set, otherwise `~/Epicenter/local/so.epicenter.whispering`. It is
+/// created when absent and resolved once; the owner and the host are both
+/// given the resolved path.
+fn data_root(app: &App) -> Result<PathBuf, String> {
+    let configured = std::env::var("WHISPERING_DATA_ROOT").ok();
+    let selected = match configured_root(configured.as_deref()) {
+        Some(path) => path,
+        None => default_root(
+            &app.path()
+                .home_dir()
+                .map_err(|error| format!("find the home directory: {error}"))?,
+        ),
+    };
+    resolve_root(&selected)
+}
+
+/// The directory `WHISPERING_DATA_ROOT` names, or none when it is unset or blank.
+fn configured_root(value: Option<&str>) -> Option<PathBuf> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn default_root(home: &Path) -> PathBuf {
+    home.join("Epicenter").join("local").join(FOLDER_SCOPE)
+}
+
+/// Create the directory when absent and resolve it to the one spelling every
+/// part of the app uses.
+fn resolve_root(selected: &Path) -> Result<PathBuf, String> {
+    fs::create_dir_all(selected)
+        .map_err(|error| format!("create the data folder at {}: {error}", selected.display()))?;
+    let root = fs::canonicalize(selected)
+        .map_err(|error| format!("resolve the data folder at {}: {error}", selected.display()))?;
+    if !root.is_dir() {
+        return Err(format!(
+            "the data folder at {} is not a directory",
+            root.display()
+        ));
+    }
+    // The owner reports the path to the page as text, and the host is handed
+    // it as text. A path that is not text could not be compared between them.
+    if root.to_str().is_none() {
+        return Err(format!(
+            "the data folder at {} has a name that is not valid Unicode",
+            root.display()
+        ));
+    }
+    Ok(root)
+}
+
+/// Register the folder for the main window, and for that window only.
+///
+/// History is local and recorded as the app: the repository's own `user.name`
+/// and `origin` are not read, so a save never pushes anywhere.
+fn register_folder<R: Runtime>(app: &AppHandle<R>, root: PathBuf) -> Result<(), String> {
+    app.folders().register(ScopeConfig {
+        scope: FOLDER_SCOPE.to_string(),
+        folder: FolderConfig::new(
+            root,
+            Author {
+                name: "Whispering".to_string(),
+                email: "whispering@localhost".to_string(),
+            },
+        ),
+        windows: vec![MAIN_WINDOW.to_string()],
+    })
+}
+
+/// What lets the page call the folder's owner: the main window, while it shows
+/// a page of the host on this launch's port, and nothing else. The page is
+/// served from loopback, which Tauri treats as a remote origin, so it has no
+/// command at all without this. A page from any other origin or port, a local
+/// page such as the failure page, and any other window are not covered.
+///
+/// The permissions are the owner's commands and listening for its events.
+fn folder_capability(port: u16) -> CapabilityBuilder {
+    CapabilityBuilder::new(FOLDER_CAPABILITY)
+        .local(false)
+        .remote(format!("http://127.0.0.1:{port}/*"))
+        .window(MAIN_WINDOW)
+        .permission("epicenter-folder:default")
+        .permission("core:event:allow-listen")
+        .permission("core:event:allow-unlisten")
 }
 
 /// The default macOS menu's Quit item can end the process without asking. This
@@ -198,7 +334,7 @@ fn request_close(app: &AppHandle) {
             app.exit(0);
         }
         WithoutHost::KeepWindowAndTellPage => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 if let Err(error) = window.eval(CLOSE_BLOCKED_SCRIPT) {
                     eprintln!("[whispering] could not tell the page a close was blocked: {error}");
                 }
@@ -229,12 +365,15 @@ struct StartedHost {
     token: String,
 }
 
-fn start_host(app: &App) -> Result<StartedHost, String> {
+/// Start the host with the folder the shell chose. The host is given that
+/// directory and reports only its port: where the folder is was never its to
+/// decide, so nothing it prints is read as a path.
+fn start_host(app: &App, root: &Path) -> Result<StartedHost, String> {
     let token = launch_token()?;
     let mut command = host_command(app)?;
     command
+        .env("WHISPERING_DATA_ROOT", root)
         .env("WHISPERING_HOST_TOKEN", &token)
-        .env_remove("WHISPERING_HOST_STANDALONE")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
@@ -251,14 +390,14 @@ fn start_host(app: &App) -> Result<StartedHost, String> {
 
     let mut child = command
         .spawn()
-        .map_err(|error| format!("start the folder host: {error}"))?;
+        .map_err(|error| format!("start the Whispering host: {error}"))?;
     let stdin = child.stdin.take();
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
             let _ = child.kill();
             let _ = child.wait();
-            return Err("the folder host has no standard output".into());
+            return Err("the Whispering host has no standard output".into());
         }
     };
 
@@ -271,9 +410,9 @@ fn start_host(app: &App) -> Result<StartedHost, String> {
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
         let first = match reader.read_line(&mut line) {
-            Ok(0) => Err("the folder host exited before it was ready".to_string()),
+            Ok(0) => Err("the Whispering host exited before it was ready".to_string()),
             Ok(_) => Ok(line.clone()),
-            Err(error) => Err(format!("read the folder host's ready line: {error}")),
+            Err(error) => Err(format!("read the Whispering host's ready line: {error}")),
         };
         let _ = sender.send(first);
         loop {
@@ -303,7 +442,7 @@ fn start_host(app: &App) -> Result<StartedHost, String> {
     let ready = match receiver.recv_timeout(READY_TIMEOUT) {
         Ok(Ok(line)) => parse_ready(&line),
         Ok(Err(error)) => Err(error),
-        Err(_) => Err("the folder host did not become ready within 20 seconds".to_string()),
+        Err(_) => Err("the Whispering host did not become ready within 20 seconds".to_string()),
     };
     let port = match ready {
         Ok(port) => port,
@@ -316,24 +455,24 @@ fn start_host(app: &App) -> Result<StartedHost, String> {
     };
 
     let state = app.state::<HostState>();
-    *state.process.lock().expect("host state lock poisoned") =
-        Some(HostProcess { child, stdin });
+    *state.process.lock().expect("host state lock poisoned") = Some(HostProcess { child, stdin });
     Ok(StartedHost { port, token })
 }
 
-/// The port from the host's `{"ready":true,"port":N,...}` line.
+/// The port from the host's `{"ready":true,"port":N}` line. Anything else on
+/// the line is ignored.
 fn parse_ready(line: &str) -> Result<u16, String> {
     let value: serde_json::Value = serde_json::from_str(line.trim())
-        .map_err(|error| format!("the folder host's ready line is not JSON: {error}"))?;
+        .map_err(|error| format!("the Whispering host's ready line is not JSON: {error}"))?;
     if value.get("ready").and_then(serde_json::Value::as_bool) != Some(true) {
-        return Err("the folder host's first line is not a ready line".into());
+        return Err("the Whispering host's first line is not a ready line".into());
     }
     value
         .get("port")
         .and_then(serde_json::Value::as_u64)
         .and_then(|port| u16::try_from(port).ok())
         .filter(|port| *port != 0)
-        .ok_or_else(|| "the folder host reported no port".to_string())
+        .ok_or_else(|| "the Whispering host reported no port".to_string())
 }
 
 fn launch_token() -> Result<String, String> {
@@ -393,6 +532,9 @@ fn is_host_url(url: &tauri::Url, port: u16) -> bool {
         && url.password().is_none()
 }
 
+/// Open the app page. `start` has already registered the folder and granted
+/// this window's page the owner's commands, so the page can attach as soon as
+/// it runs.
 fn open_app_window(app: &App, port: u16, token: &str) -> Result<(), Box<dyn std::error::Error>> {
     let origin = format!("http://127.0.0.1:{port}");
     let url: tauri::Url = format!("{origin}/").parse()?;
@@ -404,7 +546,7 @@ fn open_app_window(app: &App, port: u16, token: &str) -> Result<(), Box<dyn std:
         token = serde_json::to_string(token)?,
     );
     let handle = app.handle().clone();
-    WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+    WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(url))
         .title("Whispering")
         .inner_size(1180.0, 780.0)
         .min_inner_size(720.0, 480.0)
@@ -429,8 +571,9 @@ fn open_app_window(app: &App, port: u16, token: &str) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-/// Shown when the host could not start, so the reason is on screen and not
-/// only in a log.
+/// Shown when the app could not start, so the reason is on screen and not only
+/// in a log. It is a local page and nothing was granted when this opens, so it
+/// can call no command and reach no folder.
 fn open_failure_window(app: &App, error: &str) -> Result<(), Box<dyn std::error::Error>> {
     let script = format!(
         "window.addEventListener('DOMContentLoaded', () => {{ \
@@ -438,7 +581,7 @@ fn open_failure_window(app: &App, error: &str) -> Result<(), Box<dyn std::error:
          if (target) target.textContent = {reason}; }});",
         reason = serde_json::to_string(error)?,
     );
-    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+    WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
         .title("Whispering")
         .inner_size(720.0, 420.0)
         .initialization_script(script)
@@ -446,8 +589,9 @@ fn open_failure_window(app: &App, error: &str) -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
-/// Close the host's standard input, which asks it to settle saves and the
-/// running commit and exit, then make sure it is gone.
+/// Close the host's standard input, which asks it to exit, then make sure it
+/// is gone. The folder is not the host's: its owner settles its own saves and
+/// commits when the app exits.
 fn stop_host(app: &AppHandle) {
     let state = app.state::<HostState>();
     let Some(mut process) = state
@@ -475,10 +619,24 @@ fn stop_host(app: &AppHandle) {
 mod tests {
     use super::*;
 
+    use serde_json::{json, Value};
+    use tauri::ipc::{CallbackFn, InvokeBody, RuntimeCapability};
+    use tauri::test::{mock_builder, MockRuntime, INVOKE_KEY};
+    use tauri::utils::acl::capability::CapabilityFile;
+    use tauri::webview::InvokeRequest;
+    use tauri::WebviewWindow;
+
     #[test]
     fn ready_line_yields_its_port() {
+        assert_eq!(parse_ready("{\"ready\":true,\"port\":49321}\n"), Ok(49321));
+    }
+
+    #[test]
+    fn a_path_on_the_ready_line_is_not_read() {
+        // The host is told where the folder is. Whatever it prints about one
+        // changes nothing: only the port is taken from the line.
         assert_eq!(
-            parse_ready("{\"ready\":true,\"port\":49321,\"root\":\"/tmp/x\"}\n"),
+            parse_ready("{\"ready\":true,\"port\":49321,\"root\":\"/somewhere/else\"}\n"),
             Ok(49321)
         );
     }
@@ -540,5 +698,207 @@ mod tests {
         let second = launch_token().unwrap();
         assert_eq!(first.len(), 64);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn the_folder_is_the_configured_directory_or_the_default_under_home() {
+        assert_eq!(
+            configured_root(Some("/tmp/whispering-demo")),
+            Some(PathBuf::from("/tmp/whispering-demo"))
+        );
+        assert_eq!(
+            configured_root(Some("  /tmp/whispering-demo\n")),
+            Some(PathBuf::from("/tmp/whispering-demo"))
+        );
+        // Unset and blank both mean the default.
+        assert_eq!(configured_root(None), None);
+        assert_eq!(configured_root(Some("")), None);
+        assert_eq!(configured_root(Some("   ")), None);
+        assert_eq!(
+            default_root(Path::new("/Users/someone")),
+            PathBuf::from("/Users/someone/Epicenter/local/so.epicenter.whispering")
+        );
+    }
+
+    /// A directory under the system's temporary directory, removed on drop.
+    struct TempDirectory(PathBuf);
+
+    impl Drop for TempDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn temp(label: &str) -> TempDirectory {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "whispering-shell-{label}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        TempDirectory(fs::canonicalize(path).unwrap())
+    }
+
+    #[test]
+    fn the_folder_is_created_when_absent_and_resolved_to_one_spelling() {
+        let directory = temp("root");
+        let selected = directory.0.join("nested").join("data");
+
+        let root = resolve_root(&selected).unwrap();
+
+        assert!(root.is_dir());
+        assert_eq!(root, fs::canonicalize(&selected).unwrap());
+        // Resolving the resolved path changes nothing: it is given as it is to
+        // the owner and to the host.
+        assert_eq!(resolve_root(&root).unwrap(), root);
+        // Another spelling of the same directory resolves to the same path.
+        assert_eq!(
+            resolve_root(&selected.join("..").join("data")).unwrap(),
+            root
+        );
+        #[cfg(unix)]
+        {
+            let alias = directory.0.join("alias");
+            std::os::unix::fs::symlink(&root, &alias).unwrap();
+            assert_eq!(resolve_root(&alias).unwrap(), root);
+        }
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_a_directory_is_refused() {
+        let directory = temp("not-a-directory");
+        let file = directory.0.join("file");
+        fs::write(&file, "not a directory").unwrap();
+
+        assert!(resolve_root(&file).is_err());
+        assert!(resolve_root(&file.join("inside")).is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "not a directory");
+    }
+
+    #[test]
+    fn the_capability_names_one_window_one_origin_and_the_folder_commands() {
+        let CapabilityFile::Capability(capability) = folder_capability(49321).build() else {
+            panic!("the folder capability is a single capability");
+        };
+
+        assert_eq!(capability.identifier, FOLDER_CAPABILITY);
+        // Not for local pages: the failure page is one.
+        assert!(!capability.local);
+        assert_eq!(
+            capability.remote.map(|remote| remote.urls),
+            Some(vec!["http://127.0.0.1:49321/*".to_string()])
+        );
+        assert_eq!(capability.windows, vec![MAIN_WINDOW.to_string()]);
+        assert!(capability.webviews.is_empty());
+        assert!(capability.platforms.is_none());
+        let permissions: Vec<&str> = capability
+            .permissions
+            .iter()
+            .map(|permission| permission.identifier().get())
+            .collect();
+        assert_eq!(
+            permissions,
+            vec![
+                "epicenter-folder:default",
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+            ]
+        );
+    }
+
+    /// One `attach` through the real invoke handler, as a page at `url` would
+    /// send it.
+    fn attach(window: &WebviewWindow<MockRuntime>, url: &str, scope: &str) -> Result<Value, Value> {
+        tauri::test::get_ipc_response(
+            window,
+            InvokeRequest {
+                cmd: "plugin:epicenter-folder|attach".to_string(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: url.parse().unwrap(),
+                body: InvokeBody::Json(json!({
+                    "scope": scope,
+                    "protocol": tauri_plugin_epicenter_folder::PROTOCOL,
+                })),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|body| body.deserialize::<Value>().expect("a JSON response"))
+    }
+
+    /// The shell's own registration and capability, against the app's real
+    /// permissions, on the mock runtime. The folder is a real directory and a
+    /// real repository.
+    #[test]
+    fn only_the_main_window_on_the_host_origin_reaches_the_folder() {
+        std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+        let directory = temp("capability");
+        let root = resolve_root(&directory.0.join("data")).unwrap();
+        let app = mock_builder()
+            .plugin(tauri_plugin_epicenter_folder::init())
+            .build(context::<MockRuntime>())
+            .expect("mock app");
+        let main = WebviewWindowBuilder::new(&app, MAIN_WINDOW, Default::default())
+            .build()
+            .expect("main window");
+        let other = WebviewWindowBuilder::new(&app, "other", Default::default())
+            .build()
+            .expect("other window");
+        let host = "http://127.0.0.1:4000/";
+
+        // Before the shell registers or grants anything, nothing is reachable.
+        assert!(attach(&main, host, FOLDER_SCOPE).is_err());
+
+        register_folder(app.handle(), root.clone()).unwrap();
+        // Registered, and still not callable: the window has no capability.
+        assert!(attach(&main, host, FOLDER_SCOPE).is_err());
+
+        app.add_capability(folder_capability(4000)).unwrap();
+
+        // Another port, another host, and a local page are not the host's page.
+        assert!(attach(&main, "http://127.0.0.1:4001/", FOLDER_SCOPE).is_err());
+        assert!(attach(&main, "http://localhost:4000/", FOLDER_SCOPE).is_err());
+        assert!(attach(&main, "https://example.com/", FOLDER_SCOPE).is_err());
+        assert!(attach(&main, "tauri://localhost", FOLDER_SCOPE).is_err());
+        // Another window is not covered, even on the host's origin.
+        assert!(attach(&other, host, FOLDER_SCOPE).is_err());
+        // None of those opened the folder.
+        assert!(!root.join(".git").exists());
+
+        // The main window, on the host's origin, names the folder and gets the
+        // directory the shell chose. It supplied no path.
+        let attached = attach(&main, host, FOLDER_SCOPE).expect("the main window attaches");
+        assert_eq!(attached["root"], root.to_str().unwrap());
+        assert_eq!(attached["snapshot"]["branch"], "main");
+        assert_eq!(attached["snapshot"]["commitOnEdit"], true);
+        // Local history only: no remote, so nothing is ever pushed.
+        assert_eq!(attached["snapshot"]["remote"], Value::Null);
+        assert!(root.join(".git").exists());
+
+        // The page names only what the shell registered.
+        let unknown = attach(&main, host, "so.epicenter.todos").unwrap_err();
+        assert_eq!(unknown["name"], "UnknownScope");
+
+        // Were another window ever granted the commands, the folder would
+        // still refuse it: the registration names the main window alone.
+        app.add_capability(
+            CapabilityBuilder::new("test-other-window")
+                .local(false)
+                .remote(host.to_string())
+                .window("other")
+                .permission("epicenter-folder:default"),
+        )
+        .unwrap();
+        let refused = attach(&other, host, FOLDER_SCOPE).unwrap_err();
+        assert_eq!(refused["name"], "WindowNotPermitted");
+
+        // The folder cannot be registered a second time, for any window.
+        assert!(register_folder(app.handle(), root.clone()).is_err());
+
+        app.folders().shutdown();
     }
 }

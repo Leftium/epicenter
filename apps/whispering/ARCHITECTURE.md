@@ -1,41 +1,54 @@
 # Whispering architecture
 
-Whispering is three parts. Each has one job, and only one of them touches the
+Whispering is three parts. Each has one job, and exactly one of them owns the
 data folder.
 
 ```text
-src-tauri/        the shell     a window and one child process
-native/           the host      opens the folder, serves the page, answers its calls
-src/              the page      the UI; plain fetch, no native module
+src-tauri/        the shell     a window, the folder's owner, and one child process
+native/           the host      serves the page and does what a page cannot
+src/              the page      the UI; attaches to the folder, fetches the host
 ```
 
 ```text
-┌──────────── Tauri shell (Rust) ────────────┐
-│ starts the host, reads its port,           │
-│ loads http://127.0.0.1:<port>/, injects    │
-│ the launch token, stops the host on exit   │
-└───────┬───────────────────────┬────────────┘
-        │ spawns                │ window
-        ▼                       ▼
-┌── folder host (Bun) ──┐   ┌── page (WebView) ──┐
-│ openFolder (bun)      │◄──│ fetch /bridge/*    │
-│ tables, kv, history   │   │ Bearer <token>     │
-│ shell, watch, HTTP    │──►│ event stream       │
-└──────────┬────────────┘   └────────────────────┘
-           ▼
-   the data folder and its .git
+┌───────────────── Tauri shell (Rust) ─────────────────┐
+│ chooses the folder, registers it for the main window │
+│ starts the host with that path, reads its port,      │
+│ grants the page the owner's commands for that origin │
+│ loads http://127.0.0.1:<port>/, injects the token    │
+│                                                      │
+│   tauri-plugin-epicenter-folder: the one owner       │
+│   files, tables' bytes, history, lock, change hints  │
+└────┬──────────────────▲────────────────┬─────────────┘
+     │ spawns           │ invoke, events │ owns
+     ▼                  │                ▼
+┌── host (Bun) ─────┐  ┌┴─ page (WebView) ──┐   the data folder
+│ page, terminal,   │◄─│ fetch /bridge/app  │   and its .git
+│ requests, key,    │  │ Bearer <token>     │        ▲
+│ close relay       │─►│ event stream       │        │
+└─────────┬─────────┘  └────────────────────┘        │
+          └── an ordinary program in that directory ─┘
 ```
 
-The page calls no Tauri command, so the Rust crate registers none and the window
-has no capabilities. Everything native is in the host, which is ordinary
-TypeScript that tests run directly.
+The folder has one owner, the shared Rust plugin
+(`tauri-plugin-epicenter-folder`), running in the shell's process. The page
+attaches to it with `@epicenter/folder/tauri`, the shared desktop adapter, and
+names only the folder's ID. This app has no folder code of its own on the
+desktop: no copy of the plugin's bindings and no second transport.
 
-The host is the folder's one owner on the desktop. It opens the directory with
-`@epicenter/folder/bun`. The shared package also has a desktop adapter
-(`@epicenter/folder/tauri`) over a Rust owner
-(`tauri-plugin-epicenter-folder`); this app does not use either yet. Moving the
-desktop folder to that owner replaces the host as owner and is separate work:
-the two must never hold the same directory.
+The host does not open the folder. It is told the directory by the shell and
+uses it as any other program would. The terminal runs the person's shell
+there. Transcription reads one audio file out of it. The device key is a file
+under its `.git`. Nothing in the host takes the folder's lock, initializes Git,
+watches the directory, or saves a file the folder tracks.
+
+This is not the end of the host. The page is still served by it, and the
+terminal, revealing the folder, the provider requests, the key, fixture audio,
+and the close relay still live there. A new native ability that is not the
+folder is a host operation in `native/`, exposed through the workspace type
+with a browser implementation or an explicit `undefined`.
+
+The two fail apart. If the host stops while the app is open, the folder is
+still open and still saves; what stops is what the host did.
 
 ## The data model
 
@@ -79,34 +92,80 @@ implementation when the app layout mounts:
 
 | | Desktop (`desktop.ts`) | Browser (`browser.ts`) |
 | --- | --- | --- |
-| Folder | The real directory, through the bridge | A folder in IndexedDB (`openFolder` from `@epicenter/folder/browser`) |
-| Terminal | Your shell in the directory | The folder's own in-page shell (`folder.terminal()`) |
-| Transcription | The host makes the request | The page makes the request |
+| Folder | The real directory, through the shell's owner (`openFolder` from `@epicenter/folder/tauri`) | A folder in IndexedDB (`openFolder` from `@epicenter/folder/browser`) |
+| Terminal | Your shell in the directory, run by the host | The folder's own in-page shell (`folder.terminal()`) |
+| Transcription | The host reads the audio and makes the request | The page makes the request |
 | Transformation | The host makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
 | Key | A file under `.git` | `localStorage` |
-| Outside changes | Watched and announced | Other tabs' saves, as hints to read again |
+| Outside changes | The owner's hints: any program, this app included | Other tabs' saves, as hints to read again |
 | Reveal, failure injection | Yes | No |
 
-The desktop shell injects `window.__WHISPERING_BRIDGE__` before the page runs.
-Its presence selects the desktop workspace; there is no build flag. Everything
-above the seam (`library.svelte.ts`, the editors, the components) is the same
-code for both. `src/lib/page-boundary.test.ts` fails if anything under `src/`
-imports a Node, Bun, or Tauri module, the directory or desktop folder opener,
-or the Yjs store.
+`isTauri()` selects the storage: inside a desktop app the folder is the
+shell's, and in a browser tab it is the browser's. There is no build flag, and
+the host's token is not the test. The desktop workspace needs two things, and
+each is opened or refused on its own terms:
 
-Opening returns a `Result`, and a refusal is shown on the "Could not open the
-recordings folder" screen as it is. The two storages are never substitutes:
+1. The host. The standalone shell injects `window.__WHISPERING_BRIDGE__`
+   before the page runs. A desktop app that injected none did not start
+   Whispering's host, and the page refuses with `HostMissing` before it asks
+   anyone for a folder. A host that does not answer is `HostUnreachable`.
+2. The folder. `openFolder({ definition })` attaches to the scope
+   `so.epicenter.whispering`. The owner's refusal (an unknown scope, a window
+   the scope does not list, a folder another process holds, a missing
+   permission, another protocol version) is `DesktopFolder`, with the owner's
+   own reason.
 
-- The browser opener refuses where there is no IndexedDB and inside any
-  desktop app (`InsideTauri`). A window in a desktop app with no bridge token,
-  such as this page inside the Epicenter desktop host, therefore opens
-  nothing and says so. It is not given the desktop adapter in its place.
-- A folder host that does not answer is `FolderHost`. The page does not open
-  browser storage in its place.
+The page then checks that the owner and the host name the same directory and
+refuses with `FolderMismatch` if they do not, since the terminal and
+transcription would otherwise use a directory the saves do not go to.
+
+Everything above the seam (`library.svelte.ts`, the editors, the components)
+is the same code for both. Opening returns a `Result`, and a refusal is shown
+on the "Could not open the recordings folder" screen as it is. The two
+storages are never substitutes: nothing that is missing or refuses inside a
+desktop app is replaced by browser storage, and the browser opener itself
+refuses there (`InsideTauri`).
 
 Page code names types and helpers from `@epicenter/folder`. `vite.config.ts`
-aliases that exact specifier to `@epicenter/folder/browser`, so the built page
-carries no desktop adapter.
+aliases that exact specifier to `@epicenter/folder/browser`. The desktop
+workspace imports `@epicenter/folder/tauri` by its own name, which the alias
+leaves alone, and the opener loads that workspace with a dynamic import, so a
+browser tab never loads the desktop adapter. `src/lib/page-boundary.test.ts`
+fails if anything else under `src/` opens a folder, imports a Node or Bun
+module, imports a Tauri module other than the opener's `isTauri`, or imports
+the Yjs store.
+
+## The shell, the folder, and the window
+
+The shell settles four things, in this order, before the window exists
+(`start` in `src-tauri/src/lib.rs`):
+
+1. **Where the folder is.** `WHISPERING_DATA_ROOT`, or
+   `~/Epicenter/local/so.epicenter.whispering`. The shell creates it when
+   absent and resolves it once. That resolved path is the only spelling used
+   afterward.
+2. **The host.** It is started with that path in its environment and reports
+   only its port. A path on its ready line would not be read.
+3. **The registration.** The scope `so.epicenter.whispering` is registered
+   with that path for the window labelled `main`, with the author
+   `Whispering <whispering@localhost>` and no remote. The repository's own
+   `user.name` and `origin` are not read, so a save never pushes.
+4. **The capability.** The page is served from `http://127.0.0.1:<port>`,
+   which Tauri treats as a remote origin with no commands at all. One
+   capability, added at runtime because the port is not known until then,
+   grants the `main` window, on exactly `http://127.0.0.1:<port>/*`, the
+   owner's commands (`epicenter-folder:default`) and listening for its events
+   (`core:event:allow-listen`, `core:event:allow-unlisten`). `tauri.conf.json`
+   lists no capability.
+
+So the page cannot choose a directory: it names a scope, and the shell decided
+what that scope is. Another window, a page from another origin or port, and a
+local page are each outside the capability, and a window other than `main`
+would be refused by the registration even with one.
+
+If any of the four fails, the host is stopped and nothing is granted. The
+window that opens is the local failure page, which can call no command and
+reach no folder.
 
 ## The session and the pages
 
@@ -121,11 +180,16 @@ routes/+layout.svelte      opens one session on mount, closes it on destroy
 
 `src/lib/session.svelte.ts` is the owner. A session is the workspace, the
 product state over it (`library.svelte.ts`), the close guard, and what the
-shell is showing. The layout opens one and nothing else does: pages call
-`getSession()` and never open a workspace. There is no module-level store, so
-a session exists only while a layout holds it, and closing the layout releases
-the folder. `src/lib/page-boundary.test.ts` reads the sources and fails if
-anything but the layout opens a session.
+shell is showing. The layout holds one opening (`mountSession`) and nothing
+else does: pages call `getSession()` and never open a workspace. There is no
+module-level store, so a session exists only while a layout holds it, and
+releasing the layout releases the folder. `src/lib/page-boundary.test.ts` reads
+the sources and fails if anything but the layout holds an opening.
+
+A session exists only once it has started: the folder was read, the settings
+file exists, and the close guard is listening. An opening that fails leaves no
+session. The same holder then answers the shell's close question, so the
+window showing the refusal can be closed; see "Closing".
 
 Because the pages are routes under that one layout, a page change is a
 re-render inside the same session. The live recording, pending captures,
@@ -144,49 +208,74 @@ The host serves `index.html` for any path that is not a file, so
 
 ## The bridge
 
-The host proxies the `Folder` API, not the file boundary beneath it: every
-folder method takes data and returns a `Result`, so a call is its method path
-and arguments, and the answer is the folder's own answer. Tables, KV,
-conditional publication, and the history coordinator run in the host, beside the
-files. The page holds no copy of the data. Its only bridge state is the latest
-Git snapshot, pushed by the host so `git.snapshot` stays synchronous.
+The bridge is the page's link to the host. It carries Whispering's own
+operations and the close question, and nothing of the folder: there is no
+folder route, no generic method call, no batch sent as data, and no Git
+snapshot pushed over it. Tables, KV, conditional publication, `folder.batch`,
+and history are the shared adapter's calls to the shell's owner.
 
 ```text
-POST /bridge/call     { path: ["tables","recordings","create"], args: [...] }
-                      -> { ok: <value> } | { fault: "<message>" }
-GET  /bridge/events   newline-delimited JSON: git snapshots, "files" changed, pings
-POST /bridge/app      { op, payload }   Whispering's own operations
+POST /bridge/app      { op, payload }   -> { ok: <value> } | { fault: "<message>" }
+GET  /bridge/events   newline-delimited JSON: "close-requested" and pings
 ```
 
+`src/lib/bridge/http.ts` is the page's end and `native/host.ts` the host's.
 `src/lib/bridge/codec.ts` encodes what JSON cannot carry (`undefined`, bytes,
-maps, errors) so an entry's `issues: undefined` and a `Partial` error arrive
-intact. `src/lib/bridge/folder-client.ts` and `native/folder-rpc.ts` are the two
-ends and contain nothing specific to Whispering.
-
-`folder.batch` takes a callback, which cannot cross a process boundary. The
-page runs the callback once, synchronously, against a recorder that only
-writes down the mutations it names, and sends that list as one call:
-
-```text
-POST /bridge/call     { path: ["batch"], args: [[ { op: "files.create", path, content },
-                                                  { op: "tables.create", table, input } ]] }
-```
-
-`src/lib/bridge/batch-plan.ts` checks the list at the host (known mutations,
-argument shapes, declared tables; anything else is a `400`) and names the same
-mutations on the real folder's batch. The folder validates paths, stems,
-captures, and field values, serializes the row, and publishes: there is no
-second batch implementation. A lost reply leaves the whole batch `Unconfirmed`. [bridge proposal](./docs/bridge-proposal.txt) is
-the contract as proposed to the other file-folder apps.
+maps, errors), so fixture audio arrives as bytes and a transcription `Result`
+arrives with its error intact. It is still a wire encoding this app owns.
 
 Every bridge request must carry the per-launch token. The host also refuses a
 request whose `Host` or `Origin` is not its own loopback address. The page is
-served with a content security policy that allows connections only to the host.
+served with a content security policy that allows connections to the host and
+to the shell's own commands (`ipc:`), and to nothing else.
 
 `/bridge/app` operations: `info`, `terminal`, `reveal`, `transcribe`,
 `transform`, `credential`, `close`, and, in a debug shell only, `fixture`,
-`inject`, and `injection`. `transcribe` and `transform` take what to send and
-return a `Result`; the host adds the key and never returns it.
+`inject`, `injection`, `injection-launch`, `obstruct`, and `unobstruct`.
+`transcribe` and `transform` take what to send and return a `Result`; the host
+adds the key and never returns it.
+
+A bridge call that fails says only that no reply arrived. The host may never
+have been reached, or it may have called the endpoint and had its reply lost.
+The page reports that as `HostUnavailable`, worded as an unknown outcome and
+never as "not sent", and does not make the call again; trying again is the
+person's choice and is one more request. `AudioUnreadable` is the opposite,
+certain case: it is the host's own answer that the file was not read and no
+request was made.
+
+### Reading audio for transcription
+
+`transcribe` is given the folder-relative path a recording's row names, the
+endpoint, and the model. The page sends no audio. The host reads the file
+itself (`native/audio.ts`), once, and sends those bytes with the file's own
+name and the type its extension calls for.
+
+The read is literal and narrow:
+
+- The path must pass the folder's own path rule: folder-relative, no `.` or
+  `..`, no empty segment, no backslash or control character, nothing under
+  `.git`.
+- Every component must appear in its directory under exactly that spelling, so
+  a case-insensitive disk cannot alias another name.
+- No component may be a symbolic link, whether it points inside the folder or
+  out of it. Every component before the last must be a directory and the last
+  a regular file.
+- The file is opened once, without following a link and without blocking,
+  checked again through the open handle, read into bytes the host owns, and
+  closed.
+
+Anything else is `AudioUnreadable` and no request is sent.
+
+What is sent is what the path held when it was read. No version is asked for
+or checked: the row gives a path, not a capture, exactly as before this read
+moved out of the folder. A change to the file after the read does not change
+the request.
+
+This is best effort against a program writing the folder at the same moment.
+Each component is checked and then used in separate steps, so a writer that
+replaces a directory on the way with a link, between its check and the open,
+is followed. Opening without following a link protects the last component
+only.
 
 ## Recording and publication
 
@@ -264,7 +353,7 @@ save is reported on its own; the commit it requests is a separate outcome.
 `src/lib/transformation.ts` is the request: `POST <base>/chat/completions` with
 the model, the prompt as the system message, and the transcript as the user
 message, reading `choices[0].message.content`. It is plain `fetch`, shared by
-the host and the browser workspace like the transcription request. An error
+the Bun host and the browser workspace like the transcription request. An error
 never carries the key: an endpoint that echoes it has it removed.
 
 `library.transform` applies a saved transformation to a saved transcript, both
@@ -280,7 +369,7 @@ ways:
 | The run | What is held | Trying again |
 | --- | --- | --- |
 | Saved | Nothing. The row is in `transformation_runs/`. | |
-| Failed: the endpoint refused, was unreachable, answered wrongly, or the transport threw | Nothing was received. The run is listed as failed. | Sends the same request, under the same stem, only while the folder still has that transcript text and its recording. Otherwise it stays failed and says why. |
+| Failed: the endpoint refused, was unreachable, answered wrongly, the transport threw, or the host's reply was lost | Nothing was received. The run is listed as failed. After a lost reply the endpoint may still have been called. | Only when the person asks. Sends the same request, under the same stem, only while the folder still has that transcript text and its recording. Otherwise it stays failed and says why. |
 | Unsaved: the answer arrived and the row could not be written | The text, in the window. It blocks closing. | Writes the row. The endpoint is not called. |
 
 Saving a run looks at the folder first, as recording publication does. No file
@@ -331,7 +420,7 @@ page    saves what can be saved, then answers POST /bridge/app { op: "close" }
           asking    it is showing its confirmation
           cancel    the person chose Keep working
 host    prints {"closeApproved":true} when the answer is proceed
-shell   exits, then stops the host
+shell   exits; the owner settles the folder, and the host is stopped
 ```
 
 `src/lib/leave.svelte.ts` is the page's side, over the workspace's `closing`
@@ -343,28 +432,108 @@ something.
 
 Approval is never inferred. The host approves only on the page's authenticated
 `proceed`. Whether the page's event stream is open, or ever was, says nothing
-about what the page holds: a page can record and edit while that stream has not
+about what the page holds: a page can record and save while that stream has not
 connected. So a request with no stream to carry it waits and is delivered when
 one connects, and a page that does not answer keeps the window open. If the
 page itself stops responding, Force Quit is the way out.
 
+The desktop workspace owns that stream (`src/lib/workspace/desktop.ts`). It
+opens one, reconnects when it drops, and hands a close question to whoever is
+listening. A question that arrives before the session's guard is listening is
+kept and delivered when it does; the host repeats an unanswered question to
+every stream that connects.
+
 A host that has stopped is not approval either, because the page still holds
 its work. The shell then keeps the window and raises a `whispering:close-blocked`
-event in the page, which shows the same confirmation and says nothing more can
-be saved. Choosing to quit navigates to `/__whispering__/quit`; the shell
-refuses to load that address and, only while the host is gone, exits on it. The
-shell exits with no answer at all only when the host never started and the
-window is the failure page. None of this adds a Tauri command: the question and
-the answer travel over the host's standard streams and the authenticated
-bridge, and the host-gone fallback uses a page event and a refused navigation.
+event in the page, which shows the same confirmation. Choosing to quit
+navigates to `/__whispering__/quit`; the shell refuses to load that address
+and, only while the host is gone, exits on it. The shell exits with no answer
+at all only when the app never started and the window is the failure page.
+None of this adds a Tauri command: the question and the answer travel over the
+host's standard streams and the authenticated bridge, and the host-gone
+fallback uses a page event and a refused navigation.
+
+With the host gone the folder is still open, since the shell owns it. Changes
+to recordings, transcripts, and other files can still be saved, a pending
+recording can still be tried again, and a commit can still be made. What is
+gone is what the host did: the terminal, new transcription and transformation
+requests, reveal, the key, and the relay of this question. The prompt says
+exactly that and reads what is held live, so it shrinks as things are saved.
+It promises nothing about any one save, which can fail for its own reasons
+with or without the host. Quitting in this state is always the person's
+explicit choice, even when nothing is held, because nothing can relay an
+answer for them.
+
+### While the session is starting
+
+Opening is three steps: the workspace opens, the library reads the folder
+once, and on a first launch it writes `kv.json`. That read and that write are
+the session's own work in the folder, and a close must not be approved over
+them. So the close guard is not created until all three have settled
+(`createSession` in `src/lib/session.svelte.ts`): until then there is an
+opening, not a session, and nothing answers the shell, not even `asking`.
+
+A close asked in that time is not dropped. The host keeps an unanswered
+request and repeats it to every stream that connects, and the desktop
+workspace keeps one that arrives while nobody is listening, over the stream or
+as the shell's host-gone event, and hands it to the first listener. When the
+session has started, its guard receives the kept request and decides as it
+would for any other: from a session that has finished starting.
+
+If the start fails, the library and the workspace are closed first, which
+waits for what they had under way, and only then does the opening reject and
+the answer described next take over. A layout released while its session is
+still starting gets the same closing and no answer at all.
+
+One request is not carried across: a close attempted with the host already
+gone, during a start that then fails. The shell raises that event once per
+attempt and nothing repeats it, so the person closes again.
+
+### When opening failed
+
+The shell marks the page as opened when the window is built, before the page
+has attached to anything. If the workspace then cannot be opened (the host
+does not answer, the owner refuses the window, or the two name different
+directories), or the session cannot start, there is no session and no guard,
+and the shell would wait forever for an answer to a close.
+
+So the holder of the opening answers instead (`mountSession` in
+`src/lib/session.svelte.ts`, `answerCloseWithNothingOpen` in
+`src/lib/workspace/desktop.ts`). Once the opening has settled as failed, and
+not before, each close the person asks for is answered `proceed` through the
+host, and the shell's host-gone event is answered with the quit address.
+Nothing is held in that state: no session, draft, request, or save exists.
+
+It is narrow on purpose:
+
+- It answers requests. It never closes anything unasked and has no timer.
+- It does not run while an opening is under way, which includes the session's
+  first read and settings write. A close asked then waits: for the session's
+  guard if the opening succeeds, for this answer if it fails, and in that case
+  only after everything the opening had opened was closed.
+- It does not run while a session exists, and it is stopped when the layout
+  is released, so it can never answer for a session that holds work.
+- It uses the same authenticated `close` operation and the same quit address
+  as the guard. The shell gained no command and no privilege for it.
+- A desktop app that injected no host token is not Whispering's shell and
+  asks no close question, and a browser tab has the browser's own; neither is
+  answered.
+
+When the shell exits, the owner refuses new work, lets the saves and commits
+it had already admitted finish, and releases the folder. It commits nothing of
+its own, so a save whose automatic commit attempt was skipped stays saved and
+uncommitted. Closing the page's folder handle only detaches the window.
 
 ## History
 
-The host opens the folder with automatic commits on and no remote. Every content
-save through tables, KV, or files requests a commit and does not wait for it. `src/lib/status.ts` turns the
-folder's Git snapshot into separate lines for saved files, uncommitted changes,
-and the last commit attempt, and never lets a commit outcome change what it says
-about a save.
+The shell registers the folder with automatic commits on and no remote. A
+complete content save makes one automatic commit attempt and does not wait for
+it. The owner makes that attempt only if the folder is free at that moment; a
+skipped attempt is not retried by a timer and is not owed later, so the save
+stays uncommitted until a later save's attempt or **Commit now** includes it.
+`src/lib/status.ts` turns the folder's Git snapshot into separate lines for
+saved files, uncommitted changes, and the last commit attempt, and never lets
+a commit outcome change what it says about a save.
 
 ## The terminal
 
@@ -375,29 +544,46 @@ no terminal device, so nothing interactive runs. `src/lib/terminal.svelte.ts`
 keeps the session (output, history, typed command) for the life of the window,
 so hiding the terminal loses nothing.
 
+It is the person's real shell, not the folder's in-page one, and it writes the
+directory as any other program does, outside the owner. Nothing it writes is
+committed until a save or an explicit commit includes it, and a draft whose
+file it changed conflicts on its next save like any other outside edit.
+
 ## Noticing outside changes
 
-`native/watch.ts` compares a signature of the folder: every file's name, size,
-and modification time outside `.git`, plus where the branches point. A recursive
-filesystem watch triggers a comparison at once and a one-second poll runs it
-regardless, because a platform watch can miss events silently. One change is one
-`files` event; the page then rereads its lists, open files, and Git status.
+The owner watches the directory and tells every attached window which paths
+changed, its own saves included. The desktop workspace passes that on as
+`onExternalChange`, and the page rereads its lists, open files, and Git status.
+The host watches nothing and says nothing about files.
 
 ## Debug builds
 
 The shell sets `WHISPERING_DEBUG=1` for the host when it is compiled with debug
 assertions and removes it otherwise, whatever the environment says. Only then
 does the host accept `WHISPERING_AUDIO_FIXTURE` and construct
-`native/failure-injection.ts`. Injected publication failures are counted, so a
-test can order failure and retry exactly. They are real failures of the real
-batch: the host puts an empty directory at the path of the step that should
-fail, runs the folder's batch, and removes the directory. The folder then
+`native/failure-injection.ts`.
+
+Injected publication failures are counted, so a test can order failure and
+retry exactly. They are real failures of the real batch, and the folder's own
+`batch` is still the only thing that publishes. `publishRecording` takes an
+optional hook that runs its one batch; in a debug shell the workspace supplies
+one that asks the host to `obstruct` first and to `unobstruct` afterward. The
+host puts an empty directory at the path of the step that should fail, the
+owner runs the batch, and the host removes the directory. The owner then
 reports its own `Partial` (row obstructed, audio saved) or its own refusal
-(audio obstructed, nothing saved). The host never answers in the folder's
-place. The injected commit failure is a real
-lock file on the branch ref, created exclusively and tagged with a marker unique
-to that host. The host removes only a lock carrying its own marker, so it never
-takes or clears a lock another Git process holds.
+(audio obstructed, nothing saved). Only a recording's row path and the audio
+path its batch creates can be obstructed; both are checked before they are
+joined onto the root, and a path that is occupied or passes through a link is
+left alone. A host that cannot be asked places nothing, and the recording is
+published all the same.
+
+The injected commit failure is a real lock file on the ref of the branch `HEAD`
+names, created exclusively and tagged with a marker unique to that host. The
+host removes only a lock carrying its own marker, so it never takes or clears a
+lock another Git process holds. Because the host does not initialize Git, the
+lock can only be taken once the owner has opened the folder: a lock asked for
+at launch (`WHISPERING_DEBUG_BLOCK_COMMITS=1`) waits until the page has
+attached and says so (`injection-launch`).
 
 ## Where things are
 
@@ -405,7 +591,7 @@ takes or clears a lock another Git process holds.
 | --- | --- |
 | `src/lib/definition.ts` | The inert folder declaration. |
 | `src/lib/workspace/` | The storage seam and its two implementations. |
-| `src/lib/bridge/` | Wire encoding, the remote `Folder`, a batch as data, and the HTTP transport. |
+| `src/lib/bridge/` | The page's link to the host: its wire encoding and the HTTP calls. Nothing of the folder. |
 | `src/lib/session.svelte.ts` | The one session a mounted layout owns, and its context. |
 | `src/lib/library.svelte.ts` | Product state: lists, selections, retained editors, pending captures, transcription and transformation runs, settings. |
 | `src/lib/recordings/publish.ts` | Publication and recovery. |
@@ -415,7 +601,7 @@ takes or clears a lock another Git process holds.
 | `src/routes/` | The layout that owns the session, and the three pages. |
 | `src/routes/components/` | The shell, navigation, header, unsaved notices, recorder, recording and transformation lists and details, file browser and view, terminal. |
 | `src/lib/assets/` | The microphone mark from the earlier Whispering. |
-| `native/` | The folder host: `main.ts`, `host.ts`, `folder-rpc.ts`, `terminal.ts`, `watch.ts`, `failure-injection.ts`. |
-| `src-tauri/` | The shell. `shell/index.html` is shown only when the host cannot start. |
+| `native/` | The host: `main.ts`, `host.ts`, `audio.ts`, `terminal.ts`, `failure-injection.ts`. |
+| `src-tauri/` | The shell: the window, the folder's registration and capability, and the host's lifetime. `shell/index.html` is shown only when the app cannot start. |
 | [scripts/build-sidecar.ts](./scripts/build-sidecar.ts) | Compiles the host for the bundle. |
 | `src/lib/tauri/bindings.gen.ts` | Generated by the Epicenter host's build for its own tests. Nothing here imports it. |

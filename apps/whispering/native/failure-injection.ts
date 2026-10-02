@@ -5,18 +5,29 @@
  * exactly the next N attempts fail and then publication works again, so a test
  * can exercise failure and retry in a fixed order.
  *
- * A recording is published as one folder batch: the audio file, then the row.
- * Nothing here answers for the folder. An armed failure puts an empty
- * directory at the path of the step that should fail, lets the real batch
- * run, and removes the directory afterward. The folder then fails that step
- * itself: an obstructed row leaves the audio saved and reports its own
+ * A recording is published by the page as one folder batch: the audio file,
+ * then the row. The folder's owner is the shell, not this host, and nothing
+ * here publishes or answers for it. Just before the page sends a recording's
+ * batch it asks for an obstacle, naming the recording's stem and the audio
+ * path the batch creates. An armed failure puts an empty directory at the
+ * path of the step that should fail and hands back a name for it; the page
+ * sends its batch and then has the obstacle removed. The owner fails that
+ * step itself: an obstructed row leaves the audio saved and reports its own
  * `Partial`, and an obstructed audio file fails before anything is written.
  * A path that is already occupied is left alone and the attempt is not
- * counted, since the folder refuses it without help.
+ * counted, since the owner refuses it without help.
+ *
+ * Only those two paths can be obstructed, and each is checked before it is
+ * joined onto the root. A directory on the way that is a symbolic link is
+ * refused. Removing an obstacle removes the empty directory this host made and
+ * the empty parents it had to create, and nothing else.
  *
  * Commit failures are real: a lock file is created on the branch ref, where an
  * interrupted Git process leaves one, so Git refuses to move the branch and
- * the commit pass fails while file saves keep working.
+ * the commit fails while file saves keep working. The branch is the one
+ * `HEAD` names when the lock is taken, so the lock can only be taken once the
+ * owner has initialized Git in the folder. A lock asked for at launch waits
+ * for the page to say the folder is open.
  *
  * That lock path belongs to Git. The injected lock is created exclusively, so
  * it never replaces a lock another process holds, and it carries a marker
@@ -27,15 +38,16 @@
  * A release shell never constructs this.
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import type { DataDefinition } from '@epicenter/definition';
 import {
-	type Folder,
-	pathProblem,
-	rowPath,
-	stemProblem,
-} from '@epicenter/folder/bun';
+	lstat,
+	mkdir,
+	readFile,
+	rmdir,
+	unlink,
+	writeFile,
+} from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { pathProblem, rowPath, stemProblem } from '@epicenter/folder';
 import { RECORDINGS } from '../src/lib/definition.js';
 
 export type InjectionState = {
@@ -47,13 +59,6 @@ export type InjectionState = {
 	commitsBlocked: boolean;
 };
 
-/** The step of a recording's batch that an armed failure obstructs. */
-type Obstacle = {
-	readonly counter: 'rowWrites' | 'audioWrites';
-	/** The folder-relative path the step writes. */
-	readonly path: string;
-};
-
 /** Starts the content of every lock a debug host creates. */
 export const LOCK_MARKER_PREFIX = 'whispering-debug-lock';
 
@@ -61,117 +66,81 @@ const count = (value: unknown) =>
 	typeof value === 'number' && Number.isInteger(value) && value >= 0
 		? value
 		: undefined;
+const codeOf = (cause: unknown) => (cause as { code?: string })?.code;
 
 export function createFailureInjection({
 	root,
-	folder,
+	launch = {},
 }: {
 	root: string;
-	folder: Folder<DataDefinition>;
+	/** What the launch environment armed. The branch lock waits for `armLaunch`. */
+	launch?: Partial<InjectionState>;
 }) {
-	const branchLock = join(
-		root,
-		'.git',
-		'refs',
-		'heads',
-		`${folder.git.snapshot.branch}.lock`,
-	);
 	const state: InjectionState = {
-		rowWrites: 0,
-		audioWrites: 0,
+		rowWrites: count(launch.rowWrites) ?? 0,
+		audioWrites: count(launch.audioWrites) ?? 0,
 		commitsBlocked: false,
 	};
-
-	/**
-	 * Which step of this call an armed failure applies to, if any. Only a batch
-	 * that creates a recording row is a recording's publication. The paths come
-	 * from the page, so each is checked before it is joined onto the root.
-	 */
-	function obstacleFor(
-		path: readonly string[],
-		args: readonly unknown[],
-	): Obstacle | undefined {
-		if (path.length !== 1 || path[0] !== 'batch' || !Array.isArray(args[0]))
-			return undefined;
-		const steps = args[0] as readonly Record<string, unknown>[];
-		const row = steps.find(
-			(step) => step?.op === 'tables.create' && step.table === RECORDINGS,
-		);
-		const stem = (row?.input as { stem?: unknown } | undefined)?.stem;
-		if (typeof stem !== 'string' || stemProblem(stem) !== undefined)
-			return undefined;
-		const audio = steps.find((step) => step?.op === 'files.create')?.path;
-		if (
-			state.audioWrites > 0 &&
-			typeof audio === 'string' &&
-			pathProblem(audio) === undefined
-		)
-			return { counter: 'audioWrites', path: audio };
-		if (state.rowWrites > 0)
-			return { counter: 'rowWrites', path: rowPath(RECORDINGS, stem) };
-		return undefined;
-	}
-
-	/**
-	 * Put an empty directory where the step writes. Returns how to remove it,
-	 * or undefined when something is already there.
-	 */
-	async function obstruct(
-		obstacle: Obstacle,
-	): Promise<(() => Promise<void>) | undefined> {
-		const target = join(root, ...obstacle.path.split('/'));
-		const parent = dirname(target);
-		const madeParent = await mkdir(parent, { recursive: true });
-		const removeParent = async () => {
-			// Only a directory this created, and only while it is still empty.
-			if (madeParent !== undefined) await rmdir(parent).catch(() => {});
-		};
-		try {
-			await mkdir(target);
-		} catch (cause) {
-			await removeParent();
-			if (codeOf(cause) === 'EEXIST') return undefined;
-			throw cause;
-		}
-		state[obstacle.counter] -= 1;
-		return async () => {
-			await rmdir(target).catch(() => {});
-			await removeParent();
-		};
-	}
+	let lockAtLaunch = launch.commitsBlocked === true;
+	/** The lock this host created, at the path it was created at. */
+	let heldLock: string | undefined;
+	/** Obstacles in place now, by the name the page was given. */
+	const obstacles = new Map<string, () => Promise<void>>();
 
 	/** What this host writes into a lock it creates. Git never writes this. */
 	const marker = `${LOCK_MARKER_PREFIX} ${randomUUID()}\n`;
-	const codeOf = (cause: unknown) => (cause as { code?: string })?.code;
 
-	/** Create the lock, or refuse because one is already there. */
-	async function lockBranch() {
-		await mkdir(join(branchLock, '..'), { recursive: true });
+	/** The lock path of the branch `HEAD` names. Refuses a folder with no Git yet. */
+	async function branchLock(): Promise<string> {
+		let head: string;
 		try {
-			await writeFile(branchLock, marker, { flag: 'wx' });
-		} catch (cause) {
-			if (codeOf(cause) !== 'EEXIST') throw cause;
-			const found = await readFile(branchLock, 'utf8').catch(() => '');
+			head = await readFile(join(root, '.git', 'HEAD'), 'utf8');
+		} catch {
 			throw new Error(
-				found.startsWith(LOCK_MARKER_PREFIX)
-					? `${branchLock} is a lock left by an earlier debug session. It was not replaced. Remove it by hand if no other Whispering is running.`
-					: `${branchLock} is held by another Git process. It was not replaced.`,
+				'The folder has no Git history yet, so there is no branch to lock. Lock it once the app has opened the folder.',
 			);
 		}
+		const branch = /^ref: refs\/heads\/(.+)$/.exec(head.trim())?.[1];
+		// The name is joined onto a path, so it is held to the folder's path rule.
+		if (branch === undefined || pathProblem(branch) !== undefined)
+			throw new Error(
+				'HEAD does not name a branch, so there is no branch to lock.',
+			);
+		return `${join(root, '.git', 'refs', 'heads', ...branch.split('/'))}.lock`;
+	}
+
+	/** Create the lock, or refuse because one is already there. */
+	async function lockBranch(lock: string) {
+		await mkdir(dirname(lock), { recursive: true });
+		try {
+			await writeFile(lock, marker, { flag: 'wx' });
+		} catch (cause) {
+			if (codeOf(cause) !== 'EEXIST') throw cause;
+			const found = await readFile(lock, 'utf8').catch(() => '');
+			throw new Error(
+				found.startsWith(LOCK_MARKER_PREFIX)
+					? `${lock} is a lock left by an earlier debug session. It was not replaced. Remove it by hand if no other Whispering is running.`
+					: `${lock} is held by another Git process. It was not replaced.`,
+			);
+		}
+		heldLock = lock;
 	}
 
 	/** Remove the lock only when it is the one this host created. */
 	async function unlockBranch(): Promise<void> {
+		const lock = heldLock;
+		if (lock === undefined) return;
 		let found: string;
 		try {
-			found = await readFile(branchLock, 'utf8');
+			found = await readFile(lock, 'utf8');
 		} catch (cause) {
-			if (codeOf(cause) === 'ENOENT') return;
-			throw cause;
+			if (codeOf(cause) !== 'ENOENT') throw cause;
+			heldLock = undefined;
+			return;
 		}
 		// Someone removed ours and took the lock: it is theirs now.
-		if (found !== marker) return;
-		await unlink(branchLock);
+		if (found === marker) await unlink(lock);
+		heldLock = undefined;
 	}
 
 	async function arm(change: Record<string, unknown>): Promise<InjectionState> {
@@ -181,11 +150,100 @@ export function createFailureInjection({
 			typeof change.commitsBlocked === 'boolean' &&
 			change.commitsBlocked !== state.commitsBlocked
 		) {
-			if (change.commitsBlocked) await lockBranch();
+			if (change.commitsBlocked) await lockBranch(await branchLock());
 			else await unlockBranch();
 			state.commitsBlocked = change.commitsBlocked;
 		}
 		return { ...state };
+	}
+
+	/**
+	 * Make every missing directory above `target`, one at a time, and return
+	 * the ones made. Undefined when something on the way is not a directory,
+	 * which the owner refuses without help.
+	 */
+	async function makeParents(path: string): Promise<string[] | undefined> {
+		const parts = path.split('/').slice(0, -1);
+		const made: string[] = [];
+		let current = root;
+		for (const part of parts) {
+			current = join(current, part);
+			const stats = await lstat(current).catch((cause) => {
+				if (codeOf(cause) === 'ENOENT') return undefined;
+				throw cause;
+			});
+			if (stats === undefined) {
+				await mkdir(current);
+				made.push(current);
+				continue;
+			}
+			if (stats.isSymbolicLink())
+				throw new Error(
+					`'${path}' passes through a symbolic link. Nothing was put in its way.`,
+				);
+			if (!stats.isDirectory()) {
+				await removeEmpty(made);
+				return undefined;
+			}
+		}
+		return made;
+	}
+
+	/** Remove directories this host made, deepest first, while they are still empty. */
+	async function removeEmpty(made: readonly string[]) {
+		for (const directory of [...made].reverse())
+			await rmdir(directory).catch(() => {});
+	}
+
+	/**
+	 * Put an empty directory in the way of one recording's publication, when a
+	 * failure is armed for it. `audioPath` is given only by a publication that
+	 * creates the audio. Returns the obstacle's name, or null when nothing was
+	 * placed.
+	 */
+	async function obstruct(recording: {
+		stem: unknown;
+		audioPath: unknown;
+	}): Promise<string | null> {
+		const { stem, audioPath } = recording;
+		if (typeof stem !== 'string' || stemProblem(stem) !== undefined)
+			throw new Error('An obstacle needs the stem of a recording row.');
+		if (
+			audioPath !== undefined &&
+			(typeof audioPath !== 'string' || pathProblem(audioPath) !== undefined)
+		)
+			throw new Error('An obstacle needs a usable folder-relative audio path.');
+
+		const step =
+			state.audioWrites > 0 && audioPath !== undefined
+				? ({ counter: 'audioWrites', path: audioPath } as const)
+				: state.rowWrites > 0
+					? ({ counter: 'rowWrites', path: rowPath(RECORDINGS, stem) } as const)
+					: undefined;
+		if (step === undefined) return null;
+
+		const made = await makeParents(step.path);
+		if (made === undefined) return null;
+		const target = join(root, ...step.path.split('/'));
+		try {
+			await mkdir(target);
+		} catch (cause) {
+			await removeEmpty(made);
+			if (codeOf(cause) === 'EEXIST') return null;
+			throw cause;
+		}
+		state[step.counter] -= 1;
+		const obstacle = randomUUID();
+		obstacles.set(obstacle, () => removeEmpty([...made, target]));
+		return obstacle;
+	}
+
+	/** Remove one obstacle. A name this host does not hold removes nothing. */
+	async function clear(obstacle: unknown): Promise<void> {
+		if (typeof obstacle !== 'string') return;
+		const remove = obstacles.get(obstacle);
+		obstacles.delete(obstacle);
+		await remove?.();
 	}
 
 	return {
@@ -193,28 +251,27 @@ export function createFailureInjection({
 			return { ...state };
 		},
 		arm,
-		/** Release this host's own lock when it stops. Other locks are not touched. */
+		/**
+		 * Take the branch lock the launch environment asked for. The page calls
+		 * this once the owner has opened the folder, which is when Git exists.
+		 * A folder with no Git yet keeps the request for the next call; a lock
+		 * someone else holds is theirs, and the request is dropped.
+		 */
+		async armLaunch(): Promise<InjectionState> {
+			if (!lockAtLaunch) return { ...state };
+			const lock = await branchLock();
+			lockAtLaunch = false;
+			await lockBranch(lock);
+			state.commitsBlocked = true;
+			return { ...state };
+		},
+		obstruct,
+		clear,
+		/** Remove what this host put in the folder when it stops. Nothing else is touched. */
 		async release() {
-			if (!state.commitsBlocked) return;
+			for (const obstacle of [...obstacles.keys()]) await clear(obstacle);
 			await unlockBranch().catch(() => {});
 			state.commitsBlocked = false;
-		},
-		/**
-		 * Run one bridged folder call, with an armed failure in its way when one
-		 * applies. The answer is always the folder's own.
-		 */
-		async around<T>(
-			path: readonly string[],
-			args: readonly unknown[],
-			call: () => Promise<T>,
-		): Promise<T> {
-			const obstacle = obstacleFor(path, args);
-			const clear = obstacle && (await obstruct(obstacle));
-			try {
-				return await call();
-			} finally {
-				await clear?.();
-			}
 		},
 	};
 }

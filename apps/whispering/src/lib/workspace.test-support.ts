@@ -1,7 +1,12 @@
 /**
- * A workspace for tests: a real directory and Git repository opened as the
- * desktop host opens it, a fixture capture device, and stubbed endpoints.
- * Nothing here reaches a network, a microphone, or a provider.
+ * A workspace for tests: a real directory and Git repository, a fixture
+ * capture device, and stubbed endpoints. Nothing here reaches a network, a
+ * microphone, or a provider.
+ *
+ * The folder is opened with the Bun directory opener. It keeps the same
+ * contract as the desktop shell's owner over the same kind of directory, and
+ * is what a test can open without a shell. It is not that owner: nothing here
+ * establishes how the Rust owner behaves.
  *
  * The endpoint stubs are plain functions, so a test decides each answer and
  * counts each request.
@@ -23,7 +28,7 @@ import type {
 
 type TransformRequest = Parameters<Workspace['transform']>[0];
 
-/** A real directory opened as Whispering's folder, as the desktop host opens it. */
+/** A real directory opened as Whispering's folder, by this test process. */
 export async function openTestFolder(
 	root: string,
 	git: { commitOnEdit?: boolean } = {},
@@ -161,6 +166,8 @@ export async function openTestWorkspace({
 	const transformed: TransformRequest[] = [];
 	const answers: CloseDecision[] = [];
 	const closeListeners = new Set<() => void>();
+	/** A close the shell asked for while nothing was listening. */
+	let closeAsked = false;
 	const terminalRuns: string[] = [];
 	let cwd = '/';
 	let opens = 0;
@@ -203,8 +210,14 @@ export async function openTestWorkspace({
 		},
 		transformNote: 'test',
 		closing: {
+			// As the desktop workspace does: a request with nobody listening is
+			// kept and handed to the first listener.
 			onRequest(listener) {
 				closeListeners.add(listener);
+				if (closeAsked) {
+					closeAsked = false;
+					listener();
+				}
 				return () => closeListeners.delete(listener);
 			},
 			async answer(decision) {
@@ -243,6 +256,11 @@ export async function openTestWorkspace({
 		transformed,
 		answers,
 		closeListeners,
+		/** The shell asks to close, as the workspace delivers it: now, or kept. */
+		requestClose() {
+			if (closeListeners.size === 0) closeAsked = true;
+			for (const listener of closeListeners) listener();
+		},
 		terminalRuns,
 		get opens() {
 			return opens;

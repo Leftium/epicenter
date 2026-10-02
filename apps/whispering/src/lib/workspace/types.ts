@@ -1,10 +1,11 @@
 /**
  * The one boundary between Whispering and where its files live.
  *
- * The desktop app reaches a real directory through the folder host; a browser
- * tab keeps a logical folder in IndexedDB. Everything above this type is the
- * same code for both. Capabilities a storage cannot offer are `undefined`
- * here, not emulated: a browser folder has no directory to reveal.
+ * The desktop app reaches a real directory through the desktop shell's folder
+ * owner, and its other native abilities through the Whispering host; a
+ * browser tab keeps a logical folder in IndexedDB. Everything above this type
+ * is the same code for both. Capabilities a storage cannot offer are
+ * `undefined` here, not emulated: a browser folder has no directory to reveal.
  */
 import type {
 	FolderAccess,
@@ -26,24 +27,48 @@ export type WhisperingFolder = FolderAccess<typeof whisperingDefinition>;
 /**
  * Why no workspace could be opened. The message is what the person is shown.
  * Neither storage is tried in place of the other: a browser folder that is
- * refused is not replaced by a desktop one, and a desktop folder that cannot
- * be reached is not replaced by browser storage.
+ * refused is not replaced by a desktop one, and inside a desktop app nothing
+ * that is missing or refuses is replaced by browser storage.
  */
 export const WorkspaceError = defineErrors({
 	/** This browser's storage refused or could not be opened. */
 	BrowserFolder: ({ refusal }: { refusal: OpenFolderError }) => ({
 		message:
 			refusal.name === 'InsideTauri'
-				? 'This window is inside a desktop app, but Whispering’s folder host is not running, so there is no folder to open. Browser storage is not used inside a desktop app.'
+				? 'This window is inside a desktop app. Browser storage is not used inside a desktop app, so there is no folder to open here.'
 				: refusal.name === 'NoIndexedDb'
 					? 'This browser has no storage Whispering can use (IndexedDB is unavailable here), so the folder cannot be opened.'
 					: refusal.message,
 		refusal,
 	}),
-	/** The desktop folder host did not answer when the window opened. */
-	FolderHost: ({ reason }: { reason: string }) => ({
-		message: `Whispering’s folder host could not be reached, so the folder cannot be opened: ${reason}`,
+	/**
+	 * The page is inside a desktop app that did not start the Whispering host,
+	 * so it has no terminal, transcription, or close handshake. Nothing is
+	 * opened: a folder alone is not the app.
+	 */
+	HostMissing: () => ({
+		message:
+			'This window is inside a desktop app that did not start Whispering’s own host, so Whispering cannot run here. Nothing was opened, and browser storage is not used inside a desktop app.',
+	}),
+	/** The Whispering host did not answer when the window opened. */
+	HostUnreachable: ({ reason }: { reason: string }) => ({
+		message: `Whispering’s host could not be reached, so the folder was not opened: ${reason}`,
 		reason,
+	}),
+	/** The desktop shell's folder owner refused this window. */
+	DesktopFolder: ({ refusal }: { refusal: OpenFolderError }) => ({
+		message: refusal.message,
+		refusal,
+	}),
+	/**
+	 * The shell's owner and the host name different directories, so audio
+	 * would be read and commands run somewhere other than where files are
+	 * saved.
+	 */
+	FolderMismatch: ({ folder, host }: { folder: string; host: string }) => ({
+		message: `The desktop app opened the folder at ${folder}, but Whispering’s host uses ${host}. Nothing was opened.`,
+		folder,
+		host,
 	}),
 });
 export type WorkspaceError = InferErrors<typeof WorkspaceError>;
@@ -54,6 +79,20 @@ export type InjectionState = {
 	readonly audioWrites: number;
 	readonly commitsBlocked: boolean;
 };
+
+/**
+ * Runs the one batch that publishes a recording. A debug desktop shell puts
+ * an armed failure in that batch's way and removes it afterward; the batch is
+ * always the folder's own and so is its answer. `audioPath` is given only
+ * when the batch creates the audio.
+ */
+export type RecordingPublicationHook = <T>(
+	recording: {
+		readonly stem: string;
+		readonly audioPath: string | undefined;
+	},
+	publish: () => Promise<T>,
+) => Promise<T>;
 
 export type CloseDecision = 'proceed' | 'asking' | 'cancel';
 
@@ -71,7 +110,8 @@ export type Workspace = {
 	readonly captureNotice: string | undefined;
 	/**
 	 * Files changed, so read again. On the desktop this is any program writing
-	 * the directory; in a browser it is a save from this tab or another tab.
+	 * the directory, this app included; in a browser it is a save from this tab
+	 * or another tab.
 	 */
 	onExternalChange(listener: () => void): () => void;
 	/** Show the folder in the system file manager; a problem is returned as text. */
@@ -112,8 +152,8 @@ export type Workspace = {
 				onRequest(listener: () => void): () => void;
 				answer(decision: CloseDecision): Promise<void>;
 				/**
-				 * The shell tried to close but the folder host is gone, so it could
-				 * not ask through it. The page must keep the window and say why.
+				 * The shell tried to close but the host is gone, so it could not ask
+				 * through it. The page must keep the window and say why.
 				 */
 				onRequestWithoutHost(listener: () => void): () => void;
 				/** With the host gone, the one way to tell the shell to quit. */
@@ -129,6 +169,7 @@ export type Workspace = {
 		| {
 				state(): Promise<InjectionState>;
 				arm(change: Partial<InjectionState>): Promise<InjectionState>;
+				readonly aroundRecordingPublication: RecordingPublicationHook;
 		  }
 		| undefined;
 	close(): Promise<void>;

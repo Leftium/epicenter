@@ -9,7 +9,7 @@
  * an approval is the line the host prints.
  */
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHttpBridge } from '../src/lib/bridge/http.js';
@@ -28,13 +28,14 @@ async function start() {
 		await mkdtemp(join(tmpdir(), 'whispering-close-')),
 	);
 	let approvals = 0;
+	const root = join(directory, 'data');
+	await mkdir(root);
 	const host = await createHost({
-		root: join(directory, 'data'),
+		root,
 		token: TOKEN,
 		uiDist: undefined,
 		debug: false,
 		fixturePath: undefined,
-		inlineToken: false,
 		env: {},
 		log: () => {},
 		onCloseApproved: () => {
@@ -105,7 +106,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 test('a close asked before any event stream connected waits, and is delivered on connect', async () => {
 	const started = await start();
 
-	// A page can be recording and editing through ordinary calls while its
+	// A page can be recording and saving through the folder's owner while its
 	// event stream has not connected, so no stream is not "nothing held".
 	started.host.closeRequested();
 	started.host.closeRequested();

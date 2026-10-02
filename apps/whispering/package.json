@@ -7,7 +7,6 @@
 	"scripts": {
 		"dev": "tauri dev",
 		"dev:ui": "vite dev",
-		"host": "WHISPERING_HOST_STANDALONE=1 WHISPERING_DEBUG=1 bun native/main.ts",
 		"test": "bun test --isolate",
 		"build": "NODE_ENV=production vite build",
 		"build:epicenter": "EPICENTER_HOST=1 bun run build",

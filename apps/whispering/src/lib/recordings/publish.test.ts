@@ -600,3 +600,54 @@ test('observing a published recording whose title and notes were edited returns 
 	).toBe(before);
 	await folder.close();
 });
+
+// ============================================================================
+// The debug publication hook
+// ============================================================================
+
+test('the hook surrounds exactly the batch: it is told what the batch creates, and is not reached when nothing is published', async () => {
+	const { root, folder } = await open();
+	const pending = capture();
+	const seen: {
+		stem: string;
+		audioPath: string | undefined;
+		rows: string[];
+	}[] = [];
+	const around: Parameters<typeof publishRecording>[2] = async (
+		recording,
+		publish,
+	) => {
+		// The batch has not run yet: no row is in the folder when the hook is entered.
+		seen.push({
+			...recording,
+			rows: (
+				await readdir(join(root, 'recordings')).catch(() => [] as string[])
+			).filter((name) => name.endsWith('.md')),
+		});
+		return publish();
+	};
+
+	// A new recording: the batch creates the audio, and the hook is told its path.
+	const failing: PublishTarget = {
+		...folder,
+		batch: batchWithRecordingFailures(folder, root, { audio: 0, row: 1 }),
+	};
+	expect((await publishRecording(failing, pending, around)).status).toBe(
+		'partial',
+	);
+	// A recovery: the audio is already there, so the batch creates no audio.
+	expect((await publishRecording(folder, pending, around)).status).toBe(
+		'saved',
+	);
+	// Already published: there is no batch, so the hook is not reached.
+	expect((await publishRecording(folder, pending, around)).status).toBe(
+		'saved',
+	);
+
+	expect(seen).toEqual([
+		{ stem: pending.id, audioPath: pending.fields.audioPath, rows: [] },
+		{ stem: pending.id, audioPath: undefined, rows: [] },
+	]);
+	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
+	await folder.close();
+});

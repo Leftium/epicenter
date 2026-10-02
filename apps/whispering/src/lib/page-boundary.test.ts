@@ -2,12 +2,14 @@
  * What the page may import.
  *
  * The page runs in a WebView and in a browser tab, so nothing under `src/` may
- * reach a native module: not the directory or desktop folder openers, not
- * Node or Bun, and not a Tauri API. It names the folder contract through
- * `@epicenter/folder`, and opens a folder only through the browser entry, in
- * the browser workspace. The recording workflow is file-backed, so it may not
- * reach the Yjs store either. This reads the sources, so a violation names
- * its file.
+ * reach Node or Bun, or the directory opener that runs there. It names the
+ * folder contract through `@epicenter/folder`. A folder is opened in exactly
+ * two places, each naming its entry: the browser workspace opens browser
+ * storage, and the desktop workspace attaches to the desktop shell's owner.
+ * The only other Tauri import is the one question the workspace opener asks,
+ * whether the page is inside a desktop app. The recording workflow is
+ * file-backed, so it may not reach the Yjs store either. This reads the
+ * sources, so a violation names its file.
  *
  * The same reading establishes who owns the folder: the app layout opens one
  * session, and pages only receive it.
@@ -43,6 +45,15 @@ const files = [...sources(src)]
 	}))
 	.filter((file) => file.path !== GENERATED);
 
+/** The Bun host's own sources: what runs beside the folder, outside the page. */
+const native = fileURLToPath(new URL('../../native', import.meta.url));
+const hostFiles = readdirSync(native)
+	.filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+	.map((name) => ({
+		path: `native/${name}`,
+		text: readFileSync(join(native, name), 'utf8'),
+	}));
+
 function importers(matches: (specifier: string) => boolean) {
 	const found: string[] = [];
 	for (const file of files)
@@ -52,39 +63,97 @@ function importers(matches: (specifier: string) => boolean) {
 	return found;
 }
 
-test('the page imports no native module', () => {
+test('the page imports no Node or Bun module, and Tauri only to ask where it is running', () => {
 	expect(
 		importers(
 			(specifier) =>
 				specifier.startsWith('node:') ||
 				specifier.startsWith('bun') ||
-				specifier.startsWith('@tauri-apps/') ||
-				// The directory opener runs in Bun; the desktop one attaches to an
-				// owner this app's shell does not have.
+				// The directory opener runs in Bun, never in a page.
 				specifier === '@epicenter/folder/bun' ||
-				specifier === '@epicenter/folder/tauri' ||
 				specifier.includes('/native/'),
 		),
 	).toEqual([]);
+	// The one Tauri API the page names: the opener asks whether it is inside a
+	// desktop app. Commands and events are the folder adapter's, not the page's.
+	expect(
+		importers((specifier) => specifier.startsWith('@tauri-apps/')),
+	).toEqual(['lib/workspace/index.ts imports @tauri-apps/api/core']);
 });
 
-test('the page opens a folder only in the browser workspace, through the browser entry', () => {
+test('a folder is opened only by the two workspaces, each through its own entry', () => {
 	// Every other file names the contract, which opens nothing.
 	expect(
 		importers((specifier) => specifier === '@epicenter/folder/browser'),
 	).toEqual(['lib/workspace/browser.ts imports @epicenter/folder/browser']);
-	expect(callers('openFolder')).toEqual(['lib/workspace/browser.ts']);
+	expect(
+		importers((specifier) => specifier === '@epicenter/folder/tauri'),
+	).toEqual(['lib/workspace/desktop.ts imports @epicenter/folder/tauri']);
+	expect(callers('openFolder').sort()).toEqual([
+		'lib/workspace/browser.ts',
+		'lib/workspace/desktop.ts',
+	]);
 	const folderEntries = importers((specifier) =>
 		specifier.startsWith('@epicenter/folder'),
 	).map((found) => found.split(' imports ')[1]);
 	expect([...new Set(folderEntries)].sort()).toEqual([
 		'@epicenter/folder',
 		'@epicenter/folder/browser',
+		'@epicenter/folder/tauri',
 	]);
-	// The page is built against the browser entry, so no desktop adapter is emitted.
+	// The bare specifier is built against the browser entry. It is the exact
+	// specifier only, so the desktop workspace's entry is left as it is.
 	expect(
 		readFileSync(new URL('../../vite.config.ts', import.meta.url), 'utf8'),
 	).toContain('find: /^@epicenter\\/folder$/');
+});
+
+test('the desktop workspace is loaded only when the page is inside a desktop app', () => {
+	// Both workspaces are dynamic imports of the opener and of nothing else, so
+	// a browser tab never loads the desktop adapter.
+	const loaders = files
+		.filter((file) =>
+			/import\(\s*['"]\.\/(desktop|browser)\.js['"]/.test(file.text),
+		)
+		.map((file) => file.path);
+	expect(loaders).toEqual(['lib/workspace/index.ts']);
+	expect(
+		files.filter(
+			(file) =>
+				/from\s+['"][^'"]*workspace\/desktop\.js['"]/.test(file.text) ||
+				/from\s+['"]\.\/desktop\.js['"]/.test(file.text),
+		),
+	).toEqual([]);
+});
+
+test('the page has no folder transport of its own, and the host no folder', () => {
+	// The retired pieces: a generic folder call over HTTP and its two ends.
+	for (const retired of [
+		'bridge/call',
+		'folder-client',
+		'batch-plan',
+		'folder-rpc',
+		'connectFolder',
+		'FolderTransport',
+		'callFolder',
+	]) {
+		expect(files.filter((file) => file.text.includes(retired))).toEqual([]);
+		expect(hostFiles.filter((file) => file.text.includes(retired))).toEqual([]);
+	}
+	// The host process imports only the folder's inert contract, opens no
+	// folder, and watches nothing.
+	const hostImports = hostFiles.flatMap((file) =>
+		[...file.text.matchAll(IMPORT)].map(([, specifier]) => specifier),
+	);
+	expect(
+		[
+			...new Set(hostImports.filter((s) => s?.startsWith('@epicenter/'))),
+		].sort(),
+	).toEqual(['@epicenter/folder']);
+	for (const file of hostFiles) {
+		expect(file.text).not.toMatch(/\bopenFolder\b/);
+		expect(file.text).not.toMatch(/\bwatch\(/);
+	}
 });
 
 test('the page imports no Yjs store, sync, or account module', () => {
@@ -115,12 +184,29 @@ function callers(name: string) {
 test('the app layout is the only place a session is opened', () => {
 	// One folder for the mounted layout, kept across its routes: no page or
 	// component opens a workspace or builds product state of its own.
-	expect(callers('openSession')).toEqual(['routes/+layout.svelte']);
+	expect(callers('mountSession')).toEqual(['routes/+layout.svelte']);
+	expect(callers('openSession')).toEqual(['lib/session.svelte.ts']);
 	expect(callers('createSession')).toEqual(['lib/session.svelte.ts']);
 	expect(callers('createLibrary')).toEqual(['lib/session.svelte.ts']);
 	expect(callers('createLeaveGuard')).toEqual(['lib/session.svelte.ts']);
 	// `openSession` takes the opener as a value; nothing else calls it.
 	expect(callers('openWorkspace')).toEqual([]);
+});
+
+test('a close is answered without a session only by the holder of a failed opening', () => {
+	// Answering `proceed` unseen is right only when nothing was opened. The one
+	// place that may start it is the holder of the opening, which starts it on
+	// failure and stops it on release. It is taken there as a value, not called.
+	expect(callers('answerCloseAfterFailedOpening')).toEqual([]);
+	expect(
+		files
+			.filter((file) => file.text.includes('answerCloseAfterFailedOpening'))
+			.map((file) => file.path)
+			.sort(),
+	).toEqual(['lib/session.svelte.ts', 'lib/workspace/index.ts']);
+	expect(callers('answerCloseWithNothingOpen')).toEqual([
+		'lib/workspace/index.ts',
+	]);
 });
 
 test('every page takes the session from context, and only the shell guards navigation', () => {

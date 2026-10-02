@@ -55,7 +55,10 @@ import {
 	sameVersion,
 } from '@epicenter/folder';
 import { RECORDINGS, type RecordingFields } from '../definition.js';
-import type { WhisperingFolder } from '../workspace/types.js';
+import type {
+	RecordingPublicationHook,
+	WhisperingFolder,
+} from '../workspace/types.js';
 
 export type RecordingEntry = Entry<RecordingFields>;
 
@@ -175,9 +178,16 @@ function confirmedBy(
 	return { audio: first.file, row: second.file };
 }
 
+/**
+ * `around` runs the batch. It exists for a debug desktop shell, which puts an
+ * armed failure in the batch's way; everywhere else the batch simply runs. It
+ * is given only the batch, so an attempt that publishes nothing never reaches
+ * it.
+ */
 export async function publishRecording(
 	target: PublishTarget,
 	capture: PendingCapture,
+	around: RecordingPublicationHook = (_recording, publish) => publish(),
 ): Promise<PublishOutcome> {
 	const table = target.tables.recordings;
 	const { audioPath } = capture.fields;
@@ -210,22 +220,29 @@ export async function publishRecording(
 		return { status: 'saved', entry: existing.data, recovered: true };
 	}
 
-	const published = await target.batch((batch) => {
-		if (observedAudio === undefined)
-			batch.files.create(audioPath, capture.bytes);
-		// The audio from an earlier attempt is in place. Writing the same bytes
-		// over exactly what was read makes the row's creation conditional on it.
-		else
-			batch.files.replace(
-				{ path: observedAudio.path, version: observedAudio.version },
-				capture.bytes,
-			);
-		batch.tables.recordings.create({
+	const published = await around(
+		{
 			stem: capture.id,
-			fields: capture.fields,
-			body: capture.body,
-		});
-	});
+			audioPath: observedAudio === undefined ? audioPath : undefined,
+		},
+		() =>
+			target.batch((batch) => {
+				if (observedAudio === undefined)
+					batch.files.create(audioPath, capture.bytes);
+				// The audio from an earlier attempt is in place. Writing the same bytes
+				// over exactly what was read makes the row's creation conditional on it.
+				else
+					batch.files.replace(
+						{ path: observedAudio.path, version: observedAudio.version },
+						capture.bytes,
+					);
+				batch.tables.recordings.create({
+					stem: capture.id,
+					fields: capture.fields,
+					body: capture.body,
+				});
+			}),
+	);
 
 	if (published.error) {
 		const error = published.error;

@@ -2,8 +2,8 @@
  * One transcription request to an OpenAI-compatible endpoint.
  *
  * Plain `fetch` and nothing else, so the page (browser folder) and the Bun
- * folder host (desktop) run the same request. The desktop host makes the call
- * so the key stays out of the page and the endpoint needs no CORS headers.
+ * host (desktop) run the same request. The desktop host makes the call so the
+ * key stays out of the page and the endpoint needs no CORS headers.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
@@ -13,10 +13,17 @@ export const TranscriptionError = defineErrors({
 		message: `Transcription is not set up: ${missing} is missing`,
 		missing,
 	}),
+	/**
+	 * The host did not answer, or its answer never arrived. That says nothing
+	 * about what the host did: it may never have been reached, or it may have
+	 * sent the request and had its answer lost on the way back. The outcome is
+	 * unknown, and nothing is sent again without the person asking.
+	 */
 	HostUnavailable: ({ reason }: { reason: string }) => ({
-		message: `The folder host could not be reached, so nothing was sent: ${reason}`,
+		message: `Whispering’s host did not answer, so it is not known whether the request was sent or what came back: ${reason}. Nothing is sent again unless you try again.`,
 		reason,
 	}),
+	/** The audio was not read, so no request was made. This one is certain. */
 	AudioUnreadable: ({ path, reason }: { path: string; reason: string }) => ({
 		message: `The audio at '${path}' could not be read: ${reason}`,
 		path,

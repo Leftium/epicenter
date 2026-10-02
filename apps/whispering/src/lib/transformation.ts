@@ -4,7 +4,7 @@
  * A transformation sends its prompt as the system message and the transcript
  * as the user message to `POST <base>/chat/completions`, and reads
  * `choices[0].message.content`. Plain `fetch` and nothing else, so the page
- * (browser folder) and the Bun folder host (desktop) run the same request. The
+ * (browser folder) and the Bun host (desktop) run the same request. The
  * desktop host makes the call so the key stays out of the page and the
  * endpoint needs no CORS headers.
  *
@@ -19,8 +19,14 @@ export const TransformationError = defineErrors({
 		message: `This transformation cannot run: ${missing} is missing`,
 		missing,
 	}),
+	/**
+	 * The host did not answer, or its answer never arrived. That says nothing
+	 * about what the host did: it may never have been reached, or it may have
+	 * sent the request and had its answer lost on the way back. The outcome is
+	 * unknown, and nothing is sent again without the person asking.
+	 */
 	HostUnavailable: ({ reason }: { reason: string }) => ({
-		message: `The folder host could not be reached, so nothing was sent: ${reason}`,
+		message: `Whispering’s host did not answer, so it is not known whether the request was sent or what came back: ${reason}. Nothing is sent again unless you try again.`,
 		reason,
 	}),
 	Unreachable: ({ url, reason }: { url: string; reason: string }) => ({

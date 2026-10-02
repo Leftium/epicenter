@@ -1,13 +1,19 @@
 /**
- * The folder host and the page's bridge client, end to end without a socket.
+ * The Whispering host and the page's bridge to it, end to end without a socket.
  *
- * The client's `fetch` is the host's `handle`, so every call here crosses the
- * real wire encoding and reaches a real directory and Git repository. What
- * these establish: the bridged folder behaves like the native folder, the
+ * The bridge's `fetch` is the host's `handle`, so every call here crosses the
+ * real wire encoding and reaches a real directory. What these establish: the
+ * host holds no folder and takes no part in owning one, it reads audio and
+ * runs the terminal as an ordinary program in the directory it is given, the
  * debug failures are repeatable and leave the documented state on disk, the
- * terminal runs in the data folder and keeps its directory, and none of it is
- * reachable without the launch token.
+ * key stays in the host, and none of it is reachable without the launch token.
+ *
+ * Where a test needs something to publish and commit, it opens the directory
+ * with the Bun directory opener. That is a stand-in for the desktop shell's
+ * Rust owner, which this process cannot start: it shows the host's obstacles
+ * make a real folder fail its own step, not how the Rust owner reports it.
  */
+import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import {
@@ -17,23 +23,21 @@ import {
 	readFile,
 	realpath,
 	rm,
+	symlink,
 	writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { captureVersion } from '@epicenter/folder/bun';
-import { expectErr, expectOk } from 'wellcrafted/testing';
-import { connectFolder } from '../src/lib/bridge/folder-client.js';
+import { expectErr } from 'wellcrafted/testing';
 import { createHttpBridge } from '../src/lib/bridge/http.js';
 import { toneWav } from '../src/lib/capture.js';
-import {
-	type RecordingFields,
-	whisperingDefinition,
-} from '../src/lib/definition.js';
+import type { RecordingFields } from '../src/lib/definition.js';
 import {
 	type PendingCapture,
 	publishRecording,
 } from '../src/lib/recordings/publish.js';
+import type { RecordingPublicationHook } from '../src/lib/workspace/types.js';
+import { openTestFolder } from '../src/lib/workspace.test-support.js';
 import { createHost, type Host, type HostOptions } from './host.js';
 import type { ShellRun } from './terminal.js';
 
@@ -49,14 +53,15 @@ async function start(overrides: Partial<HostOptions> = {}) {
 	const directory = await realpath(
 		await mkdtemp(join(tmpdir(), 'whispering-host-')),
 	);
+	// The shell creates and resolves the folder before it starts the host.
 	const root = join(directory, 'data');
+	await mkdir(root);
 	const host: Host = await createHost({
 		root,
 		token: TOKEN,
 		uiDist: undefined,
 		debug: true,
 		fixturePath: undefined,
-		inlineToken: false,
 		env: {},
 		log: () => {},
 		...overrides,
@@ -67,13 +72,35 @@ async function start(overrides: Partial<HostOptions> = {}) {
 		token: TOKEN,
 		fetch: (input, init) => host.handle(new Request(input, init)),
 	});
-	const remote = await connectFolder(whisperingDefinition, bridge.transport);
 	cleanups.push(async () => {
-		await remote.close();
 		await host.close();
 		await rm(directory, { recursive: true, force: true });
 	});
-	return { directory, root: host.root, host, bridge, remote };
+	return { directory, root, host, bridge };
+}
+
+/** The folder's owner, for a test that needs files published and committed. */
+async function owner(root: string) {
+	const folder = await openTestFolder(root, { commitOnEdit: false });
+	cleanups.push(() => folder.close());
+	return folder;
+}
+
+/** What the desktop workspace does around a recording's batch in a debug shell. */
+function obstacles(
+	bridge: ReturnType<typeof createHttpBridge>,
+): RecordingPublicationHook {
+	return async (recording, publish) => {
+		const { obstacle } = await bridge.app<{ obstacle: string | null }>(
+			'obstruct',
+			recording,
+		);
+		try {
+			return await publish();
+		} finally {
+			if (obstacle !== null) await bridge.app('unobstruct', { obstacle });
+		}
+	};
 }
 
 function capture(id = '20260102-030405-abcd'): PendingCapture {
@@ -91,17 +118,62 @@ function capture(id = '20260102-030405-abcd'): PendingCapture {
 	};
 }
 
-const git = (root: string, ...args: string[]) =>
-	execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+const post = (host: Host, path: string, body: unknown, headers = {}) =>
+	host.handle(
+		new Request(`${ORIGIN}${path}`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${TOKEN}`,
+				...headers,
+			},
+			body: JSON.stringify(body),
+		}),
+	);
+
+/** An endpoint stub that records what it was sent. */
+function endpoint(
+	answer: (request: Request) => Response | Promise<Response> = () =>
+		Response.json({ text: 'a steady tone' }),
+) {
+	const requests: {
+		url: string;
+		authorization: string | null;
+		form: FormData;
+	}[] = [];
+	return {
+		requests,
+		fetch: async (input: string, init?: RequestInit) => {
+			const request = new Request(input, init);
+			requests.push({
+				url: request.url,
+				authorization: request.headers.get('authorization'),
+				form: await request.clone().formData(),
+			});
+			return answer(request);
+		},
+	};
+}
+
+const transcribeRequest = (path: string) => ({
+	path,
+	baseUrl: 'http://127.0.0.1:18080/v1/',
+	model: 'verification-model',
+});
+
+type Transcribed = {
+	data: { text: string } | null;
+	error: { name: string; message: string } | null;
+};
 
 test('the bridge answers nothing without the launch token or under another name', async () => {
 	const { host } = await start();
 	const call = (headers: Record<string, string>) =>
 		host.handle(
-			new Request(`${ORIGIN}/bridge/call`, {
+			new Request(`${ORIGIN}/bridge/app`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', ...headers },
-				body: JSON.stringify({ path: ['files', 'list'], args: [] }),
+				body: JSON.stringify({ op: 'info', payload: {} }),
 			}),
 		);
 
@@ -128,216 +200,121 @@ test('the bridge answers nothing without the launch token or under another name'
 	expect((await call({ authorization: `Bearer ${TOKEN}` })).status).toBe(200);
 });
 
-test('only folder methods can be called', async () => {
-	const { bridge } = await start();
-	await expect(
-		bridge.transport.call(['git', 'constructor'], []),
-	).rejects.toThrow();
-	await expect(
-		bridge.transport.call(['tables', '__proto__', 'list'], []),
-	).rejects.toThrow();
-	// The old unconditional-by-option write is gone; each verb states its condition.
-	await expect(
-		bridge.transport.call(['files', 'write'], ['note.md', 'x']),
-	).rejects.toThrow('not a folder method');
-});
+test('the host has no folder route, no folder operation, and no folder', async () => {
+	const { host } = await start();
 
-test('a bridged batch is the folder’s own batch: one publication, captures from the bytes it was given', async () => {
-	const { root, remote } = await start();
-	const audio = toneWav();
-
-	const receipt = expectOk(
-		await remote.folder.batch((batch) => {
-			batch.files.create('recordings/one.wav', audio);
-			batch.tables.recordings.create({
-				stem: 'one',
-				fields: capture('one').fields,
-				body: 'Notes\n',
-			});
-		}),
-	);
-
-	expect(receipt.steps.map((step) => step.kind)).toEqual(['write', 'write']);
-	const [first, second] = receipt.steps;
-	if (first?.kind !== 'write' || second?.kind !== 'write')
-		throw new Error('expected two writes');
-	expect(first.file).toEqual({
-		path: 'recordings/one.wav',
-		version: await captureVersion(audio),
+	// The generic folder call is gone, with the token and without it.
+	const call = await post(host, '/bridge/call', {
+		path: ['files', 'list'],
+		args: [],
 	});
-	expect(second.path).toBe('recordings/one.md');
-	// The row is the source the table's own create writes, and reads back valid.
-	const source = await readFile(join(root, 'recordings', 'one.md'), 'utf8');
-	expect(second.file.version).toEqual(
-		await captureVersion(new TextEncoder().encode(source)),
-	);
-	const row = expectOk(await remote.folder.tables.recordings.get('one'));
-	expect(row?.issues).toBeUndefined();
-	expect(row?.fields.audioPath).toBe('recordings/one.wav');
-	expect(row?.body).toBe('Notes\n');
-
-	// The folder's refusals come back as its own: an occupied row publishes nothing.
-	const refused = expectErr(
-		await remote.folder.batch((batch) => {
-			batch.files.create('recordings/two.wav', audio);
-			batch.tables.recordings.create({
-				stem: 'one',
-				fields: capture('one').fields,
-			});
-		}),
-	);
-	expect(refused.name).toBe('Exists');
-	// A stale capture is the folder's conflict, and the step after it never runs.
-	const stale = expectErr(
-		await remote.folder.batch((batch) => {
-			batch.files.replace(
-				{ path: 'recordings/one.wav', version: { sha256: 'stale', size: 1 } },
-				audio,
-			);
-			batch.files.create('recordings/three.wav', audio);
-		}),
-	);
-	expect(stale.name).toBe('Conflict');
-	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
-		'one.md',
-		'one.wav',
-	]);
+	expect(call.status).toBe(404);
+	expect(await call.json()).toEqual({ fault: 'Not found' });
+	// Nothing folder-shaped is an application operation either.
+	for (const op of [
+		'batch',
+		'files.read',
+		'git.commit',
+		'tables',
+		'openFolder',
+	])
+		expect((await post(host, '/bridge/app', { op, payload: {} })).status).toBe(
+			500,
+		);
+	expect('folder' in host).toBe(false);
 });
 
-test('a batch plan is checked at the bridge before the folder is asked for anything', async () => {
-	const { directory, root, host, bridge } = await start();
-	const send = (plan: unknown) =>
-		host.handle(
-			new Request(`${ORIGIN}/bridge/call`, {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					authorization: `Bearer ${TOKEN}`,
-				},
-				body: JSON.stringify({ path: ['batch'], args: [plan] }),
-			}),
-		);
+test('the host works beside a held folder lock and leaves the directory exactly as it was given', async () => {
+	const stub = endpoint();
+	const { directory, root, host, bridge } = await start({ fetch: stub.fetch });
+	// The lock the shell's owner holds for as long as it has the folder: an
+	// exclusive transaction on this file beside the directory.
+	const lock = new Database(join(directory, '.data.epicenter-lock'));
+	cleanups.push(async () => lock.close());
+	lock.run('BEGIN EXCLUSIVE');
 
-	for (const plan of [
-		'not a list',
-		[{ op: 'files.exec', path: 'a' }],
-		[{ op: 'files.create', path: 'a.md' }],
-		[{ op: 'files.create', path: 7, content: 'x' }],
-		[{ op: 'tables.create', table: '__proto__', input: { stem: 'a' } }],
-		[{ op: 'tables.create', table: 'nowhere', input: { stem: 'a' } }],
-		[{ op: 'files.create', path: 'ok.md', content: 'x' }, null],
-	]) {
-		const answered = await send(plan);
-		expect(answered.status).toBe(400);
-		expect(((await answered.json()) as { fault: string }).fault).toContain(
-			'The batch plan is not usable',
-		);
-	}
-	// A path the folder refuses is the folder's refusal, as a Result, not a fault.
-	const escaped = (await bridge.transport.call(
-		['batch'],
-		[[{ op: 'files.create', path: '../outside.md', content: 'x' }]],
-	)) as { error: { name: string } | null };
-	expect(escaped.error?.name).toBe('InvalidPath');
-	// None of it wrote anything, inside the folder or beside it.
-	expect((await readdir(root)).filter((name) => name !== '.git')).toEqual([]);
-	expect(await readdir(directory)).toEqual(['data']);
-});
-
-test('a recording published through the bridge is real files and real history', async () => {
-	const { root, remote } = await start();
-	const pending = capture();
-
-	const outcome = await publishRecording(remote.folder, pending);
-
-	expect(outcome.status).toBe('saved');
-	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
-		`${pending.id}.md`,
-		`${pending.id}.wav`,
-	]);
-	const opened = await remote.folder.files.open(`recordings/${pending.id}.wav`);
-	expect(opened.error).toBeNull();
-	expect(new Uint8Array(await opened.data!.arrayBuffer())).toEqual(
-		new Uint8Array(pending.bytes),
+	const info = await bridge.app<{ root: string }>('info');
+	expect(info.root).toBe(root);
+	const stream = await host.handle(
+		new Request(`${ORIGIN}/bridge/events`, {
+			headers: { authorization: `Bearer ${TOKEN}` },
+		}),
 	);
+	await stream.body?.cancel();
+	// While the lock is held, the host reads audio and runs its shell.
+	await writeFile(join(root, 'take.wav'), toneWav());
+	const transcribed = await bridge.app<Transcribed>(
+		'transcribe',
+		transcribeRequest('take.wav'),
+	);
+	expect(transcribed.data?.text).toBe('a steady tone');
+	const run = await bridge.app<ShellRun>('terminal', {
+		command: 'ls',
+		cwd: '',
+	});
+	expect(run.exitCode).toBe(0);
+	expect(run.stdout.trim()).toBe('take.wav');
+	await host.close();
 
-	const committed = await remote.folder.git.commit();
-	expect(['committed', 'unchanged']).toContain(committed.status);
+	// No repository, no settings file, no index: only what the test wrote.
+	expect(await readdir(root)).toEqual(['take.wav']);
+	// And the host never asked for the lock: its holder still has it.
+	const second = new Database(join(directory, '.data.epicenter-lock'));
+	cleanups.push(async () => second.close());
+	second.run('PRAGMA busy_timeout = 0');
+	expect(() => second.run('BEGIN EXCLUSIVE')).toThrow();
+	// Beside the folder there is only the lock this test took, and its journal.
 	expect(
-		git(root, 'log', '--oneline').trim().split('\n').length,
-	).toBeGreaterThan(0);
-	expect(
-		new Uint8Array(
-			execFileSync(
-				'git',
-				['cat-file', 'blob', `HEAD:recordings/${pending.id}.wav`],
-				{ cwd: root },
-			),
+		(await readdir(directory)).filter(
+			(name) => !name.startsWith('.data.epicenter-lock'),
 		),
-	).toEqual(new Uint8Array(pending.bytes));
+	).toEqual(['data']);
 });
 
-test('an entry read through the bridge can be written back, and a stale one conflicts', async () => {
-	const { root, remote } = await start();
-	const pending = capture();
-	await publishRecording(remote.folder, pending);
-	const table = remote.folder.tables.recordings;
-	const listed = await table.list();
-	const entry = listed.data!.entries[0]!;
-	expect(entry.issues).toBeUndefined();
-
-	const renamed = await table.update(entry, { fields: { title: 'Renamed' } });
-	expect(renamed.error).toBeNull();
-	expect(
-		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
-	).toContain('title: Renamed');
-
-	// The first observation is now stale: its write must be refused, not applied.
-	const stale = await table.update(entry, { fields: { title: 'Lost update' } });
-	expect(stale.error?.name).toBe('Conflict');
-	expect(
-		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
-	).toContain('title: Renamed');
-});
-
-test('unknown frontmatter and a malformed row survive the bridge untouched', async () => {
-	const { root, remote } = await start();
-	await mkdir(join(root, 'recordings'), { recursive: true });
-	const odd =
-		'---\n# kept comment\ntitle: Odd\nrecordedAt: 2026-01-02T03:04:05.000Z\ndurationMs: 5\ncapture: microphone\nmood: curious\n---\nNotes\n';
-	const broken = '---\ntitle: *missing\n---\nStill here\n';
-	await writeFile(join(root, 'recordings', 'odd.md'), odd);
-	await writeFile(join(root, 'recordings', 'broken.md'), broken);
-
-	const listed = await remote.folder.tables.recordings.list();
-	const byPath = new Map(
-		listed.data!.entries.map((entry) => [entry.path, entry]),
+test('a host is given the shell’s resolved directory, and refuses anything else without creating it', async () => {
+	const directory = await realpath(
+		await mkdtemp(join(tmpdir(), 'whispering-root-')),
 	);
-	const brokenEntry = byPath.get('recordings/broken.md')!;
-	expect(brokenEntry.issues?.[0]?.kind).toBe('frontmatter');
-	expect(brokenEntry.source).toBe(broken);
+	cleanups.push(() => rm(directory, { recursive: true, force: true }));
+	await mkdir(join(directory, 'real'));
+	await symlink(join(directory, 'real'), join(directory, 'alias'));
+	await writeFile(join(directory, 'file'), 'not a directory');
+	const open = (root: string) =>
+		createHost({
+			root,
+			token: TOKEN,
+			uiDist: undefined,
+			debug: false,
+			fixturePath: undefined,
+			env: {},
+			log: () => {},
+		});
 
-	const oddEntry = byPath.get('recordings/odd.md')!;
-	const updated = await remote.folder.tables.recordings.update(oddEntry, {
-		fields: { title: 'Odd, renamed' },
-	});
-	expect(updated.error).toBeNull();
-	const after = await readFile(join(root, 'recordings', 'odd.md'), 'utf8');
-	expect(after).toContain('# kept comment');
-	expect(after).toContain('mood: curious');
-	expect(after).toContain('title: Odd, renamed');
-	expect(await readFile(join(root, 'recordings', 'broken.md'), 'utf8')).toBe(
-		broken,
-	);
+	for (const root of [
+		join(directory, 'missing'),
+		join(directory, 'alias'),
+		join(directory, 'file'),
+		`${directory}/real/../real`,
+		`${directory}/real/`,
+		'relative/data',
+		'',
+	])
+		await expect(open(root)).rejects.toThrow('does not choose or create one');
+
+	expect((await readdir(directory)).sort()).toEqual(['alias', 'file', 'real']);
+	const host = await open(join(directory, 'real'));
+	expect(host.root).toBe(join(directory, 'real'));
+	await host.close();
 });
 
 test('an injected row failure leaves the audio saved, and retry completes one recording', async () => {
-	const { root, bridge, remote } = await start();
+	const { root, bridge } = await start();
+	const folder = await owner(root);
+	const around = obstacles(bridge);
 	const pending = capture();
 	await bridge.app('inject', { rowWrites: 2 });
-	expect((await remote.folder.git.status()).data?.changes).toEqual([]);
 
-	const first = await publishRecording(remote.folder, pending);
+	const first = await publishRecording(folder, pending, around);
 	expect(first.status).toBe('partial');
 	if (first.status === 'partial') {
 		expect(first.landed).toEqual([`recordings/${pending.id}.wav`]);
@@ -358,23 +335,10 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 	expect((await bridge.app<{ rowWrites: number }>('injection')).rowWrites).toBe(
 		1,
 	);
-	// A partial publication requests no commit; the page rechecks status after one.
-	await remote.folder.git.status();
-	expect(await bridge.transport.call(['git', 'snapshot'], [])).toMatchObject({
-		activity: { commit: { active: false } },
-		files: {
-			state: 'observed',
-			stale: false,
-			value: {
-				changes: [{ path: `recordings/${pending.id}.wav`, kind: 'add' }],
-			},
-		},
-	});
-	expect((await remote.folder.git.log(10)).data).toEqual([]);
 
 	// The second armed failure hits the recovery batch, which replaces the
 	// audio it read with the same bytes and fails at the row. The audio stays put.
-	const second = await publishRecording(remote.folder, pending);
+	const second = await publishRecording(folder, pending, around);
 	expect(second.status).toBe('partial');
 	if (second.status === 'partial')
 		expect(second.landed).toEqual([`recordings/${pending.id}.wav`]);
@@ -382,7 +346,7 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 		`${pending.id}.wav`,
 	]);
 
-	const third = await publishRecording(remote.folder, pending);
+	const third = await publishRecording(folder, pending, around);
 	expect(third.status).toBe('saved');
 	if (third.status === 'saved') {
 		expect(third.recovered).toBe(true);
@@ -397,47 +361,61 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 		`${pending.id}.md`,
 		`${pending.id}.wav`,
 	]);
-	const listed = await remote.folder.tables.recordings.list();
+	const listed = await folder.tables.recordings.list();
 	expect(listed.data!.entries).toHaveLength(1);
 	expect(listed.data!.entries[0]!.issues).toBeUndefined();
 });
 
 test('an injected audio failure writes nothing, and retry saves', async () => {
-	const { root, bridge, remote } = await start();
+	const { root, bridge } = await start();
+	const folder = await owner(root);
+	const around = obstacles(bridge);
 	const pending = capture();
 	await bridge.app('inject', { audioWrites: 1 });
 
-	const first = await publishRecording(remote.folder, pending);
+	const first = await publishRecording(folder, pending, around);
 	expect(first.status).toBe('failed');
 	expect(
 		await readdir(join(root, 'recordings')).catch(() => [] as string[]),
 	).toEqual([]);
 
-	const second = await publishRecording(remote.folder, pending);
+	const second = await publishRecording(folder, pending, around);
 	expect(second.status).toBe('saved');
 	if (second.status === 'saved') expect(second.recovered).toBe(false);
 });
 
 test('an armed failure leaves a path that is already occupied alone, and is not spent on it', async () => {
-	const { root, bridge, remote } = await start();
+	const { root, bridge } = await start();
+	const folder = await owner(root);
 	const pending = capture();
 	const foreign = '---\ntitle: Someone else\n---\nKeep me\n';
 	await mkdir(join(root, 'recordings'), { recursive: true });
 	await writeFile(join(root, 'recordings', `${pending.id}.md`), foreign);
 	await bridge.app('inject', { rowWrites: 1 });
 
-	// The page's own check refuses first; the raw batch is refused by the folder.
-	expect((await publishRecording(remote.folder, pending)).status).toBe(
+	// The page's own check refuses before any batch, so no obstacle is asked for.
+	let asked = 0;
+	const counting: RecordingPublicationHook = (recording, publish) => {
+		asked += 1;
+		return obstacles(bridge)(recording, publish);
+	};
+	expect((await publishRecording(folder, pending, counting)).status).toBe(
 		'unexpected',
 	);
+	expect(asked).toBe(0);
+	// Asked for directly, the occupied row is left alone, and the folder refuses the batch itself.
 	const refused = expectErr(
-		await remote.folder.batch((batch) => {
-			batch.files.create(pending.fields.audioPath, pending.bytes);
-			batch.tables.recordings.create({
-				stem: pending.id,
-				fields: pending.fields,
-			});
-		}),
+		await obstacles(bridge)(
+			{ stem: pending.id, audioPath: pending.fields.audioPath },
+			() =>
+				folder.batch((batch) => {
+					batch.files.create(pending.fields.audioPath, pending.bytes);
+					batch.tables.recordings.create({
+						stem: pending.id,
+						fields: pending.fields,
+					});
+				}),
+		),
 	);
 
 	expect(refused.name).toBe('Exists');
@@ -451,25 +429,40 @@ test('an armed failure leaves a path that is already occupied alone, and is not 
 });
 
 test('a locked branch fails the commit and never the save; unlocking lets it commit', async () => {
-	const { root, bridge, remote } = await start();
-	const pending = capture();
-	await bridge.app('inject', { commitsBlocked: true });
+	const { root, bridge } = await start({
+		env: { WHISPERING_DEBUG_BLOCK_COMMITS: '1' },
+	});
+	const git = (...args: string[]) =>
+		execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+	// Asked for at launch, and not taken: the folder has not been opened.
+	expect(
+		(await bridge.app<{ commitsBlocked: boolean }>('injection')).commitsBlocked,
+	).toBe(false);
+	expect(await readdir(root)).toEqual([]);
 
-	const outcome = await publishRecording(remote.folder, pending);
+	const folder = await owner(root);
+	// The page says the owner has opened the folder; the lock is taken now.
+	expect(
+		(await bridge.app<{ commitsBlocked: boolean }>('injection-launch'))
+			.commitsBlocked,
+	).toBe(true);
+	const pending = capture();
+
+	const outcome = await publishRecording(folder, pending, obstacles(bridge));
 	expect(outcome.status).toBe('saved');
-	const blocked = await remote.folder.git.commit();
+	const blocked = await folder.git.commit();
 	expect(blocked.status).not.toBe('committed');
 	expect((await readdir(join(root, 'recordings'))).sort()).toEqual([
 		`${pending.id}.md`,
 		`${pending.id}.wav`,
 	]);
-	expect(() => git(root, 'rev-parse', '--verify', 'HEAD')).toThrow();
+	expect(() => git('rev-parse', '--verify', 'HEAD')).toThrow();
 
 	await bridge.app('inject', { commitsBlocked: false });
-	const committed = await remote.folder.git.commit();
+	const committed = await folder.git.commit();
 	expect(committed.status).toBe('committed');
 	expect(
-		git(root, 'ls-tree', '-r', '--name-only', 'HEAD').trim().split('\n').sort(),
+		git('ls-tree', '-r', '--name-only', 'HEAD').trim().split('\n').sort(),
 	).toEqual([`recordings/${pending.id}.md`, `recordings/${pending.id}.wav`]);
 });
 
@@ -500,75 +493,184 @@ test('the terminal runs in the data folder, edits its files, and keeps its direc
 	const escaped = await run('cd /', inside.cwd);
 	expect(escaped.cwd).toBe('');
 	expect(escaped.stderr).toContain('stays inside the data folder');
-
-	const history = await run('git status --short', '');
-	expect(history.exitCode).toBe(0);
-	expect(history.stdout).toContain('note.md');
 });
 
-test('a change made outside the app is announced on the event stream', async () => {
-	const { root, remote } = await start();
-	const seen = new Promise<void>((resolve) => remote.onExternalChange(resolve));
-	// Give the stream a moment to connect before the outside write.
-	await new Promise((resolve) => setTimeout(resolve, 150));
-	await writeFile(join(root, 'outside.md'), 'written by another program\n');
-	await Promise.race([
-		seen,
-		new Promise((_, reject) =>
-			setTimeout(() => reject(new Error('no change event arrived')), 5000),
-		),
-	]);
-	const listing = await remote.folder.files.list();
-	expect(listing.data!.files.map((file) => file.path)).toContain('outside.md');
+test('a terminal edit is an outside write: the owner’s next read sees it, and a save over the older version conflicts', async () => {
+	const { root, bridge } = await start();
+	const folder = await owner(root);
+	const pending = capture();
+	await publishRecording(folder, pending);
+	const entry = (await folder.tables.recordings.get(pending.id)).data!;
+	expect((await folder.git.commit()).status).toBe('committed');
+
+	// The real shell, as any other program: it edits the row and commits.
+	const run = await bridge.app<ShellRun>('terminal', {
+		command: `sed -i.bak 's/First take/Renamed in the shell/' recordings/${pending.id}.md && rm recordings/${pending.id}.md.bak && git status --short`,
+		cwd: '',
+	});
+	expect(run.exitCode).toBe(0);
+	expect(run.stdout).toContain(`recordings/${pending.id}.md`);
+
+	const reread = (await folder.tables.recordings.get(pending.id)).data!;
+	expect(reread.fields.title).toBe('Renamed in the shell');
+	// The page's older observation no longer matches: its save is refused, not applied.
+	const stale = await folder.tables.recordings.update(entry, {
+		fields: { title: 'Lost update' },
+	});
+	expect(stale.error?.name).toBe('Conflict');
+	expect(
+		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
+	).toContain('title: Renamed in the shell');
 });
 
 test('transcription reads the saved audio and sends it to the configured endpoint', async () => {
-	const requests: {
-		url: string;
-		authorization: string | null;
-		form: FormData;
-	}[] = [];
-	const { bridge, remote } = await start({
+	const stub = endpoint();
+	const { root, bridge } = await start({
 		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
-		fetch: async (input, init) => {
-			const request = new Request(input, init);
-			requests.push({
-				url: request.url,
-				authorization: request.headers.get('authorization'),
-				form: await request.formData(),
-			});
-			return Response.json({ text: 'a steady tone' });
-		},
+		fetch: stub.fetch,
 	});
 	const pending = capture();
-	await publishRecording(remote.folder, pending);
+	await publishRecording(await owner(root), pending);
 
-	const result = await bridge.app<{
-		data: { text: string } | null;
-		error: unknown;
-	}>('transcribe', {
-		path: `recordings/${pending.id}.wav`,
-		baseUrl: 'http://127.0.0.1:18080/v1/',
-		model: 'verification-model',
-	});
+	const result = await bridge.app<Transcribed>(
+		'transcribe',
+		transcribeRequest(`recordings/${pending.id}.wav`),
+	);
 
 	expect(result.error).toBeNull();
 	expect(result.data?.text).toBe('a steady tone');
-	expect(requests).toHaveLength(1);
-	expect(requests[0]!.url).toBe(
+	expect(stub.requests).toHaveLength(1);
+	expect(stub.requests[0]!.url).toBe(
 		'http://127.0.0.1:18080/v1/audio/transcriptions',
 	);
-	expect(requests[0]!.authorization).toBe('Bearer local-test-key');
-	expect(requests[0]!.form.get('model')).toBe('verification-model');
-	const file = requests[0]!.form.get('file') as File;
+	expect(stub.requests[0]!.authorization).toBe('Bearer local-test-key');
+	expect(stub.requests[0]!.form.get('model')).toBe('verification-model');
+	const file = stub.requests[0]!.form.get('file') as File;
 	expect(file.name).toBe(`${pending.id}.wav`);
 	expect(new Uint8Array(await file.arrayBuffer())).toEqual(
 		new Uint8Array(pending.bytes),
 	);
 });
 
+test('audio at a nested path the row names is sent once, under its own name and type', async () => {
+	const stub = endpoint();
+	const { root, bridge } = await start({ fetch: stub.fetch });
+	const bytes = new Uint8Array([
+		0, 0, 0, 24, 102, 116, 121, 112, 77, 52, 65, 32,
+	]);
+	await mkdir(join(root, 'Imported', '2026 takes'), { recursive: true });
+	await writeFile(
+		join(root, 'Imported', '2026 takes', 'Voice Memo.m4a'),
+		bytes,
+	);
+
+	const result = await bridge.app<Transcribed>(
+		'transcribe',
+		transcribeRequest('Imported/2026 takes/Voice Memo.m4a'),
+	);
+
+	expect(result.data?.text).toBe('a steady tone');
+	expect(stub.requests).toHaveLength(1);
+	const file = stub.requests[0]!.form.get('file') as File;
+	expect(file.name).toBe('Voice Memo.m4a');
+	expect(file.type).toBe('audio/x-m4a');
+	expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes);
+	// No key is configured, so none is sent.
+	expect(stub.requests[0]!.authorization).toBeNull();
+});
+
+test('the bytes sent are the ones read: changing or removing the file during the request changes nothing', async () => {
+	const arrived = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	let sent: Uint8Array | undefined;
+	const { root, bridge } = await start({
+		fetch: async (input, init) => {
+			const request = new Request(input, init);
+			arrived.resolve();
+			// The endpoint is slow to read the upload.
+			await release.promise;
+			const file = (await request.formData()).get('file') as File;
+			sent = new Uint8Array(await file.arrayBuffer());
+			return Response.json({ text: 'a steady tone' });
+		},
+	});
+	const original = toneWav();
+	await mkdir(join(root, 'recordings'));
+	await writeFile(join(root, 'recordings', 'take.wav'), original);
+
+	const transcribing = bridge.app<Transcribed>(
+		'transcribe',
+		transcribeRequest('recordings/take.wav'),
+	);
+	await arrived.promise;
+	await writeFile(join(root, 'recordings', 'take.wav'), 'replaced meanwhile');
+	await rm(join(root, 'recordings', 'take.wav'));
+	release.resolve();
+
+	expect((await transcribing).data?.text).toBe('a steady tone');
+	expect(sent).toEqual(new Uint8Array(original));
+});
+
+test('a path that cannot be read as the folder’s own regular file sends nothing', async () => {
+	const stub = endpoint();
+	const { directory, root, bridge } = await start({
+		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
+		fetch: stub.fetch,
+	});
+	const outside = join(directory, 'outside');
+	await mkdir(outside);
+	await writeFile(join(outside, 'secret.wav'), 'outside the folder');
+	await mkdir(join(root, 'recordings'));
+	await mkdir(join(root, '.git'));
+	await writeFile(join(root, '.git', 'config'), 'private');
+	await writeFile(join(root, 'recordings', 'take.wav'), toneWav());
+	await symlink(
+		join(root, 'recordings', 'take.wav'),
+		join(root, 'recordings', 'inside-link.wav'),
+	);
+	await symlink(
+		join(outside, 'secret.wav'),
+		join(root, 'recordings', 'outside-link.wav'),
+	);
+	await symlink(join(root, 'recordings'), join(root, 'alias'));
+	await symlink(outside, join(root, 'elsewhere'));
+	execFileSync('mkfifo', [join(root, 'recordings', 'pipe.wav')]);
+
+	for (const path of [
+		'',
+		'../outside/secret.wav',
+		'recordings/../../outside/secret.wav',
+		join(outside, 'secret.wav'),
+		'recordings\\take.wav',
+		'recordings//take.wav',
+		'./recordings/take.wav',
+		'recordings/take\n.wav',
+		'.git/config',
+		'.GIT/config',
+		'Recordings/take.wav',
+		'recordings/TAKE.wav',
+		'recordings/inside-link.wav',
+		'recordings/outside-link.wav',
+		'alias/take.wav',
+		'elsewhere/secret.wav',
+		'recordings/gone.wav',
+		'recordings',
+		'recordings/take.wav/inner.wav',
+		'recordings/pipe.wav',
+	]) {
+		const result = await bridge.app<Transcribed>(
+			'transcribe',
+			transcribeRequest(path),
+		);
+		expect(result.data).toBeNull();
+		expect(result.error?.name).toBe('AudioUnreadable');
+	}
+
+	expect(stub.requests).toEqual([]);
+});
+
 test('a transcription refusal that echoes the key reaches the page without it', async () => {
-	const { remote, host } = await start({
+	const { root, host } = await start({
 		env: { WHISPERING_TRANSCRIPTION_API_KEY: 'local-test-key' },
 		fetch: async (input, init) =>
 			Response.json(
@@ -578,26 +680,16 @@ test('a transcription refusal that echoes the key reaches the page without it', 
 				{ status: 401 },
 			),
 	});
-	const pending = capture();
-	await publishRecording(remote.folder, pending);
+	await writeFile(join(root, 'take.wav'), toneWav());
 
-	const answered = await host.handle(
-		new Request(`${ORIGIN}/bridge/app`, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${TOKEN}`,
-			},
-			body: JSON.stringify({
-				op: 'transcribe',
-				payload: {
-					path: `recordings/${pending.id}.wav`,
-					baseUrl: 'http://127.0.0.1:18080/v1',
-					model: 'verification-model',
-				},
-			}),
-		}),
-	);
+	const answered = await post(host, '/bridge/app', {
+		op: 'transcribe',
+		payload: {
+			path: 'take.wav',
+			baseUrl: 'http://127.0.0.1:18080/v1',
+			model: 'verification-model',
+		},
+	});
 	const answer = await answered.text();
 
 	expect(JSON.parse(answer)).toMatchObject({
@@ -614,7 +706,7 @@ test('a transformation is sent by the host with the device key, which never reac
 		body: unknown;
 	}[] = [];
 	let refuse = false;
-	const { remote, bridge, host } = await start({
+	const { root, bridge, host } = await start({
 		fetch: async (input, init) => {
 			const request = new Request(input, init);
 			const authorization = request.headers.get('authorization');
@@ -638,24 +730,15 @@ test('a transformation is sent by the host with the device key, which never reac
 	});
 	await bridge.app('credential', { key: 'device-secret-key' });
 	const send = () =>
-		host.handle(
-			new Request(`${ORIGIN}/bridge/app`, {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					authorization: `Bearer ${TOKEN}`,
-				},
-				body: JSON.stringify({
-					op: 'transform',
-					payload: {
-						baseUrl: 'http://127.0.0.1:18080/v1/',
-						model: 'chat-model',
-						prompt: 'Fix the punctuation.',
-						input: 'um so a steady tone',
-					},
-				}),
-			}),
-		);
+		post(host, '/bridge/app', {
+			op: 'transform',
+			payload: {
+				baseUrl: 'http://127.0.0.1:18080/v1/',
+				model: 'chat-model',
+				prompt: 'Fix the punctuation.',
+				input: 'um so a steady tone',
+			},
+		});
 
 	const answered = await send();
 	const answer = await answered.text();
@@ -687,8 +770,8 @@ test('a transformation is sent by the host with the device key, which never reac
 	});
 	expect(refused).not.toContain('device-secret-key');
 
-	// A request is not a save: the host wrote nothing to the folder for either.
-	expect((await remote.folder.files.list()).data!.files).toEqual([]);
+	// A request is not a save: only the key's own file, under `.git`, was written.
+	expect(await readdir(root)).toEqual(['.git']);
 });
 
 test('fixture audio and failure injection exist only in a debug shell', async () => {
@@ -709,7 +792,15 @@ test('fixture audio and failure injection exist only in a debug shell', async ()
 	);
 	expect(taken.bytes).toEqual(toneWav());
 
-	const release = await start({ fixturePath, debug: false });
+	// A release shell arms nothing, whatever the environment says.
+	const release = await start({
+		fixturePath,
+		debug: false,
+		env: {
+			WHISPERING_DEBUG_FAIL_ROW_WRITES: '3',
+			WHISPERING_DEBUG_BLOCK_COMMITS: '1',
+		},
+	});
 	const releaseInfo = await release.bridge.app<{
 		fixture: unknown;
 		fixtureRefused: boolean;
@@ -717,22 +808,32 @@ test('fixture audio and failure injection exist only in a debug shell', async ()
 	expect(releaseInfo.fixture).toBeNull();
 	expect(releaseInfo.fixtureRefused).toBe(true);
 	await expect(release.bridge.app('fixture')).rejects.toThrow();
-	await expect(
-		release.bridge.app('inject', { rowWrites: 1 }),
-	).rejects.toThrow();
+	for (const [op, payload] of [
+		['inject', { rowWrites: 1 }],
+		['injection', {}],
+		['injection-launch', {}],
+		['obstruct', { stem: 'take', audioPath: 'recordings/take.wav' }],
+		['unobstruct', { obstacle: 'any' }],
+	] as const)
+		await expect(release.bridge.app(op, payload)).rejects.toThrow(
+			'only available in a debug shell',
+		);
+	expect(await readdir(release.root)).toEqual([]);
 });
 
 test('the device transcription key is kept out of the versioned folder', async () => {
-	const { root, bridge, remote } = await start();
+	const { root, bridge } = await start();
+	const folder = await owner(root);
 	await bridge.app('credential', { key: 'secret-key' });
 	const info = await bridge.app<{ credentialPresent: boolean }>('info');
 	expect(info.credentialPresent).toBe(true);
 
-	const listing = await remote.folder.files.list();
+	const listing = await folder.files.list();
 	for (const file of listing.data!.files)
 		expect(
 			await readFile(join(root, file.path), 'utf8').catch(() => ''),
 		).not.toContain('secret-key');
+	expect((await folder.git.status()).data?.changes).toEqual([]);
 	expect(
 		await readFile(
 			join(root, '.git', 'epicenter', 'whispering', 'device.json'),
@@ -741,7 +842,47 @@ test('the device transcription key is kept out of the versioned folder', async (
 	).toContain('secret-key');
 });
 
-test('the page is served with the token only in standalone mode, and paths stay inside it', async () => {
+test('a key from the environment decides, even an empty one, and cannot be changed from the app', async () => {
+	const stub = endpoint();
+	const { root, bridge } = await start({
+		env: { WHISPERING_TRANSCRIPTION_API_KEY: '' },
+		fetch: stub.fetch,
+	});
+	// A key saved by an earlier launch that had no override.
+	await mkdir(join(root, '.git', 'epicenter', 'whispering'), {
+		recursive: true,
+	});
+	const saved = `${JSON.stringify({ transcriptionApiKey: 'saved-device-key' })}\n`;
+	const deviceFile = join(
+		root,
+		'.git',
+		'epicenter',
+		'whispering',
+		'device.json',
+	);
+	await writeFile(deviceFile, saved);
+	await writeFile(join(root, 'take.wav'), toneWav());
+
+	const info = await bridge.app<{
+		credentialPresent: boolean;
+		credentialFromEnvironment: boolean;
+	}>('info');
+	expect(info).toMatchObject({
+		credentialPresent: false,
+		credentialFromEnvironment: true,
+	});
+	await expect(bridge.app('credential', { key: 'typed-key' })).rejects.toThrow(
+		'cannot be changed here',
+	);
+	expect(await readFile(deviceFile, 'utf8')).toBe(saved);
+
+	// The empty override is what is used: the saved key is not sent.
+	await bridge.app<Transcribed>('transcribe', transcribeRequest('take.wav'));
+	expect(stub.requests).toHaveLength(1);
+	expect(stub.requests[0]!.authorization).toBeNull();
+});
+
+test('the page is served without the token, may reach the shell’s commands, and paths stay inside it', async () => {
 	const dist = await mkdtemp(join(tmpdir(), 'whispering-dist-'));
 	cleanups.push(() => rm(dist, { recursive: true, force: true }));
 	await writeFile(
@@ -757,7 +898,12 @@ test('the page is served with the token only in standalone mode, and paths stay 
 	const shell = await start({ uiDist: dist });
 	const index = await get(shell.host, '/');
 	expect(index.status).toBe(200);
+	// Only the shell gives the page the token; the host never serves it.
 	expect(await index.text()).not.toContain(TOKEN);
+	// The folder is reached through the shell's commands, so the page may call them.
+	expect(index.headers.get('content-security-policy')).toContain(
+		"connect-src 'self' ipc: http://ipc.localhost;",
+	);
 	expect((await get(shell.host, '/recordings/anything')).status).toBe(200);
 	// A deep link or a refresh on a page of the app gets the app, not a 404.
 	for (const route of ['/recordings', '/transformations']) {
@@ -769,7 +915,4 @@ test('the page is served with the token only in standalone mode, and paths stay 
 	expect((await get(shell.host, '/%2e%2e/outside-secret.txt')).status).toBe(
 		404,
 	);
-
-	const standalone = await start({ uiDist: dist, inlineToken: true });
-	expect(await (await get(standalone.host, '/')).text()).toContain(TOKEN);
 });

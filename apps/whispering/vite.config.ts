@@ -17,10 +17,11 @@ export default defineConfig(
 		plugins: [devtoolsJson()],
 		resolve: {
 			alias: [
-				// The page opens a folder only in a browser tab; the desktop app
-				// reaches its folder through the folder host. So the page is built
-				// against the browser entry, and no desktop adapter is emitted. The
-				// exact bare specifier only: subpaths are left alone.
+				// The page names the folder contract with the bare specifier, and
+				// that is built against the browser entry. The exact bare specifier
+				// only: subpaths are left alone, so the desktop workspace's own
+				// import of `@epicenter/folder/tauri` is the desktop adapter, in a
+				// chunk a browser tab never loads.
 				{
 					find: /^@epicenter\/folder$/,
 					replacement: '@epicenter/folder/browser',

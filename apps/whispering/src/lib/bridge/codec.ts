@@ -1,14 +1,14 @@
 /**
- * The wire encoding the folder bridge uses in both directions.
+ * The wire encoding the host bridge uses in both directions.
  *
- * JSON cannot carry `undefined`, bytes, maps, or errors, and the folder API
- * uses all four: an entry's `issues: undefined` discriminates a valid row,
- * file reads and saved audio are bytes, `readMany` answers with a map, and an
- * `Io` failure carries its cause. Each is written as a tagged object and read
+ * JSON cannot carry `undefined`, bytes, maps, or errors, and the host's
+ * operations use them: fixture audio is bytes, an optional payload field is
+ * `undefined`, and a transcription or transformation answers with a `Result`
+ * whose error keeps its fields. Each is written as a tagged object and read
  * back as the same kind of value, so a `Result` crosses the bridge unchanged.
  *
  * This module is plain TypeScript with no platform imports. The page and the
- * Bun folder host both load it.
+ * Bun host both load it.
  */
 
 const TAG = '$t';
@@ -52,7 +52,7 @@ export function encode(value: unknown): unknown {
 	if (value === undefined) return { [TAG]: 'u' } satisfies Tagged;
 	if (value === null || typeof value !== 'object') {
 		if (typeof value === 'bigint' || typeof value === 'symbol')
-			throw new TypeError(`A ${typeof value} cannot cross the folder bridge`);
+			throw new TypeError(`A ${typeof value} cannot cross the host bridge`);
 		return typeof value === 'function' ? undefined : value;
 	}
 	if (value instanceof Uint8Array)
@@ -119,6 +119,6 @@ export function decode(value: unknown): unknown {
 		case 'o':
 			return decodeObject(tagged.v);
 		default:
-			throw new TypeError('The folder bridge received an unknown value tag');
+			throw new TypeError('The host bridge received an unknown value tag');
 	}
 }

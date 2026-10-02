@@ -1,23 +1,32 @@
 /**
- * The injected commit failure uses Git's own branch lock path, so it must
- * behave like a careful Git process: take the lock only when it is free, and
- * release only the lock it took. These run against a real repository and real
- * lock files.
+ * The injected failures write to a folder this host does not own, so each must
+ * behave like a careful outside program.
+ *
+ * The commit failure uses Git's own branch lock path: it takes the lock only
+ * when it is free and releases only the lock it took. The publication failure
+ * puts a directory at one of a recording's two paths and removes only what it
+ * made. These run against a real repository, real lock files, and real
+ * directories.
+ *
+ * The repository is opened here with the Bun directory opener, standing in
+ * for the shell's owner: something has to initialize Git and commit. The
+ * injection is never given that folder.
  */
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import {
+	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	realpath,
 	rm,
 	stat,
+	symlink,
 	writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DataDefinition } from '@epicenter/definition';
-import type { Folder } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { openTestFolder } from '../src/lib/workspace.test-support.js';
 import {
@@ -32,17 +41,20 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function open() {
+/** An empty directory: what the host is given before the owner has opened it. */
+async function directory() {
 	const root = await realpath(
 		await mkdtemp(join(tmpdir(), 'whispering-lock-')),
 	);
-	const folder = (await openTestFolder(root, {
-		commitOnEdit: false,
-	})) as unknown as Folder<DataDefinition>;
-	cleanups.push(async () => {
-		await folder.close();
-		await rm(root, { recursive: true, force: true });
-	});
+	cleanups.push(() => rm(root, { recursive: true, force: true }));
+	return root;
+}
+
+/** A directory the owner has opened, so Git exists in it. */
+async function open() {
+	const root = await directory();
+	const folder = await openTestFolder(root, { commitOnEdit: false });
+	cleanups.push(() => folder.close());
 	return {
 		root,
 		folder,
@@ -57,8 +69,8 @@ const exists = (path: string) =>
 	);
 
 test('the injected lock is created and removed by the host that owns it', async () => {
-	const { root, folder, lock } = await open();
-	const injection = createFailureInjection({ root, folder });
+	const { root, lock } = await open();
+	const injection = createFailureInjection({ root });
 
 	expect((await injection.arm({ commitsBlocked: true })).commitsBlocked).toBe(
 		true,
@@ -71,16 +83,111 @@ test('the injected lock is created and removed by the host that owns it', async 
 	expect(await exists(lock)).toBe(false);
 });
 
+test('the lock is taken on the branch HEAD names, and is refused before Git exists', async () => {
+	const root = await directory();
+	const injection = createFailureInjection({ root });
+
+	// The owner has not opened the folder: there is no branch, and the host
+	// does not make a repository to have one.
+	await expect(injection.arm({ commitsBlocked: true })).rejects.toThrow(
+		'no Git history yet',
+	);
+	expect(injection.state.commitsBlocked).toBe(false);
+	expect(await readdir(root)).toEqual([]);
+
+	const folder = await openTestFolder(root, { commitOnEdit: false });
+	cleanups.push(() => folder.close());
+	execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/drafts/one'], {
+		cwd: root,
+	});
+	await injection.arm({ commitsBlocked: true });
+	expect(
+		await readFile(
+			join(root, '.git', 'refs', 'heads', 'drafts', 'one.lock'),
+			'utf8',
+		),
+	).toMatch(LOCK_MARKER_PREFIX);
+
+	// The lock is released where it was taken, wherever HEAD points by then.
+	execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], {
+		cwd: root,
+	});
+	await injection.release();
+	expect(
+		await exists(join(root, '.git', 'refs', 'heads', 'drafts', 'one.lock')),
+	).toBe(false);
+	expect(await exists(join(root, '.git', 'refs', 'heads', 'main.lock'))).toBe(
+		false,
+	);
+});
+
+test('a HEAD that names no branch inside the repository locks nothing', async () => {
+	const { root } = await open();
+	const injection = createFailureInjection({ root });
+	const before = (await readdir(join(root, '.git'))).sort();
+
+	for (const head of [
+		'4b825dc642cb6eb9a060e54bf8d69288fbee4904\n',
+		'ref: refs/heads/../../../../escaped\n',
+		'ref: refs/tags/v1\n',
+	]) {
+		await writeFile(join(root, '.git', 'HEAD'), head);
+		await expect(injection.arm({ commitsBlocked: true })).rejects.toThrow(
+			'does not name a branch',
+		);
+	}
+
+	expect(injection.state.commitsBlocked).toBe(false);
+	expect((await readdir(join(root, '.git'))).sort()).toEqual(before);
+	expect(await exists(join(root, '..', 'escaped.lock'))).toBe(false);
+});
+
+test('a lock asked for at launch waits for the folder to be opened, and is taken once', async () => {
+	const root = await directory();
+	const injection = createFailureInjection({
+		root,
+		launch: { rowWrites: 2, commitsBlocked: true },
+	});
+	// Launch arms the counters and touches nothing.
+	expect(injection.state).toEqual({
+		rowWrites: 2,
+		audioWrites: 0,
+		commitsBlocked: false,
+	});
+	expect(await readdir(root)).toEqual([]);
+	// Asked before the owner opened the folder: refused, and still owed.
+	await expect(injection.armLaunch()).rejects.toThrow('no Git history yet');
+
+	const folder = await openTestFolder(root, { commitOnEdit: false });
+	cleanups.push(() => folder.close());
+	const lock = join(root, '.git', 'refs', 'heads', 'main.lock');
+	expect((await injection.armLaunch()).commitsBlocked).toBe(true);
+	expect(await readFile(lock, 'utf8')).toMatch(LOCK_MARKER_PREFIX);
+
+	// A page that reloads asks again; a lock the person released stays released.
+	await injection.arm({ commitsBlocked: false });
+	expect((await injection.armLaunch()).commitsBlocked).toBe(false);
+	expect(await exists(lock)).toBe(false);
+});
+
 test('a lock another Git process holds is never replaced or removed', async () => {
-	const { root, folder, lock } = await open();
+	const { root, lock } = await open();
 	// What `git update-ref` writes while it holds the branch: the new value.
 	const theirs = '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n';
 	await writeFile(lock, theirs, { flag: 'wx' });
-	const injection = createFailureInjection({ root, folder });
+	const injection = createFailureInjection({
+		root,
+		launch: { commitsBlocked: true },
+	});
 
 	await expect(injection.arm({ commitsBlocked: true })).rejects.toThrow(
 		'held by another Git process',
 	);
+	// Asking at launch does not take it from its holder either, and is not repeated.
+	await expect(injection.armLaunch()).rejects.toThrow(
+		'held by another Git process',
+	);
+	expect((await injection.armLaunch()).commitsBlocked).toBe(false);
 	expect(injection.state.commitsBlocked).toBe(false);
 	expect(await readFile(lock, 'utf8')).toBe(theirs);
 
@@ -91,8 +198,8 @@ test('a lock another Git process holds is never replaced or removed', async () =
 });
 
 test('a lock that replaced ours is theirs, and is left alone', async () => {
-	const { root, folder, lock } = await open();
-	const injection = createFailureInjection({ root, folder });
+	const { root, lock } = await open();
+	const injection = createFailureInjection({ root });
 	await injection.arm({ commitsBlocked: true });
 	// Someone cleared our lock and a Git process then took the branch.
 	const theirs = '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n';
@@ -105,9 +212,9 @@ test('a lock that replaced ours is theirs, and is left alone', async () => {
 });
 
 test('one debug host never releases another debug host’s lock', async () => {
-	const { root, folder, lock } = await open();
-	const first = createFailureInjection({ root, folder });
-	const second = createFailureInjection({ root, folder });
+	const { root, lock } = await open();
+	const first = createFailureInjection({ root });
+	const second = createFailureInjection({ root });
 	await first.arm({ commitsBlocked: true });
 	const held = await readFile(lock, 'utf8');
 
@@ -134,10 +241,20 @@ test('starting and stopping a debug host leaves an existing branch lock in place
 			uiDist: undefined,
 			debug: true,
 			fixturePath: undefined,
-			inlineToken: false,
 			env,
 			log: (message) => logged.push(message),
 		});
+	const ask = (host: Awaited<ReturnType<typeof start>>, op: string) =>
+		host.handle(
+			new Request('http://127.0.0.1/bridge/app', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: 'Bearer test-token',
+				},
+				body: JSON.stringify({ op, payload: {} }),
+			}),
+		);
 
 	const plain = await start({});
 	await plain.close();
@@ -145,6 +262,8 @@ test('starting and stopping a debug host leaves an existing branch lock in place
 
 	// Asking for the injected lock at launch does not take it from its holder.
 	const armed = await start({ WHISPERING_DEBUG_BLOCK_COMMITS: '1' });
+	const refused = await ask(armed, 'injection-launch');
+	expect(refused.status).toBe(500);
 	expect(logged.join('\n')).toContain('held by another Git process');
 	await armed.close();
 	expect(await readFile(lock, 'utf8')).toBe(theirs);
@@ -158,7 +277,7 @@ test('the real lock blocks a real Git ref update, and releasing it unblocks it',
 		cwd: root,
 		encoding: 'utf8',
 	}).trim();
-	const injection = createFailureInjection({ root, folder });
+	const injection = createFailureInjection({ root });
 	await injection.arm({ commitsBlocked: true });
 
 	expect(() =>
@@ -173,4 +292,117 @@ test('the real lock blocks a real Git ref update, and releasing it unblocks it',
 
 	await injection.release();
 	expect((await folder.git.commit()).status).toBe('committed');
+});
+
+test('an obstacle is one empty directory at a recording’s own path, and its removal removes only that', async () => {
+	const root = await directory();
+	const injection = createFailureInjection({
+		root,
+		launch: { rowWrites: 1, audioWrites: 1 },
+	});
+
+	// A new recording: the audio is what an armed audio failure obstructs.
+	const audio = await injection.obstruct({
+		stem: 'take',
+		audioPath: 'media/2026/take.wav',
+	});
+	expect(audio).not.toBeNull();
+	expect(
+		(await stat(join(root, 'media', '2026', 'take.wav'))).isDirectory(),
+	).toBe(true);
+	expect(injection.state).toMatchObject({ rowWrites: 1, audioWrites: 0 });
+	await injection.clear(audio);
+	// The directory and both parents it had to make are gone.
+	expect(await readdir(root)).toEqual([]);
+
+	// A recovery names no audio to create: the row is obstructed.
+	await mkdir(join(root, 'recordings'));
+	await writeFile(join(root, 'recordings', 'take.wav'), 'audio');
+	const row = await injection.obstruct({ stem: 'take', audioPath: undefined });
+	expect((await stat(join(root, 'recordings', 'take.md'))).isDirectory()).toBe(
+		true,
+	);
+	expect(injection.state).toMatchObject({ rowWrites: 0, audioWrites: 0 });
+	// Removing it twice, or naming an obstacle this host never made, removes nothing more.
+	await injection.clear(row);
+	await injection.clear(row);
+	await injection.clear('not-an-obstacle');
+	expect(await readdir(join(root, 'recordings'))).toEqual(['take.wav']);
+
+	// Nothing armed: nothing is placed.
+	expect(
+		await injection.obstruct({ stem: 'take', audioPath: 'recordings/b.wav' }),
+	).toBeNull();
+	expect(await readdir(join(root, 'recordings'))).toEqual(['take.wav']);
+});
+
+test('an occupied path is left alone and the failure is not spent on it', async () => {
+	const root = await directory();
+	await mkdir(join(root, 'recordings'));
+	const foreign = '---\ntitle: Someone else\n---\nKeep me\n';
+	await writeFile(join(root, 'recordings', 'take.md'), foreign);
+	// A file where a parent directory would be.
+	await writeFile(join(root, 'media'), 'a file, not a directory');
+	const injection = createFailureInjection({
+		root,
+		launch: { rowWrites: 1, audioWrites: 1 },
+	});
+
+	expect(
+		await injection.obstruct({ stem: 'take', audioPath: 'media/take.wav' }),
+	).toBeNull();
+	expect(
+		await injection.obstruct({ stem: 'take', audioPath: undefined }),
+	).toBeNull();
+
+	expect(injection.state).toMatchObject({ rowWrites: 1, audioWrites: 1 });
+	expect(await readFile(join(root, 'recordings', 'take.md'), 'utf8')).toBe(
+		foreign,
+	);
+	expect(await readFile(join(root, 'media'), 'utf8')).toBe(
+		'a file, not a directory',
+	);
+	expect((await readdir(root)).sort()).toEqual(['media', 'recordings']);
+});
+
+test('an obstacle is placed only at a recording’s row or a usable audio path inside the folder', async () => {
+	const directoryOutside = await directory();
+	const root = join(directoryOutside, 'data');
+	await mkdir(root);
+	await mkdir(join(directoryOutside, 'outside'));
+	await symlink(join(directoryOutside, 'outside'), join(root, 'linked'));
+	const injection = createFailureInjection({
+		root,
+		launch: { rowWrites: 5, audioWrites: 5 },
+	});
+
+	for (const recording of [
+		{ stem: '../escape', audioPath: undefined },
+		{ stem: 'a/b', audioPath: undefined },
+		{ stem: '', audioPath: undefined },
+		{ stem: 7, audioPath: undefined },
+		{ stem: 'take', audioPath: '../outside/take.wav' },
+		{ stem: 'take', audioPath: '/tmp/take.wav' },
+		{ stem: 'take', audioPath: '.git/refs/heads/main.lock' },
+		{ stem: 'take', audioPath: 7 },
+		// A directory on the way that is a link out of the folder.
+		{ stem: 'take', audioPath: 'linked/take.wav' },
+	])
+		await expect(injection.obstruct(recording)).rejects.toThrow();
+
+	expect(injection.state).toMatchObject({ rowWrites: 5, audioWrites: 5 });
+	expect(await readdir(root)).toEqual(['linked']);
+	expect(await readdir(join(directoryOutside, 'outside'))).toEqual([]);
+	expect((await readdir(directoryOutside)).sort()).toEqual(['data', 'outside']);
+});
+
+test('stopping the host removes an obstacle the page never had removed', async () => {
+	const root = await directory();
+	const injection = createFailureInjection({ root, launch: { rowWrites: 1 } });
+	await injection.obstruct({ stem: 'take', audioPath: undefined });
+	expect(await readdir(root)).toEqual(['recordings']);
+
+	await injection.release();
+
+	expect(await readdir(root)).toEqual([]);
 });

@@ -13,10 +13,18 @@
  *   confirmation. "Keep working" answers `cancel` and everything stays as it
  *   was. "Discard and quit" answers `proceed`.
  *
- * If the folder host has stopped, the shell cannot ask through it and nothing
- * more can be saved. The shell then tells the page directly that a close was
- * attempted, and the same confirmation appears with that explained. The window
- * stays open until the person chooses to quit.
+ * If Whispering's host has stopped, the shell cannot ask through it. The shell
+ * then tells the page directly that a close was attempted, and the
+ * confirmation appears with that explained. The window stays open until the
+ * person chooses to quit: with no host to relay an answer, quitting is always
+ * their explicit choice, even when nothing is held.
+ *
+ * A stopped host does not stop saving. The folder belongs to the shell and
+ * stays open, so a draft still saves and a pending recording can still be
+ * tried again; what is held is read live, and the prompt follows it. What the
+ * host did is what is gone: the terminal and new transcription and
+ * transformation requests. A save can still fail for its own reasons, as it
+ * can at any time.
  *
  * A browser tab has no shell to ask; there the browser's own leave warning
  * applies and this guard does nothing.
@@ -33,13 +41,15 @@ export function createLeaveGuard(
 	closing: Workspace['closing'],
 ) {
 	let asking = $state(false);
-	/** The host is gone: nothing more can be saved, and it cannot relay answers. */
+	/** The host is gone and cannot relay answers. The folder is still open. */
 	let hostGone = $state(false);
 	let preparing = false;
 	let quitting = false;
+	/** The session is being closed. A guard that stopped listening approves nothing. */
+	let disposed = false;
 
 	async function requested() {
-		if (closing === undefined) return;
+		if (closing === undefined || disposed) return;
 		// First, always: the page is here and has not agreed to anything.
 		await closing.answer('asking');
 		if (asking || preparing) return;
@@ -52,6 +62,9 @@ export function createLeaveGuard(
 		} finally {
 			preparing = false;
 		}
+		// Disposed while finding out: the session is closing and saving on its
+		// own, and this guard no longer speaks for it.
+		if (disposed) return;
 		if (safe) await closing.answer('proceed');
 		else asking = true;
 	}
@@ -72,7 +85,7 @@ export function createLeaveGuard(
 		get asking() {
 			return asking;
 		},
-		/** Whether the prompt is up because the folder host stopped. */
+		/** Whether the prompt is up because the host stopped. */
 		get hostGone() {
 			return hostGone;
 		},
@@ -101,6 +114,7 @@ export function createLeaveGuard(
 			}
 		},
 		dispose() {
+			disposed = true;
 			for (const stop of stops) stop?.();
 		},
 	};

@@ -750,7 +750,11 @@ export function createLibrary(workspace: Workspace) {
 			state: { kind: 'saving' },
 		};
 		setPending(item.capture.id, attempt);
-		const outcome = await publishRecording(folder, item.capture);
+		const outcome = await publishRecording(
+			folder,
+			item.capture,
+			workspace.injection?.aroundRecordingPublication,
+		);
 		if (outcome.status === 'saved') {
 			await settle(item.capture.id, outcome.entry);
 			selectedPath = outcome.entry.path;

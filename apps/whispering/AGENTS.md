@@ -6,34 +6,54 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
 
 ## Constraints
 
-- **The page stays native-free.** Nothing under `src/` imports a Node, Bun, or
-  Tauri module, `@epicenter/folder/bun`, or `@epicenter/folder/tauri`. The page
-  names the folder contract through `@epicenter/folder` and reaches a folder
-  only through `src/lib/workspace/`; `@epicenter/folder/browser` is imported
-  by the browser workspace alone. `src/lib/page-boundary.test.ts` enforces
-  this; keep it passing and do not weaken it.
+- **The page reaches native code in two named places.** Nothing under `src/`
+  imports a Node or Bun module or `@epicenter/folder/bun`. The page names the
+  folder contract through `@epicenter/folder` and reaches a folder only
+  through `src/lib/workspace/`: `@epicenter/folder/browser` is imported by the
+  browser workspace alone, and `@epicenter/folder/tauri` by the desktop
+  workspace alone. The only other Tauri import is `isTauri` in the workspace
+  opener. `src/lib/page-boundary.test.ts` enforces this; keep it passing and
+  do not weaken it.
+- **One folder, one owner.** On the desktop the data folder is owned by the
+  shell's `tauri-plugin-epicenter-folder` and by nothing else. The page
+  attaches to it and names only the folder's ID. Do not open the folder from
+  the Bun host, do not add a second path by which the page reads or writes
+  folder files, and do not copy the plugin's bindings into this app.
 - **A folder that cannot be opened is reported, not replaced.** Opening
-  returns a `Result`. A refused browser folder is never retried as a desktop
-  one, and an unreachable folder host is never replaced by browser storage.
-- **One session per mounted layout.** `src/routes/+layout.svelte` opens the
-  session and `AppShell` puts it in context. A page or component takes it with
+  returns a `Result`. Inside a desktop app, a missing host, an unreachable
+  host, and an owner that refuses are each shown as that refusal; browser
+  storage is never opened there. Whether the page is inside a desktop app is
+  asked of the runtime, never inferred from the host's token.
+- **One session per mounted layout.** `src/routes/+layout.svelte` holds the
+  one opening (`mountSession`) and `AppShell` puts its session in context. A page or component takes it with
   `getSession()`; it never opens a workspace, builds a library, or keeps
   product state in a module-level variable. State that must survive a page
   change belongs to the session. Only leaving the app is guarded, never a
   navigation between routes. `src/lib/page-boundary.test.ts` enforces the
   ownership.
-- **Native work belongs in `native/`.** The Bun folder host is the only process
-  that touches the data folder. Add a host operation there and expose it through the
-  workspace type, with a browser implementation or an explicit `undefined`.
-  Do not attach the Rust folder owner (`tauri-plugin-epicenter-folder`) to the
-  same directory: one root has one owner, and that cutover is separate work.
-- **The shell registers no commands.** Do not add a Tauri command or capability
-  to give the page a native ability. Load the `tauri` skill before changing
-  `src-tauri/`.
+- **The host is not a folder owner.** Native work that is not the folder goes
+  in `native/` as a host operation, exposed through the workspace type with a
+  browser implementation or an explicit `undefined`. The host must never open
+  the folder, take its lock, initialize Git, or save a file the folder tracks.
+  What it does in the directory instead is described in `ARCHITECTURE.md`.
+- **Only the shell decides where the folder is and who reaches it.** Neither
+  the page nor the host supplies or chooses a path. Do not add a Tauri command,
+  a capability file, a wider origin or window grant, or another registered
+  window to give the page a native ability. `ARCHITECTURE.md`, "The shell, the
+  folder, and the window", has the startup order these depend on. Load the
+  `tauri` skill before changing `src-tauri/`.
 - **The shell never closes on its own judgement.** Every window close and exit
   request goes through the close handshake (`ARCHITECTURE.md`, "Closing"). Do
-  not add a path that exits without the page's answer, and do not rely on the
-  browser's leave warning in the desktop app.
+  not add a path that exits without the page's answer, a timeout that approves,
+  or a reliance on the browser's leave warning in the desktop app. A close is
+  answered without looking only after an opening has failed and everything it
+  opened is closed; never while an opening is under way or a session exists.
+  The close guard is created only after the session's first read and settings
+  write have settled: do not make it listen earlier.
+- **A lost reply is not a refusal.** When the host does not answer, the page
+  does not know whether the endpoint was called. Report it as unknown, never
+  as "not sent", and never send a provider request again without the person
+  asking. A stopped host does not stop saving: do not tell the person it does.
 - **Files are authoritative.** Do not add a cache, mirror, or second store of
   recordings. Do not add Yjs, the `@epicenter/app` store, accounts, or sync to
   this workflow.
@@ -62,7 +82,8 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
 - **Fixture audio and failure injection are debug-only.** They are enabled by
   the shell's build, never by an environment variable alone, and the UI says so
   while they are active. An injected publication failure obstructs the real
-  batch so the folder fails its own step; it never answers for the folder.
+  batch so the folder fails its own step; it never answers for the folder, and
+  the folder's own `batch` stays the only thing that publishes.
 - **A transformation never writes its transcript.** A result is a new row in
   `transformation_runs/` with a stem fixed before the request is sent. Saving a
   received result again must not call the endpoint or create a second file.
@@ -80,8 +101,9 @@ behavior and `ARCHITECTURE.md` for structure before changing either.
 From `apps/whispering`: `bun run typecheck`, `bun test --isolate`,
 `bun run build`. For shell changes also
 `cargo test --manifest-path src-tauri/Cargo.toml`. Tests establish logic and
-what reaches disk; only running `bun dev:whispering` establishes that the
-desktop app works.
+what reaches disk. The TypeScript tests script the shell's replies or open the
+directory with the Bun opener; they never run the Rust owner. Only running
+`bun dev:whispering` establishes that the desktop app works.
 
 `src/lib/tauri/bindings.gen.ts` is written by the Epicenter host's build and
 read by its Rust tests. Do not edit, import, or delete it from here.

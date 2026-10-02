@@ -62,7 +62,7 @@ between the two files:
 From the repository root. Rust and Bun are required, and `git` must be on `PATH`.
 
 ```sh
-# The desktop app: builds the page and the folder host, then opens the window
+# The desktop app: builds the page and the host, then opens the window
 bun dev:whispering
 
 # The same app against a disposable folder
@@ -76,17 +76,23 @@ bun dev:whispering:ui
 ```
 
 `bun dev:whispering` runs `tauri dev`. There is no hot reload: the page is built
-once and served by the folder host. Use `bun dev:whispering:ui` for a fast UI
-loop.
+once and served by Whispering's host process. Use `bun dev:whispering:ui` for a
+fast UI loop.
+
+The desktop app has three parts. The window's shell owns the data folder and
+is the only thing that saves to it or records its history. A host process
+serves the page, runs the terminal, and sends transcription and transformation
+requests. The page is the UI. The host cannot be run on its own: only the
+shell starts it, with the folder it chose.
 
 Checks, from `apps/whispering`:
 
 ```sh
-bun run typecheck                 # the page, then the folder host
-bun test --isolate                # folder host, bridge, publication, and workflow tests
+bun run typecheck                 # the page, then the host
+bun test --isolate                # host, workspace, publication, and workflow tests
 bun run build                     # the page, into build/
-bun run build:sidecar             # the compiled folder host, for the desktop bundle
-cargo test --manifest-path src-tauri/Cargo.toml
+bun run build:sidecar             # the compiled host, for the desktop bundle
+cargo test --manifest-path src-tauri/Cargo.toml   # the shell: folder registration and window grant
 ```
 
 ### Environment
@@ -97,7 +103,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | `WHISPERING_TRANSCRIPTION_BASE_URL`, `WHISPERING_TRANSCRIPTION_MODEL` | Written to `kv.json` the first time a folder is opened. After that, `kv.json` decides. |
 | `WHISPERING_TRANSCRIPTION_API_KEY` | The API key for this launch, used for transcription and for transformations. Overrides the key saved from Settings. |
 | `WHISPERING_AUDIO_FIXTURE` | Debug builds only. A file whose bytes answer every recording. See [Fixture audio](#fixture-audio). |
-| `WHISPERING_BUN` | Debug builds only. The Bun executable that runs the folder host, when `bun` is not on `PATH`. |
+| `WHISPERING_BUN` | Debug builds only. The Bun executable that runs the host, when `bun` is not on `PATH`. |
 
 ## Using it
 
@@ -176,7 +182,7 @@ read, nothing is sent and the app says why.
 **The key.** Transformations use the same API key as transcription, the one in
 Settings. There is one key per device, sent to whichever endpoint a
 transformation names, so point transformations only at endpoints you would give
-that key to. In the desktop app the folder host sends the request and the key
+that key to. In the desktop app the host process sends the request and the key
 never reaches the window, the folder, or history. In a browser tab
 (`bun dev:whispering:ui`) the tab sends the request itself, so the endpoint
 must allow the page's origin (CORS). Most hosted providers refuse that; a local
@@ -187,16 +193,29 @@ again**, which sends the same request. When the answer arrives but its file
 cannot be written, the text is kept in the window with **Save it again**, which
 writes the same file and does not call the endpoint a second time.
 
+One failure is different. If the desktop app's host process stops answering
+partway, the window cannot tell whether the request reached the endpoint: it
+may have been sent, and even answered, with the reply lost on the way back. The
+notice says the outcome is not known, not that nothing was sent. Whispering
+never sends it again on its own; **Try again** is one more request, and with a
+paid endpoint possibly one more charge. This applies to transcription too.
+
 ### Saved is not committed
 
 A save writes files. A commit records them in history. They are separate
 outcomes and the status reports them separately.
 
-- Every content save through tables, KV, or Files requests a commit automatically.
-  Typing saves after a short pause.
+- Every content save through tables, KV, or Files tries one commit
+  automatically. Typing saves after a short pause.
+- In the desktop app that try happens only if the folder is free at that
+  moment. A save that lands while another save or commit is running is saved
+  and not committed; nothing retries it later. The next save's commit, or
+  **Commit now**, includes it.
 - A commit that fails or is blocked never undoes a save and never reports the
   save as failed. The status says "Saved" and what happened to the commit, and
   **Commit now** tries again.
+- Quitting commits nothing. Saves that are underway finish, and whatever was
+  saved and not yet committed stays that way until the next commit.
 - The browser terminal follows the folder's automatic history policy and refuses
   `git add` and `git commit` in automatic mode. Staged authoring requires a folder
   opened with `commitOnEdit: false`.
@@ -265,26 +284,39 @@ The app closes only on an explicit answer from the window. A window that is
 busy or slow keeps the app open until it answers; closing again only asks
 again.
 
-If the part of Whispering that reads and writes the folder stops while the
-window is open, nothing more can be saved, but what the window holds is still
-there: a pending recording still plays and unsaved text can still be copied.
-Closing or quitting then shows the same prompt with that explained, and the app
-stays open until you choose **Discard and quit** (or **Quit** when nothing is
-held).
+If Whispering's host process stops while the window is open, the terminal,
+Reveal folder, and new transcription and transformation requests stop working
+until you restart the app. Saving does not stop: the folder belongs to the
+window's shell, so changes to recordings, transcripts, and other files can
+still be saved, a pending recording can still be tried again, and **Commit
+now** still works. A save can still fail for its own reasons, such as a full
+disk, exactly as it can at any other time.
+
+What the window can no longer do is be asked through the host whether it may
+close. Closing or quitting then shows a prompt that says so and lists what is
+still only in the window. The list follows what you save, and **Keep working**
+lets you save, play a pending recording, or copy text out first. The app stays
+open until you choose **Discard and quit** (or **Quit** when nothing is held);
+in this state it never closes without that choice.
+
+If the folder could not be opened at all and the window shows "Could not open
+the recordings folder", nothing is open and nothing can be unsaved, so closing
+or quitting just closes it.
 
 This covers an ordinary close or quit. It does not cover the process being
 ended from outside: Force Quit, `kill`, a crash, or power loss discard whatever
 was only in the window, and nothing can recover it afterwards. Force Quit is
-also the only way out if the window itself stops responding, or shows the
-"Could not open the recordings folder" screen, since a window that cannot
-answer is never closed on its behalf.
+also the only way out if the window itself stops responding, or is closed
+while it is still opening the folder and never finishes, since a window that
+cannot answer is never closed on its behalf.
 
 In a browser tab (`bun dev:whispering:ui`) the browser's own leave warning
 applies instead.
 
 ### Changes from outside
 
-The app notices changes to the folder from any program within about a second.
+The app notices changes to the folder from any program, usually at once and
+otherwise within a couple of seconds.
 
 - An editor with no unsaved typing shows the new content.
 - An editor with unsaved typing keeps it, stops saving, and shows a conflict.
@@ -309,8 +341,11 @@ functions do not. There is no terminal device, so full-screen programs such as
 `vim` or `less` exit at once; `git` output is not paged. A command that leaves
 the data folder returns to its root. A command is stopped after two minutes.
 
-Avoid making files executable in the data folder: automatic commits write plain
-files only and report "Commit blocked" while an executable file is present.
+Avoid making files executable in the data folder. History records plain files
+only, so while an executable file is present a commit is not made, the branch
+does not move, and the status reads "Commit blocked" with the reason. Saving
+is not affected: your files are still written, and the status says so on its
+own line. Remove the executable bit (`chmod -x <file>`) and commit again.
 
 ## Fixture audio
 
@@ -343,13 +378,14 @@ A debug build has a bug-icon menu in the header:
 | Fail the next audio write | The next save of a new recording fails before anything is written. |
 | Lock the branch | Creates a lock on the branch ref, where an interrupted Git process leaves one, so commits fail while saves succeed. Press again to unlock. It never replaces a lock that already exists and only ever removes the lock it created. |
 
-Both publication failures are real: for the length of that one save, the folder
-host puts an empty directory where the file would be written, so the folder
-itself fails that step and reports it. The directory is removed afterward.
+Both publication failures are real: for the length of that one save, the host
+puts an empty directory where the file would be written, so the folder itself
+fails that step and reports it. The directory is removed afterward.
 
 The same failures can be armed at launch with
 `WHISPERING_DEBUG_FAIL_ROW_WRITES=<n>`, `WHISPERING_DEBUG_FAIL_AUDIO_WRITES=<n>`,
-and `WHISPERING_DEBUG_BLOCK_COMMITS=1`. To cause the commit failure by hand in
+and `WHISPERING_DEBUG_BLOCK_COMMITS=1`. The branch lock is taken when the
+window has opened the folder, since there is no branch before that. To cause the commit failure by hand in
 any build:
 
 ```sh
@@ -390,11 +426,14 @@ These are absent, not hidden behind a setting:
 - Windows and Linux are untested. The terminal needs a POSIX shell.
 - A release pipeline. `bun build:whispering` produces a locally signed bundle.
 - Running inside the Epicenter desktop host. `bun run build:epicenter` still
-  emits the page for that host, but the page does not open a folder there: a
-  browser folder is refused inside a desktop app, and this app does not yet
-  use the desktop's own folder owner. It shows "Could not open the recordings
-  folder" with that reason. The host's Whispering commands in
-  `apps/epicenter/src-tauri` are no longer called by this app.
+  emits the page for that host, but the page opens nothing there. Epicenter
+  does not start Whispering's host process and registers no Whispering
+  folder, so the page shows "Could not open the recordings folder" and says
+  that the desktop app did not start Whispering's host. Browser storage is
+  never used inside a desktop app. The host's Whispering commands in
+  `apps/epicenter/src-tauri` are not called by this app.
+- Running the host process by hand, or opening the desktop folder from a
+  browser tab. The folder belongs to the window's shell.
 - Moving a recording's audio and having the recording follow. Nothing repairs
   `audioPath`, and nothing collects audio files that no recording names.
 - Recordings saved by an earlier build of this app, whose files have no

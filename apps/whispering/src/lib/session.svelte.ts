@@ -2,6 +2,10 @@
  * One Whispering session: the opened workspace, the product state over it, the
  * close guard, and what the shell is showing.
  *
+ * A session exists only once it has started: the folder was read and the
+ * close guard is listening. Before that there is an opening, not a session,
+ * and nothing answers the shell for it.
+ *
  * The app layout opens exactly one session when it mounts and closes it when it
  * is destroyed. Pages receive it from context and never open a workspace, so
  * moving between `/`, `/recordings`, and `/transformations` keeps the live
@@ -13,13 +17,43 @@ import { Ok, type Result } from 'wellcrafted/result';
 import { createLeaveGuard } from './leave.svelte.js';
 import { createLibrary } from './library.svelte.js';
 import {
+	answerCloseAfterFailedOpening,
 	openWorkspace,
 	type Workspace,
 	type WorkspaceError,
 } from './workspace/index.js';
 
-export function createSession(workspace: Workspace) {
+/** Why an opening ended with no session although nothing failed. */
+const RELEASED = 'The layout was released before its session finished opening.';
+
+/**
+ * Build the session over an opened workspace: read the folder once, then start
+ * answering the shell.
+ *
+ * The order is the point. The first read, and the settings file it writes on
+ * a first launch, are this session's own work in the folder. Until they have
+ * settled nothing may tell the shell it can close, so the close guard does
+ * not exist until then: a close asked meanwhile is kept by the workspace and
+ * handed to the guard the moment it starts listening, and the guard then
+ * decides from a session that has finished starting.
+ *
+ * A session that cannot start is not returned. Its library and workspace are
+ * closed first, which waits for whatever they had under way, and only then
+ * does this reject. The same happens when `released` is aborted before the
+ * start settles: nothing listens and nothing is left open.
+ */
+export async function createSession(
+	workspace: Workspace,
+	released?: AbortSignal,
+) {
 	const library = createLibrary(workspace);
+	try {
+		await library.start();
+		if (released?.aborted) throw new Error(RELEASED);
+	} catch (cause) {
+		await library.close().catch(() => {});
+		throw cause;
+	}
 	const leave = createLeaveGuard(library, workspace.closing);
 	/** What the shell shows. Held here so no route owns it. */
 	const view = $state({
@@ -65,27 +99,71 @@ export function createSession(workspace: Workspace) {
 	};
 }
 
-export type Session = ReturnType<typeof createSession>;
+export type Session = Awaited<ReturnType<typeof createSession>>;
 
 /**
- * Open the workspace this page was given and read the folder once. Called by
- * the app layout when it mounts; importing this module opens nothing. A
+ * Open the workspace this page was given and start a session over it. Called
+ * by the app layout when it mounts; importing this module opens nothing. A
  * workspace that cannot be opened is returned as the reason, and no session
- * exists.
+ * exists. A session that cannot start, or whose layout was released first,
+ * rejects after everything it opened has been closed.
  */
 export async function openSession(
 	open: () => Promise<Result<Workspace, WorkspaceError>> = openWorkspace,
+	released?: AbortSignal,
 ): Promise<Result<Session, WorkspaceError>> {
 	const opened = await open();
 	if (opened.error) return opened;
-	const session = createSession(opened.data);
-	try {
-		await session.library.start();
-	} catch (cause) {
-		await session.close().catch(() => {});
-		throw cause;
+	if (released?.aborted) {
+		await opened.data.close().catch(() => {});
+		throw new Error(RELEASED);
 	}
-	return Ok(session);
+	return Ok(await createSession(opened.data, released));
+}
+
+/**
+ * What the app layout holds from mount to destroy: one opening, and the
+ * release of whatever it became.
+ *
+ * An opening ends one of two ways, and the desktop shell's close question
+ * needs an answer in both. When a session exists, its guard answers, and only
+ * after looking at what the session holds. When opening failed there is no
+ * session and nothing held, and the person must still be able to close the
+ * window, so their close requests are answered from then on.
+ *
+ * While the opening is still under way nothing answers, and that lasts until
+ * the session has finished starting: opening the workspace, the first read of
+ * the folder, and the settings write a first launch makes. A request made in
+ * that time waits, and is answered by whichever of the two the opening
+ * becomes. A failed opening is answered for only once it has rejected, which
+ * is after everything it opened was closed.
+ *
+ * `release` undoes exactly one of them: it closes the session, or stops
+ * answering for the failed opening. Released before the opening settles, the
+ * opening closes what it opened by itself and nothing ever answers.
+ */
+export function mountSession(
+	open: () => Promise<Result<Workspace, WorkspaceError>> = openWorkspace,
+	answerClose: () => () => void = answerCloseAfterFailedOpening,
+) {
+	const releasing = new AbortController();
+	const opening = openSession(open, releasing.signal);
+	let stopAnswering: (() => void) | undefined;
+	const failed = () => {
+		if (!releasing.signal.aborted) stopAnswering = answerClose();
+	};
+	void opening.then((opened) => {
+		if (opened.error) failed();
+	}, failed);
+	return {
+		opening,
+		release() {
+			if (releasing.signal.aborted) return;
+			releasing.abort();
+			stopAnswering?.();
+			void opening.then((opened) => opened.data?.close()).catch(() => {});
+		},
+	};
 }
 
 /** The session of the mounted app layout. Set by the shell, read by pages. */

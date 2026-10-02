@@ -2,14 +2,15 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
-	import MicIcon from '@lucide/svelte/icons/mic';
 	import SquareIcon from '@lucide/svelte/icons/square';
+	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import type { Library } from '$lib/library.svelte.js';
 	import RecorderClock from './RecorderClock.svelte';
 
 	/**
-	 * The home page's recorder: one large control that starts and stops, with
-	 * the elapsed time while it runs and what this session records from.
+	 * The home page's recorder: the microphone is the control that starts and
+	 * stops, with one line under it for what is happening. Fixture mode adds
+	 * its warning; nothing else sits under the recorder.
 	 */
 	let { library }: { library: Library } = $props();
 
@@ -20,59 +21,75 @@
 	const label = $derived(
 		{ idle: 'Start recording', starting: 'Starting…', recording: 'Stop recording', stopping: 'Finishing…' }[recorder.phase],
 	);
+
+	// The button is disabled while pending, which drops keyboard focus to the
+	// page. Give it back when the press came from the focused microphone.
+	let mic = $state<HTMLElement | null>(null);
+	let returnFocus = false;
+	function toggle() {
+		returnFocus = document.activeElement === mic;
+		void (active ? library.stopRecording() : library.startRecording());
+	}
+	$effect(() => {
+		if (pending || !returnFocus) return;
+		returnFocus = false;
+		// Only when focus went nowhere: someone who moved elsewhere keeps their place.
+		if (document.activeElement === document.body) mic?.focus({ preventScroll: true });
+	});
 </script>
 
-<div class={cn('w-full overflow-hidden rounded-xl bg-card shadow-sm', active && 'ring-1 ring-destructive/25')}>
-	<Button
-		variant="ghost"
-		class="h-auto min-h-24 w-full justify-start gap-4 rounded-none px-5 py-6 text-left hover:bg-transparent dark:hover:bg-transparent"
-		aria-pressed={active}
-		aria-busy={pending}
-		disabled={pending}
-		onclick={() => void (active ? library.stopRecording() : library.startRecording())}
-		data-testid={active ? 'stop-recording' : 'start-recording'}
-	>
-		<span
-			aria-hidden="true"
+<!-- The button keeps one size in every phase, so nothing under it moves. -->
+<Button
+	bind:ref={mic}
+	variant="ghost"
+	class="relative size-32 rounded-full p-0 hover:bg-transparent disabled:opacity-100 dark:hover:bg-transparent"
+	aria-label={label}
+	aria-pressed={active}
+	aria-busy={pending}
+	disabled={pending}
+	onclick={toggle}
+	data-testid={active ? 'stop-recording' : 'start-recording'}
+>
+	{#if active}
+		<span class="flex size-24 items-center justify-center rounded-full bg-destructive/10 text-destructive ring-1 ring-destructive/30">
+			<SquareIcon class="size-9 fill-current" />
+		</span>
+	{:else}
+		<!-- The image is 160px wide: at this size it is drawn 1.4 times its pixels on a 2x display, and no larger copy exists. -->
+		<img
+			src={studioMicrophone}
+			alt=""
+			draggable="false"
 			class={cn(
-				'flex size-14 shrink-0 items-center justify-center rounded-lg shadow-sm sm:size-16',
-				active ? 'bg-destructive/10 text-destructive' : 'bg-primary text-primary-foreground',
+				'size-28 drop-shadow-lg transition-transform group-hover/button:scale-105 group-active/button:scale-95 motion-reduce:transition-none',
+				pending && 'opacity-40',
 			)}
-		>
-			{#if pending}
-				<Spinner class="size-7" />
-			{:else if active}
-				<SquareIcon class="size-6 fill-current" />
-			{:else}
-				<MicIcon class="size-7" />
-			{/if}
-		</span>
-		<span class="flex min-w-0 flex-1 flex-col gap-1">
-			<span class="truncate text-base leading-none font-semibold sm:text-lg">{label}</span>
-			<span class="truncate text-sm text-muted-foreground">
-				{#if recorder.phase === 'recording'}
-					Recording · <RecorderClock startedAt={recorder.startedAt} />
-				{:else if recorder.phase === 'stopping'}
-					Saving the audio to the folder
-				{:else}
-					Saved to the recordings folder when you stop
-				{/if}
-			</span>
-		</span>
-	</Button>
-	<div class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t px-5 py-2 text-xs text-muted-foreground">
-		{#if device.source === 'fixture'}
-			<span class="text-warning" data-testid="fixture-notice">
-				Fixture mode: recordings use {device.label}. The microphone is not used.
-			</span>
-		{:else}
-			<span class="flex items-center gap-1.5"><MicIcon class="size-3.5" /> {device.label}</span>
-		{/if}
-		<span class="ml-auto truncate">
-			Transcribes with {library.settings.transcriptionModel || 'no model set'} when you ask
-		</span>
-	</div>
-</div>
+		/>
+		{#if pending}<Spinner class="absolute size-8" />{/if}
+	{/if}
+</Button>
+
+<p class="flex h-8 items-center gap-2 text-sm text-muted-foreground">
+	{#if recorder.phase === 'recording'}
+		<span class="size-2 rounded-full bg-destructive" aria-hidden="true"></span>
+		<span class="text-2xl font-semibold text-foreground"><RecorderClock startedAt={recorder.startedAt} /></span>
+	{:else if recorder.phase === 'starting'}
+		Starting…
+	{:else if recorder.phase === 'stopping'}
+		Saving the audio…
+	{:else}
+		Click the microphone to start recording.
+	{/if}
+</p>
+
+<!-- Always mounted so the start of a recording is announced. The clock stays outside it: it changes every second. -->
+<span class="sr-only" role="status">{active ? 'Recording' : ''}</span>
+
+{#if device.source === 'fixture'}
+	<p class="text-center text-xs text-balance text-warning" data-testid="fixture-notice">
+		Fixture mode: recordings use {device.label}. The microphone is not used.
+	</p>
+{/if}
 
 {#if library.workspace.captureNotice}
 	<p class="text-center text-sm text-warning" role="status" data-testid="capture-notice">{library.workspace.captureNotice}</p>

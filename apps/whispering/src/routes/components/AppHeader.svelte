@@ -13,7 +13,6 @@
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
-	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Library } from '$lib/library.svelte.js';
 	import RecorderClock from './RecorderClock.svelte';
@@ -138,10 +137,8 @@
 </script>
 
 <header class="flex h-12 shrink-0 items-center gap-1.5 border-b px-2 sm:gap-2 sm:px-3">
-	<!-- The sidebar names the app on a wide window; here it is the way home on a narrow one. -->
-	<a href={resolve('/')} class="rounded-sm text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring md:sr-only">Whispering</a>
 	{#if workspace.capture.source === 'fixture'}
-		<Badge variant="outline" class="shrink-0 border-warning text-warning" data-testid="fixture-badge">Fixture audio</Badge>
+		<Badge variant="outline" class="shrink-0 border-warning text-warning" data-testid="fixture-badge">Fixture<span class="max-sm:sr-only">&nbsp;audio</span></Badge>
 	{/if}
 
 	<!-- A live recording is visible and stoppable from every page. -->

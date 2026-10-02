@@ -713,7 +713,7 @@ When you add an ADR, add its row here.
 | [0458](0458-markdown-links-may-cross-data-folders-by-relative-path.md) | Markdown links may cross data folders by relative path | Proposed (cross-folder link resolution unbuilt) |
 | [0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) | SQLite is a local capability for derived or transactional state | Proposed (file-backed application stores and derived indexes unbuilt) |
 | [0460](0460-vocab-and-whispering-are-braden-wongs-apps-built-on-epicenter.md) | Vocab and Whispering are Braden Wong's apps built on Epicenter | Proposed (personal-domain homes and Whispering ID migration unbuilt) |
-| [0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) | Portable data folders live under Local and derived account scopes | Proposed (file-authoritative root and explicit sync attachment unbuilt) |
+| [0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) | Portable data folders live under Local and derived account scopes | Proposed (Whispering Local default implemented; account folders and explicit transfers unbuilt) |
 | [0462](0462-file-table-entries-carry-source-and-use-issues-for-conformance.md) | File table entries carry source and use issues for conformance | Proposed (file-backed table reads unbuilt) |
 | [0463](0463-a-data-folder-exposes-a-generated-root-sqlite-index.md) | A data folder exposes a generated root SQLite index | Proposed (query generator and public folder publication unbuilt) |
 | [0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md) | File table updates conditionally replace the captured whole file | Proposed (file-backed table saves unbuilt) |
@@ -731,4 +731,7 @@ When you add an ADR, add its row here.
 | [0485](0485-applications-choose-editor-observation-and-save-policies.md) | Applications choose editor observation and save policies | Proposed |
 | [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
 | [0487](0487-kv-commands-distinguish-creation-from-current-source-updates.md) | KV commands distinguish creation from current-source updates | Proposed |
+| [0488](0488-cloud-folders-use-independent-git-histories.md) | Cloud folders use independent Git histories | Proposed (unbuilt; permanently unique repository URLs, lifecycle listing, hosting and credential gates) |
+| [0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md) | Cloud folder transfers are explicit and bootstrap before opening | Proposed (unbuilt; staged account setup, explicit transfers, ownership locks) |
+| [0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) | The CLI discovers folders and delegates history to Git | Proposed (unbuilt; account setup and Git passthrough) |
 | [0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) | Field helpers build native TypeBox schemas with UI metadata | Proposed |

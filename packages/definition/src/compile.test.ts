@@ -630,6 +630,39 @@ test('a schema TypeBox cannot compile names its table and field', () => {
 	}
 });
 
+test('a throwing native refinement leaves valid sibling fields readable', () => {
+	const payload = { title: 'Keep this', meta: {} };
+	const kv = expectOk(
+		compileKv({
+			title: field.string(),
+			meta: Type.Refine(Type.Object({}), () => {
+				throw new TypeError('broken refinement');
+			}),
+		}),
+	).kv;
+
+	expect(kv.fields.get('meta')?.check(payload.meta)).toBe(false);
+	expect(kv.fields.get('meta')?.errors(payload.meta)).toEqual([
+		'schema validation threw',
+	]);
+	expect(kv.conformance(payload)).toEqual({
+		conforming: { title: 'Keep this' },
+		issues: [
+			{
+				field: 'meta',
+				message: 'meta does not conform: schema validation threw',
+			},
+		],
+	});
+	expect(kv.inputIssues(payload, { complete: true })).toEqual([
+		{
+			field: 'meta',
+			message: 'meta does not conform: schema validation threw',
+		},
+	]);
+	expect(payload).toEqual({ title: 'Keep this', meta: {} });
+});
+
 test('a refinement that throws on null is reported at the declaration', () => {
 	const error = expectErr(
 		compileKv({

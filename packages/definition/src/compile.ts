@@ -237,7 +237,7 @@ function compileTable(
 				const lens = jsonLens(schema);
 				// Inside the try: a refinement that throws on `null` fails here,
 				// named, instead of at the first stored `null`.
-				const editor = fieldEditorOf(schema, lens.check(null));
+				const editor = fieldEditorOf(schema, lens.nullable);
 				return { schema, lens, editor };
 			},
 			catch: (cause) =>
@@ -328,6 +328,10 @@ const NOT_JSON: readonly FieldError[] = Object.freeze([
 	Object.freeze({ instancePath: '', message: 'must be a JSON value' }),
 ]);
 
+const VALIDATION_FAILED: readonly FieldError[] = Object.freeze([
+	Object.freeze({ instancePath: '', message: 'schema validation threw' }),
+]);
+
 /**
  * The one read of a value against a field: is it JSON, and then TypeBox's
  * compiled validator. `check`, `errors`, `conformance`, and `inputIssues` all
@@ -341,16 +345,30 @@ const NOT_JSON: readonly FieldError[] = Object.freeze([
  * never see one.
  *
  * `isJsonSafe` sets no depth or width limit. A storage that has a budget
- * applies it itself.
+ * applies it itself. A native validator can throw on a refinement or deep
+ * recursion: that field then fails its check and reports the exception, so
+ * sibling fields and the source remain readable. The eager null probe still
+ * throws at the declaration boundary.
  */
 function jsonLens(schema: TSchema): {
+	nullable: boolean;
 	check: (value: unknown) => boolean;
 	errors: (value: unknown) => readonly FieldError[];
 } {
 	const validator = Compile(schema);
+	const nullable = validator.Check(null);
 	return {
-		check: (value) => isJsonSafe(value) && validator.Check(value),
-		errors: (value) => (isJsonSafe(value) ? validator.Errors(value) : NOT_JSON),
+		nullable,
+		check: (value) =>
+			trySync({
+				try: () => isJsonSafe(value) && validator.Check(value),
+				catch: () => Ok(false),
+			}).data,
+		errors: (value) =>
+			trySync({
+				try: () => (isJsonSafe(value) ? validator.Errors(value) : NOT_JSON),
+				catch: () => Ok(VALIDATION_FAILED),
+			}).data,
 	};
 }
 

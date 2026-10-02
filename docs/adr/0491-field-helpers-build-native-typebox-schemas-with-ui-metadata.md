@@ -66,8 +66,10 @@ hint. There is no `maxBytes` option.
 `compileData` holds each value to `isJsonSafe` before the compiled validator
 sees it, in `check`, `errors`, `conformance`, and `inputIssues`. The check
 refuses non-JSON values and cycles and sets no depth or width limit. Folder KV
-and frontmatter keep their separate budget. A value that is JSON gets TypeBox's
-own errors and paths.
+keeps its separate budget; frontmatter imposes no fixed depth or width budget.
+A value that is JSON gets TypeBox's own errors and paths. A native validator
+exception fails only that field with `schema validation threw`, so sibling
+fields and source remain readable.
 
 **`compileData` owns one frozen snapshot of each declared field.**
 It clones own string-keyed data properties with TypeBox's `Memory.Clone`,

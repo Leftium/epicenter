@@ -183,7 +183,10 @@ Being JSON has no size: `isJsonSafe` sets no depth or width limit, and a value
 reachable by two paths is fine. The 16-level, 1024-key budget is `isJsonValue`
 and `isJsonObject`, which the storages that want it apply themselves. A value
 that is JSON and fails its schema gets TypeBox's own errors, at their own
-paths.
+paths. If a native refinement or recursive validator throws, that field
+fails its check and reports `schema validation threw`. Valid sibling fields
+stay readable. A refinement that throws on the eager null probe still fails
+at the declaration.
 
 ### Who owns a declared schema
 
@@ -227,8 +230,8 @@ identifier may dangle.
 
 ## Field conformance
 
-A compiled table checks each declared field by itself. Folder uses these
-methods for stored source and supplied values:
+A compiled table checks each declared field by itself through read and write
+methods:
 
 ```ts
 const table = compileData(definition).data.tables.get('todos');

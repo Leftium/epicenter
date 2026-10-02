@@ -109,8 +109,8 @@ export type DataField = {
 	 */
 	readonly check: (value: unknown) => boolean;
 	/**
-	 * Why a value failed `check`: that it is not JSON, or TypeBox's own errors.
-	 * Empty when it passes.
+	 * Why a value failed `check`: that it is not JSON, TypeBox's own errors,
+	 * or that schema validation threw. Empty when it passes.
 	 */
 	readonly errors: (value: unknown) => readonly string[];
 };

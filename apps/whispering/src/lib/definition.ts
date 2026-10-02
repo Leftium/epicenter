@@ -117,13 +117,6 @@ export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
 	transcriptionModel: 'whisper-1',
 };
 
-/** `recordings/<id>.md` and nothing nested below it. */
-export const RECORDING_ROW = /^recordings\/([^/]+)\.md$/;
-
-export function recordingIdOf(path: string): string | undefined {
-	return RECORDING_ROW.exec(path)?.[1];
-}
-
 /** Where a new capture's audio is saved. An existing row's audio is whatever its `audioPath` says. */
 export function recordingAudioPath(id: string, extension: string): string {
 	return `${RECORDINGS}/${id}.${extension}`;
@@ -140,12 +133,6 @@ export function audioPathIn(
 	const path = fields.audioPath;
 	return typeof path === 'string' && path !== '' ? path : undefined;
 }
-
-/** `transcriptions/<id>.md` and nothing nested below it. */
-export const TRANSCRIPTION_ROW = /^transcriptions\/([^/]+)\.md$/;
-
-/** `transformations/<id>.md` and nothing nested below it. */
-export const TRANSFORMATION_ROW = /^transformations\/([^/]+)\.md$/;
 
 /**
  * Prompts offered as explicit "create" buttons. Nothing is written to the

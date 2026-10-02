@@ -24,6 +24,7 @@ import type {
 	KvSnapshot,
 	TableWriteError,
 } from '@epicenter/folder';
+import { rowPath, rowStemOf } from '@epicenter/folder';
 import { customAlphabet } from 'nanoid';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -31,14 +32,11 @@ import { audioMimeTypeOf } from './audio-format.js';
 import type { ActiveCapture, CapturedAudio } from './capture.js';
 import {
 	audioPathIn,
-	RECORDING_ROW,
 	RECORDINGS,
 	type RecordingFields,
 	recordingAudioPath,
-	recordingIdOf,
-	TRANSCRIPTION_ROW,
 	TRANSCRIPTIONS,
-	TRANSFORMATION_ROW,
+	TRANSFORMATIONS,
 	type TranscriptionFields,
 	type TranscriptionSettings,
 	type TransformationFields,
@@ -50,7 +48,6 @@ import {
 	createTextFileEditor,
 	type RecordingEditor,
 	type RecordingEntry,
-	stemOf,
 	type TextFileEditor,
 	type TransformationEditor,
 } from './editor.svelte.js';
@@ -571,7 +568,7 @@ export function createLibrary(workspace: Workspace) {
 	 */
 	async function open(path: string) {
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
-		if (TRANSFORMATION_ROW.test(path)) {
+		if (rowStemOf(TRANSFORMATIONS, path) !== undefined) {
 			let profile = transformations.find((item) => item.path === path);
 			if (profile === undefined && !transformationEditors.has(path)) {
 				// The list may predate a row written by the terminal or another program.
@@ -594,7 +591,7 @@ export function createLibrary(workspace: Workspace) {
 		)
 			return;
 		let entry = entries.find((item) => item.path === path);
-		if (entry === undefined && RECORDING_ROW.test(path)) {
+		if (entry === undefined && rowStemOf(RECORDINGS, path) !== undefined) {
 			// The list may predate a row written by the terminal or another program.
 			await refresh();
 			entry = entries.find((item) => item.path === path);
@@ -648,7 +645,9 @@ export function createLibrary(workspace: Workspace) {
 	): Promise<Result<RecordingEntry, string>> {
 		const editor = recordingEditors.get(path);
 		if (editor !== undefined && !(await editor.settle())) return Err(UNSETTLED);
-		const read = await table.get(stemOf(path));
+		const stem = rowStemOf(RECORDINGS, path);
+		if (stem === undefined) return Err(`${path} is not a recording.`);
+		const read = await table.get(stem);
 		if (read.error) return Err(read.error.message);
 		if (read.data === undefined)
 			return Err('This recording is no longer in the folder.');
@@ -1027,7 +1026,7 @@ export function createLibrary(workspace: Workspace) {
 			string
 		>
 	> {
-		const transcriptionId = TRANSCRIPTION_ROW.exec(transcriptionPath)?.[1];
+		const transcriptionId = rowStemOf(TRANSCRIPTIONS, transcriptionPath);
 		if (transcriptionId === undefined)
 			return Err(`${transcriptionPath} is not a transcript.`);
 		const editor = textEditorAt(transcriptionPath);
@@ -1092,7 +1091,7 @@ export function createLibrary(workspace: Workspace) {
 	): Promise<Result<TransformationEntry, string>> {
 		const editor = transformationEditors.get(path);
 		if (editor !== undefined && !(await editor.settle())) return Err(UNSETTLED);
-		const stem = TRANSFORMATION_ROW.exec(path)?.[1];
+		const stem = rowStemOf(TRANSFORMATIONS, path);
 		if (stem === undefined) return Err(`${path} is not a transformation.`);
 		const read = await profiles.get(stem);
 		if (read.error) return Err(read.error.message);
@@ -1384,7 +1383,9 @@ export function createLibrary(workspace: Workspace) {
 
 		async transcribe(entry: RecordingEntry) {
 			const id = entry.stem;
-			if (id === undefined) return;
+			// A transcript names its recording by this ID, so a filename that needs
+			// repair is not sent anywhere.
+			if (entry.issues?.some((issue) => issue.kind === 'filename')) return;
 			// A received transcript is held until it is saved or discarded: a new
 			// request never replaces it.
 			const current = runs.get(id)?.kind;
@@ -1571,7 +1572,7 @@ export function createLibrary(workspace: Workspace) {
 					state: { kind: 'failed', message },
 				});
 			const source = await transformationSource(
-				`${TRANSCRIPTIONS}/${run.fields.transcriptionId}.md`,
+				rowPath(TRANSCRIPTIONS, run.fields.transcriptionId),
 			);
 			if (source.error !== null) {
 				refuse(`${source.error} Dismiss this run.`);
@@ -1702,8 +1703,8 @@ export function createLibrary(workspace: Workspace) {
 			if (recordingEditors.has(path) || rowPaths.has(path)) {
 				const entry = await recordingForOperation(path);
 				if (entry.error !== null) return entry;
-				const id = recordingIdOf(path);
-				const busy = id === undefined ? undefined : recordingBusy(id);
+				const id = entry.data.stem;
+				const busy = recordingBusy(id);
 				if (busy !== undefined) return Err(busy);
 				// A transcript saved since the last listing is named from its
 				// publication; once listed, the listed row is the one named.
@@ -1779,8 +1780,7 @@ export function createLibrary(workspace: Workspace) {
 				// request that is running, or an answer not saved yet, would write a
 				// row naming this recording after it is gone; a result saved since is
 				// one the person did not agree to delete.
-				const id = recordingIdOf(path);
-				if (id === undefined) return `${path} is not a recording.`;
+				const id = deletion.entry.stem;
 				if (deleting.has(id)) return BEING_DELETED;
 				const busy = recordingBusy(id);
 				if (busy !== undefined) return busy;

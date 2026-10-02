@@ -7,7 +7,7 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PinIcon from '@lucide/svelte/icons/pin';
-	import { instantNow, type NoteEntry, type NoteFields } from '$lib/data.js';
+	import { folderIdOf, instantNow, type NoteEntry, type NoteFields } from '$lib/data.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import { missingFields } from '$lib/note-source.js';
 	import type { FileSession } from '$lib/file-session.svelte.js';
@@ -68,7 +68,8 @@
 			onchange={(event) => patch({ folderId: event.currentTarget.value || null })}
 		>
 			<option value="">No folder</option>
-			{#each notes.folders as folder (folder.path)}
+			<!-- A folder whose filename needs repair is not offered; one this note already names still shows. -->
+			{#each notes.folders.filter((folder) => folderIdOf(folder) !== null || (folderId !== '' && folder.stem === folderId)) as folder (folder.path)}
 				<option value={folder.stem}>{folder.fields.name ?? folder.stem}</option>
 			{/each}
 			{#if folderId !== '' && !notes.folders.some((folder) => folder.stem === folderId)}

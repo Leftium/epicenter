@@ -2,8 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-29
-- **Implementation:** source-backed entries, captured versions, readable malformed rows, and issue reporting in `@epicenter/app/files` and Todos.
-- **Unbuilt:** migration of released applications to file-backed table reads.
+- **Implementation:** source-backed entries, captured versions, literal stems, readable malformed rows, and issue reporting in `@epicenter/folder`, read by Todos, Whispering, Capture, and Honeycrisp.
 
 ## Context
 
@@ -31,9 +30,16 @@ table directory and `.md`. Neither is an authored frontmatter field.
 
 **`list()` and `get(stem)` return the same source-backed entry shape for a readable
 Markdown file, whether or not its declared fields conform.** Every entry carries
-its path. An entry has no usable stem when its filename cannot supply a valid one;
-`list()` still returns it for path-based selection and source repair. Removing
-the exact lowercase `.md` suffix yields the complete literal stem. No case
+its path and its stem, and `entry.path === rowPath(table.name, entry.stem)`.
+Removing the exact lowercase `.md` suffix yields the complete literal stem,
+including one that breaks the naming rules or is empty (`<table>/.md`). The
+naming rules apply to the names `create` and `rename` make; `get(stem)` and
+`update(stem)` address any existing row, so a file another program named
+stays readable and editable at the stem its entry carries. An earlier version
+of this record gave such an entry `stem: undefined` and selected it by path.
+That left `get('bad ')` able to read a row whose own entry denied having that
+stem, and made every caller re-derive the stem from the path. `rowStemOf` is
+the exported inverse of `rowPath` for callers that hold only a path. No case
 folding, Unicode normalization, or filename alias maps distinct files to one
 stem. Exact stems therefore need no duplicate-ID inventory or resolution API.
 Case-sensitive filesystems can contain `Interview.md` and `interview.md` as
@@ -52,7 +58,7 @@ an empty table.
 **The value of `issues` discriminates the two entry variants; no separate
 `status` field or nested `parsed` result is added.** The valid variant has a
 valid stem, `issues: undefined`, complete `fields`, and a body. The invalid
-variant has a nonempty `issues` array, a usable stem only if its filename yields one,
+variant has a nonempty `issues` array, its literal stem,
 only independently validated declared fields, and a body when its boundary can
 be identified. Invalid filenames and ambiguous attachments contribute issues even
 when every declared field validates. Both variants keep the unmodified source
@@ -92,7 +98,7 @@ type Entry<TFields> = {
       readonly issues: undefined;
     }
   | {
-      readonly stem: string | undefined;
+      readonly stem: string;
       readonly fields: Readonly<Partial<TFields>>;
       readonly body: string | undefined;
       readonly issues: readonly [Issue, ...Issue[]];
@@ -142,9 +148,13 @@ access preserves the bytes. It must never become an editable empty string.
   accepted save result or a deliberately adopted read. A newer read cannot
   silently authorize overwriting source while the editor has unsaved input.
 - Literal stems give each row one address without ID normalization or duplicate
-  identity repair. An invalid filename is selected by path because it has no
-  usable stem. Destination filesystem collisions remain publication checks.
-- Callers migrating from the Yjs `get(id)` contract distinguish an absent stem,
+  identity repair. A row with an invalid or empty filename is addressed by
+  that literal stem like any other, so an empty stem is an address and callers
+  must not test a stem by truthiness. Applications decide which operations a
+  `filename` issue refuses: Whispering sends no transcription request for such
+  a recording, and Honeycrisp does not delete such a folder. Destination
+  filesystem collisions remain publication checks.
+- Callers distinguish an absent row,
   an operational refusal, and a present entry whose action inputs are unusable.
   Honeycrisp selection needs a path-based source repair route; Whispering audio
   and transcription need only their actual validated inputs, not whole-row

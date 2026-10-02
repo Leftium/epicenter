@@ -17,6 +17,8 @@ import {
 	defineTable,
 	type Entry,
 	field,
+	rowPath,
+	rowStemOf,
 } from '@epicenter/folder';
 
 export const honeycrispDefinition = defineFolder({
@@ -59,13 +61,29 @@ export type FolderEntry = Entry<FolderFields>;
 export const NOTES = 'notes';
 
 export function notePath(id: NoteId): string {
-	return `${NOTES}/${id}.md`;
+	return rowPath(NOTES, id);
 }
 
-/** The note id of a row path, or undefined when the path is not a note row. */
+/**
+ * The note id of a row path, or undefined when the path is not a note row.
+ * An id is never empty: `notes/.md` is a file the table lists, not a note
+ * this app opens as one.
+ */
 export function noteIdOf(path: string): NoteId | undefined {
-	const match = /^notes\/([^/]+)\.md$/.exec(path);
-	return match?.[1];
+	const id = rowStemOf(NOTES, path);
+	return id === '' ? undefined : id;
+}
+
+/**
+ * The ID this app assigns to a note's `folderId` to name this folder: its
+ * file stem, or `null` when the folder's filename has an issue. Such a folder
+ * still has its literal stem for reading and display; the app does not hand
+ * that stem out as a reference until the file is renamed.
+ */
+export function folderIdOf(folder: FolderEntry): string | null {
+	return folder.issues?.some((issue) => issue.kind === 'filename')
+		? null
+		: folder.stem;
 }
 
 /** The current time as the files store it. */

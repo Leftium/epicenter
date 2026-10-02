@@ -28,7 +28,7 @@ import type {
 	PullOutcome,
 	TableWriteError,
 } from '@epicenter/folder';
-import { GitError } from '@epicenter/folder';
+import { GitError, rowPath, rowStemOf } from '@epicenter/folder';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -37,7 +37,6 @@ import {
 	createTodoEditor,
 	patchTodo,
 	type SavedText,
-	stemOf,
 	type TextFileEditor,
 	type TodoEditor,
 	type TodoEntry,
@@ -82,7 +81,6 @@ export type Deletion =
 	| (FileCapture & { readonly kind: 'file' })
 	| { readonly kind: 'folder'; readonly path: string };
 
-const ROW_PATH = /^todos\/[^/]+\.md$/;
 const UNSETTLED = 'Save or discard the open edits first.';
 const BUSY =
 	'Another change to this file is still in progress. Try again when it finishes.';
@@ -346,7 +344,7 @@ export function createTodos(folder: TodosFolder) {
 			return false;
 		};
 		let entry = entries.find((item) => item.path === path);
-		if (entry === undefined && ROW_PATH.test(path)) {
+		if (entry === undefined && rowStemOf(table.name, path) !== undefined) {
 			// The list may predate a row written by the terminal or a pull.
 			await refresh();
 			if (!claimed()) return;
@@ -375,9 +373,15 @@ export function createTodos(folder: TodosFolder) {
 		);
 	}
 
-	/** A row the table lists or a todo editor holds: its operations go through the table. */
-	function isTableRow(path: string) {
-		return rowPaths.has(path) || retained.get(path)?.kind === 'todo';
+	/**
+	 * The row at a path, as its todo editor holds it or the table last listed
+	 * it. Its operations go through the table, addressed by its stem.
+	 */
+	function tableRow(path: string): TodoEntry | undefined {
+		const item = retained.get(path);
+		return item?.kind === 'todo'
+			? item.editor.baseline
+			: entries.find((entry) => entry.path === path);
 	}
 
 	/**
@@ -386,10 +390,10 @@ export function createTodos(folder: TodosFolder) {
 	 * changed after that save, and the operation is refused.
 	 */
 	async function currentRow(
-		path: string,
+		stem: string,
 		settled: string | undefined,
 	): Promise<Result<TodoEntry, string>> {
-		const read = await table.get(stemOf(path));
+		const read = await table.get(stem);
 		if (read.error) return Err(read.error.message);
 		if (read.data === undefined)
 			return Err('This todo is no longer in the folder.');
@@ -400,13 +404,13 @@ export function createTodos(folder: TodosFolder) {
 
 	/** Rename a row through its table. Only the row's Markdown file moves. */
 	async function renameRow(
-		path: string,
-		to: string,
+		stem: string,
+		nextStem: string,
 		settled?: SavedText,
 	): Promise<Result<TodoEntry, string>> {
-		const row = await currentRow(path, settled?.sha256);
+		const row = await currentRow(stem, settled?.sha256);
 		if (row.error !== null) return row;
-		const renamed = await table.rename(row.data, stemOf(to));
+		const renamed = await table.rename(row.data, nextStem);
 		return renamed.error ? Err(describeWriteError(renamed.error)) : renamed;
 	}
 
@@ -496,7 +500,7 @@ export function createTodos(folder: TodosFolder) {
 		async create(title: string): Promise<string | undefined> {
 			if (closing !== undefined) return CLOSING;
 			const stem = crypto.randomUUID();
-			const release = reserve(`todos/${stem}.md`);
+			const release = reserve(rowPath(table.name, stem));
 			if (release === undefined) return BUSY;
 			const created = await table
 				.create({
@@ -531,7 +535,7 @@ export function createTodos(folder: TodosFolder) {
 						return editor.saveState.message;
 					return undefined;
 				}
-				const updated = await table.update(stemOf(entry.path), {
+				const updated = await table.update(entry.stem, {
 					fields: { done } satisfies Partial<TodoFields>,
 				});
 				await refresh();
@@ -558,8 +562,9 @@ export function createTodos(folder: TodosFolder) {
 			if (problem !== undefined) return problem;
 			const to = joinPath(directory, name);
 			if (to === path) return undefined;
-			const row = isTableRow(path);
-			if (row && !ROW_PATH.test(to))
+			const row = tableRow(path);
+			const nextStem = rowStemOf(table.name, to);
+			if (row !== undefined && nextStem === undefined)
 				return 'A todo file keeps its .md extension.';
 			// A rename never lands on an open editor, clean or not.
 			if (editorOf(retained.get(to)) !== undefined)
@@ -572,12 +577,12 @@ export function createTodos(folder: TodosFolder) {
 			/** The selection was on the file, at either path, when the rename landed. */
 			let follow = false;
 			try {
-				if (row)
+				if (row !== undefined && nextStem !== undefined)
 					moved =
 						editor === undefined
-							? await renameRow(path, to)
+							? await renameRow(row.stem, nextStem)
 							: await editor.move((settled: SavedText) =>
-									renameRow(path, to, settled),
+									renameRow(row.stem, nextStem, settled),
 								);
 				else if (item?.kind === 'text')
 					moved = await item.editor.move(async (settled) => {
@@ -596,7 +601,7 @@ export function createTodos(folder: TodosFolder) {
 						// A clean raw editor landing on a row gives way to the row's todo
 						// editor. Typing that arrived during the move keeps the raw editor
 						// and its save policy.
-						!(item.kind === 'text' && ROW_PATH.test(to) && isIdle(editor))
+						!(item.kind === 'text' && nextStem !== undefined && isIdle(editor))
 					) {
 						// The reserved destination holds no editor: this replaces any
 						// details or loading claim there.
@@ -676,12 +681,12 @@ export function createTodos(folder: TodosFolder) {
 			const release = reserve(path);
 			if (release === undefined) return Err(BUSY);
 			try {
-				const row = isTableRow(path);
+				const row = tableRow(path);
 				const editor = editorOf(retained.get(path));
 				if (editor !== undefined && !(await editor.settle()))
 					return Err(UNSETTLED);
-				if (row) {
-					const entry = await currentRow(path, editor?.baseline.sha256);
+				if (row !== undefined) {
+					const entry = await currentRow(row.stem, editor?.baseline.sha256);
 					return entry.error !== null
 						? entry
 						: Ok({ kind: 'todo', entry: entry.data });

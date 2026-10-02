@@ -111,9 +111,7 @@ test('a recording conflict read failure preserves typing instead of reporting re
 		() => {},
 	);
 	cleanup.push(async () => editor.dispose());
-	const outside = expectOk(
-		await table.update(entry.stem!, { body: 'outside' }),
-	);
+	const outside = expectOk(await table.update(entry.stem, { body: 'outside' }));
 	const typing = `${entry.source}my typing`;
 	editor.input(typing);
 	await editor.save();

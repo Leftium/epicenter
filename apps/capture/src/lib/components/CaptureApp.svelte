@@ -34,7 +34,8 @@
 
 	function show(target: { capture?: string; recover?: true; created?: true } = {}) {
 		created = target.created ? target.capture : undefined;
-		const query = target.capture
+		// An empty stem (`captures/.md`) is still a capture to open.
+		const query = target.capture !== undefined
 			? `?capture=${encodeURIComponent(target.capture)}`
 			: target.recover
 				? '?recover'

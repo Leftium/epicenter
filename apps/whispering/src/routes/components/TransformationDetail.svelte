@@ -11,7 +11,6 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import PlayIcon from '@lucide/svelte/icons/play';
-	import { TRANSFORMATION_ROW } from '$lib/definition.js';
 	import { patchRow, type TransformationEditor } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Library, TransformationEntry } from '$lib/library.svelte.js';
@@ -46,15 +45,19 @@
 		return typeof value === 'string' ? value : '';
 	};
 	const fieldsEditable = $derived(parsed.values !== undefined && parsed.body !== undefined);
-	const id = $derived(TRANSFORMATION_ROW.exec(editor.path)?.[1] ?? editor.path);
+	const id = $derived(editor.baseline.stem);
 	const outputs = $derived(library.outputsOf(id));
 	const history = $derived(entry ? committedState(library.git, [entry.path]) : undefined);
 	let tab = $state('details');
 
-	/** Saved transcripts with text, newest first, named by their recording. */
+	/**
+	 * Saved transcripts with text, newest first, named by their recording. A
+	 * recording whose filename needs repair offers none: its ID is not one to
+	 * run a transformation against. Other problems in its file do not hide it.
+	 */
 	const transcripts = $derived(
 		library.entries.flatMap((recording) =>
-			recording.stem === undefined
+			recording.issues?.some((issue) => issue.kind === 'filename')
 				? []
 				: library
 						.resultsFor(recording.stem)

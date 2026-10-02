@@ -28,7 +28,7 @@ import {
 	type LegacyBundle,
 	runLegacyImport,
 } from '@epicenter/capture/legacy';
-import type { FileCapture, GitSnapshot } from '@epicenter/folder';
+import { type FileCapture, type GitSnapshot, rowPath } from '@epicenter/folder';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	type CaptureEntry,
@@ -60,10 +60,7 @@ export type CaptureRow = {
 const describe = (cause: unknown) =>
 	cause instanceof Error ? cause.message : String(cause);
 
-const stemOf = (path: string) =>
-	path.slice(CAPTURES_TABLE.length + 1, -'.md'.length);
-
-const pathOf = (stem: string) => `${CAPTURES_TABLE}/${stem}.md`;
+const pathOf = (stem: string) => rowPath(CAPTURES_TABLE, stem);
 
 /** A readable, sortable stem: the capture's UTC time and a short random suffix. */
 function newStem(at: Date): string {
@@ -139,8 +136,8 @@ export function createCaptures(
 		}
 	}
 
-	async function read(path: string): Promise<Current> {
-		const found = await table.get(stemOf(path));
+	async function read(stem: string): Promise<Current> {
+		const found = await table.get(stem);
 		if (found.error !== null)
 			return { kind: 'unreadable', message: found.error.message };
 		if (found.data === undefined) return { kind: 'removed' };
@@ -148,18 +145,21 @@ export function createCaptures(
 	}
 
 	/**
-	 * Write exact source at a path that must be absent. Resolves the sha256
-	 * the folder admitted, which is the acknowledgment. The entry beside it is
-	 * that same file read back, and is absent when the path no longer held it:
-	 * what another program did afterwards is never taken for what was written.
+	 * Write exact source as the capture at a stem, whose file must be absent.
+	 * Resolves the sha256 the folder admitted, which is the acknowledgment. The
+	 * entry beside it is that same file read back, and is absent when the path
+	 * no longer held it: what another program did afterwards is never taken for
+	 * what was written.
 	 */
-	async function createExact(path: string, source: string) {
-		const written = await writing(() => folder.files.create(path, source));
+	async function createExact(stem: string, source: string) {
+		const written = await writing(() =>
+			folder.files.create(pathOf(stem), source),
+		);
 		if (written.error !== null)
 			return { data: null, error: written.error } as const;
 		const { sha256 } = written.data;
 		// The write is confirmed; a read that fails or throws cannot undo that.
-		const current = await read(path).catch(() => undefined);
+		const current = await read(stem).catch(() => undefined);
 		const entry =
 			current?.kind === 'present' && current.entry.sha256 === sha256
 				? current.entry
@@ -169,8 +169,8 @@ export function createCaptures(
 
 	const store: DraftStore = {
 		write: (baseline, source) => writing(() => table.replace(baseline, source)),
-		read,
-		recreate: createExact,
+		read: (baseline) => read(baseline.stem),
+		recreate: (baseline, source) => createExact(baseline.stem, source),
 	};
 
 	function noteSaved(entry: CaptureEntry) {
@@ -282,7 +282,7 @@ export function createCaptures(
 			const draft = drafts.get(entry.path);
 			const document = draft?.document ?? documentOf(entry.source);
 			return {
-				stem: stemOf(entry.path),
+				stem: entry.stem,
 				path: entry.path,
 				capturedAt: timeOf(entry),
 				preview: excerpt(document),
@@ -298,7 +298,7 @@ export function createCaptures(
 		for (const [path, draft] of drafts) {
 			if (listed.has(path)) continue;
 			list.push({
-				stem: stemOf(path),
+				stem: draft.baseline.stem,
 				path,
 				capturedAt: timeOf(draft.baseline),
 				preview: excerpt(draft.document),
@@ -444,7 +444,7 @@ export function createCaptures(
 						if (created.error === null) {
 							noteSaved(created.data);
 							if (newCapture === text) newCapture = '';
-							return { ok: true, stem: stemOf(created.data.path) };
+							return { ok: true, stem: created.data.stem };
 						}
 						const taken =
 							created.error.name === 'Exists' ||
@@ -493,7 +493,7 @@ export function createCaptures(
 				const source = draft.buffer;
 				try {
 					const stem = `${newStem(new Date())}-copy`;
-					const created = await createExact(pathOf(stem), source);
+					const created = await createExact(stem, source);
 					if (created.error !== null)
 						return { ok: false, message: created.error.message };
 					if (created.data.entry !== undefined) noteSaved(created.data.entry);
@@ -533,7 +533,7 @@ export function createCaptures(
 			{ ok: true; entry: CaptureEntry } | { ok: false; message: string }
 		> {
 			try {
-				const current = await read(pathOf(stem));
+				const current = await read(stem);
 				if (current.kind === 'present')
 					return { ok: true, entry: current.entry };
 				return {

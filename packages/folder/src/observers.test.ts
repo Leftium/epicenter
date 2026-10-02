@@ -31,10 +31,10 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
 import type { IndexedDbEnvironment } from './browser-store.js';
+import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, type Folder, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
-import { hashBytes } from './capture.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
@@ -115,7 +115,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 			await folder.tables.notes.create({ stem: 'a', fields: { title: 'A' } }),
 		);
 		expectOk(
-			await folder.tables.notes.update(row.stem!, { fields: { title: 'B' } }),
+			await folder.tables.notes.update(row.stem, { fields: { title: 'B' } }),
 		);
 		expectOk(
 			await folder.kv.update(expectOk(await folder.kv.get()), {

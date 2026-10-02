@@ -132,7 +132,7 @@ describe('row files', () => {
 			}),
 		);
 		expectOk(
-			await folder.tables.todos.update(row.stem!, { fields: { done: true } }),
+			await folder.tables.todos.update(row.stem, { fields: { done: true } }),
 		);
 		expect((await folder.tables.todos.rename(row, 'next')).error?.name).toBe(
 			'Conflict',
@@ -185,7 +185,7 @@ describe('row files', () => {
 		const bad = (await folder.tables.todos.list()).data!.entries.find(
 			(entry) => entry.path === 'todos/bad .md',
 		)!;
-		expect(bad.stem).toBeUndefined();
+		expect(bad.stem).toBe('bad ');
 		expect(bad.issues?.[0]?.kind).toBe('filename');
 		expect((await folder.tables.todos.get('bad ')).data?.path).toBe(
 			'todos/bad .md',

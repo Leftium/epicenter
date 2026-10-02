@@ -19,8 +19,8 @@
 	const latest = $derived(library.entries[0]);
 	/** The audio the newest row names. Nothing is guessed from another file's name. */
 	const audioPath = $derived(latest ? audioPathIn(latest.fields) : undefined);
-	const transcript = $derived(latest?.stem ? library.resultsFor(latest.stem)[0] : undefined);
-	const run = $derived(latest?.stem ? library.transcriptionRun(latest.stem) : undefined);
+	const transcript = $derived(latest ? library.resultsFor(latest.stem)[0] : undefined);
+	const run = $derived(latest ? library.transcriptionRun(latest.stem) : undefined);
 
 	async function openLatest() {
 		if (latest === undefined) return;

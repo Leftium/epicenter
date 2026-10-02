@@ -13,7 +13,8 @@
 	function titleOf(entry: TodoEntry) {
 		const title = entry.fields.title;
 		if (typeof title === 'string' && title.trim() !== '') return title;
-		return entry.stem ?? entry.path;
+		// An empty stem (`todos/.md`) is a real address but not a readable label.
+		return entry.stem === '' ? entry.path : entry.stem;
 	}
 
 	async function add(event: SubmitEvent) {
@@ -79,7 +80,7 @@
 						<Badge variant="destructive" class="shrink-0">Needs repair</Badge>
 					{/if}
 				</button>
-				<span class="shrink-0 font-mono text-xs text-muted-foreground max-sm:hidden">{entry.stem ?? entry.path}</span>
+				<span class="shrink-0 font-mono text-xs text-muted-foreground max-sm:hidden">{entry.stem === '' ? entry.path : entry.stem}</span>
 			</li>
 		{:else}
 			<li class="px-3 py-8 text-center text-sm text-muted-foreground">

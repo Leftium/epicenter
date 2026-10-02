@@ -20,15 +20,14 @@
  */
 import {
 	type Entry,
-	type TextCapture,
 	type FileTable,
 	type FolderFiles,
 	patchSource,
 	type SourceChange,
+	type TextCapture,
 } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
-	RECORDINGS,
 	type RecordingFields,
 	type TransformationFields,
 } from './definition.js';
@@ -56,9 +55,12 @@ type DraftStore<T extends SavedText> = {
 		baseline: T,
 		source: string,
 	): Promise<Result<T, { readonly name: string; readonly message: string }>>;
-	/** Undefined means absent; an unreadable saved file remains a failure. */
+	/**
+	 * The saved file the baseline names, now: a row by its stem, a raw file by
+	 * its path. Undefined means absent; an unreadable saved file remains a failure.
+	 */
 	read(
-		path: string,
+		baseline: T,
 	): Promise<Result<T | undefined, { readonly message: string }>>;
 	/** Save text as a new file beside the conflict; returns the path it wrote. */
 	keepCopy(path: string, source: string): Promise<Result<string, string>>;
@@ -119,7 +121,7 @@ function createDraft<T extends SavedText>(
 				result.error.name === 'Conflict' ||
 				result.error.name === 'Unconfirmed'
 			) {
-				const current = await store.read(observed.path);
+				const current = await store.read(observed);
 				if (current.error === null && current.data?.source === captured) {
 					baseline = current.data;
 					saveState = { kind: 'saved' };
@@ -323,8 +325,7 @@ export function createRowEditor<TFields>(
 	return createDraft<Entry<TFields>>(
 		{
 			write: (baseline, source) => table.replace(baseline, source),
-			read: (path) =>
-				table.get(path.slice(table.name.length + 1, -'.md'.length)),
+			read: (baseline) => table.get(baseline.stem),
 			keepCopy: copyKeeper(files),
 		},
 		entry,
@@ -354,8 +355,8 @@ export function createTextFileEditor(
 					sha256: written.data.sha256,
 				});
 			},
-			async read(path) {
-				const read = await readTextFile(files, path);
+			async read(baseline) {
+				const read = await readTextFile(files, baseline.path);
 				if (read.error)
 					return read.error.name === 'NotFound' ? Ok(undefined) : read;
 				if (read.data.kind === 'text') return Ok(read.data.file);
@@ -389,8 +390,4 @@ export function patchRow(
 	}
 	editor.input(patched.data);
 	return true;
-}
-
-export function stemOf(path: string): string {
-	return path.slice(RECORDINGS.length + 1, -'.md'.length);
 }

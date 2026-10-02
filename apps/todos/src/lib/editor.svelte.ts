@@ -16,12 +16,12 @@
  */
 import {
 	type Entry,
-	type TextCapture,
 	type FileCapture,
 	type FileTable,
 	type FolderFiles,
 	patchSource,
 	type SourceChange,
+	type TextCapture,
 } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
@@ -55,9 +55,10 @@ type DraftStore<T extends SavedText> = {
 	/**
 	 * The saved file now. Only absence is `undefined`; a file that could not be
 	 * read, or is no longer editable text, is an error and never reads as removed.
+	 * The baseline names the file: a row by its stem, a raw file by its path.
 	 */
 	read(
-		path: string,
+		baseline: T,
 	): Promise<Result<T | undefined, { readonly message: string }>>;
 };
 
@@ -112,7 +113,7 @@ function createDraft<T extends SavedText>(
 				saveState = { kind: 'failed', message: result.error.message };
 				return;
 			}
-			const current = await store.read(observed.path);
+			const current = await store.read(observed);
 			// Without the saved file there is nothing to review or replace. The
 			// baseline stays, so a retry repeats this save and this read.
 			saveState = current.error
@@ -288,7 +289,7 @@ export function createTodoEditor(
 	return createDraft<TodoEntry>(
 		{
 			write: (baseline, source) => table.replace(baseline, source),
-			read: (path) => table.get(stemOf(path)),
+			read: (baseline) => table.get(baseline.stem),
 		},
 		entry,
 		onSaved,
@@ -312,8 +313,8 @@ export function createTextFileEditor(
 				if (replaced.error) return Err(replaced.error);
 				return Ok({ ...replaced.data, source });
 			},
-			async read(path) {
-				const read = await readTextFile(files, path);
+			async read(baseline) {
+				const read = await readTextFile(files, baseline.path);
 				if (read.error)
 					return read.error.name === 'NotFound' ? Ok(undefined) : read;
 				if (read.data.kind === 'text') return Ok(read.data.file);
@@ -345,8 +346,4 @@ export function patchTodo(
 	}
 	editor.input(patched.data);
 	return true;
-}
-
-export function stemOf(path: string): string {
-	return path.slice('todos/'.length, -'.md'.length);
 }

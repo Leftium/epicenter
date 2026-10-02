@@ -49,6 +49,7 @@ export type EntryIssue =
 	  };
 
 export type ValidEntry<TFields> = TextCapture & {
+	/** The filename without `.md`. `path` is `rowPath(table.name, stem)`. */
 	readonly stem: string;
 	readonly fields: Readonly<TFields>;
 	readonly body: string;
@@ -56,7 +57,12 @@ export type ValidEntry<TFields> = TextCapture & {
 };
 
 export type InvalidEntry<TFields> = TextCapture & {
-	readonly stem: string | undefined;
+	/**
+	 * The literal filename without `.md`, even when it breaks the naming rules
+	 * or is empty (`<table>/.md`). A `filename` issue reports the violation;
+	 * the stem still addresses the row through `get` and `update`.
+	 */
+	readonly stem: string;
 	/** Only declared fields that validated independently. */
 	readonly fields: Readonly<Partial<TFields>>;
 	readonly body: string | undefined;
@@ -270,18 +276,16 @@ export function createTable<TFields>(
 					});
 			}
 		}
-		const base = { path, sha256, source };
+		const base = { path, sha256, source, stem };
 		if (issues.length === 0 && reading.body !== undefined)
 			return Object.freeze({
 				...base,
-				stem,
 				fields: Object.freeze(fields) as TFields,
 				body: reading.body,
 				issues: undefined,
 			});
 		return Object.freeze({
 			...base,
-			stem: stemIssue === undefined ? stem : undefined,
 			fields: Object.freeze(fields) as Partial<TFields>,
 			body: reading.body,
 			issues: Object.freeze(issues) as unknown as readonly [

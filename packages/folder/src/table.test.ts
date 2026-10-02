@@ -5,6 +5,8 @@
  * Updates read once and publish once, preserve unrelated current source, own
  * caller inputs before awaiting, and never retry or recreate missing rows.
  * Replacements save exact text and return submitted entries without readback.
+ * Every readable entry carries its literal stem, so `path` and `stem` convert
+ * both ways even for names that creation and rename refuse.
  */
 import { afterEach, expect, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
@@ -17,6 +19,7 @@ import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { compileFolderDefinition } from './definition.js';
 import { FileError } from './errors.js';
+import { rowPath, rowStemOf } from './paths.js';
 import { createTable } from './table.js';
 
 const definition = defineFolder({
@@ -235,6 +238,77 @@ test('existing odd filenames remain editable and supplied field values remain va
 	expect(
 		expectErr(await s.table.update('nested/a', { body: 'draft' })).name,
 	).toBe('InvalidStem');
+});
+
+test('every readable row carries its literal stem as its address, and only create and rename apply the naming rules', async () => {
+	const s = await setup();
+	const source = '---\ntitle: External\ndone: false\ntags: []\n---\n';
+	const bytes = encoder.encode(source);
+	const sha256 = await hashBytes(bytes);
+	// `123` conforms; the others break a naming rule, and the last is empty.
+	const stems = ['123', 'bad ', '.x', 'a: b', ''];
+	for (const stem of stems)
+		expectOk(
+			await s.base.apply([
+				{ kind: 'create', path: rowPath('todos', stem), bytes, sha256 },
+			]),
+		);
+
+	const listed = expectOk(await s.table.list()).entries;
+	expect(listed.map((entry) => entry.stem).sort()).toEqual(
+		[...stems, 'a'].sort(),
+	);
+	for (const entry of listed) {
+		expect(entry.path).toBe(rowPath(s.table.name, entry.stem));
+		expect(rowStemOf(s.table.name, entry.path)).toBe(entry.stem);
+		expect(entry.issues?.map((issue) => issue.kind)).toEqual(
+			entry.stem === 'a' || entry.stem === '123' ? undefined : ['filename'],
+		);
+		// The stem an entry carries reads and updates that same file.
+		expect(expectOk(await s.table.get(entry.stem))).toEqual(entry);
+		const updated = expectOk(
+			await s.table.update(entry.stem, { fields: { title: entry.stem } }),
+		);
+		expect(updated.path).toBe(entry.path);
+		expect(updated.stem).toBe(entry.stem);
+		expect(updated.fields.title).toBe(entry.stem);
+		expect(updated.issues).toEqual(entry.issues);
+	}
+
+	const valid = expectOk(await s.table.get('a'))!;
+	for (const stem of ['bad ', '.x', 'a: b', '']) {
+		const fields = { title: 'New', done: false, tags: [] };
+		expect(expectErr(await s.table.create({ stem, fields })).name).toBe(
+			'InvalidStem',
+		);
+		expect(expectErr(await s.table.rename(valid, stem)).name).toBe(
+			'InvalidStem',
+		);
+	}
+
+	// A row leaves an invalid or empty name by an ordinary rename.
+	const empty = expectOk(await s.table.get(''))!;
+	const renamed = expectOk(await s.table.rename(empty, 'named'));
+	expect(renamed).toMatchObject({
+		path: 'todos/named.md',
+		stem: 'named',
+		issues: undefined,
+	});
+	expect(expectOk(await s.table.get(''))).toBeUndefined();
+});
+
+test('a path is a row only directly inside its table with the exact lowercase extension', () => {
+	expect(rowStemOf('todos', 'todos/a.b.md')).toBe('a.b');
+	expect(rowStemOf('todos', 'todos/.md')).toBe('');
+	for (const path of [
+		'todos/a.MD',
+		'todos/a.txt',
+		'todos/a/b.md',
+		'todos.md',
+		'other/a.md',
+		'todos2/a.md',
+	])
+		expect(rowStemOf('todos', path)).toBeUndefined();
 });
 
 test('malformed table captures cannot recreate a removed row', async () => {

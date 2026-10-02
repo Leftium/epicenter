@@ -13,7 +13,8 @@ import type { Deletion } from './library.svelte.js';
 export function recordingTitle(entry: RecordingEntry): string {
 	const title = entry.fields.title;
 	if (typeof title === 'string' && title.trim() !== '') return title;
-	return entry.stem ?? entry.path;
+	// An empty ID (`recordings/.md`) is a real address but not a readable label.
+	return entry.stem === '' ? entry.path : entry.stem;
 }
 
 const count = (n: number, one: string, many: string) =>

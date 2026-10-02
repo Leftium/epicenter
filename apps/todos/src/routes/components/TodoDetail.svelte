@@ -7,7 +7,7 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { patchTodo, stemOf, type TodoEditor, type TodoEntry } from '$lib/editor.svelte.js';
+	import { patchTodo, type TodoEditor, type TodoEntry } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete } from './file-actions.js';
@@ -109,7 +109,7 @@
 
 	<FileNameBar
 		prefix="todos/"
-		name={stemOf(editor.path)}
+		name={editor.baseline.stem}
 		suffix=".md"
 		onRename={(stem) => todos.rename(editor.path, `${stem}.md`)}
 		onDelete={() => void confirmDelete(todos, editor.path)}

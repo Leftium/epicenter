@@ -6,7 +6,7 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format } from 'date-fns';
-	import type { NoteEntry } from '$lib/data.js';
+	import { folderIdOf, type NoteEntry } from '$lib/data.js';
 	import { getDateLabel } from '$lib/date-label.js';
 	import { displayTitle, previewText } from '$lib/note-source.js';
 	import type { Notes } from '$lib/notes.svelte.js';
@@ -175,7 +175,7 @@
 									{#each notes.folders as folder (folder.path)}
 										<ContextMenu.Item
 											onSelect={() =>
-												void report('move the note', notes.patchNote(note.path, { folderId: folder.stem ?? null }))}
+												void report('move the note', notes.patchNote(note.path, { folderId: folderIdOf(folder) }))}
 										>
 											{folder.fields.name ?? folder.stem}
 										</ContextMenu.Item>

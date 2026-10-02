@@ -13,6 +13,9 @@
  * - A renamed open text file keeps its editor at the new path
  * - A raw file renamed into a todo row reopens as a todo, still selected
  * - Whichever editor is open on a row settles before its table rename or delete
+ * - A row whose filename breaks the naming rules, or is empty, is addressed
+ *   by its literal stem: it toggles, rereads its conflict, keeps its draft,
+ *   and renames only to a valid name
  * - Typing that arrives during a rename or delete is kept, never forgotten
  * - A rename owns both paths until its editor is at the destination: saves
  *   wait for it, refreshes and opens leave its paths alone, and overlapping
@@ -46,7 +49,6 @@ import type { TodosFolder } from './platform/types.js';
 import type { Todos } from './todos.svelte.js';
 
 const { createTodos } = await import('./todos.svelte.ts');
-const { stemOf } = await import('./editor.svelte.ts');
 
 const opened: Todos[] = [];
 let count = 0;
@@ -419,6 +421,71 @@ test('toggle reports an open draft conflict instead of claiming success', async 
 	expect(editor.saveState.kind).toBe('conflict');
 	expect(editor.buffer).not.toContain('theirs');
 });
+
+for (const [stem, repaired] of [
+	['bad ', 'good'],
+	['', 'named'],
+] as const)
+	test(`a row at the literal stem ${JSON.stringify(stem)} toggles, rereads its conflict, keeps its draft, and renames only to a valid name`, async () => {
+		const todos = await open(withoutHints);
+		const path = `todos/${stem}.md`;
+		expectOk(await todos.folder.files.create(path, ROW));
+		await todos.refresh();
+		const listed = todos.entries.find((entry) => entry.path === path)!;
+		expect(listed.stem).toBe(stem);
+		expect(listed.issues?.map((issue) => issue.kind)).toEqual(['filename']);
+
+		// With no editor open, the toggle is a table update at that stem.
+		expect(await todos.toggle(listed)).toBeUndefined();
+		const toggled = ROW.replace('done: false', 'done: true');
+		expect(await text(todos, path)).toBe(toggled);
+
+		await todos.open(path);
+		const editor = todoEditor(todos);
+		const mine = `${toggled}mine\n`;
+		const theirs = `${toggled}theirs\n`;
+		editor.input(mine);
+		expectOk(await todos.folder.files.overwrite(path, theirs));
+		await editor.save();
+		// The conflict shows the other writer's row, read at the same stem.
+		expect(editor.saveState).toMatchObject({
+			kind: 'conflict',
+			current: { path, stem, source: theirs },
+		});
+		expect(editor.buffer).toBe(mine);
+		expect(await text(todos, path)).toBe(theirs);
+
+		await editor.keepMine();
+		expect(editor.saveState).toEqual({ kind: 'saved' });
+		expect(await text(todos, path)).toBe(mine);
+
+		// A rename validates the name it creates, not the one it leaves.
+		expect(await todos.rename(path, 'a:b.md')).toContain('some filesystems');
+		expect(await text(todos, path)).toBe(mine);
+		expect(await todos.rename(path, `${repaired}.md`)).toBeUndefined();
+		expect(await text(todos, path)).toBeUndefined();
+		expect(await text(todos, `todos/${repaired}.md`)).toBe(mine);
+		expect(todoEditor(todos)).toBe(editor);
+		expect(editor.baseline.stem).toBe(repaired);
+		expect(editor.baseline.issues).toBeUndefined();
+
+		// After the rename, a refused save rereads the row where it is now.
+		const renamedPath = `todos/${repaired}.md`;
+		const later = `${mine}theirs after the rename\n`;
+		const typed = `${mine}mine after the rename\n`;
+		expectOk(await todos.folder.files.overwrite(renamedPath, later));
+		editor.input(typed);
+		await editor.save();
+		expect(editor.saveState).toMatchObject({
+			kind: 'conflict',
+			current: { path: renamedPath, stem: repaired, source: later },
+		});
+		expect(todoEditor(todos)).toBe(editor);
+		expect(editor.buffer).toBe(typed);
+		expect(await text(todos, renamedPath)).toBe(later);
+		// Nothing was written back at the name the row left.
+		expect(await text(todos, path)).toBeUndefined();
+	});
 
 test('a raw delete removes only the version that was confirmed', async () => {
 	const todos = await open();
@@ -1114,9 +1181,8 @@ test('a hint never replaces a dirty draft, and its next save reports the other w
 		const mine = `${editor.buffer}mine\n`;
 		editor.input(mine);
 
-		const theirs = expectOk(await other.tables.todos.get(stemOf(path)));
 		expectOk(
-			await other.tables.todos.update(theirs!.stem!, {
+			await other.tables.todos.update(editor.baseline.stem, {
 				fields: { done: true },
 			}),
 		);

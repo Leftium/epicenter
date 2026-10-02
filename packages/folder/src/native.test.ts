@@ -21,6 +21,7 @@ import {
 	field,
 	openFolder,
 } from './bun.js';
+import { hashBytes } from './capture.js';
 import { createHistory } from './git/history.js';
 import { createNativeGitBackend } from './git/native-backend.js';
 import {
@@ -31,7 +32,6 @@ import {
 	scratch,
 } from './git-http.test-support.js';
 import { createNativeFileBoundary } from './native-store.js';
-import { hashBytes } from './capture.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const openNativeFolder = async <const TDefinition extends DataDefinition>(
@@ -376,7 +376,7 @@ describe('browser and native exchange through a real bare repository', () => {
 		const nativeEntry = (await native.tables.todos.get('first')).data!;
 		expect(nativeEntry.fields.title).toBe('First');
 
-		await native.tables.todos.update(nativeEntry.stem!, {
+		await native.tables.todos.update(nativeEntry.stem, {
 			fields: { done: true },
 		});
 		await settled(native);

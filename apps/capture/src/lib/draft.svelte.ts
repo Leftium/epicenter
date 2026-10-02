@@ -77,10 +77,10 @@ type Admitted = {
 export type DraftStore = {
 	/** One conditional write of exact source against a captured file. */
 	write(baseline: CaptureEntry, source: string): Promise<Result<CaptureEntry>>;
-	/** The saved file now. */
-	read(path: string): Promise<Current>;
-	/** Write the source at a path that must be absent. */
-	recreate(path: string, source: string): Promise<Result<Admitted>>;
+	/** The saved file the baseline names, now. */
+	read(baseline: CaptureEntry): Promise<Current>;
+	/** Write the source at the baseline's path, which must be absent. */
+	recreate(baseline: CaptureEntry, source: string): Promise<Result<Admitted>>;
 };
 
 /** Typing batches for this long before a save. */
@@ -170,7 +170,7 @@ export function createDraft(
 
 	async function reread() {
 		try {
-			accept(await store.read(baseline.path));
+			accept(await store.read(baseline));
 		} catch (cause) {
 			accept({ kind: 'unreadable', message: describe(cause) });
 		}
@@ -426,7 +426,7 @@ export function createDraft(
 				await save();
 				return;
 			}
-			await run((source) => store.recreate(baseline.path, source));
+			await run((source) => store.recreate(baseline, source));
 		},
 		async retry() {
 			if (saveState.kind === 'failed') saveState = { kind: 'saved' };

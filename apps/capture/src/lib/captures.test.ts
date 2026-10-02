@@ -17,6 +17,8 @@
  *   observation, and is never overwritten without a choice
  * - A copy lets go of the draft only when the copy holds all of it: input
  *   typed while the copy was being written keeps the draft
+ * - A capture whose filename breaks the naming rules, or is empty, is opened,
+ *   reread, written back, and deleted at its literal stem
  * - Deleting removes exactly the reviewed file, and refuses one that changed
  * - An explicit commit failure leaves saved files and drafts unchanged
  */
@@ -338,6 +340,54 @@ test('removed and unreadable files are told apart, and a copy keeps the draft', 
 	await captures.close();
 	await folder.close();
 });
+
+for (const stem of ['bad ', ''])
+	test(`a capture at the literal stem ${JSON.stringify(stem)} shows its filename problem, and its draft rereads, keeps its typing, and writes back at that file`, async () => {
+		const { captures, create, text, file, folder } = await setup();
+		// Valid source, saved by another program under a name creation refuses.
+		const source = await text(await create('Original'));
+		await writeFile(file(stem), source);
+		await captures.refresh();
+		const row = captures.rows.find(
+			(item) => item.path === `captures/${stem}.md`,
+		);
+		expect(row?.stem).toBe(stem);
+		expect(row?.problem).toContain('the stem');
+
+		const draft = captures.open(stem);
+		if (!draft) throw new Error('no draft');
+		draft.inputText('My typing');
+		const mine = draft.buffer;
+		const outside = source.replace('Original', 'Edited outside');
+		await writeFile(file(stem), outside);
+		// No listing ran: the refused save rereads this file by its stem.
+		await draft.save();
+		const changed = draft.saveState;
+		expect(
+			changed.kind === 'conflict' &&
+				changed.current.kind === 'present' &&
+				changed.current.entry,
+		).toMatchObject({ stem, source: outside });
+		expect(draft.buffer).toBe(mine);
+		expect(await text(stem)).toBe(outside);
+
+		// Removed outside, the draft is written back at the same file.
+		await rm(file(stem));
+		await captures.refresh();
+		const gone = draft.saveState;
+		expect(gone.kind === 'conflict' && gone.current.kind).toBe('removed');
+		await draft.saveMine();
+		expect(draft.saveState.kind).toBe('saved');
+		expect(draft.baseline.stem).toBe(stem);
+		expect(await text(stem)).toBe(mine);
+
+		const reviewed = await captures.reviewDeletion(stem);
+		if (!reviewed.ok) throw new Error(reviewed.message);
+		expect(await captures.remove(reviewed.entry)).toEqual({ ok: true });
+		expect(await Bun.file(file(stem)).exists()).toBe(false);
+		await captures.close();
+		await folder.close();
+	});
 
 test('deleting removes the reviewed file and refuses one that changed since', async () => {
 	const { captures, create, text, file, folder } = await setup();

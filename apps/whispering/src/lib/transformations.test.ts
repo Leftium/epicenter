@@ -73,7 +73,7 @@ async function transcribed(library: Library, root: string) {
 	await library.stopRecording();
 	const recording = library.entries[0]!;
 	await library.transcribe(recording);
-	const transcript = library.resultsFor(recording.stem!)[0]!;
+	const transcript = library.resultsFor(recording.stem)[0]!;
 	return {
 		recording,
 		transcript,
@@ -266,7 +266,7 @@ test('applying a transformation writes a new result row and leaves the transcrip
 		},
 	]);
 	expect(library.transformationRuns).toHaveLength(0);
-	const outputs = library.outputsFor(transcript.stem!);
+	const outputs = library.outputsFor(transcript.stem);
 	expect(outputs).toHaveLength(1);
 	const output = outputs[0]!;
 	expect(output.issues).toBeUndefined();
@@ -281,7 +281,7 @@ test('applying a transformation writes a new result row and leaves the transcrip
 		prompt: CLEANUP.prompt,
 		input: 'um so a steady tone\n',
 	});
-	expect(library.outputsOf(profile.stem!)).toEqual(outputs);
+	expect(library.outputsOf(profile.stem)).toEqual(outputs);
 	// The original transcript is the same bytes, and still the only transcript.
 	expect(await readFile(join(root, transcript.path))).toEqual(transcriptBytes);
 	expect(await names(root, 'transcriptions')).toHaveLength(1);
@@ -313,7 +313,7 @@ test('what is sent is the saved transformation: unsaved edits are saved first', 
 	expect(await readFile(join(root, editor.path), 'utf8')).toContain(
 		'Edited just now.',
 	);
-	expect(library.outputsFor(transcript.stem!)[0]!.fields.prompt).toBe(
+	expect(library.outputsFor(transcript.stem)[0]!.fields.prompt).toBe(
 		'Edited just now.\n',
 	);
 });
@@ -363,7 +363,7 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 
 	expect(transformed).toHaveLength(1);
 	expect(transformed[0]!.input).toBe('A steady tone, corrected by hand.\n');
-	const output = library.outputsFor(transcript.stem!)[0]!;
+	const output = library.outputsFor(transcript.stem)[0]!;
 	expect(output.fields.input).toBe('A steady tone, corrected by hand.\n');
 	expect(output.body).toBe('Transformed: A steady tone, corrected by hand.\n');
 	// The transcript is exactly what the other program wrote, unknown field included.
@@ -613,7 +613,7 @@ test('a result outlives edits to its transformation and the transformation’s d
 	const { transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
 	await library.transform(transcript.path, editor.path);
-	const output = library.outputsFor(transcript.stem!)[0]!;
+	const output = library.outputsFor(transcript.stem)[0]!;
 	const saved = await readFile(join(root, output.path), 'utf8');
 
 	patchRow(editor, { fields: { title: 'Renamed' } });
@@ -630,7 +630,7 @@ test('a result outlives edits to its transformation and the transformation’s d
 	expect(library.selectedTransformation).toBeUndefined();
 	expect(await names(root, 'transformations')).toEqual([]);
 	expect(await readFile(join(root, output.path), 'utf8')).toBe(saved);
-	const kept = library.outputsFor(transcript.stem!)[0]!;
+	const kept = library.outputsFor(transcript.stem)[0]!;
 	expect(kept.fields.transformationTitle).toBe('Clean up');
 	expect(kept.fields.prompt).toBe(CLEANUP.prompt);
 });
@@ -681,7 +681,7 @@ test('a refused request ends the run as failed, keeps the transcript, and retrie
 		kind: 'failed',
 		message: 'The endpoint answered 429: slow down',
 	});
-	expect(library.outputsFor(transcript.stem!)).toHaveLength(0);
+	expect(library.outputsFor(transcript.stem)).toHaveLength(0);
 	expect(await names(root, RUNS)).toEqual([]);
 	expect(await readFile(join(root, transcript.path))).toEqual(transcriptBytes);
 	// Nothing was received, so nothing is held and nothing blocks closing.
@@ -692,7 +692,7 @@ test('a refused request ends the run as failed, keeps the transcript, and retrie
 	expect(transformed).toHaveLength(2);
 	expect(transformed[1]).toEqual(transformed[0]!);
 	expect(library.transformationRuns).toHaveLength(0);
-	const output = library.outputsFor(transcript.stem!)[0]!;
+	const output = library.outputsFor(transcript.stem)[0]!;
 	expect(output.stem).toBe(failed.id);
 	expect(output.fields.createdAt).toBe(failed.fields.createdAt);
 	expect(output.body).toBe('Second try: um so a steady tone\n');
@@ -720,7 +720,7 @@ test('a transport that throws is a failed run that can be retried, never one lef
 	await library.retryTransformation(failed.id);
 
 	expect(library.transformationRuns).toHaveLength(0);
-	expect(library.outputsFor(transcript.stem!)[0]!.body).toBe(
+	expect(library.outputsFor(transcript.stem)[0]!.body).toBe(
 		'after the host came back\n',
 	);
 });
@@ -792,7 +792,7 @@ test('a result that cannot be saved keeps its text and id; saving again does not
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(filesLineOf(library).tone).toBe('good');
 	expect(await names(root, RUNS)).toEqual([`${held.id}.md`]);
-	const output = library.outputsFor(transcript.stem!)[0]!;
+	const output = library.outputsFor(transcript.stem)[0]!;
 	expect(output.stem).toBe(held.id);
 	expect(output.fields.createdAt).toBe(held.fields.createdAt);
 	expect(output.body).toBe('Transformed: um so a steady tone\n');
@@ -818,7 +818,7 @@ test('a save that landed but was reported failed is recognized, not written twic
 	expect(await readFile(join(root, RUNS, `${held.id}.md`), 'utf8')).toBe(
 		landed,
 	);
-	expect(library.outputsFor(transcript.stem!)).toHaveLength(1);
+	expect(library.outputsFor(transcript.stem)).toHaveLength(1);
 });
 
 test('another file at the result’s path is never overwritten', async () => {

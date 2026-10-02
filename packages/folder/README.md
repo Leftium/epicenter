@@ -22,7 +22,7 @@ const folder = opened.data;
 const stop = folder.onFilesChanged(() => refresh());   // subscribe, then read
 const listed = await folder.tables.todos.list();       // { entries, unreadable }
 const created = await folder.tables.todos.create({ fields: { title: 'Milk', done: false } });
-await folder.tables.todos.update(created.data!.stem!, { fields: { done: true } });
+await folder.tables.todos.update(created.data!.stem, { fields: { done: true } });
 await folder.close();
 ```
 
@@ -97,7 +97,7 @@ is not the desktop adapter, and it does not watch the directory.
 
 | Member | Contract |
 | --- | --- |
-| `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `sha256`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a captured entry. They refuse if the file changed. Each changes exactly one Markdown file. |
+| `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, literal `stem`, exact `source`, `sha256`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a captured entry. They refuse if the file changed. Each changes exactly one Markdown file. |
 | `kv` | Root `kv.json`. `get()` reads a snapshot; `update(snapshot, values)` merges declared values, preserving unknown fields; `replace(snapshot, source)` saves the complete text. Both writes check the captured version, or create exclusively when the snapshot represents absence. |
 | `files` | Ordinary files at literal paths. See below. |
 | `batch(collect)` | Several mutations in one application with one history request. See below. |
@@ -167,9 +167,18 @@ frontmatter cannot be interpreted stays a readable entry with `issues`.
 `patchSource` and `readSource` are exported for editors that keep their own
 buffer.
 
+Every entry carries `stem`: its filename without the exact lowercase `.md`,
+taken literally. `entry.path === rowPath(table.name, entry.stem)`, and
+`rowStemOf(table.name, path)` is the inverse for code that holds only a path;
+it returns `undefined` for a path that is not a row of that table. `create`
+and `rename` apply the naming rules (`stemProblem`) to the name they make.
+`get` and `update` do not: a row another program saved as `todos/bad .md` or
+`todos/.md` has the stem `'bad '` or `''`, reports a `filename` issue, and is
+read and edited at that stem. An empty stem is an address, so compare a stem
+with `undefined` or `''` explicitly rather than by truthiness.
+
 `get` refuses a stem containing a path separator, and entry operations refuse
-a nested path such as `todos/a/b.md`. A row whose external filename violates
-the stem rules stays listable and editable.
+a nested path such as `todos/a/b.md`.
 
 ### Batches
 

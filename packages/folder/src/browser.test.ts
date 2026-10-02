@@ -339,7 +339,7 @@ describe('browser folder tables', () => {
 		expect(entry.issues?.[0]?.message).toContain('Unresolved alias');
 
 		// A structured edit, as the editor's title field makes, is refused safely.
-		const edited = await folder.tables.todos.update(entry.stem!, {
+		const edited = await folder.tables.todos.update(entry.stem, {
 			fields: { title: 'Fixed' },
 		});
 		expect(edited.error?.name).toBe('UnsupportedSource');

@@ -89,7 +89,7 @@ async function setup(initial = A) {
 				? { kind: 'removed' }
 				: { kind: 'present', entry: await entryFor(disk) };
 		},
-		async recreate(_path, source) {
+		async recreate(_baseline, source) {
 			await hold?.opened;
 			if (disk !== undefined)
 				return { data: null, error: { name: 'Conflict', message: 'exists' } };

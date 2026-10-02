@@ -30,7 +30,9 @@
 
 	function titleOf(entry: TransformationEntry) {
 		const title = entry.fields.title;
-		return typeof title === 'string' && title.trim() !== '' ? title : (entry.stem ?? entry.path);
+		if (typeof title === 'string' && title.trim() !== '') return title;
+		// An empty ID (`transformations/.md`) is a real address but not a readable label.
+		return entry.stem === '' ? entry.path : entry.stem;
 	}
 </script>
 
@@ -78,7 +80,7 @@
 	<ul class="min-h-0 flex-1 overflow-y-auto" aria-label="Saved transformations" data-testid="transformation-list">
 		{#each library.transformations as entry (entry.path)}
 			{@const selected = library.selectedTransformationPath === entry.path}
-			{@const results = entry.stem ? library.outputsOf(entry.stem).length : 0}
+			{@const results = library.outputsOf(entry.stem).length}
 			<li class="border-b text-sm {selected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}">
 				<button
 					type="button"

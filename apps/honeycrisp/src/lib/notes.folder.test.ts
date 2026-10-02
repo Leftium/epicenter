@@ -40,7 +40,12 @@ import type { InstantString } from '@epicenter/definition';
 import { type FileCapture, FileError } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
-import { honeycrispDefinition, type NoteEntry } from './data.js';
+import {
+	folderIdOf,
+	honeycrispDefinition,
+	type NoteEntry,
+	noteIdOf,
+} from './data.js';
 import type { FileSession } from './file-session.svelte.js';
 import { applyRichBody } from './note-source.js';
 import { setUpFolder } from './platform/first-open.js';
@@ -337,7 +342,7 @@ describe('notes are files', () => {
 		await state.refresh();
 		expect(await state.createFolder('Work')).toBeUndefined();
 		const [made] = state.folders;
-		if (made?.stem === undefined) throw new Error('The folder is not listed');
+		if (made === undefined) throw new Error('The folder is not listed');
 		expect(await readFile(join(root, made.path), 'utf8')).toBe(
 			'---\nname: Work\nicon: null\n---\n',
 		);
@@ -355,7 +360,7 @@ describe('notes are files', () => {
 		await state.refresh();
 		await state.createFolder('Work');
 		const [made] = state.folders;
-		if (made?.stem === undefined) throw new Error('The folder is not listed');
+		if (made === undefined) throw new Error('The folder is not listed');
 		await state.patchNote(note.path, { folderId: made.stem });
 		expect(await state.deleteFolder(made)).toBeUndefined();
 		expect(state.folders).toEqual([]);
@@ -364,6 +369,51 @@ describe('notes are files', () => {
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
 			'folderId: null',
 		);
+	});
+
+	test('a folder whose filename needs repair keeps its literal stem, is not offered as a reference, and is not deleted', async () => {
+		const { state, root, seedNote } = await product();
+		const note = await seedNote();
+		const source = '---\nname: Odd\nicon: null\n---\n';
+		for (const name of ['bad .md', '.md'])
+			await writeFile(join(root, 'folders', name), source);
+		await state.refresh();
+		const bad = state.folders.find((entry) => entry.path === 'folders/bad .md');
+		const empty = state.folders.find((entry) => entry.path === 'folders/.md');
+		if (bad === undefined || empty === undefined)
+			throw new Error('The folders are not listed');
+		expect([bad.stem, empty.stem]).toEqual(['bad ', '']);
+		for (const folder of [bad, empty])
+			expect(folder.issues?.map((issue) => issue.kind)).toEqual(['filename']);
+		// The literal stem is not handed out as a reference for either.
+		expect([folderIdOf(bad), folderIdOf(empty)]).toEqual([null, null]);
+		expect(await state.createFolder('Work')).toBeUndefined();
+		const work = state.folders.find((entry) => entry.fields.name === 'Work');
+		if (work === undefined) throw new Error('The folder is not listed');
+		expect(folderIdOf(work)).toBe(work.stem);
+
+		// A note another program pointed at the odd folder is left pointing there.
+		const notePath = join(root, note.path);
+		const naming = (await readFile(notePath, 'utf8')).replace(
+			'folderId: null',
+			'folderId: "bad "',
+		);
+		await writeFile(notePath, naming);
+		await state.refresh();
+		for (const folder of [bad, empty])
+			expect(await state.deleteFolder(folder)).toBe(
+				'This folder file has an unusable name.',
+			);
+		expect(await readFile(join(root, bad.path), 'utf8')).toBe(source);
+		expect(await readFile(join(root, empty.path), 'utf8')).toBe(source);
+		expect(await readFile(notePath, 'utf8')).toBe(naming);
+	});
+
+	test('a note id is the stem of a row directly in notes, and is never empty', () => {
+		expect(noteIdOf('notes/a.b.md')).toBe('a.b');
+		expect(noteIdOf('notes/bad .md')).toBe('bad ');
+		for (const path of ['notes/.md', 'notes/a/b.md', 'notes/a.txt', 'a.md'])
+			expect(noteIdOf(path)).toBeUndefined();
 	});
 });
 

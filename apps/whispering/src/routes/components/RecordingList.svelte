@@ -26,9 +26,9 @@
 	function matches(entry: RecordingEntry) {
 		const texts = [
 			recordingTitle(entry),
-			entry.stem ?? '',
+			entry.stem,
 			entry.body ?? '',
-			...(entry.stem ? library.resultsFor(entry.stem).map((result) => result.body ?? '') : []),
+			...library.resultsFor(entry.stem).map((result) => result.body ?? ''),
 		];
 		return texts.some((text) => text.toLowerCase().includes(needle));
 	}
@@ -78,7 +78,7 @@
 		{#each visible as entry (entry.path)}
 			{@const selected = library.selectedPath === entry.path}
 			{@const history = historyOf(entry)}
-			{@const count = entry.stem ? library.resultsFor(entry.stem).length : 0}
+			{@const count = library.resultsFor(entry.stem).length}
 			<li class="border-b text-sm {selected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}">
 				<button
 					type="button"

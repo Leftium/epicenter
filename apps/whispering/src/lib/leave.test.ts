@@ -301,7 +301,7 @@ test('a transcript whose file was not saved blocks the close', async () => {
 	expect(answers).toEqual(['asking']);
 	expect(guard.held.join(' ')).toContain('1 transcript arrived');
 	await guard.stay();
-	const run = library.transcriptionRun(library.entries[0]!.stem!);
+	const run = library.transcriptionRun(library.entries[0]!.stem);
 	expect(run?.kind).toBe('unsaved');
 	if (run?.kind === 'unsaved') expect(run.text).toBe('a steady tone');
 });
@@ -318,7 +318,7 @@ test('a transformation result whose file was not saved blocks the close and is k
 	).toBeUndefined();
 	const profile = library.selectedTransformation!;
 	patchRow(profile.editor, { fields: { model: 'chat-model' } });
-	const transcript = library.resultsFor(library.entries[0]!.stem!)[0]!;
+	const transcript = library.resultsFor(library.entries[0]!.stem)[0]!;
 	expect(
 		await library.transform(transcript.path, profile.editor.path),
 	).toBeUndefined();

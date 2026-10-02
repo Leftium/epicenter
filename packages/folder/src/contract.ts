@@ -82,7 +82,7 @@ export {
 	readSource,
 	type SourceChange,
 } from './markdown.js';
-export { pathProblem, rowPath, stemProblem } from './paths.js';
+export { pathProblem, rowPath, rowStemOf, stemProblem } from './paths.js';
 export type {
 	CreateInput,
 	Entry,

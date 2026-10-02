@@ -26,6 +26,7 @@ import {
 	type FileListing,
 	type GitSnapshot,
 	readSource,
+	rowPath,
 } from '@epicenter/folder';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -808,7 +809,7 @@ export function createNotes(host: NotesHost) {
 			if (pending.some((item) => item.label === label))
 				return 'This folder was already asked for and not confirmed. Send it again from the status menu, or wait for it to appear.';
 			const created = await createRow(
-				`${FOLDERS}/${newId()}.md`,
+				rowPath(FOLDERS, newId()),
 				{ name, icon: null },
 				label,
 			);
@@ -826,8 +827,11 @@ export function createNotes(host: NotesHost) {
 		async deleteFolder(entry: FolderEntry): Promise<string | undefined> {
 			const blocked = held(entry.path);
 			if (blocked !== undefined) return blocked;
+			// Notes name a folder by its file stem. One that breaks the naming
+			// rules is repaired from Files before its notes are moved by it.
+			if (entry.issues?.some((issue) => issue.kind === 'filename'))
+				return 'This folder file has an unusable name.';
 			const id = entry.stem;
-			if (id === undefined) return 'This folder file has an unusable name.';
 			for (const note of notes.filter((item) => item.fields.folderId === id)) {
 				const problem = await patchFields(note.path, { folderId: null });
 				if (problem !== undefined)

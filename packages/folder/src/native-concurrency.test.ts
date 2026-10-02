@@ -22,9 +22,9 @@ import { afterAll, afterEach, beforeAll, expect, mock, test } from 'bun:test';
 import * as realFs from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { hashBytes } from './capture.js';
 import { defineFolder, defineTable, field } from './contract.js';
 import { GIT_ENV, scratch } from './git-http.test-support.js';
-import { hashBytes } from './capture.js';
 
 const real = { ...realFs };
 const { readdir, readFile, realpath, rm, writeFile } = real;
@@ -194,10 +194,10 @@ test('racing current-row updates return a conflict without retrying', async () =
 		holdFirstRename();
 
 		const results = await Promise.all([
-			opened.tables.todos.update(captured.stem!, {
+			opened.tables.todos.update(captured.stem, {
 				fields: { title: 'Renamed' },
 			}),
-			opened.tables.todos.update(captured.stem!, { fields: { done: true } }),
+			opened.tables.todos.update(captured.stem, { fields: { done: true } }),
 		]);
 
 		const firstWon = results[0].error === null;

@@ -92,7 +92,12 @@ export function rowPath(table: string, stem: string): string {
 	return `${table}/${stem}${ROW_EXTENSION}`;
 }
 
-/** The row stem of a table file, or `undefined` when the file is not a row. */
+/**
+ * The inverse of `rowPath`: the literal stem of a file directly in the table's
+ * directory that ends in exactly `.md`, or `undefined` when the path is not a
+ * row. The stem is not checked against `stemProblem` and may be empty
+ * (`<table>/.md`).
+ */
 export function rowStemOf(table: string, path: string): string | undefined {
 	const prefix = `${table}/`;
 	if (!path.startsWith(prefix)) return undefined;

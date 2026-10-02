@@ -9,15 +9,17 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import type { FolderEntry } from '$lib/data.js';
+	import { type FolderEntry, folderIdOf } from '$lib/data.js';
 	import type { Notes } from '$lib/notes.svelte.js';
 
 	let { notes }: { notes: Notes } = $props();
 
-	const nameOf = (folder: FolderEntry) =>
-		typeof folder.fields.name === 'string' && folder.fields.name !== ''
-			? folder.fields.name
-			: (folder.stem ?? folder.path);
+	const nameOf = (folder: FolderEntry) => {
+		const { name } = folder.fields;
+		if (typeof name === 'string' && name !== '') return name;
+		// An empty stem (`folders/.md`) is not a readable label.
+		return folder.stem === '' ? folder.path : folder.stem;
+	};
 
 	const folders = $derived(
 		[...notes.folders].sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
@@ -139,7 +141,7 @@
 					class={row}
 					class:bg-accent={notes.view.folderId === folder.stem && !notes.view.deleted}
 					aria-current={notes.view.folderId === folder.stem && !notes.view.deleted ? 'true' : undefined}
-					onclick={() => notes.showFolder(folder.stem ?? null)}
+					onclick={() => notes.showFolder(folderIdOf(folder))}
 				>
 					{#if typeof folder.fields.icon === 'string' && folder.fields.icon !== ''}
 						<span class="text-base leading-none">{folder.fields.icon}</span>
@@ -148,7 +150,7 @@
 					{/if}
 					<span class="truncate">{nameOf(folder)}</span>
 					{#if folder.issues}<span class="text-xs text-destructive">needs repair</span>{/if}
-					<span class="ml-auto text-xs text-muted-foreground">{counts.folders.get(folder.stem ?? '') ?? 0}</span>
+					<span class="ml-auto text-xs text-muted-foreground">{counts.folders.get(folder.stem) ?? 0}</span>
 				</button>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>

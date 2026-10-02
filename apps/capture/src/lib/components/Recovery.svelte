@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { CAPTURES_TABLE } from '@epicenter/capture';
 	import {
 		type ImportReport,
 		type LegacyBundle,
 		readLegacyBundle,
 		serializeLegacyBundle,
 	} from '@epicenter/capture/legacy';
+	import { rowStemOf } from '@epicenter/folder';
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import type { Captures } from '$lib/captures.svelte.js';
@@ -107,7 +109,6 @@
 		}
 	}
 
-	const stemOf = (path: string) => path.slice(path.indexOf('/') + 1, -'.md'.length);
 	const count = (status: string) =>
 		report?.documents.filter((document) => document.status === status).length ?? 0;
 </script>
@@ -194,7 +195,14 @@
 		{#if report.documents.some((document) => document.status === 'created')}
 			<ul class="mt-3 space-y-1">
 				{#each report.documents.filter((document) => document.status === 'created').slice(0, 20) as document (document.identity)}
-					<li><Button variant="link" size="sm" class="h-auto p-0" onclick={() => onOpen(stemOf(document.path))}>{document.identity}</Button></li>
+					{@const stem = rowStemOf(CAPTURES_TABLE, document.path)}
+					<li>
+						{#if stem !== undefined}
+							<Button variant="link" size="sm" class="h-auto p-0" onclick={() => onOpen(stem)}>{document.identity}</Button>
+						{:else}
+							{document.identity}
+						{/if}
+					</li>
 				{/each}
 			</ul>
 		{/if}

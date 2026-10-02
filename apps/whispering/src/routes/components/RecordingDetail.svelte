@@ -13,7 +13,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { audioPathIn } from '$lib/definition.js';
-	import { patchRow, type RecordingEditor, type RecordingEntry, stemOf } from '$lib/editor.svelte.js';
+	import { patchRow, type RecordingEditor, type RecordingEntry } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
@@ -40,7 +40,7 @@
 	const parsed = $derived(readSource(editor.buffer));
 	const title = $derived(typeof parsed.values?.title === 'string' ? parsed.values.title : '');
 	const fieldsEditable = $derived(parsed.values !== undefined && parsed.body !== undefined);
-	const id = $derived(stemOf(editor.path));
+	const id = $derived(editor.baseline.stem);
 	const results = $derived(library.resultsFor(id));
 	const run = $derived(library.transcriptionRun(id));
 	/** The audio the saved row names. Nothing is guessed from another file's name. */
@@ -191,7 +191,7 @@
 						</div>
 					{/if}
 					{#each results as result (result.path)}
-						{@const outputs = result.stem ? library.outputsFor(result.stem) : []}
+						{@const outputs = library.outputsFor(result.stem)}
 						{@const transforming = library.transformationRuns.some(
 							(item) => item.fields.transcriptionId === result.stem && item.state.kind === 'running',
 						)}

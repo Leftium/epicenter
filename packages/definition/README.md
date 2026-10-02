@@ -145,15 +145,13 @@ JSON editor; it is not replaced by the member's. A validation keyword beside
 the `anyOf`, such as a root `type`, also decides what the field admits, so that
 union is not read through.
 
-`fieldEditorOf(schema, nullable)` resolves an editor for a schema outside a
-compiled definition. The caller says whether the field admits `null`, because
-only a validator knows.
+Read the resolved editor from a compiled field. The resolver is internal.
 
 ### What survives JSON
 
 Helpers add portable keywords and editor hints, without introducing a
 refinement callback or codec. A keyword-based schema read back through
-`JSON.parse(JSON.stringify(schema))` compiles to the same checks, errors, and
+`JSON.parse(JSON.stringify(schema))` compiles to the same checks, issues, and
 editor. Constraints supplied as native callbacks remain local.
 
 A native `Type.Refine` works wherever a schema is declared, including over a
@@ -171,7 +169,7 @@ compiled as written.
 A schema can be structural about what it admits: `Type.Any()` admits a
 `Date`, `undefined`, `NaN`, a class instance, and a cycle. None of those
 survives being stored. So a compiled field asks whether a value is JSON before
-its schema runs, for every field, in `check`, `errors`, `conformance`, and
+its schema runs, for every field, in `check`, `issues`, `conformance`, and
 `inputIssues`. A value that is not JSON fails with `must be a JSON value`, and
 the schema's validator is not called. That order matters for a recursive
 schema (`Type.Cyclic`), which follows a cyclic value until the stack overflows.
@@ -204,8 +202,9 @@ select's `enum` and both the check and the options include it.
 `compileData` takes ownership. For each field it takes one snapshot with
 TypeBox's own clone, freezes the snapshot's plain objects and arrays, and
 compiles that. `defineStore` and `defineFolder` compile at the declaration.
-Each compiled field is a `DataField`: `check` and `errors`, the frozen `schema`
-they were compiled from, and the `editor` resolved from that same object.
+A field's name is its key in the compiled field map. Each field is a `DataField`:
+`check` and `issues`, the frozen `schema` they were compiled from, and the
+`editor` resolved from that same object.
 Editing the declared schema afterwards changes none of them.
 
 The snapshot holds own string-keyed data properties, hidden ones included,
@@ -247,7 +246,8 @@ caller supplies for a write: an undeclared key, a value that does not conform,
 and, for a complete row, a declared field that is absent.
 
 An issue is `{ field, path?, message }`. `field.check(value)` decides whether a
-value conforms, and the same read produces its diagnostics, so the two agree
+value conforms, and `field.issues(value)` reports its diagnostics. Table methods
+use those same issues, so the two agree
 for nullable values, a reference's nonempty value, and a value that is not
 JSON. `path` is a JSON pointer inside the field's value, such as `/1` for the
 second item of a list. It is present only when the validator named a location

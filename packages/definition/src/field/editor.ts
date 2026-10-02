@@ -292,6 +292,9 @@ function hinted(
  *
  * `nullable` is whether the field admits `null`, which only a validator can
  * say. The caller passes it: `compileData` asks its compiled field.
+ *
+ * Exported for `compileData` and this package's tests. Neither entry point
+ * exports it: a compiled field's `editor` is the resolved one.
  */
 export function fieldEditorOf(
 	schema: TSchema & object,

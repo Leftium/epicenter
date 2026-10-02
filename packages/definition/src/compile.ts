@@ -6,18 +6,18 @@
  * JSON, and a per-field conformance read. It also resolves each field's
  * editor, which no check reads.
  *
- * Reading is all it does. `check` and `errors` never change the value they are
+ * Reading is all it does. `check` and `issues` never change the value they are
  * given, so a `default` annotation in a schema is inert: nothing fills a
  * missing value, and a missing declared field is still an issue.
  */
 
-import type { TSchema } from 'typebox';
 import { Compile } from 'typebox/compile';
 import { Memory } from 'typebox/system';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 import { DATA_ADDRESS_CEILINGS, isDataId, isTableName } from './addresses.js';
 import {
+	type ConformanceIssue,
 	type DataDefinition,
 	type DataField,
 	KV_ROOT,
@@ -25,16 +25,8 @@ import {
 	type TableBody,
 	type TableDeclaration,
 } from './declaration.js';
-import { fieldEditorOf } from './field/index.js';
+import { fieldEditorOf } from './field/editor.js';
 import { isJsonSafe, type JsonObject, type JsonValue } from './json.js';
-
-/** A field diagnostic. Messages and diagnostic counts are not machine contracts. */
-export type ConformanceIssue = {
-	field: string;
-	/** JSON pointer within the field value, when the validator identifies it. */
-	path?: string;
-	message: string;
-};
 
 export const DataDefinitionParseError = defineErrors({
 	Malformed: ({ reason }: { reason: string }) => ({
@@ -220,7 +212,6 @@ function compileTable(
 			reason: `table '${tableName}' does not declare a flat field map`,
 		});
 	const compiled = new Map<string, DataField>();
-	const valueIssues = new Map<string, (value: unknown) => ConformanceIssue[]>();
 	for (const [fieldName, declared] of Object.entries(declaration)) {
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
@@ -232,14 +223,7 @@ function compileTable(
 			});
 		}
 		const prepared = trySync({
-			try: () => {
-				const schema = snapshot(declared);
-				const lens = jsonLens(schema);
-				// Inside the try: a refinement that throws on `null` fails here,
-				// named, instead of at the first stored `null`.
-				const editor = fieldEditorOf(schema, lens.nullable);
-				return { schema, lens, editor };
-			},
+			try: () => compileField(fieldName, declared),
 			catch: (cause) =>
 				DataDefinitionParseError.UnrecognizedField({
 					table: tableName,
@@ -248,36 +232,7 @@ function compileTable(
 				}),
 		});
 		if (prepared.error) return prepared;
-		const { schema, lens, editor } = prepared.data;
-		// The subject names the field and not its editor: a hint never changes
-		// what conformance reports.
-		const subject = `${fieldName} does not conform`;
-		valueIssues.set(fieldName, (value) => {
-			if (lens.check(value)) return [];
-			const errors = lens.errors(value);
-			if (errors.length === 0) return [{ field: fieldName, message: subject }];
-			return errors.map((error) => {
-				const path = verifiedPointer(value, error.instancePath);
-				return path === undefined
-					? { field: fieldName, message: `${subject}: ${error.message}` }
-					: {
-							field: fieldName,
-							path,
-							message: `${subject} at ${path}: ${error.message}`,
-						};
-			});
-		});
-		compiled.set(
-			fieldName,
-			Object.freeze({
-				name: fieldName,
-				editor,
-				schema,
-				check: lens.check,
-				errors: (value: unknown) =>
-					lens.errors(value).map((error) => error.message),
-			}),
-		);
+		compiled.set(fieldName, prepared.data);
 	}
 	return Ok(
 		Object.freeze({
@@ -286,7 +241,7 @@ function compileTable(
 			conformance(payload): Conformance {
 				const conforming: JsonObject = {};
 				const issues: ConformanceIssue[] = [];
-				for (const [fieldName, issuesOf] of valueIssues) {
+				for (const [fieldName, field] of compiled) {
 					if (!Object.hasOwn(payload, fieldName)) {
 						issues.push({
 							field: fieldName,
@@ -294,7 +249,7 @@ function compileTable(
 						});
 						continue;
 					}
-					const found = issuesOf(payload[fieldName]);
+					const found = field.issues(payload[fieldName]);
 					if (found.length === 0)
 						conforming[fieldName] = payload[fieldName] as JsonValue;
 					else issues.push(...found);
@@ -304,13 +259,13 @@ function compileTable(
 			inputIssues(values, { complete }) {
 				const issues: ConformanceIssue[] = [];
 				for (const [key, value] of Object.entries(values)) {
-					const issuesOf = valueIssues.get(key);
-					if (issuesOf === undefined)
+					const field = compiled.get(key);
+					if (field === undefined)
 						issues.push({ field: key, message: `${key} is not declared` });
-					else issues.push(...issuesOf(value));
+					else issues.push(...field.issues(value));
 				}
 				if (complete)
-					for (const fieldName of valueIssues.keys())
+					for (const fieldName of compiled.keys())
 						if (!Object.hasOwn(values, fieldName))
 							issues.push({
 								field: fieldName,
@@ -322,20 +277,11 @@ function compileTable(
 	);
 }
 
-type FieldError = { readonly instancePath: string; readonly message: string };
-
-const NOT_JSON: readonly FieldError[] = Object.freeze([
-	Object.freeze({ instancePath: '', message: 'must be a JSON value' }),
-]);
-
-const VALIDATION_FAILED: readonly FieldError[] = Object.freeze([
-	Object.freeze({ instancePath: '', message: 'schema validation threw' }),
-]);
-
 /**
- * The one read of a value against a field: is it JSON, and then TypeBox's
- * compiled validator. `check`, `errors`, `conformance`, and `inputIssues` all
- * go through it.
+ * One field's read of a value: is it JSON, and then TypeBox's compiled
+ * validator. `check` and `issues` are that read, and a table's `conformance`
+ * and `inputIssues` call `issues`. Throws when TypeBox cannot compile the
+ * schema.
  *
  * A schema can be structural about what it admits (`Type.Any()` admits a
  * `Date`, `undefined`, and a cycle), and none of those survives being stored.
@@ -347,29 +293,59 @@ const VALIDATION_FAILED: readonly FieldError[] = Object.freeze([
  * `isJsonSafe` sets no depth or width limit. A storage that has a budget
  * applies it itself. A native validator can throw on a refinement or deep
  * recursion: that field then fails its check and reports the exception, so
- * sibling fields and the source remain readable. The eager null probe still
- * throws at the declaration boundary.
+ * sibling fields and the source remain readable.
+ *
+ * `Check` decides validity. `Errors` only describes a failure, so a value
+ * `Check` refuses is an issue even when `Errors` reports nothing.
+ *
+ * The declaration probes nullability before a storage opens it. That probe can
+ * invoke callbacks with `null`, and `issues` runs `Check` and then
+ * `Errors`, so a callback may be called more than once for one read. When and
+ * how often is not promised: a callback is a deterministic predicate over the
+ * content it is given.
+ *
+ * `name` is the declaration key, held for the diagnostics. The compiled field
+ * does not carry it: the `fields` map key is the name.
  */
-function jsonLens(schema: TSchema): {
-	nullable: boolean;
-	check: (value: unknown) => boolean;
-	errors: (value: unknown) => readonly FieldError[];
-} {
+function compileField(name: string, declared: object): DataField {
+	const schema = snapshot(declared);
 	const validator = Compile(schema);
-	const nullable = validator.Check(null);
-	return {
-		nullable,
-		check: (value) =>
-			trySync({
-				try: () => isJsonSafe(value) && validator.Check(value),
-				catch: () => Ok(false),
-			}).data,
-		errors: (value) =>
-			trySync({
-				try: () => (isJsonSafe(value) ? validator.Errors(value) : NOT_JSON),
-				catch: () => Ok(VALIDATION_FAILED),
-			}).data,
-	};
+	const check = (value: unknown): boolean =>
+		trySync({
+			try: () => isJsonSafe(value) && validator.Check(value),
+			catch: () => Ok(false),
+		}).data;
+	// The subject names the field and not its editor: a hint never changes
+	// what conformance reports.
+	const subject = `${name} does not conform`;
+	const issues = (value: unknown): readonly ConformanceIssue[] =>
+		trySync({
+			try: (): ConformanceIssue[] => {
+				if (!isJsonSafe(value))
+					return [{ field: name, message: `${subject}: must be a JSON value` }];
+				if (validator.Check(value)) return [];
+				const errors = validator.Errors(value);
+				if (errors.length === 0) return [{ field: name, message: subject }];
+				return errors.map((error) => {
+					const path = verifiedPointer(value, error.instancePath);
+					return path === undefined
+						? { field: name, message: `${subject}: ${error.message}` }
+						: {
+								field: name,
+								path,
+								message: `${subject} at ${path}: ${error.message}`,
+							};
+				});
+			},
+			catch: () =>
+				Ok([{ field: name, message: `${subject}: schema validation threw` }]),
+		}).data;
+	return Object.freeze({
+		editor: fieldEditorOf(schema, validator.Check(null)),
+		schema,
+		check,
+		issues,
+	});
 }
 
 /**

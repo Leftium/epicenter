@@ -91,28 +91,44 @@ export type DataDefinition<TBody extends TableBody = TableBody> = {
 	};
 };
 
+/** A field diagnostic. Messages and diagnostic counts are not machine contracts. */
+export type ConformanceIssue = {
+	field: string;
+	/** JSON pointer within the field value, when the validator identifies it. */
+	path?: string;
+	message: string;
+};
+
 /**
  * One declared field, prepared: the lens a storage reads a cell through.
  *
- * `schema` is the read-only native schema `check` and `errors` were compiled
- * from. `editor` is resolved from that same object and decides nothing about
- * a value: it says which widget edits the field, whether `null` is a value,
- * and a select's options or a reference's target.
+ * The field's name is its key in `ParsedTable.fields`; the field does not
+ * repeat it.
+ *
+ * `schema` is the native schema `check` and `issues` were compiled from, a
+ * frozen copy of the declared one. A node with a `~guard` is the exception:
+ * TypeBox keeps that whole node by reference, so it is the author's object
+ * and is not frozen. `editor` is resolved from `schema` and decides nothing
+ * about a value: it says which widget edits the field, whether `null` is a
+ * value, and a select's options or a reference's target.
+ *
  */
 export type DataField = {
-	readonly name: string;
 	readonly editor: FieldEditor;
 	readonly schema: TSchema & object;
 	/**
 	 * Whether a value is JSON and TypeBox's compiled check admits it. This is
-	 * the only decision about a value.
+	 * the only decision about a value. A throwing validation fails that value.
 	 */
 	readonly check: (value: unknown) => boolean;
 	/**
-	 * Why a value failed `check`: that it is not JSON, TypeBox's own errors,
-	 * or that schema validation threw. Empty when it passes.
+	 * Why a value fails `check`: that it is not JSON, TypeBox's own errors with
+	 * the paths that can be walked in the value, or that schema validation
+	 * threw. Empty when `check` passes; a value TypeBox refuses without an
+	 * error still gets one issue. A table's `conformance` and `inputIssues`
+	 * report these same issues.
 	 */
-	readonly errors: (value: unknown) => readonly string[];
+	readonly issues: (value: unknown) => readonly ConformanceIssue[];
 };
 
 /** What one bucket's fields read as, once the schemas are resolved. */

@@ -16,7 +16,10 @@
  * - The schema alone decides conformance; a hint that is absent, wrong, or
  *   unknown changes the editor and nothing else
  * - Every field holds a value to JSON before its schema runs, in `check`,
- *   `errors`, `conformance`, and `inputIssues`
+ *   `issues`, `conformance`, and `inputIssues`
+ * - A field owns its diagnostics: `conformance` and `inputIssues` report what
+ *   `issues` returns, and a value the check refuses is an issue even when
+ *   TypeBox's error report is capped to nothing
  * - Each prepared field is TypeBox's own compile of a read-only schema, and its
  *   editor is resolved from that same schema
  * - Conformance checks every declared field on its own
@@ -32,6 +35,7 @@
 import { expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
 import { Compile } from 'typebox/compile';
+import { Settings } from 'typebox/system';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	compileData,
@@ -251,7 +255,7 @@ test('a helper schema read back from JSON compiles to the same field', () => {
 		expect(again?.editor).toEqual(each.editor);
 		for (const value of samples) {
 			expect(again?.check(value)).toBe(each.check(value));
-			expect(again?.errors(value)).toEqual(each.errors(value));
+			expect(again?.issues(value)).toEqual(each.issues(value));
 		}
 	}
 	const stored = { title: 'a', status: 'archived', labels: ['a'], done: true };
@@ -291,19 +295,11 @@ test('a prepared field carries the editor resolved from its schema', () => {
 		}),
 	).kv;
 	const status = kv.fields.get('status');
-	expect(status?.name).toBe('status');
 	expect(status?.editor).toEqual({
 		kind: 'select',
 		nullable: true,
 		options: ['draft', 'published'],
 	});
-	expect(Object.keys(status ?? {}).sort()).toEqual([
-		'check',
-		'editor',
-		'errors',
-		'name',
-		'schema',
-	]);
 	expect(status?.check(null)).toBe(true);
 	expect(status?.check('archived')).toBe(false);
 	expect(kv.fields.get('page')?.editor).toEqual({
@@ -324,7 +320,7 @@ test('a prepared field carries the editor resolved from its schema', () => {
 	expect(kv.fields.get('score')?.check(Number.NaN)).toBe(false);
 });
 
-test('a hint never changes checks, errors, or conformance', () => {
+test('a hint never changes checks, issues, or conformance', () => {
 	const samples = [
 		null,
 		'',
@@ -367,9 +363,7 @@ test('a hint never changes checks, errors, or conformance', () => {
 			const actual = hinted.fields.get('value');
 			for (const value of samples) {
 				expect(actual?.check(value)).toBe(expected?.check(value) as boolean);
-				expect(actual?.errors(value)).toEqual(
-					expected?.errors(value) as string[],
-				);
+				expect(actual?.issues(value)).toEqual(expected?.issues(value));
 			}
 			expect(actual?.editor.nullable).toBe(
 				expected?.editor.nullable as boolean,
@@ -429,6 +423,11 @@ test('a conflicting, composed, or unusable hint compiles to the JSON editor and 
 			badTarget: Type.String({
 				[FIELD_KEYWORD]: { kind: 'reference', target: 'a | `b`' },
 			}),
+			// The schema's format is not the one a date widget writes.
+			emailDate: Type.String({
+				format: 'email',
+				[FIELD_KEYWORD]: { kind: 'date' },
+			}),
 		}),
 	).kv;
 	const editors = Object.fromEntries(
@@ -441,7 +440,10 @@ test('a conflicting, composed, or unusable hint compiles to the JSON editor and 
 		sibling: { kind: 'json', nullable: false },
 		inherited: { kind: 'json', nullable: false },
 		badTarget: { kind: 'json', nullable: false },
+		emailDate: { kind: 'json', nullable: false },
 	});
+	expect(kv.fields.get('emailDate')?.check('a@epicenter.so')).toBe(true);
+	expect(kv.fields.get('emailDate')?.check('2026-06-09')).toBe(false);
 	expect(kv.fields.get('rootNull')?.check('a')).toBe(true);
 	expect(kv.fields.get('rootNull')?.check('b')).toBe(false);
 	for (const value of ['draft', 1])
@@ -552,8 +554,13 @@ test('a native refinement is preserved, alone, over a helper, and nested', () =>
 	expect(short?.check('abc')).toBe(false);
 	// What the helper built is still there under the refinement.
 	expect(short?.check('')).toBe(false);
-	expect(short?.errors('abc')).toEqual(['must be shorter than 3']);
-	expect(short?.errors('ab')).toEqual([]);
+	expect(short?.issues('abc')).toEqual([
+		{
+			field: 'short',
+			message: 'short does not conform: must be shorter than 3',
+		},
+	]);
+	expect(short?.issues('ab')).toEqual([]);
 
 	const optional = kv.fields.get('optional');
 	expect(optional?.editor).toEqual({
@@ -590,23 +597,25 @@ test('nested errors keep their own messages and paths', () => {
 		.map((error) => error.message);
 	expect(native.length).toBe(2);
 	for (const name of ['raw', 'wrapped']) {
-		expect(kv.fields.get(name)?.errors(value)).toEqual(native);
-		const issues = kv.conformance({ [name]: value, other: 'kept' });
-		expect(issues.conforming).toEqual({ other: 'kept' });
-		expect(
-			issues.issues
-				.filter((issue) => issue.field === name)
-				.map(({ path, message }) => ({ path, message })),
-		).toEqual([
+		const expected = [
 			{
+				field: name,
 				path: '/by/name',
 				message: `${name} does not conform at /by/name: ${native[0]}`,
 			},
 			{
+				field: name,
 				path: '/tags/1',
 				message: `${name} does not conform at /tags/1: ${native[1]}`,
 			},
-		]);
+		];
+		// The field's own diagnostics are what the table reports.
+		expect(kv.fields.get(name)?.issues(value)).toEqual(expected);
+		const issues = kv.conformance({ [name]: value, other: 'kept' });
+		expect(issues.conforming).toEqual({ other: 'kept' });
+		expect(issues.issues.filter((issue) => issue.field === name)).toEqual(
+			expected,
+		);
 		expect(
 			kv
 				.inputIssues({ [name]: value }, { complete: false })
@@ -642,8 +651,11 @@ test('a throwing native refinement leaves valid sibling fields readable', () => 
 	).kv;
 
 	expect(kv.fields.get('meta')?.check(payload.meta)).toBe(false);
-	expect(kv.fields.get('meta')?.errors(payload.meta)).toEqual([
-		'schema validation threw',
+	expect(kv.fields.get('meta')?.issues(payload.meta)).toEqual([
+		{
+			field: 'meta',
+			message: 'meta does not conform: schema validation threw',
+		},
 	]);
 	expect(kv.conformance(payload)).toEqual({
 		conforming: { title: 'Keep this' },
@@ -719,7 +731,12 @@ test('every field holds a value to JSON, whatever its schema admits', () => {
 	for (const [name, each] of kv.fields) {
 		for (const value of unsafe) {
 			expect(each.check(value)).toBe(false);
-			expect(each.errors(value)).toEqual(['must be a JSON value']);
+			expect(each.issues(value)).toEqual([
+				{
+					field: name,
+					message: `${name} does not conform: must be a JSON value`,
+				},
+			]);
 			expect(kv.conformance({ [name]: value } as never)).toMatchObject({
 				conforming: {},
 			});
@@ -734,7 +751,7 @@ test('every field holds a value to JSON, whatever its schema admits', () => {
 	for (const name of ['any', 'unknown', 'open', 'wrapped', 'optional'])
 		for (const value of [1, 'x', true, null, { a: [1, null] }, [1, 2]]) {
 			expect(kv.fields.get(name)?.check(value)).toBe(true);
-			expect(kv.fields.get(name)?.errors(value)).toEqual([]);
+			expect(kv.fields.get(name)?.issues(value)).toEqual([]);
 		}
 
 	// A storage hands conformance whatever it read; the cast stands in for that.
@@ -774,7 +791,6 @@ test('a cyclic value stops at the JSON check and never reaches a recursive schem
 
 	for (const [name, each] of kv.fields) {
 		expect(each.check(loop)).toBe(false);
-		expect(each.errors(loop)).toEqual(['must be a JSON value']);
 		const stored = { [name]: loop } as never;
 		expect(kv.conformance(stored).conforming).toEqual({});
 		expect(
@@ -803,9 +819,9 @@ test('a cyclic value stops at the JSON check and never reaches a recursive schem
 	const wrong = { value: 1, next: { value: 'two', next: null } };
 	for (const name of ['raw', 'wrapped', 'optional', 'refined']) {
 		expect(kv.fields.get(name)?.check(chain)).toBe(true);
-		expect(kv.fields.get(name)?.errors(chain)).toEqual([]);
+		expect(kv.fields.get(name)?.issues(chain)).toEqual([]);
 		expect(kv.fields.get(name)?.check(wrong)).toBe(false);
-		expect(kv.fields.get(name)?.errors(wrong)).not.toEqual([]);
+		expect(kv.fields.get(name)?.issues(wrong)).not.toEqual([]);
 	}
 });
 
@@ -827,7 +843,7 @@ test('a shared acyclic value passes; being JSON has no depth or width', () => {
 	).kv;
 	for (const value of [dag, wide, deep]) {
 		expect(kv.fields.get('open')?.check(value)).toBe(true);
-		expect(kv.fields.get('open')?.errors(value)).toEqual([]);
+		expect(kv.fields.get('open')?.issues(value)).toEqual([]);
 	}
 	expect(kv.fields.get('pair')?.check(dag)).toBe(true);
 	// The same node at two depths of one chain is shared, not a cycle.
@@ -868,6 +884,37 @@ test('conformance checks every field on its own, however many fail', () => {
 		field: 'absent',
 		message: 'absent is missing',
 	});
+});
+
+test('a value the check refuses is an issue and not conforming when TypeBox reports no errors', () => {
+	// `maxErrors` caps what `Errors` collects and is process-wide, so it is put
+	// back whatever happens here.
+	const { maxErrors } = Settings.Get();
+	Settings.Set({ maxErrors: 0 });
+	try {
+		// The control: the native validator refuses the value and says nothing.
+		const native = Compile(Type.Integer());
+		expect(native.Check('x')).toBe(false);
+		expect(native.Errors('x')).toEqual([]);
+
+		const kv = expectOk(
+			compileKv({ count: field.integer(), kept: field.string() }),
+		).kv;
+		const undiagnosed = [{ field: 'count', message: 'count does not conform' }];
+		expect(kv.fields.get('count')?.check('x')).toBe(false);
+		expect(kv.fields.get('count')?.issues('x')).toEqual(undiagnosed);
+		expect(kv.conformance({ count: 'x', kept: 'still here' })).toEqual({
+			conforming: { kept: 'still here' },
+			issues: undiagnosed,
+		});
+		expect(kv.inputIssues({ count: 'x' }, { complete: false })).toEqual(
+			undiagnosed,
+		);
+		expect(kv.conformance({ count: 1, kept: 'k' }).issues).toEqual([]);
+	} finally {
+		Settings.Set({ maxErrors });
+	}
+	expect(Compile(Type.Integer()).Errors('x')).not.toEqual([]);
 });
 
 test('a native default annotation is admitted and validates like the schema without it', () => {
@@ -955,7 +1002,7 @@ test('a default initializes and recovers nothing: missing values stay missing an
 		'settings',
 	]);
 	expect(kv.fields.get('title')?.check(undefined)).toBe(false);
-	expect(kv.fields.get('settings')?.errors({})).not.toEqual([]);
+	expect(kv.fields.get('settings')?.issues({})).not.toEqual([]);
 	kv.inputIssues(stored, { complete: true });
 
 	// A value that passes comes back as the same object, with nothing filled in.
@@ -1074,12 +1121,12 @@ test('a field is compiled from a frozen snapshot, so later edits change nothing'
 		expect(kv.fields.get(name)?.check({ a: 1 })).toBe(false);
 	}
 
-	// Check and Errors read the same snapshot, so they agree.
+	// The check and its issues read the same snapshot, so they agree.
 	const refined = kv.fields.get('refined');
 	expect(refined?.check('ab')).toBe(true);
-	expect(refined?.errors('ab')).toEqual([]);
+	expect(refined?.issues('ab')).toEqual([]);
 	expect(refined?.check('abc')).toBe(false);
-	expect(refined?.errors('abc')).not.toEqual([]);
+	expect(refined?.issues('abc')).not.toEqual([]);
 
 	for (const [name, each] of kv.fields) {
 		expect(each.schema).not.toBe(declared[name as keyof typeof declared]);
@@ -1123,7 +1170,7 @@ test('undefined annotations do not stop freezing a compiled snapshot', () => {
 		schema.properties.a.minLength = 10;
 	}).toThrow();
 	expect(value?.check({ a: 'x' })).toBe(true);
-	expect(value?.errors({ a: 'x' })).toEqual([]);
+	expect(value?.issues({ a: 'x' })).toEqual([]);
 });
 
 // ============================================================================

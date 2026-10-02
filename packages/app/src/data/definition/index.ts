@@ -8,7 +8,6 @@ export {
 	FIELD_KEYWORD,
 	type FieldEditor,
 	type FieldHint,
-	fieldEditorOf,
 	InstantString,
 	isDataId,
 	isRowId,

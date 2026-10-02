@@ -14,7 +14,6 @@ export {
 	FIELD_KEYWORD,
 	type FieldEditor,
 	type FieldHint,
-	fieldEditorOf,
 	type Kind,
 } from './editor.js';
 export { InstantString } from './instant-string.js';

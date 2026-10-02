@@ -9,13 +9,13 @@
 export * from './addresses.js';
 export {
 	type Conformance,
-	type ConformanceIssue,
 	compileData,
 	DataDefinitionParseError,
 	type ParsedDataDefinition,
 	type ParsedTable,
 } from './compile.js';
 export {
+	type ConformanceIssue,
 	type CreateRowOf,
 	type DataDefinition,
 	type DataField,
@@ -42,7 +42,6 @@ export {
 	FIELD_KEYWORD,
 	type FieldEditor,
 	type FieldHint,
-	fieldEditorOf,
 	InstantString,
 	jsonValue,
 	type Kind,

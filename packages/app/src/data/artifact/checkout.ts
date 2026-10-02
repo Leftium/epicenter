@@ -609,12 +609,11 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		a < b ? -1 : 1,
 	)) {
 		lines.push(`### ${name}/`, '', '| field | editor |', '| --- | --- |');
-		for (const field of [...table.fields.values()].sort((a, b) =>
-			a.name < b.name ? -1 : 1,
+		for (const [fieldName, { editor }] of [...table.fields].sort(([a], [b]) =>
+			a < b ? -1 : 1,
 		)) {
-			const { editor } = field;
 			lines.push(
-				`| \`${field.name}\` | ${editor.kind}${editor.nullable ? ' or null' : ''}${
+				`| \`${fieldName}\` | ${editor.kind}${editor.nullable ? ' or null' : ''}${
 					editor.kind === 'reference' ? ` -> \`${editor.target}\`` : ''
 				} |`,
 			);

@@ -18,7 +18,7 @@ Domain factories receive one structured dependency object:
 ```ts
 createFiles({ storage })
 createTable({ storage }, definition)
-createKv({ storage }, { definition })
+createKv({ storage }, definition)
 createTerminal({ storage, git }, options)
 ```
 

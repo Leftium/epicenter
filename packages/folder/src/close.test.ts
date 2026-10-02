@@ -197,9 +197,7 @@ test('closing releases storage before a begun save replies; its actual result st
 	const snapshots: boolean[] = [];
 	folder.git.subscribe((snapshot) => snapshots.push(snapshot.closed));
 
-	const saving = folder.kv.update(expectOk(await folder.kv.get()), {
-		theme: 'dark',
-	});
+	const saving = folder.kv.create({ theme: 'dark' });
 	await reached;
 	let closed = false;
 	const closing = folder.close().then(() => {
@@ -242,9 +240,7 @@ test("a save's commit attempt running when the folder closes finishes and stays 
 	const { folder, order, reached, release, commits, pushes } = await held();
 	const { promise: holding, resolve: letGo } = Promise.withResolvers<void>();
 	commits.hold = holding;
-	const saving = folder.kv.update(expectOk(await folder.kv.get()), {
-		theme: 'dark',
-	});
+	const saving = folder.kv.create({ theme: 'dark' });
 	await reached;
 	release();
 	expectOk(await saving);

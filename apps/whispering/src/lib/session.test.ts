@@ -235,7 +235,7 @@ test('a layout that went away before its opening failed never starts answering',
 /**
  * A workspace whose first read, or first settings write, is held open by the
  * test. The folder underneath is the real one, on a fresh directory, so
- * starting a session over it reads `kv.json` and then writes it.
+ * starting a session over it reads `kv.json` and then creates it.
  */
 async function starting(hold: 'read' | 'write') {
 	const test = await openTestWorkspace();
@@ -259,9 +259,9 @@ async function starting(hold: 'read' | 'write') {
 					if (hold === 'read') await held();
 					return folder.kv.get();
 				},
-				update: async (...args: Parameters<typeof folder.kv.update>) => {
+				create: async (...args: Parameters<typeof folder.kv.create>) => {
 					if (hold === 'write') await held();
-					return folder.kv.update(...args);
+					return folder.kv.create(...args);
 				},
 			},
 		},

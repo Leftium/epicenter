@@ -353,19 +353,19 @@ describe('browser folder tables', () => {
 		expect(repaired.data!.fields).toEqual({ title: 'Fixed', done: false });
 	});
 
-	test('kv.json is conditional and preserves unknown keys', async () => {
+	test('kv.json is created exclusively and updated inside its own source', async () => {
 		const folder = await open({ commitOnEdit: false });
-		const empty = (await folder.kv.get()).data!;
-		expect(empty.sha256).toBeUndefined();
-		await folder.files.create('kv.json', '{"other": 1}');
-		expect((await folder.kv.update(empty, { theme: 'dark' })).error?.name).toBe(
+		expect(expectOk(await folder.kv.get())).toBeUndefined();
+		expect(expectErr(await folder.kv.update({ theme: 'dark' })).name).toBe(
+			'NotFound',
+		);
+		await folder.files.create('kv.json', '{\n  "other": 1\n}\n');
+		expect(expectErr(await folder.kv.create({ theme: 'dark' })).name).toBe(
 			'Exists',
 		);
-		const current = (await folder.kv.get()).data!;
-		const updated = await folder.kv.update(current, { theme: 'dark' });
-		expect(updated.data!.source).toBe(
-			'{\n  "other": 1,\n  "theme": "dark"\n}\n',
-		);
+		const updated = expectOk(await folder.kv.update({ theme: 'dark' }));
+		expect(updated.source).toBe('{\n  "other": 1,\n  "theme": "dark"\n}\n');
+		expect(expectOk(await folder.kv.get())).toEqual(updated);
 	});
 });
 
@@ -449,17 +449,13 @@ describe('browser folder persistence and history', () => {
 
 	test('KV publication requests automatic history under the same policy', async () => {
 		const folder = await open();
-		const saved = expectOk(
-			await folder.kv.update(expectOk(await folder.kv.get()), {
-				theme: 'dark',
-			}),
-		);
+		expectOk(await folder.kv.create({ theme: 'dark' }));
 		await settled(folder);
 		expect(folder.git.snapshot.lastCommit).toMatchObject({
 			status: 'committed',
 			message: 'Add kv.json',
 		});
-		expectOk(await folder.kv.replace(saved, '{"theme":"light"}'));
+		expectOk(await folder.kv.update({ theme: 'light' }));
 		await settled(folder);
 		expect(folder.git.snapshot.lastCommit).toMatchObject({
 			status: 'committed',
@@ -490,7 +486,7 @@ describe('browser folder persistence and history', () => {
 			fields: { title: 'M', done: false },
 		});
 		expectOk(await folder.files.create('manual.txt', 'x'));
-		expectOk(await folder.kv.replace(expectOk(await folder.kv.get()), '{}'));
+		expectOk(await folder.kv.create({}));
 		await Bun.sleep(20);
 		expect(folder.git.snapshot.lastCommit).toBeUndefined();
 		const result = await folder.git.commitAndPush();

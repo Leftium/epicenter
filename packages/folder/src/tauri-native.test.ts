@@ -237,7 +237,7 @@ const { commands, FOLDER_PROTOCOL } = await import('./native/bindings.gen.js');
 
 const definition = defineFolder({
 	id: 'so.epicenter.taurinativetest',
-	kv: {},
+	kv: { theme: field.string() },
 	tables: {
 		todos: defineTable({
 			fields: { title: field.string(), done: field.boolean() },
@@ -399,6 +399,36 @@ const row = (stem: string) => ({
 const IMAGE = new Uint8Array([1, 2, 3]);
 
 describe.skipIf(!enabled)('tauri folder against the native owner', () => {
+	test('KV creation is exclusive and assignments preserve source through the native owner', async () => {
+		const { folder, other } = await setup({ manual: true });
+		expect(
+			await a(async () => expectOk(await folder.kv.get())),
+		).toBeUndefined();
+		expect(
+			await a(
+				async () => expectErr(await folder.kv.update({ theme: 'dark' })).name,
+			),
+		).toBe('NotFound');
+		const created = await a(async () =>
+			expectOk(await folder.kv.create({ theme: 'dark' })),
+		);
+		expect(
+			await b(
+				async () => expectErr(await other.kv.create({ theme: 'light' })).name,
+			),
+		).toBe('Exists');
+		const source =
+			'{"huge":9007199254740993,"nested":{"overflow":1e400},"theme":"dark"}';
+		await a(async () => expectOk(await folder.files.replace(created, source)));
+		const updated = await b(async () =>
+			expectOk(await other.kv.update({ theme: 'light' })),
+		);
+		expect(updated.source).toBe(source.replace('"dark"', '"light"'));
+		expect(await a(async () => expectOk(await folder.kv.get()))).toEqual(
+			updated,
+		);
+	});
+
 	test('a window attaches only to a scope registered for it, and learns the root', async () => {
 		bridge = await Bridge.start();
 		const { root } = bridge;

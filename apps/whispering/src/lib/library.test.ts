@@ -7,6 +7,9 @@
  * what it leaves on disk, not that the desktop app runs.
  *
  * Key behaviors:
+ * - A first launch creates `kv.json` only after reading that it is absent
+ * - A settings save assigns its values in the current file, creates the file
+ *   from those values when it is gone, and tries a changed file once more
  * - Record, stop, and save produce audio, a row that names it, and a commit
  * - Captured audio and its id survive a partial publication and a retry
  * - A row that names no audio says so: nothing is guessed from a file's name
@@ -74,7 +77,10 @@ type Options = {
 	transcribe?: Workspace['transcribe'];
 	root?: string;
 	beforeFileCreate?: () => Promise<void>;
+	/** Stand in front of the folder's settings methods; `real` is the folder's own. */
+	kv?: (real: Kv, externalChange: () => void) => Kv;
 };
+type Kv = Workspace['folder']['kv'];
 
 async function open({
 	failRowWrites = 0,
@@ -83,6 +89,7 @@ async function open({
 	transcribe,
 	beforeFileCreate,
 	root,
+	kv,
 }: Options = {}) {
 	const directory =
 		root ??
@@ -131,6 +138,10 @@ async function open({
 			...folder,
 			tables,
 			batch,
+			kv:
+				kv?.(folder.kv, () => {
+					for (const listener of changeListeners) listener();
+				}) ?? folder.kv,
 			files: {
 				...folder.files,
 				async create(path, content) {
@@ -212,6 +223,200 @@ test('the first launch writes kv.json with the transcription settings', async ()
 		transcriptionBaseUrl: 'http://127.0.0.1:18080/v1',
 		transcriptionModel: 'verification-model',
 	});
+});
+
+test('a launch whose kv.json read fails creates no settings file and says why', async () => {
+	let creates = 0;
+	const { library, root } = await open({
+		kv: (real) => ({
+			...real,
+			get: async () =>
+				FileError.Io({
+					path: 'kv.json',
+					operation: 'read',
+					cause: new Error('disk refused the read'),
+				}),
+			create: async (values) => {
+				creates += 1;
+				return real.create(values);
+			},
+		}),
+	});
+
+	expect(creates).toBe(0);
+	expect(await readdir(root)).not.toContain('kv.json');
+	expect(library.settingsProblem).toContain('disk refused the read');
+	// The settings a first launch would have written still show.
+	expect(library.settings.transcriptionModel).toBe('verification-model');
+});
+
+test('a launch whose first listing is superseded does not seed over settings it never saw', async () => {
+	const root = await realpath(
+		await mkdtemp(join(tmpdir(), 'whispering-library-')),
+	);
+	roots.push(root);
+	const existing = '{"transcriptionModel": "kept"}\n';
+	await writeFile(join(root, 'kv.json'), existing);
+	const held = Promise.withResolvers<void>();
+	let reads = 0;
+	let creates = 0;
+
+	const { library } = await open({
+		root,
+		kv: (real, externalChange) => ({
+			...real,
+			get: async () => {
+				reads += 1;
+				const read = reads;
+				// The first listing is overtaken by an outside change whose own
+				// read stays pending, so neither one records the settings.
+				if (read === 1) externalChange();
+				if (read === 2) await held.promise;
+				return real.get();
+			},
+			create: async (values) => {
+				creates += 1;
+				return real.create(values);
+			},
+		}),
+	});
+	held.resolve();
+
+	expect(reads).toBe(4);
+	expect(creates).toBe(0);
+	expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(existing);
+	expect(library.settingsProblem).toBeUndefined();
+	expect(library.settings.transcriptionModel).toBe('kept');
+});
+
+test('saving settings after kv.json was deleted creates it from the saved values alone', async () => {
+	const calls: string[] = [];
+	const { library, root } = await open({
+		kv: (real) => ({
+			get: () => {
+				calls.push('get');
+				return real.get();
+			},
+			create: (values) => {
+				calls.push('create');
+				return real.create(values);
+			},
+			update: (values) => {
+				calls.push('update');
+				return real.update(values);
+			},
+		}),
+	});
+	await rm(join(root, 'kv.json'));
+	await library.refresh();
+	calls.length = 0;
+
+	expect(
+		await library.saveSettings({ transcriptionModel: 'chosen' }),
+	).toBeUndefined();
+
+	// One attempt: no read before it, and the listing's read after it.
+	expect(calls).toEqual(['update', 'create', 'get']);
+	expect(JSON.parse(await readFile(join(root, 'kv.json'), 'utf8'))).toEqual({
+		transcriptionModel: 'chosen',
+	});
+	// The endpoint was not saved, so it still shows its initial value.
+	expect(library.settings).toEqual({
+		transcriptionBaseUrl: 'http://127.0.0.1:18080/v1',
+		transcriptionModel: 'chosen',
+	});
+	expect(library.settingsProblem).toBeUndefined();
+});
+
+test('a settings save that meets a changed file is tried once more, and twice is reported', async () => {
+	let conflicts = 0;
+	const calls: string[] = [];
+	const { library, root } = await open({
+		kv: (real) => ({
+			...real,
+			update: async (values) => {
+				calls.push('update');
+				if (conflicts === 0) return real.update(values);
+				conflicts -= 1;
+				return FileError.Conflict({
+					path: 'kv.json',
+					expectedSha256: 'a'.repeat(64),
+					actualSha256: 'b'.repeat(64),
+				});
+			},
+			create: async (values) => {
+				calls.push('create');
+				return real.create(values);
+			},
+		}),
+	});
+	const saved = () => readFile(join(root, 'kv.json'), 'utf8');
+
+	calls.length = 0;
+	conflicts = 1;
+	expect(
+		await library.saveSettings({ transcriptionModel: 'second-try' }),
+	).toBeUndefined();
+	expect(calls).toEqual(['update', 'update']);
+	expect(JSON.parse(await saved())).toEqual({
+		transcriptionBaseUrl: 'http://127.0.0.1:18080/v1',
+		transcriptionModel: 'second-try',
+	});
+	expect(library.settings.transcriptionModel).toBe('second-try');
+
+	calls.length = 0;
+	conflicts = 2;
+	const before = await saved();
+	expect(await library.saveSettings({ transcriptionModel: 'never' })).toContain(
+		'keeps changing',
+	);
+	expect(calls).toEqual(['update', 'update']);
+	expect(await saved()).toBe(before);
+	expect(library.settings.transcriptionModel).toBe('second-try');
+});
+
+test('a settings save reports a file that appeared first, or an unconfirmed write, without trying again', async () => {
+	const calls: string[] = [];
+	let racing = false;
+	let unconfirmed = false;
+	const theirs = '{"transcriptionModel": "theirs"}\n';
+	const { library, root } = await open({
+		kv: (real) => ({
+			...real,
+			update: async (values) => {
+				calls.push('update');
+				if (!unconfirmed) return real.update(values);
+				return FileError.Unconfirmed({
+					path: 'kv.json',
+					operation: 'replace',
+					cause: 'reply lost',
+				});
+			},
+			create: async (values) => {
+				calls.push('create');
+				// Another writer makes the file between the update's read and this create.
+				if (racing) await writeFile(join(root, 'kv.json'), theirs);
+				return real.create(values);
+			},
+		}),
+	});
+
+	await rm(join(root, 'kv.json'));
+	calls.length = 0;
+	racing = true;
+	expect(await library.saveSettings({ transcriptionModel: 'mine' })).toContain(
+		'already exists',
+	);
+	expect(calls).toEqual(['update', 'create']);
+	expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(theirs);
+
+	calls.length = 0;
+	unconfirmed = true;
+	expect(await library.saveSettings({ transcriptionModel: 'mine' })).toContain(
+		'may have completed',
+	);
+	expect(calls).toEqual(['update']);
+	expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(theirs);
 });
 
 test('record, stop, and save leave a row, real audio, and a commit', async () => {

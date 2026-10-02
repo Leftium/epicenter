@@ -316,10 +316,7 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 
 	return Object.freeze({
 		tables: Object.freeze(tables) as Folder<TDefinition>['tables'],
-		kv: createKv(
-			{ storage },
-			{ definition: compiled.kv },
-		) as Folder<TDefinition>['kv'],
+		kv: createKv({ storage }, compiled.kv) as Folder<TDefinition>['kv'],
 		files,
 		git,
 		async batch(collect) {

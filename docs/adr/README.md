@@ -729,3 +729,5 @@ When you add an ADR, add its row here.
 | [0474](0474-incoming-file-folder-sync-is-an-explicit-clean-fast-forward.md) | Incoming file-folder sync is an explicit clean fast-forward | Proposed (Todos implementation in progress) |
 | [0484](0484-conflict-presentation-follows-the-edit-being-resolved.md) | Conflict presentation follows the edit being resolved | Proposed (consistent editor presentation unbuilt) |
 | [0485](0485-applications-choose-editor-observation-and-save-policies.md) | Applications choose editor observation and save policies | Proposed |
+| [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
+| [0487](0487-kv-commands-distinguish-creation-from-current-source-updates.md) | KV commands distinguish creation from current-source updates | Proposed |

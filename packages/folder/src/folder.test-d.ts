@@ -27,6 +27,7 @@ import {
 	type OpenFolder,
 	type OpenFolderError,
 	type OpenFolderOptions,
+	type TextCapture,
 } from './index.js';
 import * as tauri from './tauri.js';
 
@@ -103,9 +104,33 @@ async function typedValues(
 	});
 	// @ts-expect-error Only declared tables exist.
 	folder.tables.lists;
-	folder.kv.update(snapshot, { theme: 'dark' });
+	folder.kv.create({});
+	folder.kv.create({ theme: 'dark' });
 	// @ts-expect-error Only declared settings exist.
-	folder.kv.update(snapshot, { language: 'en' });
+	folder.kv.create({ language: 'en' });
+	folder.kv.update({ theme: 'dark' });
+	// @ts-expect-error Typed settings retain validation.
+	folder.kv.update({ theme: 12 });
+	// @ts-expect-error Only declared settings exist.
+	folder.kv.update({ language: 'en' });
+	// @ts-expect-error An update names values, not a captured baseline.
+	folder.kv.update(snapshot, { theme: 'dark' });
+	// @ts-expect-error Complete source is saved as an ordinary file.
+	folder.kv.replace(snapshot, '{}');
+	// A snapshot is a text capture of `kv.json`; absence is `undefined`.
+	expectTypeOf(snapshot).toExtend<TextCapture>();
+	// @ts-expect-error A captured observation keeps its version.
+	snapshot.sha256 = 'changed';
+	// @ts-expect-error A captured observation keeps its source.
+	snapshot.source = '{}';
+	expectTypeOf(snapshot.path).toEqualTypeOf<'kv.json'>();
+	expectTypeOf(snapshot.values).toEqualTypeOf<Readonly<{ theme?: string }>>();
+	const observed = await folder.kv.get();
+	if (observed.error === null)
+		expectTypeOf(observed.data).toEqualTypeOf<
+			KvSnapshot<KvOf<typeof definition>> | undefined
+		>();
+	folder.files.replace(snapshot, '{}');
 
 	// Captures are plain values; a read also carries detached bytes.
 	const read = await folder.files.read('a.md');

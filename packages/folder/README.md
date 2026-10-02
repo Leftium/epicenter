@@ -98,7 +98,7 @@ is not the desktop adapter, and it does not watch the directory.
 | Member | Contract |
 | --- | --- |
 | `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, literal `stem`, exact `source`, `sha256`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a captured entry. They refuse if the file changed. Each changes exactly one Markdown file. |
-| `kv` | Root `kv.json`. `get()` reads a snapshot; `update(snapshot, values)` merges declared values, preserving unknown fields; `replace(snapshot, source)` saves the complete text. Both writes check the captured version, or create exclusively when the snapshot represents absence. |
+| `kv` | Root `kv.json`. A snapshot is a text capture: `path`, exact `source`, `sha256`, the declared `values` that validated, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with issues. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads current source once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. It refuses source that is not one strict JSON object, or that repeats a supplied key. Repair such a file with `files.replace(snapshot, source)`. |
 | `files` | Ordinary files at literal paths. See below. |
 | `batch(collect)` | Several mutations in one application with one history request. See below. |
 | `git` | A status snapshot, `status()`, `commit()`, `commitAndPush()`, `push()`, `fetch()`, `pullFastForward()`, and `paths()`, `stage()`, `commitStaged(message)`, `diff()`, `log()`. |
@@ -449,7 +449,7 @@ bun evidence/bundles/inspect.ts main tauri   # print the chunks a build emits
 ## Limits
 
 Reference fields are refused, since rename repairs no references. `kv.update`
-rewrites `kv.json` whitespace. Browser bytes are stored whole, and every commit
+writes each value it assigns as compact JSON. Browser bytes are stored whole, and every commit
 or status check reads the whole folder. Version checks on disk are best effort
 against other programs. File bytes cross the desktop bridge as JSON number
 arrays, which is slow for large audio.
@@ -464,7 +464,7 @@ write that skips history or change hints.
 ```ts
 createFiles({ storage })
 createTable({ storage }, definition)
-createKv({ storage }, { definition })
+createKv({ storage }, definition)
 createTerminal({ storage, git }, options)
 ```
 

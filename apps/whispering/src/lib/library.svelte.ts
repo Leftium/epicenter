@@ -1299,13 +1299,21 @@ export function createLibrary(workspace: Workspace) {
 		refresh,
 		refreshAll,
 		open,
-		/** First read after opening: settings exist in `kv.json` from the first launch on. */
+		/**
+		 * First read after opening: settings exist in `kv.json` from the first
+		 * launch on. The file is created only after this call's own read found
+		 * none. The listing's read is not enough: it may have failed, or been
+		 * superseded and recorded nothing, and either looks like no settings.
+		 */
 		async start() {
 			await refreshAll();
-			if (kv !== undefined && kv.sha256 === undefined && !kv.issues) {
-				const written = await folder.kv.update(kv, workspace.initialSettings);
-				if (written.error === null) kv = written.data;
-				else settingsError = describeWriteError(written.error);
+			const observed = await folder.kv.get();
+			if (observed.error === null && observed.data === undefined) {
+				const created = await folder.kv.create(workspace.initialSettings);
+				if (created.error === null) {
+					kv = created.data;
+					settingsError = undefined;
+				} else settingsError = describeWriteError(created.error);
 			}
 			credentialPresent = await workspace.credential
 				.present()
@@ -1602,15 +1610,19 @@ export function createLibrary(workspace: Workspace) {
 			},
 		),
 
-		/** Save folder settings to `kv.json`; a file changed elsewhere is reread once. */
+		/**
+		 * Save folder settings to `kv.json`. A file changed elsewhere during the
+		 * save is tried once more. A file that is gone is created from these
+		 * values alone; one that appears first is reported and left as it is.
+		 */
 		saveSettings: submitFileChange(
 			async (
 				values: Partial<TranscriptionSettings>,
 			): Promise<string | undefined> => {
 				for (let attempt = 0; attempt < 2; attempt++) {
-					const read = await folder.kv.get();
-					if (read.error) return read.error.message;
-					const written = await folder.kv.update(read.data, values);
+					let written = await folder.kv.update(values);
+					if (written.error?.name === 'NotFound')
+						written = await folder.kv.create(values);
 					if (written.error === null) {
 						kv = written.data;
 						settingsError = undefined;

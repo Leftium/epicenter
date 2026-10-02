@@ -3,7 +3,6 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
 	import SquareIcon from '@lucide/svelte/icons/square';
-	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import type { Library } from '$lib/library.svelte.js';
 	import MicrophoneControl from './MicrophoneControl.svelte';
 	import PostProcessingControl from './PostProcessingControl.svelte';
@@ -13,7 +12,7 @@
 	/**
 	 * The home page's recorder: the microphone is the control that starts and
 	 * stops, with one line under it for what is happening. Three small controls
-	 * sit at its lower-right on desktop and below the hint on narrow windows.
+	 * sit at its lower right on wide windows and below the hint on narrow ones.
 	 * Fixture mode adds its warning under them.
 	 */
 	let { library }: { library: Library } = $props();
@@ -55,13 +54,16 @@
 	});
 </script>
 
-<!-- Keep the microphone centered; its options do not add width to the recorder. -->
-<div class="relative flex flex-col items-center gap-4">
+<!--
+	--mic is the microphone's size at this width. The button, the stop mark, and how far the options tuck in are all taken from it.
+	With enough room the grid's outer columns are equal, so the options sit to the right without moving the microphone off center.
+-->
+<div class="grid w-full justify-items-center gap-y-4 [--mic:6rem] @sm/recorder:[--mic:7rem] @md/recorder:grid-cols-[1fr_auto_1fr] @md/recorder:[--mic:8rem]">
 	<!-- The button keeps one size in every phase, so nothing under it moves. -->
 	<Button
 		bind:ref={mic}
 		variant="ghost"
-		class="relative size-32 rounded-full p-0 hover:bg-transparent disabled:opacity-100 dark:hover:bg-transparent"
+		class="relative size-[calc(var(--mic)*1.25)] rounded-full p-0 hover:bg-transparent disabled:opacity-100 @md/recorder:col-start-2 dark:hover:bg-transparent"
 		aria-label={label}
 		aria-pressed={active}
 		aria-busy={pending}
@@ -70,25 +72,24 @@
 		data-testid={active ? 'stop-recording' : 'start-recording'}
 	>
 		{#if active}
-			<span class="flex size-24 items-center justify-center rounded-full bg-destructive/10 text-destructive ring-1 ring-destructive/30">
+			<span class="flex size-[calc(var(--mic)*0.75)] items-center justify-center rounded-full bg-destructive/10 text-destructive ring-1 ring-destructive/30">
 				<SquareIcon class="size-9 fill-current" />
 			</span>
 		{:else}
-			<!-- The image is 160px wide: at this size it is drawn 1.4 times its pixels on a 2x display, and no larger copy exists. -->
-			<img
-				src={studioMicrophone}
-				alt=""
-				draggable="false"
+			<span
+				aria-hidden="true"
 				class={cn(
-					'size-28 drop-shadow-lg transition-transform group-hover/button:scale-105 group-active/button:scale-95 motion-reduce:transition-none',
+					'text-(length:--mic) leading-none drop-shadow-lg transition-transform group-hover/button:scale-105 group-active/button:scale-95 motion-reduce:transition-none',
 					pending && 'opacity-40',
 				)}
-			/>
+			>
+				🎙️
+			</span>
 			{#if pending}<Spinner class="absolute size-8" />{/if}
 		{/if}
 	</Button>
 
-	<p class="flex h-8 items-center gap-2 text-sm text-muted-foreground">
+	<p class="flex h-8 items-center gap-2 text-sm text-muted-foreground @md/recorder:col-span-full @md/recorder:row-start-2">
 		{#if recorder.phase === 'recording'}
 			<span class="size-2 rounded-full bg-destructive" aria-hidden="true"></span>
 			<span class="text-2xl font-semibold text-foreground"><RecorderClock startedAt={recorder.startedAt} /></span>
@@ -102,15 +103,18 @@
 	</p>
 
 	<!--
-		The desktop row sits beside the microphone; narrow windows keep it below the hint.
+		Below the hint on narrow windows. With enough room, at the microphone's lower right, tucked into the corner its round button leaves empty.
 		Each names itself and its current value in its label and tooltip, and opens its own popover, one at a time.
 	-->
-	<div class="flex items-center justify-center gap-1.5 md:absolute md:top-20 md:left-1/2 md:ml-3 md:translate-x-16" role="group" aria-label="Recording options">
+	<div
+		class="relative flex items-center gap-0.5 @md/recorder:col-start-3 @md/recorder:row-start-1 @md/recorder:mb-[calc(var(--mic)/8)] @md/recorder:-ml-[calc(var(--mic)/8)] @md/recorder:self-end @md/recorder:justify-self-start"
+		role="group"
+		aria-label="Recording options"
+	>
 		<MicrophoneControl bind:open={() => openOption === 'microphone', (open) => setOpen('microphone', open)} />
 		<TranscriptionControl bind:open={() => openOption === 'transcription', (open) => setOpen('transcription', open)} />
 		<PostProcessingControl bind:open={() => openOption === 'post-processing', (open) => setOpen('post-processing', open)} />
 	</div>
-
 </div>
 
 <!-- Always mounted so the start of a recording is announced. The clock stays outside it: it changes every second. -->

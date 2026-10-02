@@ -54,11 +54,11 @@
 <svelte:head><title>Whispering</title></svelte:head>
 
 <!-- The spacers hold the recorder just above the middle while there is room. A long latest recording takes that room, then the page scrolls. -->
-<div class="mx-auto flex w-full max-w-xl flex-1 flex-col items-center px-4 py-8">
+<div class="@container/recorder mx-auto flex w-full max-w-xl flex-1 flex-col items-center px-4 py-8">
 	<div class="flex-2"></div>
-	<div class="flex flex-col items-center gap-4">
+	<div class="flex w-full flex-col items-center gap-4">
 		<SectionHeader.Root class="space-y-3 text-center">
-			<SectionHeader.Title level={1} class="text-4xl font-extrabold tracking-tight sm:text-5xl">Whispering</SectionHeader.Title>
+			<SectionHeader.Title level={1} class="text-3xl font-bold tracking-tight sm:text-4xl">Whispering</SectionHeader.Title>
 			<SectionHeader.Description class="text-base">Record now. Turn it into text when you’re ready.</SectionHeader.Description>
 		</SectionHeader.Root>
 

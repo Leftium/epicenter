@@ -6,8 +6,9 @@
 	import * as RadioGroup from '@epicenter/ui/radio-group';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { cn } from '@epicenter/ui/utils';
-	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
+	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import WandIcon from '@lucide/svelte/icons/wand';
 	import { resolve } from '$app/paths';
 	import { canRun, resolvePostProcessing, transformationName } from '$lib/post-processing.js';
 	import { getSession } from '$lib/session.svelte.js';
@@ -48,7 +49,10 @@
 			{#snippet child({ props: hint })}
 				<Popover.Trigger {...hint}>
 					{#snippet child({ props })}
-						<!-- A transformation that can run reads as on; one that cannot, or is gone, as a warning; None as the other two controls do. -->
+						<!--
+							None is the amber wand: that is this control's own color, not a warning. A chosen transformation is sparkles,
+							green when it can run. One that cannot, or is gone, stays shown as chosen, with a warning mark on it.
+						-->
 						<Button
 							{...props}
 							bind:ref={trigger}
@@ -57,11 +61,16 @@
 							aria-label={summary}
 							data-testid="post-processing-control"
 						>
-							<WandSparklesIcon class={cn(
-								choice.kind === 'none' && 'text-muted-foreground',
-								choice.kind === 'ready' && 'text-success brightness-75 dark:brightness-100',
-								(choice.kind === 'missing' || choice.kind === 'repair') && 'text-warning',
-							)} />
+							{#if choice.kind === 'none'}
+								<WandIcon class="text-warning" />
+							{:else if choice.kind === 'ready'}
+								<SparklesIcon class="text-success brightness-75 dark:brightness-100" />
+							{:else}
+								<span class="relative flex">
+									<SparklesIcon class="text-muted-foreground" />
+									<TriangleAlertIcon class="absolute -top-1.5 -right-1.5 size-3 fill-background text-warning" />
+								</span>
+							{/if}
 						</Button>
 					{/snippet}
 				</Popover.Trigger>

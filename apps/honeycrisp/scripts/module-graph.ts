@@ -1,54 +1,40 @@
 #!/usr/bin/env bun
-/**
- * Print every module a bundle of one entry pulls in, as a JSON array.
- *
- *   bun scripts/module-graph.ts <entry> [condition...]
- *
- * `platform-selection.test.ts` runs this in its own process and reads the
- * list to prove which leaf a build selects and that no Yjs module is in it.
- */
+/** Print the modules Vite emits for one entry using this app's resolution config. */
 import { join } from 'node:path';
+import { build } from 'vite';
 
 const appDir = join(import.meta.dir, '..');
-const [entry, ...conditions] = process.argv.slice(2);
-if (entry === undefined) {
-	console.error('Usage: bun scripts/module-graph.ts <entry> [condition...]');
-	process.exit(2);
-}
+const [entry, platform] = process.argv.slice(2);
+if (entry === undefined || (platform !== 'browser' && platform !== 'tauri'))
+	throw new Error('Usage: bun scripts/module-graph.ts <entry> <browser|tauri>');
 
-const built = await Bun.build({
-	entrypoints: [join(appDir, entry)],
-	target: 'browser',
-	conditions,
-	metafile: true,
-	plugins: [
-		{
-			name: 'app-aliases',
-			setup(build) {
-				// What Vite's alias does for the folder contract: the bare
-				// specifier is the build's one adapter entry.
-				build.onResolve({ filter: /^@epicenter\/folder$/ }, () => ({
-					path: Bun.resolveSync(
-						conditions.includes('tauri')
-							? '@epicenter/folder/tauri'
-							: '@epicenter/folder/browser',
-						appDir,
-					),
-				}));
-				// What it does for just-bash's unused gzip helpers.
-				build.onResolve({ filter: /^node:zlib$/ }, () => ({
-					path: join(appDir, 'src/lib/shims/zlib.ts'),
-				}));
-				// And for isomorphic-git's Buffer: the npm package, not Node's.
-				build.onResolve({ filter: /^buffer$/ }, () => ({
-					path: Bun.resolveSync('buffer/', appDir),
-				}));
-			},
+if (platform === 'tauri') process.env.HONEYCRISP_DESKTOP = '1';
+else delete process.env.HONEYCRISP_DESKTOP;
+const { default: config } = await import('../vite.config.js');
+const result = await build({
+	root: appDir,
+	configFile: false,
+	logLevel: 'silent',
+	resolve: config.resolve,
+	build: {
+		write: false,
+		minify: false,
+		target: 'esnext',
+		rollupOptions: {
+			input: join(appDir, entry),
+			preserveEntrySignatures: 'strict',
 		},
-	],
+	},
 });
-if (!built.success) {
-	for (const log of built.logs) console.error(log);
-	process.exit(1);
-}
-console.log(JSON.stringify(Object.keys(built.metafile!.inputs)));
+const outputs = (Array.isArray(result) ? result : [result]).flatMap((built) =>
+	'output' in built ? built.output : [],
+);
+console.log(
+	JSON.stringify([
+		...new Set(
+			outputs.flatMap((chunk) =>
+				chunk.type === 'chunk' ? Object.keys(chunk.modules) : [],
+			),
+		),
+	]),
+);

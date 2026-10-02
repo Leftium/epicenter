@@ -18,7 +18,7 @@
  * - A copy lets go of the draft only when the copy holds all of it: input
  *   typed while the copy was being written keeps the draft
  * - Deleting removes exactly the reviewed file, and refuses one that changed
- * - A save still reaches the file when Git cannot commit
+ * - An explicit commit failure leaves saved files and drafts unchanged
  */
 import './svelte-modules.test-support.js';
 import { afterAll, expect, test } from 'bun:test';
@@ -325,7 +325,7 @@ test('deleting removes the reviewed file and refuses one that changed since', as
 	await folder.close();
 });
 
-test('a save reaches the file when the commit fails', async () => {
+test('a failed explicit commit keeps the saved file and its draft acknowledged', async () => {
 	const { captures, create, text, folder } = await setup({
 		commit: async () => ({ status: 'failed', error: 'index is locked' }),
 	});
@@ -337,6 +337,8 @@ test('a save reaches the file when the commit fails', async () => {
 	expect(draft.saveState.kind).toBe('saved');
 	expect(await text(stem)).toContain('Saved regardless of Git');
 	expect((await captures.commit()).status).toBe('failed');
+	expect(draft.saveState.kind).toBe('saved');
+	expect(captures.unsettled).toBe(0);
 	expect(await text(stem)).toContain('Saved regardless of Git');
 	captures.close();
 	await folder.close();

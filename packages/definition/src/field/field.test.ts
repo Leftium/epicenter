@@ -13,7 +13,7 @@
  * - The editor is resolved from the schema: options from `enum`, nullability
  *   from whether `null` is admitted
  * - A hint that is absent, unknown, malformed, or wrong for the schema's shape
- *   resolves to the JSON editor
+ *   or `format` resolves to the JSON editor
  * - `field.nullable` and `field.json` take any native schema and keep its
  *   hidden keywords
  * - A helper copies its arguments and returns an ordinary mutable schema
@@ -355,6 +355,62 @@ describe('the editor is resolved from the schema, and falls back to JSON', () =>
 				type: 'string',
 				[FIELD_KEYWORD]: { kind: 'reference', target: 'pages' },
 			}),
+		).toEqual({ kind: 'reference', nullable: false, target: 'pages' });
+	});
+
+	test('a formatted kind is refused by another format and allowed by its own or none', () => {
+		const formats = {
+			url: 'uri',
+			date: 'date',
+			instant: 'date-time',
+			datetime: 'date-time',
+		} as const;
+		for (const [kind, format] of Object.entries(formats)) {
+			const hint = { [FIELD_KEYWORD]: { kind } };
+			// The helper's own format, and a plain string that covers it.
+			expect(BUILT[kind as Kind]).toMatchObject({ format });
+			for (const fitting of [
+				Type.String({ format, ...hint }),
+				Type.String(hint),
+			])
+				expect(editorOf(fitting)).toMatchObject({ kind, nullable: false });
+			for (const conflicting of [
+				'email',
+				kind === 'date' ? 'date-time' : 'date',
+				7,
+				null,
+				undefined,
+			]) {
+				const schema = { type: 'string', format: conflicting, ...hint };
+				expect(editorOf(schema)).toEqual(json(false));
+				expect(editorOf(Type.Union([schema, Type.Null()]))).toEqual(json(true));
+			}
+			// A hidden format is still one TypeBox validates.
+			const hidden = Type.String(hint);
+			Object.defineProperty(hidden, 'format', { value: 'email' });
+			expect(editorOf(hidden)).toEqual(json(false));
+		}
+		// The hint was never the check: the schema still validates as an email.
+		const email = Type.String({
+			format: 'email',
+			[FIELD_KEYWORD]: { kind: 'date' },
+		});
+		expect(check(email, 'a@epicenter.so')).toBe(true);
+		expect(check(email, '2026-06-09')).toBe(false);
+		// `string` and `reference` name no format, so a format is one more
+		// constraint on the text their widgets edit.
+		expect(
+			editorOf(
+				Type.String({ format: 'email', [FIELD_KEYWORD]: { kind: 'string' } }),
+			),
+		).toEqual({ kind: 'string', nullable: false });
+		expect(
+			editorOf(
+				Type.String({
+					format: 'uuid',
+					[FIELD_KEYWORD]: { kind: 'reference', target: 'pages' },
+				}),
+			),
 		).toEqual({ kind: 'reference', nullable: false, target: 'pages' });
 	});
 

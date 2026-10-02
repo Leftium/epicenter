@@ -10,8 +10,8 @@
  * Everything else an editor needs is read off the schema. Select options are
  * the schema's declared `enum`, and nullability is whether the field admits
  * `null`. A hint that is absent, unknown, malformed, or that names a widget
- * the schema's shape does not fit resolves to the JSON editor. It never
- * changes validation.
+ * the schema's shape or `format` does not fit resolves to the JSON editor. It
+ * never changes validation.
  */
 
 import type { TSchema } from 'typebox';
@@ -194,6 +194,27 @@ function nullableMember(schema: Keywords): Keywords | undefined {
 }
 
 /**
+ * The `format` each formatted string helper sets, by kind: the text its widget
+ * reads and writes.
+ */
+const FORMATS = {
+	url: 'uri',
+	date: 'date',
+	instant: 'date-time',
+	datetime: 'date-time',
+} as const;
+
+/**
+ * Whether a string schema's `format` leaves room for `expected`: it declares
+ * that format or none. A schema that declares another one refuses what the
+ * widget writes, so `{ format: 'email' }` under a `date` hint is not a date.
+ * This compares one keyword. It does not ask what the rest of the schema admits.
+ */
+function formatAllows(schema: Keywords, expected: string): boolean {
+	return !Object.hasOwn(schema, 'format') || own(schema, 'format') === expected;
+}
+
+/**
  * The editor a hint asks for, when `subject` has the shape that widget edits.
  *
  * These are conservative shape checks for the widgets that exist, not a schema
@@ -214,11 +235,14 @@ function hinted(
 	const type = own(subject, 'type');
 	switch (kind) {
 		case 'string':
+			return type === 'string' ? { kind, nullable } : undefined;
 		case 'url':
 		case 'date':
 		case 'instant':
 		case 'datetime':
-			return type === 'string' ? { kind, nullable } : undefined;
+			return type === 'string' && formatAllows(subject, FORMATS[kind])
+				? { kind, nullable }
+				: undefined;
 		case 'reference': {
 			const target = own(hint, 'target');
 			return type === 'string' &&

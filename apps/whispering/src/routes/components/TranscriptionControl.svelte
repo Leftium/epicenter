@@ -19,6 +19,8 @@
 
 	const { library } = getSession();
 	const model = $derived(library.settings.transcriptionModel);
+	const configured = $derived(model.trim() !== '' && library.settings.transcriptionBaseUrl.trim() !== '');
+	const summary = $derived(`Transcription model: ${model || 'none set'}, at ${library.settings.transcriptionBaseUrl || 'no endpoint'}${configured ? '' : '. Set a model and endpoint.'}`);
 	let hinting = $state(false);
 </script>
 
@@ -32,19 +34,18 @@
 						<Button
 							{...props}
 							bind:ref={trigger}
-							variant="outline"
+							variant="ghost"
 							size="icon"
-							class="text-muted-foreground"
-							aria-label="Transcription model: {model || 'none set'}, at {library.settings.transcriptionBaseUrl || 'no endpoint'}"
+							aria-label={summary}
 							data-testid="transcription-control"
 						>
-							<AudioLinesIcon />
+							<AudioLinesIcon class={configured ? 'text-success brightness-75 dark:brightness-100' : 'text-warning'} />
 						</Button>
 					{/snippet}
 				</Popover.Trigger>
 			{/snippet}
 		</Tooltip.Trigger>
-		<Tooltip.Content side="bottom" class="max-w-xs text-center">Transcription model: {model || 'none set'}</Tooltip.Content>
+		<Tooltip.Content side="bottom" class="max-w-xs text-center">{summary}</Tooltip.Content>
 	</Tooltip.Root>
 	<Popover.Content
 		bind:ref={content}

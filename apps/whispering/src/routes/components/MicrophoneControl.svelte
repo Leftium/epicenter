@@ -90,13 +90,12 @@
 						<Button
 							{...props}
 							bind:ref={trigger}
-							variant="outline"
+							variant="ghost"
 							size="icon"
-							class={cn('text-muted-foreground', warning && 'text-warning')}
 							aria-label={summary}
 							data-testid="microphone-control"
 						>
-							<MicIcon />
+							<MicIcon class={cn('text-muted-foreground', !warning && input.choice && input.choiceListed === true && 'text-success brightness-75 dark:brightness-100', warning && 'text-warning')} />
 						</Button>
 					{/snippet}
 				</Popover.Trigger>

@@ -12,8 +12,8 @@
 
 	/**
 	 * The home page's recorder: the microphone is the control that starts and
-	 * stops, with one line under it for what is happening, then three small
-	 * controls for the input, the transcription model, and post-processing.
+	 * stops, with one line under it for what is happening. Three small controls
+	 * sit at its lower-right on desktop and below the hint on narrow windows.
 	 * Fixture mode adds its warning under them.
 	 */
 	let { library }: { library: Library } = $props();
@@ -55,58 +55,62 @@
 	});
 </script>
 
-<!-- The button keeps one size in every phase, so nothing under it moves. -->
-<Button
-	bind:ref={mic}
-	variant="ghost"
-	class="relative size-32 rounded-full p-0 hover:bg-transparent disabled:opacity-100 dark:hover:bg-transparent"
-	aria-label={label}
-	aria-pressed={active}
-	aria-busy={pending}
-	disabled={pending}
-	onclick={toggle}
-	data-testid={active ? 'stop-recording' : 'start-recording'}
->
-	{#if active}
-		<span class="flex size-24 items-center justify-center rounded-full bg-destructive/10 text-destructive ring-1 ring-destructive/30">
-			<SquareIcon class="size-9 fill-current" />
-		</span>
-	{:else}
-		<!-- The image is 160px wide: at this size it is drawn 1.4 times its pixels on a 2x display, and no larger copy exists. -->
-		<img
-			src={studioMicrophone}
-			alt=""
-			draggable="false"
-			class={cn(
-				'size-28 drop-shadow-lg transition-transform group-hover/button:scale-105 group-active/button:scale-95 motion-reduce:transition-none',
-				pending && 'opacity-40',
-			)}
-		/>
-		{#if pending}<Spinner class="absolute size-8" />{/if}
-	{/if}
-</Button>
+<!-- Keep the microphone centered; its options do not add width to the recorder. -->
+<div class="relative flex flex-col items-center gap-4">
+	<!-- The button keeps one size in every phase, so nothing under it moves. -->
+	<Button
+		bind:ref={mic}
+		variant="ghost"
+		class="relative size-32 rounded-full p-0 hover:bg-transparent disabled:opacity-100 dark:hover:bg-transparent"
+		aria-label={label}
+		aria-pressed={active}
+		aria-busy={pending}
+		disabled={pending}
+		onclick={toggle}
+		data-testid={active ? 'stop-recording' : 'start-recording'}
+	>
+		{#if active}
+			<span class="flex size-24 items-center justify-center rounded-full bg-destructive/10 text-destructive ring-1 ring-destructive/30">
+				<SquareIcon class="size-9 fill-current" />
+			</span>
+		{:else}
+			<!-- The image is 160px wide: at this size it is drawn 1.4 times its pixels on a 2x display, and no larger copy exists. -->
+			<img
+				src={studioMicrophone}
+				alt=""
+				draggable="false"
+				class={cn(
+					'size-28 drop-shadow-lg transition-transform group-hover/button:scale-105 group-active/button:scale-95 motion-reduce:transition-none',
+					pending && 'opacity-40',
+				)}
+			/>
+			{#if pending}<Spinner class="absolute size-8" />{/if}
+		{/if}
+	</Button>
 
-<p class="flex h-8 items-center gap-2 text-sm text-muted-foreground">
-	{#if recorder.phase === 'recording'}
-		<span class="size-2 rounded-full bg-destructive" aria-hidden="true"></span>
-		<span class="text-2xl font-semibold text-foreground"><RecorderClock startedAt={recorder.startedAt} /></span>
-	{:else if recorder.phase === 'starting'}
-		Starting…
-	{:else if recorder.phase === 'stopping'}
-		Saving the audio…
-	{:else}
-		Click the microphone to start recording.
-	{/if}
-</p>
+	<p class="flex h-8 items-center gap-2 text-sm text-muted-foreground">
+		{#if recorder.phase === 'recording'}
+			<span class="size-2 rounded-full bg-destructive" aria-hidden="true"></span>
+			<span class="text-2xl font-semibold text-foreground"><RecorderClock startedAt={recorder.startedAt} /></span>
+		{:else if recorder.phase === 'starting'}
+			Starting…
+		{:else if recorder.phase === 'stopping'}
+			Saving the audio…
+		{:else}
+			Click the microphone to start recording.
+		{/if}
+	</p>
 
-<!--
-	What the recorder uses, small and close to it: three icon buttons in one row at every width.
-	Each names itself and its current value in its label and tooltip, and opens its own popover, one at a time.
--->
-<div class="flex items-center justify-center gap-1.5" role="group" aria-label="Recording options">
-	<MicrophoneControl bind:open={() => openOption === 'microphone', (open) => setOpen('microphone', open)} />
-	<TranscriptionControl bind:open={() => openOption === 'transcription', (open) => setOpen('transcription', open)} />
-	<PostProcessingControl bind:open={() => openOption === 'post-processing', (open) => setOpen('post-processing', open)} />
+	<!--
+		The desktop row sits beside the microphone; narrow windows keep it below the hint.
+		Each names itself and its current value in its label and tooltip, and opens its own popover, one at a time.
+	-->
+	<div class="flex items-center justify-center gap-1.5 md:absolute md:top-20 md:left-1/2 md:ml-3 md:translate-x-16" role="group" aria-label="Recording options">
+		<MicrophoneControl bind:open={() => openOption === 'microphone', (open) => setOpen('microphone', open)} />
+		<TranscriptionControl bind:open={() => openOption === 'transcription', (open) => setOpen('transcription', open)} />
+		<PostProcessingControl bind:open={() => openOption === 'post-processing', (open) => setOpen('post-processing', open)} />
+	</div>
+
 </div>
 
 <!-- Always mounted so the start of a recording is announced. The clock stays outside it: it changes every second. -->

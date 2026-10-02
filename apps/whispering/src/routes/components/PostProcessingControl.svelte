@@ -52,16 +52,16 @@
 						<Button
 							{...props}
 							bind:ref={trigger}
-							variant={choice.kind === 'ready' ? 'secondary' : 'outline'}
+							variant="ghost"
 							size="icon"
-							class={cn(
-								choice.kind === 'none' && 'text-muted-foreground',
-								(choice.kind === 'missing' || choice.kind === 'repair') && 'text-warning',
-							)}
 							aria-label={summary}
 							data-testid="post-processing-control"
 						>
-							<WandSparklesIcon />
+							<WandSparklesIcon class={cn(
+								choice.kind === 'none' && 'text-muted-foreground',
+								choice.kind === 'ready' && 'text-success brightness-75 dark:brightness-100',
+								(choice.kind === 'missing' || choice.kind === 'repair') && 'text-warning',
+							)} />
 						</Button>
 					{/snippet}
 				</Popover.Trigger>

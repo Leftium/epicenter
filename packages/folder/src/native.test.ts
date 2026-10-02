@@ -510,6 +510,10 @@ describe('browser and native exchange through a real bare repository', () => {
 		expect((await browser.git.commit()).status).toBe('committed');
 		const push = await browser.git.push();
 		expect(push.status).toBe('failed');
+		if (push.status === 'failed')
+			expect(push.error).toBe(
+				"The remote branch 'main' cannot be updated by a fast-forward",
+			);
 		const diverged = await browser.git.pullFastForward();
 		expect(diverged.error?.name).toBe('Diverged');
 		expect((await browser.tables.todos.get('first')).data!.fields.title).toBe(

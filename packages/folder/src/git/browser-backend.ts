@@ -501,16 +501,31 @@ export async function createBrowserGitBackend({
 		async push(oid, signal) {
 			if (remote === undefined) throw new Error('No remote is configured');
 			await withObjects(async (access) => {
-				const result = await git.push({
-					...access,
-					http: abortableHttp(signal),
-					dir: WORKDIR,
-					url: remote.url,
-					remote: REMOTE_NAME,
-					ref: oid,
-					remoteRef: `refs/heads/${remote.branch}`,
-					force: false,
-				});
+				let result: Awaited<ReturnType<typeof git.push>>;
+				try {
+					result = await git.push({
+						...access,
+						http: abortableHttp(signal),
+						dir: WORKDIR,
+						url: remote.url,
+						remote: REMOTE_NAME,
+						ref: oid,
+						remoteRef: `refs/heads/${remote.branch}`,
+						force: false,
+					});
+				} catch (cause) {
+					// isomorphic-git refuses this itself, before it sends the update, and
+					// its own message advises forcing, which a folder never does.
+					if (
+						cause instanceof git.Errors.PushRejectedError &&
+						cause.data.reason === 'not-fast-forward'
+					)
+						throw new Error(
+							`The remote branch '${remote.branch}' cannot be updated by a fast-forward`,
+							{ cause },
+						);
+					throw cause;
+				}
 				const status = result.refs[`refs/heads/${remote.branch}`];
 				if (!result.ok || (status && !status.ok))
 					throw new Error(

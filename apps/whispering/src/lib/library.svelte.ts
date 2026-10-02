@@ -1907,6 +1907,8 @@ export function createLibrary(workspace: Workspace) {
 			starting = undefined;
 			active?.cancel();
 			await fileChanges;
+			// Finish accepted microphone preference saves before closing their workspace.
+			await input.saved();
 			for (const editor of allEditors()) {
 				await editor.settle();
 				editor.dispose();

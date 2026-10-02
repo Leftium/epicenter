@@ -21,6 +21,9 @@
  *   releases it when it opens
  * - Closing releases the microphone at once, before waiting for file commands
  *   that were accepted, which still finish
+ * - Saves of the choice run one at a time in the order chosen, only the
+ *   latest choice reports whether it was saved, and closing waits for a save
+ *   it had accepted after releasing the microphone at once
  * - A saved choice whose ID is not listed stays the choice: an input with the
  *   same name is not taken for it, and a recording with it refuses
  * - Fixture mode has no input: nothing is listed, tested, or asked for
@@ -620,6 +623,117 @@ test('closing releases the microphone at once, while a file command that was acc
 		await closing;
 		expect(await readFile(join(test.root, 'note.txt'), 'utf8')).toBe('');
 	}
+});
+
+// ============================================================================
+// Saving the choice
+// ============================================================================
+
+/** Preferences whose every save waits for the test to answer it. */
+function heldPreferences() {
+	const saves: {
+		microphone: MicrophonePreference | undefined;
+		answer: (problem?: string) => void;
+	}[] = [];
+	const preferences: Workspace['preferences'] = {
+		microphone: async () => undefined,
+		setMicrophone: (microphone) =>
+			new Promise((answer) => saves.push({ microphone, answer })),
+	};
+	return { saves, preferences };
+}
+
+test('choices are saved one at a time in the order chosen, and an older save that fails does not speak for the newer choice', async () => {
+	const held = heldPreferences();
+	const { input } = await open({
+		device: { store: { saved: undefined, writes: 0 }, preferences: held.preferences },
+	});
+
+	const older = input.select(USB);
+	const newer = input.select(BUILT_IN);
+	await Promise.resolve();
+
+	// The choice applies at once; the second save waits for the first to answer.
+	expect(input.choice).toEqual(BUILT_IN);
+	expect(held.saves.map((save) => save.microphone)).toEqual([USB]);
+
+	held.saves[0]?.answer('Older choice failed');
+	await older;
+	expect(held.saves.map((save) => save.microphone)).toEqual([USB, BUILT_IN]);
+	expect(input.preferenceProblem).toBeUndefined();
+
+	held.saves[1]?.answer();
+	await newer;
+	expect(input.choice).toEqual(BUILT_IN);
+	expect(input.preferenceProblem).toBeUndefined();
+
+	// The latest choice does report its own failure, and a later one clears it.
+	const failing = input.select(USB);
+	await Promise.resolve();
+	held.saves[2]?.answer('This choice failed');
+	await failing;
+	expect(input.preferenceProblem).toBe('This choice failed');
+	const next = input.select(undefined);
+	expect(input.preferenceProblem).toBeUndefined();
+	await Promise.resolve();
+	held.saves[3]?.answer();
+	await next;
+	expect(held.saves.map((save) => save.microphone)).toEqual([
+		USB,
+		BUILT_IN,
+		USB,
+		undefined,
+	]);
+});
+
+test('closing while a choice is being saved releases the microphone at once and closes the workspace only after the save', async () => {
+	const held = heldPreferences();
+	const microphone = scriptedMicrophone();
+	const test = await openTestWorkspace();
+	const order: string[] = [];
+	const library = createLibrary({
+		...test.workspace,
+		capture: microphone.device,
+		preferences: held.preferences,
+		async close() {
+			order.push('workspace closed');
+			await test.workspace.close();
+		},
+	});
+	cleanups.push(async () => {
+		await library.close();
+		await test.remove();
+	});
+	await library.start();
+	const input = library.input;
+	const first = input.select(USB);
+	const second = input.select(BUILT_IN);
+	await input.startTest();
+	expect(microphone.open.meters).toBe(1);
+
+	const closing = library.close();
+
+	expect(microphone.open.meters).toBe(0);
+	// A choice made after closing is not accepted.
+	await input.select(undefined);
+	expect(input.choice).toEqual(BUILT_IN);
+	for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+	expect(order).toEqual([]);
+
+	order.push('first save answered');
+	held.saves[0]?.answer();
+	await first;
+	expect(order).toEqual(['first save answered']);
+	order.push('latest save answered');
+	held.saves[1]?.answer();
+	await Promise.all([second, closing]);
+
+	expect(order).toEqual([
+		'first save answered',
+		'latest save answered',
+		'workspace closed',
+	]);
+	expect(held.saves.map((save) => save.microphone)).toEqual([USB, BUILT_IN]);
 });
 
 test('fixture mode has no input: nothing is listed, tested, enabled, or chosen', async () => {

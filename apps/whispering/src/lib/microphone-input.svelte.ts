@@ -7,7 +7,8 @@
  * microphone it opened, so the choice cannot be changed while one is
  * starting, running, or finishing. A choice whose ID is not listed stays the
  * choice. A name is not an identity, so no listed input is taken for it; the
- * person chooses again.
+ * person chooses again. The choice applies at once; saving it on the device
+ * follows, one save at a time in the order chosen.
  *
  * Nothing here asks for microphone access on its own. Listing reads what the
  * WebView already lists; `allow` and `startTest` are the actions that open a
@@ -93,12 +94,31 @@ export function createMicrophoneInput({
 		if (error !== null) denied = error.name === 'PermissionDenied';
 	}
 
-	async function persist(next: MicrophonePreference | undefined) {
-		preferenceProblem = await preferences
-			.setMicrophone(next)
-			.catch((cause) =>
-				cause instanceof Error ? cause.message : String(cause),
-			);
+	/**
+	 * Every accepted save of the choice, joined in the order chosen. A save
+	 * starts only when the one before it has answered, so the device ends
+	 * holding the latest choice whatever order the answers would have come in.
+	 */
+	let saves: Promise<void> = Promise.resolve();
+	let saveSequence = 0;
+
+	/**
+	 * Save a choice on this device, after any save already accepted. Only the
+	 * latest choice reports: an older save's failure says nothing about the
+	 * choice that replaced it.
+	 */
+	function persist(next: MicrophonePreference | undefined): Promise<void> {
+		const sequence = ++saveSequence;
+		preferenceProblem = undefined;
+		saves = saves.then(async () => {
+			const outcome = await preferences
+				.setMicrophone(next)
+				.catch((cause) =>
+					cause instanceof Error ? cause.message : String(cause),
+				);
+			if (sequence === saveSequence) preferenceProblem = outcome;
+		});
+		return saves;
 	}
 
 	/**
@@ -276,12 +296,20 @@ export function createMicrophoneInput({
 		noteRecordingError(error: CaptureError) {
 			if (error.name === 'PermissionDenied') denied = true;
 		},
-		/** Release the microphone and stop hearing about inputs. Nothing opens afterward. */
+		/**
+		 * Release the microphone and stop hearing about inputs. Nothing opens
+		 * and no choice is accepted afterward. Saves already accepted go on:
+		 * `saved` says when they have ended.
+		 */
 		close() {
 			closed = true;
 			release();
 			unwatch?.();
 			unwatch = undefined;
+		},
+		/** Settles when every save of the choice accepted so far has answered. */
+		saved(): Promise<void> {
+			return saves;
 		},
 	};
 }

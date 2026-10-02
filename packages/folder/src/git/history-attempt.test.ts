@@ -912,9 +912,13 @@ test('a caller that leaves commitAndPush while its push is queued keeps its comm
 	await land('b.txt', 'two');
 	const caller = new AbortController();
 	const both = history.commitAndPush({ signal: caller.signal });
-	// The commit finishes; the push is queued behind the held one.
-	await until(() => history.snapshot.lastCommit?.status === 'committed');
-	await Bun.sleep(10);
+	// Wait for this commit, not the earlier commit whose push is still held.
+	await until(() => {
+		const committed = history.snapshot.lastCommit;
+		return (
+			committed?.status === 'committed' && committed.message === 'Add b.txt'
+		);
+	});
 	caller.abort();
 	expect(await both).toMatchObject({
 		commit: { status: 'committed', message: 'Add b.txt' },

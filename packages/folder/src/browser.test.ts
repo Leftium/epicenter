@@ -117,32 +117,6 @@ describe('browser folder tables', () => {
 		expect((await folder.tables.todos.list()).data!.entries).toEqual([]);
 	});
 
-	test('updates preserve current unrelated fields while replacements refuse stale baselines', async () => {
-		const folder = await open({ commitOnEdit: false });
-		const first = (
-			await folder.tables.todos.create({
-				stem: 'a',
-				fields: { title: 'A', done: false },
-			})
-		).data!;
-		const newer = (
-			await folder.tables.todos.update('a', { fields: { title: 'Newer' } })
-		).data!;
-		const completed = expectOk(
-			await folder.tables.todos.update('a', {
-				fields: { done: true },
-			}),
-		);
-		expect(completed.fields).toEqual({ title: 'Newer', done: true });
-		expect(first.fields).toEqual({ title: 'A', done: false });
-		const stale = await folder.tables.todos.replace(first, first.source);
-		expect(stale.error?.name).toBe('Conflict');
-		expect((await folder.tables.todos.get('a')).data!.source).toBe(
-			completed.source,
-		);
-		expect(newer.fields.title).toBe('Newer');
-	});
-
 	test('create is exclusive and refuses case-insensitive collisions', async () => {
 		const folder = await open({ commitOnEdit: false });
 		await folder.tables.todos.create({
@@ -240,6 +214,8 @@ describe('browser folder tables', () => {
 				fields: { title: 'Recording', done: false },
 			}),
 		);
+		// Siblings can also arrive after the row was captured.
+		expectOk(await folder.files.create('todos/rec.flac', 'late'));
 		expect(created.issues).toBeUndefined();
 		expect(Object.keys(created).sort()).toEqual([
 			'body',
@@ -257,20 +233,31 @@ describe('browser folder tables', () => {
 		const renamed = expectOk(await folder.tables.todos.rename(created, 'rec2'));
 		expect(renamed.path).toBe('todos/rec2.md');
 		expect(expectOk(await folder.files.children('todos')).files).toEqual([
+			'rec.flac',
 			'rec.opus',
 			'rec.wav',
 			'rec2.md',
 		]);
 
-		expectOk(await folder.tables.todos.delete(renamed));
-		// Exactly the row file went. The audio is still the audio, byte for byte.
-		expect(expectOk(await folder.files.children('todos')).files).toEqual([
-			'rec.opus',
-			'rec.wav',
-		]);
 		const kept = expectOk(await folder.files.read('todos/rec.opus'));
 		expect(kept.bytes).toEqual(audio);
 		expect(kept.sha256).toEqual(opus.sha256);
+		// Changing and moving a sibling cannot change what row deletion owns.
+		const movedAudio = expectOk(
+			await folder.files.move(opus, 'todos/rec2.opus'),
+		);
+		const changedAudio = expectOk(
+			await folder.files.replace(movedAudio, 'rewritten'),
+		);
+		expectOk(await folder.tables.todos.delete(renamed));
+		expect(expectOk(await folder.files.children('todos')).files).toEqual([
+			'rec.flac',
+			'rec.wav',
+			'rec2.opus',
+		]);
+		const surviving = expectOk(await folder.files.read('todos/rec2.opus'));
+		expect(new TextDecoder().decode(surviving.bytes)).toBe('rewritten');
+		expect(surviving.sha256).toEqual(changedAudio.sha256);
 
 		// `rec.take.md` is its own row, not something `rec.md` owns.
 		expectOk(

@@ -3,8 +3,9 @@
  *
  * `folder.batch` runs a synchronous callback once, collects the mutations it
  * names, and publishes them through one application of the file boundary and
- * one history request. These cases run against a browser folder, where the
+ * one history request. Publication cases run against a browser folder, where the
  * batch is one transaction, and a directory folder, where it is ordered steps.
+ * Shared admission refusals run once on the browser fixture.
  *
  * Key behaviors:
  * - The callback runs exactly once; a throw, a returned promise, or any other
@@ -37,6 +38,7 @@ import { join } from 'node:path';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
+import { hashBytes } from './capture.js';
 import {
 	defineFolder,
 	defineTable,
@@ -46,7 +48,6 @@ import {
 } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
-import { hashBytes } from './capture.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
@@ -187,6 +188,34 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 		if (step?.kind !== 'write' || row === undefined)
 			throw new Error('expected the row write');
 		expect(step.file.sha256).toEqual(row.sha256);
+		// Another writer replaces both files after the batch was acknowledged.
+		const theirs = '---\ntitle: Theirs\naudioPath: audio/other.webm\n---\n';
+		expectOk(await folder.files.overwrite('recordings/take.md', theirs));
+		expectOk(await folder.files.overwrite('audio/take.webm', 'not audio'));
+
+		// The receipt still names the bytes this batch saved.
+		const [audioStep, rowStep] = receipt.steps;
+		if (audioStep?.kind !== 'write' || rowStep?.kind !== 'write')
+			throw new Error('expected two writes');
+		expect(audioStep.file.sha256).toEqual(await hashBytes(AUDIO));
+		expect(rowStep.file.sha256).toEqual(
+			await hashBytes(encoder.encode(rowSource('take'))),
+		);
+		// An explicit get observes the other writer's row, not this batch's.
+		const observed = expectOk(await folder.tables.recordings.get('take'));
+		expect(observed?.fields).toEqual({
+			title: 'Theirs',
+			audioPath: 'audio/other.webm',
+		});
+		expect(observed?.sha256).not.toEqual(rowStep.file.sha256);
+		// So the receipt cannot be used to overwrite what it never saw.
+		expect(
+			expectErr(await folder.files.replace(rowStep.file, rowSource('take')))
+				.name,
+		).toBe('Conflict');
+		expect(expectErr(await folder.files.remove(audioStep.file)).name).toBe(
+			'Conflict',
+		);
 	});
 
 	test('every file verb is an intent: conditions hold, a removal leaves no capture, a move keeps its baseline', async () => {
@@ -258,182 +287,6 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 		expect(first?.kind === 'write' && first.file.sha256).toEqual(
 			await hashBytes(AUDIO),
 		);
-	});
-
-	test('a callback that throws, returns a promise, or returns a value publishes nothing', async () => {
-		const folder = await open(true);
-		let calls = 0;
-		const collectThen = (after: () => unknown) => (batch: Collector) => {
-			calls++;
-			batch.files.create('audio/take.webm', AUDIO);
-			batch.tables.recordings.create(recording('take'));
-			return after() as undefined;
-		};
-
-		const threw = expectErr(
-			await folder.batch(
-				collectThen(() => {
-					throw new Error('recorder failed');
-				}),
-			),
-		);
-		expect(threw).toMatchObject({ name: 'Threw' });
-		expect(threw.message).toContain('recorder failed');
-
-		const promised = expectErr(
-			await folder.batch(collectThen(() => Promise.resolve())),
-		);
-		expect(promised).toMatchObject({ name: 'Returned', thenable: true });
-		const thenable = expectErr(
-			// biome-ignore lint/suspicious/noThenProperty: a hand-made thenable is what this refuses.
-			await folder.batch(collectThen(() => ({ then() {} }))),
-		);
-		expect(thenable).toMatchObject({ name: 'Returned', thenable: true });
-		const valued = expectErr(await folder.batch(collectThen(() => 1)));
-		expect(valued).toMatchObject({ name: 'Returned', thenable: false });
-
-		// Each callback ran once, and none of them published or asked history.
-		expect(calls).toBe(4);
-		expect(await paths(folder)).toEqual([]);
-		expect(folder.git.snapshot.lastCommit).toBeUndefined();
-	});
-
-	test('the collector is sealed when the callback returns: a kept one, or one used after an await, throws and publishes nothing', async () => {
-		const folder = await open();
-		let kept: Collector | undefined;
-		expectOk(
-			await folder.batch((batch) => {
-				kept = batch;
-				batch.files.create('first.txt', 'first');
-			}),
-		);
-		if (kept === undefined) throw new Error('the callback did not run');
-		const retained = kept;
-		for (const use of [
-			() => retained.files.create('late.txt', 'late'),
-			() => retained.files.overwrite('first.txt', 'changed'),
-			() => retained.tables.recordings.create(recording('late')),
-		])
-			expect(use).toThrow('This batch is sealed');
-
-		// An async callback is refused, and what it does after its await fails
-		// inside its own promise without reaching the folder.
-		let afterAwait: unknown;
-		const refused = expectErr(
-			await folder.batch((async (batch: Collector) => {
-				await Promise.resolve();
-				try {
-					batch.files.create('async.txt', 'async');
-				} catch (cause) {
-					afterAwait = cause;
-					throw cause;
-				}
-			}) as unknown as (batch: Collector) => undefined),
-		);
-		expect(refused).toMatchObject({ name: 'Returned', thenable: true });
-		await Bun.sleep(5);
-		expect(String(afterAwait)).toContain('This batch is sealed');
-		expect(await paths(folder)).toEqual(['first.txt']);
-		expect(
-			decoder.decode(expectOk(await folder.files.read('first.txt')).bytes),
-		).toBe('first');
-	});
-
-	test('an invalid row, path, or capture refuses the whole batch before anything is published', async () => {
-		const folder = await open();
-		const refusals = [
-			await folder.batch((batch) => {
-				batch.files.create('audio/a.webm', AUDIO);
-				batch.tables.recordings.create({
-					stem: 'a',
-					fields: { title: 1 as unknown as string, audioPath: 'audio/a.webm' },
-				});
-			}),
-			await folder.batch((batch) => {
-				batch.files.create('audio/a.webm', AUDIO);
-				batch.tables.recordings.create({
-					...recording('a'),
-					stem: '../a',
-				});
-			}),
-			await folder.batch((batch) => {
-				batch.files.create('audio/a.webm', AUDIO);
-				batch.tables.recordings.create(
-					// A batch reads nothing, so it cannot choose an unused stem.
-					{ fields: recording('a').fields } as never,
-				);
-			}),
-			await folder.batch((batch) => {
-				batch.files.create('audio/a.webm', AUDIO);
-				batch.files.create('../outside.webm', AUDIO);
-			}),
-			await folder.batch((batch) => {
-				batch.files.create('audio/a.webm', AUDIO);
-				batch.files.replace({ path: 'audio/b.webm' } as never, AUDIO);
-			}),
-		];
-		expect(refusals.map((refused) => expectErr(refused).name)).toEqual([
-			'InvalidValues',
-			'InvalidStem',
-			'InvalidStem',
-			'InvalidPath',
-			'InvalidPath',
-		]);
-		expect(await paths(folder)).toEqual([]);
-
-		// An empty batch is a successful nothing.
-		expect(expectOk(await folder.batch(() => undefined)).steps).toEqual([]);
-	});
-
-	test('the receipt describes what this batch saved; a later read is a separate observation', async () => {
-		const folder = await open();
-		const receipt = expectOk(
-			await folder.batch((batch) => {
-				batch.files.create('audio/take.webm', AUDIO);
-				batch.tables.recordings.create(recording('take'));
-			}),
-		);
-		// Another writer replaces both files after the batch was acknowledged.
-		const theirs = '---\ntitle: Theirs\naudioPath: audio/other.webm\n---\n';
-		expectOk(await folder.files.overwrite('recordings/take.md', theirs));
-		expectOk(await folder.files.overwrite('audio/take.webm', 'not audio'));
-
-		// The receipt still names the bytes this batch saved.
-		const [audioStep, rowStep] = receipt.steps;
-		if (audioStep?.kind !== 'write' || rowStep?.kind !== 'write')
-			throw new Error('expected two writes');
-		expect(audioStep.file.sha256).toEqual(await hashBytes(AUDIO));
-		expect(rowStep.file.sha256).toEqual(
-			await hashBytes(encoder.encode(rowSource('take'))),
-		);
-		// An explicit get observes the other writer's row, not this batch's.
-		const observed = expectOk(await folder.tables.recordings.get('take'));
-		expect(observed?.fields).toEqual({
-			title: 'Theirs',
-			audioPath: 'audio/other.webm',
-		});
-		expect(observed?.sha256).not.toEqual(rowStep.file.sha256);
-		// So the receipt cannot be used to overwrite what it never saw.
-		expect(
-			expectErr(await folder.files.replace(rowStep.file, rowSource('take')))
-				.name,
-		).toBe('Conflict');
-		expect(expectErr(await folder.files.remove(audioStep.file)).name).toBe(
-			'Conflict',
-		);
-	});
-
-	test('a closed folder refuses the batch without calling the callback', async () => {
-		const folder = await open();
-		await folder.close();
-		let calls = 0;
-		const refused = expectErr(
-			await folder.batch(() => {
-				calls++;
-			}),
-		);
-		expect(refused.name).toBe('Closed');
-		expect(calls).toBe(0);
 	});
 });
 
@@ -601,6 +454,149 @@ describe.each([
 			'recordings/take.md',
 			'recordings/take.webm',
 		]);
+	});
+});
+
+// Admission rules return before backend publication; one fixture is sufficient.
+describe('batch admission', () => {
+	const open = openBrowser;
+
+	test('a callback that throws, returns a promise, or returns a value publishes nothing', async () => {
+		const folder = await open(true);
+		let calls = 0;
+		const collectThen = (after: () => unknown) => (batch: Collector) => {
+			calls++;
+			batch.files.create('audio/take.webm', AUDIO);
+			batch.tables.recordings.create(recording('take'));
+			return after() as undefined;
+		};
+
+		const threw = expectErr(
+			await folder.batch(
+				collectThen(() => {
+					throw new Error('recorder failed');
+				}),
+			),
+		);
+		expect(threw).toMatchObject({ name: 'Threw' });
+		expect(threw.message).toContain('recorder failed');
+
+		const promised = expectErr(
+			await folder.batch(collectThen(() => Promise.resolve())),
+		);
+		expect(promised).toMatchObject({ name: 'Returned', thenable: true });
+		const thenable = expectErr(
+			// biome-ignore lint/suspicious/noThenProperty: a hand-made thenable is what this refuses.
+			await folder.batch(collectThen(() => ({ then() {} }))),
+		);
+		expect(thenable).toMatchObject({ name: 'Returned', thenable: true });
+		const valued = expectErr(await folder.batch(collectThen(() => 1)));
+		expect(valued).toMatchObject({ name: 'Returned', thenable: false });
+
+		// Each callback ran once, and none of them published or asked history.
+		expect(calls).toBe(4);
+		expect(await paths(folder)).toEqual([]);
+		expect(folder.git.snapshot.lastCommit).toBeUndefined();
+	});
+
+	test('the collector is sealed when the callback returns: a kept one, or one used after an await, throws and publishes nothing', async () => {
+		const folder = await open();
+		let kept: Collector | undefined;
+		expectOk(
+			await folder.batch((batch) => {
+				kept = batch;
+				batch.files.create('first.txt', 'first');
+			}),
+		);
+		if (kept === undefined) throw new Error('the callback did not run');
+		const retained = kept;
+		for (const use of [
+			() => retained.files.create('late.txt', 'late'),
+			() => retained.files.overwrite('first.txt', 'changed'),
+			() => retained.tables.recordings.create(recording('late')),
+		])
+			expect(use).toThrow('This batch is sealed');
+
+		// An async callback is refused, and what it does after its await fails
+		// inside its own promise without reaching the folder.
+		let afterAwait: unknown;
+		const refused = expectErr(
+			await folder.batch((async (batch: Collector) => {
+				await Promise.resolve();
+				try {
+					batch.files.create('async.txt', 'async');
+				} catch (cause) {
+					afterAwait = cause;
+					throw cause;
+				}
+			}) as unknown as (batch: Collector) => undefined),
+		);
+		expect(refused).toMatchObject({ name: 'Returned', thenable: true });
+		await Bun.sleep(5);
+		expect(String(afterAwait)).toContain('This batch is sealed');
+		expect(await paths(folder)).toEqual(['first.txt']);
+		expect(
+			decoder.decode(expectOk(await folder.files.read('first.txt')).bytes),
+		).toBe('first');
+	});
+
+	test('an invalid row, path, or capture refuses the whole batch before anything is published', async () => {
+		const folder = await open();
+		const refusals = [
+			await folder.batch((batch) => {
+				batch.files.create('audio/a.webm', AUDIO);
+				batch.tables.recordings.create({
+					stem: 'a',
+					fields: { title: 1 as unknown as string, audioPath: 'audio/a.webm' },
+				});
+			}),
+			await folder.batch((batch) => {
+				batch.files.create('audio/a.webm', AUDIO);
+				batch.tables.recordings.create({
+					...recording('a'),
+					stem: '../a',
+				});
+			}),
+			await folder.batch((batch) => {
+				batch.files.create('audio/a.webm', AUDIO);
+				batch.tables.recordings.create(
+					// A batch reads nothing, so it cannot choose an unused stem.
+					{ fields: recording('a').fields } as never,
+				);
+			}),
+			await folder.batch((batch) => {
+				batch.files.create('audio/a.webm', AUDIO);
+				batch.files.create('../outside.webm', AUDIO);
+			}),
+			await folder.batch((batch) => {
+				batch.files.create('audio/a.webm', AUDIO);
+				batch.files.replace({ path: 'audio/b.webm' } as never, AUDIO);
+			}),
+		];
+		expect(refusals.map((refused) => expectErr(refused).name)).toEqual([
+			'InvalidValues',
+			'InvalidStem',
+			'InvalidStem',
+			'InvalidPath',
+			'InvalidPath',
+		]);
+		expect(await paths(folder)).toEqual([]);
+
+		// An empty batch is a successful nothing.
+		expect(expectOk(await folder.batch(() => undefined)).steps).toEqual([]);
+	});
+
+	test('a closed folder refuses the batch without calling the callback', async () => {
+		const folder = await open();
+		await folder.close();
+		let calls = 0;
+		const refused = expectErr(
+			await folder.batch(() => {
+				calls++;
+			}),
+		);
+		expect(refused.name).toBe('Closed');
+		expect(calls).toBe(0);
 	});
 });
 

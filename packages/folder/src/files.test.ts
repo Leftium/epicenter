@@ -113,24 +113,6 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 	const text = async (folder: Opened, path: string) =>
 		decoder.decode(expectOk(await folder.files.read(path)).bytes);
 
-	test('malformed table captures cannot recreate a removed row', async () => {
-		const folder = await open();
-		const table = folder.tables.todos;
-		const entry = expectOk(
-			await table.create({ stem: 'a', fields: { title: 'A' } }),
-		);
-		expectOk(await table.delete(entry));
-		const malformed = { ...entry, sha256: undefined as never };
-		expect(expectErr(await table.replace(malformed, entry.source)).name).toBe(
-			'InvalidPath',
-		);
-		expect(expectErr(await table.rename(malformed, 'b')).name).toBe(
-			'InvalidPath',
-		);
-		expect(expectErr(await table.delete(malformed)).name).toBe('InvalidPath');
-		expect(expectOk(await table.list()).entries).toEqual([]);
-	});
-
 	test('table mutations pin mutable capture payloads before awaiting', async () => {
 		const folder = await open();
 		const table = folder.tables.todos;
@@ -255,7 +237,7 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 	test('captures are frozen plain values that never follow the file, and survive serialization', async () => {
 		const folder = await open();
 		const saved = expectOk(await folder.files.create('draft.md', 'one'));
-		expect(Object.isFrozen(saved) && Object.isFrozen(saved.sha256)).toBe(true);
+		expect(Object.isFrozen(saved)).toBe(true);
 		expect(Object.keys(saved)).toEqual(['path', 'sha256']);
 		const snapshot = structuredClone(saved);
 

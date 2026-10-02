@@ -452,7 +452,7 @@ test('a save returns the capture of the bytes it sent, without reading them back
 	const observed = expectOk(await folder.files.read('b.md'));
 	expect(observed.sha256).toEqual('e'.repeat(64));
 	expect(moved.sha256).toEqual(sentVersion);
-	expect(Object.isFrozen(moved) && Object.isFrozen(moved.sha256)).toBe(true);
+	expect(Object.isFrozen(moved)).toBe(true);
 });
 
 const ROW_SOURCE = '---\ntitle: Take\ndone: false\n---\n';
@@ -471,6 +471,8 @@ test('a batch is one apply: ordered changes, exact conditions, and a receipt fro
 		sha256: 'a'.repeat(64),
 	};
 
+	const moving = { path: 'audio/move.webm', sha256: 'b'.repeat(64) };
+
 	const receipt = expectOk(
 		await folder.batch((batch) => {
 			batch.files.replace(observed, audio);
@@ -478,7 +480,7 @@ test('a batch is one apply: ordered changes, exact conditions, and a receipt fro
 				stem: 'take',
 				fields: { title: 'Take', done: false },
 			});
-			batch.files.move(observed, 'audio/kept.webm');
+			batch.files.move(moving, 'audio/kept.webm');
 		}),
 	);
 
@@ -505,9 +507,9 @@ test('a batch is one apply: ordered changes, exact conditions, and a receipt fro
 		},
 		{
 			kind: 'move',
-			from: 'audio/old.webm',
+			from: moving.path,
 			to: 'audio/kept.webm',
-			expectedSha256: observed.sha256,
+			expectedSha256: moving.sha256,
 		},
 	]);
 	expect(receipt.steps).toEqual([
@@ -526,9 +528,9 @@ test('a batch is one apply: ordered changes, exact conditions, and a receipt fro
 		},
 		{
 			kind: 'move',
-			from: 'audio/old.webm',
+			from: moving.path,
 			to: 'audio/kept.webm',
-			file: { path: 'audio/kept.webm', sha256: observed.sha256 },
+			file: { path: 'audio/kept.webm', sha256: moving.sha256 },
 		},
 	]);
 });

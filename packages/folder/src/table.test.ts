@@ -209,6 +209,13 @@ test('replacement saves invalid frontmatter exactly and returns a submitted entr
 	expect(
 		new TextDecoder().decode(expectOk(await s.base.read(s.entry.path)).bytes),
 	).toBe('another writer');
+	// A returned entry remains the submitted baseline, not the later writer's.
+	expect(expectErr(await s.table.replace(next, 'retry draft')).name).toBe(
+		'Conflict',
+	);
+	expect(
+		new TextDecoder().decode(expectOk(await s.base.read(s.entry.path)).bytes),
+	).toBe('another writer');
 });
 
 test('existing odd filenames remain editable and supplied field values remain validated', async () => {
@@ -236,4 +243,18 @@ test('existing odd filenames remain editable and supplied field values remain va
 	expect(
 		expectErr(await s.table.update('nested/a', { body: 'draft' })).name,
 	).toBe('InvalidStem');
+});
+
+test('malformed table captures cannot recreate a removed row', async () => {
+	const { table, entry } = await setup();
+	expectOk(await table.delete(entry));
+	const malformed = { ...entry, sha256: undefined as never };
+	expect(expectErr(await table.replace(malformed, entry.source)).name).toBe(
+		'InvalidPath',
+	);
+	expect(expectErr(await table.rename(malformed, 'b')).name).toBe(
+		'InvalidPath',
+	);
+	expect(expectErr(await table.delete(malformed)).name).toBe('InvalidPath');
+	expect(expectOk(await table.list()).entries).toEqual([]);
 });

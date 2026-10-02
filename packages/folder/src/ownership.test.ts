@@ -81,6 +81,9 @@ describe('byte ownership', () => {
 		next.set(encoder.encode('DDDD'));
 		const replaced = expectOk(await replacing);
 		expect(replaced.sha256).toEqual(await hashBytes(encoder.encode('CCCC')));
+		expect(expectOk(await folder.files.read('bytes.txt')).bytes).toEqual(
+			encoder.encode('CCCC'),
+		);
 
 		const last = encoder.encode('EEEE');
 		const overwriting = folder.files.overwrite('bytes.txt', last);
@@ -103,6 +106,9 @@ describe('byte ownership', () => {
 		expect(expectOk(await saving).sha256).toEqual(
 			await hashBytes(encoder.encode('middle')),
 		);
+		expect(expectOk(await folder.files.read('view.txt')).bytes).toEqual(
+			encoder.encode('middle'),
+		);
 
 		const buffer = Buffer.from('buffer bytes');
 		const buffered = folder.files.create('buffer.txt', buffer);
@@ -117,41 +123,6 @@ describe('byte ownership', () => {
 });
 
 describe('row files', () => {
-	test('rename and delete touch one Markdown file while siblings appear, change, and multiply', async () => {
-		const folder = await open();
-		const plain = expectOk(
-			await folder.tables.todos.create({
-				stem: 'plain',
-				fields: { title: 'Plain', done: false },
-			}),
-		);
-		// Siblings arrive after the entry was captured. None of them is the row.
-		const late = expectOk(
-			await folder.files.create('todos/plain.opus', 'late'),
-		);
-		expectOk(await folder.files.create('todos/plain.flac', 'x'));
-		const moved = expectOk(await folder.tables.todos.rename(plain, 'moved'));
-		expect(moved.path).toBe('todos/moved.md');
-		expect(moved.sha256).toEqual(plain.sha256);
-
-		// A sibling changes its extension and is rewritten between capture and delete.
-		const renamedAudio = expectOk(
-			await folder.files.move(late, 'todos/moved.wav'),
-		);
-		expectOk(await folder.files.replace(renamedAudio, 'rewritten'));
-		expectOk(await folder.tables.todos.delete(moved));
-
-		const paths = expectOk(await folder.files.list()).files.map(
-			(file) => file.path,
-		);
-		expect(paths.sort()).toEqual(['todos/moved.wav', 'todos/plain.flac']);
-		expect(
-			new TextDecoder().decode(
-				expectOk(await folder.files.read('todos/moved.wav')).bytes,
-			),
-		).toBe('rewritten');
-	});
-
 	test('a stale entry is refused by its own sha256, and nothing else decides', async () => {
 		const folder = await open();
 		const row = expectOk(

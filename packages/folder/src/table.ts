@@ -161,7 +161,6 @@ export type PreparedRow = {
  * whichever way it is published. Synchronous: it reads nothing.
  */
 export function prepareRow(
-	table: string,
 	parsed: ParsedTable,
 	input: {
 		readonly stem: string;
@@ -175,7 +174,7 @@ export function prepareRow(
 	const values = (input.fields ?? {}) as Record<string, unknown>;
 	const valid = invalidValues(parsed, values, true);
 	if (valid.error) return valid;
-	const path = rowPath(table, input.stem);
+	const path = rowPath(parsed.name, input.stem);
 	const ordered: Record<string, unknown> = {};
 	for (const key of parsed.fields.keys()) ordered[key] = values[key];
 	const composed = composeSource(ordered, input.body ?? '');
@@ -232,8 +231,9 @@ export function destinationProblem(
 
 export function createTable<TFields>(
 	{ storage }: { storage: FolderStorage },
-	{ name, definition: parsed }: { name: string; definition: ParsedTable },
+	{ definition: parsed }: { definition: ParsedTable },
 ): FileTable<TFields> {
+	const { name } = parsed;
 	const declared = [...parsed.fields.keys()];
 
 	function interpret(
@@ -386,7 +386,7 @@ export function createTable<TFields>(
 		},
 		get: readEntry,
 		async create(input) {
-			const prepared = prepareRow(name, parsed, {
+			const prepared = prepareRow(parsed, {
 				stem: input.stem ?? generateStem(),
 				fields: input.fields,
 				body: input.body,

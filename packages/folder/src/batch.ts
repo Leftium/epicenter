@@ -276,8 +276,8 @@ export function collectBatch<TDefinition extends DataDefinition>(
 	};
 
 	const tables: Record<string, BatchTable<unknown>> = {};
-	for (const [name, parsed] of compiled.tables)
-		tables[name] = {
+	for (const parsed of compiled.tables.values())
+		tables[parsed.name] = {
 			create(input) {
 				open();
 				if (typeof input?.stem !== 'string') {
@@ -289,7 +289,7 @@ export function collectBatch<TDefinition extends DataDefinition>(
 					);
 					return;
 				}
-				const prepared = prepareRow(name, parsed, input);
+				const prepared = prepareRow(parsed, input);
 				if (prepared.error) {
 					refuse(Err(prepared.error));
 					return;
@@ -299,7 +299,7 @@ export function collectBatch<TDefinition extends DataDefinition>(
 					kind: 'create',
 					path: prepared.data.path,
 					bytes: prepared.data.bytes,
-					row: name,
+					row: parsed.name,
 				});
 			},
 		};

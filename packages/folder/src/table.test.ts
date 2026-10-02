@@ -70,7 +70,6 @@ async function setup() {
 	}>(
 		{ storage: boundary },
 		{
-			name: 'todos',
 			definition: expectOk(compileFolderDefinition(definition)).tables.get(
 				'todos',
 			)!,

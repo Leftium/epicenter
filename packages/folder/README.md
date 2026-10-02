@@ -454,7 +454,7 @@ write that skips history or change hints.
 
 ```ts
 createFiles({ storage })
-createTable({ storage }, { name, definition })
+createTable({ storage }, { definition })
 createKv({ storage }, { definition })
 createTerminal({ storage, git }, options)
 ```

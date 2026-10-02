@@ -141,7 +141,11 @@
 					class={row}
 					class:bg-accent={notes.view.folderId === folder.stem && !notes.view.deleted}
 					aria-current={notes.view.folderId === folder.stem && !notes.view.deleted ? 'true' : undefined}
-					onclick={() => notes.showFolder(folderIdOf(folder))}
+					onclick={() => {
+						const id = folderIdOf(folder);
+						if (id === null) void notes.open(folder.path);
+						else notes.showFolder(id);
+					}}
 				>
 					{#if typeof folder.fields.icon === 'string' && folder.fields.icon !== ''}
 						<span class="text-base leading-none">{folder.fields.icon}</span>

@@ -46,7 +46,7 @@ Case-sensitive filesystems can contain `Interview.md` and `interview.md` as
 distinct rows; a destination that cannot represent both refuses the collision.
 Lookup verifies literal directory-entry spelling rather than inheriting a
 case-insensitive filesystem's aliases. A file ending in `.MD` is preserved by
-raw file access, but is neither a `.md` row nor an owned attachment.
+raw file access, but is not a `.md` row.
 `get(stem)` returns `undefined` only when no row has that literal stem. A present file
 that cannot be fully interpreted remains an entry with exact `source` and
 conformance issues. An I/O failure to read the file is an operation failure,
@@ -60,14 +60,14 @@ an empty table.
 valid stem, `issues: undefined`, complete `fields`, and a body. The invalid
 variant has a nonempty `issues` array, its literal stem,
 only independently validated declared fields, and a body when its boundary can
-be identified. Invalid filenames and ambiguous attachments contribute issues even
-when every declared field validates. Both variants keep the unmodified source
-for repair.
+be identified. Invalid filenames contribute a `filename` issue even when every
+declared field validates; the issue, not a missing stem, is what a caller
+checks before an operation that depends on a conforming name. Both variants
+keep the unmodified source for repair.
 
 Unknown frontmatter keys are preserved in `source` and do not contribute
-conformance issues merely because the current declaration omits them. Several
-same-stem attachment candidates contribute an attachment issue and leave
-`attachment` undefined; the entry does not choose one.
+conformance issues merely because the current declaration omits them. Sibling
+media files do not contribute row issues: a table owns only its Markdown row.
 
 **An entry is one immutable observation of its row file.** Its `source` and
 `sha256` come from the same captured bytes. The hash identifies their content.
@@ -77,11 +77,10 @@ checks the current file because another writer may have changed it.
 
 An entry is already a snapshot. An editor calls the entry it last accepted its
 baseline; that role adds no wrapper or second value type. `fields` and `body`
-are interpretations of `source`, not independently saved data. The optional
-`attachment` is the folder-relative path of the one unambiguous owned sibling.
-Listing or reading a row does not hash its media. The path does not promise
-that its bytes remain current or available. `files.open(path)` supplies stable
-media bytes under ADR-0466 without requiring a hash or returning a media version.
+are interpretations of `source`, not independently saved data. An application's
+declared fields or Markdown links may reference other files without establishing
+ownership. Listing or reading a row does not inspect or hash those files.
+`files.open(path)` supplies stable media bytes under ADR-0466 without requiring a hash or returning a media version.
 The workflow consumes those bytes independently of later changes to the row.
 
 ```ts
@@ -89,7 +88,6 @@ type Entry<TFields> = {
   readonly path: string;
   readonly sha256: string;
   readonly source: string;
-  readonly attachment: string | undefined;
 } & (
   | {
       readonly stem: string;

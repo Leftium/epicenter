@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-09-30
 - **Implementation:** current-source `update` and captured `replace` through the shared browser/native file boundary, with no automatic retries.
-- **Unbuilt:** migration of released editors and native integration beyond the demo.
+- **Unbuilt:** captured entries with content Results, parse-dependent update refusal, narrowed preparation errors, and released editor adoption.
 
 ## Context
 
@@ -24,12 +24,12 @@ storage mechanism, a target-dependent overload, or retry settings.
 | Method | Preparation and baseline |
 | --- | --- |
 | `update(stem, { fields?, body? })` | Read current source once, validate supplied fields, and patch only requested fields/body. Publish against that read's SHA-256. |
-| `replace(entry, source)` | Encode complete supplied UTF-8 text and publish against the entry's SHA-256. Invalid frontmatter is saved and reported in the returned entry's issues. |
+| `replace(entry, source)` | Encode complete supplied UTF-8 text and publish against the entry's SHA-256. Malformed text is saved successfully; the returned entry has a failed content Result under ADR-0462. |
 
 The stem is one literal filename segment under the table's directory, not a
-path. Updates accept existing external names under the same addressing rules
-as `get`, even when they violate creation's naming rules. A missing row returns
-`NotFound`; an update never creates a row. An entry supplies its literal path
+path. Updates, creation and rename accept literal names under the same scoped
+addressing and actual filesystem rules as `get`; no portable naming grammar
+produces content issues. A missing row returns `NotFound`; an update never creates a row. An entry supplies its literal path
 and SHA-256 to `replace`, so no separate path is required. Neither
 method changes the row stem or moves other files.
 
@@ -37,9 +37,10 @@ method changes the row stem or moves other files.
 preserves current unrelated source, including unknown keys, comments, quoting,
 ordering, byte-order marks, and untouched newline spans. A field-only update
 does not reserialize the body. Validation of a supplied field does not require
-unrelated stored fields to conform. Source that cannot be patched safely is
-refused without writing. A body assignment replaces the body deliberately;
-it does not merge another writer's body edits.
+unrelated stored fields to conform. Current source must parse under ADR-0462
+before any structured patch, including a body-only update. Parsing refusal and unsafe patching of successfully parsed
+source are distinct preparation failures. Both refuse without writing. A body assignment
+replaces the body deliberately; it does not merge another writer's body edits.
 
 `replace` saves the supplied text exactly. It neither patches frontmatter nor
 requires it to conform to the table schema. This permits complete-source repair.
@@ -65,9 +66,10 @@ write still checks its condition. `Unconfirmed`, partial progress, I/O failures,
 and thrown calls never trigger automatic replay. No retry count or transform
 callback is exposed.
 
-Success returns a new immutable entry interpreted from the exact submitted
-bytes and their hash. It is not a later reread and does not mutate an entry
-passed by the caller. Table updates and replacements check no sibling filenames
+Success returns a new immutable captured entry with a `content` Result
+interpreted from the exact submitted bytes and their hash. A failed content
+Result does not turn a completed save into an operation failure. The receipt
+is not a later reread and does not mutate an entry passed by the caller. Table updates and replacements check no sibling filenames
 and infer no attachment ownership. Creation and rename own destination layout
 preflight under
 [ADR-0477](0477-file-folder-operations-tolerate-repairable-layout-disorder.md).
@@ -81,10 +83,12 @@ preparation and receipt interpretation to the same condition used by
 `files.replace(capture, content)`.
 
 Both replacement methods take a capture containing its path. The table helper
-also checks that it identifies a row of this table and returns interpreted
-fields, body, and issues for the submitted text. Capture's draft UI consumes
-that interpretation; replacing the helper with raw files would transfer
-parsing into the application or require a racing post-save observation.
+also checks that it identifies a row of this table and returns a `content`
+Result for the submitted text: parse failure, or parsed fields, body and field
+issues. The same pure `table.inspect(source)` interprets drafts. Capture's draft
+UI will consume that interpretation. Replacing the helper with raw files
+would transfer receipt interpretation into the application; it must use the
+submitted source, never a racing post-save observation.
 
 File-save success remains independent of Git history. Commit and push failures
 do not undo a save or change its returned entry. No editor flush or pending-ref
@@ -98,11 +102,13 @@ journal is required solely to complete history.
   one to an unrelated field. The application chooses what to do with its draft.
 - Concurrent commands can return conflicts even on one handle. The library
   promises no click ordering or completion under continuous contention.
+- Source repair can save malformed text and accept its new captured baseline.
+  No successful save requires parsing success or a post-save read.
 - A captured structured patch is no longer an `update` mode. An editor can
   prepare its captured source with `patchSource` and save it through `replace`;
   `patchSource` does not itself perform table field validation.
-- Rename and delete retain captured targets. The `kv.update(snapshot, values)`
-  contract remains captured, including exclusive initialization from absence.
+- Rename and delete retain captured targets. KV preparation and publication
+  follow their own contract; this row decision does not change KV commands.
 
 ## Considered alternatives
 

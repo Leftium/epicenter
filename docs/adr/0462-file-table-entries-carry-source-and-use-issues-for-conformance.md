@@ -1,185 +1,218 @@
-# 0462. File table entries carry source and use issues for conformance
+# 0462. Table reads capture files before interpreting their contents
 
 - **Status:** Proposed
-- **Date:** 2026-09-29
-- **Implementation:** source-backed entries, captured versions, literal stems, readable malformed rows, and issue reporting in `@epicenter/folder`, read by Todos, Whispering, Capture, and Honeycrisp.
+- **Date:** 2026-10-02
+- **Unbuilt:** phase-separated content Results, schema-aware draft inspection, mandatory frontmatter fences, unified per-file listings, literal destination names, narrowed operation errors, and consumer migration.
 
 ## Context
 
-A Markdown row still exists when its frontmatter is malformed or a declared field
-fails validation. Splitting table reads into valid rows and a separate invalid
-inventory makes applications reconstruct that fact when they list, select, and
-repair documents. Returning only a validation error loses the exact file the
-person or agent needs to edit.
+`@epicenter/folder` currently combines filename, frontmatter and field issues in
+one source-backed entry. A filename problem makes every field appear partial.
+Malformed YAML and invalid fields share the same variant. Editors separately
+parse their current buffer and display field diagnostics from a saved entry.
+Those diagnostics can describe different text.
 
-The current Yjs-backed table API returns value snapshots and reports
-nonconformance through its own read results. This record concerns the proposed
-file-backed table API, whose saved Markdown is the source. It does not change
-the Yjs read contract.
+A malformed file still exists, and saving malformed text can succeed. Putting
+parsing failure in the read operation's error channel makes repair editors
+extract their baseline from either an entry or a source-bearing error. Returning
+only parsed entries after saves confuses interpretation with publication.
+
+This decision changes Folder tables, not Yjs-backed reads, sparse KV semantics
+or the raw byte API.
 
 ## Decision
 
-Table methods live under `folder.tables.<table>` alongside literal-path access
-through `folder.files`, as specified in
-[ADR-0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md).
-`get(stem)` takes the file stem under
-[ADR-0457](0457-a-row-filename-is-its-exact-id-and-a-title-is-a-field.md):
-`folder.tables.recordings.get('interview')` reads `recordings/interview.md`.
-An entry's `stem` is derived from that filename, while its `path` includes the
-table directory and `.md`. Neither is an authored frontmatter field.
-
-**`list()` and `get(stem)` return the same source-backed entry shape for a readable
-Markdown file, whether or not its declared fields conform.** Every entry carries
-its path and its stem, and `entry.path === rowPath(table.name, entry.stem)`.
-Removing the exact lowercase `.md` suffix yields the complete literal stem,
-including one that breaks the naming rules or is empty (`<table>/.md`). The
-naming rules apply to the names `create` and `rename` make; `get(stem)` and
-`update(stem)` address any existing row, so a file another program named
-stays readable and editable at the stem its entry carries. An earlier version
-of this record gave such an entry `stem: undefined` and selected it by path.
-That left `get('bad ')` able to read a row whose own entry denied having that
-stem, and made every caller re-derive the stem from the path. `rowStemOf` is
-the exported inverse of `rowPath` for callers that hold only a path. No case
-folding, Unicode normalization, or filename alias maps distinct files to one
-stem. Exact stems therefore need no duplicate-ID inventory or resolution API.
-Case-sensitive filesystems can contain `Interview.md` and `interview.md` as
-distinct rows; a destination that cannot represent both refuses the collision.
-Lookup verifies literal directory-entry spelling rather than inheriting a
-case-insensitive filesystem's aliases. A file ending in `.MD` is preserved by
-raw file access, but is not a `.md` row.
-`get(stem)` returns `undefined` only when no row has that literal stem. A present file
-that cannot be fully interpreted remains an entry with exact `source` and
-conformance issues. An I/O failure to read the file is an operation failure,
-not an entry issue. After successful path enumeration, the file boundary
-reports an individual failed read by path rather than hiding that path. If
-enumeration itself fails, `list()` refuses the operation instead of returning
-an empty table.
-
-**The value of `issues` discriminates the two entry variants; no separate
-`status` field or nested `parsed` result is added.** The valid variant has a
-valid stem, `issues: undefined`, complete `fields`, and a body. The invalid
-variant has a nonempty `issues` array, its literal stem,
-only independently validated declared fields, and a body when its boundary can
-be identified. Invalid filenames contribute a `filename` issue even when every
-declared field validates; the issue, not a missing stem, is what a caller
-checks before an operation that depends on a conforming name. Both variants
-keep the unmodified source for repair.
-
-Unknown frontmatter keys are preserved in `source` and do not contribute
-conformance issues merely because the current declaration omits them. Sibling
-media files do not contribute row issues: a table owns only its Markdown row.
-
-**An entry is one immutable observation of its row file.** Its `source` and
-`sha256` come from the same captured bytes. The hash identifies their content.
-A table replacement or deletion receives the file capture; UI callers can pass
-the whole entry without separately fetching or assembling a token. The publisher still
-checks the current file because another writer may have changed it.
-
-An entry is already a snapshot. An editor calls the entry it last accepted its
-baseline; that role adds no wrapper or second value type. `fields` and `body`
-are interpretations of `source`, not independently saved data. An application's
-declared fields or Markdown links may reference other files without establishing
-ownership. Listing or reading a row does not inspect or hash those files.
-`files.open(path)` supplies stable media bytes under ADR-0466 without requiring a hash or returning a media version.
-The workflow consumes those bytes independently of later changes to the row.
+**An entry captures a row file; its `content` Result describes interpretation.**
+`get(stem)` reads `<table>/<stem>.md`. Successful acquisition and UTF-8 decoding
+produce a literal path, stem, exact source and hash, even when parsing fails.
+Absence is `Ok(undefined)`. Address, acquisition and decoding failures are the
+outer `Err`; they are not content diagnostics.
 
 ```ts
-type Entry<TFields> = {
-  readonly path: string;
-  readonly sha256: string;
-  readonly source: string;
-} & (
-  | {
-      readonly stem: string;
-      readonly fields: Readonly<TFields>;
-      readonly body: string;
-      readonly issues: undefined;
-    }
-  | {
-      readonly stem: string;
-      readonly fields: Readonly<Partial<TFields>>;
-      readonly body: string | undefined;
-      readonly issues: readonly [Issue, ...Issue[]];
-    }
+type NonEmpty<T> = readonly [T, ...T[]];
+
+type ParseError = {
+  readonly message: string;
+  readonly diagnostics: NonEmpty<{ readonly message: string }>;
+};
+
+type FieldIssue = {
+  readonly field: string;
+  /** JSON pointer within this field's value, when the validator identifies it. */
+  readonly path?: string;
+  readonly message: string;
+};
+
+type RowContent<TFields> = { readonly body: string } & (
+  | { readonly fields: Readonly<TFields>; readonly issues: undefined }
+  | { readonly fields: Readonly<Partial<TFields>>;
+      readonly issues: NonEmpty<FieldIssue> }
 );
 
-const result = await table.get(stem);
-if (result.error) return showReadFailure(result.error);
-const entry = result.data;
-if (entry === undefined) return;
-if (entry.issues !== undefined) {
-  showRepairView(entry.source, entry.issues, entry.fields);
-} else {
-  showDocument(entry.fields, entry.body);
-}
+type Entry<TFields> = {
+  readonly path: string;
+  readonly stem: string;
+  readonly sha256: string;
+  readonly source: string;
+  readonly content: Result<RowContent<TFields>, ParseError>;
+};
+
+type TableListing<TFields> = readonly {
+  readonly path: string;
+  readonly result: Result<Entry<TFields>, TableReadError>;
+}[];
+
+// Intended signatures; current exports implement the earlier contract.
+inspect(source: string): Result<RowContent<TFields>, ParseError>;
+get(stem: string): Promise<Result<Entry<TFields> | undefined, TableReadError>>;
+list(): Promise<Result<TableListing<TFields>, TableEnumerationError>>;
 ```
 
-`get` returns a Result containing an entry or `undefined`, with typed file and
-table read failures. Absence is the successful result's `undefined`, not a
-validation failure. `list` returns `{ entries, unreadable }`; individually
-unreadable paths carry their read failure and do not hide readable entries.
-The package README and `FileTable` type name the current error variants.
+```ts
+const read = await table.get(stem);
+if (read.error !== null) return showReadFailure(read.error);
+const entry = read.data;
+if (entry === undefined) return showMissing();
 
-`issues` is `undefined` or a nonempty array, never `null` or `[]`.
-`issues: undefined` means the property value is the discriminant. It does not
-promise that the key is absent from the JavaScript object. The producer returns
-a nonempty issue list whenever the entry is invalid, so callers never have to
-infer validity from an empty array.
-Serialization may omit an undefined key; callers check its value rather than
-the physical presence of the key. Entries and file references are plain captured
-data, not resource handles. Their source and diagnostics remain readable after
-the folder closes; further operations through that folder refuse.
+showSource(entry.source); // Same repair baseline even when parsing fails.
+const content = entry.content;
+if (content.error !== null) return showParseFailure(content.error);
+if (content.data.issues !== undefined) {
+  showFieldIssues(content.data.issues, content.data.fields);
+} else {
+  showDocument(content.data.fields, content.data.body);
+}
 
-Exact UTF-8 source includes a leading byte-order mark when one was present.
-Decoding and re-encoding an unchanged `source` must reproduce the captured
-bytes. A file that is not valid UTF-8 has no source-backed entry; enumeration
-reports its path as unreadable by the text interpretation, while raw file
-access preserves the bytes. It must never become an editable empty string.
+// Diagnose unsaved text without inventing a saved capture.
+const draft = table.inspect(buffer);
+```
+
+**`inspect(source)` parses once, then validates declared fields independently.**
+This pure, synchronous method uses the compiled definition and acquires no
+storage resource. Reads, mutation receipts and draft editors use this same
+interpretation. Draft inspection invents no path or capture.
+
+Row source requires an opening `---` line at the start, after an optional BOM,
+and a closing `---` line. LF and CRLF remain supported. The YAML must convert to
+a string-keyed mapping. An empty or comment-only block is an empty mapping.
+The body is the remaining text and may be empty. Fence-less Markdown fails
+parsing; it is not an instruction to insert metadata.
+
+Missing or unclosed fences, invalid YAML including duplicate keys, non-mapping
+values, non-string keys and failed alias conversion form one parse-error family.
+It retains the available parser diagnostics, without fields, field issues or a
+duplicate capture. Parsing failure leaves the entry's source available for
+repair but exposes no partially recovered typed body.
+
+After parsing succeeds, each declared field is checked for presence and value
+conformance. `fields` contains only independently validated declared values.
+Unknown keys remain in source without issues merely for being undeclared.
+An unrelated failure does not remove a validated value. Validation never
+coerces values, inserts defaults, cleans source or silently repairs it.
+
+The definition compiler owns field conformance and effective constraints.
+Folder does not maintain a second missing/invalid-field loop. TypeBox may
+produce detail internally; reference nonemptiness, UTF-8 byte limits and
+nullable behavior must agree with the value check. Public field issues carry
+a self-contained message, field and optional nested pointer, not TypeBox
+library types or schema paths. Messages and diagnostic counts are not machine
+contracts. A pointer appears only when its producer identifies the failing value.
+
+**Literal filenames are addresses, not conformance diagnostics.**
+The table appends exactly `.md` to a single literal filename segment. It does
+not trim, normalize Unicode, case-fold, strip an extension or parse an ID suffix.
+Empty stems, leading dots and trailing spaces remain addresses when the backing
+filesystem represents them. Empty stem names `.md`; callers must not test it by
+truthiness. `.MD` files remain raw files rather than lowercase `.md` table rows.
+
+Create and rename impose no separate portability naming grammar. Scoped path
+admission still refuses folder escape, private Git paths and unsafe symlink
+traversal. Actual destination identity and representability govern refusal.
+A local name is not rejected because another platform could not store it.
+Export or incoming adoption may refuse an unrepresentable destination.
+Filename issues and application filename-conformance guards are removed.
+
+**`list()` returns one inventory of per-file Results.**
+Every enumerated direct `.md` file has one item retaining its literal path.
+Readable malformed source is a successful entry with a failed content Result.
+An individual read or UTF-8 failure is that item's `Err`. A file disappearing
+after enumeration is individual `NotFound`, not an invented empty entry.
+Enumeration or whole acquisition failure is the outer `Err`; no partial
+inventory claims completeness. Listing order is not a stable sorting contract.
+
+This replaces `{ entries, unreadable }`. Presence, selection and repair use the
+same inventory. A read failure provides no editable text; raw byte access
+remains available through `files` where acquisition succeeds.
+
+**Successful publication returns captured submitted source and its interpretation.**
+`create`, `update`, `replace` and `rename` return the same entry shape.
+Saving malformed text can return outer `Ok(entry)` with `entry.content` an
+`Err(ParseError)`. The receipt uses submitted source and its hash, not a later
+read. It advances no existing capture or unsaved buffer. Conditional deletion
+needs only the file capture.
+
+`create` always writes both fences, including for an empty field map and body.
+`update` validates supplied values, reads current source once, requires parse
+success, patches only assigned spans and attempts one conditional publication.
+It may leave unrelated field issues. A parsed document can still be unsafe to
+patch without losing source: that is a preparation refusal. Neither parse
+failure nor patch refusal triggers an implicit rewrite. Whole-source `replace`
+saves exact UTF-8 text even when malformed. Publication follows ADR-0464 and
+ADR-0477; source and hash always describe the same captured bytes.
+
+**Operation errors describe acquisition or publication; diagnostics describe interpretation.**
+
+| Family | Cases and owner |
+| --- | --- |
+| Absence | Direct `get`: `Ok(undefined)`; missing update input: `NotFound`; disappeared captured replacement: `Conflict`. |
+| Read and enumeration | Invalid scoped address, non-file/non-directory target, I/O, closed owner, transport outcomes, and invalid UTF-8 when decoding. Expose only reachable variants per method. |
+| Parsing | Required framing, YAML syntax and mapping/conversion failures. One content `ParseError` with diagnostics; no field issues. |
+| Field conformance | Missing or invalid declared values after parsing. Flat issues alongside independently validated fields. |
+| Write preparation | Invalid or uncopyable supplied values, unparsed current source, unsafe source patch. No bytes published. |
+| Destination admission | Occupied destination or a path the actual destination cannot represent. Operation errors, never entry issues. |
+| Publication | `Conflict`, `Io`, `Partial`, `Unconfirmed` and closed/transport outcomes retain their actual effects and uncertainty contracts. |
+
+Reuse the file occupied-destination error instead of duplicating `Exists` in
+table and file namespaces. Table stem-address refusal uses shared scoped-address
+failure instead of overlapping `InvalidStem` and `InvalidPath`. Put UTF-8
+failure in the read family, not the union of all table write errors. Uncopyable
+supplied fields belong to invalid-input preparation, not source-patching failure.
+Keep parse-dependent preparation refusal distinct from unsafe patching of
+successfully parsed YAML. Do not merge `Conflict`, `Partial`, `Unconfirmed` or
+I/O into a generic failure. Narrow method-specific error aliases against actual
+adapter outcomes, including transport uncertainty where reachable.
 
 ## Consequences
 
-- A table has one inventory of source-backed entries for files it can read.
-  Applications can derive valid and repair-needed groups without a second
-  public `invalid` collection. Paths whose bytes cannot be read remain file
-  boundary diagnostics.
-- Callers retain one entry as the baseline and replace it only with an
-  accepted save result or a deliberately adopted read. A newer read cannot
-  silently authorize overwriting source while the editor has unsaved input.
-- Literal stems give each row one address without ID normalization or duplicate
-  identity repair. A row with an invalid or empty filename is addressed by
-  that literal stem like any other, so an empty stem is an address and callers
-  must not test a stem by truthiness. Applications decide which operations a
-  `filename` issue refuses: Whispering sends no transcription request for such
-  a recording, and Honeycrisp does not delete such a folder. Destination
-  filesystem collisions remain publication checks.
-- Callers distinguish an absent row,
-  an operational refusal, and a present entry whose action inputs are unusable.
-  Honeycrisp selection needs a path-based source repair route; Whispering audio
-  and transcription need only their actual validated inputs, not whole-row
-  conformance.
-- An unrelated bad field does not hide independently valid fields. An
-  application can use those fields for a limited action while still showing the
-  issue and preserving the exact source.
-- An unavailable relation field cannot prove that a file is unrelated to a
-  folder. A folder deletion that promises to reparent every child must refuse
-  while such files remain unresolved, or narrow that promise explicitly.
-- Malformed frontmatter may leave no validated fields, and ambiguous
-  frontmatter framing may leave no usable body. The entry remains selectable
-  and editable through `source`.
-- An operation may rely only on fields it read and validated. It may replace an
-  invalid old field with a new value that validates, provided the edit preserves
-  unrelated source and conditionally replaces the observed file. Serializing
-  `Partial<TFields>` as the whole document would discard stored facts.
-- Conforming fields do not prove that a rich editor can safely rewrite the
-  Markdown body or preserve YAML formatting. Body interpretation and edit
-  admission belong to the editor; the table keeps the source available.
+- Parsed and unparsed files have one repair baseline and save receipt. Captures
+  and source remain inspectable after close; further folder operations refuse.
+- Consumers branch on `content` before using fields or body. Whole-row consumers
+  additionally narrow on `issues`. Limited actions check their actual validated
+  inputs, not universal entry conformance.
+- Draft diagnostics describe the buffer; saved diagnostics describe the saved
+  capture. One interpreter removes schema-free draft guards and merging issues
+  from different text generations.
+- A missing validated relation cannot prove absence of that relation. Deletion
+  promising to find every child must refuse incomplete evidence or narrow its
+  promise. Diagnostics do not authorize destructive action.
+- Mandatory framing removes body-only typed edits on malformed YAML. Source
+  replacement remains available. Rich-editor admission is a separate check.
+- A save promises neither parsing success, historical retention nor delivery.
+  Native publication retains its best-effort limits against external writers.
 
 ## Considered alternatives
 
-- Return valid rows and invalid documents in separate inventories. Callers
-  need two paths for selection and must rejoin them for repair workflows.
-- Nest `{ value } | { issues }` under `parsed`. It adds a wrapper without
-  preserving more information than the source-backed entry provides.
-- Discriminate on the physical presence of the `issues` key. An explicit
-  `undefined` value gives TypeScript callers a direct narrowing check and
-  avoids a second runtime convention about whether the key was emitted.
+| Candidate | Benefit | Cost and judgment |
+| --- | --- | --- |
+| Flat entry with mixed issues | Short partial-field access. | Parse state is inferred from body availability and issue kinds. Rejected for the phase-separated contract. |
+| Flat three-state entry union | No content wrapper; fewer caller changes. | Empty partial fields also mean never parsed; absent body doubles as parser discriminant. Viable, but explicit parsing Result is preferred. |
+| Parse failure in the outer read error | Only parsed documents are entries. | Source-bearing errors become parallel repair baselines; malformed saves need another receipt or reconstruction. Rejected. |
+| Capture plus content Result | Same baseline and receipt regardless of parsing; one pure interpreter. | Adds one content branch and property access. Chosen. |
+| Raw files plus interpreter only | Fewer table methods. | Apps rebuild discovery, decoding, absence and composition. Rejected. |
+| Always-partial fields | One entry variant. | Shifts complete-field checks into callers. Rejected. |
+
+Before runtime migration, exercise malformed selection and save, current-draft
+inspection, independently valid action inputs, literal odd names, invalid UTF-8,
+individual listing failures, disappearance and stale replacement. Verify nested
+TypeBox diagnostics against the locked dependency before producing pointers;
+do not infer partial field validity from whole-object error paths.

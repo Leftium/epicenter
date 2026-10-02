@@ -2,9 +2,9 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-30
-- **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) defines authoritative current files; [ADR-0456](0456-a-markdown-row-owns-at-most-one-same-stem-attachment.md) defines attachment ownership; [ADR-0430](0430-define-store-declares-data-and-products-compose-resources.md) separates stores from product composition.
+- **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) defines authoritative current files; [ADR-0480](0480-file-tables-own-only-their-markdown-row-files.md) proposes single-file rows; [ADR-0430](0430-define-store-declares-data-and-products-compose-resources.md) separates stores from product composition.
 - **Implementation:** browser/native folder handles, tables, KV, raw files, shared Git status and commands, and the Todos caller.
-- **Unbuilt:** migration of released table/KV callers, generated query indexes, and media/LFS integration.
+- **Unbuilt:** captured content Results, shared draft inspection, unified per-file table listings, literal naming policy, remaining consumer migration, and generated query indexes.
 
 ## Context
 
@@ -30,18 +30,18 @@ const audioResult = await folder.files.open('recordings/interview.opus');
 
 | Member | Responsibility |
 | --- | --- |
-| `tables.<name>` | Interpret that table's Markdown rows. `list` and `get` return captured entries; `update(stem, change)` patches current source; `replace(entry, source)` saves complete text against an entry. |
+| `tables.<name>` | Interpret that table's Markdown rows. `get` returns a captured entry with a `content` Result; `list` returns one inventory of per-file Results; `inspect(source)` interprets draft text; `update(stem, change)` patches current source; `replace(entry, source)` saves complete text against an entry. |
 | `kv` | Interpret declared root settings saved in `kv.json`. |
-| `files` | Enumerate literal paths and read bytes, including uninterpreted files and attachments. `open(path)` supplies stable media bytes without a media version under ADR-0466. Managed writes use the same file boundary as table and KV edits. |
+| `files` | Enumerate literal paths and read bytes, including uninterpreted files and media. `open(path)` supplies stable media bytes without a media version under ADR-0466. Intent-based mutations proposed in ADR-0479 use the same file boundary as table and KV edits. |
 | `git` | Observe history and outgoing synchronization status; explicitly refresh it and request commit-and-push attempts. |
 | `signal`, `close()` | Expose the folder owner's lifetime. Closing fences its borrowed views and preserves saved files. |
 
-The open options include `git: { commitOnEdit: false }` under
-ADR-0468; omission defaults to automatic attempts. This immutable runtime policy
-belongs to the opened owner and is not saved in the folder. It controls implicit
-requests from that handle, not other writers. No commit debounce duration is
-introduced. The experimental constructors are `openBrowserFolder` and
-`openNativeFolder`; the native Todos CLI exercises the manual policy.
+The opener is `openFolder` from `@epicenter/folder` or an explicit adapter
+entry under ADR-0478. Browser options select `browser.commitOnEdit`; the Bun
+directory opener uses `git.commitOnEdit`; the Tauri shell supplies its policy.
+This immutable runtime policy belongs to the opened owner, not saved content.
+It controls implicit requests from that handle, not other writers. No commit
+debounce duration is introduced. The native Todos CLI exercises manual history.
 
 **The folder owns one observed Git status snapshot and delivers it to every
 subscriber.** Files and Git hold durable facts; this snapshot caches the latest
@@ -135,38 +135,39 @@ Raw access includes directory and extension. The two forms are not aliases on
 one overloaded lookup. A table named `files` lives at `folder.tables.files`
 and does not collide with `folder.files`.
 
-**A table directory contains Markdown rows, each owning zero or one non-Markdown
-attachment with the same complete stem.** ADR-0456 supplies the exact extension
-grammar, collision checks, and treatment of ambiguity and orphaned bytes.
+**A table entry interprets one Markdown file; media remains ordinary file content.**
+The proposed replacement of attachment ownership in ADR-0480 permits files
+anywhere within the folder, linked through Markdown or application fields.
 
 ```text
 recordings/
   interview.md
+audio/
   interview.opus
 notes/
   meeting.md
   meeting.source.md
 ```
 
-`interview.opus` belongs to `interview.md`. `meeting.source.md` is another row
-with stem `meeting.source`, not an attachment of `meeting.md`. A same-stem `.md`
-attachment would occupy the row's own path. A row may link to any number of
-other files without owning them. The optional attachment's path is discovered
-from the files rather than copied into frontmatter.
+`interview.md` may link to `../audio/interview.opus`. The link does not authorize
+media deletion or rename. `meeting.source.md` is another row with stem
+`meeting.source`. A row may link to any number of files without owning them.
+No sibling scan discovers an attachment path.
 
 **Typed views do not hide or replace raw source.** A table declaration interprets
 the Markdown; failed interpretation leaves the file accessible through `files`.
-Table entries retain source and issues under ADR-0462. Table writes preserve
+Table entries retain exact source independently of their `content` Result under
+ADR-0462. Parsing failure and field issues have separate stages; literal
+filenames produce no conformance issues. Table writes preserve
 unrelated source under ADR-0464. Raw writes can create malformed documents or
-break a same-stem pair; inspection reports that state without deleting bytes or
-silently repairing references. App creation, deletion, and rename carry the
-ownership requirements of ADR-0456 and ADR-0457.
+broken links; inspection preserves those bytes without silently repairing
+references. Table creation, deletion, and rename affect only the row file.
 
 Recording, inference, secrets, and account transport remain independently
 composed product resources. This namespace decision does not replace current
 store-owned SQLite under ADR-0436 or settle its migration. The generated root
-`index.sqlite3` under ADR-0463 remains derived data. Constructor names, raw write
-signatures, creation and rename signatures, partial-result reporting, and exact
+`index.sqlite3` under ADR-0463 remains derived data. ADR-0479 proposes the raw file
+mutation signatures. Constructor names, partial-result reporting, and exact
 Git result types remain implementation decisions. Save and Git completion follow
 their own decisions, not the spelling of a path or the shape of this handle.
 
@@ -180,8 +181,8 @@ The remaining method contracts are bounded work, not implied APIs: table
 creation/deletion/rename; raw enumeration and mutations; KV source, version,
 issue and repair results; media consumption cleanup; and incoming synchronization.
 Yjs `body`, `watch`, and `transact` methods are not carried over by symmetry.
-The saved body is entry text, and native related-file operations may report
-partial progress.
+The saved body is successfully parsed content. Native related-file operations
+may report partial progress.
 
 ## Consequences
 
@@ -189,9 +190,9 @@ partial progress.
   into a second current document store.
 - Table names cannot collide with resource namespaces. A product may open
   several folders and pass only the views a workflow needs.
-- The one-attachment rule removes authored blob IDs and attachment paths for
-  ownership. Multiple assets require other owning rows and links.
-- External edits can leave ambiguous attachments or stale links. The folder
+- Media files need no separate folder-level blob identity or ownership registry.
+  Application fields and Markdown links can address them directly.
+- External edits can leave stale links. The folder
   preserves those files; supported app operations enforce their own admission
   checks and report partial results.
 - One shared status owner removes per-consumer scan coordination and stale
@@ -207,9 +208,8 @@ partial progress.
   spellings for one lookup.
 - Restore one aggregate App handle: couples independent product resources to
   opening a data folder.
-- Give every row an asset directory: supports arbitrary attachment names and
-  cardinality, but adds a directory and asset-selection rules for the selected
-  zero-or-one attachment contract.
+- Give every row an owned asset directory: imposes lifecycle coupling on media
+  that may be shared through ordinary links.
 - Expose only three status flags. They cannot distinguish unknown observations,
   stale checks, concurrent newer edits, and the commit a push actually attempted.
 - Poll Git status every few seconds. Full discovery can be expensive and adds

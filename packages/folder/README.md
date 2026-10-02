@@ -22,7 +22,7 @@ const folder = opened.data;
 const stop = folder.onFilesChanged(() => refresh());   // subscribe, then read
 const listed = await folder.tables.todos.list();       // { entries, unreadable }
 const created = await folder.tables.todos.create({ fields: { title: 'Milk', done: false } });
-await folder.tables.todos.update(created.data!, { fields: { done: true } });
+await folder.tables.todos.update(created.data!.stem!, { fields: { done: true } });
 await folder.close();
 ```
 
@@ -97,7 +97,7 @@ is not the desktop adapter, and it does not watch the directory.
 
 | Member | Contract |
 | --- | --- |
-| `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `version`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update`, `writeSource`, `rename`, and `delete` take a captured entry and refuse if the file changed. Each changes exactly one Markdown file. |
+| `tables.<name>` | Rows at `<name>/<stem>.md`. An entry carries its path, exact `source`, `version`, fields, body, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` keeps invalid readable rows as entries and reports undecodable files in `unreadable`. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace`, `rename`, and `delete` take a captured entry and refuse if the file changed. Each changes exactly one Markdown file. |
 | `kv` | Root `kv.json`, read and conditionally replaced like an entry. |
 | `files` | Ordinary files at literal paths. See below. |
 | `batch(collect)` | Several mutations under one admission, one application, and one history request. See below. |
@@ -136,8 +136,11 @@ its row file, and so is a `read` result.
 - `create` refuses an occupied path even when the bytes are identical.
 - A stale capture is a `Conflict`. Nothing is merged, replayed, or retried.
 
-`list`, `children`, `open` (stable bytes for consumption), `mkdir`, and `rmdir`
-are unchanged.
+`list()` inventories the whole folder; `children(directory)` lists one level
+and accepts `''` for the root. `open(path)` returns a stable `Blob` for
+consumption, without holding a file descriptor. `mkdir(path)` creates missing
+parents; `rmdir(path)` removes an empty directory. These directory operations
+do not request history through the file publisher.
 
 ### Tables own only their row files
 
@@ -149,10 +152,10 @@ keeps media records the path in a field or a Markdown link and manages those
 files through `files`. Nothing scans references, repairs links, or collects
 unreferenced files.
 
-`update` patches the captured source: it replaces only the touched frontmatter
+`update(stem, change)` reads current source once and patches it: it replaces only the touched frontmatter
 value spans or appends new keys, and refuses rather than rewriting YAML it
 cannot patch safely. Comments, quoting, key order, unknown keys, a byte-order
-mark, and CRLF line endings survive. `writeSource` writes the supplied text
+mark, and CRLF line endings survive. `replace` writes the supplied text
 exactly, so invalid frontmatter can be saved and repaired. A row whose
 frontmatter cannot be interpreted stays a readable entry with `issues`.
 `patchSource` and `readSource` are exported for editors that keep their own
@@ -203,6 +206,40 @@ To finish a recording whose audio landed but whose row did not, read the
 audio, verify it is the pending recording's, then publish
 `batch.files.replace(observed, pendingBytes)` and the row in one more batch.
 The replace lands only if the audio is still exactly what was observed.
+
+### Editor policy
+
+The application chooses its local buffer, save trigger, and response to incoming
+content independently. A checkbox can submit immediately and display confirmed
+data until success. A title input can bind to local state and save on blur,
+debounce, or an explicit action. A document can keep a complete-source buffer.
+The folder requires no timer, UI binding, or shared editor controller.
+
+An application may replace local input whenever it reads external content,
+refresh only while clean, or keep its local draft. Following external content
+while typing can discard unsaved input. Keeping a draft does not choose its
+save condition: `files.replace(capture, source)` refuses changed content, while
+`files.overwrite(path, source)` deliberately replaces whatever is there.
+An application offering review can compare its baseline, latest observation,
+and draft before conditionally saving against the reviewed capture.
+
+`tables.<name>.update(stem, { fields?, body? })` reads the current row and
+patches only the requested fields/body. Changes saved before that read survive
+when they concern other parts. A race after the read returns `Conflict`;
+there is no automatic retry. A missing row returns `NotFound` and is never
+created by an update. The caller may inspect `error.name` and decide what to do.
+
+`replace(entry, source)` saves complete text against the entry's captured
+baseline. It uses the entry's path, accepts invalid frontmatter for repair,
+and returns an entry interpreted from the submitted bytes. It does not merge
+fields, normalize text, or reread afterward. Neither method mutates captured
+entries; each returns a new one on success.
+
+A successful receipt describes the submitted content, not newer typing or a
+later observation. An `Unconfirmed` result leaves the operation's outcome
+unknown; an unchanged read does not prove cancellation. UI policy may discard
+input, but it cannot claim that an uncertain publication definitely failed.
+See [application editor policies](../../docs/adr/0485-applications-choose-editor-observation-and-save-policies.md).
 
 ### Hints
 

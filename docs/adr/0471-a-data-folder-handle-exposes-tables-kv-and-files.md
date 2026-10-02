@@ -30,7 +30,7 @@ const audioResult = await folder.files.open('recordings/interview.opus');
 
 | Member | Responsibility |
 | --- | --- |
-| `tables.<name>` | Interpret that table's Markdown rows. `list` and `get` return captured entries; `update` and `writeSource` submit edits against an entry. |
+| `tables.<name>` | Interpret that table's Markdown rows. `list` and `get` return captured entries; `update(stem, change)` patches current source; `replace(entry, source)` saves complete text against an entry. |
 | `kv` | Interpret declared root settings saved in `kv.json`. |
 | `files` | Enumerate literal paths and read bytes, including uninterpreted files and attachments. `open(path)` supplies stable media bytes without a media version under ADR-0466. Managed writes use the same file boundary as table and KV edits. |
 | `git` | Observe history and outgoing synchronization status; explicitly refresh it and request commit-and-push attempts. |
@@ -121,8 +121,9 @@ Definitions, owners, entries, and opened content have different roles:
 | Opened media | Stable bytes for consumption, with no required content hash or media version. A temporary native capture needs a consumption and cleanup boundary under ADR-0466. |
 
 `table.get` and `table.list` return observations, not live documents.
-`table.update` and `table.writeSource` receive an observation and return the
-accepted entry on success under ADR-0464. `files.open` opens content, not
+`table.update` reads current source once; `table.replace` receives a captured
+entry. Both return the published entry on success under ADR-0464 and never
+retry a conflict. `files.open` opens content, not
 another folder. Its eventual transport must account for temporary captures
 until consumption finishes; a temporary-backed Blob alone supplies no cleanup
 notification. No per-row resource handle is introduced to solve that problem.

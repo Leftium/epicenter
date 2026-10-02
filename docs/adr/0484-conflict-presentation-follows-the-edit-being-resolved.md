@@ -6,6 +6,12 @@
 
 ## Context
 
+This record applies to applications choosing to preserve drafts and offer
+conflict review. It does not impose that interaction policy on folder
+consumers. Applications may instead adopt external content while typing or
+deliberately overwrite current content from a local buffer. Those policies
+can discard input or replace another writer's changes.
+
 The Todos editor retains a saved baseline, a local buffer and a current saved
 observation when a conditional save conflicts. Honeycrisp also needs to preserve
 these distinct values. Detecting a whole-file conflict does not establish that
@@ -17,7 +23,7 @@ editor for both transfers unnecessary work to app developers and users.
 
 ## Decision
 
-**Conflict presentation exposes the information needed to resolve the edit.**
+**Apps choosing review expose the information needed to resolve the edit.**
 An editor retains three distinct content values for comparison:
 
 | Value | Meaning |
@@ -32,7 +38,8 @@ a difference view and offer the original on demand. The UI exposes the baseline
 when it is needed to explain the conflict. There is no mandatory pane count,
 Compare button, modal dialog or universal set of resolution actions.
 
-**Editors refresh clean content and preserve unresolved local work.**
+**Review-oriented editors refresh clean content and preserve unresolved local
+work.**
 A clean editor may adopt an external observation after checking that it remains
 clean and has no pending save. A dirty editor retains its baseline and draft.
 If the app cannot safely reconcile the changes, it pauses automatic saving and
@@ -59,8 +66,8 @@ infer command cancellation from an unchanged read.
 
 ## Consequences
 
-Apps share draft-preservation and conditional-resolution rules without adopting
-a universal merge interface. Simple editors can omit diff viewers, baseline
+Apps choosing review share draft-preservation and conditional-resolution rules
+without adopting a universal merge interface. Simple editors can omit diff viewers, baseline
 panes and automatic merging. Apps still choose resolution actions appropriate
 to their data; this convention does not itself provide a reusable controller.
 

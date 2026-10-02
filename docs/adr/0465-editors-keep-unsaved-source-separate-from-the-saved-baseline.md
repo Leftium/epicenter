@@ -7,6 +7,13 @@
 
 ## Context
 
+This record describes the retained whole-source editor convention. It applies
+to applications choosing to preserve drafts and conditionally save complete
+source. It does not require every folder consumer to share one source buffer,
+serialize saves, debounce input, or retain drafts. An application may instead
+follow external observations even while typing, keep a field buffer, or
+deliberately overwrite current content.
+
 The file-foundation demo coordinates debounce, save queues, selection, and
 refresh in `apps/whispering/dev-files/main.ts`. Release Honeycrisp's
 `openContent` derives title and timestamp from its live body through separate
@@ -19,7 +26,8 @@ C would let B replace C without a conflict.
 
 ## Decision
 
-**An open editor owns one source buffer and one accepted baseline entry.**
+**A retained whole-source editor owns one source buffer and one accepted
+baseline entry.**
 The buffer is the editor's current text, including unsaved changes. The
 baseline is the captured entry used by the next conditional save. They are
 different states; the baseline adds no public wrapper around the entry.
@@ -30,7 +38,7 @@ contains their body change. They do not independently update the saved row.
 An editor adapter reuses the source-preparation implementation used by table
 updates; UI handlers do not splice YAML or encode files.
 
-The controller submits complete captured source through `writeSource`. Mode
+The controller submits complete captured source through `replace`. Mode
 and frontmatter validity do not select a different persistence policy.
 Structured controls refuse unsupported transformations without modifying the
 buffer. Source editing remains available when YAML is invalid. Invalid UTF-8

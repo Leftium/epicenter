@@ -2,84 +2,105 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-30
-- **Implementation:** conditional `update` and exact `writeSource` through the shared browser/native file boundary.
+- **Implementation:** current-source `update` and captured `replace` through the shared browser/native file boundary, with no automatic retries.
 - **Unbuilt:** migration of released editors and native integration beyond the demo.
 
 ## Context
 
-The file-foundation prototype at `60dd4e8f92` has `library.edit`, raw path
-writes, and a separate generated-body edit. Its source-edit path validates
-frontmatter before saving, so temporarily invalid YAML cannot be saved through
-the editor. The explored typed-edit contract compares selected fields and
-retries against newer source, while the complete-source editor compares the
-whole file. Those are different conflict policies for the same saved path.
+A checkbox assigns one field, while a document editor submits complete source
+that began from a captured baseline. Requiring both callers to supply an entry
+makes an unrelated change since a listing reject a checkbox command. Treating
+both as current-content assignments instead lets a stale document erase
+changes it never presented.
 
-Notes need a concise rename operation, combined body and derived-title changes,
-and complete-source repair. Callers should supply those intentions without
-splicing YAML, encoding text, or pairing a source read with a later version.
+Tables interpret and prepare Markdown over the same file publisher as raw
+file operations. The API must distinguish these intentions without a second
+storage mechanism, a target-dependent overload, or retry settings.
 
 ## Decision
 
-**`table.update(entry, change)` and `table.writeSource(entry, source)` use one
-strict whole-file conditional publication rule.** The entry contains its
-literal path, exact source, and the content version captured from the same
-bytes. Neither operation changes the row stem or moves its file.
+**Structured commands read current source; complete replacements use the caller's capture.**
 
-| Method | Preparation before publication |
+| Method | Preparation and baseline |
 | --- | --- |
-| `update(entry, { fields?, body? })` | Patch the captured source, validate supplied field values, and preserve unrelated source. Fields and a Markdown body may change together. |
-| `writeSource(entry, source)` | Encode the supplied complete UTF-8 Markdown source. Invalid frontmatter is saved and reported through the resulting entry's issues. |
+| `update(stem, { fields?, body? })` | Read current source once, validate supplied fields, and patch only requested fields/body. Publish against that read's content version. |
+| `replace(entry, source)` | Encode complete supplied UTF-8 text and publish against the entry's content version. Invalid frontmatter is saved and reported in the returned entry's issues. |
 
-Both methods call one publisher that checks the current row file against the
-captured version and replaces it only when they match. It checks any admitted
-domain requirements at that publication point. Success returns an entry for
-the exact accepted bytes, not a later reread. A pre-publication conflict writes
-nothing and does not mutate the supplied entry or discard caller input. A
-failure after publication starts reports known file progress; it cannot be
-reported as that same no-write conflict or silently retried.
+The stem is one literal filename segment under the table's directory, not a
+path. Updates accept existing external names under the same addressing rules
+as `get`, even when they violate creation's naming rules. A missing row returns
+`NotFound`; an update never creates a row. An entry supplies its literal path
+and content version to `replace`, so no separate path is required. Neither
+method changes the row stem or moves other files.
 
-The publisher never substitutes a freshly read baseline, merges selected
-fields, retries against a new version, or treats a stale request as successful
-merely because its desired value is already present. An unchanged write still
-checks its preconditions. No `wrote: false` shortcut bypasses them.
+`update` captures supplied field values and body before its first wait. It
+preserves current unrelated source, including unknown keys, comments, quoting,
+ordering, byte-order marks, and untouched newline spans. A field-only update
+does not reserialize the body. Validation of a supplied field does not require
+unrelated stored fields to conform. Source that cannot be patched safely is
+refused without writing. A body assignment replaces the body deliberately;
+it does not merge another writer's body edits.
 
-`update` refuses source it cannot patch safely without writing. Validation of
-one supplied field does not require unrelated stored fields to conform. A
-field-only change does not reserialize the body. Source preparation preserves
-unknown keys, comments, ordering, byte-order marks, and untouched newline spans.
-Complete-source replacement preserves the supplied text; an editor adapter
-owns any necessary mapping from its widget to that text.
+`replace` saves the supplied text exactly. It neither patches frontmatter nor
+requires it to conform to the table schema. This permits complete-source repair.
+An editor adapter owns the mapping from its widget to the text being submitted.
 
-**The file boundary enforces the same byte-version condition for raw writes.**
-Browser managed writers compare and publish transactionally. A native host
-checks versions against concurrent writers on a best-effort basis without an
-application-wide lock. A hash check followed by rename is not an operating-system-wide
-compare-and-swap against arbitrary external programs.
+**Each call makes one conditional publication attempt and never retries.**
 
-File-save success is independent of Git history. After a completed save, the app
-attempts a commit of saved folder contents, then attempts upload and push when a
-remote is configured. Commit or push failure does not undo the file save. The
-history action rereads current source rather than replaying the old edit.
-Unchanged writes still check their conditions; no empty commit is needed.
-Ordinary saves require no pending-ref journal solely to complete history.
+Both methods use one publisher. Its whole-file byte-version check is the
+publication condition, even for a single-field assignment. A change before an
+update's read is incorporated; a change between that read and publication
+returns `Conflict`. Changes since an editor captured an entry can refuse its
+`replace`. A conflict wrote nothing. An application can narrow the error by
+`error.name` and decide whether to reread, ask for review, or issue a new command.
+
+No operation silently substitutes another baseline after conflict. An unchanged
+write still checks its condition. `Unconfirmed`, partial progress, I/O failures,
+and thrown calls never trigger automatic replay. No retry count or transform
+callback is exposed.
+
+Success returns a new immutable entry interpreted from the exact submitted
+bytes and their version. It is not a later reread and does not mutate an entry
+passed by the caller. Table updates and replacements check no sibling filenames
+and infer no attachment ownership. Creation and rename own destination layout
+preflight under
+[ADR-0477](0477-file-folder-operations-tolerate-repairable-layout-disorder.md).
+
+**The file boundary owns publication for structured and raw saves.**
+
+Browser managed writers compare and publish transactionally. Native checks are
+best effort against arbitrary external programs: a hash check followed by
+rename is not an operating-system-wide compare-and-swap. The table adds source
+preparation and receipt interpretation to the same condition used by
+`files.replace(capture, content)`.
+
+File-save success remains independent of Git history. Commit and push failures
+do not undo a save or change its returned entry. No editor flush or pending-ref
+journal is required solely to complete history.
 
 ## Consequences
 
-- An external title change conflicts with a pending body save, even when their
-  intended edits concern different parts. The app keeps the input for review.
-- Named-part freshness comparisons, raw-span freshness comparisons, semantic
-  retries, and `EditConflict.parts` have no role in ordinary file-table saves.
-- Patching and encoding remain library work. The two methods differ in source
-  preparation, not concurrency policy or lifecycle ownership.
-- An entry captured when a rename dialog opens remains that action's baseline.
-  Fetching again on submit must not silently overwrite an intervening edit.
+- A checkbox command preserves an external title edit saved before its read.
+  Assigning the same field can supersede that field's earlier value by design.
+- A captured document save refuses any intervening whole-file change, including
+  one to an unrelated field. The application chooses what to do with its draft.
+- Concurrent commands can return conflicts even on one handle. The library
+  promises no click ordering or completion under continuous contention.
+- A captured structured patch is no longer an `update` mode. An editor can
+  prepare its captured source with `patchSource` and save it through `replace`;
+  `patchSource` does not itself perform table field validation.
+- Rename and delete retain captured targets. The `kv.update(snapshot, values)`
+  contract remains captured, including exclusive initialization from absence.
 
 ## Considered alternatives
 
-- A single `save` with exclusive structured/source variants. It can enforce the
-  same rule, but the union and runtime exclusivity check remove no machinery.
-  Separate verbs state whether source interpretation is required.
-- Merge independently edited fields automatically. It adds a second freshness
-  policy and retry path; callers instead receive a whole-file refusal.
-- Put write methods on every entry. It attaches folder capabilities to captured
-  data and complicates sidecar serialization without changing publication.
+- Retry definite conflicts internally: tolerates more races but adds another
+  read/publication attempt and a retry-bound decision. Callers receive the error.
+- Retry without a bound: an operation can remain pending under continual writes.
+- Keep captured-only structured updates: unrelated changes since listing reject
+  common field assignments and push fresh-read composition into applications.
+- Overload `update` on a stem or entry: makes target shape select the policy and
+  retains two structured-update modes.
+- Use complete-source overwrite for every save: stale buffers can erase changes
+  they never observed. Explicit `files.overwrite` remains available to apps
+  deliberately choosing that behavior.

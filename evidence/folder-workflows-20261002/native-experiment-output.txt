@@ -1,0 +1,288 @@
+Disposable directory: /private/var/folders/qx/9462vg517cvdtpjr4tt32_200000gn/T/epicenter-shared-folder-workflow-bCETOH
+Bun 1.3.14, darwin
+
+==============================================================================
+1. App A creates a row with title, done, and a body
+==============================================================================
+  todos/milk.md:
+    │ ---\n
+    │ title: Buy milk\n
+    │ done: false\n
+    │ ---\n
+    │ Whole milk, 2 litres.\n
+    │ \n
+    │ Ask about the *oat* one too.\n
+  ✓ the row is one ordinary Markdown file at todos/milk.md
+  ✓ the receipt source is the bytes on disk
+  ✓ the receipt hash is the hash of the bytes on disk
+
+==============================================================================
+2. An agent edits the same file with a text editor
+==============================================================================
+  todos/milk.md:
+    │ ---\n
+    │ # agent: reviewed 2026-10-02, do not reorder\n
+    │ title: 'Buy milk'   # quoted by hand\n
+    │ done: false\n
+    │ estimate: 15m\n
+    │ ---\n
+    │ Whole milk, 2 litres.\n
+    │ \n
+    │ Ask about the *oat* one too.\n
+  · written with node:fs; no folder handle is open
+
+==============================================================================
+3. App B reads its own schema and adds its own field
+==============================================================================
+  ✓ B discovers the row A created by listing
+  ✓ B reads the title both applications declare
+  ✓ B's fields hold nothing B did not declare (no done, no estimate)
+  ✓ B's own missing field is an issue, not a parse error
+  ✓ B still has the exact source, comment and unknown keys included
+  ✓ B reads the body exactly
+  todos/milk.md:
+    │ ---\n
+    │ # agent: reviewed 2026-10-02, do not reorder\n
+    │ title: 'Buy milk'   # quoted by hand\n
+    │ done: false\n
+    │ estimate: 15m\n
+    │ priority: 2\n
+    │ ---\n
+    │ Whole milk, 2 litres.\n
+    │ \n
+    │ Ask about the *oat* one too.\n
+  ✓ the update added exactly one line; every other byte is what the agent wrote
+  ✓ the body is byte-for-byte unchanged
+  ✓ the receipt is the bytes on disk and now reads B's field
+  ✓ the update left B with no issues
+  ✓ B cannot assign A's field through its typed table: InvalidValues, nothing written
+
+==============================================================================
+4. App A reads again and ticks the checkbox
+==============================================================================
+  ✓ A reads its own two fields and no others
+  ✓ B's field is not an issue for A
+  ✓ A's source still carries B's field and the agent's comment
+  ✓ A reads the same body it wrote
+  todos/milk.md:
+    │ ---\n
+    │ # agent: reviewed 2026-10-02, do not reorder\n
+    │ title: 'Buy milk'   # quoted by hand\n
+    │ done: true\n
+    │ estimate: 15m\n
+    │ priority: 2\n
+    │ ---\n
+    │ Whole milk, 2 litres.\n
+    │ \n
+    │ Ask about the *oat* one too.\n
+  ✓ ticking the checkbox changed only the value span of done
+
+==============================================================================
+5. kv.json is absent until an application explicitly creates it
+==============================================================================
+  ✓ get() on a folder with no kv.json is Ok(undefined)
+  ✓ A's effective settings are entirely its own defaults
+  ✓ update() on a missing file is NotFound, not an upsert
+  ✓ reading, defaulting, a refused update, and closing left no kv.json
+  ✓ opening as B leaves it absent too
+  kv.json:
+    │ {\n
+    │   \"theme\": \"dark\"\n
+    │ }\n
+  ✓ create() wrote only the supplied key: the file is sparse, defaults are not saved
+  ✓ a second create() is Exists and changes nothing
+
+==============================================================================
+6. Divergent KV schemas update only their own keys
+==============================================================================
+  kv.json after the agent:
+    │ {\n
+    │   \"theme\": \"dark\",\n
+    │ \t\"agentBudget\":   1.50\n
+    │ }\n
+  ✓ B reads none of A's keys or the agent's: values is empty, with no issues
+  ✓ B's effective settings are its own defaults
+  ✓ B cannot assign A's key: InvalidValues, nothing written
+  kv.json after B's update:
+    │ {\n
+    │   \"theme\": \"dark\",\n
+    │ \t\"agentBudget\":   1.50,\n
+    │ \t\"density\":   \"compact\"\n
+    │ }\n
+  ✓ B's update appended one member; A's key and the agent's key are byte-for-byte unchanged
+  ✓ A reads only its own stored key; B's density is not in values
+  kv.json after A's update:
+    │ {\n
+    │   \"theme\": \"light\",\n
+    │ \t\"agentBudget\":   1.50,\n
+    │ \t\"density\":   \"compact\"\n
+    │ }\n
+  ✓ A's update changed only the value span of theme
+  ✓ the agent's number spelling survived both updates
+
+==============================================================================
+6b. A key both applications declare, with different types
+==============================================================================
+  ✓ A's number under a key B declares as a string is a field issue for B, and is left out of B's values
+  ✓ B falls back to its own default for that key
+  ✓ reading it changed nothing on disk
+  · B's issue: pageSize does not conform: must be string
+  ✓ nothing stops B from saving its own type there: A's stored value is gone and A now has the issue
+
+==============================================================================
+6c. An agent leaves kv.json as text that is not strict JSON
+==============================================================================
+  kv.json:
+    │ {\n
+    │   \"theme\": \"light\",\n
+    │ \t\"agentBudget\":   1.50,\n
+    │ \t\"density\":   \"compact\",\n
+    │ \t\"pageSize\":   \"all\",\n
+    │ }\n
+  ✓ get() is a snapshot with a parseError, the exact source, and no values
+  · parseError: The source is not valid JSON
+  ✓ A's stored theme is unreadable, so the documented merge silently shows the default
+  ✓ update() is refused as Unparsed and writes nothing
+  ✓ files.replace(snapshot, source) repairs it; the receipt is a bare capture of the bytes on disk
+  ✓ kv.inspect(source) is the second call that says how the repair reads: A's theme is back
+
+==============================================================================
+7. An agent writes a value a declared field does not accept
+==============================================================================
+  todos/milk.md:
+    │ ---\n
+    │ title: Buy milk\n
+    │ done: maybe\n
+    │ priority: 2\n
+    │ ---\n
+    │ Whole milk, 2 litres.\n
+    │ \n
+    │ Ask about the *oat* one too.\n
+  ✓ the text parses: there is no parseError
+  ✓ the source is available exactly
+  ✓ the healthy field is still available
+  ✓ the body is still available
+  ✓ the invalid field is left out and named by one issue
+  · issue: done does not conform: must be boolean
+  ✓ updating the healthy field succeeds and leaves the agent's invalid value in place
+  ✓ assigning the invalid field through update repairs it
+
+==============================================================================
+8. An agent writes YAML that does not parse
+==============================================================================
+  todos/milk.md:
+    │ ---\n
+    │ title: [Buy milk\n
+    │ done: false\n
+    │ ---\n
+    │ Whole milk, 2 litres.\n
+    │ \n
+    │ Ask about the *oat* one too.\n
+  ✓ the row is still listed, as a snapshot and not as an error
+  ✓ the snapshot has a parseError with at least one diagnostic
+  ✓ the source is available exactly
+  ✓ there are no fields, no body, and no issues
+  · parseError: The frontmatter is not valid YAML
+  ✓ a structured update is refused as Unparsed and writes nothing
+  ✓ inspect() says the candidate repair parses, before anything is saved
+  ✓ replace(snapshot, source) repairs it: the receipt parses and is the bytes on disk
+
+==============================================================================
+9. An agent writes Markdown with no fences at all
+==============================================================================
+  todos/milk.md:
+    │ # Buy milk\n
+    │ \n
+    │ Just a note an agent dropped in.\n
+  ✓ the snapshot has a parseError and the exact source
+  ✓ the text is not read as a body, and nothing inserted fences
+  · parseError: The source does not start with a --- line opening its frontmatter
+  ✓ a body-only update is refused as Unparsed too
+  ✓ raw replacement repairs it and keeps the agent's text as the body
+  ✓ B's repair did not write A's field, so A will see an issue for done
+  ✓ A sees its field missing after B's repair, and restores it with one update
+
+==============================================================================
+10. A stale capture: the agent edits between read and save
+==============================================================================
+  ✓ the directory handle heard no hint for the agent's write
+  ✓ the stale replacement is refused as Conflict
+  ✓ nothing was written and nothing was retried: disk is exactly the agent's text
+  ✓ the conflict names the captured hash it expected
+  ✓ the conflict names the hash of what is on disk now
+  ✓ the captured snapshot is unchanged and still holds the baseline
+  ✓ one more get() gives the disk text, and its hash is the one the conflict named
+  ✓ all three texts are in hand and distinct: baseline, candidate, and disk
+  candidate (unsaved):
+    │ ---\n
+    │ title: Buy milk and eggs\n
+    │ priority: 2\n
+    │ done: false\n
+    │ ---\n
+    │ # Buy milk\n
+    │ \n
+    │ Just a note an agent dropped in.\n
+  disk (agent):
+    │ ---\n
+    │ title: Buy milk\n
+    │ priority: 2\n
+    │ done: false\n
+    │ ---\n
+    │ # Buy milk\n
+    │ \n
+    │ Just a note an agent dropped in.\n
+    │ \n
+    │ Agent: the shop closes at 18:00.\n
+  ✓ a structured update against current source keeps the agent's line and lands the title
+
+==============================================================================
+11. Newlines and Unicode: the receipt is the bytes on disk
+==============================================================================
+  todos/milk.md:
+    │ ﻿---\r\n
+    │ title: \"Café vs Café 🥛\"\r\n
+    │ done: false\r\n
+    │ ---\r\n
+    │ Ligne un\r\n
+    │ Ligne deux
+  ✓ the bytes on disk are the UTF-8 encoding of the submitted string
+  ✓ the receipt source is the submitted string, code unit for code unit
+  ✓ the receipt hash is the hash of the bytes on disk
+  ✓ nothing normalized the decomposed é into the precomposed one
+  ✓ the body keeps CRLF and has no newline added at the end
+  ✓ a structured update on that file keeps the BOM and every CRLF
+  ✓ for an unpaired surrogate the receipt differs from the submitted string
+  ✓ and it equals the text of the bytes on disk (U+FFFD)
+
+==============================================================================
+12. Files with unusual literal names that already exist
+==============================================================================
+  · readdir(todos) = [".hidden.md",".md","milk.md","nested","shout.MD","trailing .md"]
+  ✓ list() discovers the leading-dot, trailing-space, and empty-stem rows beside milk
+  ✓ shout.MD and nested/deep.md are not rows
+  ✓ stem ".hidden": get() finds it at "todos/.hidden.md" and update() saves it there
+  ✓ stem "trailing ": get() finds it at "todos/trailing .md" and update() saves it there
+  ✓ stem "": get() finds it at "todos/.md" and update() saves it there
+  ✓ files.list() inventories every one of them, rows or not, at its literal path
+
+==============================================================================
+What is in the directory at the end
+==============================================================================
+  "kv.json"
+  "todos"
+  "todos/.hidden.md"
+  "todos/.md"
+  "todos/milk.md"
+  "todos/nested"
+  "todos/nested/deep.md"
+  "todos/shout.MD"
+  "todos/trailing .md"
+  ✓ opening the directory initialized a Git repository in it, though this run asked for none
+  ✓ with commitOnEdit: false, no save made a commit
+
+Removed /private/var/folders/qx/9462vg517cvdtpjr4tt32_200000gn/T/epicenter-shared-folder-workflow-bCETOH: true
+
+==============================================================================
+Result
+==============================================================================
+  87 assertions passed, 0 failed

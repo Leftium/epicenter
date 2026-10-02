@@ -2,13 +2,15 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-01
-- **Unbuilt:** the shared Rust folder adapter, scoped Tauri commands and typed bindings, runtime-selecting opener and standalone Folder package extraction, ownership and shutdown protocol, and integration in both shells. Complete sidecar removal also needs Rust terminal, transcription, credential, reveal, and debug services, bundled frontend loading, and removal of sidecar packaging.
+- **Unbuilt:** Whispering folder and service integration in Epicenter and completion of the shared close protocol. Complete sidecar removal also needs Rust terminal, transcription, credential, reveal, and debug services, bundled frontend loading, and removal of sidecar packaging.
 
 ## Context
 
-Whispering currently keeps its standalone desktop data in ordinary files through
-a Bun sidecar. The page proxies a `Folder` over loopback HTTP. Rust starts the
-sidecar and supervises its lifetime. Browser Whispering uses IndexedDB.
+Whispering keeps its standalone desktop data in ordinary files through
+`tauri-plugin-epicenter-folder`. The page attaches through
+`@epicenter/folder/tauri`; Rust owns the folder. A Bun sidecar still serves the
+page and supplies the terminal, provider requests, device settings, reveal,
+debug fixtures, and close relay. Browser Whispering uses IndexedDB.
 
 Epicenter already grants trusted loopback-served pages focused Tauri commands.
 Serving the SPA from Bun does not require Bun to open its data folder. A native
@@ -21,8 +23,8 @@ Applications migrate only after the native owner preserves their publication,
 terminal, history, and shutdown guarantees. The older
 [desktop packaging decision](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md)
 also excludes a standalone Whispering shell, contrary to the current README.
-That packaging discrepancy remains a separate decision; changing the folder
-transport does not settle it.
+The proposed [three deployment forms](0493-whispering-runs-as-one-application-in-three-deployment-forms.md)
+resolve that packaging discrepancy separately from the folder transport.
 
 ## Desired outcome
 
@@ -103,7 +105,7 @@ same native implementation and the standalone release runs without Bun:
 ## Decision
 
 **Shared TypeScript interprets the files; a shared Rust library accesses native resources.**
-The portable Folder implementation, currently `@epicenter/app/files`, retains
+The portable Folder implementation, `@epicenter/folder`, retains
 table and KV interpretation, source-preserving patches, and partial-save
 handling. The page retains drafts. Rust implements
 scoped filesystem access, conditional publication, Git operations, watching,

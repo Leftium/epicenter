@@ -727,6 +727,7 @@ When you add an ADR, add its row here.
 | [0472](0472-epicenter-so-is-canonical-and-product-domains-need-a-distinct-identity.md) | Epicenter.so is canonical, and product domains need a distinct identity | Proposed |
 | [0473](0473-personal-app-hosting-keeps-addresses-separate-from-data-identity.md) | Personal app hosting keeps addresses separate from data identity | Proposed |
 | [0474](0474-incoming-file-folder-sync-is-an-explicit-clean-fast-forward.md) | Incoming file-folder sync is an explicit clean fast-forward | Proposed (Todos implementation in progress) |
+| [0476](0476-whisperings-desktop-folder-uses-one-rust-library-in-both-tauri-shells.md) | Whispering's desktop folder uses one Rust library in both Tauri shells | Proposed (shared folder implemented; Epicenter integration and remaining sidecar removal unbuilt) |
 | [0484](0484-conflict-presentation-follows-the-edit-being-resolved.md) | Conflict presentation follows the edit being resolved | Proposed (consistent editor presentation unbuilt) |
 | [0485](0485-applications-choose-editor-observation-and-save-policies.md) | Applications choose editor observation and save policies | Proposed |
 | [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
@@ -735,3 +736,4 @@ When you add an ADR, add its row here.
 | [0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md) | Cloud folder transfers are explicit and bootstrap before opening | Proposed (unbuilt; staged account setup, explicit transfers, ownership locks) |
 | [0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) | The CLI discovers folders and delegates history to Git | Proposed (unbuilt; account setup and Git passthrough) |
 | [0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) | Field helpers build native TypeBox schemas with UI metadata | Proposed |
+| [0493](0493-whispering-runs-as-one-application-in-three-deployment-forms.md) | Whispering runs as one application in three deployment forms | Proposed (Epicenter integration, remaining shared native services, and release distribution unbuilt) |

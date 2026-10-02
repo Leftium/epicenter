@@ -112,6 +112,15 @@ export type ConformanceIssue = {
  * about a value: it says which widget edits the field, whether `null` is a
  * value, and a select's options or a reference's target.
  *
+ * Neither read changes the value it is given. A schema that holds a native
+ * callback (`Type.Refine`, a `~guard`) is run against a private frozen copy,
+ * so a callback that writes to its argument cannot reach the caller's value.
+ * The copy holds array elements and own enumerable string-keyed properties,
+ * which is what stored JSON is.
+ *
+ * A callback is a deterministic predicate over that content. Compilation
+ * probes `null` to learn nullability, which can invoke callbacks. A read may
+ * invoke them more than once; timing and call count are not guaranteed.
  */
 export type DataField = {
 	readonly editor: FieldEditor;

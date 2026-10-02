@@ -20,6 +20,10 @@
  * - A field owns its diagnostics: `conformance` and `inputIssues` report what
  *   `issues` returns, and a value the check refuses is an issue even when
  *   TypeBox's error report is capped to nothing
+ * - Nullability is editor information: a validator that throws on `null`
+ *   compiles and is not nullable
+ * - A native callback reads a frozen copy, so it cannot change the value it
+ *   is given
  * - Each prepared field is TypeBox's own compile of a read-only schema, and its
  *   editor is resolved from that same schema
  * - Conformance checks every declared field on its own
@@ -675,13 +679,232 @@ test('a throwing native refinement leaves valid sibling fields readable', () => 
 	expect(payload).toEqual({ title: 'Keep this', meta: {} });
 });
 
-test('a refinement that throws on null is reported at the declaration', () => {
-	const error = expectErr(
+test('a refinement that throws on null compiles, and the field is not nullable', () => {
+	const kv = expectOk(
 		compileKv({
 			title: Type.Refine(Type.Any(), (value) => value.length < 3),
+			other: field.string(),
 		}),
-	);
-	expect(error).toMatchObject({ name: 'UnrecognizedField', field: 'title' });
+	).kv;
+	const title = kv.fields.get('title');
+	expect(title?.editor).toEqual({ kind: 'json', nullable: false });
+	expect(title?.check('ab')).toBe(true);
+	expect(title?.check('abc')).toBe(false);
+	// The throw fails this value and this field, where it is read.
+	expect(title?.check(null)).toBe(false);
+	expect(kv.conformance({ title: null, other: 'kept' })).toEqual({
+		conforming: { other: 'kept' },
+		issues: [
+			{
+				field: 'title',
+				message: 'title does not conform: schema validation threw',
+			},
+		],
+	});
+});
+
+// ============================================================================
+// Native callbacks read a frozen copy
+// ============================================================================
+
+/** A refinement that writes to its argument and admits it either way. */
+const writing = (write: (value: Record<string, unknown>) => void) =>
+	Type.Refine(Type.Object({}), (value) => {
+		try {
+			write(value as Record<string, unknown>);
+		} catch {
+			// A frozen argument refuses the write; this callback carries on.
+		}
+		return true;
+	});
+
+test('a callback that writes to its argument changes neither the source nor the verdict', () => {
+	const kv = expectOk(
+		compileKv({
+			title: field.string(),
+			// The write that would make a conforming value not JSON.
+			hole: writing((value) => {
+				value.bad = undefined;
+			}),
+			// Writes that stay JSON, at the root and below it.
+			extra: writing((value) => {
+				value.added = 1;
+				(value.list as unknown[]).push('more');
+				delete (value.nested as Record<string, unknown>).keep;
+			}),
+			guarded: {
+				'~guard': {
+					check: (value: Record<string, unknown>) => {
+						try {
+							value.bad = undefined;
+						} catch {}
+						return true;
+					},
+					errors: () => [],
+				},
+			},
+			nested: Type.Object({
+				inner: writing((value) => {
+					value.bad = undefined;
+				}),
+			}),
+		}),
+	).kv;
+	const payload = {
+		title: 'Keep this',
+		hole: {},
+		extra: { list: ['one'], nested: { keep: true } },
+		guarded: {},
+		nested: { inner: {} },
+	};
+	const before = JSON.stringify(payload);
+
+	for (const [name, each] of kv.fields) {
+		const value = payload[name as keyof typeof payload];
+		expect(each.check(value)).toBe(true);
+		expect(each.issues(value)).toEqual([]);
+	}
+	const { conforming, issues } = kv.conformance(payload);
+	expect(issues).toEqual([]);
+	expect(kv.inputIssues(payload, { complete: true })).toEqual([]);
+
+	// Nothing was written, so the source is still JSON and still unfrozen.
+	expect(JSON.stringify(payload)).toBe(before);
+	expect(Object.hasOwn(payload.hole, 'bad')).toBe(false);
+	expect(Object.hasOwn(payload.nested.inner, 'bad')).toBe(false);
+	expect(isJsonSafe(payload)).toBe(true);
+	expect(Object.isFrozen(payload.hole)).toBe(false);
+	expect(Object.isFrozen(payload.extra.list)).toBe(false);
+	// A conforming value is the caller's own object, not the copy.
+	expect(conforming.hole).toBe(payload.hole);
+	expect(conforming.extra).toBe(payload.extra);
+	expect(isJsonSafe(conforming)).toBe(true);
+});
+
+test('a callback whose write throws fails its own field and keeps valid siblings', () => {
+	const kv = expectOk(
+		compileKv({
+			title: field.string(),
+			// The proven case: module code is strict, so the refused write throws.
+			meta: Type.Refine(Type.Object({}), (value) => {
+				(value as Record<string, unknown>).bad = undefined;
+				return true;
+			}),
+			list: Type.Refine(Type.Array(Type.String()), (value) => {
+				value.push('more');
+				return true;
+			}),
+		}),
+	).kv;
+	const payload = { title: 'Keep this', meta: {}, list: ['one'] };
+
+	expect(kv.fields.get('meta')?.check(payload.meta)).toBe(false);
+	expect(kv.conformance(payload)).toEqual({
+		conforming: { title: 'Keep this' },
+		issues: ['meta', 'list'].map((name) => ({
+			field: name,
+			message: `${name} does not conform: schema validation threw`,
+		})),
+	});
+	expect(payload).toEqual({ title: 'Keep this', meta: {}, list: ['one'] });
+	expect(Object.hasOwn(payload.meta, 'bad')).toBe(false);
+});
+
+test('a callback is given a frozen copy with the shape of the value', () => {
+	const seen: unknown[] = [];
+	const watched = Type.Refine(jsonValue, (value) => {
+		seen.push(value);
+		return true;
+	});
+	const kv = expectOk(
+		compileKv({
+			watched,
+			nested: Type.Object({ inner: watched }),
+			optional: field.nullable(watched),
+		}),
+	).kv;
+	seen.length = 0;
+
+	const shared = { value: 2 };
+	const bare = Object.assign(Object.create(null), { a: 1 });
+	// An own key named `__proto__`, as `JSON.parse` makes one.
+	const proto = JSON.parse('{"__proto__": {"polluted": true}, "b": [1]}');
+	const source = {
+		left: shared,
+		right: shared,
+		list: [shared, 1],
+		bare,
+		proto,
+	};
+
+	expect(kv.fields.get('watched')?.check(source)).toBe(true);
+	const copy = seen[0] as typeof source;
+	expect(copy).not.toBe(source);
+	expect(copy).toEqual(source);
+	expect(copy.left).toBe(copy.right);
+	expect(copy.list[0]).toBe(copy.left);
+	expect(Array.isArray(copy.list)).toBe(true);
+	expect(Object.getPrototypeOf(copy.bare)).toBeNull();
+	expect(Object.getPrototypeOf(copy.proto)).toBe(Object.prototype);
+	expect(Object.hasOwn(copy.proto, '__proto__')).toBe(true);
+	expect(copy.proto.__proto__).toEqual({ polluted: true });
+	expect((copy.proto as { polluted?: boolean }).polluted).toBeUndefined();
+	for (const node of [copy, copy.left, copy.list, copy.bare, copy.proto])
+		expect(Object.isFrozen(node)).toBe(true);
+	expect(Object.isFrozen(copy.proto.__proto__)).toBe(true);
+	expect(Object.isFrozen(source)).toBe(false);
+	expect(Object.isFrozen(shared)).toBe(false);
+
+	// A nested callback gets a node of the copy, and a primitive needs none.
+	seen.length = 0;
+	const inner = { a: 1 };
+	expect(kv.fields.get('nested')?.check({ inner })).toBe(true);
+	expect(seen[0]).toEqual(inner);
+	expect(seen[0]).not.toBe(inner);
+	expect(Object.isFrozen(seen[0])).toBe(true);
+	expect(kv.fields.get('optional')?.check('text')).toBe(true);
+	expect(seen.at(-1)).toBe('text');
+});
+
+test('a callback never sees a cycle or a class instance, and a deep value reaches it whole', () => {
+	let calls = 0;
+	const kv = expectOk(
+		compileKv({
+			counted: Type.Refine(Type.Any(), () => {
+				calls += 1;
+				return true;
+			}),
+		}),
+	).kv;
+	const counted = kv.fields.get('counted');
+	calls = 0;
+
+	// Neither is copied into something a validator could admit.
+	for (const value of [
+		loop,
+		{ nested: loop },
+		new Point(),
+		{ nested: [new Point()] },
+		new Map(),
+		{ at: new Date() },
+		{ nested: undefined },
+	]) {
+		expect(counted?.check(value)).toBe(false);
+		expect(counted?.issues(value)).toEqual([
+			{
+				field: 'counted',
+				message: 'counted does not conform: must be a JSON value',
+			},
+		]);
+	}
+	expect(calls).toBe(0);
+
+	let deep: unknown = 'bottom';
+	for (let level = 0; level < 100_000; level++) deep = [deep];
+	expect(counted?.check(deep)).toBe(true);
+	expect(counted?.issues(deep)).toEqual([]);
+	expect(calls).toBeGreaterThan(0);
+	expect(Object.isFrozen(deep)).toBe(false);
 });
 
 // ============================================================================

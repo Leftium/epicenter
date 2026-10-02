@@ -98,7 +98,7 @@ native union, and `inner` keeps its hint as a member.
 
 `x-field` holds a `kind`, and a reference also holds its `target`. Nothing
 else. It never changes what a field accepts: the same schema with no hint, a
-wrong hint, or an unknown hint checks, reports errors, and conforms
+wrong hint, or an unknown hint checks, reports issues, and conforms
 identically.
 
 Each compiled field has one resolved `editor`:
@@ -113,7 +113,7 @@ kv.fields.get('status').editor;
 | Part | Where it comes from |
 | --- | --- |
 | `kind` | The hint, when the schema has that widget's shape. Otherwise `json`. |
-| `nullable` | Whether the compiled field admits `null`. |
+| `nullable` | Whether the compiled field's `check` admits `null`. A validator that throws on `null` does not. |
 | `options` | The schema's declared `enum` for a select, `items.enum` for a multi-select. |
 | `target` | The hint, for a reference, when it is a usable table name. |
 
@@ -129,11 +129,17 @@ A field gets the JSON editor when:
 - the schema does not have the shape the named widget edits: a `string` hint
   on a number, a `select` hint with no string `enum`, or a string `enum`
   beside a `type` that is not `string`;
+- the schema declares a `format` other than the one the named widget writes:
+  `Type.String({ format: 'email', 'x-field': { kind: 'date' } })`. The formats
+  are `uri` for `url`, `date` for `date`, and `date-time` for `instant` and
+  `datetime`. The same format, or no format, fits. `string` and `reference`
+  name no format, so any format fits them;
 - the schema, or the item schema of a list, is composed: it has `anyOf`,
   `allOf`, `oneOf`, `not`, `if`, `then`, `else`, or `$ref`.
 
 These are conservative checks of a keyword or two on one schema node, not a
-schema recognizer. They err toward the JSON editor.
+schema recognizer. They err toward the JSON editor, and none asks whether the
+schema as a whole can be satisfied.
 
 One composition is read through: a union of exactly `{ type: 'null' }` and one
 other schema, with only annotations beside the `anyOf`. That is what
@@ -145,7 +151,8 @@ JSON editor; it is not replaced by the member's. A validation keyword beside
 the `anyOf`, such as a root `type`, also decides what the field admits, so that
 union is not read through.
 
-Read the resolved editor from a compiled field. The resolver is internal.
+The resolved editor is read from a compiled field. Neither entry point exports
+the resolver.
 
 ### What survives JSON
 
@@ -157,8 +164,10 @@ editor. Constraints supplied as native callbacks remain local.
 A native `Type.Refine` works wherever a schema is declared, including over a
 helper (`Type.Refine(field.string(), ...)`), and runs locally. Its callback is
 a function, so it is not in the schema's JSON form. The same holds for a
-codec. A declaration that uses either cannot be serialized faithfully. This
-package has no exporter and no importer for other JSON Schema dialects.
+codec. A declaration that uses either cannot be serialized faithfully. A codec
+is carried and never run: a field's `check` and `issues` call TypeBox's `Check`
+and `Errors`, which do not decode or encode, so no value is transformed here.
+This package has no exporter and no importer for other JSON Schema dialects.
 
 A spread (`{ ...field.string() }`) keeps the enumerable keywords and drops any
 hidden refinement an author added. The result is a valid native schema and is
@@ -183,8 +192,53 @@ and `isJsonObject`, which the storages that want it apply themselves. A value
 that is JSON and fails its schema gets TypeBox's own errors, at their own
 paths. If a native refinement or recursive validator throws, that field
 fails its check and reports `schema validation threw`. Valid sibling fields
-stay readable. A refinement that throws on the eager null probe still fails
-at the declaration.
+stay readable.
+
+### Validation only reads
+
+`check` and `issues` never change the value they are given. TypeBox's keyword
+validation is read-only by itself. A native callback is not: `Type.Refine` and a
+`~guard` hand the value to the author's function, which could write to it. So a
+field whose schema holds a function or a `~guard` validates a private, deeply
+frozen copy of the value, and the caller's value is neither written nor
+frozen:
+
+```ts
+const meta = Type.Refine(Type.Object({ touched: Type.Optional(Type.Boolean()) }), (value) => {
+  value.touched = true; // refused: the argument is frozen
+  return true;
+});
+```
+
+A refused write throws in strict code, which is every module. The field then
+fails with `schema validation threw`, like any other throwing callback. A
+conforming value in `conformance` is always the caller's own object.
+
+The copy holds arrays and plain objects: each object's prototype (plain or
+null), its own enumerable keys including one named `__proto__`, and shared
+nodes, which stay shared. It is made without recursion, so depth has no limit.
+A cycle, or a class instance that is not an array, is refused as not JSON
+before any callback runs. An array subclass passes `Array.isArray`, as it does
+in `isJsonSafe`, and its copy is a plain array. A schema of keywords alone,
+which is every unrefined helper, makes no copy.
+
+The supported values are stored JSON content: array elements and own
+enumerable string-keyed data properties. A non-enumerable, accessor, or
+inherited property is outside that, and the two kinds of field read it
+differently. A keyword-only schema reads the caller's value, so
+`Type.Object({ hidden: Type.Number() })` admits an object whose `hidden` is
+non-enumerable. The same schema under `Type.Refine` reads the copy, which has
+no `hidden`, and refuses it. This is a limit of the copy, stated and not
+enforced: nothing rejects or normalizes such a value.
+
+This protects the argument a callback is given, and nothing else. A callback
+is a deterministic predicate over content. Compilation probes `null` to learn
+nullability, which can invoke callbacks. A read may invoke them more than once;
+timing and call count are not guaranteed. State it closes over, state a guard
+object keeps, side effects, and answers that change between calls are the
+author's to get right. A callback sees a copy, so one that compares object
+identity is asking something a stored JSON value cannot answer. It is not a
+sandbox.
 
 ### Who owns a declared schema
 
@@ -202,21 +256,25 @@ select's `enum` and both the check and the options include it.
 `compileData` takes ownership. For each field it takes one snapshot with
 TypeBox's own clone, freezes the snapshot's plain objects and arrays, and
 compiles that. `defineStore` and `defineFolder` compile at the declaration.
-A field's name is its key in the compiled field map. Each field is a `DataField`:
-`check` and `issues`, the frozen `schema` they were compiled from, and the
-`editor` resolved from that same object.
-Editing the declared schema afterwards changes none of them.
+Each compiled field is a `DataField`: `check` and `issues`, the `schema` they
+were compiled from, and the `editor` resolved from that same object. Its name
+is its key in the table's `fields` map. Editing the declared schema afterwards
+changes none of them, with the exception below.
 
 The snapshot holds own string-keyed data properties, hidden ones included,
-which is every native constraint. Functions and TypeBox guard objects are
-copied by reference and left unfrozen. Symbol keys, accessors, class
-instances, and whatever a refinement callback closes over are not covered.
+which is every native constraint. A function is kept by reference and left
+unfrozen. So is any node with a `~guard` key, whole: TypeBox's clone returns
+that node itself, with the guard and every keyword beside it, whether it is the
+field's root or nested. That node is still the author's object, it is not
+frozen, and an edit to it after compilation is not held off. Symbol keys,
+accessors, class instances, and whatever a callback or guard closes over are
+not covered either.
 
 A field that is not a plain schema object, and a schema TypeBox cannot
 compile, are refused with the table and field named. A string or a number in a
-field map is also a type error. Nullability is asked of
-the compiled field at the declaration, so a refinement that throws when given
-`null` is refused there too.
+field map is also a type error. Nullability is not such a gate: it is editor
+information, so a refinement that throws when given `null` compiles, reads as
+not nullable, and fails a stored `null` where it is read.
 
 ### References
 
@@ -245,11 +303,13 @@ and a key the table does not declare is neither. `inputIssues` checks values a
 caller supplies for a write: an undeclared key, a value that does not conform,
 and, for a complete row, a declared field that is absent.
 
-An issue is `{ field, path?, message }`. `field.check(value)` decides whether a
-value conforms, and `field.issues(value)` reports its diagnostics. Table methods
-use those same issues, so the two agree
-for nullable values, a reference's nonempty value, and a value that is not
-JSON. `path` is a JSON pointer inside the field's value, such as `/1` for the
+An issue is `{ field, path?, message }`. A compiled field owns its diagnostics:
+`field.check(value)` decides whether a value conforms, `field.issues(value)`
+says why it does not, and `conformance` and `inputIssues` report exactly what
+`issues` returns. So they agree for nullable values, a reference's nonempty
+value, and a value that is not JSON. TypeBox's compiled `Check` is the
+authority: a value it refuses is an issue even when its error report is empty.
+`path` is a JSON pointer inside the field's value, such as `/1` for the
 second item of a list. It is present only when the validator named a location
 that can be walked in the value; TypeBox joins object keys into its path
 unescaped, so a path through a key containing `/` or `~` is reported against

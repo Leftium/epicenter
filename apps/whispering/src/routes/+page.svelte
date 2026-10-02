@@ -2,14 +2,18 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as SectionHeader from '@epicenter/ui/section-header';
+	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { audioPathIn } from '$lib/definition.js';
+	import { resolvePostProcessing, transformationName } from '$lib/post-processing.js';
 	import { getSession } from '$lib/session.svelte.js';
 	import AudioPlayer from './components/AudioPlayer.svelte';
 	import { copyText, formatTime, recordingTitle } from './components/file-actions.js';
 	import RecorderCard from './components/RecorderCard.svelte';
+	import TransformationOutput from './components/TransformationOutput.svelte';
 
 	const { library, view } = getSession();
 
@@ -21,9 +25,26 @@
 	const run = $derived(latest ? library.transcriptionRun(latest.stem) : undefined);
 	const model = $derived(library.settings.transcriptionModel);
 
-	async function openLatest() {
-		if (latest === undefined) return;
-		await library.open(latest.path);
+	/** The transformation chosen beside the recorder, as the folder has it now. */
+	const postProcessing = $derived(resolvePostProcessing(view.postProcessing, library.transformations));
+	/** A run on this transcript that is not a saved result yet: the one under way, else the newest. */
+	const postRun = $derived.by(() => {
+		if (transcript === undefined) return undefined;
+		const runs = library.transformationRuns.filter((item) => item.fields.transcriptionId === transcript.stem);
+		return runs.find((item) => item.state.kind === 'running') ?? runs.at(-1);
+	});
+	const outputs = $derived(transcript ? library.outputsFor(transcript.stem) : []);
+
+	/** Run the chosen transformation on the latest transcript. This press is the only thing that sends it. */
+	async function runPostProcessing() {
+		if (transcript === undefined || postProcessing.kind !== 'ready') return;
+		const problem = await library.transform(transcript.path, postProcessing.entry.path);
+		if (problem) toast.error('Post-processing did not run', { description: problem });
+	}
+
+	/** Show the recording, or one of its results, on the Recordings page. */
+	async function openFile(path: string) {
+		await library.open(path);
 		view.showingDetail = true;
 		await goto(resolve('/recordings'));
 	}
@@ -62,6 +83,71 @@
 							Copy
 						</Button>
 					</div>
+
+					<!-- Post-processing never starts by itself. The transcript above is not changed by it: a result is its own file. -->
+					{#if postRun?.state.kind === 'running'}
+						<p class="flex items-center gap-2 text-sm text-muted-foreground" role="status" data-testid="post-processing-running">
+							<Spinner class="size-3.5 shrink-0" />
+							<span class="min-w-0 break-words">Running “{postRun.fields.transformationTitle}”…</span>
+						</p>
+					{:else if postRun?.state.kind === 'failed'}
+						<div class="flex flex-wrap items-center gap-2 text-sm" data-testid="post-processing-failed">
+							<p class="min-w-0 flex-1 basis-full break-words text-destructive sm:basis-0" role="alert">
+								“{postRun.fields.transformationTitle}” did not run: {postRun.state.message}
+							</p>
+							<Button size="sm" onclick={() => void library.retryTransformation(postRun.id)} data-testid="post-processing-retry">Try again</Button>
+							<Button size="sm" variant="ghost" onclick={() => library.discardTransformationRun(postRun.id)}>Dismiss</Button>
+						</div>
+					{:else if postRun?.state.kind === 'unsaved'}
+						{@const text = postRun.state.text}
+						<div class="flex flex-wrap items-center gap-2 text-sm" data-testid="post-processing-unsaved">
+							<p class="min-w-0 flex-1 basis-full break-words text-destructive sm:basis-0" role="alert">
+								The result of “{postRun.fields.transformationTitle}” arrived, but its file was not saved: {postRun.state.message}
+							</p>
+							<Button
+								size="sm"
+								tooltip="Writes the file. The endpoint is not called again."
+								onclick={() => void library.retryTransformation(postRun.id)}
+								data-testid="post-processing-save"
+							>
+								Save it again
+							</Button>
+							<Button size="sm" variant="outline" onclick={() => void copyText(text, 'the result')}>Copy</Button>
+						</div>
+					{:else if postProcessing.kind === 'ready'}
+						{@const chosen = postProcessing.entry.fields}
+						{@const name = transformationName(postProcessing.entry)}
+						<div class="flex flex-wrap items-center gap-2 text-sm">
+							<!-- The visible label stays short: a title can be longer than a narrow window. The name is in the accessible label and the tooltip. -->
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={!transcript.body?.trim()}
+								aria-label="Run post-processing: {name}"
+								tooltip="Runs “{name}”: sends this transcript to {chosen.model} at {chosen.endpoint}"
+								onclick={() => void runPostProcessing()}
+								data-testid="run-post-processing"
+							>
+								<WandSparklesIcon />
+								Run post-processing
+							</Button>
+							<span class="text-xs text-muted-foreground">Nothing is sent until you press it.</span>
+						</div>
+					{:else if postProcessing.kind !== 'none'}
+						<p class="text-sm break-words text-warning" role="status" data-testid="post-processing-unavailable">
+							{postProcessing.kind === 'missing'
+								? 'The transformation chosen for post-processing is no longer in the folder. Choose another beside the recorder.'
+								: `“${transformationName(postProcessing.entry)}” needs repair before it can run. Fix it on the Transformations page.`}
+						</p>
+					{/if}
+					{#if outputs[0]}
+						<TransformationOutput {library} output={outputs[0]} naming="transformation" onOpenFile={(path) => void openFile(path)} />
+						{#if outputs.length > 1}
+							<p class="text-xs text-muted-foreground">
+								{outputs.length - 1 === 1 ? '1 earlier result is' : `${outputs.length - 1} earlier results are`} on the recording’s page.
+							</p>
+						{/if}
+					{/if}
 				{:else if run?.kind === 'failed'}
 					<p class="text-sm text-destructive" role="alert" data-testid="transcription-error">{run.message}</p>
 				{:else if audioPath && run?.kind !== 'unsaved'}
@@ -100,7 +186,7 @@
 							{run?.kind === 'failed' ? 'Try again' : 'Transcribe'}
 						</Button>
 					{/if}
-					<Button size="sm" variant="outline" onclick={() => void openLatest()} data-testid="open-latest">Open</Button>
+					<Button size="sm" variant="outline" onclick={() => void openFile(latest.path)} data-testid="open-latest">Open</Button>
 				</div>
 			</section>
 		{/if}

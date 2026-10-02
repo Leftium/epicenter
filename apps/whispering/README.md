@@ -130,6 +130,9 @@ page, is anything that is not saved yet.
 | Control | What it does |
 | --- | --- |
 | Start recording / Stop recording | On Home. Records, then saves the audio and its row to `recordings/`. On other pages the header has a microphone button to start, and while a recording runs it shows the elapsed time and Stop. |
+| Microphone input | On Home, under the recorder. Chooses the microphone the next recording uses: System default, or one by name. See [Under the recorder](#under-the-recorder). |
+| Transcription model | On Home, under the recorder. Shows the model in use and opens the same form as Settings. |
+| Post-processing | On Home, under the recorder. Chooses one of your transformations, or None. Choosing sends nothing; **Run** on the latest transcript does. |
 | Transcribe | Sends the saved audio to the endpoint in Settings and saves the answer as a row in `transcriptions/`. Nothing is transcribed until you press it. |
 | A recording | Details: play the audio, change the title, transcribe, transform a transcript, write notes. Source: the row's Markdown. Both edit one draft. |
 | Filter | On Recordings. Matches the title, notes, ID, and transcripts. A recording that needs repair is always listed. |
@@ -139,6 +142,60 @@ page, is anything that is not saved yet.
 | Reveal folder | Opens the data folder in Finder. |
 | Files (Ctrl+Shift+E) | The folder's files, beside any page. A recording row opens on Recordings and a transformation on Transformations; an audio file opens a player and other text a plain editor, both on Recordings. |
 | Terminal (Ctrl+\`) | Commands in the data folder, under any page. Its output, history, typed command, and directory stay when it is hidden. |
+
+### Under the recorder
+
+Three small controls sit under the microphone on Home. Each opens its own
+popover.
+
+**Microphone input.** System default, or one microphone by name.
+
+- Opening the popover lists the inputs the app is already allowed to see. It
+  never asks for microphone access. Until access is allowed, inputs are not
+  listed by name; **Enable microphones** asks for it, which opens the system
+  default microphone for a moment and records nothing.
+- A microphone you choose is the only one a recording will use. If it is not
+  connected, the recording does not start and says so. No other microphone is
+  used in its place; connect it or choose another input.
+- The choice applies to the next recording. A recording that is starting,
+  running, or finishing keeps the microphone it opened, and the choice cannot
+  be changed until it ends.
+- **Test microphone** opens the chosen input and shows its level. Nothing is
+  recorded, sent, or saved. The test, and a pending Enable microphones, end
+  when you close the popover, leave Home, start a recording, or close the app.
+  Only one of the two runs at a time, and never beside a recording.
+- The choice is kept on this device and is never written to `kv.json`. In the
+  desktop app it is in the same file as the API key, under the folder's
+  `.git`; in a browser tab it is in `localStorage`.
+- A microphone is identified by the ID the app is given for it, never by its
+  name: two microphones can share a name. If the saved ID is not among the
+  listed inputs, the choice is shown as "not listed" and nothing is chosen
+  for you. Not being listed does not prove the microphone is gone, since the
+  list can be limited by permission, so a recording still asks for exactly
+  that ID. If it cannot be opened, the recording does not start and no other
+  microphone is used. Choose the input again, or System default, to change
+  it. The desktop app may be given new IDs on a later launch, so this
+  can happen after a restart; that has not been checked on hardware.
+- With fixture audio there is no real input: the popover says so, and no
+  microphone is listed, asked for, or opened.
+
+**Transcription model.** The model and endpoint that **Transcribe** uses. It is
+the Settings form, with the same draft, so typing in one shows in the other.
+The model is a name you type: the app keeps no list of models and never asks
+an endpoint what it serves.
+
+**Post-processing.** None, or one of the transformations in the folder. It
+starts as None each time the app opens, and the choice stays while you move
+between pages. Nothing is created for you: with no transformations the list is
+empty and links to the Transformations page.
+
+- Choosing only chooses. Recording, stopping, and transcribing never run it.
+- When the latest recording has a transcript, **Run** sends that transcript to
+  the chosen transformation, exactly as Transform does on Recordings. The
+  result is a new file in `transformation_runs/`; the transcript and its Copy
+  button are unchanged.
+- A choice that was deleted, or that lacks its title, model, endpoint, or
+  prompt, is shown as that and does not run.
 
 ### Transformations
 
@@ -365,7 +422,9 @@ build refuses the variable, says so under the recorder, and records from the
 microphone.
 
 A fixture recording proves the save, playback, transcription, and history path.
-It proves nothing about the microphone. Test the microphone separately.
+It proves nothing about the microphone. Test the microphone separately, in a
+launch without the fixture: with it, the microphone input control says there
+is no real input and opens none.
 
 ## Failures you can cause on purpose
 
@@ -421,8 +480,11 @@ These are absent, not hidden behind a setting:
   replace rules, tools, running code, importing the earlier Whispering's
   transformations or recipes, a provider or model catalog, and a separate key
   per transformation or provider.
-- A settings page. Settings is the one popover in the header.
-- Importing audio files, choosing an input device, and recording overlays.
+- A settings page. Settings is one form, shown in the header's popover and in
+  the transcription control on Home.
+- Importing audio files and recording overlays.
+- Running post-processing on its own after a recording or a transcript. It is
+  a button you press.
 - Windows and Linux are untested. The terminal needs a POSIX shell.
 - A release pipeline. `bun build:whispering` produces a locally signed bundle.
 - Running inside the Epicenter desktop host. `bun run build:epicenter` still

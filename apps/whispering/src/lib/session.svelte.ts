@@ -16,6 +16,7 @@ import { createContext } from 'svelte';
 import { Ok, type Result } from 'wellcrafted/result';
 import { createLeaveGuard } from './leave.svelte.js';
 import { createLibrary } from './library.svelte.js';
+import { createSettingsDraft } from './settings-draft.svelte.js';
 import {
 	answerCloseAfterFailedOpening,
 	openWorkspace,
@@ -71,7 +72,14 @@ export async function createSession(
 		showingTransformation: false,
 		/** The transcription a transformation is tried on, by row path. */
 		applyTo: undefined as string | undefined,
+		/**
+		 * The transformation chosen for post-processing, by row path. Undefined
+		 * is None, which is how a session starts. Choosing sends nothing: a
+		 * transformation runs only when the person asks for it.
+		 */
+		postProcessing: undefined as string | undefined,
 	});
+	const settings = createSettingsDraft(library);
 	let closing: Promise<void> | undefined;
 
 	return {
@@ -79,6 +87,8 @@ export async function createSession(
 		library,
 		leave,
 		view,
+		/** The one draft of the transcription settings, wherever its form is shown. */
+		settings,
 		/**
 		 * Whether a navigation must be held back. A navigation between this app's
 		 * routes unloads nothing and is never held. One that unloads the document

@@ -5,12 +5,16 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import type { Library } from '$lib/library.svelte.js';
+	import MicrophoneControl from './MicrophoneControl.svelte';
+	import PostProcessingControl from './PostProcessingControl.svelte';
 	import RecorderClock from './RecorderClock.svelte';
+	import TranscriptionControl from './TranscriptionControl.svelte';
 
 	/**
 	 * The home page's recorder: the microphone is the control that starts and
-	 * stops, with one line under it for what is happening. Fixture mode adds
-	 * its warning; nothing else sits under the recorder.
+	 * stops, with one line under it for what is happening, then three small
+	 * controls for the input, the transcription model, and post-processing.
+	 * Fixture mode adds its warning under them.
 	 */
 	let { library }: { library: Library } = $props();
 
@@ -22,11 +26,24 @@
 		{ idle: 'Start recording', starting: 'Starting…', recording: 'Stop recording', stopping: 'Finishing…' }[recorder.phase],
 	);
 
+	/**
+	 * Which of the three option popovers is open. One value, so opening one
+	 * closes the one before it: nothing is left open behind another, and the
+	 * microphone popover's test or enabling ends when it stops being the one.
+	 */
+	type Option = 'microphone' | 'transcription' | 'post-processing';
+	let openOption = $state<Option>();
+	function setOpen(option: Option, open: boolean) {
+		if (open) openOption = option;
+		else if (openOption === option) openOption = undefined;
+	}
+
 	// The button is disabled while pending, which drops keyboard focus to the
 	// page. Give it back when the press came from the focused microphone.
 	let mic = $state<HTMLElement | null>(null);
 	let returnFocus = false;
 	function toggle() {
+		openOption = undefined;
 		returnFocus = document.activeElement === mic;
 		void (active ? library.stopRecording() : library.startRecording());
 	}
@@ -81,6 +98,20 @@
 		Click the microphone to start recording.
 	{/if}
 </p>
+
+<!--
+	What the recorder uses, small and close to it: each opens its own popover, one at a time.
+	On a narrow window they are three equal columns, so none is left alone on a second line and a long name truncates in its own.
+-->
+<div
+	class="grid w-full max-w-sm grid-cols-3 gap-1 sm:flex sm:w-auto sm:max-w-full sm:flex-wrap sm:items-center sm:justify-center"
+	role="group"
+	aria-label="Recording options"
+>
+	<MicrophoneControl bind:open={() => openOption === 'microphone', (open) => setOpen('microphone', open)} />
+	<TranscriptionControl bind:open={() => openOption === 'transcription', (open) => setOpen('transcription', open)} />
+	<PostProcessingControl bind:open={() => openOption === 'post-processing', (open) => setOpen('post-processing', open)} />
+</div>
 
 <!-- Always mounted so the start of a recording is announced. The clock stays outside it: it changes every second. -->
 <span class="sr-only" role="status">{active ? 'Recording' : ''}</span>

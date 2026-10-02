@@ -59,6 +59,7 @@ import {
 	nameProblem,
 	readTextFile,
 } from './files.js';
+import { createMicrophoneInput } from './microphone-input.svelte.js';
 import {
 	type ConfirmedPublication,
 	observePublication,
@@ -325,6 +326,10 @@ export function createLibrary(workspace: Workspace) {
 	let recorderError = $state<string | undefined>();
 	let credentialPresent = $state(false);
 	let active: ActiveCapture | undefined;
+	/** The start that has not answered yet. Aborting it releases a microphone that opens late. */
+	let starting: AbortController | undefined;
+	/** How many folder reads are under way. */
+	let reading = $state(0);
 	let refreshSequence = 0;
 	/**
 	 * Transcripts whose publication was confirmed and that no applied listing
@@ -368,6 +373,11 @@ export function createLibrary(workspace: Workspace) {
 	});
 
 	const terminal = createTerminalSession(workspace.terminal, refreshAll);
+	const input = createMicrophoneInput({
+		capture: workspace.capture,
+		preferences: workspace.preferences,
+		recording: () => recorder.phase !== 'idle',
+	});
 	const unsubscribe = folder.git.subscribe((snapshot) => {
 		git = snapshot;
 	});
@@ -447,6 +457,15 @@ export function createLibrary(workspace: Workspace) {
 	}
 
 	async function refresh() {
+		reading += 1;
+		try {
+			await readFolder();
+		} finally {
+			reading -= 1;
+		}
+	}
+
+	async function readFolder() {
 		const sequence = ++refreshSequence;
 		// Published before this read began, so this read's listing accounts for them.
 		const published = new Map(unlistedResults);
@@ -1117,6 +1136,12 @@ export function createLibrary(workspace: Workspace) {
 		folder,
 		terminal,
 		autosave,
+		/** The microphone the next recording uses, and the test of it. */
+		input,
+		/** Whether the folder is being read now; the lists show the last read until it ends. */
+		get refreshing() {
+			return reading > 0;
+		},
 		get entries() {
 			return entries;
 		},
@@ -1318,6 +1343,8 @@ export function createLibrary(workspace: Workspace) {
 			credentialPresent = await workspace.credential
 				.present()
 				.catch(() => false);
+			// The saved choice only: no microphone is opened or listed at launch.
+			await input.load();
 			await refreshAll();
 		},
 		/** Explicitly discard a retained conflict whose saved file is gone. */
@@ -1335,12 +1362,27 @@ export function createLibrary(workspace: Workspace) {
 
 		async startRecording() {
 			if (recorder.phase !== 'idle') return;
+			if (closing) return;
 			recorderError = undefined;
 			recorder = { phase: 'starting' };
-			const started = await workspace.capture.start();
+			// A test or a pending enable holds the microphone: release it before the recording opens one.
+			input.release();
+			const attempt = new AbortController();
+			starting = attempt;
+			const started = await workspace.capture.start({
+				input: input.choice,
+				signal: attempt.signal,
+			});
+			// Cancelled or closed while the microphone was opening: it is not kept.
+			if (starting !== attempt) {
+				started.data?.cancel();
+				return;
+			}
+			starting = undefined;
 			if (started.error) {
 				recorder = { phase: 'idle' };
 				recorderError = started.error.message;
+				input.noteRecordingError(started.error);
 				return;
 			}
 			active = started.data;
@@ -1361,6 +1403,8 @@ export function createLibrary(workspace: Workspace) {
 			await publish(accept(stopped.data, new Date()));
 		},
 		cancelRecording() {
+			starting?.abort();
+			starting = undefined;
 			active?.cancel();
 			active = undefined;
 			recorder = { phase: 'idle' };
@@ -1856,8 +1900,13 @@ export function createLibrary(workspace: Workspace) {
 		 */
 		async close() {
 			closing = true;
-			await fileChanges;
+			// The microphone first: a file command still being written must not
+			// keep a test, an enable, or a recording's microphone open meanwhile.
+			input.close();
+			starting?.abort();
+			starting = undefined;
 			active?.cancel();
+			await fileChanges;
 			for (const editor of allEditors()) {
 				await editor.settle();
 				editor.dispose();

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
-	import { Input } from '@epicenter/ui/input';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
@@ -16,6 +15,7 @@
 	import { page } from '$app/state';
 	import type { Library } from '$lib/library.svelte.js';
 	import RecorderClock from './RecorderClock.svelte';
+	import TranscriptionSettingsForm from './TranscriptionSettingsForm.svelte';
 	import {
 		commitLine,
 		commitOutcomeLine,
@@ -87,37 +87,6 @@
 	async function reveal() {
 		const problem = await workspace.reveal?.();
 		if (problem) toast.error('Could not open the folder', { description: problem });
-	}
-
-	// Settings: the endpoint and model are folder settings in kv.json; the key stays on this device.
-	let baseUrl = $derived(library.settings.transcriptionBaseUrl);
-	let model = $derived(library.settings.transcriptionModel);
-	let apiKey = $state('');
-	let savingSettings = $state(false);
-	async function saveSettings(event: SubmitEvent) {
-		event.preventDefault();
-		savingSettings = true;
-		try {
-			const problem = await library.saveSettings({
-				transcriptionBaseUrl: baseUrl.trim(),
-				transcriptionModel: model.trim(),
-			});
-			if (problem) {
-				toast.error('Could not save the settings', { description: problem });
-				return;
-			}
-			if (apiKey !== '') {
-				const keyProblem = await library.saveCredential(apiKey);
-				if (keyProblem) {
-					toast.error('Could not save the key', { description: keyProblem });
-					return;
-				}
-				apiKey = '';
-			}
-			toast.success('Settings saved');
-		} finally {
-			savingSettings = false;
-		}
 	}
 
 	// Debug controls: paused autosave everywhere they are offered, injected failures on the desktop.
@@ -268,42 +237,7 @@
 				{/snippet}
 			</Popover.Trigger>
 			<Popover.Content align="end" class="w-96 max-w-[calc(100vw-1rem)]">
-				<form class="flex flex-col gap-3 text-sm" onsubmit={saveSettings}>
-					<p class="font-medium">Transcription</p>
-					<label class="flex flex-col gap-1">
-						<span class="text-xs text-muted-foreground">Endpoint (OpenAI-compatible base URL)</span>
-						<Input bind:value={baseUrl} autocomplete="off" spellcheck={false} data-testid="settings-base-url" />
-					</label>
-					<label class="flex flex-col gap-1">
-						<span class="text-xs text-muted-foreground">Model</span>
-						<Input bind:value={model} autocomplete="off" spellcheck={false} data-testid="settings-model" />
-					</label>
-					<p class="text-xs text-muted-foreground">Saved in <code class="font-mono">kv.json</code> in the folder, with its history.</p>
-					<label class="flex flex-col gap-1">
-						<span class="text-xs text-muted-foreground">
-							API key ({library.credentialPresent ? 'one is set' : 'none set'})
-						</span>
-						<Input
-							type="password"
-							bind:value={apiKey}
-							placeholder={library.credentialPresent ? 'Leave empty to keep the current key' : 'Optional for a local endpoint'}
-							autocomplete="off"
-							disabled={workspace.credential.readOnlyReason !== undefined}
-							data-testid="settings-api-key"
-						/>
-					</label>
-					<p class="text-xs text-muted-foreground">
-						{workspace.credential.readOnlyReason ?? `Kept in ${workspace.credential.storedIn}.`}
-						Transformations send this same key to the endpoint each one names.
-					</p>
-					{#if library.settingsProblem}
-						<p class="text-xs text-destructive" role="alert">kv.json: {library.settingsProblem}</p>
-					{/if}
-					<Button type="submit" size="sm" disabled={savingSettings} data-testid="settings-save">
-						{#if savingSettings}<Spinner class="size-3.5" />{/if}
-						Save settings
-					</Button>
-				</form>
+				<TranscriptionSettingsForm />
 			</Popover.Content>
 		</Popover.Root>
 

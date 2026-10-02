@@ -84,6 +84,12 @@ What Whispering adds on top:
 - The API key is not folder data. On the desktop it is in
   `<root>/.git/epicenter/whispering/device.json`, which Git never commits.
   Transcription and transformations use the same key.
+- The chosen microphone is not folder data either: it names hardware on one
+  device. It is a second field of the same `device.json`, never `kv.json`.
+  `native/device-file.ts` owns that file. Each change starts from what the
+  file holds, replaces only the field it names, and keeps every other field,
+  including ones this build does not know. Changes run one at a time, so a
+  key save and a microphone save that overlap both land.
 
 Short file commands, including settings saves and file creation or deletion,
 start independently. The library joins their completion promises. Quit
@@ -103,6 +109,7 @@ implementation when the app layout mounts:
 | Transcription | The host reads the audio and makes the request | The page makes the request |
 | Transformation | The host makes the request | The page makes the request, so the endpoint must allow its origin (CORS) |
 | Key | A file under `.git` | `localStorage` |
+| Chosen microphone | The same file under `.git`. The page's own storage does not last, since the host serves it from a new port each launch | `localStorage` |
 | Outside changes | The owner's hints: any program, this app included | Other tabs' saves, as hints to read again |
 | Reveal, failure injection | Yes | No |
 
@@ -236,10 +243,13 @@ served with a content security policy that allows connections to the host and
 to the shell's own commands (`ipc:`), and to nothing else.
 
 `/bridge/app` operations: `info`, `terminal`, `reveal`, `transcribe`,
-`transform`, `credential`, `close`, and, in a debug shell only, `fixture`,
-`inject`, `injection`, `injection-launch`, `obstruct`, and `unobstruct`.
-`transcribe` and `transform` take what to send and return a `Result`; the host
-adds the key and never returns it.
+`transform`, `credential`, `preferences`, `set-preferences`, `close`, and, in a
+debug shell only, `fixture`, `inject`, `injection`, `injection-launch`,
+`obstruct`, and `unobstruct`. `transcribe` and `transform` take what to send
+and return a `Result`; the host adds the key and never returns it.
+`preferences` and `set-preferences` read and save the chosen microphone. Their
+replies are built from that field alone, so the key beside it is never in one,
+and saving a microphone works while the key comes from the environment.
 
 A bridge call that fails says only that no reply arrived. The host may never
 have been reached, or it may have called the endpoint and had its reply lost.
@@ -285,12 +295,59 @@ only.
 
 ## Recording and publication
 
-`src/lib/capture.ts` has two devices. The microphone device uses the WebView's
-`MediaRecorder`. The fixture device returns fixed bytes and marks them
-`fixture`. A workspace has exactly one, chosen when it opens; neither falls back
-to the other. The saved extension comes from the container signature in the
-bytes (`src/lib/audio-format.ts`), and from the recorder's claimed MIME type
-only when the signature is not recognized.
+There are two capture devices. The microphone device (`src/lib/microphone.ts`)
+uses the WebView's `MediaRecorder`. The fixture device (`src/lib/capture.ts`)
+returns fixed bytes and marks them `fixture`. A workspace has exactly one,
+chosen when it opens; neither falls back to the other. The saved extension
+comes from the container signature in the bytes (`src/lib/audio-format.ts`),
+and from the recorder's claimed MIME type only when the signature is not
+recognized.
+
+### The microphone
+
+The microphone device also has `inputs`: listing, asking for access, and a
+level reading. The fixture device has none, so in fixture mode nothing lists,
+asks for, or opens a microphone.
+
+- A chosen microphone is asked for as `{ deviceId: { exact } }`. A WebView
+  that cannot open exactly that one answers with a refusal
+  (`InputUnavailable`), and a stream that reports another device is released
+  and refused. The system default is asked for only when nothing is chosen.
+- Listing is `enumerateDevices` and nothing else. It never asks for access, so
+  before access is allowed it names no input. `allow` is the separate action:
+  it opens the default microphone and releases it at once.
+- Every request takes an `AbortSignal`. A stream that arrives after its
+  request was withdrawn is released there, so a late answer leaves nothing
+  open.
+
+`src/lib/microphone-input.svelte.ts` is the session's state over that, a field
+of the library (`library.input`): the choice, the listing, and the one request
+that may open a microphone outside a recording. Enabling and a test share that
+one owner: at most one is under way, and `release` aborts it and stops its
+meter. The popover's close, leaving Home, a new choice, `startRecording`, and
+closing the library all call it, so nothing they leave behind holds a stream.
+The recorder and that request never hold a microphone together.
+`startRecording` releases before it asks for its own microphone and passes the
+choice it read at that moment; the choice, a test, and `allow` are refused
+while a recording is starting, running, or finishing. A recording cancelled or
+closed while its microphone is opening aborts that request. Closing the
+library releases the microphone first, before it waits for file commands it
+had accepted, and stops listening for `devicechange`.
+
+Nothing here runs at launch. The session reads the saved choice through
+`workspace.preferences` and opens nothing; the first listing is when the
+person opens the control.
+
+The choice's identity is its device ID and nothing else. A name does not
+identify a microphone: another one of the same model has the same name. So a
+saved ID that is not listed is never matched to a listed input by name. The
+choice stays as it is, the control shows it as not listed, and it changes only
+when the person chooses again. A listing can be limited by permission, so
+absence from it proves nothing about the microphone: a recording still asks
+for exactly that ID, and refuses only if the WebView cannot open it. A WebView may give
+the same microphone another ID in a new origin, and the desktop page's origin
+changes with the host's port, so a choice may need choosing again after a
+restart. That is a known limit, not yet checked on hardware.
 
 `src/lib/recordings/publish.ts` publishes a capture and finishes one that
 stopped partway. A capture is fixed when it ends: its ID, its bytes, and every
@@ -598,16 +655,19 @@ attached and says so (`injection-launch`).
 | `src/lib/definition.ts` | The inert folder declaration. |
 | `src/lib/workspace/` | The storage seam and its two implementations. |
 | `src/lib/bridge/` | The page's link to the host: its wire encoding and the HTTP calls. Nothing of the folder. |
-| `src/lib/session.svelte.ts` | The one session a mounted layout owns, and its context. |
+| `src/lib/session.svelte.ts` | The one session a mounted layout owns, and its context. It holds what the shell shows, the post-processing choice, and the settings draft. |
+| `src/lib/settings-draft.svelte.ts` | The one draft of the transcription settings, shown by the header's Settings and by the control on Home. |
+| `src/lib/post-processing.ts` | What the post-processing choice is now, read against the listed transformations. It runs nothing. |
 | `src/lib/library.svelte.ts` | Product state: lists, selections, retained editors, pending captures, transcription and transformation runs, settings. |
 | `src/lib/recordings/publish.ts` | Publication and recovery. |
-| `src/lib/capture.ts`, `audio-format.ts`, `transcription.ts`, `transformation.ts` | Capture devices, container detection, the transcription and transformation requests. |
+| `src/lib/capture.ts`, `microphone.ts`, `audio-format.ts`, `transcription.ts`, `transformation.ts` | The capture contract and fixture device, the real microphone, container detection, the transcription and transformation requests. |
+| `src/lib/microphone-input.svelte.ts` | The chosen microphone and the test of it, for one session. |
 | `src/lib/audio-source.ts` | What a player holds, reloaded by content version on each folder refresh. |
 | `src/lib/editor.svelte.ts`, `status.ts`, `files.ts`, `terminal.svelte.ts` | Drafts, status lines, the file tree, the terminal session. |
 | `src/routes/` | The layout that owns the session, and the three pages. |
 | `src/routes/components/` | The shell, navigation, header, unsaved notices, recorder, recording and transformation lists and details, file browser and view, terminal. |
 | `src/lib/assets/` | The microphone mark from the earlier Whispering. |
-| `native/` | The host: `main.ts`, `host.ts`, `audio.ts`, `terminal.ts`, `failure-injection.ts`. |
+| `native/` | The host: `main.ts`, `host.ts`, `audio.ts`, `device-file.ts`, `terminal.ts`, `failure-injection.ts`. |
 | `src-tauri/` | The shell: the window, the folder's registration and capability, and the host's lifetime. `shell/index.html` is shown only when the app cannot start. |
 | [scripts/build-sidecar.ts](./scripts/build-sidecar.ts) | Compiles the host for the bundle. |
 | `src/lib/tauri/bindings.gen.ts` | Generated by the Epicenter host's build for its own tests. Nothing here imports it. |

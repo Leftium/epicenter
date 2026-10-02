@@ -7,13 +7,13 @@ import type {
 } from './boundary.js';
 import {
 	type CapturedFile,
-	captureProblem,
 	type FileCapture,
 	fileCapture,
 	hashBytes,
 	ownBytes,
+	ownCapture,
 } from './capture.js';
-import { type ApplyError, FileError } from './errors.js';
+import type { ApplyError, FileError } from './errors.js';
 
 /**
  * Ordinary files at literal folder-relative paths (ADR-0479).
@@ -76,16 +76,6 @@ export function createFiles({
 		return applied.error ? applied : Ok(fileCapture(intent.path, sha256));
 	}
 
-	function refusedCapture(file: FileCapture) {
-		const problem = captureProblem(file);
-		return problem === undefined
-			? undefined
-			: FileError.InvalidPath({
-					path: String((file as { path?: unknown } | null)?.path ?? ''),
-					reason: problem,
-				});
-	}
-
 	return Object.freeze({
 		list: () => storage.list(),
 		children: (directory) => storage.children(directory),
@@ -103,10 +93,10 @@ export function createFiles({
 		create: (path, content) =>
 			save({ kind: 'create', path, bytes: ownBytes(content) }),
 		replace: (file, content) => {
-			const refused = refusedCapture(file);
-			if (refused) return Promise.resolve(refused);
+			const captured = ownCapture(file);
+			if (captured.error) return Promise.resolve(captured);
 			// The baseline is fixed here: the capture's own hash, copied.
-			const { path, sha256 } = fileCapture(file.path, file.sha256);
+			const { path, sha256 } = captured.data;
 			return save({
 				kind: 'replace',
 				path,
@@ -115,15 +105,15 @@ export function createFiles({
 			});
 		},
 		remove: (file) => {
-			const refused = refusedCapture(file);
-			if (refused) return Promise.resolve(refused);
-			const { path, sha256 } = fileCapture(file.path, file.sha256);
+			const captured = ownCapture(file);
+			if (captured.error) return Promise.resolve(captured);
+			const { path, sha256 } = captured.data;
 			return storage.apply([{ kind: 'remove', path, expectedSha256: sha256 }]);
 		},
 		move: async (file, destination) => {
-			const refused = refusedCapture(file);
-			if (refused) return Promise.resolve(refused);
-			const { path, sha256 } = fileCapture(file.path, file.sha256);
+			const captured = ownCapture(file);
+			if (captured.error) return captured;
+			const { path, sha256 } = captured.data;
 
 			const applied = await storage.apply([
 				{ kind: 'move', from: path, to: destination, expectedSha256: sha256 },

@@ -19,11 +19,11 @@ import type {
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileWriteIntent, FolderStorage } from './boundary.js';
 import {
-	captureProblem,
 	type FileCapture,
 	fileCapture,
 	hashBytes,
 	ownBytes,
+	ownCapture,
 } from './capture.js';
 import { BatchError, FileError, TableError } from './errors.js';
 import { pathProblem } from './paths.js';
@@ -221,17 +221,12 @@ export function collectBatch<TDefinition extends DataDefinition>(
 	}
 	/** A fixed copy of a capture, or undefined after refusing a malformed one. */
 	function captured(file: FileCapture): FileCapture | undefined {
-		const problem = captureProblem(file);
-		if (problem !== undefined) {
-			refuse(
-				FileError.InvalidPath({
-					path: String((file as { path?: unknown } | null)?.path ?? ''),
-					reason: problem,
-				}),
-			);
+		const own = ownCapture(file);
+		if (own.error) {
+			refuse(own);
 			return undefined;
 		}
-		return checked(file.path) ? fileCapture(file.path, file.sha256) : undefined;
+		return checked(own.data.path) ? own.data : undefined;
 	}
 	function write(change: FileWriteIntent) {
 		if (checked(change.path)) intents.push(change);

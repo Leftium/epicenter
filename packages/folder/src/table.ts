@@ -18,10 +18,9 @@ import { customAlphabet } from 'nanoid';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
 import {
-	captureProblem,
 	type FileCapture,
-	fileCapture,
 	hashBytes,
+	ownCapture,
 	type TextCapture,
 } from './capture.js';
 import {
@@ -298,41 +297,36 @@ export function createTable<TFields>(
 		entry: FileCapture,
 		source: string,
 	): Promise<Result<Entry<TFields>, TableWriteError>> {
-		const captured = fileCapture(entry.path, entry.sha256);
+		const { path, sha256: expectedSha256 } = entry;
 		const bytes = encoder.encode(source);
 		const sha256 = await hashBytes(bytes);
 		const applied = await storage.apply([
 			{
 				kind: 'replace',
-				path: captured.path,
+				path,
 				bytes,
 				sha256,
-				expectedSha256: captured.sha256,
+				expectedSha256,
 			},
 		]);
 		if (applied.error) return Err(applied.error);
-		return Ok(interpret(captured.path, sha256, source));
+		return Ok(interpret(path, sha256, source));
 	}
 
 	/**
-	 * The literal stem of a row file directly in this table's directory. A
+	 * Own a capture of a row file directly in this table's directory. A
 	 * nested path such as `todos/a/b.md` is not a row. Stems that violate the
 	 * naming rules are still rows here, so external files stay editable.
 	 */
-	function ownsPath(entry: FileCapture): Result<string, FileError> {
-		const problem = captureProblem(entry);
-		if (problem !== undefined)
+	function captureRow(entry: FileCapture): Result<FileCapture, FileError> {
+		const own = ownCapture(entry);
+		if (own.error) return own;
+		if (rowStemOf(name, own.data.path) === undefined)
 			return FileError.InvalidPath({
-				path: String(entry?.path ?? ''),
-				reason: problem,
-			});
-		const stem = rowStemOf(name, entry.path);
-		if (stem === undefined)
-			return FileError.InvalidPath({
-				path: entry.path,
+				path: own.data.path,
 				reason: `the entry is not a row of '${name}'`,
 			});
-		return Ok(stem);
+		return own;
 	}
 
 	async function readEntry(
@@ -443,14 +437,14 @@ export function createTable<TFields>(
 			return publishSource(entry, patched.data);
 		},
 		async replace(entry, source) {
-			const owned = ownsPath(entry);
+			const owned = captureRow(entry);
 			if (owned.error) return owned;
-			return publishSource(entry, source);
+			return publishSource(owned.data, source);
 		},
 		async rename(entry, nextStem) {
-			const owned = ownsPath(entry);
+			const owned = captureRow(entry);
 			if (owned.error) return owned;
-			const captured = fileCapture(entry.path, entry.sha256);
+			const captured = owned.data;
 			const source = entry.source;
 			const problem = stemProblem(nextStem);
 			if (problem !== undefined)
@@ -478,9 +472,9 @@ export function createTable<TFields>(
 			return Ok(interpret(path, captured.sha256, source));
 		},
 		async delete(entry) {
-			const owned = ownsPath(entry);
+			const owned = captureRow(entry);
 			if (owned.error) return owned;
-			const captured = fileCapture(entry.path, entry.sha256);
+			const captured = owned.data;
 			return storage.apply([
 				{
 					kind: 'remove',

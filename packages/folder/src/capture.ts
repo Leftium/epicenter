@@ -1,5 +1,8 @@
 /** Captures identify the exact bytes observed or submitted, across every storage backend. */
 
+import { Ok, type Result } from 'wellcrafted/result';
+import { FileError } from './errors.js';
+
 /** A fixed path and SHA-256 of the bytes captured there. Holds no lease. */
 export type FileCapture = {
 	path: string;
@@ -17,16 +20,21 @@ export function fileCapture(path: string, sha256: string): FileCapture {
 	return Object.freeze({ path, sha256 });
 }
 
-/** Why a supplied value is not a usable capture, or undefined when it is. */
-export function captureProblem(file: FileCapture): string | undefined {
-	if (
-		typeof (file as Partial<FileCapture> | null | undefined)?.path !== 'string'
-	)
-		return 'the capture has no path';
+/** Validate and detach a caller's capture before any asynchronous work. */
+export function ownCapture(file: FileCapture): Result<FileCapture, FileError> {
+	const path = (file as Partial<FileCapture> | null | undefined)?.path;
+	if (typeof path !== 'string')
+		return FileError.InvalidPath({
+			path: String(path ?? ''),
+			reason: 'the capture has no path',
+		});
 	const sha256 = (file as Partial<FileCapture> | null | undefined)?.sha256;
 	if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256))
-		return 'the capture has no valid SHA-256';
-	return undefined;
+		return FileError.InvalidPath({
+			path,
+			reason: 'the capture has no valid SHA-256',
+		});
+	return Ok(fileCapture(path, sha256));
 }
 
 const encoder = new TextEncoder();

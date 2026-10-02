@@ -402,18 +402,6 @@ export function createTodos(folder: TodosFolder) {
 		return Ok(read.data);
 	}
 
-	/** Rename a row through its table. Only the row's Markdown file moves. */
-	async function renameRow(
-		stem: string,
-		nextStem: string,
-		settled?: SavedText,
-	): Promise<Result<TodoEntry, string>> {
-		const row = await currentRow(stem, settled?.sha256);
-		if (row.error !== null) return row;
-		const renamed = await table.rename(row.data, nextStem);
-		return renamed.error ? Err(describeWriteError(renamed.error)) : renamed;
-	}
-
 	/**
 	 * Move a raw file's exact bytes to an unoccupied path. `from` is the
 	 * capture an editor last saved, or a path whose file is captured now.
@@ -577,14 +565,19 @@ export function createTodos(folder: TodosFolder) {
 			/** The selection was on the file, at either path, when the rename landed. */
 			let follow = false;
 			try {
-				if (row !== undefined && nextStem !== undefined)
-					moved =
-						editor === undefined
-							? await renameRow(row.stem, nextStem)
-							: await editor.move((settled: SavedText) =>
-									renameRow(row.stem, nextStem, settled),
-								);
-				else if (item?.kind === 'text')
+				if (row !== undefined && nextStem !== undefined) {
+					const move = async (baseline: SavedText) => {
+						const renamed = await table.rename(baseline, nextStem);
+						return renamed.error
+							? Err(describeWriteError(renamed.error))
+							: renamed;
+					};
+					if (editor !== undefined) moved = await editor.move(move);
+					else {
+						const current = await currentRow(row.stem, undefined);
+						moved = current.error !== null ? current : await move(current.data);
+					}
+				} else if (item?.kind === 'text')
 					moved = await item.editor.move(async (settled) => {
 						const bytes = await moveFile(settled, to);
 						return bytes.error === null

@@ -311,6 +311,34 @@ test('a path is a row only directly inside its table with the exact lowercase ex
 		expect(rowStemOf('todos', path)).toBeUndefined();
 });
 
+test('a text capture can rename its row, returns an interpreted entry, and refuses a changed baseline', async () => {
+	const { table, entry } = await setup();
+	const capture = {
+		path: entry.path,
+		sha256: entry.sha256,
+		source: entry.source,
+	};
+	expect(expectOk(await table.rename(capture, 'a'))).toEqual(entry);
+	const changed = expectOk(
+		await table.update('a', { fields: { title: 'Outside' } }),
+	);
+	expect(expectErr(await table.rename(capture, 'named')).name).toBe('Conflict');
+	expect(expectOk(await table.get('named'))).toBeUndefined();
+	expect(expectOk(await table.get('a'))).toEqual(changed);
+
+	const current = {
+		path: changed.path,
+		sha256: changed.sha256,
+		source: changed.source,
+	};
+	const renamed = expectOk(await table.rename(current, 'named'));
+	expect(renamed).toMatchObject({
+		path: 'todos/named.md',
+		stem: 'named',
+		fields: { title: 'Outside' },
+	});
+});
+
 test('malformed table captures cannot recreate a removed row', async () => {
 	const { table, entry } = await setup();
 	expectOk(await table.delete(entry));

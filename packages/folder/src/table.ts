@@ -109,7 +109,7 @@ export type FileTable<TFields> = {
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
 	/** Move the row file to another stem. No other file moves with it. */
 	rename(
-		entry: Entry<TFields>,
+		entry: TextCapture,
 		nextStem: string,
 	): Promise<Result<Entry<TFields>, TableWriteError>>;
 	/** Remove the row file. No other file is removed with it. */
@@ -452,7 +452,8 @@ export function createTable<TFields>(
 			if (problem !== undefined)
 				return TableError.InvalidStem({ stem: nextStem, reason: problem });
 			const path = rowPath(name, nextStem);
-			if (path === captured.path) return Ok(entry);
+			if (path === captured.path)
+				return Ok(interpret(captured.path, captured.sha256, source));
 			const found = await directory();
 			if (found.error) return found;
 			const destination = destinationProblem(

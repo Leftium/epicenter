@@ -262,9 +262,15 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 		expectOk(await folder.files.replace(read, 'text now'));
 	});
 
-	test('a value that is not a capture is refused before anything is published', async () => {
+	test('invalid paths and captures are refused before anything is published', async () => {
 		const folder = await open();
 		expectOk(await folder.files.create('a.txt', 'kept'));
+		expect(expectErr(await folder.files.read('../outside.txt')).name).toBe(
+			'InvalidPath',
+		);
+		expect(expectErr(await folder.files.create('.git/config', 'x')).name).toBe(
+			'InvalidPath',
+		);
 		const pathOnly = { path: 'a.txt' } as unknown as FileCapture;
 		for (const refused of [
 			await folder.files.replace(pathOnly, 'x'),

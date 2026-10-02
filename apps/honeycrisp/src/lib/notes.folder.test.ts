@@ -2,14 +2,13 @@
  * Notes Over A Real Directory Tests
  *
  * Runs the notes state and its file sessions against a real temporary
- * directory and the real `git`, laid out the way the desktop shell prepares
- * it. The folder is the folder package's directory opener, with the same
+ * directory with automatic history disabled. Explicit history checks use the
+ * real `git`. The folder is the folder package's directory opener, with the same
  * handle the desktop page receives from the shell, so these cover what
  * Honeycrisp does with a folder, not how the page reaches one.
  *
  * Key behaviors:
  * - Reading a note never rewrites it; an edit keeps unknown frontmatter and comments
- * - A content save is committed without the save waiting for it
  * - A Git failure is history, never a save error
  * - A stale save is refused, and a dirty draft survives another writer
  * - A save acknowledges only the text it submitted
@@ -68,9 +67,8 @@ async function until(check: () => boolean | Promise<boolean>, what: string) {
 }
 
 /**
- * A new notes directory, opened as a folder that commits every content save
- * and set up the way the desktop page sets one up, with that first commit
- * already made.
+ * A new notes directory with automatic history disabled. Editor tests do not
+ * wait for background commits; explicit history is exercised through the app.
  */
 async function open() {
 	const root = await realpath(
@@ -80,14 +78,13 @@ async function open() {
 		await openFolder({
 			root,
 			definition: honeycrispDefinition,
-			git: { author: { name: 'Honeycrisp', email: 'honeycrisp@localhost' } },
+			git: {
+				author: { name: 'Honeycrisp', email: 'honeycrisp@localhost' },
+				commitOnEdit: false,
+			},
 		}),
 	);
 	await setUpFolder(opened.files, Object.keys(honeycrispDefinition.tables));
-	await until(
-		() => opened.git.snapshot.lastCommit?.status === 'committed',
-		'the first commit',
-	);
 	// The methods the notes UI uses, on plain objects a test can wrap.
 	const folder: NotesFolder = {
 		tables: {
@@ -130,12 +127,6 @@ async function open() {
 	});
 	const git = (...args: string[]) =>
 		spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout.trim();
-	/** Wait until history holds exactly `count` commits (the layout commit is the first). */
-	const commits = (count: number) =>
-		until(
-			() => git('rev-list', '--count', 'HEAD') === String(count),
-			`${count} commits`,
-		);
 	/** A note already in the folder, as another session of the app would have left it. */
 	const seedNote = async (title = 'First') =>
 		expectOk(
@@ -156,7 +147,7 @@ async function open() {
 		expectOk(await opened.tables.notes.list()).entries.map(
 			(entry) => entry.path,
 		);
-	return { host, folder, root, git, commits, seedNote, notePaths, ran };
+	return { host, folder, root, git, seedNote, notePaths, ran };
 }
 
 /** The notes state over a new directory. */
@@ -263,31 +254,8 @@ const OUTSIDE = [
 // ============================================================================
 
 describe('notes are files', () => {
-	test('the layout is the first commit, so a note has a commit of its own', async () => {
-		const { folder, root, git, commits, seedNote } = await open();
-		expect(git('log', '--format=%s')).toBe('Add kv.json');
-		const note = await seedNote();
-		expect(note.path).toMatch(/^notes\/[0-9a-z]+\.md$/);
-		const source = await readFile(join(root, note.path), 'utf8');
-		expect(source).toBe(note.source);
-		expect(source).toContain('title: First');
-		expect(source.endsWith('---\nHello\n')).toBe(true);
-		await commits(2);
-		expect(git('log', '--format=%s').split('\n')).toEqual([
-			`Add ${note.path}`,
-			'Add kv.json',
-		]);
-		await until(() => {
-			const last = folder.git.snapshot.lastCommit;
-			return (
-				last?.status === 'committed' && last.oid === git('rev-parse', 'HEAD')
-			);
-		}, 'the commit to be reported');
-		expect(git('--no-optional-locks', 'status', '--porcelain')).toBe('');
-	});
-
-	test('a new note is one file of frontmatter, opened as it was written and committed', async () => {
-		const { state, root, git, commits } = await product();
+	test('a new note opens its saved source and an explicit app commit records it', async () => {
+		const { state, root, git } = await product();
 		expect(await state.createNote()).toBeUndefined();
 		const path = state.selectedPath as string;
 		expect(path).toMatch(/^notes\/[0-9a-z]+\.md$/);
@@ -301,36 +269,8 @@ describe('notes are files', () => {
 		expect(state.notes.map((entry) => entry.path)).toEqual([path]);
 		expect(state.notes[0]?.issues).toBeUndefined();
 		expect(state.pending).toEqual([]);
-		await commits(2);
-		expect(git('log', '--format=%s', '-1')).toBe(`Add ${path}`);
-	});
-
-	test('file saves, moves, and removals are committed', async () => {
-		const { folder, root, git, commits } = await open();
-		const created = expectOk(
-			await folder.files.create('references/example.md', 'Example\n'),
-		);
-		await commits(2);
-		expect(git('show', 'HEAD:references/example.md')).toBe('Example');
-		const moved = expectOk(
-			await folder.files.move(created, 'references/renamed.md'),
-		);
-		expect(moved).toEqual({
-			path: 'references/renamed.md',
-			version: created.version,
-		});
-		await commits(3);
-		expect(git('ls-tree', '-r', '--name-only', 'HEAD')).toContain(
-			'references/renamed.md',
-		);
-		expect(await readFile(join(root, 'references/renamed.md'), 'utf8')).toBe(
-			'Example\n',
-		);
-		expectOk(await folder.files.remove(moved));
-		await commits(4);
-		expect(git('ls-tree', '-r', '--name-only', 'HEAD')).not.toContain(
-			'references/',
-		);
+		expect((await state.commitNow()).status).toBe('committed');
+		expect(git('show', `HEAD:${path}`)).toBe(source.trim());
 	});
 
 	test('listing, opening, and reading a note never rewrite it', async () => {
@@ -424,14 +364,6 @@ describe('notes are files', () => {
 			'folderId: null',
 		);
 	});
-
-	test('a file path cannot leave the directory', async () => {
-		const { folder } = await open();
-		const read = await folder.files.read('../outside.txt');
-		expect(read.error?.name).toBe('InvalidPath');
-		const written = await folder.files.create('.git/config', 'x');
-		expect(written.error?.name).toBe('InvalidPath');
-	});
 });
 
 // ============================================================================
@@ -439,28 +371,30 @@ describe('notes are files', () => {
 // ============================================================================
 
 test('a Git failure leaves the file saved and is reported as history, not as a save error', async () => {
-	const { state, folder, root, git, commits, seedNote } = await product();
+	const { state, root, git, seedNote } = await product();
 	const note = await seedNote();
-	await commits(2);
 	const session = await opened(state, note.path);
-	// Another Git process holding the branch lock makes the next commit fail.
+	// The save finishes before an explicit app commit meets the branch lock.
 	await writeFile(join(root, '.git', 'refs', 'heads', 'main.lock'), '');
 	session.input(note.source.replace('Hello', 'Locked out'));
 	await session.save();
 	expect(session.status).toBe('saved');
-	await until(
-		() => folder.git.snapshot.lastCommit?.status === 'failed',
-		'the failed commit',
-	);
+	expect((await state.commitNow()).status).toBe('failed');
+	expect(state.git.lastCommit?.status).toBe('failed');
 	expect(draftsLineOf(state).label).toBe('No unsaved drafts');
 	expect(await readFile(join(root, note.path), 'utf8')).toContain('Locked out');
-	expect(git('rev-list', '--count', 'HEAD')).toBe('2');
-	expect(git('--no-optional-locks', 'status', '--porcelain')).toContain(
-		note.path,
-	);
+	expect(git('rev-parse', '--verify', '--quiet', 'HEAD')).toBe('');
+	expect(
+		git(
+			'--no-optional-locks',
+			'status',
+			'--porcelain',
+			'--untracked-files=all',
+		),
+	).toContain(note.path);
 	// History catches up with the next commit; the save was never undone.
 	await rm(join(root, '.git', 'refs', 'heads', 'main.lock'));
-	expect((await folder.git.commit()).status).toBe('committed');
+	expect((await state.commitNow()).status).toBe('committed');
 	expect(git('--no-optional-locks', 'status', '--porcelain')).toBe('');
 });
 

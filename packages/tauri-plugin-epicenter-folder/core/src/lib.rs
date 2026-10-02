@@ -8,6 +8,7 @@
 pub mod files;
 pub mod git;
 pub mod history;
+pub mod kv_merge;
 pub mod lock;
 pub mod messages;
 pub mod owner;

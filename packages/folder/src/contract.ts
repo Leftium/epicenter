@@ -86,6 +86,7 @@ export type {
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
 export type { FileKv, KvReading, KvSnapshot } from './kv.js';
+export { type KvMerge, type KvMergeInput, mergeKv } from './kv-merge.js';
 export {
 	frameSource,
 	type PatchRefusal,

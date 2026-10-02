@@ -388,6 +388,35 @@ Repair the complete text with `files.replace(snapshot, source)`. That returns
 a raw capture; call `kv.inspect` on the text that was submitted to see how it
 reads. `KvReadError` and `KvWriteError` are the two error unions.
 
+### Merging kv.json
+
+`mergeKv({ base, ours, theirs })` reconciles three captured sources without
+opening a folder. Each input is a JSON object string or `null` for a missing
+file. Rust exposes the equivalent `kv_merge::merge_kv(base, ours, theirs)` in
+`epicenter-folder-core`. Both implementations run the same fixtures.
+
+For each root key, equal choices agree; a side unchanged from the base yields
+to the other side. Competing changes return `kind: 'conflict'` with each key's
+raw base, ours, and theirs values. Nested objects and arrays stay together as
+one value. A missing key differs from a stored JSON `null`. Deleting the file
+conflicts with a change to its values and returns `kind: 'file-conflict'`.
+
+A successful result has `kind: 'merged'` and `source`, which is `null` for a
+deleted file. It preserves selected value text and regenerates root formatting
+with sorted keys. Object key order and string escape spelling do not affect
+equality. Number tokens compare exactly, so `1` and `1.0` differ; large unknown
+numbers never round through JavaScript. Equal values choose the same raw text
+when ours and theirs swap.
+
+Malformed JSON, duplicate keys at any depth, unpaired Unicode surrogates, and
+nesting beyond 64 containers return `kind: 'invalid'` and the first invalid
+`side` in base, ours, theirs order. A leading BOM is accepted and removed from
+output. Callers must decode bytes without replacing invalid UTF-8.
+
+The function does not apply field schemas, write files, or choose a winner for
+competing edits. History currently pulls by fast-forward only; Git merge driver
+and synchronization integration are separate work.
+
 ### Batches
 
 ```ts

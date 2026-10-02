@@ -8,12 +8,24 @@
  * starts from what the file holds at that moment and keeps every field it
  * does not name. Changes run one at a time: a key save and a microphone save
  * that overlap would otherwise each write back the other's old value.
+ *
+ * A file that is there and does not decode as one JSON object is never
+ * replaced. It may still hold a key, or fields from another build, that a
+ * person can recover by hand; a rewrite would destroy them. Reading it and
+ * changing it both refuse until it is fixed or removed.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { MicrophonePreference } from '../src/lib/capture.js';
 
 export type DeviceValues = Readonly<Record<string, unknown>>;
+
+/**
+ * Said for any existing file that is not one JSON object. It names no path
+ * and carries none of the file's text, which may hold the key.
+ */
+const UNDECODABLE =
+	'This device’s Whispering settings file does not read as a JSON object, so it was left as it is. Fix or remove device.json under the folder’s .git/epicenter/whispering directory, then try again.';
 
 const KEY_FIELD = 'transcriptionApiKey';
 const MICROPHONE_FIELD = 'microphone';
@@ -51,9 +63,9 @@ export function readMicrophone(
 
 export function createDeviceFile(path: string) {
 	/**
-	 * The file's object. A file that is absent, or whose text is not a JSON
-	 * object, holds nothing. A file that is there and cannot be read throws, so
-	 * a change never replaces fields it could not see.
+	 * The file's object. Only an absent file holds nothing. A file that is
+	 * there and cannot be read, or whose text is not one JSON object, throws,
+	 * so a change never replaces fields it could not see.
 	 */
 	async function read(): Promise<DeviceValues> {
 		let text: string;
@@ -63,18 +75,16 @@ export function createDeviceFile(path: string) {
 			if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return {};
 			throw cause;
 		}
+		let parsed: unknown;
 		try {
-			const parsed: unknown = JSON.parse(text);
-			if (
-				typeof parsed === 'object' &&
-				parsed !== null &&
-				!Array.isArray(parsed)
-			)
-				return parsed as DeviceValues;
+			parsed = JSON.parse(text);
 		} catch {
-			// Not ours to read.
+			// The parser's own message can quote the text. It is not passed on.
+			throw new Error(UNDECODABLE);
 		}
-		return {};
+		if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+			throw new Error(UNDECODABLE);
+		return parsed as DeviceValues;
 	}
 
 	let changes: Promise<unknown> = Promise.resolve();

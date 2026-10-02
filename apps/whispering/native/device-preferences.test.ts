@@ -14,12 +14,16 @@
  *   and the key saved in the file is left as it was
  * - A preference that does not read as one is refused and writes nothing
  * - A device file that cannot be read is not replaced
+ * - A device file that is there and is not one JSON object is refused and
+ *   left byte for byte, by key saves and microphone saves alike, and the
+ *   refusal quotes none of it
  */
 import { afterEach, expect, test } from 'bun:test';
 import {
 	chmod,
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	realpath,
 	rm,
@@ -218,4 +222,62 @@ test('a device file that cannot be read is not replaced by a microphone save', a
 
 	await chmod(deviceFile, 0o600);
 	expect(await readFile(deviceFile, 'utf8')).toBe(before);
+});
+
+test('a device file that is not one JSON object is refused and left as it is, by key and microphone saves alike', async () => {
+	// Cut short mid-write by something else: the key and a later build's field are still recoverable by hand.
+	const truncated = `{"transcriptionApiKey":"${SECRET}","addedByALaterBuild":{"keep":true}`;
+	for (const contents of [
+		truncated,
+		'',
+		'null',
+		`["${SECRET}"]`,
+		`"${SECRET}"`,
+		'7',
+	]) {
+		const { bridge, deviceFile, replies, logged } = await start();
+		await mkdir(join(deviceFile, '..'), { recursive: true });
+		await writeFile(deviceFile, contents);
+
+		await expect(
+			bridge.app('set-preferences', { microphone: USB }),
+		).rejects.toThrow('does not read as a JSON object');
+		await expect(
+			bridge.app('set-preferences', { microphone: null }),
+		).rejects.toThrow('does not read as a JSON object');
+		await expect(bridge.app('credential', { key: 'new-key' })).rejects.toThrow(
+			'does not read as a JSON object',
+		);
+		await expect(bridge.app('preferences')).rejects.toThrow(
+			'does not read as a JSON object',
+		);
+
+		expect(await readFile(deviceFile, 'utf8')).toBe(contents);
+		// Nothing was staged beside it either.
+		expect(await readdir(join(deviceFile, '..'))).toEqual(['device.json']);
+		// A key that cannot be read is not reported as set, and is not quoted anywhere.
+		expect(
+			await bridge.app<{ credentialPresent: boolean }>('info'),
+		).toMatchObject({ credentialPresent: false });
+		expect([...replies, ...logged].join('\n')).not.toContain(SECRET);
+		expect([...replies, ...logged].join('\n')).not.toContain('addedByALaterBuild');
+	}
+});
+
+test('once the file is repaired by hand, saves work again and keep what it holds', async () => {
+	const { bridge, deviceFile, saved, seed } = await start();
+	await mkdir(join(deviceFile, '..'), { recursive: true });
+	await writeFile(deviceFile, `{"transcriptionApiKey":"${SECRET}"`);
+	await expect(
+		bridge.app('set-preferences', { microphone: USB }),
+	).rejects.toThrow('does not read as a JSON object');
+
+	await seed({ transcriptionApiKey: SECRET, addedByALaterBuild: 7 });
+	await bridge.app('set-preferences', { microphone: USB });
+
+	expect(await saved()).toEqual({
+		transcriptionApiKey: SECRET,
+		addedByALaterBuild: 7,
+		microphone: USB,
+	});
 });

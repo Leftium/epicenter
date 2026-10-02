@@ -292,6 +292,36 @@ test.each([
 	expect(await source()).toBe('{"theme": "light"}');
 });
 
+test.each([
+	[
+		'an object wider than the budget',
+		Object.fromEntries(
+			Array.from({ length: 1025 }, (_, index) => [`key${index}`, index]),
+		),
+	],
+	['nesting deeper than the budget', [[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]],
+])('create and update refuse %s by naming the budget, not conformance', async (_name, layout) => {
+	const { kv, calls, source } = await setup('{"theme": "light"}');
+	// The field itself takes the value: it is JSON, and JSON has no size.
+	const parsed = expectOk(compileFolderDefinition(definition)).kv;
+	expect(parsed.fields.get('layout')?.check(layout)).toBe(true);
+
+	const supplied = { layout } as Partial<Values>;
+	for (const refused of [await kv.update(supplied), await kv.create(supplied)])
+		expect(expectErr(refused)).toMatchObject({
+			name: 'InvalidValues',
+			issues: [
+				{
+					field: 'layout',
+					message:
+						'The value is over the kv.json budget: nesting deeper than 16 levels, or an object with more than 1024 keys',
+				},
+			],
+		});
+	expect(calls).toEqual({ reads: 0, applies: 0 });
+	expect(await source()).toBe('{"theme": "light"}');
+});
+
 // ============================================================================
 // What an update leaves alone
 // ============================================================================

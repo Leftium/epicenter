@@ -355,8 +355,8 @@ rather than an array splice that races.
 
 ## The data definition
 
-A data definition is one durable data domain's complete declaration: closed JSON
-field descriptors, with no storage or lifecycle
+A data definition is one durable data domain's complete declaration: fields
+built with `field.*`, with no storage or lifecycle
 (ADR-0213, ADR-0240). It never migrates user data (ADR-0125). A newer release
 ships a newer definition and reads the same durable data through it.
 
@@ -398,8 +398,9 @@ Three rules bite immediately:
    `field.nullable(inner)`
    accepts stored JSON `null`, but a missing field remains nonconforming.
 2. **Definitions do not own defaults.** Initialization and recovery values live
-   in application code. `compileData` rejects a descriptor carrying `default`.
-3. **No transforming fields.** Date, instant, and datetime descriptors preserve
+   in application code. `compileData` rejects a field whose schema declares a
+   `default`.
+3. **No transforming fields.** Date, instant, and datetime fields preserve
    their string representation, so values round-trip through storage and SQL.
 
 ### Nonconforming is a view, not damage

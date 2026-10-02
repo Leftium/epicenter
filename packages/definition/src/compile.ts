@@ -1,8 +1,13 @@
 /**
- * Compile developer declarations into read lenses with field checks and codecs.
+ * Compile developer declarations into read lenses.
+ *
+ * A field is a native TypeBox schema, so preparing one is `Compile`. The
+ * compiler adds what a single schema cannot say: usable names, no declared
+ * defaults, and a per-field conformance read.
  */
 
-import type { TSchema } from 'typebox';
+import { Compile } from 'typebox/compile';
+import { Memory } from 'typebox/system';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 import { DATA_ADDRESS_CEILINGS, isDataId, isTableName } from './addresses.js';
@@ -15,11 +20,11 @@ import {
 	type TableDeclaration,
 } from './declaration.js';
 import {
-	compile as compileField,
-	type Field,
-	recognize,
-	referenceTargetOf,
+	FIELD_KEYWORD,
+	type FieldSchema,
+	fieldMetadataOf,
 } from './field/index.js';
+import { isHelperBuilt } from './field/metadata.js';
 import type { JsonObject, JsonValue } from './json.js';
 
 export type ConformanceIssue = { field: string; message: string };
@@ -38,7 +43,7 @@ export const DataDefinitionParseError = defineErrors({
 		field: string;
 		reason: string;
 	}) => ({
-		message: `Field '${table}.${field}' is not recognized vocabulary: ${reason}`,
+		message: `Field '${table}.${field}' is not a usable field: ${reason}`,
 		table,
 		field,
 		reason,
@@ -97,9 +102,10 @@ const parsed = new WeakMap<
  * every opener would redo that work. It is not here for the milliseconds; it is
  * here so "validate early" does not mean "validate twice".
  *
- * Identity keying means a definition MUTATED IN PLACE would read back its old
- * compile. Definitions are module-level constants built from `field.*` and are
- * never mutated.
+ * Identity keying means a definition MUTATED IN PLACE reads back its old
+ * compile. That is the intent: each field is compiled from a frozen snapshot
+ * taken here, so what a storage checks and what an editor shows stay the pair
+ * that was declared, whatever happens to the declared schema afterwards.
  */
 export function compileData<TBody extends TableBody = TableBody>(
 	value: DataDefinition<TBody>,
@@ -207,54 +213,37 @@ function compileTable(
 			reason: `table '${tableName}' does not declare a flat field map`,
 		});
 	const compiled = new Map<string, DataField>();
-	for (const [fieldName, descriptor] of Object.entries(declaration)) {
+	for (const [fieldName, declared] of Object.entries(declaration)) {
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
-		if (!isPlainObject(descriptor)) {
+		if (fieldMetadataOf(declared) === null) {
 			return DataDefinitionParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
-				reason: 'a field descriptor must be a JSON object',
+				reason: 'a field is declared with field.*',
 			});
 		}
-		if (containsDefault(descriptor)) {
+		if (declaresDefault(declared)) {
 			return DataDefinitionParseError.DeclarationDefault({
 				table: tableName,
 				field: fieldName,
 			});
 		}
-		const serialized = trySync({
-			try: () =>
-				JSON.parse(
-					JSON.stringify(descriptor, (_key, value: unknown) => {
-						if (
-							(typeof value === 'number' && !Number.isFinite(value)) ||
-							typeof value === 'bigint' ||
-							typeof value === 'symbol'
-						) {
-							throw new TypeError(
-								'Field descriptors require finite JSON values',
-							);
-						}
-						return value;
-					}),
-				) as Record<string, unknown>,
-			catch: (cause) =>
-				DataDefinitionParseError.Malformed({ reason: String(cause) }),
-		});
-		if (serialized.error !== null) return serialized;
-		const wire = serialized.data;
-		const nullableDescriptor = nullableParts(wire);
-		const base = recognize(nullableDescriptor?.inner ?? wire);
-		if (base === null) {
+		// After the default check, so a spread field that carries a default is
+		// still told about the default.
+		if (!isHelperBuilt(declared as object)) {
 			return DataDefinitionParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
-				reason: 'expected a closed @epicenter/definition/field descriptor',
+				reason:
+					'it lost what its field.* helper built; a spread or a rebuilt schema drops hidden constraints',
 			});
 		}
-		const checker = trySync({
-			try: () => compileField(base.schema),
+		const prepared = trySync({
+			try: () => {
+				const schema = snapshot(declared as FieldSchema);
+				return { schema, validator: Compile(schema) };
+			},
 			catch: (cause) =>
 				DataDefinitionParseError.UnrecognizedField({
 					table: tableName,
@@ -262,23 +251,23 @@ function compileTable(
 					reason: String(cause),
 				}),
 		});
-		if (checker.error) return checker;
-		const check = checker.data;
-		compiled.set(fieldName, {
-			name: fieldName,
-			kind: base.kind,
-			schema: wire,
-			check:
-				nullableDescriptor === null
-					? check
-					: (value) => value === null || check(value),
-			nullable: nullableDescriptor !== null,
-			reference: referenceTargetOf({
-				...base,
+		if (prepared.error) return prepared;
+		const { schema, validator } = prepared.data;
+		const metadata = schema[FIELD_KEYWORD];
+		compiled.set(
+			fieldName,
+			Object.freeze({
 				name: fieldName,
-				check,
-			} as Field),
-		});
+				kind: metadata.kind,
+				nullable: metadata.nullable,
+				reference: metadata.kind === 'reference' ? metadata.target : null,
+				metadata,
+				schema,
+				check: (value: unknown) => validator.Check(value),
+				errors: (value: unknown) =>
+					validator.Errors(value).map((error) => error.message),
+			}),
+		);
 	}
 	return Ok(
 		Object.freeze({
@@ -294,9 +283,12 @@ function compileTable(
 							message: `${fieldName} is missing`,
 						});
 					} else if (!field.check(payload[fieldName])) {
+						const [detail] = field.errors(payload[fieldName]);
 						issues.push({
 							field: fieldName,
-							message: `${fieldName} is not a conforming ${field.kind} value`,
+							message: `${fieldName} is not a conforming ${field.kind} value${
+								detail === undefined ? '' : `: ${detail}`
+							}`,
 						});
 					} else {
 						conforming[fieldName] = payload[fieldName] as JsonValue;
@@ -308,37 +300,86 @@ function compileTable(
 	);
 }
 
-function nullableParts(
-	value: Record<string, unknown>,
-): { inner: TSchema } | null {
-	if (
-		Object.keys(value).some((key) => key !== 'anyOf') ||
-		!Array.isArray(value.anyOf) ||
-		value.anyOf.length !== 2
-	)
-		return null;
-	const nonNull = value.anyOf.filter((part) => !isNullSchema(part));
-	return nonNull.length === 1 && isPlainObject(nonNull[0])
-		? { inner: nonNull[0] }
-		: null;
-}
-
-function isNullSchema(value: unknown): boolean {
-	return (
-		isPlainObject(value) &&
-		value.type === 'null' &&
-		Object.keys(value).every((key) => key === 'type')
-	);
-}
-
-function containsDefault(value: unknown, seen = new Set<object>()): boolean {
-	if (!isPlainObject(value) && !Array.isArray(value)) return false;
-	if (typeof value === 'object' && value !== null) {
-		if (seen.has(value)) return false;
-		seen.add(value);
+/**
+ * A frozen native copy of a declared schema: what a field is compiled from.
+ *
+ * `Memory.Clone` is TypeBox's own clone. It copies own string-keyed data
+ * properties, hidden ones included, so every native constraint comes along. It
+ * copies functions and `~guard` objects by reference, and those stay as they
+ * are here: freezing one would freeze the author's state. Symbol keys,
+ * accessors, and what a refinement callback closes over are outside what this
+ * snapshot holds still.
+ */
+function snapshot<S extends object>(declared: S): S {
+	const schema = Memory.Clone(declared) as S;
+	const pending: unknown[] = [schema];
+	while (pending.length > 0) {
+		const value = pending.pop();
+		if (typeof value !== 'object' || value === null) continue;
+		if (Object.isFrozen(value) || '~guard' in value) continue;
+		if (!Array.isArray(value) && !isPlainObject(value)) continue;
+		Object.freeze(value);
+		for (const key of Object.getOwnPropertyNames(value))
+			pending.push(Object.getOwnPropertyDescriptor(value, key)?.value);
 	}
-	if (isPlainObject(value) && Object.hasOwn(value, 'default')) return true;
-	return Object.values(value).some((child) => containsDefault(child, seen));
+	return schema;
+}
+
+/** Keywords whose value maps names to schemas, so a key there is not a keyword. */
+const NAMED_SCHEMAS: readonly string[] = [
+	'properties',
+	'patternProperties',
+	'$defs',
+	'definitions',
+	'dependentSchemas',
+];
+
+/** Keywords whose value is one schema, or a list of them. */
+const SUBSCHEMAS: readonly string[] = [
+	'items',
+	'prefixItems',
+	'anyOf',
+	'allOf',
+	'oneOf',
+	'not',
+	'if',
+	'then',
+	'else',
+	'additionalProperties',
+	'contains',
+	'propertyNames',
+	'unevaluatedProperties',
+	'unevaluatedItems',
+];
+
+/**
+ * Whether a schema declares a `default` anywhere a schema can.
+ *
+ * It follows only the keywords that hold schemas. So a payload property NAMED
+ * `default` (`Type.Object({ default: Type.String() })`) is a name, and a
+ * `default` key inside a `const`, an `enum` member, an annotation, or a
+ * `dependentRequired` map is data; none of those is a declared default.
+ */
+function declaresDefault(schema: unknown, seen = new Set<object>()): boolean {
+	if (typeof schema !== 'object' || schema === null || seen.has(schema))
+		return false;
+	seen.add(schema);
+	if (Array.isArray(schema))
+		return schema.some((child) => declaresDefault(child, seen));
+	if (Object.hasOwn(schema, 'default')) return true;
+	const keywords = schema as Record<string, unknown>;
+	return (
+		SUBSCHEMAS.some((keyword) => declaresDefault(keywords[keyword], seen)) ||
+		NAMED_SCHEMAS.some((keyword) => {
+			const named = keywords[keyword];
+			return (
+				typeof named === 'object' &&
+				named !== null &&
+				!Array.isArray(named) &&
+				Object.values(named).some((child) => declaresDefault(child, seen))
+			);
+		})
+	);
 }
 
 function fieldNameProblem(

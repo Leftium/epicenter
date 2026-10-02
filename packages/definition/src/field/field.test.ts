@@ -1,59 +1,42 @@
 /**
- * Field Vocabulary Tests
+ * Field Helper Tests
  *
- * The two halves of the closed vocabulary, proven to be inverses over one
- * wire-form: the `field.*` builders construct schemas, `recognize` classifies
- * them back. The ROUND-TRIP suite is the convergence proof: a serialized
- * `field.X(...)` recognizes as kind `X` for every kind.
+ * A `field.*` helper returns one native TypeBox schema annotated with the
+ * editor it gets. These tests check the schema with TypeBox's own `Compile`,
+ * never through this package's compiler, so they hold the helpers to being
+ * native on their own.
  *
  * Key behaviors:
- * - Round-trip: recognize(at-rest of field.X(...)) === X, for every kind
- * - Discrimination invariant: every legal schema matches EXACTLY ONE meta
- * - Cross-discrimination: the shapes that could collide resolve to one kind
- * - Refinements and annotations ride along without changing the kind
- * - String byte bounds count UTF-8 bytes at runtime
- * - Rejection lane: unsupported shapes match no meta and recognize as null
+ * - Every helper annotates its schema with its kind, and the annotation is an
+ *   ordinary enumerable keyword
+ * - A select's options and a reference's target are in the annotation, and
+ *   `field.nullable` keeps them
+ * - `maxBytes` is a native refinement
+ * - `field.json` keeps every hidden keyword of the schema it wraps, and decides
+ *   that a value is JSON before the wrapped schema sees it
+ * - A helper copies its arguments and leaves them as they were; what it
+ *   returns is an ordinary mutable native schema with a frozen annotation
  *
  * See also:
- * - `field.test-d.ts` for the `Static<>` preservation of the branded builders.
+ * - `field.test-d.ts` for `Static<>` and the helper-only declaration types
+ * - `../compile.test.ts` for the compiler that prepares these schemas
  */
 
 import { describe, expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
+import { Compile } from 'typebox/compile';
 import { Value } from 'typebox/value';
+import { isJsonObject, isJsonSafe, isJsonValue } from '../json.js';
 import { field, jsonValue } from './builders.js';
-import { compile, KINDS, type Kind, META_BY_KIND, recognize } from './field.js';
-import { INSTANT_STRING_PATTERN } from './instant-string.js';
+import {
+	FIELD_KEYWORD,
+	type FieldMetadata,
+	fieldMetadataOf,
+	type Kind,
+} from './metadata.js';
 
-/**
- * The at-rest form of a built schema: a live TypeBox schema carries a
- * non-enumerable `~kind` tag that the CLOSED metas reject; JSON serialization
- * drops it. This mirrors what is actually stored (on disk / in Yjs) and what
- * `recognize` reads, so the round-trip is over the honest stored shape.
- */
-const atRest = (schema: TSchema): unknown => JSON.parse(JSON.stringify(schema));
+const check = (schema: TSchema, value: unknown) => Compile(schema).Check(value);
 
-/**
- * The discrimination invariant is the whole bet: every legal field schema must
- * match EXACTLY ONE meta. `countMatches` is the proof instrument; if it ever
- * returns a number other than 1 for a legal schema, the total `recognize` and
- * the per-field degrade both rest on sand.
- */
-function countMatches(schema: unknown): number {
-	return (Object.keys(META_BY_KIND) as Kind[]).filter((kind) =>
-		Value.Check(META_BY_KIND[kind], schema),
-	).length;
-}
-
-/** The kind `recognize` assigns, or null when the schema is outside the palette. */
-const kindOf = (schema: unknown): Kind | null =>
-	recognize(schema)?.kind ?? null;
-
-// ============================================================================
-// Round-trip: field.* builders are the inverse of recognize
-// ============================================================================
-
-/** One representative builder call per kind. The convergence proof iterates these. */
 const BUILT: Record<Kind, TSchema> = {
 	string: field.string(),
 	reference: field.reference('pages'),
@@ -70,394 +53,498 @@ const BUILT: Record<Kind, TSchema> = {
 	json: field.json(jsonValue),
 };
 
-describe('round-trip: recognize(field.X(...)) is kind X', () => {
-	for (const kind of KINDS) {
-		test(`field.${kind} recognizes back as ${kind} and matches exactly one meta`, () => {
-			const rest = atRest(BUILT[kind]);
-			expect(kindOf(rest)).toBe(kind);
-			expect(countMatches(rest)).toBe(1);
+describe('every helper annotates a native schema', () => {
+	for (const [kind, schema] of Object.entries(BUILT)) {
+		test(`field.${kind} is kind ${kind}, not nullable, and enumerable`, () => {
+			expect(fieldMetadataOf(schema)).toMatchObject({ kind, nullable: false });
+			expect(Object.keys(schema)).toContain(FIELD_KEYWORD);
+			expect(JSON.parse(JSON.stringify(schema))[FIELD_KEYWORD].kind).toBe(kind);
 		});
 	}
+
+	test('number and integer are distinct kinds with distinct checks', () => {
+		expect(fieldMetadataOf(field.number())?.kind).toBe('number');
+		expect(fieldMetadataOf(field.integer())?.kind).toBe('integer');
+		expect(check(field.number(), 1.5)).toBe(true);
+		expect(check(field.integer(), 1.5)).toBe(false);
+		expect(check(field.number(), Number.NaN)).toBe(false);
+		expect(check(field.integer({ minimum: 1, maximum: 5 }), 6)).toBe(false);
+	});
+
+	test('a bare native schema is not a field', () => {
+		expect(fieldMetadataOf(Type.String())).toBeNull();
+		expect(fieldMetadataOf({ type: 'string', [FIELD_KEYWORD]: {} })).toBeNull();
+		expect(
+			fieldMetadataOf({ [FIELD_KEYWORD]: { kind: 'blob', nullable: false } }),
+		).toBeNull();
+	});
+
+	test('temporal helpers keep their formats', () => {
+		expect(check(field.date(), '2026-06-09')).toBe(true);
+		expect(check(field.date(), '2026-02-30')).toBe(false);
+		expect(check(field.instant(), '2026-06-09T14:00:00.000Z')).toBe(true);
+		expect(check(field.instant(), '2026-06-09T14:00:00Z')).toBe(false);
+		expect(check(field.instant(), '2026-06-09T14:00:00.000-05:00')).toBe(false);
+		expect(check(field.datetime(), '2026-06-09T14:00:00-05:00')).toBe(true);
+		expect(check(field.url(), 'not a url')).toBe(false);
+	});
 });
 
-describe('round-trip: the native enum wire-form', () => {
-	test('field.select emits the native {enum:[...]} keyword at rest', () => {
-		expect(atRest(field.select(['draft', 'published']))).toEqual({
-			enum: ['draft', 'published'],
+describe('options are the supported ones', () => {
+	test('an option cannot replace what the helper sets', () => {
+		for (const declare of [
+			// @ts-expect-error the format is the helper's
+			() => field.url({ format: 'email' }),
+			// @ts-expect-error the type is the helper's
+			() => field.string({ type: 'number' }),
+			// @ts-expect-error the annotation is the helper's
+			() => field.string({ [FIELD_KEYWORD]: { kind: 'url', nullable: false } }),
+			// @ts-expect-error a default belongs to the application
+			() => field.string({ default: 'untitled' }),
+			// @ts-expect-error a typo is not an option
+			() => field.tags({ minItem: 1 }),
+			// @ts-expect-error instant owns its pattern
+			() => field.instant({ pattern: '.*' }),
+		])
+			expect(declare).toThrow('does not support');
+	});
+
+	test('supported options reach the native schema', () => {
+		const title = field.string({ minLength: 2, pattern: '^[a-z]+$' });
+		expect(check(title, 'ab')).toBe(true);
+		expect(check(title, 'a')).toBe(false);
+		expect(check(title, 'AB')).toBe(false);
+		const labels = field.tags({ maxItems: 1, uniqueItems: true });
+		expect(check(labels, ['a'])).toBe(true);
+		expect(check(labels, ['a', 'b'])).toBe(false);
+		expect(field.url({ title: 'Homepage' })).toMatchObject({
+			title: 'Homepage',
+			format: 'uri',
 		});
 	});
 
-	test('field.multiSelect items carry enum (so it is multiSelect, not tags)', () => {
-		const rest = atRest(field.multiSelect(['a', 'b']));
-		expect(rest).toEqual({
-			type: 'array',
-			items: { enum: ['a', 'b'] },
-		});
-		expect(kindOf(rest)).toBe('multiSelect');
+	test('an options object changed after the call changes nothing', () => {
+		const opts = { minLength: 2 };
+		const title = field.string(opts);
+		opts.minLength = 0;
+		expect(check(title, 'a')).toBe(false);
+	});
+});
+
+describe('string byte ceilings', () => {
+	test('maxBytes counts UTF-8 bytes at the exact boundary', () => {
+		const schema = field.string({ maxBytes: 4 });
+		expect(check(schema, 'abcd')).toBe(true);
+		expect(check(schema, 'abcde')).toBe(false);
+		expect(check(schema, '😀')).toBe(true);
+		expect(check(schema, '😀a')).toBe(false);
+		expect(check(schema, 4)).toBe(false);
+		expect(
+			Compile(schema)
+				.Errors('abcde')
+				.map((error) => error.message),
+		).toEqual(['must be at most 4 UTF-8 bytes']);
 	});
 
-	test('a type:"string"-pinned enum still recognizes as select', () => {
-		expect(kindOf({ type: 'string', enum: ['draft', 'published'] })).toBe(
-			'select',
+	test('maxBytes composes with the other string options and with null', () => {
+		const schema = field.nullable(field.string({ maxBytes: 4, minLength: 2 }));
+		expect(check(schema, 'ab')).toBe(true);
+		expect(check(schema, 'a')).toBe(false);
+		expect(check(schema, 'abcde')).toBe(false);
+		expect(check(schema, null)).toBe(true);
+	});
+
+	test('maxBytes is not a keyword, and a bad ceiling is refused', () => {
+		expect(Object.keys(field.string({ maxBytes: 4 }))).not.toContain(
+			'maxBytes',
 		);
-	});
-
-	test('an empty member list degrades to raw (recognize returns null)', () => {
-		expect(recognize(atRest(field.select([])))).toBeNull();
+		expect(() => field.string({ maxBytes: -1 })).toThrow('maxBytes');
+		expect(() => field.string({ maxBytes: 1.5 })).toThrow('maxBytes');
 	});
 });
 
-// ============================================================================
-// The palette catalog
-// ============================================================================
+describe('reference', () => {
+	test('the target is in the annotation and the value is never empty', () => {
+		const schema = field.reference('pages');
+		expect(fieldMetadataOf(schema)).toEqual({
+			kind: 'reference',
+			nullable: false,
+			target: 'pages',
+		});
+		expect(check(schema, 'become-the-source')).toBe(true);
+		expect(check(schema, '')).toBe(false);
+		expect(check(schema, 42)).toBe(false);
+	});
 
-describe('the palette catalog', () => {
-	test('the catalog includes every declared field kind', () => {
-		const expected: Kind[] = [
-			'boolean',
-			'date',
-			'datetime',
-			'integer',
-			'instant',
-			'json',
-			'multiSelect',
-			'number',
-			'reference',
-			'select',
-			'string',
-			'tags',
-			'url',
+	test('a larger minLength is kept and a smaller one is raised to 1', () => {
+		expect(check(field.reference('pages', { minLength: 5 }), 'abcd')).toBe(
+			false,
+		);
+		expect(check(field.reference('pages', { minLength: 0 }), '')).toBe(false);
+	});
+
+	test('a reference needs a table name', () => {
+		expect(() => field.reference('')).toThrow('name of a table');
+	});
+});
+
+describe('select and multiSelect own their option list', () => {
+	test('the annotation and the schema are built from one list', () => {
+		const status = field.select(['draft', 'published']);
+		expect(status[FIELD_KEYWORD].options).toEqual(['draft', 'published']);
+		expect(status.enum).toEqual(['draft', 'published']);
+		expect(Object.isFrozen(status[FIELD_KEYWORD])).toBe(true);
+		expect(Object.isFrozen(status[FIELD_KEYWORD].options)).toBe(true);
+
+		const labels = field.multiSelect(['a', 'b'], { uniqueItems: true });
+		expect(labels[FIELD_KEYWORD].options).toEqual(labels.items.enum);
+		expect(check(labels, ['a', 'b'])).toBe(true);
+		expect(check(labels, ['a', 'a'])).toBe(false);
+		expect(check(labels, ['c'])).toBe(false);
+	});
+
+	test('changing the list that was passed in changes neither validator nor widget', () => {
+		const values = ['draft', 'published'];
+		const status = field.select(values);
+		const labels = field.multiSelect(values);
+		values.push('archived');
+		values[0] = 'renamed';
+		for (const schema of [status, labels]) {
+			expect(fieldMetadataOf(schema)).toMatchObject({
+				options: ['draft', 'published'],
+			});
+		}
+		expect(check(status, 'draft')).toBe(true);
+		expect(check(status, 'archived')).toBe(false);
+		expect(check(labels, ['archived'])).toBe(false);
+	});
+
+	test('a field is an ordinary schema; only its annotation is frozen', () => {
+		const status = field.select(['draft', 'published']);
+		expect(Object.isFrozen(status)).toBe(false);
+		expect(Object.isFrozen(status.enum)).toBe(false);
+		expect(() => {
+			(status[FIELD_KEYWORD] as { kind: string }).kind = 'string';
+		}).toThrow();
+		expect(() =>
+			(status[FIELD_KEYWORD].options as readonly string[] as string[]).push(
+				'archived',
+			),
+		).toThrow();
+	});
+
+	test('an empty or non-string list is refused', () => {
+		expect(() => field.select([])).toThrow('at least one string option');
+		// @ts-expect-error select holds strings; a numeric range is integer + min/max
+		expect(() => field.select([1, 2])).toThrow('at least one string option');
+		expect(() => field.multiSelect([])).toThrow('at least one string option');
+	});
+});
+
+describe('nullable', () => {
+	test('it is the native union with null and keeps the editor', () => {
+		const status = field.nullable(field.select(['draft', 'published']));
+		expect(fieldMetadataOf(status)).toEqual({
+			kind: 'select',
+			nullable: true,
+			options: ['draft', 'published'],
+		});
+		expect(check(status, null)).toBe(true);
+		expect(check(status, 'draft')).toBe(true);
+		expect(check(status, 'archived')).toBe(false);
+		expect(check(status, undefined)).toBe(false);
+
+		const page = field.nullable(field.reference('pages'));
+		expect(fieldMetadataOf(page)).toEqual({
+			kind: 'reference',
+			nullable: true,
+			target: 'pages',
+		});
+		expect(check(page, null)).toBe(true);
+		expect(check(page, '')).toBe(false);
+	});
+
+	test('the field it wraps is not changed, and never frozen', () => {
+		const status = field.select(['draft']);
+		field.nullable(status);
+		expect(fieldMetadataOf(status)?.nullable).toBe(false);
+		expect(check(status, null)).toBe(false);
+
+		// A native refinement over a field is the caller's own schema.
+		const refined = Type.Refine(field.string(), (value) => value !== '');
+		const wrapped = field.nullable(refined);
+		expect(Object.isFrozen(refined)).toBe(false);
+		Object.assign(refined, { maxLength: 1 });
+		expect(refined).toMatchObject({ maxLength: 1 });
+		expect(
+			check(
+				Type.Refine(refined, () => true),
+				'ab',
+			),
+		).toBe(false);
+		// The nullable field was built from what `refined` was at the call.
+		expect(check(wrapped, 'ab')).toBe(true);
+		expect(check(wrapped, '')).toBe(false);
+	});
+
+	test('it wraps a field, not a bare schema', () => {
+		// @ts-expect-error a bare schema has no editor to keep
+		expect(() => field.nullable(Type.String())).toThrow('field.*');
+	});
+});
+
+describe('json wraps the schema it is given', () => {
+	const Author = Type.Object(
+		{ author: Type.String() },
+		{ additionalProperties: false },
+	);
+	const never = () => false;
+
+	test('an object, an array, and a nested payload are checked as declared', () => {
+		expect(fieldMetadataOf(field.json(Author))).toEqual({
+			kind: 'json',
+			nullable: false,
+		});
+		expect(check(field.json(Author), { author: 'Braden' })).toBe(true);
+		expect(check(field.json(Author), { author: 42 })).toBe(false);
+		expect(check(field.json(Author), { author: 'x', extra: 1 })).toBe(false);
+
+		const list = field.json(Type.Array(Author, { maxItems: 1 }));
+		expect(check(list, [{ author: 'a' }])).toBe(true);
+		expect(check(list, [{ author: 'a' }, { author: 'b' }])).toBe(false);
+
+		const nested = field.nullable(
+			field.json(Type.Object({ by: Author, tags: Type.Array(Type.String()) })),
+		);
+		expect(fieldMetadataOf(nested)).toEqual({ kind: 'json', nullable: true });
+		expect(check(nested, { by: { author: 'a' }, tags: ['x'] })).toBe(true);
+		expect(check(nested, { by: { author: 1 }, tags: ['x'] })).toBe(false);
+		expect(check(nested, null)).toBe(true);
+	});
+
+	test('a refinement on the payload schema survives, at the root and nested', () => {
+		const refused = Type.Refine(Type.Object({ a: Type.String() }), never);
+		// The control: copying only enumerable keywords loses the refinement.
+		expect(check(Type.Options(refused, {}), { a: 'x' })).toBe(true);
+
+		expect(check(field.json(refused), { a: 'x' })).toBe(false);
+		expect(check(field.json(Type.Array(refused)), [{ a: 'x' }])).toBe(false);
+		expect(check(field.nullable(field.json(refused)), { a: 'x' })).toBe(false);
+		expect(
+			check(field.json(Type.Object({ inner: refused })), { inner: { a: 'x' } }),
+		).toBe(false);
+		expect(check(field.nullable(field.json(refused)), null)).toBe(true);
+	});
+
+	test('a frozen payload schema works and is left as it was', () => {
+		const refused = Object.freeze(
+			Type.Refine(Type.Object({ a: Type.String() }), never),
+		);
+		expect(check(field.json(refused), { a: 'x' })).toBe(false);
+		const plain = Object.freeze(Type.Object({ a: Type.String() }));
+		expect(check(field.json(plain), { a: 'x' })).toBe(true);
+		expect(FIELD_KEYWORD in plain).toBe(false);
+		expect('~refine' in plain).toBe(false);
+	});
+
+	test('a payload schema changed after the call changes nothing', () => {
+		const payload = Type.Object({ a: Type.String() });
+		const wrapped = field.json(payload);
+		Object.assign(payload.properties, { a: Type.Number() });
+		expect(check(wrapped, { a: 'x' })).toBe(true);
+		expect(check(wrapped, { a: 1 })).toBe(false);
+	});
+
+	test('wrapping a field replaces its editor and keeps its check', () => {
+		const status = field.select(['small', 'large']);
+		const wrapped = field.json(status);
+		expect(fieldMetadataOf(wrapped)).toEqual({ kind: 'json', nullable: false });
+		expect(fieldMetadataOf(status)).toMatchObject({ kind: 'select' });
+		expect(check(wrapped, 'small')).toBe(true);
+		expect(check(wrapped, 'medium')).toBe(false);
+
+		const bounded = field.json(field.string({ maxBytes: 2 }));
+		expect(check(bounded, 'ab')).toBe(true);
+		expect(check(bounded, 'abc')).toBe(false);
+	});
+
+	test('a JSON Schema written by hand is checked the same way', () => {
+		const text = field.json({
+			$defs: { text: { type: 'string', minLength: 2 } },
+			$ref: '#/$defs/text',
+		});
+		expect(check(text, 'yes')).toBe(true);
+		expect(check(text, 'x')).toBe(false);
+		expect(check(text, 2)).toBe(false);
+	});
+
+	test('only JSON is admitted, whatever the payload schema says', () => {
+		const cycle: Record<string, unknown> = {};
+		cycle.self = cycle;
+		class Point {
+			x = 1;
+		}
+		const unsafe = [
+			new Date(),
+			undefined,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			cycle,
+			new Point(),
+			new Map(),
+			() => 1,
+			1n,
+			Symbol('s'),
+			{ nested: [new Date()] },
+			{ nested: undefined },
 		];
-		expect([...KINDS].sort()).toEqual(expected.sort());
-		expect(KINDS).toContain('json');
-		expect(KINDS).toContain('reference');
-	});
-});
-
-// ============================================================================
-// Discrimination: every canonical schema matches exactly one meta
-// ============================================================================
-
-/** Canonical at-rest shape per kind: the minimal schema that should recognize as it. */
-const CANONICAL: Record<Kind, unknown> = {
-	string: { type: 'string' },
-	reference: { type: 'string', 'x-ref': 'pages' },
-	url: { type: 'string', format: 'uri' },
-	date: { type: 'string', format: 'date' },
-	instant: {
-		type: 'string',
-		format: 'date-time',
-		pattern: INSTANT_STRING_PATTERN,
-	},
-	datetime: { type: 'string', format: 'date-time' },
-	select: { type: 'string', enum: ['draft', 'published'] },
-	integer: { type: 'integer' },
-	number: { type: 'number' },
-	boolean: { type: 'boolean' },
-	tags: { type: 'array', items: { type: 'string' } },
-	multiSelect: { type: 'array', items: { type: 'string', enum: ['a', 'b'] } },
-	json: { 'x-json-schema': true },
-};
-
-describe('recognize: every canonical schema matches exactly one meta', () => {
-	for (const kind of KINDS) {
-		test(`${kind} canonical matches exactly one meta and recognizes as ${kind}`, () => {
-			const schema = CANONICAL[kind];
-			expect(countMatches(schema)).toBe(1);
-			expect(kindOf(schema)).toBe(kind);
-		});
-	}
-});
-
-describe('the cross-discrimination pairs (the shapes that could collide)', () => {
-	test('bare string is string, not url/datetime/select', () => {
-		expect(kindOf({ type: 'string' })).toBe('string');
-		expect(countMatches({ type: 'string' })).toBe(1);
+		// The control: the native schema alone admits a Date.
+		expect(check(Type.Any(), new Date())).toBe(true);
+		for (const schema of [
+			field.json(jsonValue),
+			field.json(Type.Any()),
+			field.json(Type.Unknown()),
+			field.json(Type.Unsafe<Date>({})),
+			field.nullable(field.json(jsonValue)),
+		]) {
+			for (const value of unsafe) expect(check(schema, value)).toBe(false);
+			for (const value of [1, 'x', true, { a: [1, null] }, [1, 2]])
+				expect(check(schema, value)).toBe(true);
+		}
+		expect(check(field.json(Type.Array(jsonValue)), [new Date()])).toBe(false);
+		expect(check(field.json(Type.Object({})), new Point())).toBe(false);
+		expect(check(field.json(jsonValue), null)).toBe(true);
 	});
 
-	test('a uri-format string is url, not string', () => {
-		const s = { type: 'string', format: 'uri' };
-		expect(kindOf(s)).toBe('url');
-		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `format`
-	});
-
-	test('a date-format string is date, not string or datetime', () => {
-		const s = { type: 'string', format: 'date' };
-		expect(kindOf(s)).toBe('date');
-		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `format`
-		expect(Value.Check(META_BY_KIND.datetime, s)).toBe(false);
-	});
-
-	test('a date-time string is datetime, not string', () => {
-		expect(kindOf({ type: 'string', format: 'date-time' })).toBe('datetime');
-	});
-
-	test('a fixed UTC date-time schema is instant, not datetime', () => {
-		const s = {
-			type: 'string',
-			format: 'date-time',
-			pattern: INSTANT_STRING_PATTERN,
-		};
-		expect(kindOf(s)).toBe('instant');
-		expect(Value.Check(META_BY_KIND.datetime, s)).toBe(false); // datetime forbids `pattern`
-	});
-
-	test('a string with enum is select, not string', () => {
-		const s = { type: 'string', enum: ['a', 'b'] };
-		expect(kindOf(s)).toBe('select');
-		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `enum`
-	});
-
-	test('select is string-only: an integer enum is NOT select (degrades to raw)', () => {
-		const s = { type: 'integer', enum: [1, 2, 3] };
-		expect(kindOf(s)).toBeNull(); // a numeric range is integer + min/max, not a select
-		expect(Value.Check(META_BY_KIND.select, s)).toBe(false); // select holds strings
-		expect(Value.Check(META_BY_KIND.integer, s)).toBe(false); // integer forbids `enum`
-		expect(countMatches(s)).toBe(0);
-	});
-
-	test('an enum with no type is select', () => {
-		expect(kindOf({ enum: ['a', 'b'] })).toBe('select');
-	});
-
-	test('a string array is tags, not multiSelect', () => {
-		const s = { type: 'array', items: { type: 'string' } };
-		expect(kindOf(s)).toBe('tags');
-		expect(Value.Check(META_BY_KIND.multiSelect, s)).toBe(false); // items lack `enum`
-	});
-
-	test('an enum-item array is multiSelect, not tags', () => {
-		const s = { type: 'array', items: { type: 'string', enum: ['a', 'b'] } };
-		expect(kindOf(s)).toBe('multiSelect');
-		expect(Value.Check(META_BY_KIND.tags, s)).toBe(false); // string item forbids `enum`
-	});
-
-	test('an enum-item array with no item type is multiSelect', () => {
-		expect(kindOf({ type: 'array', items: { enum: ['a', 'b'] } })).toBe(
-			'multiSelect',
+	test('being JSON has no size: wide, deep, and shared values pass', () => {
+		const wide = Object.fromEntries(
+			Array.from({ length: 1025 }, (_, index) => [`key${index}`, index]),
 		);
+		let deep: unknown = 'bottom';
+		for (let level = 0; level < 100_000; level++) deep = [deep];
+		const shared = { leaf: [1, 2] };
+		const dag = { left: shared, right: shared, both: [shared, shared] };
+		let deepCycle: unknown[] = [];
+		const top = deepCycle;
+		for (let level = 0; level < 100_000; level++) {
+			const next: unknown[] = [];
+			deepCycle.push(next);
+			deepCycle = next;
+		}
+		deepCycle.push(top);
+
+		expect(isJsonSafe(wide)).toBe(true);
+		expect(isJsonSafe(deep)).toBe(true);
+		expect(isJsonSafe(dag)).toBe(true);
+		expect(isJsonSafe(top)).toBe(false);
+		// The bounded guards keep the storage budget.
+		expect(isJsonValue(wide)).toBe(false);
+		expect(isJsonObject(wide)).toBe(false);
+		expect(isJsonValue([[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]])).toBe(false);
+
+		const open = Compile(field.json(jsonValue));
+		expect(open.Check(wide)).toBe(true);
+		expect(open.Check(dag)).toBe(true);
+		expect(open.Check(deep)).toBe(true);
+		expect(open.Check(top)).toBe(false);
+		expect(open.Errors(top)).not.toEqual([]);
 	});
 });
 
-describe('json: the marker-discriminated escape kind', () => {
-	test('field.json(jsonValue) recognizes as json and accepts any JSON value', () => {
-		const schema = field.json(jsonValue);
-		expect(kindOf(atRest(schema))).toBe('json');
-		for (const v of [1, 'x', true, null, { a: 1 }, [1, 2]]) {
-			expect(Value.Check(schema, v)).toBe(true);
+describe('json decides a value is JSON before the payload schema runs', () => {
+	const Node = Type.Cyclic(
+		{
+			Node: Type.Object({
+				value: Type.Number(),
+				next: Type.Union([Type.Ref('Node'), Type.Null()]),
+			}),
+		},
+		'Node',
+	);
+	const chain = { value: 1, next: { value: 2, next: null } };
+	const loop: Record<string, unknown> = { value: 1 };
+	loop.next = loop;
+
+	test('the control: the recursive schema alone overflows on a cyclic value', () => {
+		expect(() => Compile(Node).Check(loop)).toThrow(RangeError);
+		// A refinement runs after the schema's own keywords, so it is too late.
+		const after = Compile(Type.Refine(Node, isJsonSafe));
+		expect(() => after.Check(loop)).toThrow(RangeError);
+		expect(() => after.Errors(loop)).toThrow(RangeError);
+	});
+
+	test('a cyclic value is refused by Check and Errors without running the schema', () => {
+		for (const schema of [
+			field.json(Node),
+			field.nullable(field.json(Node)),
+			Type.Refine(field.json(Node), () => true),
+		]) {
+			const compiled = Compile(schema);
+			expect(compiled.Check(loop)).toBe(false);
+			expect(compiled.Errors(loop).map((error) => error.message)).toContain(
+				'must be a JSON value',
+			);
+			// TypeBox's interpreter takes the same branch as its compiled code.
+			expect(Value.Check(schema, loop)).toBe(false);
+			expect(Value.Errors(schema, loop)).not.toEqual([]);
+
+			expect(compiled.Check(chain)).toBe(true);
+			expect(compiled.Errors(chain)).toEqual([]);
+			expect(Value.Check(schema, chain)).toBe(true);
+			const wrong = { value: 1, next: { value: 'two', next: null } };
+			expect(compiled.Check(wrong)).toBe(false);
+			expect(compiled.Errors(wrong)).not.toEqual([]);
 		}
 	});
 
-	test('field.json(inner) recognizes as json and validates the payload on read', () => {
-		const schema = field.json(
-			Type.Object({ author: Type.String() }, { additionalProperties: false }),
-		);
-		expect(kindOf(atRest(schema))).toBe('json');
-		expect(Value.Check(schema, { author: 'Braden' })).toBe(true);
-		expect(Value.Check(schema, { author: 42 })).toBe(false); // payload validation preserved
-		expect(Value.Check(schema, 'garbage')).toBe(false);
-	});
-
-	test('a json wire-form matches exactly one meta (the open json meta)', () => {
-		expect(countMatches(atRest(field.json(jsonValue)))).toBe(1);
-		expect(
-			countMatches(atRest(field.json(Type.Object({ author: Type.String() })))),
-		).toBe(1);
-	});
-
-	test('the marker is what flips a bare object from raw to json', () => {
-		// same shape, no marker -> raw; with marker -> json
-		expect(kindOf({ type: 'object', properties: {} })).toBeNull();
-		expect(
-			kindOf({ type: 'object', properties: {}, 'x-json-schema': true }),
-		).toBe('json');
-	});
-
-	test('jsonValue: field.json(Type.Array(jsonValue)) is the any-JSON-list pattern, kind json', () => {
-		const schema = field.json(Type.Array(jsonValue));
-		expect(kindOf(atRest(schema))).toBe('json');
-		expect(countMatches(atRest(schema))).toBe(1);
-		expect(Value.Check(schema, [1, 'x', null, { a: 1 }])).toBe(true);
-		expect(Value.Check(schema, 'not-an-array')).toBe(false);
-	});
-});
-
-describe('reference: the marker-discriminated cross-row pointer', () => {
-	test('field.reference recognizes as reference and carries its target table', () => {
-		const rest = atRest(field.reference('pages')) as Record<string, unknown>;
-		expect(kindOf(rest)).toBe('reference');
-		expect(countMatches(rest)).toBe(1);
-		expect(rest['x-ref']).toBe('pages');
-	});
-
-	test('the marker is what flips a plain string into a reference', () => {
-		// same string shape, no marker -> string; with marker -> reference
-		expect(kindOf({ type: 'string' })).toBe('string');
-		expect(kindOf({ type: 'string', 'x-ref': 'pages' })).toBe('reference');
-	});
-
-	test('a plain string is NOT a reference (the marker is required)', () => {
-		expect(Value.Check(META_BY_KIND.reference, { type: 'string' })).toBe(false);
-	});
-
-	test('the string meta forbids the marker, so the two are mutually exclusive', () => {
-		const s = { type: 'string', 'x-ref': 'pages' };
-		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids x-ref
-		expect(countMatches(s)).toBe(1);
-	});
-
-	test('value validation ignores the marker and validates the value as a string', () => {
-		const schema = field.reference('pages', { minLength: 1 });
-		expect(Value.Check(schema, 'become-the-source')).toBe(true);
-		expect(Value.Check(schema, '')).toBe(false); // minLength rides along
-		expect(Value.Check(schema, 42)).toBe(false);
-	});
-
-	test('string refinements ride along without changing the kind', () => {
-		const s = { type: 'string', 'x-ref': 'pages', minLength: 1 };
-		expect(kindOf(s)).toBe('reference');
-		expect(countMatches(s)).toBe(1);
-	});
-
-	test('the compiled value check rejects an empty reference even with no stored minLength', () => {
-		// A reference points at a row by stem, so "" names no row and is never a valid pointer.
-		// The floor is intrinsic to the kind: a bare {type:'string','x-ref':'pages'} (no minLength)
-		// still rejects "" at the value check, so an empty pointer is INVALID, not silently OK.
-		const check = compile(
-			recognize({ type: 'string', 'x-ref': 'pages' })!.schema,
-		);
-		expect(check('become-the-source')).toBe(true);
-		expect(check('')).toBe(false);
-	});
-
-	test('a larger author-set minLength is kept, not lowered to 1', () => {
-		const check = compile(
-			recognize({ type: 'string', 'x-ref': 'pages', minLength: 5 })!.schema,
-		);
-		expect(check('abcd')).toBe(false);
-		expect(check('abcde')).toBe(true);
-	});
-});
-
-describe('temporal value validation', () => {
-	test('field.date accepts only calendar-date strings', () => {
-		const schema = field.date();
-		expect(Value.Check(schema, '2026-06-09')).toBe(true);
-		expect(Value.Check(schema, '2026-02-30')).toBe(false);
-		expect(Value.Check(schema, '2026-06-09T00:00:00.000Z')).toBe(false);
-	});
-
-	test('field.instant accepts only fixed millisecond UTC instants', () => {
-		const schema = field.instant();
-		expect(Value.Check(schema, '2026-06-09T14:00:00.000Z')).toBe(true);
-		expect(Value.Check(schema, '2026-06-09T14:00:00Z')).toBe(false);
-		expect(Value.Check(schema, '2026-06-09T14:00:00.000-05:00')).toBe(false);
-		expect(Value.Check(schema, '2026-06-09T14:00:00.000z')).toBe(false);
-	});
-});
-
-describe('refinements and annotations ride along without changing the kind', () => {
-	test('string with minLength/pattern is still string', () => {
-		const s = { type: 'string', minLength: 1, pattern: '^[a-z-]+$' };
-		expect(kindOf(s)).toBe('string');
-		expect(countMatches(s)).toBe(1);
-	});
-
-	test('string maxBytes counts UTF-8 bytes at the exact boundary', () => {
-		const recognized = recognize(atRest(field.string({ maxBytes: 4 })));
-		expect(recognized?.kind).toBe('string');
-		if (recognized?.kind !== 'string')
-			throw new Error('Expected string schema');
-		const check = compile(recognized.schema);
-
-		expect(check('abcd')).toBe(true);
-		expect(check('abcde')).toBe(false);
-		expect(check('😀')).toBe(true);
-		expect(check('😀a')).toBe(false);
-	});
-
-	test('a rating (integer with min/max) is still integer', () => {
-		const s = { type: 'integer', minimum: 1, maximum: 5 };
-		expect(kindOf(s)).toBe('integer');
-		expect(countMatches(s)).toBe(1);
-	});
-
-	test('the annotation bucket (title/description/default) does not open the shape', () => {
-		const s = {
-			type: 'string',
-			title: 'Headline',
-			description: 'the H1',
-			default: 'untitled',
-		};
-		expect(kindOf(s)).toBe('string');
-		expect(countMatches(s)).toBe(1);
-	});
-
-	test('a default rides along on a select without tipping the kind', () => {
-		const s = {
-			type: 'string',
-			enum: ['draft', 'published'],
-			default: 'draft',
-		};
-		expect(kindOf(s)).toBe('select');
-		expect(countMatches(s)).toBe(1);
-	});
-
-	test('tags with uniqueItems is still tags', () => {
-		const s = { type: 'array', items: { type: 'string' }, uniqueItems: true };
-		expect(kindOf(s)).toBe('tags');
-		expect(countMatches(s)).toBe(1);
-	});
-});
-
-describe('the rejection lane: unsupported shapes match no meta', () => {
-	const UNSUPPORTED: Array<[string, unknown]> = [
-		['a typo in the type', { type: 'strng' }],
-		['a typo in a refinement key', { type: 'string', minLgth: 1 }],
-		['an unknown extra key', { type: 'string', foo: 1 }],
-		['a plain object', { type: 'object' }],
-		['an object with properties', { type: 'object', properties: {} }],
-		[
-			'a number array (number[] is not curated)',
-			{ type: 'array', items: { type: 'number' } },
-		],
-		['an object array', { type: 'array', items: { type: 'object' } }],
-		[
-			'a nullable wrapper (emptiness is substrate policy, not vocabulary)',
-			{ anyOf: [{ type: 'string' }, { type: 'null' }] },
-		],
-		[
-			'a true multi-branch union',
-			{ anyOf: [{ type: 'string' }, { type: 'integer' }] },
-		],
-		[
-			'a date-or-instant union (input schema, not a field kind)',
-			atRest(Type.Union([field.date(), field.instant()])),
-		],
-		[
-			'an unrecognized format (email is not yet a kind)',
-			{ type: 'string', format: 'email' },
-		],
-		// Annotations we deliberately did NOT admit: standard JSON Schema keywords with
-		// no real authoring path into a field. They degrade today; the day a real schema
-		// carries one and degrades is the signal to add it to ANNOT, not before.
-		['examples is not admitted', { type: 'string', examples: ['x'] }],
-		['$comment is not admitted', { type: 'string', $comment: 'note' }],
-		['deprecated is not admitted', { type: 'string', deprecated: true }],
-		['an empty object', {}],
-		['a non-object', 'string'],
-		['null', null],
-	];
-
-	for (const [label, schema] of UNSUPPORTED) {
-		test(`${label} matches no meta and recognizes as null`, () => {
-			expect(countMatches(schema)).toBe(0);
-			expect(recognize(schema)).toBeNull();
+	test('a local reference inside the payload schema still resolves', () => {
+		const text = field.json({
+			$defs: { text: { type: 'string', minLength: 2 } },
+			$ref: '#/$defs/text',
 		});
-	}
+		for (const schema of [text, field.nullable(text)]) {
+			expect(check(schema, 'yes')).toBe(true);
+			expect(check(schema, 'x')).toBe(false);
+			expect(check(schema, 2)).toBe(false);
+			expect(Value.Check(schema, 'yes')).toBe(true);
+			expect(Value.Check(schema, 'x')).toBe(false);
+		}
+		const nested = field.json(
+			Type.Object({
+				count: { $defs: { n: { type: 'number' } }, $ref: '#/$defs/n' },
+			}),
+		);
+		expect(check(nested, { count: 1 })).toBe(true);
+		expect(check(nested, { count: 'one' })).toBe(false);
+	});
 });
 
-test('retired byte ownership markers are outside the field vocabulary', () => {
-	for (const marker of ['x-attachment', 'x-blob'])
-		expect(recognize({ type: 'string', [marker]: true })).toBeNull();
+describe('a native refinement over a field', () => {
+	const short = (value: string) => value.length < 3;
+
+	test('keeps the annotation and adds to the check', () => {
+		for (const [inner, metadata] of [
+			[field.string(), { kind: 'string', nullable: false }],
+			[field.string({ maxBytes: 8 }), { kind: 'string', nullable: false }],
+			[
+				field.reference('pages'),
+				{ kind: 'reference', nullable: false, target: 'pages' },
+			],
+		] as const) {
+			const refined = Type.Refine(inner, short);
+			expect(fieldMetadataOf(refined)).toEqual(metadata as FieldMetadata);
+			expect(check(refined, 'ab')).toBe(true);
+			expect(check(refined, 'abc')).toBe(false);
+		}
+		// The byte ceiling the helper added is still there.
+		const both = Type.Refine(field.string({ maxBytes: 2 }), () => true);
+		expect(check(both, 'abc')).toBe(false);
+	});
+
+	test('works over a json field', () => {
+		const refined = Type.Refine(field.json(jsonValue), () => true);
+		expect(fieldMetadataOf(refined)).toEqual({ kind: 'json', nullable: false });
+		expect(check(refined, { a: 1 })).toBe(true);
+		expect(check(refined, new Date())).toBe(false);
+	});
 });

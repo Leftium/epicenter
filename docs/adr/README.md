@@ -731,3 +731,4 @@ When you add an ADR, add its row here.
 | [0485](0485-applications-choose-editor-observation-and-save-policies.md) | Applications choose editor observation and save policies | Proposed |
 | [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
 | [0487](0487-kv-commands-distinguish-creation-from-current-source-updates.md) | KV commands distinguish creation from current-source updates | Proposed |
+| [0491](0491-field-helpers-build-native-typebox-schemas-with-ui-metadata.md) | Field helpers build native TypeBox schemas with UI metadata | Proposed |

@@ -13,7 +13,11 @@
  * it as an ordinary file with `files.replace(snapshot, source)`.
  */
 
-import { isJsonValue, type ParsedTable } from '@epicenter/definition';
+import {
+	isJsonValue,
+	JSON_BUDGET,
+	type ParsedTable,
+} from '@epicenter/definition';
 import { type Node, type ParseError, parseTree } from 'jsonc-parser';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
@@ -125,7 +129,17 @@ function ownValues(
 			issues.push({ field: key, message: 'The key is not declared' });
 			continue;
 		}
-		const json = field.check(value) && isJsonValue(value) && serialize(value);
+		const conforms = field.check(value);
+		// A value its field accepts is JSON already, so what the bounded guard
+		// refuses here is size, and the issue says so.
+		if (conforms && !isJsonValue(value)) {
+			issues.push({
+				field: key,
+				message: `The value is over the kv.json budget: nesting deeper than ${JSON_BUDGET.depth} levels, or an object with more than ${JSON_BUDGET.propertiesPerObject} keys`,
+			});
+			continue;
+		}
+		const json = conforms && serialize(value);
 		// The saved text is what a reader gets back, so it has to conform too.
 		if (typeof json === 'string' && field.check(JSON.parse(json)))
 			owned.set(key, json);

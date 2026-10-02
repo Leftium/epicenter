@@ -38,13 +38,12 @@ export {
 export {
 	CalendarDateString,
 	DateTimeString,
-	type Field,
-	type FieldOf,
+	FIELD_KEYWORD,
+	type FieldMetadata,
+	type FieldSchema,
+	fieldMetadataOf,
 	InstantString,
 	jsonValue,
 	type Kind,
-	REFERENCE_KEYWORD,
-	recognize,
-	referenceTargetOf,
 } from './field/index.js';
 export * from './json.js';

@@ -12,8 +12,10 @@
  * checked in `compile.ts`.
  */
 
-import { type Static, type TSchema, Type } from 'typebox';
-import { type Field, field as genericField } from './field/index.js';
+import type { Static } from 'typebox';
+import type { FieldMetadata, FieldSchema, Kind } from './field/index.js';
+
+export { field } from './field/index.js';
 
 export const KV_ROOT = 'kv';
 export const RESERVED_TABLE_NAMES: readonly string[] = [KV_ROOT];
@@ -21,18 +23,12 @@ export const RESERVED_TABLE_NAMES: readonly string[] = [KV_ROOT];
 /**
  * The fields of one bucket, by name.
  *
- * A field IS a schema. It was `object` for one release, so that this one type
- * could describe both a declaration written with `field.*` and one that arrived
- * as JSON, and every type reading a declaration paid for it: unable to assume a
- * schema, each asked `extends TSchema` and answered `never` when the guess
- * failed. A wrong answer, silently, rather than an error.
- *
- * Nothing needed it. A definition is imported from a first-party TypeScript
- * module, so the serialized shape never needs a static form to accommodate.
- * What is declared here is what an author writes.
+ * Every field is a schema a `field.*` helper built. A bare `Type.String()` is
+ * not one: it has no editor, and the mark `FieldSchema` carries is how the
+ * type says so. Native `Type.*` schemas belong inside `field.json`.
  */
 export type FieldMap = {
-	readonly [field: string]: TSchema;
+	readonly [field: string]: FieldSchema;
 };
 
 /**
@@ -93,43 +89,25 @@ export type DataDefinition<TBody extends TableBody = TableBody> = {
 };
 
 /**
- * Add data-substrate nullability without teaching the generic field package
- * about it.
+ * One declared field, prepared: the lens a storage reads a cell through.
  *
- * `Type.Union` with `Type.Null`, which is TypeBox's own spelling of exactly
- * this. It emits the same `anyOf: [inner, { type: 'null' }]` the hand-rolled
- * version did, byte for byte, and infers `Static<S> | null` including for a
- * BRANDED inner schema, which is the case that made this a function in the
- * first place.
- *
- * It used to be built with `Type.Unsafe` and two casts, because a schema
- * assembled that way leaves its `Static` to be recovered structurally from the
- * `anyOf` and that recovery produced `unknown` for a branded `TUnsafe`:
- * `field.nullable(field.string())` read as `string | null` while
- * `field.nullable(field.instant())` read as `unknown`, in the same table. That
- * is a real defect in structural recovery and it is not a reason to reach for
- * the escape hatch, because `Type.Union` never had it.
- *
- * TypeBox retains the tuple for the owning-field input lens; runtime compilation
- * recognizes the same nullable shape from its serialized schema.
+ * `schema` is the read-only native schema `check` and `errors` were compiled
+ * from, and `metadata` is the annotation on that same object. `kind`,
+ * `nullable`, and `reference` repeat the annotation for the storages that
+ * only name a field.
  */
-function nullable<S extends TSchema>(inner: S) {
-	return Type.Union([inner, Type.Null()]);
-}
-
-/** The data definition's field namespace. */
-export const field = Object.freeze({
-	...genericField,
-	nullable,
-});
-
 export type DataField = {
 	readonly name: string;
-	readonly kind: Field['kind'];
-	readonly schema: unknown;
-	readonly check: (value: unknown) => boolean;
+	readonly kind: Kind;
 	readonly nullable: boolean;
+	/** The table a reference field points at, or `null`. */
 	readonly reference: string | null;
+	readonly metadata: FieldMetadata;
+	readonly schema: FieldSchema;
+	/** TypeBox's compiled check, and the only decision about a value. */
+	readonly check: (value: unknown) => boolean;
+	/** Why a value failed `check`, in TypeBox's words. Empty when it passes. */
+	readonly errors: (value: unknown) => readonly string[];
 };
 
 /** What one bucket's fields read as, once the schemas are resolved. */

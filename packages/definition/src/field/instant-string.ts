@@ -9,8 +9,8 @@
 import { Format } from 'typebox/format';
 import type { Brand } from 'wellcrafted/brand';
 
-// Persisted schema discriminator: changing this string would make stored
-// `field.instant()` schemas stop recognizing as `instant`.
+// The fixed-width UTC form `field.instant()` and `InstantString.is` both hold a
+// value to. Loosening it would admit strings that do not sort chronologically.
 export const INSTANT_STRING_PATTERN =
 	'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$';
 

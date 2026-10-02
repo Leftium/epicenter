@@ -2,7 +2,7 @@
 	"name": "@epicenter/definition",
 	"version": "0.0.1",
 	"private": true,
-	"description": "Inert data-definition vocabulary: the closed field palette, table and KV declarations, durable name grammars, and the compiler that turns a declaration into field checks.",
+	"description": "Inert data-definition vocabulary: the field helpers, table and KV declarations, durable name grammars, and the compiler that turns a declaration into field checks.",
 	"type": "module",
 	"sideEffects": false,
 	"exports": {

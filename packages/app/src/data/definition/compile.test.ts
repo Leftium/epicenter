@@ -1,10 +1,11 @@
 /**
  * Declaration compilation preserves codecs and compiles trusted field schemas.
- * Key behaviors: malformed codecs and compiler failures report errors; nullable
- * wrappers remain closed; conformance requires stored fields to be present.
+ * Key behaviors: malformed codecs and compiler failures report errors; a bare
+ * schema is not a field; conformance requires stored fields to be present.
  */
 import { expect, test } from 'bun:test';
 import { defineStore } from '@epicenter/app';
+import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { plainText } from './body.js';
 import { compileData } from './compile.js';
@@ -76,21 +77,19 @@ test('an explicitly malformed codec is refused at compilation', () => {
 	}
 });
 
-test('unserializable or non-finite field descriptors return a malformed declaration error', () => {
-	const cycle: Record<string, unknown> = { type: 'string' };
-	cycle.self = cycle;
-	for (const descriptor of [
-		cycle,
-		{ type: 'string', bad: 1n },
-		{ type: 'number', minimum: Infinity },
-		{ type: 'string', bad: Symbol('bad') },
-	]) {
+test('a schema that no field helper built is refused, not adopted', () => {
+	for (const bare of [Type.String(), { type: 'string' }]) {
 		const result = compileData({
 			id: 'test.invalid',
 			tables: {},
-			kv: { value: descriptor },
+			// @ts-expect-error a field is built with field.*
+			kv: { value: bare },
 		});
-		expect(expectErr(result).name).toBe('Malformed');
+		expect(expectErr(result)).toMatchObject({
+			name: 'UnrecognizedField',
+			table: 'kv',
+			field: 'value',
+		});
 	}
 });
 
@@ -114,21 +113,6 @@ test('field compiler failures identify the table and field', () => {
 		field: 'title',
 	});
 	expect(error.message).toContain('regular expression');
-});
-
-test('nullable wrappers refuse extra keywords that would otherwise be ignored', () => {
-	const error = expectErr(
-		compileData({
-			id: 'test.invalid-nullable',
-			kv: { title: { ...field.nullable(field.string()), maxLength: 2 } },
-			tables: {},
-		}),
-	);
-	expect(error).toMatchObject({
-		name: 'UnrecognizedField',
-		table: 'kv',
-		field: 'title',
-	});
 });
 
 test('nullable fields accept explicit null but still require stored presence', () => {

@@ -66,11 +66,10 @@ defineTable({
  * default removed entirely, so it was testing the door rather than the
  * default. The kv half below is genuine, because `kv` takes a bare field map.
  *
- * The default has to be spread in rather than passed to the builder. Every
- * builder returns a fixed schema type (`field.string(opts)` is `TString`
- * whatever `opts` says), so an annotation handed to one is erased before this
- * check can see it. Only a schema whose OWN type carries `default` is caught
- * here; the rest is `compileData`'s to refuse.
+ * The default is spread in because no helper takes one: `default` is not among
+ * any helper's options, so passing it is its own type error and throws at the
+ * call. Only a schema whose OWN type carries `default` is caught here; one
+ * nested in a `field.json` payload schema is `compileData`'s to refuse.
  */
 defineTable({
 	fields: {

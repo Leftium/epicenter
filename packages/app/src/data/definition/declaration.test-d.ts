@@ -6,7 +6,7 @@ import type {
 	InstantString,
 } from '@epicenter/definition/field';
 import type * as Y from '@y/y';
-import { type Static, Type } from 'typebox';
+import type { Static } from 'typebox';
 import type { TypedTableHandle } from '../store/handles.js';
 import { plainText } from './body.js';
 import { type CreateRowOf, defineTable, field, type RowOf } from './index.js';
@@ -60,12 +60,6 @@ const definition = defineStore({
 			},
 			body: plainText(),
 		}),
-		reversed: defineTable({
-			fields: {
-				audio: Type.Union([Type.Null(), field.string<BlobId>()]),
-			},
-			body: plainText(),
-		}),
 	},
 });
 
@@ -80,20 +74,6 @@ export type _NullableIdentifierInput = Expect<
 export type _BrandedStringIsNotOwning = Expect<
 	Equal<RecordingInput['ordinaryId'], BlobId>
 >;
-export type _ReversedNullableInput = Expect<
-	Equal<CreateRowOf<typeof definition.tables.reversed>['audio'], BlobId | null>
->;
-export type _ReversedNullableRead = Expect<
-	Equal<RowOf<typeof definition.tables.reversed>['audio'], BlobId | null>
->;
-export type _ReversedNullableCreateIsSynchronous = Expect<
-	ReturnType<
-		TypedTableHandle<typeof definition.tables.reversed>['create']
-	> extends RowOf<typeof definition.tables.reversed>
-		? true
-		: false
->;
-
 export type _SelectStatic = Expect<
 	Equal<Static<Values['status']>, 'draft' | 'published'>
 >;

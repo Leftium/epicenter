@@ -1,286 +1,431 @@
 /**
- * The `field.*` authoring builders: the CONSTRUCTION half of the closed field
- * vocabulary. `recognize` (in `./field`) is the recognition half. They are
- * inverses over ONE wire-form: serialize a `field.X(...)` schema to its at-rest
- * JSON and `recognize` classifies it back to kind `X`. `field.test.ts` proves
- * the round-trip for every kind.
+ * The `field.*` helpers: the one way to declare a field.
  *
- * Every builder is a thin composition of native TypeBox constructors that emit
- * the recognized wire-form directly:
+ * Each helper returns a native TypeBox schema, so `Static`, `Compile`, and
+ * `Value.Check` read it directly, and annotates it with the editor it gets
+ * (see `./metadata`). The schema and the annotation are built from the same
+ * arguments in the same call:
  *
- *   field.select(['a','b'])      Type.Enum            -> {enum:['a','b']}        Static = 'a' | 'b'
- *   field.multiSelect(['a','b']) Type.Array(Type.Enum)-> {type:'array',items:{enum:[...]}}
- *   field.tags()                 Type.Array(Type.String) -> {type:'array',items:{type:'string'}}
- *   field.number/integer/boolean Type.Number/Integer/Boolean (full TypeBox JSDoc preserved)
+ *   field.select(['a', 'b'])   Type.Enum(['a', 'b'])   { kind: 'select', options: ['a', 'b'] }
+ *   field.reference('pages')   Type.String({ minLength: 1 })   { kind: 'reference', target: 'pages' }
+ *   field.nullable(inner)      Type.Union([inner, Type.Null()])   inner's annotation, nullable
+ *   field.json(schema)         schema itself, behind a JSON-value gate   { kind: 'json' }
  *
- * `Type.Enum` is the load-bearing choice: in TypeBox v1 it emits the native JSON
- * Schema `enum` keyword, infers `Static` as the literal union, and carries `enum`
- * at the type level, so authoring, recognition, and any SQL an application
- * derives all read one shape with no `Type.Unsafe` and no value-to-tuple
- * gymnastics.
+ * A helper takes only the options listed in its type and refuses any other
+ * key, so an option cannot replace the `type`, `format`, or annotation the
+ * helper sets. It copies what it is given: changing an options object, an
+ * option list, or a payload schema after the call changes nothing here.
  *
- * Branding still rides on `Type.Unsafe` for the cases that need a brand the
- * wire-form cannot express: `field.string<Brand>()`, `field.date()`,
- * `field.instant()`, and `field.datetime()`. `Type.Unsafe` decouples the emitted
- * JSON Schema from the inferred `Static<>`.
+ * What a helper returns is an ordinary native schema, as mutable as any
+ * `Type.*` result. `compileData` is what takes ownership: it compiles a frozen
+ * snapshot. Editing a helper's schema natively before then is the author's
+ * edit to make and to answer for.
  *
- * NOTE on at-rest vs in-memory: a live TypeBox schema carries a non-enumerable
- * `~kind` tag that the CLOSED metas reject on a direct `recognize`. That tag is
- * dropped by JSON serialization, so the AT-REST form (what is stored on disk / in
- * Yjs and what `recognize` actually reads) classifies correctly. The round-trip
- * test serializes through JSON to mirror this.
- *
- * Closed sets are STRING-ONLY: `select` / `multiSelect` hold strings, not numbers
- * or booleans. A numeric range is an `integer` with `minimum` / `maximum`, not a
- * select. `json` is the one OPEN escape kind in the vocabulary: an arbitrary JSON
- * payload discriminated by the marker, not a `type`. Emptiness (`nullable`) is the
- * one axis NOT in the vocabulary: it is SUBSTRATE POLICY the workspace layers on with
- * its own standalone `nullable` wrapper, and matter forbids it. The vocabulary carries
- * kinds, never an emptiness policy.
+ * Closed sets hold strings. A numeric range is an `integer` with `minimum`
+ * and `maximum`, not a select.
  */
 
 import {
 	type Static,
 	type TArray,
+	type TBoolean,
 	type TEnum,
+	type TInteger,
+	type TNull,
+	type TNumber,
 	type TSchema,
-	type TSchemaOptions,
 	type TString,
-	type TStringOptions,
+	type TUnion,
 	type TUnsafe,
 	Type,
 } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
+import { isJsonSafe } from '../json.js';
 import type { CalendarDateString } from './calendar-date-string.js';
 import type { DateTimeString } from './datetime-string.js';
-import { JSON_SCHEMA_KEYWORD, REFERENCE_KEYWORD } from './field.js';
 import {
 	INSTANT_STRING_PATTERN,
 	type InstantString,
 } from './instant-string.js';
+import {
+	attach,
+	type FIELD_KEYWORD,
+	type FieldMetadata,
+	type FieldSchema,
+	fieldMetadataOf,
+	isHelperBuilt,
+	type Kind,
+} from './metadata.js';
 
-type BrandedString = string & Brand<string>;
-type StringOptions = TStringOptions & {
+/** A helper's annotation: its kind, not nullable, and what the kind adds. */
+type Meta<K extends Kind, TExtra = unknown> = {
+	readonly kind: K;
+	readonly nullable: false;
+} & TExtra;
+
+/** An annotation with `nullable` set and everything else as it was. */
+type Nullable<M> = M extends unknown
+	? Omit<M, 'nullable'> & { readonly nullable: true }
+	: never;
+
+type Annotations = {
+	/** A short label for the field. */
+	title?: string;
+	/** What the field holds. */
+	description?: string;
+};
+
+type StringOptions = Annotations & {
+	minLength?: number;
+	maxLength?: number;
+	pattern?: string;
 	/** Maximum UTF-8 bytes in the stored string. */
 	maxBytes?: number;
 };
 
+type NumberOptions = Annotations & { minimum?: number; maximum?: number };
+
+type ListOptions = Annotations & {
+	minItems?: number;
+	maxItems?: number;
+	uniqueItems?: boolean;
+};
+
+const ANNOTATIONS = ['title', 'description'] as const;
+const STRING = [...ANNOTATIONS, 'minLength', 'maxLength', 'pattern'] as const;
+const NUMBER = [...ANNOTATIONS, 'minimum', 'maximum'] as const;
+const LIST = [...ANNOTATIONS, 'minItems', 'maxItems', 'uniqueItems'] as const;
+
+/**
+ * The options a helper passes to TypeBox, copied.
+ *
+ * TypeBox merges options over the keywords a constructor sets, so an
+ * unchecked `type` or `format` would replace the helper's. An unsupported key
+ * throws rather than being dropped: a declaration that asks for something the
+ * field will not do should not load.
+ */
+function supported<TOptions extends object, TKey extends keyof TOptions>(
+	helper: string,
+	opts: TOptions | undefined,
+	keys: readonly TKey[],
+): Pick<TOptions, TKey> {
+	const picked: Partial<Pick<TOptions, TKey>> = {};
+	for (const key of Object.keys(opts ?? {})) {
+		if (!(keys as readonly string[]).includes(key))
+			throw new TypeError(
+				`field.${helper} does not support the '${key}' option`,
+			);
+		const value = (opts as TOptions)[key as TKey];
+		if (value !== undefined) picked[key as TKey] = value;
+	}
+	return picked as Pick<TOptions, TKey>;
+}
+
+const utf8 = new TextEncoder();
+
+/**
+ * The native string schema behind `field.string` and `field.reference`.
+ *
+ * `maxBytes` is a `Type.Refine`, so TypeBox enforces it wherever the schema is
+ * checked and reports it among its errors. It is not a keyword: JSON Schema has
+ * none for byte length.
+ */
+function stringSchema(
+	helper: string,
+	opts: StringOptions | undefined,
+	minLength: number,
+): TString {
+	const { maxBytes, ...keywords } = opts ?? {};
+	if (maxBytes !== undefined && !(Number.isInteger(maxBytes) && maxBytes >= 0))
+		throw new TypeError(
+			`field.${helper} needs maxBytes to be a non-negative integer`,
+		);
+	const options = supported(helper, keywords, STRING);
+	const floor = Math.max(minLength, options.minLength ?? 0);
+	const schema = Type.String(
+		floor === 0 ? options : { ...options, minLength: floor },
+	);
+	return maxBytes === undefined
+		? schema
+		: Type.Refine(
+				schema,
+				(value) => utf8.encode(value).byteLength <= maxBytes,
+				`must be at most ${maxBytes} UTF-8 bytes`,
+			);
+}
+
+type BrandedString = string & Brand<string>;
+
+/** `TString`, or a schema whose `Static` is the brand `T`. A literal subtype is `never`. */
+type StringSchema<T extends string> = string extends T
+	? TString
+	: T extends BrandedString
+		? TUnsafe<T>
+		: never;
+
 /**
  * String field with optional brand sugar.
  *
- * - `field.string()` -> `TString`, `Static<>` = `string`.
- * - `field.string<NoteId>()` -> `TUnsafe<NoteId>`, `Static<>` = `NoteId`.
- * - `field.string<'draft'>()` -> `never` (compile-time): pretending a literal
- *   subtype is enforced at runtime is dishonest; use `field.select(['draft'])`.
+ * - `field.string()`: `Static<>` = `string`.
+ * - `field.string<NoteId>()`: `Static<>` = `NoteId`.
+ * - `field.string<'draft'>()`: `never`. A literal subtype is not enforced at
+ *   runtime; use `field.select(['draft'])`.
  */
 function string<T extends string = string>(
 	opts?: StringOptions,
-): string extends T ? TString : T extends BrandedString ? TUnsafe<T> : never {
-	return Type.String(opts) as string extends T
-		? TString
-		: T extends BrandedString
-			? TUnsafe<T>
-			: never;
+): FieldSchema<StringSchema<T>, Meta<'string'>> {
+	return attach(stringSchema('string', opts, 0), {
+		kind: 'string',
+		nullable: false,
+	});
 }
 
 /**
- * Cross-row reference field: a string value that points at a row in another table.
+ * A string that names a row in `table`. Brands like {@link string}.
  *
- * - `field.reference('pages')` -> `TUnsafe<string>`, `Static<>` = `string`.
- * - `field.reference<PageId>('pages')` -> `TUnsafe<PageId>`, `Static<>` = `PageId`.
- * - `field.reference<'draft'>('x')` -> `never` (compile-time), for the same reason
- *   `field.string<'draft'>()` is: a literal subtype is not enforced at runtime.
- *
- * The VALUE is the target row's stem / id; the `table` argument is recorded in the
- * at-rest schema under {@link REFERENCE_KEYWORD} so `recognize` classifies the field as
- * kind `reference` and recovers its target. This composes the two existing tricks:
- * `Type.Unsafe` carries the brand on `Static<>` (as in {@link string}) while the marker
- * rides on the emitted wire-form (as in {@link json}). It is ALWAYS `TUnsafe` (even
- * unbranded), because the marker-bearing wire-form must be decoupled from the inferred
- * `Static<>`. Value validation is plain-string (the marker is non-standard, so
- * `Value.Check` ignores it); whether the target ROW exists is cross-table integrity,
- * enforced outside this leaf.
- *
- * The brand is type-safe at the call site; the `table` STRING is not (the field is
- * authored before its workspace knows the full table set), so a dangling target is caught
- * at workspace construction, not here.
+ * The value is never empty, because the empty string names no row; a larger
+ * `minLength` is kept. Whether the target row or table exists is not checked
+ * here.
  */
-function reference<T extends string = string>(
-	table: string,
+function reference<
+	T extends string = string,
+	const TTable extends string = string,
+>(
+	table: TTable,
 	opts?: StringOptions,
-): string extends T
-	? TUnsafe<string>
-	: T extends BrandedString
-		? TUnsafe<T>
-		: never {
-	return Type.Unsafe({
-		...Type.String(opts),
-		[REFERENCE_KEYWORD]: table,
-	}) as string extends T
-		? TUnsafe<string>
-		: T extends BrandedString
-			? TUnsafe<T>
-			: never;
+): FieldSchema<
+	StringSchema<T>,
+	Meta<'reference', { readonly target: TTable }>
+> {
+	if (typeof table !== 'string' || table === '')
+		throw new TypeError('field.reference needs the name of a table');
+	return attach(stringSchema('reference', opts, 1), {
+		kind: 'reference',
+		nullable: false,
+		target: table,
+	});
 }
 
-/**
- * URL string field. A `TString` carrying `format: 'uri'` as a hint, so the schema
- * is self-describing and editor tooling can surface it. Static type is `string`
- * (no brand). When the `uri` format is not registered with the runtime validator,
- * `Value.Check` treats it as a pass, so this never rejects a value the rest of the
- * system would accept.
- */
-function url(opts?: TStringOptions): TString {
-	return Type.String({ format: 'uri', ...opts });
+/** URL string, checked with TypeBox's `uri` format. */
+function url(opts?: Annotations): FieldSchema<TString, Meta<'url'>> {
+	return attach(
+		Type.String({ ...supported('url', opts, ANNOTATIONS), format: 'uri' }),
+		{ kind: 'url', nullable: false },
+	);
 }
 
-/** Pass-through to `Type.Number`, exposed as `field.number`. */
-const number = Type.Number;
+/** Any finite number. */
+function number(opts?: NumberOptions): FieldSchema<TNumber, Meta<'number'>> {
+	return attach(Type.Number(supported('number', opts, NUMBER)), {
+		kind: 'number',
+		nullable: false,
+	});
+}
 
-/** Pass-through to `Type.Integer`. */
-const integer = Type.Integer;
+/** A whole number. A rating is `field.integer({ minimum: 1, maximum: 5 })`. */
+function integer(opts?: NumberOptions): FieldSchema<TInteger, Meta<'integer'>> {
+	return attach(Type.Integer(supported('integer', opts, NUMBER)), {
+		kind: 'integer',
+		nullable: false,
+	});
+}
 
-/** Pass-through to `Type.Boolean`. */
-const boolean = Type.Boolean;
+function boolean(opts?: Annotations): FieldSchema<TBoolean, Meta<'boolean'>> {
+	return attach(Type.Boolean(supported('boolean', opts, ANNOTATIONS)), {
+		kind: 'boolean',
+		nullable: false,
+	});
+}
 
 /**
  * ISO calendar day, branded as `CalendarDateString`.
  *
- * Uses TypeBox v1's built-in `date` format validator. Carries no time, offset,
- * or time zone meaning. Stored as `YYYY-MM-DD`, which sorts naturally as TEXT.
+ * Carries no time, offset, or time zone. Stored as `YYYY-MM-DD`, which sorts
+ * as text.
  */
-function date(opts?: TSchemaOptions): TUnsafe<CalendarDateString> {
-	return Type.Unsafe<CalendarDateString>(
-		Type.String({ ...opts, format: 'date' }),
+function date(
+	opts?: Annotations,
+): FieldSchema<TUnsafe<CalendarDateString>, Meta<'date'>> {
+	return attach(
+		Type.String({ ...supported('date', opts, ANNOTATIONS), format: 'date' }),
+		{ kind: 'date', nullable: false },
 	);
 }
 
 /**
  * Canonical UTC instant, branded as `InstantString`.
  *
- * This is stricter than `field.datetime()`: it requires the exact fixed-width
- * `YYYY-MM-DDTHH:mm:ss.sssZ` form. The fixed UTC form is why SQLite TEXT order
- * matches chronological order.
+ * Stricter than `field.datetime()`: it requires the fixed-width
+ * `YYYY-MM-DDTHH:mm:ss.sssZ` form, which is why text order is chronological
+ * order.
  */
-function instant(opts?: TSchemaOptions): TUnsafe<InstantString> {
-	return Type.Unsafe<InstantString>(
+function instant(
+	opts?: Annotations,
+): FieldSchema<TUnsafe<InstantString>, Meta<'instant'>> {
+	return attach(
 		Type.String({
-			...opts,
+			...supported('instant', opts, ANNOTATIONS),
 			format: 'date-time',
 			pattern: INSTANT_STRING_PATTERN,
 		}),
+		{ kind: 'instant', nullable: false },
 	);
 }
 
 /**
- * RFC 3339 / ISO 8601 datetime string, branded as `DateTimeString`.
- *
- * Uses TypeBox v1's built-in `date-time` format validator (auto-registered; no
- * `Format.Set` required). Accepts both Z (`...Z`) and offset (`...±HH:MM`) forms.
- * `Type.Unsafe` carries the brand on `Static<>` while emitting the plain
- * `{type:'string', format:'date-time'}` wire-form that `recognize` reads.
+ * RFC 3339 datetime string, branded as `DateTimeString`. Accepts both `Z` and
+ * offset forms.
  */
-function datetime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
-	return Type.Unsafe<DateTimeString>(
-		Type.String({ format: 'date-time', ...opts }),
+function datetime(
+	opts?: Annotations,
+): FieldSchema<TUnsafe<DateTimeString>, Meta<'datetime'>> {
+	return attach(
+		Type.String({
+			...supported('datetime', opts, ANNOTATIONS),
+			format: 'date-time',
+		}),
+		{ kind: 'datetime', nullable: false },
 	);
 }
 
 /**
- * Closed-set field over a fixed list of string members. A typed narrowing of
- * `Type.Enum`: it emits the native `{enum:[...]}` wire-form `recognize`
- * classifies as `select`, infers `Static` as the literal union (`'a' | 'b'`),
- * and keeps the members on the type so a derived SQL column reads them
- * structurally. String-only by design: a numeric range is an `integer` with
- * `minimum` / `maximum`, not a select.
- *
- * The `readonly [...T]` variadic mirrors `Type.Enum`'s own parameter, so the
- * literal tuple flows through with NO cast; the narrower `readonly string[]`
- * bound assigns cleanly because `Type.Enum` accepts a superset. An empty list
- * yields `{enum:[]}`, which `recognize` rejects (the field degrades to raw),
- * matching the uniform "unrecognized schema degrades" contract.
+ * One frozen copy of an option list. The schema's `enum` and the annotation's
+ * `options` are both built from it, so the validator and the widget start out
+ * agreeing, and the caller's array is not involved after the call.
  */
-const select: <const T extends readonly string[]>(
+function optionList<const T extends readonly string[]>(
+	helper: string,
 	values: readonly [...T],
-	opts?: TSchemaOptions,
-) => TEnum<[...T]> = Type.Enum;
+): readonly [...T] {
+	if (
+		!Array.isArray(values) ||
+		values.length === 0 ||
+		!values.every((value) => typeof value === 'string')
+	)
+		throw new TypeError(`field.${helper} needs at least one string option`);
+	return Object.freeze([...values]) as readonly [...T];
+}
 
 /**
- * List of closed-set members: an array of the same native `enum` shape `select`
- * emits. Recognizes as `multiSelect`. `Static<>` is the array of the literal
- * union (`('a' | 'b')[]`). Composing the typed `select` (whose declared return
- * threads `T`) keeps this cast-free; the list refinements (`minItems` /
- * `maxItems` / `uniqueItems`) ride on the array via `opts`.
+ * One of a fixed list of strings. `Static<>` is the literal union
+ * (`'a' | 'b'`).
  */
-const multiSelect = <const T extends readonly string[]>(
+function select<const T extends readonly string[]>(
 	values: readonly [...T],
-	opts?: TSchemaOptions,
-): TArray<TEnum<[...T]>> => Type.Array(select(values), opts);
+	opts?: Annotations,
+): FieldSchema<
+	TEnum<[...T]>,
+	Meta<'select', { readonly options: readonly [...T] }>
+> {
+	const options = optionList('select', values);
+	return attach(Type.Enum(options, supported('select', opts, ANNOTATIONS)), {
+		kind: 'select',
+		nullable: false,
+		options,
+	});
+}
+
+/** Any number of a fixed list of strings. `Static<>` is `('a' | 'b')[]`. */
+function multiSelect<const T extends readonly string[]>(
+	values: readonly [...T],
+	opts?: ListOptions,
+): FieldSchema<
+	TArray<TEnum<[...T]>>,
+	Meta<'multiSelect', { readonly options: readonly [...T] }>
+> {
+	const options = optionList('multiSelect', values);
+	return attach(
+		Type.Array(Type.Enum(options), supported('multiSelect', opts, LIST)),
+		{ kind: 'multiSelect', nullable: false, options },
+	);
+}
+
+/** A list of free-form strings. `Static<>` is `string[]`. */
+function tags(opts?: ListOptions): FieldSchema<TArray<TString>, Meta<'tags'>> {
+	return attach(Type.Array(Type.String(), supported('tags', opts, LIST)), {
+		kind: 'tags',
+		nullable: false,
+	});
+}
 
 /**
- * List of free-form strings: `{type:'array', items:{type:'string'}}`. Recognizes
- * as `tags`. `Static<>` is `string[]`.
- */
-const tags = (opts?: TSchemaOptions) => Type.Array(Type.String(), opts);
-
-/**
- * The canonical "any JSON value" schema: `Static<> = JsonValue`, runtime accepts any
- * value. Reach for it when a payload is genuinely shapeless: pass it straight
- * (`field.json(jsonValue)` for an opaque cell) or as an element type
- * (`field.json(Type.Array(jsonValue))` for a list of arbitrary JSON). It replaces
- * the hand-rolled `Type.Unsafe<JsonValue>(Type.Any())` that several apps had each spelled
- * a slightly different way.
+ * The "any JSON value" payload schema: `Static<>` is `JsonValue`.
  *
- * `Type.Unsafe` pins `Static<>` to wellcrafted's canonical `JsonValue` while the runtime
- * schema stays `Type.Any()` (wire-form `{}`). JSON-ness is enforced at the TYPE level by
- * `FlatJsonTSchema` at the `defineTable` boundary, NOT by a runtime check here, and that
- * is deliberate: TypeBox's `Value.Check` is structural, so even a recursive JSON schema
- * (`Type.Cyclic`) cannot reject a `Date` (it reads as an empty object). A recursive runtime
- * schema would add wire-form weight without adding safety, and the `x-json-schema` marker
- * already declares the cell as arbitrary JSON, so `Type.Any()` is the honest floor.
+ * Pass it to `field.json` for a shapeless cell, or nest it:
+ * `field.json(Type.Array(jsonValue))`. On its own it is `Type.Any()` and
+ * checks nothing; `field.json` is what holds a value to JSON.
  */
 export const jsonValue: TUnsafe<JsonValue> = Type.Unsafe<JsonValue>(Type.Any());
 
-/**
- * Arbitrary JSON payload, stored as TEXT, recognized as kind `json`.
- *
- * `field.json(inner)` -> `Static<> = Static<inner>`, validates the payload against
- * `inner` on read. For a genuinely shapeless cell, pass {@link jsonValue}
- * (`field.json(jsonValue)`): "any JSON" is not a special case, just the `inner = jsonValue`
- * instance of the general form, so it takes the same one signature with no overload.
- *
- * The wire-form SPREADS the payload's own JSON Schema keywords (so `Value.Check` and
- * `Schema.Compile` enforce them) and adds the {@link JSON_SCHEMA_KEYWORD} marker, so
- * `recognize` classifies it as `json` instead of the bare object/array it would otherwise
- * look like (which would degrade to raw). `Type.Unsafe<Static<S>>` decouples the inferred
- * `Static<>` from that marker-bearing wire-form while letting the payload generic flow
- * straight through to the return type.
- *
- * No JSON-safety gate lives here (that would pull the workspace's `ColumnError` into the
- * leaf): a non-JSON inner (e.g. `Type.Date`) flows through as `TUnsafe<Date>` and is caught
- * by `FlatJsonTSchema` at the `defineTable` boundary, where field safety belongs.
- */
-type TJson<S extends TSchema> = TUnsafe<Static<S>> & {
-	// Keep the real wire marker visible to schema-aware type consumers while
-	// `Static<TJson<S>>` remains exactly `Static<S>` for ordinary application data.
-	readonly [JSON_SCHEMA_KEYWORD]: true;
-};
+const NOT_JSON = 'must be a JSON value';
 
-function json<S extends TSchema>(inner: S): TJson<S> {
-	return Type.Unsafe<Static<S>>({
-		...inner,
-		[JSON_SCHEMA_KEYWORD]: true,
-	}) as TJson<S>;
+/** Passes exactly the values that are JSON. */
+const JsonGate = Type.Refine(Type.Unknown(), isJsonSafe, NOT_JSON);
+
+/** Passes nothing, and says why: the branch a value takes when it is not JSON. */
+const NotJson = Type.Refine(Type.Unknown(), () => false, NOT_JSON);
+
+/**
+ * A JSON payload checked against `inner`, edited as JSON.
+ *
+ * `inner` is any native schema, nested `Type.*` included, and `Static<>` is
+ * `Static<inner>`. Another field works too: `field.json(field.select([...]))`
+ * keeps the select's check and swaps its editor for the JSON one.
+ *
+ * The field is the native conditional `{ if: JsonGate, then: inner, else:
+ * NotJson }`. `inner` is the `then` branch whole, so its hidden refinements
+ * run and a `#/$defs/...` reference inside it still resolves; nothing in it is
+ * rewritten.
+ *
+ * A schema can be structural about what it admits (`Type.Any()` admits a
+ * `Date`, `undefined`, and a cycle), and none of those survives being stored,
+ * so the gate refuses them whatever `inner` says.
+ *
+ * The gate has to run BEFORE `inner`, and a conditional is the one native
+ * keyword that guarantees it. A recursive `inner` (`Type.Cyclic`) follows a
+ * cyclic value until the stack overflows, so it must never see one. A
+ * refinement on `inner` runs after `inner`'s own keywords, and `allOf`
+ * evaluates every member when it collects errors. `if` decides first in both
+ * `Check` and `Errors`, and only then is one branch evaluated.
+ *
+ * The cost is in the errors: TypeBox reports a failed `then` as one
+ * `must match "then" schema` and drops what `inner` said.
+ */
+function json<S extends TSchema>(
+	inner: S,
+): FieldSchema<TUnsafe<Static<S>>, Meta<'json'>> {
+	if (typeof inner !== 'object' || inner === null || Array.isArray(inner))
+		throw new TypeError('field.json needs a schema');
+	return attach(
+		// biome-ignore lint/suspicious/noThenProperty: `then` is the JSON Schema keyword, and a schema is never awaited
+		Type.Unknown({ if: JsonGate, then: inner, else: NotJson }),
+		{ kind: 'json', nullable: false },
+	);
 }
 
 /**
- * The `field.*` namespace: the one blessed way to construct a schema in the recognized
- * vocabulary. Each builder emits the wire-form its kind's meta reads, so `recognize` is
- * its inverse. `json` is the arbitrary-JSON escape kind (marker-discriminated). The
- * emptiness AXIS (`nullable`) is NOT a kind and lives in the workspace, not here.
+ * A field that may also hold `null`: `Type.Union([inner, Type.Null()])`, with
+ * `Static<>` = `Static<inner> | null`, brands included.
+ *
+ * The annotation is `inner`'s with `nullable` set, so a nullable select keeps
+ * its options and a nullable reference its target. A stored field is still
+ * always present; `null` is a value, not absence.
  */
-export const field = {
+function nullable<S extends FieldSchema>(
+	inner: S,
+): FieldSchema<TUnion<[S, TNull]>, Nullable<S[typeof FIELD_KEYWORD]>> {
+	const metadata = fieldMetadataOf(inner);
+	if (metadata === null || !isHelperBuilt(inner))
+		throw new TypeError('field.nullable needs a field built with field.*');
+	return attach<TUnion<[S, TNull]>, FieldMetadata>(
+		Type.Union([inner, Type.Null()]),
+		{ ...metadata, nullable: true },
+	) as FieldSchema<TUnion<[S, TNull]>, Nullable<S[typeof FIELD_KEYWORD]>>;
+}
+
+/** The field namespace: every way to declare a field. */
+export const field = Object.freeze({
 	string,
 	reference,
 	url,
@@ -294,4 +439,5 @@ export const field = {
 	multiSelect,
 	tags,
 	json,
-};
+	nullable,
+});

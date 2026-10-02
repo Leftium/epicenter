@@ -24,6 +24,9 @@
  *   unsaved, including work that began after the deletion was confirmed
  * - Unknown fields survive edits, a malformed row stays listed and repairable,
  *   and a dirty draft keeps both versions when the file changes outside
+ * - Two asks for the same transcript and transformation at once are one
+ *   request and one result, while another pair and a later run stay separate;
+ *   a run retried or saved again twice at once is retried or saved once
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
@@ -923,4 +926,150 @@ test('this run’s exact row is recognized even with fields the app does not kno
 	expect(await readFile(join(root, RUNS, `${held.id}.md`), 'utf8')).toBe(
 		annotated,
 	);
+});
+
+// ============================================================================
+// One run for one ask
+// ============================================================================
+
+/**
+ * A library whose reads of one table's rows wait while `reads.hold` is set.
+ * A run reads its transformation and its transcript before anything is sent,
+ * so holding those reads is what puts two asks inside that time together.
+ */
+async function openHoldingReads(
+	held: 'transformations' | 'transcriptions',
+	options: TestWorkspaceOptions = {},
+) {
+	const test = await openTestWorkspace(options);
+	const reads: { hold?: Promise<void>; waiting: number } = { waiting: 0 };
+	const { tables } = test.workspace.folder;
+	const table = tables[held];
+	const library = createLibrary({
+		...test.workspace,
+		folder: {
+			...test.workspace.folder,
+			tables: {
+				...tables,
+				[held]: {
+					...table,
+					async get(stem: string) {
+						reads.waiting += 1;
+						await reads.hold;
+						return table.get(stem);
+					},
+				},
+			},
+		} as Library['workspace']['folder'],
+	});
+	cleanups.push(async () => {
+		await library.close();
+		await test.remove();
+	});
+	await library.start();
+	return { library, reads, ...test };
+}
+
+test('two asks for the same transcript and transformation at once send one request and save one result; another pair and a later run are separate', async () => {
+	const { library, root, transformed, reads } =
+		await openHoldingReads('transformations');
+	const { transcript, transcriptBytes } = await transcribed(library, root);
+	const cleanup = await cleanupProfile(library);
+	expect(
+		await library.createTransformation(STARTER_TRANSFORMATIONS[1]!),
+	).toBeUndefined();
+	const summarize = library.selectedTransformation!.editor;
+	patchRow(summarize, { fields: { model: 'chat-model' } });
+	await summarize.save();
+	expect(summarize.saveState.kind).toBe('saved');
+	const reading = deferred<void>();
+	reads.hold = reading.promise;
+
+	const first = library.transform(transcript.path, cleanup.path);
+	const second = library.transform(transcript.path, cleanup.path);
+	const other = library.transform(transcript.path, summarize.path);
+
+	// The second ask is refused while the first is still reading: nothing has been sent yet.
+	expect(await second).toContain('already running on this transcript');
+	expect(transformed).toEqual([]);
+	expect(library.holdsUnsavedWork).toBe(true);
+	expect(await library.prepareToLeave()).toBe(false);
+	reads.hold = undefined;
+	reading.resolve();
+	expect(await first).toBeUndefined();
+	expect(await other).toBeUndefined();
+
+	expect(transformed).toHaveLength(2);
+	expect(transformed.map((request) => request.prompt).sort()).toEqual(
+		[STARTER_TRANSFORMATIONS[0]!.prompt, STARTER_TRANSFORMATIONS[1]!.prompt].sort(),
+	);
+	expect(await names(root, RUNS)).toHaveLength(2);
+	expect(library.transformationRuns).toEqual([]);
+
+	// Asked again once the first has ended, it runs again and is its own result.
+	expect(
+		await library.transform(transcript.path, cleanup.path),
+	).toBeUndefined();
+	expect(transformed).toHaveLength(3);
+	expect(await names(root, RUNS)).toHaveLength(3);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(await readFile(join(root, transcript.path))).toEqual(transcriptBytes);
+});
+
+test('a failed run retried twice at once is sent once more, not twice', async () => {
+	let attempts = 0;
+	const { library, root, transformed, reads } = await openHoldingReads(
+		'transcriptions',
+		{
+			transform: async () => {
+				attempts += 1;
+				if (attempts === 1) throw new Error('the folder host went away');
+				return Ok({ text: 'after the host came back' });
+			},
+		},
+	);
+	const { transcript } = await transcribed(library, root);
+	const cleanup = await cleanupProfile(library);
+	await library.transform(transcript.path, cleanup.path);
+	const failed = library.transformationRuns[0]!;
+	expect(failed.state.kind).toBe('failed');
+	const reading = deferred<void>();
+	reads.hold = reading.promise;
+	reads.waiting = 0;
+
+	const retries = Promise.all([
+		library.retryTransformation(failed.id),
+		library.retryTransformation(failed.id),
+	]);
+	await Promise.resolve();
+	// One retry is reading the transcript; the other was left to it.
+	expect(reads.waiting).toBe(1);
+	reads.hold = undefined;
+	reading.resolve();
+	await retries;
+
+	expect(transformed).toHaveLength(2);
+	expect(await names(root, RUNS)).toEqual([`${failed.id}.md`]);
+	expect(library.transformationRuns).toEqual([]);
+	expect(library.outputsFor(transcript.stem)).toHaveLength(1);
+});
+
+test('a received result saved again twice at once is written once and is not left unsaved', async () => {
+	const { library, root, transformed } = await open({ failRunWrites: 1 });
+	const { transcript } = await transcribed(library, root);
+	const cleanup = await cleanupProfile(library);
+	await library.transform(transcript.path, cleanup.path);
+	const held = library.transformationRuns[0]!;
+	expect(held.state.kind).toBe('unsaved');
+
+	await Promise.all([
+		library.retryTransformation(held.id),
+		library.retryTransformation(held.id),
+	]);
+
+	expect(transformed).toHaveLength(1);
+	expect(await names(root, RUNS)).toEqual([`${held.id}.md`]);
+	expect(library.transformationRuns).toEqual([]);
+	expect(library.holdsUnsavedWork).toBe(false);
 });

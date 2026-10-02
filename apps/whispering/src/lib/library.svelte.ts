@@ -737,7 +737,11 @@ export function createLibrary(workspace: Workspace) {
 					? '1 transformation result arrived but its file is not saved.'
 					: `${unsavedOutputs} transformation results arrived but their files are not saved.`,
 			);
-		if (transforming.some((run) => run.state.kind === 'running'))
+		if (
+			applying.size > 0 ||
+			retrying.size > 0 ||
+			transforming.some((run) => run.state.kind === 'running')
+		)
 			held.push('A transformation is still running; its result would be lost.');
 		const unsettled = allEditors().filter(
 			(editor) => editor.dirty || editor.saveState.kind !== 'saved',
@@ -1074,6 +1078,9 @@ export function createLibrary(workspace: Workspace) {
 		if (deleting.has(recordingId)) return Err(BEING_DELETED);
 		return Ok({ transcriptionId, recordingId, input: transcription.body });
 	}
+
+	const applying = new SvelteSet<string>();
+	const retrying = new SvelteSet<string>();
 
 	/** One request for a run. It always ends: saved, unsaved with its text, or failed. */
 	async function sendRun(run: TransformationRun) {
@@ -1568,39 +1575,48 @@ export function createLibrary(workspace: Workspace) {
 			transcriptionPath: string,
 			transformationPath: string,
 		): Promise<string | undefined> {
-			const read = await transformationForOperation(transformationPath);
-			if (read.error !== null) return read.error;
-			const profile = read.data;
-			if (profile.issues !== undefined)
-				return 'This transformation needs repair before it can run. Fix it in Source.';
-			if (profile.fields.endpoint.trim() === '')
-				return 'This transformation has no endpoint. Add one, then run it.';
-			if (profile.fields.model.trim() === '')
-				return 'This transformation has no model. Add one, then run it.';
-			if (profile.body.trim() === '')
-				return 'This transformation has no prompt. Write one, then run it.';
-			const source = await transformationSource(transcriptionPath);
-			if (source.error !== null) return source.error;
-			// From this check to the run being listed there is no await, so a
-			// deletion either sees this run or is seen here.
-			if (deleting.has(source.data.recordingId)) return BEING_DELETED;
-			const at = new Date();
-			await sendRun({
-				id: recordingId(at),
-				fields: {
-					recordingId: source.data.recordingId,
-					transcriptionId: source.data.transcriptionId,
-					transformationId: profile.stem,
-					transformationTitle: profile.fields.title,
-					createdAt: at.toISOString(),
-					model: profile.fields.model.trim(),
-					endpoint: profile.fields.endpoint.trim(),
-					prompt: profile.body,
-					input: source.data.input,
-				} as TransformationRunFields,
-				state: { kind: 'running' },
-			});
-			return undefined;
+			if (closing) return 'The library is closing.';
+			const pair = JSON.stringify([transcriptionPath, transformationPath]);
+			if (applying.has(pair))
+				return 'This transformation is already running on this transcript. Run it again when it has finished.';
+			applying.add(pair);
+			try {
+				const read = await transformationForOperation(transformationPath);
+				if (read.error !== null) return read.error;
+				const profile = read.data;
+				if (profile.issues !== undefined)
+					return 'This transformation needs repair before it can run. Fix it in Source.';
+				if (profile.fields.endpoint.trim() === '')
+					return 'This transformation has no endpoint. Add one, then run it.';
+				if (profile.fields.model.trim() === '')
+					return 'This transformation has no model. Add one, then run it.';
+				if (profile.body.trim() === '')
+					return 'This transformation has no prompt. Write one, then run it.';
+				const source = await transformationSource(transcriptionPath);
+				if (source.error !== null) return source.error;
+				// From this check to the run being listed there is no await, so a
+				// deletion either sees this run or is seen here.
+				if (deleting.has(source.data.recordingId)) return BEING_DELETED;
+				const at = new Date();
+				await sendRun({
+					id: recordingId(at),
+					fields: {
+						recordingId: source.data.recordingId,
+						transcriptionId: source.data.transcriptionId,
+						transformationId: profile.stem,
+						transformationTitle: profile.fields.title,
+						createdAt: at.toISOString(),
+						model: profile.fields.model.trim(),
+						endpoint: profile.fields.endpoint.trim(),
+						prompt: profile.body,
+						input: source.data.input,
+					} as TransformationRunFields,
+					state: { kind: 'running' },
+				});
+				return undefined;
+			} finally {
+				applying.delete(pair);
+			}
 		},
 		/**
 		 * Finish a run that did not end as a saved result. A failed request is
@@ -1611,35 +1627,42 @@ export function createLibrary(workspace: Workspace) {
 		 * name it was given.
 		 */
 		async retryTransformation(id: string) {
-			const run = transformationRuns.get(id);
-			if (run === undefined) return;
-			if (run.state.kind === 'unsaved') {
-				await saveRun(run, run.state.text);
-				return;
-			}
-			if (run.state.kind !== 'failed') return;
-			const refuse = (message: string) =>
-				transformationRuns.set(id, {
-					...run,
-					state: { kind: 'failed', message },
-				});
-			const source = await transformationSource(
-				rowPath(TRANSCRIPTIONS, run.fields.transcriptionId),
-			);
-			if (source.error !== null) {
-				refuse(`${source.error} Dismiss this run.`);
-				return;
-			}
-			if (
-				source.data.input !== run.fields.input ||
-				source.data.recordingId !== run.fields.recordingId
-			) {
-				refuse(
-					'The transcript changed after this run started, so the same request was not sent again. Dismiss this run and run the transformation again.',
+			if (closing) return;
+			if (retrying.has(id)) return;
+			retrying.add(id);
+			try {
+				const run = transformationRuns.get(id);
+				if (run === undefined) return;
+				if (run.state.kind === 'unsaved') {
+					await saveRun(run, run.state.text);
+					return;
+				}
+				if (run.state.kind !== 'failed') return;
+				const refuse = (message: string) =>
+					transformationRuns.set(id, {
+						...run,
+						state: { kind: 'failed', message },
+					});
+				const source = await transformationSource(
+					rowPath(TRANSCRIPTIONS, run.fields.transcriptionId),
 				);
-				return;
+				if (source.error !== null) {
+					refuse(`${source.error} Dismiss this run.`);
+					return;
+				}
+				if (
+					source.data.input !== run.fields.input ||
+					source.data.recordingId !== run.fields.recordingId
+				) {
+					refuse(
+						'The transcript changed after this run started, so the same request was not sent again. Dismiss this run and run the transformation again.',
+					);
+					return;
+				}
+				await sendRun(run);
+			} finally {
+				retrying.delete(id);
 			}
-			await sendRun(run);
 		},
 		/** Drop a run that is not running. A received result that was not saved is lost. */
 		discardTransformationRun(id: string) {

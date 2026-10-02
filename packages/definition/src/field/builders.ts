@@ -1,25 +1,32 @@
 /**
- * The `field.*` helpers: the one way to declare a field.
+ * The `field.*` helpers: ergonomic wrappers over native TypeBox schemas.
  *
- * Each helper returns a native TypeBox schema, so `Static`, `Compile`, and
- * `Value.Check` read it directly, and annotates it with the editor it gets
- * (see `./metadata`). The schema and the annotation are built from the same
- * arguments in the same call:
+ * Each helper returns a native schema, so `Static`, `Compile`, and
+ * `Value.Check` read it directly, and annotates it with the editor it is meant
+ * to get (see `./editor`):
  *
- *   field.select(['a', 'b'])   Type.Enum(['a', 'b'])   { kind: 'select', options: ['a', 'b'] }
- *   field.reference('pages')   Type.String({ minLength: 1 })   { kind: 'reference', target: 'pages' }
- *   field.nullable(inner)      Type.Union([inner, Type.Null()])   inner's annotation, nullable
- *   field.json(schema)         schema itself, behind a JSON-value gate   { kind: 'json' }
+ *   field.select(['a', 'b'])   Type.Enum(['a', 'b'])              { kind: 'select' }
+ *   field.reference('pages')   Type.String({ minLength: 1 })      { kind: 'reference', target: 'pages' }
+ *   field.json(schema)         a copy of schema                   { kind: 'json' }
+ *   field.nullable(inner)      Type.Union([inner, Type.Null()])   no hint of its own
+ *
+ * A helper is a convenience, not a gate. A declaration takes any native
+ * schema, and a bare `Type.Object(...)` is a field with the JSON editor.
+ *
+ * Helpers add portable keywords and editor hints, without introducing a
+ * refinement callback or codec. These additions survive JSON serialization.
+ * Native callbacks supplied to a helper or composed over its result run
+ * locally and are not part of the schema's JSON form.
  *
  * A helper takes only the options listed in its type and refuses any other
- * key, so an option cannot replace the `type`, `format`, or annotation the
- * helper sets. It copies what it is given: changing an options object, an
- * option list, or a payload schema after the call changes nothing here.
+ * key, so an option cannot replace the `type`, `format`, or hint the helper
+ * sets. It copies what it is given: changing an options object, an option
+ * list, or a wrapped schema after the call changes nothing here.
  *
- * What a helper returns is an ordinary native schema, as mutable as any
- * `Type.*` result. `compileData` is what takes ownership: it compiles a frozen
+ * Helpers return native schema objects. Copies retain the input's property
+ * descriptors. `compileData` takes ownership by compiling a frozen
  * snapshot. Editing a helper's schema natively before then is the author's
- * edit to make and to answer for.
+ * edit to make, and the editor follows the edited schema.
  *
  * Closed sets hold strings. A numeric range is an `integer` with `minimum`
  * and `maximum`, not a select.
@@ -39,35 +46,20 @@ import {
 	type TUnsafe,
 	Type,
 } from 'typebox';
+import { Memory } from 'typebox/system';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import { isJsonSafe } from '../json.js';
+import { DATA_ADDRESS_CEILINGS, isTableName } from '../addresses.js';
 import type { CalendarDateString } from './calendar-date-string.js';
 import type { DateTimeString } from './datetime-string.js';
+import { type Annotated, annotate, type Kind } from './editor.js';
 import {
 	INSTANT_STRING_PATTERN,
 	type InstantString,
 } from './instant-string.js';
-import {
-	attach,
-	type FIELD_KEYWORD,
-	type FieldMetadata,
-	type FieldSchema,
-	fieldMetadataOf,
-	isHelperBuilt,
-	type Kind,
-} from './metadata.js';
 
-/** A helper's annotation: its kind, not nullable, and what the kind adds. */
-type Meta<K extends Kind, TExtra = unknown> = {
-	readonly kind: K;
-	readonly nullable: false;
-} & TExtra;
-
-/** An annotation with `nullable` set and everything else as it was. */
-type Nullable<M> = M extends unknown
-	? Omit<M, 'nullable'> & { readonly nullable: true }
-	: never;
+/** A helper's hint: its kind, and what the kind adds. */
+type Hint<K extends Kind, TExtra = unknown> = { readonly kind: K } & TExtra;
 
 type Annotations = {
 	/** A short label for the field. */
@@ -80,8 +72,6 @@ type StringOptions = Annotations & {
 	minLength?: number;
 	maxLength?: number;
 	pattern?: string;
-	/** Maximum UTF-8 bytes in the stored string. */
-	maxBytes?: number;
 };
 
 type NumberOptions = Annotations & { minimum?: number; maximum?: number };
@@ -103,7 +93,7 @@ const LIST = [...ANNOTATIONS, 'minItems', 'maxItems', 'uniqueItems'] as const;
  * TypeBox merges options over the keywords a constructor sets, so an
  * unchecked `type` or `format` would replace the helper's. An unsupported key
  * throws rather than being dropped: a declaration that asks for something the
- * field will not do should not load.
+ * helper will not do should not load.
  */
 function supported<TOptions extends object, TKey extends keyof TOptions>(
 	helper: string,
@@ -122,37 +112,18 @@ function supported<TOptions extends object, TKey extends keyof TOptions>(
 	return picked as Pick<TOptions, TKey>;
 }
 
-const utf8 = new TextEncoder();
-
 /**
  * The native string schema behind `field.string` and `field.reference`.
- *
- * `maxBytes` is a `Type.Refine`, so TypeBox enforces it wherever the schema is
- * checked and reports it among its errors. It is not a keyword: JSON Schema has
- * none for byte length.
+ * `minLength` is the helper's floor; a larger declared one is kept.
  */
 function stringSchema(
 	helper: string,
 	opts: StringOptions | undefined,
 	minLength: number,
 ): TString {
-	const { maxBytes, ...keywords } = opts ?? {};
-	if (maxBytes !== undefined && !(Number.isInteger(maxBytes) && maxBytes >= 0))
-		throw new TypeError(
-			`field.${helper} needs maxBytes to be a non-negative integer`,
-		);
-	const options = supported(helper, keywords, STRING);
+	const options = supported(helper, opts, STRING);
 	const floor = Math.max(minLength, options.minLength ?? 0);
-	const schema = Type.String(
-		floor === 0 ? options : { ...options, minLength: floor },
-	);
-	return maxBytes === undefined
-		? schema
-		: Type.Refine(
-				schema,
-				(value) => utf8.encode(value).byteLength <= maxBytes,
-				`must be at most ${maxBytes} UTF-8 bytes`,
-			);
+	return Type.String(floor === 0 ? options : { ...options, minLength: floor });
 }
 
 type BrandedString = string & Brand<string>;
@@ -174,19 +145,17 @@ type StringSchema<T extends string> = string extends T
  */
 function string<T extends string = string>(
 	opts?: StringOptions,
-): FieldSchema<StringSchema<T>, Meta<'string'>> {
-	return attach(stringSchema('string', opts, 0), {
-		kind: 'string',
-		nullable: false,
-	});
+): Annotated<StringSchema<T>, Hint<'string'>> {
+	return annotate(stringSchema('string', opts, 0), { kind: 'string' });
 }
 
 /**
  * A string that names a row in `table`. Brands like {@link string}.
  *
  * The value is never empty, because the empty string names no row; a larger
- * `minLength` is kept. Whether the target row or table exists is not checked
- * here.
+ * `minLength` is kept. The target is an editor hint and must be a usable table
+ * name. Nothing checks that the table or the row exists, so a stored
+ * identifier may dangle.
  */
 function reference<
 	T extends string = string,
@@ -194,47 +163,40 @@ function reference<
 >(
 	table: TTable,
 	opts?: StringOptions,
-): FieldSchema<
-	StringSchema<T>,
-	Meta<'reference', { readonly target: TTable }>
-> {
-	if (typeof table !== 'string' || table === '')
+): Annotated<StringSchema<T>, Hint<'reference', { readonly target: TTable }>> {
+	if (typeof table !== 'string' || !isTableName(table, DATA_ADDRESS_CEILINGS))
 		throw new TypeError('field.reference needs the name of a table');
-	return attach(stringSchema('reference', opts, 1), {
+	return annotate(stringSchema('reference', opts, 1), {
 		kind: 'reference',
-		nullable: false,
 		target: table,
 	});
 }
 
 /** URL string, checked with TypeBox's `uri` format. */
-function url(opts?: Annotations): FieldSchema<TString, Meta<'url'>> {
-	return attach(
+function url(opts?: Annotations): Annotated<TString, Hint<'url'>> {
+	return annotate(
 		Type.String({ ...supported('url', opts, ANNOTATIONS), format: 'uri' }),
-		{ kind: 'url', nullable: false },
+		{ kind: 'url' },
 	);
 }
 
 /** Any finite number. */
-function number(opts?: NumberOptions): FieldSchema<TNumber, Meta<'number'>> {
-	return attach(Type.Number(supported('number', opts, NUMBER)), {
+function number(opts?: NumberOptions): Annotated<TNumber, Hint<'number'>> {
+	return annotate(Type.Number(supported('number', opts, NUMBER)), {
 		kind: 'number',
-		nullable: false,
 	});
 }
 
 /** A whole number. A rating is `field.integer({ minimum: 1, maximum: 5 })`. */
-function integer(opts?: NumberOptions): FieldSchema<TInteger, Meta<'integer'>> {
-	return attach(Type.Integer(supported('integer', opts, NUMBER)), {
+function integer(opts?: NumberOptions): Annotated<TInteger, Hint<'integer'>> {
+	return annotate(Type.Integer(supported('integer', opts, NUMBER)), {
 		kind: 'integer',
-		nullable: false,
 	});
 }
 
-function boolean(opts?: Annotations): FieldSchema<TBoolean, Meta<'boolean'>> {
-	return attach(Type.Boolean(supported('boolean', opts, ANNOTATIONS)), {
+function boolean(opts?: Annotations): Annotated<TBoolean, Hint<'boolean'>> {
+	return annotate(Type.Boolean(supported('boolean', opts, ANNOTATIONS)), {
 		kind: 'boolean',
-		nullable: false,
 	});
 }
 
@@ -246,10 +208,10 @@ function boolean(opts?: Annotations): FieldSchema<TBoolean, Meta<'boolean'>> {
  */
 function date(
 	opts?: Annotations,
-): FieldSchema<TUnsafe<CalendarDateString>, Meta<'date'>> {
-	return attach(
+): Annotated<TUnsafe<CalendarDateString>, Hint<'date'>> {
+	return annotate(
 		Type.String({ ...supported('date', opts, ANNOTATIONS), format: 'date' }),
-		{ kind: 'date', nullable: false },
+		{ kind: 'date' },
 	);
 }
 
@@ -262,14 +224,14 @@ function date(
  */
 function instant(
 	opts?: Annotations,
-): FieldSchema<TUnsafe<InstantString>, Meta<'instant'>> {
-	return attach(
+): Annotated<TUnsafe<InstantString>, Hint<'instant'>> {
+	return annotate(
 		Type.String({
 			...supported('instant', opts, ANNOTATIONS),
 			format: 'date-time',
 			pattern: INSTANT_STRING_PATTERN,
 		}),
-		{ kind: 'instant', nullable: false },
+		{ kind: 'instant' },
 	);
 }
 
@@ -279,152 +241,124 @@ function instant(
  */
 function datetime(
 	opts?: Annotations,
-): FieldSchema<TUnsafe<DateTimeString>, Meta<'datetime'>> {
-	return attach(
+): Annotated<TUnsafe<DateTimeString>, Hint<'datetime'>> {
+	return annotate(
 		Type.String({
 			...supported('datetime', opts, ANNOTATIONS),
 			format: 'date-time',
 		}),
-		{ kind: 'datetime', nullable: false },
+		{ kind: 'datetime' },
 	);
 }
 
-/**
- * One frozen copy of an option list. The schema's `enum` and the annotation's
- * `options` are both built from it, so the validator and the widget start out
- * agreeing, and the caller's array is not involved after the call.
- */
+/** A copy of an option list, so the caller's array is not involved after the call. */
 function optionList<const T extends readonly string[]>(
 	helper: string,
 	values: readonly [...T],
-): readonly [...T] {
+): [...T] {
 	if (
 		!Array.isArray(values) ||
 		values.length === 0 ||
 		!values.every((value) => typeof value === 'string')
 	)
 		throw new TypeError(`field.${helper} needs at least one string option`);
-	return Object.freeze([...values]) as readonly [...T];
+	return [...values] as [...T];
 }
 
 /**
  * One of a fixed list of strings. `Static<>` is the literal union
- * (`'a' | 'b'`).
+ * (`'a' | 'b'`), and the options an editor offers are the schema's `enum`.
  */
 function select<const T extends readonly string[]>(
 	values: readonly [...T],
 	opts?: Annotations,
-): FieldSchema<
-	TEnum<[...T]>,
-	Meta<'select', { readonly options: readonly [...T] }>
-> {
-	const options = optionList('select', values);
-	return attach(Type.Enum(options, supported('select', opts, ANNOTATIONS)), {
-		kind: 'select',
-		nullable: false,
-		options,
-	});
+): Annotated<TEnum<[...T]>, Hint<'select'>> {
+	return annotate(
+		Type.Enum(
+			optionList('select', values),
+			supported('select', opts, ANNOTATIONS),
+		),
+		{ kind: 'select' },
+	);
 }
 
-/** Any number of a fixed list of strings. `Static<>` is `('a' | 'b')[]`. */
+/**
+ * Any number of a fixed list of strings. `Static<>` is `('a' | 'b')[]`, and
+ * the options an editor offers are the schema's `items.enum`.
+ */
 function multiSelect<const T extends readonly string[]>(
 	values: readonly [...T],
 	opts?: ListOptions,
-): FieldSchema<
-	TArray<TEnum<[...T]>>,
-	Meta<'multiSelect', { readonly options: readonly [...T] }>
-> {
-	const options = optionList('multiSelect', values);
-	return attach(
-		Type.Array(Type.Enum(options), supported('multiSelect', opts, LIST)),
-		{ kind: 'multiSelect', nullable: false, options },
+): Annotated<TArray<TEnum<[...T]>>, Hint<'multiSelect'>> {
+	return annotate(
+		Type.Array(
+			Type.Enum(optionList('multiSelect', values)),
+			supported('multiSelect', opts, LIST),
+		),
+		{ kind: 'multiSelect' },
 	);
 }
 
 /** A list of free-form strings. `Static<>` is `string[]`. */
-function tags(opts?: ListOptions): FieldSchema<TArray<TString>, Meta<'tags'>> {
-	return attach(Type.Array(Type.String(), supported('tags', opts, LIST)), {
+function tags(opts?: ListOptions): Annotated<TArray<TString>, Hint<'tags'>> {
+	return annotate(Type.Array(Type.String(), supported('tags', opts, LIST)), {
 		kind: 'tags',
-		nullable: false,
 	});
 }
 
 /**
- * The "any JSON value" payload schema: `Static<>` is `JsonValue`.
+ * The "any JSON value" schema: `Static<>` is `JsonValue`.
  *
- * Pass it to `field.json` for a shapeless cell, or nest it:
- * `field.json(Type.Array(jsonValue))`. On its own it is `Type.Any()` and
- * checks nothing; `field.json` is what holds a value to JSON.
+ * At runtime it is `Type.Any()` and checks nothing. A compiled field holds
+ * every value to JSON before its schema runs, which is what makes the static
+ * type true of a stored value. Use it bare, under `field.json`, or nested:
+ * `Type.Array(jsonValue)`.
  */
 export const jsonValue: TUnsafe<JsonValue> = Type.Unsafe<JsonValue>(Type.Any());
 
-const NOT_JSON = 'must be a JSON value';
-
-/** Passes exactly the values that are JSON. */
-const JsonGate = Type.Refine(Type.Unknown(), isJsonSafe, NOT_JSON);
-
-/** Passes nothing, and says why: the branch a value takes when it is not JSON. */
-const NotJson = Type.Refine(Type.Unknown(), () => false, NOT_JSON);
+/**
+ * A schema is an object. TypeBox's `TSchema` is an empty interface, which a
+ * string or a number satisfies, so the helpers that take a schema say so.
+ */
+function isSchema(value: unknown): value is TSchema & object {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 /**
- * A JSON payload checked against `inner`, edited as JSON.
+ * `inner`, edited as JSON: a copy of the schema with the JSON editor hint.
  *
- * `inner` is any native schema, nested `Type.*` included, and `Static<>` is
- * `Static<inner>`. Another field works too: `field.json(field.select([...]))`
- * keeps the select's check and swaps its editor for the JSON one.
+ * `inner` is any native schema and `Static<>` is `Static<inner>`. The copy
+ * keeps every keyword, hidden ones included, so `inner`'s own errors are
+ * reported and a native refinement on it still runs. Another field works too:
+ * `field.json(field.select([...]))` keeps the select's check and swaps its
+ * editor for the JSON one.
  *
- * The field is the native conditional `{ if: JsonGate, then: inner, else:
- * NotJson }`. `inner` is the `then` branch whole, so its hidden refinements
- * run and a `#/$defs/...` reference inside it still resolves; nothing in it is
- * rewritten.
- *
- * A schema can be structural about what it admits (`Type.Any()` admits a
- * `Date`, `undefined`, and a cycle), and none of those survives being stored,
- * so the gate refuses them whatever `inner` says.
- *
- * The gate has to run BEFORE `inner`, and a conditional is the one native
- * keyword that guarantees it. A recursive `inner` (`Type.Cyclic`) follows a
- * cyclic value until the stack overflows, so it must never see one. A
- * refinement on `inner` runs after `inner`'s own keywords, and `allOf`
- * evaluates every member when it collects errors. `if` decides first in both
- * `Check` and `Errors`, and only then is one branch evaluated.
- *
- * The cost is in the errors: TypeBox reports a failed `then` as one
- * `must match "then" schema` and drops what `inner` said.
+ * A bare native schema already gets the JSON editor, so this helper adds no
+ * validation. It says the JSON editor is the intent, and it replaces a hint
+ * that would have chosen another one.
  */
-function json<S extends TSchema>(
+function json<S extends TSchema & object>(
 	inner: S,
-): FieldSchema<TUnsafe<Static<S>>, Meta<'json'>> {
-	if (typeof inner !== 'object' || inner === null || Array.isArray(inner))
-		throw new TypeError('field.json needs a schema');
-	return attach(
-		// biome-ignore lint/suspicious/noThenProperty: `then` is the JSON Schema keyword, and a schema is never awaited
-		Type.Unknown({ if: JsonGate, then: inner, else: NotJson }),
-		{ kind: 'json', nullable: false },
-	);
+): Annotated<TUnsafe<Static<S>>, Hint<'json'>> {
+	if (!isSchema(inner)) throw new TypeError('field.json needs a schema');
+	return annotate(inner, { kind: 'json' });
 }
 
 /**
  * A field that may also hold `null`: `Type.Union([inner, Type.Null()])`, with
  * `Static<>` = `Static<inner> | null`, brands included.
  *
- * The annotation is `inner`'s with `nullable` set, so a nullable select keeps
- * its options and a nullable reference its target. A stored field is still
- * always present; `null` is a value, not absence.
+ * `inner` is any native schema. The union carries no hint of its own: `inner`
+ * keeps its hint as a member, and the editor is resolved through the union, so
+ * a nullable select is still a select. A stored field is still always
+ * present; `null` is a value, not absence.
  */
-function nullable<S extends FieldSchema>(
-	inner: S,
-): FieldSchema<TUnion<[S, TNull]>, Nullable<S[typeof FIELD_KEYWORD]>> {
-	const metadata = fieldMetadataOf(inner);
-	if (metadata === null || !isHelperBuilt(inner))
-		throw new TypeError('field.nullable needs a field built with field.*');
-	return attach<TUnion<[S, TNull]>, FieldMetadata>(
-		Type.Union([inner, Type.Null()]),
-		{ ...metadata, nullable: true },
-	) as FieldSchema<TUnion<[S, TNull]>, Nullable<S[typeof FIELD_KEYWORD]>>;
+function nullable<S extends TSchema & object>(inner: S): TUnion<[S, TNull]> {
+	if (!isSchema(inner)) throw new TypeError('field.nullable needs a schema');
+	return Type.Union([Memory.Clone(inner) as S, Type.Null()]);
 }
 
-/** The field namespace: every way to declare a field. */
+/** The field namespace: the helpers for declaring a field. */
 export const field = Object.freeze({
 	string,
 	reference,

@@ -55,29 +55,21 @@ defineTable({
 });
 
 /**
- * A declared default is refused where it is authored, not at first open.
+ * A native `default` annotation is admitted, in a table and in kv.
  *
- * `compileData` refuses one at runtime too (`DeclarationDefault`), and this is
- * the compile-time half of that rule, for both buckets a definition has.
- *
- * Through `defineTable` rather than a table literal handed to `defineStore`. A
- * literal is refused for having no brand, and that refusal fires FIRST: the
- * table half of this pin used to sit on a bare literal, and it passed with the
- * default removed entirely, so it was testing the door rather than the
- * default. The kv half below is genuine, because `kv` takes a bare field map.
- *
- * The default is spread in because no helper takes one: `default` is not among
- * any helper's options, so passing it is its own type error and throws at the
- * call. Only a schema whose OWN type carries `default` is caught here; one
- * nested in a `field.json` payload schema is `compileData`'s to refuse.
+ * Nothing applies one: validation does not fill or change a value, so the
+ * keyword is inert and the field still reads as its schema's type. The default
+ * is spread in because no helper takes one as an option.
  */
-defineTable({
+const annotated = defineTable({
 	fields: {
-		// @ts-expect-error a default belongs to the application, not the schema
 		title: { ...field.string(), default: 'untitled' },
 	},
 	body: plainText(),
 });
+// @ts-expect-error the annotation does not make the field optional
+const withoutTitle: CreateRowOf<typeof annotated> = {};
+void withoutTitle;
 
 /**
  * A table has one door, and a bare literal is not it.
@@ -105,7 +97,6 @@ defineStore({
 defineStore({
 	id: 'so.epicenter.declaration-default',
 	kv: {
-		// @ts-expect-error a default belongs to the application, not the schema
 		theme: { ...field.string(), default: 'light' },
 	},
 	tables: {

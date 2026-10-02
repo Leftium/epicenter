@@ -602,17 +602,20 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'',
 		'## The tables',
 		'',
+		'Editors describe how a field is edited. Its schema decides which values conform.',
+		'',
 	];
 	for (const [name, table] of [...definition.tables].sort(([a], [b]) =>
 		a < b ? -1 : 1,
 	)) {
-		lines.push(`### ${name}/`, '', '| field | type |', '| --- | --- |');
+		lines.push(`### ${name}/`, '', '| field | editor |', '| --- | --- |');
 		for (const field of [...table.fields.values()].sort((a, b) =>
 			a.name < b.name ? -1 : 1,
 		)) {
+			const { editor } = field;
 			lines.push(
-				`| \`${field.name}\` | ${field.kind}${field.nullable ? ' or null' : ''}${
-					field.reference === null ? '' : ` -> \`${field.reference}\``
+				`| \`${field.name}\` | ${editor.kind}${editor.nullable ? ' or null' : ''}${
+					editor.kind === 'reference' ? ` -> \`${editor.target}\`` : ''
 				} |`,
 			);
 		}
@@ -1790,8 +1793,8 @@ function readsBack(table: ParsedTable, text: string): boolean {
  * A file nobody pulled, as the row it would become or as the reason it cannot.
  *
  * Three things stop a file from becoming a row, and every one of them is the
- * file being unreadable rather than the row being wrong. A definition declares
- * no defaults (ADR-0255), so a file missing half its fields mints a row this
+ * file being unreadable rather than the row being wrong. Import never fills
+ * missing values, so a file missing half its fields mints a row this
  * release reads as nonconforming, which is a state the store already has a
  * word, a surface, and a record for (ADR-0125, ADR-0338). It is written, and
  * the note list shows it.

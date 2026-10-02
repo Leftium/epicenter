@@ -138,7 +138,7 @@ test('get returns a text capture with the declared values that validated', async
 		issues: [
 			{
 				field: 'size',
-				message: 'The value does not conform to its number field',
+				message: 'The value does not conform to its declared schema',
 			},
 		],
 	});
@@ -213,6 +213,51 @@ test('create is refused as Exists when another writer made the file first', asyn
 	expect(expectErr(await kv.create({ theme: 'mine' })).name).toBe('Exists');
 	expect(await source()).toBe('{"theme": "theirs"}');
 	expect(calls.applies).toBe(1);
+});
+
+test('a reference and an unannotated schema are kv fields, and an identifier may dangle', async () => {
+	const references = defineFolder({
+		id: 'so.epicenter.kvreferences',
+		kv: {
+			home: field.nullable(field.reference('pages')),
+			// A native schema with no editor hint.
+			window: {
+				type: 'object',
+				properties: { width: { type: 'integer' } },
+				required: ['width'],
+			},
+		},
+		tables: {},
+	});
+	const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+	const db = await openFolderDatabase('epicenter-folder:kv-refs', environment);
+	const kv = createKv<KvOf<typeof references>>(
+		{ storage: createBrowserFileBoundary(db, environment) },
+		expectOk(compileFolderDefinition(references)).kv,
+	);
+
+	// No `pages` table exists, and nothing looks for the row.
+	const created = expectOk(
+		await kv.create({ home: 'no-such-page', window: { width: 800 } }),
+	);
+	expect(created.values).toEqual({
+		home: 'no-such-page',
+		window: { width: 800 },
+	});
+	expect(created.issues).toBeUndefined();
+
+	// The schemas still decide what is saved.
+	for (const refused of [{ home: '' }, { window: { width: 1.5 } }])
+		expect(expectErr(await kv.update(refused))).toMatchObject({
+			name: 'InvalidValues',
+			issues: [
+				{ message: 'The value does not conform to its declared schema' },
+			],
+		});
+	expect(expectOk(await kv.update({ home: null })).values).toEqual({
+		home: null,
+		window: { width: 800 },
+	});
 });
 
 // ============================================================================

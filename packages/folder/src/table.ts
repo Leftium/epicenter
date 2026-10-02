@@ -141,7 +141,7 @@ function invalidValues(
 		else if (!field.check(value))
 			issues.push({
 				field: key,
-				message: `The value does not conform to its ${field.kind} field`,
+				message: 'The value does not conform to its declared schema',
 			});
 	}
 	if (complete)
@@ -270,7 +270,7 @@ export function createTable<TFields>(
 					issues.push({
 						kind: 'field',
 						field: key,
-						message: `The value does not conform to its ${field.kind} field`,
+						message: 'The value does not conform to its declared schema',
 					});
 			}
 		}

@@ -101,15 +101,13 @@ test('Personal acquisition hydrates the existing handles and survives refused sy
 });
 
 test('invalid definitions throw before opening storage', async () => {
-	// Runtime validation also refuses defaults hidden by a broad schema type.
 	const invalid = () =>
 		defineStore({
 			id: 'so.epicenter.app-test',
 			tables: {},
 			kv: {
-				name: { ...field.string(), default: 'invalid' } as ReturnType<
-					typeof field.string
-				>,
+				// @ts-expect-error row identity is reserved at the runtime boundary too
+				id: field.string(),
 			},
 		});
 	expect(invalid).toThrow();

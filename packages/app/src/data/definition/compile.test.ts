@@ -1,7 +1,8 @@
 /**
  * Declaration compilation preserves codecs and compiles trusted field schemas.
- * Key behaviors: malformed codecs and compiler failures report errors; a bare
- * schema is not a field; conformance requires stored fields to be present.
+ * Key behaviors: malformed codecs and compiler failures report errors; a
+ * native schema without a hint is a field with the JSON editor; conformance
+ * requires stored fields to be present.
  */
 import { expect, test } from 'bun:test';
 import { defineStore } from '@epicenter/app';
@@ -77,20 +78,27 @@ test('an explicitly malformed codec is refused at compilation', () => {
 	}
 });
 
-test('a schema that no field helper built is refused, not adopted', () => {
+test('a native schema no helper built is a field with the JSON editor', () => {
 	for (const bare of [Type.String(), { type: 'string' }]) {
-		const result = compileData({
-			id: 'test.invalid',
-			tables: {},
-			// @ts-expect-error a field is built with field.*
-			kv: { value: bare },
-		});
-		expect(expectErr(result)).toMatchObject({
-			name: 'UnrecognizedField',
-			table: 'kv',
-			field: 'value',
-		});
+		const value = expectOk(
+			compileData({ id: 'test.native', tables: {}, kv: { value: bare } }),
+		).kv.fields.get('value');
+		expect(value?.editor).toEqual({ kind: 'json', nullable: false });
+		expect(value?.check('text')).toBe(true);
+		expect(value?.check(1)).toBe(false);
 	}
+	const helper = expectOk(
+		compileData({
+			id: 'test.helper',
+			tables: {},
+			kv: { value: field.nullable(field.reference('notes')) },
+		}),
+	).kv.fields.get('value');
+	expect(helper?.editor).toEqual({
+		kind: 'reference',
+		nullable: true,
+		target: 'notes',
+	});
 });
 
 test('field compiler failures identify the table and field', () => {

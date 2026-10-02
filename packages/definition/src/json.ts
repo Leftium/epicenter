@@ -17,6 +17,10 @@ export type JsonObject = { [key: string]: JsonValue };
  * fine; only a node that contains itself is a cycle.
  */
 export function isJsonSafe(value: unknown): value is JsonValue {
+	if (value === null || typeof value === 'string' || typeof value === 'boolean')
+		return true;
+	if (typeof value === 'number') return Number.isFinite(value);
+	if (typeof value !== 'object') return false;
 	const ancestors = new Set<object>();
 	// A node that passed once passes anywhere: it was walked whole, so no path
 	// from it leads back to anything above it.

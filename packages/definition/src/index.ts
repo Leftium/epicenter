@@ -36,12 +36,13 @@ export {
 	type ValidateFields,
 } from './define.js';
 export {
+	type Annotated,
 	CalendarDateString,
 	DateTimeString,
 	FIELD_KEYWORD,
-	type FieldMetadata,
-	type FieldSchema,
-	fieldMetadataOf,
+	type FieldEditor,
+	type FieldHint,
+	fieldEditorOf,
 	InstantString,
 	jsonValue,
 	type Kind,

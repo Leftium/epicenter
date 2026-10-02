@@ -1648,6 +1648,8 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 				expect(agents).toContain(`\`${fieldName}\``);
 			}
 		}
+		expect(agents).toContain('| field | editor |');
+		expect(agents).toContain('Its schema decides which values conform.');
 		// A nullable reference says both facts, because an agent writing one has
 		// to know it may be null and what it points at.
 		expect(agents).toContain('| `folderId` | reference or null -> `folders` |');

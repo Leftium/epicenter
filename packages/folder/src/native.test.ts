@@ -149,21 +149,21 @@ describe('native folder', () => {
 
 	test('an unsupported definition is refused before a repository is initialized', async () => {
 		const root = await scratch('native-refused-');
-		const withReference: DataDefinition = {
-			id: 'so.epicenter.references',
+		const withCodec: DataDefinition = {
+			id: 'so.epicenter.codec',
 			kv: {},
 			tables: {
-				lists: defineTable({ fields: { title: field.string() } }),
-				todos: defineTable({
-					fields: { title: field.string(), list: field.reference('lists') },
+				notes: defineTable({
+					fields: { title: field.string() },
+					body: { encode: () => '', decode: () => undefined },
 				}),
 			},
 		};
 		const refused = expectErr(
-			await openFolder({ root, definition: withReference, git: { author } }),
+			await openFolder({ root, definition: withCodec, git: { author } }),
 		);
 		expect(refused.name).toBe('InvalidDefinition');
-		expect(refused.message).toContain("Field 'todos.list' is a reference");
+		expect(refused.message).toContain('body codec');
 		expect(await readdir(root)).toEqual([]);
 	});
 

@@ -6,15 +6,13 @@ import type {
 	TableDeclaration,
 } from './declaration.js';
 
-type RejectDefault<T> = T extends { default: unknown } ? never : T;
-
 /** Field validation shared with KV; identity remains reserved. */
 export type ValidateFields<T extends FieldMap> = {
 	[K in keyof T]: K extends string
 		? Lowercase<K> extends 'id'
 			? `'${K}' is reserved for row identity`
-			: RejectDefault<T[K]>
-		: RejectDefault<T[K]>;
+			: T[K]
+		: T[K];
 };
 
 /**

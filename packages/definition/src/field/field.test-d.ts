@@ -6,8 +6,10 @@
  * assertion fails, the type error appears at the offending line during typecheck.
  *
  * What these prove: a helper's return is a native schema whose `Static<>` is the
- * authored type, brands and literal unions included, and a declaration takes
- * helper-built fields only.
+ * authored type, brands and literal unions included; its hint is typed as
+ * what the helper was told; and `nullable` and `json` take any native schema.
+ *
+ * See `../declaration.test-d.ts` for raw native schemas in a declaration.
  */
 
 import { type Static, Type } from 'typebox';
@@ -16,8 +18,8 @@ import type { JsonValue } from 'wellcrafted/json';
 import { field, type jsonValue } from './builders.js';
 import type { CalendarDateString } from './calendar-date-string.js';
 import type { DateTimeString } from './datetime-string.js';
+import type { Annotated, FieldHint } from './editor.js';
 import type { InstantString } from './instant-string.js';
-import type { FieldMetadata, FieldSchema } from './metadata.js';
 
 /**
  * A failed assertion carries both sides, so the error names what moved.
@@ -171,17 +173,19 @@ export type _JsonOfFieldStatic = Expect<
 	Equal<Static<typeof sizes>, 'small' | 'large'>
 >;
 
-// A byte ceiling is a runtime refinement; it does not disturb the brand.
-const boundedId = field.string<NoteId>({ maxBytes: 64 });
+// Options do not disturb the brand, alone or under nullable.
+const boundedId = field.string<NoteId>({ maxLength: 64 });
 export type _BoundedBrandStatic = Expect<
 	Equal<Static<typeof boundedId>, NoteId>
 >;
 const boundedRef = field.nullable(
-	field.reference<NoteId>('notes', { maxBytes: 64 }),
+	field.reference<NoteId>('notes', { maxLength: 64 }),
 );
 export type _BoundedNullableRefStatic = Expect<
 	Equal<Static<typeof boundedRef>, NoteId | null>
 >;
+// @ts-expect-error a byte ceiling is not a schema keyword
+field.string({ maxBytes: 64 });
 
 // field.nullable(inner): Static = Static<inner> | null, for brands, literal
 // unions, and JSON payloads alike.
@@ -200,88 +204,68 @@ export type _NullableInstantStatic = Expect<
 	Equal<Static<typeof nullableInstant>, InstantString | null>
 >;
 
-// Every helper's return is a field, and its annotation is typed.
-const everyField: FieldSchema[] = [
-	field.string(),
-	boundedId,
-	boundedRef,
-	field.url(),
-	field.number(),
-	field.integer(),
-	field.boolean(),
-	field.date(),
-	field.instant(),
-	field.datetime(),
-	nullableStatus,
-	field.multiSelect(['a']),
-	field.tags(),
-	sizes,
-	nullablePayload,
-	// A native refinement over a field is still that field.
-	Type.Refine(field.string(), (value) => value !== ''),
-];
-export const _annotation: FieldMetadata = nullableStatus['x-field'];
-void everyField;
-
-// The annotation keeps what the helper was told, literally: a widget reads
-// the option tuple, the kind, and nullability without narrowing.
+// The hint keeps what the helper was told, literally: the kind, and a
+// reference's target. It holds nothing the schema already says.
 const status = field.select(['draft', 'published']);
-export type _SelectMetadata = Expect<
+export type _SelectHint = Expect<
+	Equal<(typeof status)['x-field'], { readonly kind: 'select' }>
+>;
+export type _PlainHint = Expect<
 	Equal<
-		(typeof status)['x-field'],
-		{ readonly kind: 'select'; readonly nullable: false } & {
-			readonly options: readonly ['draft', 'published'];
-		}
+		ReturnType<typeof field.integer>['x-field'],
+		{ readonly kind: 'integer' }
 	>
 >;
-export type _SelectOptions = Expect<
-	Equal<(typeof status)['x-field']['options'][number], 'draft' | 'published'>
+const page = field.reference('pages');
+export type _ReferenceKind = Expect<
+	Equal<(typeof page)['x-field']['kind'], 'reference'>
 >;
-export type _NullableSelectKind = Expect<
-	Equal<(typeof nullableStatus)['x-field']['kind'], 'select'>
->;
-export type _NullableSelectNullable = Expect<
-	Equal<(typeof nullableStatus)['x-field']['nullable'], true>
->;
-export type _NullableSelectOptions = Expect<
-	Equal<
-		(typeof nullableStatus)['x-field']['options'],
-		readonly ['draft', 'published']
-	>
->;
-const labels = field.multiSelect(['a', 'b']);
-export type _MultiSelectOptions = Expect<
-	Equal<(typeof labels)['x-field']['options'], readonly ['a', 'b']>
->;
-const page = field.nullable(field.reference('pages'));
 export type _ReferenceTarget = Expect<
 	Equal<(typeof page)['x-field']['target'], 'pages'>
 >;
-export type _ReferenceNullable = Expect<
-	Equal<(typeof page)['x-field']['nullable'], true>
+export const _hint: FieldHint = page['x-field'];
+
+// A select's options are the native schema's enum, typed as the tuple.
+export type _SelectOptions = Expect<
+	Equal<(typeof status)['enum'], ['draft', 'published']>
 >;
-export type _PlainKind = Expect<
+const labels = field.multiSelect(['a', 'b']);
+export type _MultiSelectOptions = Expect<
+	Equal<(typeof labels)['items']['enum'], ['a', 'b']>
+>;
+
+// field.nullable is the native union: no hint of its own, and the inner
+// schema, hint included, is its first member.
+export type _NullableIsNativeUnion = Expect<
 	Equal<
-		ReturnType<typeof field.integer>['x-field'],
-		{ readonly kind: 'integer'; readonly nullable: false }
+		typeof nullableStatus,
+		ReturnType<typeof Type.Union<[typeof status, ReturnType<typeof Type.Null>]>>
 	>
 >;
-export type _JsonKind = Expect<
-	Equal<(typeof nullablePayload)['x-field']['kind'], 'json'>
+export type _NullableMemberHint = Expect<
+	Equal<(typeof nullableStatus)['anyOf'][0]['x-field']['kind'], 'select'>
 >;
-// A literal reads without a cast where a widget wants one.
-export const _firstOption: 'draft' = status['x-field'].options[0];
-export const _isNullable: true = nullableStatus['x-field'].nullable;
+// @ts-expect-error the union carries no hint of its own
+nullableStatus['x-field'];
 
-// A bare native schema is not a field, at the top level or under nullable.
-// @ts-expect-error a field is built with field.*
-export const _bareString: FieldSchema = Type.String();
-// @ts-expect-error a hand-written annotation is not provenance
-export const _forged: FieldSchema = Type.String({
-	'x-field': { kind: 'string', nullable: false },
-});
-// @ts-expect-error nullable wraps a field
-field.nullable(Type.String());
+// field.nullable and field.json take any native schema, and Static follows.
+const nullablePlain = field.nullable(Type.Object({ a: Type.Number() }));
+export type _NullablePlainStatic = Expect<
+	Equal<Static<typeof nullablePlain>, { a: number } | null>
+>;
+const refined = Type.Refine(field.string<NoteId>(), (value) => value !== '');
+const nullableRefined = field.nullable(refined);
+export type _NullableRefinedStatic = Expect<
+	Equal<Static<typeof nullableRefined>, NoteId | null>
+>;
+export type _JsonHint = Expect<
+	Equal<(typeof sizes)['x-field'], { readonly kind: 'json' }>
+>;
+
+// A helper's return and a hand-annotated native schema are the same type.
+export const _handAnnotated: Annotated = Type.String({
+	'x-field': { kind: 'string' },
+}) as Annotated<ReturnType<typeof Type.String>, { kind: 'string' }>;
 
 // @ts-expect-error: byte ownership is not a field constructor.
 export type _NoBlobBuilder = typeof field.blob;

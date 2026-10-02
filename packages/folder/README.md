@@ -418,11 +418,16 @@ or a normalizing attribute on a source file. Reads and file saves still work.
 
 `defineFolder` checks the definition where it is written. `defineTable` and
 `field` are the vocabulary every Epicenter storage shares
-(`@epicenter/definition`). A folder refuses a table that declares a body
-conversion, because a row's body is the file's Markdown text, and a reference
-field, because renaming a row file would not repair what points at it. An
-opener given such a definition returns `InvalidDefinition` before it acquires
-anything.
+(`@epicenter/definition`). A field is any native TypeBox schema; the `field.*`
+helpers build common ones. A folder refuses a table that declares a body
+conversion, because a row's body is the file's Markdown text. An opener given
+such a definition returns `InvalidDefinition` before it acquires anything.
+
+A field's editor hint decides nothing about what a folder stores.
+`field.reference('lists')` is a nonempty string whose hint names a table. The
+folder does not check that the table or the row exists, and renaming or
+deleting a row rewrites nothing that names it, so a stored identifier may
+dangle.
 
 ## Layout
 
@@ -448,7 +453,8 @@ bun evidence/bundles/inspect.ts main tauri   # print the chunks a build emits
 
 ## Limits
 
-Reference fields are refused, since rename repairs no references. `kv.update`
+A reference field has no integrity: nothing checks its target, and rename
+repairs no references. `kv.update`
 writes each value it assigns as compact JSON. Browser bytes are stored whole, and every commit
 or status check reads the whole folder. Version checks on disk are best effort
 against other programs. File bytes cross the desktop bridge as JSON number

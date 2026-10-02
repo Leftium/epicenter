@@ -6,10 +6,16 @@ import type {
 	InstantString,
 } from '@epicenter/definition/field';
 import type * as Y from '@y/y';
-import type { Static } from 'typebox';
+import { type Static, Type } from 'typebox';
 import type { TypedTableHandle } from '../store/handles.js';
 import { plainText } from './body.js';
-import { type CreateRowOf, defineTable, field, type RowOf } from './index.js';
+import {
+	type CreateRowOf,
+	defineTable,
+	field,
+	type KvOf,
+	type RowOf,
+} from './index.js';
 
 /**
  * A failed assertion carries both sides, so the error names what moved.
@@ -44,6 +50,9 @@ const definition = defineStore({
 		datetime: field.datetime(),
 		payload: field.json(field.select(['small', 'large'])),
 		optional: field.nullable(field.string()),
+		// Native schemas no helper built.
+		window: Type.Object({ width: Type.Integer() }),
+		theme: field.nullable(Type.Enum(['light', 'dark'])),
 	},
 	tables: {
 		items: defineTable({
@@ -94,6 +103,12 @@ export type _JsonStatic = Expect<
 >;
 export type _NullableStatic = Expect<
 	Equal<Static<Values['optional']>, string | null>
+>;
+export type _NativeObjectStatic = Expect<
+	Equal<KvOf<typeof definition>['window'], { width: number }>
+>;
+export type _NullableNativeStatic = Expect<
+	Equal<KvOf<typeof definition>['theme'], 'light' | 'dark' | null>
 >;
 export type _RowStatusStatic = Expect<
 	Equal<Item['status'], 'draft' | 'published'>

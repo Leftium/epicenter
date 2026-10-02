@@ -298,8 +298,8 @@ describe('browser folder tables', () => {
 		expect(() => defineFolder(withCodec as never)).toThrow('body codec');
 	});
 
-	test('rejects reference fields it cannot repair on rename', async () => {
-		const withReference: DataDefinition = {
+	test('admits a reference field as a string that nothing checks or repairs', async () => {
+		const withReference = defineFolder({
 			id: 'so.epicenter.references',
 			kv: {},
 			tables: {
@@ -308,20 +308,60 @@ describe('browser folder tables', () => {
 					fields: { title: field.string(), list: field.reference('lists') },
 				}),
 			},
-		};
-		const indexedDB = new IDBFactory();
-		const refused = expectErr(
+		});
+		const folder = expectOk(
 			await openFolder({
 				id: 'references',
 				definition: withReference,
-				browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
+				browser: {
+					author,
+					commitOnEdit: false,
+					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+				},
 			}),
 		);
-		expect(refused.message).toContain("Field 'todos.list' is a reference");
-		expect(await indexedDB.databases()).toEqual([]);
-		expect(() => defineFolder(withReference as never)).toThrow(
-			"Field 'todos.list' is a reference",
-		);
+		try {
+			const { lists, todos } = folder.tables;
+			// The schema is the whole check: a nonempty string, existing or not.
+			expect(
+				expectErr(
+					await todos.create({
+						stem: 'empty',
+						fields: { title: 'T', list: '' },
+					}),
+				).name,
+			).toBe('InvalidValues');
+			expectOk(
+				await todos.create({
+					stem: 'dangling',
+					fields: { title: 'T', list: 'no-such-list' },
+				}),
+			);
+			const home = expectOk(
+				await lists.create({ stem: 'home', fields: { title: 'Home' } }),
+			);
+			expectOk(
+				await todos.create({
+					stem: 'milk',
+					fields: { title: 'M', list: 'home' },
+				}),
+			);
+
+			// Renaming the row a reference names rewrites nothing that names it.
+			expectOk(await lists.rename(home, 'house'));
+			for (const [stem, list] of [
+				['milk', 'home'],
+				['dangling', 'no-such-list'],
+			] as const) {
+				const row = expectOk(await todos.get(stem));
+				expect(row).toMatchObject({
+					fields: { list },
+					issues: undefined,
+				});
+			}
+		} finally {
+			await folder.close();
+		}
 	});
 
 	test('a todo with an unresolvable alias stays an entry and is repaired through its source', async () => {

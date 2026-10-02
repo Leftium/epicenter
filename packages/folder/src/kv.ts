@@ -146,7 +146,7 @@ function ownValues(
 		else
 			issues.push({
 				field: key,
-				message: `The value does not conform to its ${field.kind} field`,
+				message: 'The value does not conform to its declared schema',
 			});
 	}
 	return issues.length === 0 ? Ok(owned) : TableError.InvalidValues({ issues });
@@ -278,7 +278,7 @@ export function createKv<TValues>(
 				else
 					issues.push({
 						field: key,
-						message: `The value does not conform to its ${field.kind} field`,
+						message: 'The value does not conform to its declared schema',
 					});
 			}
 		return Object.freeze({

@@ -2,10 +2,16 @@
  * Compile developer declarations into read lenses.
  *
  * A field is a native TypeBox schema, so preparing one is `Compile`. The
- * compiler adds what a single schema cannot say: usable names, no declared
- * defaults, and a per-field conformance read.
+ * compiler adds what a single schema cannot say: usable names, that a value is
+ * JSON, and a per-field conformance read. It also resolves each field's
+ * editor, which no check reads.
+ *
+ * Reading is all it does. `check` and `errors` never change the value they are
+ * given, so a `default` annotation in a schema is inert: nothing fills a
+ * missing value, and a missing declared field is still an issue.
  */
 
+import type { TSchema } from 'typebox';
 import { Compile } from 'typebox/compile';
 import { Memory } from 'typebox/system';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -19,15 +25,16 @@ import {
 	type TableBody,
 	type TableDeclaration,
 } from './declaration.js';
-import {
-	FIELD_KEYWORD,
-	type FieldSchema,
-	fieldMetadataOf,
-} from './field/index.js';
-import { isHelperBuilt } from './field/metadata.js';
-import type { JsonObject, JsonValue } from './json.js';
+import { fieldEditorOf } from './field/index.js';
+import { isJsonSafe, type JsonObject, type JsonValue } from './json.js';
 
-export type ConformanceIssue = { field: string; message: string };
+/** A field diagnostic. Messages and diagnostic counts are not machine contracts. */
+export type ConformanceIssue = {
+	field: string;
+	/** JSON pointer within the field value, when the validator identifies it. */
+	path?: string;
+	message: string;
+};
 
 export const DataDefinitionParseError = defineErrors({
 	Malformed: ({ reason }: { reason: string }) => ({
@@ -47,11 +54,6 @@ export const DataDefinitionParseError = defineErrors({
 		table,
 		field,
 		reason,
-	}),
-	DeclarationDefault: ({ table, field }: { table: string; field: string }) => ({
-		message: `Field '${table}.${field}' declares a default; initialization and recovery belong to the application`,
-		table,
-		field,
 	}),
 });
 export type DataDefinitionParseError = InferErrors<
@@ -78,7 +80,12 @@ export type ParsedTable<TBody extends TableBody = TableBody> = {
 	 * one, or without one, is that storage's rule.
 	 */
 	body?: TBody;
-	conformance(payload: JsonObject): Conformance;
+	conformance(payload: Readonly<Record<string, unknown>>): Conformance;
+	/** Check supplied fields and, for a complete row, required field presence. */
+	inputIssues(
+		values: Readonly<Record<string, unknown>>,
+		options: { complete: boolean },
+	): ConformanceIssue[];
 };
 
 export type ParsedDataDefinition<TBody extends TableBody = TableBody> = {
@@ -213,36 +220,25 @@ function compileTable(
 			reason: `table '${tableName}' does not declare a flat field map`,
 		});
 	const compiled = new Map<string, DataField>();
+	const valueIssues = new Map<string, (value: unknown) => ConformanceIssue[]>();
 	for (const [fieldName, declared] of Object.entries(declaration)) {
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
-		if (fieldMetadataOf(declared) === null) {
+		if (!isPlainObject(declared)) {
 			return DataDefinitionParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
-				reason: 'a field is declared with field.*',
-			});
-		}
-		if (declaresDefault(declared)) {
-			return DataDefinitionParseError.DeclarationDefault({
-				table: tableName,
-				field: fieldName,
-			});
-		}
-		// After the default check, so a spread field that carries a default is
-		// still told about the default.
-		if (!isHelperBuilt(declared as object)) {
-			return DataDefinitionParseError.UnrecognizedField({
-				table: tableName,
-				field: fieldName,
-				reason:
-					'it lost what its field.* helper built; a spread or a rebuilt schema drops hidden constraints',
+				reason: 'a field is a TypeBox schema',
 			});
 		}
 		const prepared = trySync({
 			try: () => {
-				const schema = snapshot(declared as FieldSchema);
-				return { schema, validator: Compile(schema) };
+				const schema = snapshot(declared);
+				const lens = jsonLens(schema);
+				// Inside the try: a refinement that throws on `null` fails here,
+				// named, instead of at the first stored `null`.
+				const editor = fieldEditorOf(schema, lens.check(null));
+				return { schema, lens, editor };
 			},
 			catch: (cause) =>
 				DataDefinitionParseError.UnrecognizedField({
@@ -252,20 +248,34 @@ function compileTable(
 				}),
 		});
 		if (prepared.error) return prepared;
-		const { schema, validator } = prepared.data;
-		const metadata = schema[FIELD_KEYWORD];
+		const { schema, lens, editor } = prepared.data;
+		// The subject names the field and not its editor: a hint never changes
+		// what conformance reports.
+		const subject = `${fieldName} does not conform`;
+		valueIssues.set(fieldName, (value) => {
+			if (lens.check(value)) return [];
+			const errors = lens.errors(value);
+			if (errors.length === 0) return [{ field: fieldName, message: subject }];
+			return errors.map((error) => {
+				const path = verifiedPointer(value, error.instancePath);
+				return path === undefined
+					? { field: fieldName, message: `${subject}: ${error.message}` }
+					: {
+							field: fieldName,
+							path,
+							message: `${subject} at ${path}: ${error.message}`,
+						};
+			});
+		});
 		compiled.set(
 			fieldName,
 			Object.freeze({
 				name: fieldName,
-				kind: metadata.kind,
-				nullable: metadata.nullable,
-				reference: metadata.kind === 'reference' ? metadata.target : null,
-				metadata,
+				editor,
 				schema,
-				check: (value: unknown) => validator.Check(value),
+				check: lens.check,
 				errors: (value: unknown) =>
-					validator.Errors(value).map((error) => error.message),
+					lens.errors(value).map((error) => error.message),
 			}),
 		);
 	}
@@ -273,31 +283,75 @@ function compileTable(
 		Object.freeze({
 			name: tableName,
 			fields: compiled,
-			conformance(payload: JsonObject): Conformance {
+			conformance(payload): Conformance {
 				const conforming: JsonObject = {};
 				const issues: ConformanceIssue[] = [];
-				for (const [fieldName, field] of compiled) {
+				for (const [fieldName, issuesOf] of valueIssues) {
 					if (!Object.hasOwn(payload, fieldName)) {
 						issues.push({
 							field: fieldName,
 							message: `${fieldName} is missing`,
 						});
-					} else if (!field.check(payload[fieldName])) {
-						const [detail] = field.errors(payload[fieldName]);
-						issues.push({
-							field: fieldName,
-							message: `${fieldName} is not a conforming ${field.kind} value${
-								detail === undefined ? '' : `: ${detail}`
-							}`,
-						});
-					} else {
-						conforming[fieldName] = payload[fieldName] as JsonValue;
+						continue;
 					}
+					const found = issuesOf(payload[fieldName]);
+					if (found.length === 0)
+						conforming[fieldName] = payload[fieldName] as JsonValue;
+					else issues.push(...found);
 				}
 				return { conforming, issues };
 			},
+			inputIssues(values, { complete }) {
+				const issues: ConformanceIssue[] = [];
+				for (const [key, value] of Object.entries(values)) {
+					const issuesOf = valueIssues.get(key);
+					if (issuesOf === undefined)
+						issues.push({ field: key, message: `${key} is not declared` });
+					else issues.push(...issuesOf(value));
+				}
+				if (complete)
+					for (const fieldName of valueIssues.keys())
+						if (!Object.hasOwn(values, fieldName))
+							issues.push({
+								field: fieldName,
+								message: `${fieldName} is missing`,
+							});
+				return issues;
+			},
 		}),
 	);
+}
+
+type FieldError = { readonly instancePath: string; readonly message: string };
+
+const NOT_JSON: readonly FieldError[] = Object.freeze([
+	Object.freeze({ instancePath: '', message: 'must be a JSON value' }),
+]);
+
+/**
+ * The one read of a value against a field: is it JSON, and then TypeBox's
+ * compiled validator. `check`, `errors`, `conformance`, and `inputIssues` all
+ * go through it.
+ *
+ * A schema can be structural about what it admits (`Type.Any()` admits a
+ * `Date`, `undefined`, and a cycle), and none of those survives being stored.
+ * So the JSON question is asked of every field, before its schema and
+ * whatever the schema says. Before, because a recursive schema
+ * (`Type.Cyclic`) follows a cyclic value until the stack overflows; it must
+ * never see one.
+ *
+ * `isJsonSafe` sets no depth or width limit. A storage that has a budget
+ * applies it itself.
+ */
+function jsonLens(schema: TSchema): {
+	check: (value: unknown) => boolean;
+	errors: (value: unknown) => readonly FieldError[];
+} {
+	const validator = Compile(schema);
+	return {
+		check: (value) => isJsonSafe(value) && validator.Check(value),
+		errors: (value) => (isJsonSafe(value) ? validator.Errors(value) : NOT_JSON),
+	};
 }
 
 /**
@@ -323,63 +377,6 @@ function snapshot<S extends object>(declared: S): S {
 			pending.push(Object.getOwnPropertyDescriptor(value, key)?.value);
 	}
 	return schema;
-}
-
-/** Keywords whose value maps names to schemas, so a key there is not a keyword. */
-const NAMED_SCHEMAS: readonly string[] = [
-	'properties',
-	'patternProperties',
-	'$defs',
-	'definitions',
-	'dependentSchemas',
-];
-
-/** Keywords whose value is one schema, or a list of them. */
-const SUBSCHEMAS: readonly string[] = [
-	'items',
-	'prefixItems',
-	'anyOf',
-	'allOf',
-	'oneOf',
-	'not',
-	'if',
-	'then',
-	'else',
-	'additionalProperties',
-	'contains',
-	'propertyNames',
-	'unevaluatedProperties',
-	'unevaluatedItems',
-];
-
-/**
- * Whether a schema declares a `default` anywhere a schema can.
- *
- * It follows only the keywords that hold schemas. So a payload property NAMED
- * `default` (`Type.Object({ default: Type.String() })`) is a name, and a
- * `default` key inside a `const`, an `enum` member, an annotation, or a
- * `dependentRequired` map is data; none of those is a declared default.
- */
-function declaresDefault(schema: unknown, seen = new Set<object>()): boolean {
-	if (typeof schema !== 'object' || schema === null || seen.has(schema))
-		return false;
-	seen.add(schema);
-	if (Array.isArray(schema))
-		return schema.some((child) => declaresDefault(child, seen));
-	if (Object.hasOwn(schema, 'default')) return true;
-	const keywords = schema as Record<string, unknown>;
-	return (
-		SUBSCHEMAS.some((keyword) => declaresDefault(keywords[keyword], seen)) ||
-		NAMED_SCHEMAS.some((keyword) => {
-			const named = keywords[keyword];
-			return (
-				typeof named === 'object' &&
-				named !== null &&
-				!Array.isArray(named) &&
-				Object.values(named).some((child) => declaresDefault(child, seen))
-			);
-		})
-	);
 }
 
 function fieldNameProblem(
@@ -410,4 +407,32 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 		return false;
 	const prototype = Object.getPrototypeOf(value);
 	return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * The pointer TypeBox reported, when it names a location inside `value`.
+ * `undefined` for the value itself and for a path that cannot be walked.
+ */
+function verifiedPointer(
+	value: unknown,
+	instancePath: string,
+): string | undefined {
+	if (!instancePath.startsWith('/')) return undefined;
+	let node = value;
+	for (const segment of instancePath.slice(1).split('/')) {
+		if (Array.isArray(node)) {
+			if (!/^(0|[1-9][0-9]*)$/.test(segment) || Number(segment) >= node.length)
+				return undefined;
+			node = node[Number(segment)];
+		} else if (typeof node === 'object' && node !== null) {
+			// An unescaped key holding `/` or `~` could split into these segments.
+			if (
+				!Object.hasOwn(node, segment) ||
+				Object.keys(node).some((key) => /[/~]/.test(key))
+			)
+				return undefined;
+			node = (node as Record<string, unknown>)[segment];
+		} else return undefined;
+	}
+	return instancePath;
 }

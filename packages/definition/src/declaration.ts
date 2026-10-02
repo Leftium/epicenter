@@ -12,8 +12,8 @@
  * checked in `compile.ts`.
  */
 
-import type { Static } from 'typebox';
-import type { FieldMetadata, FieldSchema, Kind } from './field/index.js';
+import type { Static, TSchema } from 'typebox';
+import type { FieldEditor } from './field/index.js';
 
 export { field } from './field/index.js';
 
@@ -23,12 +23,15 @@ export const RESERVED_TABLE_NAMES: readonly string[] = [KV_ROOT];
 /**
  * The fields of one bucket, by name.
  *
- * Every field is a schema a `field.*` helper built. A bare `Type.String()` is
- * not one: it has no editor, and the mark `FieldSchema` carries is how the
- * type says so. Native `Type.*` schemas belong inside `field.json`.
+ * A field is any native TypeBox schema. The `field.*` helpers build common
+ * ones and annotate them with an editor; a bare `Type.Object(...)`,
+ * `Type.Enum(...)`, `Type.Any()`, or `Type.Refine(...)` is a field too, and
+ * gets the JSON editor.
  */
 export type FieldMap = {
-	readonly [field: string]: FieldSchema;
+	// TypeBox's `TSchema` is an empty interface, which a string or a number
+	// satisfies. A schema is an object.
+	readonly [field: string]: TSchema & object;
 };
 
 /**
@@ -92,21 +95,23 @@ export type DataDefinition<TBody extends TableBody = TableBody> = {
  * One declared field, prepared: the lens a storage reads a cell through.
  *
  * `schema` is the read-only native schema `check` and `errors` were compiled
- * from, and `metadata` is the annotation on that same object. `kind`,
- * `nullable`, and `reference` repeat the annotation for the storages that
- * only name a field.
+ * from. `editor` is resolved from that same object and decides nothing about
+ * a value: it says which widget edits the field, whether `null` is a value,
+ * and a select's options or a reference's target.
  */
 export type DataField = {
 	readonly name: string;
-	readonly kind: Kind;
-	readonly nullable: boolean;
-	/** The table a reference field points at, or `null`. */
-	readonly reference: string | null;
-	readonly metadata: FieldMetadata;
-	readonly schema: FieldSchema;
-	/** TypeBox's compiled check, and the only decision about a value. */
+	readonly editor: FieldEditor;
+	readonly schema: TSchema & object;
+	/**
+	 * Whether a value is JSON and TypeBox's compiled check admits it. This is
+	 * the only decision about a value.
+	 */
 	readonly check: (value: unknown) => boolean;
-	/** Why a value failed `check`, in TypeBox's words. Empty when it passes. */
+	/**
+	 * Why a value failed `check`: that it is not JSON, or TypeBox's own errors.
+	 * Empty when it passes.
+	 */
 	readonly errors: (value: unknown) => readonly string[];
 };
 

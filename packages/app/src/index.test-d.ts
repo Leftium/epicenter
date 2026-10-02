@@ -68,11 +68,11 @@ function invalidDeclarations() {
 			id: field.string(),
 		},
 	});
+	// A native default annotation is admitted; nothing applies it.
 	defineStore({
-		id: 'test.invalid',
+		id: 'test.annotated',
 		tables: {},
 		kv: {
-			// @ts-expect-error Defaults belong to the application.
 			theme: { ...field.string(), default: 'light' },
 		},
 	});

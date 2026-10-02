@@ -75,6 +75,11 @@ the row lenses, and the compiler live in `@epicenter/definition`; this package
 re-exports them from its root, `/field`, and `/definition`, and adds what only
 a Yjs store has: `defineStore`, the `BodyCodec` type, and `plainText()`.
 
+A declared field is any native TypeBox schema. The `field.*` helpers build
+common ones and annotate them with an editor hint; a schema without a hint
+gets the JSON editor. The schema decides what a store accepts, and a hint
+never does. See the [definition README](../definition/README.md).
+
 ## Resource constructors
 
 | Subpath | Constructors | Required destination |

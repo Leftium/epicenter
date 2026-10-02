@@ -3,9 +3,12 @@
  * file folder can keep.
  *
  * A folder stores a row as one Markdown file. Its body is the file's text, so
- * a table that declares a body conversion is refused, and so is a reference
- * field, because renaming a row file would not repair what points at it.
- * Unsupported declarations are refused, never ignored.
+ * a table that declares a body conversion is refused, never ignored.
+ *
+ * A field's editor hint decides nothing here. `field.reference` is a string
+ * schema like any other: the folder checks no target, and renaming or
+ * deleting a row repairs nothing that names it, so a stored identifier may
+ * dangle.
  */
 import {
 	compileData,
@@ -29,19 +32,11 @@ export function compileFolderDefinition(
 ): Result<ParsedDataDefinition, { readonly reason: string }> {
 	const compiled = compileData(definition);
 	if (compiled.error !== null) return Err({ reason: compiled.error.message });
-	for (const [name, table] of [
-		...compiled.data.tables,
-		['kv', compiled.data.kv] as const,
-	]) {
+	for (const [name, table] of compiled.data.tables) {
 		if (table.body !== undefined)
 			return Err({
 				reason: `Table '${name}' declares a body codec. A file folder stores the body as Markdown text; remove the codec from this definition.`,
 			});
-		for (const [field, declared] of table.fields)
-			if (declared.reference !== null)
-				return Err({
-					reason: `Field '${name}.${field}' is a reference to '${declared.reference}'. File folders do not support reference fields yet: renaming a row would not repair them.`,
-				});
 	}
 	return Ok(compiled.data);
 }
@@ -51,9 +46,8 @@ export function compileFolderDefinition(
  * written with `defineTable` and fields with `field`, the same vocabulary
  * every Epicenter storage declares with.
  *
- * The definition is checked here, where it is written: a malformed schema, a
- * body conversion, or a reference field throws at the declaration, not at the
- * first open.
+ * The definition is checked here, where it is written: a malformed schema or
+ * a body conversion throws at the declaration, not at the first open.
  */
 export function defineFolder<const TDefinition extends DataDefinition>(
 	schema: TDefinition & {

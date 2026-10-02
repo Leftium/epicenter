@@ -2,38 +2,45 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
-	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
+	import * as Collapsible from '@epicenter/ui/collapsible';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { audioPathIn } from '$lib/definition.js';
 	import { patchRow, type RecordingEditor, type RecordingEntry } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
-	import type { Library, TranscriptionEntry } from '$lib/library.svelte.js';
+	import type { Library } from '$lib/library.svelte.js';
 	import { committedState } from '$lib/status.js';
 	import AudioPlayer from './AudioPlayer.svelte';
-	import { confirmDelete, copyText } from './file-actions.js';
+	import { confirmDelete } from './file-actions.js';
 	import SaveStatus from './SaveStatus.svelte';
-	import TransformationOutput from './TransformationOutput.svelte';
+	import TranscriptCard from './TranscriptCard.svelte';
 
 	let {
 		library,
 		editor,
 		entry,
 		onBack,
+		onClose,
 	}: {
 		library: Library;
 		editor: RecordingEditor;
 		/** The listed row, or undefined when the file left the folder. */
 		entry: RecordingEntry | undefined;
-		/** Shown on narrow windows, where the list and the details take turns. */
+		/** Shown on narrow windows, where the table and the details take turns. */
 		onBack?: () => void;
+		/** Shown on wide windows, where the details are a pane beside the table. */
+		onClose?: () => void;
 	} = $props();
+
+	/**
+	 * What is worked on comes first: the audio, then the transcript beside it,
+	 * then notes. What describes the files (when, how long, where, which ID) is
+	 * kept, one press away, under File details.
+	 */
 
 	/**
 	 * How the draft reads, by the recordings table's own interpreter. Details
@@ -63,23 +70,6 @@
 	function seconds(value: unknown) {
 		return typeof value === 'number' ? `${(value / 1000).toFixed(1)} s` : 'Unknown';
 	}
-
-	/**
-	 * Transformations that can run: a run needs the prompt and all three
-	 * fields. One that lacks any is fixed on its own page first.
-	 */
-	const runnable = $derived(
-		library.transformations.filter((item) => {
-			const { title, model, endpoint } = item.fields;
-			return item.body !== undefined && title !== undefined && model !== undefined && endpoint !== undefined;
-		}),
-	);
-
-	/** Apply a transformation to one transcript. The result is a new file; the transcript is not changed. */
-	async function transform(result: TranscriptionEntry, path: string) {
-		const problem = await library.transform(result.path, path);
-		if (problem) toast.error('The transformation did not run', { description: problem });
-	}
 </script>
 
 <section class="flex h-full min-h-0 flex-col" aria-label="Recording" data-testid="recording-detail">
@@ -97,10 +87,10 @@
 			disabled={!fieldsEditable}
 			oninput={(event) => patchRow(editor, { fields: { title: event.currentTarget.value } })}
 		/>
-		{#if history === 'uncommitted'}
-			<Badge variant="outline" data-testid="recording-history">Saved · not in history yet</Badge>
-		{:else if history === 'committed'}
-			<Badge variant="secondary" data-testid="recording-history">In history</Badge>
+		{#if onClose}
+			<Button variant="ghost" size="icon-sm" tooltip="Close details" aria-label="Close details" onclick={onClose} data-testid="close-detail">
+				<XIcon />
+			</Button>
 		{/if}
 	</div>
 
@@ -151,27 +141,6 @@
 					</p>
 				{/if}
 
-				<dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-sm">
-					<dt class="text-muted-foreground">Recorded</dt>
-					<dd>{when(draft.fields.recordedAt)}</dd>
-					<dt class="text-muted-foreground">Length</dt>
-					<dd>{seconds(draft.fields.durationMs)}</dd>
-					<dt class="text-muted-foreground">Captured from</dt>
-					<dd>
-						{#if draft.fields.capture === 'fixture'}
-							<Badge variant="outline">Fixture audio, not a microphone take</Badge>
-						{:else if draft.fields.capture === 'microphone'}
-							Microphone
-						{:else}
-							Unknown
-						{/if}
-					</dd>
-					<dt class="text-muted-foreground">Files</dt>
-					<dd class="min-w-0 font-mono text-xs break-all">
-						{editor.path}{#if audioPath}<br />{audioPath}{/if}
-					</dd>
-				</dl>
-
 				<div class="flex flex-col gap-2">
 					<div class="flex items-center gap-2">
 						<h3 class="text-sm font-medium">Transcription</h3>
@@ -186,9 +155,6 @@
 							{results.length > 0 ? 'Transcribe again' : 'Transcribe'}
 						</Button>
 					</div>
-					<p class="text-xs text-muted-foreground">
-						{library.settings.transcriptionModel} at {library.settings.transcriptionBaseUrl}
-					</p>
 					{#if run?.kind === 'failed'}
 						<p class="text-sm text-destructive" role="alert" data-testid="transcription-error">
 							{run.message}
@@ -210,50 +176,7 @@
 						</div>
 					{/if}
 					{#each results as result (result.path)}
-						{@const outputs = library.outputsFor(result.stem)}
-						{@const transcript = result.body}
-						{@const transforming = library.transformationRuns.some(
-							(item) => item.fields.transcriptionId === result.stem && item.state.kind === 'running',
-						)}
-						<article class="flex flex-col gap-2 rounded border p-3 text-sm" data-testid="transcription-result">
-							<p class="whitespace-pre-wrap" data-testid="transcript-text">{transcript?.trim() || '(empty transcript)'}</p>
-							<footer class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-								<span>{when(result.fields.createdAt)} · {result.fields.model ?? 'unknown model'}</span>
-								<Button size="xs" variant="ghost" onclick={() => void library.open(result.path)}>
-									<code class="font-mono">{result.path}</code>
-								</Button>
-								<span class="ml-auto flex items-center gap-1">
-									<DropdownMenu.Root>
-										<DropdownMenu.Trigger>
-											{#snippet child({ props })}
-												<Button {...props} size="xs" variant="outline" disabled={!transcript?.trim()} data-testid="transform">
-													{#if transforming}<Spinner class="size-3" />{:else}<WandSparklesIcon />{/if}
-													Transform
-												</Button>
-											{/snippet}
-										</DropdownMenu.Trigger>
-										<DropdownMenu.Content align="end" class="min-w-52">
-											<DropdownMenu.Label>Make a new text from this transcript</DropdownMenu.Label>
-											{#each runnable as item (item.path)}
-												<DropdownMenu.Item onSelect={() => void transform(result, item.path)}>
-													{item.fields.title || (item.stem === '' ? item.path : item.stem)}
-												</DropdownMenu.Item>
-											{:else}
-												<DropdownMenu.Item disabled>No transformations yet</DropdownMenu.Item>
-											{/each}
-											<DropdownMenu.Separator />
-											<DropdownMenu.Item onSelect={() => void goto(resolve('/transformations'))}>
-												Manage transformations…
-											</DropdownMenu.Item>
-										</DropdownMenu.Content>
-									</DropdownMenu.Root>
-									<Button size="xs" variant="ghost" onclick={() => void copyText(transcript ?? '', 'the transcript')}>Copy</Button>
-								</span>
-							</footer>
-							{#each outputs as output (output.path)}
-								<TransformationOutput {library} {output} naming="transformation" onOpenFile={(path) => void library.open(path)} />
-							{/each}
-						</article>
+						<TranscriptCard {library} {result} />
 					{:else}
 						{#if run === undefined}
 							<p class="text-sm text-muted-foreground">No transcription yet.</p>
@@ -273,6 +196,47 @@
 							patchRow(editor, { body: withFileNewlines(event.currentTarget.value, draft.body ?? '') })}
 					/>
 				</div>
+
+				<Collapsible.Root>
+					<Collapsible.Trigger>
+						{#snippet child({ props })}
+							<Button {...props} variant="ghost" size="sm" class="group -ml-2 text-muted-foreground" data-testid="file-details">
+								<ChevronRightIcon class="transition-transform group-aria-expanded:rotate-90 motion-reduce:transition-none" />
+								File details
+							</Button>
+						{/snippet}
+					</Collapsible.Trigger>
+					<Collapsible.Content class="pt-2">
+					<dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-sm">
+						<dt class="text-muted-foreground">Recorded</dt>
+						<dd>{when(draft.fields.recordedAt)}</dd>
+						<dt class="text-muted-foreground">Length</dt>
+						<dd>{seconds(draft.fields.durationMs)}</dd>
+						<dt class="text-muted-foreground">Captured from</dt>
+						<dd>
+							{#if draft.fields.capture === 'fixture'}
+								<Badge variant="outline">Fixture audio, not a microphone take</Badge>
+							{:else if draft.fields.capture === 'microphone'}
+								Microphone
+							{:else}
+								Unknown
+							{/if}
+						</dd>
+						<dt class="text-muted-foreground">Transcribes with</dt>
+						<dd class="min-w-0 break-words">{library.settings.transcriptionModel} at {library.settings.transcriptionBaseUrl}</dd>
+						<dt class="text-muted-foreground">History</dt>
+						<dd data-testid="recording-history">
+							{history === 'uncommitted' ? 'Saved · not in history yet' : history === 'committed' ? 'In history' : 'Unknown'}
+						</dd>
+						<dt class="text-muted-foreground">ID</dt>
+						<dd class="min-w-0 font-mono text-xs break-all">{id}</dd>
+						<dt class="text-muted-foreground">Files</dt>
+						<dd class="min-w-0 font-mono text-xs break-all">
+							{editor.path}{#if audioPath}<br />{audioPath}{/if}{#each results as result (result.path)}<br />{result.path}{/each}
+						</dd>
+					</dl>
+					</Collapsible.Content>
+				</Collapsible.Root>
 			</div>
 		</Tabs.Content>
 		<Tabs.Content value="source" class="min-h-0 flex-1">
@@ -287,7 +251,6 @@
 	</Tabs.Root>
 
 	<div class="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
-		<span>ID <code class="font-mono">{id}</code></span>
 		<Button class="ml-auto" size="sm" variant="ghost-destructive" onclick={() => void confirmDelete(library, editor.path)}>
 			Delete recording
 		</Button>

@@ -13,10 +13,17 @@
 
 	const { library, view } = getSession();
 
-	/** Below this width, the list and the details take turns. */
+	/**
+	 * The table is the page. Opening a recording shows its details: beside the
+	 * table on a wide window, where the table keeps its search, order, and
+	 * ticks in view, and in place of it below this width. Closing the details
+	 * gives the whole width back to the table and changes nothing else: the
+	 * recording stays selected, and what was typed in its drafts stays typed.
+	 */
 	const wide = new MediaQuery('(min-width: 768px)');
 
-	async function back() {
+	/** Close the details and put focus back on the row they were opened from. */
+	async function close() {
 		const path = library.selectedPath;
 		view.showingDetail = false;
 		await tick();
@@ -27,14 +34,14 @@
 
 <svelte:head><title>Recordings · Whispering</title></svelte:head>
 
-{#snippet detail(onBack: (() => void) | undefined)}
+{#snippet detail(onBack: (() => void) | undefined, onClose: (() => void) | undefined)}
 	{@const selection = library.selection}
 	{#if selection?.kind === 'recording'}
 		{#key selection.editor}
-			<RecordingDetail {library} editor={selection.editor} entry={selection.entry} {onBack} />
+			<RecordingDetail {library} editor={selection.editor} entry={selection.entry} {onBack} {onClose} />
 		{/key}
 	{:else if selection?.kind === 'file'}
-		<FileView {library} path={selection.path} file={selection.file} {onBack} />
+		<FileView {library} path={selection.path} file={selection.file} onBack={onBack ?? onClose} />
 	{:else}
 		<Empty.Root class="h-full">
 			{#if library.selectedPath !== undefined}
@@ -44,25 +51,25 @@
 				<Empty.Title>Select a recording</Empty.Title>
 				<Empty.Description>Its audio, transcripts, transformation results, notes, and source open here. Any other file opens from Files.</Empty.Description>
 			{/if}
-			{#if onBack}
-				<Button variant="outline" size="sm" onclick={onBack}><ArrowLeftIcon /> Back to recordings</Button>
+			{#if onBack ?? onClose}
+				<Button variant="outline" size="sm" onclick={onBack ?? onClose}><ArrowLeftIcon /> Back to recordings</Button>
 			{/if}
 		</Empty.Root>
 	{/if}
 {/snippet}
 
-{#if wide.current}
+{#if !view.showingDetail}
+	<RecordingList onOpen={() => (view.showingDetail = true)} />
+{:else if wide.current}
 	<Resizable.PaneGroup direction="horizontal" class="min-h-0 flex-1">
-		<Resizable.Pane id="list" order={1} defaultSize={38} minSize={20}>
-			<RecordingList {library} bind:query={view.recordingQuery} />
+		<Resizable.Pane id="list" order={1} defaultSize={42} minSize={25}>
+			<RecordingList onOpen={() => (view.showingDetail = true)} />
 		</Resizable.Pane>
 		<Resizable.Handle />
-		<Resizable.Pane id="detail" order={2} defaultSize={62} minSize={30}>
-			{@render detail(undefined)}
+		<Resizable.Pane id="detail" order={2} defaultSize={58} minSize={35}>
+			{@render detail(undefined, close)}
 		</Resizable.Pane>
 	</Resizable.PaneGroup>
-{:else if view.showingDetail}
-	{@render detail(back)}
 {:else}
-	<RecordingList {library} bind:query={view.recordingQuery} onOpen={() => (view.showingDetail = true)} />
+	{@render detail(close, undefined)}
 {/if}

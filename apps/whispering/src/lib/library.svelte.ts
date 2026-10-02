@@ -494,6 +494,9 @@ export function createLibrary(workspace: Workspace) {
 		}
 	}
 
+	/** Told the recording files a listing found, each time one is read. Never told of a listing that failed. */
+	const recordingsListed = new Set<(present: ReadonlySet<string>) => void>();
+
 	async function readFolder() {
 		const sequence = ++refreshSequence;
 		// Published before this read began, so this read's listing accounts for them.
@@ -548,6 +551,8 @@ export function createLibrary(workspace: Workspace) {
 				if (!editor.dirty && editor.saveState.kind === 'saved') forget(path);
 				else editor.observeRemoved();
 			}
+			// Only a listing that was read says a file is gone; a failed one says nothing.
+			for (const listener of recordingsListed) listener(present);
 		}
 		if (found.error === null) {
 			const read = splitListing(found.data);
@@ -613,12 +618,16 @@ export function createLibrary(workspace: Workspace) {
 	 * its own selection, so opening one leaves the selected recording alone.
 	 */
 	async function open(path: string) {
+		// Nothing is opened once the library is closing: an editor made now
+		// would outlive the folder it saves to.
+		if (closing) return;
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
 		if (rowStemOf(TRANSFORMATIONS, path) !== undefined) {
 			let profile = transformations.find((item) => item.path === path);
 			if (profile === undefined && !transformationEditors.has(path)) {
 				// The list may predate a row written by the terminal or another program.
 				await refresh();
+				if (closing) return;
 				profile = transformations.find((item) => item.path === path);
 			}
 			if (profile !== undefined) transformationEditorFor(profile);
@@ -640,6 +649,7 @@ export function createLibrary(workspace: Workspace) {
 		if (entry === undefined && rowStemOf(RECORDINGS, path) !== undefined) {
 			// The list may predate a row written by the terminal or another program.
 			await refresh();
+			if (closing) return;
 			entry = entries.find((item) => item.path === path);
 		}
 		if (entry !== undefined) {
@@ -651,9 +661,29 @@ export function createLibrary(workspace: Workspace) {
 			openFiles.set(path, { kind: 'audio', size });
 			return;
 		}
+		await load(path);
+	}
+
+	/**
+	 * Read a file into the one draft kept for its path. Files, and a
+	 * transcript edited beside its recording, both reach a file's text through
+	 * this draft, so typing in one is the typing in the other.
+	 *
+	 * No read is begun once the library is closing, and a read that answers
+	 * after closing began makes no draft: closing settles and disposes the
+	 * drafts that exist when it runs, so one made later would be left with a
+	 * save timer and a folder that is gone. The placeholder is dropped; no
+	 * typing can have gone into a file that was still being read.
+	 */
+	async function load(path: string) {
+		if (closing) return;
 		openFiles.set(path, { kind: 'loading' });
 		const read = await readTextFile(folder.files, path);
 		if (openFiles.get(path)?.kind !== 'loading') return;
+		if (closing) {
+			openFiles.delete(path);
+			return;
+		}
 		openFiles.set(
 			path,
 			read.error
@@ -1249,6 +1279,37 @@ export function createLibrary(workspace: Workspace) {
 		get selection() {
 			return selection;
 		},
+		/**
+		 * The draft kept for a transcript's file, read on first ask. Nothing is
+		 * selected by this: the recording being worked on stays open, and its
+		 * transcript is edited beside it. It is the same draft Files shows for
+		 * that file, with the same saves, conflicts, and hold on leaving.
+		 */
+		async openTranscript(path: string) {
+			if (closing || rowStemOf(TRANSCRIPTIONS, path) === undefined) return;
+			const known = openFiles.get(path)?.kind;
+			if (known === 'text' || known === 'loading') return;
+			await load(path);
+		},
+		/** Whether the library has begun closing; bulk actions stop admitting queued requests. */
+		get closing() {
+			return closing;
+		},
+		/**
+		 * Hear which recording files each successful listing of the folder
+		 * found. A path not among them has left the folder. A listing that
+		 * failed tells nothing, so nothing is taken as gone on its account.
+		 */
+		onRecordingsListed(
+			listener: (present: ReadonlySet<string>) => void,
+		): () => void {
+			recordingsListed.add(listener);
+			return () => recordingsListed.delete(listener);
+		},
+		/** The draft kept for a file, when it has been read: Files' and a recording's alike. */
+		fileAt(path: string): OpenFile | undefined {
+			return openFiles.get(path);
+		},
 		get pending() {
 			return pending;
 		},
@@ -1491,6 +1552,9 @@ export function createLibrary(workspace: Workspace) {
 		 * row's `audioPath` is the one field that has to have validated.
 		 */
 		async transcribe(entry: RecordingEntry) {
+			// No request starts once the library is closing. One already sent is
+			// not affected: it ends as it would have.
+			if (closing) return;
 			// A transcript names its recording by this ID: the row's literal stem.
 			const id = entry.stem;
 			// A received transcript is held until it is saved or discarded: a new
@@ -2008,6 +2072,7 @@ export function createLibrary(workspace: Workspace) {
 			}
 			unwatch();
 			unsubscribe();
+			recordingsListed.clear();
 			await workspace.close();
 		},
 	};

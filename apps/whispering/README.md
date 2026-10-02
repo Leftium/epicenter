@@ -116,7 +116,7 @@ forward, and refresh work.
 | Page | Address | What it is for |
 | --- | --- | --- |
 | Home | `/` | The recorder, and the newest recording with its transcript. |
-| Recordings | `/recordings` | Every saved recording: filter, play, rename, transcribe, transform, write notes, edit source. |
+| Recordings | `/recordings` | Search, sort, and select recordings; open playback and transcript editing beside the table. |
 | Transformations | `/transformations` | The prompts you apply to transcripts, and the results they produced. |
 
 Changing pages keeps everything in progress: a recording keeps recording, a
@@ -135,14 +135,35 @@ page, is anything that is not saved yet.
 | Transcription model | On Home, under the recorder. Shows the model in use and opens the same form as Settings. |
 | Post-processing | On Home, under the recorder. Chooses one of your transformations, or None. Choosing sends nothing; **Run** on the latest transcript does. |
 | Transcribe | Sends the saved audio to the endpoint in Settings and saves the answer as a row in `transcriptions/`. Nothing is transcribed until you press it. |
-| A recording | Details: play the audio, change the title, transcribe, transform a transcript, write notes. Source: the row's Markdown. Both edit one draft. |
-| Filter | On Recordings. Matches the title, notes, ID, and transcripts. A recording that needs repair is always listed. |
+| A recording | Opens an optional detail pane for playback, title, transcript editing, Copy, Transform, and notes. Close restores the full table. Narrow windows show the detail with Back. Source edits the recording's Markdown. |
+| Search recordings | Matches the title, notes, ID, and every transcript. Excerpts show the matching passage. A recording that needs repair stays listed. |
+| Sort | Click Recording, Recorded, Length, or Status to sort; click again to reverse. |
+| Select recordings | Check individual rows or every row shown. Search keeps hidden selections; bulk actions use only selected rows shown. |
+| Transcribe selected | Sends recordings shown with no transcript, one at a time. Existing transcripts, missing audio, and pending or unsaved requests are skipped. Closing stops queued requests. |
+| Copy transcripts | Copies the newest transcript of each selected row shown, in table order, with titles when copying several. |
+| Delete selected | Captures the selected rows shown and their results before confirmation. Audio stays in the folder. |
 | Transform | On a transcript. Applies one of your transformations and saves the answer as a new file under the transcript. |
 | Status | Saved files, uncommitted changes, the last commit attempt, and the folder path as separate lines, with Check again and Commit now. |
 | Settings | Transcription endpoint and model (saved in `kv.json`) and the API key (kept on this device, outside history). |
 | Reveal folder | Opens the data folder in Finder. |
 | Files (Ctrl+Shift+E) | The folder's files, beside any page. A recording row opens on Recordings and a transformation on Transformations; an audio file opens a player and other text a plain editor, both on Recordings. |
 | Terminal (Ctrl+\`) | Commands in the data folder, under any page. Its output, history, typed command, and directory stay when it is hidden. |
+
+### Working with recordings
+
+The table starts at full width. Activate a recording to open its detail pane,
+then close the pane to return that space to the collection. Search, sorting,
+selection, and typed drafts stay when you change pages or hide details.
+
+Edit transcript text beside playback. The transcript and its file in Files
+share one draft, with the same autosave and conflict handling. Copy uses the
+text shown; Transform first settles the draft and reads the saved transcript.
+Dates, file paths, capture information, endpoint, and history are under
+**File details**.
+
+The collection workflows are covered by synthetic-history tests. Visual
+acceptance and manually editing while listening remain pending because the
+current browser preview could not be accessed for inspection.
 
 ### Under the recorder
 

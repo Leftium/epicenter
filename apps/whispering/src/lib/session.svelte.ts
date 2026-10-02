@@ -16,6 +16,7 @@ import { createContext } from 'svelte';
 import { Ok, type Result } from 'wellcrafted/result';
 import { createLeaveGuard } from './leave.svelte.js';
 import { createLibrary } from './library.svelte.js';
+import { DEFAULT_SORT, type RecordingSort } from './recording-collection.js';
 import { createSettingsDraft } from './settings-draft.svelte.js';
 import {
 	answerCloseAfterFailedOpening,
@@ -64,9 +65,27 @@ export async function createSession(
 		/** The file browser in a sheet, on a narrow window. */
 		filesSheet: false,
 		terminalOpen: false,
-		/** The recordings filter. Rows needing repair are never filtered out. */
+		/** The recordings search. Rows needing repair are never searched out. */
 		recordingQuery: '',
-		/** On a narrow window, whether a recording's details show in place of the list. */
+		/** The order of the recordings table. */
+		recordingSort: DEFAULT_SORT as RecordingSort,
+		/**
+		 * The recordings selected in the table, by row path. A successful
+		 * listing removes paths that left the folder; search keeps hidden selections.
+		 */
+		recordingSelected: [] as string[],
+		/**
+		 * An action on several recordings that is under way: how far it has got.
+		 * Held here so a page change neither hides it nor lets a second start.
+		 */
+		recordingBulk: undefined as
+			| { readonly label: string; readonly done: number; readonly total: number }
+			| undefined,
+		/**
+		 * Whether a recording's details are showing: beside the table on a wide
+		 * window, in place of it on a narrow one. Closing them changes nothing
+		 * else: the recording stays selected and its drafts stay as typed.
+		 */
 		showingDetail: false,
 		/** On a narrow window, whether a transformation's editor shows in place of the list. */
 		showingTransformation: false,
@@ -80,6 +99,17 @@ export async function createSession(
 		postProcessing: undefined as string | undefined,
 	});
 	const settings = createSettingsDraft(library);
+	// A ticked recording whose file a listing no longer finds is unticked then,
+	// not later: a file made afterward at the same path is another recording
+	// and must not arrive ticked. A search hides rows without removing them,
+	// and a listing that failed is not heard here, so neither unticks anything.
+	// The library drops this listener when it closes.
+	library.onRecordingsListed((present) => {
+		if (view.recordingSelected.some((path) => !present.has(path)))
+			view.recordingSelected = view.recordingSelected.filter((path) =>
+				present.has(path),
+			);
+	});
 	let closing: Promise<void> | undefined;
 
 	return {

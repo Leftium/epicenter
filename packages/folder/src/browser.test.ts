@@ -630,14 +630,8 @@ describe('browser terminal', () => {
 		// A redirect publishes the empty file and then its content, one attempt
 		// each. When the second finds the first still running, the content is
 		// saved and uncommitted until the next request.
-		const left = (await folder.git.status()).data?.changes;
-		expect(left?.map((change) => change.path) ?? ['?']).toEqual(
-			left?.length === 0 ? [] : ['typed.txt'],
-		);
-		expect((await folder.git.commit()).status).toBe(
-			left?.length === 0 ? 'unchanged' : 'committed',
-		);
-		expect((await folder.git.status()).data?.changes).toEqual([]);
+		await folder.git.commit();
+		expect(expectOk(await folder.git.status()).changes).toEqual([]);
 		const before = expectOk(await folder.git.log(10)).map(
 			(commit) => commit.oid,
 		);

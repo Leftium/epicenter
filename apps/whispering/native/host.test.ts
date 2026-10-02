@@ -884,15 +884,15 @@ test('a key from the environment decides, even an empty one, and cannot be chang
 });
 
 test('the page is served without the token, may reach the shell’s commands, and paths stay inside it', async () => {
-	const dist = await mkdtemp(join(tmpdir(), 'whispering-dist-'));
-	cleanups.push(() => rm(dist, { recursive: true, force: true }));
+	const root = await mkdtemp(join(tmpdir(), 'whispering-dist-'));
+	const dist = join(root, 'dist');
+	await mkdir(dist);
+	cleanups.push(() => rm(root, { recursive: true, force: true }));
 	await writeFile(
 		join(dist, 'index.html'),
 		'<html><head></head><body></body></html>',
 	);
-	await writeFile(join(dist, '..', 'outside-secret.txt'), 'secret').catch(
-		() => {},
-	);
+	await writeFile(join(root, 'outside-secret.txt'), 'secret');
 	const get = (host: Host, path: string) =>
 		host.handle(new Request(`${ORIGIN}${path}`));
 
@@ -913,7 +913,7 @@ test('the page is served without the token, may reach the shell’s commands, an
 		expect(deep.headers.get('content-type')).toContain('text/html');
 	}
 	expect((await get(shell.host, '/_app/missing.js')).status).toBe(404);
-	expect((await get(shell.host, '/%2e%2e/outside-secret.txt')).status).toBe(
+	expect((await get(shell.host, '/%252e%252e/outside-secret.txt')).status).toBe(
 		404,
 	);
 });

@@ -52,20 +52,27 @@ test('omitting a codec compiles only the declared fields', () => {
 });
 
 test('an explicitly malformed codec is refused at compilation', () => {
-	for (const body of [null, {}, { encode() {}, decode() {} }]) {
-		expect(() =>
-			defineStore({
+	for (const body of [
+		null,
+		{},
+		{ encode: 'invalid', decode() {} },
+		{ encode() {} },
+	]) {
+		const error = expectErr(
+			compileData({
 				id: 'so.epicenter.invalid-codec',
 				kv: {},
 				tables: {
-					notes: defineTable({
+					notes: {
 						fields: {},
 						// @ts-expect-error exercise the runtime declaration boundary
 						body,
-					}),
+					},
 				},
 			}),
-		).toThrow('invalid body codec');
+		);
+		expect(error.name).toBe('Malformed');
+		expect(error.message).toContain('invalid body codec');
 	}
 });
 

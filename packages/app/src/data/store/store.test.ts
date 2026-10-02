@@ -1,9 +1,15 @@
+/**
+ * Declared stores preserve row, body, and KV contracts across live edits,
+ * replica exchange, declaration changes, and durable reopen. Notifications
+ * identify the affected rows and separate body edits from value writes.
+ */
 import { Database } from 'bun:sqlite';
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 import { InstantString } from '@epicenter/app/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
 	type Data,
@@ -31,6 +37,10 @@ let db: Data<typeof database>;
 
 beforeEach(async () => {
 	db = await openMemory(database);
+});
+
+afterEach(async () => {
+	await db[Symbol.asyncDispose]();
 });
 
 /** A note, and its minted id, for tests that need one to exist. */
@@ -124,8 +134,7 @@ describe('a read is a property access on a plain object', () => {
 
 describe('a write that reaches nothing is a failure', () => {
 	test('update on an absent row refuses instead of swallowing it', async () => {
-		const { data, error } = db.tables.notes.update('nope', { title: 'x' });
-		expect(data).toBeNull();
+		const error = expectErr(db.tables.notes.update('nope', { title: 'x' }));
 		// The verb this replaces returned Ok(undefined) and dropped the write.
 		expect(error?.name).toBe('RowAbsent');
 	});
@@ -151,7 +160,7 @@ describe('a write that reaches nothing is a failure', () => {
 		const result = db.tables.notes.update(made.id, {
 			tags: 'food' as never,
 		});
-		expect(result.error).toBeNull();
+		expectOk(result);
 		// The write lands; the read is where the declaration objects. `get` stops
 		// answering for the row, and `nonconforming` carries what survived so a
 		// caller can compose its own repair (ADR-0125).
@@ -213,8 +222,9 @@ describe('deletion', () => {
 		// to get wrong: `update` refuses, and `create` mints an id of its own.
 		const made = note();
 		db.tables.notes.delete(made.id);
-		const { data, error } = db.tables.notes.update(made.id, { title: 'back?' });
-		expect(data).toBeNull();
+		const error = expectErr(
+			db.tables.notes.update(made.id, { title: 'back?' }),
+		);
 		expect(error?.name).toBe('RowAbsent');
 		expect(db.tables.notes.get(made.id)).toBeUndefined();
 	});
@@ -357,7 +367,7 @@ describe('two replicas converge', () => {
 
 describe("a row's body node lives on the row (ADR-0295)", () => {
 	test('an absent row has no body, which is a fact not a failure', () => {
-		expect(db.tables.notes.get('nope')).toBeUndefined();
+		expect(db.tables.notes.body('nope')).toBeUndefined();
 	});
 
 	test('a body node is minted with its row and is empty', () => {
@@ -373,6 +383,7 @@ describe("a row's body node lives on the row (ADR-0295)", () => {
 		body?.applyDelta(body.change.insert('milk') as never);
 		db.tables.notes.delete(made.id);
 		expect(db.tables.notes.get(made.id)).toBeUndefined();
+		expect(db.tables.notes.body(made.id)).toBeUndefined();
 	});
 
 	test('body is a live node on the row, never a JSON value', () => {
@@ -487,7 +498,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// stored as they arrived, so the gap is still a gap on the way back up.
 		const record = createMemoryRecord();
 		const laptop = await openMemory(database, record);
-		expect(syncEngineOf(laptop).applyRemote(second).error).toBeNull();
+		expectOk(syncEngineOf(laptop).applyRemote(second));
 		expect(syncEngineOf(laptop).hasUnresolvedDependencies()).toBe(true);
 		await laptop[Symbol.asyncDispose]();
 
@@ -495,7 +506,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		const reopened = syncEngineOf(db2);
 		expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
-		expect(reopened.applyRemote(first).error).toBeNull();
+		expectOk(reopened.applyRemote(first));
 		expect(reopened.hasUnresolvedDependencies()).toBe(false);
 		expect(db2.tables.notes.get(made.id)?.title).toBe('second');
 		await db2[Symbol.asyncDispose]();

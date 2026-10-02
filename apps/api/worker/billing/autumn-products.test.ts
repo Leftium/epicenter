@@ -1,3 +1,8 @@
+/**
+ * Autumn product configuration tests.
+ * Pins free-plan storage, paid storage overage pricing, and one-off prepaid
+ * credit purchases against the catalog sent to the billing provider.
+ */
 import { expect, test } from 'bun:test';
 import { creditTopUp, free, pro } from './autumn-products.js';
 import { FEATURE_IDS, PLAN_IDS, PLANS } from './catalog.js';

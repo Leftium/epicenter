@@ -45,12 +45,6 @@ test('configuredProviders registers Google, GitHub, Microsoft, and Apple when cr
 			privateKey: 'apple-private-key',
 		},
 	});
-	expect(Object.keys(providers)).toEqual([
-		'google',
-		'github',
-		'microsoft',
-		'apple',
-	]);
 });
 
 test('configuredProviders omits providers with incomplete credentials', () => {

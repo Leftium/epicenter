@@ -1,3 +1,12 @@
+/**
+ * Application installation tests over real temporary release directories.
+ *
+ * Key behaviors:
+ * - Installation and interrupted activation preserve application-owned files
+ * - Relative release paths preserve bundle filenames
+ * - Invalid identities, reserved ids, symlinks, overlapping paths, and missing
+ *   root documents are refused before activation
+ */
 import { expect, test } from 'bun:test';
 import {
 	mkdir,
@@ -112,7 +121,7 @@ test('rejects symlinks and malformed release identity before installation', asyn
 		try {
 			await writeFile(join(outside, 'secret.txt'), 'secret');
 			await symlink(join(outside, 'secret.txt'), join(root, 'secret.txt'));
-			expect(readReleaseManifest(root)).rejects.toThrow(/symlinks/);
+			await expect(readReleaseManifest(root)).rejects.toThrow(/symlinks/);
 		} finally {
 			await rm(outside, { recursive: true, force: true });
 		}
@@ -121,9 +130,9 @@ test('rejects symlinks and malformed release identity before installation', asyn
 			join(root, 'manifest.json'),
 			JSON.stringify({ id: 'notes', title: 'Notes', version: '1.0.0' }),
 		);
-		expect(installApplication({ releaseRoot: root, dataRoot })).rejects.toThrow(
-			/valid id/,
-		);
+		await expect(
+			installApplication({ releaseRoot: root, dataRoot }),
+		).rejects.toThrow(/valid id/);
 	} finally {
 		await Promise.all([
 			rm(root, { recursive: true, force: true }),
@@ -135,15 +144,7 @@ test('rejects symlinks and malformed release identity before installation', asyn
 test('refuses reserved ids', async () => {
 	const { root, dataRoot } = await releaseFixture();
 	try {
-		await writeFile(
-			join(root, 'manifest.json'),
-			JSON.stringify({
-				id: 'com.example.notes',
-				title: 'Notes',
-				version: '1.0.0',
-			}),
-		);
-		expect(
+		await expect(
 			installApplication({
 				releaseRoot: root,
 				dataRoot,
@@ -158,7 +159,7 @@ test('refuses reserved ids', async () => {
 	}
 });
 
-test('refuses a release nested inside its installation directory', async () => {
+test('refuses a release that contains its installation directory', async () => {
 	const { root, dataRoot } = await releaseFixture();
 	try {
 		await writeFile(
@@ -186,7 +187,7 @@ test('requires index.html to be a regular file', async () => {
 	try {
 		await rm(join(root, 'index.html'));
 		await mkdir(join(root, 'index.html'));
-		expect(readReleaseManifest(root)).rejects.toThrow(/root index.html/);
+		await expect(readReleaseManifest(root)).rejects.toThrow(/root index.html/);
 	} finally {
 		await Promise.all([
 			rm(root, { recursive: true, force: true }),

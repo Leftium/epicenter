@@ -14,6 +14,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { expectErr } from 'wellcrafted/testing';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
 import { GmailApiError } from './gmail-client.ts';
 import { openIntentStore } from './intent-store.ts';
@@ -23,22 +24,17 @@ import { openPassRecord, readBlockedAccounts, readOutbox } from './outbox.ts';
 import type { GmailMessage } from './schema.ts';
 import { openTestSession } from './session.test-support.ts';
 import { MAIL_CACHE_SCHEMA } from './storage.ts';
-import { CacheWriteError, type SyncFailure } from './sync.ts';
+import { CacheWriteError } from './sync.ts';
 
 const AT = '2026-09-04T12:00:00.000Z';
 const LATER = '2026-09-04T12:05:00.000Z';
 const SUB = 'account-one';
 
-const failure = (result: { error: SyncFailure | null }): SyncFailure => {
-	if (result.error === null) throw new Error('expected an error variant');
-	return result.error;
-};
-
 const reauth = () =>
-	failure(OAuthError.ReauthRequired({ reason: 'the grant was revoked' }));
-const offline = () => failure(GmailApiError.Network({ cause: 'no route' }));
+	expectErr(OAuthError.ReauthRequired({ reason: 'the grant was revoked' }));
+const offline = () => expectErr(GmailApiError.Network({ cause: 'no route' }));
 const refused = () =>
-	failure(GmailApiError.Http({ status: 400, body: 'invalid label id' }));
+	expectErr(GmailApiError.Http({ status: 400, body: 'invalid label id' }));
 
 function message(id: string, subject: string): GmailMessage {
 	return {
@@ -187,7 +183,7 @@ test('a lock another writer held reads as worth trying again', async () => {
 	try {
 		const recorded = await session.passes.record(
 			report({
-				failure: failure(
+				failure: expectErr(
 					CacheWriteError.CacheBusy({ cause: { code: 'SQLITE_BUSY' } }),
 				),
 			}),

@@ -1,3 +1,8 @@
+/**
+ * Saved chat tests.
+ * Real memory stores preserve conversation and account isolation across reopen,
+ * deduplicate message identities, and derive stable titles and focused chats.
+ */
 import { expect, test } from 'bun:test';
 import type { AgentMessage } from '@epicenter/agent';
 import { createMemoryRecord, openMemory } from '@epicenter/app/memory';
@@ -130,7 +135,7 @@ test('duplicate message rows present one stable value inside one conversation', 
 	expect([...chat.entries()]).toEqual([{ key: question.id, val: question }]);
 });
 
-test('a focused chat is listed before an answer, scoped to its account, and retains text after entry deletion', async () => {
+test('a focused chat is listed before an answer, scoped to its account, and stores the expression text', async () => {
 	await using db = await openMemory(chatHistoryDefinition);
 	const chat = startChat(db.tables.chats, 'account-a', [
 		{ entryId: 'deleted-entry', text: 'lucid' },

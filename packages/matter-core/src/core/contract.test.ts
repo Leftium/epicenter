@@ -1,5 +1,10 @@
+/**
+ * Matter contract tests.
+ * Raw markers classify as typed, untyped, or erroneous. Field recognition,
+ * optional/searchable policy, and view diagnostics retain valid siblings.
+ */
 import { describe, expect, test } from 'bun:test';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { parseContract, validateContract } from './contract';
 
 describe('validateContract (the matter.json gate)', () => {
@@ -52,11 +57,11 @@ describe('validateContract (the matter.json gate)', () => {
 
 	test('rejects optional when it is not an array of field names', () => {
 		expect(
-			validateContract({ fields: {}, optional: 'title' }).error?.name,
+			expectErr(validateContract({ fields: {}, optional: 'title' })).name,
 		).toBe('InvalidOptional');
-		expect(validateContract({ fields: {}, optional: [42] }).error?.name).toBe(
-			'InvalidOptional',
-		);
+		expect(
+			expectErr(validateContract({ fields: {}, optional: [42] })).name,
+		).toBe('InvalidOptional');
 	});
 
 	test('searchable defaults to body plus every TEXT-storage field', () => {
@@ -106,11 +111,11 @@ describe('validateContract (the matter.json gate)', () => {
 
 	test('rejects searchable when it is not an array of column names', () => {
 		expect(
-			validateContract({ fields: {}, searchable: 'body' }).error?.name,
+			expectErr(validateContract({ fields: {}, searchable: 'body' })).name,
 		).toBe('InvalidSearchable');
-		expect(validateContract({ fields: {}, searchable: [42] }).error?.name).toBe(
-			'InvalidSearchable',
-		);
+		expect(
+			expectErr(validateContract({ fields: {}, searchable: [42] })).name,
+		).toBe('InvalidSearchable');
 	});
 
 	test('reports optional entries that do not match typed fields', () => {
@@ -165,9 +170,9 @@ describe('validateContract (the matter.json gate)', () => {
 	});
 
 	test('rejects a non-object top level', () => {
-		expect(validateContract(42).error?.name).toBe('NotAnObject');
-		expect(validateContract(null).error?.name).toBe('NotAnObject');
-		expect(validateContract([]).error?.name).toBe('NotAnObject');
+		expect(expectErr(validateContract(42)).name).toBe('NotAnObject');
+		expect(expectErr(validateContract(null)).name).toBe('NotAnObject');
+		expect(expectErr(validateContract([])).name).toBe('NotAnObject');
 	});
 
 	// No `fields` map is no longer a contract error: it is the untyped marker, classified by

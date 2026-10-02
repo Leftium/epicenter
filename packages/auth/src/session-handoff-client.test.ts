@@ -63,7 +63,18 @@ async function setup(callback = browserCallback) {
 				cells.set(key, value);
 			},
 		};
-		const options = { baseURL, callback, storage };
+		const redemptions: Request[] = [];
+		const options = {
+			baseURL,
+			callback,
+			storage,
+			fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+				const request = new Request(input, init);
+				if (new URL(request.url).pathname === '/auth/session/redeem')
+					redemptions.push(request);
+				return fetch(request);
+			},
+		};
 		const client = createSessionHandoffClient(options);
 		async function issue(begin: URL) {
 			expect(begin.pathname).toBe('/sign-in');
@@ -86,6 +97,7 @@ async function setup(callback = browserCallback) {
 		}
 		return {
 			client,
+			redemptions,
 			options,
 			cells,
 			issue,
@@ -158,7 +170,7 @@ test('native callbacks compare hosts despite opaque URL origins', async () => {
 
 test('concurrent duplicate completion sends only one redemption', async () => {
 	using context = await setup();
-	const { client, issue, db } = context;
+	const { client, issue, db, redemptions } = context;
 	const returned = await issue(await client.begin());
 	const results = await Promise.allSettled([
 		client.complete(returned),
@@ -169,6 +181,7 @@ test('concurrent duplicate completion sends only one redemption', async () => {
 		'rejected',
 	]);
 	expect(db.session).toHaveLength(2);
+	expect(redemptions).toHaveLength(1);
 });
 
 test('new begin supersedes stored attempts and cancel replaces the verifier with a tombstone', async () => {

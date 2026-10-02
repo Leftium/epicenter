@@ -1,3 +1,10 @@
+/**
+ * Personal blob URL contract tests.
+ *
+ * Minted URLs preserve owner, visibility, and storage-key identity. The parser
+ * refuses foreign authorities, encoded aliases, traversal, and URL context so
+ * only canonical addresses can identify a blob.
+ */
 import { expect, test } from 'bun:test';
 import { mintPersonalBlobUrl, parsePersonalBlobUrl } from '@epicenter/blobs';
 

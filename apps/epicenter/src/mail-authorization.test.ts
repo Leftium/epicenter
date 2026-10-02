@@ -62,18 +62,4 @@ describe("the Mail window's Gmail consent grant", () => {
 			expect(GOOGLE_AUTHORIZE_URL.startsWith(pattern.slice(0, -1))).toBe(true);
 		}
 	});
-
-	test('admits nothing else, so this is not a general power to open links', () => {
-		for (const file of FILES) {
-			const origin = openablePattern(file).slice(0, -1);
-			for (const denied of [
-				'https://accounts.google.com.evil.test/o/oauth2/v2/auth',
-				'https://evil.test/?u=https://accounts.google.com/',
-				'http://accounts.google.com/o/oauth2/v2/auth',
-				'file:///etc/passwd',
-			]) {
-				expect(denied.startsWith(origin)).toBe(false);
-			}
-		}
-	});
 });

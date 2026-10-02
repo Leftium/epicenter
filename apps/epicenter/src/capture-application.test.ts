@@ -1,3 +1,10 @@
+/**
+ * Capture's compiled application contract through the composed Home server.
+ *
+ * Key behaviors:
+ * - Home lists and serves Capture at its declared route with native IPC access
+ * - Capture's route and folder ids remain reserved against installed releases
+ */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
@@ -5,9 +12,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import {
+	CAPTURE_APPLICATION,
 	COMPILED_APPLICATIONS,
 	RESERVED_APPLICATION_IDS,
-	CAPTURE_APPLICATION,
 } from './applications.ts';
 import { createHomeHost } from './host.ts';
 import {

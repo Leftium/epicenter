@@ -84,13 +84,6 @@ async function setup({
 	const idb = { factory: new IDBFactory(), keyRange: IDBKeyRange };
 	replaceGlobal('MediaRecorder', Recorder);
 	replaceGlobal('navigator', {
-		locks: {
-			request: async (
-				_name: string,
-				_options: unknown,
-				callback: (lock: object) => unknown,
-			) => callback({}),
-		},
 		mediaDevices: {
 			async getUserMedia() {
 				acquisitions++;
@@ -170,13 +163,14 @@ test('failed local commit retains finalized bytes for retry without holding the 
 });
 
 test('cancel creates no rows and a stale session cannot stop its successor', async () => {
-	const { owner, recorders } = await setup();
+	const { owner, recorders, local } = await setup();
 	const first = expectOk(await owner.value.start({}));
 	expectOk(await first.cancel());
 	const second = expectOk(await owner.value.start({}));
 	expect(expectErr(await first.stop()).name).toBe('NoActiveRecording');
 	expect(recorders[1]?.state).toBe('recording');
 	expectOk(await second.cancel());
+	expect(expectOk(await local.list()).items).toEqual([]);
 });
 
 test('an asynchronous start error releases capture and permits another acquisition', async () => {

@@ -1,3 +1,8 @@
+/**
+ * Vocabulary import review tests.
+ * Preserves expression spelling and punctuation while separating eligible lines,
+ * duplicate input lines, and expressions already saved.
+ */
 import { expect, test } from 'bun:test';
 import { reviewImport } from './import.js';
 

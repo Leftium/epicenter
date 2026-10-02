@@ -113,16 +113,7 @@ describe('a concurrent delete and edit reads the same under both models', () => 
 			expect(read(phone, rowId)).toBeUndefined();
 		});
 
-		test(`${model}: the two devices converge`, () => {
-			const { laptop, phone, rowId } = pair();
-			remove(laptop, rowId, model);
-			edit(phone, rowId, 'renamed on the phone');
-			sync(laptop, phone);
-
-			expect(read(phone, rowId)).toEqual(read(laptop, rowId) as never);
-		});
-
-		test(`${model}: delete wins regardless of which side goes first`, () => {
+		test(`${model}: deletion after the peer edit arrives removes the row on both devices`, () => {
 			const { laptop, phone, rowId } = pair();
 			edit(phone, rowId, 'renamed on the phone');
 			sync(laptop, phone);

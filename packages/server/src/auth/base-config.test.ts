@@ -67,7 +67,10 @@ describe('credential lockdown (BASE_AUTH_CONFIG)', () => {
 				}),
 			}),
 		);
-		expect(res.status).toBeGreaterThanOrEqual(400);
+		expect(res.status).toBe(400);
+		expect(await res.json()).toMatchObject({
+			code: 'EMAIL_PASSWORD_SIGN_UP_DISABLED',
+		});
 		expect(res.headers.get('set-cookie')).toBeNull();
 	});
 
@@ -83,7 +86,10 @@ describe('credential lockdown (BASE_AUTH_CONFIG)', () => {
 				}),
 			}),
 		);
-		expect(res.status).toBeGreaterThanOrEqual(400);
+		expect(res.status).toBe(400);
+		expect(await res.json()).toMatchObject({
+			code: 'EMAIL_PASSWORD_DISABLED',
+		});
 		expect(res.headers.get('set-cookie')).toBeNull();
 	});
 });

@@ -1,3 +1,8 @@
+/**
+ * Table reader tests.
+ * Unreadable files stay separate from parsed rows. Typed, optional, and invalid
+ * contract inputs drive the appropriate conformance or raw-column view.
+ */
 import { describe, expect, test } from 'bun:test';
 import { readTable } from './table';
 

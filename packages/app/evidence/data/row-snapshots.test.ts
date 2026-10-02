@@ -2,7 +2,7 @@
  * Row reads are serializable value snapshots; body access returns live editing state.
  * Converged stores produce equal rows while their body nodes remain distinct objects.
  */
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { defineStore } from '@epicenter/app';
 import {
 	defineTable,
@@ -11,6 +11,11 @@ import {
 } from '../../src/data/definition/index.js';
 import { openMemory } from '../../src/data/store/memory.js';
 import { syncEngineOf } from '../../src/data/store/store.js';
+
+const opened: Awaited<ReturnType<typeof openMemory>>[] = [];
+afterEach(async () => {
+	for (const store of opened.splice(0)) await store[Symbol.asyncDispose]();
+});
 
 const database = defineStore({
 	id: 'so.epicenter.rowvalue',
@@ -28,11 +33,13 @@ const database = defineStore({
 /** Two stores holding byte-identical state, the way a synced pair does. */
 async function convergedPair() {
 	const phone = await openMemory(database);
+	opened.push(phone);
 	const made = phone.tables.notes.create({ title: 'Groceries' });
 	const content = phone.tables.notes.body(made.id);
 	content?.insert(0, ['buy milk']);
 
 	const laptop = await openMemory(database);
+	opened.push(laptop);
 	syncEngineOf(laptop).applyRemote(phone.encodeStateSince());
 	return { phone, laptop, id: made.id };
 }
@@ -55,6 +62,7 @@ describe('rows are values and bodies are live nodes', () => {
 	test('a value is a snapshot and the content node is not', async () => {
 		const { phone, id } = await convergedPair();
 		const held = phone.tables.notes.get(id);
+		const body = phone.tables.notes.body(id);
 
 		phone.tables.notes.update(id, { title: 'Errands' });
 		phone.tables.notes.body(id)?.insert(0, ['and eggs, ']);
@@ -64,7 +72,8 @@ describe('rows are values and bodies are live nodes', () => {
 		// visible through the same object.
 		expect(held?.title).toBe('Groceries');
 		expect(phone.tables.notes.get(id)?.title).toBe('Errands');
-		expect(phone.tables.notes.body(id)?.toString()).toContain('and eggs');
+		expect(body).toBe(phone.tables.notes.body(id));
+		expect(body?.toString()).toContain('and eggs');
 	});
 
 	test('storedRow preserves stored values alongside the body', async () => {

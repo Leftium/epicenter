@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { makeConfig } from '../../test/helpers.ts';
 import {
 	makeBill,
@@ -99,19 +100,21 @@ describe('recategorizeExpense', () => {
 	test('moves the expense line in QuickBooks and folds it into the mirror', async () => {
 		const { mock, mirror, openQb, cleanup } = await setup();
 
-		const { data, error } = await recategorizeExpense({
-			openQb,
-			mirror,
-			readOnly: false,
-			input: {
-				entity: 'Purchase',
-				id: 'p1',
-				account_id: '77',
-				account_name: 'Cloud Infrastructure',
-			},
-		});
-		expect(error).toBeNull();
-		expect(data?.changed[0]?.toAccount).toBe('Cloud Infrastructure');
+		const data = expectOk(
+			await recategorizeExpense({
+				openQb,
+				mirror,
+				readOnly: false,
+				input: {
+					entity: 'Purchase',
+					id: 'p1',
+					account_id: '77',
+					account_name: 'Cloud Infrastructure',
+				},
+			}),
+		);
+
+		expect(data.changed[0]?.toAccount).toBe('Cloud Infrastructure');
 		expect(mock.hits.update).toBe(1);
 
 		// The sparse body carries Purchase's mandatory top-level fields (a Line-only
@@ -150,19 +153,21 @@ describe('recategorizeExpense', () => {
 			id: 'b1',
 		});
 
-		const { data, error } = await recategorizeExpense({
-			openQb,
-			mirror,
-			readOnly: false,
-			input: {
-				entity: 'Bill',
-				id: 'b1',
-				account_id: '24',
-				account_name: 'Utilities',
-			},
-		});
-		expect(error).toBeNull();
-		expect(data?.changed[0]?.toAccount).toBe('Utilities');
+		const data = expectOk(
+			await recategorizeExpense({
+				openQb,
+				mirror,
+				readOnly: false,
+				input: {
+					entity: 'Bill',
+					id: 'b1',
+					account_id: '24',
+					account_name: 'Utilities',
+				},
+			}),
+		);
+
+		expect(data.changed[0]?.toAccount).toBe('Utilities');
 		expect(mock.hits.update).toBe(1);
 
 		// A Bill without VendorRef is a 400 ValidationFault (code 2020); the sparse
@@ -199,13 +204,16 @@ describe('recategorizeExpense', () => {
 			mirrorSyncToken: '0',
 		});
 
-		const { error } = await recategorizeExpense({
-			openQb,
-			mirror,
-			readOnly: false,
-			input: { entity: 'Purchase', id: 'p1', account_id: '77' },
-		});
-		expect(error).not.toBeNull();
+		const error = expectErr(
+			await recategorizeExpense({
+				openQb,
+				mirror,
+				readOnly: false,
+				input: { entity: 'Purchase', id: 'p1', account_id: '77' },
+			}),
+		);
+
+		expect(error).toMatchObject({ name: 'Http', status: 409 });
 
 		// QuickBooks kept the original category: no clobber on a stale write.
 		const remote = mock.get('Purchase', 'p1');
@@ -216,26 +224,30 @@ describe('recategorizeExpense', () => {
 
 	test('errors clearly when the transaction is not in the mirror', async () => {
 		const { mirror, openQb, cleanup } = await setup();
-		const { error } = await recategorizeExpense({
-			openQb,
-			mirror,
-			readOnly: false,
-			input: { entity: 'Purchase', id: 'does-not-exist', account_id: '77' },
-		});
-		expect(error?.message).toContain('mirror');
+		const error = expectErr(
+			await recategorizeExpense({
+				openQb,
+				mirror,
+				readOnly: false,
+				input: { entity: 'Purchase', id: 'does-not-exist', account_id: '77' },
+			}),
+		);
+		expect(error.message).toContain('mirror');
 		cleanup();
 	});
 
 	test('refuses the write in read-only mode, leaving QuickBooks untouched', async () => {
 		const { mock, mirror, openQb, cleanup } = await setup();
-		const { error } = await recategorizeExpense({
-			openQb,
-			mirror,
-			readOnly: true,
-			input: { entity: 'Purchase', id: 'p1', account_id: '77' },
-		});
+		const error = expectErr(
+			await recategorizeExpense({
+				openQb,
+				mirror,
+				readOnly: true,
+				input: { entity: 'Purchase', id: 'p1', account_id: '77' },
+			}),
+		);
 		// The gate fires before any QuickBooks call: refused, nothing moved.
-		expect(error?.message).toContain('read-only');
+		expect(error.message).toContain('read-only');
 		expect(mock.hits.update).toBe(0);
 		cleanup();
 	});

@@ -43,6 +43,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import { loadAudio } from './audio-source.js';
 import { createFixtureDevice, toneWav } from './capture.js';
 import { describeDeletion } from './deletion-copy.js';
@@ -541,7 +542,7 @@ test('a dirty editor keeps both versions when the file changes outside, until a 
 	expect(library.saveProblems).toBe(1);
 
 	const kept = await editor.keepBoth();
-	expect(kept.error).toBeNull();
+	expectOk(kept);
 	expect(editor.saveState.kind as string).toBe('saved');
 	expect(editor.buffer).toBe(outside);
 	expect(await readFile(path, 'utf8')).toBe(outside);
@@ -707,7 +708,7 @@ test('deleting a recording removes its row and results, keeps its audio, and say
 	await library.transcribe(entry);
 
 	const deletion = await library.deletionFor(entry.path);
-	expect(deletion.error).toBeNull();
+	expectOk(deletion);
 	// What the person is asked matches what the deletion does.
 	const asked = describeDeletion(deletion.data!, library.recordingNaming);
 	expect(asked.description).toContain(
@@ -830,7 +831,7 @@ test('a recording cannot be deleted while its transcription runs, including one 
 	const entry = library.entries[0]!;
 	// The person is asked, and agrees, before any request exists.
 	const confirmed = await library.deletionFor(entry.path);
-	expect(confirmed.error).toBeNull();
+	expectOk(confirmed);
 
 	const transcribing = library.transcribe(entry);
 	expect(library.transcriptionRun(entry.stem)?.kind).toBe('running');
@@ -903,7 +904,7 @@ test('audio replaced by bytes of the same length is noticed by its content', asy
 	const entry = library.entries[0]!;
 	const path = entry.fields.audioPath!;
 	const first = await loadAudio(library.folder.files, path, undefined);
-	expect(first.error).toBeNull();
+	expectOk(first);
 
 	// Unchanged audio is the same object, so a player keeps what it has.
 	const before = library.generation;
@@ -1259,7 +1260,7 @@ test('a late observation does not replace a file selected while it was reading',
 		'other.txt',
 		'Another open file',
 	);
-	expect(created.error).toBeNull();
+	expectOk(created);
 	await library.open('other.txt');
 	expect(library.selectedPath).toBe('other.txt');
 	reply.resolve(Ok(entry));
@@ -1411,7 +1412,7 @@ test('another file at a held transcript’s path is left as it is, and the trans
 		fields: first.fields,
 		body: 'a steady tone, edited since\n',
 	});
-	expect(edited.error).toBeNull();
+	expectOk(edited);
 	const theirs = await readFile(path, 'utf8');
 
 	await library.retrySaveResult(id);

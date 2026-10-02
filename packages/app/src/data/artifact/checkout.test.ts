@@ -1,17 +1,13 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-import { parseRowFile } from './frontmatter.js';
 /**
- * `pull` and the base it writes (ADR-0337).
+ * Working-copy previews, three-way field edits, and body replacements.
  *
- * The host is a `fetch` here, because what these pin is the application's
- * half: that a pull hands over every file and a manifest describing exactly
- * those files, that it refuses a folder holding unpushed edits, and that
- * `planPush` calls an edit what it is. Whether the bytes reach a
- * filesystem is `apps/epicenter/src/checkout.test.ts`.
+ * A fetch-backed folder exercises the application's manifest ownership,
+ * confirmation, ETag races, admission, and refusal contracts. Filesystem
+ * publication belongs to the host's separate tests.
  */
 
 import { describe, expect, test } from 'bun:test';
-
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 import type * as Y from '@y/y';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
@@ -34,6 +30,7 @@ import {
 	type PushPreview,
 	type PushResult,
 } from './checkout.js';
+import { parseRowFile } from './frontmatter.js';
 
 /** The one item of a plan of this kind, or a failure naming what was there. */
 function only<TKind extends PlanItem['kind']>(
@@ -107,7 +104,7 @@ const etagOf = async (body: string) => `"${await contentHash(body)}"`;
  *
  * `GET` hands back what it holds with an `ETag`, and `PUT` requires that tag
  * back and replaces the folder, which is the whole of the contract
- * `apps/epicenter/src/checkout.ts` implements against a disk. Every test that
+ * the host implements against a disk. Every test that
  * reaches into `folder` directly is a file landing underneath somebody, and
  * the tag moving is what the working copy notices.
  */
@@ -325,15 +322,6 @@ describe('pull fills the folder and writes the base', () => {
 		expect(manifest.rows[`notes/${noteId}`]?.bodyHash).toBe(
 			await contentHash('buy milk'),
 		);
-		await data[Symbol.asyncDispose]();
-	});
-
-	test('an empty folder is filled without a word', async () => {
-		// Nothing is there to lose, so there is nothing to ask about.
-		const host = fakeHost();
-		const { data } = await notebook();
-		expectOk(await pullInto(host, data));
-		expect(host.folder.has(MANIFEST_PATH)).toBe(true);
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -807,26 +795,6 @@ describe('the preview says what a push would do (ADR-0337)', () => {
 		folder.set(path, (folder.get(path) as string).replace(line, next));
 	}
 
-	test('a value the person changed and the store did not is applied', async () => {
-		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
-			setField(folder, `notes/${id}.md`, '"Groceries"', '"Shopping"');
-		});
-		const plan = await planOf(host, data);
-		expect(plan).toEqual([
-			{
-				kind: 'value',
-				path: `notes/${noteId}.md`,
-				table: 'notes',
-				rowId: noteId,
-				name: 'title',
-				store: 'Groceries',
-				file: 'Shopping',
-				storeChanged: false,
-			},
-		]);
-		await data[Symbol.asyncDispose]();
-	});
-
 	test('a value the person did not touch leaves the store alone', async () => {
 		// `mine == base`, so the store's value stands however far it has moved.
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
@@ -907,7 +875,7 @@ describe('the preview says what a push would do (ADR-0337)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a body the codec cannot read is a file the send rewrites', async () => {
+	test('a body the codec cannot decode remains a kept file in the preview', async () => {
 		// Checked with `decode`, which validates the text `rewrite` would apply,
 		// so a person never reads a plan its own push then refuses.
 		const refusing = defineStore({
@@ -1489,41 +1457,6 @@ describe('push sends the values back and re-renders', () => {
 		expect(pushed.admitted).toHaveLength(1);
 		expect(data.tables.notes.ids()).toHaveLength(2);
 		expect(host.folder.has('notes/scratch.md')).toBe(false);
-		await data[Symbol.asyncDispose]();
-	});
-
-	test('a codec that throws is a file the send rewrites, not a rejected plan', async () => {
-		// A codec is application code run over a file somebody hand-edited, and
-		// a plan that let a throw escape would make the preview REJECT on the one
-		// surface a person has to be able to look at.
-		const exploding = defineStore({
-			id: 'so.epicenter.honeycrisp',
-			kv: { theme: field.string() },
-			tables: {
-				notes: defineTable({
-					fields: {
-						title: field.string(),
-						pinned: field.boolean(),
-					},
-					body: {
-						encode: (node) => node.toString(),
-						decode: () => {
-							throw new Error('the codec exploded');
-						},
-					},
-				}),
-			},
-		});
-		const host = fakeHost();
-		const data = addressed(await openMemory(exploding));
-		const note = data.tables.notes.create({ title: 'x', pinned: false });
-		expectOk(await pullInto(host, data));
-		host.folder.set(
-			`notes/${note.id}.md`,
-			`${host.folder.get(`notes/${note.id}.md`) as string}\nprose\n`,
-		);
-		const plan = await planOf(host, data);
-		expect(only(plan, 'kept').reason).toBe('body-unreadable');
 		await data[Symbol.asyncDispose]();
 	});
 

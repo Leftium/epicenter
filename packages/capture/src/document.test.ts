@@ -15,8 +15,8 @@
  * - Edits replace one span: unknown frontmatter, a byte-order mark, CRLF
  *   lines, original leading and trailing whitespace, and trailing blocks stay
  * - An unclosed fence refuses an append that it would absorb
- * - Edit, delete, and both sides of a reorder are refused when the thought
- *   the caller saw is no longer at that index
+ * - Edit, delete, and either side of a reorder refuse a thought from another
+ *   parse, even with equal text at the same index
  */
 import { expect, test } from 'bun:test';
 import {
@@ -459,5 +459,6 @@ test('text with an open fence keeps its section in the file and says it is absor
 	});
 	const reopened = parseCapture(`---\nx: 1\n---\n${composed.body}`);
 	expect(reopened.hasSection).toBe(false);
+	expect(reopened.thoughts).toEqual([]);
 	expect(refusalOf(addThought(reopened, 'mine')).code).toBe('unverified');
 });

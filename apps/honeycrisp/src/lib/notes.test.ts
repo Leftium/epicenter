@@ -1,5 +1,5 @@
 /**
- * Notes Selection Tests
+ * Notes state tests
  *
  * Drives the real notes state against a folder whose file reads resolve only
  * when the test says so, and observes the selection from effects the way
@@ -9,6 +9,8 @@
  * - A raw file selected after a note shows as loading, then as its text
  * - A component that reads the selection while it is torn down does not
  *   stop the selection from following the file that is loading
+ * - Concurrent opens share a read, and refreshes never overlap listings
+ * - A removed binary keeps its selected path without a selected file
  */
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
@@ -85,7 +87,7 @@ async function open() {
 	return { notes, release: () => release(), reads: () => reads };
 }
 
-/** Effects run in a microtask after the change that scheduled them. */
+/** Give scheduled Svelte effects a turn to run after the state change. */
 const rendered = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test('a raw file opened after a note shows its text once it is read, whatever read the selection during teardown', async () => {
@@ -177,7 +179,7 @@ test('refresh requests during a read wait for one follow-up without overlapping 
 	expect(notes.notes[0]?.source).toBe(NOTE);
 });
 
-test('an externally removed binary file keeps the selected missing-file screen', async () => {
+test('an externally removed binary keeps its selected path without a selected file', async () => {
 	const { notes } = await open();
 	const files = notes.host.folder.files;
 	const bytes = new Uint8Array([0]);

@@ -1,14 +1,13 @@
-import { expect, test } from 'bun:test';
-import { createTokenManager } from '../src/token-manager.ts';
-import type { TokenSet } from '../src/tokens.ts';
-import { createMemoryTokenStore, makeConfig } from './helpers.ts';
-
 /**
  * The provider-environment assertion (ADR-0108 rule 3). A token records the
  * environment it was minted for; the manager refuses to hand it out under a
  * different requested environment, so a sandbox token can never be refreshed with
  * the production client secret (which Intuit would reject opaquely).
  */
+import { expect, test } from 'bun:test';
+import { createTokenManager } from '../src/token-manager.ts';
+import type { TokenSet } from '../src/tokens.ts';
+import { createMemoryTokenStore, makeConfig } from './helpers.ts';
 
 const NOW = Date.parse('2026-06-21T12:00:00.000Z');
 

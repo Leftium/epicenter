@@ -264,7 +264,7 @@ describe('undo history', () => {
 		draft.buffer = `${HEAD}abcdef and more\n`;
 		expect(session.sync()?.selection.anchor).toBe(3);
 		draft.buffer = `${HEAD}a\n`;
-		expect(session.sync()?.selection.anchor).toBeLessThanOrEqual(2);
+		expect(session.sync()?.selection.anchor).toBe(2);
 	});
 });
 

@@ -133,13 +133,14 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	await run(native, ['git', 'push', '--quiet', session.bare, 'main']);
 
 	// The browser fetches and fast-forwards explicitly.
-	expect((await browser.git.fetch()).error).toBeNull();
-	const pulled = await browser.git.pullFastForward();
-	expect(pulled.data?.status).toBe('fastForwarded');
-	const entry = (await browser.tables.todos.get('milk')).data!;
+	expectOk(await browser.git.fetch());
+	const pulled = expectOk(await browser.git.pullFastForward());
+	expect(pulled.status).toBe('fastForwarded');
+	const entry = expectOk(await browser.tables.todos.get('milk'));
+	if (!entry) throw new Error('Expected milk todo');
 	expect(entry.fields).toEqual({ title: 'Buy oat milk', done: true });
 	expect(
-		(await browser.git.log(5)).data?.map((commit) => commit.message.trim()),
+		expectOk(await browser.git.log(5)).map((commit) => commit.message.trim()),
 	).toEqual([
 		'Rename the milk todo',
 		'Update todos/milk.md',

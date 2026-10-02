@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { BlobStoreError } from '@epicenter/blobs';
 import { Ok } from 'wellcrafted/result';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { StoreError } from './data/store/store.js';
 import { defineStore } from './index.js';
 import { openLocal } from './open-store.js';
@@ -22,7 +22,7 @@ test('stores own blob admission and close while isolated runtimes retain indepen
 	expect('close' in a.blobs).toBe(false);
 	expect('signal' in a.blobs).toBe(false);
 	const id = expectOk(await a.blobs.add(new Blob(['first'])));
-	expect((await b.blobs.get(id)).error?.name).toBe('BlobNotFound');
+	expect(expectErr(await b.blobs.get(id)).name).toBe('BlobNotFound');
 	const retained = a.blobs.get;
 	const closing = a.close();
 	expect(a.close()).toBe(closing);

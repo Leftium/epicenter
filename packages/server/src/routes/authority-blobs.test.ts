@@ -1,3 +1,11 @@
+/**
+ * Personal blob authority route tests.
+ *
+ * The mounted HTTP route enforces captured owner and visibility, create-only
+ * publication, body limits, media response policy, and conditional byte ranges.
+ * Scripted storage replies expose failed or uncertain publication without
+ * claiming the remote bytes were rolled back.
+ */
 import { afterEach, expect, test } from 'bun:test';
 import {
 	MAX_HOSTED_BLOB_BYTES,

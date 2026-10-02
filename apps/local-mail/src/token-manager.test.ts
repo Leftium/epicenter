@@ -100,8 +100,8 @@ test('a rotated refresh token is stored back', async () => {
 		now: NOW,
 	});
 
-	const { data, error } = await manager.getValidAccessToken();
-	expect(error).toBeNull();
+	const data = expectOk(await manager.getValidAccessToken());
+
 	expect(data).toBe('new-access-token');
 	expect(bodies[0]?.get('grant_type')).toBe('refresh_token');
 	expect(bodies[0]?.get('refresh_token')).toBe('old-refresh-token');
@@ -173,7 +173,7 @@ test('a failed grant does not poison the next call', async () => {
 	const failed = await manager.getValidAccessToken();
 	const retried = await manager.getValidAccessToken();
 
-	expect(failed.error?.name).toBe('TokenExchangeFailed');
+	expect(expectErr(failed).name).toBe('TokenExchangeFailed');
 	expect(retried.data).toBe('retried-access-token');
 	expect(requests).toBe(2);
 	server.stop(true);
@@ -195,7 +195,7 @@ test('a revoked grant asks for re-consent rather than a retry', async () => {
 		now: NOW,
 	});
 
-	expect((await manager.getValidAccessToken()).error?.name).toBe(
+	expect(expectErr(await manager.getValidAccessToken()).name).toBe(
 		'ReauthRequired',
 	);
 	server.stop(true);

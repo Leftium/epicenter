@@ -1,3 +1,8 @@
+/**
+ * Artifact frontmatter tests.
+ * Deterministic YAML preserves JSON shapes, quoted strings and body framing
+ * through Matter edits, and rejects malformed or non-JSON input atomically.
+ */
 import { describe, expect, test } from 'bun:test';
 
 import { editField } from '@epicenter/matter-core/serialize';

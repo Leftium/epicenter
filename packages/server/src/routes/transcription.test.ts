@@ -121,6 +121,7 @@ describe('transcription gateway', () => {
 				model: 'whisper-1',
 				language: 'en',
 				prompt: 'Epicenter',
+				response_format: 'text',
 			}),
 			{ OPENAI_API_KEY: 'sk-house' },
 		);

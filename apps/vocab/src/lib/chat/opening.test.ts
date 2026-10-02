@@ -1,3 +1,8 @@
+/**
+ * Tutor opening tests.
+ * Real conversations add a transient opening prompt without a saved learner turn,
+ * avoid repeating on remount, and discard stopped partial openings before retry.
+ */
 import { expect, test } from 'bun:test';
 import { type AgentEngineRequest, createConversation } from '@epicenter/agent';
 import { openMemory } from '@epicenter/app/memory';

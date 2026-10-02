@@ -33,9 +33,11 @@ function sync(a: Y.Doc, b: Y.Doc): void {
 }
 
 /** Two devices holding one row, already synchronised. */
-function pair() {
+function pair(phoneId?: number, laptopId?: number) {
 	const phone = new Y.Doc({ gc: true });
 	const laptop = new Y.Doc({ gc: true });
+	if (phoneId !== undefined) phone.clientID = phoneId;
+	if (laptopId !== undefined) laptop.clientID = laptopId;
 	phone.transact(() => {
 		const row: ValuesType = new Y.Node();
 		putRow(phone.get('notes'), 'n1', row);
@@ -76,25 +78,26 @@ describe('a row of values', () => {
 		expect(['from the phone', 'from the laptop']).toContain(survivor);
 	});
 
-	test('and the survivor is a coin flip, not the later edit', () => {
-		// Worth stating plainly, because "the CRDT resolves it properly" is the
-		// belief this replaces. The winner is whichever document happened to mint
-		// the higher clientID. A wall-clock timestamp would at least mean the
-		// later edit wins, which is what a person expects.
-		let phoneWon = 0;
-		const rounds = 40;
-		for (let round = 0; round < rounds; round += 1) {
-			const { phone, laptop, row } = pair();
-			phone.transact(() => row(phone).setAttr('title', 'phone'));
-			laptop.transact(() => row(laptop).setAttr('title', 'laptop'));
+	test('the higher client ID wins even when the lower client edits later', () => {
+		for (const [phoneId, laptopId] of [
+			[2, 1],
+			[1, 2],
+		] as const) {
+			const { phone, laptop, row } = pair(phoneId, laptopId);
+			if (phoneId > laptopId) {
+				phone.transact(() => row(phone).setAttr('title', 'phone'));
+				laptop.transact(() => row(laptop).setAttr('title', 'laptop'));
+			} else {
+				laptop.transact(() => row(laptop).setAttr('title', 'laptop'));
+				phone.transact(() => row(phone).setAttr('title', 'phone'));
+			}
 			sync(phone, laptop);
-			if (row(phone).getAttr('title') === 'phone') phoneWon += 1;
+			const winner = phoneId > laptopId ? 'phone' : 'laptop';
+			expect(row(phone).getAttr('title')).toBe(winner);
+			expect(row(laptop).getAttr('title')).toBe(winner);
+			phone.destroy();
+			laptop.destroy();
 		}
-
-		// Neither side is systematically favoured, which is what makes it
-		// arbitrary rather than a rule anyone could rely on.
-		expect(phoneWon).toBeGreaterThan(0);
-		expect(phoneWon).toBeLessThan(rounds);
 	});
 });
 

@@ -251,7 +251,29 @@ test('one Bun process persists enrollment, sync, and local blobs across restart'
 						setTimeout(() => reject(new Error('media timed out')), 5000);
 					});
 				await audio.play();
-				await new Promise((resolve) => setTimeout(resolve, 250));
+				await new Promise<void>((resolve, reject) => {
+					const cleanup = () => {
+						clearTimeout(deadline);
+						audio.removeEventListener('timeupdate', progressed);
+						audio.removeEventListener('error', failed);
+					};
+					const progressed = () => {
+						if (audio.currentTime <= 0.1) return;
+						cleanup();
+						resolve();
+					};
+					const failed = () => {
+						cleanup();
+						reject(new Error('media playback failed'));
+					};
+					const deadline = setTimeout(() => {
+						cleanup();
+						reject(new Error('media playback did not advance'));
+					}, 5000);
+					audio.addEventListener('timeupdate', progressed);
+					audio.addEventListener('error', failed);
+					progressed();
+				});
 				return {
 					duration: audio.duration,
 					currentTime: audio.currentTime,

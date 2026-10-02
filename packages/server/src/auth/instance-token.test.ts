@@ -14,6 +14,7 @@
 import { expect, test } from 'bun:test';
 import { INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import type { Context } from 'hono';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { Env } from '../types.js';
 import { createEnvTokenResolver } from './instance-token.js';
 
@@ -25,19 +26,17 @@ const context = {} as Context<Env>;
 const resolve = createEnvTokenResolver(TOKEN);
 
 test('resolves the instance principal for an exact bearer match', async () => {
-	const { data, error } = await resolve(context, TOKEN);
-	expect(error).toBeNull();
+	const data = expectOk(await resolve(context, TOKEN));
 	expect(data).toEqual({ id: INSTANCE_PRINCIPAL_ID });
-	expect(data?.email).toBeUndefined();
+	expect(data.email).toBeUndefined();
 });
 
 test('rejects a mismatched token with InvalidToken', async () => {
-	const { data, error } = await resolve(context, `${TOKEN}-wrong`);
-	expect(data).toBeNull();
-	expect(error?.name).toBe('InvalidToken');
+	const error = expectErr(await resolve(context, `${TOKEN}-wrong`));
+	expect(error.name).toBe('InvalidToken');
 });
 
 test('rejects a token that is only a prefix of the configured token', async () => {
-	const { error } = await resolve(context, TOKEN.slice(0, -1));
-	expect(error?.name).toBe('InvalidToken');
+	const error = expectErr(await resolve(context, TOKEN.slice(0, -1)));
+	expect(error.name).toBe('InvalidToken');
 });

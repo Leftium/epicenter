@@ -212,6 +212,8 @@ describe('createConversation', () => {
 					])
 				: streamOf([{ type: 'text-delta', delta: 'done' }]);
 		const order: string[] = [];
+		const started = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
 		const tools: ToolCatalog = {
 			definitions: () => [
 				{ name: 'a', kind: 'query' },
@@ -219,6 +221,10 @@ describe('createConversation', () => {
 			],
 			resolve: async (call) => {
 				order.push(call.toolName);
+				if (call.toolName === 'a') {
+					started.resolve();
+					await release.promise;
+				}
 				return { content: call.toolName, isError: false };
 			},
 		};
@@ -228,9 +234,17 @@ describe('createConversation', () => {
 			tools,
 			generateId: ids(),
 		});
-		conversation.send('go');
-		await settle(conversation);
-		expect(order).toEqual(['a', 'b']);
+		try {
+			conversation.send('go');
+			await started.promise;
+			expect(order).toEqual(['a']);
+			release.resolve();
+			await settle(conversation);
+			expect(order).toEqual(['a', 'b']);
+		} finally {
+			release.resolve();
+			conversation[Symbol.dispose]();
+		}
 	});
 
 	test('declined mutations record denial without invoking the catalog', async () => {
@@ -272,22 +286,37 @@ describe('createConversation', () => {
 
 	test('aborting drops the partial assistant and retry starts another turn', async () => {
 		const { store } = makeStore();
-		const engine: AgentEngine = () =>
-			streamOf([{ type: 'text-delta', delta: 'partial' }]);
+		const streamed = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		const engine: AgentEngine = async function* () {
+			yield { type: 'text-delta', delta: 'partial' };
+			streamed.resolve();
+			await release.promise;
+		};
 		const conversation = createConversation({
 			store,
 			engine,
 			generateId: ids(),
 		});
-		conversation.send('go');
-		conversation.stop();
-		await settle(conversation);
-		expect(
-			conversation.snapshot().messages.map((message) => message.role),
-		).toEqual(['user']);
-		conversation.retry();
-		await settle(conversation);
-		expect(conversation.snapshot().messages).toHaveLength(2);
+		try {
+			conversation.send('go');
+			await streamed.promise;
+			expect(agentMessageText(conversation.snapshot().streaming!)).toBe(
+				'partial',
+			);
+			conversation.stop();
+			release.resolve();
+			await settle(conversation);
+			expect(
+				conversation.snapshot().messages.map((message) => message.role),
+			).toEqual(['user']);
+			conversation.retry();
+			await settle(conversation);
+			expect(conversation.snapshot().messages).toHaveLength(2);
+		} finally {
+			release.resolve();
+			conversation[Symbol.dispose]();
+		}
 	});
 
 	test('runaway tool loops stop after 50 steps without persisting the turn', async () => {

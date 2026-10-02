@@ -5,7 +5,7 @@ import {
 	createBrowserBlobStore,
 } from '@epicenter/blobs/browser';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { acquireLocalBlobs } from './blob-owner.js';
 import { createRecorder } from './recorder.js';
 import { createBrowserRecording } from './recording/browser.js';
@@ -56,13 +56,12 @@ test('Local add preserves the minted identity and scope after a writer commits t
 		}),
 	);
 	const result = await owner.value.add(new Blob(['published']));
-	expect(result.error).not.toBeNull();
-	if (!result.error) throw new Error('Expected failed acknowledgment');
-	expect(result.error.destination).toEqual({
+	const error = expectErr(result);
+	expect(error.destination).toEqual({
 		kind: 'local',
 		namespace: 'test.source',
 	});
-	expect(await expectOk(await owner.value.get(result.error.id)).text()).toBe(
+	expect(await expectOk(await owner.value.get(error.id)).text()).toBe(
 		'published',
 	);
 	await owner.close();

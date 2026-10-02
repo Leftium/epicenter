@@ -1,5 +1,3 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
 /**
  * The optimistic persistence boundary (ADR-0238, amended by ADR-0300):
  * acceptance is live, persistence is an ordered best-effort queue, and sync
@@ -11,10 +9,13 @@ import { compileData } from '@epicenter/app/definition';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
+import { compileData } from '@epicenter/app/definition';
 
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Logger } from 'wellcrafted/logger';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 
 import { createSqliteDurablePort } from './log.js';
 import { createPersistenceController, type DurableOp } from './persistence.js';
@@ -41,9 +42,7 @@ const database = defineStore({
 
 /** The parsed form the over-port constructors take (ADR-0240). */
 function parsed() {
-	const { data, error } = compileData(database);
-	if (error !== null) throw new Error(error.message);
-	return data;
+	return expectOk(compileData(database));
 }
 
 /** Failed flushes are the subject here, not noise worth printing. */
@@ -54,22 +53,6 @@ const silent: Logger = {
 	debug: () => undefined,
 	trace: () => undefined,
 };
-
-function expectOk<TValue, TError>(
-	result: Result<TValue, TError> | TValue,
-): TValue {
-	if (
-		typeof result === 'object' &&
-		result !== null &&
-		'data' in result &&
-		'error' in result
-	) {
-		const outcome = result as Result<TValue, TError>;
-		if (outcome.error !== null) throw outcome.error;
-		return outcome.data as TValue;
-	}
-	return result as TValue;
-}
 
 /**
  * A real SQLite durable engine behind a gate that can refuse whole batches,
@@ -146,8 +129,8 @@ describe('acceptance is live, durability is a visible debt', () => {
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
 
-		expectOk(replica.db.tables.notes.create({ title: 'first' }));
-		expectOk(replica.db.tables.notes.create({ title: 'second' }));
+		replica.db.tables.notes.create({ title: 'first' });
+		replica.db.tables.notes.create({ title: 'second' });
 
 		expect(titles(replica.db)).toEqual(['first', 'second']);
 		await new Promise<void>((resolve) => setImmediate(resolve));
@@ -161,14 +144,14 @@ describe('acceptance is live, durability is a visible debt', () => {
 		const replica = await openFailable();
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'a' }));
-		expectOk(replica.db.tables.notes.create({ title: 'b' }));
+		replica.db.tables.notes.create({ title: 'a' });
+		replica.db.tables.notes.create({ title: 'b' });
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(replica.store.persistence.get()).toBe('blocked');
 
 		replica.gate.failing = false;
 		// The next accepted edit is the retry trigger; no autonomous loop.
-		expectOk(replica.db.tables.notes.create({ title: 'c' }));
+		replica.db.tables.notes.create({ title: 'c' });
 
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(replica.store.persistence.get()).toBe('saved');
@@ -184,7 +167,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		const replica = await openFailable();
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'retained' }));
+		replica.db.tables.notes.create({ title: 'retained' });
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(replica.store.persistence.get()).toBe('blocked');
 
@@ -198,10 +181,10 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 	test('closing while blocked loses only the in-memory work, deliberately', async () => {
 		const replica = await openFailable();
-		expectOk(replica.db.tables.notes.create({ title: 'durable before' }));
+		replica.db.tables.notes.create({ title: 'durable before' });
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'accepted only' }));
+		replica.db.tables.notes.create({ title: 'accepted only' });
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(replica.store.persistence.get()).toBe('blocked');
 
@@ -216,12 +199,12 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 	test('kv and type-field edits are accepted while blocked, like table writes', async () => {
 		const replica = await openFailable();
-		const made = expectOk(replica.db.tables.notes.create({ title: 'holder' }));
+		const made = replica.db.tables.notes.create({ title: 'holder' });
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
 
 		// KV: accepted live, visible at once.
-		expectOk(replica.db.kv.update({ theme: 'dark' }));
+		replica.db.kv.update({ theme: 'dark' });
 		expect(replica.db.kv.get('theme')).toBe('dark');
 
 		// A row's body node: an edit keeps writing text while blocked. The
@@ -238,7 +221,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(replica.durableUpdateCount()).toBe(1);
 
 		replica.gate.failing = false;
-		expectOk(replica.db.tables.notes.create({ title: 'retry trigger' }));
+		replica.db.tables.notes.create({ title: 'retry trigger' });
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(replica.store.persistence.get()).toBe('saved');
 		const restarted = await reopen(replica.sqlite);
@@ -256,12 +239,12 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'x' }));
+		replica.db.tables.notes.create({ title: 'x' });
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(seen).toEqual(['pending', 'blocked']);
 
 		replica.gate.failing = false;
-		expectOk(replica.db.tables.notes.create({ title: 'y' }));
+		replica.db.tables.notes.create({ title: 'y' });
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(seen).toEqual(['pending', 'blocked', 'pending', 'saved']);
 	});
@@ -296,7 +279,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(await ready);
 		const db = view as unknown as DeclaredData<typeof database>;
 
-		expectOk(db.tables.notes.create({ title: 'a' }));
+		db.tables.notes.create({ title: 'a' });
 		expect(store.persistence.get()).toBe('pending');
 		// Acceptance is not waiting on the flight: live reads already hold the
 		// row.
@@ -304,8 +287,8 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		// Two more accepted mid-flight; they must ride the NEXT batch together.
-		expectOk(db.tables.notes.create({ title: 'b' }));
-		expectOk(db.tables.notes.create({ title: 'c' }));
+		db.tables.notes.create({ title: 'b' });
+		db.tables.notes.create({ title: 'c' });
 
 		const settled = store.persistence.flush();
 		release.shift()?.();
@@ -335,7 +318,7 @@ describe('owed work collapses so an offline chain stays bounded (ADR-0301)', () 
 		// ever acknowledged, and under the old rule every one of these rows was
 		// unfoldable forever.
 		for (let i = 0; i < 80; i += 1) {
-			expectOk(replica.db.tables.notes.create({ title: `note ${i}` }));
+			replica.db.tables.notes.create({ title: `note ${i}` });
 		}
 
 		// Far fewer rows than edits, and every one of them still owed: a merge
@@ -354,7 +337,7 @@ describe('owed work collapses so an offline chain stays bounded (ADR-0301)', () 
 	test('work already handed to the sender is not replaced under it', async () => {
 		const replica = await openFailable();
 		for (let i = 0; i < 10; i += 1) {
-			expectOk(replica.db.tables.notes.create({ title: `early ${i}` }));
+			replica.db.tables.notes.create({ title: `early ${i}` });
 		}
 		// The sender takes what exists. Everything at or below this id is now
 		// named by a submission that may still be in flight.
@@ -363,7 +346,7 @@ describe('owed work collapses so an offline chain stays bounded (ADR-0301)', () 
 		if (sent === undefined) throw new Error('nothing to send');
 
 		for (let i = 0; i < 80; i += 1) {
-			expectOk(replica.db.tables.notes.create({ title: `later ${i}` }));
+			replica.db.tables.notes.create({ title: `later ${i}` });
 		}
 
 		// The rows the sender was handed are untouched, so the acknowledgement
@@ -383,7 +366,7 @@ describe('sync reads only durable facts', () => {
 		const replica = await openFailable();
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'not yet durable' }));
+		replica.db.tables.notes.create({ title: 'not yet durable' });
 
 		// The live document holds the edit and the person can see it; the sender
 		// cannot, because what is owed is a property of the durable record
@@ -391,7 +374,7 @@ describe('sync reads only durable facts', () => {
 		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
 
 		replica.gate.failing = false;
-		expectOk(replica.db.tables.notes.create({ title: 'now everything lands' }));
+		replica.db.tables.notes.create({ title: 'now everything lands' });
 		// Both edits land together and merge into one submission.
 		await replica.store.persistence.flush();
 		const merged = syncEngineOf(replica.store).coalesce();
@@ -407,18 +390,18 @@ describe('sync reads only durable facts', () => {
 
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'accepted' }));
+		replica.db.tables.notes.create({ title: 'accepted' });
 		expect(nudges).toBe(0);
 
 		replica.gate.failing = false;
-		expectOk(replica.db.tables.notes.create({ title: 'flushed' }));
+		replica.db.tables.notes.create({ title: 'flushed' });
 		await replica.store.persistence.flush();
 		expect(nudges).toBe(1);
 	});
 
 	test('a remote update is live at once, and its cursor waits for the bytes', async () => {
 		const author = await openFailable();
-		expectOk(author.db.tables.notes.create({ title: 'from the authority' }));
+		author.db.tables.notes.create({ title: 'from the authority' });
 		const update = author.store.encodeStateSince();
 
 		const replica = await openFailable();
@@ -450,7 +433,7 @@ describe('sync reads only durable facts', () => {
 
 	test('an acknowledged entry stays off the live sender while its retirement is retained', async () => {
 		const replica = await openFailable();
-		expectOk(replica.db.tables.notes.create({ title: 'sent' }));
+		replica.db.tables.notes.create({ title: 'sent' });
 		await replica.store.persistence.flush();
 		const sent = syncEngineOf(replica.store).coalesce();
 		if (sent === undefined) throw new Error('nothing to send');
@@ -473,7 +456,7 @@ describe('sync reads only durable facts', () => {
 
 	test('a remote update lost with a blocked close is simply re-received', async () => {
 		const author = await openFailable();
-		expectOk(author.db.tables.notes.create({ title: 'from the authority' }));
+		author.db.tables.notes.create({ title: 'from the authority' });
 		const update = author.store.encodeStateSince();
 
 		const replica = await openFailable();
@@ -501,16 +484,14 @@ describe('sync reads only durable facts', () => {
 
 	test('an acknowledgement drops only the work it names; queued work lands intact', async () => {
 		const replica = await openFailable();
-		expectOk(replica.db.tables.notes.create({ title: 'sent' }));
+		replica.db.tables.notes.create({ title: 'sent' });
 		await replica.store.persistence.flush();
 		const sent = syncEngineOf(replica.store).coalesce();
 		if (sent === undefined) throw new Error('nothing to send');
 
 		await replica.store.persistence.flush();
 		replica.gate.failing = true;
-		expectOk(
-			replica.db.tables.notes.create({ title: 'authored while blocked' }),
-		);
+		replica.db.tables.notes.create({ title: 'authored while blocked' });
 		syncEngineOf(replica.store).acknowledge(sent.id, 1);
 
 		replica.gate.failing = false;

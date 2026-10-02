@@ -32,6 +32,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readSource } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
 import type { Library } from './library.svelte.js';
 import { filesLineOf } from './status.js';
@@ -219,7 +220,7 @@ test('a dirty transformation draft keeps both versions when the file changes out
 	expect(await readFile(path, 'utf8')).toBe(outside);
 
 	const kept = await editor.keepBoth();
-	expect(kept.error).toBeNull();
+	expectOk(kept);
 	expect(editor.buffer).toBe(outside);
 	expect(await readFile(path, 'utf8')).toBe(outside);
 	expect(await readFile(join(root, kept.data!), 'utf8')).toContain('My prompt');
@@ -476,7 +477,7 @@ test('a recording cannot be deleted while a transformation of it runs, including
 	const editor = await cleanupProfile(library);
 	// The person is asked, and agrees, before any request exists.
 	const confirmed = await library.deletionFor(recording.path);
-	expect(confirmed.error).toBeNull();
+	expectOk(confirmed);
 
 	const running = library.transform(transcript.path, editor.path);
 	await new Promise((resolve) => setTimeout(resolve, 20));
@@ -878,7 +879,7 @@ for (const [field, value] of [
 			fields: { ...held.fields, [field]: value } as typeof held.fields,
 			body: `${text}\n`,
 		});
-		expect(other.error).toBeNull();
+		expectOk(other);
 		const path = join(root, RUNS, `${held.id}.md`);
 		const theirs = await readFile(path, 'utf8');
 
@@ -905,7 +906,7 @@ test('this run’s exact row is recognized even with fields the app does not kno
 		fields: held.fields,
 		body: `${text}\n`,
 	});
-	expect(mine.error).toBeNull();
+	expectOk(mine);
 	// Another program annotates the row without touching what the run recorded.
 	const annotated = mine.data!.source.replace(
 		'---\n',

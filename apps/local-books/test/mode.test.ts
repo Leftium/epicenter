@@ -1,3 +1,11 @@
+/**
+ * Synchronization mode decisions from company cursors and full-pull timestamps.
+ *
+ * Key behaviors:
+ * - Explicit full pulls and incomplete history require a full query
+ * - Recent complete history permits incremental CDC
+ * - An expired CDC cursor or stale full-pull backstop forces a full query
+ */
 import { describe, expect, test } from 'bun:test';
 import type { RealmState } from '../src/db.ts';
 import { decideMode } from '../src/sync.ts';
@@ -38,12 +46,12 @@ describe('decideMode', () => {
 		).toBe('FULL');
 	});
 
-	test('no cursor is FULL', () => {
+	test('no cursor requires FULL even after a recent full pull', () => {
 		expect(
 			decideMode({
 				...base,
 				forceFull: false,
-				realmState: state({ cdcCursor: null }),
+				realmState: state({ cdcCursor: null, lastFullPullAt: daysAgo(1) }),
 			}).mode,
 		).toBe('FULL');
 	});

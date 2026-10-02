@@ -1,3 +1,8 @@
+/**
+ * Conformance tests.
+ * Required and optional nullish values classify separately from invalid values.
+ * Extra keys and unrecognized field schemas preserve row validity and raw data.
+ */
 import { describe, expect, test } from 'bun:test';
 import { expectOk } from 'wellcrafted/testing';
 import { classifyRow, classifyRows } from './conformance';

@@ -1,5 +1,7 @@
 /** Platform normalization: empty reads, thrown platform failures, and write passthrough. */
+
 import { describe, expect, test } from 'bun:test';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { type ClipboardSource, createClipboard } from './clipboard.js';
 
 function source(overrides: Partial<ClipboardSource> = {}) {
@@ -17,7 +19,7 @@ function source(overrides: Partial<ClipboardSource> = {}) {
 describe('readText', () => {
 	test('returns the platform text', async () => {
 		const { clipboard } = source({ readText: async () => 'hello' });
-		expect(await clipboard.readText()).toEqual({ data: 'hello', error: null });
+		expect(expectOk(await clipboard.readText())).toBe('hello');
 	});
 
 	test.each([
@@ -26,7 +28,7 @@ describe('readText', () => {
 		[undefined, 'undefined'],
 	])('normalizes a %p (%s) platform read to null', async (value) => {
 		const { clipboard } = source({ readText: async () => value });
-		expect(await clipboard.readText()).toEqual({ data: null, error: null });
+		expect(expectOk(await clipboard.readText())).toBeNull();
 	});
 
 	test('converts a platform failure to ClipboardRead', async () => {
@@ -39,9 +41,8 @@ describe('readText', () => {
 				throw cause;
 			},
 		});
-		const result = await clipboard.readText();
-		expect(result.data).toBeNull();
-		expect(result.error).toMatchObject({
+		const error = expectErr(await clipboard.readText());
+		expect(error).toMatchObject({
 			name: 'ClipboardRead',
 			message: 'Failed to read from clipboard: Document is not focused.',
 			cause,
@@ -52,12 +53,9 @@ describe('readText', () => {
 describe('writeText', () => {
 	test('writes through and reads back', async () => {
 		const { clipboard, written } = source();
-		expect(await clipboard.writeText('copied')).toEqual({
-			data: undefined,
-			error: null,
-		});
+		expectOk(await clipboard.writeText('copied'));
 		expect(written).toEqual(['copied']);
-		expect(await clipboard.readText()).toEqual({ data: 'copied', error: null });
+		expect(expectOk(await clipboard.readText())).toBe('copied');
 	});
 
 	test('converts a platform failure to ClipboardWrite', async () => {
@@ -67,7 +65,7 @@ describe('writeText', () => {
 				throw cause;
 			},
 		});
-		expect((await clipboard.writeText('x')).error).toMatchObject({
+		expect(expectErr(await clipboard.writeText('x'))).toMatchObject({
 			name: 'ClipboardWrite',
 			message: 'Failed to write to clipboard: denied',
 			cause,

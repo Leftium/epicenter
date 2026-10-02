@@ -23,6 +23,7 @@ import {
 	projectToSqlite,
 	type Row,
 } from '@epicenter/matter-core';
+import { expectOk } from 'wellcrafted/testing';
 
 const TABLE = 'tasks';
 // `searchable` defaults to body + text fields, so the projector also emits an FTS5 index and trigger;
@@ -31,13 +32,9 @@ const CONTRACT = JSON.stringify({ fields: { status: { type: 'string' } } });
 
 /** Parse one card's markdown into a Row (the parse the watcher's Content delta feeds). */
 function card(stem: string, status: string): Row {
-	const { data, error } = parseEntry(
-		`${stem}.md`,
-		`---\nstatus: ${status}\n---\n# ${stem}\n`,
+	return expectOk(
+		parseEntry(`${stem}.md`, `---\nstatus: ${status}\n---\n# ${stem}\n`),
 	);
-	if (error)
-		throw new Error(`fixture ${stem} failed to parse: ${error.message}`);
-	return data;
 }
 
 /** Project the rows into a fresh SQLite db, exactly as a settled watcher batch would. */
@@ -67,7 +64,7 @@ function bucket(db: Database, status: string): string[] {
 }
 
 test('a status edit moves a card between board buckets through the projector', () => {
-	const db = new Database(':memory:');
+	using db = new Database(':memory:');
 
 	// Two cards: one todo, one done.
 	project(db, [card('card-a', 'todo'), card('card-b', 'done')]);

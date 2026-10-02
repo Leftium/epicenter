@@ -10,10 +10,12 @@
  * - A rich edit replaces only the body and `updatedAt`
  * - Unreadable frontmatter and unsupported bodies refuse rich editing with reasons
  * - CRLF files and the blank line after frontmatter are kept
+ * - List titles and previews are plain text, and draft comparison marks changed lines
  */
 import { describe, expect, test } from 'bun:test';
 import type { InstantString } from '@epicenter/definition';
 import { readSource } from '@epicenter/folder';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { serializeNoteBody } from './editor/markdown.js';
 import { diffLines } from './line-diff.js';
 import {
@@ -51,7 +53,9 @@ describe('rich availability', () => {
 			serializeNoteBody(availability.inspection.doc),
 			NOW,
 		);
-		expect(again.data?.replace(NOW, '2026-10-01T00:00:00.000Z')).toBe(SOURCE);
+		expect(expectOk(again).replace(NOW, '2026-10-01T00:00:00.000Z')).toBe(
+			SOURCE,
+		);
 	});
 
 	test('unsupported Markdown is refused with a reason', () => {
@@ -74,7 +78,7 @@ describe('rich availability', () => {
 
 	test('a file with no frontmatter is editable and gains none from a body edit', () => {
 		expect(richAvailability('Just text\n').editable).toBe(true);
-		expect(applyRichBody('Just text\n', 'New text', NOW).data).toBe(
+		expect(expectOk(applyRichBody('Just text\n', 'New text', NOW))).toBe(
 			'New text\n',
 		);
 	});
@@ -82,8 +86,8 @@ describe('rich availability', () => {
 
 describe('writing a rich-text body', () => {
 	test('only the body and updatedAt change', () => {
-		const next = applyRichBody(SOURCE, '# List\n\n- [x] milk', NOW);
-		expect(next.data).toBe(
+		const next = expectOk(applyRichBody(SOURCE, '# List\n\n- [x] milk', NOW));
+		expect(next).toBe(
 			SOURCE.replace('2026-10-01T00:00:00.000Z', NOW).replace(
 				'- [ ] milk',
 				'- [x] milk',
@@ -93,8 +97,8 @@ describe('writing a rich-text body', () => {
 
 	test('CRLF line endings are kept', () => {
 		const crlf = '---\r\ntitle: T\r\n---\r\n\r\none\r\n';
-		const next = applyRichBody(crlf, 'one\n\ntwo', NOW);
-		expect(next.data).toBe('---\r\ntitle: T\r\n---\r\n\r\none\r\n\r\ntwo\r\n');
+		const next = expectOk(applyRichBody(crlf, 'one\n\ntwo', NOW));
+		expect(next).toBe('---\r\ntitle: T\r\n---\r\n\r\none\r\n\r\ntwo\r\n');
 	});
 
 	test('an emptied body keeps the blank lines after the frontmatter and nothing else', () => {
@@ -104,20 +108,24 @@ describe('writing a rich-text body', () => {
 
 	test('a source whose frontmatter cannot be read is not patched', () => {
 		const broken = '---\ntitle: *missing\n---\nbody\n';
-		expect(applyRichBody(broken, 'x', NOW).error).toContain('Unresolved alias');
+		expect(expectErr(applyRichBody(broken, 'x', NOW))).toContain(
+			'Unresolved alias',
+		);
 	});
 });
 
 describe('fields', () => {
 	test('a field change leaves comments, unknown keys, and the body as written', () => {
-		const next = applyFields(SOURCE, { title: 'Shopping', pinned: true });
-		expect(next.data).toBe(
+		const next = expectOk(
+			applyFields(SOURCE, { title: 'Shopping', pinned: true }),
+		);
+		expect(next).toBe(
 			SOURCE.replace('title: Groceries', 'title: Shopping').replace(
 				'updatedAt: 2026-10-01T00:00:00.000Z\n',
 				'updatedAt: 2026-10-01T00:00:00.000Z\npinned: true\n',
 			),
 		);
-		expect(readSource(next.data!).values?.unknown).toEqual({ a: 1 });
+		expect(readSource(next).values?.unknown).toEqual({ a: 1 });
 	});
 
 	test('missing declared fields are named, and none when the file is complete', () => {
@@ -127,14 +135,14 @@ describe('fields', () => {
 			'createdAt',
 			'deletedAt',
 		]);
-		const complete = applyFields(SOURCE, missingFields(SOURCE, NOW)!).data!;
+		const complete = expectOk(applyFields(SOURCE, missingFields(SOURCE, NOW)!));
 		expect(missingFields(complete, NOW)).toBeUndefined();
 		expect(missingFields('---\ntitle: *missing\n---\n', NOW)).toBeUndefined();
 	});
 });
 
 describe('list text', () => {
-	test('a preview is plain text without Markdown markers', () => {
+	test('previews remove Markdown markers and titles fall back to body text', () => {
 		expect(
 			previewText('# Title\n\n- [x] **done** item\n> quoted `code`\n'),
 		).toBe('Title done item quoted code');

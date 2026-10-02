@@ -1,3 +1,8 @@
+/**
+ * Independent Yjs document root tests.
+ * Real peers concurrently create one named text or attribute root and exchange
+ * states; both edits survive because roots share their name-based identity.
+ */
 import { expect, test } from 'bun:test';
 import * as Y from '@y/y';
 

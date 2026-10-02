@@ -1,6 +1,7 @@
 /**
- * AppBoot owns acquisition beneath the working route. Callback routes and their
- * ancestors never import the bootstrap or acquire an App; the mounted AppBoot acquires it, and VocabShell only consumes the opened App.
+ * Vocab acquisition boundary tests.
+ * Callback pages and ancestor layouts acquire no resources; the working page
+ * opens resources and passes them to the shell, which consumes the opened data.
  */
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
@@ -42,7 +43,7 @@ describe('the callback opens nothing', () => {
 		}
 	});
 
-	test('the page delegates acquisition to its mounted AppBoot', async () => {
+	test('the working page opens resources and passes them to its shell', async () => {
 		const bootNode = join(routes, '+page.svelte');
 		const source = await Bun.file(bootNode).text();
 		expect(source).toContain('openVocabResources(account, signal)');

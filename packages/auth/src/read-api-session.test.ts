@@ -1,5 +1,13 @@
+/**
+ * API session verification tests.
+ *
+ * Verification sends an explicit bearer without cookies and validates the
+ * session response. Refusals, transport failures, statuses, and malformed
+ * bodies retain distinct errors for the session owner.
+ */
 import { describe, expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { AuthFetch } from './auth-contract.js';
 import { readApiSession } from './read-api-session.js';
 
@@ -22,14 +30,15 @@ describe('readApiSession', () => {
 				email: 'principal-1@example.com',
 			});
 		};
-		const { data, error } = await readApiSession({
-			baseURL,
-			token: 'dev:principal-1',
-			fetch,
-		});
-		expect(error).toBeNull();
-		expect(data?.principalId).toBe(asPrincipalId('principal-1'));
-		expect(data?.email).toBe('principal-1@example.com');
+		const data = expectOk(
+			await readApiSession({
+				baseURL,
+				token: 'dev:principal-1',
+				fetch,
+			}),
+		);
+		expect(data.principalId).toBe(asPrincipalId('principal-1'));
+		expect(data.email).toBe('principal-1@example.com');
 		expect(calls[0]?.url).toBe(`${baseURL}/api/session`);
 		expect(calls[0]?.init?.credentials).toBe('omit');
 		expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(
@@ -37,24 +46,32 @@ describe('readApiSession', () => {
 		);
 	});
 
-	test('maps a rejected bearer (401/403) to Rejected', async () => {
-		const fetch: AuthFetch = async () => json({}, 401);
-		const { error } = await readApiSession({ baseURL, token: 'bad', fetch });
-		expect(error?.name).toBe('Rejected');
+	test.each([
+		401, 403,
+	])('maps a rejected bearer (%s) to Rejected', async (status) => {
+		const fetch: AuthFetch = async () => json({}, status);
+		const error = expectErr(
+			await readApiSession({ baseURL, token: 'bad', fetch }),
+		);
+		expect(error.name).toBe('Rejected');
 	});
 
 	test('maps a thrown fetch to Unreachable', async () => {
 		const fetch: AuthFetch = async () => {
 			throw new Error('ECONNREFUSED');
 		};
-		const { error } = await readApiSession({ baseURL, token: 'x', fetch });
-		expect(error?.name).toBe('Unreachable');
+		const error = expectErr(
+			await readApiSession({ baseURL, token: 'x', fetch }),
+		);
+		expect(error.name).toBe('Unreachable');
 	});
 
 	test('maps an unexpected status to Unexpected', async () => {
 		const fetch: AuthFetch = async () => json({}, 500);
-		const { error } = await readApiSession({ baseURL, token: 'x', fetch });
-		expect(error?.name).toBe('Unexpected');
+		const error = expectErr(
+			await readApiSession({ baseURL, token: 'x', fetch }),
+		);
+		expect(error.name).toBe('Unexpected');
 	});
 
 	test('maps an unreadable body to Malformed', async () => {
@@ -63,7 +80,9 @@ describe('readApiSession', () => {
 				status: 200,
 				headers: { 'content-type': 'application/json' },
 			});
-		const { error } = await readApiSession({ baseURL, token: 'x', fetch });
-		expect(error?.name).toBe('Malformed');
+		const error = expectErr(
+			await readApiSession({ baseURL, token: 'x', fetch }),
+		);
+		expect(error.name).toBe('Malformed');
 	});
 });

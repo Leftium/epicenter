@@ -11,7 +11,9 @@
  *   loudly (OO1 refuses a nested BEGIN) rather than pretending
  *
  * The browser adapter runs against sqlite.org's real WASM build, not a
- * bun:sqlite stand-in, so what is pinned here is OO1's own semantics.
+ * bun:sqlite stand-in, so what is pinned here is OO1's own semantics. The
+ * Durable Object storage shape delegates to Bun SQLite here; the server's
+ * Workers suite separately exercises the real workerd storage boundary.
  */
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';

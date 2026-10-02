@@ -1,5 +1,3 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-
 /**
  * The driver, over the same hub and authority that get deployed.
  *
@@ -17,9 +15,10 @@ import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import type { Result } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 
 import {
 	type DeclaredData,
@@ -47,22 +46,6 @@ const database = defineStore({
 		}),
 	},
 });
-
-function expectOk<TValue, TError>(
-	result: Result<TValue, TError> | TValue,
-): TValue {
-	if (
-		typeof result === 'object' &&
-		result !== null &&
-		'data' in result &&
-		'error' in result
-	) {
-		const outcome = result as Result<TValue, TError>;
-		if (outcome.error !== null) throw outcome.error;
-		return outcome.data as TValue;
-	}
-	return result as TValue;
-}
 
 /** A network that delivers in order, and only when told to. */
 function createWire() {
@@ -171,9 +154,11 @@ async function openDriven({
 	let swallow = 0;
 	let generation = 0;
 	let breakSocket: (() => void) | undefined;
+	let reportSocketClose: (() => void) | undefined;
 
 	const dial: SyncDial = ({ cursor, opened, received, closed }) => {
 		dialledFrom.push(cursor);
+		reportSocketClose = closed;
 		generation += 1;
 		const mine = generation;
 		const connection: HubConnection = {
@@ -228,6 +213,9 @@ async function openDriven({
 			swallow = count;
 		},
 		breakSocket: () => breakSocket?.(),
+		get reportSocketClose() {
+			return reportSocketClose;
+		},
 		titles: () => db.tables.notes.rows.map((row) => row.title).sort(),
 	};
 }
@@ -278,7 +266,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		laptop.connection.start();
 		await run(wire, clock, 0);
 
-		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
+		phone.db.tables.notes.create({ title: 'Groceries' });
 		await run(wire, clock, 1_000);
 
 		expect(laptop.titles()).toEqual(['Groceries']);
@@ -292,7 +280,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		laptop.connection.start();
 		await run(wire, clock, 0);
 
-		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
+		phone.db.tables.notes.create({ title: 'Groceries' });
 		await run(wire, clock, 0);
 
 		expect(laptop.titles()).toEqual([]);
@@ -304,7 +292,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		laptop.connection.start();
 		await run(wire, clock, 0);
 
-		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
+		const note = phone.db.tables.notes.create({ title: 'Groceries' });
 		const body = phone.db.tables.notes.body(note.id);
 		if (body === undefined) throw new Error('the row has no content');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
@@ -329,9 +317,9 @@ describe('a gap is repaired without anybody noticing it', () => {
 		// The laptop loses the frame carrying the first entry, so the second is
 		// a gap and every later one is too.
 		laptop.loseNextFrames(1);
-		expectOk(phone.db.tables.notes.create({ title: 'first' }));
+		phone.db.tables.notes.create({ title: 'first' });
 		await run(wire, clock, 1_000);
-		expectOk(phone.db.tables.notes.create({ title: 'second' }));
+		phone.db.tables.notes.create({ title: 'second' });
 		await run(wire, clock, 1_000);
 		expect(laptop.connection.status().needsResync).toBe(true);
 
@@ -364,9 +352,9 @@ describe('a gap is repaired without anybody noticing it', () => {
 		await run(wire, clock, 0);
 
 		laptop.loseNextFrames(1);
-		expectOk(phone.db.tables.notes.create({ title: 'first' }));
+		phone.db.tables.notes.create({ title: 'first' });
 		await run(wire, clock, 1_000);
-		expectOk(phone.db.tables.notes.create({ title: 'second' }));
+		phone.db.tables.notes.create({ title: 'second' });
 		await run(wire, clock, 60_000);
 
 		expect(laptop.titles()).toEqual([]);
@@ -380,12 +368,12 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 		phone.connection.start();
 		laptop.connection.start();
 		await run(wire, clock, 0);
-		expectOk(phone.db.tables.notes.create({ title: 'before' }));
+		phone.db.tables.notes.create({ title: 'before' });
 		await run(wire, clock, 1_000);
 		expect(laptop.titles()).toEqual(['before']);
 
 		phone.breakSocket();
-		expectOk(phone.db.tables.notes.create({ title: 'while offline' }));
+		phone.db.tables.notes.create({ title: 'while offline' });
 		await run(wire, clock, 5_000);
 
 		expect(laptop.titles()).toEqual(['before', 'while offline']);
@@ -397,7 +385,7 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 		phone.connection.start();
 		laptop.connection.start();
 		await run(wire, clock, 0);
-		expectOk(phone.db.tables.notes.create({ title: 'first' }));
+		phone.db.tables.notes.create({ title: 'first' });
 		await run(wire, clock, 1_000);
 
 		laptop.breakSocket();
@@ -449,13 +437,13 @@ describe('a submission nobody answers is not waited on forever', () => {
 
 		// The push leaves and its acknowledgement never comes back.
 		phone.loseNextFrames(1);
-		expectOk(phone.db.tables.notes.create({ title: 'first' }));
+		phone.db.tables.notes.create({ title: 'first' });
 		await run(wire, clock, 1_000);
 		expect(phone.connection.status().inFlight).toBe(true);
 
 		// The damage. One submission is out at a time, so nothing this device
 		// writes from here on can leave, and every layer still reports success.
-		expectOk(phone.db.tables.notes.create({ title: 'second' }));
+		phone.db.tables.notes.create({ title: 'second' });
 		await run(wire, clock, 5_000);
 		expect(laptop.titles()).toEqual(['first']);
 
@@ -480,7 +468,7 @@ describe('a submission nobody answers is not waited on forever', () => {
 		await run(wire, clock, 0);
 
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
+			phone.db.tables.notes.create({ title: `note ${index}` });
 			await run(wire, clock, 1_100);
 		}
 
@@ -546,7 +534,7 @@ describe('a refused dial is reported and dialled again', () => {
 		// schedules its idle send, which is the timer counted here: a driver
 		// that had let go would take the write and schedule nothing.
 		const scheduled = clock.pending();
-		expectOk(replica.db.tables.notes.create({ title: 'local only' }));
+		replica.db.tables.notes.create({ title: 'local only' });
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(clock.pending()).toBe(scheduled + 1);
 	});
@@ -649,15 +637,20 @@ describe('the driver lets go of what it has abandoned', () => {
 		phone.connection.start();
 		laptop.connection.start();
 		await run(wire, clock, 0);
-		const stale = phone.breakSocket;
+		const stale = phone.reportSocketClose;
+		if (stale === undefined)
+			throw new Error('The first dial did not expose its close callback');
+		phone.breakSocket();
 		await run(wire, clock, 5_000);
+		const dials = phone.dialledFrom.length;
 
 		// The socket that died two connections ago, reporting its close late.
 		stale();
-		expectOk(phone.db.tables.notes.create({ title: 'still connected' }));
+		phone.db.tables.notes.create({ title: 'still connected' });
 		await run(wire, clock, 1_000);
 
 		expect(laptop.titles()).toEqual(['still connected']);
+		expect(phone.dialledFrom).toHaveLength(dials);
 	});
 
 	test('disposing stops dialling and stops listening to the store', async () => {
@@ -668,7 +661,7 @@ describe('the driver lets go of what it has abandoned', () => {
 
 		phone.connection[Symbol.dispose]();
 		phone.breakSocket();
-		expectOk(phone.db.tables.notes.create({ title: 'after disposal' }));
+		phone.db.tables.notes.create({ title: 'after disposal' });
 		await run(wire, clock, 60_000);
 
 		expect(phone.dialledFrom).toHaveLength(dials);
@@ -709,7 +702,7 @@ describe('a retired opcode on the wire is ignored, not concluded from', () => {
 		expect(connection.status().connected).toBe(true);
 		expect(connection.status().lastError).toBeUndefined();
 		connection[Symbol.dispose]();
-		void data[Symbol.asyncDispose]();
+		await data[Symbol.asyncDispose]();
 	});
 });
 
@@ -760,7 +753,7 @@ async function openAdmissionDriver(onRetired: () => void = () => undefined) {
 
 test('socket open and local edits send nothing until explicit admission', async () => {
 	await using driver = await openAdmissionDriver();
-	expectOk(driver.store.tables.notes.create({ title: 'pending' }));
+	driver.store.tables.notes.create({ title: 'pending' });
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	driver.open();
 	expectOk(driver.connection.flush());
@@ -780,7 +773,7 @@ test('data arriving before admission cannot alter the held document or cursor', 
 		definition: database,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	expectOk(donor.tables.notes.create({ title: 'remote' }));
+	donor.tables.notes.create({ title: 'remote' });
 	const bytes = syncEngineOf(donor).encodeSnapshot();
 	driver.open();
 	for (const frame of [
@@ -803,7 +796,7 @@ test('retirement stops sends and retries before notifying the lifetime owner onc
 	await using driver = await openAdmissionDriver(() => {
 		expect(driver.connection.status().connected).toBe(false);
 		expect(driver.connection.status().retired).toBe(true);
-		expectOk(driver.store.tables.notes.create({ title: 'late producer' }));
+		driver.store.tables.notes.create({ title: 'late producer' });
 		expectOk(driver.connection.flush());
 	});
 	driver.open();
@@ -822,7 +815,7 @@ test('retirement stops sends and retries before notifying the lifetime owner onc
 
 test('retirement before admission preserves pending bytes and never sends them', async () => {
 	await using driver = await openAdmissionDriver();
-	expectOk(driver.store.tables.notes.create({ title: 'pending' }));
+	driver.store.tables.notes.create({ title: 'pending' });
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	driver.open();
 	driver.attempts[0]?.received(encodeFrame({ kind: 'retired' }));
@@ -849,7 +842,7 @@ test('stale attempts cannot admit or retire their replacement', async () => {
 
 test('a silent socket times out admission and retries without sending its outbox', async () => {
 	await using driver = await openAdmissionDriver();
-	expectOk(driver.store.tables.notes.create({ title: 'pending' }));
+	driver.store.tables.notes.create({ title: 'pending' });
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	driver.open();
 	driver.clock.advance(20);
@@ -863,7 +856,7 @@ test('a silent socket times out admission and retries without sending its outbox
 
 test('retirement inside the first outgoing chunk stops the remaining submission', async () => {
 	await using driver = await openAdmissionDriver();
-	expectOk(driver.store.tables.notes.create({ title: 'x'.repeat(5_000_000) }));
+	driver.store.tables.notes.create({ title: 'x'.repeat(5_000_000) });
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	const attempt = driver.attempts[0];
 	attempt?.opened({
@@ -916,7 +909,7 @@ test('retirement inside a snapshot offer stops its remaining chunks', async () =
 		definition: database,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	expectOk(donor.tables.notes.create({ title: 'x'.repeat(5_000_000) }));
+	donor.tables.notes.create({ title: 'x'.repeat(5_000_000) });
 	const attempt = driver.attempts[0];
 	attempt?.opened({
 		send(bytes) {
@@ -977,7 +970,7 @@ test('retirement still fences its owner when socket teardown throws', async () =
 	expect(retirements).toBe(1);
 	expect(connection.status().connected).toBe(false);
 	expect(connection.status().retired).toBe(true);
-	expectOk(store.tables.notes.create({ title: 'late' }));
+	store.tables.notes.create({ title: 'late' });
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	clock.advance(120_000);
 	current?.received(encodeFrame({ kind: 'retired' }));

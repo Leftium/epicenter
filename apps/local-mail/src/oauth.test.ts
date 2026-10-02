@@ -10,6 +10,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { expectOk } from 'wellcrafted/testing';
 import { DEFAULT_MAIL_CONFIG, type MailConfig } from './config.ts';
 import {
 	beginAuthorization,
@@ -122,7 +123,7 @@ test('the account is identified by Googles subject, and the address is metadata'
 		now: NOW,
 	});
 
-	expect(result.error).toBeNull();
+	expectOk(result);
 	expect(result.data).toEqual({
 		providerAccountId: 'google-sub-1',
 		email: 'you@example.com',

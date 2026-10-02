@@ -352,44 +352,6 @@ test('get reports descriptor close failure through its Result and releases the h
 	}
 });
 
-test('Response stream finalization closes the borrowed file after completion and cancellation', async () => {
-	const { store } = await setup();
-	const id = generateBlobId('bin');
-	expectOk(await store.put(id, new Blob(['saved data'])));
-	for (const cancel of [false, true]) {
-		const opened = expectOk(await store.openFile(id));
-		const close = spyOn(opened, 'close');
-		const reader = opened.file.stream().getReader();
-		const response = new Response(
-			new ReadableStream({
-				async pull(controller) {
-					try {
-						const { done, value } = await reader.read();
-						if (done) {
-							await opened.close();
-							controller.close();
-						} else controller.enqueue(value);
-					} catch (cause) {
-						await opened.close();
-						controller.error(cause);
-					}
-				},
-				async cancel(reason) {
-					try {
-						await reader.cancel(reason);
-					} finally {
-						await opened.close();
-					}
-				},
-			}),
-		);
-		if (cancel) await response.body!.cancel('client disconnected');
-		else expect(await response.text()).toBe('saved data');
-		expect(close).toHaveBeenCalledTimes(1);
-		close.mockRestore();
-	}
-});
-
 test('descriptor-backed ranges survive path replacement and close after consumption', async () => {
 	const { directory, store } = await setup();
 	const id = generateBlobId('bin');

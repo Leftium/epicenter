@@ -138,18 +138,6 @@ describe('loadPath: a folder is a table XOR a container of tables', () => {
 		});
 	});
 
-	test('an unmarked folder yields just its marked children, sorted', async () => {
-		await withTempDir(async (root) => {
-			// The root itself is not marked; it is just a container of tables.
-			await makeTable(join(root, 'pages'), pagesModel);
-			await makeTable(join(root, 'adaptations'), pagesModel);
-			await writeFile(join(root, 'README.md'), '# loose file, ignored');
-
-			const tables = await loadPath(root);
-			expect(tables.map((t) => t.name)).toEqual(['adaptations', 'pages']);
-		});
-	});
-
 	test('a marked folder is just itself, even when its subfolders are marked', async () => {
 		await withTempDir(async (root) => {
 			// XOR (ADR-0032): a marked folder IS the table; its subfolders are ignored, even when

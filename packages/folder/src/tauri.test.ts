@@ -240,21 +240,16 @@ test.each([
 });
 
 test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
-	// A shell on another protocol refuses this page before other calls.
-	for (const host of [1, 3]) {
-		calls = [];
-		replies = {
-			attach: () => refuse({ name: 'Incompatible', host, page: 2 }),
-		};
-
-		const refused = expectErr(await openFolder({ id: 'notes', definition }));
-
-		expect(refused.name).toBe('Incompatible');
-		expect(refused.message).toContain('Update the app');
-		expect(calls).toEqual([
-			{ cmd: 'attach', args: { scope: 'notes', protocol: 3 } },
-		]);
-	}
+	calls = [];
+	replies = {
+		attach: () => refuse({ name: 'Incompatible', host: 4, page: 3 }),
+	};
+	const refused = expectErr(await openFolder({ id: 'notes', definition }));
+	expect(refused).toMatchObject({ name: 'Incompatible', host: 4, page: 3 });
+	expect(refused.message).toContain('Update the app');
+	expect(calls).toEqual([
+		{ cmd: 'attach', args: { scope: 'notes', protocol: 3 } },
+	]);
 });
 
 test('a save whose reply is lost is Unconfirmed and is sent exactly once', async () => {

@@ -1,3 +1,8 @@
+/**
+ * Dashboard navigation tests.
+ * Preserves the requested account and destination through sign-in while refusing
+ * ambiguous identities and return paths outside the dashboard.
+ */
 import { expect, test } from 'bun:test';
 import { readDashboardReturnPath, readDashboardTarget } from './navigation.js';
 

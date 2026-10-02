@@ -11,8 +11,9 @@
  * - Only UTF-8 without NUL bytes opens as text, and a byte order mark survives
  */
 import { expect, test } from 'bun:test';
-import { hashBytes, type FolderFiles } from '@epicenter/folder';
+import { type FolderFiles, hashBytes } from '@epicenter/folder';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import { EDITABLE_TEXT_LIMIT, readTextFile, visibleRows } from './files.js';
 
 const listing = {
@@ -59,26 +60,25 @@ function filesWith(bytes: Uint8Array) {
 
 test('only UTF-8 text without NUL bytes opens for editing', async () => {
 	const withBom = new Uint8Array([0xef, 0xbb, 0xbf, 0x68, 0x69]);
-	const text = await readTextFile(filesWith(withBom), 'a.txt');
-	expect(text.data?.kind).toBe('text');
-	const source = text.data?.kind === 'text' ? text.data.file.source : '';
+	const text = expectOk(await readTextFile(filesWith(withBom), 'a.txt'));
+	expect(text.kind).toBe('text');
+	if (text.kind !== 'text') throw new Error('Expected editable text');
+	const source = text.file.source;
 	expect(new TextEncoder().encode(source)).toEqual(withBom);
 
-	const nul = await readTextFile(
-		filesWith(new Uint8Array([0x68, 0, 0x69])),
-		'a.bin',
+	const nul = expectOk(
+		await readTextFile(filesWith(new Uint8Array([0x68, 0, 0x69])), 'a.bin'),
 	);
-	expect(nul.data).toEqual({ kind: 'binary', size: 3 });
+	expect(nul).toEqual({ kind: 'binary', size: 3 });
 
-	const invalid = await readTextFile(
-		filesWith(new Uint8Array([0xff, 0xfe, 0x41])),
-		'b.bin',
+	const invalid = expectOk(
+		await readTextFile(filesWith(new Uint8Array([0xff, 0xfe, 0x41])), 'b.bin'),
 	);
-	expect(invalid.data).toEqual({ kind: 'binary', size: 3 });
+	expect(invalid).toEqual({ kind: 'binary', size: 3 });
 
 	const large = new Uint8Array(EDITABLE_TEXT_LIMIT + 1).fill(0x61);
-	const tooLarge = await readTextFile(filesWith(large), 'big.txt');
-	expect(tooLarge.data).toEqual({
+	const tooLarge = expectOk(await readTextFile(filesWith(large), 'big.txt'));
+	expect(tooLarge).toEqual({
 		kind: 'tooLarge',
 		size: EDITABLE_TEXT_LIMIT + 1,
 	});

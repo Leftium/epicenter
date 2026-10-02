@@ -1,7 +1,7 @@
-import { defineStore } from '@epicenter/app';
-import { compileData } from '@epicenter/app/definition';
 /** Current startup installs canonical bytes, preserves offline outboxes by actor/scope,
  * and returns to ordinary bootstrap after durable retirement invalidation. */
+import { defineStore } from '@epicenter/app';
+import { compileData } from '@epicenter/app/definition';
 import 'fake-indexeddb/auto';
 import { expect, test } from 'bun:test';
 

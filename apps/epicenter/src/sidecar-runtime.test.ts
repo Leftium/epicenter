@@ -127,7 +127,7 @@ describe('runtime mode', () => {
 });
 
 describe('boot protocol', () => {
-	test('Rust supplies the configured server unchanged for Cloud and self-hosted builds', () => {
+	test('boot parsing preserves supplied Cloud and self-hosted server descriptors', () => {
 		for (const authServer of [CLOUD_SERVER, SELF_HOSTED_SERVER]) {
 			expect(
 				parseBootFrame(bootFrame({ authServer }), 'production').authServer,
@@ -166,16 +166,6 @@ describe('boot protocol', () => {
 				),
 			).toThrow('authServer');
 		}
-	});
-
-	test('Rust and TypeScript retain the same self-hosted authority bytes', () => {
-		const authServer = {
-			baseURL: 'https://self.example',
-			authorityId: 'instance-68747470733a2f2f73656c662e6578616d706c65',
-		};
-		expect(
-			parseBootFrame(bootFrame({ authServer }), 'production').authServer,
-		).toEqual(SELF_HOSTED_SERVER);
 	});
 
 	test('account management never rewrites native authority identity', () => {

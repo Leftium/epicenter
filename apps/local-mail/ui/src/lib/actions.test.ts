@@ -1,3 +1,11 @@
+/**
+ * Mail triage plans and the descriptions shown for pending assertions.
+ *
+ * Key behaviors:
+ * - Inbox, unread, star, and custom-label actions toggle desired label presence
+ * - Undo reverses the plan while preserving its label identity
+ * - Assertion descriptions name system actions and recover missing label names
+ */
 import { describe, expect, test } from 'bun:test';
 import { describeAssertion, invert, planLabel, planToggle } from './actions';
 
@@ -72,14 +80,14 @@ describe('describeAssertion', () => {
 	test('names an assertion with the same verb that planned it', () => {
 		// The two directions have to agree or the outbox tells a person their
 		// archive is a different act than the one they made.
-		const archive = planToggle(['INBOX'], 'inbox');
-		expect(archive.labelId).toBe('INBOX');
-		expect(archive.want).toBe(false);
 		expect(describeAssertion('INBOX', false)).toBe('Archive');
 		expect(describeAssertion('INBOX', true)).toBe('Move to inbox');
 		expect(describeAssertion('TRASH', true)).toBe('Move to trash');
+		expect(describeAssertion('TRASH', false)).toBe('Restore from trash');
 		expect(describeAssertion('UNREAD', false)).toBe('Mark read');
+		expect(describeAssertion('UNREAD', true)).toBe('Mark unread');
 		expect(describeAssertion('STARRED', true)).toBe('Star');
+		expect(describeAssertion('STARRED', false)).toBe('Unstar');
 	});
 
 	test('a custom label is named, and falls back to its id', () => {

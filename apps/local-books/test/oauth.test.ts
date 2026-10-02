@@ -1,4 +1,13 @@
+/**
+ * QuickBooks authorization and refresh through a local token-endpoint fixture.
+ *
+ * Key behaviors:
+ * - Authorization and refresh produce timestamped token sets
+ * - Forged state prevents exchange and missing credentials name their variable
+ * - A callback listener can use a different port from the public redirect URI
+ */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	completeAuthorization,
 	refreshAccessToken,
@@ -31,16 +40,19 @@ test('authorization-code exchange yields a token set', async () => {
 		tokenUrl: server.tokenUrl,
 		realmOverride: server.realmId,
 	});
-	const { data, error } = await completeAuthorization(
-		config,
-		{ callbackUrl: callback('s1'), state: 's1' },
-		() => NOW,
+	const before = server.hits.token;
+	const data = expectOk(
+		await completeAuthorization(
+			config,
+			{ callbackUrl: callback('s1'), state: 's1' },
+			() => NOW,
+		),
 	);
-	expect(error).toBeNull();
-	expect(data?.realmId).toBe(server.realmId);
-	expect(data?.accessToken).toStartWith('access-');
-	expect(Date.parse(data!.accessTokenExpiresAt)).toBe(NOW + 3600 * 1000);
-	expect(server.hits.token).toBeGreaterThanOrEqual(1);
+
+	expect(data.realmId).toBe(server.realmId);
+	expect(data.accessToken).toStartWith('access-');
+	expect(Date.parse(data.accessTokenExpiresAt)).toBe(NOW + 3600 * 1000);
+	expect(server.hits.token).toBe(before + 1);
 });
 
 test('a forged callback (state mismatch) is rejected, not exchanged', async () => {
@@ -49,12 +61,15 @@ test('a forged callback (state mismatch) is rejected, not exchanged', async () =
 		realmOverride: server.realmId,
 	});
 	const before = server.hits.token;
-	const { error } = await completeAuthorization(
-		config,
-		{ callbackUrl: callback('attacker-state'), state: 'expected-state' },
-		() => NOW,
+	const error = expectErr(
+		await completeAuthorization(
+			config,
+			{ callbackUrl: callback('attacker-state'), state: 'expected-state' },
+			() => NOW,
+		),
 	);
-	expect(error).not.toBeNull();
+
+	expect(error.name).toBe('TokenExchangeFailed');
 	expect(server.hits.token).toBe(before); // never reached the token endpoint
 });
 
@@ -73,9 +88,9 @@ test('refresh exchange mints a new token set', async () => {
 		refreshTokenExpiresAt: new Date(NOW + 8726400 * 1000).toISOString(),
 		obtainedAt: new Date(NOW).toISOString(),
 	};
-	const { data, error } = await refreshAccessToken(config, token, () => NOW);
-	expect(error).toBeNull();
-	expect(data?.accessToken).not.toBe('old-access');
+	const data = expectOk(await refreshAccessToken(config, token, () => NOW));
+
+	expect(data.accessToken).not.toBe('old-access');
 	expect(server.hits.token).toBe(before + 1);
 });
 
@@ -89,25 +104,27 @@ test('callbackPort decouples the local listener from a portless HTTPS redirect',
 		redirectUri: 'https://books.example.trycloudflare.com/callback',
 		callbackPort: PORT,
 	});
-	const { data, error } = await runAuthorizationFlow(config, {
-		now: () => NOW,
-		timeoutMs: 5000,
-		// Stand in for the browser: bounce the authorize request straight at the
-		// local callback server on PORT, the way the tunnel would.
-		openBrowser: (url) => {
-			const state = new URL(url).searchParams.get('state') ?? '';
-			const cb = new URL(`http://localhost:${PORT}/callback`);
-			cb.searchParams.set('code', 'auth-code');
-			cb.searchParams.set('state', state);
-			cb.searchParams.set('realmId', server.realmId);
-			// The server force-stops the instant it catches the callback, resetting
-			// this connection; that reset is expected, not a failure.
-			void fetch(cb).catch(() => {});
-		},
-	});
-	expect(error).toBeNull();
-	expect(data?.realmId).toBe(server.realmId);
-	expect(data?.accessToken).toStartWith('access-');
+	const data = expectOk(
+		await runAuthorizationFlow(config, {
+			now: () => NOW,
+			timeoutMs: 5000,
+			// Stand in for the browser: bounce the authorize request straight at the
+			// local callback server on PORT, the way the tunnel would.
+			openBrowser: (url) => {
+				const state = new URL(url).searchParams.get('state') ?? '';
+				const cb = new URL(`http://localhost:${PORT}/callback`);
+				cb.searchParams.set('code', 'auth-code');
+				cb.searchParams.set('state', state);
+				cb.searchParams.set('realmId', server.realmId);
+				// The server force-stops the instant it catches the callback, resetting
+				// this connection; that reset is expected, not a failure.
+				void fetch(cb).catch(() => {});
+			},
+		}),
+	);
+
+	expect(data.realmId).toBe(server.realmId);
+	expect(data.accessToken).toStartWith('access-');
 });
 
 test('a missing client secret is reported, not thrown, and names the qualified var', async () => {
@@ -118,14 +135,17 @@ test('a missing client secret is reported, not thrown, and names the qualified v
 	delete process.env.QB_SANDBOX_CLIENT_SECRET;
 	try {
 		const config = makeConfig({ tokenUrl: server.tokenUrl });
-		const { error } = await completeAuthorization(
-			config,
-			{ callbackUrl: callback('s2'), state: 's2' },
-			() => NOW,
+		const error = expectErr(
+			await completeAuthorization(
+				config,
+				{ callbackUrl: callback('s2'), state: 's2' },
+				() => NOW,
+			),
 		);
-		expect(error?.name).toBe('MissingCredentials');
-		expect(error?.message).toContain('QB_SANDBOX_CLIENT_SECRET');
+		expect(error.name).toBe('MissingCredentials');
+		expect(error.message).toContain('QB_SANDBOX_CLIENT_SECRET');
 	} finally {
-		process.env.QB_SANDBOX_CLIENT_SECRET = saved;
+		if (saved === undefined) delete process.env.QB_SANDBOX_CLIENT_SECRET;
+		else process.env.QB_SANDBOX_CLIENT_SECRET = saved;
 	}
 });

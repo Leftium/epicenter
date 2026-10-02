@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectOk } from 'wellcrafted/testing';
 import { makeConfig } from '../../test/helpers.ts';
 import { startMockQbServer } from '../../test/mock-qb-server.ts';
 import { createFileTokenStore } from '../token-store.ts';
@@ -55,20 +56,21 @@ describe('fetchReport', () => {
 	test('runs a report live against QuickBooks and passes the period through', async () => {
 		const { mock, openQb, cleanup } = await setup();
 
-		const { data, error } = await fetchReport({
-			openQb,
-			input: {
-				report: 'ProfitAndLoss',
-				start_date: '2026-01-01',
-				end_date: '2026-03-31',
-			},
-		});
+		const data = expectOk(
+			await fetchReport({
+				openQb,
+				input: {
+					report: 'ProfitAndLoss',
+					start_date: '2026-01-01',
+					end_date: '2026-03-31',
+				},
+			}),
+		);
 
-		expect(error).toBeNull();
 		expect(mock.hits.report).toBe(1);
-		expect(data?.report).toBe('ProfitAndLoss');
+		expect(data.report).toBe('ProfitAndLoss');
 		const header = (
-			data?.data as {
+			data.data as {
 				Header: { ReportName: string; StartPeriod: string };
 			}
 		).Header;

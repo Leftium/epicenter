@@ -177,20 +177,18 @@ test('save B, typing C, outside write D after B landed: B acknowledged, C kept, 
 	// is not trusted.
 	file.draft.observe({ kind: 'present', entry: await entryFor(A) });
 	expect(file.draft.buffer).toBe(C);
+	// B lands before this reread; another program replaces it at that boundary.
+	file.beforeNextRead(() => file.outside(D));
 	held.open();
-	await Bun.sleep(0);
-	// B is on disk; another program replaces it before the draft rereads.
-	const reread = store_settled(file, D);
 	await saving;
-	await reread;
 
 	expect(file.saved).toEqual([B]);
 	expect(file.draft.baseline.source).toBe(B);
 	expect(file.draft.buffer).toBe(C);
-	const state = file.draft.saveState;
-	expect(state.kind).toBe('conflict');
-	if (state.kind !== 'conflict' || state.current.kind !== 'present') return;
-	expect(state.current.entry.source).toBe(D);
+	expect(file.draft.saveState).toMatchObject({
+		kind: 'conflict',
+		current: { kind: 'present', entry: { source: D } },
+	});
 	expect(file.disk).toBe(D);
 
 	// Saving is paused: more typing writes nothing.
@@ -198,15 +196,6 @@ test('save B, typing C, outside write D after B landed: B acknowledged, C kept, 
 	await file.draft.save();
 	expect(file.writes).toHaveLength(1);
 });
-
-/** Replace the disk as soon as the pending write has landed. */
-async function store_settled(
-	file: Awaited<ReturnType<typeof setup>>,
-	next: string,
-) {
-	while (file.disk !== B) await Bun.sleep(0);
-	file.outside(next);
-}
 
 test('an outside write that lands before the save conflicts and writes nothing', async () => {
 	const file = await setup();

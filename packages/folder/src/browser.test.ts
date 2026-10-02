@@ -99,8 +99,12 @@ describe('browser folder tables', () => {
 		const completed = await folder.tables.todos.update('milk', {
 			fields: { done: true },
 		});
-		expect(completed.data!.fields).toEqual({ title: 'Buy milk', done: true });
-		expect(completed.data!.body).toBe('Two liters.\n');
+		expect(expectOk(completed)).toMatchObject({
+			fields: { title: 'Buy milk', done: true },
+			body: 'Two liters.\n',
+			parseError: undefined,
+			issues: [],
+		});
 
 		const renamed = await folder.tables.todos.rename(
 			completed.data!,
@@ -108,16 +112,16 @@ describe('browser folder tables', () => {
 		);
 		expect(renamed.data!.path).toBe('todos/groceries.md');
 		expect((await folder.tables.todos.get('milk')).data).toBeUndefined();
-		const listed = await folder.tables.todos.list();
-		expect(listed.data!.entries.map((entry) => entry.stem)).toEqual([
+		const listed = expectOk(await folder.tables.todos.list());
+		expect(listed.map((item) => expectOk(item.result).stem)).toEqual([
 			'groceries',
 		]);
 
 		expectOk(await folder.tables.todos.delete(renamed.data!));
-		expect((await folder.tables.todos.list()).data!.entries).toEqual([]);
+		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 	});
 
-	test('create is exclusive and refuses case-insensitive collisions', async () => {
+	test('create is exclusive, keeps names exactly, and refuses a path outside its table', async () => {
 		const folder = await open({ commitOnEdit: false });
 		await folder.tables.todos.create({
 			stem: 'Plan',
@@ -131,14 +135,15 @@ describe('browser folder tables', () => {
 				})
 			).error?.name,
 		).toBe('Exists');
+		// Browser storage keeps names exactly: another spelling is another row.
 		expect(
-			(
+			expectOk(
 				await folder.tables.todos.create({
 					stem: 'plan',
 					fields: { title: 'Q', done: false },
-				})
-			).error?.name,
-		).toBe('Collision');
+				}),
+			).path,
+		).toBe('todos/plan.md');
 		expect(
 			(
 				await folder.tables.todos.create({
@@ -146,7 +151,7 @@ describe('browser folder tables', () => {
 					fields: { title: 'Q', done: false },
 				})
 			).error?.name,
-		).toBe('InvalidStem');
+		).toBe('InvalidPath');
 		expect(
 			(
 				await folder.tables.todos.create({
@@ -157,7 +162,7 @@ describe('browser folder tables', () => {
 		).toBe('InvalidValues');
 	});
 
-	test('invalid readable rows stay entries with issues and independently valid fields', async () => {
+	test('readable rows stay snapshots: field issues beside valid fields, and a parse failure with no fields', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const source =
 			'﻿---\r\ntitle: Kept # comment\r\ndone: maybe\r\nextra: unknown\r\n---\r\nBody\r\n';
@@ -167,13 +172,14 @@ describe('browser folder tables', () => {
 			'todos/bad.md',
 			new Uint8Array([0xff, 0xfe, 0x00]),
 		);
-		const listed = (await folder.tables.todos.list()).data!;
-		expect(listed.unreadable.map((item) => item.path)).toEqual([
-			'todos/bad.md',
-		]);
-		const odd = listed.entries.find((entry) => entry.path === 'todos/odd.md')!;
+		const listed = expectOk(await folder.tables.todos.list());
+		const item = (path: string) =>
+			listed.find((found) => found.path === path)!.result;
+		expect(expectErr(item('todos/bad.md')).name).toBe('InvalidUtf8');
+		const odd = expectOk(item('todos/odd.md'));
 		expect(odd.source).toBe(source);
-		expect(odd.issues?.map((issue) => issue.kind)).toEqual(['field']);
+		expect(odd.parseError).toBeUndefined();
+		expect(odd.issues.map((issue) => issue.field)).toEqual(['done']);
 		expect(odd.fields).toEqual({ title: 'Kept' });
 		expect(odd.stem).toBe('odd');
 
@@ -184,22 +190,26 @@ describe('browser folder tables', () => {
 		expect(fixed.data!.source).toBe(
 			source.replace('done: maybe', 'done: true'),
 		);
-		expect(fixed.data!.issues).toBeUndefined();
+		expect(fixed.data!.issues).toEqual([]);
 
-		const broken = listed.entries.find(
-			(entry) => entry.path === 'todos/broken.md',
-		)!;
-		expect(broken.issues?.[0]?.kind).toBe('frontmatter');
+		const broken = expectOk(item('todos/broken.md'));
+		expect(broken.parseError).toBeDefined();
+		expect(broken).toMatchObject({ fields: {}, body: undefined, issues: [] });
 		expect(
 			(await folder.tables.todos.update('broken', { fields: { done: true } }))
 				.error?.name,
-		).toBe('UnsupportedSource');
-		const repaired = await folder.tables.todos.replace(
-			broken,
-			'---\ntitle: Repaired\ndone: false\n---\n',
+		).toBe('Unparsed');
+		const repaired = expectOk(
+			await folder.tables.todos.replace(
+				broken,
+				'---\ntitle: Repaired\ndone: false\n---\n',
+			),
 		);
-		expect(repaired.data!.issues).toBeUndefined();
-		expect(repaired.data!.fields.title).toBe('Repaired');
+		expect(repaired).toMatchObject({
+			fields: { title: 'Repaired', done: false },
+			parseError: undefined,
+			issues: [],
+		});
 	});
 
 	test('same-stem siblings are ordinary files: a row is created beside them, and rename and delete leave them', async () => {
@@ -216,11 +226,13 @@ describe('browser folder tables', () => {
 		);
 		// Siblings can also arrive after the row was captured.
 		expectOk(await folder.files.create('todos/rec.flac', 'late'));
-		expect(created.issues).toBeUndefined();
+		expect(created.issues).toEqual([]);
+		// A snapshot is the capture and its reading: no attachment, no sibling.
 		expect(Object.keys(created).sort()).toEqual([
 			'body',
 			'fields',
 			'issues',
+			'parseError',
 			'path',
 			'sha256',
 			'source',
@@ -228,7 +240,7 @@ describe('browser folder tables', () => {
 		]);
 		// Two siblings are not an ambiguity; the listed row is as valid as it was.
 		const listed = expectOk(await folder.tables.todos.list());
-		expect(listed.entries.map((entry) => entry.issues)).toEqual([undefined]);
+		expect(listed.map((item) => expectOk(item.result))).toEqual([created]);
 
 		const renamed = expectOk(await folder.tables.todos.rename(created, 'rec2'));
 		expect(renamed.path).toBe('todos/rec2.md');
@@ -266,9 +278,10 @@ describe('browser folder tables', () => {
 				'---\ntitle: T\ndone: false\n---\n',
 			),
 		);
-		expect(
-			expectOk(await folder.tables.todos.get('rec.take'))?.issues,
-		).toBeUndefined();
+		expect(expectOk(await folder.tables.todos.get('rec.take'))).toMatchObject({
+			parseError: undefined,
+			issues: [],
+		});
 	});
 
 	test('rejects a definition that supplies a body codec', async () => {
@@ -354,43 +367,46 @@ describe('browser folder tables', () => {
 				['dangling', 'no-such-list'],
 			] as const) {
 				const row = expectOk(await todos.get(stem));
-				expect(row).toMatchObject({
-					fields: { list },
-					issues: undefined,
-				});
+				expect(row).toMatchObject({ fields: { list }, issues: [] });
 			}
 		} finally {
 			await folder.close();
 		}
 	});
 
-	test('a todo with an unresolvable alias stays an entry and is repaired through its source', async () => {
+	test('a todo with an unresolvable alias stays a snapshot and is repaired through its source', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const source = '---\ntitle: *missing\ndone: false\n---\nNotes stay.\n';
 		await folder.files.create('todos/alias.md', source);
-		const listed = (await folder.tables.todos.list()).data!;
-		expect(listed.unreadable).toEqual([]);
-		const entry = listed.entries.find(
-			(item) => item.path === 'todos/alias.md',
-		)!;
+		const listed = expectOk(await folder.tables.todos.list());
+		expect(listed).toHaveLength(1);
+		const entry = expectOk(listed[0]!.result);
 		expect(entry.source).toBe(source);
-		expect(entry.body).toBe('Notes stay.\n');
-		expect(entry.issues?.[0]?.kind).toBe('frontmatter');
-		expect(entry.issues?.[0]?.message).toContain('Unresolved alias');
+		// The source is the repair baseline; a failed parse recovers no body.
+		expect(entry.parseError?.diagnostics[0].message).toContain(
+			'Unresolved alias',
+		);
+		expect(entry.body).toBeUndefined();
 
 		// A structured edit, as the editor's title field makes, is refused safely.
-		const edited = await folder.tables.todos.update(entry.stem, {
-			fields: { title: 'Fixed' },
-		});
-		expect(edited.error?.name).toBe('UnsupportedSource');
+		for (const change of [{ fields: { title: 'Fixed' } }, { body: 'New.\n' }])
+			expect(
+				expectErr(await folder.tables.todos.update(entry.stem, change)).name,
+			).toBe('Unparsed');
 		expect((await folder.tables.todos.get('alias')).data!.source).toBe(source);
 
-		const repaired = await folder.tables.todos.replace(
-			entry,
-			source.replace('*missing', 'Fixed'),
+		const repaired = expectOk(
+			await folder.tables.todos.replace(
+				entry,
+				source.replace('*missing', 'Fixed'),
+			),
 		);
-		expect(repaired.data!.issues).toBeUndefined();
-		expect(repaired.data!.fields).toEqual({ title: 'Fixed', done: false });
+		expect(repaired).toMatchObject({
+			fields: { title: 'Fixed', done: false },
+			body: 'Notes stay.\n',
+			parseError: undefined,
+			issues: [],
+		});
 	});
 
 	test('kv.json is created exclusively and updated inside its own source', async () => {

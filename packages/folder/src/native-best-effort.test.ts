@@ -63,7 +63,7 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 			new Uint8Array(await readFile(join(root, 'todos/take.wav'))),
 		).toEqual(new Uint8Array([7, 7]));
 		const entry = expectOk(await table.get('take'));
-		expect(entry?.issues).toBeUndefined();
+		expect(entry).toMatchObject({ parseError: undefined, issues: [] });
 		expect(entry?.sha256).toEqual(landed[0]!.data!.sha256);
 	} finally {
 		await rm(root, { recursive: true, force: true });

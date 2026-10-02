@@ -108,7 +108,10 @@ describe('native folder', () => {
 			fields: { done: true },
 		});
 		expect(done.error).toBeNull();
-		expect(done.data!.fields).toEqual({ title: 'Run', done: true });
+		expect(done.data!.fields).toEqual({
+			title: 'Run',
+			done: true,
+		});
 		await settled(folder);
 		expect(await git(root, 'log', '-1', '--format=%s')).toBe(
 			'Update todos/walk.md',
@@ -213,6 +216,87 @@ describe('native folder', () => {
 		);
 		expect((await folder.tables.todos.get('Plan')).data?.stem).toBe('Plan');
 		expect((await folder.tables.todos.get('plan')).data).toBeUndefined();
+
+		// Creating the other spelling is this filesystem's question, not a
+		// naming rule's: it is refused exactly when both names are one file.
+		const oneFile = await readFile(join(root, 'todos/plan.md')).then(
+			() => true,
+			() => false,
+		);
+		const other = await folder.tables.todos.create({
+			stem: 'plan',
+			fields: { title: 'Q', done: false },
+		});
+		const plan = expectOk(await folder.tables.todos.get('Plan'))!;
+		const moved = await folder.tables.todos.rename(plan, 'PLAN');
+		if (oneFile) {
+			expect(expectErr(other)).toMatchObject({
+				name: 'Exists',
+				path: 'todos/plan.md',
+			});
+			expect(expectErr(moved).name).toBe('Exists');
+			expect(await readdir(join(root, 'todos'))).toEqual(['Plan.md']);
+			expect(await readFile(join(root, 'todos/Plan.md'), 'utf8')).toBe(
+				plan.source,
+			);
+		} else {
+			expectOk(other);
+			expectOk(moved);
+			expect((await readdir(join(root, 'todos'))).sort()).toEqual([
+				'PLAN.md',
+				'plan.md',
+			]);
+		}
+		await folder.close();
+	});
+
+	test('literal stems are rows on disk: an empty stem, a leading dot, a trailing space, and punctuation', async () => {
+		const root = await scratch('native-literal-');
+		const folder = await openNativeFolder({
+			root,
+			definition,
+			git: { author, commitOnEdit: false },
+		});
+		const stems = ['', '.hidden', 'trailing ', 'a: b', 'q?*'];
+		for (const stem of stems) {
+			const created = expectOk(
+				await folder.tables.todos.create({
+					stem,
+					fields: { title: stem, done: false },
+				}),
+			);
+			expect(created.stem).toBe(stem);
+			expect(await readFile(join(root, 'todos', `${stem}.md`), 'utf8')).toBe(
+				created.source,
+			);
+			expect(expectOk(await folder.tables.todos.get(stem))).toEqual(created);
+			const updated = expectOk(
+				await folder.tables.todos.update(stem, { fields: { done: true } }),
+			);
+			expect(updated).toMatchObject({ parseError: undefined, issues: [] });
+		}
+		// An uppercase extension is an ordinary file, not a row.
+		await writeFile(join(root, 'todos/Loud.MD'), 'not a row');
+		const listing = expectOk(await folder.tables.todos.list());
+		expect(listing.map((item) => expectOk(item.result).stem).sort()).toEqual(
+			[...stems].sort(),
+		);
+		expect(expectOk(await folder.tables.todos.get('Loud'))).toBeUndefined();
+
+		// Bytes that are not text fail that file alone.
+		await writeFile(join(root, 'todos/binary.md'), new Uint8Array([0xff, 0]));
+		const withBinary = expectOk(await folder.tables.todos.list());
+		expect(withBinary).toHaveLength(stems.length + 1);
+		expect(
+			expectErr(
+				withBinary.find((item) => item.path === 'todos/binary.md')!.result,
+			).name,
+		).toBe('InvalidUtf8');
+
+		const empty = expectOk(await folder.tables.todos.get(''))!;
+		const named = expectOk(await folder.tables.todos.rename(empty, 'named'));
+		expectOk(await folder.tables.todos.delete(named));
+		expect(await readdir(join(root, 'todos'))).not.toContain('.md');
 		await folder.close();
 	});
 
@@ -232,7 +316,7 @@ describe('native folder', () => {
 				fields: { title: 'Take', done: false },
 			}),
 		);
-		expect(created.issues).toBeUndefined();
+		expect(created).toMatchObject({ parseError: undefined, issues: [] });
 
 		const renamed = expectOk(
 			await folder.tables.todos.rename(created, 'take2'),

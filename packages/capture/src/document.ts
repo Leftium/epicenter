@@ -35,11 +35,12 @@
  *   belongs to the one parse that produced it. An operation takes a thought
  *   of the document it is given and refuses one from any other parse.
  *
- * Structured operations are refused, with the reason, when the layout is
- * ambiguous: more than one root heading reading "Thoughts", a Thoughts
+ * Structured operations are refused, with the reason, when the source is not
+ * a capture's (no opening frontmatter line, or no closing one) or its layout
+ * is ambiguous: more than one root heading reading "Thoughts", a Thoughts
  * heading that is not `## Thoughts`, anything but a bullet list first under
- * the heading, a second bullet list in the section, or frontmatter with no
- * closing line. The source stays editable as text.
+ * the heading, or a second bullet list in the section. The source stays
+ * editable as text.
  */
 import { frameSource } from '@epicenter/folder';
 import MarkdownIt from 'markdown-it';
@@ -54,7 +55,10 @@ export type Thought = {
 };
 
 export type RefusalCode =
+	| 'missing-frontmatter'
 	| 'unclosed-frontmatter'
+	/** The frontmatter is framed but does not parse; the capture table says why. */
+	| 'unparsed'
 	| 'duplicate-heading'
 	| 'heading-form'
 	| 'section-shape'
@@ -78,12 +82,12 @@ type ItemSpan = Span & {
 
 /** Offsets into `source`. Meaningful only with the document that holds them. */
 type Layout = {
+	/** The first offset after the frontmatter's closing line. */
 	readonly bodyStart: number;
 	/** The capture text's exact span. */
 	readonly text: Span;
 	/** Start of the heading line, or the end of the source. */
 	readonly regionEnd: number;
-	readonly hasFrontmatter: boolean;
 	/** The `## Thoughts` line, without its terminator. */
 	readonly heading: Span | undefined;
 	readonly items: readonly ItemSpan[];
@@ -230,17 +234,43 @@ function rootBlocks(body: string): RootBlock[] {
 	return blocks;
 }
 
+/**
+ * A document for source the capture table could not parse, with the table's
+ * reason. Nothing is read from it: the whole file is edited as Source.
+ */
+export function unparsedCapture(
+	source: string,
+	message: string,
+): CaptureDocument {
+	return refused(
+		source,
+		source.includes('\r\n') ? '\r\n' : '\n',
+		'unparsed',
+		message,
+	);
+}
+
+/**
+ * Read a capture's text and thoughts from its source. The source must have
+ * both frontmatter lines: Markdown without them is not a capture's body, and
+ * no operation adds them. Whether the frontmatter between them parses is the
+ * capture table's question (`table.inspect`); a caller that has that answer
+ * uses `unparsedCapture` for source that does not.
+ */
 export function parseCapture(source: string): CaptureDocument {
 	const frame = frameSource(source);
-	if (frame.kind === 'unclosed')
+	if (frame.kind !== 'frontmatter')
 		return refused(
 			source,
 			source.includes('\r\n') ? '\r\n' : '\n',
-			'unclosed-frontmatter',
-			'The frontmatter opening line has no closing --- line.',
+			frame.kind === 'unclosed'
+				? 'unclosed-frontmatter'
+				: 'missing-frontmatter',
+			frame.kind === 'unclosed'
+				? 'The frontmatter opening line has no closing --- line.'
+				: 'The file does not start with a --- line opening its frontmatter.',
 		);
 	const { bodyStart, newline } = frame;
-	const hasFrontmatter = frame.kind === 'frontmatter';
 	const lines = lineTable(source, bodyStart);
 	const blocks = rootBlocks(source.slice(bodyStart));
 	const lineText = (at: number) => {
@@ -281,10 +311,8 @@ export function parseCapture(source: string): CaptureDocument {
 	// The capture text, between its separators: one blank line after
 	// frontmatter, and one before the heading.
 	let textStart = bodyStart;
-	if (hasFrontmatter) {
-		const lead = /^(?:\r\n|\n|\r)/.exec(source.slice(bodyStart, regionEnd));
-		if (lead) textStart += lead[0].length;
-	}
+	const lead = /^(?:\r\n|\n|\r)/.exec(source.slice(bodyStart, regionEnd));
+	if (lead) textStart += lead[0].length;
 	let textEnd = regionEnd;
 	if (headingLine !== undefined)
 		for (let count = 0; count < 2; count++) {
@@ -362,7 +390,6 @@ export function parseCapture(source: string): CaptureDocument {
 			bodyStart,
 			text: { start: textStart, end: textEnd },
 			regionEnd,
-			hasFrontmatter,
 			heading:
 				headingLine === undefined
 					? undefined
@@ -545,7 +572,7 @@ export function setText(document: CaptureDocument, text: string): Edit {
 		splice(
 			source,
 			{ start: layout.bodyStart, end: layout.regionEnd },
-			(layout.hasFrontmatter ? newline : '') +
+			newline +
 				next +
 				(layout.heading === undefined ? '' : `${newline}${newline}`),
 		),
@@ -594,9 +621,7 @@ export function addThought(document: CaptureDocument, text: string): Edit {
 	const body = source.slice(layout.bodyStart);
 	const gap =
 		body === ''
-			? layout.hasFrontmatter
-				? newline
-				: ''
+			? newline
 			: /\n[ \t]*\n$/.test(toTextarea(body)) ||
 					/^[ \t]*\n$/.test(toTextarea(body))
 				? ''

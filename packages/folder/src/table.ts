@@ -1,19 +1,27 @@
 /**
  * File-backed tables: Markdown rows at `<table>/<stem>.md` (ADR-0457, ADR-0462).
  *
- * An entry is one captured observation of a row file: its exact source, the
- * sha256 of those bytes, the interpretation of its fields and body, and
- * conformance issues. Structured updates read current source once; complete
- * replacements use the supplied entry's baseline. Both conditionally publish
- * once and return a conflict without retrying (ADR-0464).
+ * A snapshot is one captured row file: its literal path and stem, its exact
+ * source, the SHA-256 of those bytes, and how that text reads. Reading the
+ * file and interpreting its text are separate. A file that was read is a
+ * snapshot even when its text does not parse. A parse failure and a field
+ * that does not conform are different things: the first leaves no fields or
+ * body at all, the second leaves every field that validated.
+ *
+ * `inspect` is that interpretation by itself: reads, save receipts, and
+ * editors checking an unsaved buffer all use it.
+ *
+ * Structured updates read current source once; complete replacements use the
+ * supplied capture's baseline. Both conditionally publish once and return a
+ * conflict without retrying (ADR-0464).
  *
  * A table reads and writes exactly one Markdown file per row (ADR-0480). A
  * sibling that shares a row's stem is an ordinary file: it is not part of the
- * entry, it does not block creating the row, and renaming or deleting the row
- * leaves it where it is.
+ * snapshot, it does not block creating the row, and renaming or deleting the
+ * row leaves it where it is.
  */
 
-import type { ParsedTable } from '@epicenter/definition';
+import { isJsonSafe, type ParsedTable } from '@epicenter/definition';
 import { customAlphabet } from 'nanoid';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
@@ -25,95 +33,140 @@ import {
 } from './capture.js';
 import {
 	FileError,
+	type TableCreateError,
+	type TableDeleteError,
+	type TableEnumerationError,
 	TableError,
+	type TableGetError,
 	type TableReadError,
-	type TableWriteError,
+	type TableRenameError,
+	type TableReplaceError,
+	type TableUpdateError,
 } from './errors.js';
-import { composeSource, patchSource, readSource } from './markdown.js';
 import {
-	collisionKey,
-	pathProblem,
+	composeSource,
+	parseSource,
+	patchSource,
+	valueProblem,
+} from './markdown.js';
+import {
 	ROW_EXTENSION,
+	rowAddressProblem,
 	rowPath,
 	rowStemOf,
-	stemProblem,
 } from './paths.js';
+import {
+	type DeepReadonly,
+	type FieldIssue,
+	freezeDeep,
+	freezeIssues,
+	ownSupplied,
+	type ParseError,
+} from './reading.js';
 
-export type EntryIssue =
-	| { readonly kind: 'filename'; readonly message: string }
-	| { readonly kind: 'frontmatter'; readonly message: string }
-	| {
-			readonly kind: 'field';
-			readonly field: string;
-			readonly message: string;
-	  };
-
-export type ValidEntry<TFields> = TextCapture & {
-	/** The filename without `.md`. `path` is `rowPath(table.name, stem)`. */
-	readonly stem: string;
-	readonly fields: Readonly<TFields>;
-	readonly body: string;
-	readonly issues: undefined;
+/**
+ * How row source reads. Text that does not parse has a `parseError`, no
+ * fields, no body, and no issues. Text that parses has a body and every
+ * declared field that validated by itself, so one field's issue does not
+ * hide another field's value.
+ *
+ * `fields` is always partial: an empty `issues` does not make it a complete
+ * row, so check the fields an action needs. Every declared field the source
+ * lacks is an issue. Keys the table does not declare stay in the source and
+ * are not issues.
+ */
+export type TableReading<TFields> = {
+	readonly fields: DeepReadonly<Partial<TFields>>;
+	/** The text after the closing fence, possibly empty; `undefined` when the source does not parse. */
+	readonly body: string | undefined;
+	readonly parseError: ParseError | undefined;
+	readonly issues: readonly FieldIssue[];
 };
 
-export type InvalidEntry<TFields> = TextCapture & {
+/**
+ * One immutable capture of a row file and how its text reads. `source` and
+ * `sha256` always describe the same bytes, and the reading is of that source.
+ * It is the same repair baseline whether or not the text parses.
+ */
+export type TableSnapshot<TFields> = TableReading<TFields> & {
+	readonly path: string;
 	/**
-	 * The literal filename without `.md`, even when it breaks the naming rules
-	 * or is empty (`<table>/.md`). A `filename` issue reports the violation;
-	 * the stem still addresses the row through `get` and `update`.
+	 * The literal filename without `.md`: `path` is `rowPath(table.name, stem)`.
+	 * It may be empty (`<table>/.md`), so never test it by truthiness.
 	 */
 	readonly stem: string;
-	/** Only declared fields that validated independently. */
-	readonly fields: Readonly<Partial<TFields>>;
-	readonly body: string | undefined;
-	readonly issues: readonly [EntryIssue, ...EntryIssue[]];
+	readonly source: string;
+	readonly sha256: string;
 };
 
-/** One immutable observation of a row file. `issues` discriminates the variants. */
-export type Entry<TFields> = ValidEntry<TFields> | InvalidEntry<TFields>;
-
-export type TableListing<TFields> = {
-	readonly entries: readonly Entry<TFields>[];
-	/** Row files that were enumerated but whose bytes could not be read as UTF-8 text. */
-	readonly unreadable: readonly {
-		readonly path: string;
-		readonly error: TableReadError | TableError;
-	}[];
-};
-
-export type CreateInput<TFields> = {
-	/** The file stem; generated when omitted. It is not the title. */
-	readonly stem?: string;
-	readonly fields: TFields;
-	readonly body?: string;
-};
+/**
+ * One item for every `.md` file directly in the table's directory, in no
+ * promised order. A file whose text was read is a snapshot, parsed or not. A
+ * file that could not be read, is not UTF-8, or went away after it was
+ * enumerated is that item's error.
+ */
+export type TableListing<TFields> = readonly {
+	readonly path: string;
+	readonly result: Result<TableSnapshot<TFields>, TableReadError>;
+}[];
 
 export type FileTable<TFields> = {
 	readonly name: string;
-	list(): Promise<Result<TableListing<TFields>, TableReadError>>;
+	/**
+	 * Interpret row source: parse it once, then check each declared field by
+	 * itself. Synchronous and pure: it reads no file and invents no capture, so
+	 * an editor can inspect the text it has not saved.
+	 */
+	inspect(source: string): TableReading<TFields>;
+	/** An outer error means the listing itself failed; no partial listing is returned. */
+	list(): Promise<Result<TableListing<TFields>, TableEnumerationError>>;
+	/** `undefined` only when no file is at the stem. A file whose text does not parse is still a snapshot. */
 	get(
 		stem: string,
-	): Promise<Result<Entry<TFields> | undefined, TableReadError | TableError>>;
-	create(
-		input: CreateInput<TFields>,
-	): Promise<Result<Entry<TFields>, TableWriteError>>;
-	/** Assign fields/body on current source. A publication race returns Conflict; nothing retries. */
+	): Promise<Result<TableSnapshot<TFields> | undefined, TableGetError>>;
+	/**
+	 * Save a new row. The source always has both fences, even with no fields
+	 * and no body. The supplied values are copied, never frozen or kept.
+	 */
+	create(input: {
+		/** The file stem; generated when omitted. It is not the title. */
+		readonly stem?: string;
+		readonly fields: DeepReadonly<TFields>;
+		readonly body?: string;
+	}): Promise<Result<TableSnapshot<TFields>, TableCreateError>>;
+	/**
+	 * Assign fields/body in current source. The source must parse, for a body
+	 * change too; other fields may have issues. A publication race returns
+	 * Conflict; nothing retries, and nothing is rewritten on a refusal.
+	 */
 	update(
 		stem: string,
-		change: { readonly fields?: Partial<TFields>; readonly body?: string },
-	): Promise<Result<Entry<TFields>, TableWriteError>>;
-	/** Save complete text against this entry's baseline, including invalid frontmatter for repair. */
+		change: {
+			readonly fields?: DeepReadonly<Partial<TFields>>;
+			readonly body?: string;
+		},
+	): Promise<Result<TableSnapshot<TFields>, TableUpdateError>>;
+	/**
+	 * Save complete text against this capture's baseline, exactly as given.
+	 * Text that does not parse is saved all the same: the returned snapshot
+	 * then has a `parseError`, and the save still succeeded.
+	 */
 	replace(
-		entry: FileCapture,
+		capture: FileCapture,
 		source: string,
-	): Promise<Result<Entry<TFields>, TableWriteError>>;
-	/** Move the row file to another stem. No other file moves with it. */
+	): Promise<Result<TableSnapshot<TFields>, TableReplaceError>>;
+	/**
+	 * Move the row file to another stem. No other file moves with it. The
+	 * capture's `source` must be the text of its `sha256`: the returned
+	 * snapshot reads that text, so a capture whose two halves disagree is
+	 * refused as `InvalidPath` before anything moves.
+	 */
 	rename(
-		entry: TextCapture,
+		capture: TextCapture,
 		nextStem: string,
-	): Promise<Result<Entry<TFields>, TableWriteError>>;
+	): Promise<Result<TableSnapshot<TFields>, TableRenameError>>;
 	/** Remove the row file. No other file is removed with it. */
-	delete(entry: FileCapture): Promise<Result<undefined, TableWriteError>>;
+	delete(capture: FileCapture): Promise<Result<undefined, TableDeleteError>>;
 };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -128,29 +181,104 @@ function decode(bytes: Uint8Array): string | undefined {
 	}
 }
 
-function invalidValues(
+/**
+ * The bytes a save submits and the text those bytes are. Encoding replaces
+ * an unpaired surrogate, so a receipt's source is the text of the bytes, not
+ * a string assumed to equal them. The text is always decoded from the bytes,
+ * with the decoder that reads files: a byte-order mark stays in it.
+ */
+function submitted(source: string): { bytes: Uint8Array; source: string } {
+	const bytes = encoder.encode(source);
+	return { bytes, source: utf8.decode(bytes) };
+}
+
+/**
+ * Interpret row source against a compiled table. Parsing comes first and
+ * fails as a whole. The definition compiler then checks each declared field
+ * by itself; nothing is coerced, defaulted, or repaired.
+ *
+ * The values are this parse's own, so freezing them at every depth touches
+ * nothing a caller holds. Each declared value that is JSON is frozen before
+ * the compiler sees it, so a field's callback cannot make a reading say what
+ * its source does not.
+ *
+ * YAML can also hold what JSON cannot: a `!!binary` byte array, a date, a
+ * set, a map, a number that is not finite. A declared value like that is
+ * handed over as it is, since a byte array cannot be frozen: the compiler
+ * refuses it as an issue before any callback runs. A key the table does not
+ * declare is never checked, so nothing here touches its value.
+ */
+export function inspectSource<TFields>(
 	parsed: ParsedTable,
-	values: Readonly<Record<string, unknown>>,
+	source: string,
+): TableReading<TFields> {
+	const read = parseSource(source);
+	if (read.error)
+		return Object.freeze({
+			fields: Object.freeze({}) as DeepReadonly<Partial<TFields>>,
+			body: undefined,
+			parseError: read.error,
+			issues: freezeIssues([]),
+		});
+	const declared: Record<string, unknown> = {};
+	for (const key of parsed.fields.keys()) {
+		if (!Object.hasOwn(read.data.values, key)) continue;
+		const value = read.data.values[key];
+		declared[key] = isJsonSafe(value) ? freezeDeep(value) : value;
+	}
+	const { conforming, issues } = parsed.conformance(declared);
+	return Object.freeze({
+		// Every value is frozen already; only the map that holds them is new.
+		fields: Object.freeze(conforming) as DeepReadonly<Partial<TFields>>,
+		body: read.data.body,
+		parseError: undefined,
+		issues: freezeIssues(issues),
+	});
+}
+
+/** The row path a literal stem addresses, or the refusal of a stem that is not one filename segment in this folder. */
+function rowAddress(
+	table: string,
+	stem: string,
+): Result<string, Extract<FileError, { name: 'InvalidPath' }>> {
+	const problem = rowAddressProblem(table, stem);
+	if (problem !== undefined)
+		return FileError.InvalidPath({
+			path: rowPath(table, String(stem)),
+			reason: problem,
+		});
+	return Ok(rowPath(table, stem));
+}
+
+/**
+ * Supplied values as the table will save them: the table's own frozen
+ * copies, checked by the definition compiler and known to be writable as
+ * YAML. Synchronous, so it finishes before anything is read.
+ */
+function ownValues(
+	parsed: ParsedTable,
+	supplied: unknown,
 	complete: boolean,
-): Result<undefined, TableError> {
-	const issues: { field: string; message: string }[] = [];
+): Result<
+	Record<string, unknown>,
+	Extract<TableError, { name: 'InvalidValues' }>
+> {
+	const { values, issues } = ownSupplied(
+		parsed,
+		(supplied ?? {}) as Record<string, unknown>,
+		{ complete },
+	);
+	if (issues.length > 0) return TableError.InvalidValues({ issues });
 	for (const [key, value] of Object.entries(values)) {
-		const field = parsed.fields.get(key);
-		if (field === undefined)
-			issues.push({ field: key, message: 'The field is not declared' });
-		else if (!field.check(value))
+		const problem = valueProblem(value);
+		if (problem !== undefined)
 			issues.push({
 				field: key,
-				message: 'The value does not conform to its declared schema',
+				message: `${key} cannot be saved: ${problem}`,
 			});
 	}
-	if (complete)
-		for (const key of parsed.fields.keys())
-			if (!Object.hasOwn(values, key))
-				issues.push({ field: key, message: 'The field is required' });
-	return issues.length === 0
-		? Ok(undefined)
-		: TableError.InvalidValues({ issues });
+	if (issues.length > 0) return TableError.InvalidValues({ issues });
+	return Ok(values);
 }
 
 /** The exact file a new row is: its path, its source text, and that text's bytes. */
@@ -172,65 +300,40 @@ export function prepareRow(
 		readonly fields: unknown;
 		readonly body?: string;
 	},
-): Result<PreparedRow, TableError> {
-	const problem = stemProblem(input.stem);
-	if (problem !== undefined)
-		return TableError.InvalidStem({ stem: input.stem, reason: problem });
-	const values = (input.fields ?? {}) as Record<string, unknown>;
-	const valid = invalidValues(parsed, values, true);
-	if (valid.error) return valid;
-	const path = rowPath(parsed.name, input.stem);
+): Result<
+	PreparedRow,
+	Extract<TableCreateError, { name: 'InvalidPath' | 'InvalidValues' }>
+> {
+	const address = rowAddress(parsed.name, input.stem);
+	if (address.error) return address;
+	const values = ownValues(parsed, input.fields, true);
+	if (values.error) return values;
 	const ordered: Record<string, unknown> = {};
-	for (const key of parsed.fields.keys()) ordered[key] = values[key];
+	for (const key of parsed.fields.keys()) ordered[key] = values.data[key];
 	const composed = composeSource(ordered, input.body ?? '');
 	if (composed.error)
-		return TableError.UnsupportedSource({
-			path,
-			reason: composed.error.reason,
+		return TableError.InvalidValues({
+			issues: [
+				{
+					field: composed.error.field,
+					message: `${composed.error.field} cannot be saved: ${composed.error.reason}`,
+				},
+			],
 		});
-	return Ok({
-		path,
-		source: composed.data,
-		bytes: encoder.encode(composed.data),
-	});
+	return Ok({ path: address.data, ...submitted(composed.data) });
 }
 
 /** The filenames directly in a table's directory; none when it does not exist yet. */
 export async function tableFilenames(
 	storage: Pick<FolderStorage, 'children'>,
 	table: string,
-): Promise<Result<string[], FileError>> {
+): Promise<Result<string[], TableEnumerationError>> {
 	const children = await storage.children(table);
 	if (children.error) {
 		if (children.error.name === 'NotFound') return Ok([]);
-		return children;
+		return Err(children.error);
 	}
 	return Ok(children.data.files);
-}
-
-/**
- * Refuse a row destination that exists or collides with a sibling on
- * case-insensitive filesystems. `files` are the table directory's filenames
- * as last observed; another program can still race them. A standalone create,
- * a rename, and a batched create all decide with this.
- */
-export function destinationProblem(
-	table: string,
-	files: Iterable<string>,
-	destination: string,
-	ignore: string | undefined,
-): Result<undefined, TableError> {
-	const filename = destination.slice(table.length + 1);
-	const key = collisionKey(destination);
-	let collision: string | undefined;
-	for (const existing of files) {
-		if (existing === filename) return TableError.Exists({ path: destination });
-		const path = `${table}/${existing}`;
-		if (path !== ignore && collisionKey(path) === key) collision ??= path;
-	}
-	return collision === undefined
-		? Ok(undefined)
-		: TableError.Collision({ path: destination, existing: collision });
 }
 
 export function createTable<TFields>(
@@ -238,155 +341,122 @@ export function createTable<TFields>(
 	parsed: ParsedTable,
 ): FileTable<TFields> {
 	const { name } = parsed;
-	const declared = [...parsed.fields.keys()];
 
-	function interpret(
+	const inspect = (source: string) => inspectSource<TFields>(parsed, source);
+
+	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
+	function snapshotOf(
 		path: string,
 		sha256: string,
 		source: string,
-	): Entry<TFields> {
-		const stem = path.slice(name.length + 1, -ROW_EXTENSION.length);
-		const issues: EntryIssue[] = [];
-		const stemIssue = stemProblem(stem);
-		if (stemIssue !== undefined)
-			issues.push({ kind: 'filename', message: stemIssue });
-		const reading = readSource(source);
-		for (const issue of reading.issues) issues.push(issue);
-		const fields: Record<string, unknown> = {};
-		if (reading.values !== undefined) {
-			for (const key of declared) {
-				const field = parsed.fields.get(key)!;
-				if (!Object.hasOwn(reading.values, key)) {
-					issues.push({
-						kind: 'field',
-						field: key,
-						message: 'The field is missing',
-					});
-					continue;
-				}
-				const value = reading.values[key];
-				if (field.check(value)) fields[key] = value;
-				else
-					issues.push({
-						kind: 'field',
-						field: key,
-						message: 'The value does not conform to its declared schema',
-					});
-			}
-		}
-		const base = { path, sha256, source, stem };
-		if (issues.length === 0 && reading.body !== undefined)
-			return Object.freeze({
-				...base,
-				fields: Object.freeze(fields) as TFields,
-				body: reading.body,
-				issues: undefined,
-			});
+	): TableSnapshot<TFields> {
 		return Object.freeze({
-			...base,
-			fields: Object.freeze(fields) as Partial<TFields>,
-			body: reading.body,
-			issues: Object.freeze(issues) as unknown as readonly [
-				EntryIssue,
-				...EntryIssue[],
-			],
+			path,
+			stem: path.slice(name.length + 1, -ROW_EXTENSION.length),
+			sha256,
+			source,
+			...inspect(source),
 		});
 	}
 
-	const directory = () => tableFilenames(storage, name);
+	/** Interpret the bytes of one read, or say why they are not text. */
+	function readSnapshot(
+		path: string,
+		read: { bytes: Uint8Array; sha256: string },
+	): Result<
+		TableSnapshot<TFields>,
+		Extract<TableError, { name: 'InvalidUtf8' }>
+	> {
+		const source = decode(read.bytes);
+		if (source === undefined) return TableError.InvalidUtf8({ path });
+		return Ok(snapshotOf(path, read.sha256, source));
+	}
 
-	async function publishSource(
-		entry: FileCapture,
-		source: string,
-	): Promise<Result<Entry<TFields>, TableWriteError>> {
-		const { path, sha256: expectedSha256 } = entry;
-		const bytes = encoder.encode(source);
-		const sha256 = await hashBytes(bytes);
-		const applied = await storage.apply([
-			{
-				kind: 'replace',
-				path,
-				bytes,
-				sha256,
-				expectedSha256,
-			},
-		]);
-		if (applied.error) return Err(applied.error);
-		return Ok(interpret(path, sha256, source));
+	/**
+	 * The one destination check before publication (ADR-0477): refuse a path a
+	 * file already occupies, by the table's directory as it was just read.
+	 * Names are compared exactly. Another program can still take the path
+	 * afterward, and a filesystem that holds one file for two spellings refuses
+	 * the second at publication, where the exclusive destination condition runs.
+	 */
+	async function vacant(
+		path: string,
+	): Promise<
+		Result<
+			undefined,
+			TableEnumerationError | Extract<FileError, { name: 'Exists' }>
+		>
+	> {
+		const found = await tableFilenames(storage, name);
+		if (found.error) return found;
+		if (found.data.includes(path.slice(name.length + 1)))
+			return FileError.Exists({ path });
+		return Ok(undefined);
 	}
 
 	/**
 	 * Own a capture of a row file directly in this table's directory. A
-	 * nested path such as `todos/a/b.md` is not a row. Stems that violate the
-	 * naming rules are still rows here, so external files stay editable.
+	 * nested path such as `todos/a/b.md` is not a row, and neither is `a.MD`.
 	 */
-	function captureRow(entry: FileCapture): Result<FileCapture, FileError> {
-		const own = ownCapture(entry);
+	function captureRow(
+		capture: FileCapture,
+	): Result<FileCapture, Extract<FileError, { name: 'InvalidPath' }>> {
+		const own = ownCapture(capture);
 		if (own.error) return own;
 		if (rowStemOf(name, own.data.path) === undefined)
 			return FileError.InvalidPath({
 				path: own.data.path,
-				reason: `the entry is not a row of '${name}'`,
+				reason: `the capture is not a row of '${name}'`,
 			});
 		return own;
 	}
 
-	async function readEntry(
-		stem: string,
-	): Promise<Result<Entry<TFields> | undefined, TableReadError | TableError>> {
-		const path = rowPath(name, stem);
-		const problem = pathProblem(path);
-		if (problem !== undefined)
-			return FileError.InvalidPath({ path, reason: problem });
-		// Existing external filenames need not conform to creation's naming rules.
-		if (rowStemOf(name, path) !== stem)
-			return TableError.InvalidStem({
-				stem,
-				reason: 'the stem contains a path separator',
-			});
-		const read = await storage.read(path);
-		if (read.error) {
-			if (read.error.name === 'NotFound') return Ok(undefined);
-			return read;
-		}
-		const source = decode(read.data.bytes);
-		if (source === undefined) return TableError.InvalidUtf8({ path });
-		return Ok(interpret(path, read.data.sha256, source));
-	}
-
 	return {
 		name,
+		inspect,
 		async list() {
-			const found = await directory();
+			const found = await tableFilenames(storage, name);
 			if (found.error) return found;
+			// Only the exact lowercase extension is a row; `a.MD` is an ordinary file.
 			const rows = found.data.filter((file) => file.endsWith(ROW_EXTENSION));
 			const reads = await storage.readMany(
 				rows.map((file) => `${name}/${file}`),
 			);
-			if (reads.error) return reads;
-			const entries: Entry<TFields>[] = [];
-			const unreadable: {
-				path: string;
-				error: TableReadError | TableError;
-			}[] = [];
-			for (const [path, read] of reads.data) {
-				if (read.error) {
-					unreadable.push({ path, error: read.error });
-					continue;
-				}
-				const source = decode(read.data.bytes);
-				if (source === undefined) {
-					unreadable.push({
-						path,
-						error: TableError.InvalidUtf8({ path }).error,
-					});
-					continue;
-				}
-				entries.push(interpret(path, read.data.sha256, source));
-			}
-			return Ok({ entries, unreadable });
+			if (reads.error) return Err(reads.error);
+			return Ok(
+				Object.freeze(
+					rows.map((file) => {
+						const path = `${name}/${file}`;
+						const read = reads.data.get(path);
+						if (read === undefined)
+							return Object.freeze({
+								path,
+								result: FileError.Io({
+									path,
+									operation: 'read',
+									cause: 'The storage response omitted this requested file',
+								}),
+							});
+						return Object.freeze({
+							path,
+							result: read.error
+								? Err(read.error)
+								: readSnapshot(path, read.data),
+						});
+					}),
+				),
+			);
 		},
-		get: readEntry,
+		async get(stem) {
+			const address = rowAddress(name, stem);
+			if (address.error) return address;
+			const read = await storage.read(address.data);
+			if (read.error) {
+				if (read.error.name === 'NotFound') return Ok(undefined);
+				return Err(read.error);
+			}
+			return readSnapshot(address.data, read.data);
+		},
 		async create(input) {
 			const prepared = prepareRow(parsed, {
 				stem: input.stem ?? generateStem(),
@@ -395,72 +465,105 @@ export function createTable<TFields>(
 			});
 			if (prepared.error) return prepared;
 			const { path, source, bytes } = prepared.data;
-			const found = await directory();
-			if (found.error) return found;
-			const destination = destinationProblem(name, found.data, path, undefined);
-			if (destination.error) return destination;
+			const vacancy = await vacant(path);
+			if (vacancy.error) return vacancy;
 			const sha256 = await hashBytes(bytes);
+			// The receipt is prepared before anything is published and never after.
+			const receipt = snapshotOf(path, sha256, source);
 			const applied = await storage.apply([
 				{ kind: 'create', path, bytes, sha256 },
 			]);
 			if (applied.error) return Err(applied.error);
-			return Ok(interpret(path, sha256, source));
+			return Ok(receipt);
 		},
 		async update(stem, change) {
-			let values = (change.fields ?? {}) as Record<string, unknown>;
-			const valid = invalidValues(parsed, values, false);
-			if (valid.error) return valid;
-			// Own nested JSON/array values before the first asynchronous read.
-			try {
-				values = structuredClone(values);
-			} catch {
-				return TableError.UnsupportedSource({
-					path: rowPath(name, stem),
-					reason: 'the supplied fields cannot be copied',
+			const address = rowAddress(name, stem);
+			if (address.error) return address;
+			const path = address.data;
+			// Own the supplied values and body before the first asynchronous read.
+			const values = ownValues(parsed, change.fields, false);
+			if (values.error) return values;
+			const body = change.body;
+			const read = await storage.read(path);
+			if (read.error) return Err(read.error);
+			const source = decode(read.data.bytes);
+			if (source === undefined) return TableError.InvalidUtf8({ path });
+			const patched = patchSource(source, { fields: values.data, body });
+			if (patched.error) {
+				const refusal = patched.error;
+				if (refusal.kind === 'unparsed')
+					return TableError.Unparsed({ path, error: refusal.error });
+				if (refusal.kind === 'unsafe')
+					return TableError.UnsupportedSource({ path, reason: refusal.reason });
+				return TableError.InvalidValues({
+					issues: [
+						{
+							field: refusal.field,
+							message: `${refusal.field} cannot be saved: ${refusal.reason}`,
+						},
+					],
 				});
 			}
-			const body = change.body;
-			const read = await readEntry(stem);
-			if (read.error) return read;
-			const entry = read.data;
-			if (entry === undefined)
-				return FileError.NotFound({ path: rowPath(name, stem) });
-			const patched = patchSource(entry.source, {
-				fields: values,
-				body,
-			});
-			if (patched.error)
-				return TableError.UnsupportedSource({
-					path: entry.path,
-					reason: patched.error.reason,
-				});
-			return publishSource(entry, patched.data);
+			const next = submitted(patched.data);
+			const { bytes } = next;
+			const sha256 = await hashBytes(bytes);
+			const receipt = snapshotOf(path, sha256, next.source);
+			const applied = await storage.apply([
+				{
+					kind: 'replace',
+					path,
+					bytes,
+					sha256,
+					expectedSha256: read.data.sha256,
+				},
+			]);
+			if (applied.error) return Err(applied.error);
+			return Ok(receipt);
 		},
-		async replace(entry, source) {
-			const owned = captureRow(entry);
+		async replace(capture, source) {
+			const owned = captureRow(capture);
 			if (owned.error) return owned;
-			return publishSource(owned.data, source);
+			const { path, sha256: expectedSha256 } = owned.data;
+			const next = submitted(source);
+			const { bytes } = next;
+			const sha256 = await hashBytes(bytes);
+			// The receipt is the submitted text and its hash, never a reread. It is
+			// prepared before publication, so returning it needs no further validation.
+			const receipt = snapshotOf(path, sha256, next.source);
+			const applied = await storage.apply([
+				{ kind: 'replace', path, bytes, sha256, expectedSha256 },
+			]);
+			if (applied.error) return Err(applied.error);
+			return Ok(receipt);
 		},
-		async rename(entry, nextStem) {
-			const owned = captureRow(entry);
+		async rename(capture, nextStem) {
+			const owned = captureRow(capture);
 			if (owned.error) return owned;
 			const captured = owned.data;
-			const source = entry.source;
-			const problem = stemProblem(nextStem);
-			if (problem !== undefined)
-				return TableError.InvalidStem({ stem: nextStem, reason: problem });
-			const path = rowPath(name, nextStem);
-			if (path === captured.path)
-				return Ok(interpret(captured.path, captured.sha256, source));
-			const found = await directory();
-			if (found.error) return found;
-			const destination = destinationProblem(
-				name,
-				found.data,
-				path,
-				captured.path,
-			);
-			if (destination.error) return destination;
+			// Own the source before the first await, like the path and the hash.
+			const supplied: unknown = (capture as Partial<TextCapture>).source;
+			if (typeof supplied !== 'string')
+				return FileError.InvalidPath({
+					path: captured.path,
+					reason: 'the capture has no source',
+				});
+			const address = rowAddress(name, nextStem);
+			if (address.error) return address;
+			const path = address.data;
+			// The receipt reads this source under this hash, so the two must be one
+			// capture: the bytes of the source have the captured hash.
+			const { bytes, source } = submitted(supplied);
+			if ((await hashBytes(bytes)) !== captured.sha256)
+				return FileError.InvalidPath({
+					path: captured.path,
+					reason: "the capture's source does not have its SHA-256",
+				});
+			const receipt = snapshotOf(path, captured.sha256, source);
+			// The row already has this path: nothing is published, and nothing is
+			// asked of storage.
+			if (path === captured.path) return Ok(receipt);
+			const vacancy = await vacant(path);
+			if (vacancy.error) return vacancy;
 			const applied = await storage.apply([
 				{
 					kind: 'move',
@@ -470,19 +573,21 @@ export function createTable<TFields>(
 				},
 			]);
 			if (applied.error) return Err(applied.error);
-			return Ok(interpret(path, captured.sha256, source));
+			return Ok(receipt);
 		},
-		async delete(entry) {
-			const owned = captureRow(entry);
+		async delete(capture) {
+			const owned = captureRow(capture);
 			if (owned.error) return owned;
 			const captured = owned.data;
-			return storage.apply([
+			const applied = await storage.apply([
 				{
 					kind: 'remove',
 					path: captured.path,
 					expectedSha256: captured.sha256,
 				},
 			]);
+			if (applied.error) return Err(applied.error);
+			return Ok(undefined);
 		},
 	};
 }

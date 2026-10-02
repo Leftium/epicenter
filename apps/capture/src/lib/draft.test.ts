@@ -14,9 +14,9 @@
  *   keeps its buffer and pauses saving
  * - Removed and unreadable are different conflicts with different choices
  * - Writing a draft back to a removed file is acknowledged as exactly what was
- *   written, even when the file is replaced, removed, or unreadable before it
- *   is read back; that later state is a conflict or a refresh, never a
- *   failed save
+ *   written, and is followed by one read of the path before the choice
+ *   resolves. A file replaced, removed, or unreadable by then is adopted or
+ *   shown as a conflict, never a failed save
  * - A failed save and a store that throws both keep the buffer for a retry
  * - Unsent thought text and refused capture text count as unsettled
  * - A thought edit begun before the buffer changed is refused, text kept
@@ -30,8 +30,10 @@ import type {
 	Draft,
 	DraftStore,
 } from './draft.svelte.ts';
+import { captureInspector } from './inspect.test-support.js';
 
 const { createDraft } = await import('./draft.svelte.ts');
+const inspectCapture = await captureInspector();
 
 const PATH = 'captures/one.md';
 const head = '---\ncapturedAt: 2026-10-01T02:30:00.000Z\n---\n';
@@ -43,9 +45,7 @@ async function entryFor(source: string): Promise<CaptureEntry> {
 		stem: 'one',
 		source,
 		sha256: await hashBytes(new TextEncoder().encode(source)),
-		fields: { capturedAt: '2026-10-01T02:30:00.000Z' as never },
-		body: '',
-		issues: undefined,
+		...inspectCapture(source),
 	};
 }
 
@@ -67,6 +67,7 @@ async function setup(initial = A) {
 	const elsewhere: { afterRecreate?: () => void; beforeRead?: () => void } = {};
 	const writes: { against: string; source: string }[] = [];
 	const store: DraftStore = {
+		inspect: inspectCapture,
 		async write(baseline, source) {
 			writes.push({ against: baseline.source, source });
 			await hold?.opened;
@@ -97,13 +98,9 @@ async function setup(initial = A) {
 			disk = source;
 			elsewhere.afterRecreate?.();
 			elsewhere.afterRecreate = undefined;
-			// Like the folder: the sha256 is what was written, and the entry is
-			// there only if the file still holds it when read back.
-			const intact = disk === source && unreadable === undefined;
-			return {
-				data: { sha256: entry.sha256, entry: intact ? entry : undefined },
-				error: null,
-			};
+			// Like the folder: the entry is what was written, whatever the path
+			// holds by the time this resolves.
+			return { data: entry, error: null };
 		},
 	};
 	const saved: string[] = [];
@@ -131,7 +128,7 @@ async function setup(initial = A) {
 		unreadable(message: string | undefined) {
 			unreadable = message;
 		},
-		/** Once a write back has landed, before the store reads it back. */
+		/** Once a write back has landed, before the draft reads the path. */
 		afterRecreate(act: () => void) {
 			elsewhere.afterRecreate = act;
 		},
@@ -478,8 +475,8 @@ test('writing back B, replaced by D before it is read back: B is the baseline, t
 			state.current.kind === 'present' &&
 			state.current.entry.source,
 	).toBe(D);
-	// The store had no entry for B to list, and nothing saves over D unasked.
-	expect(file.saved).toEqual([]);
+	// B is reported as written, and nothing saves over D unasked.
+	expect(file.saved).toEqual([B]);
 	await file.draft.save();
 	expect(await file.draft.settle()).toBe(false);
 	expect(file.writes).toHaveLength(1);
@@ -499,6 +496,8 @@ test('writing back B with nothing more typed, replaced by D before it is read ba
 	file.afterRecreate(() => file.outside(D));
 	await file.draft.saveMine();
 
+	// Seen by the one read that follows a write back, before saveMine resolves.
+	expect(file.saved).toEqual([B]);
 	expect(file.draft.saveState.kind).toBe('saved');
 	expect(file.draft.baseline.source).toBe(D);
 	expect(file.draft.buffer).toBe(D);
@@ -555,7 +554,8 @@ test('writing back B that is unreadable before it is read back keeps B as saved,
 	file.unreadable(undefined);
 	await file.draft.check();
 	expect(file.draft.saveState.kind).toBe('saved');
-	expect(file.saved).toEqual([]);
+	// One write was reported, and the reads after it reported none.
+	expect(file.saved).toEqual([B]);
 	expect(file.draft.unsettled).toBe(false);
 });
 

@@ -22,4 +22,5 @@ export {
 	swapThoughts,
 	type Thought,
 	toTextarea,
+	unparsedCapture,
 } from './document.js';

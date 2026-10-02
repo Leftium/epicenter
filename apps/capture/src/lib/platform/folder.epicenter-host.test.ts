@@ -345,7 +345,7 @@ test('a shell that refuses the quit listener still opens the folder and states t
 	expect(host.quitProtectionProblem).toContain('event.listen not allowed');
 	put(PATH, SAVED);
 	const listed = await host.folder.tables.captures.list();
-	expect(listed.data?.entries.map((entry) => entry.path)).toEqual([PATH]);
+	expect(listed.data?.map((item) => item.path)).toEqual([PATH]);
 	await host.close();
 	expect(listening()).toBe(0);
 });

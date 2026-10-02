@@ -10,6 +10,7 @@
 	import { audioPathIn } from '$lib/definition.js';
 	import type { RecordingEntry } from '$lib/editor.svelte.js';
 	import type { Library } from '$lib/library.svelte.js';
+	import { needsRepair } from '$lib/rows.js';
 	import { committedState } from '$lib/status.js';
 	import { formatTime, recordingTitle } from './file-actions.js';
 
@@ -36,7 +37,7 @@
 	// A row that needs repair is always listed: a filter must never hide the
 	// one file the person has to fix, and its title may be unreadable anyway.
 	const visible = $derived(
-		needle === '' ? library.entries : library.entries.filter((entry) => entry.issues !== undefined || matches(entry)),
+		needle === '' ? library.entries : library.entries.filter((entry) => needsRepair(entry) || matches(entry)),
 	);
 	const hidden = $derived(library.entries.length - visible.length);
 
@@ -92,7 +93,7 @@
 				>
 					<span class="flex items-center gap-2">
 						<span class="truncate font-medium">{recordingTitle(entry)}</span>
-						{#if entry.issues}<Badge variant="destructive" class="shrink-0">Needs repair</Badge>{/if}
+						{#if needsRepair(entry)}<Badge variant="destructive" class="shrink-0">Needs repair</Badge>{/if}
 						{#if entry.fields.capture === 'fixture'}<Badge variant="outline" class="shrink-0">Fixture</Badge>{/if}
 					</span>
 					<span class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">

@@ -15,10 +15,11 @@ import {
 	type CreateRowOf,
 	defineFolder,
 	defineTable,
-	type Entry,
+	type FileTable,
 	field,
 	rowPath,
 	rowStemOf,
+	type TableSnapshot,
 } from '@epicenter/folder';
 
 export const honeycrispDefinition = defineFolder({
@@ -55,8 +56,14 @@ export type FolderFields = CreateRowOf<
 	typeof honeycrispDefinition.tables.folders
 >;
 
-export type NoteEntry = Entry<NoteFields>;
-export type FolderEntry = Entry<FolderFields>;
+/**
+ * A saved file as it was read. `fields` holds the declared fields that
+ * validated, each by itself, and none when the text does not parse; `source`
+ * is then all there is to show. A folder's id, the value a note's `folderId`
+ * holds, is its literal `stem`.
+ */
+export type NoteEntry = TableSnapshot<NoteFields>;
+export type FolderEntry = TableSnapshot<FolderFields>;
 
 export const NOTES = 'notes';
 
@@ -66,24 +73,29 @@ export function notePath(id: NoteId): string {
 
 /**
  * The note id of a row path, or undefined when the path is not a note row.
- * An id is never empty: `notes/.md` is a file the table lists, not a note
- * this app opens as one.
+ * The id is the literal stem, so it may be empty (`notes/.md`): compare it
+ * with `undefined`, never by truthiness.
  */
 export function noteIdOf(path: string): NoteId | undefined {
-	const id = rowStemOf(NOTES, path);
-	return id === '' ? undefined : id;
+	return rowStemOf(NOTES, path);
 }
 
-/**
- * The ID this app assigns to a note's `folderId` to name this folder: its
- * file stem, or `null` when the folder's filename has an issue. Such a folder
- * still has its literal stem for reading and display; the app does not hand
- * that stem out as a reference until the file is renamed.
- */
-export function folderIdOf(folder: FolderEntry): string | null {
-	return folder.issues?.some((issue) => issue.kind === 'filename')
-		? null
-		: folder.stem;
+/** How the notes table reads source text: `folder.tables.notes.inspect`. */
+export type InspectNote = FileTable<NoteFields>['inspect'];
+
+/** The name a person sees for a folder: its `name`, else its file. */
+export function folderLabel(folder: FolderEntry): string {
+	const { name } = folder.fields;
+	if (name !== undefined && name !== '') return name;
+	// An empty stem (`folders/.md`) is not a readable label.
+	return folder.stem === '' ? folder.path : folder.stem;
+}
+
+/** Why a saved file needs repair, in the first message that says so, or undefined. */
+export function repairReason(
+	entry: TableSnapshot<unknown>,
+): string | undefined {
+	return entry.parseError?.message ?? entry.issues[0]?.message;
 }
 
 /** The current time as the files store it. */

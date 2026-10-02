@@ -4,6 +4,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { toast } from '@epicenter/ui/sonner';
 	import type { Library, TransformationRunEntry } from '$lib/library.svelte.js';
+	import { needsRepair } from '$lib/rows.js';
 	import { copyText, formatTime, recordingTitle } from './file-actions.js';
 
 	/**
@@ -19,15 +20,18 @@
 		onOpenFile: (path: string) => void;
 	} = $props();
 
+	/** What the file states, field by field. A field that did not validate reads as unknown. */
+	const fields = $derived(output.fields);
+	const text = $derived(output.body);
 	const recording = $derived(
-		library.entries.find((entry) => entry.stem === output.fields.recordingId),
+		library.entries.find((entry) => entry.stem === fields.recordingId),
 	);
 	const heading = $derived(
 		naming === 'transformation'
-			? (output.fields.transformationTitle ?? 'Unknown transformation')
+			? (fields.transformationTitle ?? 'Unknown transformation')
 			: recording
 				? recordingTitle(recording)
-				: `Recording ${output.fields.recordingId ?? 'unknown'} (no longer in the folder)`,
+				: `Recording ${fields.recordingId ?? 'unknown'} (no longer in the folder)`,
 	);
 
 	function remove() {
@@ -46,16 +50,16 @@
 <article class="rounded border bg-muted/30 p-3 text-sm" data-testid="transformation-result">
 	<header class="mb-1.5 flex flex-wrap items-center gap-2 text-xs">
 		<span class="font-medium">{heading}</span>
-		{#if output.issues}<Badge variant="destructive">Needs repair</Badge>{/if}
+		{#if needsRepair(output)}<Badge variant="destructive">Needs repair</Badge>{/if}
 	</header>
-	<p class="whitespace-pre-wrap">{output.body?.trim() || '(empty result)'}</p>
+	<p class="whitespace-pre-wrap">{text?.trim() || '(empty result)'}</p>
 	<footer class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-		<span>{formatTime(output.fields.createdAt) || 'Unknown time'} · {output.fields.model ?? 'unknown model'}</span>
+		<span>{formatTime(fields.createdAt) || 'Unknown time'} · {fields.model ?? 'unknown model'}</span>
 		<Button size="xs" variant="ghost" onclick={() => onOpenFile(output.path)}>
 			<code class="font-mono">{output.path}</code>
 		</Button>
 		<span class="ml-auto flex items-center gap-1">
-			<Button size="xs" variant="ghost" onclick={() => void copyText(output.body ?? '', 'the result')}>Copy</Button>
+			<Button size="xs" variant="ghost" onclick={() => void copyText(text ?? '', 'the result')}>Copy</Button>
 			<Button size="xs" variant="ghost-destructive" onclick={remove}>Delete</Button>
 		</span>
 	</footer>

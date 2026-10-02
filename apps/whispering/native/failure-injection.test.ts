@@ -379,7 +379,7 @@ test('an obstacle is placed only at a recording’s row or a usable audio path i
 	for (const recording of [
 		{ stem: '../escape', audioPath: undefined },
 		{ stem: 'a/b', audioPath: undefined },
-		{ stem: '', audioPath: undefined },
+		{ stem: 'a\\b', audioPath: undefined },
 		{ stem: 7, audioPath: undefined },
 		{ stem: 'take', audioPath: '../outside/take.wav' },
 		{ stem: 'take', audioPath: '/tmp/take.wav' },

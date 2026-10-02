@@ -9,6 +9,7 @@
 	import { resolve } from '$app/paths';
 	import { audioPathIn } from '$lib/definition.js';
 	import { resolvePostProcessing, transformationName } from '$lib/post-processing.js';
+	import { needsRepair } from '$lib/rows.js';
 	import { getSession } from '$lib/session.svelte.js';
 	import AudioPlayer from './components/AudioPlayer.svelte';
 	import { copyText, formatTime, recordingTitle } from './components/file-actions.js';
@@ -69,7 +70,7 @@
 			<section class="mt-8 flex flex-col gap-2 border-t pt-5" aria-label="Latest recording" data-testid="latest-recording">
 				<div class="flex items-center gap-2 text-sm">
 					<h2 class="min-w-0 flex-1 truncate font-medium">{recordingTitle(latest)}</h2>
-					{#if latest.issues}<Badge variant="destructive">Needs repair</Badge>{/if}
+					{#if needsRepair(latest)}<Badge variant="destructive">Needs repair</Badge>{/if}
 					{#if latest.fields.capture === 'fixture'}<Badge variant="outline">Fixture</Badge>{/if}
 					<span class="shrink-0 text-xs text-muted-foreground max-sm:hidden">{formatTime(latest.fields.recordedAt, 'short')}</span>
 				</div>

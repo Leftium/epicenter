@@ -113,9 +113,8 @@ export function nameProblem(
 	directory: string,
 	name: string,
 ): string | undefined {
-	if (name.trim() === '') return 'Enter a name.';
+	if (name === '') return 'Enter a name.';
 	if (name.includes('/')) return 'A name cannot contain "/".';
-	if (name !== name.trim()) return 'A name cannot start or end with a space.';
 	const problem = pathProblem(joinPath(directory, name));
 	return problem === undefined
 		? undefined
@@ -139,6 +138,22 @@ export type OpenedFile =
 	| { readonly kind: 'tooLarge'; readonly size: number };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+const encoder = new TextEncoder();
+
+/**
+ * Encode text for a save: the exact bytes it submits, and the text those
+ * bytes are. Encoding replaces an unpaired surrogate, so the saved text is
+ * decoded from the bytes, with the decoder that reads files, and never
+ * assumed to be the string that was typed. A byte order mark, CRLF, and
+ * paired surrogates come back as they went in.
+ */
+export function submittedText(text: string): {
+	readonly bytes: Uint8Array;
+	readonly source: string;
+} {
+	const bytes = encoder.encode(text);
+	return { bytes, source: utf8.decode(bytes) };
+}
 
 /**
  * Read a file for the editor. Only valid UTF-8 without NUL bytes opens as

@@ -17,11 +17,15 @@
  * status cache of its own. A save and its commit are separate outcomes.
  */
 import type {
+	ApplyError,
 	CommitOutcome,
-	Entry,
+	FileError,
 	FileListing,
 	GitSnapshot,
 	KvSnapshot,
+	KvWriteError,
+	TableListing,
+	TableSnapshot,
 	TableWriteError,
 } from '@epicenter/folder';
 import { rowPath, rowStemOf } from '@epicenter/folder';
@@ -70,9 +74,9 @@ import { createTerminalSession } from './terminal.svelte.js';
 import type { Workspace } from './workspace/index.js';
 
 export type Library = ReturnType<typeof createLibrary>;
-export type TranscriptionEntry = Entry<TranscriptionFields>;
-export type TransformationEntry = Entry<TransformationFields>;
-export type TransformationRunEntry = Entry<TransformationRunFields>;
+export type TranscriptionEntry = TableSnapshot<TranscriptionFields>;
+export type TransformationEntry = TableSnapshot<TransformationFields>;
+export type TransformationRunEntry = TableSnapshot<TransformationRunFields>;
 
 /** A raw file the person opened. Recording and transformation rows open as row editors instead. */
 export type OpenFile =
@@ -250,7 +254,9 @@ function defaultTitle(at: Date): string {
 }
 
 /** Library errors state failures precisely; these are the ones a person acts on. */
-function describeWriteError(error: TableWriteError): string {
+function describeWriteError(
+	error: TableWriteError | KvWriteError | FileError | ApplyError,
+): string {
 	if (error.name === 'Exists')
 		return `"${basename(error.path)}" already exists here.`;
 	if (error.name === 'Conflict')
@@ -265,20 +271,31 @@ function describeWriteError(error: TableWriteError): string {
 /** A received answer as its row's body: the text, ending in one newline of its own. */
 const resultBody = (text: string) => (text.endsWith('\n') ? text : `${text}\n`);
 
+/** A listing's files that were read, and the ones that were not, with why. */
+function splitListing<TFields>(listing: TableListing<TFields>) {
+	const entries: TableSnapshot<TFields>[] = [];
+	const failed: { path: string; message: string }[] = [];
+	for (const { path, result } of listing)
+		if (result.error === null) entries.push(result.data);
+		else failed.push({ path, message: result.error.message });
+	return { entries, failed };
+}
+
 /**
- * Whether a row already at a result's path is that result's own: a valid row
- * with the same body and every field that was fixed for it. A row that differs
- * in any of them (another prompt, model, endpoint, transcript, or source) is
- * someone else's file. Fields the app does not declare are not part of what
- * was fixed, so extra ones do not make it a different result.
+ * Whether a row already at a result's path is that result's own: a row that
+ * parses, with the same body and every field that was fixed for it, each
+ * validated. A row that differs in any of them (another prompt, model,
+ * endpoint, transcript, or source) is someone else's file, and so is one
+ * whose text does not parse. Fields the app does not declare are not part of
+ * what was fixed, so extra ones do not make it a different result.
  */
-function isThisResult<TFields extends object>(
-	existing: Entry<TFields>,
-	fields: TFields,
+function isThisResult(
+	existing: TableSnapshot<Record<string, unknown>>,
+	fields: object,
 	body: string,
 ): boolean {
-	if (existing.issues !== undefined || existing.body !== body) return false;
-	const saved: Readonly<Record<string, unknown>> = existing.fields;
+	if (existing.body !== body) return false;
+	const saved = existing.fields;
 	return Object.entries(fields).every(([key, value]) => saved[key] === value);
 }
 
@@ -314,6 +331,23 @@ export function createLibrary(workspace: Workspace) {
 		{ path: string; message: string }[]
 	>([]);
 	let transformationsError = $state<string | undefined>();
+	/**
+	 * Result files the last listing found and could not read as text, by table.
+	 * A recording's results are found by the `recordingId` each row holds, and
+	 * a file with no text says nothing about whose it is.
+	 */
+	const resultsUnknown = new Map<string, string>();
+	function noteUnread(
+		table: string,
+		failed: readonly { path: string; message: string }[],
+	) {
+		if (failed.length === 0) resultsUnknown.delete(table);
+		else
+			resultsUnknown.set(
+				table,
+				`${failed.map((item) => item.path).join(', ')} could not be read as text`,
+			);
+	}
 	let selectedTransformationPath = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
@@ -402,10 +436,7 @@ export function createLibrary(workspace: Workspace) {
 
 	/** Newest first; a row whose time cannot be read sorts by its file name. */
 	function sortEntries(list: readonly RecordingEntry[]) {
-		const key = (entry: RecordingEntry) =>
-			typeof entry.fields.recordedAt === 'string'
-				? entry.fields.recordedAt
-				: '';
+		const key = (entry: RecordingEntry) => entry.fields.recordedAt ?? '';
 		return [...list].sort(
 			(a, b) =>
 				key(b).localeCompare(key(a)) ||
@@ -446,9 +477,7 @@ export function createLibrary(workspace: Workspace) {
 	/** By title; a row whose title cannot be read sorts by its file name. */
 	function sortTransformations(list: readonly TransformationEntry[]) {
 		const key = (entry: TransformationEntry) =>
-			typeof entry.fields.title === 'string' && entry.fields.title !== ''
-				? entry.fields.title
-				: entry.path;
+			entry.fields.title || entry.path;
 		return [...list].sort(
 			(a, b) =>
 				key(a).localeCompare(key(b), undefined, { sensitivity: 'base' }) ||
@@ -479,45 +508,41 @@ export function createLibrary(workspace: Workspace) {
 				outputs.list(),
 			]);
 		if (sequence !== refreshSequence) return;
+		// A file that was read is a row to show and open, whether or not its text
+		// parses. A file that could not be read has no text and is listed apart.
 		if (profileRows.error) {
 			transformationsError = profileRows.error.message;
 		} else {
 			transformationsError = undefined;
-			transformations = sortTransformations(profileRows.data.entries);
-			unreadableTransformations = profileRows.data.unreadable.map((item) => ({
-				path: item.path,
-				message: item.error.message,
-			}));
-			for (const entry of profileRows.data.entries)
+			const read = splitListing(profileRows.data);
+			transformations = sortTransformations(read.entries);
+			unreadableTransformations = read.failed;
+			for (const entry of read.entries)
 				transformationEditors.get(entry.path)?.observe(entry);
-			const present = new Set([
-				...profileRows.data.entries.map((entry) => entry.path),
-				...profileRows.data.unreadable.map((entry) => entry.path),
-			]);
+			const present = new Set(profileRows.data.map((item) => item.path));
 			for (const [path, editor] of transformationEditors) {
 				if (present.has(path)) continue;
 				if (!editor.dirty && editor.saveState.kind === 'saved') forget(path);
 				else editor.observeRemoved();
 			}
 		}
-		if (outputRows.error === null)
-			transformationResults = [...outputRows.data.entries];
+		// A listing that failed keeps the previous observation, as the lists do.
+		if (outputRows.error === null) {
+			const read = splitListing(outputRows.data);
+			transformationResults = read.entries;
+			noteUnread(outputs.name, read.failed);
+		}
 		if (rows.error) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
 			listError = rows.error.message;
 		} else {
 			listError = undefined;
-			entries = sortEntries(rows.data.entries);
-			unreadable = rows.data.unreadable.map((item) => ({
-				path: item.path,
-				message: item.error.message,
-			}));
-			for (const entry of rows.data.entries)
+			const read = splitListing(rows.data);
+			entries = sortEntries(read.entries);
+			unreadable = read.failed;
+			for (const entry of read.entries)
 				recordingEditors.get(entry.path)?.observe(entry);
-			const present = new Set([
-				...rows.data.entries.map((entry) => entry.path),
-				...rows.data.unreadable.map((entry) => entry.path),
-			]);
+			const present = new Set(rows.data.map((item) => item.path));
 			for (const [path, editor] of recordingEditors) {
 				if (present.has(path)) continue;
 				if (!editor.dirty && editor.saveState.kind === 'saved') forget(path);
@@ -525,7 +550,9 @@ export function createLibrary(workspace: Workspace) {
 			}
 		}
 		if (found.error === null) {
-			transcriptions = [...found.data.entries];
+			const read = splitListing(found.data);
+			transcriptions = read.entries;
+			noteUnread(results.name, read.failed);
 			for (const [path, entry] of published)
 				if (unlistedResults.get(path) === entry) unlistedResults.delete(path);
 		}
@@ -1010,6 +1037,34 @@ export function createLibrary(workspace: Workspace) {
 	const BEING_DELETED = 'This recording is being deleted.';
 
 	/**
+	 * Why the results of a recording cannot all be named now, or undefined.
+	 * Deleting a recording deletes its results, and those are found by the
+	 * `recordingId` each result row holds. A row whose text does not parse, or
+	 * whose `recordingId` did not validate, might be this recording's; so might
+	 * a listed file that could not be read. Not knowing is not the same as
+	 * none, so the recording is not deleted until those are repaired or
+	 * removed.
+	 */
+	function unknownResults(): string | undefined {
+		const unread = [...resultsUnknown.values()];
+		const unsaid = [
+			...transcriptions,
+			...unlistedResults.values(),
+			...transformationResults,
+		]
+			.filter((row) => row.fields.recordingId === undefined)
+			.map((row) => row.path);
+		if (unread.length === 0 && unsaid.length === 0) return undefined;
+		const reasons = [
+			...unread,
+			...(unsaid.length > 0
+				? [`${unsaid.join(', ')} cannot be read well enough`]
+				: []),
+		];
+		return `Some results cannot be told apart from this recording’s: ${reasons.join('; ')}. Repair or remove them from Files first, so none is left naming a recording that is gone.`;
+	}
+
+	/**
 	 * Why a recording cannot be deleted now, or undefined. A request still
 	 * running, or an answer that is not saved yet, would otherwise write a row
 	 * that names a recording that is gone. So would the write of a transcript
@@ -1062,13 +1117,16 @@ export function createLibrary(workspace: Workspace) {
 		const transcription = read.data;
 		if (transcription === undefined)
 			return Err('This transcript is no longer in the folder.');
-		if (transcription.issues !== undefined)
-			return Err(
-				`${transcription.path} needs repair before it can be transformed. Fix it from Files.`,
-			);
-		if (transcription.body.trim() === '')
-			return Err('This transcript has no text to transform.');
+		// What a transformation needs from the transcript is its text and the
+		// recording it names. Its other fields may need fixing.
+		const input = transcription.body;
 		const { recordingId } = transcription.fields;
+		if (input === undefined || recordingId === undefined)
+			return Err(
+				`${transcription.path} needs repair before it can be transformed: its text or the recording it names cannot be read. Fix it from Files.`,
+			);
+		if (input.trim() === '')
+			return Err('This transcript has no text to transform.');
 		const recording = await table.get(recordingId);
 		if (recording.error) return Err(recording.error.message);
 		if (recording.data === undefined)
@@ -1076,7 +1134,7 @@ export function createLibrary(workspace: Workspace) {
 				'The recording this transcript was made from is no longer in the folder.',
 			);
 		if (deleting.has(recordingId)) return Err(BEING_DELETED);
-		return Ok({ transcriptionId, recordingId, input: transcription.body });
+		return Ok({ transcriptionId, recordingId, input });
 	}
 
 	const applying = new SvelteSet<string>();
@@ -1128,14 +1186,12 @@ export function createLibrary(workspace: Workspace) {
 		return Ok(read.data);
 	}
 
-	function byNewest<TEntry extends { fields: { createdAt?: unknown } }>(
-		list: readonly TEntry[],
-	): TEntry[] {
-		return [...list].sort((a, b) =>
-			String(b.fields.createdAt ?? '').localeCompare(
-				String(a.fields.createdAt ?? ''),
-			),
-		);
+	/** Newest first; a row whose time did not validate sorts last. */
+	function byNewest<
+		TEntry extends { readonly fields: { readonly createdAt?: string } },
+	>(list: readonly TEntry[]): TEntry[] {
+		const key = (entry: TEntry) => entry.fields.createdAt ?? '';
+		return [...list].sort((a, b) => key(b).localeCompare(key(a)));
 	}
 
 	return {
@@ -1177,11 +1233,12 @@ export function createLibrary(workspace: Workspace) {
 		},
 		/** Why `kv.json` could not be read, or what in it does not conform. */
 		get settingsProblem() {
-			return (
-				settingsError ??
-				kv?.issues?.map((issue) => issue.message).join('; ') ??
-				undefined
-			);
+			if (settingsError !== undefined) return settingsError;
+			if (kv === undefined) return undefined;
+			if (kv.parseError !== undefined) return kv.parseError.message;
+			// No issues is no problem: joining none would read as an empty one.
+			if (kv.issues.length === 0) return undefined;
+			return kv.issues.map((issue) => issue.message).join('; ');
 		},
 		get credentialPresent() {
 			return credentialPresent;
@@ -1332,27 +1389,16 @@ export function createLibrary(workspace: Workspace) {
 		refreshAll,
 		open,
 		/**
-		 * First read after opening: settings exist in `kv.json` from the first
-		 * launch on. The file is created only after this call's own read found
-		 * none. The listing's read is not enough: it may have failed, or been
-		 * superseded and recorded nothing, and either looks like no settings.
+		 * First read after opening. Missing settings use the workspace defaults
+		 * in memory; only an explicit settings save creates `kv.json`.
 		 */
 		async start() {
 			await refreshAll();
-			const observed = await folder.kv.get();
-			if (observed.error === null && observed.data === undefined) {
-				const created = await folder.kv.create(workspace.initialSettings);
-				if (created.error === null) {
-					kv = created.data;
-					settingsError = undefined;
-				} else settingsError = describeWriteError(created.error);
-			}
 			credentialPresent = await workspace.credential
 				.present()
 				.catch(() => false);
 			// The saved choice only: no microphone is opened or listed at launch.
 			await input.load();
-			await refreshAll();
 		},
 		/** Explicitly discard a retained conflict whose saved file is gone. */
 		discardRemoved(path: string) {
@@ -1440,11 +1486,13 @@ export function createLibrary(workspace: Workspace) {
 			return entries.find((entry) => audioPathIn(entry.fields) === path);
 		},
 
+		/**
+		 * Transcribe a recording. It needs only the audio the row names, so the
+		 * row's `audioPath` is the one field that has to have validated.
+		 */
 		async transcribe(entry: RecordingEntry) {
+			// A transcript names its recording by this ID: the row's literal stem.
 			const id = entry.stem;
-			// A transcript names its recording by this ID, so a filename that needs
-			// repair is not sent anywhere.
-			if (entry.issues?.some((issue) => issue.kind === 'filename')) return;
 			// A received transcript is held until it is saved or discarded: a new
 			// request never replaces it.
 			const current = runs.get(id)?.kind;
@@ -1457,7 +1505,7 @@ export function createLibrary(workspace: Workspace) {
 				runs.set(id, {
 					kind: 'failed',
 					message:
-						'This recording’s file names no audio (it has no audioPath), so there is nothing to transcribe. Add the audio file’s path in Source.',
+						'This recording’s file names no audio (it has no readable audioPath), so there is nothing to transcribe. Add the audio file’s path in Source.',
 				});
 				return;
 			}
@@ -1546,14 +1594,19 @@ export function createLibrary(workspace: Workspace) {
 				title: string;
 				prompt: string;
 			}): Promise<string | undefined> => {
-				const like = transformations.find(
-					(entry) => entry.issues === undefined,
-				);
+				// What is copied is a model and an endpoint, so those are what the
+				// transformation copied from has to hold.
+				const like = transformations
+					.map((entry) => entry.fields)
+					.find(
+						(fields) =>
+							fields.model !== undefined && fields.endpoint !== undefined,
+					);
 				const created = await profiles.create({
 					fields: {
 						title,
-						model: like?.fields.model ?? '',
-						endpoint: like?.fields.endpoint ?? settings.transcriptionBaseUrl,
+						model: like?.model ?? '',
+						endpoint: like?.endpoint ?? settings.transcriptionBaseUrl,
 					},
 					body: prompt,
 				});
@@ -1584,13 +1637,22 @@ export function createLibrary(workspace: Workspace) {
 				const read = await transformationForOperation(transformationPath);
 				if (read.error !== null) return read.error;
 				const profile = read.data;
-				if (profile.issues !== undefined)
+				// A run sends the prompt to a model at an endpoint and records the
+				// title, so it needs the body and all three fields.
+				const prompt = profile.body;
+				const { title, model, endpoint } = profile.fields;
+				if (
+					prompt === undefined ||
+					title === undefined ||
+					model === undefined ||
+					endpoint === undefined
+				)
 					return 'This transformation needs repair before it can run. Fix it in Source.';
-				if (profile.fields.endpoint.trim() === '')
+				if (endpoint.trim() === '')
 					return 'This transformation has no endpoint. Add one, then run it.';
-				if (profile.fields.model.trim() === '')
+				if (model.trim() === '')
 					return 'This transformation has no model. Add one, then run it.';
-				if (profile.body.trim() === '')
+				if (prompt.trim() === '')
 					return 'This transformation has no prompt. Write one, then run it.';
 				const source = await transformationSource(transcriptionPath);
 				if (source.error !== null) return source.error;
@@ -1604,11 +1666,11 @@ export function createLibrary(workspace: Workspace) {
 						recordingId: source.data.recordingId,
 						transcriptionId: source.data.transcriptionId,
 						transformationId: profile.stem,
-						transformationTitle: profile.fields.title,
+						transformationTitle: title,
 						createdAt: at.toISOString(),
-						model: profile.fields.model.trim(),
-						endpoint: profile.fields.endpoint.trim(),
-						prompt: profile.body,
+						model: model.trim(),
+						endpoint: endpoint.trim(),
+						prompt,
 						input: source.data.input,
 					} as TransformationRunFields,
 					state: { kind: 'running' },
@@ -1785,6 +1847,10 @@ export function createLibrary(workspace: Workspace) {
 				const id = entry.data.stem;
 				const busy = recordingBusy(id);
 				if (busy !== undefined) return Err(busy);
+				// The person is told every result that goes with the recording, so
+				// every result has to be known to be this one's or another's.
+				const unknown = unknownResults();
+				if (unknown !== undefined) return Err(unknown);
 				// A transcript saved since the last listing is named from its
 				// publication; once listed, the listed row is the one named.
 				const listed = new Set(transcriptions.map((result) => result.path));
@@ -1863,6 +1929,10 @@ export function createLibrary(workspace: Workspace) {
 				if (deleting.has(id)) return BEING_DELETED;
 				const busy = recordingBusy(id);
 				if (busy !== undefined) return busy;
+				// A result that stopped being readable since the person was asked
+				// could be this recording's and is not among those confirmed.
+				const unknown = unknownResults();
+				if (unknown !== undefined) return unknown;
 				const confirmed = new Set(
 					[...deletion.results, ...deletion.outputs].map((row) => row.path),
 				);

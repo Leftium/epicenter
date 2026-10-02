@@ -27,8 +27,8 @@
 
 	async function rename(event: SubmitEvent) {
 		event.preventDefault();
-		const value = next.trim();
-		if (value === '' || value === name || renaming) return;
+		const value = next;
+		if ((suffix === '' && value === '') || value === name || renaming) return;
 		renaming = true;
 		try {
 			const problem = await onRename(value);
@@ -50,7 +50,7 @@
 		<Input {id} class="h-8 w-44 font-mono md:text-xs" bind:value={next} autocomplete="off" spellcheck={false} />
 		{#if suffix}<span class="font-mono text-xs text-muted-foreground">{suffix}</span>{/if}
 	</div>
-	<Button type="submit" size="sm" variant="outline" disabled={renaming || next.trim() === '' || next.trim() === name}>
+	<Button type="submit" size="sm" variant="outline" disabled={renaming || (suffix === '' && next === '') || next === name}>
 		Rename file
 	</Button>
 	<Button class="ml-auto" size="sm" variant="ghost-destructive" onclick={onDelete}>Delete</Button>

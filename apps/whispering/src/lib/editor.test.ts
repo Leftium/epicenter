@@ -1,4 +1,8 @@
-/** Conflict reads must distinguish a missing file from an unreadable saved version. */
+/**
+ * Conflict reads must distinguish a missing file from an unreadable saved
+ * version. An accepted save's baseline is the text of the bytes sent, so an
+ * unpaired surrogate settles and newer typing stays as typed.
+ */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -213,3 +217,124 @@ for (const readFailure of [false, true]) {
 		editor.dispose();
 	});
 }
+
+// A byte order mark, CRLF, and a surrogate pair are saved as typed. An
+// unpaired surrogate cannot be: its bytes are the replacement character's.
+const typedOver = (source: string) =>
+	`﻿${source}lone \uD800 pair \u{1F600}\r\n`;
+const storedFor = (typed: string) => typed.replace('\uD800', '�');
+const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
+
+for (const kind of ['recording', 'raw file'] as const)
+	test(`a ${kind} saved with an unpaired surrogate settles on the text of the bytes sent and is not sent again`, async () => {
+		const folder = await open();
+		let saves = 0;
+		const onSaved = () => {
+			saves++;
+		};
+		const row =
+			kind === 'recording'
+				? expectOk(
+						await folder.tables.recordings.create({
+							stem: 'one',
+							fields: {
+								title: 'One',
+								recordedAt: '2026-10-01T00:00:00.000Z' as InstantString,
+								durationMs: 1,
+								capture: 'fixture',
+								audioPath: 'recordings/one.wav',
+							},
+						}),
+					)
+				: undefined;
+		const editor =
+			row !== undefined
+				? createRowEditor(
+						folder.tables.recordings,
+						folder.files,
+						row,
+						{ paused: true },
+						onSaved,
+					)
+				: createTextFileEditor(
+						folder.files,
+						{
+							...expectOk(await folder.files.create('note.md', 'original')),
+							source: 'original',
+						},
+						{ paused: true },
+						onSaved,
+					);
+		cleanup.push(async () => editor.dispose());
+
+		const typed = typedOver(editor.buffer);
+		const stored = storedFor(typed);
+		editor.input(typed);
+		await editor.save();
+		const read = expectOk(await folder.files.read(editor.path));
+		expect(decoder.decode(read.bytes)).toBe(stored);
+		expect(editor.baseline.source).toBe(stored);
+		expect(editor.baseline.sha256).toBe(read.sha256);
+		expect(editor.buffer).toBe(stored);
+		expect(editor.dirty).toBe(false);
+		expect(await editor.settle()).toBe(true);
+		expect(saves).toBe(1);
+
+		// The capture is the file's, so the next save is accepted against it.
+		editor.input(`${stored}more\n`);
+		await editor.save();
+		expect(editor.saveState).toEqual({ kind: 'saved' });
+		expect(saves).toBe(2);
+	});
+
+test('a save with an unpaired surrogate whose reply is lost reconciles on the text of its bytes, and newer typing stays as typed', async () => {
+	const folder = await open();
+	const created = expectOk(await folder.files.create('note.md', 'original'));
+	const sent = Promise.withResolvers<void>();
+	const hold = Promise.withResolvers<void>();
+	let replaces = 0;
+	const editor = createTextFileEditor(
+		{
+			...folder.files,
+			async replace(file, content) {
+				replaces++;
+				const result = await folder.files.replace(file, content);
+				sent.resolve();
+				await hold.promise;
+				return result.error
+					? result
+					: FileError.Unconfirmed({
+							path: file.path,
+							operation: 'replace',
+							cause: 'reply lost after saving',
+						});
+			},
+		},
+		{ ...created, source: 'original' },
+		{ paused: true },
+		() => {},
+	);
+	cleanup.push(async () => editor.dispose());
+
+	const typed = typedOver('');
+	const stored = storedFor(typed);
+	editor.input(typed);
+	const saving = editor.save();
+	await sent.promise;
+	// Typed while the save is out: a later generation than the one sent.
+	editor.input(`${typed}newer \uD800`);
+	hold.resolve();
+	await saving;
+	// The file holds exactly the bytes that were sent, so that save landed.
+	expect(editor.baseline.source).toBe(stored);
+	expect(editor.buffer).toBe(`${typed}newer \uD800`);
+	expect(editor.dirty).toBe(true);
+
+	// Its own save settles it the same way, with one write for each generation.
+	hold.resolve();
+	await editor.save();
+	expect(editor.saveState).toEqual({ kind: 'saved' });
+	expect(editor.buffer).toBe(`${stored}newer �`);
+	expect(editor.dirty).toBe(false);
+	expect(replaces).toBe(2);
+});

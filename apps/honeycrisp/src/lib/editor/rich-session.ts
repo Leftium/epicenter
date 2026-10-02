@@ -19,7 +19,6 @@
  * The session has no DOM. A view displays `state` and sends transactions to
  * `apply`; tests drive it the same way.
  */
-import { readSource } from '@epicenter/folder';
 import {
 	baseKeymap,
 	chainCommands,
@@ -51,7 +50,7 @@ import {
 	TextSelection,
 	type Transaction,
 } from 'prosemirror-state';
-import { instantNow, type NoteFields } from '../data.js';
+import { type InspectNote, instantNow, type NoteFields } from '../data.js';
 import { applyRichBody, bodyText, richAvailability } from '../note-source.js';
 import { checkNoteDoc } from './markdown.js';
 import { noteSchema } from './schema.js';
@@ -172,17 +171,22 @@ export type RichSession = NonNullable<ReturnType<typeof createRichSession>>;
 export function createRichSession(
 	draft: SourceBuffer,
 	{
+		inspect,
 		now = instantNow,
 		viewPlugins = [],
 	}: {
+		/** How the notes table reads the draft's text. */
+		inspect: InspectNote;
 		now?: () => NoteFields['updatedAt'];
 		/** Plugins that need a DOM, such as decorations and click handlers. */
 		viewPlugins?: readonly Plugin[];
-	} = {},
+	},
 ) {
-	const opened = richAvailability(draft.buffer);
+	const opened = richAvailability(draft.buffer, inspect);
 	if (!opened.editable) return undefined;
 	const plugins = [...editingPlugins(), ...viewPlugins];
+	/** The draft's body as it is now; undefined while the draft does not parse. */
+	const bodyNow = () => inspect(draft.buffer).body;
 
 	function stateFor(doc: Node, previous?: EditorState): EditorState {
 		let selection: Selection | undefined;
@@ -226,21 +230,26 @@ export function createRichSession(
 				draft.refuse(check.reason);
 				return undefined;
 			}
-			const current = readSource(draft.buffer).body;
+			const current = bodyNow();
 			// An edit Markdown has no spelling for (a new empty paragraph) leaves
 			// the body as it is, so it does not make the note newer.
 			if (
 				current === undefined ||
 				bodyText(check.markdown, current) !== current
 			) {
-				const patched = applyRichBody(draft.buffer, check.markdown, now());
+				const patched = applyRichBody(
+					draft.buffer,
+					check.markdown,
+					now(),
+					inspect,
+				);
 				if (patched.error !== null) {
 					draft.refuse(patched.error);
 					return undefined;
 				}
 				// Input that is not being taken is not shown either.
 				if (!draft.input(patched.data)) return undefined;
-				syncedBody = readSource(patched.data).body ?? syncedBody;
+				syncedBody = inspect(patched.data).body ?? syncedBody;
 			}
 			state = next;
 			return next;
@@ -252,9 +261,9 @@ export function createRichSession(
 		 * or undefined when nothing was replaced.
 		 */
 		sync(): EditorState | undefined {
-			const body = readSource(draft.buffer).body;
+			const body = bodyNow();
 			if (body === undefined || body === syncedBody) return undefined;
-			const available = richAvailability(draft.buffer);
+			const available = richAvailability(draft.buffer, inspect);
 			if (!available.editable) return undefined;
 			syncedBody = available.body;
 			state = stateFor(available.inspection.doc, state);
@@ -262,7 +271,7 @@ export function createRichSession(
 		},
 		/** Whether the draft's body is the one this document stands for. */
 		get inSync() {
-			return readSource(draft.buffer).body === syncedBody;
+			return bodyNow() === syncedBody;
 		},
 	};
 }

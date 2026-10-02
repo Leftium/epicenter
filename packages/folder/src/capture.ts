@@ -21,7 +21,9 @@ export function fileCapture(path: string, sha256: string): FileCapture {
 }
 
 /** Validate and detach a caller's capture before any asynchronous work. */
-export function ownCapture(file: FileCapture): Result<FileCapture, FileError> {
+export function ownCapture(
+	file: FileCapture,
+): Result<FileCapture, Extract<FileError, { name: 'InvalidPath' }>> {
 	const path = (file as Partial<FileCapture> | null | undefined)?.path;
 	if (typeof path !== 'string')
 		return FileError.InvalidPath({

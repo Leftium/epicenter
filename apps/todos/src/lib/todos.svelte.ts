@@ -20,8 +20,10 @@
  * starts folder work after it, and nothing new is retained.
  */
 import type {
+	ApplyError,
 	CommitAndPushResult,
 	FileCapture,
+	FileError,
 	FileListing,
 	GitSnapshot,
 	PullError,
@@ -67,12 +69,7 @@ type Retained =
 	| OpenFile;
 
 export type Selection =
-	| {
-			readonly kind: 'todo';
-			readonly editor: TodoEditor;
-			/** The listed row, or undefined when the file left the folder. */
-			readonly entry: TodoEntry | undefined;
-	  }
+	| { readonly kind: 'todo'; readonly editor: TodoEditor }
 	| { readonly kind: 'file'; readonly path: string; readonly file: OpenFile };
 
 /** What a confirmed deletion removes, captured when the person was asked. */
@@ -98,13 +95,17 @@ function isIdle(editor: TodoEditor | TextFileEditor) {
 }
 
 /** Library errors state failures precisely; these are the ones a person acts on. */
-function describeWriteError(error: TableWriteError): string {
+function describeWriteError(
+	error: TableWriteError | FileError | ApplyError,
+): string {
 	if (error.name === 'Exists')
 		return `"${basename(error.path)}" already exists here.`;
 	if (error.name === 'Conflict')
 		return error.actualSha256 === undefined
 			? 'The file is no longer here. Nothing was changed. Check it and try again.'
 			: 'The file has different content now. Nothing was changed. Check it and try again.';
+	if (error.name === 'Unparsed')
+		return `This todo's text cannot be read as a todo, so nothing was changed. Open it and fix its source. ${error.error.message}.`;
 	if (error.name === 'DirectoryNotEmpty')
 		return 'The folder is not empty, so nothing was deleted.';
 	return error.message;
@@ -144,11 +145,7 @@ export function createTodos(folder: TodosFolder) {
 		const item = path === undefined ? undefined : retained.get(path);
 		if (path === undefined || item === undefined) return undefined;
 		return item.kind === 'todo'
-			? {
-					kind: 'todo',
-					editor: item.editor,
-					entry: entries.find((entry) => entry.path === path),
-				}
+			? { kind: 'todo', editor: item.editor }
 			: { kind: 'file', path, file: item };
 	});
 	const shell = folder.terminal();
@@ -258,25 +255,27 @@ export function createTodos(folder: TodosFolder) {
 			folder.files.list(),
 		]);
 		if (stale()) return;
+		// Every row file that was read is a todo to select, whether or not its
+		// text parses. A file that could not be read has no text to show.
+		const read: TodoEntry[] = [];
+		const failed: { path: string; message: string }[] = [];
+		for (const item of rows.data ?? [])
+			if (item.result.error === null) read.push(item.result.data);
+			else failed.push({ path: item.path, message: item.result.error.message });
 		if (rows.error) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
 			listError = rows.error.message;
 		} else {
 			listError = undefined;
-			entries = sortEntries(rows.data.entries);
-			unreadable = rows.data.unreadable.map((item) => ({
-				path: item.path,
-				message: item.error.message,
-			}));
+			entries = sortEntries(read);
+			unreadable = failed;
 		}
 		if (files.error) listingError = files.error.message;
 		else {
 			listingError = undefined;
 			listing = files.data;
 		}
-		const listed = new Map(
-			rows.data?.entries.map((entry) => [entry.path, entry]),
-		);
+		const listed = new Map(read.map((entry) => [entry.path, entry]));
 		const present =
 			files.data && new Set(files.data.files.map((file) => file.path));
 		const current = (path: string, item: Retained) =>
@@ -505,14 +504,21 @@ export function createTodos(folder: TodosFolder) {
 			retainTodo(created.data);
 			return undefined;
 		},
-		/** Toggle completion. An open editor receives it in its buffer instead of racing it. */
+		/**
+		 * Toggle completion. An open editor receives it in its buffer instead of
+		 * racing it. The toggle needs only this todo's own `done` value to have
+		 * validated: issues in its other fields do not stand in the way.
+		 */
 		async toggle(entry: TodoEntry): Promise<string | undefined> {
 			if (closing !== undefined) return CLOSING;
+			const current = entry.fields.done;
+			if (typeof current !== 'boolean')
+				return 'This todo has no readable done value to change. Open it and fix its source.';
 			const release = reserve(entry.path);
 			if (release === undefined) return BUSY;
 			try {
 				const editor = editorOf(retained.get(entry.path));
-				const done = !(entry.fields.done === true);
+				const done = !current;
 				if (editor !== undefined) {
 					if (!patchTodo(editor, { fields: { done } })) return editor.refusal;
 					await editor.save();

@@ -33,11 +33,11 @@ import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readSource } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
 import type { Library } from './library.svelte.js';
+import { needsRepair } from './rows.js';
 import { filesLineOf } from './status.js';
 import { TransformationError } from './transformation.js';
 import {
@@ -108,17 +108,17 @@ test('opening a folder seeds no transformation; creating one writes an ordinary 
 
 	expect(library.transformations).toHaveLength(1);
 	const entry = library.transformations[0]!;
-	expect(entry.issues).toBeUndefined();
+	expect(needsRepair(entry)).toBe(false);
 	expect(library.selectedTransformationPath).toBe(entry.path);
 	const source = await readFile(join(root, entry.path), 'utf8');
-	const read = readSource(source);
+	expect(source).toBe(entry.source);
 	// The endpoint starts from the transcription endpoint; the model is the person's to name.
-	expect(read.values).toEqual({
+	expect(entry.fields).toEqual({
 		title: 'Clean up',
 		model: '',
 		endpoint: 'http://127.0.0.1:18080/v1',
 	});
-	expect(read.body).toBe(CLEANUP.prompt);
+	expect(entry.body).toBe(CLEANUP.prompt);
 	expect(await names(root, RUNS)).toEqual([]);
 });
 
@@ -132,9 +132,11 @@ test('a second transformation starts from the first one’s endpoint and model',
 	await library.createTransformation({ title: 'Summarize', prompt: 'Sum.\n' });
 
 	const created = library.selectedTransformation!.entry!;
-	expect(created.fields.title).toBe('Summarize');
-	expect(created.fields.model).toBe('chat-model');
-	expect(created.fields.endpoint).toBe('http://127.0.0.1:11434/v1');
+	expect(created.fields).toEqual({
+		title: 'Summarize',
+		model: 'chat-model',
+		endpoint: 'http://127.0.0.1:11434/v1',
+	});
 });
 
 test('editing a transformation keeps unknown fields, comments, and the rest of the source', async () => {
@@ -170,12 +172,17 @@ test('a malformed transformation stays listed, cannot run, and is repaired in it
 	const entry = library.transformations.find(
 		(item) => item.path === 'transformations/broken.md',
 	);
-	expect(entry?.issues?.[0]?.kind).toBe('frontmatter');
+	// It was read, so it is listed with its source; its text did not parse.
+	expect(entry?.source).toBe(broken);
+	expect(entry?.parseError).toBeDefined();
+	expect(entry?.body).toBeUndefined();
+	expect(library.unreadableTransformations).toEqual([]);
 	await library.open('transformations/broken.md');
 	const { editor } = library.selectedTransformation!;
 	expect(editor.buffer).toBe(broken);
-	// A structured edit is refused; only the source can repair it.
-	expect(patchRow(editor, { fields: { title: 'x' } })).toBe(false);
+	// A structured edit is refused, a prompt edit too; only the source can repair it.
+	for (const change of [{ fields: { title: 'x' } }, { body: 'New prompt\n' }])
+		expect(patchRow(editor, change)).toBe(false);
 	expect(await library.transform(transcript.path, editor.path)).toContain(
 		'needs repair',
 	);
@@ -193,7 +200,7 @@ test('a malformed transformation stays listed, cannot run, and is repaired in it
 	const repaired = library.transformations.find(
 		(item) => item.path === 'transformations/broken.md',
 	);
-	expect(repaired?.issues).toBeUndefined();
+	expect(repaired && needsRepair(repaired)).toBe(false);
 	expect(
 		await readFile(join(root, 'transformations', 'broken.md'), 'utf8'),
 	).toContain('mood: curious');
@@ -273,7 +280,7 @@ test('applying a transformation writes a new result row and leaves the transcrip
 	const outputs = library.outputsFor(transcript.stem);
 	expect(outputs).toHaveLength(1);
 	const output = outputs[0]!;
-	expect(output.issues).toBeUndefined();
+	expect(needsRepair(output)).toBe(false);
 	expect(output.body).toBe('Transformed: um so a steady tone\n');
 	expect(output.fields).toMatchObject({
 		recordingId: recording.stem,
@@ -359,9 +366,9 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 		.replace('---\n', '---\nreviewedBy: someone\n')
 		.replace(transcript.body!, 'A steady tone, corrected by hand.\n');
 	await writeFile(join(root, transcript.path), outside);
-	expect(library.resultsFor(transcript.fields.recordingId!)[0]!.body).toBe(
-		'um so a steady tone\n',
-	);
+	expect(
+		library.resultsFor(transcript.fields.recordingId!)[0]!.body,
+	).toBe('um so a steady tone\n');
 
 	expect(await library.transform(transcript.path, editor.path)).toBeUndefined();
 
@@ -369,7 +376,9 @@ test('a transcript edited outside is sent as the folder has it now, and is not r
 	expect(transformed[0]!.input).toBe('A steady tone, corrected by hand.\n');
 	const output = library.outputsFor(transcript.stem)[0]!;
 	expect(output.fields.input).toBe('A steady tone, corrected by hand.\n');
-	expect(output.body).toBe('Transformed: A steady tone, corrected by hand.\n');
+	expect(output.body).toBe(
+		'Transformed: A steady tone, corrected by hand.\n',
+	);
 	// The transcript is exactly what the other program wrote, unknown field included.
 	expect(await readFile(join(root, transcript.path), 'utf8')).toBe(outside);
 });
@@ -475,7 +484,13 @@ test('a transcript draft in conflict refuses, and both versions are kept', async
 test('a recording cannot be deleted while a transformation of it runs, including one started after confirming', async () => {
 	const answer =
 		deferred<Awaited<ReturnType<Library['workspace']['transform']>>>();
-	const { library, root } = await open({ transform: () => answer.promise });
+	const started = deferred<void>();
+	const { library, root } = await open({
+		transform: () => {
+			started.resolve();
+			return answer.promise;
+		},
+	});
 	const { recording, transcript } = await transcribed(library, root);
 	const editor = await cleanupProfile(library);
 	// The person is asked, and agrees, before any request exists.
@@ -483,7 +498,7 @@ test('a recording cannot be deleted while a transformation of it runs, including
 	expectOk(confirmed);
 
 	const running = library.transform(transcript.path, editor.path);
-	await new Promise((resolve) => setTimeout(resolve, 20));
+	await started.promise;
 	expect(library.transformationRuns[0]!.state.kind).toBe('running');
 
 	// Asking now refuses, and so does the deletion already confirmed.
@@ -1012,7 +1027,6 @@ test('two asks for the same transcript and transformation at once send one reque
 	).toBeUndefined();
 	expect(transformed).toHaveLength(3);
 	expect(await names(root, RUNS)).toHaveLength(3);
-	expect(library.holdsUnsavedWork).toBe(false);
 	expect(library.holdsUnsavedWork).toBe(false);
 	expect(await readFile(join(root, transcript.path))).toEqual(transcriptBytes);
 });

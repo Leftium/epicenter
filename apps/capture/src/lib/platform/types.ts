@@ -19,7 +19,7 @@ export type CaptureFolder = {
 	readonly tables: {
 		readonly captures: Pick<
 			FileTable<CaptureFields>,
-			'list' | 'get' | 'create' | 'replace' | 'delete'
+			'list' | 'get' | 'inspect' | 'create' | 'replace' | 'delete'
 		>;
 	};
 	/**

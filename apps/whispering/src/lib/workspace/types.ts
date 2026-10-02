@@ -172,7 +172,7 @@ export type Workspace = {
 				quitWithoutHost(): void;
 		  }
 		| undefined;
-	/** Written to `kv.json` when the folder has none. */
+	/** In-memory defaults for settings absent from `kv.json`. */
 	readonly initialSettings: TranscriptionSettings;
 	/** Whether debug controls (paused autosave) are offered. */
 	readonly debugControls: boolean;

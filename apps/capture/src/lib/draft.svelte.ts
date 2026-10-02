@@ -6,8 +6,13 @@
  *   is the buffer read as text and thoughts; structured controls are edits to
  *   the buffer through it.
  * - A save writes exactly the buffer it captured, against the baseline it
- *   captured. Success advances the baseline to that file and nothing else:
- *   typing that arrived meanwhile stays dirty and saves next.
+ *   captured. Success advances the baseline to the entry the store returns:
+ *   the bytes that were sent, their hash, and how their text reads. That text
+ *   is the captured buffer unless encoding replaced an unpaired surrogate; a
+ *   buffer still at the captured text becomes it. Typing that arrived
+ *   meanwhile stays dirty and saves next.
+ * - That entry acknowledges the write. It is not a reading of the path, which
+ *   another program may have changed since: only a reread says what is there.
  * - An observation of the saved file (from a reread of the folder) refreshes
  *   a clean draft. It never replaces unsaved input: a dirty draft keeps its
  *   buffer, stops saving, and shows the saved file beside explicit choices.
@@ -37,10 +42,11 @@ import {
 	setText,
 	swapThoughts,
 	type Thought,
+	unparsedCapture,
 } from '@epicenter/capture';
-import { type Entry } from '@epicenter/folder';
+import type { FileTable, TableSnapshot } from '@epicenter/folder';
 
-export type CaptureEntry = Entry<CaptureFields>;
+export type CaptureEntry = TableSnapshot<CaptureFields>;
 
 /** What is at the draft's path now. */
 export type Current =
@@ -64,23 +70,24 @@ type Result<T> =
 	| { readonly data: null; readonly error: Failure };
 
 /**
- * A confirmed write: the content the folder admitted, and that file as an
- * entry. There is no entry when another program changed the file before the
- * store could read it back. The write is confirmed all the same.
+ * Where a draft saves and rereads. Any method may throw; the draft keeps its
+ * input. A write resolves the entry of the bytes it sent, read from nothing.
  */
-type Admitted = {
-	readonly sha256: string;
-	readonly entry: CaptureEntry | undefined;
-};
-
-/** Where a draft saves and rereads. Any method may throw; the draft keeps its input. */
 export type DraftStore = {
+	/**
+	 * How the captures table reads source text. It reads nothing from the
+	 * folder, so the draft asks it about the buffer as it is typed.
+	 */
+	inspect: FileTable<CaptureFields>['inspect'];
 	/** One conditional write of exact source against a captured file. */
 	write(baseline: CaptureEntry, source: string): Promise<Result<CaptureEntry>>;
 	/** The saved file the baseline names, now. */
 	read(baseline: CaptureEntry): Promise<Current>;
 	/** Write the source at the baseline's path, which must be absent. */
-	recreate(baseline: CaptureEntry, source: string): Promise<Result<Admitted>>;
+	recreate(
+		baseline: CaptureEntry,
+		source: string,
+	): Promise<Result<CaptureEntry>>;
 };
 
 /** Typing batches for this long before a save. */
@@ -112,10 +119,23 @@ export function createDraft(
 	>();
 	/** Capture text typed but refused, kept until it applies or is dropped. */
 	let pendingText = $state<string | undefined>();
-	/** The saved file is gone and there was nothing unsaved: nothing to keep. */
+	/**
+	 * The saved file is gone and there was nothing unsaved: nothing to keep.
+	 * Input taken afterwards ends this; see `retain`.
+	 */
 	let gone = $state(false);
 
-	const document = $derived(parseCapture(buffer));
+	/**
+	 * How the buffer reads, by the table's own interpreter. This describes the
+	 * text on screen, saved or not; the saved file's reading is on `baseline`.
+	 */
+	const reading = $derived(store.inspect(buffer));
+	// Text and thoughts are read only from a buffer that parses as a capture.
+	const document = $derived(
+		reading.parseError === undefined
+			? parseCapture(buffer)
+			: unparsedCapture(buffer, reading.parseError.message),
+	);
 
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let saving: Promise<void> | undefined;
@@ -134,8 +154,21 @@ export function createDraft(
 		timer = setTimeout(() => void save(), batchMs);
 	}
 
+	/**
+	 * A draft that holds input is never gone. Input taken after the file was
+	 * found removed is kept as any input over a removed file is: a conflict,
+	 * with saving paused until the person chooses. Nothing is read or written.
+	 */
+	function retain() {
+		if (!gone) return;
+		gone = false;
+		clearTimeout(timer);
+		saveState = { kind: 'conflict', current: { kind: 'removed' } };
+	}
+
 	function input(source: string) {
 		buffer = source;
+		retain();
 		schedule();
 	}
 
@@ -178,24 +211,23 @@ export function createDraft(
 
 	/**
 	 * One write of the buffer as it is now. Success advances the baseline to
-	 * exactly what was admitted, that source with that hash, whatever the path
-	 * holds by now. That is a separate observation, and the reread takes it.
+	 * exactly what was sent, that text with that hash, whatever the path holds
+	 * by now. That is a separate observation, and a reread takes it.
 	 */
 	async function saveOnce(
-		write: (source: string) => Promise<Result<Admitted>>,
+		write: (source: string) => Promise<Result<CaptureEntry>>,
 	) {
 		const captured = buffer;
 		saveState = { kind: 'saving' };
 		try {
 			const result = await write(captured);
 			if (result.error === null) {
-				const { sha256, entry } = result.data;
-				// Without the entry, the fields, body, and issues stay as last read at
-				// this path until the reread, or the choice after it, reads them again.
-				baseline = entry ?? { ...baseline, sha256, source: captured };
+				baseline = result.data;
+				// The same text unless encoding replaced an unpaired surrogate.
+				// Newer typing is a later generation and stays as typed.
+				if (buffer === captured) buffer = baseline.source;
 				saveState = { kind: 'saved' };
-				if (entry !== undefined) hooks.onSaved(entry);
-				else recheck = true;
+				hooks.onSaved(baseline);
 			} else if (result.error.name !== 'Conflict') {
 				saveState = { kind: 'failed', message: result.error.message };
 				return;
@@ -206,9 +238,9 @@ export function createDraft(
 			saveState = { kind: 'failed', message: describe(cause) };
 			return;
 		}
-		// The file was not what the write expected, or the folder hinted while
-		// it ran: what was written is acknowledged, and the file as it is now
-		// decides the rest.
+		// The file was not what the write expected, the folder hinted while it
+		// ran, or the write asked to be followed by a look: what was written is
+		// acknowledged, and the file as it is now decides the rest.
 		if (recheck) {
 			recheck = false;
 			if (saveState.kind === 'saving') saveState = { kind: 'saved' };
@@ -217,7 +249,7 @@ export function createDraft(
 	}
 
 	/** Run one save to its end. Typing that arrived during it batches again. */
-	async function run(write: (source: string) => Promise<Result<Admitted>>) {
+	async function run(write: (source: string) => Promise<Result<CaptureEntry>>) {
 		if (disposed) return;
 		saving = saveOnce(write);
 		try {
@@ -226,18 +258,6 @@ export function createDraft(
 			saving = undefined;
 		}
 		if (dirty() && isSaved()) schedule();
-	}
-
-	/** The conditional write against the baseline, as the folder admitted it. */
-	async function writeAgainstBaseline(
-		source: string,
-	): Promise<Result<Admitted>> {
-		const written = await store.write(baseline, source);
-		if (written.error !== null) return written;
-		return {
-			data: { sha256: written.data.sha256, entry: written.data },
-			error: null,
-		};
 	}
 
 	/** Run saves until nothing admitted is left. Stops at a conflict or a failure. */
@@ -250,7 +270,7 @@ export function createDraft(
 				: undefined;
 		}
 		if (disposed || saveState.kind === 'conflict' || !dirty() || gone) return;
-		await run(writeAgainstBaseline);
+		await run((source) => store.write(baseline, source));
 	}
 
 	async function save(): Promise<void> {
@@ -285,6 +305,10 @@ export function createDraft(
 		/** The buffer read as text and thoughts. Thoughts belong to this value. */
 		get document(): CaptureDocument {
 			return document;
+		},
+		/** The buffer read as a row: a parse failure, or its fields and their issues. */
+		get reading() {
+			return reading;
 		},
 		get saveState() {
 			return saveState;
@@ -329,7 +353,10 @@ export function createDraft(
 		inputText(value: string) {
 			const edit = setText(document, value);
 			if (apply(edit)) pendingText = undefined;
-			else pendingText = value;
+			else {
+				pendingText = value;
+				retain();
+			}
 		},
 		dropPendingText() {
 			pendingText = undefined;
@@ -341,6 +368,7 @@ export function createDraft(
 		},
 		set newThought(value: string) {
 			newThought = value;
+			if (value !== '') retain();
 		},
 		/** Add the new-thought text as the last thought. The text stays if refused. */
 		addThought(): boolean {
@@ -355,6 +383,7 @@ export function createDraft(
 		startEditing(thought: Thought) {
 			editing = { thought, text: thought.text };
 			refusal = undefined;
+			retain();
 		},
 		inputEditing(text: string) {
 			if (editing) editing = { thought: editing.thought, text };
@@ -414,7 +443,9 @@ export function createDraft(
 		 * Conflict choice: save my draft over the saved file I was shown. It is
 		 * checked against that file, so a further change conflicts again. When
 		 * the file was removed, the draft is written back to its path, which
-		 * must still be absent.
+		 * must still be absent. Another program is at work on that path, so the
+		 * write back is followed by one read of it before this resolves: what
+		 * the file holds by then is adopted or shown here, not at a later refresh.
 		 */
 		async saveMine() {
 			if (saveState.kind !== 'conflict' || saving) return;
@@ -426,7 +457,11 @@ export function createDraft(
 				await save();
 				return;
 			}
-			await run((source) => store.recreate(baseline, source));
+			await run(async (source) => {
+				const created = await store.recreate(baseline, source);
+				if (created.error === null) recheck = true;
+				return created;
+			});
 		},
 		async retry() {
 			if (saveState.kind === 'failed') saveState = { kind: 'saved' };

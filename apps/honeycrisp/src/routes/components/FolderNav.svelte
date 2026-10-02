@@ -9,17 +9,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { type FolderEntry, folderIdOf } from '$lib/data.js';
+	import { type FolderEntry, folderLabel as nameOf, repairReason } from '$lib/data.js';
 	import type { Notes } from '$lib/notes.svelte.js';
 
 	let { notes }: { notes: Notes } = $props();
-
-	const nameOf = (folder: FolderEntry) => {
-		const { name } = folder.fields;
-		if (typeof name === 'string' && name !== '') return name;
-		// An empty stem (`folders/.md`) is not a readable label.
-		return folder.stem === '' ? folder.path : folder.stem;
-	};
 
 	const folders = $derived(
 		[...notes.folders].sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
@@ -27,12 +20,13 @@
 	const counts = $derived.by(() => {
 		const result = { active: 0, deleted: 0, folders: new Map<string, number>() };
 		for (const note of notes.notes) {
-			if (typeof note.fields.deletedAt === 'string') {
+			const { fields } = note;
+			if (typeof fields.deletedAt === 'string') {
 				result.deleted += 1;
 				continue;
 			}
 			result.active += 1;
-			const id = note.fields.folderId;
+			const id = fields.folderId;
 			if (typeof id === 'string') result.folders.set(id, (result.folders.get(id) ?? 0) + 1);
 		}
 		return result;
@@ -141,19 +135,15 @@
 					class={row}
 					class:bg-accent={notes.view.folderId === folder.stem && !notes.view.deleted}
 					aria-current={notes.view.folderId === folder.stem && !notes.view.deleted ? 'true' : undefined}
-					onclick={() => {
-						const id = folderIdOf(folder);
-						if (id === null) void notes.open(folder.path);
-						else notes.showFolder(id);
-					}}
+					onclick={() => notes.showFolder(folder.stem)}
 				>
-					{#if typeof folder.fields.icon === 'string' && folder.fields.icon !== ''}
+					{#if folder.fields.icon}
 						<span class="text-base leading-none">{folder.fields.icon}</span>
 					{:else}
 						<FolderIcon class="size-4" />
 					{/if}
 					<span class="truncate">{nameOf(folder)}</span>
-					{#if folder.issues}<span class="text-xs text-destructive">needs repair</span>{/if}
+					{#if repairReason(folder)}<span class="text-xs text-destructive">needs repair</span>{/if}
 					<span class="ml-auto text-xs text-muted-foreground">{counts.folders.get(folder.stem) ?? 0}</span>
 				</button>
 				<DropdownMenu.Root>

@@ -41,10 +41,10 @@ import { type FileCapture, FileError } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import { expectOk } from 'wellcrafted/testing';
 import {
-	folderIdOf,
 	honeycrispDefinition,
 	type NoteEntry,
 	noteIdOf,
+	repairReason,
 } from './data.js';
 import type { FileSession } from './file-session.svelte.js';
 import { applyRichBody } from './note-source.js';
@@ -95,7 +95,10 @@ async function product() {
 	// Mutable copies let a test hold or lose replies from the real folder.
 	const folder: NotesFolder = {
 		tables: {
-			notes: { list: opened.tables.notes.list },
+			notes: {
+				list: opened.tables.notes.list,
+				inspect: opened.tables.notes.inspect,
+			},
 			folders: { list: opened.tables.folders.list },
 		},
 		files: { ...opened.files },
@@ -142,9 +145,7 @@ async function product() {
 		) as NoteEntry;
 	/** The note files in the folder now. */
 	const notePaths = async () =>
-		expectOk(await opened.tables.notes.list()).entries.map(
-			(entry) => entry.path,
-		);
+		expectOk(await opened.tables.notes.list()).map((item) => item.path);
 	const state = createNotes(host);
 	cleanup.push(() => state.close());
 	await state.refreshAll();
@@ -259,7 +260,7 @@ describe('notes are files', () => {
 		expect(session?.buffer).toBe(source);
 		expect(session?.status).toBe('saved');
 		expect(state.notes.map((entry) => entry.path)).toEqual([path]);
-		expect(state.notes[0]?.issues).toBeUndefined();
+		expect(state.notes[0] && repairReason(state.notes[0])).toBeUndefined();
 		expect(state.pending).toEqual([]);
 		expect((await state.commitNow()).status).toBe('committed');
 		expect(git('show', `HEAD:${path}`)).toBe(source.trim());
@@ -283,7 +284,7 @@ describe('notes are files', () => {
 	});
 
 	test('a body edit keeps unknown frontmatter, comments, and key order', async () => {
-		const { state, root } = await product();
+		const { state, root, folder } = await product();
 		const source = [
 			'---',
 			'# a comment about this note',
@@ -308,6 +309,7 @@ describe('notes are files', () => {
 				session.buffer,
 				'# New\n\n- [x] done',
 				'2026-10-02T00:00:00.000Z' as InstantString,
+				folder.tables.notes.inspect,
 			),
 		);
 		session.input(next);
@@ -336,20 +338,22 @@ describe('notes are files', () => {
 			await state.patchNote(note.path, { folderId: made.stem }),
 		).toBeUndefined();
 		const moved = state.notes.find((entry) => entry.path === note.path);
-		expect(moved?.fields.folderId).toBe(made.stem);
+		expect(moved && moved.fields.folderId).toBe(made.stem);
 		expect(state.notes).toHaveLength(1);
 		expect(await state.deleteFolder(made)).toBeUndefined();
 		expect(state.folders).toEqual([]);
-		expect(state.notes[0]?.fields.folderId).toBeNull();
+		expect(state.notes[0] && state.notes[0].fields.folderId).toBeNull();
 		await expect(stat(join(root, made.path))).rejects.toThrow();
 		expect(await readFile(join(root, note.path), 'utf8')).toContain(
 			'folderId: null',
 		);
 	});
 
-	test('a folder whose filename needs repair keeps its literal stem, is not offered as a reference, and is not deleted', async () => {
+	test('a folder with an unusual or empty file name is an ordinary folder: its stem is its id, and it deletes like any other', async () => {
 		const { state, root, seedNote } = await product();
-		const note = await seedNote();
+		const inOdd = await seedNote('In odd');
+		const inEmpty = await seedNote('In empty');
+		const unfiled = await seedNote('Unfiled');
 		const source = '---\nname: Odd\nicon: null\n---\n';
 		for (const name of ['bad .md', '.md'])
 			await writeFile(join(root, 'folders', name), source);
@@ -359,36 +363,91 @@ describe('notes are files', () => {
 		if (bad === undefined || empty === undefined)
 			throw new Error('The folders are not listed');
 		expect([bad.stem, empty.stem]).toEqual(['bad ', '']);
+		// A name is an address, never something to repair.
 		for (const folder of [bad, empty])
-			expect(folder.issues?.map((issue) => issue.kind)).toEqual(['filename']);
-		// The literal stem is not handed out as a reference for either.
-		expect([folderIdOf(bad), folderIdOf(empty)]).toEqual([null, null]);
-		expect(await state.createFolder('Work')).toBeUndefined();
-		const work = state.folders.find((entry) => entry.fields.name === 'Work');
-		if (work === undefined) throw new Error('The folder is not listed');
-		expect(folderIdOf(work)).toBe(work.stem);
+			expect(repairReason(folder)).toBeUndefined();
 
-		// A note another program pointed at the odd folder is left pointing there.
-		const notePath = join(root, note.path);
-		const naming = (await readFile(notePath, 'utf8')).replace(
-			'folderId: null',
-			'folderId: "bad "',
+		// The literal stem is the reference, including the empty one.
+		expect(
+			await state.patchNote(inOdd.path, { folderId: bad.stem }),
+		).toBeUndefined();
+		expect(
+			await state.patchNote(inEmpty.path, { folderId: empty.stem }),
+		).toBeUndefined();
+		const folderOf = (path: string) => {
+			const note = state.notes.find((entry) => entry.path === path);
+			return note && note.fields.folderId;
+		};
+		expect(folderOf(inOdd.path)).toBe('bad ');
+		expect(folderOf(inEmpty.path)).toBe('');
+		expect(await readFile(join(root, inEmpty.path), 'utf8')).toContain(
+			'folderId: ""',
 		);
-		await writeFile(notePath, naming);
-		await state.refresh();
-		for (const folder of [bad, empty])
-			expect(await state.deleteFolder(folder)).toBe(
-				'This folder file has an unusable name.',
-			);
-		expect(await readFile(join(root, bad.path), 'utf8')).toBe(source);
-		expect(await readFile(join(root, empty.path), 'utf8')).toBe(source);
-		expect(await readFile(notePath, 'utf8')).toBe(naming);
+
+		// Deleting the empty-stem folder moves out its note, and only its note.
+		expect(await state.deleteFolder(empty)).toBeUndefined();
+		await expect(stat(join(root, empty.path))).rejects.toThrow();
+		expect(folderOf(inEmpty.path)).toBeNull();
+		expect(folderOf(inOdd.path)).toBe('bad ');
+		expect(folderOf(unfiled.path)).toBeNull();
+		expect(await state.deleteFolder(bad)).toBeUndefined();
+		await expect(stat(join(root, bad.path))).rejects.toThrow();
+		expect(folderOf(inOdd.path)).toBeNull();
 	});
 
-	test('a note id is the stem of a row directly in notes, and is never empty', () => {
+	test('a folder is not deleted while a note cannot say which folder it is in', async () => {
+		const { state, root, seedNote } = await product();
+		const member = await seedNote('Member');
+		expect(await state.createFolder('Work')).toBeUndefined();
+		const [work] = state.folders;
+		if (work === undefined) throw new Error('The folder is not listed');
+		expect(
+			await state.patchNote(member.path, { folderId: work.stem }),
+		).toBeUndefined();
+		const memberSource = await readFile(join(root, member.path), 'utf8');
+		const untouched = async () => {
+			expect(await readFile(join(root, work.path), 'utf8')).toContain('Work');
+			expect(await readFile(join(root, member.path), 'utf8')).toBe(
+				memberSource,
+			);
+		};
+
+		// Each of these might be in the folder: its text names it, or might.
+		const unknown: Record<string, string | Uint8Array> = {
+			'unparsed.md': `---\nfolderId: ${work.stem}\ntitle: [open\n---\n`,
+			'fenceless.md': `folderId: ${work.stem}\n`,
+			'invalid.md': '---\nfolderId: 12\ntitle: Odd\n---\n',
+			'absent.md': '---\ntitle: No folder field\n---\n',
+			'binary.md': new Uint8Array([0xff, 0xfe, 0x00]),
+		};
+		for (const [name, content] of Object.entries(unknown)) {
+			await writeFile(join(root, 'notes', name), content);
+			await state.refresh();
+			const refusal = await state.deleteFolder(work);
+			expect(refusal).toContain('cannot be read well enough');
+			expect(refusal).toContain(name);
+			await untouched();
+			await rm(join(root, 'notes', name));
+		}
+
+		// A note with issues in other fields still says where it is: that is enough.
+		await writeFile(
+			join(root, 'notes', 'elsewhere.md'),
+			'---\nfolderId: null\ntitle: 12\n---\n',
+		);
+		await state.refresh();
+		expect(await state.deleteFolder(work)).toBeUndefined();
+		await expect(stat(join(root, work.path))).rejects.toThrow();
+		expect(await readFile(join(root, member.path), 'utf8')).toContain(
+			'folderId: null',
+		);
+	});
+
+	test('a note id is the literal stem of a row directly in notes, and may be empty', () => {
 		expect(noteIdOf('notes/a.b.md')).toBe('a.b');
 		expect(noteIdOf('notes/bad .md')).toBe('bad ');
-		for (const path of ['notes/.md', 'notes/a/b.md', 'notes/a.txt', 'a.md'])
+		expect(noteIdOf('notes/.md')).toBe('');
+		for (const path of ['notes/a/b.md', 'notes/a.txt', 'notes/a.MD', 'a.md'])
 			expect(noteIdOf(path)).toBeUndefined();
 	});
 });
@@ -475,30 +534,53 @@ describe('other writers', () => {
 		expect(session.buffer).toContain('Mine');
 	});
 
-	test('a malformed file stays listed with its issue and its source, and is repaired as text', async () => {
-		const { state, folder, root } = await product();
-		await writeFile(
-			join(root, 'notes', 'bad.md'),
-			'---\ntitle: *missing\n---\nbody\n',
-		);
+	test('a malformed file is still a note to select, saves while malformed, and is repaired as text', async () => {
+		const { state, root } = await product();
+		const malformed = '---\ntitle: *missing\n---\nbody\n';
+		await writeFile(join(root, 'notes', 'bad.md'), malformed);
+		await writeFile(join(root, 'notes', 'plain.md'), 'No frontmatter\n');
 		await writeFile(
 			join(root, 'notes', 'binary.md'),
 			new Uint8Array([0xff, 0xfe, 0x00]),
 		);
-		const listed = expectOk(await folder.tables.notes.list());
-		const bad = listed.entries.find((entry) => entry.path === 'notes/bad.md');
-		if (bad === undefined) throw new Error('The malformed note is not listed');
-		expect(bad.issues?.[0]?.kind).toBe('frontmatter');
-		expect(bad.source).toContain('*missing');
-		expect(listed.unreadable.map((item) => item.path)).toEqual([
+		await state.refresh();
+		// Text that does not parse is listed with its source; bytes that are not
+		// text are listed apart, with no entry invented for them.
+		const listed = (path: string) =>
+			state.notes.find((entry) => entry.path === path);
+		for (const path of ['notes/bad.md', 'notes/plain.md']) {
+			expect(listed(path)?.parseError).toBeDefined();
+			expect(listed(path)?.body).toBeUndefined();
+			expect(repairReason(listed(path) as NoteEntry)).toBeDefined();
+		}
+		expect(listed('notes/bad.md')?.source).toBe(malformed);
+		expect(state.unreadable.map((item) => item.path)).toEqual([
 			'notes/binary.md',
 		]);
+
 		const session = await opened(state, 'notes/bad.md');
+		expect(session.buffer).toBe(malformed);
+		// A structured change is refused and writes nothing.
+		expect(await state.patchNote('notes/bad.md', { pinned: true })).toContain(
+			'Unresolved alias',
+		);
+		expect(await readFile(join(root, 'notes/bad.md'), 'utf8')).toBe(malformed);
+		// Still malformed text saves as written, and stays selectable.
+		const still = malformed.replace('body', 'more body');
+		session.input(still);
+		await session.save();
+		expect(session.status).toBe('saved');
+		expect(await readFile(join(root, 'notes/bad.md'), 'utf8')).toBe(still);
+		await state.refresh();
+		expect(listed('notes/bad.md')?.source).toBe(still);
+		expect(listed('notes/bad.md')?.parseError).toBeDefined();
+
 		session.input('---\ntitle: Fixed\n---\nbody\n');
 		await session.save();
 		await state.refresh();
-		const repaired = state.notes.find((entry) => entry.path === 'notes/bad.md');
-		expect(repaired?.fields.title).toBe('Fixed');
+		const repaired = listed('notes/bad.md') as NoteEntry;
+		expect(repaired.fields.title).toBe('Fixed');
+		expect(repaired.body).toBe('body\n');
 	});
 });
 
@@ -1290,6 +1372,38 @@ describe('a save whose reply is lost', () => {
 		expect(draftsLineOf(state).label).toBe('No unsaved drafts');
 	});
 
+	test('one holding an unpaired surrogate is kept as the text of the bytes it sent, and is found when those bytes land', async () => {
+		const { state, folder, root, seedNote } = await product();
+		const note = await seedNote();
+		const session = await opened(state, note.path);
+		const file = join(root, note.path);
+		const land = loseNext(folder, 'replace', { landed: false });
+		const typed = `${note.source}lone \uD800\n`;
+		const stored = typed.replace('\uD800', '�');
+		session.input(typed);
+		await session.save();
+		expect(session.attempt).toMatchObject({
+			path: note.path,
+			source: stored,
+			kind: 'replace',
+			expectedSha256: note.sha256,
+			state: 'unconfirmed',
+		});
+		// Nothing is known to be saved, so the draft is as it was typed.
+		expect(session.buffer).toBe(typed);
+		expectOk(await land());
+		await state.refresh();
+		expect(await readFile(file, 'utf8')).toBe(stored);
+		expect(session.attempt).toBeUndefined();
+		expect(session.saved.source).toBe(stored);
+		expect(session.saved.sha256).toBe(
+			expectOk(await folder.files.read(note.path)).sha256,
+		);
+		expect(session.buffer).toBe(stored);
+		expect(session.status).toBe('saved');
+		expect(await state.settleAll()).toBe(0);
+	});
+
 	test('a read that still finds the old file does not mean it failed: it lands later, and only then is it saved', async () => {
 		const { state, session, note, file, a, land } = await unconfirmedSave({
 			landed: false,
@@ -1502,6 +1616,18 @@ describe('a change with no open file whose reply is lost', () => {
 		expect(await readFile(join(root, change.path), 'utf8')).toBe(change.source);
 		expect((await land()).error?.name).toBe('Exists');
 		expect(await notePaths()).toEqual([change.path]);
+	});
+
+	test('a new folder named with an unpaired surrogate is recorded as the text of the bytes sent, and is found when it appears', async () => {
+		const { state, folder, root } = await product();
+		const land = loseNext(folder, 'create', { landed: false });
+		expect(await state.createFolder('lone \uD800')).toContain('not confirmed');
+		const [change] = state.pending;
+		if (change?.kind !== 'create') throw new Error('No creation is pending');
+		expectOk(await land());
+		await state.refresh();
+		expect(await readFile(join(root, change.path), 'utf8')).toBe(change.source);
+		expect(state.pending).toEqual([]);
 	});
 
 	test('a field change is kept as it was sent, blocks another change to that file, and ends only on exactly its text', async () => {

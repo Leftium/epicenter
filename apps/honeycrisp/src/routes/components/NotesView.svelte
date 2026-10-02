@@ -93,7 +93,7 @@
 					{@const selection = notes.selection}
 					{#if selection?.kind === 'note'}
 						{#key selection.session}
-							<NoteDetail {notes} session={selection.session} entry={selection.entry} />
+							<NoteDetail {notes} session={selection.session} />
 						{/key}
 					{:else if selection?.kind === 'file'}
 						<FileView {notes} path={selection.path} file={selection.file} />

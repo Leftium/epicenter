@@ -362,8 +362,11 @@ test('an injected row failure leaves the audio saved, and retry completes one re
 		`${pending.id}.wav`,
 	]);
 	const listed = await folder.tables.recordings.list();
-	expect(listed.data!.entries).toHaveLength(1);
-	expect(listed.data!.entries[0]!.issues).toBeUndefined();
+	expect(listed.data).toHaveLength(1);
+	// The one row was read, parses, and has no field issue.
+	const row = listed.data![0]!.result.data!;
+	expect(row.parseError).toBeUndefined();
+	expect(row.issues).toEqual([]);
 });
 
 test('an injected audio failure writes nothing, and retry saves', async () => {

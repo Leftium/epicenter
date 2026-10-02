@@ -31,9 +31,9 @@ const RELEASED = 'The layout was released before its session finished opening.';
  * Build the session over an opened workspace: read the folder once, then start
  * answering the shell.
  *
- * The order is the point. The first read, and the settings file it writes on
- * a first launch, are this session's own work in the folder. Until they have
- * settled nothing may tell the shell it can close, so the close guard does
+ * The order is the point. The first read is this session's own work in the
+ * folder. Until it has settled nothing may tell the shell it can close, so
+ * the close guard does
  * not exist until then: a close asked meanwhile is kept by the workspace and
  * handed to the guard the moment it starts listening, and the guard then
  * decides from a session that has finished starting.
@@ -143,7 +143,7 @@ export async function openSession(
  *
  * While the opening is still under way nothing answers, and that lasts until
  * the session has finished starting: opening the workspace, the first read of
- * the folder, and the settings write a first launch makes. A request made in
+ * the folder, and credential presence. A request made in
  * that time waits, and is answered by whichever of the two the opening
  * becomes. A failed opening is answered for only once it has rejected, which
  * is after everything it opened was closed.

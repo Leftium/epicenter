@@ -96,7 +96,7 @@
 				<dd>
 					{#if owner}
 						<Button variant="link" class="h-auto p-0" onclick={() => void library.open(owner.path)}>
-							{typeof owner.fields.title === 'string' && owner.fields.title !== '' ? owner.fields.title : owner.path}
+							{owner.fields.title || owner.path}
 						</Button>
 					{:else}
 						No recording row names this file.

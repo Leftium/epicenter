@@ -29,7 +29,8 @@ of it. [What is not supported](#what-is-not-supported) lists the rest.
 └── .git/                            ordinary Git: Markdown, kv.json, and audio bytes
 ```
 
-Opening the folder creates `kv.json` and Git metadata. Recording, transcript,
+Opening the folder creates Git metadata. Settings use defaults in memory until
+you save them, which creates `kv.json`. Recording, transcript,
 prompt, and result files are created by explicit actions. A folder has no
 `transformations/` until you create a transformation.
 
@@ -100,7 +101,7 @@ cargo test --manifest-path src-tauri/Cargo.toml   # the shell: folder registrati
 | Variable | Meaning |
 | --- | --- |
 | `WHISPERING_DATA_ROOT` | The data folder. Default `~/Epicenter/local/so.epicenter.whispering`. Created when absent. |
-| `WHISPERING_TRANSCRIPTION_BASE_URL`, `WHISPERING_TRANSCRIPTION_MODEL` | Written to `kv.json` the first time a folder is opened. After that, `kv.json` decides. |
+| `WHISPERING_TRANSCRIPTION_BASE_URL`, `WHISPERING_TRANSCRIPTION_MODEL` | Defaults for settings absent from `kv.json`. They can change on each launch until you save settings. |
 | `WHISPERING_TRANSCRIPTION_API_KEY` | The API key for this launch, used for transcription and for transformations. Overrides the key saved from Settings. |
 | `WHISPERING_AUDIO_FIXTURE` | Debug builds only. A file whose bytes answer every recording. See [Fixture audio](#fixture-audio). |
 | `WHISPERING_BUN` | Debug builds only. The Bun executable that runs the host, when `bun` is not on `PATH`. |
@@ -381,10 +382,27 @@ otherwise within a couple of seconds.
   yours and load the saved file, save yours over it, or **Keep both**, which
   writes your text to `conflicts/<name>-<time>.md` and loads the saved file.
 
-A recording or transformation row whose frontmatter cannot be read, or lacks a
-field, stays in its list marked "Needs repair" with its file untouched. Fix it
-in Source. A transformation that needs repair cannot run until it is fixed.
+A recording or transformation file whose text does not read as a row stays in
+its list marked "Needs repair" with its file untouched, and still opens. A row
+starts with a `---` line, its fields, and a closing `---` line; Markdown
+without those lines, bad YAML, or a repeated key does not read. Its details
+are unavailable and you fix it in Source. Saving it while it is still
+malformed works.
+
+A row that reads but has a missing or bad field is marked the same way, and
+everything that does not need that field keeps working: a recording with a bad
+title still plays and transcribes, and one with no `audioPath` still takes
+notes. A transformation runs once its title, model, endpoint, and prompt are
+all there. The messages shown describe the text on screen, saved or not.
 Fields the app does not know are kept as written.
+
+Any file name works for a row, including a trailing space or `recordings/.md`.
+Only `.md` in lowercase makes a file a row.
+
+Deleting a recording also deletes its results. It is refused while any result
+file cannot say which recording it belongs to (text that does not read, a bad
+`recordingId`, or a file that is not text). Repair or remove those from Files
+first.
 
 ### The terminal
 

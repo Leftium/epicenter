@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/folder';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
@@ -38,34 +37,35 @@
 		onOpenFile: (path: string) => void;
 	} = $props();
 
-	/** The buffer's interpretation. Details and Source are two views of this one draft. */
-	const parsed = $derived(readSource(editor.buffer));
-	const text = (key: string) => {
-		const value = parsed.values?.[key];
-		return typeof value === 'string' ? value : '';
-	};
-	const fieldsEditable = $derived(parsed.values !== undefined && parsed.body !== undefined);
+	/**
+	 * How the draft reads, by the transformations table's own interpreter.
+	 * Details and Source are two views of this one draft, and every message
+	 * below describes the text on screen, saved or not, never the file as last
+	 * saved.
+	 */
+	const draft = $derived(library.folder.tables.transformations.inspect(editor.buffer));
+	const text = (key: 'title' | 'model' | 'endpoint') => draft.fields[key] ?? '';
+	// A draft that does not parse has no fields or prompt to edit; its source does.
+	const fieldsEditable = $derived(draft.parseError === undefined);
 	const id = $derived(editor.baseline.stem);
 	const outputs = $derived(library.outputsOf(id));
 	const history = $derived(entry ? committedState(library.git, [entry.path]) : undefined);
 	let tab = $state('details');
 
 	/**
-	 * Saved transcripts with text, newest first, named by their recording. A
-	 * recording whose filename needs repair offers none: its ID is not one to
-	 * run a transformation against. Other problems in its file do not hide it.
+	 * Saved transcripts with text, newest first, named by their recording. Any
+	 * recording offers its transcripts, whatever its file is named and whatever
+	 * else in its file needs fixing.
 	 */
 	const transcripts = $derived(
 		library.entries.flatMap((recording) =>
-			recording.issues?.some((issue) => issue.kind === 'filename')
-				? []
-				: library
-						.resultsFor(recording.stem)
-						.filter((result) => (result.body ?? '').trim() !== '')
-						.map((result) => ({
-							result,
-							label: `${recordingTitle(recording)} · ${formatTime(result.fields.createdAt, 'short')}`,
-						})),
+			library
+				.resultsFor(recording.stem)
+				.filter((result) => (result.body ?? '').trim() !== '')
+				.map((result) => ({
+					result,
+					label: `${recordingTitle(recording)} · ${formatTime(result.fields.createdAt, 'short')}`,
+				})),
 		),
 	);
 	const chosen = $derived(transcripts.find((item) => item.result.path === applyTo));
@@ -75,10 +75,11 @@
 	/** Why Run is unavailable, in the order a person would fix it, or undefined when it can run. */
 	const blocked = $derived.by(() => {
 		if (entry === undefined) return 'This transformation is not in the folder.';
-		if (entry.issues !== undefined || parsed.issues.length > 0) return 'Repair this transformation before running it.';
+		// Running saves this draft first, so what has to be sound is the draft.
+		if (draft.body === undefined || draft.issues.length > 0) return 'Repair this transformation before running it.';
 		if (text('endpoint').trim() === '') return 'Add an endpoint to run this.';
 		if (text('model').trim() === '') return 'Add a model to run this.';
-		if ((parsed.body ?? '').trim() === '') return 'Write a prompt to run this.';
+		if (draft.body.trim() === '') return 'Write a prompt to run this.';
 		if (transcripts.length === 0) return 'Transcribe a recording first; a transformation runs on a saved transcript.';
 		if (chosen === undefined) return 'Choose a transcript to run this on.';
 		return undefined;
@@ -116,21 +117,28 @@
 
 	<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => library.discardRemoved(editor.path)} />
 
-	{#if entry?.issues || parsed.issues.length > 0}
+	{#if draft.parseError}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
 			<p class="mb-1 flex items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
-				Edit the source to fix it; the file stays saved as written.
+				{draft.parseError.message}. Edit the source to fix it; the text is saved as written.
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
-				{#each entry?.issues ?? [] as issue, index (index)}
-					<li>{issue.kind === 'field' ? `${issue.field}: ` : ''}{issue.message}</li>
+				{#each draft.parseError.diagnostics as diagnostic, index (index)}
+					<li>{diagnostic.message}</li>
 				{/each}
-				{#if !entry?.issues}
-					{#each parsed.issues as issue, index (index)}
-						<li>Unsaved source: {issue.message}</li>
-					{/each}
-				{/if}
+			</ul>
+		</div>
+	{:else if draft.issues.length > 0}
+		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
+			<p class="mb-1 flex items-center gap-2 font-medium">
+				<Badge variant="destructive">Needs repair</Badge>
+				Some fields need fixing in Source. The others can still be edited here.
+			</p>
+			<ul class="space-y-0.5 text-muted-foreground">
+				{#each draft.issues as issue, index (index)}
+					<li>{issue.message}</li>
+				{/each}
 			</ul>
 		</div>
 	{/if}
@@ -148,10 +156,10 @@
 						<Textarea
 							id="transformation-prompt"
 							class="min-h-36 resize-y font-sans"
-							value={parsed.body ?? ''}
+							value={draft.body ?? ''}
 							placeholder="Say what to do with the transcript, such as: Fix punctuation and remove filler words. Answer with the text only."
-							disabled={parsed.body === undefined}
-							oninput={(event) => patchRow(editor, { body: withFileNewlines(event.currentTarget.value, parsed.body ?? '') })}
+							disabled={!fieldsEditable}
+							oninput={(event) => patchRow(editor, { body: withFileNewlines(event.currentTarget.value, draft.body ?? '') })}
 							data-testid="transformation-prompt"
 						/>
 						<Field.Description>

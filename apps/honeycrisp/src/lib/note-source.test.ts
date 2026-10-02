@@ -7,23 +7,26 @@
  *
  * Key behaviors:
  * - Parsing a source for the rich view and writing nothing leaves it byte-identical
- * - A rich edit replaces only the body and `updatedAt`
- * - Unreadable frontmatter and unsupported bodies refuse rich editing with reasons
+ * - A rich edit replaces only the body and a valid `updatedAt`
+ * - Source that does not parse, fence-less Markdown included, and
+ *   unsupported bodies refuse rich editing with reasons
+ * - A field with an issue does not stop the body being edited
  * - CRLF files and the blank line after frontmatter are kept
- * - List titles and previews are plain text, and draft comparison marks changed lines
+ * - A new file's source has both fences
  */
 import { describe, expect, test } from 'bun:test';
 import type { InstantString } from '@epicenter/definition';
-import { readSource } from '@epicenter/folder';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { serializeNoteBody } from './editor/markdown.js';
+import { inspectNote as inspect } from './inspect.test-support.js';
 import { diffLines } from './line-diff.js';
 import {
 	applyFields,
 	applyRichBody,
 	bodyText,
 	displayTitle,
-	missingFields,
+	fieldDefaults,
+	newSource,
 	previewText,
 	richAvailability,
 } from './note-source.js';
@@ -45,22 +48,24 @@ const SOURCE = [
 
 describe('rich availability', () => {
 	test('a supported source is editable, and re-serializing its unchanged document changes no byte', () => {
-		const availability = richAvailability(SOURCE);
+		const availability = richAvailability(SOURCE, inspect);
 		expect(availability.editable).toBe(true);
 		if (!availability.editable) return;
-		const again = applyRichBody(
-			SOURCE,
-			serializeNoteBody(availability.inspection.doc),
-			NOW,
+		const again = expectOk(
+			applyRichBody(
+				SOURCE,
+				serializeNoteBody(availability.inspection.doc),
+				NOW,
+				inspect,
+			),
 		);
-		expect(expectOk(again).replace(NOW, '2026-10-01T00:00:00.000Z')).toBe(
-			SOURCE,
-		);
+		expect(again.replace(NOW, '2026-10-01T00:00:00.000Z')).toBe(SOURCE);
 	});
 
 	test('unsupported Markdown is refused with a reason', () => {
 		const availability = richAvailability(
 			'---\ntitle: T\n---\n<details>x</details>\n',
+			inspect,
 		);
 		expect(availability).toEqual({
 			editable: false,
@@ -68,25 +73,41 @@ describe('rich availability', () => {
 		});
 	});
 
-	test('unreadable frontmatter is refused with the parser’s reason', () => {
-		const availability = richAvailability('---\ntitle: *missing\n---\nbody\n');
+	test('source that does not parse is refused with the parser’s reason', () => {
+		const availability = richAvailability(
+			'---\ntitle: *missing\n---\nbody\n',
+			inspect,
+		);
 		expect(availability.editable).toBe(false);
 		if (!availability.editable)
 			expect(availability.reasons[0]).toContain('Unresolved alias');
-		expect(richAvailability('---\ntitle: open\n').editable).toBe(false);
+		expect(richAvailability('---\ntitle: open\n', inspect).editable).toBe(
+			false,
+		);
 	});
 
-	test('a file with no frontmatter is editable and gains none from a body edit', () => {
-		expect(richAvailability('Just text\n').editable).toBe(true);
-		expect(expectOk(applyRichBody('Just text\n', 'New text', NOW))).toBe(
-			'New text\n',
+	test('Markdown with no frontmatter lines is not a body, and a body edit does not add them', () => {
+		expect(richAvailability('Just text\n', inspect).editable).toBe(false);
+		const refused = applyRichBody('Just text\n', 'New text', NOW, inspect);
+		expect(refused.data).toBeNull();
+		expect(refused.error).toContain('does not start with a --- line');
+	});
+
+	test('a field that needs fixing does not stop the body being edited', () => {
+		const source = '---\ntitle: 12\npinned: maybe\n---\nbody\n';
+		expect(inspect(source).issues.length).toBeGreaterThan(0);
+		expect(richAvailability(source, inspect).editable).toBe(true);
+		expect(applyRichBody(source, 'new', NOW, inspect).data).toBe(
+			source.replace('body', 'new'),
 		);
 	});
 });
 
 describe('writing a rich-text body', () => {
 	test('only the body and updatedAt change', () => {
-		const next = expectOk(applyRichBody(SOURCE, '# List\n\n- [x] milk', NOW));
+		const next = expectOk(
+			applyRichBody(SOURCE, '# List\n\n- [x] milk', NOW, inspect),
+		);
 		expect(next).toBe(
 			SOURCE.replace('2026-10-01T00:00:00.000Z', NOW).replace(
 				'- [ ] milk',
@@ -95,9 +116,16 @@ describe('writing a rich-text body', () => {
 		);
 	});
 
+	test('updatedAt is neither added nor overwritten when the file holds no valid one', () => {
+		for (const head of ['---\ntitle: T\n---\n', '---\nupdatedAt: soon\n---\n'])
+			expect(applyRichBody(`${head}one\n`, 'two', NOW, inspect).data).toBe(
+				`${head}two\n`,
+			);
+	});
+
 	test('CRLF line endings are kept', () => {
 		const crlf = '---\r\ntitle: T\r\n---\r\n\r\none\r\n';
-		const next = expectOk(applyRichBody(crlf, 'one\n\ntwo', NOW));
+		const next = expectOk(applyRichBody(crlf, 'one\n\ntwo', NOW, inspect));
 		expect(next).toBe('---\r\ntitle: T\r\n---\r\n\r\none\r\n\r\ntwo\r\n');
 	});
 
@@ -106,9 +134,12 @@ describe('writing a rich-text body', () => {
 		expect(bodyText('new', 'old')).toBe('new\n');
 	});
 
-	test('a source whose frontmatter cannot be read is not patched', () => {
+	test('a source that does not parse is not patched', () => {
 		const broken = '---\ntitle: *missing\n---\nbody\n';
-		expect(expectErr(applyRichBody(broken, 'x', NOW))).toContain(
+		expect(expectErr(applyRichBody(broken, 'x', NOW, inspect))).toContain(
+			'Unresolved alias',
+		);
+		expect(expectErr(applyFields(broken, { pinned: true }))).toContain(
 			'Unresolved alias',
 		);
 	});
@@ -125,24 +156,36 @@ describe('fields', () => {
 				'updatedAt: 2026-10-01T00:00:00.000Z\npinned: true\n',
 			),
 		);
-		expect(readSource(next).values?.unknown).toEqual({ a: 1 });
+		expect(next).toContain('unknown: { a: 1 }');
 	});
 
-	test('missing declared fields are named, and none when the file is complete', () => {
-		expect(Object.keys(missingFields(SOURCE, NOW) ?? {})).toEqual([
+	test('fields with no valid value get defaults, valid ones are left, and a complete file needs none', () => {
+		const content = inspect(SOURCE);
+		const defaults = fieldDefaults(content, NOW);
+		expect(Object.keys(defaults ?? {})).toEqual([
 			'folderId',
 			'pinned',
 			'createdAt',
 			'deletedAt',
 		]);
-		const complete = expectOk(applyFields(SOURCE, missingFields(SOURCE, NOW)!));
-		expect(missingFields(complete, NOW)).toBeUndefined();
-		expect(missingFields('---\ntitle: *missing\n---\n', NOW)).toBeUndefined();
+		const complete = expectOk(applyFields(SOURCE, defaults!));
+		const repaired = inspect(complete);
+		expect(repaired).toMatchObject({ parseError: undefined, issues: [] });
+		expect(repaired.fields.title).toBe('Groceries');
+		expect(fieldDefaults(repaired, NOW)).toBeUndefined();
+		// A value that does not conform counts as having no valid value.
+		const invalid = inspect(complete.replace('pinned: false', 'pinned: 3'));
+		expect(fieldDefaults(invalid, NOW)).toEqual({ pinned: false });
+	});
+
+	test('a new file has both fences around its fields, so it parses', () => {
+		const source = expectOk(newSource({ name: 'Recipes', icon: null }));
+		expect(source).toBe('---\nname: Recipes\nicon: null\n---\n');
 	});
 });
 
 describe('list text', () => {
-	test('previews remove Markdown markers and titles fall back to body text', () => {
+	test('a preview is plain text without Markdown markers', () => {
 		expect(
 			previewText('# Title\n\n- [x] **done** item\n> quoted `code`\n'),
 		).toBe('Title done item quoted code');

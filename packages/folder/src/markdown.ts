@@ -1,6 +1,11 @@
 /**
- * Markdown row source: frontmatter framing, interpretation, and
- * source-preserving patches.
+ * Markdown row source: mandatory frontmatter framing, parsing, and
+ * source-preserving patches (ADR-0462, ADR-0464).
+ *
+ * Row source is an opening `---` line, a YAML mapping with string keys, a
+ * closing `---` line, and a body. Source that is not that shape fails
+ * parsing as a whole: there are no recovered values and no recovered body.
+ * Parsing knows no schema; `table.inspect` adds field conformance.
  *
  * Patching never re-emits YAML. It locates the touched value's node range in
  * the parsed frontmatter and replaces only that span, or appends a new key
@@ -20,17 +25,12 @@ import {
 	parseDocument,
 	stringify,
 } from 'yaml';
+import { type ParseError, parseError } from './reading.js';
 
 const BOM = '﻿';
 
 /** The located parts of a row file's text. Offsets index into the source string. */
 export type SourceFrame =
-	| {
-			readonly kind: 'none';
-			readonly bom: string;
-			readonly bodyStart: number;
-			readonly newline: '\n' | '\r\n';
-	  }
 	| {
 			readonly kind: 'frontmatter';
 			readonly bom: string;
@@ -41,9 +41,15 @@ export type SourceFrame =
 			readonly bodyStart: number;
 			readonly newline: '\n' | '\r\n';
 	  }
+	/** The source does not start with an exact `---` line. */
+	| { readonly kind: 'missing'; readonly bom: string }
+	/** The opening line has no exact `---` line after it. */
 	| { readonly kind: 'unclosed'; readonly bom: string };
 
-/** Locate frontmatter. Only an exact `---` first line opens it; the next exact `---` line closes it. */
+/**
+ * Locate frontmatter. Only an exact `---` first line opens it, after an
+ * optional byte-order mark; the next exact `---` line closes it.
+ */
 export function frameSource(source: string): SourceFrame {
 	const bom = source.startsWith(BOM) ? BOM : '';
 	const start = bom.length;
@@ -52,11 +58,10 @@ export function frameSource(source: string): SourceFrame {
 		: source.startsWith('---\n', start)
 			? '\n'
 			: undefined;
-	if (openingNewline === undefined) {
-		if (source.slice(start) === '---') return { kind: 'unclosed', bom };
-		const newline = source.includes('\r\n') ? '\r\n' : '\n';
-		return { kind: 'none', bom, bodyStart: start, newline };
-	}
+	if (openingNewline === undefined)
+		return source.slice(start) === '---'
+			? { kind: 'unclosed', bom }
+			: { kind: 'missing', bom };
 	const yamlStart = start + 3 + openingNewline.length;
 	let lineStart = yamlStart;
 	while (lineStart <= source.length) {
@@ -79,21 +84,6 @@ export function frameSource(source: string): SourceFrame {
 	return { kind: 'unclosed', bom };
 }
 
-export type SourceIssue = {
-	readonly kind: 'frontmatter';
-	readonly message: string;
-};
-
-/** Frontmatter values and body as read from source, without a schema. */
-export type ReadSource = {
-	readonly frame: SourceFrame;
-	/** Frontmatter keys and values; undefined when the frontmatter cannot be read. */
-	readonly values: Readonly<Record<string, unknown>> | undefined;
-	/** Text after the frontmatter; undefined when the framing is ambiguous. */
-	readonly body: string | undefined;
-	readonly issues: readonly SourceIssue[];
-};
-
 function parseFrontmatter(yaml: string) {
 	return parseDocument(yaml, {
 		prettyErrors: false,
@@ -102,65 +92,77 @@ function parseFrontmatter(yaml: string) {
 	});
 }
 
-export function readSource(source: string): ReadSource {
+/** Row source that is not framed frontmatter holding a string-keyed YAML mapping. */
+function parseFailure(
+	message: string,
+	diagnostics?: readonly string[],
+): Result<never, ParseError> {
+	return Err(parseError(message, diagnostics));
+}
+
+type Framed = Extract<SourceFrame, { kind: 'frontmatter' }>;
+
+type Parsed = {
+	readonly frame: Framed;
+	readonly document: ReturnType<typeof parseFrontmatter>;
+	readonly values: Readonly<Record<string, unknown>>;
+	readonly body: string;
+};
+
+function parse(source: string): Result<Parsed, ParseError> {
 	const frame = frameSource(source);
+	if (frame.kind === 'missing')
+		return parseFailure(
+			'The source does not start with a --- line opening its frontmatter',
+		);
 	if (frame.kind === 'unclosed')
-		return {
-			frame,
-			values: undefined,
-			body: undefined,
-			issues: [
-				{
-					kind: 'frontmatter',
-					message: 'The frontmatter opening line has no closing --- line',
-				},
-			],
-		};
-	const body = source.slice(frame.bodyStart);
-	if (frame.kind === 'none') return { frame, values: {}, body, issues: [] };
+		return parseFailure('The frontmatter opening line has no closing --- line');
 	const document = parseFrontmatter(
 		source.slice(frame.yamlStart, frame.yamlEnd),
 	);
+	/** The 1-based source line of a YAML offset. */
+	const lineOf = (offset: number) =>
+		source.slice(0, frame.yamlStart + offset).split('\n').length;
 	if (document.errors.length > 0)
-		return {
-			frame,
-			values: undefined,
-			body,
-			issues: document.errors.map((error) => ({
-				kind: 'frontmatter' as const,
-				message: `Invalid YAML: ${error.message}`,
-			})),
-		};
+		return parseFailure(
+			'The frontmatter is not valid YAML',
+			document.errors.map(
+				(error) => `Line ${lineOf(error.pos[0])}: ${error.message}`,
+			),
+		);
+	const body = source.slice(frame.bodyStart);
+	// An empty or comment-only block is an empty mapping.
 	if (document.contents === null)
-		return { frame, values: {}, body, issues: [] };
+		return Ok({ frame, document, values: {}, body });
 	if (!isMap(document.contents))
-		return {
-			frame,
-			values: undefined,
-			body,
-			issues: [
-				{ kind: 'frontmatter', message: 'The frontmatter is not a mapping' },
-			],
-		};
+		return parseFailure('The frontmatter is not a mapping');
 	for (const pair of document.contents.items)
 		if (!isScalar(pair.key) || typeof pair.key.value !== 'string')
-			return {
-				frame,
-				values: undefined,
-				body,
-				issues: [
-					{ kind: 'frontmatter', message: 'A frontmatter key is not a string' },
-				],
-			};
+			return parseFailure(
+				'A frontmatter key is not a string',
+				isNode(pair.key) && pair.key.range != null
+					? [`Line ${lineOf(pair.key.range[0])}: The key is not a string`]
+					: undefined,
+			);
 	const converted = convertFrontmatter(document);
-	if (converted.error)
-		return {
-			frame,
-			values: undefined,
-			body,
-			issues: [{ kind: 'frontmatter', message: converted.error.reason }],
-		};
-	return { frame, values: converted.data, body, issues: [] };
+	if (converted.error !== null) return parseFailure(converted.error);
+	return Ok({ frame, document, values: converted.data, body });
+}
+
+/**
+ * Parse row source without a schema: every frontmatter key and value, and
+ * the body after the closing fence. A failure carries no partial result.
+ */
+export function parseSource(source: string): Result<
+	{
+		readonly values: Readonly<Record<string, unknown>>;
+		readonly body: string;
+	},
+	ParseError
+> {
+	const parsed = parse(source);
+	if (parsed.error) return parsed;
+	return Ok({ values: parsed.data.values, body: parsed.data.body });
 }
 
 /** Bounded alias expansion; larger expansions are refused, not evaluated. */
@@ -173,20 +175,20 @@ const MAX_ALIAS_COUNT = 100;
  */
 function convertFrontmatter(
 	document: ReturnType<typeof parseFrontmatter>,
-): Result<Record<string, unknown>, PatchRefusal> {
+): Result<Record<string, unknown>, string> {
 	if (document.contents === null) return Ok({});
 	let value: unknown;
 	try {
 		value = document.toJS({ maxAliasCount: MAX_ALIAS_COUNT });
 	} catch (cause) {
-		return Err({
-			reason: `The frontmatter cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`,
-		});
+		return Err(
+			`The frontmatter cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+		);
 	}
 	if (typeof value !== 'object' || value === null || Array.isArray(value))
-		return Err({ reason: 'The frontmatter is not a mapping' });
+		return Err('The frontmatter is not a mapping');
 	if (isCircular(value))
-		return Err({ reason: 'The frontmatter contains a circular alias' });
+		return Err('The frontmatter contains a circular alias');
 	return Ok(value as Record<string, unknown>);
 }
 
@@ -200,86 +202,93 @@ function isCircular(value: unknown, ancestors = new Set<object>()): boolean {
 	return false;
 }
 
-export type PatchRefusal = { readonly reason: string };
+/** A supplied value that cannot be written as YAML and read back as supplied. */
+export type ValueRefusal = {
+	readonly kind: 'value';
+	readonly field: string;
+	readonly reason: string;
+};
+
+/**
+ * Why a patch was not prepared. Nothing is rewritten on any of them.
+ *
+ * - `unparsed`: the source does not parse, so there is nothing to patch.
+ * - `value`: a supplied value cannot be written as YAML.
+ * - `unsafe`: the source parses, but assigning the fields would change
+ *   source the patch was not asked to change.
+ */
+export type PatchRefusal =
+	| { readonly kind: 'unparsed'; readonly error: ParseError }
+	| ValueRefusal
+	| { readonly kind: 'unsafe'; readonly reason: string };
 
 export type SourceChange = {
 	readonly fields?: Readonly<Record<string, unknown>>;
 	readonly body?: string;
 };
 
+const unsafe = (reason: string): Result<never, PatchRefusal> =>
+	Err({ kind: 'unsafe', reason });
+
 /**
- * Apply field values and an optional replacement body to captured source,
- * preserving every unrelated byte. Returns the new source or a refusal; it
- * never guesses at ambiguous framing or invalid YAML.
+ * Apply field values and an optional replacement body to source that parses,
+ * preserving every unrelated byte. Returns the new source or a refusal. A
+ * body-only change still requires the source to parse: without both fences
+ * there is no body to replace.
  */
 export function patchSource(
 	source: string,
 	change: SourceChange,
 ): Result<string, PatchRefusal> {
-	const frame = frameSource(source);
-	if (frame.kind === 'unclosed')
-		return Err({ reason: 'the frontmatter has no closing --- line' });
-	let head: string;
-	if (frame.kind === 'none') {
-		const created = frontmatterBlock(change.fields ?? {}, frame.newline);
-		if (created.error) return created;
-		head = frame.bom + created.data;
-	} else {
-		const yaml = source.slice(frame.yamlStart, frame.yamlEnd);
-		const patched = patchYaml(yaml, change.fields ?? {}, frame.newline);
-		if (patched.error) return patched;
-		head =
-			source.slice(0, frame.yamlStart) +
+	const parsed = parse(source);
+	if (parsed.error) return Err({ kind: 'unparsed', error: parsed.error });
+	const { frame, document, values } = parsed.data;
+	const patched = patchYaml(
+		source.slice(frame.yamlStart, frame.yamlEnd),
+		document,
+		values,
+		change.fields ?? {},
+		frame.newline,
+	);
+	if (patched.error) return patched;
+	return Ok(
+		source.slice(0, frame.yamlStart) +
 			patched.data +
-			source.slice(frame.yamlEnd, frame.bodyStart);
-	}
-	const body = change.body ?? source.slice(frame.bodyStart);
-	return Ok(head + body);
+			source.slice(frame.yamlEnd, frame.bodyStart) +
+			(change.body ?? source.slice(frame.bodyStart)),
+	);
 }
 
 function patchYaml(
 	yaml: string,
+	document: Parsed['document'],
+	before: Readonly<Record<string, unknown>>,
 	fields: Readonly<Record<string, unknown>>,
 	newline: '\n' | '\r\n',
 ): Result<string, PatchRefusal> {
 	const entries = Object.entries(fields);
 	if (entries.length === 0) return Ok(yaml);
-	const document = parseFrontmatter(yaml);
-	if (document.errors.length > 0)
-		return Err({
-			reason:
-				'the frontmatter is not valid YAML; edit the complete source instead',
-		});
-	const contents = document.contents;
-	if (contents !== null && !isMap(contents))
-		return Err({ reason: 'the frontmatter is not a mapping' });
-	if (contents?.flow)
-		return Err({ reason: 'the frontmatter is a flow mapping' });
-	const before = readValues(yaml);
-	if (before.error) return before;
+	const contents = isMap(document.contents) ? document.contents : undefined;
+	if (contents?.flow) return unsafe('the frontmatter is a flow mapping');
 
 	type Edit = { start: number; end: number; text: string };
 	const edits: Edit[] = [];
 	const appended: string[] = [];
 	for (const [key, value] of entries) {
-		const serialized = serializeValue(value);
+		const serialized = valueText(key, value);
 		if (serialized.error) return serialized;
 		const pair = contents?.items.find(
 			(item) => isScalar(item.key) && item.key.value === key,
 		);
 		if (pair === undefined) {
-			const text = yamlKey(key);
-			if (text.error) return text;
-			appended.push(`${text.data}: ${serialized.data}${newline}`);
+			appended.push(`${yamlKey(key)}: ${serialized.data}${newline}`);
 			continue;
 		}
 		const node = pair.value;
 		if (!isNode(node) || node.range == null)
-			return Err({ reason: `the value of '${key}' has no source position` });
+			return unsafe(`the value of '${key}' has no source position`);
 		if (isAlias(node) || (node as Node).anchor || (node as Node).tag)
-			return Err({
-				reason: `the value of '${key}' uses an anchor, alias, or tag`,
-			});
+			return unsafe(`the value of '${key}' uses an anchor, alias, or tag`);
 		const [start, end] = node.range;
 		const old = yaml.slice(start, end);
 		const trailing = old.match(/(?:\r?\n[ \t]*)+$/)?.[0] ?? '';
@@ -292,53 +301,32 @@ function patchYaml(
 		next = next.slice(0, edit.start) + edit.text + next.slice(edit.end);
 	if (appended.length > 0) {
 		if (next !== '' && !next.endsWith('\n'))
-			return Err({ reason: 'the frontmatter does not end with a line break' });
+			return unsafe('the frontmatter does not end with a line break');
 		next += appended.join('');
 	}
-	const verified = verifyFields(next, before.data, fields);
-	if (verified.error) return verified;
-	return Ok(next);
-}
 
-function readValues(
-	yaml: string,
-): Result<Record<string, unknown>, PatchRefusal> {
-	const document = parseFrontmatter(yaml);
-	if (document.errors.length > 0)
-		return Err({ reason: 'the patched frontmatter is not valid YAML' });
-	const converted = convertFrontmatter(document);
-	if (converted.error)
-		return Err({
-			reason: `${converted.error.reason}; edit the complete source instead`,
-		});
-	return converted;
-}
-
-/** Refuse unless touched keys read back exactly and every other key is unchanged. */
-function verifyFields(
-	yaml: string,
-	before: Readonly<Record<string, unknown>>,
-	fields: Readonly<Record<string, unknown>>,
-): Result<undefined, PatchRefusal> {
-	const after = readValues(yaml);
-	if (after.error) return after;
+	// Refuse unless touched keys read back exactly and every other key is unchanged.
+	const reread = parseFrontmatter(next);
+	if (reread.errors.length > 0)
+		return unsafe('the patched frontmatter is not valid YAML');
+	const after = convertFrontmatter(reread);
+	if (after.error !== null) return unsafe(after.error);
 	const expected: Record<string, unknown> = { ...before, ...fields };
 	const keys = new Set([...Object.keys(expected), ...Object.keys(after.data)]);
 	for (const key of keys)
 		if (!deepEqual(expected[key], after.data[key]))
-			return Err({
-				reason: `the patch would not preserve the value of '${key}'`,
-			});
-	return Ok(undefined);
+			return unsafe(`the patch would not preserve the value of '${key}'`);
+	return Ok(next);
 }
 
-function yamlKey(key: string): Result<string, PatchRefusal> {
-	if (/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) return Ok(key);
-	return Ok(JSON.stringify(key));
+function yamlKey(key: string): string {
+	return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(key) ? key : JSON.stringify(key);
 }
 
 /** One-line YAML for a value; JSON flow style is valid YAML 1.2. */
-export function serializeValue(value: unknown): Result<string, PatchRefusal> {
+export function serializeValue(
+	value: unknown,
+): Result<string, { readonly reason: string }> {
 	if (value === null) return Ok('null');
 	if (typeof value === 'boolean') return Ok(value ? 'true' : 'false');
 	if (typeof value === 'number') {
@@ -369,6 +357,33 @@ export function serializeValue(value: unknown): Result<string, PatchRefusal> {
 	return Err({ reason: `a ${typeof value} value cannot be written as YAML` });
 }
 
+/**
+ * The YAML text a supplied value is written as. Refused unless that text
+ * reads back as the value, so nothing is published that a reader would see
+ * differently from what the caller supplied.
+ */
+function valueText(
+	field: string,
+	value: unknown,
+): Result<string, ValueRefusal> {
+	const refuse = (reason: string): Result<never, ValueRefusal> =>
+		Err({ kind: 'value', field, reason });
+	const text = serializeValue(value);
+	if (text.error) return refuse(text.error.reason);
+	const document = parseFrontmatter(`value: ${text.data}\n`);
+	if (
+		document.errors.length > 0 ||
+		!deepEqual((document.toJS() as { value?: unknown } | null)?.value, value)
+	)
+		return refuse('the value does not read back from YAML as it was supplied');
+	return Ok(text.data);
+}
+
+/** Why a supplied value cannot be saved in frontmatter, or `undefined` when it can. */
+export function valueProblem(value: unknown): string | undefined {
+	return valueText('', value).error?.reason;
+}
+
 function deepEqual(left: unknown, right: unknown): boolean {
 	if (Object.is(left, right)) return true;
 	if (
@@ -391,35 +406,20 @@ function deepEqual(left: unknown, right: unknown): boolean {
 }
 
 /**
- * A new frontmatter block for the supplied fields, in their order, or an
- * empty string when there are none.
+ * Complete source for a new row: both fences around the fields in the
+ * supplied order, then the body. The fences are written even when there are
+ * no fields and no body, because source without them does not parse.
  */
-function frontmatterBlock(
-	fields: Readonly<Record<string, unknown>>,
-	newline: '\n' | '\r\n',
-): Result<string, PatchRefusal> {
-	const entries = Object.entries(fields);
-	if (entries.length === 0) return Ok('');
-	let yaml = '';
-	for (const [key, value] of entries) {
-		const text = yamlKey(key);
-		if (text.error) return text;
-		const serialized = serializeValue(value);
-		if (serialized.error) return serialized;
-		yaml += `${text.data}: ${serialized.data}${newline}`;
-	}
-	const verified = verifyFields(yaml, {}, fields);
-	if (verified.error) return verified;
-	return Ok(`---${newline}${yaml}---${newline}`);
-}
-
-/** Complete source for a new row: frontmatter in the supplied field order, then the body. */
 export function composeSource(
 	fields: Readonly<Record<string, unknown>>,
 	body: string,
-): Result<string, PatchRefusal> {
+): Result<string, ValueRefusal> {
 	const newline = body.includes('\r\n') ? '\r\n' : '\n';
-	const block = frontmatterBlock(fields, newline);
-	if (block.error) return block;
-	return Ok(block.data + body);
+	let yaml = '';
+	for (const [key, value] of Object.entries(fields)) {
+		const text = valueText(key, value);
+		if (text.error) return text;
+		yaml += `${yamlKey(key)}: ${text.data}${newline}`;
+	}
+	return Ok(`---${newline}${yaml}---${newline}${body}`);
 }

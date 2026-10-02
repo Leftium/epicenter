@@ -45,12 +45,12 @@
  */
 import {
 	type BatchReceipt,
-	hashBytes,
-	type Entry,
 	type FileCapture,
 	type FileTable,
 	type FolderFiles,
+	hashBytes,
 	rowPath,
+	type TableSnapshot,
 } from '@epicenter/folder';
 import { RECORDINGS, type RecordingFields } from '../definition.js';
 import type {
@@ -58,7 +58,7 @@ import type {
 	WhisperingFolder,
 } from '../workspace/types.js';
 
-export type RecordingEntry = Entry<RecordingFields>;
+export type RecordingEntry = TableSnapshot<RecordingFields>;
 
 export type PendingCapture = {
 	/** The row's stem. Fixed when the capture ended. */
@@ -139,17 +139,21 @@ function occupied(path: string): PublishOutcome {
 }
 
 /**
- * Whether a row is this capture's recording: a valid row with the capture's
- * own facts. The title and notes are the person's to change, and fields the
- * app does not declare are not part of a capture, so neither is compared.
+ * Whether a row is this capture's recording: a row whose text parses and
+ * whose validated facts are the capture's own. The title and notes are the
+ * person's to change, and fields the app does not declare are not part of a
+ * capture, so neither is compared: a title that needs fixing does not make
+ * the row another recording. A fact that did not validate is not the
+ * capture's, and a row that does not parse states none.
  */
 function isThisRecording(entry: RecordingEntry, capture: PendingCapture) {
+	const { fields } = entry;
 	return (
-		entry.issues === undefined &&
-		entry.fields.recordedAt === capture.fields.recordedAt &&
-		entry.fields.durationMs === capture.fields.durationMs &&
-		entry.fields.capture === capture.fields.capture &&
-		entry.fields.audioPath === capture.fields.audioPath
+		entry.parseError === undefined &&
+		fields.recordedAt === capture.fields.recordedAt &&
+		fields.durationMs === capture.fields.durationMs &&
+		fields.capture === capture.fields.capture &&
+		fields.audioPath === capture.fields.audioPath
 	);
 }
 
@@ -253,12 +257,6 @@ export async function publishRecording(
 			// Refused before publication: another writer took a path after it was read.
 			case 'Exists':
 				return occupied(error.path);
-			case 'Collision':
-				return {
-					status: 'unexpected',
-					path: error.existing,
-					message: `${error.message}. Nothing was written.`,
-				};
 			case 'Conflict':
 				return {
 					status: 'unexpected',

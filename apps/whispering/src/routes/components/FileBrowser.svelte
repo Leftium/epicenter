@@ -151,7 +151,7 @@
 	async function commit(value: string) {
 		const current = editing;
 		if (current === undefined || committing) return;
-		const name = value.trim();
+		const name = value;
 		const directory = current.kind === 'rename' ? dirname(current.path) : current.directory;
 		if (name === '' || (current.kind === 'rename' && name === basename(current.path))) {
 			await cancel();

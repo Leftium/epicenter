@@ -36,13 +36,19 @@
 
 	let view = $state('capture');
 	const document = $derived(draft.document);
+	/**
+	 * How the draft reads as a row. The time and the messages below describe
+	 * the text on screen, saved or not, and never the file as it was last saved.
+	 */
+	const reading = $derived(draft.reading);
 	const capturedAt = $derived.by(() => {
-		const value = draft.baseline.fields.capturedAt;
-		if (typeof value !== 'string') return undefined;
+		const value = reading.fields.capturedAt;
+		if (value === undefined) return undefined;
 		const time = new Date(value);
 		return Number.isNaN(time.getTime()) ? undefined : time;
 	});
-	const issues = $derived(draft.baseline.issues?.map((issue) => issue.message) ?? []);
+	/** Fields that need fixing in a draft that parses. A draft that does not is Source only, below. */
+	const issues = $derived(reading.issues.map((issue) => issue.message));
 	// A thought edit whose thought is no longer in the document as shown.
 	const strandedEdit = $derived(
 		draft.editing !== undefined && !document.thoughts.includes(draft.editing.thought)
@@ -212,7 +218,7 @@
 			<Alert.Title>This file needs repair</Alert.Title>
 			<Alert.Description>
 				<ul class="list-disc pl-5">{#each issues as issue (issue)}<li>{issue}</li>{/each}</ul>
-				Fix it in Source. Nothing is changed until you do.
+				Fix it in Source. The capture text and thoughts still work.
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
@@ -239,6 +245,13 @@
 				<Alert.Title>This capture can only be edited as Source</Alert.Title>
 				<Alert.Description>
 					<p>{document.refusal.message}</p>
+					{#if reading.parseError}
+						<ul class="list-disc pl-5">
+							{#each reading.parseError.diagnostics as diagnostic, index (index)}
+								{#if diagnostic.message !== reading.parseError.message}<li>{diagnostic.message}</li>{/if}
+							{/each}
+						</ul>
+					{/if}
 					Nothing was changed. The whole file is in Source, where you can edit it directly.
 				</Alert.Description>
 				<div class="mt-2"><Button variant="outline" size="sm" onclick={showSource}>Edit Source</Button></div>

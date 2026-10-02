@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/folder';
 	import { Button } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import { toast } from '@epicenter/ui/sonner';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format } from 'date-fns';
-	import { folderIdOf, type NoteEntry } from '$lib/data.js';
+	import { folderLabel, type NoteEntry, repairReason } from '$lib/data.js';
 	import { getDateLabel } from '$lib/date-label.js';
 	import { displayTitle, previewText } from '$lib/note-source.js';
 	import type { Notes } from '$lib/notes.svelte.js';
@@ -14,19 +13,23 @@
 
 	let { notes }: { notes: Notes } = $props();
 
-	const updated = (note: NoteEntry) =>
-		typeof note.fields.updatedAt === 'string' ? note.fields.updatedAt : '';
+	const updated = (note: NoteEntry) => note.fields.updatedAt ?? '';
 	const isDeleted = (note: NoteEntry) => typeof note.fields.deletedAt === 'string';
+	const isPinned = (note: NoteEntry) => note.fields.pinned === true;
+	/** A note whose text does not parse, or with a field that needs fixing. */
+	const needsRepair = (note: NoteEntry) => repairReason(note) !== undefined;
 
 	/** What the row shows: the open draft when there is one, else the saved file. */
 	function shown(note: NoteEntry) {
 		const session = notes.sessionAt(note.path);
-		if (session === undefined || !session.dirty)
-			return { title: displayTitle(note.fields.title, note.body), preview: previewText(note.body) };
-		const draft = readSource(session.buffer);
+		// A draft is read as it is typed, with the reader that reads saved files.
+		const reading =
+			session === undefined || !session.dirty
+				? note
+				: notes.host.folder.tables.notes.inspect(session.buffer);
 		return {
-			title: displayTitle(draft.values?.title ?? note.fields.title, draft.body),
-			preview: previewText(draft.body),
+			title: displayTitle(reading.fields.title ?? note.fields.title, reading.body),
+			preview: previewText(reading.body),
 		};
 	}
 
@@ -36,7 +39,7 @@
 		return notes.notes
 			.filter((note) => {
 				// A file that needs repair is shown everywhere, so it cannot go missing.
-				if (note.issues) return !deleted;
+				if (needsRepair(note)) return !deleted;
 				if (isDeleted(note) !== deleted) return false;
 				if (!deleted && folderId !== null && note.fields.folderId !== folderId) return false;
 				if (needle === '') return true;
@@ -49,7 +52,8 @@
 		if (notes.view.deleted) return 'Recently Deleted';
 		const id = notes.view.folderId;
 		if (id === null) return 'All Notes';
-		return notes.folders.find((folder) => folder.stem === id)?.fields.name ?? 'Notes';
+		const folder = notes.folders.find((item) => item.stem === id);
+		return folder === undefined ? 'Notes' : folderLabel(folder);
 	});
 
 	const groups = $derived.by(() => {
@@ -59,10 +63,10 @@
 			if (last?.label === label) last.entries.push(note);
 			else result.push({ label, entries: [note] });
 		};
-		for (const note of visible.filter((item) => item.issues)) push('Needs repair', note);
-		for (const note of visible.filter((item) => !item.issues && item.fields.pinned === true))
+		for (const note of visible.filter(needsRepair)) push('Needs repair', note);
+		for (const note of visible.filter((item) => !needsRepair(item) && isPinned(item)))
 			push('Pinned', note);
-		for (const note of visible.filter((item) => !item.issues && item.fields.pinned !== true))
+		for (const note of visible.filter((item) => !needsRepair(item) && !isPinned(item)))
 			push(updated(note) === '' ? 'Undated' : getDateLabel(updated(note)), note);
 		return result;
 	});
@@ -120,7 +124,7 @@
 						>
 							<span class="flex items-start justify-between gap-2">
 								<span class="line-clamp-1 text-sm font-medium">
-									{#if note.fields.pinned === true}<PinIcon class="mr-1 inline size-3 fill-current align-baseline" />{/if}
+									{#if isPinned(note)}<PinIcon class="mr-1 inline size-3 fill-current align-baseline" />{/if}
 									{row.title}
 								</span>
 								<span class="shrink-0 text-xs text-muted-foreground">
@@ -136,7 +140,7 @@
 								</span>
 							</span>
 							<span class="line-clamp-2 text-xs text-muted-foreground">
-								{note.issues ? note.issues[0].message : row.preview || 'No text'}
+								{repairReason(note) ?? (row.preview || 'No text')}
 							</span>
 						</button>
 					</ContextMenu.Trigger>
@@ -144,7 +148,7 @@
 						{#if notes.fenced}
 							<!-- An open menu is outside the app's inert root. -->
 							<ContextMenu.Item disabled>The app is closing</ContextMenu.Item>
-						{:else if note.issues}
+						{:else if needsRepair(note)}
 							<ContextMenu.Item onSelect={() => void notes.open(note.path)}>Open to repair</ContextMenu.Item>
 							<ContextMenu.Item variant="destructive" onSelect={() => void confirmDelete(notes, note.path)}>
 								Delete file…
@@ -159,9 +163,9 @@
 						{:else}
 							<ContextMenu.Item
 								onSelect={() =>
-									void report('pin the note', notes.patchNote(note.path, { pinned: note.fields.pinned !== true }))}
+									void report('pin the note', notes.patchNote(note.path, { pinned: !isPinned(note) }))}
 							>
-								{note.fields.pinned === true ? 'Unpin' : 'Pin'}
+								{isPinned(note) ? 'Unpin' : 'Pin'}
 							</ContextMenu.Item>
 							<ContextMenu.Sub>
 								<ContextMenu.SubTrigger>Move to folder</ContextMenu.SubTrigger>
@@ -175,9 +179,9 @@
 									{#each notes.folders as folder (folder.path)}
 										<ContextMenu.Item
 											onSelect={() =>
-												void report('move the note', notes.patchNote(note.path, { folderId: folderIdOf(folder) }))}
+												void report('move the note', notes.patchNote(note.path, { folderId: folder.stem }))}
 										>
-											{folder.fields.name ?? folder.stem}
+											{folderLabel(folder)}
 										</ContextMenu.Item>
 									{/each}
 								</ContextMenu.SubContent>

@@ -11,6 +11,7 @@
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { STARTER_TRANSFORMATIONS } from '$lib/definition.js';
 	import type { Library, TransformationEntry } from '$lib/library.svelte.js';
+	import { needsRepair } from '$lib/rows.js';
 
 	let { library, onOpen }: { library: Library; onOpen?: () => void } = $props();
 
@@ -29,8 +30,8 @@
 	}
 
 	function titleOf(entry: TransformationEntry) {
-		const title = entry.fields.title;
-		if (typeof title === 'string' && title.trim() !== '') return title;
+		const { title } = entry.fields;
+		if (title !== undefined && title.trim() !== '') return title;
 		// An empty ID (`transformations/.md`) is a real address but not a readable label.
 		return entry.stem === '' ? entry.path : entry.stem;
 	}
@@ -94,7 +95,7 @@
 				>
 					<span class="flex items-center gap-2">
 						<span class="truncate font-medium">{titleOf(entry)}</span>
-						{#if entry.issues}<Badge variant="destructive" class="shrink-0">Needs repair</Badge>{/if}
+						{#if needsRepair(entry)}<Badge variant="destructive" class="shrink-0">Needs repair</Badge>{/if}
 					</span>
 					<span class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
 						<span>{entry.fields.model || 'No model set'}</span>

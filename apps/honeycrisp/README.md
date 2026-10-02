@@ -61,6 +61,23 @@ between folders changes one field and never moves or renames its file. Keys
 Honeycrisp does not know, comments, quoting, and key order in frontmatter are
 kept as written.
 
+A note file starts with a `---` line, its fields, and a closing `---` line.
+A file in `notes/` whose text does not read that way, including plain
+Markdown with no `---` lines, is still listed and still opens: it is marked
+"Needs repair", its fields and rich-text view are unavailable, and you fix it
+in Source. Saving it while it is still malformed works. A note that reads but
+has a bad field, such as `pinned: maybe`, is marked the same way and keeps its
+other controls and its rich-text view. The messages describe the text on
+screen, saved or not.
+
+Any file name works, for notes and for folders, including a leading dot, a
+trailing space, and `notes/.md` itself. A folder's id is its file stem.
+
+Deleting a folder first moves its notes out. It is refused while any note
+cannot say which folder it is in: a note that does not read, a `folderId` that
+is not valid, or a file that cannot be read as text. Repair or remove those
+first.
+
 ## Editing
 
 A note has two views of one draft: **Rich text** and **Source**. Switching

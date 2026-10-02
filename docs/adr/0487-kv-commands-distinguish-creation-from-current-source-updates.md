@@ -1,77 +1,132 @@
-# 0487. KV commands distinguish creation from current-source updates
+# 0487. One KV file exposes stored values; applications own defaults
 
 - **Status:** Proposed
 - **Date:** 2026-10-02
 
 ## Context
 
-Folder settings live in one `kv.json` file. Whispering reads the settings as a
-map, creates defaults on first launch, and assigns several settings together.
-Its settings commands reread the current document before saving. Complete-text
-repair already uses the ordinary file editor.
+KV is a sparse map in one reserved root `kv.json`. Applications may interpret it
+as preferences or other small shared values. Its public contract should not
+assume that every caller is a settings application.
 
-Encoding absence as a snapshot with no source or hash made one write method
-choose between creation and replacement. Parsing and serializing the whole
-object also changed unknown numeric values during unrelated settings edits.
+A missing file has no source or hash. Missing keys have no stored values.
+Defaults supplied by an application are useful but are not observations about
+the file. Mixing user keys with capture metadata would also reserve ordinary
+keys such as `source`, `issues`, or `defaults`.
 
 ## Decision
 
-KV exposes three methods:
+`folder.kv` reads one fixed `kv.json`. Usable stored values live under `values`,
+separate from snapshot metadata. It uses the same parse-error and field-issue
+shapes as table interpretation in ADR-0462.
 
 ```ts
-folder.kv.get()
-folder.kv.create(values)
-folder.kv.update(values)
+type KvReading<TValues> = {
+  readonly values: DeepReadonly<Partial<TValues>>;
+  readonly parseError: ParseError | undefined;
+  readonly issues: readonly FieldIssue[];
+};
+
+type KvSnapshot<TValues> = KvReading<TValues> & {
+  readonly path: 'kv.json';
+  readonly source: string;
+  readonly sha256: string;
+};
+
+type FileKv<TValues> = {
+  inspect(source: string): KvReading<TValues>;
+  get(): Promise<Result<KvSnapshot<TValues> | undefined, KvReadError>>;
+  create(values: DeepReadonly<Partial<TValues>>):
+    Promise<Result<KvSnapshot<TValues>, KvWriteError>>;
+  update(values: DeepReadonly<Partial<TValues>>):
+    Promise<Result<KvSnapshot<TValues>, KvWriteError>>;
+};
 ```
 
-`get` returns `undefined` only for absence. Every snapshot describes a real
-file and carries its exact source and SHA-256. Readable malformed JSON remains
-a snapshot with issues; unreadable bytes remain an error. Declared values are
-validated independently, and missing declared settings are permitted.
+`get` returns `Ok(undefined)` only for file absence. A read or UTF-8 failure is
+an operation error. Readable malformed or non-object JSON is a snapshot with
+`parseError`, empty `values`, and empty `issues`. Parsing success yields
+independently validated declared values and an issue array. Missing keys are
+permitted and omitted; invalid stored values are omitted and reported. Unknown
+keys remain in source. Values and diagnostics are detached and recursively
+readonly and frozen. `inspect` performs the same work without storage or capture
+metadata and returns a plain reading.
+
+The format is a strict JSON object, with an optional initial BOM. Comments and
+trailing commas fail parsing. Reading duplicate root keys follows `JSON.parse`'s
+last value interpretation. Structured updates refuse repeated occurrences of a
+key they are asked to change. Unknown duplicate keys remain untouched.
 
 `create` validates the supplied partial map and publishes exclusively without
-reading. `update` owns its supplied values before awaiting, reads current
-source once, patches only supplied root keys, and replaces against that read's
-hash. Absence is `NotFound`; a publication race is `Conflict`. Neither method
-retries. Successful writes return the submitted source and its hash without a
-read-back observation.
+reading. `update` owns supplied values before awaiting, reads current source
+once, patches only supplied root keys, and replaces against that read's hash.
+Absence is `NotFound`; a publication race is `Conflict`. Neither command retries
+or creates an absent file implicitly. Successful receipts describe submitted
+source and its hash without rereading. Receipt interpretation finishes before
+publication, so successful publication needs no subsequent validation.
 
-JSON syntax-tree offsets identify editable spans. Untouched source remains
-exact, including unknown nested numeric tokens. Structured updates refuse
-malformed or non-object JSON and repeated occurrences of a supplied key.
-Unknown duplicate keys remain untouched. Full-text repair uses
-`files.replace(snapshot, source)`.
+Syntax-tree offsets preserve untouched source, including unknown nested numeric
+tokens. Malformed or non-object current JSON refuses update with `Unparsed`,
+carrying the shared `ParseError`. Successfully parsed JSON that cannot be
+patched safely, including a repeated supplied key, refuses with
+`UnsupportedSource`. A readable map can therefore have valid values while a
+particular update is refused. Invalid supplied values remain an invalid-input
+preparation error. Complete-text repair uses `folder.files.replace(snapshot,
+source)`. That returns a raw `FileCapture`; inspect the UTF-8-decoded submitted
+bytes for diagnostics, without attaching an older interpretation to the new
+hash. Write inputs accept recursively readonly values. Folder copies and freezes
+them before validation without freezing caller-owned data. Parsed stored values
+are also frozen before schema callbacks run. A callback attempting mutation
+produces a field issue on read or an invalid-input preparation error on write.
 
-Files, tables, and KV are sibling factories over accounted, fenced storage:
+Applications apply defaults once where they derive usable application state:
 
 ```ts
-createFiles({ storage })
-createTable({ storage }, definition)
-createKv({ storage }, definition)
+const { data: snapshot, error } = await folder.kv.get();
+if (error) return showReadFailure(error);
+const kv = { ...KV_DEFAULTS, ...(snapshot?.values ?? {}) };
+showDiagnostics(snapshot?.parseError, snapshot?.issues ?? []);
 ```
 
-Applications own defaults, retries, and recreation policy. Whispering keeps its
-one-conflict retry and explicitly creates only the supplied patch after a
-missing-file refusal. Startup seeds defaults only after its own successful
-absent observation, and awaits that creation before installing its close guard.
+Missing files, missing keys, and omitted invalid values fall back to application
+defaults. Broken JSON can display defaults alongside its parse diagnostic.
+Acquisition errors must be handled before applying this policy. Valid `null`
+overrides a default. Merging is shallow: each stored root value replaces that
+root's default, without implicitly merging nested objects.
+
+Neither `get`, schema compilation, nor folder opening inserts or persists
+defaults. The application may expose `KV_DEFAULTS` itself; Folder has no
+`defaults` member or resolution helper. A patch contains only deliberate edits,
+not the entire default-resolved map. Initialization is an explicit `create`
+policy, including handling a competing creation. Library code does not freeze or
+modify application-owned default objects.
 
 ## Consequences
 
-Absence no longer has a file capture. Structured settings commands accept
-values without a preliminary caller read. KV has no separate raw replacement
-method, cache, operation registry, or history callback.
+The `values` namespace permits arbitrary declared user keys without colliding
+with capture metadata. Snapshots describe real files, and reads do not invent
+captures for absence. Defaults can change independently of stored data.
 
-Source-preserving edits require a JSON syntax parser. Duplicate supplied keys
-require manual source repair before a structured update. Typed supplied values
-must be representable as JSON; raw file editing retains arbitrary source.
-`update` assigns current values and does not protect an earlier displayed
-snapshot. The ordinary file editor retains captured-baseline protection.
+Current-source commands need no preliminary caller read. They assign supplied
+values deliberately; they do not protect an earlier displayed snapshot.
+Full-text editing retains captured-baseline protection through `files.replace`.
 
 ## Considered alternatives
 
-A merging `set` hides what happens to omitted fields. Per-key writes split a
-multi-setting command into several publications. An upserting `update` cannot
-seed defaults safely after an earlier absence observation: another writer may
-have created settings in between. A captured structured update preserves an
-argument that production callers immediately reread. A KV source-replacement
-method duplicates the existing ordinary file repair path.
+Flattening KV keys into the snapshot reserves metadata names. Returning defaults
+from `get` hides absence and invalid source, and can persist values a person
+never chose. Multiple root KV files add addressing before a concrete caller
+needs it; ordinary files remain available. Per-key publications split one
+command into several saves. An upserting update hides creation policy. Row
+editors use interpreted save receipts; there is no current typed KV repair
+caller that needs a separate replacement helper. Ordinary file repair remains
+available without adding that facade. A captured structured update changes the
+concurrency policy of existing current-source commands.
+
+## Implementation
+
+[KV interpretation and commands](../../packages/folder/src/kv.ts) implement
+this sparse stored-value contract. [KV tests](../../packages/folder/src/kv.test.ts)
+cover absence, parse diagnostics, independent validation, readonly ownership,
+source preservation, and conditional publication. Whispering derives defaults
+where it reads application settings.

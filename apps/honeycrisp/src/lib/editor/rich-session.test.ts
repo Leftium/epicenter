@@ -15,10 +15,10 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { InstantString } from '@epicenter/definition';
-import { readSource } from '@epicenter/folder';
 import { baseKeymap, toggleMark } from 'prosemirror-commands';
 import { redo, redoDepth, undo, undoDepth } from 'prosemirror-history';
 import { type Command, TextSelection } from 'prosemirror-state';
+import { inspectNote as inspect } from '../inspect.test-support.js';
 import { equivalentNoteDocs, parseNoteBody } from './markdown.js';
 import {
 	createRichSession,
@@ -54,7 +54,10 @@ function draftOf(source: string) {
 
 function open(initialBody: string) {
 	const draft = draftOf(HEAD + initialBody);
-	const session = createRichSession(draft, { now: () => NOW }) as RichSession;
+	const session = createRichSession(draft, {
+		inspect,
+		now: () => NOW,
+	}) as RichSession;
 	expect(session).toBeDefined();
 	/** Run a command the way the view does. Returns whether it was displayed. */
 	const run = (command: Command) => {
@@ -69,7 +72,7 @@ function open(initialBody: string) {
 			dispatch?.(state.tr.insertText(text));
 			return true;
 		});
-	const body = () => readSource(draft.buffer).body as string;
+	const body = () => inspect(draft.buffer).body as string;
 	/** What is on screen and what the draft holds are the same content. */
 	const expectDraftHoldsScreen = () =>
 		expect(equivalentNoteDocs(parseNoteBody(body()), session.state.doc)).toBe(
@@ -270,10 +273,25 @@ describe('undo history', () => {
 
 describe('source the editor cannot hold', () => {
 	test('opens no session', () => {
-		expect(createRichSession(draftOf(`${HEAD}<div>x</div>\n`))).toBeUndefined();
-		expect(
-			createRichSession(draftOf('---\ntitle: *missing\n---\nbody\n')),
-		).toBeUndefined();
+		for (const source of [
+			`${HEAD}<div>x</div>\n`,
+			'---\ntitle: *missing\n---\nbody\n',
+			// Markdown with no frontmatter lines does not parse as a note.
+			'Just text\n',
+		])
+			expect(createRichSession(draftOf(source), { inspect })).toBeUndefined();
+	});
+
+	test('a draft that stops parsing takes no rich edit, and the screen does not change', () => {
+		const { draft, session, type } = open('one\n');
+		const state = session.state;
+		const broken = draft.buffer.replace('title: T', 'title: [open');
+		draft.buffer = broken;
+		expect(type('x')).toBe(false);
+		expect(draft.buffer).toBe(broken);
+		expect(draft.refusal).toContain('not valid YAML');
+		expect(session.state).toBe(state);
+		expect(session.sync()).toBeUndefined();
 	});
 
 	test('typed into Source is not pulled into the document', () => {

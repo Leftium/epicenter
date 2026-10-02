@@ -4,7 +4,10 @@
  * A draft's `buffer` is the text on screen, including unsaved typing.
  * `baseline` is the saved file the next conditional save is checked against. A
  * save captures one generation of the buffer; success advances the baseline to
- * the accepted file and leaves newer typing dirty. A conflict pauses autosave
+ * the accepted file and leaves newer typing dirty. The accepted file holds the
+ * text of the bytes that were sent, which differs from the typed string where
+ * encoding replaced an unpaired surrogate; a buffer still at the generation
+ * that was sent becomes that text, so the draft settles. A conflict pauses autosave
  * and keeps the input until the person chooses. A conflict whose saved file
  * cannot be read is a failed save, never a removal. A rename runs through the
  * draft's `move`, which holds saves until the file is at its new path. Git
@@ -15,19 +18,24 @@
  * conflict rules are the same for every file the app edits.
  */
 import {
-	type Entry,
 	type FileCapture,
 	type FileTable,
 	type FolderFiles,
 	patchSource,
 	type SourceChange,
+	type TableSnapshot,
 	type TextCapture,
 } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { TodoFields } from './definition.js';
-import { readTextFile } from './files.js';
+import { readTextFile, type SubmittedText, submittedText } from './files.js';
 
-export type TodoEntry = Entry<TodoFields>;
+export type TodoEntry = TableSnapshot<TodoFields>;
+
+/** Whether a saved todo's text fails to parse or leaves a declared field with an issue. */
+export function needsRepair(entry: TodoEntry): boolean {
+	return entry.parseError !== undefined || entry.issues.length > 0;
+}
 
 /**
  * One saved text file as its draft last accepted it: the capture the next
@@ -48,9 +56,10 @@ export type SaveState<T> =
 
 /** Where a draft saves: one conditional write, and a fresh read for conflict review. */
 type DraftStore<T extends SavedText> = {
+	/** The accepted file's `source` is the text of the submitted bytes. */
 	write(
 		baseline: T,
-		source: string,
+		submitted: SubmittedText,
 	): Promise<Result<T, { readonly name: string; readonly message: string }>>;
 	/**
 	 * The saved file now. Only absence is `undefined`; a file that could not be
@@ -102,9 +111,12 @@ function createDraft<T extends SavedText>(
 		const observed = baseline;
 		saveState = { kind: 'saving' };
 		try {
-			const result = await store.write(observed, captured);
+			const result = await store.write(observed, submittedText(captured));
 			if (result.error === null) {
 				baseline = result.data;
+				// The same text unless encoding replaced an unpaired surrogate.
+				// Newer typing is a later generation and stays as typed.
+				if (buffer === captured) buffer = result.data.source;
 				saveState = { kind: 'saved' };
 				onSaved();
 				return;
@@ -288,7 +300,7 @@ export function createTodoEditor(
 ): TodoEditor {
 	return createDraft<TodoEntry>(
 		{
-			write: (baseline, source) => table.replace(baseline, source),
+			write: (baseline, { source }) => table.replace(baseline, source),
 			read: (baseline) => table.get(baseline.stem),
 		},
 		entry,
@@ -298,8 +310,9 @@ export function createTodoEditor(
 
 /**
  * A text file editor whose conditional saves follow the folder's history
- * policy. A save replaces the baseline's captured bytes, and the capture it
- * returns, computed from the text that was sent, is the next baseline.
+ * policy. A save replaces the baseline's captured bytes with the submitted
+ * ones; the capture it returns, with the text of those bytes, is the next
+ * baseline.
  */
 export function createTextFileEditor(
 	files: FolderFiles,
@@ -308,8 +321,8 @@ export function createTextFileEditor(
 ): TextFileEditor {
 	return createDraft<SavedText>(
 		{
-			async write(baseline, source) {
-				const replaced = await files.replace(baseline, source);
+			async write(baseline, { bytes, source }) {
+				const replaced = await files.replace(baseline, bytes);
 				if (replaced.error) return Err(replaced.error);
 				return Ok({ ...replaced.data, source });
 			},
@@ -333,7 +346,8 @@ export function createTextFileEditor(
 
 /**
  * Change frontmatter fields or the body with the preparation table updates
- * use. Source the preparation cannot change safely is refused and kept as typed.
+ * use. A buffer that does not parse, or that the preparation cannot change
+ * safely, is refused and kept as typed: the source editor is how it is fixed.
  */
 export function patchTodo(
 	editor: TodoEditor | TextFileEditor,
@@ -341,7 +355,11 @@ export function patchTodo(
 ): boolean {
 	const patched = patchSource(editor.buffer, change);
 	if (patched.error) {
-		editor.refuse(patched.error.reason);
+		editor.refuse(
+			patched.error.kind === 'unparsed'
+				? patched.error.error.message
+				: patched.error.reason,
+		);
 		return false;
 	}
 	editor.input(patched.data);

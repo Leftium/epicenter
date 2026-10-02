@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/folder';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
@@ -36,10 +35,15 @@
 		onBack?: () => void;
 	} = $props();
 
-	/** The buffer's interpretation. Details and Source are two views of this one draft. */
-	const parsed = $derived(readSource(editor.buffer));
-	const title = $derived(typeof parsed.values?.title === 'string' ? parsed.values.title : '');
-	const fieldsEditable = $derived(parsed.values !== undefined && parsed.body !== undefined);
+	/**
+	 * How the draft reads, by the recordings table's own interpreter. Details
+	 * and Source are two views of this one draft, and every message below
+	 * describes the text on screen, saved or not, never the file as last saved.
+	 */
+	const draft = $derived(library.folder.tables.recordings.inspect(editor.buffer));
+	const title = $derived(draft.fields.title ?? '');
+	// A draft that does not parse has no fields or notes to edit; its source does.
+	const fieldsEditable = $derived(draft.parseError === undefined);
 	const id = $derived(editor.baseline.stem);
 	const results = $derived(library.resultsFor(id));
 	const run = $derived(library.transcriptionRun(id));
@@ -60,8 +64,16 @@
 		return typeof value === 'number' ? `${(value / 1000).toFixed(1)} s` : 'Unknown';
 	}
 
-	/** Transformations that can run; one that needs repair is fixed on its own page first. */
-	const runnable = $derived(library.transformations.filter((item) => item.issues === undefined));
+	/**
+	 * Transformations that can run: a run needs the prompt and all three
+	 * fields. One that lacks any is fixed on its own page first.
+	 */
+	const runnable = $derived(
+		library.transformations.filter((item) => {
+			const { title, model, endpoint } = item.fields;
+			return item.body !== undefined && title !== undefined && model !== undefined && endpoint !== undefined;
+		}),
+	);
 
 	/** Apply a transformation to one transcript. The result is a new file; the transcript is not changed. */
 	async function transform(result: TranscriptionEntry, path: string) {
@@ -94,21 +106,28 @@
 
 	<SaveStatus {editor} autosavePaused={library.autosave.paused} onDiscardRemoved={() => library.discardRemoved(editor.path)} />
 
-	{#if entry?.issues || parsed.issues.length > 0}
+	{#if draft.parseError}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
 			<p class="mb-1 flex items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
-				Edit the source to fix it; the file stays saved as written.
+				{draft.parseError.message}. Edit the source to fix it; the text is saved as written.
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
-				{#each entry?.issues ?? [] as issue, index (index)}
-					<li>{issue.kind === 'field' ? `${issue.field}: ` : ''}{issue.message}</li>
+				{#each draft.parseError.diagnostics as diagnostic, index (index)}
+					<li>{diagnostic.message}</li>
 				{/each}
-				{#if !entry?.issues}
-					{#each parsed.issues as issue, index (index)}
-						<li>Unsaved source: {issue.message}</li>
-					{/each}
-				{/if}
+			</ul>
+		</div>
+	{:else if draft.issues.length > 0}
+		<div class="border-b bg-destructive/5 px-4 py-2 text-xs" data-testid="needs-repair">
+			<p class="mb-1 flex items-center gap-2 font-medium">
+				<Badge variant="destructive">Needs repair</Badge>
+				Some fields need fixing in Source. The rest of the recording still works.
+			</p>
+			<ul class="space-y-0.5 text-muted-foreground">
+				{#each draft.issues as issue, index (index)}
+					<li>{issue.message}</li>
+				{/each}
 			</ul>
 		</div>
 	{/if}
@@ -134,14 +153,14 @@
 
 				<dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-sm">
 					<dt class="text-muted-foreground">Recorded</dt>
-					<dd>{when(parsed.values?.recordedAt)}</dd>
+					<dd>{when(draft.fields.recordedAt)}</dd>
 					<dt class="text-muted-foreground">Length</dt>
-					<dd>{seconds(parsed.values?.durationMs)}</dd>
+					<dd>{seconds(draft.fields.durationMs)}</dd>
 					<dt class="text-muted-foreground">Captured from</dt>
 					<dd>
-						{#if parsed.values?.capture === 'fixture'}
+						{#if draft.fields.capture === 'fixture'}
 							<Badge variant="outline">Fixture audio, not a microphone take</Badge>
-						{:else if parsed.values?.capture === 'microphone'}
+						{:else if draft.fields.capture === 'microphone'}
 							Microphone
 						{:else}
 							Unknown
@@ -192,11 +211,12 @@
 					{/if}
 					{#each results as result (result.path)}
 						{@const outputs = library.outputsFor(result.stem)}
+						{@const transcript = result.body}
 						{@const transforming = library.transformationRuns.some(
 							(item) => item.fields.transcriptionId === result.stem && item.state.kind === 'running',
 						)}
 						<article class="flex flex-col gap-2 rounded border p-3 text-sm" data-testid="transcription-result">
-							<p class="whitespace-pre-wrap" data-testid="transcript-text">{result.body?.trim() || '(empty transcript)'}</p>
+							<p class="whitespace-pre-wrap" data-testid="transcript-text">{transcript?.trim() || '(empty transcript)'}</p>
 							<footer class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
 								<span>{when(result.fields.createdAt)} · {result.fields.model ?? 'unknown model'}</span>
 								<Button size="xs" variant="ghost" onclick={() => void library.open(result.path)}>
@@ -206,7 +226,7 @@
 									<DropdownMenu.Root>
 										<DropdownMenu.Trigger>
 											{#snippet child({ props })}
-												<Button {...props} size="xs" variant="outline" disabled={!result.body?.trim()} data-testid="transform">
+												<Button {...props} size="xs" variant="outline" disabled={!transcript?.trim()} data-testid="transform">
 													{#if transforming}<Spinner class="size-3" />{:else}<WandSparklesIcon />{/if}
 													Transform
 												</Button>
@@ -216,7 +236,7 @@
 											<DropdownMenu.Label>Make a new text from this transcript</DropdownMenu.Label>
 											{#each runnable as item (item.path)}
 												<DropdownMenu.Item onSelect={() => void transform(result, item.path)}>
-													{item.fields.title || item.stem}
+													{item.fields.title || (item.stem === '' ? item.path : item.stem)}
 												</DropdownMenu.Item>
 											{:else}
 												<DropdownMenu.Item disabled>No transformations yet</DropdownMenu.Item>
@@ -227,7 +247,7 @@
 											</DropdownMenu.Item>
 										</DropdownMenu.Content>
 									</DropdownMenu.Root>
-									<Button size="xs" variant="ghost" onclick={() => void copyText(result.body ?? '', 'the transcript')}>Copy</Button>
+									<Button size="xs" variant="ghost" onclick={() => void copyText(transcript ?? '', 'the transcript')}>Copy</Button>
 								</span>
 							</footer>
 							{#each outputs as output (output.path)}
@@ -245,12 +265,12 @@
 					<h3 class="text-sm font-medium">Notes</h3>
 					<Textarea
 						class="min-h-28 resize-y font-sans"
-						value={parsed.body ?? ''}
+						value={draft.body ?? ''}
 						placeholder="Notes in Markdown, saved in the recording’s file"
 						aria-label="Notes"
-						disabled={parsed.body === undefined}
+						disabled={!fieldsEditable}
 						oninput={(event) =>
-							patchRow(editor, { body: withFileNewlines(event.currentTarget.value, parsed.body ?? '') })}
+							patchRow(editor, { body: withFileNewlines(event.currentTarget.value, draft.body ?? '') })}
 					/>
 				</div>
 			</div>

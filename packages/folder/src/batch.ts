@@ -25,9 +25,15 @@ import {
 	ownBytes,
 	ownCapture,
 } from './capture.js';
-import { BatchError, FileError, TableError } from './errors.js';
+import { BatchError, FileError, type TableError } from './errors.js';
 import { pathProblem } from './paths.js';
-import { destinationProblem, prepareRow, tableFilenames } from './table.js';
+import type { DeepReadonly } from './reading.js';
+import { prepareRow, tableFilenames } from './table.js';
+
+/** A batched row is refused for the values it was given, or as any file is. */
+export type BatchRefusal =
+	| FileError
+	| Extract<TableError, { name: 'InvalidValues' }>;
 
 /** The file verbs of `folder.files`, as intents. Each returns nothing. */
 export type BatchFiles = {
@@ -42,12 +48,13 @@ export type BatchTable<TFields> = {
 	/**
 	 * Create a row at a stem the caller chose. The collector reads nothing, so
 	 * it generates no stem. Before the batch is published, the row's
-	 * destination is checked as a standalone create checks it: an occupied
-	 * path or a case-colliding sibling refuses the whole batch.
+	 * destination is looked for once: a file already at that exact path
+	 * refuses the whole batch. Any other identity the backing filesystem gives
+	 * names is its publication's to refuse.
 	 */
 	create(input: {
 		readonly stem: string;
-		readonly fields: TFields;
+		readonly fields: DeepReadonly<TFields>;
 		readonly body?: string;
 	}): void;
 };
@@ -95,22 +102,24 @@ export type BatchChange =
 	| Extract<BatchIntent, { kind: 'remove' | 'move' }>;
 
 /**
- * Check every typed row creation the way a standalone `create` checks its
- * destination, against the table directory as it will be when that step runs.
+ * Refuse a typed row creation whose exact destination is occupied, against
+ * the table directory as it will be when that step runs.
  *
  * Each table's filenames are read once. The plan is then walked in order: a
  * removal or a move earlier in the batch frees its name, and a write or a
  * move adds one, so a row may take the place of a row the same batch retires,
- * and two collected rows that collide with each other are refused. Nothing
- * is published before this returns, so a refusal here wrote nothing.
+ * and two collected rows at one path are refused. Nothing is published
+ * before this returns, so a refusal here wrote nothing.
  *
- * Like the standalone check, this reads names once and another program can
- * still race it. The per-file conditions at publication are unchanged.
+ * Names are compared exactly; there is no case or Unicode folding. This
+ * reads names once and another program can still race it. Each creation's
+ * own condition at publication is unchanged, and it is where a filesystem
+ * that treats two spellings as one file refuses the second.
  */
 export async function checkRowDestinations(
 	intents: readonly BatchIntent[],
 	boundary: Pick<FolderStorage, 'children'>,
-): Promise<Result<undefined, FileError | TableError>> {
+): Promise<Result<undefined, FileError>> {
 	const names = new Map<string, Set<string>>();
 	for (const intent of intents) {
 		if (
@@ -134,16 +143,9 @@ export async function checkRowDestinations(
 	};
 	for (const intent of intents) {
 		if (intent.kind !== 'remove' && intent.kind !== 'move') {
-			if (intent.row !== undefined) {
-				const refused = destinationProblem(
-					intent.row,
-					names.get(intent.row) ?? [],
-					intent.path,
-					undefined,
-				);
-				if (refused.error) return refused;
-			}
 			const place = placeOf(intent.path);
+			if (intent.row !== undefined && place?.table.has(place.filename))
+				return FileError.Exists({ path: intent.path });
 			place?.table.add(place.filename);
 			continue;
 		}
@@ -188,7 +190,7 @@ export function receiptOf(changes: readonly BatchChange[]): BatchReceipt {
 	});
 }
 
-type Refusal = Result<never, FileError | TableError>;
+type Refusal = Result<never, BatchRefusal>;
 
 /**
  * Run the callback once and return what it collected, or the reason nothing
@@ -198,7 +200,7 @@ type Refusal = Result<never, FileError | TableError>;
 export function collectBatch<TDefinition extends DataDefinition>(
 	compiled: ParsedDataDefinition,
 	collect: (batch: FolderBatch<TDefinition>) => undefined,
-): Result<readonly BatchIntent[], BatchError | FileError | TableError> {
+): Result<readonly BatchIntent[], BatchError | BatchRefusal> {
 	const intents: BatchIntent[] = [];
 	let refusal: Refusal | undefined;
 	let sealed = false;
@@ -282,8 +284,8 @@ export function collectBatch<TDefinition extends DataDefinition>(
 				open();
 				if (typeof input?.stem !== 'string') {
 					refuse(
-						TableError.InvalidStem({
-							stem: String(input?.stem),
+						FileError.InvalidPath({
+							path: `${parsed.name}/`,
 							reason: 'a batched row is created at a stem the caller supplies',
 						}),
 					);

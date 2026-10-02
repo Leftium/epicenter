@@ -99,6 +99,10 @@ async function text(todos: Todos, path: string) {
 	return read === undefined ? undefined : new TextDecoder().decode(read);
 }
 
+/** The validated `done` of a listed todo; undefined when it has none. */
+const doneOf = (entry: Todos['entries'][number] | undefined) =>
+	entry?.fields.done;
+
 /** Another writer deletes the file as it is now. */
 async function removeNow(todos: Todos, path: string) {
 	const { files } = todos.folder;
@@ -442,14 +446,15 @@ for (const [stem, repaired] of [
 	['bad ', 'good'],
 	['', 'named'],
 ] as const)
-	test(`a row at the literal stem ${JSON.stringify(stem)} toggles, rereads its conflict, keeps its draft, and renames only to a valid name`, async () => {
+	test(`a row at the literal stem ${JSON.stringify(stem)} is an ordinary todo: it toggles, rereads its conflict, keeps its draft, and renames to any literal name`, async () => {
 		const todos = await open(withoutHints);
 		const path = `todos/${stem}.md`;
 		expectOk(await todos.folder.files.create(path, ROW));
 		await todos.refresh();
 		const listed = todos.entries.find((entry) => entry.path === path)!;
 		expect(listed.stem).toBe(stem);
-		expect(listed.issues?.map((issue) => issue.kind)).toEqual(['filename']);
+		// A name is an address. It is never something to repair.
+		expect(listed.issues).toEqual([]);
 
 		// With no editor open, the toggle is a table update at that stem.
 		expect(await todos.toggle(listed)).toBeUndefined();
@@ -475,15 +480,24 @@ for (const [stem, repaired] of [
 		expect(editor.saveState).toEqual({ kind: 'saved' });
 		expect(await text(todos, path)).toBe(mine);
 
-		// A rename validates the name it creates, not the one it leaves.
-		expect(await todos.rename(path, 'a:b.md')).toContain('some filesystems');
+		// A rename applies no naming rule: punctuation and a trailing space are
+		// names like any other, and only a path outside the folder is refused.
+		expect(await todos.rename(path, 'nested/b.md')).toBe(
+			'A name cannot contain "/".',
+		);
 		expect(await text(todos, path)).toBe(mine);
-		expect(await todos.rename(path, `${repaired}.md`)).toBeUndefined();
+		expect(await todos.rename(path, 'a: b? .md')).toBeUndefined();
 		expect(await text(todos, path)).toBeUndefined();
+		expect(await text(todos, 'todos/a: b? .md')).toBe(mine);
+		expect(editor.baseline.stem).toBe('a: b? ');
+		expect(await todos.rename('todos/a: b? .md', `${repaired}.md`)).toBe(
+			undefined,
+		);
+		expect(await text(todos, 'todos/a: b? .md')).toBeUndefined();
 		expect(await text(todos, `todos/${repaired}.md`)).toBe(mine);
 		expect(todoEditor(todos)).toBe(editor);
 		expect(editor.baseline.stem).toBe(repaired);
-		expect(editor.baseline.issues).toBeUndefined();
+		expect(editor.baseline.issues).toEqual([]);
 
 		// After the rename, a refused save rereads the row where it is now.
 		const renamedPath = `todos/${repaired}.md`;
@@ -572,7 +586,7 @@ test('a raw file renamed into a todo row settles, then reopens as a todo at the 
 	const selection = todos.selection;
 	if (selection?.kind !== 'todo') throw new Error('Expected todo selection');
 	expect(selection.editor.buffer).toBe(`${ROW}mine\n`);
-	expect(selection.entry?.fields.title).toBe('Note');
+	expect(selection.editor.baseline.fields.title).toBe('Note');
 	expect(todos.unsaved).toBe(false);
 	expect(await text(todos, 'todos/note.txt')).toBeUndefined();
 });
@@ -1202,9 +1216,9 @@ test('a hint never replaces a dirty draft, and its next save reports the other w
 				fields: { done: true },
 			}),
 		);
-		await eventually(() => todos.entries[0]?.fields.done === true);
+		await eventually(() => doneOf(todos.entries[0]) === true);
 		// The list shows the other tab's save; the editor still holds the input.
-		expect(todos.entries[0]?.fields.done).toBe(true);
+		expect(doneOf(todos.entries[0])).toBe(true);
 		expect(editor.buffer).toBe(mine);
 		expect(todos.unsaved).toBe(true);
 

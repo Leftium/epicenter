@@ -28,6 +28,7 @@ export type {
 	BatchFiles,
 	BatchLanded,
 	BatchReceipt,
+	BatchRefusal,
 	BatchTable,
 	FolderBatch,
 } from './batch.js';
@@ -45,9 +46,18 @@ export {
 	BatchError,
 	FileError,
 	type FileStep,
+	type KvReadError,
+	type KvWriteError,
 	OpenFolderError,
+	type TableCreateError,
+	type TableDeleteError,
+	type TableEnumerationError,
 	TableError,
+	type TableGetError,
 	type TableReadError,
+	type TableRenameError,
+	type TableReplaceError,
+	type TableUpdateError,
 	type TableWriteError,
 } from './errors.js';
 export type { FolderFiles } from './files.js';
@@ -75,22 +85,21 @@ export type {
 } from './git/history.js';
 export { commitSubject, escapePath, type PathChange } from './git/messages.js';
 export type { Author, CommitSummary } from './git/objects.js';
-export type { FileKv, KvIssue, KvSnapshot } from './kv.js';
+export type { FileKv, KvReading, KvSnapshot } from './kv.js';
 export {
 	frameSource,
+	type PatchRefusal,
 	patchSource,
-	readSource,
 	type SourceChange,
+	type SourceFrame,
 } from './markdown.js';
-export { pathProblem, rowPath, rowStemOf, stemProblem } from './paths.js';
+export { pathProblem, rowPath, rowStemOf } from './paths.js';
+export type { DeepReadonly, FieldIssue, ParseError } from './reading.js';
 export type {
-	CreateInput,
-	Entry,
-	EntryIssue,
 	FileTable,
-	InvalidEntry,
 	TableListing,
-	ValidEntry,
+	TableReading,
+	TableSnapshot,
 } from './table.js';
 export type { FolderTerminal, TerminalResult } from './terminal.js';
 

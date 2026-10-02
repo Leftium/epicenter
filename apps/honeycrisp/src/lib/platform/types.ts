@@ -13,13 +13,14 @@ import type { honeycrispDefinition } from '../data.js';
 type Definition = typeof honeycrispDefinition;
 
 /**
- * The folder surface the notes UI uses. Tables are read as listings; every
- * change to a file goes through `files`, on a capture. The folder says when
- * files changed, as a hint to read again. Remotes are outside this app.
+ * The folder surface the notes UI uses. Tables are read as listings, and the
+ * notes table also reads a draft's text with `inspect`; every change to a
+ * file goes through `files`, on a capture. The folder says when files
+ * changed, as a hint to read again. Remotes are outside this app.
  */
 export type NotesFolder = {
 	tables: {
-		notes: Pick<Folder<Definition>['tables']['notes'], 'list'>;
+		notes: Pick<Folder<Definition>['tables']['notes'], 'list' | 'inspect'>;
 		folders: Pick<Folder<Definition>['tables']['folders'], 'list'>;
 	};
 	files: Pick<

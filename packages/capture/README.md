@@ -42,16 +42,18 @@ this package maps those ranges to offsets in the source.
 A line reading `## Thoughts` inside a code fence, an HTML block, a block
 quote, or a list item is not the heading.
 
-A document is refused, with `refusal` saying why, when the layout is
-ambiguous. Its text and thoughts are then not offered, and the source stays
-editable as text:
+A document is refused, with `refusal` saying why, when the source is not a
+capture's or its layout is ambiguous. Its text and thoughts are then not
+offered, and the source stays editable as text:
 
 | `refusal.code` | Cause |
 | --- | --- |
+| `missing-frontmatter` | The source does not start with a `---` line. Markdown without frontmatter lines is not read as a capture's text, and no operation adds them. |
+| `unclosed-frontmatter` | The opening `---` has no closing line. |
+| `unparsed` | The frontmatter is framed but does not parse. `parseCapture` reads no YAML; a caller that asked the capture table (`table.inspect(source)`) passes its reason to `unparsedCapture(source, message)`. |
 | `duplicate-heading` | More than one root-level heading reads "Thoughts". |
 | `heading-form` | The Thoughts heading is not `## Thoughts` at the start of a line. |
 | `section-shape` | Something other than a bullet list comes first under the heading, or the section holds a second bullet list. |
-| `unclosed-frontmatter` | The opening `---` has no closing line. |
 
 ## Changing a capture
 

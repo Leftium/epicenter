@@ -47,7 +47,7 @@ import {
 	writeFile,
 } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { pathProblem, rowPath, stemProblem } from '@epicenter/folder';
+import { pathProblem, rowPath } from '@epicenter/folder';
 import { RECORDINGS } from '../src/lib/definition.js';
 
 export type InjectionState = {
@@ -206,7 +206,12 @@ export function createFailureInjection({
 		audioPath: unknown;
 	}): Promise<string | null> {
 		const { stem, audioPath } = recording;
-		if (typeof stem !== 'string' || stemProblem(stem) !== undefined)
+		// A stem is one literal segment whose row path stays inside the folder.
+		if (
+			typeof stem !== 'string' ||
+			stem.includes('/') ||
+			pathProblem(rowPath(RECORDINGS, stem)) !== undefined
+		)
 			throw new Error('An obstacle needs the stem of a recording row.');
 		if (
 			audioPath !== undefined &&

@@ -36,16 +36,20 @@
 		type RichSession,
 		toggleQuote,
 	} from '$lib/editor/rich-session.js';
+	import type { InspectNote } from '$lib/data.js';
 	import { noteSchema as schema } from '$lib/editor/schema.js';
 	import type { FileSession } from '$lib/file-session.svelte.js';
 	import { richAvailability } from '$lib/note-source.js';
 
 	let {
 		session,
+		inspect,
 		focusRequest,
 		onOpenSource,
 	}: {
 		session: FileSession;
+		/** How the notes table reads the draft's text. */
+		inspect: InspectNote;
 		focusRequest: number;
 		onOpenSource: () => void;
 	} = $props();
@@ -63,7 +67,7 @@
 	const reasons = $derived.by((): readonly string[] | undefined => {
 		// While the document stands for the draft's body there is nothing to decide.
 		if (rich?.inSync) return undefined;
-		const availability = richAvailability(session.buffer);
+		const availability = richAvailability(session.buffer, inspect);
 		return availability.editable ? undefined : availability.reasons;
 	});
 	/**
@@ -155,7 +159,7 @@
 	$effect(() => {
 		if (!element || !editable) return;
 		const opened = untrack(() =>
-			createRichSession(session, { viewPlugins: [placeholder, taskCheckbox] }),
+			createRichSession(session, { inspect, viewPlugins: [placeholder, taskCheckbox] }),
 		);
 		if (!opened) return;
 		const created = new EditorView(element, {

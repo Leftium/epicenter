@@ -85,7 +85,7 @@
 {#snippet detail(onBack: (() => void) | undefined)}
 	{@const selection = todos.selection}
 	{#if selection?.kind === 'todo'}
-		<TodoDetail {todos} editor={selection.editor} entry={selection.entry} {onBack} />
+		<TodoDetail {todos} editor={selection.editor} {onBack} />
 	{:else if selection?.kind === 'file'}
 		<FileView {todos} path={selection.path} file={selection.file} {onBack} />
 	{:else}

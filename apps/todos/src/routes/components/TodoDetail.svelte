@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { readSource } from '@epicenter/folder';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Checkbox } from '@epicenter/ui/checkbox';
@@ -7,7 +6,7 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { patchTodo, type TodoEditor, type TodoEntry } from '$lib/editor.svelte.js';
+	import { patchTodo, type TodoEditor } from '$lib/editor.svelte.js';
 	import { withFileNewlines } from '$lib/files.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import { confirmDelete } from './file-actions.js';
@@ -17,22 +16,24 @@
 	let {
 		todos,
 		editor,
-		entry,
 		onBack,
 	}: {
 		todos: Todos;
 		editor: TodoEditor;
-		/** The listed row, or undefined when the file left the folder. */
-		entry: TodoEntry | undefined;
 		/** Shown on narrow screens, where the list and the editor take turns. */
 		onBack?: () => void;
 	} = $props();
 
-	/** The buffer's interpretation, for the structured controls. */
-	const parsed = $derived(readSource(editor.buffer));
-	const title = $derived(typeof parsed.values?.title === 'string' ? parsed.values.title : '');
-	const done = $derived(parsed.values?.done === true);
-	const fieldsEditable = $derived(parsed.values !== undefined && parsed.body !== undefined);
+	/**
+	 * How the text on screen reads, by the table's own interpreter. Every
+	 * control and every diagnostic below describes this buffer, saved or not,
+	 * and never the file as it was last saved.
+	 */
+	const draft = $derived(todos.folder.tables.todos.inspect(editor.buffer));
+	const title = $derived(draft.fields.title ?? '');
+	const done = $derived(draft.fields.done === true);
+	// A buffer that does not parse has no fields or body to edit; its source does.
+	const structured = $derived(draft.parseError === undefined);
 	let tab = $state('notes');
 </script>
 
@@ -45,7 +46,7 @@
 		{/if}
 		<Checkbox
 			checked={done}
-			disabled={!fieldsEditable}
+			disabled={!structured}
 			aria-label="Done"
 			onCheckedChange={(checked) => patchTodo(editor, { fields: { done: checked === true } })}
 		/>
@@ -54,28 +55,35 @@
 			value={title}
 			placeholder="Title"
 			aria-label="Title"
-			disabled={!fieldsEditable}
+			disabled={!structured}
 			oninput={(event) => patchTodo(editor, { fields: { title: event.currentTarget.value } })}
 		/>
 	</div>
 
 	<SaveStatus {editor} onDiscard={() => todos.discard(editor.path)} />
 
-	{#if entry?.issues || parsed.issues.length > 0}
+	{#if draft.parseError}
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
 			<p class="mb-1 flex items-center gap-2 font-medium">
 				<Badge variant="destructive">Needs repair</Badge>
-				Edit the source to fix it; the file stays saved as written.
+				{draft.parseError.message}. Edit the source to fix it; the text is saved as written.
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
-				{#each entry?.issues ?? [] as issue, index (index)}
-					<li>{issue.kind === 'field' ? `${issue.field}: ` : ''}{issue.message}</li>
+				{#each draft.parseError.diagnostics as diagnostic, index (index)}
+					<li>{diagnostic.message}</li>
 				{/each}
-				{#if !entry?.issues}
-					{#each parsed.issues as issue, index (index)}
-						<li>Unsaved source: {issue.message}</li>
-					{/each}
-				{/if}
+			</ul>
+		</div>
+	{:else if draft.issues.length > 0}
+		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
+			<p class="mb-1 flex items-center gap-2 font-medium">
+				<Badge variant="destructive">Needs repair</Badge>
+				Some fields need fixing. The rest of the todo still works.
+			</p>
+			<ul class="space-y-0.5 text-muted-foreground">
+				{#each draft.issues as issue, index (index)}
+					<li>{issue.message}</li>
+				{/each}
 			</ul>
 		</div>
 	{/if}
@@ -88,12 +96,12 @@
 		<Tabs.Content value="notes" class="min-h-0 flex-1">
 			<Textarea
 				class="h-full min-h-40 resize-none font-sans"
-				value={parsed.body ?? ''}
+				value={draft.body ?? ''}
 				placeholder="Notes in Markdown"
 				aria-label="Notes"
-				disabled={parsed.body === undefined}
+				disabled={!structured}
 				oninput={(event) =>
-					patchTodo(editor, { body: withFileNewlines(event.currentTarget.value, parsed.body ?? '') })}
+					patchTodo(editor, { body: withFileNewlines(event.currentTarget.value, draft.body ?? '') })}
 			/>
 		</Tabs.Content>
 		<Tabs.Content value="source" class="min-h-0 flex-1">

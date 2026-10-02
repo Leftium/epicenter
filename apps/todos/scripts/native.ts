@@ -73,18 +73,25 @@ function print(value: unknown) {
 async function summary() {
 	const listed = await folder.tables.todos.list();
 	if (listed.error) return { error: listed.error.message };
+	// One line per row file. A file that was read is a todo even when its text
+	// does not parse; `parseError` then stands where its fields would be.
 	return {
-		todos: listed.data.entries.map((entry) => ({
-			path: entry.path,
-			stem: entry.stem,
-			title: entry.fields.title,
-			done: entry.fields.done,
-			issues: entry.issues,
-		})),
-		unreadable: listed.data.unreadable.map((item) => ({
-			path: item.path,
-			error: item.error.message,
-		})),
+		todos: listed.data.flatMap(({ result }) => {
+			if (result.error) return [];
+			const { path, stem, parseError, fields, issues } = result.data;
+			return parseError
+				? { path, stem, parseError }
+				: {
+						path,
+						stem,
+						title: fields.title,
+						done: fields.done,
+						issues: issues.length > 0 ? issues : undefined,
+					};
+		}),
+		unreadable: listed.data.flatMap(({ path, result }) =>
+			result.error ? { path, error: result.error.message } : [],
+		),
 	};
 }
 
@@ -131,7 +138,7 @@ try {
 				print({ error: entry.error?.message ?? `No todo named ${stem}` });
 				break;
 			}
-			const updated = await folder.tables.todos.update(entry.data.stem!, {
+			const updated = await folder.tables.todos.update(entry.data.stem, {
 				fields: { done: true },
 			});
 			if (updated.error) {

@@ -22,6 +22,7 @@ import {
 	composeBody,
 	excerpt,
 	parseCapture,
+	unparsedCapture,
 } from '@epicenter/capture';
 import {
 	type ImportReport,
@@ -62,6 +63,10 @@ const describe = (cause: unknown) =>
 
 const pathOf = (stem: string) => rowPath(CAPTURES_TABLE, stem);
 
+const encoder = new TextEncoder();
+// The decoder that reads row files: a byte order mark stays in the text.
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
 /** A readable, sortable stem: the capture's UTC time and a short random suffix. */
 function newStem(at: Date): string {
 	const stamp = at
@@ -78,8 +83,9 @@ function newStem(at: Date): string {
 }
 
 function timeOf(entry: CaptureEntry): Date | undefined {
+	// Undefined when the file does not parse or its `capturedAt` did not validate.
 	const value = entry.fields.capturedAt;
-	if (typeof value !== 'string') return undefined;
+	if (value === undefined) return undefined;
 	const time = new Date(value);
 	return Number.isNaN(time.getTime()) ? undefined : time;
 }
@@ -146,28 +152,36 @@ export function createCaptures(
 
 	/**
 	 * Write exact source as the capture at a stem, whose file must be absent.
-	 * Resolves the sha256 the folder admitted, which is the acknowledgment. The
-	 * entry beside it is that same file read back, and is absent when the path
-	 * no longer held it: what another program did afterwards is never taken for
-	 * what was written.
+	 * Resolves the entry of what was sent: the text of the submitted bytes, how
+	 * the table reads that text, and the path and hash the folder returned.
+	 *
+	 * The text and its reading are settled before anything is published, and
+	 * nothing is read back, so the entry acknowledges this write and is never
+	 * what another program did at the path afterwards. Encoding replaces an
+	 * unpaired surrogate, so the text is decoded from the bytes.
 	 */
 	async function createExact(stem: string, source: string) {
+		const bytes = encoder.encode(source);
+		const text = utf8.decode(bytes);
+		const reading = table.inspect(text);
 		const written = await writing(() =>
-			folder.files.create(pathOf(stem), source),
+			folder.files.create(pathOf(stem), bytes),
 		);
 		if (written.error !== null)
 			return { data: null, error: written.error } as const;
-		const { sha256 } = written.data;
-		// The write is confirmed; a read that fails or throws cannot undo that.
-		const current = await read(stem).catch(() => undefined);
-		const entry =
-			current?.kind === 'present' && current.entry.sha256 === sha256
-				? current.entry
-				: undefined;
-		return { data: { sha256, entry }, error: null } as const;
+		const { path, sha256 } = written.data;
+		const entry: CaptureEntry = Object.freeze({
+			path,
+			stem,
+			source: text,
+			sha256,
+			...reading,
+		});
+		return { data: entry, error: null } as const;
 	}
 
 	const store: DraftStore = {
+		inspect: table.inspect,
 		write: (baseline, source) => writing(() => table.replace(baseline, source)),
 		read: (baseline) => read(baseline.stem),
 		recreate: (baseline, source) => createExact(baseline.stem, source),
@@ -216,11 +230,12 @@ export function createCaptures(
 			}
 			listProblem = undefined;
 			loaded = true;
-			entries = listed.data.entries;
-			unreadable = listed.data.unreadable.map((item) => ({
-				path: item.path,
-				message: item.error.message,
-			}));
+			// A file that was read is a capture to open, whether or not its text
+			// parses. A file that could not be read has no text and is listed apart.
+			entries = listed.data.flatMap(({ result }) => result.data ?? []);
+			unreadable = listed.data.flatMap(({ path, result }) =>
+				result.error ? { path, message: result.error.message } : [],
+			);
 			const present = new Map(entries.map((entry) => [entry.path, entry]));
 			const broken = new Map(
 				unreadable.map((item) => [item.path, item.message]),
@@ -263,14 +278,28 @@ export function createCaptures(
 
 	/** One parse per distinct source, for the timeline. */
 	const parsed = new Map<string, CaptureDocument>();
-	function documentOf(source: string): CaptureDocument {
+	function documentOf(entry: CaptureEntry): CaptureDocument {
+		const { source, parseError } = entry;
 		let document = parsed.get(source);
 		if (document === undefined) {
 			if (parsed.size > 2000) parsed.clear();
-			document = parseCapture(source);
+			// Text and thoughts are read only from a file that parses as a capture.
+			document =
+				parseError === undefined
+					? parseCapture(source)
+					: unparsedCapture(source, parseError.message);
 			parsed.set(source, document);
 		}
 		return document;
+	}
+
+	/** Why a saved file does not read as a capture, or undefined when it does. */
+	function problemOf(entry: CaptureEntry): string | undefined {
+		const { parseError, issues } = entry;
+		if (parseError !== undefined) return parseError.message;
+		// No issues is no problem: joining none would read as an empty one.
+		if (issues.length === 0) return undefined;
+		return issues.map((issue) => issue.message).join('; ');
 	}
 
 	const rows = $derived.by((): CaptureRow[] => {
@@ -280,14 +309,14 @@ export function createCaptures(
 				: undefined;
 		const list = entries.map((entry): CaptureRow => {
 			const draft = drafts.get(entry.path);
-			const document = draft?.document ?? documentOf(entry.source);
+			const document = draft?.document ?? documentOf(entry);
 			return {
 				stem: entry.stem,
 				path: entry.path,
 				capturedAt: timeOf(entry),
 				preview: excerpt(document),
 				thoughtCount: document.thoughts.length,
-				problem: entry.issues?.map((issue) => issue.message).join('; '),
+				problem: problemOf(entry),
 				unsettled: draft?.unsettled ?? false,
 				conflict: conflictOf(draft),
 			};
@@ -446,9 +475,8 @@ export function createCaptures(
 							if (newCapture === text) newCapture = '';
 							return { ok: true, stem: created.data.stem };
 						}
-						const taken =
-							created.error.name === 'Exists' ||
-							created.error.name === 'Collision';
+						// Another capture took this name: a new one is tried.
+						const taken = created.error.name === 'Exists';
 						if (!taken || attempt >= 3)
 							return { ok: false, message: created.error.message };
 					}
@@ -496,7 +524,8 @@ export function createCaptures(
 					const created = await createExact(stem, source);
 					if (created.error !== null)
 						return { ok: false, message: created.error.message };
-					if (created.data.entry !== undefined) noteSaved(created.data.entry);
+					// Listed as it was written; the refresh below says what is there now.
+					noteSaved(created.data);
 					// Another draft may have been opened at the path since; it is not this one.
 					if (
 						drafts.get(draft.path) === draft &&

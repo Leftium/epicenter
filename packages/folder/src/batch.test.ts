@@ -128,6 +128,74 @@ async function settled(folder: Opened) {
 const paths = async (folder: Opened) =>
 	expectOk(await folder.files.list()).files.map((file) => file.path);
 
+test('a batched row is checked as a frozen copy: the supplied objects stay as they were, and a refinement that changes its value refuses the batch', async () => {
+	/** What `Type.Refine` adds to a schema, written out: this package does not depend on TypeBox. */
+	const refined = (refine: (value: unknown) => boolean) => ({
+		type: 'object',
+		'~refine': [{ refine, message: 'refused' }],
+	});
+	const folder = expectOk(
+		await openBrowserFolder({
+			definition: defineFolder({
+				id: 'so.epicenter.batchrefined',
+				kv: {},
+				tables: {
+					frozen: defineTable({
+						fields: {
+							data: refined((value) => {
+								Object.freeze(value);
+								return true;
+							}),
+						},
+					}),
+					mutating: defineTable({
+						fields: {
+							data: refined((value) => {
+								if (value !== null) (value as { answer: number }).answer = 99;
+								return true;
+							}),
+						},
+					}),
+				},
+			}),
+			browser: {
+				author,
+				commitOnEdit: false,
+				indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+			},
+		}),
+	);
+	try {
+		const supplied = { data: { answer: 1, list: [1] } };
+		expectOk(
+			await folder.batch((batch) => {
+				batch.tables.frozen.create({ stem: 'a', fields: supplied });
+				// Collected already: a later change is not what is published.
+				supplied.data.list.push(2);
+			}),
+		);
+		expect(Object.isFrozen(supplied.data)).toBe(false);
+		expect(expectOk(await folder.tables.frozen.get('a'))?.fields.data).toEqual({
+			answer: 1,
+			list: [1],
+		});
+
+		const refused = expectErr(
+			await folder.batch((batch) => {
+				batch.files.create('audio/a.webm', AUDIO);
+				batch.tables.mutating.create({ stem: 'a', fields: supplied });
+			}),
+		);
+		expect(refused.name).toBe('InvalidValues');
+		expect(supplied.data.answer).toBe(1);
+		expect(
+			expectOk(await folder.files.list()).files.map((file) => file.path),
+		).toEqual(['frozen/a.md']);
+	} finally {
+		await folder.close();
+	}
+});
+
 describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 	const open = async (commitOnEdit = false) =>
 		kind === 'browser'
@@ -178,7 +246,7 @@ describe.each(['browser', 'directory'])('%s folder batch', (kind) => {
 		// The collector writes the row a standalone create would have written.
 		const row = expectOk(await folder.tables.recordings.get('take'));
 		expect(row?.source).toBe(rowSource('take'));
-		expect(row?.issues).toBeUndefined();
+		expect(row).toMatchObject({ parseError: undefined, issues: [] });
 		const alone = expectOk(
 			await folder.tables.recordings.create(recording('alone')),
 		);
@@ -321,43 +389,76 @@ describe.each([
 		};
 	}
 
-	test('a batched row is refused exactly as a standalone create is: occupied, and case-colliding', async () => {
+	test('a batched row at an occupied path is refused exactly as a standalone create is', async () => {
 		const { folder, untouched } = await withReview();
 		let calls = 0;
-
-		for (const stem of ['review', 'Review', 'REVIEW']) {
-			const standalone = expectErr(
-				await folder.tables.recordings.create(recording(stem)),
-			);
-			const batched = expectErr(
-				await folder.batch((batch) => {
-					calls++;
-					// Collected first, so a refusal after publication would show.
-					batch.files.create(`audio/${stem}.webm`, AUDIO);
-					batch.tables.recordings.create(recording(stem));
-				}),
-			);
-			// The same error, field for field, from the same check.
-			expect(batched).toEqual(standalone);
-			expect(batched.name).toBe(stem === 'Review' ? 'Exists' : 'Collision');
-		}
-		expect(calls).toBe(3);
+		const standalone = expectErr(
+			await folder.tables.recordings.create(recording('Review')),
+		);
+		const batched = expectErr(
+			await folder.batch((batch) => {
+				calls++;
+				// Collected first, so a refusal after publication would show.
+				batch.files.create('audio/Review.webm', AUDIO);
+				batch.tables.recordings.create(recording('Review'));
+			}),
+		);
+		// The same error, field for field: the files' occupied-destination error.
+		expect(batched).toEqual(standalone);
+		expect(batched).toMatchObject({
+			name: 'Exists',
+			path: 'recordings/Review.md',
+		});
+		expect(calls).toBe(1);
 		await untouched();
 	});
 
-	test('two collected rows that collide with each other are refused before either is published', async () => {
+	test('another spelling of an occupied name is refused only where the storage holds one file for both', async () => {
 		const { folder, untouched } = await withReview();
-		const refused = expectErr(
+		// Browser storage keeps names exactly. A directory answers for its own
+		// filesystem: the other spelling opens the same file, or it does not.
+		const oneFile =
+			folder.location.kind === 'directory' &&
+			(await readFile(join(folder.location.root, 'recordings/review.md')).then(
+				() => true,
+				() => false,
+			));
+		const standalone = await folder.tables.recordings.create(
+			recording('review'),
+		);
+		if (oneFile) {
+			// No folding rule decided this: the exclusive create itself refused.
+			expect(expectErr(standalone)).toMatchObject({
+				name: 'Exists',
+				path: 'recordings/review.md',
+			});
+			const batched = expectErr(
+				await folder.batch((batch) => {
+					batch.tables.recordings.create(recording('REVIEW'));
+				}),
+			);
+			expect(batched).toMatchObject({
+				name: 'Exists',
+				path: 'recordings/REVIEW.md',
+			});
+			await untouched();
+			return;
+		}
+		expectOk(standalone);
+		expectOk(
 			await folder.batch((batch) => {
-				batch.tables.recordings.create(recording('Draft'));
-				batch.tables.recordings.create(recording('draft'));
+				batch.tables.recordings.create(recording('REVIEW'));
 			}),
 		);
-		expect(refused).toMatchObject({
-			name: 'Collision',
-			path: 'recordings/draft.md',
-			existing: 'recordings/Draft.md',
-		});
+		expect((await paths(folder)).sort()).toEqual([
+			'recordings/REVIEW.md',
+			'recordings/Review.md',
+			'recordings/review.md',
+		]);
+	});
+
+	test('two collected rows at one path are refused before either is published', async () => {
+		const { folder, untouched } = await withReview();
 		const twice = expectErr(
 			await folder.batch((batch) => {
 				batch.tables.recordings.create(recording('Draft'));
@@ -368,73 +469,73 @@ describe.each([
 			name: 'Exists',
 			path: 'recordings/Draft.md',
 		});
-		// An ordinary file the same batch creates under a colliding name counts.
+		// An ordinary file the same batch creates at the row's path counts.
 		const afterFile = expectErr(
 			await folder.batch((batch) => {
-				batch.files.create('recordings/NOTES.md', 'plain');
+				batch.files.create('recordings/notes.md', 'plain');
 				batch.tables.recordings.create(recording('notes'));
 			}),
 		);
 		expect(afterFile).toMatchObject({
-			name: 'Collision',
-			existing: 'recordings/NOTES.md',
+			name: 'Exists',
+			path: 'recordings/notes.md',
 		});
 		await untouched();
 	});
 
 	test('the plan is read in order: a row retired earlier in the batch frees its name', async () => {
 		const { folder, review } = await withReview();
-		// Removing the captured row first makes room for its case variant.
+		// Removing the captured row first makes room for a new row at its path.
 		const replaced = expectOk(
 			await folder.batch((batch) => {
 				batch.files.remove(review);
-				batch.tables.recordings.create(recording('review'));
+				batch.tables.recordings.create(recording('Review'));
 			}),
 		);
 		expect(replaced.steps.map((step) => step.kind)).toEqual([
 			'remove',
 			'write',
 		]);
-		expect((await paths(folder)).sort()).toEqual(['recordings/review.md']);
+		expect((await paths(folder)).sort()).toEqual(['recordings/Review.md']);
 
 		// Moving a captured row away frees its name too, and the move's
-		// destination becomes a name a later row can collide with.
-		const current = expectOk(await folder.tables.recordings.get('review'));
+		// destination becomes a name a later row can find occupied.
+		const current = expectOk(await folder.tables.recordings.get('Review'));
 		if (current === undefined) throw new Error('the row is missing');
 		const moved = expectOk(
 			await folder.batch((batch) => {
 				batch.files.move(current, 'recordings/Archived.md');
-				batch.tables.recordings.create(recording('REVIEW'));
+				batch.tables.recordings.create(recording('Review'));
 			}),
 		);
 		expect(moved.steps.map((step) => step.kind)).toEqual(['move', 'write']);
-		const collides = expectErr(
+		const occupied = expectErr(
 			await folder.batch((batch) => {
 				batch.files.move(
 					{ path: 'recordings/Archived.md', sha256: current.sha256 },
 					'recordings/Kept.md',
 				);
-				batch.tables.recordings.create(recording('kept'));
+				batch.tables.recordings.create(recording('Kept'));
 			}),
 		);
-		expect(collides).toMatchObject({
-			name: 'Collision',
-			existing: 'recordings/Kept.md',
+		expect(occupied).toMatchObject({
+			name: 'Exists',
+			path: 'recordings/Kept.md',
 		});
 		// The reverse order is refused: the create comes before the removal.
 		const tooEarly = expectErr(
 			await folder.batch((batch) => {
-				batch.tables.recordings.create(recording('archived'));
+				batch.tables.recordings.create(recording('Archived'));
 				batch.files.remove({
 					path: 'recordings/Archived.md',
 					sha256: current.sha256,
 				});
 			}),
 		);
-		expect(tooEarly.name).toBe('Collision');
+		expect(tooEarly.name).toBe('Exists');
 		expect((await paths(folder)).sort()).toEqual([
 			'recordings/Archived.md',
-			'recordings/REVIEW.md',
+			'recordings/Review.md',
 		]);
 	});
 
@@ -575,8 +676,8 @@ describe('batch admission', () => {
 		];
 		expect(refusals.map((refused) => expectErr(refused).name)).toEqual([
 			'InvalidValues',
-			'InvalidStem',
-			'InvalidStem',
+			'InvalidPath',
+			'InvalidPath',
 			'InvalidPath',
 			'InvalidPath',
 		]);

@@ -20,10 +20,11 @@ function describe(deletion: Deletion) {
 	switch (deletion.kind) {
 		case 'todo': {
 			const { entry } = deletion;
+			// A todo whose title did not validate is still named by its file.
+			const validated = entry.fields.title;
 			const title =
-				typeof entry.fields.title === 'string' &&
-				entry.fields.title.trim() !== ''
-					? entry.fields.title
+				validated !== undefined && validated.trim() !== ''
+					? validated
 					: basename(entry.path);
 			return {
 				title: `Delete “${title}”?`,

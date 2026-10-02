@@ -15,6 +15,7 @@
 import './svelte-modules.test-support.js';
 import { expect, test } from 'bun:test';
 import { hashBytes } from '@epicenter/folder';
+import { inspectNote, listingOf, noteEntry } from './inspect.test-support.js';
 import type { NotesHost } from './platform/types.js';
 
 const { createNotes } = await import('./notes.svelte.ts');
@@ -26,14 +27,7 @@ const RAW = '{}\n';
 
 /** A folder with one note and `kv.json`, whose raw read waits for `release`. */
 async function open() {
-	const note = {
-		path: 'notes/a.md',
-		stem: 'a',
-		source: NOTE,
-		sha256: await hashBytes(encoder.encode(NOTE)),
-		fields: { title: 'A' },
-		body: 'body\n',
-	};
+	const note = await noteEntry('notes/a.md', NOTE);
 	const bytes = encoder.encode(RAW);
 	const sha256 = await hashBytes(bytes);
 	let release = () => {};
@@ -42,16 +36,11 @@ async function open() {
 		folder: {
 			tables: {
 				notes: {
-					list: async () => ({
-						data: { entries: [note], unreadable: [] },
-						error: null,
-					}),
+					inspect: inspectNote,
+					list: async () => ({ data: listingOf([note]), error: null }),
 				},
 				folders: {
-					list: async () => ({
-						data: { entries: [], unreadable: [] },
-						error: null,
-					}),
+					list: async () => ({ data: listingOf([]), error: null }),
 				},
 			},
 			files: {

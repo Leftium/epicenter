@@ -152,9 +152,9 @@ describe('row files', () => {
 			'---\ntitle: Nested\ndone: false\n---\n',
 		);
 		expect((await folder.tables.todos.get('a/b')).error?.name).toBe(
-			'InvalidStem',
+			'InvalidPath',
 		);
-		expect((await folder.tables.todos.list()).data!.entries).toEqual([]);
+		expect(expectOk(await folder.tables.todos.list())).toEqual([]);
 
 		const real = (
 			await folder.tables.todos.create({
@@ -169,7 +169,7 @@ describe('row files', () => {
 		expect(
 			(await folder.tables.todos.update('a/b', { fields: { done: true } }))
 				.error?.name,
-		).toBe('InvalidStem');
+		).toBe('InvalidPath');
 		expect((await folder.tables.todos.delete(forged)).error?.name).toBe(
 			'InvalidPath',
 		);
@@ -177,16 +177,19 @@ describe('row files', () => {
 			'InvalidPath',
 		);
 
-		// An externally written row with an invalid stem stays listable and readable.
+		// An externally written row with an unusual name is an ordinary row.
 		await folder.files.create(
 			'todos/bad .md',
 			'---\ntitle: B\ndone: false\n---\n',
 		);
-		const bad = (await folder.tables.todos.list()).data!.entries.find(
-			(entry) => entry.path === 'todos/bad .md',
-		)!;
+		const bad = expectOk(
+			expectOk(await folder.tables.todos.list()).find(
+				(item) => item.path === 'todos/bad .md',
+			)!.result,
+		);
 		expect(bad.stem).toBe('bad ');
-		expect(bad.issues?.[0]?.kind).toBe('filename');
+		// A name is never a diagnostic.
+		expect(bad).toMatchObject({ parseError: undefined, issues: [] });
 		expect((await folder.tables.todos.get('bad ')).data?.path).toBe(
 			'todos/bad .md',
 		);

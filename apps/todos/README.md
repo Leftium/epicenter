@@ -273,9 +273,18 @@ without the push.
    `pull` are also available. A checkout that cannot be opened prints the
    refusal and exits 1.
 
-Write a file with invalid frontmatter (for example `printf -- '---\ntitle: *missing\n---\n' > todos/bad.md`)
-to see a row marked "Needs repair"; its title and done controls are disabled
-and structured edits are refused, and you fix it in the Source tab.
+Write a file whose text does not parse (for example `printf -- '---\ntitle: *missing\n---\n' > todos/bad.md`,
+or Markdown with no `---` lines at all) to see a row marked "Needs repair". It
+is still a todo you can select: its title, done, and notes controls are
+disabled, structured edits are refused, and you fix it in the Source tab.
+Saving text that still does not parse succeeds and keeps it marked. A todo
+that parses but has a bad field, such as `done: soon`, is marked the same way
+and keeps its other controls working. The messages shown describe the text on
+screen, saved or not.
+
+Any file name works for a todo, including a leading dot, a trailing space,
+punctuation, and `todos/.md` itself. Only `.md` in lowercase makes a file a
+todo; `todos/a.MD` is an ordinary file.
 
 ## Layout
 

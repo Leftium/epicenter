@@ -51,7 +51,7 @@ test('a session opens the folder once and releases it once', async () => {
 	const { session, library, test } = await open();
 	expect(test.opens).toBe(1);
 	expect(test.closeListeners.size).toBe(1);
-	// The first read happened: settings exist from the first launch on.
+	// The first read happened: missing settings use defaults in memory.
 	expect(library.settings.transcriptionModel).toBe('verification-model');
 
 	await session.close();
@@ -233,11 +233,10 @@ test('a layout that went away before its opening failed never starts answering',
 // ============================================================================
 
 /**
- * A workspace whose first read, or first settings write, is held open by the
- * test. The folder underneath is the real one, on a fresh directory, so
- * starting a session over it reads `kv.json` and then creates it.
+ * A workspace whose first read is held open by the test. The folder underneath
+ * is real and fresh; starting reads it without creating settings.
  */
-async function starting(hold: 'read' | 'write') {
+async function starting() {
 	const test = await openTestWorkspace();
 	cleanups.push(test.remove);
 	const { folder } = test.workspace;
@@ -256,12 +255,8 @@ async function starting(hold: 'read' | 'write') {
 			kv: {
 				...folder.kv,
 				get: async () => {
-					if (hold === 'read') await held();
+					await held();
 					return folder.kv.get();
-				},
-				create: async (...args: Parameters<typeof folder.kv.create>) => {
-					if (hold === 'write') await held();
-					return folder.kv.create(...args);
 				},
 			},
 		},
@@ -291,46 +286,43 @@ async function until(condition: () => boolean, what: string) {
 	throw new Error(`timed out waiting for ${what}`);
 }
 
-for (const hold of ['read', 'write'] as const)
-	test(`a close asked while the first ${hold} is pending is not answered until the session has started, and then its guard decides`, async () => {
-		const { test, open, begun, finish } = await starting(hold);
-		const { counts, answerClose } = closeAnswerer();
-		const mounted = mountSession(open, answerClose);
-		await begun();
+test('a close asked while the first read is pending is not answered until the session has started, and then its guard decides', async () => {
+	const { test, open, begun, finish } = await starting();
+	const { counts, answerClose } = closeAnswerer();
+	const mounted = mountSession(open, answerClose);
+	await begun();
 
-		// The person asks to close, more than once, while the session is starting.
-		test.requestClose();
-		test.requestClose();
-		await Bun.sleep(60);
+	// The person asks to close, more than once, while the session is starting.
+	test.requestClose();
+	test.requestClose();
+	await Bun.sleep(60);
 
-		// Nobody is listening yet and nobody has answered: not even `asking`.
-		expect(test.closeListeners.size).toBe(0);
-		expect(test.answers).toEqual([]);
-		expect(counts).toEqual({ started: 0, stopped: 0 });
-		if (hold === 'write')
-			// The write the session admitted has not landed; closing now would cut it.
-			expect(await Bun.file(`${test.root}/kv.json`).exists()).toBe(false);
+	// Nobody is listening yet and nobody has answered: not even `asking`.
+	expect(test.closeListeners.size).toBe(0);
+	expect(test.answers).toEqual([]);
+	expect(counts).toEqual({ started: 0, stopped: 0 });
+	expect(await Bun.file(`${test.root}/kv.json`).exists()).toBe(false);
 
-		finish();
-		const session = expectOk(await mounted.opening);
-		cleanups.push(() => session.close());
+	finish();
+	const session = expectOk(await mounted.opening);
+	cleanups.push(() => session.close());
 
-		// The kept request reached the session's guard once it existed. The
-		// session has started and holds nothing, so the guard lets it close.
-		await until(() => test.answers.length === 2, 'the guard to answer');
-		expect(test.answers).toEqual(['asking', 'proceed']);
-		expect(test.closeListeners.size).toBe(1);
-		expect(await Bun.file(`${test.root}/kv.json`).exists()).toBe(true);
-		expect(session.library.settings.transcriptionModel).toBe(
-			'verification-model',
-		);
-		// It was the guard's answer. Nothing answered for the opening unseen.
-		expect(counts).toEqual({ started: 0, stopped: 0 });
-		mounted.release();
-	});
+	// The kept request reached the session's guard once it existed. The
+	// session has started and holds nothing, so the guard lets it close.
+	await until(() => test.answers.length === 2, 'the guard to answer');
+	expect(test.answers).toEqual(['asking', 'proceed']);
+	expect(test.closeListeners.size).toBe(1);
+	expect(await Bun.file(`${test.root}/kv.json`).exists()).toBe(false);
+	expect(session.library.settings.transcriptionModel).toBe(
+		'verification-model',
+	);
+	// It was the guard's answer. Nothing answered for the opening unseen.
+	expect(counts).toEqual({ started: 0, stopped: 0 });
+	mounted.release();
+});
 
 test('a start that fails with a close pending answers nothing until everything it opened is released, and then hands over', async () => {
-	const { test, open, begun, failWith } = await starting('read');
+	const { test, open, begun, failWith } = await starting();
 	// The workspace takes a moment to close, as a folder with work under way does.
 	const closing = deferred<void>();
 	const release = test.workspace.close;
@@ -373,7 +365,7 @@ test('a start that fails with a close pending answers nothing until everything i
 });
 
 test('a layout released while its session is starting leaves nothing listening and nothing open, and answers nothing', async () => {
-	const { test, open, begun, finish } = await starting('write');
+	const { test, open, begun, finish } = await starting();
 	const { counts, answerClose } = closeAnswerer();
 	const mounted = mountSession(open, answerClose);
 	await begun();
@@ -384,8 +376,8 @@ test('a layout released while its session is starting leaves nothing listening a
 
 	await expect(mounted.opening).rejects.toThrow('released');
 	await Bun.sleep(20);
-	// The write it had admitted was allowed to land before the folder closed.
-	expect(await Bun.file(`${test.root}/kv.json`).exists()).toBe(true);
+	// The admitted read settled before the folder closed; nothing was seeded.
+	expect(await Bun.file(`${test.root}/kv.json`).exists()).toBe(false);
 	expect(test.closes).toBe(1);
 	expect(test.closeListeners.size).toBe(0);
 	expect(test.answers).toEqual([]);

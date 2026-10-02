@@ -138,7 +138,10 @@ test('browser push, native pull and push, then browser fast-forward through the 
 	expect(pulled.status).toBe('fastForwarded');
 	const entry = expectOk(await browser.tables.todos.get('milk'));
 	if (!entry) throw new Error('Expected milk todo');
-	expect(entry.fields).toEqual({ title: 'Buy oat milk', done: true });
+	expect(entry.fields).toEqual({
+		title: 'Buy oat milk',
+		done: true,
+	});
 	expect(
 		expectOk(await browser.git.log(5)).map((commit) => commit.message.trim()),
 	).toEqual([

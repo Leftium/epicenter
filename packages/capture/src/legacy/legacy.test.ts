@@ -211,12 +211,12 @@ test('a capture imports as its exact text and its thoughts in position order', a
 
 	// The folder's table reads it as a valid capture.
 	const listed = expectOk(await folder.tables.captures.list());
-	expect(listed.entries).toHaveLength(1);
-	expect(listed.entries[0]?.issues).toBeUndefined();
-	expect(String(listed.entries[0]?.fields.capturedAt)).toBe(
-		'2026-01-01T00:00:00.000Z',
-	);
-	const document = parseCapture(listed.entries[0]?.source ?? '');
+	expect(listed).toHaveLength(1);
+	const entry = expectOk(listed[0]!.result);
+	expect(entry.parseError).toBeUndefined();
+	expect(entry.issues).toEqual([]);
+	expect(String(entry.fields.capturedAt)).toBe('2026-01-01T00:00:00.000Z');
+	const document = parseCapture(entry.source);
 	expect(document.text).toBe('  Dinner\nFriday  \n');
 	expect(document.thoughts.map((thought) => thought.text)).toEqual([
 		'first',

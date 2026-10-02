@@ -1,5 +1,5 @@
 /**
- * Literal folder-relative paths and the row naming rules.
+ * Literal folder-relative paths and row addresses.
  *
  * Paths are never normalized, case folded, or aliased. A path that would need
  * rewriting to be usable is refused so that raw access and Git history address
@@ -70,33 +70,32 @@ export function ancestors(path: string): string[] {
 export const ROW_EXTENSION = '.md';
 
 /**
- * Why a stem cannot name a row file, or `undefined` when it can. A stem is a
- * single path segment; it may contain dots, since the row adds `.md`.
+ * The row file a literal stem names. The stem is used as written: nothing is
+ * trimmed, folded, or stripped, and the empty stem names `<table>/.md`.
  */
-export function stemProblem(stem: string): string | undefined {
-	if (stem === '') return 'the stem is empty';
-	if (stem.includes('/') || stem.includes('\\'))
-		return 'the stem contains a path separator';
-	if (CONTROL.test(stem)) return 'the stem contains a control character';
-	if (stem === '.' || stem === '..') return 'the stem is a relative segment';
-	if (stem.startsWith('.')) return 'the stem starts with a dot';
-	if (/[ .]$/.test(stem)) return 'the stem ends with a space or dot';
-	if (/[<>:"|?*]/.test(stem))
-		return 'the stem contains a character some filesystems refuse';
-	if (new TextEncoder().encode(`${stem}.md`).byteLength > 255)
-		return 'the filename is too long';
-	return undefined;
-}
-
 export function rowPath(table: string, stem: string): string {
 	return `${table}/${stem}${ROW_EXTENSION}`;
 }
 
 /**
+ * Why a stem does not address a row of the table, or `undefined` when it
+ * does. A stem is one literal filename segment, so the only rules are the
+ * folder's own path rules: there is no portable-name grammar (ADR-0457).
+ * Whether the backing filesystem can store the name is its answer to give.
+ */
+export function rowAddressProblem(
+	table: string,
+	stem: string,
+): string | undefined {
+	if (typeof stem !== 'string') return 'the stem is not a string';
+	if (stem.includes('/')) return 'the stem contains a path separator';
+	return pathProblem(rowPath(table, stem));
+}
+
+/**
  * The inverse of `rowPath`: the literal stem of a file directly in the table's
  * directory that ends in exactly `.md`, or `undefined` when the path is not a
- * row. The stem is not checked against `stemProblem` and may be empty
- * (`<table>/.md`).
+ * row. The stem may be empty (`<table>/.md`). `.MD` is not a row.
  */
 export function rowStemOf(table: string, path: string): string | undefined {
 	const prefix = `${table}/`;
@@ -108,8 +107,10 @@ export function rowStemOf(table: string, path: string): string | undefined {
 }
 
 /**
- * Case- and Unicode-folded spelling used only to detect destinations that
- * cannot coexist on case-insensitive filesystems. Never used for lookup.
+ * Case- and Unicode-folded spelling used only when adopting incoming history,
+ * to refuse a commit whose paths some filesystem could not hold apart
+ * (ADR-0474). Never used for lookup, and never applied to a local save: a
+ * create or rename is refused by what its own filesystem does.
  */
 export function collisionKey(path: string): string {
 	return path.normalize('NFC').toLowerCase();

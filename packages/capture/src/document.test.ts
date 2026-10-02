@@ -10,6 +10,8 @@
  *   lazy continuation, and tab-indented lines; nothing after the list is one
  * - A "## Thoughts" line inside a fence or an HTML comment is not the heading
  * - Zero headings: the body is the text, and a thought appends the section
+ * - Markdown with no frontmatter lines is not a capture: it is refused, and
+ *   no operation adds the lines
  * - Two Thoughts headings, prose before the list, or two lists refuse
  *   structured operations and leave the source as it is
  * - Edits replace one span: unknown frontmatter, a byte-order mark, CRLF
@@ -59,6 +61,9 @@ const read = (source: string) => {
 	};
 };
 
+/** The smallest frontmatter a capture file can have: both lines, no fields. */
+const HEAD = '---\n---\n';
+
 // ============================================================================
 // Reading
 // ============================================================================
@@ -80,6 +85,8 @@ test('the accepted layout reads as text and ordered thoughts', () => {
 
 test('an item owns its later paragraph, nested list, fence, and lazy line', () => {
 	const source = [
+		'---',
+		'---',
 		'Text',
 		'',
 		'## Thoughts',
@@ -108,23 +115,22 @@ test('an item owns its later paragraph, nested list, fence, and lazy line', () =
 });
 
 test('tab-indented continuation lines belong to their item', () => {
-	expect(read('## Thoughts\n\n-\tone\n\ttwo\n- three\n').thoughts).toEqual([
-		'one\ntwo',
-		'three',
-	]);
+	expect(
+		read(`${HEAD}## Thoughts\n\n-\tone\n\ttwo\n- three\n`).thoughts,
+	).toEqual(['one\ntwo', 'three']);
 });
 
 test('a Thoughts line inside a fence, comment, or quote is not the heading', () => {
-	expect(read('a\n\n```\n## Thoughts\n```\n\n## Thoughts\n\n- real\n')).toEqual(
-		{
-			refusal: undefined,
-			text: 'a\n\n```\n## Thoughts\n```',
-			thoughts: ['real'],
-		},
-	);
+	expect(
+		read(`${HEAD}a\n\n\`\`\`\n## Thoughts\n\`\`\`\n\n## Thoughts\n\n- real\n`),
+	).toEqual({
+		refusal: undefined,
+		text: 'a\n\n```\n## Thoughts\n```',
+		thoughts: ['real'],
+	});
 	expect(
 		read(
-			'a\n\n<!--\n## Thoughts\n-->\n\n> ## Thoughts\n\n## Thoughts\n\n- real\n',
+			`${HEAD}a\n\n<!--\n## Thoughts\n-->\n\n> ## Thoughts\n\n## Thoughts\n\n- real\n`,
 		),
 	).toEqual({
 		refusal: undefined,
@@ -134,23 +140,40 @@ test('a Thoughts line inside a fence, comment, or quote is not the heading', () 
 });
 
 test('with no heading the whole body is the text', () => {
-	expect(read('Just some\nMarkdown\n\n- a list\n')).toEqual({
+	expect(read(`${HEAD}Just some\nMarkdown\n\n- a list\n`)).toEqual({
 		refusal: undefined,
 		text: 'Just some\nMarkdown\n\n- a list\n',
 		thoughts: [],
 	});
 });
 
+test('Markdown with no frontmatter lines is not a capture: it reads as no text, and nothing adds the lines', () => {
+	for (const source of [
+		'Just some\nMarkdown\n',
+		'',
+		'a\n\n## Thoughts\n\n- x\n',
+	]) {
+		const document = parseCapture(source);
+		expect(document.refusal?.code).toBe('missing-frontmatter');
+		expect(document.text).toBeUndefined();
+		expect(document.thoughts).toEqual([]);
+		for (const edit of [setText(document, 'new'), addThought(document, 'new')])
+			expect(refusalOf(edit).code).toBe('missing-frontmatter');
+	}
+});
+
 test('blocks after the list and after the next heading are never thoughts', () => {
 	const document = parseCapture(
-		'T\n\n## Thoughts\n\n- one\n\nTrailing paragraph.\n\n## Later\n\n- not a thought\n',
+		`${HEAD}T\n\n## Thoughts\n\n- one\n\nTrailing paragraph.\n\n## Later\n\n- not a thought\n`,
 	);
 	expect(document.thoughts.map((thought) => thought.text)).toEqual(['one']);
 	expect(document.hasOtherContent).toBe(true);
 });
 
 test('an empty section followed by another heading reads as no thoughts', () => {
-	expect(read('T\n\n## Thoughts\n\n## Later\n\n- not a thought\n')).toEqual({
+	expect(
+		read(`${HEAD}T\n\n## Thoughts\n\n## Later\n\n- not a thought\n`),
+	).toEqual({
 		refusal: undefined,
 		text: 'T',
 		thoughts: [],
@@ -188,7 +211,9 @@ test.each([
 		'---\ncapturedAt: x\n\ntext\n',
 		'unclosed-frontmatter',
 	],
-] as const)('%s refuses structured reading and every operation', (_name, source, code) => {
+] as const)('%s refuses structured reading and every operation', (_name, body, code) => {
+	// Every case but the unclosed one is a body under complete frontmatter.
+	const source = body.startsWith('---') ? body : `${HEAD}${body}`;
 	const document = parseCapture(source);
 	expect(document.refusal?.code).toBe(code);
 	expect(document.text).toBeUndefined();
@@ -260,19 +285,19 @@ test('swapping exchanges the two items and keeps the bytes between them', () => 
 });
 
 test('a loose list keeps its blank lines through add, swap, and delete', () => {
-	const source = 'T\n\n## Thoughts\n\n- a\n\n- b\n\nAfter.\n';
+	const source = `${HEAD}T\n\n## Thoughts\n\n- a\n\n- b\n\nAfter.\n`;
 	const document = parseCapture(source);
 	expect(sourceOf(addThought(document, 'c'))).toBe(
-		'T\n\n## Thoughts\n\n- a\n\n- b\n\n- c\n\nAfter.\n',
+		`${HEAD}T\n\n## Thoughts\n\n- a\n\n- b\n\n- c\n\nAfter.\n`,
 	);
 	expect(
 		sourceOf(swapThoughts(document, nth(document, 0), nth(document, 1))),
-	).toBe('T\n\n## Thoughts\n\n- b\n\n- a\n\nAfter.\n');
+	).toBe(`${HEAD}T\n\n## Thoughts\n\n- b\n\n- a\n\nAfter.\n`);
 	expect(sourceOf(deleteThought(document, nth(document, 0)))).toBe(
-		'T\n\n## Thoughts\n\n- b\n\nAfter.\n',
+		`${HEAD}T\n\n## Thoughts\n\n- b\n\nAfter.\n`,
 	);
 	expect(sourceOf(deleteThought(document, nth(document, 1)))).toBe(
-		'T\n\n## Thoughts\n\n- a\n\nAfter.\n',
+		`${HEAD}T\n\n## Thoughts\n\n- a\n\nAfter.\n`,
 	);
 });
 
@@ -324,11 +349,11 @@ test('the full-source textarea round trip keeps mixed line endings', () => {
 // ============================================================================
 
 test('a thought on external Markdown with no heading appends the section', () => {
-	expect(sourceOf(addThought(parseCapture('Just text'), 'hi'))).toBe(
-		'Just text\n\n## Thoughts\n\n- hi\n',
+	expect(sourceOf(addThought(parseCapture(`${HEAD}Just text`), 'hi'))).toBe(
+		`${HEAD}Just text\n\n## Thoughts\n\n- hi\n`,
 	);
-	expect(sourceOf(addThought(parseCapture('Just text\n'), 'hi'))).toBe(
-		'Just text\n\n## Thoughts\n\n- hi\n',
+	expect(sourceOf(addThought(parseCapture(`${HEAD}Just text\n`), 'hi'))).toBe(
+		`${HEAD}Just text\n\n## Thoughts\n\n- hi\n`,
 	);
 	expect(
 		sourceOf(addThought(parseCapture('---\nx: 1\n---\n'), 'multi\nline')),
@@ -338,12 +363,15 @@ test('a thought on external Markdown with no heading appends the section', () =>
 test('a thought on an empty section lands under the heading, before what follows', () => {
 	expect(
 		sourceOf(
-			addThought(parseCapture('T\n\n## Thoughts\n\n## Later\n\nb\n'), 'x'),
+			addThought(
+				parseCapture(`${HEAD}T\n\n## Thoughts\n\n## Later\n\nb\n`),
+				'x',
+			),
 		),
-	).toBe('T\n\n## Thoughts\n\n- x\n\n## Later\n\nb\n');
-	expect(sourceOf(addThought(parseCapture('T\n\n## Thoughts'), 'x'))).toBe(
-		'T\n\n## Thoughts\n\n- x\n',
-	);
+	).toBe(`${HEAD}T\n\n## Thoughts\n\n- x\n\n## Later\n\nb\n`);
+	expect(
+		sourceOf(addThought(parseCapture(`${HEAD}T\n\n## Thoughts`), 'x')),
+	).toBe(`${HEAD}T\n\n## Thoughts\n\n- x\n`);
 });
 
 test('an unclosed fence refuses an appended section and leaves the source', () => {
@@ -352,22 +380,22 @@ test('an unclosed fence refuses an appended section and leaves the source', () =
 });
 
 test('text that would absorb or duplicate the section is refused', () => {
-	const document = parseCapture('a\n\n## Thoughts\n\n- t\n');
+	const document = parseCapture(`${HEAD}a\n\n## Thoughts\n\n- t\n`);
 	expect(refusalOf(setText(document, 'a\n```\nopen')).code).toBe('unverified');
 	expect(refusalOf(setText(document, 'a\n\n## Thoughts')).code).toBe(
 		'unverified',
 	);
 	expect(sourceOf(setText(document, 'a\n```\nclosed\n```'))).toBe(
-		'a\n```\nclosed\n```\n\n## Thoughts\n\n- t\n',
+		`${HEAD}a\n\`\`\`\nclosed\n\`\`\`\n\n## Thoughts\n\n- t\n`,
 	);
 });
 
 test('a heading typed inside a thought stays inside that thought', () => {
-	const document = parseCapture('a\n\n## Thoughts\n\n- t\n- u\n');
+	const document = parseCapture(`${HEAD}a\n\n## Thoughts\n\n- t\n- u\n`);
 	const next = sourceOf(
 		editThought(document, nth(document, 0), 'x\n\n## Thoughts'),
 	);
-	expect(next).toBe('a\n\n## Thoughts\n\n- x\n\n  ## Thoughts\n- u\n');
+	expect(next).toBe(`${HEAD}a\n\n## Thoughts\n\n- x\n\n  ## Thoughts\n- u\n`);
 	expect(read(next).thoughts).toEqual(['x\n\n## Thoughts', 'u']);
 	expect(refusalOf(addThought(document, '  \n ')).code).toBe('empty');
 });
@@ -377,13 +405,13 @@ test('a heading typed inside a thought stays inside that thought', () => {
 // ============================================================================
 
 test('a thought from another parse is refused, even with equal text at the same index', () => {
-	const source = 'a\n\n## Thoughts\n\n- same\n- same\n- three\n';
+	const source = `${HEAD}a\n\n## Thoughts\n\n- same\n- same\n- three\n`;
 	const shown = parseCapture(source);
 	// The same bytes parsed again are a different generation.
 	const reparsed = parseCapture(source);
 	// A changed source that still has "same" at index 0.
 	const changed = parseCapture(
-		'a changed\n\n## Thoughts\n\n- same\n- same\n- three\n',
+		`${HEAD}a changed\n\n## Thoughts\n\n- same\n- same\n- three\n`,
 	);
 	for (const document of [reparsed, changed]) {
 		expect(refusalOf(editThought(document, nth(shown, 0), 'x')).code).toBe(
@@ -408,7 +436,7 @@ test('a thought from another parse is refused, even with equal text at the same 
 	).toBe('stale');
 	// The thoughts of the document itself are accepted.
 	expect(sourceOf(deleteThought(shown, nth(shown, 0)))).toBe(
-		'a\n\n## Thoughts\n\n- same\n- three\n',
+		`${HEAD}a\n\n## Thoughts\n\n- same\n- three\n`,
 	);
 });
 

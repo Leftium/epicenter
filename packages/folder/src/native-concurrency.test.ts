@@ -216,7 +216,10 @@ test('racing current-row updates return a conflict without retrying', async () =
 				fields: firstWon ? { done: true } : { title: 'Renamed' },
 			}),
 		);
-		expect(retried.fields).toEqual({ title: 'Renamed', done: true });
+		expect(retried.fields).toEqual({
+			title: 'Renamed',
+			done: true,
+		});
 	} finally {
 		await opened.close();
 	}

@@ -714,23 +714,23 @@ When you add an ADR, add its row here.
 | [0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) | SQLite is a local capability for derived or transactional state | Proposed (file-backed application stores and derived indexes unbuilt) |
 | [0460](0460-vocab-and-whispering-are-braden-wongs-apps-built-on-epicenter.md) | Vocab and Whispering are Braden Wong's apps built on Epicenter | Proposed (personal-domain homes and Whispering ID migration unbuilt) |
 | [0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) | Portable data folders live under Local and derived account scopes | Proposed (Whispering Local default implemented; account folders and explicit transfers unbuilt) |
-| [0462](0462-file-table-entries-carry-source-and-use-issues-for-conformance.md) | File table entries carry source and use issues for conformance | Proposed (file-backed table reads unbuilt) |
+| [0462](0462-file-table-entries-carry-source-and-use-issues-for-conformance.md) | Table snapshots expose usable fields and source diagnostics | Proposed |
 | [0463](0463-a-data-folder-exposes-a-generated-root-sqlite-index.md) | A data folder exposes a generated root SQLite index | Proposed (query generator and public folder publication unbuilt) |
-| [0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md) | File table updates conditionally replace the captured whole file | Proposed (file-backed table saves unbuilt) |
+| [0464](0464-file-table-updates-conditionally-replace-the-captured-whole-file.md) | File table updates conditionally replace the captured whole file | Proposed |
 | [0465](0465-editors-keep-unsaved-source-separate-from-the-saved-baseline.md) | Editors keep unsaved source separate from the saved baseline | Proposed (file-backed editor lifecycle unbuilt) |
 | [0466](0466-opened-media-provides-stable-input-bytes.md) | Opened media provides stable input bytes | Proposed (stable media reads and transcription migration unbuilt) |
 | [0467](0467-interrupted-file-operations-report-partial-results.md) | Interrupted file operations report partial results | Proposed (retained operations and resolution unbuilt) |
 | [0468](0468-file-saves-succeed-independently-of-automatic-commits.md) | File saves succeed independently of automatic commits | Proposed (best-effort commits and sync UX unbuilt) |
 | [0469](0469-generated-commit-messages-describe-captured-file-changes.md) | Generated commit messages describe captured file changes | Proposed (tree-derived message generation unbuilt) |
 | [0470](0470-epicenter-helps-people-make-software-that-is-unmistakably-theirs.md) | Epicenter helps people make software that is unmistakably theirs | Proposed (product articulation; public adoption and independent browser folder access unbuilt) |
-| [0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md) | A data folder handle exposes tables, KV, files, and Git | Proposed (file-backed handle, Git status/commands, and migrated callers unbuilt) |
+| [0471](0471-a-data-folder-handle-exposes-tables-kv-and-files.md) | A data folder handle exposes tables, KV, files, and Git | Proposed |
 | [0472](0472-epicenter-so-is-canonical-and-product-domains-need-a-distinct-identity.md) | Epicenter.so is canonical, and product domains need a distinct identity | Proposed |
 | [0473](0473-personal-app-hosting-keeps-addresses-separate-from-data-identity.md) | Personal app hosting keeps addresses separate from data identity | Proposed |
 | [0474](0474-incoming-file-folder-sync-is-an-explicit-clean-fast-forward.md) | Incoming file-folder sync is an explicit clean fast-forward | Proposed (Todos implementation in progress) |
 | [0484](0484-conflict-presentation-follows-the-edit-being-resolved.md) | Conflict presentation follows the edit being resolved | Proposed (consistent editor presentation unbuilt) |
 | [0485](0485-applications-choose-editor-observation-and-save-policies.md) | Applications choose editor observation and save policies | Proposed |
 | [0486](0486-folder-domain-methods-share-accounted-storage.md) | Folder domain methods share accounted storage | Proposed |
-| [0487](0487-kv-commands-distinguish-creation-from-current-source-updates.md) | KV commands distinguish creation from current-source updates | Proposed |
+| [0487](0487-kv-commands-distinguish-creation-from-current-source-updates.md) | One KV file exposes stored values; applications own defaults | Proposed |
 | [0488](0488-cloud-folders-use-independent-git-histories.md) | Cloud folders use independent Git histories | Proposed (unbuilt; permanently unique repository URLs, lifecycle listing, hosting and credential gates) |
 | [0489](0489-cloud-folder-transfers-are-explicit-and-bootstrap-before-opening.md) | Cloud folder transfers are explicit and bootstrap before opening | Proposed (unbuilt; staged account setup, explicit transfers, ownership locks) |
 | [0490](0490-the-cli-discovers-folders-and-delegates-history-to-git.md) | The CLI discovers folders and delegates history to Git | Proposed (unbuilt; account setup and Git passthrough) |

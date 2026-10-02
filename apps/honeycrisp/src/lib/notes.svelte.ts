@@ -25,7 +25,6 @@ import {
 	type FileCapture,
 	type FileListing,
 	type GitSnapshot,
-	readSource,
 	rowPath,
 } from '@epicenter/folder';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -33,6 +32,7 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type FolderEntry,
 	type FolderFields,
+	folderLabel,
 	NOTES,
 	type NoteEntry,
 	type NoteFields,
@@ -60,6 +60,7 @@ import {
 	joinPath,
 	nameProblem,
 	readTextFile,
+	submittedText,
 } from './files.js';
 import { applyFields, displayTitle, newSource } from './note-source.js';
 import type { NotesHost } from './platform/types.js';
@@ -75,12 +76,7 @@ export type OpenFile =
 	| { readonly kind: 'binary' | 'tooLarge'; readonly size: number };
 
 export type Selection =
-	| {
-			readonly kind: 'note';
-			readonly session: FileSession;
-			/** The listed row, or undefined when the file left the folder. */
-			readonly entry: NoteEntry | undefined;
-	  }
+	| { readonly kind: 'note'; readonly session: FileSession }
 	| { readonly kind: 'file'; readonly path: string; readonly file: OpenFile };
 
 /** What a confirmed deletion removes, captured when the person was asked. */
@@ -189,6 +185,7 @@ export function createNotes(host: NotesHost) {
 	let notes = $state.raw<NoteEntry[]>([]);
 	let folders = $state.raw<FolderEntry[]>([]);
 	let unreadable = $state.raw<{ path: string; message: string }[]>([]);
+	let unreadableFolders = $state.raw<{ path: string; message: string }[]>([]);
 	let listError = $state<string | undefined>();
 	let listing = $state.raw<FileListing | undefined>();
 	let listingError = $state<string | undefined>();
@@ -217,7 +214,7 @@ export function createNotes(host: NotesHost) {
 
 	/**
 	 * Every run reads the same signals whatever is selected: the open-file
-	 * collection whole, the note rows, and the path. Svelte re-runs a derived with the
+	 * collection whole and the path. Svelte re-runs a derived with the
 	 * values from before an update while an effect that read it is torn down,
 	 * and keeps that run's dependencies. A lookup by the selected key alone
 	 * would leave this subscribed to the path just left, so a file that
@@ -227,16 +224,11 @@ export function createNotes(host: NotesHost) {
 	 */
 	const selection = $derived.by((): Selection | undefined => {
 		const files = new Map(openFiles);
-		const rows = notes;
 		const path = selectedPath;
 		if (path === undefined) return undefined;
 		const file = files.get(path);
 		if (file?.kind === 'text' && noteIdOf(path) !== undefined)
-			return {
-				kind: 'note',
-				session: file.session,
-				entry: rows.find((entry) => entry.path === path),
-			};
+			return { kind: 'note', session: file.session };
 		return file && { kind: 'file', path, file };
 	});
 
@@ -438,13 +430,19 @@ export function createNotes(host: NotesHost) {
 			listError = rows.error.message;
 		} else {
 			listError = undefined;
-			notes = [...rows.data.entries];
-			unreadable = rows.data.unreadable.map((item) => ({
-				path: item.path,
-				message: item.error.message,
-			}));
+			// A file that was read is a note to select, whether or not its text
+			// parses. A file that could not be read has no text to open.
+			notes = rows.data.flatMap(({ result }) => result.data ?? []);
+			unreadable = rows.data.flatMap(({ path, result }) =>
+				result.error ? { path, message: result.error.message } : [],
+			);
 		}
-		if (!folderRows.error) folders = [...folderRows.data.entries];
+		if (!folderRows.error) {
+			folders = folderRows.data.flatMap(({ result }) => result.data ?? []);
+			unreadableFolders = folderRows.data.flatMap(({ path, result }) =>
+				result.error ? { path, message: result.error.message } : [],
+			);
+		}
 		if (files.error) {
 			listingError = files.error.message;
 		} else {
@@ -593,15 +591,17 @@ export function createNotes(host: NotesHost) {
 		const patched = applyFields(listed.source, fields);
 		if (patched.error !== null) return patched.error;
 		const base: FileCapture = { path, sha256: listed.sha256 };
+		// The record holds the text of the bytes sent: what a read of them returns.
+		const { source } = submittedText(patched.data);
 		const change = {
 			kind: 'replace',
 			base,
-			source: patched.data,
+			source,
 			label: `Change to "${basename(path)}"`,
 		} as const;
 		const outcome = await send(
 			pathsOf(change),
-			() => replaceFile(folder.files, base, patched.data),
+			() => replaceFile(folder.files, base, source),
 			keep(change),
 		);
 		await refresh();
@@ -616,7 +616,8 @@ export function createNotes(host: NotesHost) {
 	): Promise<Result<Capture, string>> {
 		const source = newSource(fields);
 		if (source.error !== null) return source;
-		const text = source.data;
+		// The record holds the text of the bytes sent: what a read of them returns.
+		const text = submittedText(source.data).source;
 		const change = { kind: 'create', path, source: text, label } as const;
 		const created = await send(
 			pathsOf(change),
@@ -636,9 +637,9 @@ export function createNotes(host: NotesHost) {
 		get folders() {
 			return folders;
 		},
-		/** Note files whose bytes could not be read as text. */
+		/** Note and folder files whose bytes could not be read as text. */
 		get unreadable() {
-			return unreadable;
+			return [...unreadable, ...unreadableFolders];
 		},
 		get listError() {
 			return listError;
@@ -823,16 +824,31 @@ export function createNotes(host: NotesHost) {
 		 * moved stops the operation before the folder goes, so it can be retried
 		 * without leaving a note pointing at a folder that no longer exists.
 		 * The folder's file is removed only as it was listed when this was asked.
+		 *
+		 * Moving every note out needs every note's folder to be known. A note
+		 * whose text does not parse, whose `folderId` did not validate, or whose
+		 * file could not be read might be in this folder, so the folder is not
+		 * deleted until those are repaired. Not knowing is not the same as no.
 		 */
 		async deleteFolder(entry: FolderEntry): Promise<string | undefined> {
 			const blocked = held(entry.path);
 			if (blocked !== undefined) return blocked;
-			// Notes name a folder by its file stem. One that breaks the naming
-			// rules is repaired from Files before its notes are moved by it.
-			if (entry.issues?.some((issue) => issue.kind === 'filename'))
-				return 'This folder file has an unusable name.';
+			if (listError !== undefined)
+				return `The notes could not be listed, so it is not known which are in this folder: ${listError}`;
+			// A folder's id is its literal file stem, whatever that name is.
 			const id = entry.stem;
-			for (const note of notes.filter((item) => item.fields.folderId === id)) {
+			const unknown = [
+				...notes.filter((note) => !Object.hasOwn(note.fields, 'folderId')),
+				...unreadable,
+			];
+			if (unknown.length > 0) {
+				const names = unknown.slice(0, 3).map((note) => basename(note.path));
+				if (unknown.length > names.length) names.push('and more');
+				return `Some notes cannot be read well enough to tell which folder they are in (${names.join(', ')}). Repair or remove them first, so no note is left pointing at a folder that is gone.`;
+			}
+			for (const note of notes.filter(
+				(item) => item.fields.folderId === id,
+			)) {
 				const problem = await patchFields(note.path, { folderId: null });
 				if (problem !== undefined)
 					return `A note could not be moved out of the folder: ${problem}`;
@@ -841,7 +857,7 @@ export function createNotes(host: NotesHost) {
 			const change = {
 				kind: 'remove',
 				from,
-				label: `Delete folder "${entry.fields.name ?? id}"`,
+				label: `Delete folder "${folderLabel(entry)}"`,
 			} as const;
 			const session = sessionAt(entry.path);
 			// An open file's session keeps an unknown outcome itself.
@@ -1064,8 +1080,9 @@ export function createNotes(host: NotesHost) {
 			}
 			let title: string | undefined;
 			if (noteIdOf(path) !== undefined && captured.source !== undefined) {
-				const read = readSource(captured.source);
-				title = displayTitle(read.values?.title, read.body);
+				// A note whose text does not parse is named by nothing but its file.
+				const read = folder.tables.notes.inspect(captured.source);
+				title = displayTitle(read.fields.title, read.body);
 			}
 			return Ok({
 				kind: 'file',

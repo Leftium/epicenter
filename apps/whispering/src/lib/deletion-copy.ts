@@ -9,10 +9,10 @@ import type { RecordingEntry } from './editor.svelte.js';
 import { basename } from './files.js';
 import type { Deletion } from './library.svelte.js';
 
-/** A recording's title, or its ID when the title is empty or unreadable. */
+/** A recording's title, or its ID when the title is empty or did not validate. */
 export function recordingTitle(entry: RecordingEntry): string {
-	const title = entry.fields.title;
-	if (typeof title === 'string' && title.trim() !== '') return title;
+	const { title } = entry.fields;
+	if (title !== undefined && title.trim() !== '') return title;
 	// An empty ID (`recordings/.md`) is a real address but not a readable label.
 	return entry.stem === '' ? entry.path : entry.stem;
 }
@@ -62,10 +62,10 @@ export function describeDeletion(
 		}
 		case 'transformation': {
 			const { entry, results } = deletion;
+			const named = entry.fields.title;
 			const title =
-				typeof entry.fields.title === 'string' &&
-				entry.fields.title.trim() !== ''
-					? entry.fields.title
+				named !== undefined && named.trim() !== ''
+					? named
 					: basename(entry.path);
 			return {
 				title: `Delete the transformation “${title}”?`,

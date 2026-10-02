@@ -21,9 +21,14 @@
  */
 import '../src/lib/svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
-import { hashBytes, readSource } from '@epicenter/folder';
+import { hashBytes } from '@epicenter/folder';
 import { undoDepth } from 'prosemirror-history';
 import { createRichSession } from '../src/lib/editor/rich-session.js';
+import {
+	inspectNote as inspect,
+	listingOf,
+	noteEntry,
+} from '../src/lib/inspect.test-support.js';
 import {
 	type CloseRequest,
 	openGuarded,
@@ -79,14 +84,6 @@ function folder() {
 	let closed = 0;
 
 	const sha256 = (source: string) => hashBytes(encoder.encode(source));
-	const note = async (source: string) => ({
-		path: NOTE_PATH,
-		stem: 'a',
-		source,
-		sha256: await sha256(source),
-		fields: { title: 'A' },
-		body: readSource(source).body ?? '',
-	});
 	async function write(path: string, source: string) {
 		waiting += 1;
 		try {
@@ -109,19 +106,16 @@ function folder() {
 		folder: {
 			tables: {
 				notes: {
+					inspect,
 					list: async () => ({
-						data: {
-							entries: [await note(files.get(NOTE_PATH) as string)],
-							unreadable: [],
-						},
+						data: listingOf([
+							await noteEntry(NOTE_PATH, files.get(NOTE_PATH) as string),
+						]),
 						error: null,
 					}),
 				},
 				folders: {
-					list: async () => ({
-						data: { entries: [], unreadable: [] },
-						error: null,
-					}),
+					list: async () => ({ data: listingOf([]), error: null }),
 				},
 			},
 			files: {
@@ -352,7 +346,7 @@ test('a raw file draft that cannot be saved holds the close until the person cho
 
 test('a rich-text edit that is still saving is written before the close is approved', async () => {
 	const { gate, disk, notes, draft, prompts } = await editing(NOTE_PATH);
-	const rich = createRichSession(draft);
+	const rich = createRichSession(draft, { inspect });
 	if (rich === undefined) throw new Error('The note is not rich text');
 	expect(rich.apply(rich.state.tr.insertText('rich ', 1))).toBeDefined();
 	expect(draft.dirty).toBe(true);
@@ -374,7 +368,7 @@ test('a rich-text edit that is still saving is written before the close is appro
 	expect(prompts).toEqual([]);
 	expect(gate.accepted('approve')).toEqual(['approve:1:1']);
 	const saved = disk.saved(NOTE_PATH) as string;
-	expect(readSource(saved).body).toBe('rich body\n');
+	expect(inspect(saved).body).toBe('rich body\n');
 	// The person's own frontmatter is as they wrote it.
 	expect(saved).toContain('# kept\nextra: 1\n');
 	expect(await gate.close()).toBe('proceed');
@@ -382,33 +376,17 @@ test('a rich-text edit that is still saving is written before the close is appro
 
 test('a rich-text draft in conflict with the file is kept when the person keeps editing', async () => {
 	const { gate, disk, notes, draft, prompts } = await editing(NOTE_PATH);
-	const rich = createRichSession(draft);
+	const rich = createRichSession(draft, { inspect });
 	if (rich === undefined) throw new Error('The note is not rich text');
 	expect(rich.apply(rich.state.tr.insertText('mine ', 1))).toBeDefined();
 	const mine = draft.buffer;
 	const history = undoDepth(rich.state);
 	// Another program rewrote the file; the refresh finds it.
 	const theirs = NOTE.replace('body', 'theirs');
-	const listed = notes.host.folder.tables.notes.list;
-	notes.host.folder.tables.notes.list = async () => {
-		const rows = await listed();
-		if (rows.error) return rows;
-		const [row] = rows.data.entries;
-		if (row === undefined) return rows;
-		return {
-			data: {
-				...rows.data,
-				entries: [
-					{
-						...row,
-						source: theirs,
-						sha256: await hashBytes(encoder.encode(theirs)),
-					},
-				],
-			},
-			error: null,
-		};
-	};
+	notes.host.folder.tables.notes.list = async () => ({
+		data: listingOf([await noteEntry(NOTE_PATH, theirs)]),
+		error: null,
+	});
 	await notes.refresh();
 	expect(draft.status).toBe('conflict');
 	const reviewed = draft.external;

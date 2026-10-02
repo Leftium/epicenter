@@ -10,6 +10,8 @@
  * - A clean session adopts an external change and writes nothing back
  * - A dirty session keeps its text and holds the external version apart
  * - A save takes the text as it is when asked for, and acknowledges only that
+ * - What a save sends, keeps, and acknowledges is the text of its bytes: an
+ *   unpaired surrogate settles as its replacement and is not sent again
  * - A review choice names one observed version; a newer one invalidates it,
  *   and a refused choice leaves the saved base and the conflict as they were
  * - An unconfirmed save is kept as it was sent through anything else that is
@@ -39,6 +41,13 @@ const PATH = 'notes/a.md';
 const ELSEWHERE = 'notes/b.md';
 
 const versionOf = (source: string) => hashBytes(encoder.encode(source));
+
+/** A file holds bytes: what a write stores is the text its bytes decode to. */
+const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
+const textOf = (content: string | Uint8Array) =>
+	decoder.decode(
+		typeof content === 'string' ? encoder.encode(content) : content,
+	);
 
 /** What the next change does instead of answering plainly. */
 type Plan =
@@ -198,12 +207,12 @@ function disk(initial: string | undefined) {
 				return Ok({ path, sha256: await hashBytes(bytes), bytes });
 			},
 			create(path: string, content: string | Uint8Array) {
-				const source = content as string;
+				const source = textOf(content);
 				requests.push({ create: path, source });
 				return write({ kind: 'create', path, source });
 			},
 			replace(file: FileCapture, content: string | Uint8Array) {
-				const source = content as string;
+				const source = textOf(content);
 				requests.push({ replace: file.path, source, expected: file.sha256 });
 				return write({
 					kind: 'replace',
@@ -461,6 +470,51 @@ test('typing during a save stays dirty after the submitted text is acknowledged'
 	expect(session.attempt).toBeUndefined();
 });
 
+test('a save acknowledges the text of the bytes it sent: an unpaired surrogate settles, and the same bytes are not sent again', async () => {
+	const { files, session } = await open('one\n');
+	// A byte order mark, CRLF, and a surrogate pair are saved as typed. The
+	// unpaired surrogate cannot be: its bytes are the replacement character's.
+	const typed = '﻿lone \uD800 pair \u{1F600}\r\n';
+	const stored = typed.replace('\uD800', '�');
+	session.input(typed);
+	await session.save();
+	expect(files.at()).toBe(stored);
+	expect(session.saved).toEqual({
+		path: PATH,
+		source: stored,
+		sha256: await versionOf(stored),
+	});
+	expect(session.buffer).toBe(stored);
+	expect(session.status).toBe('saved');
+	expect(await session.settle()).toBe(true);
+
+	// Typed again, it is the saved bytes: nothing is sent, and nothing is dirty.
+	session.input(typed);
+	expect(await session.settle()).toBe(true);
+	expect(session.buffer).toBe(stored);
+	expect(files.asked).toEqual([stored]);
+});
+
+test('typing during a save whose text encoding changed stays as typed', async () => {
+	const { files, session } = await open('one\n');
+	session.input('a\uD800');
+	const asked = files.hold();
+	const saving = session.save();
+	await asked;
+	expect(session.attempt).toMatchObject({ source: 'a�', state: 'sent' });
+	session.input('a\uD800b');
+	files.release();
+	await saving;
+	expect(session.saved.source).toBe('a�');
+	// Other bytes than the ones acknowledged: the buffer is left alone.
+	expect(session.buffer).toBe('a\uD800b');
+	expect(session.dirty).toBe(true);
+	await session.save();
+	expect(files.asked).toEqual(['a�', 'a�b']);
+	expect(session.buffer).toBe('a�b');
+	expect(session.status).toBe('saved');
+});
+
 test('a stale save is refused and the draft is kept', async () => {
 	const { files, session } = await open('one\n');
 	session.input('mine\n');
@@ -683,6 +737,33 @@ test('an unconfirmed save pauses saving, and its retry sends the same text on th
 	expect((await files.land()).error?.name).toBe('Conflict');
 	await session.save();
 	expect(files.at()).toBe('A and B\n');
+});
+
+test('an unconfirmed save of an unpaired surrogate is kept as the text of its bytes: its retry sends those bytes, and the draft stays until then', async () => {
+	const { files, session } = await open('one\n');
+	const base = session.saved.sha256;
+	session.input('A \uD800\n');
+	files.next({ kind: 'defer' });
+	await session.save();
+	expect(session.attempt).toMatchObject({
+		kind: 'replace',
+		path: PATH,
+		source: 'A �\n',
+		expectedSha256: base,
+		state: 'unconfirmed',
+	});
+	// Nothing is known to be saved, so the draft is as it was typed.
+	expect(session.buffer).toBe('A \uD800\n');
+	expect(await session.settle()).toBe(false);
+
+	await session.retry();
+	const sent = { replace: PATH, source: 'A �\n', expected: base };
+	expect(files.requests).toEqual([sent, sent]);
+	expect(session.attempt).toBeUndefined();
+	expect(session.saved.source).toBe('A �\n');
+	expect(session.buffer).toBe('A �\n');
+	expect(session.status).toBe('saved');
+	expect((await files.land()).error?.name).toBe('Conflict');
 });
 
 test('a retry that is refused because the text is already there reconciles on that equality, and newer typing is dirty against it', async () => {

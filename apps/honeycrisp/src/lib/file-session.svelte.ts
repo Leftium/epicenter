@@ -11,7 +11,10 @@
  *   view, the Source view, and the metadata controls all edit this one string.
  * - `attempt` is exactly what a write submitted: the path, the text, and the
  *   condition. It is `sent` until the folder replies, and `unconfirmed` when
- *   the reply cannot say whether the write happened.
+ *   the reply cannot say whether the write happened. Its text is the text of
+ *   the bytes that were sent, which differs from the typed string only where
+ *   encoding replaced an unpaired surrogate, so it is what a read of those
+ *   bytes returns.
  * - `pathChange` is a move or a removal of this file that was submitted: the
  *   capture it named and, for a move, the destination. It is kept when its
  *   outcome is unknown or partial.
@@ -23,7 +26,8 @@
  *
  * - A successful write acknowledges the submitted text at the capture the
  *   folder returned. Nothing is read to confirm it, and typing during the
- *   write stays dirty.
+ *   write stays dirty. A buffer that is the same bytes as the saved text
+ *   shows the saved text, so it is not dirty and is not sent again.
  * - A refusal wrote nothing. `saved` and `external` are left as they are until
  *   a read says otherwise.
  * - An unconfirmed write stays exactly as it was sent, and nothing more is
@@ -53,7 +57,7 @@ import {
 	type FolderFiles,
 } from '@epicenter/folder';
 import type { Result } from 'wellcrafted/result';
-import { type Capture, readTextFile } from './files.js';
+import { type Capture, readTextFile, submittedText } from './files.js';
 
 // ============================================================================
 // The folder calls
@@ -115,25 +119,33 @@ async function ask<T>(
 	};
 }
 
-/** Save `source` as a file that must not exist yet. */
+/**
+ * Save `text` as a file that must not exist yet. The capture's source is the
+ * text of the bytes that were sent.
+ */
 export async function createFile(
 	files: Pick<FolderFiles, 'create'>,
 	path: string,
-	source: string,
+	text: string,
 ): Promise<FileOutcome<Capture>> {
-	const created = await ask(() => files.create(path, source));
+	const { bytes, source } = submittedText(text);
+	const created = await ask(() => files.create(path, bytes));
 	return created.kind === 'done'
 		? { kind: 'done', value: { ...created.value, source } }
 		: created;
 }
 
-/** Save `source` over a file only while it still holds the captured bytes. */
+/**
+ * Save `text` over a file only while it still holds the captured bytes. The
+ * capture's source is the text of the bytes that were sent.
+ */
 export async function replaceFile(
 	files: Pick<FolderFiles, 'replace'>,
 	base: FileCapture,
-	source: string,
+	text: string,
 ): Promise<FileOutcome<Capture>> {
-	const replaced = await ask(() => files.replace(base, source));
+	const { bytes, source } = submittedText(text);
+	const replaced = await ask(() => files.replace(base, bytes));
 	return replaced.kind === 'done'
 		? { kind: 'done', value: { ...replaced.value, source } }
 		: replaced;
@@ -191,7 +203,10 @@ export type External =
 	| { readonly kind: 'removed' }
 	| { readonly kind: 'unreadable'; readonly message: string };
 
-/** One submitted write: where, what text, and on what condition. */
+/**
+ * One submitted write: where, what text, and on what condition. `source` is
+ * the text of the bytes sent, so it encodes to exactly those bytes again.
+ */
 type Submission = { readonly path: string; readonly source: string } & (
 	| { readonly kind: 'create' }
 	| { readonly kind: 'replace'; readonly expectedSha256: string }
@@ -321,11 +336,29 @@ export function createFileSession(
 		}
 	}
 
-	/** Agree that `next` is what the file holds. Neither the buffer nor an attempt is touched. */
+	/**
+	 * Show the saved text when the buffer is the same bytes. The two differ as
+	 * strings only where encoding replaced an unpaired surrogate. The file can
+	 * never hold that string, so it would stay dirty and be sent again without
+	 * end. Typing that encodes to other bytes is left as it is.
+	 */
+	function acknowledge() {
+		if (
+			buffer !== saved.source &&
+			submittedText(buffer).source === saved.source
+		)
+			buffer = saved.source;
+	}
+
+	/**
+	 * Agree that `next` is what the file holds. No attempt is touched, and the
+	 * buffer keeps every byte it has.
+	 */
 	function agree(next: Capture) {
 		saved = next;
 		external = undefined;
 		failure = undefined;
+		acknowledge();
 	}
 
 	function apply(observed: Observed): ObserveOutcome {
@@ -478,11 +511,14 @@ export function createFileSession(
 	}
 
 	/**
-	 * Save `source`, the buffer as it was when the save was asked for, over
-	 * whatever this session agrees is saved when its turn comes.
+	 * Save `text`, the buffer as it was when the save was asked for, over
+	 * whatever this session agrees is saved when its turn comes. Text whose
+	 * bytes are already the saved ones is not sent.
 	 */
-	async function saveText(source: string, typed: object) {
-		if (!idle() || typed !== typedOver || source === saved.source) return;
+	async function saveText(text: string, typed: object) {
+		if (!idle() || typed !== typedOver || text === saved.source) return;
+		const { source } = submittedText(text);
+		if (source === saved.source) return acknowledge();
 		const sent: Submission = {
 			kind: 'replace',
 			path: saved.path,
@@ -666,7 +702,7 @@ export function createFileSession(
 		saveMine(reviewed: External, alternate?: () => string): Promise<boolean> {
 			if (!admits() || reviewed !== external) return Promise.resolve(false);
 			clearTimeout(timer);
-			const source = buffer;
+			const text = buffer;
 			return exclusive(async () => {
 				if (
 					reviewed !== external ||
@@ -674,6 +710,7 @@ export function createFileSession(
 					pathChange !== undefined
 				)
 					return false;
+				const { source } = submittedText(text);
 				const sent: Submission =
 					reviewed.kind === 'changed'
 						? {

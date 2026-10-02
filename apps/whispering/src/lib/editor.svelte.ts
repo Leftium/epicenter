@@ -4,8 +4,11 @@
  * A draft's `buffer` is the text on screen, including unsaved typing.
  * `baseline` is the saved file the next conditional save is checked against. A
  * save captures one generation of the buffer; success advances the baseline to
- * the accepted file and leaves newer typing dirty. Git outcomes never affect
- * this state.
+ * the accepted file and leaves newer typing dirty. The accepted file holds the
+ * text of the bytes that were sent, which differs from the typed string where
+ * encoding replaced an unpaired surrogate; a buffer still at the generation
+ * that was sent becomes that text, so the draft settles. Git outcomes never
+ * affect this state.
  *
  * Another writer can change the file while a draft is dirty: the terminal, an
  * editor outside the app, or Git. The draft learns of it either from a folder
@@ -19,11 +22,11 @@
  * this way.
  */
 import {
-	type Entry,
 	type FileTable,
 	type FolderFiles,
 	patchSource,
 	type SourceChange,
+	type TableSnapshot,
 	type TextCapture,
 } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -31,9 +34,9 @@ import {
 	type RecordingFields,
 	type TransformationFields,
 } from './definition.js';
-import { readTextFile } from './files.js';
+import { readTextFile, type SubmittedText, submittedText } from './files.js';
 
-export type RecordingEntry = Entry<RecordingFields>;
+export type RecordingEntry = TableSnapshot<RecordingFields>;
 
 /** One saved text file as its draft last accepted it. */
 export type SavedText = TextCapture;
@@ -51,9 +54,10 @@ export type SaveState<T> =
 
 /** Where a draft saves: one conditional write, and a fresh read for conflict review. */
 type DraftStore<T extends SavedText> = {
+	/** The accepted file's `source` is the text of the submitted bytes. */
 	write(
 		baseline: T,
-		source: string,
+		submitted: SubmittedText,
 	): Promise<Result<T, { readonly name: string; readonly message: string }>>;
 	/**
 	 * The saved file the baseline names, now: a row by its stem, a raw file by
@@ -73,7 +77,7 @@ export type Autosave = { paused: boolean };
 const TYPING_BATCH_MS = 400;
 
 export type Draft<T extends SavedText> = ReturnType<typeof createDraft<T>>;
-export type RowEditor<TFields> = Draft<Entry<TFields>>;
+export type RowEditor<TFields> = Draft<TableSnapshot<TFields>>;
 export type RecordingEditor = RowEditor<RecordingFields>;
 export type TransformationEditor = RowEditor<TransformationFields>;
 export type TextFileEditor = Draft<SavedText>;
@@ -107,27 +111,34 @@ function createDraft<T extends SavedText>(
 
 	async function saveOnce() {
 		const captured = buffer;
+		const submitted = submittedText(captured);
 		const observed = baseline;
+		/**
+		 * The file holds the text of the submitted bytes. That is the captured
+		 * text unless encoding replaced an unpaired surrogate. Newer typing is
+		 * a later generation and stays as typed.
+		 */
+		const accept = (saved: T) => {
+			baseline = saved;
+			if (buffer === captured) buffer = saved.source;
+			saveState = { kind: 'saved' };
+			onSaved();
+		};
 		saveState = { kind: 'saving' };
 		try {
-			const result = await store.write(observed, captured);
-			if (result.error === null) {
-				baseline = result.data;
-				saveState = { kind: 'saved' };
-				onSaved();
-				return;
-			}
+			const result = await store.write(observed, submitted);
+			if (result.error === null) return accept(result.data);
 			if (
 				result.error.name === 'Conflict' ||
 				result.error.name === 'Unconfirmed'
 			) {
 				const current = await store.read(observed);
-				if (current.error === null && current.data?.source === captured) {
-					baseline = current.data;
-					saveState = { kind: 'saved' };
-					onSaved();
-					return;
-				}
+				// The file holding exactly the submitted text is this save, landed.
+				if (
+					current.error === null &&
+					current.data?.source === submitted.source
+				)
+					return accept(current.data);
 				if (result.error.name === 'Conflict') {
 					saveState = current.error
 						? {
@@ -318,13 +329,13 @@ function copyKeeper(files: FolderFiles): DraftStore<SavedText>['keepCopy'] {
 export function createRowEditor<TFields>(
 	table: FileTable<TFields>,
 	files: FolderFiles,
-	entry: Entry<TFields>,
+	entry: TableSnapshot<TFields>,
 	autosave: Autosave,
 	onSaved: () => void,
 ): RowEditor<TFields> {
-	return createDraft<Entry<TFields>>(
+	return createDraft<TableSnapshot<TFields>>(
 		{
-			write: (baseline, source) => table.replace(baseline, source),
+			write: (baseline, { source }) => table.replace(baseline, source),
 			read: (baseline) => table.get(baseline.stem),
 			keepCopy: copyKeeper(files),
 		},
@@ -343,10 +354,10 @@ export function createTextFileEditor(
 ): TextFileEditor {
 	return createDraft<SavedText>(
 		{
-			async write(baseline, source) {
+			async write(baseline, { bytes, source }) {
 				const written = await files.replace(
 					{ path: baseline.path, sha256: baseline.sha256 },
-					source,
+					bytes,
 				);
 				if (written.error) return Err(written.error);
 				return Ok({
@@ -377,7 +388,8 @@ export function createTextFileEditor(
 
 /**
  * Change frontmatter fields or the body with the preparation table updates
- * use. Source the preparation cannot change safely is refused and kept as typed.
+ * use. A buffer that does not parse, or that the preparation cannot change
+ * safely, is refused and kept as typed: the Source view is how it is fixed.
  */
 export function patchRow(
 	editor: Pick<TextFileEditor, 'buffer' | 'input' | 'refuse'>,
@@ -385,7 +397,11 @@ export function patchRow(
 ): boolean {
 	const patched = patchSource(editor.buffer, change);
 	if (patched.error) {
-		editor.refuse(patched.error.reason);
+		editor.refuse(
+			patched.error.kind === 'unparsed'
+				? patched.error.error.message
+				: patched.error.reason,
+		);
 		return false;
 	}
 	editor.input(patched.data);

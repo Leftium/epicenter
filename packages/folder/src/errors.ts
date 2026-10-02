@@ -3,10 +3,15 @@
  *
  * Library messages state the failure precisely; the application decides what
  * a person is told. A refusal before publication (`Conflict`, `Exists`, and
- * validation failures) wrote nothing. `Partial` reports a multi-file operation
+ * preparation failures) wrote nothing. `Partial` reports a multi-file operation
  * that stopped after some steps reached the folder.
+ *
+ * These describe acquiring and publishing files. Whether a row's text parses
+ * and whether its fields conform are not failures of an operation: a snapshot
+ * carries them as `parseError` and `issues` (ADR-0462).
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { FieldIssue, ParseError } from './reading.js';
 
 export const FileError = defineErrors({
 	InvalidPath: ({ path, reason }: { path: string; reason: string }) => ({
@@ -118,29 +123,31 @@ export const ApplyError = defineErrors({
 });
 export type ApplyError = InferErrors<typeof ApplyError>;
 
+/**
+ * Failures of reading a row or `kv.json` as text and of preparing a
+ * structured write. None of them published anything. An address a folder does not admit is
+ * `FileError.InvalidPath`, and an occupied destination is `FileError.Exists`:
+ * a table has no naming or collision rule of its own (ADR-0462).
+ */
 export const TableError = defineErrors({
-	InvalidStem: ({ stem, reason }: { stem: string; reason: string }) => ({
-		message: `The stem '${stem}' is not usable: ${reason}`,
-		stem,
-		reason,
-	}),
-	Exists: ({ path }: { path: string }) => ({
-		message: `The destination '${path}' is already occupied`,
-		path,
-	}),
-	Collision: ({ path, existing }: { path: string; existing: string }) => ({
-		message: `The destination '${path}' collides with '${existing}' on case-insensitive filesystems`,
-		path,
-		existing,
-	}),
-	InvalidValues: ({
-		issues,
-	}: {
-		issues: readonly { field: string; message: string }[];
-	}) => ({
-		message: `Supplied values do not conform: ${issues.map((issue) => `${issue.field}: ${issue.message}`).join('; ')}`,
+	/**
+	 * Supplied values are undeclared, do not conform to their fields, are
+	 * absent from a complete row, or cannot be copied or written to the file.
+	 */
+	InvalidValues: ({ issues }: { issues: readonly FieldIssue[] }) => ({
+		message: `Supplied values do not conform: ${issues.map((issue) => issue.message).join('; ')}`,
 		issues,
 	}),
+	/**
+	 * The current source does not parse, so no structured change was prepared,
+	 * a row's body change included. Replace the complete source instead.
+	 */
+	Unparsed: ({ path, error }: { path: string; error: ParseError }) => ({
+		message: `The source of '${path}' does not parse, so it cannot be updated: ${error.message}`,
+		path,
+		error,
+	}),
+	/** The source parses, but the change cannot be made without altering source it did not name. */
 	UnsupportedSource: ({ path, reason }: { path: string; reason: string }) => ({
 		message: `The source of '${path}' cannot be changed safely: ${reason}`,
 		path,
@@ -173,11 +180,61 @@ export const BatchError = defineErrors({
 });
 export type BatchError = InferErrors<typeof BatchError>;
 
-/** Failures from a table read. Absence is a successful `undefined`. */
-export type TableReadError = FileError;
+type TableErrorOf<TName extends TableError['name']> = Extract<
+	TableError,
+	{ name: TName }
+>;
 
-/** Failures from a table write. */
-export type TableWriteError = TableError | FileError | ApplyError;
+/** Storage failures are forwarded intact. Narrower storage signatures belong to their producers. */
+export type TableEnumerationError = FileError;
+
+/** Acquisition or UTF-8 decoding failed. A parse failure is the snapshot's `parseError`. */
+export type TableReadError = FileError | TableErrorOf<'InvalidUtf8'>;
+
+/** get recovers NotFound as Ok(undefined); it shares the storage read error family. */
+export type TableGetError = TableReadError;
+
+/** Storage publication or preparation of the supplied complete row failed. */
+export type TableCreateError =
+	| FileError
+	| ApplyError
+	| TableErrorOf<'InvalidValues'>;
+
+/** Structured preparation adds its failures to acquisition and publication failures. */
+export type TableUpdateError =
+	| TableReadError
+	| ApplyError
+	| TableErrorOf<'InvalidValues' | 'Unparsed' | 'UnsupportedSource'>;
+
+/** Complete source publication needs no parsing or field preparation. */
+export type TableReplaceError = FileError | ApplyError;
+
+/** Moving a captured row preserves the storage operation's failures. */
+export type TableRenameError = FileError | ApplyError;
+
+/** Removing a captured row preserves the storage operation's failures. */
+export type TableDeleteError = FileError | ApplyError;
+
+/** Every failure a table write can report. */
+export type TableWriteError =
+	| TableCreateError
+	| TableUpdateError
+	| TableReplaceError
+	| TableRenameError
+	| TableDeleteError;
+
+/** Acquisition or UTF-8 decoding of kv.json failed. `get` recovers NotFound as Ok(undefined). */
+export type KvReadError = FileError | TableErrorOf<'InvalidUtf8'>;
+
+/**
+ * Failures from a sparse kv.json write. `Unparsed` is current source that is
+ * not one JSON object; `UnsupportedSource` is an object the supplied keys
+ * cannot be assigned in safely.
+ */
+export type KvWriteError =
+	| KvReadError
+	| ApplyError
+	| TableErrorOf<'InvalidValues' | 'Unparsed' | 'UnsupportedSource'>;
 
 /**
  * Why a folder could not be opened. Every opener returns these; none throws

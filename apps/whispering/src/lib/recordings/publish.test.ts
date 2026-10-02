@@ -88,9 +88,14 @@ test('a capture is saved as audio and a row that names it, then committed and re
 	expect(outcome.status).toBe('saved');
 	if (outcome.status !== 'saved') return;
 	expect(outcome.recovered).toBe(false);
-	expect(outcome.entry.issues).toBeUndefined();
-	expect(outcome.entry.fields).toEqual(pending.fields);
-	expect(outcome.entry.fields.audioPath).toBe(`recordings/${pending.id}.wav`);
+	// The entry is the capture of the row, and its text reads as the capture's facts.
+	expect(outcome.entry).toMatchObject({
+		fields: pending.fields,
+		body: pending.body,
+		parseError: undefined,
+		issues: [],
+	});
+	expect(pending.fields.audioPath).toBe(`recordings/${pending.id}.wav`);
 	expect(await names(root)).toEqual([`${pending.id}.md`, `${pending.id}.wav`]);
 	// The stored audio is the captured bytes, exactly.
 	expect(await bytesAt(root, 'recordings', `${pending.id}.wav`)).toEqual(
@@ -143,7 +148,9 @@ test('a file that only shares the stem is not the recording’s and does not blo
 	if (outcome.status !== 'saved') return;
 	expect(outcome.recovered).toBe(false);
 	// The row names its own audio; the sibling is neither named nor touched.
-	expect(outcome.entry.fields.audioPath).toBe(`recordings/${pending.id}.wav`);
+	expect(outcome.entry.fields.audioPath).toBe(
+		`recordings/${pending.id}.wav`,
+	);
 	expect(await names(root)).toEqual([
 		`${pending.id}.m4a`,
 		`${pending.id}.md`,
@@ -386,9 +393,9 @@ test('a row from before audioPath is not this recording, even beside matching au
 		await readFile(join(root, 'recordings', `${pending.id}.md`), 'utf8'),
 	).toBe(old);
 	const listed = expectOk(await folder.tables.recordings.list());
-	expect(listed.entries[0]!.issues).toEqual([
-		{ kind: 'field', field: 'audioPath', message: 'The field is missing' },
-	]);
+	const row = expectOk(listed[0]!.result);
+	expect(row.parseError).toBeUndefined();
+	expect(row.issues.map((issue) => issue.field)).toEqual(['audioPath']);
 	await folder.close();
 });
 

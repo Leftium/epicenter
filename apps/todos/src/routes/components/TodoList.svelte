@@ -3,7 +3,7 @@
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Input } from '@epicenter/ui/input';
 	import { toast } from '@epicenter/ui/sonner';
-	import type { TodoEntry } from '$lib/editor.svelte.js';
+	import { needsRepair, type TodoEntry } from '$lib/editor.svelte.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 
 	let { todos, onOpen }: { todos: Todos; onOpen?: () => void } = $props();
@@ -76,7 +76,7 @@
 					}}
 				>
 					<span class="truncate {done ? 'text-muted-foreground line-through' : ''}">{titleOf(entry)}</span>
-					{#if entry.issues}
+					{#if needsRepair(entry)}
 						<Badge variant="destructive" class="shrink-0">Needs repair</Badge>
 					{/if}
 				</button>

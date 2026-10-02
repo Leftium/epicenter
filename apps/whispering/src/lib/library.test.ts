@@ -7,7 +7,7 @@
  * what it leaves on disk, not that the desktop app runs.
  *
  * Key behaviors:
- * - A first launch creates `kv.json` only after reading that it is absent
+ * - A first launch uses defaults without creating files or history
  * - A settings save assigns its values in the current file, creates the file
  *   from those values when it is gone, and tries a changed file once more
  * - Record, stop, and save produce audio, a row that names it, and a commit
@@ -16,9 +16,14 @@
  * - Deleting a recording deletes its row and results and keeps its audio
  * - A title edit in details and the Source view are one draft
  * - A clean editor follows an outside edit; a dirty one keeps both versions
- * - A malformed row stays listed and its source is untouched
- * - A recording whose filename needs repair keeps its literal ID: nothing is
- *   sent for it, and its draft, conflict review, and deletion act on that file
+ * - A malformed row stays listed and selectable, saves while malformed, and
+ *   its source is untouched until the person changes it
+ * - A draft is read as typed: its diagnostics are the buffer's, and a field
+ *   issue leaves the other fields and the notes editable
+ * - A recording with an unusual file name is an ordinary recording at its
+ *   literal ID: transcribed, edited, reviewed, and deleted like any other
+ * - A recording is not deleted while a result cannot say which recording it
+ *   belongs to
  * - A transcription result is its own row naming the recording
  * - Reopening the folder shows the same recordings and results
  * - A received transcript has one file name: saving it again never calls the
@@ -48,6 +53,7 @@ import { loadAudio } from './audio-source.js';
 import { createFixtureDevice, toneWav } from './capture.js';
 import { describeDeletion } from './deletion-copy.js';
 import type { Library } from './library.svelte.js';
+import { needsRepair } from './rows.js';
 import {
 	commitLine,
 	filesLine,
@@ -221,12 +227,23 @@ function recordingEditor(library: Library) {
 	return selection.editor;
 }
 
-test('the first launch writes kv.json with the transcription settings', async () => {
-	const { root } = await open();
-	const kv = JSON.parse(await readFile(join(root, 'kv.json'), 'utf8'));
-	expect(kv).toEqual({
+test('the first launch uses settings defaults without creating files or history; saving settings creates the file', async () => {
+	const { library, root } = await open();
+	expect(await readdir(root)).not.toContain('kv.json');
+	expect(git(root, 'symbolic-ref', '--short', 'HEAD').trim()).toBe('main');
+	expect(await Bun.file(join(root, '.git/refs/heads/main')).exists()).toBe(
+		false,
+	);
+	expect(git(root, 'status', '--porcelain').trim()).toBe('');
+	expect(library.settings).toEqual({
 		transcriptionBaseUrl: 'http://127.0.0.1:18080/v1',
 		transcriptionModel: 'verification-model',
+	});
+	expect(
+		await library.saveSettings({ transcriptionModel: 'chosen' }),
+	).toBeUndefined();
+	expect(JSON.parse(await readFile(join(root, 'kv.json'), 'utf8'))).toEqual({
+		transcriptionModel: 'chosen',
 	});
 });
 
@@ -251,8 +268,37 @@ test('a launch whose kv.json read fails creates no settings file and says why', 
 	expect(creates).toBe(0);
 	expect(await readdir(root)).not.toContain('kv.json');
 	expect(library.settingsProblem).toContain('disk refused the read');
-	// The settings a first launch would have written still show.
+	// Defaults still show in memory when the saved settings cannot be read.
 	expect(library.settings.transcriptionModel).toBe('verification-model');
+});
+
+test('kv.json that does not parse, or holds a value that does not conform, is the settings problem, and defaults fill only what is absent', async () => {
+	const root = await realpath(
+		await mkdtemp(join(tmpdir(), 'whispering-library-')),
+	);
+	roots.push(root);
+	await writeFile(join(root, 'kv.json'), '{"transcriptionModel": ');
+	const { library } = await open({ root });
+
+	// A parse failure reads no values; it is reported, and defaults still show.
+	expect(library.settingsProblem).toContain('not valid JSON');
+	expect(library.settings.transcriptionModel).toBe('verification-model');
+
+	// One value that does not conform is named; the other still applies.
+	await writeFile(
+		join(root, 'kv.json'),
+		'{"transcriptionModel": 7, "transcriptionBaseUrl": "http://kept"}\n',
+	);
+	await library.refreshAll();
+	expect(library.settingsProblem).toContain('transcriptionModel');
+	expect(library.settings.transcriptionBaseUrl).toBe('http://kept');
+	expect(library.settings.transcriptionModel).toBe('verification-model');
+
+	// Healthy text has no issues, and no issues is no problem at all.
+	await writeFile(join(root, 'kv.json'), '{"transcriptionModel": "kept"}\n');
+	await library.refreshAll();
+	expect(library.settingsProblem).toBeUndefined();
+	expect(library.settings.transcriptionModel).toBe('kept');
 });
 
 test('a launch whose first listing is superseded does not seed over settings it never saw', async () => {
@@ -286,8 +332,8 @@ test('a launch whose first listing is superseded does not seed over settings it 
 		}),
 	});
 	held.resolve();
+	await library.refreshAll();
 
-	expect(reads).toBe(4);
 	expect(creates).toBe(0);
 	expect(await readFile(join(root, 'kv.json'), 'utf8')).toBe(existing);
 	expect(library.settingsProblem).toBeUndefined();
@@ -298,6 +344,7 @@ test('saving settings after kv.json was deleted creates it from the saved values
 	const calls: string[] = [];
 	const { library, root } = await open({
 		kv: (real) => ({
+			...real,
 			get: () => {
 				calls.push('get');
 				return real.get();
@@ -312,6 +359,7 @@ test('saving settings after kv.json was deleted creates it from the saved values
 			},
 		}),
 	});
+	await library.saveSettings({ ...library.settings });
 	await rm(join(root, 'kv.json'));
 	await library.refresh();
 	calls.length = 0;
@@ -356,6 +404,7 @@ test('a settings save that meets a changed file is tried once more, and twice is
 		}),
 	});
 	const saved = () => readFile(join(root, 'kv.json'), 'utf8');
+	await library.saveSettings({ ...library.settings });
 
 	calls.length = 0;
 	conflicts = 1;
@@ -406,7 +455,6 @@ test('a settings save reports a file that appeared first, or an unconfirmed writ
 		}),
 	});
 
-	await rm(join(root, 'kv.json'));
 	calls.length = 0;
 	racing = true;
 	expect(await library.saveSettings({ transcriptionModel: 'mine' })).toContain(
@@ -432,7 +480,7 @@ test('record, stop, and save leave a row, real audio, and a commit', async () =>
 	expect(library.pending).toHaveLength(0);
 	expect(library.entries).toHaveLength(1);
 	const entry = library.entries[0]!;
-	expect(entry.issues).toBeUndefined();
+	expect(needsRepair(entry)).toBe(false);
 	expect(entry.fields.capture).toBe('fixture');
 	expect(entry.fields.durationMs).toBe(1000);
 	expect(entry.fields.audioPath).toBe(`recordings/${entry.stem}.wav`);
@@ -446,7 +494,7 @@ test('record, stop, and save leave a row, real audio, and a commit', async () =>
 	const tree = git(root, 'ls-tree', '-r', '--name-only', 'HEAD');
 	expect(tree).toContain(entry.path);
 	expect(tree).toContain(entry.fields.audioPath!);
-	expect(tree).toContain('kv.json');
+	expect(tree).not.toContain('kv.json');
 });
 
 test('a partial publication keeps the audio and id, and retry makes one recording', async () => {
@@ -575,24 +623,49 @@ test('choosing mine saves over the reviewed outside version', async () => {
 	expect(await readFile(path, 'utf8')).toContain('title: Mine');
 });
 
-test('a malformed row stays listed and its bytes are not rewritten', async () => {
+test('a malformed row stays listed and selectable, saves while malformed, and its bytes are not rewritten', async () => {
 	const { library, root } = await open();
 	await record(library);
 	const broken = '---\ntitle: *missing\nmood: curious\n---\nStill here\n';
 	await writeFile(join(root, 'recordings', 'broken.md'), broken);
+	// Markdown with no frontmatter lines does not parse either, and is listed too.
+	await writeFile(join(root, 'recordings', 'plain.md'), 'Just notes\n');
 	await library.refreshAll();
 
-	const entry = library.entries.find(
-		(item) => item.path === 'recordings/broken.md',
+	const listed = (path: string) =>
+		library.entries.find((item) => item.path === path);
+	const entry = listed('recordings/broken.md');
+	// The capture is whole; the parse failed and recovered nothing.
+	expect(entry?.source).toBe(broken);
+	expect(entry).toMatchObject({ fields: {}, body: undefined, issues: [] });
+	expect(entry?.parseError?.diagnostics[0].message).toContain(
+		'Unresolved alias',
 	);
-	expect(entry?.issues?.[0]?.kind).toBe('frontmatter');
+	expect(listed('recordings/plain.md')?.parseError).toBeDefined();
+	// A file that was read is never among the files that could not be.
+	expect(library.unreadable).toEqual([]);
 	await library.open('recordings/broken.md');
 	const editor = recordingEditor(library);
 	expect(editor.buffer).toBe(broken);
-	// A structured edit is refused; only the source can repair it.
-	expect(patchRow(editor, { fields: { title: 'x' } })).toBe(false);
+	// A structured edit is refused, a notes edit too; only the source can repair it.
+	for (const change of [{ fields: { title: 'x' } }, { body: 'new notes\n' }])
+		expect(patchRow(editor, change)).toBe(false);
 	expect(await readFile(join(root, 'recordings', 'broken.md'), 'utf8')).toBe(
 		broken,
+	);
+	// The draft is read as typed, by the table's own interpreter.
+	const inspect = library.folder.tables.recordings.inspect;
+	expect(entry).toMatchObject(inspect(editor.buffer));
+
+	// Text that is still malformed saves, and its capture is the next baseline.
+	const still = broken.replace('Still here', 'Still here, still broken');
+	editor.input(still);
+	await editor.save();
+	expect(editor.saveState).toEqual({ kind: 'saved' });
+	expect(editor.baseline.source).toBe(still);
+	expect(editor.baseline.parseError).toBeDefined();
+	expect(await readFile(join(root, 'recordings', 'broken.md'), 'utf8')).toBe(
+		still,
 	);
 
 	editor.input(
@@ -603,28 +676,62 @@ test('a malformed row stays listed and its bytes are not rewritten', async () =>
 	const repaired = library.entries.find(
 		(item) => item.path === 'recordings/broken.md',
 	);
-	expect(repaired?.issues).toBeUndefined();
+	expect(repaired && needsRepair(repaired)).toBe(false);
 	expect(
 		await readFile(join(root, 'recordings', 'broken.md'), 'utf8'),
 	).toContain('mood: curious');
 });
 
-test('a recording whose filename needs repair is never sent, and is edited, reviewed, and deleted at its literal ID', async () => {
+test('a draft’s diagnostics are the buffer’s: a field issue leaves the other fields and the notes editable', async () => {
+	const { library } = await open();
+	await record(library);
+	const saved = library.entries[0]!;
+	await library.open(saved.path);
+	const editor = recordingEditor(library);
+	library.autosave.paused = true;
+	const inspect = library.folder.tables.recordings.inspect;
+
+	editor.input(saved.source.replace(/durationMs: .*/, 'durationMs: long'));
+	const draft = inspect(editor.buffer);
+	expect(draft.parseError).toBeUndefined();
+	expect(draft.issues.map((issue) => issue.field)).toEqual(['durationMs']);
+	// The other fields validated by themselves and are still there.
+	expect(draft.fields.title).toBe(saved.fields.title);
+	expect(draft.fields.audioPath).toBe(saved.fields.audioPath);
+	// The saved row has no issue: nothing is merged from one text into the other.
+	expect(needsRepair(editor.baseline)).toBe(false);
+
+	expect(patchRow(editor, { fields: { title: 'Renamed' } })).toBe(true);
+	expect(patchRow(editor, { body: 'Notes\n' })).toBe(true);
+	const edited = inspect(editor.buffer);
+	expect(edited.fields.title).toBe('Renamed');
+	expect(edited.body).toBe('Notes\n');
+	expect(edited.issues.map((issue) => issue.field)).toEqual(['durationMs']);
+});
+
+test('a recording with an unusual file name is an ordinary recording: it is transcribed, edited, reviewed, and deleted at its literal ID', async () => {
 	const { library, root, transcribed } = await open();
 	await record(library);
 	const recorded = library.entries[0]!;
-	// The same valid row under a name the naming rules refuse.
+	// The same valid row under a name with a trailing space.
 	const path = 'recordings/bad .md';
 	await writeFile(join(root, path), recorded.source);
 	await library.refreshAll();
 	const entry = library.entries.find((item) => item.path === path)!;
 	expect(entry.stem).toBe('bad ');
-	expect(entry.issues?.map((issue) => issue.kind)).toEqual(['filename']);
+	// A name is an address. It is never something to repair.
+	expect(needsRepair(entry)).toBe(false);
 
-	// The row names real audio, and still no request leaves for it.
+	// The row names real audio, so it is transcribed like any other, and its
+	// result names it by that literal ID.
 	await library.transcribe(entry);
-	expect(transcribed).toEqual([]);
-	expect(library.transcriptionRun(entry.stem)).toBeUndefined();
+	expect(transcribed.map((request) => request.audioPath)).toEqual([
+		entry.fields.audioPath!,
+	]);
+	expect(
+		library.resultsFor('bad ').map((result) => result.fields.recordingId),
+	).toEqual(['bad ']);
+	expect(library.resultsFor(recorded.stem)).toEqual([]);
 
 	await library.open(path);
 	const editor = recordingEditor(library);
@@ -650,8 +757,72 @@ test('a recording whose filename needs repair is never sent, and is edited, revi
 		kind: 'recording',
 		entry: { path, stem: 'bad ' },
 	});
+	// Its result goes with it, found by the ID it names.
+	expect(
+		deletion.data?.kind === 'recording' && deletion.data.results,
+	).toHaveLength(1);
 	expect(await library.remove(deletion.data!)).toBeUndefined();
 	expect(library.entries.map((item) => item.path)).toEqual([recorded.path]);
+	expect(library.transcriptions).toEqual([]);
+});
+
+test('a recording is not deleted while a result cannot say which recording it belongs to', async () => {
+	const { library, root } = await open();
+	await record(library);
+	const entry = library.entries[0]!;
+	await library.transcribe(entry);
+	const [result] = library.resultsFor(entry.stem);
+	const rowSource = await readFile(join(root, entry.path), 'utf8');
+	const untouched = async () => {
+		expect(await readFile(join(root, entry.path), 'utf8')).toBe(rowSource);
+		expect(await readFile(join(root, result!.path), 'utf8')).toBe(
+			result!.source,
+		);
+	};
+
+	// Each of these might be this recording's result: its text says so, or might.
+	const unknown: Record<string, string | Uint8Array> = {
+		'transcriptions/unparsed.md': `---\nrecordingId: ${entry.stem}\nmodel: [open\n---\ntext\n`,
+		'transcriptions/fenceless.md': `recordingId: ${entry.stem}\n`,
+		'transcriptions/invalid.md': '---\nrecordingId: 12\n---\ntext\n',
+		'transformation_runs/absent.md': '---\nmodel: m\n---\ntext\n',
+		'transcriptions/binary.md': new Uint8Array([0xff, 0xfe, 0x00]),
+	};
+	await mkdir(join(root, 'transformation_runs'), { recursive: true });
+	for (const [path, content] of Object.entries(unknown)) {
+		await writeFile(join(root, path), content);
+		await library.refreshAll();
+		const refusal = (await library.deletionFor(entry.path)).error;
+		expect(refusal).toContain('cannot be told apart');
+		expect(refusal).toContain(path);
+		await untouched();
+		await rm(join(root, path));
+	}
+
+	// A deletion confirmed before such a file appeared is refused when it runs.
+	await library.refreshAll();
+	const confirmed = (await library.deletionFor(entry.path)).data!;
+	await writeFile(
+		join(root, 'transcriptions/late.md'),
+		unknown['transcriptions/unparsed.md']!,
+	);
+	await library.refreshAll();
+	expect(await library.remove(confirmed)).toContain('cannot be told apart');
+	await untouched();
+	await rm(join(root, 'transcriptions/late.md'));
+
+	// A result with issues in other fields still names its recording: enough.
+	await writeFile(
+		join(root, 'transcriptions/other.md'),
+		'---\nrecordingId: someone-else\nmodel: 12\n---\ntext\n',
+	);
+	await library.refreshAll();
+	const deletion = (await library.deletionFor(entry.path)).data!;
+	expect(await library.remove(deletion)).toBeUndefined();
+	expect(library.entries).toEqual([]);
+	expect(library.transcriptions.map((item) => item.path)).toEqual([
+		'transcriptions/other.md',
+	]);
 });
 
 test('a transcription is saved as its own row naming the recording', async () => {
@@ -773,10 +944,16 @@ test('a row written before audioPath names no audio: it needs repair, and no sam
 	await library.refreshAll();
 
 	const entry = library.entries.find((item) => item.stem === 'old')!;
-	expect(entry.issues).toEqual([
-		{ kind: 'field', field: 'audioPath', message: 'The field is missing' },
+	// The one field it lacks is the one issue; the others validated and are there.
+	expect(entry.issues.map((issue) => issue.field)).toEqual([
+		'audioPath',
 	]);
-	expect(entry.fields.audioPath).toBeUndefined();
+	expect<object>(entry.fields).toEqual({
+		title: 'Old take',
+		recordedAt: '2026-01-02T03:04:05.000Z',
+		durationMs: 1000,
+		capture: 'fixture',
+	});
 	// The file beside it is an ordinary file that no recording names.
 	expect(library.recordingNaming('recordings/old.wav')).toBeUndefined();
 
@@ -798,7 +975,7 @@ test('a row written before audioPath names no audio: it needs repair, and no sam
 	await editor.save();
 	await library.refresh();
 	const repaired = library.entries.find((item) => item.stem === 'old')!;
-	expect(repaired.issues).toBeUndefined();
+	expect(needsRepair(repaired)).toBe(false);
 	expect(library.recordingNaming('recordings/old.wav')?.path).toBe(
 		'recordings/old.md',
 	);
@@ -1376,9 +1553,7 @@ test('two simultaneous saves of a held transcript write one file and leave nothi
 	expect(library.transcriptionRun(id)).toBeUndefined();
 	expect(library.unsavedResults).toBe(0);
 	expect(library.holdsUnsavedWork).toBe(false);
-	expect(library.resultsFor(id).map((result) => result.body)).toEqual([
-		'a steady tone\n',
-	]);
+	expect(library.resultsFor(id).map((row) => row.body)).toEqual(['a steady tone\n']);
 });
 
 test('another file at a held transcript’s path is left as it is, and the transcript stays held', async () => {
@@ -1508,12 +1683,10 @@ test('a save that lands after its transcript was discarded leaves a newer held t
 	expect((await transcripts(root)).sort()).toEqual(
 		[`${first.id}.md`, `${second.id}.md`].sort(),
 	);
-	expect(
-		library
-			.resultsFor(id)
-			.map((result) => result.body)
-			.sort(),
-	).toEqual(['first answer\n', 'second answer\n']);
+	expect(library.resultsFor(id).map((row) => row.body).sort()).toEqual([
+		'first answer\n',
+		'second answer\n',
+	]);
 });
 
 test('a transcript already in the folder is acknowledged as saved even when the folder cannot then be listed', async () => {

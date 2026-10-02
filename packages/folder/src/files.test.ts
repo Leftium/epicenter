@@ -491,7 +491,7 @@ describe('a save never reads its bytes back', () => {
 		expect(row.sha256).toEqual(await versionOf('---\ntitle: Mine\n---\n'));
 		// An explicit get is the new observation; it never acknowledges the draft.
 		const current = expectOk(await folder.tables.todos.get('r'));
-		expect(current?.fields).toEqual({ title: 'Theirs' });
+		expect(current!.fields).toEqual({ title: 'Theirs' });
 		expect(
 			expectErr(
 				await folder.tables.todos.replace(

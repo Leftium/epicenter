@@ -32,7 +32,13 @@ import {
 	rowStemOf,
 	stemProblem,
 } from './paths.js';
-import { captureVersion, type FileVersion } from './version.js';
+import {
+	captureProblem,
+	captureVersion,
+	type FileCapture,
+	type FileVersion,
+	fileCapture,
+} from './version.js';
 
 export type EntryIssue =
 	| { readonly kind: 'filename'; readonly message: string }
@@ -302,22 +308,23 @@ export function createFileTable<TFields>(
 	) => destinationProblem(name, files, destination, ignore);
 
 	async function publishSource(
-		entry: Entry<TFields>,
+		entry: FileCapture,
 		source: string,
 	): Promise<Result<Entry<TFields>, TableWriteError>> {
+		const captured = fileCapture(entry.path, entry.version);
 		const bytes = encoder.encode(source);
 		const version = await captureVersion(bytes);
 		const applied = await context.publish([
 			{
 				kind: 'write',
-				path: entry.path,
+				path: captured.path,
 				bytes,
 				version,
-				expected: entry.version,
+				expected: captured.version,
 			},
 		]);
 		if (applied.error) return Err(applied.error);
-		return Ok(interpret(entry.path, version, source));
+		return Ok(interpret(captured.path, version, source));
 	}
 
 	/**
@@ -326,6 +333,12 @@ export function createFileTable<TFields>(
 	 * naming rules are still rows here, so external files stay editable.
 	 */
 	function ownsPath(entry: Entry<TFields>): Result<string, FileError> {
+		const problem = captureProblem(entry);
+		if (problem !== undefined)
+			return FileError.InvalidPath({
+				path: String(entry?.path ?? ''),
+				reason: problem,
+			});
 		const stem = rowStemOf(name, entry.path);
 		if (stem === undefined)
 			return FileError.InvalidPath({
@@ -470,25 +483,27 @@ export function createFileTable<TFields>(
 				async (): Promise<Result<Entry<TFields>, TableWriteError>> => {
 					const owned = ownsPath(entry);
 					if (owned.error) return owned;
+					const captured = fileCapture(entry.path, entry.version);
+					const source = entry.source;
 					const problem = stemProblem(nextStem);
 					if (problem !== undefined)
 						return TableError.InvalidStem({ stem: nextStem, reason: problem });
 					const path = rowPath(name, nextStem);
-					if (path === entry.path) return Ok(entry);
+					if (path === captured.path) return Ok(entry);
 					const found = await directory();
 					if (found.error) return found;
-					const destination = checkDestination(found.data, path, entry.path);
+					const destination = checkDestination(found.data, path, captured.path);
 					if (destination.error) return destination;
 					const applied = await context.publish([
 						{
 							kind: 'move',
-							from: entry.path,
+							from: captured.path,
 							to: path,
-							expected: entry.version,
+							expected: captured.version,
 						},
 					]);
 					if (applied.error) return Err(applied.error);
-					return Ok(interpret(path, entry.version, entry.source));
+					return Ok(interpret(path, captured.version, source));
 				},
 			);
 		},
@@ -497,8 +512,9 @@ export function createFileTable<TFields>(
 				async (): Promise<Result<undefined, TableWriteError>> => {
 					const owned = ownsPath(entry);
 					if (owned.error) return owned;
+					const captured = fileCapture(entry.path, entry.version);
 					return context.publish([
-						{ kind: 'remove', path: entry.path, expected: entry.version },
+						{ kind: 'remove', path: captured.path, expected: captured.version },
 					]);
 				},
 			);

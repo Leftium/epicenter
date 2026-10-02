@@ -113,6 +113,62 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 	const text = async (folder: Opened, path: string) =>
 		decoder.decode(expectOk(await folder.files.read(path)).bytes);
 
+	test('malformed table captures cannot recreate a removed row', async () => {
+		const folder = await open();
+		const table = folder.tables.todos;
+		const entry = expectOk(
+			await table.create({ stem: 'a', fields: { title: 'A' } }),
+		);
+		expectOk(await table.delete(entry));
+		const malformed = { ...entry, version: undefined as never };
+		expect(expectErr(await table.replace(malformed, entry.source)).name).toBe(
+			'InvalidPath',
+		);
+		expect(expectErr(await table.rename(malformed, 'b')).name).toBe(
+			'InvalidPath',
+		);
+		expect(expectErr(await table.delete(malformed)).name).toBe('InvalidPath');
+		expect(expectOk(await table.list()).entries).toEqual([]);
+	});
+
+	test('table mutations pin mutable capture payloads before awaiting', async () => {
+		const folder = await open();
+		const table = folder.tables.todos;
+		const entry = expectOk(
+			await table.create({ stem: 'a', fields: { title: 'A' } }),
+		);
+		const mutable = { ...entry, version: { ...entry.version } };
+		const source = entry.source.replace('title: A', 'title: Mine');
+		const saving = table.replace(mutable, source);
+		mutable.path = 'elsewhere.md';
+		mutable.version.sha256 = 'changed';
+		const saved = expectOk(await saving);
+		expect(saved.path).toBe(entry.path);
+		expect(saved.source).toBe(source);
+		expect(await text(folder, entry.path)).toBe(source);
+		expect(expectErr(await folder.files.read('elsewhere.md')).name).toBe(
+			'NotFound',
+		);
+
+		const moving = { ...saved, version: { ...saved.version } };
+		const renamed = table.rename(moving, 'b');
+		moving.path = 'elsewhere.md';
+		moving.source = 'different source';
+		moving.version.sha256 = 'changed';
+		const moved = expectOk(await renamed);
+		expect(moved.path).toBe('todos/b.md');
+		expect(moved.source).toBe(source);
+		expect(moved.version).toEqual(saved.version);
+		expect(await text(folder, moved.path)).toBe(source);
+
+		const deleting = { ...moved, version: { ...moved.version } };
+		const removing = table.delete(deleting);
+		deleting.path = 'elsewhere.md';
+		deleting.version.sha256 = 'changed';
+		expectOk(await removing);
+		expect(expectOk(await table.get('b'))).toBeUndefined();
+	});
+
 	test('create is exclusive even over identical bytes; overwrite is unconditional', async () => {
 		const folder = await open();
 		const created = expectOk(await folder.files.create('a.txt', 'same'));

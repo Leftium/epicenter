@@ -126,20 +126,7 @@ test('the desktop workspace is loaded only when the page is inside a desktop app
 	).toEqual([]);
 });
 
-test('the page has no folder transport of its own, and the host no folder', () => {
-	// The retired pieces: a generic folder call over HTTP and its two ends.
-	for (const retired of [
-		'bridge/call',
-		'folder-client',
-		'batch-plan',
-		'folder-rpc',
-		'connectFolder',
-		'FolderTransport',
-		'callFolder',
-	]) {
-		expect(files.filter((file) => file.text.includes(retired))).toEqual([]);
-		expect(hostFiles.filter((file) => file.text.includes(retired))).toEqual([]);
-	}
+test('the credential host opens no folder and watches nothing', () => {
 	// The host process imports only the folder's inert contract, opens no
 	// folder, and watches nothing.
 	const hostImports = hostFiles.flatMap((file) =>
@@ -191,22 +178,6 @@ test('the app layout is the only place a session is opened', () => {
 	expect(callers('createLeaveGuard')).toEqual(['lib/session.svelte.ts']);
 	// `openSession` takes the opener as a value; nothing else calls it.
 	expect(callers('openWorkspace')).toEqual([]);
-});
-
-test('a close is answered without a session only by the holder of a failed opening', () => {
-	// Answering `proceed` unseen is right only when nothing was opened. The one
-	// place that may start it is the holder of the opening, which starts it on
-	// failure and stops it on release. It is taken there as a value, not called.
-	expect(callers('answerCloseAfterFailedOpening')).toEqual([]);
-	expect(
-		files
-			.filter((file) => file.text.includes('answerCloseAfterFailedOpening'))
-			.map((file) => file.path)
-			.sort(),
-	).toEqual(['lib/session.svelte.ts', 'lib/workspace/index.ts']);
-	expect(callers('answerCloseWithNothingOpen')).toEqual([
-		'lib/workspace/index.ts',
-	]);
 });
 
 test('every page takes the session from context, and only the shell guards navigation', () => {

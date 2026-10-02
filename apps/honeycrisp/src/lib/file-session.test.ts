@@ -25,9 +25,9 @@ import { afterEach, expect, jest, test } from 'bun:test';
 import {
 	ApplyError,
 	type CapturedFile,
-	hashBytes,
 	type FileCapture,
 	FileError,
+	hashBytes,
 } from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { FileSession, Observed } from './file-session.svelte.ts';
@@ -326,8 +326,8 @@ test('observing the same bytes changes nothing', async () => {
 	expect(session.buffer).toBe('one and mine\n');
 });
 
-test('a dirty session keeps its text and holds the external version apart', async () => {
-	const { files, session } = await conflicted('theirs\n');
+test('a dirty session keeps its text and review target across repeated external observations', async () => {
+	const { files, session, reviewed } = await conflicted('theirs\n');
 	expect(session.buffer).toBe('mine\n');
 	expect(session.saved.source).toBe('one\n');
 	expect(session.external).toMatchObject({
@@ -335,16 +335,12 @@ test('a dirty session keeps its text and holds the external version apart', asyn
 		current: { source: 'theirs\n' },
 	});
 	expect(session.status).toBe('conflict');
+	expect(session.observe(await files.observed())).toBe('conflict');
+	expect(session.external).toBe(reviewed);
 	// Saving is paused: asking for a save writes nothing.
 	await session.save();
 	expect(files.requests).toEqual([]);
 	expect(files.at()).toBe('theirs\n');
-});
-
-test('the same external bytes seen again are the same review target', async () => {
-	const { files, session, reviewed } = await conflicted('theirs\n');
-	expect(session.observe(await files.observed())).toBe('conflict');
-	expect(session.external).toBe(reviewed);
 });
 
 test('a conflict ends when the file returns to what the session agreed with', async () => {

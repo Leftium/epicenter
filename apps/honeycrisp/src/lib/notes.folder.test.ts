@@ -322,7 +322,7 @@ describe('notes are files', () => {
 		);
 	});
 
-	test('moving a note between folders changes a field, not its file', async () => {
+	test('assigning a note keeps its path, and deleting its folder clears the reference and removes the folder file', async () => {
 		const { state, root, seedNote } = await product();
 		const note = await seedNote();
 		await state.refresh();
@@ -338,16 +338,6 @@ describe('notes are files', () => {
 		const moved = state.notes.find((entry) => entry.path === note.path);
 		expect(moved?.fields.folderId).toBe(made.stem);
 		expect(state.notes).toHaveLength(1);
-	});
-
-	test('deleting a folder moves its notes out first and removes only its own file', async () => {
-		const { state, root, seedNote } = await product();
-		const note = await seedNote();
-		await state.refresh();
-		await state.createFolder('Work');
-		const [made] = state.folders;
-		if (made === undefined) throw new Error('The folder is not listed');
-		await state.patchNote(note.path, { folderId: made.stem });
 		expect(await state.deleteFolder(made)).toBeUndefined();
 		expect(state.folders).toEqual([]);
 		expect(state.notes[0]?.fields.folderId).toBeNull();

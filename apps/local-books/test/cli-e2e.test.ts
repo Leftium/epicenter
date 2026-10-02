@@ -1,3 +1,11 @@
+/**
+ * QuickBooks synchronization through the actual CLI subprocess and SQLite file.
+ *
+ * Key behaviors:
+ * - A full pull produces valid mirrored JSON and a company cursor
+ * - Incremental synchronization advances that cursor and adds changed rows
+ * - The incremental command uses CDC without issuing another full query
+ */
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';

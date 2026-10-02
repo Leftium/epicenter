@@ -1,3 +1,10 @@
+/**
+ * Session route projection tests.
+ *
+ * The mounted HTTP route returns the authenticated principal ID and includes
+ * email only when the principal provides it. Response literals pin the client
+ * wire format independently of the principal's internal field names.
+ */
 import { expect, test } from 'bun:test';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { asPrincipalId } from '@epicenter/principal';

@@ -1,6 +1,6 @@
 /**
  * Session handoff destinations are exact URLs, independent of CORS trust.
- * Production permits the native callback, hosted session callback, and three
+ * Production permits the native callback, hosted session callback, and four
  * app callbacks. Only loopback deployments add the app development callbacks.
  */
 import { expect, test } from 'bun:test';

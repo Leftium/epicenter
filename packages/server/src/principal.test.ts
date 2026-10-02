@@ -1,13 +1,9 @@
 /**
- * Partition derivations: every durable string for per-user and instance topologies.
+ * Historical principal authority naming tests.
  *
- * The point of these tests is to pin the durable namespace target. There is
- * no compatibility exception for the legacy owner-named shape; the clean-break target
- * is principals/ everywhere new durable server state is addressed.
- *
- * Per-user and instance topologies share the same shape; in the per-user topology
- * `principalId` is the signed-in user's id, on an instance it is the literal
- * `'instance'`.
+ * These literals pin the retained generation-specific namespace helper for
+ * user and instance principals. Current store authorities use application and
+ * scope addresses, covered by the mounted store route tests.
  */
 
 import { describe, expect, test } from 'bun:test';

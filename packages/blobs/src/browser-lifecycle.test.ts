@@ -4,8 +4,8 @@
  * Verifies the IndexedDB implementation of the canonical local blob contract.
  *
  * Key behaviors:
- * - Blob bytes and metadata survive reopening the store
- * - Immutable ids refuse replacement without changing the original bytes
+ * - Retained methods refuse work after closure and close waits for admitted work
+ * - Object URLs are leased and revoked when released or when their owner closes
  * - Missing reads are typed, deletion is idempotent, and failures stay typed
  */
 

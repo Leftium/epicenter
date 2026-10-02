@@ -1,5 +1,3 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
-
 /**
  * What the shared dial has to get right: the address it asks for, including
  * the subprotocol the server requires, and how it classifies a rejection.
@@ -13,6 +11,7 @@ import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { MAIN_SUBPROTOCOL } from '@epicenter/sync';

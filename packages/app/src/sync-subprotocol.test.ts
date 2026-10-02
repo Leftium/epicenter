@@ -1,4 +1,3 @@
-import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 /**
  * What the store's dial actually offers when a real auth client is the
  * transport.
@@ -18,6 +17,7 @@ import { defineStore, defineTable, field, plainText } from '@epicenter/app';
  */
 
 import { expect, test } from 'bun:test';
+import { defineStore, defineTable, field, plainText } from '@epicenter/app';
 
 import { openMemory } from '@epicenter/app/memory';
 import { attachStoreSync } from '@epicenter/app/sync';

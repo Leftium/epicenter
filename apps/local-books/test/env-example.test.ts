@@ -1,9 +1,3 @@
-import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { specToEnvExampleLines } from '@epicenter/constants/provider-credentials';
-import { QB_SPEC } from '../src/qb-credentials.ts';
-
 /**
  * Drift guard for `.env.example` (ADR-0108): the committed file must document
  * exactly the environment-qualified names `QB_SPEC` resolves, no more and no
@@ -11,6 +5,11 @@ import { QB_SPEC } from '../src/qb-credentials.ts';
  * the resolver reads through, so this test fails the moment the file lists a
  * stale name (e.g. the retired unqualified `QB_CLIENT_ID`) or omits a real one.
  */
+import { expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { specToEnvExampleLines } from '@epicenter/constants/provider-credentials';
+import { QB_SPEC } from '../src/qb-credentials.ts';
 
 /** Extract the `NAME=` variable names from `.env.example`-style lines. */
 function envNames(lines: string[]): string[] {

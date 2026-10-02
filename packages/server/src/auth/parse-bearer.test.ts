@@ -1,3 +1,9 @@
+/**
+ * Bearer header parsing tests.
+ *
+ * Token extraction accepts case-insensitive schemes and trims whitespace while
+ * refusing absent tokens and other authentication schemes.
+ */
 import { expect, test } from 'bun:test';
 import { parseBearer } from './parse-bearer.js';
 

@@ -17,12 +17,24 @@ import { expect, test } from 'bun:test';
 import { hashBytes } from '@epicenter/folder';
 import { inspectNote, listingOf, noteEntry } from './inspect.test-support.js';
 import type { NotesHost } from './platform/types.js';
+import { openFakeRowEditor } from './row-editor.test-support.js';
 
 const { createNotes } = await import('./notes.svelte.ts');
 const { constant, watch } = await import('./effects.test-support.svelte.ts');
 
 const encoder = new TextEncoder();
-const NOTE = '---\ntitle: A\n---\nbody\n';
+const NOTE = [
+	'---',
+	'folderId: null',
+	'title: A',
+	'pinned: false',
+	'createdAt: "2026-10-01T00:00:00.000Z"',
+	'updatedAt: "2026-10-01T00:00:00.000Z"',
+	'deletedAt: null',
+	'---',
+	'body',
+	'',
+].join('\n');
 const RAW = '{}\n';
 
 /** A folder with one note and `kv.json`, whose raw read waits for `release`. */
@@ -38,6 +50,19 @@ async function open() {
 				notes: {
 					inspect: inspectNote,
 					list: async () => ({ data: listingOf([note]), error: null }),
+					// The note opens its row editor; nothing here saves it.
+					edit: (stem: string) =>
+						openFakeRowEditor({
+							path: `notes/${stem}.md`,
+							declared: [],
+							inspect: inspectNote,
+							file: {
+								read: () => NOTE,
+								write: () => {
+									throw new Error('Nothing is saved in these tests');
+								},
+							},
+						}),
 				},
 				folders: {
 					list: async () => ({ data: listingOf([]), error: null }),
@@ -99,13 +124,16 @@ test('a raw file opened after a note shows its text once it is read, whatever re
 	await rendered();
 	await notes.open('notes/a.md');
 	await rendered();
+	// The note may show as loading while its row editor opens.
+	const fromNote = () => shown.slice(shown.indexOf('note'));
+	expect(shown[0]).toBeUndefined();
 	const opening = notes.open('kv.json');
 	await rendered();
-	expect(shown).toEqual([undefined, 'note', 'loading']);
+	expect(fromNote()).toEqual(['note', 'loading']);
 	release();
 	await opening;
 	await rendered();
-	expect(shown).toEqual([undefined, 'note', 'loading', 'text']);
+	expect(fromNote()).toEqual(['note', 'loading', 'text']);
 	const selection = notes.selection;
 	expect(selection?.kind === 'file' && selection.file.kind).toBe('text');
 	expect(

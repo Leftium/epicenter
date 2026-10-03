@@ -2,21 +2,24 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { toast } from '@epicenter/ui/sonner';
-	import type { FileSession } from '$lib/file-session.svelte.js';
 	import type { FileRevision, NotesHost } from '$lib/platform/types.js';
 
 	let {
 		history,
-		session,
+		path,
+		admitting,
+		onUse,
 		open = $bindable(),
 	}: {
 		history: NonNullable<NotesHost['history']>;
-		session: FileSession;
+		path: string;
+		/** Whether input is being taken; false while the app answers a close. */
+		admitting: boolean;
+		/** Put this version in the draft. Resolves why it was not taken, or undefined. */
+		onUse: (source: string) => string | undefined;
 		open: boolean;
 	} = $props();
 
-	// svelte-ignore state_referenced_locally
-	const path = session.path;
 	// svelte-ignore state_referenced_locally
 	const revisions = history.log(path, 50);
 	let shown = $state<{ revision: FileRevision; source: string } | undefined>();
@@ -69,11 +72,13 @@
 		</div>
 		<Dialog.Footer>
 			<Button
-				disabled={shown === undefined || !session.admitting}
+				disabled={shown === undefined || !admitting}
 				onclick={() => {
 					if (shown === undefined) return;
-					// Nothing is taken while the app is closing; the version stays chosen.
-					if (session.input(shown.source)) open = false;
+					// A version that is not taken stays chosen.
+					const problem = onUse(shown.source);
+					if (problem === undefined) open = false;
+					else toast.error('Could not use this version', { description: problem });
 				}}
 			>
 				Use this version as my draft

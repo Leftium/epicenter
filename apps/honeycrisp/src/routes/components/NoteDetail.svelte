@@ -6,34 +6,33 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PinIcon from '@lucide/svelte/icons/pin';
-	import { folderLabel, instantNow, type NoteFields } from '$lib/data.js';
+	import { folderLabel, type NoteFields } from '$lib/data.js';
 	import { withFileNewlines } from '$lib/files.js';
-	import { fieldDefaults } from '$lib/note-source.js';
-	import type { FileSession } from '$lib/file-session.svelte.js';
-	import type { Notes } from '$lib/notes.svelte.js';
-	import DraftStatus from './DraftStatus.svelte';
+	import { noteBody } from '$lib/note-source.js';
+	import type { NoteSession, Notes } from '$lib/notes.svelte.js';
 	import { confirmDelete } from './file-actions.js';
 	import NoteHistory from './NoteHistory.svelte';
 	import RichEditor from './RichEditor.svelte';
+	import RowDraftStatus from './RowDraftStatus.svelte';
 
-	let { notes, session }: { notes: Notes; session: FileSession } = $props();
+	let { notes, session }: { notes: Notes; session: NoteSession } = $props();
 
-	const inspect = $derived(notes.host.folder.tables.notes.inspect);
 	/**
-	 * How the draft reads, by the notes table's own interpreter. Every control
-	 * and every message below describes the text on screen, saved or not, and
-	 * never the file as it was last saved.
+	 * The body every view of this note edits. It follows `session`, which a
+	 * rename replaces, so the views and their undo history stay mounted.
 	 */
-	const draft = $derived(inspect(session.buffer));
-	const fields = $derived(draft.fields);
+	const draft = noteBody(() => session);
+	/**
+	 * How the draft reads. Every control and every message below describes the
+	 * document on screen, saved or not, and never the file as last saved.
+	 */
+	const reading = $derived(session.state.reading);
+	const fields = $derived(reading.fields);
 	const title = $derived(fields.title ?? '');
 	const pinned = $derived(fields.pinned === true);
 	/** The folder this draft names. `null` is no folder; an id may be the empty string. */
 	const folderId = $derived(fields.folderId ?? null);
 	const deleted = $derived(typeof fields.deletedAt === 'string');
-	// A draft that does not parse has no fields to edit; its source does.
-	const fieldsEditable = $derived(draft.parseError === undefined);
-	const defaults = $derived(fieldDefaults(draft, instantNow()));
 
 	/** Which view of the one draft is showing. Switching saves nothing and discards nothing. */
 	let tab = $state<'rich' | 'source'>('rich');
@@ -41,6 +40,11 @@
 
 	function patch(changes: Partial<NoteFields>) {
 		void notes.patchNote(session.path, changes, { save: 'later' });
+	}
+
+	async function editAsFile() {
+		const problem = await notes.editAsFile(session.path);
+		if (problem) toast.error('Could not open the file as text', { description: problem });
 	}
 
 	/** A folder's option value. No folder is the empty value, so a folder id never is. */
@@ -55,13 +59,11 @@
 			value={title}
 			placeholder="Title"
 			aria-label="Title"
-			disabled={!fieldsEditable}
 			oninput={(event) => patch({ title: event.currentTarget.value })}
 		/>
 		<select
 			class="h-9 max-w-40 rounded-md border bg-background px-2 text-sm"
 			aria-label="Folder"
-			disabled={!fieldsEditable}
 			value={optionOf(folderId)}
 			onchange={(event) => patch({ folderId: idOf(event.currentTarget.value) })}
 		>
@@ -79,7 +81,6 @@
 			aria-label={pinned ? 'Unpin' : 'Pin'}
 			aria-pressed={pinned}
 			tooltip={pinned ? 'Unpin' : 'Pin'}
-			disabled={!fieldsEditable}
 			onclick={() => patch({ pinned: !pinned })}
 		>
 			<PinIcon class={pinned ? 'fill-current' : ''} />
@@ -91,39 +92,21 @@
 		{/if}
 	</div>
 
-	<DraftStatus
+	<RowDraftStatus
 		{session}
-		noun="note"
-		onRecover={() => notes.recoverDraft(session.path)}
 		onDiscard={() => notes.discardDraft(session.path)}
+		onStopTracking={() => notes.stopTracking(session.path)}
 	/>
 
-	{#if draft.parseError}
+	{#if reading.issues.length > 0}
+		<!-- Input the note cannot save stays on screen; saving waits until it is fixed. -->
 		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
 			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
-				<Badge variant="destructive">Needs repair</Badge>
-				{draft.parseError.message}. Fix it in Source.
-				{#if tab !== 'source'}
-					<Button size="xs" variant="outline" onclick={() => (tab = 'source')}>Edit Source</Button>
-				{/if}
+				<Badge variant="destructive">Not saved</Badge>
+				Some fields need fixing before this note can be saved.
 			</p>
 			<ul class="space-y-0.5 text-muted-foreground">
-				{#each draft.parseError.diagnostics as diagnostic, index (index)}
-					{#if diagnostic.message !== draft.parseError.message}<li>{diagnostic.message}</li>{/if}
-				{/each}
-			</ul>
-		</div>
-	{:else if draft.issues.length > 0}
-		<div class="border-b bg-destructive/5 px-4 py-2 text-xs">
-			<p class="mb-1 flex flex-wrap items-center gap-2 font-medium">
-				<Badge variant="destructive">Needs repair</Badge>
-				Some fields need fixing. The rest of the note still works.
-				{#if defaults}
-					<Button size="xs" variant="outline" onclick={() => patch(defaults)}>Set these fields to their defaults</Button>
-				{/if}
-			</p>
-			<ul class="space-y-0.5 text-muted-foreground">
-				{#each draft.issues as issue, index (index)}
+				{#each reading.issues as issue, index (index)}
 					<li>{issue.message}</li>
 				{/each}
 			</ul>
@@ -155,29 +138,31 @@
 	<!-- The rich-text view stays mounted while Source shows, so its undo history
 	     survives a look at the source that changes nothing. -->
 	<div class="min-h-0 flex-1" hidden={tab !== 'rich'}>
-		<RichEditor {session} {inspect} focusRequest={notes.focusRequest} onOpenSource={() => (tab = 'source')} />
+		<RichEditor {draft} admitting={session.admitting} focusRequest={notes.focusRequest} onOpenSource={() => (tab = 'source')} />
 	</div>
 	{#if tab === 'source'}
 		<div class="flex min-h-0 flex-1 flex-col p-3">
 			<Textarea
 				class="min-h-40 flex-1 resize-none font-mono text-xs"
-				value={session.buffer}
+				value={draft.body}
 				aria-label="Markdown source"
 				spellcheck={false}
-				oninput={(event) => session.input(withFileNewlines(event.currentTarget.value, session.buffer))}
+				oninput={(event) => draft.input(withFileNewlines(event.currentTarget.value, draft.body))}
 			/>
 		</div>
 	{/if}
 
 	<div class="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
 		<code class="font-mono">{session.path}</code>
+		<Button size="sm" variant="ghost" tooltip="Edit the whole file as text, including keys Honeycrisp does not show" onclick={editAsFile}>
+			Edit as file
+		</Button>
 		<div class="ml-auto flex items-center gap-1">
 			{#if deleted}
 				<Button
 					size="sm"
 					variant="outline"
-					disabled={!fieldsEditable}
-					onclick={async () => {
+							onclick={async () => {
 						const problem = await notes.restoreNote(session.path);
 						if (problem) toast.error('Could not restore the note', { description: problem });
 					}}
@@ -192,12 +177,11 @@
 					size="sm"
 					variant="ghost-destructive"
 					onclick={async () => {
-						if (!fieldsEditable) return void confirmDelete(notes, session.path);
 						const problem = await notes.trashNote(session.path);
 						if (problem) toast.error('Could not delete the note', { description: problem });
 					}}
 				>
-					{fieldsEditable ? 'Move to Recently Deleted' : 'Delete file'}
+					Move to Recently Deleted
 				</Button>
 			{/if}
 		</div>
@@ -205,5 +189,11 @@
 </section>
 
 {#if notes.host.history && historyOpen}
-	<NoteHistory history={notes.host.history} {session} bind:open={historyOpen} />
+	<NoteHistory
+		history={notes.host.history}
+		path={session.path}
+		admitting={session.admitting}
+		onUse={(source) => notes.useVersion(session, source)}
+		bind:open={historyOpen}
+	/>
 {/if}

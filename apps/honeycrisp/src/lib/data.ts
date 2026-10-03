@@ -9,7 +9,6 @@
  * The body is plain Markdown text. The rich-text editor reads and writes it
  * through `editor/markdown.ts`; no codec is declared here.
  */
-import { APPS } from '@epicenter/constants/apps';
 import { InstantString } from '@epicenter/definition';
 import {
 	type CreateRowOf,
@@ -23,7 +22,6 @@ import {
 } from '@epicenter/folder';
 
 export const honeycrispDefinition = defineFolder({
-	id: APPS.HONEYCRISP.id,
 	title: 'Honeycrisp',
 	kv: {},
 	tables: {

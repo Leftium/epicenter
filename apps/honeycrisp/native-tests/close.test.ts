@@ -12,8 +12,8 @@
  * Key behaviors:
  * - A close while the folder is opening, or after it failed to open, proceeds
  * - Once the folder is held, a close proceeds only on the page's approval
- * - A raw file draft and a rich-text draft are settled first, and kept when
- *   the person keeps editing
+ * - A raw file draft and a note's rich-text draft are settled first, and
+ *   kept when the person keeps editing
  * - Input is fenced before drafts are settled and while the approval is on
  *   its way; Keep editing and a refused approval release it
  * - A declined, replaced, or earlier page's approval is never replayed
@@ -21,14 +21,19 @@
  */
 import '../src/lib/svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
-import { hashBytes } from '@epicenter/folder';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { type FileCapture, FileError } from '@epicenter/folder';
+import { openFolder } from '@epicenter/folder/bun';
 import { undoDepth } from 'prosemirror-history';
+import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
+import { honeycrispDefinition } from '../src/lib/data.js';
 import { createRichSession } from '../src/lib/editor/rich-session.js';
-import {
-	inspectNote as inspect,
-	listingOf,
-	noteEntry,
-} from '../src/lib/inspect.test-support.js';
+import { noteBody } from '../src/lib/note-source.js';
+import { setUpFolder } from '../src/lib/platform/first-open.js';
 import {
 	type CloseRequest,
 	openGuarded,
@@ -39,10 +44,21 @@ import { createGateShell } from './gate.js';
 
 const { createNotes } = await import('../src/lib/notes.svelte.ts');
 
-const encoder = new TextEncoder();
 const NOTE_PATH = 'notes/a.md';
-const NOTE =
-	'---\ntitle: A\n# kept\nextra: 1\nupdatedAt: 2026-10-01T00:00:00.000Z\n---\nbody\n';
+const NOTE = [
+	'---',
+	'title: A',
+	'# kept',
+	'extra: 1',
+	'folderId: null',
+	'pinned: false',
+	'createdAt: "2026-10-01T00:00:00.000Z"',
+	'updatedAt: "2026-10-01T00:00:00.000Z"',
+	'deletedAt: null',
+	'---',
+	'body',
+	'',
+].join('\n');
 const RAW_PATH = 'kv.json';
 const RAW = '{}\n';
 
@@ -66,14 +82,34 @@ async function until(check: () => boolean, what: string) {
 }
 
 /**
- * A folder with one note and one raw file. Its writes can be made to fail,
- * or to wait until released, as a full disk or a slow one would.
+ * A real directory with one note and one raw file, opened with the folder's
+ * directory opener, so the note is edited by the production row editor. The
+ * fixture scripts only the boundary the page calls: a file write, a note
+ * save, or a new row can be made to fail, to wait until released, or to land
+ * and lose its reply, as a full disk, a slow one, or a lost IPC reply would.
+ * Raw file reads can be made to wait too.
  */
-function folder() {
-	const files = new Map([
-		[NOTE_PATH, NOTE],
-		[RAW_PATH, RAW],
-	]);
+async function folder() {
+	const root = await realpath(
+		await mkdtemp(join(tmpdir(), 'honeycrisp-close-')),
+	);
+	const handle = expectOk(
+		await openFolder({
+			root,
+			definition: honeycrispDefinition,
+			git: {
+				author: { name: 'Honeycrisp', email: 'honeycrisp@localhost' },
+				commitOnEdit: false,
+			},
+		}),
+	);
+	await setUpFolder(handle.files, Object.keys(honeycrispDefinition.tables));
+	writeFileSync(join(root, NOTE_PATH), NOTE);
+	writeFileSync(join(root, RAW_PATH), RAW);
+	cleanup.push(() => {
+		void handle.close().then(() => rm(root, { recursive: true, force: true }));
+	});
+
 	let failure: string | undefined;
 	let lost = false;
 	let held: PromiseWithResolvers<void> | undefined;
@@ -83,8 +119,13 @@ function folder() {
 	let moves = 0;
 	let closed = 0;
 
-	const sha256 = (source: string) => hashBytes(encoder.encode(source));
-	async function write(path: string, source: string) {
+	/** One publication through the scripted boundary: wait, then fail, land, or land with its reply lost. */
+	async function publish<T>(
+		path: string,
+		run: () => Promise<
+			{ data: T; error: null } | { data: null; error: unknown }
+		>,
+	) {
 		waiting += 1;
 		try {
 			await held?.promise;
@@ -92,43 +133,45 @@ function folder() {
 			waiting -= 1;
 		}
 		if (failure !== undefined)
-			return { data: null, error: { name: 'Io', message: failure } };
-		files.set(path, source);
-		if (lost)
-			return {
-				data: null,
-				error: { name: 'Unconfirmed', message: 'The reply was lost' },
-			};
-		return { data: { path, sha256: await sha256(source) }, error: null };
+			return FileError.Io({
+				path,
+				operation: 'write',
+				cause: new Error(failure),
+			});
+		const result = await run();
+		if (lost && result.error === null)
+			return FileError.Unconfirmed({
+				path,
+				operation: 'publishing to',
+				cause: new Error('The reply was lost'),
+			});
+		return result;
 	}
 
+	const notes = handle.tables.notes;
 	const host = {
 		folder: {
 			tables: {
 				notes: {
-					inspect,
-					list: async () => ({
-						data: listingOf([
-							await noteEntry(NOTE_PATH, files.get(NOTE_PATH) as string),
-						]),
-						error: null,
-					}),
+					list: notes.list,
+					inspect: notes.inspect,
+					create: (input: Parameters<typeof notes.create>[0]) =>
+						publish(`notes/${input.stem}.md`, () => notes.create(input)),
+					// The production editor; only its saves cross the scripted boundary.
+					edit: async (...args: Parameters<typeof notes.edit>) => {
+						const opened = await notes.edit(...args);
+						if (opened.error !== null) return opened;
+						const editor = opened.data;
+						return Ok({
+							...editor,
+							save: () => publish(editor.get().path, () => editor.save()),
+						});
+					},
 				},
-				folders: {
-					list: async () => ({ data: listingOf([]), error: null }),
-				},
+				folders: handle.tables.folders,
 			},
 			files: {
-				list: async () => ({
-					data: {
-						files: [...files].map(([path, source]) => ({
-							path,
-							size: source.length,
-						})),
-						directories: ['notes'],
-					},
-					error: null,
-				}),
+				...handle.files,
 				read: async (path: string) => {
 					reading += 1;
 					try {
@@ -136,38 +179,49 @@ function folder() {
 					} finally {
 						reading -= 1;
 					}
-					const bytes = encoder.encode(files.get(path));
-					return {
-						data: { path, bytes, sha256: await hashBytes(bytes) },
-						error: null,
-					};
+					return handle.files.read(path);
 				},
-				create: write,
-				replace: (file: { path: string }, source: string) =>
-					write(file.path, source),
-				move: async (file: { path: string; sha256: unknown }, to: string) => {
+				create: (path: string, content: string | Uint8Array) =>
+					publish(path, () => handle.files.create(path, content)),
+				replace: (file: FileCapture, content: string | Uint8Array) =>
+					publish(file.path, () => handle.files.replace(file, content)),
+				move: (file: FileCapture, to: string) => {
 					moves += 1;
-					files.set(to, files.get(file.path) as string);
-					files.delete(file.path);
-					return { data: { path: to, sha256: file.sha256 }, error: null };
+					return handle.files.move(file, to);
 				},
 			},
-			git: {
-				snapshot: {},
-				subscribe: () => () => {},
-				status: async () => undefined,
-			},
-			onFilesChanged: () => () => {},
+			git: handle.git,
+			onFilesChanged: handle.onFilesChanged,
 		},
-		terminal: { cwd: '/', description: '' },
+		terminal: {
+			cwd: '/',
+			description: '',
+			exec: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+		},
+		location: root,
+		reveal: undefined,
+		history: undefined,
 		close: async () => {
 			closed += 1;
+			await handle.close();
 		},
 	} as unknown as NotesHost;
 
 	return {
 		host,
-		saved: (path: string) => files.get(path),
+		/** How the notes table reads text. */
+		inspect: notes.inspect,
+		saved(path: string): string | undefined {
+			try {
+				return readFileSync(join(root, path), 'utf8');
+			} catch {
+				return undefined;
+			}
+		},
+		/** Another program writes the file, as the shell's terminal could. */
+		outside(path: string, source: string) {
+			writeFileSync(join(root, path), source);
+		},
 		failWrites(message: string | undefined) {
 			failure = message;
 		},
@@ -198,7 +252,14 @@ function folder() {
 		get moves() {
 			return moves;
 		},
-		paths: () => [...files.keys()].sort(),
+		/** Every file in the directory, outside `.git`. */
+		paths: () =>
+			(readdirSync(root, { recursive: true }) as string[])
+				.filter(
+					(path) =>
+						!path.startsWith('.git') && statSync(join(root, path)).isFile(),
+				)
+				.sort(),
 		get closed() {
 			return closed;
 		},
@@ -229,10 +290,10 @@ function page(
 	return { opening, prompts, problems };
 }
 
-/** An open page over a fresh folder, with one file's draft ready to edit. */
+/** An open page over a fresh folder, with the raw file's draft ready to edit. */
 async function editing(path: string) {
 	const gate = shell();
-	const disk = folder();
+	const disk = await folder();
 	const { opening, prompts, problems } = page(async () => disk.host);
 	const notes = await opening;
 	await notes.open(path);
@@ -240,6 +301,21 @@ async function editing(path: string) {
 	if (draft === undefined) throw new Error(`${path} did not open as text`);
 	cleanup.push(() => draft.dispose());
 	return { gate, disk, notes, draft, prompts, problems };
+}
+
+/** An open page over a fresh folder, with the note open and its rich-text view on its body. */
+async function editingNote() {
+	const gate = shell();
+	const disk = await folder();
+	const { opening, prompts, problems } = page(async () => disk.host);
+	const notes = await opening;
+	await notes.open(NOTE_PATH);
+	const draft = notes.noteAt(NOTE_PATH);
+	if (draft === undefined) throw new Error(`${NOTE_PATH} did not open as a note`);
+	cleanup.push(() => void draft.dispose());
+	const rich = createRichSession(noteBody(() => draft));
+	if (rich === undefined) throw new Error('The note is not rich text');
+	return { gate, disk, notes, draft, rich, prompts, problems };
 }
 
 // ============================================================================
@@ -252,7 +328,7 @@ test('a close before any page registered proceeds', async () => {
 
 test('a close while the folder is opening proceeds, and the folder that arrives afterward is closed unshown', async () => {
 	const gate = shell();
-	const disk = folder();
+	const disk = await folder();
 	const acquiring = Promise.withResolvers<NotesHost>();
 	let created = 0;
 	const { opening } = page(
@@ -284,7 +360,7 @@ test('a close after the folder failed to open proceeds', async () => {
 
 test('a page whose notes failed to start after the folder was held still answers a close', async () => {
 	const gate = shell();
-	const disk = folder();
+	const disk = await folder();
 	const { opening, prompts } = page(
 		async () => disk.host,
 		async () => {
@@ -327,7 +403,7 @@ test('a raw file draft that cannot be saved holds the close until the person cho
 	prompts[0]?.choose(false);
 	await until(() => gate.accepted('decline').length === 1, 'the decline');
 	expect(draft.buffer).toBe('{"kept": true}\n');
-	expect(draft.failure).toBe('The disk is full');
+	expect(draft.failure).toContain('The disk is full');
 	expect(notes.unsettled).toBe(1);
 	expect(disk.saved(RAW_PATH)).toBe(RAW);
 	// Keep editing means exactly that.
@@ -345,9 +421,7 @@ test('a raw file draft that cannot be saved holds the close until the person cho
 });
 
 test('a rich-text edit that is still saving is written before the close is approved', async () => {
-	const { gate, disk, notes, draft, prompts } = await editing(NOTE_PATH);
-	const rich = createRichSession(draft, { inspect });
-	if (rich === undefined) throw new Error('The note is not rich text');
+	const { gate, disk, notes, draft, rich, prompts } = await editingNote();
 	expect(rich.apply(rich.state.tr.insertText('rich ', 1))).toBeDefined();
 	expect(draft.dirty).toBe(true);
 
@@ -368,25 +442,22 @@ test('a rich-text edit that is still saving is written before the close is appro
 	expect(prompts).toEqual([]);
 	expect(gate.accepted('approve')).toEqual(['approve:1:1']);
 	const saved = disk.saved(NOTE_PATH) as string;
-	expect(inspect(saved).body).toBe('rich body\n');
-	// The person's own frontmatter is as they wrote it.
-	expect(saved).toContain('# kept\nextra: 1\n');
+	expect(disk.inspect(saved).body).toBe('rich body\n');
+	// The whole note is saved in one form: a value Honeycrisp does not know
+	// is kept, and the comment and the spelling are not.
+	expect(saved).toContain('"extra": 1\n');
+	expect(saved).not.toContain('# kept');
 	expect(await gate.close()).toBe('proceed');
 });
 
 test('a rich-text draft in conflict with the file is kept when the person keeps editing', async () => {
-	const { gate, disk, notes, draft, prompts } = await editing(NOTE_PATH);
-	const rich = createRichSession(draft, { inspect });
-	if (rich === undefined) throw new Error('The note is not rich text');
+	const { gate, disk, notes, draft, rich, prompts } = await editingNote();
 	expect(rich.apply(rich.state.tr.insertText('mine ', 1))).toBeDefined();
-	const mine = draft.buffer;
+	const mine = draft.state.document;
 	const history = undoDepth(rich.state);
 	// Another program rewrote the file; the refresh finds it.
 	const theirs = NOTE.replace('body', 'theirs');
-	notes.host.folder.tables.notes.list = async () => ({
-		data: listingOf([await noteEntry(NOTE_PATH, theirs)]),
-		error: null,
-	});
+	disk.outside(NOTE_PATH, theirs);
 	await notes.refresh();
 	expect(draft.status).toBe('conflict');
 	const reviewed = draft.external;
@@ -394,15 +465,15 @@ test('a rich-text draft in conflict with the file is kept when the person keeps 
 	expect(await gate.close()).toBe('held');
 	await until(() => prompts.length === 1, 'the prompt');
 	// Nothing is chosen for the person while the close is being answered.
-	if (reviewed === undefined)
+	if (reviewed?.kind !== 'present')
 		throw new Error('Expected the reviewed external file');
-	expect(draft.takeTheirs(reviewed)).toBe(false);
+	expect(draft.adopt(reviewed.revision)).toBe(false);
 	prompts[0]?.choose(false);
 	await until(() => gate.accepted('decline').length === 1, 'the decline');
-	expect(draft.buffer).toBe(mine);
+	expect(draft.state.document).toBe(mine);
 	expect(draft.external).toBe(reviewed);
-	expect(draft.external?.kind).toBe('changed');
-	expect(disk.saved(NOTE_PATH)).toBe(NOTE);
+	// Nothing was written over the other program's text.
+	expect(disk.saved(NOTE_PATH)).toBe(theirs);
 	expect(gate.accepted('approve')).toEqual([]);
 	// The same rich-text session goes on, with the undo history it had.
 	expect(notes.fenced).toBe(false);
@@ -419,7 +490,7 @@ test('a rich-text draft in conflict with the file is kept when the person keeps 
 /** An open page over a fresh folder, with no file open. */
 async function browsing() {
 	const gate = shell();
-	const disk = folder();
+	const disk = await folder();
 	const { opening, prompts, problems } = page(async () => disk.host);
 	const notes = await opening;
 	return { gate, disk, notes, prompts, problems };
@@ -461,7 +532,9 @@ test('a new note whose reply is lost holds the close until the person chooses, a
 	const { gate, disk, notes, prompts } = await browsing();
 	disk.loseReplies();
 	expect(await notes.createNote()).toContain('not confirmed');
-	expect(notes.pending).toMatchObject([{ kind: 'create', label: 'New note' }]);
+	expect(notes.pending).toMatchObject([
+		{ kind: 'createRow', label: 'New note' },
+	]);
 	expect(notes.unsettled).toBe(1);
 
 	expect(await gate.close()).toBe('held');
@@ -472,7 +545,9 @@ test('a new note whose reply is lost holds the close until the person chooses, a
 	await until(() => gate.accepted('decline').length === 1, 'the decline');
 	// Keep editing keeps the record as it was.
 	expect(notes.fenced).toBe(false);
-	expect(notes.pending).toMatchObject([{ kind: 'create', label: 'New note' }]);
+	expect(notes.pending).toMatchObject([
+		{ kind: 'createRow', label: 'New note' },
+	]);
 });
 
 test('a reply lost while the close is being answered is counted by that close', async () => {

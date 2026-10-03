@@ -8,7 +8,7 @@
 	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import { getAbortSignal } from 'svelte';
-	import type { Notes, PendingChange } from '$lib/notes.svelte.js';
+	import { canResend, type Notes, type PendingChange } from '$lib/notes.svelte.js';
 	import {
 		draftsLine,
 		historyLine,
@@ -136,29 +136,30 @@
 								<div>
 									<span class="block font-medium">{change.label}</span>
 									<span class="block break-words text-muted-foreground">
-										{#if change.state === 'partial'}
-											The new file was created and the old one was not removed. Both are there; neither is
-											changed from here.
-										{:else if change.kind === 'create' || change.kind === 'replace' || change.kind === 'mkdir'}
-											This may or may not have happened. It clears when the folder shows exactly what was
-											asked for, or when sending it again is confirmed.
+										{#if change.state === 'sourceNotRemoved' && change.kind === 'move'}
+											<code class="font-mono">{change.to}</code> was created and
+											<code class="font-mono">{change.from.path}</code> was not removed. Both hold the same
+											text; neither is changed from here.
 										{:else}
-											This may or may not have happened, and nothing here can tell. Look in Files. Nothing
-											else is changed there from this app until it is restarted.
+											This may or may not have happened, and nothing read since can say which.
+											{#if notes.found(change)}
+												The folder shows what was asked for now; that does not show this change did it.
+											{/if}
+											Nothing else is changed there from this app until you send it again or dismiss it.
 										{/if}
 										{change.problem}
 									</span>
-									{#if change.state === 'unconfirmed' && (change.kind === 'create' || change.kind === 'replace' || change.kind === 'mkdir')}
-										<Button
-											class="mt-1"
-											variant="outline"
-											size="xs"
-											disabled={notes.fenced}
-											onclick={() => void retryPending(change)}
-										>
-											Send it again
+									<span class="mt-1 flex gap-1">
+										{#if canResend(change)}
+											<Button variant="outline" size="xs" disabled={notes.fenced} onclick={() => void retryPending(change)}>
+												Send it again
+											</Button>
+										{/if}
+										<!-- The popover is outside the app's inert root. -->
+										<Button variant="ghost" size="xs" disabled={notes.fenced} onclick={() => notes.dismissPending(change)}>
+											Dismiss
 										</Button>
-									{/if}
+									</span>
 								</div>
 							{/each}
 						</dd>

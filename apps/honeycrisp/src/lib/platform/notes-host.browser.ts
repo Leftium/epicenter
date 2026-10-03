@@ -6,10 +6,15 @@
  */
 import { openFolder } from '@epicenter/folder/browser';
 import { honeycrispDefinition } from '../data.js';
-import type { NotesHost, OpenNotes } from './types.js';
+import {
+	HONEYCRISP_FOLDER_ID,
+	type NotesHost,
+	type OpenNotes,
+} from './types.js';
 
 async function acquire(): Promise<NotesHost> {
 	const opened = await openFolder({
+		id: HONEYCRISP_FOLDER_ID,
 		definition: honeycrispDefinition,
 		browser: { author: { name: 'Honeycrisp', email: 'honeycrisp@localhost' } },
 	});

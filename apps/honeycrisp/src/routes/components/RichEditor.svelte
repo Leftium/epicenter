@@ -29,6 +29,7 @@
 	import 'prosemirror-view/style/prosemirror.css';
 	import { untrack } from 'svelte';
 	import {
+		type BodyDraft,
 		createRichSession,
 		marks,
 		nodeActive,
@@ -36,20 +37,19 @@
 		type RichSession,
 		toggleQuote,
 	} from '$lib/editor/rich-session.js';
-	import type { InspectNote } from '$lib/data.js';
 	import { noteSchema as schema } from '$lib/editor/schema.js';
-	import type { FileSession } from '$lib/file-session.svelte.js';
 	import { richAvailability } from '$lib/note-source.js';
 
 	let {
-		session,
-		inspect,
+		draft,
+		admitting,
 		focusRequest,
 		onOpenSource,
 	}: {
-		session: FileSession;
-		/** How the notes table reads the draft's text. */
-		inspect: InspectNote;
+		/** The note's body, shared with its Markdown view. */
+		draft: BodyDraft;
+		/** Whether input is being taken; false while the app answers a close. */
+		admitting: boolean;
 		focusRequest: number;
 		onOpenSource: () => void;
 	} = $props();
@@ -63,11 +63,11 @@
 	let view = $state.raw<EditorView>();
 	let element = $state<HTMLDivElement>();
 
-	/** Why the draft cannot be edited as rich text, or undefined when it can. */
+	/** Why the body cannot be edited as rich text, or undefined when it can. */
 	const reasons = $derived.by((): readonly string[] | undefined => {
 		// While the document stands for the draft's body there is nothing to decide.
 		if (rich?.inSync) return undefined;
-		const availability = richAvailability(session.buffer, inspect);
+		const availability = richAvailability(draft.body);
 		return availability.editable ? undefined : availability.reasons;
 	});
 	/**
@@ -159,7 +159,7 @@
 	$effect(() => {
 		if (!element || !editable) return;
 		const opened = untrack(() =>
-			createRichSession(session, { inspect, viewPlugins: [placeholder, taskCheckbox] }),
+			createRichSession(draft, { viewPlugins: [placeholder, taskCheckbox] }),
 		);
 		if (!opened) return;
 		const created = new EditorView(element, {
@@ -187,7 +187,7 @@
 	// The draft's body changed from outside this view: the rich session replaces
 	// the document and drops the undo history that described the old text.
 	$effect(() => {
-		session.buffer;
+		draft.body;
 		const current = untrack(() => rich);
 		const mounted = untrack(() => view);
 		if (!current || !mounted) return;
@@ -297,7 +297,7 @@
 					>
 						<Input class="h-8" placeholder="https://example.com" aria-label="Link address" bind:value={linkHref} />
 						<!-- The popover is outside the app's inert root. -->
-						<Button type="submit" size="sm" disabled={!session.admitting}>{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
+						<Button type="submit" size="sm" disabled={!admitting}>{linkHref.trim() === '' ? 'Remove' : 'Apply'}</Button>
 					</form>
 				</Popover.Content>
 			</Popover.Root>
@@ -333,8 +333,7 @@
 		</div>
 		<div bind:this={element} class="honeycrisp-editor min-h-0 flex-1 overflow-y-auto p-6"></div>
 	</div>
-{:else if inspect(session.buffer).parseError === undefined}
-	<!-- A draft that does not parse is the note's own banner to explain; this one is for text that parses. -->
+{:else}
 	<div class="flex h-full flex-col items-start gap-3 overflow-y-auto p-6 text-sm" role="status">
 		<p class="font-medium">This note opens in Source only</p>
 		<p class="text-muted-foreground">

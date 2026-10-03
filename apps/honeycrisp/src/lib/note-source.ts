@@ -1,24 +1,19 @@
 /**
- * A note's source text, read and changed as one string.
+ * A note's text: its Markdown body for the rich-text view, the text a list
+ * shows, and help for repairing a note's file as text.
  *
- * The draft a person edits is the whole file: frontmatter and body. The
- * rich-text view changes only the body and the Source view changes anything,
- * so both go through these functions and share one string. Every change is a
- * source-preserving patch: unknown frontmatter keys, comments, quoting, and
- * line endings are kept as written.
- *
- * Text is read with the notes table's own interpreter (`InspectNote`), the
- * one that reads saved files. A draft that does not parse has no body and no
- * fields here either, and is repaired in the Source view.
+ * A structured note is a row editor's document: fields and a Markdown body.
+ * The rich-text view and the Markdown view both edit that body through
+ * `noteBody`; a save writes the whole document in its canonical form. A note
+ * file the row editor cannot hold is repaired as text, and `repairFields` is
+ * the one change made to that text here: a person asks for it.
  */
-import {
-	type PatchRefusal,
-	patchSource,
-	type TableReading,
-} from '@epicenter/folder';
+import { patchSource, type TableReading } from '@epicenter/folder';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { FolderFields, InspectNote, NoteFields } from './data.js';
+import { instantNow, type NoteFields } from './data.js';
 import { type BodyInspection, inspectNoteBody } from './editor/markdown.js';
+import type { BodyDraft } from './editor/rich-session.js';
+import type { RowSession } from './row-session.svelte.js';
 
 export type RichAvailability =
 	| {
@@ -30,22 +25,10 @@ export type RichAvailability =
 	| { readonly editable: false; readonly reasons: readonly string[] };
 
 /**
- * Whether this source can be edited as rich text, and why not when it cannot.
- * It needs the source to parse and the body to be Markdown the editor can
- * write back. A field with an issue does not stand in the way of the body.
+ * Whether this body can be edited as rich text, and why not when it cannot:
+ * the editor must be able to write it back as the Markdown it read.
  */
-export function richAvailability(
-	source: string,
-	inspect: InspectNote,
-): RichAvailability {
-	const { body, parseError } = inspect(source);
-	if (body === undefined)
-		return {
-			editable: false,
-			reasons: parseError?.diagnostics.map(
-				(diagnostic) => diagnostic.message,
-			) ?? ['This note has no text to edit.'],
-		};
+export function richAvailability(body: string): RichAvailability {
 	const inspection = inspectNoteBody(body);
 	if (!inspection.supported)
 		return { editable: false, reasons: inspection.reasons };
@@ -53,9 +36,9 @@ export function richAvailability(
 }
 
 /**
- * The file body for serialized rich text: blank lines between the
- * frontmatter and the text are kept, the text ends with one line break, and
- * the file's CRLF line endings are kept when it uses them.
+ * The body for serialized rich text: blank lines at its start are kept, the
+ * text ends with one line break, and CRLF line endings are kept when the body
+ * uses them.
  */
 export function bodyText(markdown: string, previousBody: string): string {
 	const lead = /^(?:\r?\n)*/.exec(previousBody)?.[0] ?? '';
@@ -63,48 +46,31 @@ export function bodyText(markdown: string, previousBody: string): string {
 	return previousBody.includes('\r\n') ? body.replace(/\r?\n/g, '\r\n') : body;
 }
 
-/** A patch refusal in words: why the source did not parse, or why the change is not safe. */
-function refusalMessage(refusal: PatchRefusal): string {
-	return refusal.kind === 'unparsed' ? refusal.error.message : refusal.reason;
-}
-
 /**
- * Replace the body with serialized rich text. `updatedAt` moves only when
- * the file holds a valid one: a body edit neither adds the field nor
- * overwrites a value that needs repair.
+ * A note's body, as the rich-text and Markdown views edit it, in whichever
+ * session holds the note now: a rename hands the note to a new session, and
+ * the views, with their undo history, stay. A body change moves `updatedAt`
+ * when the document holds a valid one; it never adds the field.
  */
-export function applyRichBody(
-	source: string,
-	markdown: string,
-	now: NoteFields['updatedAt'],
-	inspect: InspectNote,
-): Result<string, string> {
-	const read = inspect(source);
-	if (read.body === undefined)
-		return Err(read.parseError?.message ?? 'This note has no text to edit.');
-	const patched = patchSource(source, {
-		body: bodyText(markdown, read.body),
-		...(read.fields.updatedAt !== undefined && {
-			fields: { updatedAt: now },
-		}),
-	});
-	return patched.error ? Err(refusalMessage(patched.error)) : Ok(patched.data);
-}
-
-/** Change frontmatter fields, leaving the body and every other key as written. */
-export function applyFields(
-	source: string,
-	fields: Partial<NoteFields> | Partial<FolderFields>,
-): Result<string, string> {
-	const patched = patchSource(source, { fields });
-	return patched.error ? Err(refusalMessage(patched.error)) : Ok(patched.data);
-}
-
-/** The source of a new note or folder file: both fences around its fields in order, and no body. */
-export function newSource(
-	fields: NoteFields | FolderFields,
-): Result<string, string> {
-	return applyFields('---\n---\n', fields);
+export function noteBody(
+	current: () => RowSession<NoteFields>,
+	now: () => NoteFields['updatedAt'] = instantNow,
+): BodyDraft {
+	return {
+		get body() {
+			return current().state.document.body;
+		},
+		input(body) {
+			const session = current();
+			return session.change({
+				body,
+				...(session.state.reading.fields.updatedAt !== undefined && {
+					fields: { updatedAt: now() },
+				}),
+			});
+		},
+		refuse: (reason) => current().refuse(reason),
+	};
 }
 
 /**
@@ -131,6 +97,20 @@ export function fieldDefaults(
 		if (!Object.hasOwn(content.fields, key))
 			Object.assign(needed, { [key]: value });
 	return Object.keys(needed).length === 0 ? undefined : needed;
+}
+
+/**
+ * Set fields in a note file's text being repaired, leaving the body and
+ * every other key as written.
+ */
+export function repairFields(
+	source: string,
+	fields: Partial<NoteFields>,
+): Result<string, string> {
+	const patched = patchSource(source, { fields });
+	if (patched.error === null) return Ok(patched.data);
+	const refusal = patched.error;
+	return Err(refusal.kind === 'unparsed' ? refusal.error.message : refusal.reason);
 }
 
 /** Plain text from the start of a Markdown body, for list previews. */

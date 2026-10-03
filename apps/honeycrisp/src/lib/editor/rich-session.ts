@@ -1,9 +1,9 @@
 /**
  * The rich-text view's editing session: one ProseMirror state, its undo
- * history, and its tie to the note's draft.
+ * history, and its tie to the note's body.
  *
- * The draft is the one logical buffer. This session is a view of its body,
- * and two rules keep them the same:
+ * The note's row editor holds the one document; this session is a view of its
+ * Markdown body, and two rules keep them the same:
  *
  * - Every transaction that changes the document is checked before it is
  *   shown. If its Markdown would not parse back to an equivalent document,
@@ -11,8 +11,8 @@
  *   the screen does not change. If it passes, the draft receives the Markdown
  *   in the same step. There is never text on screen that the draft does not
  *   hold.
- * - When the draft's body changes from anywhere else (the Source view, a
- *   file adopted from disk, a discarded conflict), `sync` replaces the
+ * - When the body changes from anywhere else (the Markdown view, a file the
+ *   editor followed, a version the person chose), `sync` replaces the
  *   document and starts a new undo history, because the old history
  *   describes text that is gone.
  *
@@ -50,8 +50,7 @@ import {
 	TextSelection,
 	type Transaction,
 } from 'prosemirror-state';
-import { type InspectNote, instantNow, type NoteFields } from '../data.js';
-import { applyRichBody, bodyText, richAvailability } from '../note-source.js';
+import { bodyText, richAvailability } from '../note-source.js';
 import { checkNoteDoc } from './markdown.js';
 import { noteSchema } from './schema.js';
 
@@ -154,40 +153,32 @@ function editingPlugins(): Plugin[] {
 	];
 }
 
-/** The part of a file session the rich-text view reads and writes. */
-export type SourceBuffer = {
-	readonly buffer: string;
-	/** Take the whole new source. False means it was not taken. */
-	input(text: string): boolean;
+/** The body the rich-text view reads and writes: one note's, shared with its other views. */
+export type BodyDraft = {
+	readonly body: string;
+	/** Take the whole new body. False means it was not taken. */
+	input(body: string): boolean;
 	refuse(reason: string): void;
 };
 
 export type RichSession = NonNullable<ReturnType<typeof createRichSession>>;
 
 /**
- * Open a session on a draft whose source is editable as rich text. Returns
+ * Open a session on a draft whose body is editable as rich text. Returns
  * undefined when it is not; the caller shows why from `richAvailability`.
  */
 export function createRichSession(
-	draft: SourceBuffer,
+	draft: BodyDraft,
 	{
-		inspect,
-		now = instantNow,
 		viewPlugins = [],
 	}: {
-		/** How the notes table reads the draft's text. */
-		inspect: InspectNote;
-		now?: () => NoteFields['updatedAt'];
 		/** Plugins that need a DOM, such as decorations and click handlers. */
 		viewPlugins?: readonly Plugin[];
-	},
+	} = {},
 ) {
-	const opened = richAvailability(draft.buffer, inspect);
+	const opened = richAvailability(draft.body);
 	if (!opened.editable) return undefined;
 	const plugins = [...editingPlugins(), ...viewPlugins];
-	/** The draft's body as it is now; undefined while the draft does not parse. */
-	const bodyNow = () => inspect(draft.buffer).body;
-
 	function stateFor(doc: Node, previous?: EditorState): EditorState {
 		let selection: Selection | undefined;
 		if (previous)
@@ -230,26 +221,14 @@ export function createRichSession(
 				draft.refuse(check.reason);
 				return undefined;
 			}
-			const current = bodyNow();
+			const current = draft.body;
+			const body = bodyText(check.markdown, current);
 			// An edit Markdown has no spelling for (a new empty paragraph) leaves
 			// the body as it is, so it does not make the note newer.
-			if (
-				current === undefined ||
-				bodyText(check.markdown, current) !== current
-			) {
-				const patched = applyRichBody(
-					draft.buffer,
-					check.markdown,
-					now(),
-					inspect,
-				);
-				if (patched.error !== null) {
-					draft.refuse(patched.error);
-					return undefined;
-				}
+			if (body !== current) {
 				// Input that is not being taken is not shown either.
-				if (!draft.input(patched.data)) return undefined;
-				syncedBody = inspect(patched.data).body ?? syncedBody;
+				if (!draft.input(body)) return undefined;
+				syncedBody = draft.body;
 			}
 			state = next;
 			return next;
@@ -261,9 +240,8 @@ export function createRichSession(
 		 * or undefined when nothing was replaced.
 		 */
 		sync(): EditorState | undefined {
-			const body = bodyNow();
-			if (body === undefined || body === syncedBody) return undefined;
-			const available = richAvailability(draft.buffer, inspect);
+			if (draft.body === syncedBody) return undefined;
+			const available = richAvailability(draft.body);
 			if (!available.editable) return undefined;
 			syncedBody = available.body;
 			state = stateFor(available.inspection.doc, state);
@@ -271,7 +249,7 @@ export function createRichSession(
 		},
 		/** Whether the draft's body is the one this document stands for. */
 		get inSync() {
-			return bodyNow() === syncedBody;
+			return draft.body === syncedBody;
 		},
 	};
 }

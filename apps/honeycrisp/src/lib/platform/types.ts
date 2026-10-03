@@ -7,21 +7,37 @@
  * folder's emulated shell. The UI never asks which one it has except through
  * the optional capabilities below.
  */
+import { APPS } from '@epicenter/constants/apps';
 import type { Folder, FolderFiles, FolderGit } from '@epicenter/folder';
 import type { honeycrispDefinition } from '../data.js';
 
 type Definition = typeof honeycrispDefinition;
 
 /**
- * The folder surface the notes UI uses. Tables are read as listings, and the
- * notes table also reads a draft's text with `inspect`; every change to a
- * file goes through `files`, on a capture. The folder says when files
+ * The folder both leaves open. The browser names its IndexedDB database after
+ * it; the desktop shell registers its directory under it (`SCOPE` in
+ * `src-tauri/src/root.rs`).
+ */
+export const HONEYCRISP_FOLDER_ID = APPS.HONEYCRISP.id;
+
+/**
+ * The folder surface the notes UI uses. Tables are read as listings and
+ * create new rows; a structured change to a row goes through that table's
+ * row editor (`edit`), which saves the complete canonical document. The notes
+ * table also reads a file being repaired with `inspect`. Every other change
+ * to a file goes through `files`, on a capture. The folder says when files
  * changed, as a hint to read again. Remotes are outside this app.
  */
 export type NotesFolder = {
 	tables: {
-		notes: Pick<Folder<Definition>['tables']['notes'], 'list' | 'inspect'>;
-		folders: Pick<Folder<Definition>['tables']['folders'], 'list'>;
+		notes: Pick<
+			Folder<Definition>['tables']['notes'],
+			'list' | 'inspect' | 'create' | 'edit'
+		>;
+		folders: Pick<
+			Folder<Definition>['tables']['folders'],
+			'list' | 'create' | 'edit'
+		>;
 	};
 	files: Pick<
 		FolderFiles,

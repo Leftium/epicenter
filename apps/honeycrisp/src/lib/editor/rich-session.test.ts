@@ -2,8 +2,8 @@
  * Rich Session Tests
  *
  * Drives the rich-text session the way the view does: transactions in,
- * states out, against a draft. The session has no DOM, so undo history,
- * refusals, and the tie to the draft are tested exactly as they run.
+ * states out, against a note body. The session has no DOM, so undo history,
+ * refusals, and the tie to the body are tested exactly as they run.
  *
  * Key behaviors:
  * - Every displayed edit is in the draft, including spaces and Enter
@@ -14,11 +14,9 @@
  * - Moving the cursor writes nothing
  */
 import { describe, expect, test } from 'bun:test';
-import type { InstantString } from '@epicenter/definition';
 import { baseKeymap, toggleMark } from 'prosemirror-commands';
 import { redo, redoDepth, undo, undoDepth } from 'prosemirror-history';
 import { type Command, TextSelection } from 'prosemirror-state';
-import { inspectNote as inspect } from '../inspect.test-support.js';
 import { equivalentNoteDocs, parseNoteBody } from './markdown.js';
 import {
 	createRichSession,
@@ -27,20 +25,16 @@ import {
 	type RichSession,
 } from './rich-session.js';
 
-const NOW = '2026-10-02T00:00:00.000Z' as InstantString;
-const HEAD =
-	'---\ntitle: T\n# kept\nextra: 1\nupdatedAt: 2026-10-01T00:00:00.000Z\n---\n';
-
-function draftOf(source: string) {
+function draftOf(body: string) {
 	const draft = {
-		buffer: source,
+		body,
 		inputs: 0,
 		refusal: undefined as string | undefined,
 		/** Whether input is being taken, as it is not while the app closes. */
 		admits: true,
 		input(text: string) {
 			if (!draft.admits) return false;
-			draft.buffer = text;
+			draft.body = text;
 			draft.inputs += 1;
 			draft.refusal = undefined;
 			return true;
@@ -53,11 +47,8 @@ function draftOf(source: string) {
 }
 
 function open(initialBody: string) {
-	const draft = draftOf(HEAD + initialBody);
-	const session = createRichSession(draft, {
-		inspect,
-		now: () => NOW,
-	}) as RichSession;
+	const draft = draftOf(initialBody);
+	const session = createRichSession(draft) as RichSession;
 	expect(session).toBeDefined();
 	/** Run a command the way the view does. Returns whether it was displayed. */
 	const run = (command: Command) => {
@@ -72,7 +63,7 @@ function open(initialBody: string) {
 			dispatch?.(state.tr.insertText(text));
 			return true;
 		});
-	const body = () => inspect(draft.buffer).body as string;
+	const body = () => draft.body;
 	/** What is on screen and what the draft holds are the same content. */
 	const expectDraftHoldsScreen = () =>
 		expect(equivalentNoteDocs(parseNoteBody(body()), session.state.doc)).toBe(
@@ -114,10 +105,10 @@ describe('every displayed edit is in the draft', () => {
 		const { type, run, body, session, draft, end, expectDraftHoldsScreen } =
 			open('one\n');
 		end();
-		const before = draft.buffer;
+		const before = draft.body;
 		expect(run(baseKeymap.Enter as Command)).toBe(true);
 		expect(session.state.doc.childCount).toBe(2);
-		expect(draft.buffer).toBe(before);
+		expect(draft.body).toBe(before);
 		expect(draft.refusal).toBeUndefined();
 		expectDraftHoldsScreen();
 		type('two');
@@ -145,19 +136,18 @@ describe('every displayed edit is in the draft', () => {
 		expectDraftHoldsScreen();
 	});
 
-	test('an edit changes only the body and updatedAt', () => {
+	test('an edit gives the draft the whole new body, once', () => {
 		const { type, draft } = open('one\n');
 		type('x');
-		expect(draft.buffer).toBe(
-			`${HEAD.replace('2026-10-01', '2026-10-02')}xone\n`,
-		);
+		expect(draft.body).toBe('xone\n');
+		expect(draft.inputs).toBe(1);
 	});
 
 	test('moving the cursor writes nothing', () => {
 		const { end, draft } = open('one\n');
 		end();
 		expect(draft.inputs).toBe(0);
-		expect(draft.buffer).toBe(`${HEAD}one\n`);
+		expect(draft.body).toBe('one\n');
 	});
 });
 
@@ -165,7 +155,7 @@ describe('an edit Markdown cannot express', () => {
 	test('is refused before it is displayed, and says why', () => {
 		const { run, session, draft } = open('a(b)\n');
 		const before = session.state;
-		const buffer = draft.buffer;
+		const buffer = draft.body;
 		// Bold on "(b)" directly after a letter has no Markdown spelling.
 		const displayed = run((state, dispatch) => {
 			dispatch?.(state.tr.addMark(2, 5, marks.strong.create()));
@@ -173,7 +163,7 @@ describe('an edit Markdown cannot express', () => {
 		});
 		expect(displayed).toBe(false);
 		expect(session.state).toBe(before);
-		expect(draft.buffer).toBe(buffer);
+		expect(draft.body).toBe(buffer);
 		expect(draft.refusal).toContain('cannot be written as Markdown');
 	});
 
@@ -240,7 +230,7 @@ describe('undo history', () => {
 		const { type, run, draft, session, body, end } = open('one\n');
 		end();
 		type('!');
-		draft.input(`${HEAD}from source\n`);
+		draft.input('from source\n');
 		const inputs = draft.inputs;
 		const replaced = session.sync();
 		expect(replaced).toBeDefined();
@@ -264,40 +254,23 @@ describe('undo history', () => {
 			dispatch?.(state.tr.setSelection(TextSelection.create(state.doc, 3)));
 			return true;
 		});
-		draft.buffer = `${HEAD}abcdef and more\n`;
+		draft.body = 'abcdef and more\n';
 		expect(session.sync()?.selection.anchor).toBe(3);
-		draft.buffer = `${HEAD}a\n`;
+		draft.body = 'a\n';
 		expect(session.sync()?.selection.anchor).toBe(2);
 	});
 });
 
 describe('source the editor cannot hold', () => {
 	test('opens no session', () => {
-		for (const source of [
-			`${HEAD}<div>x</div>\n`,
-			'---\ntitle: *missing\n---\nbody\n',
-			// Markdown with no frontmatter lines does not parse as a note.
-			'Just text\n',
-		])
-			expect(createRichSession(draftOf(source), { inspect })).toBeUndefined();
-	});
-
-	test('a draft that stops parsing takes no rich edit, and the screen does not change', () => {
-		const { draft, session, type } = open('one\n');
-		const state = session.state;
-		const broken = draft.buffer.replace('title: T', 'title: [open');
-		draft.buffer = broken;
-		expect(type('x')).toBe(false);
-		expect(draft.buffer).toBe(broken);
-		expect(draft.refusal).toContain('not valid YAML');
-		expect(session.state).toBe(state);
-		expect(session.sync()).toBeUndefined();
+		for (const body of ['<div>x</div>\n', '![image](x.png)\n'])
+			expect(createRichSession(draftOf(body))).toBeUndefined();
 	});
 
 	test('typed into Source is not pulled into the document', () => {
 		const { draft, session } = open('one\n');
 		const state = session.state;
-		draft.buffer = `${HEAD}![image](x.png)\n`;
+		draft.body = '![image](x.png)\n';
 		expect(session.sync()).toBeUndefined();
 		expect(session.state).toBe(state);
 		expect(session.inSync).toBe(false);

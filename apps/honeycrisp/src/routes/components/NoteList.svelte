@@ -21,12 +21,15 @@
 
 	/** What the row shows: the open draft when there is one, else the saved file. */
 	function shown(note: NoteEntry) {
-		const session = notes.sessionAt(note.path);
+		const opened = notes.noteAt(note.path);
+		const raw = notes.sessionAt(note.path);
 		// A draft is read as it is typed, with the reader that reads saved files.
 		const reading =
-			session === undefined || !session.dirty
-				? note
-				: notes.host.folder.tables.notes.inspect(session.buffer);
+			opened?.dirty
+				? { fields: opened.state.reading.fields, body: opened.state.document.body }
+				: raw?.dirty
+					? notes.host.folder.tables.notes.inspect(raw.buffer)
+					: note;
 		return {
 			title: displayTitle(reading.fields.title ?? note.fields.title, reading.body),
 			preview: previewText(reading.body),
@@ -112,7 +115,7 @@
 			<h3 class="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">{group.label}</h3>
 			{#each group.entries as note (note.path)}
 				{@const row = shown(note)}
-				{@const session = notes.sessionAt(note.path)}
+				{@const session = notes.noteAt(note.path) ?? notes.sessionAt(note.path)}
 				<ContextMenu.Root>
 					<ContextMenu.Trigger>
 						<button

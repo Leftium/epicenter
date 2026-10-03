@@ -162,6 +162,10 @@ export type Workspace = {
 	readonly closing:
 		| {
 				onRequest(listener: () => void): () => void;
+				/**
+				 * Rejects when the answer was not delivered. The host may still have
+				 * taken it: a rejected `proceed` is not a refusal to quit.
+				 */
 				answer(decision: CloseDecision): Promise<void>;
 				/**
 				 * The shell tried to close but the host is gone, so it could not ask

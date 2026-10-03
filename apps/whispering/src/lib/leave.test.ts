@@ -44,6 +44,8 @@ async function open({
 	failResultWrites = 0,
 	failOutputWrites = 0,
 	failPrepare = false,
+	deliverProceed,
+	beforeTransformationRead,
 }: {
 	failAudioWrites?: number;
 	failResultWrites?: number;
@@ -51,6 +53,10 @@ async function open({
 	failOutputWrites?: number;
 	/** Make finding out what is held throw. */
 	failPrepare?: boolean;
+	/** How a `proceed` reaches the shell: held, or lost. It is recorded first. */
+	deliverProceed?: () => Promise<void>;
+	/** Runs before each read of a transformation row. */
+	beforeTransformationRead?: () => Promise<void>;
 } = {}) {
 	const root = await realpath(
 		await mkdtemp(join(tmpdir(), 'whispering-leave-')),
@@ -59,7 +65,8 @@ async function open({
 	const folder = await openTestFolder(root);
 	let resultFailures = failResultWrites;
 	let outputFailures = failOutputWrites;
-	const { transcriptions, transformation_runs } = folder.tables;
+	const { transcriptions, transformation_runs, transformations } =
+		folder.tables;
 	// The acceptance case: the audio write fails, so no file reaches the folder.
 	const batch = batchWithRecordingFailures(folder, root, {
 		audio: failAudioWrites,
@@ -69,6 +76,13 @@ async function open({
 		FileError.Io({ path, operation: 'create', cause: new Error('disk full') });
 	const tables = {
 		...folder.tables,
+		transformations: {
+			...transformations,
+			get: async (stem: string) => {
+				await beforeTransformationRead?.();
+				return transformations.get(stem);
+			},
+		},
 		transformation_runs: {
 			...transformation_runs,
 			create: async (
@@ -92,6 +106,7 @@ async function open({
 	const requestListeners = new Set<() => void>();
 	const hostGoneListeners = new Set<() => void>();
 	let quitSignals = 0;
+	let transformCalls = 0;
 	const workspace: Workspace = {
 		kind: 'native',
 		folder: { ...folder, tables, batch } as Workspace['folder'],
@@ -109,7 +124,10 @@ async function open({
 		onExternalChange: () => () => {},
 		reveal: undefined,
 		transcribe: async () => Ok({ text: 'a steady tone' }),
-		transform: async ({ input }) => Ok({ text: `Cleaned: ${input.trim()}` }),
+		transform: async ({ input }) => {
+			transformCalls += 1;
+			return Ok({ text: `Cleaned: ${input.trim()}` });
+		},
 		transformNote: 'test',
 		closing: {
 			onRequest(listener) {
@@ -118,6 +136,7 @@ async function open({
 			},
 			async answer(decision) {
 				answers.push(decision);
+				if (decision === 'proceed') await deliverProceed?.();
 			},
 			onRequestWithoutHost(listener) {
 				hostGoneListeners.add(listener);
@@ -157,6 +176,8 @@ async function open({
 					get unsavedWork() {
 						return library.unsavedWork;
 					},
+					pauseAdmission: () => library.pauseAdmission(),
+					resumeAdmission: () => library.resumeAdmission(),
 				}
 			: library,
 		workspace.closing,
@@ -191,7 +212,20 @@ async function open({
 		get quitSignals() {
 			return quitSignals;
 		},
+		/** How many transformation requests reached the endpoint. */
+		get transformCalls() {
+			return transformCalls;
+		},
 	};
+}
+
+/** Wait for something another task does. */
+async function until(condition: () => boolean, what: string) {
+	for (let waited = 0; waited < 200; waited++) {
+		if (condition()) return;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error(`timed out waiting for ${what}`);
 }
 
 async function record(library: Library) {
@@ -465,7 +499,12 @@ test('a guard disposed while it is finding out what is held approves nothing', a
 	const listeners = new Set<() => void>();
 	const prepared = Promise.withResolvers<boolean>();
 	const guard = createLeaveGuard(
-		{ prepareToLeave: () => prepared.promise, unsavedWork: [] },
+		{
+			prepareToLeave: () => prepared.promise,
+			unsavedWork: [],
+			pauseAdmission() {},
+			resumeAdmission() {},
+		},
 		{
 			onRequest(listener) {
 				listeners.add(listener);
@@ -497,4 +536,294 @@ test('the guard stops listening when the view goes away', async () => {
 	expect(listeners.size).toBe(1);
 	guard.dispose();
 	expect(listeners.size).toBe(0);
+});
+
+// ============================================================================
+// Nothing new starts once the shell has asked
+// ============================================================================
+
+test('a capture or typing asked for while the approval is on its way is refused', async () => {
+	const delivered = Promise.withResolvers<void>();
+	const { library, guard, answers, ask } = await open({
+		deliverProceed: () => delivered.promise,
+	});
+	await record(library);
+	const selection = library.selection;
+	if (selection?.kind !== 'recording') throw new Error('expected a recording');
+	const { editor } = selection;
+	const before = editor.buffer;
+
+	// Nothing was held, so `proceed` is sent. It has not arrived yet.
+	await ask();
+	expect(answers).toEqual(['asking', 'proceed']);
+	expect(guard.phase).toBe('quitting');
+
+	await library.startRecording();
+	patchRow(editor, { fields: { title: 'Typed after approval' } });
+	editor.input('typed straight into the draft');
+
+	expect(library.recorder.phase).toBe('idle');
+	expect(editor.buffer).toBe(before);
+	expect(library.holdsUnsavedWork).toBe(false);
+
+	delivered.resolve();
+	await until(() => !guard.sending, 'the quit to be delivered');
+	// Committed: there is nothing to keep working on.
+	await guard.stay();
+	expect(guard.phase).toBe('quitting');
+	expect(library.admitting).toBe(false);
+	expect(answers).toEqual(['asking', 'proceed']);
+});
+
+test('while the person decides nothing new starts, and keep working admits work again with everything held intact', async () => {
+	const { library, guard, answers, ask, root } = await open({
+		failAudioWrites: 1,
+	});
+	await record(library);
+	const pending = library.pending[0]!;
+	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
+	const { editor } = library.selectedTransformation!;
+	library.autosave.paused = true;
+	patchRow(editor, { body: 'Typed before the close.\n' });
+
+	await ask();
+	expect(answers).toEqual(['asking']);
+	expect(guard.phase).toBe('asking');
+
+	// Every way to start something is refused, whoever calls it.
+	await library.startRecording();
+	expect(library.recorder.phase).toBe('idle');
+	await library.retryPending(pending.capture.id);
+	expect(library.pending[0]!.attempts).toBe(pending.attempts);
+	expect(library.pending[0]!.state.kind).toBe('failed');
+	editor.input('typed while asked');
+	expect(editor.buffer).toContain('Typed before the close.');
+	expect(await library.createFile('', 'note.md')).toContain('closing');
+	expect(await Bun.file(join(root, 'note.md')).exists()).toBe(false);
+	library.terminal.command = 'echo hi';
+	await library.terminal.run();
+	expect(library.terminal.runs.at(-1)?.result?.stderr).toContain('closing');
+	expect((await library.commit()).status).toBe('blocked');
+
+	await guard.stay();
+
+	expect(answers).toEqual(['asking', 'cancel']);
+	expect(library.admitting).toBe(true);
+	expect(library.pending[0]!.capture.bytes).toEqual(toneWav());
+	expect(editor.buffer).toContain('Typed before the close.');
+	expect(editor.dirty).toBe(true);
+	editor.input(`${editor.buffer}More.\n`);
+	expect(editor.buffer).toContain('More.');
+	await library.startRecording();
+	expect(library.recorder.phase).toBe('recording');
+	library.cancelRecording();
+});
+
+test('a quit whose answer is lost stays committed: nothing is admitted again, and quitting again is the only action', async () => {
+	const started = await open({
+		deliverProceed: async () => {
+			throw new TypeError('Load failed');
+		},
+	});
+	const { library, guard, answers, ask, listeners } = started;
+
+	await ask();
+	await until(() => !guard.sending, 'the quit to be tried');
+	expect(answers).toEqual(['asking', 'proceed']);
+	expect(guard.phase).toBe('quitting');
+	expect(guard.problem).toBe('Load failed');
+	// The page quit on its own judgement, so it chose no other way out.
+	expect(started.quitSignals).toBe(0);
+
+	await guard.stay();
+	expect(guard.phase).toBe('quitting');
+	expect(library.admitting).toBe(false);
+	await library.startRecording();
+	expect(library.recorder.phase).toBe('idle');
+
+	// The shell asks again: acknowledged, and nothing resumes.
+	for (const listener of listeners) listener();
+	await until(() => answers.length === 3, 'the acknowledgement');
+	expect(answers).toEqual(['asking', 'proceed', 'asking']);
+	expect(guard.phase).toBe('quitting');
+
+	// The person quits again: the same answer, and the quit address in case
+	// the host is gone.
+	await guard.discardAndQuit();
+	expect(answers).toEqual(['asking', 'proceed', 'asking', 'proceed']);
+	expect(started.quitSignals).toBe(1);
+
+	// The shell says its host is gone: quitting again uses the quit address.
+	started.askWithoutHost();
+	expect(guard.phase).toBe('quitting');
+	await guard.discardAndQuit();
+	expect(started.quitSignals).toBe(2);
+	expect(answers).toHaveLength(4);
+	expect(library.admitting).toBe(false);
+});
+
+test('a transformation whose reads were under way when the person quit is never sent', async () => {
+	let hold: PromiseWithResolvers<void> | undefined;
+	const started = await open({
+		beforeTransformationRead: () => hold?.promise ?? Promise.resolve(),
+	});
+	const { library, guard, answers, ask } = started;
+	await record(library);
+	await library.transcribe(library.entries[0]!);
+	await library.createTransformation({ title: 'Clean up', prompt: 'Tidy.\n' });
+	const profile = library.selectedTransformation!;
+	patchRow(profile.editor, { fields: { model: 'chat-model' } });
+	const transcript = library.resultsFor(library.entries[0]!.stem)[0]!;
+	hold = Promise.withResolvers<void>();
+	const running = library.transform(transcript.path, profile.editor.path);
+
+	await ask();
+	// Its reads count as a running transformation, so the person is asked.
+	expect(answers).toEqual(['asking']);
+	expect(guard.held).toContain(
+		'A transformation is still running; its result would be lost.',
+	);
+	await guard.discardAndQuit();
+	expect(answers).toEqual(['asking', 'proceed']);
+
+	hold.resolve();
+	expect(await running).toContain('closing');
+	expect(started.transformCalls).toBe(0);
+	expect(library.transformationRuns).toEqual([]);
+});
+
+/** A guard over a library whose preparation the test finishes. */
+function scripted() {
+	const answers: CloseDecision[] = [];
+	const requests = new Set<() => void>();
+	const hostGone = new Set<() => void>();
+	const prepared = Promise.withResolvers<boolean>();
+	const counts = { prepares: 0, quitSignals: 0 };
+	let admitting = true;
+	const guard = createLeaveGuard(
+		{
+			prepareToLeave() {
+				counts.prepares += 1;
+				return prepared.promise;
+			},
+			unsavedWork: [],
+			pauseAdmission() {
+				admitting = false;
+			},
+			resumeAdmission() {
+				admitting = true;
+			},
+		},
+		{
+			onRequest(listener) {
+				requests.add(listener);
+				return () => requests.delete(listener);
+			},
+			async answer(decision) {
+				answers.push(decision);
+			},
+			onRequestWithoutHost(listener) {
+				hostGone.add(listener);
+				return () => hostGone.delete(listener);
+			},
+			quitWithoutHost() {
+				counts.quitSignals += 1;
+			},
+		},
+	);
+	return {
+		guard,
+		answers,
+		counts,
+		prepared,
+		get admitting() {
+			return admitting;
+		},
+		ask: () => {
+			for (const listener of requests) listener();
+		},
+		askWithoutHost: () => {
+			for (const listener of hostGone) listener();
+		},
+	};
+}
+
+test('requests that arrive together stop admission at once and prepare once', async () => {
+	const page = scripted();
+
+	page.ask();
+	page.ask();
+	// Before anything was awaited.
+	expect(page.admitting).toBe(false);
+	expect(page.guard.phase).toBe('preparing');
+	await until(() => page.counts.prepares === 1, 'the preparation');
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(page.answers).toEqual(['asking', 'asking']);
+	expect(page.counts.prepares).toBe(1);
+
+	page.prepared.resolve(true);
+	await until(() => page.answers.length === 3, 'the answer');
+	expect(page.answers).toEqual(['asking', 'asking', 'proceed']);
+});
+
+test('the host going away while saves settle shows the prompt, and approves nothing by itself', async () => {
+	const page = scripted();
+	page.ask();
+	await until(() => page.answers.length === 1, 'the acknowledgement');
+
+	page.askWithoutHost();
+	expect(page.guard.phase).toBe('asking');
+	expect(page.guard.hostGone).toBe(true);
+	page.prepared.resolve(true);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+
+	expect(page.answers).toEqual(['asking']);
+	expect(page.counts.quitSignals).toBe(0);
+	expect(page.admitting).toBe(false);
+	await page.guard.discardAndQuit();
+	expect(page.counts.quitSignals).toBe(1);
+});
+
+test('keep working while saves settle admits work again, and the finished preparation approves nothing', async () => {
+	const page = scripted();
+	page.ask();
+	await until(() => page.answers.length === 1, 'the acknowledgement');
+
+	await page.guard.stay();
+	expect(page.answers).toEqual(['asking', 'cancel']);
+	expect(page.admitting).toBe(true);
+	page.prepared.resolve(true);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+
+	expect(page.answers).toEqual(['asking', 'cancel']);
+	expect(page.guard.phase).toBe('idle');
+});
+
+test('a guard that was disposed answers nothing, whatever its prompt still offers', async () => {
+	const { library, guard, answers, ask } = await open({ failAudioWrites: 1 });
+	await record(library);
+	await ask();
+	expect(guard.phase).toBe('asking');
+	guard.dispose();
+
+	await guard.stay();
+	await guard.discardAndQuit();
+
+	expect(answers).toEqual(['asking']);
+	expect(guard.phase).toBe('asking');
+});
+
+
+test('released library drafts cannot accept typing or resume admission', async () => {
+	const { library, guard } = await open();
+	await record(library);
+	const selection = library.selection;
+	if (selection?.kind !== 'recording') throw new Error('expected a recording');
+	const before = selection.editor.buffer;
+	guard.dispose();
+	await library.close();
+	library.resumeAdmission();
+	selection.editor.input('Typed after release');
+	expect(library.admitting).toBe(false);
+	expect(selection.editor.buffer).toBe(before);
 });

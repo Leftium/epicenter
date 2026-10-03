@@ -224,6 +224,7 @@ export type TransformationRun = {
 };
 
 const UNSETTLED = 'Save or discard the open edits first.';
+const LEAVING = 'Whispering is closing, so nothing new was started.';
 const RECORDING_NAME =
 	'A recording’s file is named by its ID, which its transcription results refer to. Change the title instead.';
 const RECORDING_AUDIO_NAME =
@@ -302,6 +303,14 @@ function isThisResult(
 export function createLibrary(workspace: Workspace) {
 	const { folder } = workspace;
 	let closing = false;
+	/**
+	 * Whether new work starts: a capture, a request, a retry, a file change, or
+	 * typing. Off while the page decides whether it may close, so what it saves
+	 * and inspects is all there is. Work accepted before stays accepted and
+	 * settles as it would have.
+	 */
+	let admitting = $state(true);
+	const admits = () => admitting;
 	/** Each caller owns its result; this promise joins accepted file commands. */
 	let fileChanges: Promise<void> = Promise.resolve();
 	function submitFileChange<TArgs extends unknown[]>(
@@ -309,6 +318,7 @@ export function createLibrary(workspace: Workspace) {
 	) {
 		return (...args: TArgs): Promise<string | undefined> => {
 			if (closing) return Promise.resolve('The library is closing.');
+			if (!admitting) return Promise.resolve(LEAVING);
 			const submitted = structuredClone(args);
 			const running = work(...submitted);
 			fileChanges = Promise.allSettled([fileChanges, running]).then(() => {});
@@ -408,7 +418,18 @@ export function createLibrary(workspace: Workspace) {
 		return file && { kind: 'file', path: selectedPath, file };
 	});
 
-	const terminal = createTerminalSession(workspace.terminal, refreshAll);
+	const terminal = createTerminalSession(
+		{
+			get cwd() {
+				return workspace.terminal.cwd;
+			},
+			exec: (command, options) =>
+				admitting
+					? workspace.terminal.exec(command, options)
+					: Promise.reject(new Error(LEAVING)),
+		},
+		refreshAll,
+	);
 	const input = createMicrophoneInput({
 		capture: workspace.capture,
 		preferences: workspace.preferences,
@@ -594,6 +615,7 @@ export function createLibrary(workspace: Workspace) {
 				entry,
 				autosave,
 				() => void refresh(),
+				admits,
 			);
 			recordingEditors.set(entry.path, editor);
 		}
@@ -611,6 +633,7 @@ export function createLibrary(workspace: Workspace) {
 				entry,
 				autosave,
 				() => void refresh(),
+				admits,
 			);
 			transformationEditors.set(entry.path, editor);
 		}
@@ -701,6 +724,7 @@ export function createLibrary(workspace: Workspace) {
 								read.data.file,
 								autosave,
 								() => void refresh(),
+								admits,
 							),
 						}
 					: read.data,
@@ -1331,6 +1355,27 @@ export function createLibrary(workspace: Workspace) {
 			return closing;
 		},
 		/**
+		 * Whether new work starts now. Off from the moment the shell asks to
+		 * close until the person keeps working; never on again once the page has
+		 * said it may close.
+		 */
+		get admitting() {
+			return admitting;
+		},
+		/**
+		 * Start nothing new: no capture, request, retry, file change, terminal
+		 * command, commit, or typing. Work already accepted continues and
+		 * settles; discarding what is held is still possible.
+		 */
+		pauseAdmission() {
+			admitting = false;
+		},
+		/** Start admitting new work again, after the person chose to keep working. */
+		resumeAdmission() {
+			if (closing) return;
+			admitting = true;
+		},
+		/**
 		 * Hear which recording files each successful listing of the folder
 		 * found. A path not among them has left the folder. A listing that
 		 * failed tells nothing, so nothing is taken as gone on its account.
@@ -1511,7 +1556,7 @@ export function createLibrary(workspace: Workspace) {
 
 		async startRecording() {
 			if (recorder.phase !== 'idle') return;
-			if (closing) return;
+			if (closing || !admitting) return;
 			recorderError = undefined;
 			recorder = { phase: 'starting' };
 			// A test or a pending enable holds the microphone: release it before the recording opens one.
@@ -1537,9 +1582,14 @@ export function createLibrary(workspace: Workspace) {
 			active = started.data;
 			recorder = { phase: 'recording', startedAt: started.data.startedAt };
 		},
-		/** Stop, keep the audio in this window, and publish it to the folder. */
+		/**
+		 * Stop, keep the audio in this window, and publish it to the folder.
+		 * While new work is not admitted the recording stays as it is: stopping
+		 * would start a publication.
+		 */
 		async stopRecording() {
 			if (recorder.phase !== 'recording' || active === undefined) return;
+			if (!admitting) return;
 			const capture = active;
 			active = undefined;
 			recorder = { phase: 'stopping' };
@@ -1564,6 +1614,7 @@ export function createLibrary(workspace: Workspace) {
 		 * publication is confirmed is only read again: it is never republished.
 		 */
 		async retryPending(id: string) {
+			if (!admitting) return;
 			const item = pending.find((candidate) => candidate.capture.id === id);
 			if (item === undefined || item.state.kind === 'saving') return;
 			if (item.state.kind === 'published') await reconcile(item);
@@ -1587,9 +1638,10 @@ export function createLibrary(workspace: Workspace) {
 		 * row's `audioPath` is the one field that has to have validated.
 		 */
 		async transcribe(entry: RecordingEntry) {
-			// No request starts once the library is closing. One already sent is
-			// not affected: it ends as it would have.
-			if (closing) return;
+			// No request starts once the library is closing, or while the page
+			// decides whether it may. One already sent is not affected: it ends
+			// as it would have.
+			if (closing || !admitting) return;
 			// A transcript names its recording by this ID: the row's literal stem.
 			const id = entry.stem;
 			// A received transcript is held until it is saved or discarded: a new
@@ -1656,6 +1708,7 @@ export function createLibrary(workspace: Workspace) {
 		 * While one save of it is under way, another does not start.
 		 */
 		async retrySaveResult(id: string) {
+			if (!admitting) return;
 			const run = runs.get(id);
 			if (run?.kind !== 'unsaved' || run.saving) return;
 			const admitted: TranscriptionRun = { ...run, saving: true };
@@ -1728,6 +1781,7 @@ export function createLibrary(workspace: Workspace) {
 			transformationPath: string,
 		): Promise<string | undefined> {
 			if (closing) return 'The library is closing.';
+			if (!admitting) return LEAVING;
 			const pair = JSON.stringify([transcriptionPath, transformationPath]);
 			if (applying.has(pair))
 				return 'This transformation is already running on this transcript. Run it again when it has finished.';
@@ -1756,8 +1810,10 @@ export function createLibrary(workspace: Workspace) {
 				const source = await transformationSource(transcriptionPath);
 				if (source.error !== null) return source.error;
 				// From this check to the run being listed there is no await, so a
-				// deletion either sees this run or is seen here.
+				// deletion either sees this run or is seen here. The reads above
+				// were held as running; a close asked meanwhile stops the send.
 				if (deleting.has(source.data.recordingId)) return BEING_DELETED;
+				if (!admitting) return LEAVING;
 				const at = new Date();
 				await sendRun({
 					id: recordingId(at),
@@ -1793,7 +1849,7 @@ export function createLibrary(workspace: Workspace) {
 		 * still land.
 		 */
 		async retryTransformation(id: string) {
-			if (closing) return;
+			if (closing || !admitting) return;
 			if (retrying.has(id)) return;
 			retrying.add(id);
 			try {
@@ -1835,6 +1891,8 @@ export function createLibrary(workspace: Workspace) {
 					refuse(BEING_DELETED);
 					return;
 				}
+				// A close asked during the reads above: the run stays failed, unsent.
+				if (!admitting) return;
 				await sendRun(run);
 			} finally {
 				retrying.delete(id);
@@ -1884,6 +1942,7 @@ export function createLibrary(workspace: Workspace) {
 			},
 		),
 		async saveCredential(key: string): Promise<string | undefined> {
+			if (!admitting) return LEAVING;
 			const problem = await workspace.credential.set(key);
 			if (problem === undefined) credentialPresent = key !== '';
 			return problem;
@@ -2111,6 +2170,8 @@ export function createLibrary(workspace: Workspace) {
 		),
 		/** Commit current saved files. Unsaved editor input is not included. */
 		commit(): Promise<CommitOutcome> {
+			if (!admitting)
+				return Promise.resolve({ status: 'blocked', reason: LEAVING });
 			return folder.git.commit();
 		},
 		/**
@@ -2120,6 +2181,7 @@ export function createLibrary(workspace: Workspace) {
 		 */
 		async close() {
 			closing = true;
+			admitting = false;
 			// The microphone first: a file command still being written must not
 			// keep a test, an enable, or a recording's microphone open meanwhile.
 			input.close();

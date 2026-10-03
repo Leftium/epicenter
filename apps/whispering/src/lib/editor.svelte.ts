@@ -73,8 +73,17 @@ type DraftStore<T extends SavedText> = {
 /** Shared by every draft of one workspace. Pausing leaves typing unsaved until asked. */
 export type Autosave = { paused: boolean };
 
+/**
+ * Whether a draft takes typing and starts writes of its own now. While it
+ * does not, the text stays as it is and nothing new is written; a save of
+ * typing already taken still runs and settles.
+ */
+export type Admits = () => boolean;
+
 /** Typing batches for this long before a save; the folder adds no Git delay. */
 const TYPING_BATCH_MS = 400;
+
+const CLOSING = 'Whispering is closing, so nothing was written.';
 
 export type Draft<T extends SavedText> = ReturnType<typeof createDraft<T>>;
 export type RowEditor<TFields> = Draft<TableSnapshot<TFields>>;
@@ -87,6 +96,7 @@ function createDraft<T extends SavedText>(
 	initial: T,
 	autosave: Autosave,
 	onSaved: () => void,
+	admits: Admits,
 ) {
 	let baseline = $state.raw<T>(initial);
 	let buffer = $state(initial.source);
@@ -104,6 +114,7 @@ function createDraft<T extends SavedText>(
 	}
 
 	function input(text: string) {
+		if (!admits()) return;
 		buffer = text;
 		refusal = undefined;
 		schedule();
@@ -253,6 +264,7 @@ function createDraft<T extends SavedText>(
 		},
 		/** Conflict choice: discard my input and load the saved file. */
 		loadSaved() {
+			if (!admits()) return;
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
@@ -261,6 +273,7 @@ function createDraft<T extends SavedText>(
 		},
 		/** Conflict choice: keep my input and save it over the version I reviewed. */
 		async keepMine() {
+			if (!admits()) return;
 			if (saveState.kind !== 'conflict' || saveState.current === undefined)
 				return;
 			baseline = saveState.current;
@@ -273,6 +286,7 @@ function createDraft<T extends SavedText>(
 		 * failure the conflict and my input stay as they were.
 		 */
 		async keepBoth(): Promise<Result<string, string>> {
+			if (!admits()) return Err(CLOSING);
 			if (saveState.kind !== 'conflict')
 				return Err('There is no conflict to resolve.');
 			const copied = await store.keepCopy(baseline.path, buffer);
@@ -285,6 +299,7 @@ function createDraft<T extends SavedText>(
 			return copied;
 		},
 		async retry() {
+			if (!admits()) return;
 			if (saveState.kind === 'failed') saveState = { kind: 'saved' };
 			await save();
 		},
@@ -332,6 +347,7 @@ export function createRowEditor<TFields>(
 	entry: TableSnapshot<TFields>,
 	autosave: Autosave,
 	onSaved: () => void,
+	admits: Admits = () => true,
 ): RowEditor<TFields> {
 	return createDraft<TableSnapshot<TFields>>(
 		{
@@ -342,6 +358,7 @@ export function createRowEditor<TFields>(
 		entry,
 		autosave,
 		onSaved,
+		admits,
 	);
 }
 
@@ -351,6 +368,7 @@ export function createTextFileEditor(
 	file: SavedText,
 	autosave: Autosave,
 	onSaved: () => void,
+	admits: Admits = () => true,
 ): TextFileEditor {
 	return createDraft<SavedText>(
 		{
@@ -383,6 +401,7 @@ export function createTextFileEditor(
 		file,
 		autosave,
 		onSaved,
+		admits,
 	);
 }
 

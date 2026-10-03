@@ -204,10 +204,10 @@ export async function openDesktopWorkspace(
 				}
 				return () => closeListeners.delete(listener);
 			},
-			// An answer that cannot be delivered leaves the window open, which is
-			// the safe outcome; closing again asks again.
+			// An answer that cannot be delivered rejects. The host may or may not
+			// have taken it; the guard decides what the person is shown.
 			async answer(decision) {
-				await bridge.app('close', { decision }).catch(() => {});
+				await bridge.app('close', { decision });
 			},
 			// With the host gone there is no bridge. The shell raises this event in
 			// the page, and watches for a navigation to the quit address, which it

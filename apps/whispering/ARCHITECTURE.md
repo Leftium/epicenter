@@ -493,6 +493,18 @@ stops with the session. The page acknowledges every request with `asking` before
 anything else, and treats a failure to find out what is held as holding
 something.
 
+When a request arrives, before anything is awaited, the library stops
+admitting new work (`pauseAdmission`): no capture starts or stops, no request,
+retry, file change, terminal command, commit, or typing. Work it had already
+accepted continues: saves settle, and a request already sent is shown as
+running and holds the close. A transformation whose reads were under way is
+counted as running, and is not sent once admission has stopped. The prompt
+covers the page from that moment, so nothing on screen takes input either.
+"Keep working" admits work again. Sending `proceed` commits the quit: admission
+never resumes, "Keep working" is no longer offered, and an answer that could
+not be delivered leaves the page frozen with one action, quitting again. A
+lost reply may still have been taken, so it is never read as a refusal.
+
 Approval is never inferred. The host approves only on the page's authenticated
 `proceed`. Whether the page's event stream is open, or ever was, says nothing
 about what the page holds: a page can record and save while that stream has not

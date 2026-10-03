@@ -20,6 +20,15 @@ publication moments while another program edits the file.
 
 ## Run it
 
+A separate canonical-frontmatter prototype now tests the proposed next
+design. It is not wired into this page. See wave 5 in [ITERATIONS.md](./ITERATIONS.md)
+for the candidate API, tradeoffs, and remaining engine work. Run its
+counterexamples from the repository root:
+
+```sh
+bun test packages/folder/evidence/edit-handle/canonical-codec.test.ts
+```
+
 From the repository root:
 
 ```sh

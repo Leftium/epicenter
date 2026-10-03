@@ -128,6 +128,130 @@ root `gPE6Nl`, all views mounted, autosave off, and no gates held or armed.
 No new failure was observed. The simulated transport limits below still
 apply.
 
+## Wave 5: canonical document design
+
+The user permits canonical frontmatter formatting, including removal of
+comments and quote spelling, and leaves a whole-file editor optional. The
+new candidate makes fields and body the table draft. Exact file replacement
+remains the repair boundary. This is a design under test; the interactive
+demo still implements the source-preserving wave-4 handle.
+
+Fresh independent reviews considered both source-authoritative and parsed
+document drafts. A sequential challenge tested the parsed destination after
+the raw editor requirement became optional. The source-authoritative
+alternative retains intermediate malformed YAML and exact text editing, but
+also retains source/field reconciliation. Those promises no longer justify
+that machinery for the primary table editor.
+
+The proposed call sites are:
+
+```ts
+const edit = folder.tables.todos.edit(displayed);
+edit.update({ fields: { title: 'A' } });
+edit.update({ body: markdown });
+await edit.save();
+await edit.save(reviewed); // Keep my changes: one conditional publication
+edit.reset();
+edit.reset(reviewed);      // Take this reviewed document, without writing
+await edit.refresh();
+await edit.close();
+```
+
+These names are proposals, not existing package methods. The core remains
+framework neutral with `get` and `subscribe`. Solid and Svelte use their
+native reactive primitives; Svelte uses runes, not stores. Each `edit` call
+still owns an independent lifetime that callers may share explicitly.
+
+`save(reviewed)` captures the complete local candidate and the reviewed
+capture at admission. It does not move the baseline before publication.
+A later external C makes a save against reviewed B conflict; nothing retries
+against C. Canonical submitted B becomes the receipt baseline while newer
+local C stays drafted. Lost replies remain unknown history. Reset remains
+refused while a save is admitted.
+
+The editable document must contain every key, including unknown metadata
+and schema-invalid declared values. The validated `TableReading.fields`
+projection cannot supply it. Schema issues remain diagnostics; application
+submission policy may require validity. A min-length constraint must not
+erase the intermediate input `A` on the way to `ABC`.
+
+The codec admits JSON-domain frontmatter before any lossy YAML conversion.
+It sorts declared keys by definition and remaining keys deterministically,
+sorts nested mappings, preserves arrays and signed zero, and keeps body
+text opaque. Unsafe integers, custom tags, binary values, sets, non-string
+mapping keys, cycles, and expansion beyond a bounded budget must refuse.
+One such value makes the complete row unavailable for structured editing.
+Exact `files.replace` is the repair escape hatch. This cost is deliberate;
+comment loss does not authorize value loss.
+
+Installed YAML probes confirmed that unknown tags can produce warnings
+without errors, unsafe float-form integers can already round under
+`intAsBigInt`, and integer negative zero needs its scalar spelling to retain
+its sign. Ordinary object conversion can also lose non-string key identity.
+The existing `composeSource` and its enumerable-key equality therefore
+cannot become the canonical codec without replacement.
+
+Opening a noncanonical file stays semantically clean, so autosave does not
+rewrite it merely because it was opened. Explicit Save may canonicalize a
+clean document. Semantic equality includes every unknown key and the opaque
+body. The codec does not weaken the native best-effort byte-hash write guard.
+
+One reviewer proposed automatically advancing a dirty draft's baseline on
+an external formatting-only change. That is not accepted in this experiment:
+retain the actual guarded capture and expose the new observation for review.
+Equal fields alone must never silently choose a newer publication target.
+The review UI can explain a presentation-only change without a raw editor.
+
+The deletion prize is span patching, a raw/document editing mode, reparsing
+on every keystroke, `input`/`setSource`, and a separate keep/rebase operation.
+The introduced work is one strict codec plus document equality. Field
+removal and the exact reset naming remain to be exercised in real call sites.
+Next, a bounded isolated codec prototype tests data preservation and
+idempotence before changing the interactive engine. The engine migration
+must then prove canonical receipt/newer-input and stale-reviewed-capture
+races through the native folder and the three framework callers.
+
+The isolated codec prototype was integrated as `canonical-codec.ts` and
+`canonical-codec.test.ts`. It walks YAML nodes before conversion and emits
+quoted keys with deterministic flow values. It preserves signed zero and
+unknown metadata, refuses unsupported YAML, and retains well-formed body
+text exactly. The coordinator added refusals for malformed body strings,
+plus tests for unsafe decimal and exponent integer spellings that ordinary
+Number parsing rounds. These are codec checks, not evidence that the new
+handle API or publication races have been implemented.
+
+The local post-integration review read:
+
+```text
+packages/folder/
+|-- src/
+|   |-- markdown.ts
+|   `-- table.ts
+`-- evidence/edit-handle/
+    |-- README.md
+    |-- ITERATIONS.md
+    |-- package.json
+    |-- edit-handle.ts
+    |-- folder-edits.ts
+    |-- canonical-codec.ts
+    `-- canonical-codec.test.ts
+```
+
+The codec earns a boundary because it owns the unsafe YAML parse and
+canonical serialization. It contains no lifecycle or schema policy. The
+document is not yet frozen: immutable ownership belongs to the future
+handle. Prototype limits are explicit: finite safe integer numbers plus
+ordinary JS fractional semantics, UTF-16 code-unit key order, refusal of
+every YAML warning, 100 alias expansions, and 10,000 converted nodes. These
+limits are experiment choices, not a settled production compatibility
+contract. Field order currently arrives as a string array rather than a
+production definition object.
+
+Verification after integration: all 56 experiment tests passed, including
+25 codec counterexamples. The experiment TypeScript check and Biome check
+passed. No framework caller changed in this wave, and no new browser
+acceptance is claimed. Existing browser evidence belongs to wave 4.
+
 ## Limits
 
 The native folder's hash check is best effort against outside writers. The

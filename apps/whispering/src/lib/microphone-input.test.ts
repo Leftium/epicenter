@@ -765,3 +765,24 @@ test('fixture mode has no input: nothing is listed, tested, enabled, or chosen',
 	await library.stopRecording();
 	expect(library.entries).toHaveLength(1);
 });
+
+test('an unreadable saved microphone reports the failure without opening a device or saving a default', async () => {
+	const device = devicePreferences(USB);
+	device.preferences.microphone = async () => {
+		throw new Error('Storage access refused');
+	};
+	const { input, microphone } = await open({ device });
+	expect(input.preferenceProblem).toBe(
+		'The saved microphone could not be read: Storage access refused',
+	);
+	expect(input.choice).toBeUndefined();
+	expect(device.store.saved).toEqual(USB);
+	expect(device.store.writes).toBe(0);
+	expect(microphone.calls).toEqual({
+		allowSignals: [],
+		list: 0,
+		allow: 0,
+		meter: [],
+		start: [],
+	});
+});

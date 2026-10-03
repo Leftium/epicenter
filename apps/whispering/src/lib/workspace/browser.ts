@@ -33,25 +33,21 @@ import { type Workspace, WorkspaceError } from './types.js';
 const KEY_STORAGE = 'whispering.transcriptionApiKey';
 const MICROPHONE_STORAGE = 'whispering.microphone';
 
-/** The microphone saved in this browser, or undefined when none is or it does not read as one. */
+/** Read the saved microphone; storage and JSON failures reach the chooser. */
 function savedMicrophone(): MicrophonePreference | undefined {
-	try {
-		const saved: unknown = JSON.parse(
-			localStorage.getItem(MICROPHONE_STORAGE) ?? 'null',
-		);
-		if (
-			typeof saved === 'object' &&
-			saved !== null &&
-			'deviceId' in saved &&
-			typeof saved.deviceId === 'string' &&
-			saved.deviceId !== '' &&
-			'label' in saved &&
-			typeof saved.label === 'string'
-		)
-			return { deviceId: saved.deviceId, label: saved.label };
-	} catch {
-		// Not ours to read.
-	}
+	const saved: unknown = JSON.parse(
+		localStorage.getItem(MICROPHONE_STORAGE) ?? 'null',
+	);
+	if (
+		typeof saved === 'object' &&
+		saved !== null &&
+		'deviceId' in saved &&
+		typeof saved.deviceId === 'string' &&
+		saved.deviceId !== '' &&
+		'label' in saved &&
+		typeof saved.label === 'string'
+	)
+		return { deviceId: saved.deviceId, label: saved.label };
 	return undefined;
 }
 

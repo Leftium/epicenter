@@ -182,7 +182,7 @@
 				<p class="text-xs text-destructive" role="alert" data-testid="microphone-problem">{input.problem}</p>
 			{/if}
 			{#if input.preferenceProblem}
-				<p class="text-xs text-destructive" role="alert">The choice was not saved on this device: {input.preferenceProblem}</p>
+				<p class="text-xs text-destructive" role="alert">Microphone setting: {input.preferenceProblem}</p>
 			{/if}
 
 			<!-- One action at a time: enabling while nothing is named, otherwise the test. -->

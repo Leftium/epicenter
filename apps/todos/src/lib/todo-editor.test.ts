@@ -2,7 +2,7 @@
  * Todo Editor Tests
  *
  * Drives the real todo editor runes module over the folder's own row editor
- * (`table.edit`) in a browser folder on fake IndexedDB. The row editor owns
+ * (`table.edit`) in a browser folder on an in-memory OPFS stand-in. The row editor owns
  * the canonical draft and its unconditional save; these tests pin the app's
  * policy around it: autosave, halting, review, and rename.
  *

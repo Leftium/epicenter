@@ -3,7 +3,7 @@
  *
  * `#platform/folder` resolves at build time. The Epicenter host leaf opens the
  * directory the desktop shell owns; the browser leaf opens a folder in
- * IndexedDB. Both answer the same folder handle, so the UI edits, lists, hears
+ * OPFS. Both answer the same folder handle, so the UI edits, lists, hears
  * change hints, and runs its terminal the same way in either build.
  */
 import type { Folder, OpenFolderError } from '@epicenter/folder';
@@ -13,7 +13,7 @@ import type { todosDefinition } from '../definition.js';
 export type TodosFolder = Folder<typeof todosDefinition>;
 
 /**
- * The folder both leaves open. The browser names its IndexedDB database after
+ * The folder both leaves open. The browser names its scoped OPFS directory after
  * it; the desktop shell registers its directory under it.
  */
 export const TODOS_FOLDER_ID = 'so.epicenter.todos';

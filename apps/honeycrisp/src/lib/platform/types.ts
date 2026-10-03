@@ -3,7 +3,7 @@
  *
  * `#platform/notes-host` resolves at build time. The desktop leaf opens the
  * folder the desktop shell owns and uses the shell's own commands, including
- * its real `/bin/sh`; the browser leaf opens a folder in IndexedDB with the
+ * its real `/bin/sh`; the browser leaf opens a folder in OPFS with the
  * folder's emulated shell. The UI never asks which one it has except through
  * the optional capabilities below.
  */
@@ -14,7 +14,7 @@ import type { honeycrispDefinition } from '../data.js';
 type Definition = typeof honeycrispDefinition;
 
 /**
- * The folder both leaves open. The browser names its IndexedDB database after
+ * The folder both leaves open. The browser names its scoped OPFS directory after
  * it; the desktop shell registers its directory under it (`SCOPE` in
  * `src-tauri/src/root.rs`).
  */

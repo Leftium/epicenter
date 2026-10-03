@@ -1,5 +1,5 @@
 /**
- * The browser leaf: a folder in this browser's IndexedDB, with the same
+ * The browser leaf: a folder in this browser's OPFS, with the same
  * files and Git history as the desktop directory, and the folder's own shell
  * emulated over those files. Nothing native is imported here, and this entry
  * refuses inside the desktop app.

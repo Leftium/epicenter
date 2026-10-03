@@ -2,7 +2,7 @@
  * Todos File Operation Tests
  *
  * Drives the real Todos state module against a real browser folder over
- * fake IndexedDB. The file browser reaches every file, but each operation
+ * an in-memory OPFS stand-in. The file browser reaches every file, but each operation
  * keeps the rule its file needs.
  *
  * Key behaviors:
@@ -60,9 +60,9 @@
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { FileError, MoveError, openFolder } from '@epicenter/folder/browser';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
+import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import { todosDefinition } from './definition.js';
 import type { TodosFolder } from './platform/types.js';
 import type { Todos } from './todos.svelte.js';
@@ -93,7 +93,7 @@ async function open(
 					author: { name: 'Test', email: 'test@example.test' },
 					commitOnEdit: false,
 					remote,
-					indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+					...testBrowserStorage(),
 				},
 			}),
 		),
@@ -1442,11 +1442,7 @@ test('a folder is deleted from the browser only when it is empty', async () => {
  */
 async function openWithAnotherTab() {
 	const id = `todos-test-${count++}`;
-	const environment = {
-		indexedDB: new IDBFactory(),
-		IDBKeyRange,
-		BroadcastChannel,
-	};
+	const storage = testBrowserStorage({ BroadcastChannel });
 	const handle = async () =>
 		expectOk(
 			await openFolder({
@@ -1455,7 +1451,7 @@ async function openWithAnotherTab() {
 				browser: {
 					author: { name: 'Test', email: 'test@example.test' },
 					commitOnEdit: false,
-					indexedDb: environment,
+					...storage,
 				},
 			}),
 		);
@@ -1673,7 +1669,8 @@ test('a hint that arrives after the app closed changes nothing', async () => {
  */
 async function openWithSilentHandle() {
 	const id = `todos-test-${count++}`;
-	const indexedDb = { indexedDB: new IDBFactory(), IDBKeyRange };
+	// One storage for both handles, with no channel between them.
+	const storage = testBrowserStorage();
 	const handle = async () =>
 		expectOk(
 			await openFolder({
@@ -1682,7 +1679,7 @@ async function openWithSilentHandle() {
 				browser: {
 					author: { name: 'Test', email: 'test@example.test' },
 					commitOnEdit: false,
-					indexedDb,
+					...storage,
 				},
 			}),
 		);

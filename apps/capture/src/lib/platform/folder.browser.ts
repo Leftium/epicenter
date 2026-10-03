@@ -1,5 +1,5 @@
 /**
- * The browser leaf: a folder in this browser's IndexedDB, with local Git
+ * The browser leaf: a folder in this browser's OPFS, with local Git
  * history and no remote. It opens through the browser entry only, which
  * refuses inside the desktop app instead of opening storage there.
  *

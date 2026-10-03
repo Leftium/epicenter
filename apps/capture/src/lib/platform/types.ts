@@ -3,7 +3,7 @@
  *
  * `#platform/folder` resolves at build time. The Epicenter host leaf attaches
  * to a real directory the desktop shell owns; the browser leaf opens a logical
- * folder in IndexedDB. Neither leaf imports the other's storage.
+ * folder in OPFS. Neither leaf imports the other's storage.
  */
 
 import type { CaptureFields } from '@epicenter/capture';
@@ -15,7 +15,7 @@ import type {
 } from '@epicenter/folder';
 
 /**
- * The folder both leaves open. The browser names its IndexedDB database after
+ * The folder both leaves open. The browser names its scoped OPFS directory after
  * it; the desktop shell registers its directory under it.
  */
 export const CAPTURE_FOLDER_ID = 'so.epicenter.capture';

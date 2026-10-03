@@ -1,5 +1,5 @@
 /**
- * The browser leaf: a folder in this browser's IndexedDB, with a loopback Git
+ * The browser leaf: a folder in this browser's OPFS, with a loopback Git
  * remote reached through the same-origin Vite proxy. Nothing native is
  * imported here.
  */

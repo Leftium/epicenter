@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-03
 - **Amends:** [ADR-0436](0436-stores-own-local-sqlite-namespaces.md), only its preserved physical namespace encoding and shell-specific storage root. Store-owned acquisition remains the implemented API.
-- **Relates:** [ADR-0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) defines SQL retention; [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) defines authored folder scopes.
+- **Relates:** [ADR-0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) defines SQL retention; [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) defines authored folder owners.
 - **Unbuilt:** shared native root resolution, cross-process runtime admission, shared provider credentials, migration, and a standalone native Local Mail shell. Current host SQL remains under its bundle-specific AppData root.
 
 ## Context
@@ -22,6 +22,7 @@ stale assertions independently.
 ## Decision
 
 **All participating native shells resolve one fixed local-data root per OS user and release channel.**
+Channel means release or development; each has separate retained state.
 A shared Rust implementation resolves the OS local-data directory and appends
 `so.epicenter` for release or `so.epicenter.dev` for development. It does not
 append the running shell's bundle ID. Standalone applications can resolve the
@@ -45,21 +46,38 @@ Use the persistent local-data directory, not the cache directory or the OS
 temporary runtime directory. Development cannot open production state through
 an ordinary launch or authored-folder override. Tests use isolated roots.
 
-**The root contains `<app-id>/<account-owner>/` directly.** No `runtime/`,
+**The root contains `<app-id>/<owner-path>/` directly.** No `runtime/`,
 `apps/`, `device/`, or `sqlite/` prefix is needed for this application namespace.
 App IDs use the existing lowercase reverse-DNS grammar. Other host resources
 do not become application directories merely by moving this namespace.
 
-The account owner is `local` for account-independent work, or the bounded
-SHA-256 account key defined by ADR-0461. That key includes authority and
-principal. Google subjects select mailbox names inside the captured Epicenter
-account; they do not replace its owner.
+The owner is Local for account-independent work, or a specific account. Its
+path is `local` or `accounts/<account-key>`, respectively. The bounded SHA-256 key
+defined by ADR-0461 includes authority and principal. These owner paths match authored
+folders, while private storage groups owners beneath their application.
+Google subjects select mailbox names inside the captured Epicenter account;
+they do not replace its owner.
+
+The app comes first because it owns schema migration, repair, and pending-work
+delivery. Authored folders group by owner because copying an owner’s
+directory preserves its files and sibling links. Private account-wide erasure still requires each
+affected app to retire its executor and handle pending obligations; directory
+order does not make raw deletion or restore safe. The private namespace uses
+an app ID, never a selected folder ID. Several saved-query folders can use the
+same Mail app/account state.
+
+One app/account runtime can open several named SQLite databases. The database
+name selects a file within that private namespace; an authored folder ID does
+not participate. An application can independently open several authored folders.
+Current store-owned SQL uses the store definition ID as its namespace ID. Mail's
+definition ID matches its app ID today; independent private SQL acquisition
+remains part of the file-first composition work below.
 
 ```text
 OS local-data directory/
   so.epicenter/
     so.epicenter.local-mail/
-      <account-key>/
+      accounts/<account-key>/
         local.sqlite3                 retained accounts and pending edits
         mail-<google-sub>.sqlite3      downloaded mailbox
   so.epicenter.dev/
@@ -108,6 +126,25 @@ executor. Raw restore of old pending work has no safe automatic activation
 contract here. Sandboxed distributions must establish shared storage and
 credential access rather than silently create a second private namespace.
 
+## Work backward from the shared runtime
+
+The target is one retained app/account runtime that standalone and embedded
+shells can open sequentially. Selecting another authored folder leaves that
+runtime intact.
+
+1. Acquire private SQL by app ID and captured Local or account owner,
+   independently of any authored folder or synchronized store. Mail currently
+   borrows SQL from Personal; replace that lifetime dependency before migrating
+   its saved queries to Folder.
+2. Resolve the shared channel root and acquire the cross-process runtime lease
+   before exposing databases or starting provider delivery. Use the same captured
+   identity for SQL and credential addresses.
+3. Migrate retained databases only after excluding old and new owners. Preserve
+   pending work and refuse unsupported newer schemas.
+4. Verify switching authored folders with SQL still open, then closing one shell
+   and reopening the same state in the other. Verify simultaneous acquisition
+   refuses and development state remains separate from release state.
+
 ## Consequences
 
 Shell-independent discovery removes duplicate native mailbox downloads and
@@ -128,6 +165,9 @@ to their origin and browser profile. They do not share native bytes.
   work. Preventing that requires a separate activation and root-selection owner.
 - Bundle-specific AppData: retains duplicate outboxes and downloads when a
   person switches shells.
+- Owner-first private storage: groups one account's state across apps, but
+  spreads each app's operational data across owners. Account-wide erasure
+  still requires coordination with each app's pending-work owner.
 - `runtime/apps/<app>/<owner>`: repeats the role already established by the
   private root without a consumer needing those categories.
 - Concurrent runtimes sharing SQLite: SQL locking protects transactions, not

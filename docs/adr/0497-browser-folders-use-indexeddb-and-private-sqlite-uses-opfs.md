@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-03
-- **Relates:** [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) defines authored scopes; [ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) defines shell-independent native runtime ownership; [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) separates optional derived caches from authored source.
+- **Relates:** [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) defines authored folder owners; [ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) defines shell-independent native runtime ownership; [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) separates optional derived caches from authored source.
 - **Implementation:** one IndexedDB database per browser folder with literal file bytes, metadata, directories, and private Git state. Application SQLite already uses a separate OPFS worker.
 - **Unbuilt:** captured channel/account folder addressing, corresponding lock and notification identities, channel-scoped SQL ownership, and any migration required to preserve existing namespaces. Generic folder queries and persistent query caches are unbuilt.
 
@@ -36,7 +36,7 @@ Desktop authored folders:
     accounts/<account-key>/<folder-id>/...
 
 Browser authored folders, per origin:
-  IndexedDB database for [channel, scope, account-key-or-null, folder-id]
+  IndexedDB database for [channel, owner, folder-id]
     contents
       "kv.json"                -> exact bytes
       "notes/example.md"       -> exact bytes
@@ -73,9 +73,12 @@ There is no additional `apps/`, `runtime/`, `device/`, or `sqlite/` prefix.
 This contract creates no selected-folder registry or generic storage router.
 
 **Capture a folder's identity once, before opening its resources.**
-The address includes channel, Local or account scope, the account key or null
-for Local, and folder ID. Account keys follow ADR-0461. One captured address
-supplies the database, Web Lock, and notification identities. Exact encoding
+Channel means release or development. Owner means Local or a specific account
+identified by its account key; Local has no account key. The address includes
+channel, owner, and folder ID. Account keys follow ADR-0461. One captured address
+supplies the database name, Web Lock name, and notification channel name. File
+keys inside that database remain literal relative paths. This release channel
+is distinct from the BroadcastChannel used for notifications. Exact encoding
 and any physical renaming are implementation decisions, not a reason to
 migrate an existing database merely to resemble a directory tree.
 
@@ -85,7 +88,7 @@ pending work. Provider credential addresses follow that private ownership;
 authentication sessions remain separate from the authored namespace.
 
 Private storage groups by app first, then uses the same `local` or
-`accounts/<account-key>` scope spelling as authored folders. The app owns its
+`accounts/<account-key>` owner paths as authored folders. The app owns its
 schema and pending-work lifecycle. A private app ID is independent of the
 selected authored folder ID; matching their strings does not couple their
 owners. Account-wide private erasure requires app-aware coordination under
@@ -131,7 +134,7 @@ ships before its source exclusions. Legacy `.epicenter/manifest.json` retains
 its existing contract until explicit conversion.
 
 **Namespace changes preserve existing data and exclude older active owners.**
-Current unscoped databases contain authored bytes and history. Do not bind an
+Current databases addressed only by folder ID contain authored bytes and history. Do not bind an
 old folder to the current login automatically, silently open an empty
 replacement, or interpret missing target records as deletions. A new claim key
 alone cannot exclude an older build. Require a quiesced cutover or verified
@@ -144,6 +147,24 @@ database, lock, hint, and SQL ownership; folder switching with SQL retained;
 stale-save refusal; atomic incoming files/index/branch publication; and
 migration preserving bytes, history, and pending intents. Real-browser checks
 cover transaction lifetime, quota failure, and media capture memory and timing.
+
+## Work backward from isolated owners
+
+1. Capture channel and owner before opening resources. An owner is either Local
+   or an account key; avoid independently mutable owner kind and nullable key.
+   A folder adds its folder ID. Private SQL adds its app ID and database name,
+   with no selected-folder dependency.
+2. Derive database, lock, notification, and SQL pool identities from those
+   captured addresses. Keep the current transactional IndexedDB file backend
+   and OPFS SQLite worker.
+3. Preserve existing bytes and history through an explicit migration or a
+   compatible existing address. Never infer account ownership from the current
+   login for an old Local database.
+4. Verify release/development and Local/two-account isolation on one origin,
+   plus changing authored folders without closing the private SQL runtime.
+
+This is an implementation order, not a new public opener signature or a selected
+physical encoding. Existing folder-ID-only names remain until that work lands.
 
 ## Consequences
 
@@ -164,7 +185,7 @@ backend does not implement that identity contract.
   if a measured media or memory problem earns that cost after evaluating the
   IndexedDB path. Ordinary async OPFS does not require a dedicated worker;
   synchronous access handles have additional worker constraints.
-- One global IndexedDB filesystem: adds prefix-based scope isolation and
+- One global IndexedDB filesystem: adds prefix-based owner isolation and
   couples folder deletion, upgrades, and transaction scope without a caller
   requiring cross-folder atomic operations.
 - Combined metadata and bytes: deletes paired record maintenance but risks

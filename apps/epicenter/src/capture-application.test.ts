@@ -42,7 +42,6 @@ function scratch(prefix: string) {
 }
 
 async function serve() {
-	const folderRoot = scratch('epicenter-capture-folder-');
 	const host = await createHomeHost({
 		model: 'test',
 		engine: async function* () {},
@@ -52,7 +51,6 @@ async function serve() {
 	cleanups.push(() => desktopAuth[Symbol.dispose]());
 	const blobs = scratch('epicenter-capture-blobs-');
 	const { app } = createHomeServer({
-		folderRoot,
 		host,
 		origin: ORIGIN,
 		launchToken: LAUNCH_TOKEN,

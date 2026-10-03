@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-02
+- **Superseded by:** [ADR-0501](0501-store-checkout-push-pull-and-its-baseline-are-removed.md) removes this workflow; the implementation and baseline described below are historical.
 - **Amended by:** [ADR-0418](0418-push-translates-file-differences-into-ordinary-edits.md) replaces current-store conflict comparison with file-versus-baseline edits and ordinary CRDT resolution; no remote-conflict preview or eventual folder-wins guarantee remains.
 - **Amended by:** [ADR-0417](0417-a-data-address-holds-one-document.md) removes generation from working-copy identity and requires a fresh comparison baseline after coordinated document replacement.
 - **Amends:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) by withdrawing the continuous render and the one-way rule; [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md) by making the folder a working copy rather than only a mint source; [ADR-0329](0329-frontmatter-round-trips-and-the-body-only-renders-out.md) at the return path's mechanism, keeping its rule that values round-trip and a body does not

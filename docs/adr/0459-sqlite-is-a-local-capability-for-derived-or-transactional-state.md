@@ -90,14 +90,11 @@ are deferred on both runtimes until a caller and end-to-end measurements justify
 them. Any future cache must remain outside authored capture and transfer; a
 `.gitignore` entry alone does not establish that boundary.
 
-A completed query export uses the default filename `query.sqlite3` at an
-explicitly selected destination under
+SQLite query export is deferred under
 [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md).
-No live root filename is reserved for this export. It is generated explicitly,
-not kept continuously current. Public exports are generated from selected public
-files after private material is removed. An intentionally saved SQLite dataset can be an authored
-attachment with an explicit Git ignore exception; its format alone does not
-make it an application cache.
+Internal querying reserves no filename or destination and introduces no exporter.
+An intentionally saved SQLite dataset can remain an authored attachment; its
+format alone does not make it an application cache.
 
 This is Epicenter's contract, not a claim that SQLite can never be replicated.
 A local transaction supplies no cross-device commit or ordering guarantee.
@@ -150,8 +147,8 @@ data. SQLite remains available without making every application maintain a
 second authoritative representation of its records.
 
 An authored-folder copy includes its selected authored data and attachment bytes.
-No directory is omitted merely because it is named `.epicenter`; legacy
-reconciliation manifests keep their existing contracts. Mail's app/account
+No directory is omitted merely because it is named `.epicenter`; old
+manifest files remain on disk after the store checkout workflow is removed. Mail's app/account
 databases require a separate backup. Erasing the pending-work database loses undelivered work.
 Copying or restoring those obligations does not authorize execution; transfer
 or restore needs an explicit activation contract regardless of database location.

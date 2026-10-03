@@ -120,7 +120,6 @@ async function main(): Promise<void> {
 		);
 		const origin = `http://127.0.0.1:${boot.port}`;
 		const { app, websocket } = createHomeServer({
-			folderRoot: boot.folderDir,
 			host,
 			origin,
 			launchToken: boot.token,

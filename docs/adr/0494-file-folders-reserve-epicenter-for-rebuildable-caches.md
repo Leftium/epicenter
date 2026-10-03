@@ -2,8 +2,8 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-03
-- **Relates:** [ADR-0436](0436-stores-own-local-sqlite-namespaces.md) defines current store-owned SQL; [ADR-0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) separates authored files from application SQL; [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md) defines completed query exports.
-- **Unbuilt:** folder query sessions, projection schema and capture contract, SQL exports, managed-folder ignore initialization, explicit legacy-checkout adoption, and file-first Mail resource composition. Persistent folder caches and their locations are deferred, not implementation tasks.
+- **Relates:** [ADR-0436](0436-stores-own-local-sqlite-namespaces.md) defines current store-owned SQL; [ADR-0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) separates authored files from application SQL; [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md) records the deferred query export proposal.
+- **Unbuilt:** folder query sessions, projection schema and capture contract, managed-folder ignore initialization and file-first Mail resource composition. Persistent folder caches and their locations are deferred, not implementation tasks.
 
 ## Context
 
@@ -21,8 +21,9 @@ before any caller demonstrated a need. It required source exclusions,
 cache validation, publication, and legacy adoption rules for an unbuilt cache.
 The root `index.sqlite3` exclusion has since been removed from the folder engine.
 
-Legacy Yjs working copies use `.epicenter/manifest.json` as their reconciliation
-baseline. Those bytes have an existing owner and are not disposable query data.
+The removed Yjs checkout used `.epicenter/manifest.json` as its reconciliation
+baseline. Existing files are left on disk; the new design assigns them no cache
+meaning or execution behavior. ADR-0501 records the removal.
 
 ## Decision
 
@@ -112,16 +113,10 @@ captured app/account SQL namespace/  AppData on desktop, OPFS in browser
   local.sqlite                       existing retained state and pending work
   mail-<google-sub>.sqlite            existing mailbox and checkpoints
 
-chosen export destination/
-  query.sqlite3                      completed snapshot; optional owned media
 ```
 
-**Completed exports default to `query.sqlite3` at an explicit destination.**
-
-An export may share projection code with query sessions, but has a separately
-chosen durable destination under ADR-0463. It is not continuously refreshed.
-Saving one inside a live folder makes it an ordinary authored file subject to
-normal history rules; its name does not activate a cache or another authority.
+SQLite query export is deferred under ADR-0463. It is not part of the query
+session lifecycle or an implementation task.
 
 **New application-managed SQLite files use `.sqlite3`; managed folders ignore SQLite and its companions by default.**
 
@@ -147,13 +142,13 @@ Tracked files remain tracked until explicitly removed from inclusion. Ignore
 rules affect Git inclusion, not source readability, backup selection, deletion
 safety, or execution of imported pending work. Renaming extensions is not migration.
 
-**Existing `.epicenter/` uses retain their contracts.**
+**No manifest or legacy store checkout is part of file-authoritative folders.**
 
-This decision creates no path exclusion or permission to delete a directory by
-name. Legacy checkout readers and writers keep their manifest semantics. Explicit
-adoption of a known legacy checkout must preserve its reconciliation state and
-retire the old writer before changing ownership. That adoption protocol remains
-unbuilt; leaving out a new cache reservation does not authorize two writers.
+ADR-0501 removes the old store Pull/Push workflow, baseline, and host route.
+Existing `.epicenter/manifest.json` files are left untouched and have no active
+checkout reader or writer. This decision adds no path exclusion or permission
+to delete a directory by name. Adopting selected existing files does not restart
+the old workflow or reinterpret its manifest as a query cache.
 
 ## Consequences
 
@@ -164,8 +159,8 @@ projection costs. Large collections may later justify persistence; that benefit
 has not been established for actual file-folder queries.
 
 Authored folders require no new `.epicenter/` subtree. Their current files remain
-readable and portable. Explicit SQLite exports supply external SQL tools without
-promising a continuously current database in every folder.
+readable and portable. SQLite query export is deferred; there is no external
+SQL file contract.
 
 A Mail source-folder copy does not back up its offline mailbox or pending triage.
 Those databases need separate backup and safe activation after restore. Mirror
@@ -176,7 +171,7 @@ revision-checked retirement, and execution ownership remain Mail requirements.
 
 - Reserve `.epicenter/query.sqlite3` now: preselects a cache owner and location
   without a consumer or measurements. It adds exclusions and adoption work and
-  conflicts with legacy manifest semantics. A later measured cache may choose
+  would reinterpret existing manifest files. A later measured cache may choose
   folder-local placement under a new, explicit contract.
 - Persist an app-owned folder index with fingerprints: adds database naming,
   scope alignment, schema changes, and erasure. Native size and modification
@@ -188,4 +183,4 @@ revision-checked retirement, and execution ownership remain Mail requirements.
 - Put pending work under `.epicenter/state/` or private Git state: copies or
   history resets can duplicate or destroy the only undelivered user intent.
 - Require a root `index.sqlite3`: adds a discovery promise and source exception
-  without a caller. Explicit exports cover intentional SQL sharing.
+  without a caller. SQL export also remains deferred until a consumer needs it.

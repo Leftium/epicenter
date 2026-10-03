@@ -133,8 +133,8 @@ enumeration, capture, history, transfer, and authored change notifications.
 No folder-local cache path is reserved. A future cache owner must keep its bytes
 outside authored enumeration, capture, history, transfer, and hints before
 writing them. The root `index.sqlite3` exclusion has been removed; no directory
-is disposable by name. Legacy `.epicenter/manifest.json` retains its contract
-until explicit conversion preserves its reconciliation state and retires its writer.
+is disposable by name. ADR-0501 removes the old store checkout and its manifest machinery. Existing
+manifest files remain on disk; this query design gives them no active role.
 
 **Namespace changes preserve existing data and exclude older active owners.**
 Current databases addressed only by folder ID contain authored bytes and history. Do not bind an

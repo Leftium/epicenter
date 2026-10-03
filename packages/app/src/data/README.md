@@ -13,8 +13,7 @@ The main entrypoints are:
 | `@epicenter/app` | `defineStore`, `defineTable`, and `field`: the store declaration |
 | `@epicenter/app/definition` | Reusable table vocabulary and `prepareData`, which checks a definition and returns it in the same shape |
 | `@epicenter/app/sync` | `createSyncConnection`, and the authority half a server runs |
-| `@epicenter/app/artifact` | `renderArtifact` renders Markdown; `readArtifact` reads Markdown into a fresh document. Ordinary edits use checkout instead. |
-| `@epicenter/app/artifact/checkout` | `createWorkingCopy` with previewed `pull` and `push`, using the checkout manifest as the three-way baseline |
+| `@epicenter/app/artifact` | `renderArtifact` renders Markdown; `readArtifact` reads Markdown into a fresh document. |
 | `@epicenter/app/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
 
 Local and Personal stores persist through their IndexedDB backing. `openData`
@@ -27,9 +26,10 @@ These entrypoints do not acquire product resources or load platform implementati
 The descriptions below reflect the current implementation. The unbuilt
 [ADR-0417 direction](../../../../docs/adr/0417-a-data-address-holds-one-document.md)
 removes generations and retirement.
-[ADR-0418](../../../../docs/adr/0418-push-translates-file-differences-into-ordinary-edits.md)
-replaces checkout's three-way planning with field-level file-versus-baseline
-edits. Pull/Push application and CLI wiring remain unbuilt.
+Store checkout Pull/Push and its manifest baseline have been removed. Store
+Markdown rendering and whole-document import remain explicit conversion APIs;
+they do not synchronize a filesystem working copy. File-authoritative products
+edit current files through `@epicenter/folder`.
 
 ## Validate working files
 
@@ -313,11 +313,9 @@ There is no default codec. `plainText()` explicitly describes a text sequence.
 Omitting `body` omits the codec,
 not the live node. A populated body without a codec refuses export, and nonempty
 incoming body text without a codec refuses import.
-When a codec is declared, import and checkout hand it every body string,
+When a codec is declared, import hands it every body string,
 including empty text. The codec returns complete sequence content; the artifact
-layer applies it to a fresh node or replaces the sequence of an existing node
-inside the store transaction. The existing node and its root attributes stay in
-place. A codec-backed body with root attributes refuses export because this
+layer applies it to a fresh node. A codec-backed body with root attributes refuses export because this
 sequence format cannot round-trip them. Converter exceptions become
 file-specific errors before live mutation.
 
@@ -520,11 +518,6 @@ supports retirement evidence; no restore endpoint is mounted. The Honeycrisp
 retirement fixture constructs fresh replacement state independently.
 
 The Markdown `readArtifact` reader remains a separate whole-document API with
-package and app test callers. It is not ordinary Push.
-
-The [ADR-0394 folder direction](../../../../docs/adr/0394-materialization-contains-documents-and-blob-references.md)
-is document-only: Markdown, settings, and the checkout manifest carry readable
-references without copying or fetching local or remote blob payloads. The
-[ADR-0395 recovery direction](../../../../docs/adr/0395-restore-is-one-request-that-carries-its-own-safety-copy.md)
-uses the current working-copy baseline rather than replacing it with an old
-manifest.
+package and app test callers. Store checkout, its comparison baseline, and its
+host route are removed. Historical materialization and recovery proposals live
+in the ADRs; they do not expose a store Pull/Push workflow.

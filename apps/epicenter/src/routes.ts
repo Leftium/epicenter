@@ -9,7 +9,6 @@
  * SPA reaches domain code.
  */
 
-import { CHECKOUT_PATH } from '@epicenter/app/artifact/checkout';
 import {
 	CALLBACK_PATH as MAIL_CALLBACK_PATH,
 	PENDING_CALLBACK_PATH as MAIL_PENDING_CALLBACK_PATH,
@@ -62,27 +61,6 @@ export const BOOKS_ROUTE = BUILT_IN_ROUTES.books;
 export const APPLICATIONS_ROUTE = route('/api/apps');
 export const SESSION_ROUTE = route('/api/home/session');
 export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
-/**
- * One database's working copy in `~/Device` (ADR-0337).
- *
- * `PUT` replaces the folder with the checkout in the body; `GET` hands back
- * what the folder holds. Both carry their files in an NDJSON body, so there is
- * no per-file path to route, capture, or validate. That is what the earlier
- * per-file design cost, and it cost it silently: Hono routes a bare `*` but
- * captures nothing under it, so every write arrived with an empty path.
- *
- * The `folder` segment this route used to carry named `local` or `account`,
- * and went with the device store: there is one store per data id (ADR-0336),
- * so there is one folder.
- *
- * The host takes the data id from the caller and does not verify that the
- * caller owns it, which is the trust model rather than a gap in it: a deployed
- * app is a trusted app (ADR-0334), and ADR-0118 decided that every SPA on this
- * origin is fully trusted. Do not add a per-app credential to close this. The
- * thing that would change it is an origin per app, so that the socket answers
- * who is asking and the id leaves the URL entirely.
- */
-export const CHECKOUT_ROUTE = route(`${CHECKOUT_PATH}/:dataId`);
 /**
  * Where Google returns a person after Local Mail's consent screen.
  *

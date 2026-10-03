@@ -9,7 +9,6 @@ import { createAiCatalogRoutes } from './ai-catalog-routes.ts';
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { AgentToolDefinition } from '@epicenter/agent';
-import { CHECKOUT_PATH } from '@epicenter/app/artifact/checkout';
 import { type BlobId, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import { isAppId } from '@epicenter/constants/app-id';
@@ -40,12 +39,6 @@ import { createLogger } from 'wellcrafted/logger';
 import { createAccountRelay } from './account-relay.ts';
 import type { AppSecretOwner } from './app-secrets.ts';
 import type { Application } from './applications.ts';
-import {
-	CheckoutPreconditionFailedError,
-	checkoutFolderPath,
-	readCheckout,
-	writeCheckout,
-} from './checkout.ts';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import {
 	type HomeHost,
@@ -60,7 +53,6 @@ import {
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	BUILT_IN_ROUTES,
-	CHECKOUT_ROUTE,
 	MAIL_CALLBACK_ROUTE,
 	MAIL_PENDING_CALLBACK_ROUTE,
 	SESSION_ROUTE,
@@ -84,8 +76,6 @@ export type ApplicationsResponse = {
 };
 
 export type HomeServerOptions = {
-	/** Working copy directory selected by native startup. */
-	folderRoot: string;
 	host: HomeHost;
 	/** Exact active origin, including the Rust-selected explicit port. */
 	origin: string;
@@ -118,7 +108,6 @@ const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>D
 const RESTART_REQUIRED_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Restart Epicenter</title></head><body><h1>Restart Epicenter to continue</h1><p>This session has ended. Quit and reopen Epicenter. If the account change failed, your saved sign-in may not have changed.</p></body></html>`;
 
 export function createHomeServer({
-	folderRoot,
 	host,
 	origin,
 	launchToken,
@@ -635,12 +624,6 @@ export function createHomeServer({
 			return c.text('Application storage failed', 500);
 		}
 	});
-	// The same gate the blob routes carry, for the same reason: these write and
-	// delete real files and list a workspace's row ids, and the only caller is
-	// a rendering WebView that already holds the session it was bootstrapped
-	// with. Without this they are the one loopback API any local process can
-	// reach (ADR-0271).
-	app.use(`${CHECKOUT_PATH}/*`, requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
 		await next();
@@ -661,67 +644,6 @@ export function createHomeServer({
 			),
 		} satisfies ApplicationsResponse),
 	);
-
-	/**
-	 * One database's working copy in `~/Device` (ADR-0337).
-	 *
-	 * `PUT` is `pull`'s half: the application says what its store holds and the
-	 * host replaces the folder with it. `GET` is `push`'s, and what `pull` reads
-	 * first to know the folder is clean: the host hands back the files it holds.
-	 *
-	 * No store is opened here, no CRDT update is decoded, and no frontmatter is
-	 * parsed. The host owns the root, the refusal, and the atomic swap; the
-	 * application owns what any of it means.
-	 *
-	 * Native startup validates the root before the server is constructed.
-	 */
-	const checkoutFolder = (c: {
-		req: { param(name: string): string | undefined };
-	}) =>
-		checkoutFolderPath({
-			dataId: c.req.param('dataId') ?? '',
-			root: folderRoot,
-		});
-
-	app.put(CHECKOUT_ROUTE.pattern, async (c) => {
-		const folder = checkoutFolder(c);
-		if (folder === undefined) return c.text('Invalid checkout path', 400);
-		// Required, not optional. A checkout with no reading behind it is a write
-		// nobody approved, and refusing it here makes that impossible at the wire
-		// rather than only in the client that usually sends one.
-		const ifMatch = c.req.header('if-match');
-		if (ifMatch === undefined) {
-			return c.text('A checkout write must carry If-Match', 428);
-		}
-		try {
-			await writeCheckout(folder, await c.req.text(), ifMatch);
-		} catch (cause) {
-			if (cause instanceof CheckoutPreconditionFailedError) {
-				return c.text('The folder changed since it was read', 412);
-			}
-			// The folder sits on a filesystem that may be full, read-only, or on a
-			// drive someone unplugged. The store is unaffected, so this is the
-			// folder's failure to report and never the application's to crash on.
-			return c.text('The checkout could not be written', 500);
-		}
-		return c.body(null, 204);
-	});
-
-	app.get(CHECKOUT_ROUTE.pattern, async (c) => {
-		const folder = checkoutFolder(c);
-		if (folder === undefined) return c.text('Invalid checkout path', 400);
-		try {
-			const { ndjson, etag } = await readCheckout(folder);
-			return c.body(ndjson, 200, {
-				'content-type': 'application/x-ndjson',
-				// What a write has to hand back. Strong, because it is a digest of
-				// the exact bytes below rather than a claim about how fresh they are.
-				etag,
-			});
-		} catch {
-			return c.text('The folder could not be read', 500);
-		}
-	});
 
 	type BlobEnv = { Variables: { appId: string; id: BlobId; owner: string } };
 	const blobApi = new Hono<BlobEnv>();

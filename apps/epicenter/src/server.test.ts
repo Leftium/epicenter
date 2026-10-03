@@ -35,7 +35,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentEngine, EngineChunk } from '@epicenter/agent';
-import { CHECKOUT_PATH } from '@epicenter/app/artifact/checkout';
 import { epicenterCloud } from '@epicenter/auth';
 import { generateBlobId } from '@epicenter/blobs';
 import { type BunBlobStore, createBunBlobStore } from '@epicenter/blobs/bun';
@@ -117,7 +116,6 @@ test('development browser callback completes the pending sign-in without a Home 
 		},
 	});
 	const options = {
-		folderRoot: testDataDir(),
 		host,
 		origin,
 		launchToken: 'launch',
@@ -199,7 +197,6 @@ test.each([
 		host,
 		origin,
 		launchToken: 'launch',
-		folderRoot: testDataDir(),
 		staticAssets: await createAppsDistFixture(PAGE),
 		blobs: createTestBlobs(),
 		desktopAuth,
@@ -352,7 +349,6 @@ async function serveHost(
 	owners: {
 		device?: BunDevice;
 		appSecrets?: AppSecretOwner;
-		folderRoot?: string;
 		blobs?: HomeServerOptions['blobs'];
 	} = {},
 ) {
@@ -365,7 +361,6 @@ async function serveHost(
 	await portProbe.stop(true);
 	const origin = `http://127.0.0.1:${port}`;
 	const { app, websocket } = createHomeServer({
-		folderRoot: testDataDir(),
 		host,
 		origin,
 		launchToken: TOKEN,
@@ -595,7 +590,6 @@ describe('createHomeServer', () => {
 		const desktopAuth = createTestDesktopAuth();
 		expect(() =>
 			createHomeServer({
-				folderRoot: testDataDir(),
 				host,
 				origin: 'http://127.0.0.1:39130',
 				launchToken: '',
@@ -612,7 +606,6 @@ describe('createHomeServer', () => {
 		]) {
 			expect(() =>
 				createHomeServer({
-					folderRoot: testDataDir(),
 					host,
 					origin,
 					launchToken: TOKEN,
@@ -706,7 +699,6 @@ describe('createHomeServer', () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const origin = 'http://127.0.0.1:43127';
 		const { app } = createHomeServer({
-			folderRoot: testDataDir(),
 			host,
 			origin,
 			launchToken: TOKEN,
@@ -2070,25 +2062,6 @@ describe('sidecar end-to-end smoke', () => {
 			expect(
 				await Bun.file(join(ignoredDirectory, 'blobs', blobId)).exists(),
 			).toBe(false);
-			const checkoutUrl = `${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`;
-			const before = await fetch(checkoutUrl, { headers });
-			await before.text();
-			const checkedOut = await fetch(checkoutUrl, {
-				method: 'PUT',
-				headers: { ...headers, 'if-match': before.headers.get('etag') ?? '' },
-				body: `${JSON.stringify({ path: 'kv.json', contents: '{}' })}\n`,
-			});
-			expect(checkedOut.status).toBe(204);
-			expect(
-				await Bun.file(
-					join(folderDir, 'so.epicenter.honeycrisp', 'kv.json'),
-				).text(),
-			).toBe('{}');
-			expect(
-				await Bun.file(
-					join(ignoredDirectory, 'so.epicenter.honeycrisp', 'kv.json'),
-				).exists(),
-			).toBe(false);
 
 			const served = await fetch(HOME_ROUTE.url(origin), {
 				headers: { cookie: cookie ?? '' },
@@ -2224,183 +2197,21 @@ describe('sidecar end-to-end smoke', () => {
 	}, 60_000);
 });
 
-describe('checkout routes (ADR-0337)', () => {
-	/**
-	 * The seam neither side's tests reach. `packages/app/src/data`'s checkout test
-	 * injects a `fetch` and asserts what would have crossed the wire;
-	 * `checkout.test.ts` here calls the host's functions directly. Between them
-	 * sits the routing, and an earlier per-file version declared a bare `*` tail
-	 * that Hono routes but does not capture, so every write arrived with an
-	 * empty path and 400'd. Both suites stayed green and the folder was never
-	 * written once.
-	 *
-	 * A checkout carries its files in the body now, so there is no path in the
-	 * URL to capture wrong. These exist anyway, because "the folder is written"
-	 * and "the folder is read back" are the two facts only a request can
-	 * establish.
-	 */
-	const checkout = (files: object[]) =>
-		files.map((file) => `${JSON.stringify(file)}\n`).join('');
-
-	test('a checkout replaces the folder, and reads back as what was written', async () => {
-		const folderRoot = mkdtempSync(join(tmpdir(), 'checkout-route-test-'));
+describe('retired store checkout routes', () => {
+	test('GET and PUT no longer expose a store working copy', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host, PAGE, { folderRoot });
-		const origin = server.url.origin;
-		const url = `${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`;
-		const folder = join(folderRoot, 'so.epicenter.honeycrisp');
+		const server = await serveHost(host, PAGE);
 		try {
-			// Session-gated like every other domain API on this origin: these
-			// routes write, delete, and read real files under a person's home
-			// directory.
-			expect((await fetch(url, { method: 'PUT', body: '' })).status).toBe(401);
-			expect((await fetch(url)).status).toBe(401);
-
-			/** The folder as it stands, which every write has to name. */
-			const reading = async () => {
+			const url = `${server.url.origin}/api/checkout/so.epicenter.honeycrisp`;
+			for (const method of ['GET', 'PUT']) {
 				const response = await fetch(url, {
+					method,
 					headers: authenticatedHeaders(server),
 				});
-				const etag = response.headers.get('etag');
-				if (etag === null) throw new Error('the read stated no folder');
-				return { etag, body: await response.text() };
-			};
-
-			// A write with no reading behind it is one nobody approved, and the
-			// wire refuses it rather than trusting the library to have asked.
-			const unprepared = await fetch(url, {
-				method: 'PUT',
-				body: checkout([{ path: 'kv.json', contents: '{}' }]),
-				headers: authenticatedHeaders(server),
-			});
-			expect(unprepared.status).toBe(428);
-
-			const empty = await reading();
-			const wrote = await fetch(url, {
-				method: 'PUT',
-				headers: { ...authenticatedHeaders(server), 'if-match': empty.etag },
-				body: checkout([
-					{
-						path: 'notes/abc.md',
-						contents: '---\npinned: true\n---\n\n# A note\n',
-					},
-					{ path: 'notes/def.md', contents: '---\npinned: false\n---\n' },
-					{ path: 'kv.json', contents: '{}' },
-					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
-				]),
-			});
-			expect(wrote.status).toBe(204);
-			expect(await Bun.file(join(folder, 'notes/abc.md')).text()).toContain(
-				'# A note',
-			);
-
-			// The write it was prepared against is gone now, so sending it again
-			// is refused and the folder is untouched.
-			const replayed = await fetch(url, {
-				method: 'PUT',
-				headers: { ...authenticatedHeaders(server), 'if-match': empty.etag },
-				body: checkout([{ path: 'kv.json', contents: '{}' }]),
-			});
-			expect(replayed.status).toBe(412);
-			expect(await Bun.file(join(folder, 'notes/abc.md')).exists()).toBe(true);
-
-			// A second checkout that no longer names one row takes its file with
-			// it. A checkout is complete by definition, so absence is the answer
-			// rather than a manifest line saying so.
-			const swept = await fetch(url, {
-				method: 'PUT',
-				headers: {
-					...authenticatedHeaders(server),
-					'if-match': (await reading()).etag,
-				},
-				body: checkout([
-					{ path: 'notes/abc.md', contents: '---\npinned: true\n---\n' },
-					{ path: 'kv.json', contents: '{}' },
-					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
-				]),
-			});
-			expect(swept.status).toBe(204);
-			expect(await Bun.file(join(folder, 'notes/def.md')).exists()).toBe(false);
-			expect(await Bun.file(join(folder, 'notes/abc.md')).exists()).toBe(true);
-
-			// And the read hands back exactly what a checkout is responsible for,
-			// which is what `pull` compares against its manifest before it
-			// overwrites anything.
-			writeFileSync(join(folder, 'README.md'), 'mine');
-			const read = await fetch(url, { headers: authenticatedHeaders(server) });
-			expect(read.status).toBe(200);
-			const paths = (await read.text())
-				.split('\n')
-				.filter((line) => line.trim() !== '')
-				.map((line) => (JSON.parse(line) as { path: string }).path)
-				.sort();
-			expect(paths).toEqual([
-				'.epicenter/manifest.json',
-				'kv.json',
-				'notes/abc.md',
-			]);
-			// The person's own file is still there, and was never the host's to
-			// hand over or to sweep.
-			expect(await Bun.file(join(folder, 'README.md')).text()).toBe('mine');
-			// And the read states which folder it handed back, which is the only
-			// thing a write is allowed to name.
-			expect(read.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
-		} finally {
-			await server.stop(true);
-			rmSync(folderRoot, { recursive: true, force: true });
-		}
-	});
-
-	test('a data id the render never produces is refused', async () => {
-		const folderRoot = mkdtempSync(join(tmpdir(), 'checkout-route-test-'));
-		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host, PAGE, { folderRoot });
-		const origin = server.url.origin;
-		try {
-			const refused = [
-				[`${CHECKOUT_PATH}/so.epicenter.honeycrisp/notes/abc.md`, 404],
-				[`${CHECKOUT_PATH}/..%2F..%2Fetc`, 400],
-				[`${CHECKOUT_PATH}/not_an_app_id`, 400],
-			] as const;
-			for (const [path, status] of refused) {
-				const response = await fetch(`${origin}${path}`, {
-					method: 'PUT',
-					body: checkout([{ path: 'notes/abc.md', contents: 'x' }]),
-					// A path the host cannot name is refused before it looks at
-					// anything else, so this never reaches the folder's identity.
-					headers: { ...authenticatedHeaders(server), 'if-match': '"x"' },
-				});
-				expect(response.status).toBe(status);
+				expect(response.status).toBe(404);
 			}
-			// A file inside the checkout that would climb out is refused by the
-			// host without costing the checkout its other files.
-			const checkoutUrl = `${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`;
-			const fresh = await fetch(checkoutUrl, {
-				headers: authenticatedHeaders(server),
-			});
-			const mixed = await fetch(checkoutUrl, {
-				method: 'PUT',
-				body: checkout([
-					{ path: '../escape.md', contents: 'no' },
-					{ path: 'notes/ok.md', contents: 'yes' },
-				]),
-				headers: {
-					...authenticatedHeaders(server),
-					'if-match': fresh.headers.get('etag') as string,
-				},
-			});
-			expect(mixed.status).toBe(204);
-			expect(await Bun.file(join(folderRoot, 'escape.md')).exists()).toBe(
-				false,
-			);
-			expect(
-				await Bun.file(
-					join(folderRoot, 'so.epicenter.honeycrisp/notes/ok.md'),
-				).exists(),
-			).toBe(true);
 		} finally {
 			await server.stop(true);
-			rmSync(folderRoot, { recursive: true, force: true });
 		}
 	});
 });

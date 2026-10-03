@@ -25,13 +25,6 @@
  * encodes to a JSON array below a YAML fence, so `conversations/<id>.json`
  * would be a lie that breaks `jq` on the first byte.
  *
- * It also has to be knowable without a definition. The host sweeps every
- * row-shaped path a checkout did not name (`apps/epicenter/src/checkout.ts`)
- * and holds no definition and interprets no file, so `parseRowPath` cannot ask
- * a table what it writes. A fixed set of extensions the host would accept
- * instead buys a cosmetic `.txt` and costs a real hazard: a table whose
- * extension changed between releases leaves a stale sibling that reads as a
- * file nobody pulled, and a push would admit it as a second row.
  */
 export const ROW_FILE_EXTENSION = '.md';
 

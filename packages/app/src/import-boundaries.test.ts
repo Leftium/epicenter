@@ -48,7 +48,6 @@ for (const entrypoint of [
 	'sync',
 	'artifact',
 	'artifact/format',
-	'artifact/checkout',
 	'memory',
 ]) {
 	test(`${entrypoint} bundles without application or platform implementations`, async () => {

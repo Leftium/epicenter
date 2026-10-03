@@ -60,8 +60,8 @@ recordings belong to this device. `EPICENTER_DATA_DIR` overrides the complete
 path and must be absolute.
 
 Development uses `so.epicenter.dev` for data, settings, and keyring entries.
-Production's working copy is `~/Epicenter`; development's is `~/Epicenter Dev`.
-`EPICENTER_FOLDER_DIR` overrides the working-copy directory and must be absolute.
+Production's authored folder root is `~/Epicenter`; development's is `~/Epicenter Dev`.
+`EPICENTER_FOLDER_DIR` overrides the authored folder root and must be absolute.
 Overrides select an explicit location, so pointing both builds at the same
 location deliberately shares those files. Development starts signed out after
 credential isolation; production credentials are unchanged.
@@ -150,7 +150,7 @@ open 'epicenter://app/home'
 ## The Todos folder
 
 Todos keeps each todo as a Markdown file in an ordinary directory:
-`so.epicenter.todos` under the working-copy directory native startup resolved
+`so.epicenter.todos` under the authored folder root native startup resolved
 (`~/Epicenter` in production, `~/Epicenter Dev` in development, or
 `EPICENTER_FOLDER_DIR`). Other programs edit the same files.
 

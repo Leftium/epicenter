@@ -9,11 +9,12 @@
  */
 import { captureDefinition } from '@epicenter/capture';
 import { openFolder } from '@epicenter/folder/browser';
-import type { OpenCaptureHost } from './types.js';
+import { CAPTURE_FOLDER_ID, type OpenCaptureHost } from './types.js';
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
 	const opened = await openFolder({
+		id: CAPTURE_FOLDER_ID,
 		definition: captureDefinition,
 		// History stays in this browser: a local author, a commit after each
 		// save, and no remote to push to.

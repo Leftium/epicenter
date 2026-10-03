@@ -8,28 +8,21 @@
  * - Creating a capture writes the exact Markdown; opening and listing write
  *   nothing
  * - The timeline orders by the captured instant, not by its text
- * - An outside edit refreshes a clean draft and conflicts a dirty one
- * - A removed file and an unreadable file are reported differently
+ * - A draft's save writes the whole canonical file; a listing makes each
+ *   draft read its file again, so a clean draft follows an outside edit and a
+ *   dirty one keeps its text and waits for a choice
+ * - A removed file and an unreadable file are reported differently; a draft
+ *   with input whose file was removed stays on the timeline, and its next save
+ *   writes it back
  * - Save as a copy writes the draft at a new path and never touches the
- *   original
- * - A draft written back to its removed file is acknowledged as exactly what
- *   was written; what another program does to the file next is a separate
- *   observation, and is never overwritten without a choice
- * - A saved, written-back, or copied draft is acknowledged as the text of the
- *   bytes sent, so an unpaired surrogate settles and is not sent again, and
- *   a copy's entry is what the table then reads at its path
- * - A draft let go after its file was removed is kept again as soon as it
- *   takes input of any kind: it counts as unsettled, survives a refresh, and
- *   is written back only by choice
- * - A copy lets go of the draft only when the copy holds all of it: input
- *   typed while the copy was being written keeps the draft
- * - A capture with an unusual or empty file name is an ordinary capture:
- *   opened, reread, written back, and deleted at its literal stem
- * - A file whose text does not parse is still listed and opened, edits only
- *   as Source, saves while malformed, and is repaired there; a draft's
- *   messages describe the text on screen
- * - Deleting removes exactly the reviewed file, and refuses one that changed
- * - An explicit commit failure leaves saved files and drafts unchanged
+ *   original; it lets go of the draft only when the copy holds all of it
+ * - A capture with an unusual or empty file name is an ordinary capture
+ * - A file whose text does not parse is still listed, opens as raw source,
+ *   and is repaired there
+ * - Deleting removes exactly the reviewed file, refuses one that changed, and
+ *   is never undone by a pending save
+ * - Closing finishes submitted saves and imports; discarding publishes
+ *   nothing typed after a save was submitted
  */
 import './svelte-modules.test-support.js';
 import { afterAll, expect, test } from 'bun:test';
@@ -45,7 +38,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureDefinition } from '@epicenter/capture';
 import { readLegacyBundle } from '@epicenter/capture/legacy';
-import { type CommitOutcome, hashBytes } from '@epicenter/folder';
+import { type CommitOutcome, FileError } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/bun';
 import fixture from '../../fixtures/legacy-bundle.json';
 import type { Draft } from './draft.svelte.ts';
@@ -80,24 +73,42 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 		afterCreate?: () => Promise<unknown>;
 	} = {};
 	let heldCreate: Promise<void> | undefined;
-	let heldReplace: Promise<void> | undefined;
+	/**
+	 * How the next delete is answered: it throws, as a host that went away
+	 * does; it lands and its answer is lost; it is lost before it lands; or it
+	 * waits for a promise and then runs for real.
+	 */
+	let nextDelete: 'throws' | 'landed' | 'lost' | Promise<void> | undefined;
 	const captures = createCaptures(
 		{
 			folder: {
 				tables: {
 					captures: {
 						...folder.tables.captures,
+						async delete(capture) {
+							const answer = nextDelete;
+							nextDelete = undefined;
+							if (answer === 'throws')
+								throw new Error('Epicenter did not answer');
+							if (answer === 'landed' || answer === 'lost') {
+								if (answer === 'landed') {
+									const removed = await folder.tables.captures.delete(capture);
+									if (removed.error !== null) return removed;
+								}
+								return FileError.Unconfirmed({
+									path: capture.path,
+									operation: 'removing',
+									cause: new Error('the answer was lost'),
+								});
+							}
+							await answer;
+							return folder.tables.captures.delete(capture);
+						},
 						async create(options) {
 							const held = heldCreate;
 							heldCreate = undefined;
 							await held;
 							return folder.tables.captures.create(options);
-						},
-						async replace(entry, source) {
-							const held = heldReplace;
-							heldReplace = undefined;
-							await held;
-							return folder.tables.captures.replace(entry, source);
 						},
 					},
 				},
@@ -131,6 +142,13 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 		if (!created.ok) throw new Error(created.message);
 		return created.stem;
 	}
+	/** The draft for a listed capture, once its editor has opened. */
+	async function open(stem: string): Promise<Draft> {
+		const draft = captures.open(stem);
+		if (!draft) throw new Error(`no draft for ${stem}`);
+		await draft.ready;
+		return draft;
+	}
 	return {
 		root,
 		folder,
@@ -138,23 +156,23 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 		file,
 		text: (stem: string) => readFile(file(stem), 'utf8'),
 		create,
+		open,
+		/** Answer the next delete as `answer` says. */
+		answerNextDelete(answer: 'throws' | 'landed' | 'lost') {
+			nextDelete = answer;
+		},
+		/** Hold the next delete until the returned function is called. */
+		holdNextDelete() {
+			const held = Promise.withResolvers<void>();
+			nextDelete = held.promise;
+			return held.resolve;
+		},
 		holdCaptureCreate() {
 			let release!: () => void;
 			heldCreate = new Promise<void>((resolve) => {
 				release = resolve;
 			});
 			return release;
-		},
-		holdDraftSave() {
-			let release!: () => void;
-			heldReplace = new Promise<void>((resolve) => {
-				release = resolve;
-			});
-			return release;
-		},
-		/** Run `work` once the next exact create has been published. */
-		afterNextCreate(work: () => Promise<unknown>) {
-			nextCreate.afterCreate = work;
 		},
 		/** Hold the next exact create until the returned function is called. */
 		holdNextCreate() {
@@ -167,26 +185,28 @@ async function setup(options: { commit?: () => Promise<CommitOutcome> } = {}) {
 		/** A draft with unsaved typing whose file another program removed. */
 		async removedDraft() {
 			const stem = await create('Original');
-			const draft = captures.open(stem);
-			if (!draft) throw new Error('no draft');
+			const draft = await open(stem);
 			draft.inputText('My draft');
 			draft.newThought = 'a thought';
 			if (!draft.addThought()) throw new Error('fixture');
 			await rm(file(stem));
 			await captures.refresh();
-			const state = draft.saveState;
-			if (state.kind !== 'conflict' || state.current.kind !== 'removed')
+			if (draft.editor?.observation.kind !== 'missing')
 				throw new Error('fixture');
-			return { stem, draft, mine: draft.buffer };
+			return { stem, draft, mine: draft.source };
 		},
 	};
 }
 
-const versionOf = (source: string) =>
-	hashBytes(new TextEncoder().encode(source));
+/** The canonical frontmatter a save writes for a file created by Capture. */
+function canonicalHead(source: string) {
+	const at = /^capturedAt: (.*)$/m.exec(source)?.[1];
+	if (at === undefined) throw new Error('no capturedAt');
+	return `---\n"capturedAt": ${JSON.stringify(at)}\n---`;
+}
 
 test('creating writes exact Markdown; listing and opening write nothing', async () => {
-	const { captures, create, text, file, folder } = await setup();
+	const { captures, create, open, text, file, folder } = await setup();
 	const stem = await create('Dinner with Sebastian\nFriday at seven');
 	const saved = await text(stem);
 	expect(saved).toMatch(
@@ -196,8 +216,8 @@ test('creating writes exact Markdown; listing and opening write nothing', async 
 
 	const before = (await Bun.file(file(stem)).stat()).mtimeMs;
 	await captures.refresh();
-	const draft = captures.open(stem);
-	expect(draft?.document.text).toBe('Dinner with Sebastian\nFriday at seven');
+	const draft = await open(stem);
+	expect(draft.document.text).toBe('Dinner with Sebastian\nFriday at seven');
 	await captures.settleAll();
 	expect(await text(stem)).toBe(saved);
 	expect((await Bun.file(file(stem)).stat()).mtimeMs).toBe(before);
@@ -247,11 +267,11 @@ test('the timeline orders by the instant, across offsets, newest first', async (
 	await folder.close();
 });
 
-test('structured edits save as the expected file and reload as the same thoughts', async () => {
-	const { captures, create, text, folder } = await setup();
+test('structured edits save as the whole canonical file and reload as the same thoughts', async () => {
+	const { captures, create, open, text, folder } = await setup();
 	const stem = await create('Idea');
-	const draft = captures.open(stem);
-	if (!draft) throw new Error('no draft');
+	const head = canonicalHead(await text(stem));
+	const draft = await open(stem);
 	for (const thought of ['one', 'two\nwith a second line', 'three']) {
 		draft.newThought = thought;
 		expect(draft.addThought()).toBe(true);
@@ -264,7 +284,6 @@ test('structured edits save as the expected file and reload as the same thoughts
 	expect(draft.deleteThought(first)).toBe(true);
 	await draft.save();
 
-	const head = (await text(stem)).split('\n\n')[0];
 	expect(await text(stem)).toBe(
 		`${head}\n\nIdea\n\n## Thoughts\n\n- three\n- two\n  with a second line\n`,
 	);
@@ -273,49 +292,63 @@ test('structured edits save as the expected file and reload as the same thoughts
 	await folder.close();
 });
 
-test('an outside edit refreshes a clean draft and conflicts a dirty one', async () => {
-	const { captures, create, text, file, folder } = await setup();
+test('a listing makes a clean draft follow an outside edit and a dirty one wait for a choice', async () => {
+	const { captures, create, open, text, file, folder } = await setup();
 	const stem = await create('Original');
-	const draft = captures.open(stem);
-	if (!draft) throw new Error('no draft');
+	const draft = await open(stem);
 	const original = await text(stem);
 
 	const outside = original.replace('Original', 'Edited in another program');
 	await writeFile(file(stem), outside);
 	await captures.refresh();
-	expect(draft.buffer).toBe(outside);
-	expect(draft.saveState.kind).toBe('saved');
+	expect(draft.text).toBe('Edited in another program');
+	expect(draft.notice).toBeUndefined();
 	expect(await text(stem)).toBe(outside);
 
 	draft.inputText('My unsaved typing');
-	const mine = draft.buffer;
 	const again = outside.replace('Edited in another program', 'Edited again');
 	await writeFile(file(stem), again);
 	await captures.refresh();
-	expect(draft.buffer).toBe(mine);
-	const state = draft.saveState;
-	expect(
-		state.kind === 'conflict' &&
-			state.current.kind === 'present' &&
-			state.current.entry.source,
-	).toBe(again);
+	expect(draft.text).toBe('My unsaved typing');
+	const notice = draft.notice;
+	expect(notice?.kind === 'changed' && notice.revision.source).toBe(again);
+	expect(captures.rows.find((row) => row.stem === stem)?.attention).toBe(
+		'changed',
+	);
+	expect(await captures.settleAll()).toBe(1);
 	expect(await text(stem)).toBe(again);
-	expect(captures.unsettled).toBe(1);
 
 	await draft.saveMine();
-	expect(await text(stem)).toBe(mine);
+	expect(await text(stem)).toBe(
+		`${canonicalHead(original)}\n\nMy unsaved typing\n\n## Thoughts\n`,
+	);
 	expect(captures.unsettled).toBe(0);
 	await captures.close();
 	await folder.close();
 });
 
-test('removed and unreadable files are told apart, and a copy keeps the draft', async () => {
-	const { captures, create, text, file, root, folder } = await setup();
+test('a save overwrites an outside edit this window had not read yet', async () => {
+	const { captures, create, open, text, file, folder } = await setup();
+	const stem = await create('Original');
+	const draft = await open(stem);
+	draft.inputText('Mine');
+	await writeFile(
+		file(stem),
+		(await text(stem)).replace('Original', 'Not read here'),
+	);
+	await draft.save();
+	expect(await text(stem)).toContain('\nMine\n');
+	expect(draft.unsettled).toBe(false);
+	await captures.close();
+	await folder.close();
+});
+
+test('removed and unreadable files are told apart; a copy keeps one draft and a save writes the other back', async () => {
+	const { captures, create, open, text, file, root, folder } = await setup();
 	const removedStem = await create('Will be removed');
 	const brokenStem = await create('Will be unreadable');
-	const removed = captures.open(removedStem);
-	const broken = captures.open(brokenStem);
-	if (!removed || !broken) throw new Error('no draft');
+	const removed = await open(removedStem);
+	const broken = await open(brokenStem);
 	removed.inputText('Typed before the file went away');
 	broken.inputText('Typed before the file broke');
 
@@ -323,30 +356,35 @@ test('removed and unreadable files are told apart, and a copy keeps the draft', 
 	await writeFile(file(brokenStem), new Uint8Array([0xff, 0xfe, 0x00]));
 	await captures.refresh();
 
-	const gone = removed.saveState;
-	expect(gone.kind === 'conflict' && gone.current.kind).toBe('removed');
-	const unreadable = broken.saveState;
-	expect(unreadable.kind === 'conflict' && unreadable.current.kind).toBe(
-		'unreadable',
+	expect(removed.notice).toBeUndefined();
+	expect(removed.editor?.observation.kind).toBe('missing');
+	expect(broken.notice?.kind).toBe('unreadable');
+	expect(
+		captures.rows.map((row) => [row.stem, row.attention]).sort(),
+	).toEqual(
+		[
+			[removedStem, 'removed'],
+			[brokenStem, 'unreadable'],
+		].sort(),
 	);
 	expect(captures.unreadable.map((item) => item.path)).toEqual([
 		`captures/${brokenStem}.md`,
 	]);
 
-	// The unreadable file cannot be overwritten; a copy saves the draft beside it.
-	await broken.saveMine();
+	// Settling saves what may be saved: the removed file is written back, and
+	// the unreadable one is not saved over.
+	expect(await captures.settleAll()).toBe(1);
+	expect(await text(removedStem)).toContain('Typed before the file went away');
+	expect(removed.unsettled).toBe(false);
 	expect(new Uint8Array(await readFile(file(brokenStem)))).toEqual(
 		new Uint8Array([0xff, 0xfe, 0x00]),
 	);
+
+	// A copy saves the other draft beside it.
 	const copy = await captures.saveCopy(broken);
 	if (!copy.ok) throw new Error(copy.message);
 	expect(await text(copy.stem)).toContain('Typed before the file broke');
 	expect(captures.draft(brokenStem)).toBeUndefined();
-
-	// The removed file can be written back at its own path.
-	await removed.saveMine();
-	expect(await text(removedStem)).toContain('Typed before the file went away');
-	expect(removed.saveState.kind).toBe('saved');
 	expect((await readdir(join(root, 'captures'))).sort()).toEqual(
 		[`${removedStem}.md`, `${brokenStem}.md`, `${copy.stem}.md`].sort(),
 	);
@@ -355,8 +393,8 @@ test('removed and unreadable files are told apart, and a copy keeps the draft', 
 });
 
 for (const stem of ['bad ', ''])
-	test(`a capture at the literal stem ${JSON.stringify(stem)} is an ordinary capture, and its draft rereads, keeps its typing, and writes back at that file`, async () => {
-		const { captures, create, text, file, folder } = await setup();
+	test(`a capture at the literal stem ${JSON.stringify(stem)} is an ordinary capture: opened, kept, written back, and deleted at that file`, async () => {
+		const { captures, create, open, text, file, folder } = await setup();
 		// Valid source, saved by another program under an unusual name.
 		const source = await text(await create('Original'));
 		await writeFile(file(stem), source);
@@ -368,32 +406,21 @@ for (const stem of ['bad ', ''])
 		// A name is an address, never a problem with the capture.
 		expect(row?.problem).toBeUndefined();
 
-		const draft = captures.open(stem);
-		if (!draft) throw new Error('no draft');
+		const draft = await open(stem);
 		draft.inputText('My typing');
-		const mine = draft.buffer;
 		const outside = source.replace('Original', 'Edited outside');
 		await writeFile(file(stem), outside);
-		// No listing ran: the refused save rereads this file by its stem.
-		await draft.save();
-		const changed = draft.saveState;
-		expect(
-			changed.kind === 'conflict' &&
-				changed.current.kind === 'present' &&
-				changed.current.entry,
-		).toMatchObject({ stem, source: outside });
-		expect(draft.buffer).toBe(mine);
+		await draft.check();
+		expect(draft.notice?.kind).toBe('changed');
+		expect(draft.text).toBe('My typing');
 		expect(await text(stem)).toBe(outside);
 
-		// Removed outside, the draft is written back at the same file.
+		// Removed outside, the draft's next save writes it back at the same file.
 		await rm(file(stem));
-		await captures.refresh();
-		const gone = draft.saveState;
-		expect(gone.kind === 'conflict' && gone.current.kind).toBe('removed');
-		await draft.saveMine();
-		expect(draft.saveState.kind).toBe('saved');
-		expect(draft.baseline.stem).toBe(stem);
-		expect(await text(stem)).toBe(mine);
+		await draft.check();
+		await draft.save();
+		expect(draft.stem).toBe(stem);
+		expect(await text(stem)).toContain('\nMy typing\n');
 
 		const reviewed = await captures.reviewDeletion(stem);
 		if (!reviewed.ok) throw new Error(reviewed.message);
@@ -403,8 +430,8 @@ for (const stem of ['bad ', ''])
 		await folder.close();
 	});
 
-test('a file whose text does not parse is still listed and opened, edits only as Source, saves while malformed, and is repaired there', async () => {
-	const { captures, create, text, file, folder } = await setup();
+test('a file whose text does not parse is listed, opens as raw source, and is repaired there', async () => {
+	const { captures, create, open, text, file, folder } = await setup();
 	const valid = await text(await create('Original'));
 	const malformed = valid.replace(/capturedAt: .*/, 'capturedAt: [open');
 	await writeFile(file('broken'), malformed);
@@ -420,40 +447,39 @@ test('a file whose text does not parse is still listed and opened, edits only as
 	}
 	expect(captures.unreadable).toEqual([]);
 
-	const draft = captures.open('broken');
-	if (!draft) throw new Error('no draft');
-	expect(draft.buffer).toBe(malformed);
+	const draft = await open('broken');
+	expect(draft.mode.kind).toBe('raw');
+	expect(draft.source).toBe(malformed);
 	expect(draft.reading.parseError).toBeDefined();
 	expect(draft.document.refusal?.code).toBe('unparsed');
 	// No text or thought is read from it, and no structured edit applies.
 	expect(draft.document.text).toBeUndefined();
 	draft.newThought = 'a thought';
 	expect(draft.addThought()).toBe(false);
-	expect(draft.buffer).toBe(malformed);
+	expect(draft.source).toBe(malformed);
 	draft.newThought = '';
 
-	// Still malformed text saves as written, and that capture is the baseline.
+	// Still malformed text is written as typed, when asked.
 	const still = malformed.replace('Original', 'Original, edited');
 	draft.inputSource(still);
-	await draft.save();
-	expect(draft.saveState.kind).toBe('saved');
+	await draft.writeRaw();
 	expect(await text('broken')).toBe(still);
-	expect(draft.baseline.source).toBe(still);
-	expect(draft.baseline.parseError).toBeDefined();
+	expect(draft.mode.kind).toBe('raw');
+	expect(draft.unsettled).toBe(false);
 
-	// A field that needs fixing is the draft's message, and the text still edits.
+	// A field that needs fixing is described for the text on screen.
 	draft.inputSource(still.replace('[open', 'soon'));
 	expect(draft.reading.parseError).toBeUndefined();
 	expect(draft.reading.issues.map((issue) => issue.field)).toEqual([
 		'capturedAt',
 	]);
-	expect(draft.document.refusal).toBeUndefined();
-	// The saved file is still the malformed one: the two are different text.
-	expect(draft.baseline.parseError).toBeDefined();
 
 	draft.inputSource(valid);
 	expect(draft.reading).toMatchObject({ parseError: undefined, issues: [] });
-	await draft.save();
+	await draft.writeRaw();
+	expect(await text('broken')).toBe(valid);
+	expect(draft.mode.kind).toBe('editing');
+	expect(draft.structured).toBe(true);
 	await captures.refresh();
 	const repaired = captures.rows.find((item) => item.stem === 'broken');
 	expect(repaired?.problem).toBeUndefined();
@@ -482,19 +508,153 @@ test('deleting removes the reviewed file and refuses one that changed since', as
 	await folder.close();
 });
 
-test('a failed explicit commit keeps the saved file and its draft acknowledged', async () => {
-	const { captures, create, text, folder } = await setup({
+test('deleting a capture with unsaved typing leaves no save behind to write it back', async () => {
+	const { captures, create, open, file, folder } = await setup();
+	const stem = await create('To delete');
+	const draft = await open(stem);
+	draft.inputText('Typed, then deleted');
+	const reviewed = await captures.reviewDeletion(stem);
+	if (!reviewed.ok) throw new Error(reviewed.message);
+	expect(await captures.remove(reviewed.entry)).toEqual({ ok: true });
+	expect(captures.draft(stem)).toBeUndefined();
+	await draft.save();
+	expect(await captures.settleAll()).toBe(0);
+	expect(await Bun.file(file(stem)).exists()).toBe(false);
+	await captures.close();
+	await folder.close();
+});
+
+test('a delete that throws gives the draft back, saves nothing on its own, and the next explicit save works', async () => {
+	const t = await setup();
+	const stem = await t.create('Original');
+	const draft = await t.open(stem);
+	draft.inputText('Typed before the delete');
+	const reviewed = await t.captures.reviewDeletion(stem);
+	if (!reviewed.ok) throw new Error(reviewed.message);
+	t.answerNextDelete('throws');
+
+	expect(await t.captures.remove(reviewed.entry)).toMatchObject({
+		ok: false,
+		changed: false,
+	});
+	expect(t.captures.draft(stem)).toBe(draft);
+	// Whether the file is gone is not known, so typing does not save it back.
+	expect(draft.outcome?.kind).toBe('deletion');
+	expect(draft.editor?.lastSave).toBeUndefined();
+	await draft.save();
+	expect(await t.text(stem)).not.toContain('Typed before the delete');
+
+	await draft.saveMine();
+	expect(await t.text(stem)).toContain('\nTyped before the delete\n');
+	expect(draft.outcome).toBeUndefined();
+	await t.captures.close();
+	await t.folder.close();
+});
+
+for (const landed of [true, false])
+	for (const dirty of [false, true])
+		test(`a delete answered Unconfirmed that ${landed ? 'landed' : 'did not land'} keeps the ${dirty ? 'dirty' : 'clean'} draft, writes nothing on its own, and waits for a choice`, async () => {
+			const t = await setup();
+			const stem = await t.create('Original');
+			const draft = await t.open(stem);
+			if (dirty) draft.inputText('Unsaved body');
+			const reviewed = await t.captures.reviewDeletion(stem);
+			if (!reviewed.ok) throw new Error(reviewed.message);
+			t.answerNextDelete(landed ? 'landed' : 'lost');
+			const exists = () => Bun.file(t.file(stem)).exists();
+
+			expect(await t.captures.remove(reviewed.entry)).toMatchObject({
+				ok: false,
+				changed: false,
+			});
+			expect(t.captures.draft(stem)).toBe(draft);
+			expect(draft.gated).toBe(false);
+			expect(draft.outcome?.kind).toBe('deletion');
+			expect(draft.unsettled).toBe(true);
+
+			// A read, present or gone, confirms nothing about the delete.
+			await t.captures.refresh();
+			expect(t.captures.draft(stem)).toBe(draft);
+			expect(draft.editor?.observation.kind).toBe(
+				landed ? 'missing' : 'present',
+			);
+			expect(draft.outcome?.kind).toBe('deletion');
+			expect(
+				t.captures.rows.find((row) => row.stem === stem)?.attention,
+			).toBe('deletion');
+			// Typing, saving, and settling write nothing by themselves.
+			await draft.save();
+			expect(await t.captures.settleAll()).toBe(1);
+			expect(await exists()).toBe(!landed);
+			if (dirty) expect(draft.text).toBe('Unsaved body');
+
+			if (landed && !dirty) {
+				// Letting it go writes nothing and lets the draft go.
+				await t.captures.discard(draft);
+				expect(t.captures.draft(stem)).toBeUndefined();
+				expect(await exists()).toBe(false);
+				expect(await t.captures.settleAll()).toBe(0);
+			} else if (landed) {
+				// Saving it back is the person's choice, and writes it.
+				await draft.saveMine();
+				expect(await t.text(stem)).toContain('\nUnsaved body\n');
+				expect(draft.outcome).toBeUndefined();
+			} else {
+				// Taking the file as it is answers the delete; typing then saves.
+				draft.discardMine();
+				expect(draft.outcome).toBeUndefined();
+				expect(draft.text).toBe('Original');
+				draft.inputText('After');
+				await draft.save();
+				expect(await t.text(stem)).toContain('\nAfter\n');
+			}
+			await t.captures.close({ discard: true });
+			await t.folder.close();
+		});
+
+test('while a delete owns the file, nothing typed is taken, kept, or dropped', async () => {
+	const t = await setup();
+	const stem = await t.create('Original');
+	const draft = await t.open(stem);
+	const reviewed = await t.captures.reviewDeletion(stem);
+	if (!reviewed.ok) throw new Error(reviewed.message);
+	const release = t.holdNextDelete();
+	const removing = t.captures.remove(reviewed.entry);
+	await Bun.sleep(5);
+	expect(draft.gated).toBe(true);
+
+	const source = draft.source;
+	draft.inputText('typed during the delete');
+	draft.newThought = 'typed during the delete';
+	draft.inputSource(`${source}typed during the delete\n`);
+	expect(draft.addThought()).toBe(false);
+	expect(draft.text).toBe('Original');
+	expect(draft.textIsPending).toBe(false);
+	expect(draft.newThought).toBe('');
+	expect(draft.source).toBe(source);
+	expect(draft.mode.kind).toBe('editing');
+	expect(draft.dirty).toBe(false);
+	expect(draft.refusal).toContain('being deleted');
+
+	release();
+	expect(await removing).toEqual({ ok: true });
+	expect(await Bun.file(t.file(stem)).exists()).toBe(false);
+	await t.captures.close();
+	await t.folder.close();
+});
+
+test('a failed explicit commit keeps the saved file and its draft saved', async () => {
+	const { captures, create, open, text, folder } = await setup({
 		commit: async () => ({ status: 'failed', error: 'index is locked' }),
 	});
 	const stem = await create('Saved regardless');
-	const draft = captures.open(stem);
-	if (!draft) throw new Error('no draft');
+	const draft = await open(stem);
 	draft.inputText('Saved regardless of Git');
 	await draft.save();
-	expect(draft.saveState.kind).toBe('saved');
+	expect(draft.notice).toBeUndefined();
 	expect(await text(stem)).toContain('Saved regardless of Git');
 	expect((await captures.commit()).status).toBe('failed');
-	expect(draft.saveState.kind).toBe('saved');
+	expect(draft.notice).toBeUndefined();
 	expect(captures.unsettled).toBe(0);
 	expect(await text(stem)).toContain('Saved regardless of Git');
 	await captures.close();
@@ -502,12 +662,11 @@ test('a failed explicit commit keeps the saved file and its draft acknowledged',
 });
 
 test('a draft whose file was removed stays open and on the timeline with its unsent input', async () => {
-	const { captures, create, file, folder } = await setup();
+	const { captures, create, open, file, folder } = await setup();
 	const stem = await create('Its file will go');
 	const other = await create('Untouched neighbour');
-	const draft = captures.open(stem);
-	captures.open(other);
-	if (!draft) throw new Error('no draft');
+	const draft = await open(stem);
+	await open(other);
 	// Clean source, but text typed and not added.
 	draft.newThought = 'typed, not added';
 	expect(draft.dirty).toBe(false);
@@ -521,7 +680,7 @@ test('a draft whose file was removed stays open and on the timeline with its uns
 	expect(captures.draft(stem)).toBe(draft);
 	expect(draft.newThought).toBe('typed, not added');
 	expect(
-		captures.rows.map((row) => [row.stem, row.conflict, row.unsettled]),
+		captures.rows.map((row) => [row.stem, row.attention, row.unsettled]),
 	).toEqual([[stem, 'removed', true]]);
 	expect(captures.rows[0]?.preview).toBe('Its file will go');
 	expect(captures.rows[0]?.capturedAt).toBeInstanceOf(Date);
@@ -535,10 +694,9 @@ test('a draft whose file was removed stays open and on the timeline with its uns
 });
 
 test('save as a copy is refused, writing nothing, while unsent input would be dropped', async () => {
-	const { captures, create, file, root, folder } = await setup();
+	const { captures, create, open, file, root, folder } = await setup();
 	const stem = await create('Original');
-	const draft = captures.open(stem);
-	if (!draft) throw new Error('no draft');
+	const draft = await open(stem);
 	draft.inputText('My draft');
 	draft.newThought = 'typed, not added';
 	await rm(file(stem));
@@ -552,248 +710,17 @@ test('save as a copy is refused, writing nothing, while unsent input would be dr
 	expect(captures.draft(stem)).toBe(draft);
 	expect(draft.newThought).toBe('typed, not added');
 
-	// Once the thought is in the source, the copy carries everything.
+	// Once the thought is in the document, the copy carries everything.
 	expect(draft.addThought()).toBe(true);
 	const copied = await captures.saveCopy(draft);
 	if (!copied.ok) throw new Error(copied.message);
 	const saved = await readFile(file(copied.stem), 'utf8');
 	expect(saved).toContain('My draft');
 	expect(saved).toContain('- typed, not added');
+	// The original is not written back by letting go of the draft.
+	expect(await Bun.file(file(stem)).exists()).toBe(false);
 	await captures.close();
 	await folder.close();
-});
-
-// An unpaired surrogate cannot be saved: its bytes are the replacement
-// character's. A surrogate pair beside it is saved as typed.
-const withLoneSurrogate = (source: string) =>
-	`${source}- lone \uD800 pair \u{1F600}\n`;
-
-test('a draft saved with an unpaired surrogate settles on the text of the bytes sent and is not sent again', async () => {
-	const { captures, create, text, file, folder } = await setup();
-	const stem = await create('Original');
-	const draft = captures.open(stem);
-	if (!draft) throw new Error('no draft');
-	const typed = withLoneSurrogate(draft.buffer);
-	const stored = typed.replace('\uD800', '�');
-	draft.inputSource(typed);
-	await draft.save();
-
-	expect(await text(stem)).toBe(stored);
-	expect(draft.baseline.source).toBe(stored);
-	expect(draft.baseline.sha256).toBe(await versionOf(stored));
-	expect(draft.buffer).toBe(stored);
-	expect(draft.dirty).toBe(false);
-	const written = (await Bun.file(file(stem)).stat()).mtimeMs;
-	expect(await captures.settleAll()).toBe(0);
-	expect((await Bun.file(file(stem)).stat()).mtimeMs).toBe(written);
-	await captures.close();
-	await folder.close();
-});
-
-test('a draft with an unpaired surrogate written back to its removed file is acknowledged as the text of the bytes sent', async () => {
-	const { captures, removedDraft, text, folder } = await setup();
-	const { stem, draft } = await removedDraft();
-	const typed = withLoneSurrogate(draft.buffer);
-	const stored = typed.replace('\uD800', '�');
-	draft.inputSource(typed);
-	await draft.saveMine();
-
-	expect(await text(stem)).toBe(stored);
-	expect(draft.saveState.kind).toBe('saved');
-	expect(draft.baseline.source).toBe(stored);
-	expect(draft.baseline.sha256).toBe(await versionOf(stored));
-	expect(draft.buffer).toBe(stored);
-	expect(await captures.settleAll()).toBe(0);
-	await captures.close();
-	await folder.close();
-});
-
-test('a copy is listed as the entry of the bytes sent, which is what the table then reads at its path', async () => {
-	const { captures, removedDraft, text, folder } = await setup();
-	const { draft } = await removedDraft();
-	const typed = withLoneSurrogate(draft.buffer);
-	const stored = typed.replace('\uD800', '�');
-	draft.inputSource(typed);
-	const copied = await captures.saveCopy(draft);
-	if (!copied.ok) throw new Error(copied.message);
-
-	// Listed from the write itself, before any listing of the folder.
-	const listed = captures.open(copied.stem)?.baseline;
-	expect(await text(copied.stem)).toBe(stored);
-	const read = await folder.tables.captures.get(copied.stem);
-	if (read.error !== null || read.data === undefined)
-		throw new Error('the copy was not read');
-	expect(listed).toEqual(read.data);
-	expect(listed).toMatchObject({
-		path: `captures/${copied.stem}.md`,
-		stem: copied.stem,
-		source: stored,
-		sha256: await versionOf(stored),
-		parseError: undefined,
-	});
-	await captures.close();
-	await folder.close();
-});
-
-test('a draft written back, then replaced by another program before it is read back, is not saved over the replacement', async () => {
-	const { captures, removedDraft, afterNextCreate, text, file, folder } =
-		await setup();
-	const { stem, draft, mine } = await removedDraft();
-	const outside = mine.replace('My draft', 'Saved by another program');
-	afterNextCreate(() => writeFile(file(stem), outside));
-	await draft.saveMine();
-
-	// Mine was written and is no longer typing; the file now is shown instead.
-	expect(draft.saveState.kind).toBe('saved');
-	expect(draft.baseline.source).toBe(outside);
-	expect(draft.buffer).toBe(outside);
-	expect(draft.dirty).toBe(false);
-	await draft.save();
-	expect(await captures.settleAll()).toBe(0);
-	expect(await text(stem)).toBe(outside);
-	await captures.close();
-	await folder.close();
-});
-
-test('typing during a write back stays against what was written when another program replaces the file', async () => {
-	const t = await setup();
-	const { stem, draft, mine } = await t.removedDraft();
-	const outside = mine.replace('My draft', 'Saved by another program');
-	const release = t.holdNextCreate();
-	t.afterNextCreate(() => writeFile(t.file(stem), outside));
-	const writing = draft.saveMine();
-	draft.inputText('My draft, and more');
-	const typed = draft.buffer;
-	release();
-	await writing;
-
-	expect(draft.baseline.source).toBe(mine);
-	expect(draft.baseline.sha256).toEqual(await versionOf(mine));
-	expect(draft.buffer).toBe(typed);
-	const state = draft.saveState;
-	expect(
-		state.kind === 'conflict' &&
-			state.current.kind === 'present' &&
-			state.current.entry.source,
-	).toBe(outside);
-
-	// Saving is paused until a choice is made: the replacement is not overwritten.
-	await draft.save();
-	expect(await t.captures.settleAll()).toBe(1);
-	expect(await t.text(stem)).toBe(outside);
-	await t.captures.close();
-	await t.folder.close();
-});
-
-test.each([
-	['removed', (path: string) => rm(path)],
-	[
-		'unreadable',
-		(path: string) => writeFile(path, new Uint8Array([0xff, 0xfe, 0x00])),
-	],
-] as const)('a write back that landed is not a failed save when the file is %s straight after', async (kind, outside) => {
-	const t = await setup();
-	const { stem, draft, mine } = await t.removedDraft();
-	const release = t.holdNextCreate();
-	t.afterNextCreate(() => outside(t.file(stem)));
-	const writing = draft.saveMine();
-	draft.inputText('My draft, and more');
-	const typed = draft.buffer;
-	release();
-	await writing;
-
-	// What was written is the baseline; what became of the file is a conflict.
-	expect(draft.baseline.source).toBe(mine);
-	expect(draft.baseline.sha256).toEqual(await versionOf(mine));
-	expect(draft.buffer).toBe(typed);
-	const state = draft.saveState;
-	expect(state.kind === 'conflict' && state.current.kind).toBe(kind);
-	expect(t.captures.draft(stem)).toBe(draft);
-	expect(t.captures.unsettled).toBe(1);
-	await t.captures.close();
-	await t.folder.close();
-});
-
-test('a write back that landed and was then removed lets go of a draft with nothing more typed', async () => {
-	const t = await setup();
-	const { stem, draft, mine } = await t.removedDraft();
-	t.afterNextCreate(() => rm(t.file(stem)));
-	await draft.saveMine();
-
-	expect(draft.saveState.kind).toBe('saved');
-	expect(draft.baseline.source).toBe(mine);
-	expect(draft.baseline.sha256).toEqual(await versionOf(mine));
-	expect(draft.gone).toBe(true);
-	expect(t.captures.unsettled).toBe(0);
-	await t.captures.close();
-	await t.folder.close();
-});
-
-test.each([
-	['a text edit', (draft: Draft) => draft.inputText('New input after removal')],
-	[
-		'new-thought text',
-		(draft: Draft): void => {
-			draft.newThought = 'typed after removal';
-		},
-	],
-	[
-		'a thought being edited',
-		(draft: Draft) => {
-			const [first] = draft.document.thoughts;
-			if (!first) throw new Error('fixture');
-			draft.startEditing(first);
-		},
-	],
-	[
-		'refused capture text',
-		(draft: Draft) => {
-			draft.inputText('My draft\n```\nopen');
-			if (!draft.textIsPending) throw new Error('fixture');
-		},
-	],
-] as const)('a draft let go after its file was removed is kept again once it takes %s, and nothing is written unasked', async (_name, type) => {
-	const t = await setup();
-	const { stem, draft } = await t.removedDraft();
-	t.afterNextCreate(() => rm(t.file(stem)));
-	await draft.saveMine();
-	expect(draft.gone).toBe(true);
-	expect(t.captures.unsettled).toBe(0);
-
-	// The page is still showing it, and the person goes on typing.
-	type(draft);
-	const held = {
-		buffer: draft.buffer,
-		newThought: draft.newThought,
-		editing: draft.editing?.text,
-		text: draft.text,
-	};
-	await draft.save();
-	expect(draft.gone).toBe(false);
-	expect(t.captures.unsettled).toBe(1);
-	const state = draft.saveState;
-	expect(state.kind === 'conflict' && state.current.kind).toBe('removed');
-
-	// A refresh keeps it, on the timeline, and settling saves nothing for it.
-	await t.captures.refresh();
-	expect(t.captures.draft(stem)).toBe(draft);
-	expect(t.captures.rows.map((row) => [row.stem, row.unsettled])).toEqual([
-		[stem, true],
-	]);
-	expect(await t.captures.settleAll()).toBe(1);
-	expect(await Bun.file(t.file(stem)).exists()).toBe(false);
-	expect({
-		buffer: draft.buffer,
-		newThought: draft.newThought,
-		editing: draft.editing?.text,
-		text: draft.text,
-	}).toEqual(held);
-
-	// Writing it back is still the person's choice, and saves what it holds.
-	await draft.saveMine();
-	expect(await t.text(stem)).toBe(held.buffer);
-	await t.captures.close();
-	await t.folder.close();
 });
 
 test.each([
@@ -822,7 +749,7 @@ test.each([
 	[
 		'a source edit',
 		(draft: Draft) =>
-			draft.inputSource(`${draft.buffer}- typed while copying\n`),
+			draft.inputSource(`${draft.source}- typed while copying\n`),
 	],
 ] as const)('a copy keeps the draft that took %s while the copy was being written', async (_name, type) => {
 	const t = await setup();
@@ -831,7 +758,7 @@ test.each([
 	const copying = t.captures.saveCopy(draft);
 	type(draft);
 	const held = {
-		buffer: draft.buffer,
+		source: draft.source,
 		newThought: draft.newThought,
 		editing: draft.editing?.text,
 		text: draft.text,
@@ -847,22 +774,12 @@ test.each([
 	expect(draft.unsettled).toBe(true);
 	expect(t.captures.unsettled).toBe(1);
 	expect({
-		buffer: draft.buffer,
+		source: draft.source,
 		newThought: draft.newThought,
 		editing: draft.editing?.text,
 		text: draft.text,
 	}).toEqual(held);
-	await t.captures.refresh();
-	expect(t.captures.draft(stem)).toBe(draft);
-	expect(
-		t.captures.rows.map((row) => [row.stem, row.unsettled]).sort(),
-	).toEqual(
-		[
-			[copied.stem, false],
-			[stem, true],
-		].sort(),
-	);
-	await t.captures.close();
+	await t.captures.close({ discard: true });
 	await t.folder.close();
 });
 
@@ -881,6 +798,7 @@ test('a copy lets go of the draft it was made from when nothing changed while it
 	expect(await t.text(copied.stem)).toBe(mine);
 	expect(t.captures.draft(stem)).toBeUndefined();
 	expect(t.captures.unsettled).toBe(0);
+	expect(await Bun.file(t.file(stem)).exists()).toBe(false);
 	await t.captures.close();
 	await t.folder.close();
 });
@@ -888,22 +806,20 @@ test('a copy lets go of the draft it was made from when nothing changed while it
 test('a copy that finishes late leaves a newer draft at the same path alone', async () => {
 	const t = await setup();
 	const stem = await t.create('Original');
-	const first = t.captures.open(stem);
-	if (!first) throw new Error('no draft');
+	const first = await t.open(stem);
 	first.inputText('My draft');
-	const mine = first.buffer;
+	const mine = first.source;
 	const outside = (await t.text(stem)).replace('Original', 'Changed outside');
 	await writeFile(t.file(stem), outside);
 	await t.captures.refresh();
-	expect(first.saveState.kind).toBe('conflict');
+	expect(first.notice?.kind).toBe('changed');
 
 	const release = t.holdNextCreate();
 	const copying = t.captures.saveCopy(first);
 	// The person discards the draft and opens the capture again meanwhile.
-	t.captures.discard(first);
-	await t.captures.refresh();
-	const second = t.captures.open(stem);
-	if (!second || second === first) throw new Error('fixture');
+	await t.captures.discard(first);
+	const second = await t.open(stem);
+	if (second === first) throw new Error('fixture');
 	second.newThought = 'typed in the newer draft';
 	release();
 	const copied = await copying;
@@ -987,32 +903,28 @@ test('closing finishes an entire import before detaching the real folder', async
 	);
 });
 
-test('closing drains typing that arrived during a draft save before detaching', async () => {
+test('closing saves typing that arrived during a draft save before detaching', async () => {
 	const t = await setup();
 	const stem = await t.create('Original');
-	const draft = t.captures.open(stem);
-	if (!draft) throw new Error('missing draft');
+	const draft = await t.open(stem);
 	draft.inputText('First');
-	const release = t.holdDraftSave();
 	const saving = draft.save();
 	draft.inputText('Second');
 	const closing = t.captures.close().then(() => t.folder.close());
 	t.captures.newCapture = 'After closing began';
 	expect((await t.captures.create()).ok).toBe(false);
-	release();
 	await saving;
 	await closing;
-	expect(await t.text(stem)).toContain('Second');
+	expect(await t.text(stem)).toContain('\nSecond\n');
 	expect(draft.dirty).toBe(false);
 });
 
 test('closing does not publish deliberately discarded input', async () => {
 	const t = await setup();
 	const stem = await t.create('Original');
-	const draft = t.captures.open(stem);
-	if (!draft) throw new Error('missing draft');
+	const draft = await t.open(stem);
 	draft.inputText('Discard me');
-	t.captures.discard(draft);
+	await t.captures.discard(draft);
 	await t.captures.close();
 	await t.folder.close();
 	expect(await t.text(stem)).toContain('Original');
@@ -1022,41 +934,31 @@ test('closing does not publish deliberately discarded input', async () => {
 test('discard and close waits for a submitted save without publishing later typing', async () => {
 	const t = await setup();
 	const stem = await t.create('Original');
-	const draft = t.captures.open(stem);
-	if (!draft) throw new Error('missing draft');
+	const draft = await t.open(stem);
 	draft.inputText('Submitted');
-	const release = t.holdDraftSave();
 	const saving = draft.save();
 	draft.inputText('Discarded typing');
-	let closed = false;
-	const closing = t.captures.close({ discard: true }).then(async () => {
-		await t.folder.close();
-		closed = true;
-	});
-	await Promise.resolve();
-	expect(closed).toBe(false);
-	release();
+	const closing = t.captures.close({ discard: true }).then(() =>
+		t.folder.close(),
+	);
 	await saving;
 	await closing;
-	expect(await t.text(stem)).toContain('Submitted');
+	expect(await t.text(stem)).toContain('\nSubmitted\n');
 	expect(await t.text(stem)).not.toContain('Discarded typing');
-	expect(draft.buffer).toContain('Discarded typing');
+	expect(draft.source).toContain('Discarded typing');
 });
 
 test("closing waits for a discarded draft's submitted save and drops its later typing", async () => {
 	const t = await setup();
 	const stem = await t.create('Original');
-	const draft = t.captures.open(stem);
-	if (!draft) throw new Error('missing draft');
+	const draft = await t.open(stem);
 	draft.inputText('Submitted');
-	const release = t.holdDraftSave();
 	const saving = draft.save();
 	draft.inputText('Discarded typing');
 	const discarding = t.captures.discard(draft);
 	const closing = t.captures.close().then(() => t.folder.close());
 	expect(t.captures.draft(stem)).toBeUndefined();
-	release();
 	await Promise.all([saving, discarding, closing]);
-	expect(await t.text(stem)).toContain('Submitted');
+	expect(await t.text(stem)).toContain('\nSubmitted\n');
 	expect(await t.text(stem)).not.toContain('Discarded typing');
 });

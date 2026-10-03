@@ -19,7 +19,7 @@ import {
 	type ShellLifetime,
 	type ShellPort,
 } from './shell-lifetime.js';
-import type { OpenCaptureHost } from './types.js';
+import { CAPTURE_FOLDER_ID, type OpenCaptureHost } from './types.js';
 
 const tauriPort: ShellPort = {
 	listen: (event, handler) =>
@@ -29,7 +29,10 @@ const tauriPort: ShellPort = {
 
 /** Called from a mounted component; importing this module opens nothing. */
 export const openCaptureHost: OpenCaptureHost = async () => {
-	const opened = await openFolder({ definition: captureDefinition });
+	const opened = await openFolder({
+		id: CAPTURE_FOLDER_ID,
+		definition: captureDefinition,
+	});
 	if (opened.error)
 		throw new Error(opened.error.message, { cause: opened.error });
 	const folder = opened.data;

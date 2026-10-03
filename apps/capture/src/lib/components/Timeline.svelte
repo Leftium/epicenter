@@ -122,9 +122,12 @@
 						{#if row.thoughtCount > 0} · {row.thoughtCount} {row.thoughtCount === 1 ? 'thought' : 'thoughts'}{/if}
 					</Item.Description>
 				</Item.Content>
-				{#if row.conflict === 'removed'}<Badge variant="destructive">File removed, draft kept</Badge>
-				{:else if row.conflict === 'unreadable'}<Badge variant="destructive">Cannot be read</Badge>
-				{:else if row.conflict === 'present'}<Badge variant="destructive">Changed elsewhere</Badge>
+				{#if row.attention === 'removed'}<Badge variant="destructive">File removed, draft kept</Badge>
+				{:else if row.attention === 'unreadable'}<Badge variant="destructive">Cannot be read</Badge>
+				{:else if row.attention === 'changed' || row.attention === 'invalid'}<Badge variant="destructive">Changed elsewhere</Badge>
+				{:else if row.attention === 'failed'}<Badge variant="destructive">Save failed</Badge>
+				{:else if row.attention === 'unconfirmed'}<Badge variant="destructive">Save not confirmed</Badge>
+				{:else if row.attention === 'deletion'}<Badge variant="destructive">Delete not confirmed</Badge>
 				{:else if row.unsettled}<Badge variant="outline">Not saved</Badge>{/if}
 				{#if row.problem}<Badge variant="destructive">Needs repair</Badge>{/if}
 			</Item.Button>

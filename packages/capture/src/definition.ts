@@ -12,7 +12,6 @@ import { defineFolder } from '@epicenter/folder';
  * writes.
  */
 export const captureDefinition = defineFolder({
-	id: 'so.epicenter.capture',
 	title: 'Capture',
 	kv: {},
 	tables: {

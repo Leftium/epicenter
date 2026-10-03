@@ -148,10 +148,11 @@ try {
 		() => document.activeElement?.id === 'new-thought',
 	);
 	const captureUrl = first.url();
+	// Source shows the capture as a save writes it: canonical frontmatter.
 	const created = await source(first);
 	assert.match(
 		created,
-		/^---\ncapturedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\n---\n\nDinner with Sebastian\nFriday at seven\nBring the invitation\.\n\n## Thoughts\n$/,
+		/^---\n"capturedAt": "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"\n---\n\nDinner with Sebastian\nFriday at seven\nBring the invitation\.\n\n## Thoughts\n$/,
 	);
 	const head = created.slice(0, created.indexOf('\n\nDinner'));
 
@@ -186,10 +187,17 @@ try {
 		`${head}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n- Moving to Singapore\n  A longer thought\n`,
 	);
 
-	// 4. Editing the source is editing the capture.
+	// 4. Editing the source is editing the capture. A frontmatter change is
+	// written exactly, only when chosen.
 	await first.getByRole('tab', { name: 'Source' }).click();
-	const edited = `${head.replace(/\n---$/, '\nunknownKey: kept\n---')}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n  - nested point\n- Moving to Singapore\n  A longer thought\n- Typed in source\n\nTrailing note.\n`;
+	const edited = `${head.replace(/\n---$/, '\n"unknownKey": "kept"\n---')}\n\n${text}\n\n## Thoughts\n\n- A question for next time\n  - nested point\n- Moving to Singapore\n  A longer thought\n- Typed in source\n\nTrailing note.\n`;
 	await first.getByLabel('Markdown source').fill(edited);
+	await first
+		.getByRole('button', { name: 'Save this source as the file' })
+		.click();
+	await first
+		.getByRole('alert', { name: 'Source not saved' })
+		.waitFor({ state: 'detached' });
 	// The views are real tabs: the arrow keys move between them.
 	await first.getByRole('tab', { name: 'Source' }).press('ArrowLeft');
 	await first.getByLabel('Capture text').waitFor();

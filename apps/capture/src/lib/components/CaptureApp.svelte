@@ -10,6 +10,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Captures } from '$lib/captures.svelte.js';
+	import type { Notice } from '$lib/draft.svelte.js';
 	import type { CaptureHost } from '$lib/platform/types.js';
 	import CaptureDetail from './CaptureDetail.svelte';
 	import Recovery from './Recovery.svelte';
@@ -110,12 +111,19 @@
 		}
 	}
 
+	const NOTICE_STATUS = {
+		unconfirmed: 'Save not confirmed',
+		failed: 'Save failed',
+		deletion: 'Delete not confirmed',
+		changed: 'Changed elsewhere',
+		invalid: 'Changed elsewhere',
+		unreadable: 'Cannot be read',
+	} satisfies Record<Notice['kind'], string>;
+
 	const status = $derived.by((): { text: string; tone: 'quiet' | 'pending' | 'problem' } => {
 		if (captures.folderStopped) return { text: 'Saving unavailable', tone: 'problem' };
-		const state = draft?.saveState.kind;
-		if (state === 'saving') return { text: 'Saving…', tone: 'quiet' };
-		if (state === 'conflict') return { text: 'Changed elsewhere', tone: 'problem' };
-		if (state === 'failed') return { text: 'Save not confirmed', tone: 'problem' };
+		if (draft?.saving) return { text: 'Saving…', tone: 'quiet' };
+		if (draft?.notice) return { text: NOTICE_STATUS[draft.notice.kind], tone: 'problem' };
 		if (captures.unsettled > 0)
 			return {
 				text: draft?.dirty ? 'Unsaved changes' : `${captures.unsettled} not saved`,
@@ -201,12 +209,12 @@
 		{#if recovering}
 			<Recovery {captures} onOpen={(capture) => show({ capture })} />
 		{:else if stem !== null}
-			{#if draft}
+			{#if draft && draft.mode.kind !== 'opening'}
 				{#key draft}
 					<CaptureDetail {draft} {captures} {stem} focusNewThought={created === stem} onBack={() => show()} onOpen={(capture) => show({ capture })} />
 				{/key}
-			{:else if captures.has(stem)}
-				<!-- Its saved file is listed; the draft over it opens in this same pass. -->
+			{:else if draft || captures.has(stem)}
+				<!-- Its saved file is listed; the editor over it is opening. -->
 				<Loading label="Opening…" />
 			{:else}
 				{@const reason = captures.unreadableReason(stem)}

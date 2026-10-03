@@ -14,6 +14,7 @@
 	import { copyText, downloadText } from '$lib/download.js';
 	import type { CaptureEntry, Draft } from '$lib/draft.svelte.js';
 	import DraftRecovery from './DraftRecovery.svelte';
+	import TechnicalDetails from './TechnicalDetails.svelte';
 
 	let {
 		draft,
@@ -41,6 +42,16 @@
 	 * the text on screen, saved or not, and never the file as it was last saved.
 	 */
 	const reading = $derived(draft.reading);
+	/** Why the Capture view cannot edit, when it cannot. */
+	const sourceOnly = $derived.by((): string | undefined => {
+		const { mode } = draft;
+		if (mode.kind === 'raw')
+			return mode.reason !== undefined
+				? `This file cannot be edited as a capture until it is repaired: ${mode.reason}`
+				: 'Source has changes to the file that are not saved yet. Save or discard them in Source first.';
+		if (mode.kind === 'unavailable') return mode.message;
+		return document.refusal?.message;
+	});
 	const capturedAt = $derived.by(() => {
 		const value = reading.fields.capturedAt;
 		if (value === undefined) return undefined;
@@ -205,8 +216,8 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="end" class="w-48">
-				<DropdownMenu.Item onclick={() => copy(draft.buffer, 'Source')}>Copy source</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => downloadText(`${stem}.md`, draft.buffer)}>Download file</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => copy(draft.source, 'Source')}>Copy source</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => downloadText(`${stem}.md`, draft.source)}>Download file</DropdownMenu.Item>
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item variant="destructive" onclick={reviewDeletion}>Delete capture…</DropdownMenu.Item>
 			</DropdownMenu.Content>
@@ -240,11 +251,11 @@
 	{/if}
 
 	<Tabs.Content value="capture" class="flex flex-col gap-8">
-		{#if document.refusal}
+		{#if sourceOnly !== undefined}
 			<Alert.Root aria-label="Source only">
 				<Alert.Title>This capture can only be edited as Source</Alert.Title>
 				<Alert.Description>
-					<p>{document.refusal.message}</p>
+					<p>{sourceOnly}</p>
 					{#if reading.parseError}
 						<ul class="list-disc pl-5">
 							{#each reading.parseError.diagnostics as diagnostic, index (index)}
@@ -261,8 +272,8 @@
 				<Field.Label for="capture-text">Capture text</Field.Label>
 				<Textarea
 					id="capture-text"
-					value={draft.text}
-					oninput={(event) => draft.inputText(event.currentTarget.value)}
+					readonly={draft.gated}
+					bind:value={() => draft.text, (value) => draft.inputText(value)}
 					rows={rowsFor(draft.text)}
 					class="max-h-96 resize-y leading-relaxed"
 					placeholder="Write here…"
@@ -285,7 +296,7 @@
 					<Alert.Root aria-label="Kept thought edit">
 						<Alert.Title>Your edit to a thought was not applied</Alert.Title>
 						<Alert.Description>The capture changed after you started editing, so it is unclear which thought this belongs to. Your text is kept here. Copy it, then edit the thought again.</Alert.Description>
-						<Textarea aria-label="Kept thought text" value={strandedEdit.text} oninput={(event) => draft.inputEditing(event.currentTarget.value)} rows={3} class="mt-2" />
+						<Textarea aria-label="Kept thought text" readonly={draft.gated} bind:value={() => draft.editing?.text ?? '', (value) => draft.inputEditing(value)} rows={3} class="mt-2" />
 						<div class="mt-2 flex flex-wrap gap-2">
 							<Button variant="outline" size="sm" onclick={() => copy(strandedEdit.text, 'Text')}>Copy text</Button>
 							<Button variant="outline" size="sm" onclick={() => draft.cancelEditing()}>Discard this edit</Button>
@@ -301,15 +312,15 @@
 									<form class="flex flex-col gap-2 py-1" onsubmit={(event) => { event.preventDefault(); saveEdit(index); }}>
 										<Textarea
 											aria-label="Thought text"
-											value={draft.editing.text}
-											oninput={(event) => draft.inputEditing(event.currentTarget.value)}
+											readonly={draft.gated}
+											bind:value={() => draft.editing?.text ?? '', (value) => draft.inputEditing(value)}
 											onkeydown={submitOnModEnter}
 											rows={rowsFor(draft.editing.text)}
 											class="leading-relaxed"
 											{@attach focusAtEnd}
 										/>
 										<div class="flex flex-wrap gap-2">
-											<Button type="submit" size="sm">Save thought</Button>
+											<Button type="submit" size="sm" disabled={draft.gated}>Save thought</Button>
 											<Button size="sm" variant="outline" onclick={() => cancelEdit(index)}>Cancel</Button>
 										</div>
 									</form>
@@ -345,7 +356,8 @@
 						<Textarea
 							id="new-thought"
 							bind:ref={newThoughtField}
-							bind:value={draft.newThought}
+							readonly={draft.gated}
+							bind:value={() => draft.newThought, (value) => (draft.newThought = value)}
 							onkeydown={submitOnModEnter}
 							rows={2}
 							class="leading-relaxed"
@@ -364,7 +376,7 @@
 								This file has no Thoughts section yet. Adding a thought appends one.
 							{/if}
 						</p>
-						<Button type="submit" size="sm">Add thought</Button>
+						<Button type="submit" size="sm" disabled={draft.gated}>Add thought</Button>
 					</div>
 				</form>
 
@@ -375,20 +387,58 @@
 		{/if}
 	</Tabs.Content>
 
-	<Tabs.Content value="source">
-		<Field.Field>
-			<Field.Label for="capture-source">Markdown source</Field.Label>
-			<Field.Description>This is the file <code class="break-all">{draft.path}</code>, exactly. Anything Markdown allows can go here.</Field.Description>
-			<Textarea
-				id="capture-source"
-				bind:ref={sourceField}
-				value={toTextarea(draft.buffer)}
-				oninput={(event) => draft.inputSource(event.currentTarget.value)}
-				rows={18}
-				spellcheck={false}
-				class="min-h-64 resize-y font-mono"
-			/>
-		</Field.Field>
+	<Tabs.Content value="source" class="flex flex-col gap-4">
+		{#if draft.mode.kind === 'unavailable'}
+			<Alert.Root variant="destructive" aria-label="File unavailable">
+				<Alert.Title>{draft.mode.missing ? 'This file is not in the folder' : 'This file cannot be read'}</Alert.Title>
+				<Alert.Description>It was not changed by this window. Check again once it is back or repaired.</Alert.Description>
+				<div class="mt-2 text-foreground"><Button variant="outline" size="sm" onclick={() => draft.check()}>Check again</Button></div>
+				<TechnicalDetails detail={draft.mode.message} />
+			</Alert.Root>
+		{:else}
+			{@const raw = draft.mode.kind === 'raw' ? draft.mode : undefined}
+			<Field.Field>
+				<Field.Label for="capture-source">Markdown source</Field.Label>
+				<Field.Description>
+					{#if raw === undefined}
+						This is <code class="break-all">{draft.path}</code> as it saves. Text below the frontmatter saves as you type; changing the frontmatter is saved only when you choose.
+					{:else}
+						This is the text for <code class="break-all">{draft.path}</code>. It is saved exactly as written, and only when you choose.
+					{/if}
+				</Field.Description>
+				<Textarea
+					id="capture-source"
+					bind:ref={sourceField}
+					readonly={draft.gated}
+					bind:value={() => toTextarea(draft.source), (value) => draft.inputSource(value)}
+					rows={18}
+					spellcheck={false}
+					class="min-h-64 resize-y font-mono"
+				/>
+			</Field.Field>
+			{#if raw}
+				<Alert.Root aria-label="Source not saved">
+					<Alert.Title>{raw.reason !== undefined ? 'This file needs repair' : 'This source is not saved yet'}</Alert.Title>
+					<Alert.Description>
+						{#if raw.reason !== undefined}
+							<p>{raw.reason}</p>
+						{:else}
+							<p>Changes to the frontmatter are written exactly as typed, and only when you choose. They replace only the version of the file this window last had.</p>
+						{/if}
+						{#if raw.problem}<p class="mt-1 font-medium">{raw.problem}</p>{/if}
+					</Alert.Description>
+					{#if raw.problem && typeof raw.over === 'object'}
+						<p class="mt-2 text-xs font-medium text-muted-foreground">Saved file now</p>
+						<!-- svelte-ignore a11y_no_noninteractive_tabindex: the preview scrolls, so the keyboard must reach it -->
+						<pre aria-label="Saved file now" role="region" tabindex="0" class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-xs">{raw.over.source}</pre>
+					{/if}
+					<div class="mt-2 flex flex-wrap gap-2">
+						<Button size="sm" disabled={draft.saving || raw.over === 'settling'} onclick={() => draft.writeRaw()}>{raw.over === 'absent' ? 'Save this file back' : 'Save this source as the file'}</Button>
+						<Button size="sm" variant="outline" disabled={draft.saving || raw.over === 'settling'} onclick={() => draft.discardRaw()}>{raw.reason !== undefined ? 'Undo my changes' : 'Discard source changes'}</Button>
+					</div>
+				</Alert.Root>
+			{/if}
+		{/if}
 	</Tabs.Content>
 </Tabs.Root>
 

@@ -14,18 +14,29 @@ import type {
 	FolderLocation,
 } from '@epicenter/folder';
 
+/**
+ * The folder both leaves open. The browser names its IndexedDB database after
+ * it; the desktop shell registers its directory under it.
+ */
+export const CAPTURE_FOLDER_ID = 'so.epicenter.capture';
+
 /** The folder surface Capture uses. */
 export type CaptureFolder = {
 	readonly tables: {
+		/**
+		 * `edit` opens the row editor an open capture is typed into; its saves
+		 * overwrite the whole file. `replace` writes a raw repair only over
+		 * the version that was read, and `delete` removes only the reviewed one.
+		 */
 		readonly captures: Pick<
 			FileTable<CaptureFields>,
-			'list' | 'get' | 'inspect' | 'create' | 'replace' | 'delete'
+			'list' | 'get' | 'inspect' | 'create' | 'replace' | 'delete' | 'edit'
 		>;
 	};
 	/**
-	 * Exact source at a literal path. `create` needs the path unoccupied and
-	 * `replace` needs the file to be the one that was read; Capture takes no
-	 * verb that overwrites.
+	 * Exact source at a literal path, for copies and imports. `create` needs
+	 * the path unoccupied and `replace` needs the file to be the one that was
+	 * read.
 	 */
 	readonly files: Pick<FolderFiles, 'read' | 'create' | 'replace'>;
 	readonly git: Pick<FolderGit, 'snapshot' | 'subscribe' | 'commit'>;

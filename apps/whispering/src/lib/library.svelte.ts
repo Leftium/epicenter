@@ -372,6 +372,8 @@ export function createLibrary(workspace: Workspace) {
 	 * as the recording's results from the moment they are saved.
 	 */
 	const unlistedResults = new Map<string, TranscriptionEntry>();
+	/** The same for transformation results, which a deletion also counts. */
+	const unlistedOutputs = new Map<string, TransformationRunEntry>();
 	/** Counts completed folder refreshes; audio players recheck their file on each. */
 	let generation = $state(0);
 	const autosave = $state<Autosave>({ paused: false });
@@ -501,6 +503,7 @@ export function createLibrary(workspace: Workspace) {
 		const sequence = ++refreshSequence;
 		// Published before this read began, so this read's listing accounts for them.
 		const published = new Map(unlistedResults);
+		const publishedOutputs = new Map(unlistedOutputs);
 		const [rows, found, files, kvRead, profileRows, outputRows] =
 			await Promise.all([
 				table.list(),
@@ -534,6 +537,8 @@ export function createLibrary(workspace: Workspace) {
 			const read = splitListing(outputRows.data);
 			transformationResults = read.entries;
 			noteUnread(outputs.name, read.failed);
+			for (const [path, entry] of publishedOutputs)
+				if (unlistedOutputs.get(path) === entry) unlistedOutputs.delete(path);
 		}
 		if (rows.error) {
 			// Keep the previous observation visible; never show an empty list for a failed read.
@@ -1020,45 +1025,68 @@ export function createLibrary(workspace: Workspace) {
 	// --- transformations ----------------------------------------------------
 
 	/**
+	 * Result rows being written now, by run id, each naming its recording. A
+	 * discard drops the text but cannot stop a write already begun, so the
+	 * recording is not deleted under one.
+	 */
+	const writingRuns = new Map<string, string | undefined>();
+
+	/**
 	 * Write a received result as `transformation_runs/<run.id>.md`. The row is
 	 * created, never updated, so the transcript it came from is untouched. If an
 	 * earlier attempt already wrote this exact result, it is recognized and not
 	 * written twice; any other file at that path is left as it is.
+	 *
+	 * `admitted` is the run this save was let in under. Its outcome is applied
+	 * only while that run still stands, so a save that ends after the run was
+	 * discarded restores nothing and removes nothing; a row it wrote stays.
 	 */
-	async function saveRun(run: TransformationRun, text: string) {
-		const unsaved = (message: string) =>
-			transformationRuns.set(run.id, {
-				...run,
-				state: { kind: 'unsaved', message, text },
-			});
+	async function saveRun(
+		run: TransformationRun,
+		text: string,
+		admitted: TransformationRun,
+	) {
 		const body = resultBody(text);
+		/** The row as the folder has it, or why it is not known to be there. */
+		let published: Result<TransformationRunEntry, string>;
+		writingRuns.set(run.id, run.fields.recordingId);
 		try {
 			const existing = await outputs.get(run.id);
-			if (existing.error) {
-				unsaved(existing.error.message);
-				return;
-			}
-			if (existing.data === undefined) {
+			if (existing.error) published = Err(existing.error.message);
+			else if (existing.data === undefined) {
 				const created = await outputs.create({
 					stem: run.id,
 					fields: run.fields,
 					body,
 				});
-				if (created.error) {
-					unsaved(describeWriteError(created.error));
-					return;
-				}
-			} else if (!isThisResult(existing.data, run.fields, body)) {
-				unsaved(
-					`${existing.data.path} already exists and is not this result. Nothing was overwritten.`,
-				);
-				return;
-			}
+				published = created.error
+					? Err(describeWriteError(created.error))
+					: Ok(created.data);
+			} else
+				published = isThisResult(existing.data, run.fields, body)
+					? Ok(existing.data)
+					: Err(
+							`${existing.data.path} already exists and is not this result. Nothing was overwritten.`,
+						);
 		} catch (cause) {
-			unsaved(describe(cause));
+			published = Err(describe(cause));
+		} finally {
+			writingRuns.delete(run.id);
+		}
+		const stands = transformationRuns.get(run.id) === admitted;
+		if (published.error !== null) {
+			if (stands)
+				transformationRuns.set(run.id, {
+					...run,
+					state: { kind: 'unsaved', message: published.error, text },
+				});
 			return;
 		}
-		transformationRuns.delete(run.id);
+		// Saved, whatever the listing below reports. There is no await between
+		// the write ending and this, so a deletion confirmed earlier always
+		// finds the run, the write, or this row in its way.
+		unlistedOutputs.set(published.data.path, published.data);
+		if (stands) transformationRuns.delete(run.id);
 		await refreshAll();
 	}
 
@@ -1081,6 +1109,7 @@ export function createLibrary(workspace: Workspace) {
 			...transcriptions,
 			...unlistedResults.values(),
 			...transformationResults,
+			...unlistedOutputs.values(),
 		]
 			.filter((row) => row.fields.recordingId === undefined)
 			.map((row) => row.path);
@@ -1098,8 +1127,9 @@ export function createLibrary(workspace: Workspace) {
 	 * Why a recording cannot be deleted now, or undefined. A request still
 	 * running, or an answer that is not saved yet, would otherwise write a row
 	 * that names a recording that is gone. So would the write of a transcript
-	 * that was discarded while it was being saved. A failed run holds nothing
-	 * and does not block; it is dropped with the recording.
+	 * or a transformation result that was discarded while it was being saved.
+	 * A failed run holds nothing and does not block; it is dropped with the
+	 * recording.
 	 */
 	function recordingBusy(id: string): string | undefined {
 		const transcript = runs.get(id);
@@ -1116,6 +1146,8 @@ export function createLibrary(workspace: Workspace) {
 			return 'A transformation of this recording’s transcript is still running. Wait for it to finish, then delete the recording.';
 		if (own.some((run) => run.state.kind === 'unsaved'))
 			return 'A transformation result for this recording arrived but its file is not saved. Save it again or discard it in the notice under the header, then delete the recording.';
+		if ([...writingRuns.values()].includes(id))
+			return 'A transformation result for this recording is still being written to the folder. Wait for it to finish, then delete the recording.';
 		return undefined;
 	}
 
@@ -1172,12 +1204,15 @@ export function createLibrary(workspace: Workspace) {
 
 	/** One request for a run. It always ends: saved, unsaved with its text, or failed. */
 	async function sendRun(run: TransformationRun) {
-		transformationRuns.set(run.id, { ...run, state: { kind: 'running' } });
-		const failed = (message: string) =>
-			transformationRuns.set(run.id, {
-				...run,
-				state: { kind: 'failed', message },
-			});
+		const running: TransformationRun = { ...run, state: { kind: 'running' } };
+		transformationRuns.set(run.id, running);
+		const failed = (message: string) => {
+			if (transformationRuns.get(run.id) === running)
+				transformationRuns.set(run.id, {
+					...run,
+					state: { kind: 'failed', message },
+				});
+		};
 		let answered: Awaited<ReturnType<Workspace['transform']>>;
 		try {
 			answered = await workspace.transform({
@@ -1196,7 +1231,7 @@ export function createLibrary(workspace: Workspace) {
 			failed(answered.error.message);
 			return;
 		}
-		await saveRun(run, answered.data.text);
+		await saveRun(run, answered.data.text, running);
 	}
 
 	/** Settle input, then read the saved transformation an operation acts on. */
@@ -1751,6 +1786,11 @@ export function createLibrary(workspace: Workspace) {
 		 * there. Otherwise it stays failed and says why. A received result is
 		 * only saved again: the endpoint is not called, and the file keeps the
 		 * name it was given.
+		 *
+		 * Either way the run stays discardable until it is sent. A run discarded,
+		 * or dropped with its recording, while this is under way is not sent,
+		 * not restored, and not removed again; a row already being written may
+		 * still land.
 		 */
 		async retryTransformation(id: string) {
 			if (closing) return;
@@ -1760,15 +1800,18 @@ export function createLibrary(workspace: Workspace) {
 				const run = transformationRuns.get(id);
 				if (run === undefined) return;
 				if (run.state.kind === 'unsaved') {
-					await saveRun(run, run.state.text);
+					await saveRun(run, run.state.text, run);
 					return;
 				}
 				if (run.state.kind !== 'failed') return;
-				const refuse = (message: string) =>
-					transformationRuns.set(id, {
-						...run,
-						state: { kind: 'failed', message },
-					});
+				const stands = () => transformationRuns.get(id) === run;
+				const refuse = (message: string) => {
+					if (stands())
+						transformationRuns.set(id, {
+							...run,
+							state: { kind: 'failed', message },
+						});
+				};
 				const source = await transformationSource(
 					rowPath(TRANSCRIPTIONS, run.fields.transcriptionId),
 				);
@@ -1785,12 +1828,23 @@ export function createLibrary(workspace: Workspace) {
 					);
 					return;
 				}
+				// From these checks to the run being listed as running there is no
+				// await, so a discard or a deletion either is seen here or sees it.
+				if (!stands()) return;
+				if (deleting.has(source.data.recordingId)) {
+					refuse(BEING_DELETED);
+					return;
+				}
 				await sendRun(run);
 			} finally {
 				retrying.delete(id);
 			}
 		},
-		/** Drop a run that is not running. A received result that was not saved is lost. */
+		/**
+		 * Drop a run that is not running. A received result that was not saved
+		 * is lost from this window; a write of it already begun may still reach
+		 * the folder, and whatever it wrote stays there.
+		 */
 		discardTransformationRun(id: string) {
 			if (transformationRuns.get(id)?.state.kind !== 'running')
 				transformationRuns.delete(id);
@@ -1798,6 +1852,7 @@ export function createLibrary(workspace: Workspace) {
 		deleteTransformationResult: submitFileChange(
 			async (entry: TransformationRunEntry): Promise<string | undefined> => {
 				const removed = await outputs.delete(entry);
+				if (removed.error === null) unlistedOutputs.delete(entry.path);
 				await refreshAll();
 				return removed.error ? describeWriteError(removed.error) : undefined;
 			},
@@ -1915,9 +1970,12 @@ export function createLibrary(workspace: Workspace) {
 				// every result has to be known to be this one's or another's.
 				const unknown = unknownResults();
 				if (unknown !== undefined) return Err(unknown);
-				// A transcript saved since the last listing is named from its
+				// A result saved since the last listing is named from its
 				// publication; once listed, the listed row is the one named.
 				const listed = new Set(transcriptions.map((result) => result.path));
+				const listedOutputs = new Set(
+					transformationResults.map((result) => result.path),
+				);
 				return Ok({
 					kind: 'recording',
 					entry: entry.data,
@@ -1927,9 +1985,12 @@ export function createLibrary(workspace: Workspace) {
 							(result) => !listed.has(result.path),
 						),
 					].filter((result) => result.fields.recordingId === id),
-					outputs: transformationResults.filter(
-						(result) => result.fields.recordingId === id,
-					),
+					outputs: [
+						...transformationResults,
+						...[...unlistedOutputs.values()].filter(
+							(result) => !listedOutputs.has(result.path),
+						),
+					].filter((result) => result.fields.recordingId === id),
 				});
 			}
 			if (transformationEditors.has(path) || transformationPaths.has(path)) {
@@ -2000,11 +2061,12 @@ export function createLibrary(workspace: Workspace) {
 				const confirmed = new Set(
 					[...deletion.results, ...deletion.outputs].map((row) => row.path),
 				);
-				// A transcript saved since the last listing counts from its publication.
+				// A result saved since the last listing counts from its publication.
 				const unconfirmed = [
 					...transcriptions,
 					...unlistedResults.values(),
 					...transformationResults,
+					...unlistedOutputs.values(),
 				].some(
 					(row) => row.fields.recordingId === id && !confirmed.has(row.path),
 				);
@@ -2036,6 +2098,7 @@ export function createLibrary(workspace: Workspace) {
 					for (const output of deletion.outputs) {
 						const gone = await outputs.delete(output);
 						if (gone.error) leftovers.push(output.path);
+						else unlistedOutputs.delete(output.path);
 					}
 					await refreshAll();
 					return leftovers.length > 0

@@ -27,12 +27,16 @@
  * - Two asks for the same transcript and transformation at once are one
  *   request and one result, while another pair and a later run stay separate;
  *   a run retried or saved again twice at once is retried or saved once
+ * - A run discarded while it is saved or retried stays discarded: a failed
+ *   save does not restore it, a retry does not send it, and a row already
+ *   being written may land and is counted by a deletion
  */
 import './svelte-modules.test-support.js';
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { FileError } from '@epicenter/folder/bun';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { STARTER_TRANSFORMATIONS } from './definition.js';
@@ -1086,4 +1090,201 @@ test('a received result saved again twice at once is written once and is not lef
 	expect(await names(root, RUNS)).toEqual([`${held.id}.md`]);
 	expect(library.transformationRuns).toEqual([]);
 	expect(library.holdsUnsavedWork).toBe(false);
+});
+
+// ============================================================================
+// A run discarded while it is being saved or retried
+// ============================================================================
+
+/**
+ * A library whose result-row reads, writes, and listings first run the hook
+ * the test sets for them. A hook can hold the call, throw, or, for a listing,
+ * answer in its place.
+ */
+async function openHookedRuns(options: TestWorkspaceOptions = {}) {
+	const test = await openTestWorkspace(options);
+	const { tables } = test.workspace.folder;
+	const runs = tables.transformation_runs;
+	type Listed = Awaited<ReturnType<typeof runs.list>>;
+	const hooks: {
+		get?: () => Promise<void>;
+		create?: () => Promise<void>;
+		list?: () => Promise<Listed | undefined>;
+	} = {};
+	const library = createLibrary({
+		...test.workspace,
+		folder: {
+			...test.workspace.folder,
+			tables: {
+				...tables,
+				transformation_runs: {
+					...runs,
+					async get(stem: string) {
+						await hooks.get?.();
+						return runs.get(stem);
+					},
+					async create(input: Parameters<typeof runs.create>[0]) {
+						await hooks.create?.();
+						return runs.create(input);
+					},
+					async list() {
+						return (await hooks.list?.()) ?? runs.list();
+					},
+				},
+			},
+		} as Library['workspace']['folder'],
+	});
+	cleanups.push(async () => {
+		await library.close();
+		await test.remove();
+	});
+	await library.start();
+	return { library, hooks, ...test };
+}
+
+/** A call held until the test lets it go: `reached` settles once it is waiting. */
+function holdCall() {
+	const reached = deferred<void>();
+	const released = deferred<void>();
+	return {
+		reached: reached.promise,
+		release: () => released.resolve(),
+		async wait() {
+			reached.resolve();
+			await released.promise;
+		},
+	};
+}
+
+/** A received result that was not saved, with a recording and a transformation to go with it. */
+async function unsavedRun(options: TestWorkspaceOptions) {
+	const opened = await openHookedRuns(options);
+	const { library, root } = opened;
+	const { recording, transcript } = await transcribed(library, root);
+	const editor = await cleanupProfile(library);
+	const confirmed = expectOk(await library.deletionFor(recording.path));
+	await library.transform(transcript.path, editor.path);
+	const held = library.transformationRuns[0]!;
+	expect(held.state.kind).toBe('unsaved');
+	return { ...opened, recording, confirmed, held };
+}
+
+test('a result discarded while its save reads the folder is not restored when the read fails', async () => {
+	const { library, root, hooks, held, transformed } = await unsavedRun({
+		failRunWrites: 1,
+	});
+	const reading = holdCall();
+	hooks.get = async () => {
+		await reading.wait();
+		throw new Error('the folder host went away');
+	};
+
+	const saving = library.retryTransformation(held.id);
+	await reading.reached;
+	library.discardTransformationRun(held.id);
+	expect(library.transformationRuns).toEqual([]);
+	reading.release();
+	await saving;
+
+	// The dropped text stays dropped, and nothing was sent again.
+	expect(library.transformationRuns).toEqual([]);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(transformed).toHaveLength(1);
+	expect(await names(root, RUNS)).toEqual([]);
+});
+
+test('a result discarded while its row is being written is not restored when the write fails, and its recording waits for the write', async () => {
+	const { library, root, hooks, recording, confirmed, held, transformed } =
+		await unsavedRun({ failRunWrites: 2 });
+	const writing = holdCall();
+	hooks.create = () => writing.wait();
+
+	const saving = library.retryTransformation(held.id);
+	await writing.reached;
+	library.discardTransformationRun(held.id);
+	expect(library.transformationRuns).toEqual([]);
+	// The write already begun could still land a row naming the recording.
+	expect((await library.deletionFor(recording.path)).error).toContain(
+		'still being written',
+	);
+	expect(await library.remove(confirmed)).toContain('still being written');
+	writing.release();
+	await saving;
+
+	expect(library.transformationRuns).toEqual([]);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(transformed).toHaveLength(1);
+	expect(await names(root, RUNS)).toEqual([]);
+	// With the write refused nothing names the recording, so it can go.
+	expect(await library.remove(confirmed)).toBeUndefined();
+	expect(await names(root, 'recordings')).toEqual([`${recording.stem}.wav`]);
+});
+
+test('a result discarded while its row is being written leaves only the file when the write lands, and a deletion counts it', async () => {
+	const { library, root, hooks, recording, confirmed, held, transformed } =
+		await unsavedRun({ failRunWrites: 1 });
+	const writing = holdCall();
+	hooks.create = () => writing.wait();
+	// The listing after the write does not see it yet, as when that read fails.
+	hooks.list = async () =>
+		FileError.Io({
+			path: RUNS,
+			operation: 'list',
+			cause: new Error('the listing could not be read'),
+		});
+
+	const saving = library.retryTransformation(held.id);
+	await writing.reached;
+	library.discardTransformationRun(held.id);
+	writing.release();
+	await saving;
+
+	// The row landed under the id fixed when the run began; no run came back.
+	expect(await names(root, RUNS)).toEqual([`${held.id}.md`]);
+	expect(library.transformationRuns).toEqual([]);
+	expect(library.holdsUnsavedWork).toBe(false);
+	expect(transformed).toHaveLength(1);
+
+	// The deletion confirmed before the row existed did not name it, so it is refused.
+	expect(await library.remove(confirmed)).toContain('after you were asked');
+	expect(await names(root, 'recordings')).toHaveLength(2);
+	// Asked again, the person is told of the row, and it goes with the recording.
+	const again = expectOk(await library.deletionFor(recording.path));
+	expect(again).toMatchObject({
+		kind: 'recording',
+		outputs: [{ path: `${RUNS}/${held.id}.md` }],
+	});
+	expect(await library.remove(again)).toBeUndefined();
+	expect(await names(root, RUNS)).toEqual([]);
+	expect(await names(root, 'recordings')).toEqual([`${recording.stem}.wav`]);
+});
+
+test('a failed run discarded while its retry reads the transcript sends nothing and is not restored', async () => {
+	const { library, root, transformed, reads } = await openHoldingReads(
+		'transcriptions',
+		{
+			transform: async () =>
+				TransformationError.Unreachable({ url: 'http://x', reason: 'down' }),
+		},
+	);
+	const { transcript } = await transcribed(library, root);
+	const cleanup = await cleanupProfile(library);
+	await library.transform(transcript.path, cleanup.path);
+	const failed = library.transformationRuns[0]!;
+	expect(failed.state.kind).toBe('failed');
+	const reading = deferred<void>();
+	reads.hold = reading.promise;
+	reads.waiting = 0;
+
+	const retry = library.retryTransformation(failed.id);
+	await Promise.resolve();
+	expect(reads.waiting).toBe(1);
+	library.discardTransformationRun(failed.id);
+	reads.hold = undefined;
+	reading.resolve();
+	await retry;
+
+	expect(transformed).toHaveLength(1);
+	expect(library.transformationRuns).toEqual([]);
+	expect(await names(root, RUNS)).toEqual([]);
 });

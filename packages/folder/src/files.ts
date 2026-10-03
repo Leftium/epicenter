@@ -13,7 +13,8 @@ import {
 	ownBytes,
 	ownCapture,
 } from './capture.js';
-import type { ApplyError, FileError } from './errors.js';
+import type { FileError, MoveError } from './errors.js';
+import { applyOne, reserveSubmission } from './storage.js';
 
 /**
  * Ordinary files at literal folder-relative paths (ADR-0479).
@@ -37,27 +38,29 @@ export type FolderFiles = {
 	create(
 		path: string,
 		content: string | Uint8Array,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
+	): Promise<Result<FileCapture, FileError>>;
 	/** Save over the captured file. Refused when its bytes are no longer the captured ones. */
 	replace(
 		file: FileCapture,
 		content: string | Uint8Array,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
+	): Promise<Result<FileCapture, FileError>>;
 	/** Remove the captured file. Refused when its bytes are no longer the captured ones. */
-	remove(file: FileCapture): Promise<Result<undefined, FileError | ApplyError>>;
+	remove(file: FileCapture): Promise<Result<undefined, FileError>>;
 	/**
 	 * Move the captured file to an unoccupied path. The returned capture is the
-	 * same content hash at the destination.
+	 * same content hash at the destination. A move that landed the destination
+	 * but could not remove the source reports `MoveError.SourceNotRemoved`;
+	 * both paths then hold the bytes.
 	 */
 	move(
 		file: FileCapture,
 		destination: string,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
+	): Promise<Result<FileCapture, FileError | MoveError>>;
 	/** Save at the path whatever is there, as a shell redirection does. */
 	overwrite(
 		path: string,
 		content: string | Uint8Array,
-	): Promise<Result<FileCapture, FileError | ApplyError>>;
+	): Promise<Result<FileCapture, FileError>>;
 	mkdir(path: string): Promise<Result<undefined, FileError>>;
 	rmdir(path: string): Promise<Result<undefined, FileError>>;
 };
@@ -67,12 +70,17 @@ export function createFiles({
 }: {
 	storage: FolderStorage;
 }): FolderFiles {
-	/** Publish one write and return the capture of the bytes that were given. */
+	/**
+	 * Publish one write and return the capture of the bytes that were given.
+	 * Its place is reserved here, before the hash, so a later save never
+	 * overtakes it.
+	 */
 	async function save(
 		intent: FileWriteIntent,
-	): Promise<Result<FileCapture, FileError | ApplyError>> {
+	): Promise<Result<FileCapture, FileError>> {
+		const submission = reserveSubmission();
 		const sha256 = await hashBytes(intent.bytes);
-		const applied = await storage.apply([{ ...intent, sha256 }]);
+		const applied = await applyOne(storage, { ...intent, sha256 }, submission);
 		return applied.error ? applied : Ok(fileCapture(intent.path, sha256));
 	}
 
@@ -108,16 +116,23 @@ export function createFiles({
 			const captured = ownCapture(file);
 			if (captured.error) return Promise.resolve(captured);
 			const { path, sha256 } = captured.data;
-			return storage.apply([{ kind: 'remove', path, expectedSha256: sha256 }]);
+			return applyOne(
+				storage,
+				{ kind: 'remove', path, expectedSha256: sha256 },
+				reserveSubmission(),
+			);
 		},
 		move: async (file, destination) => {
+			const submission = reserveSubmission();
 			const captured = ownCapture(file);
 			if (captured.error) return captured;
 			const { path, sha256 } = captured.data;
 
-			const applied = await storage.apply([
+			const applied = await applyOne(
+				storage,
 				{ kind: 'move', from: path, to: destination, expectedSha256: sha256 },
-			]);
+				submission,
+			);
 			// A move carries the captured bytes, so their hash is the capture's.
 			return applied.error ? applied : Ok(fileCapture(destination, sha256));
 		},

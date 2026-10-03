@@ -5,9 +5,11 @@
  * native folder must never claim or silently rewrite.
  *
  * Key behaviors:
- * - A move whose destination landed but whose source could not be retired is
- *   a `Partial` result naming both facts, merged with earlier steps; both
- *   copies stay and observations become stale without an automatic commit
+ * - A raw move whose destination landed but whose source could not be
+ *   retired is a `Partial` result naming both facts, merged with earlier
+ *   steps; both copies stay
+ * - Through the folder it is `MoveError.SourceNotRemoved` with the capture at
+ *   the destination; observations become stale without an automatic commit
  * - A pull whose files landed while the index was locked returns
  *   `IndexFailed`, keeps HEAD, and never leaves a fresh clean observation
  * - Whole-folder commits refuse repositories they would misrepresent
@@ -30,7 +32,7 @@ import {
 	writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineFolder, defineTable, field } from './contract.js';
 import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
@@ -38,7 +40,6 @@ import { createNativeFileBoundary } from './native-store.js';
 import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.todostest',
 	kv: {},
 	tables: {
 		todos: defineTable({
@@ -69,40 +70,6 @@ async function writeChange(path: string, text: string) {
 		sha256: await hashBytes(bytes),
 	};
 }
-
-test('a partially published batch invalidates Git observation without requesting a commit', async () => {
-	const root = await scratch('native-create-');
-	const folder = await openNativeFolder({ root, definition, git: { author } });
-	try {
-		await mkdir(join(root, 'todos/blocked.md'), { recursive: true });
-		await folder.git.status();
-		// The image lands; the row that follows it cannot, because a directory
-		// already has its name.
-		const created = await folder.batch((batch) => {
-			batch.files.create('todos/blocked.png', new Uint8Array([1]));
-			batch.tables.todos.create({
-				stem: 'blocked',
-				fields: { title: 'Blocked', done: false },
-			});
-		});
-		expect(created.error).toMatchObject({
-			name: 'Partial',
-			applied: [{ kind: 'write', path: 'todos/blocked.png' }],
-			failed: { kind: 'write', path: 'todos/blocked.md' },
-			notAttempted: [],
-		});
-		expect(await readFile(join(root, 'todos/blocked.png'))).toEqual(
-			Buffer.from([1]),
-		);
-		const observation = folder.git.snapshot.files;
-		expect(observation.state === 'observed' && observation.stale).toBe(true);
-		await folder.close();
-		expect(folder.git.snapshot.lastCommit).toBeUndefined();
-	} finally {
-		await folder.close();
-		await rm(root, { recursive: true, force: true });
-	}
-});
 
 describe('native partial moves', () => {
 	test.skipIf(!canDenyWrites)(
@@ -145,7 +112,7 @@ describe('native partial moves', () => {
 	);
 
 	test.skipIf(!canDenyWrites)(
-		'a partial raw move marks observations stale and requests no commit',
+		'a folder move that keeps its source names both paths, marks observations stale, and requests no commit',
 		async () => {
 			const root = await scratch('native-move-folder-');
 			const folder = await openNativeFolder({
@@ -166,8 +133,16 @@ describe('native partial moves', () => {
 			const committed = folder.git.snapshot.lastCommit;
 			await chmod(join(root, 'locked'), 0o555);
 			try {
-				const moved = await folder.files.move(locked, 'open/a.txt');
-				expect(moved.error?.name).toBe('Partial');
+				const moved = expectErr(await folder.files.move(locked, 'open/a.txt'));
+				expect(moved).toMatchObject({
+					name: 'SourceNotRemoved',
+					from: 'locked/a.txt',
+					to: 'open/a.txt',
+					moved: { path: 'open/a.txt', sha256: locked.sha256 },
+					cause: { name: 'Io', path: 'locked/a.txt', operation: 'retire' },
+				});
+				expect(await readFile(join(root, 'locked/a.txt'), 'utf8')).toBe('A');
+				expect(await readFile(join(root, 'open/a.txt'), 'utf8')).toBe('A');
 				const files = folder.git.snapshot.files;
 				expect(files.state === 'observed' && files.stale).toBe(true);
 				expect(folder.git.snapshot.activity.commit).toEqual({ active: false });

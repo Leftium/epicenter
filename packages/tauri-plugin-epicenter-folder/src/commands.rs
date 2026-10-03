@@ -53,12 +53,16 @@ pub struct FolderFilesChanged {
 /// The version of this command contract. A page built against another
 /// version is refused at attach, before it can change anything.
 ///
-/// Version 3 is the unreleased command contract. Push and fetch name a
+/// Version 4 is the unreleased command contract. Push and fetch name a
 /// session-owned request that can withdraw before transport admission. No
 /// command holds the folder across calls or names a terminal lease. A read
 /// returns its bytes and their SHA-256, and a file change is one of create,
 /// replace, overwrite, remove, or move, guarded by `expectedSha256`.
-pub const PROTOCOL: u32 = 3;
+///
+/// Version 4 adds the number every `apply` must name, which orders the
+/// session's saves. A version 3 page sends none, so it is refused at attach
+/// rather than having every save rejected afterward.
+pub const PROTOCOL: u32 = 4;
 
 /// What a window receives when it attaches to a scope.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -176,6 +180,8 @@ pub(crate) fn end_page<R: Runtime>(webview: &Webview<R>) {
 
 const NO_SESSION: &str = "this window has no such folder session; attach first";
 
+const UNNUMBERED: &str = "a save is numbered from 1 in its page; 0 names no save";
+
 fn session<R: Runtime>(webview: &Webview<R>, rid: ResourceId) -> Result<Arc<SessionState>, String> {
     let resource = webview
         .resources_table()
@@ -287,6 +293,10 @@ pub async fn attach<R: Runtime>(
         .authorize(&label)
         .map_err(|message| AttachError::Unavailable { message })?
         .clone();
+    // The page orders its saves to this root once, across all its sessions.
+    let writer = instance
+        .writer(attaching_page, owner.root())
+        .ok_or_else(gone)?;
 
     // The owner calls listeners while it holds its snapshot lock, so the
     // listener only queues; a thread of this session does the emitting.
@@ -330,6 +340,7 @@ pub async fn attach<R: Runtime>(
         &instance,
         Live {
             session,
+            writer,
             requests: BTreeMap::new(),
             _subscription: subscription,
         },
@@ -421,22 +432,46 @@ pub async fn read_many<R: Runtime>(
 /// Publish ordered changes. Where the folder commits on edit, a complete
 /// batch makes one automatic commit attempt, which is skipped if the folder
 /// is busy.
+///
+/// `submission` is the batch's number in its page. The page numbers its saves
+/// from 1, once for all its handles and roots, in the order it asks for them,
+/// and never reuses a number. The page's saves to one root are ordered by
+/// those numbers, through whichever of its sessions they arrive. A delivery
+/// that reaches the folder after a save of the page numbered at or after it
+/// landed on one of its paths is refused as `Superseded` and writes nothing.
+/// That covers a stale save and a second delivery of one whose first landed,
+/// and does not tell them apart: whether the save landed is unknown. Other
+/// pages' and windows' saves are not ordered against it.
 #[tauri::command]
 #[specta::specta]
 pub async fn apply<R: Runtime>(
     webview: Webview<R>,
     session: u32,
+    submission: u64,
     changes: Vec<FileChange>,
 ) -> Result<(), ApplyError> {
-    let owner = owner(&webview, session).map_err(|reason| ApplyError::Refused {
+    let refused = |reason| ApplyError::Refused {
         error: file_denied(reason),
-    })?;
+    };
+    if submission == 0 {
+        return Err(refused(UNNUMBERED.to_string()));
+    }
+    let (owner, submission) = self::session(&webview, session)
+        .map_err(refused)?
+        .submit(webview.label(), submission)
+        .map_err(refused)?;
     let path = changes
         .first()
         .map(|change| change.step().paths()[0].to_string())
         .unwrap_or_default();
+    #[cfg(test)]
+    let label = webview.label().to_string();
     blocking(
-        move || owner.apply(&changes),
+        move || {
+            #[cfg(test)]
+            crate::tests::apply_submitted(&label);
+            owner.apply_submitted(&submission, &changes)
+        },
         // Not a refusal: some of the batch may have landed.
         |cause| {
             Err(ApplyError::Unconfirmed {

@@ -14,10 +14,12 @@
  * - A moved file's capture is the captured hash at the new path
  * - Captures are frozen, serializable, and never follow the file
  * - Read bytes are detached from storage
+ * - Several changes are several calls: one that landed stays when a later
+ *   one is refused
  *
  * See also:
  * - `ownership.test.ts` for byte copies at admission
- * - `batch.test.ts` for several mutations under one admission
+ * - `native-safety.test.ts` for a move that keeps its source
  */
 import {
 	afterAll,
@@ -52,7 +54,6 @@ import {
 import { GIT_ENV, scratch } from './git-http.test-support.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.filestest',
 	kv: {},
 	tables: {
 		todos: defineTable({ fields: { title: field.string() } }),
@@ -87,6 +88,7 @@ const openers: Record<string, () => Promise<Opened>> = {
 	browser: async () =>
 		expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.filestest',
 				definition,
 				browser: {
 					author,
@@ -230,6 +232,33 @@ describe.each(Object.keys(openers))('%s folder file verbs', (kind) => {
 		// The old capture names a path that no longer holds the file.
 		expect(expectErr(await folder.files.replace(source, 'x')).name).toBe(
 			'Conflict',
+		);
+	});
+
+	test('several changes are several calls: a save that landed stays when the next is refused', async () => {
+		const folder = await open();
+		// Another writer already holds the row's path.
+		expectOk(await folder.files.create('todos/take.md', 'not a row'));
+		const audio = expectOk(
+			await folder.files.create('audio/take.webm', new Uint8Array([1, 2])),
+		);
+		const row = expectErr(
+			await folder.tables.todos.create({
+				stem: 'take',
+				fields: { title: 'Take' },
+			}),
+		);
+		expect(row).toMatchObject({ name: 'Exists', path: 'todos/take.md' });
+		// Nothing undoes the audio; the caller decides what comes next.
+		expect(expectOk(await folder.files.read('audio/take.webm'))).toMatchObject(
+			audio,
+		);
+		expect(await text(folder, 'todos/take.md')).toBe('not a row');
+		expectOk(
+			await folder.tables.todos.create({
+				stem: 'take-2',
+				fields: { title: 'Take' },
+			}),
 		);
 	});
 

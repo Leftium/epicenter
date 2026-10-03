@@ -1,5 +1,5 @@
 /**
- * EXPERIMENT: the definition and seed files of the canonical editor demo.
+ * The definition, folder ID, and seed rows of the canonical editor demo.
  *
  * `title` has a minimum length so that typing toward a valid title shows
  * schema issues without erasing the draft: `A` stays drafted on the way to
@@ -11,7 +11,13 @@ import {
 	defineTable,
 	field,
 	rowPath,
-} from '../../../src/contract.js';
+} from '../../../src/browser.js';
+
+/**
+ * The demo's own disposable folder. Every tab and reload on this origin opens
+ * the same one, so saves persist and other tabs hear them.
+ */
+export const DEMO_FOLDER_ID = 'so.epicenter.evidence.canonical-editor';
 
 /** The options a priority control offers, in order. */
 export const PRIORITIES = ['low', 'normal', 'high'] as const;
@@ -50,10 +56,11 @@ export const NEW_ROW =
 	'---\ntitle: New todo\ndone: false\npriority: normal\n---\n';
 
 /**
- * Every file a fresh harness folder starts with. `plan.md` is valid but not
- * canonical: a comment, single quotes, keys out of declared order, and two
- * keys the table does not declare. A canonical save drops the comment and
- * the quoting and keeps every value, `owner` and `labels` included.
+ * The rows a folder with no todos starts with, and what Reset writes back.
+ * `plan.md` is valid but not canonical: a comment, single quotes, keys out of
+ * declared order, and two keys the table does not declare. A canonical save
+ * drops the comment and the quoting and keeps every value, `owner` and
+ * `labels` included. `gone` is not seeded.
  */
 export const SEED: Readonly<Record<string, string>> = {
 	[todoPath('plan')]: [

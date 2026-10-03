@@ -1,26 +1,27 @@
 # Edit handle experiment
 
-Status: experimental evidence. The current canonical editor is described in
-[canonical-editor-api.md](./canonical-editor-api.md), with three framework
-callers and browser evidence in [canonical-callers.md](./canonical-callers.md).
-Nothing here is part of
-`@epicenter/folder`, and production `Folder` code is unchanged.
+Status: experimental evidence. The editor this experiment led to is now the
+production `folder.tables.<name>.edit(stem, { signal })` in
+`@epicenter/folder` ("Editing a row" in the package README). Its design record
+is [canonical-editor-api.md](./canonical-editor-api.md), and the three
+framework callers over a real persisted folder are in
+[canonical-callers.md](./canonical-callers.md). Nothing in this directory is
+part of `@epicenter/folder`.
 
-Run the current experiment from the repository root:
+Run the row editor callers page from the repository root:
 
 ```sh
 bun packages/folder/evidence/edit-handle/canonical-dev.ts
 ```
 
-Open `http://localhost:5181/`. Its in-memory folder is disposable; the engine
-also has a real folder integration test. The proposed production entry is
-`folder.tables.todos.edit(stem)`. The implemented prototype uses
-`createCanonicalEditors(folder, definition).tables.todos.edit(stem)`.
+Open `http://localhost:5181/`. The page opens a fixed demo folder in this
+browser's default storage with the production browser opener; its files
+persist across reloads and are shared by every tab of that origin.
 
 The rest of this README describes the preserved wave 4 comparison demo. Its
 conditional, source-preserving saves are historical evidence, not the current
-canonical editor recommendation. Wave 6 in [ITERATIONS.md](./ITERATIONS.md)
-records the changed contract and review decisions.
+editor recommendation. Waves 6 and 7 in [ITERATIONS.md](./ITERATIONS.md)
+record the changed contract, review decisions, and production integration.
 
 Boundaries: one handle edits one file, its fields, body, and raw source
 together. It is not a transaction across files. Saves and the demo's other
@@ -39,14 +40,9 @@ publication moments while another program edits the file.
 
 ## Run it
 
-A separate canonical-frontmatter prototype now tests the proposed next
-design. It is now used by the canonical editor, separate from the wave 4 page. See wave 5 in [ITERATIONS.md](./ITERATIONS.md)
-for the candidate API, tradeoffs, and remaining engine work. Run its
-counterexamples from the repository root:
-
-```sh
-bun test packages/folder/evidence/edit-handle/canonical-codec.test.ts
-```
+The canonical-frontmatter codec that wave 5 prototyped here is now
+`src/canonical.ts`; its counterexamples are `src/canonical.test.ts`. See
+wave 5 in [ITERATIONS.md](./ITERATIONS.md) for how it was chosen.
 
 From the repository root:
 

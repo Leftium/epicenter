@@ -1,16 +1,17 @@
 /**
- * EXPERIMENT: the demo's names for a todo canonical editor, shared by all
- * three framework callers. Types plus the text a person reads.
+ * The demo's names for the todos row editor, shared by all three framework
+ * callers. Types plus the text a person reads.
  */
 import type {
-	CanonicalEditor,
-	ChangeError,
-	SaveError,
-} from '../canonical-editor.js';
+	RowChangeError,
+	RowEditor,
+	RowEditorState,
+	RowSaveError,
+} from '../../../src/browser.js';
 import type { TodoRow } from './todos.js';
 
-export type TodoEditor = CanonicalEditor<TodoRow>;
-export type TodoState = ReturnType<TodoEditor['get']>;
+export type TodoEditor = RowEditor<TodoRow>;
+export type TodoState = RowEditorState<TodoRow>;
 
 /**
  * What the controls show: the draft document, not the validated
@@ -28,11 +29,11 @@ export function draftOf({ document }: TodoState) {
 	};
 }
 
-export function describeChangeError(error: ChangeError): string {
+export function describeChangeError(error: RowChangeError): string {
 	return `Not applied: ${error.message}`;
 }
 
-export function describeSaveError(error: SaveError): string {
+export function describeSaveError(error: RowSaveError): string {
 	switch (error.name) {
 		case 'InvalidDocument':
 			return 'Not saved: the draft has the issues listed above.';

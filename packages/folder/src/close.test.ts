@@ -29,7 +29,6 @@ import { withPublication } from './storage.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.closetest',
 	kv: { theme: field.string() },
 	tables: { todos: defineTable({ fields: { title: field.string() } }) },
 });
@@ -53,6 +52,7 @@ test('browser helpers still preparing when close starts are refused without writ
 	const open = async () =>
 		expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.closetest',
 				definition,
 				browser: { author, indexedDb: environment },
 			}),
@@ -63,11 +63,8 @@ test('browser helpers still preparing when close starts are refused without writ
 		stem: 'last',
 		fields: { title: 'Last' },
 	});
-	const batch = folder.batch((collector) => {
-		collector.files.create('audio/last.webm', new Uint8Array([1, 2]));
-	});
 	await folder.close();
-	for (const pending of [saving, row, batch])
+	for (const pending of [saving, row])
 		expect(expectErr(await pending).name).toBe('Closed');
 	expect(expectErr(await folder.files.create('late.md', 'late')).name).toBe(
 		'Closed',
@@ -105,7 +102,7 @@ async function held() {
 	const { promise: released, resolve: release } = Promise.withResolvers<void>();
 	const { promise: reached, resolve: reach } = Promise.withResolvers<void>();
 	const rows = {
-		/** Set to hold the next directory listing, as a batch's row check makes. */
+		/** Set to hold the next directory listing, as a row creation's vacancy check makes. */
 		hold: undefined as Promise<void> | undefined,
 		listing: Promise.withResolvers<void>(),
 	};
@@ -284,21 +281,6 @@ test('a save refused while closing changes nothing, and close still settles', as
 	expect(order).toEqual(['released', 'saved']);
 });
 
-test('a batch whose callback closes the folder is refused before its next storage call', async () => {
-	const { folder, order } = await held();
-	let ran = 0;
-	const saving = folder.batch((batch) => {
-		ran++;
-		batch.tables.todos.create({ stem: 'a', fields: { title: 'Captured' } });
-		void folder.close();
-	});
-	expect(ran).toBe(1);
-	expect(expectErr(await saving).name).toBe('Closed');
-	await folder.close();
-	expect(order).toEqual(['released']);
-	expect(folder.git.snapshot.lastCommit).toBeUndefined();
-});
-
 test('a helper between its directory read and publication is fenced without holding close', async () => {
 	const { folder, order, release, rows } = await held();
 	release();
@@ -314,18 +296,6 @@ test('a helper between its directory read and publication is fenced without hold
 	letGo();
 	expect(expectErr(await saving).name).toBe('Closed');
 	expect(order).toEqual(['released', 'row check done']);
-});
-
-test('a batch callback failure returns its result and holds no resource lifetime', async () => {
-	const { folder, order } = await held();
-	const failed = expectErr(
-		await folder.batch(() => {
-			throw new Error('callback failed');
-		}),
-	);
-	expect(failed.name).toBe('Threw');
-	await folder.close();
-	expect(order).toEqual(['released']);
 });
 
 test('close reentered by abort and history observers shares one completion and releases once', async () => {

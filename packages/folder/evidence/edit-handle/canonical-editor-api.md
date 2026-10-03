@@ -1,29 +1,41 @@
-# Canonical editor API (experiment)
+# Row editor API (design record)
 
-Status: experimental evidence. `canonical-editor.ts` is not part of
-`@epicenter/folder`, and the wave 4 demo does not use it. Run its tests from
-the repository root:
+Status: design record for the production API. `@epicenter/folder` ships
+`folder.tables.<name>.edit(stem, { signal })` in `src/editor.ts`, with the
+canonical codec in `src/canonical.ts`. The package README's "Editing a row"
+is the current contract; this page keeps the call-site reasoning and the
+tradeoffs left open. Behavior is covered by `src/editor.test.ts`,
+`src/canonical.test.ts`, and `src/editor.test-d.ts`:
 
 ```sh
-bun test packages/folder/evidence/edit-handle/canonical-editor.test.ts
+bun test --isolate packages/folder/src/editor.test.ts packages/folder/src/canonical.test.ts
 ```
 
-`canonical-editor.test-d.ts` holds the call-site type evidence; the folder
-package's `tsc` checks it.
+History: waves 5 and 6 exercised this API through an experimental wrapper,
+`createCanonicalEditors(folder, definition).tables.<name>.edit`, in
+`canonical-editor.ts` and `canonical-codec.ts`. Wave 7 deleted the wrapper,
+its codec, and their tests after every test moved to `src/` (see
+[ITERATIONS.md](./ITERATIONS.md)). The prototype names map to production as
+`CanonicalEditor` to `RowEditor`, `CanonicalEditorState` to
+`RowEditorState`, `CanonicalEditorError` to `RowEditorError`, `OpenError` to
+`TableEditError`, `ChangeError`/`SaveError`/`AdoptError` to
+`RowChangeError`/`RowSaveError`/`RowAdoptError`, `Revision` to
+`RowRevision`, `Observation` to `RowObservation`, `SaveAttempt` to
+`RowSaveAttempt`, `SaveOutcome` to `RowSaveOutcome`, `DocumentChange` to
+`RowChange`, and the opening refusal `UnsupportedSource` to
+`NoCanonicalForm`.
 
 ## Open, edit, save
 
 ```ts
-const editors = createCanonicalEditors(folder, definition);
-
-const { data, error } = await editors.tables.todos.edit(stem, { signal });
+const { data, error } = await folder.tables.todos.edit(stem, { signal });
 if (error !== null) {
 	switch (error.name) {
 		case 'Aborted':
 			return; // the person navigated away; nothing is subscribed
 		case 'NotFound':
 			return showMissing(error.path);
-		case 'UnsupportedSource':
+		case 'NoCanonicalForm':
 		case 'InvalidSource':
 			return showRepair(error.file); // exact text and SHA-256 for repair
 		default:
@@ -48,23 +60,10 @@ if (saveError !== null) {
 showSaved(receipt.sha256); // the submitted bytes, not a later read
 ```
 
-`definition` supplies each table's declared field order. A `Folder` does
-not expose its definition, so the caller passes the one it opened with.
-Every method closes over the editor and never reads `this`, so the
-destructured functions above behave exactly like `editor.save()`.
-
-## Proposed production ownership
-
-The wrapper exists to exercise this API without editing production folder code.
-The long-term call site should put the method on the table that already owns
-its row address, schema, and field order:
-
-```ts
-// Proposed API, not a current @epicenter/folder export.
-const { data, error } = await folder.tables.todos.edit('plan', { signal });
-if (error !== null) return showOpenError(error);
-const { get, subscribe, change, save, refresh, adopt, dispose } = data;
-```
+The table already owns the row address, schema, and declared field order, so
+the caller supplies only the stem. Every method closes over the editor and
+never reads `this`, so the destructured functions above behave exactly like
+`editor.save()`.
 
 `edit` opens a retained draft for that row. Its result's `data` is the editor;
 `get().document` is the local content. No second `open()` step or nested handle
@@ -72,7 +71,8 @@ is needed. A form owns the editor, and its controls share it. Save timing is
 chosen by the form or by an immediate control. A checkbox that owns an editor
 may call `change({ fields: { done } })` and then `save()` in the same handler;
 that save publishes the complete document, including any other local edits.
-A field-only write is a separate table operation, not a full-document save.
+A field-only write is a separate table operation (`table.update`), not a
+full-document save.
 
 ```text
 folder.tables.todos
@@ -88,15 +88,14 @@ folder.tables.todos
         `-- dispose -> stop watching; finish admitted save; release listeners
 ```
 
-A direct file editor can own the same lifetime for raw text, but this prototype
-only implements table rows. It does not invent a structured schema for arbitrary
-files or treat audio bytes as form fields.
+The editor covers table rows only. It does not invent a structured schema for
+arbitrary files or treat audio bytes as form fields.
 
 ## Lifetime
 
 ```ts
 let opening: AbortController | undefined;
-let current: CanonicalEditor<Todo> | undefined;
+let current: RowEditor<Todo> | undefined;
 
 async function show(stem: string) {
 	opening?.abort();
@@ -105,7 +104,7 @@ async function show(stem: string) {
 	void current?.dispose(); // an admitted save still lands; navigation does not wait
 	current = undefined;
 
-	const { data: editor, error } = await editors.tables.todos.edit(stem, {
+	const { data: editor, error } = await folder.tables.todos.edit(stem, {
 		signal: controller.signal,
 	});
 	if (opening !== controller) {
@@ -152,33 +151,33 @@ views share an editor and when to call `save`.
 ## Shape
 
 ```text
-createCanonicalEditors(folder, definition)
-`-- tables.<name>.edit(stem, { signal }) -> Promise<Result<editor, OpenError>>
-      OpenError: InvalidPath | NotFound | read errors | InvalidUtf8
-               | Aborted | UnsupportedSource{file,refusal} | InvalidSource{file,reading}
+folder.tables.<name>.edit(stem, { signal }) -> Promise<Result<RowEditor, TableEditError>>
+      TableEditError: InvalidPath | NotFound | read errors | InvalidUtf8
+                    | Aborted | NoCanonicalForm{file,refusal} | InvalidSource{file,reading}
 
 editor
 |-- get() -> state
 |-- subscribe(listener) -> unsubscribe        listener(state) now, then current-state notifications
 |-- change({ fields?: { [declared key]?: CanonicalValue | undefined }, body? })
-|     -> Result<undefined, Unrepresentable | Disposed>
-|-- save() -> Promise<Result<Revision, InvalidDocument | Saving | Disposed | FileError | ApplyError>>
+|     -> Result<undefined, RowChangeError>      Unrepresentable | Disposed
+|-- save() -> Promise<Result<RowRevision, RowSaveError>>
+|                                               InvalidDocument | Saving | Disposed | FileError | ApplyError
 |-- refresh() -> Promise<void>                one coalesced read after this call
-|-- adopt({ path, canonical }) -> Result<undefined, Stale{latest} | Saving | Disposed>
+|-- adopt({ path, canonical }) -> Result<undefined, RowAdoptError>   Stale{latest} | Saving | Disposed
 `-- dispose() -> Promise<void>
 
-state
-|-- baseline: Revision        what isDirty compares against
+state (RowEditorState)
+|-- baseline: RowRevision     what isDirty compares against
 |-- document, source          local fields and body; source is the canonical text save writes
 |-- reading                   how source reads: issues make save refuse
 |-- isDirty                   canonical text differs from baseline.canonical
 |-- observation               latest read: present | missing | unreadable | unsupported | invalid
-|-- saving: SaveAttempt       captured document while a save is admitted
+|-- saving: RowSaveAttempt    captured document while a save is admitted
 |-- lastSave                  saved{receipt} | unconfirmed{attempt} | failed{attempt}
 `-- isDisposed
 
-Revision    = { path, sha256, source (exact text), document, canonical (text) }
-SaveAttempt = { path, document, source (canonical text sent) }    no hash: not a capture
+RowRevision    = { path, sha256, source (exact text), document, canonical (text) }
+RowSaveAttempt = { path, document, source (canonical text sent) }    no hash: not a capture
 ```
 
 ## Rules
@@ -197,7 +196,7 @@ SaveAttempt = { path, document, source (canonical text sent) }    no hash: not a
   narrowed to the row type; `reading.fields` is the validated view. Editing
   unknown metadata is a raw repair through `files.overwrite`. The runtime does
   not check keys, so untyped callers can still name any key.
-- Format. A save writes `files.overwrite(path, canonical)`: declared keys in
+- Format. A save is one storage `overwrite` of the row's path with the canonical text: declared keys in
   declared order, other keys in code unit order, every value in JSON flow
   style. Comments and YAML spelling are not kept. Opening a differently
   formatted file is clean, so opening alone writes nothing.
@@ -210,10 +209,10 @@ SaveAttempt = { path, document, source (canonical text sent) }    no hash: not a
   content, the editor becomes clean.
 - Saves. One save is admitted at a time and captures the document when
   `save()` is called. Input during it stays local and dirty against the
-  receipt. The receipt is the attempt plus the SHA-256 that `overwrite`
-  returned for the bytes it was given; the editor does not hash them again.
+  receipt. The receipt is the attempt plus the SHA-256 of the bytes storage
+  accepted, hashed once before publication.
   A clean document is saved too: `save()` always writes the whole document.
-  Nothing retries or queues. A port that throws is a bug, not an outcome:
+  Nothing retries or queues. Storage that throws is a bug, not an outcome:
   the editor releases the save, records nothing in `lastSave`, and the
   throw reaches `save()` and `dispose()`. During a save, reads update `observation` but adopt nothing;
   a read that started before the save settled is dropped and read again.

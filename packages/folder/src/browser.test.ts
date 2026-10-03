@@ -8,7 +8,7 @@
  * file alone.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { DataDefinition } from '@epicenter/definition';
+import type { DataSchema } from '@epicenter/definition';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import * as isogit from 'isomorphic-git';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -24,13 +24,13 @@ import {
 	type IndexedDbEnvironment,
 	openFolderDatabase,
 } from './browser-store.js';
+import { hashBytes } from './capture.js';
 import { createBrowserGitBackend } from './git/browser-backend.js';
 import { createGitSession, GITDIR } from './git/browser-fs.js';
 import { createHistory } from './git/history.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.todostest',
 	kv: { theme: field.string() },
 	tables: {
 		todos: defineTable({
@@ -78,6 +78,62 @@ async function settled(folder: Folder<typeof definition>) {
 }
 
 describe('browser folder tables', () => {
+	test('a repository previously opened on another branch refuses a new main history', async () => {
+		environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		const db = await openFolderDatabase(
+			'epicenter-folder:legacy-branch',
+			environment,
+		);
+		const backend = await createBrowserGitBackend({
+			db,
+			environment,
+			lockName: 'legacy-branch',
+			branch: 'backup',
+			remote: undefined,
+		});
+		const boundary = createBrowserFileBoundary(db, environment);
+		const history = createHistory({
+			backend,
+			boundary,
+			author,
+			commitOnEdit: false,
+		});
+		const bytes = new TextEncoder().encode('previous history');
+		expectOk(
+			await boundary.apply([
+				{
+					kind: 'create',
+					path: 'legacy.txt',
+					bytes,
+					sha256: await hashBytes(bytes),
+				},
+			]),
+		);
+		expect((await history.commit()).status).toBe('committed');
+		const previous = await backend.readBranch();
+		await history.close();
+		const folder = await open({ id: 'legacy-branch', commitOnEdit: false });
+		expectOk(await folder.files.create('saved.txt', 'saved'));
+		expect(await folder.git.commit()).toMatchObject({
+			status: 'blocked',
+			reason: 'HEAD is not on main',
+		});
+		expect(expectOk(await folder.files.read('saved.txt')).bytes).toEqual(
+			new TextEncoder().encode('saved'),
+		);
+		expect(expectOk(await folder.git.log(10))).toEqual([]);
+		expect(await backend.readBranch()).toBe(previous);
+		const session = createGitSession(db, environment);
+		await expect(
+			isogit.resolveRef({
+				fs: session.fs,
+				gitdir: GITDIR,
+				ref: 'refs/heads/main',
+			}),
+		).rejects.toThrow();
+		db.close();
+	});
+
 	test('creates, lists, updates, completes, renames, and deletes plain Markdown rows', async () => {
 		const folder = await open({ commitOnEdit: false });
 		const created = await folder.tables.todos.create({
@@ -285,8 +341,7 @@ describe('browser folder tables', () => {
 	});
 
 	test('rejects a definition that supplies a body codec', async () => {
-		const withCodec: DataDefinition = {
-			id: 'so.epicenter.codec',
+		const withCodec: DataSchema = {
 			kv: {},
 			tables: {
 				notes: defineTable({
@@ -313,7 +368,6 @@ describe('browser folder tables', () => {
 
 	test('admits a reference field as a string that nothing checks or repairs', async () => {
 		const withReference = defineFolder({
-			id: 'so.epicenter.references',
 			kv: {},
 			tables: {
 				lists: defineTable({ fields: { title: field.string() } }),
@@ -439,7 +493,7 @@ describe('browser folder persistence and history', () => {
 		await first.close();
 
 		const second = await open();
-		expect((await second.tables.todos.get('kept')).data!.fields.title).toBe(
+		expect(expectOk(await second.tables.todos.get('kept'))?.fields.title).toBe(
 			'Kept',
 		);
 		expect((await second.files.children('empty')).data!.directories).toEqual([
@@ -578,6 +632,9 @@ describe('browser folder persistence and history', () => {
 				stem: 'a',
 				fields: { title: 'A', done: false },
 			});
+			await settled(folder);
+			expect(requests).toBe(0);
+			const pushing = folder.git.push();
 			for (let index = 0; index < 200 && requests === 0; index++)
 				await Bun.sleep(5);
 			expect(folder.git.snapshot.activity.push.active).toBe(true);
@@ -599,6 +656,7 @@ describe('browser folder persistence and history', () => {
 			expect(folder.git.snapshot.activity.push.active).toBe(true);
 
 			await folder.close();
+			expect((await pushing).status).toBe('cancelled');
 			expect(folder.git.snapshot.lastPush?.status).toBe('cancelled');
 			expect(folder.git.snapshot.activity.push).toEqual({ active: false });
 			expect(requests).toBe(1);

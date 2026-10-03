@@ -661,7 +661,6 @@ describe('publication baseline', () => {
 
 describe('the browser journey', () => {
 	const definition = defineFolder({
-		id: 'so.epicenter.mergetest',
 		kv: { theme: field.string(), lang: field.string() },
 		tables: {},
 	});
@@ -684,6 +683,7 @@ describe('the browser journey', () => {
 	async function open(environment: IndexedDbEnvironment): Promise<Opened> {
 		const opened = expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.mergetest',
 				definition,
 				browser: {
 					author,
@@ -764,7 +764,6 @@ test('a directory folder reports the merge as unsupported and changes nothing', 
 	const local = join(root, 'local');
 	await mkdir(local);
 	const definition = defineFolder({
-		id: 'so.epicenter.mergedirectory',
 		kv: {},
 		tables: {},
 	});

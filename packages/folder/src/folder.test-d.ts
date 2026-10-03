@@ -11,7 +11,6 @@ import * as bun from './bun.js';
 import type * as contract from './contract.js';
 import * as root from './index.js';
 import {
-	type BatchReceipt,
 	type CapturedFile,
 	type CreateRowOf,
 	type DeepReadonly,
@@ -31,6 +30,7 @@ import {
 	type KvReading,
 	type KvSnapshot,
 	type KvWriteError,
+	type MoveError,
 	type OpenFolder,
 	type OpenFolderError,
 	type OpenFolderOptions,
@@ -41,6 +41,7 @@ import {
 	type TableListing,
 	type TableReadError,
 	type TableReading,
+	type TableRenameError,
 	type TableReplaceError,
 	type TableSnapshot,
 	type TableUpdateError,
@@ -49,7 +50,6 @@ import {
 import * as tauri from './tauri.js';
 
 const definition = defineFolder({
-	id: 'test.folder',
 	kv: { theme: field.string() },
 	tables: {
 		todos: defineTable({
@@ -64,7 +64,6 @@ type Opened = Folder<typeof definition>;
 
 // Nested values: a list, a branded instant, a tuple, and free-form JSON.
 const nested = defineFolder({
-	id: 'test.nested',
 	kv: {
 		recent: field.tags(),
 		since: field.instant(),
@@ -135,10 +134,6 @@ async function nestedValues(
 	notes.update('a', { fields: { tags: ['a'] as const } });
 	// @ts-expect-error An unvalidated string still does not carry the brand.
 	notes.update('a', { fields: { at: '2026-10-01T00:00:00.000Z' } });
-	folder.batch((batch) => {
-		if (tags !== undefined && at !== undefined && meta !== undefined)
-			batch.tables.notes.create({ stem: 'b', fields: { tags, at, meta } });
-	});
 	// A draft's values are the same readonly types.
 	expectTypeOf(notes.inspect('').fields).toEqualTypeOf(snapshot.fields);
 
@@ -167,7 +162,6 @@ const headed = {
 	minItems: 1,
 } as const;
 const tuples = defineFolder({
-	id: 'test.tuples',
 	kv: { span: headed },
 	tables: { rows: defineTable({ fields: { span: headed } }) },
 });
@@ -179,7 +173,9 @@ expectTypeOf<DeepReadonly<Span>>().toEqualTypeOf<
 expectTypeOf<DeepReadonly<[string?, ...number[]]>>().toEqualTypeOf<
 	readonly [string?, ...number[]]
 >();
-expectTypeOf<DeepReadonly<[{ a: string[] }, ...{ b: number }[]]>>().toEqualTypeOf<
+expectTypeOf<
+	DeepReadonly<[{ a: string[] }, ...{ b: number }[]]>
+>().toEqualTypeOf<
 	readonly [{ readonly a: readonly string[] }, ...{ readonly b: number }[]]
 >();
 
@@ -246,6 +242,17 @@ expectTypeOf(root.openFolder<typeof definition>).returns.toEqualTypeOf<
 expectTypeOf(root.openFolder<typeof definition>)
 	.parameter(0)
 	.toEqualTypeOf<OpenFolderOptions<typeof definition>>();
+// The opener names the folder; the definition does not.
+expectTypeOf<
+	OpenFolderOptions<typeof definition>['id']
+>().toEqualTypeOf<string>();
+// @ts-expect-error A folder is opened by its ID.
+void root.openFolder({ definition });
+void root.openFolder({
+	id: 'test.folder',
+	// @ts-expect-error A definition that names its data is not a folder definition.
+	definition: { id: 'test.folder', kv: {}, tables: {} },
+});
 
 // Every entry exports the same contract, so a build may resolve one for another.
 type Contract = typeof contract;
@@ -463,26 +470,16 @@ async function typedValues(
 	// @ts-expect-error The old single write verb is gone.
 	folder.files.write('a.md', 'next', { expected: 'any' });
 
-	// A batch callback collects and returns undefined.
-	const receipt = await folder.batch((batch) => {
-		batch.files.create('audio/a.webm', new Uint8Array());
-		batch.tables.todos.create({
-			stem: 'a',
-			fields: { title: 'A', due: null },
-		});
-		// @ts-expect-error A batched row names its stem.
-		batch.tables.todos.create({ fields: { title: 'A', due: null } });
-		// @ts-expect-error The collector has no reads.
-		batch.files.read('a.md');
-		// @ts-expect-error The collector mirrors only row creation.
-		batch.tables.todos.update;
-	});
-	if (receipt.error === null)
-		expectTypeOf(receipt.data).toEqualTypeOf<BatchReceipt>();
-	// @ts-expect-error A batch callback is not asynchronous.
-	folder.batch(async () => {});
-	// @ts-expect-error A batch callback returns nothing.
-	folder.batch(() => 1);
+	// Each write is one file change: a failure is that file's, and only a
+	// move names the two paths it touched.
+	const created = await folder.files.create('a.md', 'a');
+	if (created.error) expectTypeOf(created.error).toEqualTypeOf<FileError>();
+	const moved = await folder.files.move(replaced.data, 'b.md');
+	if (moved.error)
+		expectTypeOf(moved.error).toEqualTypeOf<FileError | MoveError>();
+	expectTypeOf<TableRenameError>().toEqualTypeOf<FileError | MoveError>();
+	// @ts-expect-error Several changes are several calls; there is no batch.
+	folder.batch;
 
 	expectTypeOf(folder.location).toEqualTypeOf<FolderLocation>();
 	expectTypeOf(folder.terminal()).toEqualTypeOf<FolderTerminal>();
@@ -492,7 +489,6 @@ void typedValues;
 
 // A table with a body conversion is not a folder table.
 defineFolder({
-	id: 'test.body',
 	kv: {},
 	tables: {
 		// @ts-expect-error A folder stores the body as the file's Markdown text.
@@ -503,7 +499,12 @@ defineFolder({
 	},
 });
 defineFolder({
-	id: 'test.bare',
+	// @ts-expect-error A folder definition names no folder; the opener does.
+	id: 'test.named',
+	kv: {},
+	tables: {},
+});
+defineFolder({
 	kv: {},
 	tables: {
 		// @ts-expect-error A table is authored with `defineTable`.

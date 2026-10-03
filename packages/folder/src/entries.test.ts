@@ -53,8 +53,8 @@ const tauri = await import('./tauri.js');
 const bun = await import('./bun.js');
 const contract = await import('./contract.js');
 
+const id = 'so.epicenter.entriestest';
 const definition = root.defineFolder({
-	id: 'so.epicenter.entriestest',
 	kv: {},
 	tables: {
 		notes: root.defineTable({ fields: { title: root.field.string() } }),
@@ -108,15 +108,32 @@ test('every entry exports the same contract beside its opener', () => {
 });
 
 test('on a server the automatic entry refuses, and so does each explicit entry', async () => {
-	expect(expectErr(await root.openFolder({ definition })).name).toBe(
+	expect(expectErr(await root.openFolder({ id, definition })).name).toBe(
 		'NoIndexedDb',
 	);
-	expect(expectErr(await browser.openFolder({ definition })).name).toBe(
+	expect(expectErr(await browser.openFolder({ id, definition })).name).toBe(
 		'NoIndexedDb',
 	);
-	expect(expectErr(await tauri.openFolder({ definition })).name).toBe(
+	expect(expectErr(await tauri.openFolder({ id, definition })).name).toBe(
 		'NotTauri',
 	);
+	expect(invoked).toEqual([]);
+	expect(listened).toEqual([]);
+});
+
+test('every opener refuses a missing folder ID before it acquires anything, even from an untyped caller', async () => {
+	const indexedDB = new IDBFactory();
+	const untyped = {
+		definition,
+		browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
+	} as never;
+	expect(expectErr(await browser.openFolder(untyped)).name).toBe('InvalidId');
+	expect(expectErr(await root.openFolder(untyped)).name).toBe('InvalidId');
+	expect(await indexedDB.databases()).toEqual([]);
+
+	inShell = true;
+	expect(expectErr(await tauri.openFolder(untyped)).name).toBe('InvalidId');
+	expect(expectErr(await root.openFolder(untyped)).name).toBe('InvalidId');
 	expect(invoked).toEqual([]);
 	expect(listened).toEqual([]);
 });
@@ -124,6 +141,7 @@ test('on a server the automatic entry refuses, and so does each explicit entry',
 test('the automatic entry decides when it is called: the desktop adapter in the shell, and no browser storage when that fails', async () => {
 	const indexedDB = new IDBFactory();
 	const options = {
+		id,
 		definition,
 		browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
 	};
@@ -161,6 +179,7 @@ test('the browser entry refuses inside the desktop app even when handed storage'
 	const indexedDB = new IDBFactory();
 	const refused = expectErr(
 		await browser.openFolder({
+			id,
 			definition,
 			browser: { author, indexedDb: { indexedDB, IDBKeyRange } },
 		}),
@@ -175,6 +194,7 @@ test('a browser folder defaults to a local author and local automatic history; a
 	const environment = { indexedDB, IDBKeyRange };
 	const withoutAuthor = expectErr(
 		await browser.openFolder({
+			id,
 			definition,
 			browser: {
 				remote: { url: 'http://git.test/remote.git', branch: 'main' },
@@ -190,6 +210,7 @@ test('a browser folder defaults to a local author and local automatic history; a
 
 	const folder = expectOk(
 		await browser.openFolder({
+			id,
 			definition,
 			browser: { indexedDb: environment },
 		}),
@@ -223,6 +244,7 @@ test('handles sharing browser storage hear each other, when the storage carries 
 	const open = async () =>
 		expectOk(
 			await browser.openFolder({
+				id,
 				definition,
 				browser: { author, commitOnEdit: false, indexedDb: environment },
 			}),

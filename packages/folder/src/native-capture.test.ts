@@ -61,7 +61,6 @@ const { createNativeFileBoundary } = await import('./native-store.js');
 const { openNativeFolder } = await import('./directory.test-support.js');
 
 const definition = defineFolder({
-	id: 'so.epicenter.capturetest',
 	kv: {},
 	tables: {
 		todos: defineTable({

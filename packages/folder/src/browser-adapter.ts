@@ -48,13 +48,13 @@ function globalEnvironment(): IndexedDbEnvironment | undefined {
 }
 
 /**
- * Open a browser folder. Refusals are returned, not thrown: a definition a
- * folder cannot keep, a page inside the desktop app, no IndexedDB, or a
- * remote without an author.
+ * Open the browser folder named `id`. Refusals are returned, not thrown: a
+ * definition a folder cannot keep, a page inside the desktop app, a missing
+ * ID, no IndexedDB, or a remote without an author.
  */
 export const openFolder: OpenFolder = async ({
 	definition,
-	id = definition.id,
+	id,
 	browser = {},
 }) => {
 	const prepared = prepareFolderDefinition(definition);
@@ -157,7 +157,7 @@ export const openFolder: OpenFolder = async ({
 			db,
 			environment,
 			lockName,
-			branch: remote?.branch ?? 'main',
+			branch: 'main',
 			remote,
 		});
 		const history = createHistory({

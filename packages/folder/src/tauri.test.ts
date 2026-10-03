@@ -11,7 +11,13 @@
  * - Outside the shell, opening is refused and nothing is invoked; a refusal
  *   inside the shell never opens browser storage
  * - A save's capture comes from the bytes that were sent, not from a read
- * - A batch is one `apply`, and its receipt comes from what was sent
+ * - Each save is one `apply` of one change; an owner's partial move is
+ *   `SourceNotRemoved`, and any other partial report is `Unconfirmed`
+ * - Each save takes its place in one page-wide order when its public method
+ *   is entered, before it hashes, reads, or notifies, through any handle;
+ *   no number is reused, and a place reserved before closing sends nothing
+ * - A delivery the owner refuses by page ordering is `Unconfirmed`: it may be
+ *   a stale save or a fallback's second delivery of one that landed
  * - A lost reply to a save is `Unconfirmed` and is never sent again; a lost
  *   reply to a read is an ordinary failure
  * - An outcome the owner could not confirm stays `Unconfirmed` here
@@ -28,7 +34,7 @@
  * See also:
  * - `tauri-native.test.ts` for the same adapter against the real Rust owner
  */
-import { afterEach, expect, mock, test } from 'bun:test';
+import { afterEach, expect, mock, spyOn, test } from 'bun:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { hashBytes } from './capture.js';
@@ -73,7 +79,6 @@ mock.module('@tauri-apps/api/event', () => ({
 const { openFolder } = await import('./tauri.js');
 
 const definition = defineFolder({
-	id: 'so.epicenter.taurifoldertest',
 	kv: {},
 	tables: {
 		todos: defineTable({
@@ -131,7 +136,7 @@ async function attached() {
 		withdraw_request: () => null,
 	};
 	const folder = expectOk(await openFolder({ id: 'notes', definition }));
-	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 3 });
+	expect(sent('attach')[0]?.args).toEqual({ scope: 'notes', protocol: 4 });
 	expect(folder.location).toEqual({
 		kind: 'directory',
 		root: '/Users/someone/Epicenter/notes',
@@ -148,7 +153,7 @@ afterEach(() => {
 	listeners.clear();
 });
 
-test("the folder opened is the definition's own ID unless another is named", async () => {
+test('the folder opened is the scope the opener names', async () => {
 	replies = {
 		attach: () => ({
 			session: 7,
@@ -160,6 +165,7 @@ test("the folder opened is the definition's own ID unless another is named", asy
 	};
 	const folder = expectOk(
 		await openFolder({
+			id: 'so.epicenter.taurifoldertest',
 			definition,
 			// Browser settings do not reach the shell: its own policy is in effect.
 			browser: { commitOnEdit: true },
@@ -167,7 +173,7 @@ test("the folder opened is the definition's own ID unless another is named", asy
 	);
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.taurifoldertest',
-		protocol: 3,
+		protocol: 4,
 	});
 	expect(folder.git.snapshot.commitOnEdit).toBe(false);
 	await folder.close();
@@ -242,13 +248,14 @@ test.each([
 test('a desktop app that speaks another protocol is refused at attach, before any other call', async () => {
 	calls = [];
 	replies = {
-		attach: () => refuse({ name: 'Incompatible', host: 4, page: 3 }),
+		// A desktop app from before saves were numbered.
+		attach: () => refuse({ name: 'Incompatible', host: 3, page: 4 }),
 	};
 	const refused = expectErr(await openFolder({ id: 'notes', definition }));
-	expect(refused).toMatchObject({ name: 'Incompatible', host: 4, page: 3 });
+	expect(refused).toMatchObject({ name: 'Incompatible', host: 3, page: 4 });
 	expect(refused.message).toContain('Update the app');
 	expect(calls).toEqual([
-		{ cmd: 'attach', args: { scope: 'notes', protocol: 3 } },
+		{ cmd: 'attach', args: { scope: 'notes', protocol: 4 } },
 	]);
 });
 
@@ -265,6 +272,8 @@ test('a save whose reply is lost is Unconfirmed and is sent exactly once', async
 	expect(sent('apply')).toHaveLength(1);
 	expect(sent('apply')[0]?.args).toEqual({
 		session: 7,
+		// One sequence serves every save of the page; see the ordering tests.
+		submission: expect.any(Number),
 		changes: [
 			{ kind: 'create', path: 'notes/a.md', bytes: [116, 101, 120, 116] },
 		],
@@ -345,13 +354,193 @@ test('typed refusals from the owner become the shared file errors', async () => 
 			error: { name: 'Io', path: 'a.md', operation: 'retire', cause: 'busy' },
 			notAttempted: [],
 		});
-	const partial = expectErr(
+	const kept = expectErr(
 		await folder.files.move({ path: 'a.md', sha256 }, 'b.md'),
 	);
-	expect(partial.name).toBe('Partial');
-	if (partial.name !== 'Partial') return;
-	expect(partial.applied).toEqual([{ kind: 'write', path: 'b.md' }]);
-	expect(partial.error.message).toBe("Could not retire 'a.md': busy");
+	expect(kept.name).toBe('SourceNotRemoved');
+	if (kept.name !== 'SourceNotRemoved') return;
+	expect(kept).toMatchObject({
+		from: 'a.md',
+		to: 'b.md',
+		moved: { path: 'b.md', sha256 },
+	});
+	expect(kept.cause.message).toBe("Could not retire 'a.md': busy");
+});
+
+test('saves are numbered in the order they are asked for, before they are sent, and no number is reused', async () => {
+	const folder = await attached();
+	const unanswered = Promise.withResolvers<null>();
+	let asked = 0;
+	replies.apply = () => (asked++ === 0 ? unanswered.promise : null);
+
+	// The first save is still unanswered when the second is asked for and lands.
+	const first = folder.files.overwrite('a.md', 'first');
+	expectOk(await folder.files.overwrite('a.md', 'second'));
+	// The owner placed the first before the second and refused that delivery.
+	unanswered.reject({
+		name: 'Refused',
+		error: { name: 'Superseded', path: 'a.md' },
+	});
+	const refused = expectErr(await first);
+	expect(refused.name).toBe('Unconfirmed');
+	expect(refused.message).toContain(
+		'a delivery was refused by page ordering; whether an earlier delivery landed is unknown',
+	);
+
+	// A save whose reply was lost keeps its number; the next save takes a new one.
+	replies.apply = () => {
+		throw new Error('the webview lost its IPC connection');
+	};
+	expect(expectErr(await folder.files.overwrite('b.md', 'lost')).name).toBe(
+		'Unconfirmed',
+	);
+	replies.apply = () => null;
+	expectOk(await folder.files.overwrite('b.md', 'next'));
+	const numbers = sent('apply').map((call) => call.args.submission as number);
+	const start = numbers[0] as number;
+	expect(numbers.map((number) => number - start)).toEqual([0, 1, 2, 3]);
+	// Directory changes are not numbered.
+	replies.mkdir = () => null;
+	expectOk(await folder.files.mkdir('dir'));
+	expect(sent('mkdir')[0]?.args).toEqual({ session: 7, path: 'dir' });
+});
+
+/**
+ * Hold the next SHA-256 digest anyone asks for until `release`, where a slow
+ * hash would leave a save. Digests after it run at once.
+ */
+function holdNextDigest() {
+	const digest = crypto.subtle.digest.bind(crypto.subtle);
+	const reached = Promise.withResolvers<void>();
+	const released = Promise.withResolvers<void>();
+	let holding = true;
+	const spy = spyOn(crypto.subtle, 'digest').mockImplementation(
+		async (algorithm, data) => {
+			if (holding) {
+				holding = false;
+				reached.resolve();
+				await released.promise;
+			}
+			return digest(algorithm, data);
+		},
+	);
+	spies.push(() => spy.mockRestore());
+	return { reached: reached.promise, release: () => released.resolve() };
+}
+const spies: (() => void)[] = [];
+afterEach(() => {
+	for (const restore of spies.splice(0)) restore();
+});
+
+/** Each apply sent, in the order it was sent: its number and its text. */
+const applies = () =>
+	sent('apply').map((call) => ({
+		submission: call.args.submission as number,
+		text: new TextDecoder().decode(
+			Uint8Array.from(
+				(call.args.changes as { bytes: number[] }[])[0]?.bytes ?? [],
+			),
+		),
+	}));
+
+test('a save keeps the place it was asked for in while it hashes, though a later save is sent first', async () => {
+	const folder = await attached();
+	replies.apply = () => null;
+	const digest = holdNextDigest();
+
+	const earlier = folder.files.overwrite('note.md', 'earlier');
+	await digest.reached;
+	expectOk(await folder.files.overwrite('note.md', 'later'));
+	digest.release();
+	expectOk(await earlier);
+
+	// The later save reached the shell first, numbered after the earlier one,
+	// so the owner can refuse the earlier one when it arrives.
+	const [later, first] = applies();
+	expect([later?.text, first?.text]).toEqual(['later', 'earlier']);
+	expect(first?.submission).toBeLessThan(later?.submission ?? 0);
+});
+
+test("a row editor's save is placed when save() is called, before a raw save made while it hashes", async () => {
+	const folder = await attached();
+	const row = new TextEncoder().encode('---\ntitle: Take\ndone: false\n---\n');
+	replies.read = () => ({ bytes: [...row], sha256: 'a'.repeat(64) });
+	replies.apply = () => null;
+	const editor = expectOk(await folder.tables.todos.edit('take'));
+	const digest = holdNextDigest();
+
+	const saving = editor.save();
+	await digest.reached;
+	expectOk(await folder.files.overwrite('todos/take.md', 'raw'));
+	digest.release();
+	await saving;
+
+	const [raw, saved] = applies();
+	expect(raw?.text).toBe('raw');
+	expect(saved?.text).not.toBe('raw');
+	expect(saved?.submission).toBeLessThan(raw?.submission ?? 0);
+	await editor.dispose();
+});
+
+test("two handles of one page share one order: a handle's held save is placed before the other's later one", async () => {
+	const one = await attached();
+	const other = await attached();
+	replies.apply = () => null;
+	const digest = holdNextDigest();
+
+	const earlier = one.files.overwrite('note.md', 'earlier');
+	await digest.reached;
+	expectOk(await other.files.overwrite('note.md', 'later'));
+	digest.release();
+	expectOk(await earlier);
+
+	const [later, first] = applies();
+	expect([later?.text, first?.text]).toEqual(['later', 'earlier']);
+	expect(first?.submission).toBeLessThan(later?.submission ?? 0);
+});
+
+test('a save whose first delivery landed but whose reply came from a refused fallback delivery is Unconfirmed, not failed', async () => {
+	const folder = await attached();
+	// Save 1's first delivery lands and its response is lost. Save 2 lands.
+	// Tauri's fallback then delivers save 1 again; the owner refuses that
+	// delivery, and its refusal is the only reply save 1 gets.
+	const reply = Promise.withResolvers<null>();
+	let asked = 0;
+	replies.apply = () => (asked++ === 0 ? reply.promise : null);
+
+	const original = folder.files.overwrite('a.md', 'one');
+	await untilSent('apply');
+	expectOk(await folder.files.overwrite('a.md', 'two'));
+	reply.reject({
+		name: 'Refused',
+		error: { name: 'Superseded', path: 'a.md' },
+	});
+
+	// Save 1 may well have landed; this page cannot know. It is neither a
+	// success nor a definite failure, and nothing is sent again.
+	const outcome = expectErr(await original);
+	expect(outcome).toMatchObject({
+		name: 'Unconfirmed',
+		path: 'a.md',
+		operation: 'publishing to',
+		cause:
+			'a delivery was refused by page ordering; whether an earlier delivery landed is unknown',
+	});
+	expect(sent('apply')).toHaveLength(2);
+});
+
+test('a place reserved before closing sends nothing once the folder is closed', async () => {
+	const folder = await attached();
+	replies.apply = () => null;
+	const digest = holdNextDigest();
+
+	const saving = folder.files.overwrite('note.md', 'too late');
+	await digest.reached;
+	await folder.close();
+	digest.release();
+
+	expect(expectErr(await saving).name).toBe('Closed');
+	expect(sent('apply')).toEqual([]);
 });
 
 test('an outcome the owner itself could not confirm is Unconfirmed, not a refusal', async () => {
@@ -403,7 +592,7 @@ test("a table save changes exactly its row file, under that file's exact conditi
 	const { changes, ...rest } = sent('apply')[0]?.args as {
 		changes: { kind: string; path: string; expectedSha256?: string }[];
 	};
-	expect(rest).toEqual({ session: 7 });
+	expect(rest).toEqual({ session: 7, submission: expect.any(Number) });
 	expect(changes.map(({ kind, path }) => ({ kind, path }))).toEqual([
 		{ kind: 'create', path: 'todos/take.md' },
 	]);
@@ -450,124 +639,64 @@ test('a save returns the capture of the bytes it sent, without reading them back
 	expect(Object.isFrozen(moved)).toBe(true);
 });
 
-const ROW_SOURCE = '---\ntitle: Take\ndone: false\n---\n';
-
-test('a batch is one apply: ordered changes, exact conditions, and a receipt from what was sent', async () => {
+test('a replace is one apply carrying its bytes and captured hash, and returns a capture of what was sent', async () => {
 	const folder = await attached();
-	// Audio shares the row's stem; only a colliding row name would matter.
-	replies.children = () => ({
-		files: ['take.png', 'other.md'],
-		directories: [],
-	});
 	replies.apply = () => null;
 	const audio = new Uint8Array([1, 2, 3]);
-	const observed = {
-		path: 'audio/old.webm',
-		sha256: 'a'.repeat(64),
-	};
+	const observed = { path: 'audio/old.webm', sha256: 'a'.repeat(64) };
 
-	const moving = { path: 'audio/move.webm', sha256: 'b'.repeat(64) };
+	const replaced = expectOk(await folder.files.replace(observed, audio));
 
-	const receipt = expectOk(
-		await folder.batch((batch) => {
-			batch.files.replace(observed, audio);
-			batch.tables.todos.create({
-				stem: 'take',
-				fields: { title: 'Take', done: false },
-			});
-			batch.files.move(moving, 'audio/kept.webm');
-		}),
-	);
-
-	// One admission published once. Before it, the typed row's directory was
-	// listed by name for the destination check; no file was read, before or
-	// after.
-	expect(calls.map((call) => call.cmd)).toEqual(['children', 'apply']);
-	expect(sent('children')[0]?.args).toEqual({ session: 7, directory: 'todos' });
-	const { changes, ...rest } = sent('apply')[0]?.args as {
-		changes: Record<string, unknown>[];
-	};
-	expect(rest).toEqual({ session: 7 });
-	expect(changes).toEqual([
+	expect(calls).toEqual([
 		{
-			kind: 'replace',
-			path: 'audio/old.webm',
-			bytes: [1, 2, 3],
-			expectedSha256: observed.sha256,
-		},
-		{
-			kind: 'create',
-			path: 'todos/take.md',
-			bytes: [...new TextEncoder().encode(ROW_SOURCE)],
-		},
-		{
-			kind: 'move',
-			from: moving.path,
-			to: 'audio/kept.webm',
-			expectedSha256: moving.sha256,
-		},
-	]);
-	expect(receipt.steps).toEqual([
-		{
-			kind: 'write',
-			path: 'audio/old.webm',
-			file: { path: 'audio/old.webm', sha256: await hashBytes(audio) },
-		},
-		{
-			kind: 'write',
-			path: 'todos/take.md',
-			file: {
-				path: 'todos/take.md',
-				sha256: await hashBytes(new TextEncoder().encode(ROW_SOURCE)),
+			cmd: 'apply',
+			args: {
+				session: 7,
+				submission: expect.any(Number),
+				changes: [
+					{
+						kind: 'replace',
+						path: 'audio/old.webm',
+						bytes: [1, 2, 3],
+						expectedSha256: observed.sha256,
+					},
+				],
 			},
 		},
-		{
-			kind: 'move',
-			from: moving.path,
-			to: 'audio/kept.webm',
-			file: { path: 'audio/kept.webm', sha256: moving.sha256 },
-		},
 	]);
+	expect(replaced).toEqual({
+		path: 'audio/old.webm',
+		sha256: await hashBytes(audio),
+	});
 });
 
-test('a batch the owner stopped partway keeps its applied steps, and a lost reply fabricates no receipt', async () => {
+test('a partial report that is not a move keeping its source is Unconfirmed, never a receipt', async () => {
 	const folder = await attached();
 	replies.children = () => ({ files: [], directories: [] });
-	const publish = () =>
-		folder.batch((batch) => {
-			batch.files.create('audio/take.webm', new Uint8Array([1]));
-			batch.tables.todos.create({
-				stem: 'take',
-				fields: { title: 'Take', done: false },
-			});
-		});
-	replies.apply = () =>
-		refuse({
-			name: 'Partial',
-			applied: [{ kind: 'write', path: 'audio/take.webm' }],
-			failed: { kind: 'write', path: 'todos/take.md' },
-			error: {
-				name: 'Io',
-				path: 'todos/take.md',
-				operation: 'create',
-				cause: 'disk full',
-			},
-			notAttempted: [],
-		});
-	const partial = expectErr(await publish());
-	expect(partial).toMatchObject({
+	const report = {
 		name: 'Partial',
-		applied: [{ kind: 'write', path: 'audio/take.webm' }],
-		failed: { kind: 'write', path: 'todos/take.md' },
-	});
-
-	calls = [];
-	replies.apply = () => {
-		throw new Error('the webview lost its IPC connection');
+		applied: [{ kind: 'write', path: 'todos/take.md' }],
+		failed: { kind: 'write', path: 'todos/other.md' },
+		error: {
+			name: 'Io',
+			path: 'todos/other.md',
+			operation: 'create',
+			cause: 'disk full',
+		},
+		notAttempted: [],
 	};
-	const lost = await publish();
-	expect(lost.data).toBeNull();
-	expect(lost.error?.name).toBe('Unconfirmed');
+	replies.apply = () => refuse(report);
+	const created = expectErr(
+		await folder.tables.todos.create({
+			stem: 'take',
+			fields: { title: 'Take', done: false },
+		}),
+	);
+	expect(created).toMatchObject({
+		name: 'Unconfirmed',
+		path: 'todos/take.md',
+		cause: { name: 'Partial', applied: report.applied },
+	});
 	// Sent once; nothing here decides to send it again.
 	expect(sent('apply')).toHaveLength(1);
 });
@@ -611,12 +740,16 @@ test("a terminal command's steps are the commands any save sends, and nothing ho
 		'list',
 		'read',
 	]);
+	let previous = 0;
 	const applied = sent('apply').flatMap((call) => {
 		const { changes, ...rest } = call.args as {
 			changes: { kind: string; path: string; expectedSha256?: string }[];
 		};
-		// The same arguments a page's own save sends.
-		expect(rest).toEqual({ session: 7 });
+		// The same arguments a page's own save sends, numbered in the order
+		// the command took its steps. A step that published nothing leaves a gap.
+		expect(rest).toEqual({ session: 7, submission: expect.any(Number) });
+		expect(call.args.submission as number).toBeGreaterThan(previous);
+		previous = call.args.submission as number;
 		return changes;
 	});
 	const firstTo = (path: string) =>
@@ -647,6 +780,39 @@ test("a terminal command's steps are the commands any save sends, and nothing ho
 	);
 	// The step after the refused one never ran.
 	expect(sent('apply')).toHaveLength(1);
+});
+
+test('each file a recursive copy writes is placed before its source is read, so a save made during the read comes after it', async () => {
+	const folder = await attached();
+	const source = new TextEncoder().encode('source\n');
+	const sha256 = await hashBytes(source);
+	replies.list = () => ({
+		files: [{ path: 'source/note.md', size: source.byteLength }],
+		directories: ['source'],
+	});
+	replies.mkdir = () => null;
+	replies.apply = () => null;
+	const reading = Promise.withResolvers<void>();
+	const released = Promise.withResolvers<void>();
+	replies.read = async () => {
+		reading.resolve();
+		await released.promise;
+		return { bytes: [...source], sha256 };
+	};
+
+	// The copy's read of its source is held; a raw save of the copy's
+	// destination is asked for meanwhile and lands.
+	const copying = folder.terminal().exec('cp -r source copy');
+	await reading.promise;
+	expectOk(await folder.files.overwrite('copy/note.md', 'later'));
+	released.resolve();
+	expect((await copying).exitCode).toBe(0);
+
+	// The copy reached the shell second, numbered before the raw save, so
+	// the owner refuses it rather than let it replace the later bytes.
+	const [later, copied] = applies();
+	expect([later?.text, copied?.text]).toEqual(['later', 'source\n']);
+	expect(copied?.submission).toBeLessThan(later?.submission ?? 0);
 });
 
 test('a terminal command whose listing is lost fails and sends nothing else', async () => {

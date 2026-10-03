@@ -25,7 +25,6 @@ import { openNativeFolder } from './directory.test-support.js';
 import { GIT_ENV, git, scratch } from './git-http.test-support.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.todostest',
 	kv: {},
 	tables: {
 		todos: defineTable({

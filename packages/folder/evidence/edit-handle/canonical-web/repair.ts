@@ -2,11 +2,12 @@
  * Raw repair when opening refuses. This is not the editor: there is no
  * editor to edit with. It shows why opening refused and the file's exact
  * text when there is one, and writes a replacement with the folder's own
- * `files.overwrite`. The owner then opens again.
+ * `files.overwrite`. Opening itself never rewrites a file. The owner then
+ * opens again.
  */
-import type { CanonicalEditorFolder, OpenError } from '../canonical-editor.js';
+import type { FolderFiles, TableEditError } from '../../../src/browser.js';
 import { h } from './dom.js';
-import { type definition, NEW_ROW } from './todos.js';
+import { NEW_ROW } from './todos.js';
 
 export function mountRepair(
 	root: HTMLElement,
@@ -16,16 +17,17 @@ export function mountRepair(
 		files,
 		reopen,
 	}: {
-		error: OpenError;
+		error: TableEditError;
 		path: string;
-		files: CanonicalEditorFolder<typeof definition>['files'];
+		files: Pick<FolderFiles, 'overwrite'>;
 		reopen: () => void;
 	},
 ) {
+	const exact = exactText(error);
 	const text = h('textarea', {
 		rows: 8,
 		className: 'source',
-		value: exactText(error) ?? NEW_ROW,
+		value: exact ?? NEW_ROW,
 	});
 	const message = h('p', { className: 'message' });
 	const write = h(
@@ -44,7 +46,14 @@ export function mountRepair(
 	};
 	root.replaceChildren(
 		h('p', { className: 'warn' }, describeOpenError(error)),
-		h('label', {}, `Exact text of ${path}`, text),
+		h(
+			'label',
+			{},
+			exact === undefined
+				? `Text to write at ${path}`
+				: `Exact text of ${path}`,
+			text,
+		),
 		h(
 			'div',
 			{ className: 'row' },
@@ -56,9 +65,9 @@ export function mountRepair(
 }
 
 /** The refused file's exact text, when the refusal carries it. */
-function exactText(error: OpenError): string | undefined {
+function exactText(error: TableEditError): string | undefined {
 	switch (error.name) {
-		case 'UnsupportedSource':
+		case 'NoCanonicalForm':
 		case 'InvalidSource':
 			return error.file.source;
 		default:
@@ -66,16 +75,16 @@ function exactText(error: OpenError): string | undefined {
 	}
 }
 
-function describeOpenError(error: OpenError): string {
+function describeOpenError(error: TableEditError): string {
 	switch (error.name) {
 		case 'NotFound':
 			return 'There is no file here. Write one below to create it.';
-		case 'UnsupportedSource':
-			return `This file cannot be edited as a form: ${error.refusal.reason}. Fix its text below.`;
+		case 'NoCanonicalForm':
+			return `This file cannot be edited as a form: ${error.refusal.reason}. Its exact text is below; fix it and overwrite.`;
 		case 'InvalidSource':
-			return `This file is not a valid todo: ${error.message}. Fix its text below.`;
+			return `This file is not a valid todo: ${error.message}. Its exact text is below; fix it and overwrite.`;
 		case 'InvalidUtf8':
-			return 'This file is not UTF-8 text. Replace it below.';
+			return 'This file is not UTF-8 text, so there is no text to show. Replace it below.';
 		default:
 			return `Could not open: ${error.message}`;
 	}

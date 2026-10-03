@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DataDefinition } from '@epicenter/definition';
+import type { DataSchema } from '@epicenter/definition';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openFolder as openBrowserFolder } from './browser.js';
@@ -18,6 +18,7 @@ import {
 	defineFolder,
 	defineTable,
 	type Folder,
+	type FolderDefinition,
 	field,
 	openFolder,
 } from './bun.js';
@@ -34,12 +35,11 @@ import {
 import { createNativeFileBoundary } from './native-store.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
-const openNativeFolder = async <const TDefinition extends DataDefinition>(
+const openNativeFolder = async <const TDefinition extends FolderDefinition>(
 	options: DirectoryFolderOptions<TDefinition>,
 ) => expectOk(await openFolder(options));
 
 const definition = defineFolder({
-	id: 'so.epicenter.todostest',
 	kv: {},
 	tables: {
 		todos: defineTable({
@@ -78,6 +78,34 @@ async function settled(folder: Todos) {
 }
 
 describe('native folder', () => {
+	test('an existing non-main HEAD refuses history changes while file saves remain available', async () => {
+		const root = await scratch('native-legacy-branch-');
+		await git(root, 'init', '--quiet', '--initial-branch=backup');
+		await writeFile(join(root, 'legacy.txt'), 'previous history');
+		await git(root, 'add', 'legacy.txt');
+		await git(root, 'commit', '--quiet', '-m', 'Previous history');
+		const previous = await git(root, 'rev-parse', 'HEAD');
+		const folder = await openNativeFolder({
+			root,
+			definition,
+			git: { author, commitOnEdit: false },
+		});
+		try {
+			expectOk(await folder.files.create('saved.txt', 'saved'));
+			expect(await folder.git.commit()).toMatchObject({
+				status: 'blocked',
+				reason: 'HEAD is not on main',
+			});
+			expect(await git(root, 'rev-parse', 'HEAD')).toBe(previous);
+			expect(
+				await git(root, 'for-each-ref', '--format=%(refname)', 'refs/heads'),
+			).toBe('refs/heads/backup');
+			expect(await readFile(join(root, 'saved.txt'), 'utf8')).toBe('saved');
+		} finally {
+			await folder.close();
+		}
+	});
+
 	test('saves ordinary files, commits automatically, and keeps the native index consistent', async () => {
 		const root = await scratch('native-folder-');
 		const folder = await openNativeFolder({
@@ -152,8 +180,7 @@ describe('native folder', () => {
 
 	test('an unsupported definition is refused before a repository is initialized', async () => {
 		const root = await scratch('native-refused-');
-		const withCodec: DataDefinition = {
-			id: 'so.epicenter.codec',
+		const withCodec: DataSchema = {
 			kv: {},
 			tables: {
 				notes: defineTable({
@@ -413,6 +440,118 @@ describe('native folder', () => {
 });
 
 describe('browser and native exchange through a real bare repository', () => {
+	test('attaching a remote branch preserves local main and exchanges that history', async () => {
+		const root = await scratch('exchange-other-branch-');
+		const bare = await createBareRemote(root);
+		globalThis.fetch = await gitHttpFetch(root);
+		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
+		const local = expectOk(
+			await openBrowserFolder({
+				id: 'attach-backup',
+				definition,
+				browser: { author, indexedDb: environment, commitOnEdit: false },
+			}),
+		);
+		expectOk(await local.files.create('local.txt', 'local'));
+		expect((await local.git.commit()).status).toBe('committed');
+		const first = expectOk(await local.git.log(10))[0]!.oid;
+		await local.close();
+
+		const browser = expectOk(
+			await openBrowserFolder({
+				id: 'attach-backup',
+				definition,
+				browser: {
+					author,
+					indexedDb: environment,
+					commitOnEdit: false,
+					remote: { url: 'http://git.test/remote.git', branch: 'backup' },
+				},
+			}),
+		);
+		try {
+			expect(expectOk(await browser.git.log(10))[0]!.oid).toBe(first);
+			expectOk(await browser.files.create('second.txt', 'second'));
+			expect((await browser.git.commit()).status).toBe('committed');
+			expect((await browser.git.push()).status).toBe('pushed');
+			expect(await git(bare, 'rev-parse', 'backup^')).toBe(first);
+			expect(await git(bare, 'symbolic-ref', 'HEAD')).toBe('refs/heads/main');
+			const second = await git(bare, 'rev-parse', 'backup');
+			// isomorphic-git 1.38.5 requires a resolvable advertised HEAD,
+			// even when fetching another branch explicitly.
+			expect(expectErr(await browser.git.fetch()).message).toContain(
+				'Could not find HEAD',
+			);
+			expect(expectOk(await browser.git.log(10))[0]!.oid).toBe(second);
+			await git(bare, 'update-ref', 'refs/heads/main', second);
+			expect(expectOk(await browser.git.fetch()).oid).toBe(second);
+
+			const nativeRoot = await scratch('native-other-branch-');
+			let native = await openNativeFolder({
+				root: nativeRoot,
+				definition,
+				git: {
+					author,
+					commitOnEdit: false,
+					remote: { url: bare, branch: 'backup' },
+				},
+			});
+			try {
+				expect(await git(nativeRoot, 'symbolic-ref', 'HEAD')).toBe(
+					'refs/heads/main',
+				);
+				expect(expectOk(await native.git.fetch()).oid).toBe(second);
+				expect(expectOk(await native.git.pullFastForward()).status).toBe(
+					'fastForwarded',
+				);
+				expect(
+					await git(nativeRoot, 'rev-parse', 'refs/remotes/origin/backup'),
+				).toBe(second);
+				expect(
+					await git(
+						nativeRoot,
+						'for-each-ref',
+						'--format=%(refname)',
+						'refs/heads',
+					),
+				).toBe('refs/heads/main');
+				await native.close();
+				native = await openNativeFolder({
+					root: nativeRoot,
+					definition,
+					git: { author, commitOnEdit: false },
+				});
+				expectOk(await native.files.create('third.txt', 'third'));
+				expect((await native.git.commit()).status).toBe('committed');
+				const third = await git(nativeRoot, 'rev-parse', 'HEAD');
+				await native.close();
+				native = await openNativeFolder({
+					root: nativeRoot,
+					definition,
+					git: {
+						author,
+						commitOnEdit: false,
+						remote: { url: bare, branch: 'backup' },
+					},
+				});
+				expect((await native.git.push()).status).toBe('pushed');
+				expect(await git(bare, 'rev-parse', 'backup^')).toBe(second);
+				expect(expectOk(await browser.git.fetch()).oid).toBe(third);
+				expect(expectOk(await browser.git.pullFastForward()).status).toBe(
+					'fastForwarded',
+				);
+				expect((await browser.terminal().exec('git status')).stdout).toContain(
+					'## main',
+				);
+			} finally {
+				await native.close();
+			}
+		} finally {
+			await browser.close();
+			globalThis.fetch = originalFetch;
+		}
+	});
+
 	test('browser push, native pull, native push, browser fast-forward', async () => {
 		const root = await scratch('exchange-');
 		const bare = await createBareRemote(root);
@@ -436,7 +575,8 @@ describe('browser and native exchange through a real bare repository', () => {
 			fields: { title: 'First', done: false },
 		});
 		await settled(browser);
-		expect(browser.git.snapshot.lastPush?.status).toBe('pushed');
+		expect(browser.git.snapshot.lastPush).toBeUndefined();
+		expect((await browser.git.push()).status).toBe('pushed');
 		expect(await git(bare, 'log', '--format=%s', 'main')).toBe(
 			'Add todos/first.md',
 		);
@@ -464,7 +604,8 @@ describe('browser and native exchange through a real bare repository', () => {
 			fields: { done: true },
 		});
 		await settled(native);
-		expect(native.git.snapshot.lastPush?.status).toBe('pushed');
+		expect(native.git.snapshot.lastPush).toBeUndefined();
+		expect((await native.git.push()).status).toBe('pushed');
 		expect(await git(bare, 'log', '-1', '--format=%s', 'main')).toBe(
 			'Update todos/first.md',
 		);
@@ -482,6 +623,7 @@ describe('browser and native exchange through a real bare repository', () => {
 			fields: { title: 'Native edit' },
 		});
 		await settled(native);
+		expect((await native.git.push()).status).toBe('pushed');
 		// Another writer publishes without a save request on this handle.
 		const externalDb = await openFolderDatabase(
 			'epicenter-folder:exchange',
@@ -540,6 +682,8 @@ describe('browser and native exchange through a real bare repository', () => {
 		expectOk(await browser.files.create('offline.txt', 'Offline'));
 		await settled(browser);
 		expect(browser.git.snapshot.lastCommit?.status).toBe('committed');
+		expect(browser.git.snapshot.lastPush).toBeUndefined();
+		expect((await browser.git.push()).status).toBe('failed');
 		expect(browser.git.snapshot.lastPush?.status).toBe('failed');
 		const sync = browser.git.snapshot.sync;
 		expect(sync.state === 'observed' && sync.value.ahead).toBe(1);

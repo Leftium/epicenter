@@ -461,6 +461,131 @@ fn a_differently_cased_name_never_overwrites_the_existing_file() {
     }
 }
 
+/// What a change of `path` is refused as when the filesystem resolves it to
+/// the existing `existing`.
+fn aliased(path: &str, existing: &str) -> Result<(), ApplyError> {
+    Err(ApplyError::Refused {
+        error: FileError::InvalidPath {
+            path: path.into(),
+            reason: format!(
+                "this filesystem resolves it to the existing '{existing}', which is spelled differently"
+            ),
+        },
+    })
+}
+
+/// The folder's files and directories, by their own spellings.
+fn entries(owner: &FolderOwner) -> (Vec<String>, Vec<String>) {
+    let listing = owner.list().unwrap();
+    (
+        listing.files.into_iter().map(|file| file.path).collect(),
+        listing.directories,
+    )
+}
+
+#[test]
+fn no_change_lands_on_an_entry_through_another_spelling_of_its_name_or_directory() {
+    let temp = TempDir::new("alias");
+    let root = temp.folder("notes");
+    let owner = manual(&root);
+    owner
+        .apply(&[create("Note.md", "upper"), create("Dir/inner.md", "inner")])
+        .unwrap();
+    let before = entries(&owner);
+    // This host's filesystem decides: APFS and NTFS resolve another case of
+    // a name to the entry; most Linux filesystems hold both names.
+    let folds_case = root.join("note.md").exists();
+    let upper = sha256(b"upper");
+
+    let changes = [
+        overwrite("note.md", "lower"),
+        replace("note.md", "lower", &upper),
+        FileChange::Remove {
+            path: "note.md".into(),
+            expected_sha256: None,
+        },
+        FileChange::Move {
+            from: "note.md".into(),
+            to: "moved.md".into(),
+            expected_sha256: None,
+        },
+        overwrite("dir/new.md", "new"),
+    ];
+    if folds_case {
+        // Each would act on `Note.md` or put a file inside `Dir`, under
+        // names the caller did not give. Each is refused before it writes.
+        let refusals = [
+            aliased("note.md", "Note.md"),
+            aliased("note.md", "Note.md"),
+            aliased("note.md", "Note.md"),
+            aliased("note.md", "Note.md"),
+            aliased("dir/new.md", "Dir"),
+        ];
+        for (change, refused) in changes.iter().zip(refusals) {
+            assert_eq!(owner.apply(std::slice::from_ref(change)), refused);
+        }
+        // A destination that is another spelling of an entry is occupied.
+        assert_eq!(
+            owner.apply(&[FileChange::Move {
+                from: "Note.md".into(),
+                to: "note.md".into(),
+                expected_sha256: None,
+            }]),
+            Err(ApplyError::Refused {
+                error: FileError::Exists {
+                    path: "note.md".into()
+                }
+            })
+        );
+        assert_eq!(owner.mkdir("dir/sub"), aliased_directory("dir", "Dir"));
+        assert_eq!(owner.rmdir("dir"), aliased_directory("dir", "Dir"));
+        // A read of another spelling finds no file of that name.
+        assert!(matches!(
+            owner.read("note.md"),
+            Err(FileError::NotFound { .. })
+        ));
+        assert_eq!(entries(&owner), before);
+        assert_eq!(owner.read("Note.md").unwrap().bytes, b"upper");
+    } else {
+        // Here each spelling is its own entry: the change lands on its own
+        // name and leaves the other alone.
+        owner.apply(&[changes[0].clone()]).unwrap();
+        owner.apply(&[changes[4].clone()]).unwrap();
+        assert_eq!(owner.read("note.md").unwrap().bytes, b"lower");
+        assert_eq!(owner.read("dir/new.md").unwrap().bytes, b"new");
+        assert_eq!(owner.read("Note.md").unwrap().bytes, b"upper");
+        assert_eq!(owner.read("Dir/inner.md").unwrap().bytes, b"inner");
+    }
+}
+
+fn aliased_directory(path: &str, existing: &str) -> Result<(), FileError> {
+    match aliased(path, existing) {
+        Err(ApplyError::Refused { error }) => Err(error),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_differently_normalized_spelling_never_changes_the_existing_file() {
+    let temp = TempDir::new("alias-unicode");
+    let root = temp.folder("notes");
+    let owner = manual(&root);
+    let (composed, decomposed) = ("caf\u{e9}.md", "cafe\u{301}.md");
+    owner.apply(&[create(composed, "composed")]).unwrap();
+    // APFS resolves either normalization to the one entry; most Linux
+    // filesystems hold both names.
+    let normalizes = root.join(decomposed).exists();
+    let written = owner.apply(&[overwrite(decomposed, "decomposed")]);
+    assert_eq!(owner.read(composed).unwrap().bytes, b"composed");
+    if normalizes {
+        assert_eq!(written, aliased(decomposed, composed));
+        assert_eq!(entries(&owner).0, vec![composed.to_string()]);
+    } else {
+        assert_eq!(written, Ok(()));
+        assert_eq!(owner.read(decomposed).unwrap().bytes, b"decomposed");
+    }
+}
+
 #[test]
 fn directory_changes_and_reads_attempt_no_commit() {
     let temp = TempDir::new("directories");

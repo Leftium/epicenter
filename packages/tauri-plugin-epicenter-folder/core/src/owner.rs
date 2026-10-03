@@ -41,6 +41,14 @@
 //! on an earlier read carries the SHA-256 it read and is refused if the file
 //! changed since.
 //!
+//! The gate is not first come, first served, and a save can be delayed
+//! anywhere before it, including before it reaches this process. So one
+//! writer's saves keep their order another way: the writer numbers each save
+//! before sending it, and a delivery that reaches the gate after a save of the
+//! same writer numbered at or after it landed on one of its paths is refused
+//! as `Superseded`, having written nothing. See `Writer`. Between writers the
+//! last save to land wins.
+//!
 //! The snapshot is exact against this owner's own writes, which replace files
 //! by rename or link. A program that edits a file in place can still change
 //! bytes the snapshot links to: that stays best effort.
@@ -80,8 +88,8 @@ pub struct FolderConfig {
     /// Author and committer for automatic and staged commits.
     pub author: Author,
     pub remote: Option<Remote>,
-    /// Whether a complete content save attempts an automatic commit, and a
-    /// push after it. The attempt is skipped when the folder is busy.
+    /// Whether a complete content save attempts an automatic local commit.
+    /// The attempt is skipped when the folder is busy. Transfers are explicit.
     pub commit_on_edit: bool,
     /// Whether the repository's own `user.name` and `user.email` decide who
     /// commits. They are read once, when the folder opens, after its lock is
@@ -93,9 +101,7 @@ pub struct FolderConfig {
     /// repository with no `origin` keeps `remote`, which is honored whether
     /// or not this is set. The branch stays `branch`.
     ///
-    /// This is separate from the author because a configured remote makes
-    /// automatic commits push: a folder that should stay local reads the
-    /// author and leaves this off.
+    /// Reading a remote enables explicit transfers, never automatic pushing.
     pub use_repository_origin: bool,
     /// Whether filesystem events are watched, so a change made outside the
     /// owner is noticed at once, even one that leaves size and time as they
@@ -335,6 +341,75 @@ impl Drop for Request {
         if let Some(owner) = self.owner.upgrade() {
             owner.push.withdraw(&self.caller.push);
             owner.fetch.withdraw(&self.caller.fetch);
+        }
+    }
+}
+
+/// One caller's saves, in the order the caller numbered them.
+///
+/// The caller numbers each save before it sends it, so the number is the
+/// save's place in the caller's order however late the save arrives. A
+/// delivery that reaches the file gate after a save of the same writer
+/// numbered at or after it landed on one of its paths is refused as
+/// `Superseded`: it never puts back bytes the writer already replaced, and a
+/// save delivered twice lands at most once. The refusal says only that this
+/// delivery wrote nothing. Once a later save has landed, the record cannot
+/// tell a stale save that never landed from another delivery of one that
+/// did, so it does not try: whether the save itself landed is unknown to it.
+/// Different paths of one writer, and different writers, are not ordered
+/// against each other: between writers the last save to land wins.
+///
+/// For each path a save of it landed on, the writer keeps the highest number
+/// that landed there, for as long as the writer lives. No save in flight is
+/// not proof that none is on its way, so nothing is forgotten sooner. That
+/// is one entry per path, kept in memory only. Clones share the record.
+#[derive(Clone, Default)]
+pub struct Writer {
+    landed: Arc<Mutex<BTreeMap<String, u64>>>,
+}
+
+/// One save of a `Writer`, under the number its caller gave it.
+pub struct Submission {
+    landed: Arc<Mutex<BTreeMap<String, u64>>>,
+    sequence: u64,
+}
+
+impl Writer {
+    /// The save its caller numbered `sequence`. It shares the writer's
+    /// record, so it is still ordered if the writer is dropped first.
+    pub fn submission(&self, sequence: u64) -> Submission {
+        Submission {
+            landed: Arc::clone(&self.landed),
+            sequence,
+        }
+    }
+}
+
+impl Submission {
+    /// Refuse if a save of this writer numbered at or after this one, this
+    /// save's own earlier delivery included, landed on any of `changes`'
+    /// paths. The caller holds the file gate.
+    fn admit(&self, changes: &[FileChange]) -> Result<(), FileError> {
+        let landed = lock(&self.landed);
+        match changes
+            .iter()
+            .flat_map(FileChange::paths)
+            .find(|path| landed.get(*path) >= Some(&self.sequence))
+        {
+            Some(path) => Err(FileError::Superseded {
+                path: path.to_string(),
+            }),
+            None => Ok(()),
+        }
+    }
+
+    /// Record the paths this save's landed steps touched. The caller holds
+    /// the file gate it was admitted under, so no entry for these paths is
+    /// at or after this save.
+    fn landed<'a>(&self, paths: impl Iterator<Item = &'a str>) {
+        let mut landed = lock(&self.landed);
+        for path in paths {
+            landed.insert(path.to_string(), self.sequence);
         }
     }
 }
@@ -624,6 +699,25 @@ impl FolderOwner {
     /// commit attempt before this returns; a partial one only marks
     /// observations stale.
     pub fn apply(&self, changes: &[FileChange]) -> Result<(), ApplyError> {
+        self.apply_in_order(None, changes)
+    }
+
+    /// `apply`, in `submission`'s place in its writer's order: refused as
+    /// `Superseded` if a save of that writer numbered at or after it, another
+    /// delivery of itself included, already landed on one of these paths.
+    pub fn apply_submitted(
+        &self,
+        submission: &Submission,
+        changes: &[FileChange],
+    ) -> Result<(), ApplyError> {
+        self.apply_in_order(Some(submission), changes)
+    }
+
+    fn apply_in_order(
+        &self,
+        submission: Option<&Submission>,
+        changes: &[FileChange],
+    ) -> Result<(), ApplyError> {
         let refused = |error| ApplyError::Refused { error };
         let _admitted = self.inner.admit().map_err(refused)?;
         Files::validate(changes).map_err(refused)?;
@@ -631,7 +725,24 @@ impl FolderOwner {
         self.inner.hook(|hooks| &hooks.before_apply);
         let result = {
             let _files = lock(&self.inner.file_gate);
-            self.inner.publish(changes)
+            // Checked and recorded under the gate, so no save of the same
+            // writer lands between this one's check and its record.
+            match submission.map_or(Ok(()), |submission| submission.admit(changes)) {
+                Err(error) => Err(refused(error)),
+                Ok(()) => {
+                    let result = self.inner.publish(changes);
+                    if let Some(submission) = submission {
+                        match &result {
+                            Ok(()) => submission.landed(changes.iter().flat_map(FileChange::paths)),
+                            Err(ApplyError::Partial { applied, .. }) => {
+                                submission.landed(applied.iter().flat_map(FileStep::paths))
+                            }
+                            Err(ApplyError::Refused { .. } | ApplyError::Unconfirmed { .. }) => {}
+                        }
+                    }
+                    result
+                }
+            }
         };
         match &result {
             Ok(()) => {
@@ -1066,14 +1177,6 @@ impl Inner {
                 let _running = inner.running(&inner.commits);
                 drop(decided);
                 inner.commit_with(files, git);
-                // A push that cannot start now is not owed later.
-                let ahead = matches!(
-                    &lock(&inner.state).sync,
-                    Observation::Observed { value, stale: false, .. } if value.ahead > 0
-                );
-                if ahead && inner.git.remote.is_some() && !inner.closing.load(Ordering::SeqCst) {
-                    inner.push.attempt();
-                }
             });
         if spawned.is_ok() {
             // Settles when the attempt was admitted or dropped.
@@ -1840,7 +1943,7 @@ impl Drop for Inner {
 mod tests {
     use super::*;
 
-    use crate::testing::{config, create, eventually, git, open, TempDir};
+    use crate::testing::{config, create, eventually, git, open, overwrite, TempDir};
 
     #[test]
     fn an_automatic_attempt_is_dropped_while_either_gate_is_held_and_never_made_up() {
@@ -1877,6 +1980,175 @@ mod tests {
             snapshot.last_commit.is_some() && !snapshot.activity.commit.active
         });
         assert_eq!(git(&root, &["log", "--format=%s"]), "Add a.md");
+    }
+
+    /// Apply `changes` as `earlier`, hold it after admission and before the
+    /// file gate, where a slow worker would leave it, run `meanwhile`, and
+    /// then let it go on.
+    fn delayed(
+        owner: &FolderOwner,
+        earlier: Submission,
+        changes: Vec<FileChange>,
+        meanwhile: impl FnOnce(),
+    ) -> Result<(), ApplyError> {
+        let (hook, _, at_hook, release) = count_and_hold_first();
+        owner.hooks().before_apply = Some(hook);
+        let held = {
+            let owner = owner.clone();
+            std::thread::spawn(move || owner.apply_submitted(&earlier, &changes))
+        };
+        at_hook.recv().unwrap();
+        meanwhile();
+        release.send(()).unwrap();
+        held.join().unwrap()
+    }
+
+    #[test]
+    fn a_save_never_lands_over_one_its_writer_numbered_later_however_late_it_arrives() {
+        let temp = TempDir::new("writer-order");
+        let root = temp.folder("notes");
+        let owner = FolderOwner::open(FolderConfig {
+            commit_on_edit: false,
+            ..config(&root)
+        })
+        .unwrap();
+        let read = |path: &str| std::fs::read_to_string(root.join(path)).ok();
+        let (window, other) = (Writer::default(), Writer::default());
+        let superseded = |path: &str| -> Result<(), ApplyError> {
+            Err(ApplyError::Refused {
+                error: FileError::Superseded {
+                    path: path.to_string(),
+                },
+            })
+        };
+
+        // Save 1 is held before the gate while save 2 lands. It is refused
+        // whole, before its first step, once save 2 landed on any of its paths.
+        let refused = delayed(
+            &owner,
+            window.submission(1),
+            vec![overwrite("first.md", "A"), overwrite("note.md", "A")],
+            || {
+                assert_eq!(
+                    owner.apply_submitted(&window.submission(2), &[overwrite("note.md", "B")]),
+                    Ok(())
+                );
+            },
+        );
+        assert_eq!(refused, superseded("note.md"));
+        assert_eq!(read("note.md").as_deref(), Some("B"));
+        assert_eq!(read("first.md"), None);
+
+        // A later save of another path does not order it.
+        let landed = delayed(
+            &owner,
+            window.submission(3),
+            vec![overwrite("a.md", "A")],
+            || {
+                assert_eq!(
+                    owner.apply_submitted(&window.submission(4), &[overwrite("b.md", "B")]),
+                    Ok(())
+                );
+            },
+        );
+        assert_eq!(landed, Ok(()));
+        assert_eq!(read("a.md").as_deref(), Some("A"));
+
+        // Nor does another writer's: between writers the last to land wins.
+        let landed = delayed(
+            &owner,
+            other.submission(1),
+            vec![overwrite("note.md", "C")],
+            || {
+                assert_eq!(
+                    owner.apply_submitted(&window.submission(5), &[overwrite("note.md", "D")]),
+                    Ok(())
+                );
+            },
+        );
+        assert_eq!(landed, Ok(()));
+        assert_eq!(read("note.md").as_deref(), Some("C"));
+
+        // No save of the writer is in flight now, and an earlier-numbered save
+        // that was still on its way arrives: it is refused all the same.
+        assert_eq!(
+            owner.apply_submitted(&window.submission(2), &[overwrite("note.md", "late")]),
+            superseded("note.md")
+        );
+        // So is a second delivery of save 5, which writes nothing either.
+        assert_eq!(
+            owner.apply_submitted(&window.submission(5), &[overwrite("note.md", "again")]),
+            superseded("note.md")
+        );
+        assert_eq!(read("note.md").as_deref(), Some("C"));
+
+        // A save made before its writer was dropped keeps the writer's record.
+        let late = window.submission(4);
+        drop(window);
+        assert_eq!(
+            owner.apply_submitted(&late, &[overwrite("note.md", "late")]),
+            superseded("note.md")
+        );
+        assert_eq!(read("note.md").as_deref(), Some("C"));
+    }
+
+    #[test]
+    fn a_second_delivery_writes_nothing_whether_its_first_landed_whole_in_part_or_was_overtaken() {
+        let temp = TempDir::new("writer-duplicate");
+        let root = temp.folder("notes");
+        let owner = FolderOwner::open(FolderConfig {
+            commit_on_edit: false,
+            ..config(&root)
+        })
+        .unwrap();
+        let read = |path: &str| std::fs::read_to_string(root.join(path)).ok();
+        owner
+            .apply(&[create("taken.md", "someone else's")])
+            .unwrap();
+        let window = Writer::default();
+        let refused = |path: &str| -> Result<(), ApplyError> {
+            Err(ApplyError::Refused {
+                error: FileError::Superseded {
+                    path: path.to_string(),
+                },
+            })
+        };
+
+        // Save 1's first delivery lands its first step and stops at its second.
+        // A second delivery overlaps what landed, so it is refused whole.
+        let first = owner.apply_submitted(
+            &window.submission(1),
+            &[overwrite("a.md", "first"), create("taken.md", "first")],
+        );
+        assert!(
+            matches!(&first, Err(ApplyError::Partial { applied, .. }) if applied.len() == 1),
+            "{first:?}"
+        );
+        assert_eq!(
+            owner.apply_submitted(
+                &window.submission(1),
+                &[overwrite("a.md", "again"), create("taken.md", "again")],
+            ),
+            refused("a.md")
+        );
+        assert_eq!(read("a.md").as_deref(), Some("first"));
+        assert_eq!(read("taken.md").as_deref(), Some("someone else's"));
+
+        // Save 3 lands whole, then save 4. Save 3 is delivered again, as
+        // Tauri's IPC fallback does when the first reply is lost. The record
+        // cannot tell this from a stale save that never landed, and it is
+        // the same refusal: this delivery wrote nothing, and save 4 stays.
+        owner
+            .apply_submitted(&window.submission(3), &[overwrite("b.md", "three")])
+            .unwrap();
+        owner
+            .apply_submitted(&window.submission(4), &[overwrite("b.md", "four")])
+            .unwrap();
+        assert_eq!(
+            owner.apply_submitted(&window.submission(3), &[overwrite("b.md", "three")]),
+            refused("b.md")
+        );
+        assert_eq!(read("b.md").as_deref(), Some("four"));
     }
 
     /// A folder whose one commit is on its bare remote, so a push and a

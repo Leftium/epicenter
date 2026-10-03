@@ -20,10 +20,11 @@ import {
 	defineCommand,
 	type IFileSystem,
 } from 'just-bash';
-import type { FileChange, FolderStorage } from './boundary.js';
+import type { FileChange, FolderStorage, Submission } from './boundary.js';
 import { hashBytes, ownBytes } from './capture.js';
 import type { ApplyError, FileError } from './errors.js';
 import type { FolderGit } from './folder.js';
+import { reserveSubmission } from './storage.js';
 
 export type TerminalResult = {
 	readonly stdout: string;
@@ -152,10 +153,17 @@ export function createTerminal(
 		return read.data.bytes;
 	}
 
-	/** Maintain command observations for every confirmed step, including partial progress. */
-	async function applyChanges(changes: readonly FileChange[]) {
+	/**
+	 * Maintain command observations for every confirmed step, including
+	 * partial progress. Each file step reserves its `submission` when it is
+	 * entered, like any other save of the page.
+	 */
+	async function applyChanges(
+		changes: readonly FileChange[],
+		submission: Submission,
+	) {
 		if (changes.length === 0) return;
-		const result = await storage.apply(changes);
+		const result = await storage.apply(changes, submission);
 		const applied =
 			result.error === null
 				? changes
@@ -209,18 +217,25 @@ export function createTerminal(
 		await refresh();
 	}
 
-	async function writeBytes(path: string, content: string | Uint8Array) {
+	async function writeBytes(
+		path: string,
+		content: string | Uint8Array,
+		submission = reserveSubmission(),
+	) {
 		const name = relative(path);
 		const bytes = ownBytes(content);
 		// A rewrite of bytes this command read is conditional; otherwise the
 		// shell deliberately overwrites or creates the path.
 		const expectedSha256 = observed.get(name);
 		const sha256 = await hashBytes(bytes);
-		await applyChanges([
-			expectedSha256 === undefined
-				? { kind: 'overwrite', path: name, bytes, sha256 }
-				: { kind: 'replace', path: name, bytes, sha256, expectedSha256 },
-		]);
+		await applyChanges(
+			[
+				expectedSha256 === undefined
+					? { kind: 'overwrite', path: name, bytes, sha256 }
+					: { kind: 'replace', path: name, bytes, sha256, expectedSha256 },
+			],
+			submission,
+		);
 	}
 
 	const fs: IFileSystem = {
@@ -248,6 +263,7 @@ export function createTerminal(
 			);
 		},
 		async appendFile(path, content, options) {
+			const submission = reserveSubmission();
 			const encoding =
 				typeof options === 'string' ? options : options?.encoding;
 			const addition =
@@ -258,14 +274,17 @@ export function createTerminal(
 			const read = await storage.read(name);
 			if (read.error) {
 				if (read.error.name !== 'NotFound') fail(read.error);
-				await applyChanges([
-					{
-						kind: 'create',
-						path: name,
-						bytes: addition,
-						sha256: await hashBytes(addition),
-					},
-				]);
+				await applyChanges(
+					[
+						{
+							kind: 'create',
+							path: name,
+							bytes: addition,
+							sha256: await hashBytes(addition),
+						},
+					],
+					submission,
+				);
 				return;
 			}
 			observed.set(name, read.data.sha256);
@@ -273,7 +292,7 @@ export function createTerminal(
 			const next = new Uint8Array(read.data.bytes.length + addition.length);
 			next.set(read.data.bytes);
 			next.set(addition, read.data.bytes.length);
-			await writeBytes(path, next);
+			await writeBytes(path, next, submission);
 		},
 		exists: async (path) => isFile(path) || isDirectory(path),
 		async stat(path) {
@@ -327,11 +346,13 @@ export function createTerminal(
 			].sort();
 		},
 		async rm(path, options) {
+			const submission = reserveSubmission();
 			const name = relative(path);
 			if (isFile(path)) {
-				await applyChanges([
-					{ kind: 'remove', path: name, expectedSha256: observed.get(name) },
-				]);
+				await applyChanges(
+					[{ kind: 'remove', path: name, expectedSha256: observed.get(name) }],
+					submission,
+				);
 				return;
 			}
 			if (!isDirectory(path)) {
@@ -352,12 +373,14 @@ export function createTerminal(
 					path,
 					expectedSha256: observed.get(path),
 				})),
+				submission,
 			);
 			await removeDirectories([...nestedDirectories, name]);
 		},
 		async cp(source, destination, options) {
 			if (!isDirectory(source)) {
-				await writeBytes(destination, await readBytes(source));
+				const submission = reserveSubmission();
+				await writeBytes(destination, await readBytes(source), submission);
 				return;
 			}
 			if (!options?.recursive)
@@ -374,19 +397,26 @@ export function createTerminal(
 						: `${destination}/${path.slice(prefix.length)}`;
 				await fs.mkdir(target, { recursive: true });
 			}
-			for (const file of sourceFiles)
+			for (const file of sourceFiles) {
+				// Each copied file is its own save, placed before its source is
+				// read, as a single-file copy is.
+				const submission = reserveSubmission();
 				await writeBytes(
 					resolvePath('/', `${destination}/${file.slice(prefix.length)}`),
 					await readBytes(`/${file}`),
+					submission,
 				);
+			}
 		},
 		async mv(source, destination) {
+			const submission = reserveSubmission();
 			const from = relative(source);
 			const to = relative(destination);
 			if (isFile(source)) {
-				await applyChanges([
-					{ kind: 'move', from, to, expectedSha256: observed.get(from) },
-				]);
+				await applyChanges(
+					[{ kind: 'move', from, to, expectedSha256: observed.get(from) }],
+					submission,
+				);
 				return;
 			}
 			if (!isDirectory(source))
@@ -410,6 +440,7 @@ export function createTerminal(
 					to: `${to}/${path.slice(prefix.length)}`,
 					expectedSha256: observed.get(path),
 				})),
+				submission,
 			);
 			await removeDirectories([
 				...sourceDirectories.sort((a, b) => b.length - a.length),

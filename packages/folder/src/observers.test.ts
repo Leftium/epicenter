@@ -38,7 +38,6 @@ import { GIT_ENV, scratch } from './git-http.test-support.js';
 import { useWebLocks } from './web-locks.test-support.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.observerstest',
 	kv: { theme: field.string() },
 	tables: { notes: defineTable({ fields: { title: field.string() } }) },
 });
@@ -79,6 +78,7 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 			kind === 'browser'
 				? expectOk(
 						await openBrowserFolder({
+							id: 'so.epicenter.observerstest',
 							definition,
 							browser: {
 								author,
@@ -118,13 +118,10 @@ describe.each(['browser', 'directory'])('%s folder observers', (kind) => {
 			await folder.tables.notes.update(row.stem, { fields: { title: 'B' } }),
 		);
 		expectOk(await folder.kv.create({ theme: 'dark' }));
-		const receipt = expectOk(
-			await folder.batch((batch) => {
-				batch.files.create('audio/a.webm', new Uint8Array([1]));
-				batch.tables.notes.create({ stem: 'b', fields: { title: 'B' } });
-			}),
+		expectOk(await folder.files.create('audio/a.webm', new Uint8Array([1])));
+		expectOk(
+			await folder.tables.notes.create({ stem: 'b', fields: { title: 'B' } }),
 		);
-		expect(receipt.steps).toHaveLength(2);
 
 		// The second listener heard everything the first one threw on.
 		expect(heard).toEqual([
@@ -281,6 +278,7 @@ describe('browser channel', () => {
 
 		const refused = expectErr(
 			await openBrowserFolder({
+				id: 'so.epicenter.observerstest',
 				definition,
 				browser: { indexedDb: environment },
 			}),
@@ -301,6 +299,7 @@ describe('browser channel', () => {
 		// The same storage opens normally afterward: nothing was left locked.
 		const reopened = expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.observerstest',
 				definition,
 				browser: { indexedDb: { indexedDB, IDBKeyRange } },
 			}),
@@ -313,6 +312,7 @@ describe('browser channel', () => {
 		const { Channel } = channelClass('post');
 		const folder = expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.observerstest',
 				definition,
 				browser: {
 					author,
@@ -324,11 +324,7 @@ describe('browser channel', () => {
 		folder.onFilesChanged((paths) => heard.push(...paths));
 
 		expectOk(await folder.files.create('note.txt', 'submitted'));
-		expectOk(
-			await folder.batch((batch) => {
-				batch.files.create('b.txt', 'b');
-			}),
-		);
+		expectOk(await folder.files.create('b.txt', 'b'));
 		expect(heard).toEqual(['note.txt', 'b.txt']);
 		await settled(folder);
 		expect(expectOk(await folder.git.log(10)).length).toBeGreaterThan(0);
@@ -342,6 +338,7 @@ describe('browser channel', () => {
 		const { Channel, log } = channelClass('close');
 		const folder = expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.observerstest',
 				definition,
 				browser: {
 					author,
@@ -365,6 +362,7 @@ describe('browser channel', () => {
 		const open = async () =>
 			expectOk(
 				await openBrowserFolder({
+					id: 'so.epicenter.observerstest',
 					definition,
 					browser: {
 						author,
@@ -399,6 +397,7 @@ test('a cross-tab file hint marks history stale without requesting an automatic 
 	const open = async (commitOnEdit: boolean) =>
 		expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.observerstest',
 				definition,
 				browser: { author, commitOnEdit, indexedDb: environment },
 			}),

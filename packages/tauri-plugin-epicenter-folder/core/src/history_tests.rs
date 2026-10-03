@@ -42,9 +42,10 @@ fn settled(owner: &FolderOwner) {
     });
 }
 
-/// Wait until the branch head is on the remote and no push is running.
+/// Explicitly push and verify the branch head reached the remote.
 fn pushed(owner: &FolderOwner, root: &Path) {
     let head = git(root, &["rev-parse", "HEAD"]);
+    assert_eq!(owner.push(None), PushOutcome::Pushed { oid: head.clone() });
     eventually("the head to be pushed", || {
         let snapshot = owner.snapshot();
         !snapshot.activity.push.active
@@ -968,7 +969,7 @@ fn with_remote(root: &Path, bare: &Path, commit_on_edit: bool) -> FolderOwner {
 }
 
 #[test]
-fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
+fn a_save_is_committed_locally_then_explicitly_pushed_and_another_folder_fast_forwards_to_it() {
     let temp = TempDir::new("remote");
     let bare = temp.folder("remote.git");
     git(
@@ -985,6 +986,8 @@ fn a_save_is_committed_then_pushed_and_another_folder_fast_forwards_to_it() {
 
     save(&first, "a.md", "A");
     settled(&first);
+    assert!(first.snapshot().last_push.is_none());
+    assert!(!bare.join("refs/heads/main").exists());
     pushed(&first, &first_root);
     let head = git(&first_root, &["rev-parse", "HEAD"]);
     assert_eq!(
@@ -1268,9 +1271,10 @@ fn a_repository_that_configures_its_identity_and_remote_keeps_them() {
         })
     );
     save(&configured, "a.md", "A");
-    eventually("the save to be pushed to the configured remote", || {
-        configured.snapshot().last_push.is_some()
-    });
+    settled(&configured);
+    assert!(configured.snapshot().last_push.is_none());
+    assert!(!bare.join("refs/heads/main").exists());
+    pushed(&configured, &configured_root);
     assert_eq!(
         git(&configured_root, &["log", "-1", "--format=%an <%ae>"]),
         "Ada Lovelace <ada@example.com>"
@@ -1791,7 +1795,12 @@ fn a_fetch_and_a_push_in_flight_hold_no_save_and_no_commit_back() {
         CommitOutcome::Committed { oid, parent, message, .. }
             if *oid == first && parent.as_deref() == Some(base.as_str()) && message == "Add a.md"
     ));
-    // That commit started a push, which is admitted and in flight as well.
+    // The save stays local. An explicit push is admitted and held as well.
+    assert!(owner.snapshot().last_push.is_none());
+    let pushing = {
+        let owner = owner.clone();
+        std::thread::spawn(move || owner.push(None))
+    };
     at_push.recv().unwrap();
     let snapshot = owner.snapshot();
     assert!(snapshot.activity.fetch.active && snapshot.activity.push.active);
@@ -1836,6 +1845,10 @@ fn a_fetch_and_a_push_in_flight_hold_no_save_and_no_commit_back() {
         incoming
     );
     release_push.send(()).unwrap();
+    assert!(matches!(
+        pushing.join().unwrap(),
+        PushOutcome::Failed { .. }
+    ));
     eventually("the push to settle", || {
         owner.snapshot().last_push.is_some()
     });
@@ -1868,9 +1881,9 @@ fn an_unreachable_remote_fails_the_push_and_the_fetch_but_not_the_commit() {
     let missing = temp.path().join("no-such-remote.git");
     let owner = with_remote(&root, &missing, true);
     save(&owner, "a.md", "A");
-    eventually("the push attempt to settle", || {
-        owner.snapshot().last_push.is_some()
-    });
+    settled(&owner);
+    assert!(owner.snapshot().last_push.is_none());
+    assert!(matches!(owner.push(None), PushOutcome::Failed { .. }));
     assert_eq!(subjects(&root), vec!["Add a.md"]);
     assert!(matches!(
         owner.snapshot().last_push.as_ref().unwrap().result,

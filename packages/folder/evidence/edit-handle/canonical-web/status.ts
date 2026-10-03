@@ -4,7 +4,7 @@
  * saves ended. It lives as long as the editor, not as long as the three
  * views, so its receipt history survives remounting them.
  */
-import type { SaveOutcome } from '../canonical-editor.js';
+import type { RowSaveOutcome } from '../../../src/browser.js';
 import { h, shortSha } from './dom.js';
 import type { TodoEditor, TodoState } from './todo-editor.js';
 
@@ -58,7 +58,7 @@ export function mountEditorStatus(root: HTMLElement, editor: TodoEditor) {
 		probeLog,
 	);
 
-	let lastSeen: SaveOutcome | undefined;
+	let lastSeen: RowSaveOutcome | undefined;
 
 	function render(state: TodoState) {
 		const { baseline, observation } = state;
@@ -215,7 +215,7 @@ function observedText({ observation }: TodoState): string | undefined {
 	}
 }
 
-function describeOutcome(outcome: SaveOutcome): string {
+function describeOutcome(outcome: RowSaveOutcome): string {
 	switch (outcome.kind) {
 		case 'saved':
 			return `Saved: wrote ${shortSha(outcome.receipt.sha256)}`;

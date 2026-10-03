@@ -15,9 +15,11 @@
  * saves and incoming updates, not edits made by other programs.
  */
 
-import type { DataDefinition } from '@epicenter/definition';
 import { Ok, type Result } from 'wellcrafted/result';
-import { prepareFolderDefinition } from './definition.js';
+import {
+	type FolderDefinition,
+	prepareFolderDefinition,
+} from './definition.js';
 import { OpenFolderError } from './errors.js';
 import {
 	assembleFolder,
@@ -42,7 +44,7 @@ export {
 } from './git/native-backend.js';
 export { verifyNativeLayout } from './native-store.js';
 
-export type DirectoryFolderOptions<TDefinition extends DataDefinition> = {
+export type DirectoryFolderOptions<TDefinition extends FolderDefinition> = {
 	/** An existing directory. A Git repository is initialized there if absent. */
 	readonly root: string;
 	readonly definition: TDefinition;
@@ -54,7 +56,7 @@ export type DirectoryFolderOptions<TDefinition extends DataDefinition> = {
  * definition a folder cannot keep, a root that is not a directory, or one
  * whose private Git state points somewhere else.
  */
-export async function openFolder<const TDefinition extends DataDefinition>({
+export async function openFolder<const TDefinition extends FolderDefinition>({
 	root,
 	definition,
 	git,
@@ -74,7 +76,7 @@ export async function openFolder<const TDefinition extends DataDefinition>({
 		const boundary = createNativeFileBoundary(resolved);
 		const backend = await createNativeGitBackend({
 			root: resolved,
-			branch: git.remote?.branch ?? 'main',
+			branch: 'main',
 			remote: git.remote,
 			boundary,
 		});

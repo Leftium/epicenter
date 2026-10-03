@@ -1,7 +1,16 @@
 /**
  * Domain methods share one storage API. Openers attach local-save accounting
- * before assembly gives it to files, tables, KV, batches, and the terminal.
- * Git keeps raw storage for its own publication sequence and captures.
+ * before assembly gives it to files, tables, KV, and the terminal. Git keeps
+ * raw storage for its own publication sequence and captures.
+ *
+ * `apply` takes ordered changes for Git publication, the terminal, and the
+ * native transport. Files, tables, KV, and editors publish one change at a
+ * time through `applyOne` (`storage.ts`), which restates the raw outcome.
+ *
+ * Every save of files, tables, KV, editors, and the terminal carries the
+ * `Submission` it reserved, synchronously, when its public method was
+ * entered: before it hashes, reads, or tells a listener anything. That is
+ * the order the page asked for its saves in, whatever finishes first.
  *
  * Browser applications use one IndexedDB transaction. Native applications
  * use ordered filesystem steps and report completed steps on later failure.
@@ -44,8 +53,16 @@ export type CapturedFiles = {
 	}[];
 };
 
-/** Storage used by domain methods; apply includes content-save accounting. */
-export type FolderStorage = {
+declare const reserved: unique symbol;
+
+/**
+ * A save's place in this page's order of saves, taken by `reserveSubmission`
+ * (`storage.ts`) when a public method that saves is entered.
+ */
+export type Submission = number & { readonly [reserved]: true };
+
+/** What every storage serves besides publication. */
+type StorageAccess = {
 	list(): Promise<Result<FileListing, FileError>>;
 	/** Immediate children of a directory: files and subdirectories by name. */
 	children(
@@ -58,14 +75,32 @@ export type FolderStorage = {
 	): Promise<Result<Map<string, Result<FileRead, FileError>>, FileError>>;
 	/** Stable bytes for consumption; later path changes do not alter them. */
 	open(path: string): Promise<Result<Blob, FileError>>;
-	apply(
-		changes: readonly FileChange[],
-	): Promise<Result<undefined, FileError | ApplyError>>;
 	mkdir(path: string): Promise<Result<undefined, FileError>>;
 	rmdir(path: string): Promise<Result<undefined, FileError>>;
 };
 
-/** Raw storage also captures portable files for history. */
-export type FileBoundary = FolderStorage & {
+/** Storage used by domain methods; apply includes content-save accounting. */
+export type FolderStorage = StorageAccess & {
+	/**
+	 * Publish `changes` in `submission`'s place. A storage whose saves can
+	 * reach the folder out of order refuses one that arrives after a later
+	 * save of this page landed on its path; one that publishes in call order
+	 * needs no number.
+	 */
+	apply(
+		changes: readonly FileChange[],
+		submission: Submission,
+	): Promise<Result<undefined, FileError | ApplyError>>;
+};
+
+/**
+ * Raw storage also captures portable files for history. Git publishes
+ * through it in its own sequence, so its saves take no page number.
+ */
+export type FileBoundary = StorageAccess & {
+	apply(
+		changes: readonly FileChange[],
+		submission?: Submission,
+	): Promise<Result<undefined, FileError | ApplyError>>;
 	capture(): Promise<Result<CapturedFiles, FileError>>;
 };

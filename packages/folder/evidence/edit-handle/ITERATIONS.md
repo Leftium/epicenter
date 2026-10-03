@@ -404,6 +404,57 @@ briefly predates a receipt until the follow-up read lands; the UI must describe
 it as the latest read, not an atomic view of disk. Neither limit changes the
 selected ownership or save semantics.
 
+## Wave 7: production integration and a real persisted demo
+
+The editor shipped in `@epicenter/folder` as
+`folder.tables.<name>.edit(stem, { signal })` (`src/editor.ts`), with the codec
+as `src/canonical.ts`. The table owns path, schema, and declared field order,
+so callers no longer pass the definition. Public names changed from the
+prototype's: `RowEditor`, `RowEditorState`, `RowEditorError`,
+`TableEditError`, `RowChangeError`, `RowSaveError`, `RowAdoptError`,
+`RowRevision`, `RowObservation`, `RowSaveAttempt`, `RowSaveOutcome`,
+`RowChange`, and the opening refusal `NoCanonicalForm` for the prototype's
+`UnsupportedSource`, whose name `TableError.UnsupportedSource` already used
+with other fields.
+
+Every prototype test moved to `src/` before the prototype was deleted:
+
+| Prototype (deleted) | Production | Tests / expects |
+| --- | --- | --- |
+| `canonical-editor.test.ts` | `src/editor.test.ts` | 27 tests, one per prototype test; the save, throwing-storage, and real-folder tests gained assertions (unconditional `overwrite`, clean resave, hinted follow, `Closed` after close) |
+| `canonical-codec.test.ts` | `src/canonical.test.ts` | 25 tests, same bodies |
+| `canonical-editor.test-d.ts` | `src/editor.test-d.ts` | 5 negative type checks plus a snapshot-writability check |
+| both runtime suites | | 52 tests / 215 expects before, 52 / 224 after |
+
+Then the wrapper (`canonical-editor.ts`), its codec (`canonical-codec.ts`),
+their three test files, the in-memory harness (`canonical-web/memory-folder.ts`),
+and its gate controls (`canonical-web/harness.ts`) were deleted. No second
+engine remains in this directory. References to those files in waves 5 and 6
+above describe what existed then.
+
+The three framework callers now run over a real folder. `canonical-web/main.tsx`
+opens `so.epicenter.evidence.canonical-editor` with `openFolder` from
+`@epicenter/folder/browser`, so it uses whatever default storage that opener
+chooses and shows the reported `folder.location`. Files persist across reloads
+and other tabs of the origin hear saves. Loading seeds only a folder with no
+todo rows, so a removed example row is not resurrected. It makes one exclusive
+`files.create` per seed row and leaves an occupied path as it is. Opening never
+writes. Reset is an explicit, confirmed workflow for this disposable folder: one
+`files.overwrite` per seed row, then a conditional `files.remove` of
+`todos/gone.md`. It stops at the first failure, keeps and logs the writes before
+it, and names the failing path. It does not promise that replaced text survives;
+automatic commits are best effort, and the page lists what history recorded. The raw
+file panel writes through `folder.files`, replacing the simulated "another
+program". Held, lost, and throwing replies and slow reads are no longer on the
+page: a real browser folder does not produce them on demand, and
+`src/editor.test.ts` covers them with a storage fake. The vanilla, Solid, and
+Svelte callers kept their code; only their shared types changed to the
+production names.
+
+Verification for this wave: the demo's `svelte-check`, the folder package
+`tsc`, and the Vite build pass. Browser acceptance of the persisted page is the
+integrating reviewer's to record; none is claimed here.
+
 ## Earlier guarded-demo limits
 
 The native folder's hash check is best effort against outside writers. The

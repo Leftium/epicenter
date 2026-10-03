@@ -31,7 +31,7 @@ import {
 	parseTree,
 } from 'jsonc-parser';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { FolderStorage } from './boundary.js';
+import type { FolderStorage, Submission } from './boundary.js';
 import { hashBytes } from './capture.js';
 import {
 	describe,
@@ -48,6 +48,7 @@ import {
 	type ParseError,
 	parseError,
 } from './reading.js';
+import { applyOne, reserveSubmission } from './storage.js';
 
 export const KV_PATH = 'kv.json';
 
@@ -371,8 +372,10 @@ export function createKv<TValues>(
 	 * Publish once and return the snapshot of the submitted source; nothing is
 	 * read back. The source is well-formed text, built from JSON this module
 	 * serialized and from decoded UTF-8, so it is exactly the text of its bytes.
+	 * `submission` is the place the public method reserved when it was entered.
 	 */
 	async function publish(
+		submission: Submission,
 		source: string,
 		condition: { kind: 'create' } | { kind: 'replace'; expectedSha256: string },
 	): Promise<Result<KvSnapshot<TValues>, KvWriteError>> {
@@ -380,9 +383,11 @@ export function createKv<TValues>(
 		const sha256 = await hashBytes(bytes);
 		// Interpret before publication; returning the receipt needs no further validation.
 		const receipt = snapshotOf(source, sha256);
-		const applied = await storage.apply([
+		const applied = await applyOne(
+			storage,
 			{ ...condition, path: KV_PATH, bytes, sha256 },
-		]);
+			submission,
+		);
 		if (applied.error) return Err(applied.error);
 		return Ok(receipt);
 	}
@@ -399,16 +404,18 @@ export function createKv<TValues>(
 			return Ok(snapshotOf(source, read.data.sha256));
 		},
 		async create(values) {
+			const submission = reserveSubmission();
 			const owned = ownValues(schemas, values as Record<string, unknown>);
 			if (owned.error) return owned;
 			const object = Object.fromEntries(
 				[...owned.data].map(([key, json]) => [key, JSON.parse(json)]),
 			);
-			return publish(`${JSON.stringify(object, null, 2)}\n`, {
+			return publish(submission, `${JSON.stringify(object, null, 2)}\n`, {
 				kind: 'create',
 			});
 		},
 		async update(values) {
+			const submission = reserveSubmission();
 			const owned = ownValues(schemas, values as Record<string, unknown>);
 			if (owned.error) return owned;
 			const read = await storage.read(KV_PATH);
@@ -418,7 +425,7 @@ export function createKv<TValues>(
 				return TableError.InvalidUtf8({ path: KV_PATH });
 			const patched = assignKeys(source, owned.data);
 			if (patched.error) return patched;
-			return publish(patched.data, {
+			return publish(submission, patched.data, {
 				kind: 'replace',
 				expectedSha256: read.data.sha256,
 			});

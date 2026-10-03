@@ -48,7 +48,6 @@ import {
 } from './git-http.test-support.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.incomingtest',
 	kv: {},
 	tables: {},
 });
@@ -171,6 +170,7 @@ async function incoming(kind: 'browser' | 'directory') {
 		const environment = { indexedDB: new IDBFactory(), IDBKeyRange };
 		folder = expectOk(
 			await openBrowserFolder({
+				id: 'so.epicenter.incomingtest',
 				definition,
 				browser: {
 					author,

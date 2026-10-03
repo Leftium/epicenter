@@ -15,9 +15,8 @@
  * - A write nobody published through this handle, and `noteEdit` alone, make
  *   no attempt
  * - A failed attempt records the error, keeps the files, and is not retried
- * - `commit()` is local; an attempt pushes only when the branch is ahead and
- *   no push is running; a caller that stopped waiting on `commitAndPush`
- *   starts no push later
+ * - Automatic commits and `commit()` stay local; a caller that stopped waiting
+ *   on `commitAndPush` starts no push later
  * - Closing refuses a request still waiting for the protection without moving
  *   the branch, waits for work already inside it, and makes no last commit
  * - Two tabs, real Git locks, and many callers leave a branch that only ever
@@ -25,7 +24,7 @@
  *
  * See also:
  * - `history-ordering.test.ts` for capture ordering inside the Git lock
- * - `batch.test.ts` and `browser.test.ts` for partial and refused saves
+ * - `native-safety.test.ts` and `browser.test.ts` for partial and refused saves
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFile, rm, writeFile } from 'node:fs/promises';
@@ -54,7 +53,6 @@ const author = { name: 'History', email: 'history@example.test' };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const definition = defineFolder({
-	id: 'so.epicenter.attempt',
 	kv: { theme: field.string() },
 	tables: {},
 });
@@ -270,8 +268,9 @@ test('a published save makes one attempt that commits the folder with a subject 
 		changedPaths: 1,
 	});
 	expect(await committed()).toEqual({ 'a.txt': 'one' });
-	// The branch was ahead and no push was running, so one push went out.
-	expect(probe.pushes).toBe(1);
+	// A configured remote never makes a save upload.
+	expect(probe.pushes).toBe(0);
+	expect(history.snapshot.lastPush).toBeUndefined();
 
 	// Nothing else happens until the next save.
 	await Bun.sleep(30);
@@ -485,8 +484,8 @@ test('an explicit commit during a held attempt waits and captures a save made wh
 		'b.txt': 'while waiting',
 	});
 	await until(() => !history.snapshot.activity.push.active);
-	// Only the save's attempt tried to push; the explicit commit stayed local.
-	expect(probe.pushes).toBe(1);
+	// Both the automatic attempt and the explicit commit stayed local.
+	expect(probe.pushes).toBe(0);
 	await history.close();
 	db.close();
 });
@@ -495,7 +494,7 @@ test('an explicit commit during a held attempt waits and captures a save made wh
 // Pushing
 // ============================================================================
 
-test("a failed push is not owed; the next save's attempt pushes because the branch is ahead", async () => {
+test('a failed explicit push is not retried by a save; another explicit push uploads the new history', async () => {
 	const { db, history, probe, save, idle } = await tab(
 		freshEnvironment(),
 		'push-again',
@@ -503,6 +502,8 @@ test("a failed push is not owed; the next save's attempt pushes because the bran
 	probe.offline = true;
 	await save('a.txt', 'one');
 	await idle();
+	expect(probe.pushes).toBe(0);
+	expect((await history.push()).status).toBe('failed');
 	expect(history.snapshot.lastPush?.status).toBe('failed');
 	expect(probe.pushes).toBe(1);
 
@@ -513,6 +514,9 @@ test("a failed push is not owed; the next save's attempt pushes because the bran
 	probe.offline = false;
 	await save('a.txt', 'two');
 	await idle();
+	expect(history.snapshot.lastPush?.status).toBe('failed');
+	expect(probe.pushes).toBe(1);
+	expect((await history.push()).status).toBe('pushed');
 	expect(history.snapshot.lastPush?.status).toBe('pushed');
 	expect(probe.pushes).toBe(2);
 	const sync = history.snapshot.sync;

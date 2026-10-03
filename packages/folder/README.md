@@ -8,14 +8,13 @@ behind it. The package does not depend on `@epicenter/app`.
 import { defineFolder, defineTable, field, openFolder } from '@epicenter/folder';
 
 const definition = defineFolder({
-  id: 'so.epicenter.todos',
   kv: { theme: field.string() },
   tables: {
     todos: defineTable({ fields: { title: field.string(), done: field.boolean() } }),
   },
 });
 
-const opened = await openFolder({ definition });
+const opened = await openFolder({ id: 'so.epicenter.todos', definition });
 if (opened.error) return show(opened.error.message);
 const folder = opened.data;
 
@@ -35,28 +34,31 @@ Reverse-DNS names provide a shared convention for compatible tools. A name such
 as `so.epicenter.todos.work` denotes another dataset in a literal sibling
 directory; dots do not create nested directories or inherited permissions.
 
-A definition describes how this tool reads and edits the folder's files.
-Its required `id` supplies a convenient default folder ID. It is not a schema
-fingerprint or an exclusive claim by an application. Different tools can use
-different definitions to interpret the same files. Compatible field meanings
-still matter when those tools write to the same dataset.
+A definition describes how this tool reads and edits the folder's files. It
+names no folder: `defineFolder` refuses an `id`, at the type and when it runs.
+Different tools can use different definitions to interpret the same files.
+Compatible field meanings still matter when those tools write to the same
+dataset.
 
 ```ts
-const personal = await openFolder({ definition });
-const work = await openFolder({ definition, id: 'so.epicenter.todos.work' });
+const personal = await openFolder({ id: 'so.epicenter.todos', definition });
+const work = await openFolder({ id: 'so.epicenter.todos.work', definition });
 ```
 
-Both openings use the same interpretation at different addresses. Supplying
-`id` at opening keeps dataset selection separate from the reusable definition.
-An application can open several datasets, and several compatible applications
-can reach the same dataset. Its app ID and private SQLite namespace are separate
-choices even when they use the same default string.
+Both openings use the same prepared definition at different addresses. The
+browser and desktop openers require `id`, and refuse a missing one before they
+acquire anything. An application keeps its usual folder ID beside the code
+that opens it, not in the definition. An application can open several
+datasets, and several compatible applications can reach the same dataset. Its
+app ID and private SQLite namespace are separate choices even when they use the
+same string.
 
 The complete managed address includes the channel, owner, and folder ID.
 Browser storage also belongs to one origin. Opening captures the address for
 the handle's lifetime; signing in later does not move its data or retarget its
 writes. Browser callers select `browser.scope`; a native shell registers the
-selected directory. The Bun opener instead receives an explicit directory.
+selected directory. The Bun opener instead receives an explicit directory and
+no folder ID.
 The managed native layout is described in
 [ADR-0461](../../docs/adr/0461-portable-data-folders-live-under-local-and-derived-account-scopes.md).
 
@@ -75,8 +77,8 @@ nothing. On a server, opening returns a refusal.
 
 ```ts
 openFolder({
+  id,        // required: which folder, such as 'so.epicenter.todos'. Never a path.
   definition,
-  id,        // optional: which folder. Defaults to definition.id. Never a path.
   browser,   // optional: { scope, author, remote, commitOnEdit, indexedDb }
 }): Promise<Result<Folder, OpenFolderError>>
 ```
@@ -91,6 +93,7 @@ Browser storage ownership can be supplied explicitly:
 
 ```ts
 openFolder({
+  id,
   definition,
   browser: { scope: { channel: 'development' } },
 });
@@ -156,7 +159,7 @@ is not the desktop adapter, and it does not watch the directory.
 
 | Member | Contract |
 | --- | --- |
-| `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact `source`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `inspect(source)` interprets text without reading anything. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a text capture. They refuse if the file changed. Each changes exactly one Markdown file. See [Reading a row](#reading-a-row). |
+| `tables.<name>` | Rows at `<name>/<stem>.md`. A snapshot is the captured file: its path, literal `stem`, exact `source`, and `sha256`, beside how that text reads: `fields`, `body`, `parseError`, and `issues`. `get(stem)` returns `undefined` only for absence. `list()` returns one `{ path, result }` for every row file. `inspect(source)` interprets text without reading anything. `create` is exclusive. `update(stem, change)` reads current source once and conditionally publishes without retry. `replace` and `delete` take a file capture; `rename` takes a text capture. They refuse if the file changed. Each changes exactly one Markdown file. `edit(stem, { signal })` opens a retained canonical editor whose `save()` overwrites the complete row. See [Reading a row](#reading-a-row) and [Editing a row](#editing-a-row). |
 | `kv` | Root `kv.json`, a sparse map of declared values. A snapshot is a text capture: `path`, exact `source`, and `sha256`, beside the stored `values` that validated, `parseError`, and `issues`. `get()` returns `undefined` only for absence; readable text that is not a JSON object is a snapshot with a `parseError`. `inspect(source)` interprets text without reading anything. `create(values)` saves a new file from the supplied values and refuses with `Exists` when one is there. `update(values)` reads current source once, assigns the supplied keys, and conditionally publishes without retry; a missing file is `NotFound`. An update changes only the values it assigns: unknown keys, number spellings, and formatting stay exact. See [Reading and saving kv.json](#reading-and-saving-kvjson). |
 | `files` | Ordinary files at literal paths. See below. |
 | `batch(collect)` | Several mutations in one application with one history request. See below. |
@@ -389,6 +392,112 @@ for code that presents any save failure alike.
 buffer. `patchSource` has the same refusals as `update`, as `unparsed`,
 `value`, and `unsafe`; it checks no table fields.
 
+### Editing a row
+
+`tables.<name>.edit(stem, { signal })` opens a retained editor on one row. The
+table supplies the row's path, schema, and declared field order. The editor
+holds a local draft, the baseline it compares the draft against, and the latest
+read. Its `save()` writes the complete draft in one canonical form, whatever
+the file holds.
+
+```ts
+const { data: editor, error } = await folder.tables.todos.edit(stem, { signal });
+if (error !== null) {
+  switch (error.name) {
+    case 'Aborted':
+      return;                                  // nothing stays subscribed
+    case 'NotFound':
+      return showMissing(error.path);
+    case 'NoCanonicalForm':
+    case 'InvalidSource':
+      return showRepair(error.file);           // exact text and SHA-256 for raw repair
+    default:
+      return showUnreadable(error);
+  }
+}
+const { get, subscribe, change, save, refresh, adopt, dispose } = editor;
+
+const stop = subscribe((state) => render(state)); // the current state now, then changes
+change({ fields: { title: 'Plan B', priority: undefined } }); // `undefined` removes a field
+const { data: receipt, error: saveError } = await save();
+```
+
+Every method closes over the editor and never reads `this`, so destructured
+methods behave like `editor.save()`. One form owns the editor and shares it
+among its views; each view subscribes on its own and stops with its own
+function. Only `dispose()` stops watching.
+
+```text
+state
+|-- baseline: RowRevision     what isDirty compares against
+|-- document, source          local fields and body; source is the canonical text save writes
+|-- reading                   inspect(source): issues make save refuse
+|-- isDirty                   source differs from baseline.canonical
+|-- observation               latest read: present | missing | unreadable | unsupported | invalid
+|-- saving: RowSaveAttempt    captured document while a save is admitted
+|-- lastSave                  saved{receipt} | unconfirmed{attempt} | failed{attempt}
+`-- isDisposed
+
+RowRevision    = { path, sha256, source (exact text), document, canonical }
+RowSaveAttempt = { path, document, source (canonical text sent) }    no hash: not a capture
+```
+
+- Opening. `edit` subscribes to `onFilesChanged` before its single read, so
+  a change during opening becomes a reread. It opens only a file that has a
+  canonical form and whose declared fields conform. `NoCanonicalForm` (a
+  custom tag, a timestamp, an unsafe integer) and `InvalidSource` carry the
+  exact text. `signal` governs opening only.
+- Canonical form. Declared keys come first in declared order, other keys in
+  code unit order, every key quoted and every value in JSON flow style. Unknown
+  keys and nested values are kept; comments, quoting, and header line endings
+  are not. The body is kept byte for byte. Opening a differently formatted
+  file is clean, so opening writes nothing.
+- Local input. `change` names declared fields only, so a misspelled or unknown
+  key does not compile. Values are any canonical value, because a draft must
+  hold what the schema rejects; `reading` shows the issues and `save` refuses
+  with `InvalidDocument`, writing nothing. A value with no canonical form,
+  such as `NaN`, is refused as `Unrepresentable`. Editing unknown metadata or
+  text with no canonical form is a raw repair through `files.overwrite` or
+  `table.replace`.
+- Saves. One save is admitted at a time and captures the draft when `save()`
+  is called. It is one `overwrite` of the row's path, with no baseline
+  condition: a write by another program that lands first is replaced. Input
+  during a save stays dirty against the receipt. A clean draft is saved too;
+  an autosave that only wants unsaved work checks `isDirty` itself. Nothing
+  retries or queues. Storage that throws is a bug: the save is released,
+  nothing is recorded, and the throw reaches `save()` and `dispose()`.
+- Reads. Hints for the row's path request a reread; `refresh()` requests one
+  explicitly. A clean editor follows a valid read. A read never resets dirty
+  input, and a missing, unreadable, unsupported, or invalid read only updates
+  `observation`. A read that started before a save settled is dropped and run
+  again, so an older read cannot revert a receipt.
+- Unknown outcomes. `Unconfirmed` stays in `lastSave`. A later read whose
+  canonical content equals the draft makes `isDirty` false, because the file
+  holds that content, but never upgrades `lastSave`: the read cannot say
+  which writer put it there.
+- Review. `adopt(reviewed)` takes the latest read's content in place of the
+  draft while its canonical text is still the reviewed one; it reads only
+  `path` and `canonical` from what it is given. Different content is `Stale`
+  with the newer observation. "Keep mine" is `save()`.
+- Subscription. A listener gets the current state at once, then each change.
+  Delivery is never reentrant, and reentrant changes may coalesce: this is a
+  current-state subscription, not an event log. What a listener throws is
+  logged and reaches no operation or other listener.
+- Disposal. `dispose()` stops watching and refuses input, reads, saves, and
+  adoptions. An admitted save still settles into `lastSave`, and the returned
+  promise settles after it. Repeated calls return the same promise. Closing
+  the folder does not dispose an editor: its reads observe `Closed`, and a
+  save fails with `Closed` and keeps the draft.
+
+`table.update` and `table.replace` keep their own conditional,
+source-preserving contracts; the editor is a separate save shape for forms
+that own a complete draft. `TableEditError` is the opening error union;
+`RowChangeError`, `RowSaveError`, and `RowAdoptError` are the editor's.
+
+`bun packages/folder/evidence/edit-handle/canonical-dev.ts` serves a page
+where vanilla DOM, Solid, and Svelte 5 views share one editor over a
+persisted browser folder; see `evidence/edit-handle/canonical-callers.md`.
+
 ### Reading and saving kv.json
 
 `kv` is one fixed root file holding a sparse map of declared values. It uses
@@ -525,7 +634,9 @@ The application chooses its local buffer, save trigger, and response to incoming
 content independently. A checkbox can submit immediately and display confirmed
 data until success. A title input can bind to local state and save on blur,
 debounce, or an explicit action. A document can keep a complete-source buffer.
-The folder requires no timer, UI binding, or shared editor controller.
+The folder requires no timer, UI binding, or shared editor controller. A form
+that owns a complete draft of one row can use `table.edit`, which retains the
+draft and saves it unconditionally; see [Editing a row](#editing-a-row).
 
 An application may replace local input whenever it reads external content,
 refresh only while clean, or keep its local draft. Following external content
@@ -641,9 +752,14 @@ Edits made by another program or tab, and saves that stopped partway, make no
 attempt. `git.snapshot.files` turns `stale` when a save lands after the last
 capture, and `git.status()` lists what is uncommitted.
 
-After an attempt that ran, a push is attempted if a remote exists, the branch
-is ahead of it, and no push is running; a push that does not start or fails is
-not owed. `commit()` stays local. `commitAndPush()` commits and then pushes;
+The browser and Bun openers use local `main`. A remote branch selects the
+transfer destination; it never selects another local history. An existing
+repository with `HEAD` on another branch refuses commits and incoming
+adoption until its branch is deliberately reconciled.
+
+Automatic commits and `commit()` stay local, even with a configured remote.
+Only explicit `push()` or `commitAndPush()` requests upload history.
+`commitAndPush()` commits and then pushes;
 a caller `signal` only stops that caller waiting, and a caller that stopped
 during the commit starts no push. An explicit request waits for the folder's
 Git work and then reads the folder, so it includes saves made while it
@@ -687,6 +803,10 @@ commit because a page closed or the app quit: a save whose attempt was skipped
 stays uncommitted there too.
 
 ### Incoming changes
+
+Browser fetch uses isomorphic-git 1.38.5, which fails when a non-default
+remote branch exists but the server advertises no resolvable `HEAD`. This
+failure leaves local files and history intact.
 
 `fetch()` records the remote head. `pullFastForward()` applies it only when
 the whole folder, including staged changes, is clean and the update is a
@@ -762,6 +882,12 @@ helpers build common ones. A folder refuses a table that declares a body
 conversion, because a row's body is the file's Markdown text. An opener given
 such a definition returns `InvalidDefinition` before it acquires anything.
 
+A definition is `{ title?, kv, tables }` and nothing else. `defineFolder`
+throws on an `id`; an opener given an untyped definition with one returns
+`InvalidDefinition`. Its type is `FolderDefinition`, the identity-free
+`DataSchema` of `@epicenter/definition`, prepared with `prepareSchema`. A store
+definition keeps its required `id` and its own `prepareData`.
+
 `defineFolder` returns the prepared definition. It has the shape and type of
 what was declared: `kv` and each table's `fields` are records of native
 schemas, and a table's key is its name. Each schema is an owned, frozen
@@ -783,6 +909,7 @@ dangle.
 | `src/index.ts`, `browser.ts`, `tauri.ts`, `bun.ts` | The entries. |
 | `src/browser-adapter.ts`, `tauri-adapter.ts` | The adapters the automatic entry loads lazily. |
 | `src/folder.ts`, `table.ts`, `kv.ts`, `batch.ts`, `markdown.ts` | The handle and its interpretation of files, shared by every adapter. |
+| `src/editor.ts`, `canonical.ts` | The row editor `table.edit` opens, and the canonical document codec it holds and saves. |
 | `src/reading.ts` | The diagnostics a table and KV reading share: `ParseError`, `FieldIssue`, `DeepReadonly`, and the ownership every checked value has: parsed values frozen and supplied values copied before a field sees them. |
 | `src/browser-store.ts`, `git/browser-*.ts` | IndexedDB storage and isomorphic-git. |
 | `src/native-store.ts`, `git/native-*.ts` | The directory entry's files and `git` program. "Native" here means an ordinary directory in Bun, not the desktop shell. |
@@ -816,7 +943,7 @@ write that skips history or change hints.
 
 ```ts
 createFiles({ storage })
-createTable({ storage }, name, definition.tables[name].fields)
+createTable({ storage, onFilesChanged }, name, definition.tables[name].fields)
 createKv({ storage }, definition.kv)
 createTerminal({ storage, git }, options)
 ```

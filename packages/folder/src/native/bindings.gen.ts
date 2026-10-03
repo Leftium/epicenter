@@ -25,8 +25,18 @@ export const commands = {
 	 *  Publish ordered changes. Where the folder commits on edit, a complete
 	 *  batch makes one automatic commit attempt, which is skipped if the folder
 	 *  is busy.
+	 *
+	 *  `submission` is the batch's number in its page. The page numbers its saves
+	 *  from 1, once for all its handles and roots, in the order it asks for them,
+	 *  and never reuses a number. The page's saves to one root are ordered by
+	 *  those numbers, through whichever of its sessions they arrive. A delivery
+	 *  that reaches the folder after a save of the page numbered at or after it
+	 *  landed on one of its paths is refused as `Superseded` and writes nothing.
+	 *  That covers a stale save and a second delivery of one whose first landed,
+	 *  and does not tell them apart: whether the save landed is unknown. Other
+	 *  pages' and windows' saves are not ordered against it.
 	 */
-	apply: (session: number, changes: FileChange[]) => typedError<null, ApplyError>(__TAURI_INVOKE("plugin:epicenter-folder|apply", { session, changes })),
+	apply: (session: number, submission: number, changes: FileChange[]) => typedError<null, ApplyError>(__TAURI_INVOKE("plugin:epicenter-folder|apply", { session, submission, changes })),
 	mkdir: (session: number, path: string) => typedError<null, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|mkdir", { session, path })),
 	rmdir: (session: number, path: string) => typedError<null, FileError>(__TAURI_INVOKE("plugin:epicenter-folder|rmdir", { session, path })),
 	status: (session: number) => typedError<FilesObservation, GitError>(__TAURI_INVOKE("plugin:epicenter-folder|status", { session })),
@@ -71,7 +81,7 @@ export const events = {
 };
 
 /* Constants */
-export const FOLDER_PROTOCOL = 3 as const;
+export const FOLDER_PROTOCOL = 4 as const;
 
 /* Types */
 export type Activities = {
@@ -201,6 +211,14 @@ export type FileError = { name: "InvalidPath"; path: string; reason: string } | 
  *  replace target has no `actual_sha256`.
  */
 { name: "Conflict"; path: string; expectedSha256: string; actualSha256: string | null } | { name: "NotAFile"; path: string } | { name: "NotADirectory"; path: string } | { name: "DirectoryNotEmpty"; path: string } | { name: "Io"; path: string; operation: string; cause: string } | { name: "Closed" } |
+/**
+ *  A save its writer numbered at or after this one already landed on this
+ *  path, so this delivery was refused before writing anything: landing
+ *  now could put back bytes the writer had already replaced. That is all
+ *  it says. Another delivery of this same save may have landed earlier,
+ *  so whether the save itself landed is unknown.
+ */
+{ name: "Superseded"; path: string } |
 /**
  *  The operation started and its outcome is unknown: it may have reached
  *  the folder. Look before trying again.

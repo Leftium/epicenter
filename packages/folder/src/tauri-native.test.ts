@@ -20,6 +20,9 @@
  *   commits a save on its own when the folder is free
  * - A page built for the previous protocol is refused at attach
  * - Two windows saving over one version: one lands, one conflicts
+ * - A save the shell receives after a later save of its page landed on the
+ *   same path writes nothing and is `Unconfirmed`, whether it was late in
+ *   transit or still hashing, and through any handle of the page
  * - A row another window changed after a table's directory read is still an
  *   exact-sha256 conflict
  * - A terminal command holds nothing: another window saves, and runs a whole
@@ -38,7 +41,7 @@
  * - `tauri.test.ts` for what the adapter decides on its own
  * - `native-best-effort.test.ts` for what file-backed tables do not promise
  */
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync } from 'node:fs';
 import { realpath, rm, writeFile } from 'node:fs/promises';
@@ -236,7 +239,6 @@ const { openFolder } = await import('./tauri.js');
 const { commands, FOLDER_PROTOCOL } = await import('./native/bindings.gen.js');
 
 const definition = defineFolder({
-	id: 'so.epicenter.taurinativetest',
 	kv: { theme: field.string() },
 	tables: {
 		todos: defineTable({
@@ -439,18 +441,12 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		const unknown = expectErr(
 			await a(() => openFolder({ id: 'elsewhere', definition })),
 		);
-		// The definition's own ID names no folder this shell registered.
-		const byDefinition = expectErr(await a(() => openFolder({ definition })));
 		const folder = expectOk(
 			await a(() => openFolder({ id: 'notes', definition })),
 		);
 
 		expect(intruder.name).toBe('WindowNotPermitted');
-		expect(unknown.name).toBe('UnknownScope');
-		expect(byDefinition).toMatchObject({
-			name: 'UnknownScope',
-			scope: 'so.epicenter.taurinativetest',
-		});
+		expect(unknown).toMatchObject({ name: 'UnknownScope', scope: 'elsewhere' });
 		expect(folder.location).toEqual({ kind: 'directory', root });
 		expect(folder.git.snapshot.branch).toBe('main');
 		expect(folder.git.snapshot.activity.commit).toEqual({ active: false });
@@ -464,44 +460,37 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		});
 	});
 
-	test('a batch of audio and its row is one publication the owner commits once, and the snapshot says so', async () => {
+	test('audio and its row are two saves the owner commits on its own, and each capture is what it reads back', async () => {
 		const { folder, todos, root, settled } = await setup();
 		const statuses: (string | undefined)[] = [];
 		folder.git.subscribe((snapshot) =>
 			statuses.push(snapshot.lastCommit?.status),
 		);
 
-		const receipt = expectOk(
-			await a(() =>
-				folder.batch((batch) => {
-					batch.files.create('todos/take.png', IMAGE);
-					batch.tables.todos.create(row('take'));
-				}),
-			),
+		// Settling between them keeps the second automatic attempt from finding
+		// the first still running.
+		const image = expectOk(
+			await a(() => folder.files.create('todos/take.png', IMAGE)),
 		);
 		await settled();
+		const created = expectOk(await a(() => todos.create(row('take'))));
+		await settled();
 
-		expect(receipt.steps.map((step) => step.kind)).toEqual(['write', 'write']);
-		expect(await git(root, 'log', '--format=%s')).toBe('Update 2 files');
+		expect(await git(root, 'log', '--format=%s')).toBe(
+			'Add todos/take.md\nAdd todos/take.png',
+		);
 		expect(await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).toBe(
 			'todos/take.md\ntodos/take.png',
 		);
 		expect(statuses.at(-1)).toBe('committed');
 		expect(folder.git.snapshot.commitOnEdit).toBe(true);
 		expect(expectOk(await a(() => folder.git.status())).changes).toEqual([]);
-		// The receipt's captures are the versions the owner now reads back.
+		// Each save's capture is the version the owner now reads back.
 		const reread = expectOk(await a(() => todos.get('take')));
-		const rowStep = receipt.steps[1];
 		if (reread === undefined) throw new Error('the row is missing');
-		expect(rowStep?.kind === 'write' && rowStep.file).toEqual({
-			path: 'todos/take.md',
-			sha256: reread.sha256,
-		});
-		const image = expectOk(await a(() => folder.files.read('todos/take.png')));
-		const imageStep = receipt.steps[0];
-		expect(imageStep?.kind === 'write' && imageStep.file.sha256).toEqual(
-			image.sha256,
-		);
+		expect(reread.sha256).toEqual(created.sha256);
+		const read = expectOk(await a(() => folder.files.read('todos/take.png')));
+		expect(read.sha256).toEqual(image.sha256);
 		expect(image.sha256).toEqual(await hashBytes(IMAGE));
 
 		// Deleting the row leaves the image: the owner removes one file.
@@ -807,6 +796,106 @@ describe.skipIf(!enabled)('tauri folder against the native owner', () => {
 		expectOk(await saving);
 		const current = expectOk(await b(() => other.files.read('late-reply.txt')));
 		expect(decoder.decode(current.bytes)).toBe('landed');
+	});
+
+	test('a save the shell receives after its session saved again is refused and writes nothing', async () => {
+		const { folder, other } = await setup({ manual: true });
+		const reached = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		// Save 1 is numbered and held before Rust receives it.
+		active().beforeApply = async () => {
+			reached.resolve();
+			await release.promise;
+		};
+		const earlier = a(() => folder.files.overwrite('order.md', 'earlier'));
+		await reached.promise;
+		// Save 2 reaches the owner first and lands. The owner refuses save 1's
+		// delivery; it cannot tell a stale save from a repeated one, so the
+		// page reports it unconfirmed.
+		expectOk(await a(() => folder.files.overwrite('order.md', 'later')));
+		release.resolve();
+		expect(expectErr(await earlier)).toMatchObject({
+			name: 'Unconfirmed',
+			path: 'order.md',
+		});
+		const current = expectOk(await b(() => other.files.read('order.md')));
+		expect(decoder.decode(current.bytes)).toBe('later');
+	});
+
+	/** Hold the next SHA-256 digest until released, where a slow hash leaves a save. */
+	function holdNextDigest() {
+		const digest = crypto.subtle.digest.bind(crypto.subtle);
+		const reached = Promise.withResolvers<void>();
+		const released = Promise.withResolvers<void>();
+		let holding = true;
+		const spy = spyOn(crypto.subtle, 'digest').mockImplementation(
+			async (algorithm, data) => {
+				if (holding) {
+					holding = false;
+					reached.resolve();
+					await released.promise;
+				}
+				return digest(algorithm, data);
+			},
+		);
+		return {
+			reached: reached.promise,
+			release() {
+				released.resolve();
+				spy.mockRestore();
+			},
+		};
+	}
+
+	test('a save still hashing when a later save of the page lands is refused, through one handle or two', async () => {
+		const { folder, other } = await setup({ manual: true });
+		const second = await a(async () =>
+			expectOk(await openFolder({ id: 'notes', definition })),
+		);
+		for (const [label, later] of [
+			['one handle', folder],
+			['two handles', second],
+		] as const) {
+			const path = `hashing-${label.replace(' ', '-')}.md`;
+			const digest = holdNextDigest();
+			const earlier = a(() => folder.files.overwrite(path, 'earlier'));
+			await digest.reached;
+			expectOk(await a(() => later.files.overwrite(path, 'later')));
+			digest.release();
+			expect(expectErr(await earlier)).toMatchObject({
+				name: 'Unconfirmed',
+				path,
+			});
+			const current = expectOk(await b(() => other.files.read(path)));
+			expect(decoder.decode(current.bytes)).toBe('later');
+		}
+		await a(() => second.close());
+	});
+
+	test("a row editor's save still hashing when a raw save lands is refused, and the raw save stays", async () => {
+		const { folder, other } = await setup({ manual: true });
+		const created = expectOk(
+			await a(() =>
+				folder.tables.todos.create({
+					stem: 'plan',
+					fields: { title: 'Plan', done: false },
+				}),
+			),
+		);
+		const editor = expectOk(
+			await a(() => folder.tables.todos.edit(created.stem)),
+		);
+		const digest = holdNextDigest();
+		const saving = a(() => editor.save());
+		await digest.reached;
+		expectOk(await a(() => folder.files.overwrite(created.path, 'raw')));
+		digest.release();
+		expect(expectErr(await saving).name).toBe('Unconfirmed');
+		// The editor keeps the save as unknown, never as failed or saved.
+		expect(editor.get().lastSave?.kind).toBe('unconfirmed');
+		const current = expectOk(await b(() => other.files.read(created.path)));
+		expect(decoder.decode(current.bytes)).toBe('raw');
+		await a(() => editor.dispose());
 	});
 
 	test('an apply delivered after detach returns the owner refusal without writing or replay', async () => {

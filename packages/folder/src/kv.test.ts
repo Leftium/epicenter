@@ -43,7 +43,6 @@ import { createFiles } from './files.js';
 import { createKv, type KvSnapshot } from './kv.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.kvtest',
 	kv: {
 		theme: field.string(),
 		size: field.number(),
@@ -197,7 +196,6 @@ test.each([
 test('a stored value is reported where it fails, and a repeated root key reads as its last value', async () => {
 	const { kv } = await setup();
 	const nested = defineFolder({
-		id: 'so.epicenter.kvnested',
 		kv: {
 			window: {
 				type: 'object',
@@ -247,7 +245,6 @@ const refined = <TSchema extends object>(
 ) => ({ ...schema, '~refine': [{ refine, message: 'refused' }] });
 
 const refining = defineFolder({
-	id: 'so.epicenter.kvrefined',
 	kv: {
 		theme: { type: 'string' },
 		// A refinement may freeze the value it is shown, and only that value.
@@ -398,7 +395,6 @@ test('a receipt is prepared before publication: an interpreter that fails leaves
 
 test('declared keys that every object inherits are read only when the file has them', async () => {
 	const inherited = defineFolder({
-		id: 'so.epicenter.kvinherited',
 		kv: { constructor: field.string(), toString: field.string() },
 		tables: {},
 	});
@@ -475,7 +471,6 @@ test('create is refused as Exists when another writer made the file first', asyn
 
 test('a reference and an unannotated schema are kv fields, and an identifier may dangle', async () => {
 	const references = defineFolder({
-		id: 'so.epicenter.kvreferences',
 		kv: {
 			home: field.nullable(field.reference('pages')),
 			// A native schema with no editor hint.

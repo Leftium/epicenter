@@ -17,7 +17,6 @@ import { createNativeFileBoundary } from './native-store.js';
 import { createTerminal } from './terminal.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.terminaltest',
 	kv: {},
 	tables: {},
 });

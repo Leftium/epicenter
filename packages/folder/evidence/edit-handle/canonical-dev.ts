@@ -1,12 +1,12 @@
 /**
- * EXPERIMENT launcher for the canonical editor callers page. From the
- * repository root:
+ * Launcher for the row editor callers page. From the repository root:
  *
  *     bun packages/folder/evidence/edit-handle/canonical-dev.ts
  *
  * It serves `canonical-web/` with Vite on port 5181 (or `PORT`). There is no
- * server folder: the page runs the editor over an in-memory harness folder,
- * so nothing outside the browser tab is read or written.
+ * server folder: the page opens the persisted demo folder in the browser's
+ * own storage with the production browser opener. The folder belongs to the
+ * page's origin, so keep the same host and port to see the same files.
  */
 import { join } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';

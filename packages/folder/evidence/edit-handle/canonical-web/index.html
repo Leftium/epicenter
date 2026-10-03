@@ -3,23 +3,70 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<title>Canonical editor callers</title>
+		<title>Row editor callers</title>
 		<link rel="stylesheet" href="./style.css">
 	</head>
 	<body>
 		<header>
-			<h1>Canonical editor callers</h1>
+			<h1>Row editor callers</h1>
 			<p>
-				Experimental evidence, not a production API. One canonical editor for a
-				todo row, shared by a vanilla DOM view, a Solid view, and a Svelte 5
-				view. The editor's draft is the row's fields and body; a save writes the
-				whole row in canonical form.
+				One <code>folder.tables.todos.edit(stem)</code> editor for a todo row,
+				shared by a vanilla DOM view, a Solid view, and a Svelte 5 view. The
+				editor's draft is the row's fields and body; a save writes the whole row
+				in canonical form.
+			</p>
+			<p>
+				This is a real, persisted folder opened with the production browser
+				opener, in this browser's default storage:
+				<strong id="location">opening…</strong>
 			</p>
 			<p class="quiet">
-				The folder is an in-memory test harness in this page, not a persistent
-				backend. Its files disappear on reload or reset. "Another program" and
-				the reply gates simulate what a real folder can meet.
+				Loading writes nothing to a folder that already has todo rows, and
+				opening a row never rewrites it. Faults a browser folder does not
+				produce on demand, such as a held or lost save reply, are covered by
+				unit tests with fake storage (<code>src/editor.test.ts</code>), not by
+				this page.
 			</p>
+			<details open>
+				<summary>Journeys to try</summary>
+				<ol>
+					<li>
+						Type <code>A</code> as the title in any view. All three show it and
+						its issue; Save refuses and writes nothing. Type on to
+						<code>ABC</code>
+						and Save.
+					</li>
+					<li>
+						Reload this tab. The saved row reopens from the folder. An unsaved
+						draft lives only in the page and is gone.
+					</li>
+					<li>
+						Open this same address in a second tab. Save in one tab: a clean
+						editor in the other follows. Type in the other first, then save
+						here: it keeps its draft and offers "Take this version" or "Keep
+						mine: save".
+					</li>
+					<li>
+						With <code>plan</code> clean, press "Same values, reformatted": the
+						editor follows and stays clean. Save rewrites it canonically and
+						keeps <code>owner</code> and <code>labels</code>.
+					</li>
+					<li>
+						Unmount the three views, change the file, mount them again: they
+						show the same retained editor and its latest read.
+					</li>
+					<li>
+						Choose <code>tagged</code> or <code>urgent</code>: opening refuses
+						and shows the exact text. Fix it and overwrite; the row opens.
+						<code>gone</code>
+						starts from a new row.
+					</li>
+					<li>
+						"Remove file" keeps the draft and baseline; "Save my draft" writes
+						it back.
+					</li>
+				</ol>
+			</details>
 		</header>
 
 		<section>
@@ -49,15 +96,28 @@
 				<div id="status"></div>
 			</article>
 			<article>
-				<h2>Harness</h2>
-				<div id="harness" class="panel"></div>
+				<h2>Raw file, through <code>folder.files</code></h2>
+				<div id="raw" class="panel"></div>
 			</article>
 		</section>
 
-		<section>
+		<section class="columns two">
 			<article>
 				<h2>Events</h2>
 				<ol id="log" class="log"></ol>
+			</article>
+			<article>
+				<h2>Test workflow</h2>
+				<p class="quiet">
+					Reset is for this disposable demo folder only. It asks first, then
+					writes the seed rows back and removes <code>gone.md</code>, one file
+					at a time; the events log names each write and any path where it
+					stopped. Replaced text is not guaranteed to be kept: automatic commits
+					are best effort, and "Show recent commits" lists what history
+					recorded.
+				</p>
+				<div id="reset" class="row"></div>
+				<ol id="history" class="log"></ol>
 			</article>
 		</section>
 

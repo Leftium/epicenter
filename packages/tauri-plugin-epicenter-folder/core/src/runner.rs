@@ -9,8 +9,7 @@
 //! timer. A request made while a pass is active joins the single pending
 //! pass, which starts when the active one settles. The active pass may
 //! already have read its inputs, so a request never joins it. Coalescing
-//! bounds the backlog, not the pass frequency. An attempt starts a pass only
-//! on an idle runner and is otherwise forgotten.
+//! bounds the backlog, not the pass frequency.
 //!
 //! A pass is admitted when the worker takes it, under the runner's lock. Until
 //! then a caller that named a `Leaving` can withdraw, under the same lock, so
@@ -178,26 +177,6 @@ impl<T: Clone + Send + 'static> PassRunner<T> {
             })
             .expect("a folder worker thread starts");
         Self { shared, on_change }
-    }
-
-    /// Start a pass only if none is active or pending and closing has not
-    /// started. Nothing remembers an attempt that started none.
-    pub fn attempt(&self) {
-        {
-            let mut state = self.shared.lock();
-            if state.fenced || state.running.is_some() || state.queued.is_some() {
-                return;
-            }
-            let pass = state.next;
-            state.next += 1;
-            state.queued = Some(Queued {
-                pass,
-                callers: Vec::new(),
-                owed: true,
-            });
-        }
-        self.shared.changed.notify_all();
-        (self.on_change)();
     }
 
     fn identity(&self) -> usize {
@@ -583,33 +562,6 @@ mod tests {
         let (runner, _release, _runs) = held();
         let (other, _other_release, _other_runs) = held();
         other.request_and_wait(Some(&runner.leaving()));
-    }
-
-    #[test]
-    fn an_attempt_starts_a_pass_only_on_an_idle_runner_and_is_otherwise_forgotten() {
-        let (runner, release, runs) = held();
-        runner.attempt();
-        while !runner.active() {
-            std::thread::yield_now();
-        }
-        // The pass is held. An attempt made now starts nothing, now or later.
-        runner.attempt();
-        release.send(()).unwrap();
-        assert_eq!(runner.wait(1, None), "pass 1");
-        // The worker settles a pass and clears `running` under one lock, and
-        // only then takes a pending pass: one left behind would show here.
-        {
-            let state = runner.shared.lock();
-            assert!(state.running.is_none() && state.queued.is_none());
-        }
-        assert_eq!(runs.load(Ordering::SeqCst), 1);
-
-        runner.close(CloseMode::Drain);
-        runner.attempt();
-        assert!(
-            runner.shared.lock().queued.is_none(),
-            "closing fences attempts"
-        );
     }
 
     #[test]

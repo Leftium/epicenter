@@ -28,6 +28,18 @@
  * report that as an ordinary failure. Anything that could have changed files
  * or history reports `Unconfirmed` and is never retried here.
  *
+ * A page's saves keep the order the page asked for them in, even when they
+ * finish preparing, or reach the shell, in another order. Each save carries
+ * the number it reserved when its public method was entered (`storage.ts`),
+ * one sequence for every handle and root of the page. The shell orders a
+ * page's saves to one root by those numbers, whichever handle sent them: it
+ * refuses a delivery that arrives after a save numbered at or after it
+ * landed on one of its paths. That delivery wrote nothing, but it may be a
+ * stale save or a second delivery of one whose first delivery landed, which
+ * the shell cannot tell apart, so the save is reported `Unconfirmed`. Other
+ * pages and windows are not ordered against it: the last save to land wins.
+ * Directory changes are not numbered.
+ *
  * This module loads no Git implementation and no IndexedDB store.
  */
 
@@ -114,6 +126,9 @@ async function call<W extends Wire<unknown, unknown>>(
 const orUndefined = <T>(value: T | null): T | undefined =>
 	value === null ? undefined : value;
 
+const SUPERSEDED =
+	'a delivery was refused by page ordering; whether an earlier delivery landed is unknown';
+
 function fileError(error: WireFileError): FileError {
 	switch (error.name) {
 		case 'InvalidPath':
@@ -138,6 +153,16 @@ function fileError(error: WireFileError): FileError {
 			return FileError.Io(error).error;
 		case 'Closed':
 			return FileError.Closed().error;
+		// This delivery wrote nothing. It may be a stale save, or Tauri's
+		// fallback delivering again a save whose first delivery landed and
+		// whose reply was lost; the owner cannot tell which. So the save is
+		// neither a success nor a definite failure.
+		case 'Superseded':
+			return FileError.Unconfirmed({
+				path: error.path,
+				operation: 'publishing to',
+				cause: SUPERSEDED,
+			}).error;
 		case 'Unconfirmed':
 			return FileError.Unconfirmed(error).error;
 		// A refusal before any write: the session the call named is not one
@@ -460,10 +485,12 @@ function createBoundary(session: number): FolderStorage {
 			if (found.error) return found;
 			return Ok(new Blob([found.data.bytes as Uint8Array<ArrayBuffer>]));
 		},
-		async apply(changes) {
+		async apply(changes, submission) {
 			const first = changes[0];
+			// The number the saving method reserved when it was entered, so a
+			// save that hashed or read longer keeps its place.
 			const result = await call(
-				commands.apply(session, changes.map(changeToWire)),
+				commands.apply(session, submission, changes.map(changeToWire)),
 			);
 			// No reply: the batch may have been published. It is sent once.
 			if (!result.sent)
@@ -863,14 +890,11 @@ function createSnapshots(initial: GitSnapshot): Snapshots {
 }
 
 /**
- * Open the folder the shell registered under `id`, which defaults to the
- * definition's ID. Refusals are returned, not thrown: not running in the
- * shell, a folder this window may not use, a folder another process holds.
+ * Open the folder the shell registered under `id`. Refusals are returned, not
+ * thrown: not running in the shell, a missing ID, a folder this window may
+ * not use, a folder another process holds.
  */
-export const openFolder: OpenFolder = async ({
-	definition,
-	id = definition.id,
-}) => {
+export const openFolder: OpenFolder = async ({ definition, id }) => {
 	const prepared = prepareFolderDefinition(definition);
 	if (prepared.error) return OpenFolderError.InvalidDefinition(prepared.error);
 	if (!isTauri()) return OpenFolderError.NotTauri();

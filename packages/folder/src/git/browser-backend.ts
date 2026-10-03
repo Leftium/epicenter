@@ -338,6 +338,16 @@ export async function createBrowserGitBackend({
 		readRemoteTracking: () => readRef(trackingKey),
 		casBranch,
 		async blocked() {
+			const head = (await request(
+				db
+					.transaction(STORES.git)
+					.objectStore(STORES.git)
+					.get(`${GITDIR}/HEAD`),
+			)) as Uint8Array | undefined;
+			if (head === undefined || !decoder.decode(head).startsWith('ref: '))
+				return 'HEAD is detached';
+			if (decoder.decode(head).trim() !== `ref: refs/heads/${branch}`)
+				return `HEAD is not on ${branch}`;
 			return undefined;
 		},
 		async checkpointProblem() {

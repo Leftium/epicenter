@@ -98,7 +98,7 @@ pub enum FileChange {
 }
 
 impl FileChange {
-    fn paths(&self) -> Vec<&str> {
+    pub(crate) fn paths(&self) -> Vec<&str> {
         match self {
             Self::Create { path, .. }
             | Self::Replace { path, .. }
@@ -179,6 +179,14 @@ pub enum FileError {
         cause: String,
     },
     Closed,
+    /// A save its writer numbered at or after this one already landed on this
+    /// path, so this delivery was refused before writing anything: landing
+    /// now could put back bytes the writer had already replaced. That is all
+    /// it says. Another delivery of this same save may have landed earlier,
+    /// so whether the save itself landed is unknown.
+    Superseded {
+        path: String,
+    },
     /// The operation started and its outcome is unknown: it may have reached
     /// the folder. Look before trying again.
     Unconfirmed {
@@ -215,11 +223,62 @@ pub enum ApplyError {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Kind {
     File,
     Directory,
     Absent,
+    /// No entry has the path's literal spelling, but the filesystem resolves
+    /// that spelling to an entry of another name, as a case-insensitive or
+    /// normalizing filesystem does. A read finds nothing at such a spelling;
+    /// a change is refused.
+    Aliased(Alias),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Alias {
+    /// The existing entry's own spelling, from the root down to it, where it
+    /// can be found.
+    existing: Option<String>,
+    /// Whether the path itself is the alias, rather than one of its
+    /// directories.
+    leaf: bool,
+}
+
+/// A change refused because its path, or a directory on the way, is another
+/// spelling of an entry that exists.
+fn aliased(path: &str, alias: &Alias) -> FileError {
+    FileError::InvalidPath {
+        path: path.to_string(),
+        reason: match &alias.existing {
+            Some(existing) => format!(
+                "this filesystem resolves it to the existing '{existing}', which is spelled differently"
+            ),
+            None => "this filesystem resolves it to an existing entry spelled differently"
+                .to_string(),
+        },
+    }
+}
+
+/// The name in `directory` of the entry `found` describes, for an alias
+/// message. Unix identifies an entry by device and inode; elsewhere the name
+/// is not looked for.
+#[cfg(unix)]
+fn spelled_as(directory: &Path, found: &fs::Metadata) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    fs::read_dir(directory).ok()?.flatten().find_map(|entry| {
+        let stats = entry.metadata().ok()?;
+        if stats.dev() == found.dev() && stats.ino() == found.ino() {
+            entry.file_name().to_str().map(str::to_string)
+        } else {
+            None
+        }
+    })
+}
+
+#[cfg(not(unix))]
+fn spelled_as(_directory: &Path, _found: &fs::Metadata) -> Option<String> {
+    None
 }
 
 fn io(path: &str, operation: &str, cause: &io::Error) -> FileError {
@@ -266,7 +325,9 @@ impl Files {
 
     /// Verify each component's literal spelling and that nothing on the way is
     /// a symbolic link, so a case-insensitive filesystem cannot alias another
-    /// name and a link cannot escape the folder.
+    /// name and a link cannot escape the folder. A component no entry spells
+    /// exactly, but which the filesystem still resolves, is `Aliased`: the
+    /// path is not absent there, it names another entry.
     fn verify_literal(&self, path: &str) -> Result<Kind, FileError> {
         let parts: Vec<&str> = path.split('/').collect();
         let mut directory = self.root.clone();
@@ -290,7 +351,21 @@ impl Files {
                 }
             }
             if !spelled {
-                return Ok(Kind::Absent);
+                return match fs::symlink_metadata(directory.join(name)) {
+                    Ok(found) => Ok(Kind::Aliased(Alias {
+                        existing: spelled_as(&directory, &found).map(|existing| {
+                            parts[..index]
+                                .iter()
+                                .copied()
+                                .chain([existing.as_str()])
+                                .collect::<Vec<_>>()
+                                .join("/")
+                        }),
+                        leaf: index == parts.len() - 1,
+                    })),
+                    Err(cause) if cause.kind() == ErrorKind::NotFound => Ok(Kind::Absent),
+                    Err(cause) => Err(io(path, "inspect", &cause)),
+                };
             }
             let next = directory.join(name);
             let stats = match fs::symlink_metadata(&next) {
@@ -328,9 +403,31 @@ impl Files {
         Ok(Kind::Absent)
     }
 
+    /// What a change finds at `path`. Another spelling of an existing entry,
+    /// at the path or on the way to it, is refused before anything is
+    /// written: the change would land on that entry under its own name.
+    fn changeable(&self, path: &str) -> Result<Kind, FileError> {
+        match self.verify_literal(path)? {
+            Kind::Aliased(alias) => Err(aliased(path, &alias)),
+            kind => Ok(kind),
+        }
+    }
+
+    /// Like `changeable`, for a path that must be unoccupied: another
+    /// spelling of an existing entry at the path itself occupies it.
+    fn vacant_or_occupied(&self, path: &str) -> Result<Kind, FileError> {
+        match self.verify_literal(path)? {
+            Kind::Aliased(Alias { leaf: true, .. }) => Err(Self::exists(path)),
+            Kind::Aliased(alias) => Err(aliased(path, &alias)),
+            kind => Ok(kind),
+        }
+    }
+
+    /// The bytes at exactly this spelling. Another spelling's entry is not
+    /// this path's, so a read finds nothing there.
     fn read_current(&self, path: &str) -> Result<Option<FileRead>, FileError> {
         match self.verify_literal(path)? {
-            Kind::Absent => return Ok(None),
+            Kind::Absent | Kind::Aliased(_) => return Ok(None),
             Kind::Directory => {
                 return Err(FileError::NotAFile {
                     path: path.to_string(),
@@ -355,6 +452,8 @@ impl Files {
     fn ensure_parent(&self, path: &str) -> Result<(), FileError> {
         for parent in ancestors(path) {
             match self.verify_literal(parent)? {
+                // Creating it would put this path inside the other spelling.
+                Kind::Aliased(alias) => return Err(aliased(parent, &alias)),
                 Kind::Directory => {}
                 Kind::File => {
                     return Err(FileError::NotADirectory {
@@ -429,6 +528,7 @@ impl Files {
     }
 
     fn create(&self, path: &str, bytes: &[u8]) -> Result<(), FileError> {
+        self.vacant_or_occupied(path)?;
         if self.read_current(path)?.is_some() {
             return Err(Self::exists(path));
         }
@@ -443,6 +543,7 @@ impl Files {
     }
 
     fn replace(&self, path: &str, bytes: &[u8], expected: &str) -> Result<(), FileError> {
+        self.changeable(path)?;
         Self::expect(path, expected, self.current_sha256(path)?)?;
         self.stage(path, bytes, |temporary| {
             // Staging and parent creation took time. Check the hash again so
@@ -453,7 +554,9 @@ impl Files {
     }
 
     fn overwrite(&self, path: &str, bytes: &[u8]) -> Result<(), FileError> {
-        // A directory or a link at the path is refused; a file there is replaced.
+        // A directory, a link, or another spelling at the path is refused; a
+        // file there is replaced.
+        self.changeable(path)?;
         self.read_current(path)?;
         self.stage(path, bytes, |temporary| {
             fs::rename(temporary, self.absolute(path)).map_err(|cause| io(path, "replace", &cause))
@@ -464,6 +567,7 @@ impl Files {
         let not_found = || FileError::NotFound {
             path: path.to_string(),
         };
+        self.changeable(path)?;
         let found = self.current_sha256(path)?.ok_or_else(not_found)?;
         if let Some(expected) = expected {
             Self::expect(path, expected, Some(found))?;
@@ -485,20 +589,22 @@ impl Files {
         expected: Option<&str>,
         landed: &mut Vec<FileStep>,
     ) -> Result<(), FileError> {
+        self.changeable(from)?;
         let found = self.current_sha256(from)?.ok_or(FileError::NotFound {
             path: from.to_string(),
         })?;
         if let Some(expected) = expected {
             Self::expect(from, expected, Some(found))?;
         }
-        match self.verify_literal(to)? {
+        match self.vacant_or_occupied(to)? {
             Kind::Directory => {
                 return Err(FileError::NotAFile {
                     path: to.to_string(),
                 })
             }
             Kind::File => return Err(Self::exists(to)),
-            Kind::Absent => {}
+            // Another spelling there was refused as occupied above.
+            Kind::Absent | Kind::Aliased(_) => {}
         }
         self.ensure_parent(to)?;
         if let Some(expected) = expected {
@@ -617,7 +723,7 @@ impl Files {
             invalid(directory)?;
             match self.verify_literal(directory)? {
                 Kind::Directory => {}
-                Kind::Absent => {
+                Kind::Absent | Kind::Aliased(_) => {
                     return Err(FileError::NotFound {
                         path: directory.to_string(),
                     })
@@ -669,9 +775,10 @@ impl Files {
 
     pub fn rmdir(&self, path: &str) -> Result<(), FileError> {
         invalid(path)?;
-        match self.verify_literal(path)? {
+        match self.changeable(path)? {
             Kind::Directory => {}
-            Kind::Absent => {
+            // Another spelling was refused above.
+            Kind::Absent | Kind::Aliased(_) => {
                 return Err(FileError::NotFound {
                     path: path.to_string(),
                 })

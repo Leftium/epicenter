@@ -31,7 +31,6 @@ import {
 import { hashBytes } from './capture.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.todostest',
 	kv: {},
 	tables: {
 		todos: defineTable({

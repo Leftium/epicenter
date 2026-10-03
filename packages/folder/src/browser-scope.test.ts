@@ -11,8 +11,8 @@ import {
 import { useWebLocks } from './web-locks.test-support.js';
 
 useWebLocks();
+const id = 'so.epicenter.scopetest';
 const definition = defineFolder({
-	id: 'so.epicenter.scopetest',
 	kv: {},
 	tables: {},
 });
@@ -43,6 +43,7 @@ async function open(
 ) {
 	const folder = expectOk(
 		await openFolder({
+			id,
 			definition,
 			browser: { indexedDb, scope, commitOnEdit: false },
 		}),
@@ -143,6 +144,7 @@ test('an unassigned legacy folder refuses a new scope without creating an empty 
 	const before = await storage.indexedDB.databases();
 	const error = expectErr(
 		await openFolder({
+			id,
 			definition,
 			browser: { indexedDb: storage, scope: { channel: 'development' } },
 		}),
@@ -186,6 +188,7 @@ test('invalid account identity refuses before creating storage', async () => {
 	const storage = environment();
 	const error = expectErr(
 		await openFolder({
+			id,
 			definition,
 			browser: {
 				indexedDb: storage,
@@ -208,6 +211,7 @@ test('failed database enumeration refuses without creating storage', async () =>
 	};
 	const error = expectErr(
 		await openFolder({
+			id,
 			definition,
 			browser: { indexedDb: storage, scope: { channel: 'development' } },
 		}),

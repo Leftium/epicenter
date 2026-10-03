@@ -3,14 +3,16 @@
  *
  * Library messages state the failure precisely; the application decides what
  * a person is told. A refusal before publication (`Conflict`, `Exists`, and
- * preparation failures) wrote nothing. `Partial` reports a multi-file operation
- * that stopped after some steps reached the folder.
+ * preparation failures) wrote nothing. Each ordinary operation publishes one
+ * file change; a move that landed its destination but kept its source is
+ * `MoveError.SourceNotRemoved`.
  *
  * These describe acquiring and publishing files. Whether a row's text parses
  * and whether its fields conform are not failures of an operation: a snapshot
  * carries them as `parseError` and `issues` (ADR-0462).
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { FileCapture } from './capture.js';
 import type { FieldIssue, ParseError } from './reading.js';
 
 export const FileError = defineErrors({
@@ -97,6 +99,12 @@ export type FileStep =
 	| { readonly kind: 'remove'; readonly path: string }
 	| { readonly kind: 'move'; readonly from: string; readonly to: string };
 
+/**
+ * Raw storage failures beyond one file's refusal. Internal: Git publication
+ * and the native transport apply ordered changes, and the ordinary domain
+ * methods restate a single change's outcome as `FileError` or `MoveError`
+ * (`applyOne` in `storage.ts`).
+ */
 export const ApplyError = defineErrors({
 	/**
 	 * A native multi-file operation stopped partway. `applied` steps reached the
@@ -122,6 +130,34 @@ export const ApplyError = defineErrors({
 	}),
 });
 export type ApplyError = InferErrors<typeof ApplyError>;
+
+export const MoveError = defineErrors({
+	/**
+	 * A move is two steps: the captured bytes are put at `to`, then `from`
+	 * is removed. A native directory and browser OPFS storage both move this
+	 * way. The first step landed and the second failed, so both paths hold
+	 * the captured bytes. Nothing was rolled back. `moved` is the capture of
+	 * the bytes now at `to`; `cause` is why `from` was not removed.
+	 */
+	SourceNotRemoved: ({
+		from,
+		to,
+		moved,
+		cause,
+	}: {
+		from: string;
+		to: string;
+		moved: FileCapture;
+		cause: FileError;
+	}) => ({
+		message: `The file reached '${to}', but '${from}' could not be removed, so both paths hold it: ${cause.message}`,
+		from,
+		to,
+		moved,
+		cause,
+	}),
+});
+export type MoveError = InferErrors<typeof MoveError>;
 
 /**
  * Failures of reading a row or `kv.json` as text and of preparing a
@@ -160,26 +196,6 @@ export const TableError = defineErrors({
 });
 export type TableError = InferErrors<typeof TableError>;
 
-export const BatchError = defineErrors({
-	/** The callback threw while collecting. Nothing was published. */
-	Threw: ({ cause }: { cause: unknown }) => ({
-		message: `The batch callback threw, so nothing was published: ${describe(cause)}`,
-		cause,
-	}),
-	/**
-	 * The callback returned something. A batch collects mutations
-	 * synchronously and returns `undefined`; a promise is not waited for.
-	 * Nothing was published.
-	 */
-	Returned: ({ thenable }: { thenable: boolean }) => ({
-		message: thenable
-			? 'The batch callback returned a promise. A batch collects mutations synchronously, so nothing was published'
-			: 'The batch callback returned a value. A batch callback returns undefined, so nothing was published',
-		thenable,
-	}),
-});
-export type BatchError = InferErrors<typeof BatchError>;
-
 type TableErrorOf<TName extends TableError['name']> = Extract<
 	TableError,
 	{ name: TName }
@@ -195,25 +211,21 @@ export type TableReadError = FileError | TableErrorOf<'InvalidUtf8'>;
 export type TableGetError = TableReadError;
 
 /** Storage publication or preparation of the supplied complete row failed. */
-export type TableCreateError =
-	| FileError
-	| ApplyError
-	| TableErrorOf<'InvalidValues'>;
+export type TableCreateError = FileError | TableErrorOf<'InvalidValues'>;
 
 /** Structured preparation adds its failures to acquisition and publication failures. */
 export type TableUpdateError =
 	| TableReadError
-	| ApplyError
 	| TableErrorOf<'InvalidValues' | 'Unparsed' | 'UnsupportedSource'>;
 
 /** Complete source publication needs no parsing or field preparation. */
-export type TableReplaceError = FileError | ApplyError;
+export type TableReplaceError = FileError;
 
-/** Moving a captured row preserves the storage operation's failures. */
-export type TableRenameError = FileError | ApplyError;
+/** Moving a captured row preserves the file move's failures. */
+export type TableRenameError = FileError | MoveError;
 
 /** Removing a captured row preserves the storage operation's failures. */
-export type TableDeleteError = FileError | ApplyError;
+export type TableDeleteError = FileError;
 
 /** Every failure a table write can report. */
 export type TableWriteError =
@@ -233,7 +245,6 @@ export type KvReadError = FileError | TableErrorOf<'InvalidUtf8'>;
  */
 export type KvWriteError =
 	| KvReadError
-	| ApplyError
 	| TableErrorOf<'InvalidValues' | 'Unparsed' | 'UnsupportedSource'>;
 
 /**

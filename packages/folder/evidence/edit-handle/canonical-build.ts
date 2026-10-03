@@ -1,6 +1,6 @@
 /**
- * EXPERIMENT: build the canonical editor callers page to `dist-canonical/`,
- * as a compile check. The output is disposable and not committed.
+ * Build the row editor callers page to `dist-canonical/`, as a compile check.
+ * The output is disposable and not committed.
  *
  *     bun packages/folder/evidence/edit-handle/canonical-build.ts
  */

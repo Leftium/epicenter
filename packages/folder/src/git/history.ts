@@ -18,9 +18,8 @@
  * that landed while it waited.
  *
  * Pushes and fetches have runners of their own, because network work never
- * runs under the protection. Each push pins the commit it sends. After an
- * automatic commit attempt that ran, a push is attempted if the branch is
- * ahead and no push is running; nothing is owed if it is not. A caller that
+ * runs under the protection. Each push pins the commit it sends. Network
+ * transfers require an explicit request. A caller that
  * stops waiting before its push or fetch starts leaves no transport behind.
  * Incoming changes are explicit: `fetch` records the remote head,
  * `pullFastForward` publishes a clean fast-forward, and `mergeIncoming`
@@ -598,10 +597,6 @@ export function createHistory({
 			).catch((cause) => ({ ran: true as const, value: failedCommit(cause) }));
 			if (!attempt.ran || attempt.value.status === 'closed') return;
 			await settleCommit(attempt.value);
-			// A push that cannot start now is not owed later.
-			const ahead =
-				sync.state === 'observed' && !sync.stale && sync.value.ahead > 0;
-			if (backend.remote !== undefined && ahead) void pushRunner.attempt();
 		});
 	}
 

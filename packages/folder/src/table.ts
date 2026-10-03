@@ -13,7 +13,9 @@
  *
  * Structured updates read current source once; complete replacements use the
  * supplied capture's baseline. Both conditionally publish once and return a
- * conflict without retrying (ADR-0464).
+ * conflict without retrying (ADR-0464). `edit` is the other save shape: a
+ * retained canonical draft of one row whose save overwrites the complete
+ * document unconditionally (`editor.ts`).
  *
  * A table reads and writes exactly one Markdown file per row (ADR-0480). A
  * sibling that shares a row's stem is an ordinary file: it is not part of the
@@ -31,6 +33,11 @@ import {
 	ownCapture,
 	type TextCapture,
 } from './capture.js';
+import {
+	openRowEditor,
+	type RowEditor,
+	type TableEditError,
+} from './editor.js';
 import {
 	FileError,
 	type TableCreateError,
@@ -63,6 +70,7 @@ import {
 	ownSupplied,
 	type ParseError,
 } from './reading.js';
+import { applyOne, reserveSubmission } from './storage.js';
 
 /**
  * How row source reads. Text that does not parse has a `parseError`, no
@@ -159,7 +167,9 @@ export type FileTable<TFields> = {
 	 * Move the row file to another stem. No other file moves with it. The
 	 * capture's `source` must be the text of its `sha256`: the returned
 	 * snapshot reads that text, so a capture whose two halves disagree is
-	 * refused as `InvalidPath` before anything moves.
+	 * refused as `InvalidPath` before anything moves. A move that landed the
+	 * new path but kept the old one is `MoveError.SourceNotRemoved`, as for
+	 * `files.move`.
 	 */
 	rename(
 		capture: TextCapture,
@@ -167,6 +177,17 @@ export type FileTable<TFields> = {
 	): Promise<Result<TableSnapshot<TFields>, TableRenameError>>;
 	/** Remove the row file. No other file is removed with it. */
 	delete(capture: FileCapture): Promise<Result<undefined, TableDeleteError>>;
+	/**
+	 * Open a retained editor on the row at `stem`. It subscribes to change
+	 * hints, then reads once. It opens only a file that has a canonical form
+	 * and whose declared fields conform; a refusal carries the exact text
+	 * when there is one, for raw repair. `signal` governs opening only: once
+	 * the editor is returned, the caller owns it and ends it with `dispose`.
+	 */
+	edit(
+		stem: string,
+		options?: { readonly signal?: AbortSignal },
+	): Promise<Result<RowEditor<TFields>, TableEditError>>;
 };
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -289,14 +310,12 @@ type PreparedRow = {
 };
 
 /**
- * Validate and serialize a new row. A standalone `create` and a batched one
- * both write exactly what this returns, so a row has one source format
- * whichever way it is published. Synchronous: it reads nothing.
+ * Validate and serialize a new row. Synchronous: it reads nothing.
  *
  * `name` is the table's key in the prepared definition, which is the only
  * place a table is named, and `schemas` are that table's prepared fields.
  */
-export function prepareRow(
+function prepareRow(
 	name: string,
 	schemas: FieldMap,
 	input: {
@@ -328,7 +347,7 @@ export function prepareRow(
 }
 
 /** The filenames directly in a table's directory; none when it does not exist yet. */
-export async function tableFilenames(
+async function tableFilenames(
 	storage: Pick<FolderStorage, 'children'>,
 	table: string,
 ): Promise<Result<string[], TableEnumerationError>> {
@@ -342,14 +361,25 @@ export async function tableFilenames(
 
 /**
  * The file table for one declared table. `name` is its key in the prepared
- * definition and its directory; `schemas` are its prepared fields.
+ * definition and its directory; `schemas` are its prepared fields, in
+ * declared order. `onFilesChanged` is the folder's change hints, which an
+ * editor watches.
  */
 export function createTable<TFields>(
-	{ storage }: { storage: FolderStorage },
+	{
+		storage,
+		onFilesChanged,
+	}: {
+		storage: FolderStorage;
+		onFilesChanged: (
+			listener: (paths: readonly string[]) => void,
+		) => () => void;
+	},
 	name: string,
 	schemas: FieldMap,
 ): FileTable<TFields> {
 	const inspect = (source: string) => inspectSource<TFields>(schemas, source);
+	const declaredKeys = Object.freeze(Object.keys(schemas));
 
 	/** The snapshot of captured bytes: what was read, or exactly what was submitted. */
 	function snapshotOf(
@@ -465,6 +495,8 @@ export function createTable<TFields>(
 			return readSnapshot(address.data, read.data);
 		},
 		async create(input) {
+			// Every save reserves its place first, before its reads and hash.
+			const submission = reserveSubmission();
 			const prepared = prepareRow(name, schemas, {
 				stem: input.stem ?? generateStem(),
 				fields: input.fields,
@@ -477,13 +509,16 @@ export function createTable<TFields>(
 			const sha256 = await hashBytes(bytes);
 			// The receipt is prepared before anything is published and never after.
 			const receipt = snapshotOf(path, sha256, source);
-			const applied = await storage.apply([
+			const applied = await applyOne(
+				storage,
 				{ kind: 'create', path, bytes, sha256 },
-			]);
+				submission,
+			);
 			if (applied.error) return Err(applied.error);
 			return Ok(receipt);
 		},
 		async update(stem, change) {
+			const submission = reserveSubmission();
 			const address = rowAddress(name, stem);
 			if (address.error) return address;
 			const path = address.data;
@@ -515,7 +550,8 @@ export function createTable<TFields>(
 			const { bytes } = next;
 			const sha256 = await hashBytes(bytes);
 			const receipt = snapshotOf(path, sha256, next.source);
-			const applied = await storage.apply([
+			const applied = await applyOne(
+				storage,
 				{
 					kind: 'replace',
 					path,
@@ -523,11 +559,13 @@ export function createTable<TFields>(
 					sha256,
 					expectedSha256: read.data.sha256,
 				},
-			]);
+				submission,
+			);
 			if (applied.error) return Err(applied.error);
 			return Ok(receipt);
 		},
 		async replace(capture, source) {
+			const submission = reserveSubmission();
 			const owned = captureRow(capture);
 			if (owned.error) return owned;
 			const { path, sha256: expectedSha256 } = owned.data;
@@ -537,13 +575,16 @@ export function createTable<TFields>(
 			// The receipt is the submitted text and its hash, never a reread. It is
 			// prepared before publication, so returning it needs no further validation.
 			const receipt = snapshotOf(path, sha256, next.source);
-			const applied = await storage.apply([
+			const applied = await applyOne(
+				storage,
 				{ kind: 'replace', path, bytes, sha256, expectedSha256 },
-			]);
+				submission,
+			);
 			if (applied.error) return Err(applied.error);
 			return Ok(receipt);
 		},
 		async rename(capture, nextStem) {
+			const submission = reserveSubmission();
 			const owned = captureRow(capture);
 			if (owned.error) return owned;
 			const captured = owned.data;
@@ -571,30 +612,49 @@ export function createTable<TFields>(
 			if (path === captured.path) return Ok(receipt);
 			const vacancy = await vacant(path);
 			if (vacancy.error) return vacancy;
-			const applied = await storage.apply([
+			const applied = await applyOne(
+				storage,
 				{
 					kind: 'move',
 					from: captured.path,
 					to: path,
 					expectedSha256: captured.sha256,
 				},
-			]);
+				submission,
+			);
 			if (applied.error) return Err(applied.error);
 			return Ok(receipt);
 		},
 		async delete(capture) {
+			const submission = reserveSubmission();
 			const owned = captureRow(capture);
 			if (owned.error) return owned;
 			const captured = owned.data;
-			const applied = await storage.apply([
+			const applied = await applyOne(
+				storage,
 				{
 					kind: 'remove',
 					path: captured.path,
 					expectedSha256: captured.sha256,
 				},
-			]);
+				submission,
+			);
 			if (applied.error) return Err(applied.error);
 			return Ok(undefined);
+		},
+		async edit(stem, options) {
+			const address = rowAddress(name, stem);
+			if (address.error) return address;
+			return openRowEditor<TFields>(
+				{
+					path: address.data,
+					storage,
+					onFilesChanged,
+					declaredKeys,
+					inspect,
+				},
+				options?.signal,
+			);
 		},
 	};
 }

@@ -9,10 +9,10 @@
  * This module is inert. Importing it opens nothing and loads no storage, no
  * Git implementation, and no runtime-specific module.
  */
-import type { DataDefinition } from '@epicenter/definition';
 import type { AccountIdentity } from '@epicenter/principal';
 import type { Result } from 'wellcrafted/result';
 import type { IndexedDbEnvironment } from './browser-store.js';
+import type { FolderDefinition } from './definition.js';
 import type { OpenFolderError } from './errors.js';
 import type { Folder } from './folder.js';
 import type { GitRemote } from './git/backend.js';
@@ -20,35 +20,48 @@ import type { Author } from './git/objects.js';
 
 export {
 	type CreateRowOf,
-	type DataDefinition,
 	defineTable,
 	field,
 	type KvOf,
 } from '@epicenter/definition';
-export type {
-	BatchFiles,
-	BatchLanded,
-	BatchReceipt,
-	BatchRefusal,
-	BatchTable,
-	FolderBatch,
-} from './batch.js';
 export type { FileListing } from './boundary.js';
 export type { IndexedDbEnvironment } from './browser-store.js';
+export type {
+	CanonicalDocument,
+	CanonicalRefusal,
+	CanonicalValue,
+} from './canonical.js';
 export {
 	type CapturedFile,
 	type FileCapture,
 	hashBytes,
 	type TextCapture,
 } from './capture.js';
-export { defineFolder, type FolderTable } from './definition.js';
 export {
-	ApplyError,
-	BatchError,
+	defineFolder,
+	type FolderDefinition,
+	type FolderTable,
+} from './definition.js';
+export {
+	type RowAdoptError,
+	type RowChange,
+	type RowChangeError,
+	type RowEditor,
+	RowEditorError,
+	type RowEditorState,
+	type RowObservation,
+	type RowRevision,
+	type RowSaveAttempt,
+	type RowSaveError,
+	type RowSaveOutcome,
+	type TableEditError,
+} from './editor.js';
+export {
 	FileError,
 	type FileStep,
 	type KvReadError,
 	type KvWriteError,
+	MoveError,
 	OpenFolderError,
 	type TableCreateError,
 	type TableDeleteError,
@@ -138,22 +151,24 @@ export type BrowserFolderOptions = {
 	/** The remote branch to push to and fetch from. Requires `author`. */
 	readonly remote?: GitRemote;
 	/**
-	 * Whether complete content saves request automatic commits, and pushes
-	 * when a remote is configured. Default `true`.
+	 * Whether complete content saves request automatic local commits.
+	 * Transfers remain explicit. Default `true`.
 	 */
 	readonly commitOnEdit?: boolean;
 	/** Injected IndexedDB for tests; defaults to the browser globals. */
 	readonly indexedDb?: IndexedDbEnvironment;
 };
 
-export type OpenFolderOptions<TDefinition extends DataDefinition> = {
+export type OpenFolderOptions<TDefinition extends FolderDefinition> = {
+	/** How this caller reads the folder's files. It names no folder. */
 	readonly definition: TDefinition;
 	/**
-	 * Which folder to open. Defaults to the definition's ID. A browser names
-	 * its database after it; the desktop shell maps it to a directory it
-	 * registered. It is never a path.
+	 * Which folder to open: its dataset name relative to the owner, such as
+	 * `so.epicenter.todos`. Required, and never a path. A browser names its
+	 * database after it; the desktop shell maps it to a directory it
+	 * registered.
 	 */
-	readonly id?: string;
+	readonly id: string;
 	readonly browser?: BrowserFolderOptions;
 };
 
@@ -161,6 +176,6 @@ export type OpenFolderOptions<TDefinition extends DataDefinition> = {
  * The one opener signature. The automatic entry, the browser entry, and the
  * desktop entry each export an `openFolder` of exactly this type.
  */
-export type OpenFolder = <const TDefinition extends DataDefinition>(
+export type OpenFolder = <const TDefinition extends FolderDefinition>(
 	options: OpenFolderOptions<TDefinition>,
 ) => Promise<Result<Folder<TDefinition>, OpenFolderError>>;

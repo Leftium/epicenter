@@ -66,17 +66,16 @@ once registered.
 | `branch` | `main` | The local branch, and the remote branch when a remote exists. |
 | `author` | required | Who commits. With `use_repository_author`, the fallback for whichever of name and email the repository does not configure. |
 | `remote` | none | Where to push and fetch. |
-| `commit_on_edit` | `true` | Whether a complete save attempts a commit, and a push after it when a remote exists. The attempt is skipped when the folder is busy; see "Automatic commits". |
+| `commit_on_edit` | `true` | Whether a complete save attempts a local commit. Transfers are explicit. The attempt is skipped when the folder is busy; see "Automatic commits". |
 | `use_repository_author` | `false` | Read `user.name` and `user.email` when the folder opens. |
 | `use_repository_origin` | `false` | Read `remote.origin.url` when the folder opens and use it as the remote. |
 | `watch_events` | `true` | Watch filesystem events for changes made outside the owner. |
 | `watch_interval` | 2 s | Also compare file sizes and times this often. |
 
-The two `use_repository_*` options are separate because a remote changes what
-a save does: with a remote and `commit_on_edit`, an automatic commit is
-followed by a push attempt. A folder that should record history locally under the person's own
-identity sets `use_repository_author` and leaves `use_repository_origin` off;
-an `origin` configured in that directory is then never read or contacted. A
+The two `use_repository_*` options select author and transfer destination
+independently. Neither enables automatic network work. Leaving
+`use_repository_origin` off means an `origin` configured in the directory is
+never read. A
 `remote` given in `FolderConfig` is used either way, and is the fallback when
 origin discovery is on and the repository has no `origin`. Both are read once,
 inside the open, after the cross-process lock is held and the Git layout is
@@ -87,8 +86,8 @@ verified.
 ```ts
 import { openFolder } from '@epicenter/folder';
 
-// The scope is the folder's ID: `definition.id` unless `id` names another.
-const opened = await openFolder({ definition });
+// The scope is the folder's ID, which the page names; the definition names none.
+const opened = await openFolder({ id: 'so.epicenter.todos', definition });
 if (opened.error) return show(opened.error.message);
 const folder = opened.data;
 
@@ -104,7 +103,8 @@ await folder.close();           // detaches this page only
 `openFolder` returns its refusals: an unknown scope, a window the scope does
 not list, a folder another process holds, a shell without this plugin, and a
 desktop app built for another protocol version. The unreleased protocol is
-version 3. No command holds the folder across calls or names a terminal lease.
+version 4, which added the number every `apply` names. No command holds the
+folder across calls or names a terminal lease.
 A page built for a different version is refused at attach. It never opens
 browser storage instead. `@epicenter/folder/tauri` is the same opener without the
 browser adapter in the build.
@@ -132,6 +132,19 @@ it read. `apply` takes ordered changes, each one of:
 - `Exists` is `{ path }`: a `create` target or a `move` destination already
   holds a file.
 - A missing `remove` or `move` source is `NotFound`.
+- Paths are literal. A filesystem that folds case or normalizes Unicode, as
+  APFS and NTFS do, can resolve `note.md` to an existing `Note.md`, or
+  `dir/` to an existing `Dir/`. Every change refuses such a spelling, of
+  the path or of a directory on the way, before writing anything:
+  `InvalidPath` names the existing spelling, and a `create` target or
+  `move` destination that is one is `Exists`. A read of such a spelling is
+  `NotFound`: no file has that name. Where the filesystem holds both names,
+  each is its own file.
+- `apply` also takes `submission`, the batch's number in its page.
+  `Superseded` is `{ path }`: a batch of the same page numbered at or after
+  this one already landed on the path, so this delivery wrote nothing.
+  Whether the batch itself landed through another delivery is unknown. See
+  [Locking and ordering](#locking-and-ordering).
 - The steps reported in a partial batch are `write`, `remove`, and `move`:
   they say what landed, not which kind of change asked for it.
 
@@ -156,10 +169,15 @@ anything if it cannot name one.
   another window. It withdraws the session's pushes and fetches that the
   owner had not started.
 - **`folder.close()`** in a page refuses that page's new file, Git, and
-  terminal calls without invoking anything, waits for the calls it already
-  sent, stops waiting for its pushes and fetches and withdraws them, and then
-  detaches. A terminal command running then sends no later step; the step
-  the owner already admitted settles first. It commits nothing.
+  terminal calls without invoking anything, stops waiting for its pushes and
+  fetches and withdraws them, waits for the Git calls it already sent, and
+  then detaches. It does not wait for file calls already sent: one the
+  owner admitted before the detach still lands and replies to its caller,
+  and one that arrives after it is denied and writes nothing. A save that
+  had reserved its place but not yet been sent is refused as closed. A
+  terminal command running then sends no later step. Close commits nothing.
+  A page that needs its saves settled first awaits them, or disposes its
+  editors, before closing.
 - **A terminal command** holds nothing. Each of its steps is an ordinary
   command of its session, so other windows' saves land between its steps. A
   rewrite of a file the command read names the hash it read and is
@@ -182,6 +200,32 @@ removes only ended sessions, so an attachment from the new page survives it.
 - **The file gate** admits one publication at a time: an `apply` batch, a
   directory change, or a fast-forward's file changes. It is held for that
   one publication and never across commands.
+- **A page's saves** keep the order the page asked for them in. A save can
+  finish hashing or reading after a save asked for later, can reach the
+  plugin late, can be delivered twice by Tauri's IPC fallback, and can wait
+  for a worker before it reaches the gate, which is not first come, first
+  served. So every public method that saves takes the page's next number
+  synchronously when it is entered, before any of that, from one sequence
+  for every folder handle and root of the page; `submission` carries it.
+  The plugin keeps one writer per page and canonical root, shared by every
+  session the page attaches there, including one attached after detaching.
+  Under the gate, a delivery is refused as `Superseded` (`{ path }`), with
+  nothing written, if a save of the page numbered at or after it already
+  landed on one of its paths. That covers both a stale save and a second
+  delivery of one whose first delivery landed, and once a later save has
+  landed the record cannot tell them apart. So the page reports every
+  `Superseded` as unconfirmed: this delivery wrote nothing, and whether an
+  earlier delivery landed is unknown. It never reports it as success or as
+  a save that definitely failed. `submission: 0` is refused as `Denied`.
+- For each path, the writer keeps the highest number that landed there, in
+  memory, for as long as the page lasts: a page with nothing in flight may
+  still have an earlier save on its way. Other paths are not ordered against
+  a save, and neither are other pages: between windows, and between a page
+  and the page that replaced it on reload, the last save to land wins. A
+  save the plugin took before its session ended keeps the page's record and
+  still lands unless refused; one that arrives after the session ended is
+  denied and writes nothing. Two scopes cannot hold one root at once, since
+  the second cannot take its lock. Directory changes are not numbered.
 - **The Git lock** orders commits, staging, and ref updates.
 - Pushes and fetches run outside both. A transport in flight delays no save
   and no commit.
@@ -212,9 +256,8 @@ free at that moment, and decides before the save returns.
   publishes the empty file and then its content, so its second attempt can
   find the first still running and be skipped.
 - A partial, refused, or unconfirmed batch makes no attempt.
-- After an attempt that ran, the owner starts a push if the branch is ahead
-  of the remote and no push is running. A push it could not start is not
-  owed later.
+- Automatic commits stay local. Only an explicit push request starts outgoing
+  transport, even when a remote is configured.
 - A page is never told that an attempt was skipped and has nothing to retry.
   `snapshot.activity.commit.active` is true while a commit runs, and the
   files observation is stale after any save the last commit did not cover.
@@ -258,9 +301,6 @@ never arrive too early to matter.
   the page at that moment.
 - Shutdown stops the running push and fetch and settles the waiting ones as
   cancelled or closed without running them.
-
-The automatic push after an automatic commit has no caller to withdraw. It
-starts only when no push is running or waiting, and is otherwise not owed.
 
 ## Noticing outside changes
 

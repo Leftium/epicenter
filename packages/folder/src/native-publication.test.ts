@@ -72,7 +72,6 @@ const { openFolder, openNativeFolder } = await import(
 );
 
 const definition = defineFolder({
-	id: 'so.epicenter.publicationtest',
 	kv: {},
 	tables: {
 		todos: defineTable({

@@ -36,7 +36,7 @@
  * - `native.test.ts` for the same table over a real directory
  */
 import { afterEach, expect, test } from 'bun:test';
-import { type DataDefinition, jsonValue } from '@epicenter/definition';
+import { type DataSchema, jsonValue } from '@epicenter/definition';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import type { Result } from 'wellcrafted/result';
 import { Ok } from 'wellcrafted/result';
@@ -52,7 +52,6 @@ import { rowPath, rowStemOf } from './paths.js';
 import { createTable, type TableSnapshot } from './table.js';
 
 const definition = defineFolder({
-	id: 'table.commands',
 	kv: {},
 	tables: {
 		todos: defineTable({
@@ -82,12 +81,16 @@ type TodoSnapshot = TableSnapshot<Todo>;
  */
 function tableOf<TFields>(
 	storage: Parameters<typeof createTable>[0]['storage'],
-	prepared: DataDefinition,
+	prepared: DataSchema,
 	name: string,
 ) {
 	const declared = prepared.tables[name];
 	if (declared === undefined) throw new Error(`no table '${name}'`);
-	return createTable<TFields>({ storage }, name, declared.fields);
+	return createTable<TFields>(
+		{ storage, onFilesChanged: () => () => {} },
+		name,
+		declared.fields,
+	);
 }
 
 /** The interpretation a snapshot carries, without its capture. */
@@ -980,7 +983,6 @@ const refined = <TSchema extends object>(
 ) => ({ ...schema, '~refine': [{ refine, message: 'refused' }] });
 
 const refining = defineFolder({
-	id: 'table.refinements',
 	kv: {},
 	tables: {
 		// A refinement may freeze the value it is shown, and only that value.
@@ -1165,7 +1167,7 @@ test('a receipt is prepared before publication: an interpreter that fails leaves
 	// Interpreting source lists the table's fields, and that listing throws.
 	let failing = false;
 	const table = createTable<Todo>(
-		{ storage: s.storage },
+		{ storage: s.storage, onFilesChanged: () => () => {} },
 		'todos',
 		new Proxy(definition.tables.todos.fields, {
 			ownKeys(fields) {

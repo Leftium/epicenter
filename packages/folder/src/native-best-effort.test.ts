@@ -12,7 +12,6 @@ import { createNativeFileBoundary } from './native-store.js';
 import { createTable } from './table.js';
 
 const definition = defineFolder({
-	id: 'so.epicenter.bestefforttest',
 	kv: {},
 	tables: { todos: defineTable({ fields: { title: field.string() } }) },
 });
@@ -36,7 +35,7 @@ test('overlapping creates of one stem land one row and refuse the other, beside 
 			},
 		};
 		const table = createTable<{ title: string }>(
-			{ storage: boundary },
+			{ storage: boundary, onFilesChanged: () => () => {} },
 			'todos',
 			definition.tables.todos.fields,
 		);

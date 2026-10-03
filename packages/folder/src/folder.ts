@@ -1,7 +1,9 @@
 /**
  * The opened folder handle every opener returns (ADR-0471, ADR-0478).
  *
- * `tables`, `kv`, `files`, and `batch` publish through one file boundary.
+ * `tables`, `kv`, and `files` publish through one file boundary, one file
+ * change per operation. A caller that needs several changes makes several
+ * calls; each one that succeeded stays published when a later one fails.
  * `git` observes and records history. A complete content save makes one
  * automatic commit attempt when the folder's history policy says so.
  *
@@ -11,19 +13,9 @@
  * outcome. History work drains before storage is released. Closing makes no
  * last commit.
  */
-import type { CreateRowOf, DataDefinition, KvOf } from '@epicenter/definition';
-import { Ok, type Result } from 'wellcrafted/result';
-import {
-	type BatchChange,
-	type BatchReceipt,
-	checkRowDestinations,
-	collectBatch,
-	type FolderBatch,
-	receiptOf,
-	toChange,
-} from './batch.js';
+import type { CreateRowOf, KvOf } from '@epicenter/definition';
+import type { Result } from 'wellcrafted/result';
 import type { FolderStorage } from './boundary.js';
-import { type BatchError, FileError, type TableWriteError } from './errors.js';
 import { createFiles, type FolderFiles } from './files.js';
 import type { GitRemote, PathStatus } from './git/backend.js';
 import type {
@@ -40,6 +32,7 @@ import type {
 	PushOutcome,
 } from './git/history.js';
 import type { Author, CommitSummary } from './git/objects.js';
+import type { FolderDefinition } from './definition.js';
 import { createKv, type FileKv } from './kv.js';
 import { callObserver } from './observer.js';
 import { fenceStorage } from './storage.js';
@@ -53,8 +46,8 @@ export type FolderGitOptions = {
 	/** The remote branch to push to and fetch from. */
 	readonly remote?: GitRemote;
 	/**
-	 * Whether complete content saves request automatic commits and pushes when
-	 * a remote is configured. Fixed for this handle's lifetime. Default `true`.
+	 * Whether complete content saves request automatic local commits.
+	 * Transfers remain explicit. Fixed for this handle's lifetime. Default `true`.
 	 */
 	readonly commitOnEdit?: boolean;
 };
@@ -114,7 +107,7 @@ export type FolderGit = {
 };
 
 /** Borrowed data access; the object that opened the folder owns its lifetime. */
-export type FolderAccess<TDefinition extends DataDefinition> = {
+export type FolderAccess<TDefinition extends FolderDefinition> = {
 	readonly tables: {
 		readonly [K in keyof TDefinition['tables']]: FileTable<
 			CreateRowOf<TDefinition['tables'][K]>
@@ -123,27 +116,6 @@ export type FolderAccess<TDefinition extends DataDefinition> = {
 	readonly kv: FileKv<KvOf<TDefinition>>;
 	readonly files: FolderFiles;
 	readonly git: FolderGit;
-	/**
-	 * Publish several mutations as one application and one
-	 * history request (ADR-0482).
-	 *
-	 * The callback runs once, synchronously, and returns `undefined`. It only
-	 * collects: there is nothing to read and nothing to await inside it, and
-	 * the collector stops accepting calls when the callback returns. Bytes are
-	 * copied when each mutation is collected. A callback that throws, or that
-	 * returns anything (a promise included), publishes nothing.
-	 *
-	 * The receipt lists the steps that landed, in order, with the capture each
-	 * left behind. Those captures are computed from the bytes that were
-	 * collected, never read back, so a file another writer changed afterward
-	 * is a different observation: read it to see it.
-	 *
-	 * A browser folder applies the whole batch or none of it. A folder on disk
-	 * applies ordered steps and reports `Partial` when a later one fails.
-	 */
-	batch(
-		collect: (batch: FolderBatch<TDefinition>) => undefined,
-	): Promise<Result<BatchReceipt, BatchError | TableWriteError>>;
 };
 
 /**
@@ -156,7 +128,7 @@ export type FolderLocation =
 	/** An ordinary directory, by absolute path. */
 	| { readonly kind: 'directory'; readonly root: string };
 
-export type Folder<TDefinition extends DataDefinition> =
+export type Folder<TDefinition extends FolderDefinition> =
 	FolderAccess<TDefinition> & {
 		readonly location: FolderLocation;
 		/**
@@ -301,7 +273,7 @@ function createLocalTerminal(
  * opener was handed. No argument carries `TDefinition`, so the opener names
  * it.
  */
-export function assembleFolder<TDefinition extends DataDefinition>({
+export function assembleFolder<TDefinition extends FolderDefinition>({
 	prepared,
 	storage: suppliedStorage,
 	history,
@@ -309,7 +281,7 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 	hints,
 	release,
 }: {
-	prepared: DataDefinition;
+	prepared: FolderDefinition;
 	storage: FolderStorage;
 	history: FolderHistory;
 	location: FolderLocation;
@@ -321,10 +293,16 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 	let closing: Promise<void> | undefined;
 
 	const storage = fenceStorage(suppliedStorage, controller.signal);
+	const onFilesChanged = (listener: (paths: readonly string[]) => void) =>
+		hints.subscribe(listener);
 	const tables: Record<string, FileTable<unknown>> = {};
 	// A table's key is its name and its directory.
 	for (const [name, table] of Object.entries(prepared.tables))
-		tables[name] = createTable<unknown>({ storage }, name, table.fields);
+		tables[name] = createTable<unknown>(
+			{ storage, onFilesChanged },
+			name,
+			table.fields,
+		);
 	const files = createFiles({ storage });
 	const git = createFolderGit(history);
 
@@ -333,23 +311,8 @@ export function assembleFolder<TDefinition extends DataDefinition>({
 		kv: createKv({ storage }, prepared.kv) as Folder<TDefinition>['kv'],
 		files,
 		git,
-		async batch(collect) {
-			if (controller.signal.aborted) return FileError.Closed();
-			const collected = collectBatch<TDefinition>(prepared, collect);
-			if (collected.error) return collected;
-			if (collected.data.length === 0) return Ok(receiptOf([]));
-			// Typed rows are checked against their directories before
-			// anything is published, so a refusal here wrote nothing.
-			const destinations = await checkRowDestinations(collected.data, storage);
-			if (destinations.error) return destinations;
-			const changes: BatchChange[] = [];
-			for (const intent of collected.data) changes.push(await toChange(intent));
-			const applied = await storage.apply(changes);
-			if (applied.error) return applied;
-			return Ok(receiptOf(changes));
-		},
 		location: Object.freeze(location),
-		onFilesChanged: (listener) => hints.subscribe(listener),
+		onFilesChanged,
 		terminal: (options) =>
 			createLocalTerminal({ storage, git, signal: controller.signal }, options),
 		signal: controller.signal,

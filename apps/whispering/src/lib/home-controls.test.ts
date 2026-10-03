@@ -29,7 +29,7 @@ import { STARTER_TRANSFORMATIONS } from './definition.js';
 import { resolvePostProcessing } from './post-processing.js';
 import type { Session } from './session.svelte.js';
 import type { Workspace } from './workspace/types.js';
-import { openTestWorkspace } from './workspace.test-support.js';
+import { deferred, openTestWorkspace } from './workspace.test-support.js';
 
 const { openSession } = await import('./session.svelte.ts');
 const { patchRow } = await import('./editor.svelte.ts');
@@ -238,4 +238,84 @@ test('a key the device refuses is reported, stays typed, and leaves the saved se
 	expect(settings.saving).toBe(false);
 	expect(library.settings.transcriptionModel).toBe('another-model');
 	expect(library.credentialPresent).toBe(false);
+});
+
+for (const phase of ['folder', 'credential'] as const) {
+	test(`saving uses the submitted key and preserves later typing during the ${phase} write`, async () => {
+		const started = deferred<void>();
+		const finish = deferred<void>();
+		const keys: string[] = [];
+		const { session } = await open((workspace) => ({
+			...workspace,
+			folder: {
+				...workspace.folder,
+				kv: {
+					...workspace.folder.kv,
+					async update(values) {
+						if (phase === 'folder') {
+							started.resolve();
+							await finish.promise;
+						}
+						return workspace.folder.kv.update(values);
+					},
+				},
+			},
+			credential: {
+				...workspace.credential,
+				async set(key) {
+					keys.push(key);
+					if (phase === 'credential') {
+						started.resolve();
+						await finish.promise;
+					}
+					return undefined;
+				},
+			},
+		}));
+		const { settings } = session;
+		settings.apiKey = 'submitted-fixture-key';
+		const saving = settings.save();
+		await started.promise;
+		expect(settings.saving).toBe(true);
+		settings.apiKey = 'next-fixture-key';
+		finish.resolve();
+		expect(await saving).toBeUndefined();
+		expect(keys).toEqual(['submitted-fixture-key']);
+		expect(settings.apiKey).toBe('next-fixture-key');
+		expect(settings.saving).toBe(false);
+	});
+}
+
+test('an empty submitted key does not save a key typed while folder settings are saving', async () => {
+	const started = deferred<void>();
+	const finish = deferred<void>();
+	const keys: string[] = [];
+	const { session } = await open((workspace) => ({
+		...workspace,
+		folder: {
+			...workspace.folder,
+			kv: {
+				...workspace.folder.kv,
+				async update(values) {
+					started.resolve();
+					await finish.promise;
+					return workspace.folder.kv.update(values);
+				},
+			},
+		},
+		credential: {
+			...workspace.credential,
+			async set(key) {
+				keys.push(key);
+				return undefined;
+			},
+		},
+	}));
+	const saving = session.settings.save();
+	await started.promise;
+	session.settings.apiKey = 'next-fixture-key';
+	finish.resolve();
+	expect(await saving).toBeUndefined();
+	expect(keys).toEqual([]);
+	expect(session.settings.apiKey).toBe('next-fixture-key');
 });

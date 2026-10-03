@@ -56,6 +56,7 @@ export function createSettingsDraft(library: Library) {
 		 */
 		async save(): Promise<SettingsSaveProblem | undefined> {
 			if (saving) return undefined;
+			const submittedKey = apiKey;
 			saving = true;
 			try {
 				const problem = await library.saveSettings({
@@ -64,11 +65,11 @@ export function createSettingsDraft(library: Library) {
 				});
 				if (problem)
 					return { title: 'Could not save the settings', description: problem };
-				if (apiKey !== '') {
-					const keyProblem = await library.saveCredential(apiKey);
+				if (submittedKey !== '') {
+					const keyProblem = await library.saveCredential(submittedKey);
 					if (keyProblem)
 						return { title: 'Could not save the key', description: keyProblem };
-					apiKey = '';
+					if (apiKey === submittedKey) apiKey = '';
 				}
 				return undefined;
 			} finally {

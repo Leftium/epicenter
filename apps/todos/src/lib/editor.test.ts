@@ -40,9 +40,9 @@ import type {
 } from '@epicenter/folder';
 import { FileError, hashBytes, TableError } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
+import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import { type TodoFields, todosDefinition } from './definition.js';
 import type { SavedText } from './editor.svelte.js';
 import { EDITABLE_TEXT_LIMIT } from './files.js';
@@ -58,10 +58,7 @@ const folder = expectOk(
 	await openFolder({
 		id: 'todos-editor-test',
 		definition: todosDefinition,
-		browser: {
-			commitOnEdit: false,
-			indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
-		},
+		browser: { commitOnEdit: false, ...testBrowserStorage() },
 	}),
 );
 afterAll(() => folder.close());

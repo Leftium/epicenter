@@ -12,9 +12,9 @@ import {
 	type TableSnapshot,
 } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
+import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import {
 	honeycrispDefinition,
 	type InspectNote,
@@ -26,10 +26,7 @@ const folder = expectOk(
 	await openFolder({
 		definition: honeycrispDefinition,
 		id: 'honeycrisp-inspect-test',
-		browser: {
-			commitOnEdit: false,
-			indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
-		},
+		browser: { commitOnEdit: false, ...testBrowserStorage() },
 	}),
 );
 

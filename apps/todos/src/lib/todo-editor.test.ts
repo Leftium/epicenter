@@ -35,8 +35,8 @@ import { afterEach, expect, test } from 'bun:test';
 import type { RowEditor } from '@epicenter/folder';
 import { FileError } from '@epicenter/folder';
 import { openFolder } from '@epicenter/folder/browser';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
+import { testBrowserStorage } from '../../../../packages/folder/src/browser-storage.test-support.js';
 import { type TodoFields, todosDefinition } from './definition.js';
 import type { TodoEditor } from './todo-editor.svelte.js';
 
@@ -62,10 +62,7 @@ async function setup(wrap: (row: Row) => Row = (row) => row) {
 		await openFolder({
 			id: `todo-editor-test-${count++}`,
 			definition: todosDefinition,
-			browser: {
-				commitOnEdit: false,
-				indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
-			},
+			browser: { commitOnEdit: false, ...testBrowserStorage() },
 		}),
 	);
 	cleanup.push(() => folder.close());

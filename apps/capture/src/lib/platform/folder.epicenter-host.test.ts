@@ -66,6 +66,7 @@ const wireSnapshot = (overridden: Record<string, unknown> = {}) => ({
 	branch: 'main',
 	remote: null,
 	commitOnEdit: true,
+	pendingIncoming: null,
 	files: { state: 'unknown', error: null },
 	sync: { state: 'unknown', error: null },
 	activity: Object.fromEntries(
@@ -313,7 +314,7 @@ test('the page names the Capture scope and is told the directory', async () => {
 
 	expect(sent('attach')[0]?.args).toEqual({
 		scope: 'so.epicenter.capture',
-		protocol: 4,
+		protocol: 5,
 	});
 	expect(host.location).toEqual({ kind: 'directory', root: ROOT });
 	expect(host.quitProtectionProblem).toBeUndefined();

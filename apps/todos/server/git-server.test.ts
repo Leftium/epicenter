@@ -7,8 +7,8 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openFolder } from '@epicenter/folder/browser';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { expectOk } from 'wellcrafted/testing';
+import { testBrowserStorage } from '../../../packages/folder/src/browser-storage.test-support.js';
 import { todosDefinition } from '../src/lib/definition.js';
 import { createGitHandler, prepareGitSession } from './git-server.js';
 
@@ -65,7 +65,7 @@ test('browser push, native pull and push, then browser fast-forward through the 
 				author: { name: 'Todos', email: 'todos@localhost' },
 				remote: { url: session.remoteUrl, branch: 'main' },
 				commitOnEdit: false,
-				indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+				...testBrowserStorage(),
 			},
 		}),
 	);

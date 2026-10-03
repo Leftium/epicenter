@@ -3,8 +3,8 @@
 - **Status:** Proposed
 - **Date:** 2026-10-03
 - **Relates:** [ADR-0461](0461-portable-data-folders-live-under-local-and-derived-account-scopes.md) defines authored folder owners; [ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md) defines shell-independent native runtime ownership; [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) separates optional derived caches from authored source.
-- **Implementation:** one IndexedDB database per browser folder with literal file bytes, metadata, directories, and private Git state. Application SQLite already uses a separate OPFS worker.
-- **Unbuilt:** captured channel/account folder addressing, corresponding lock and notification identities, channel-scoped SQL ownership, and any migration required to preserve existing namespaces. Generic folder queries and persistent query caches are unbuilt.
+- **Implementation:** one IndexedDB database per browser folder with literal file bytes, metadata, directories, and private Git state. Explicit browser scope captures channel/account folder addressing for databases, locks, and hints; release Local retains legacy names. Opening refuses a new scoped replacement when legacy data is unassigned. Application SQLite uses a separate OPFS worker.
+- **Unbuilt:** application scope selection and migration UI, channel-scoped SQL ownership, and any migration required to preserve existing namespaces. Generic folder queries and persistent query caches are unbuilt.
 
 ## Context
 
@@ -128,9 +128,9 @@ and a separate database needs its own lifecycle. Cache storage failures must
 not prevent querying readable source. Any eventual cache stays outside source
 enumeration, capture, history, transfer, and authored change notifications.
 
-ADR-0494's future `.epicenter/` boundary and legacy root `index.sqlite3`
-exclusion are planning concerns, not newly implemented filters. No cache writer
-ships before its source exclusions. Legacy `.epicenter/manifest.json` retains
+ADR-0494's future `.epicenter/` boundary remains a planning concern, not an
+implemented filter. The legacy root `index.sqlite3` exclusion has been removed.
+No cache writer ships before its source exclusions. Legacy `.epicenter/manifest.json` retains
 its existing contract until explicit conversion.
 
 **Namespace changes preserve existing data and exclude older active owners.**

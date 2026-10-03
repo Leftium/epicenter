@@ -250,6 +250,14 @@ export const OpenFolderError = defineErrors({
 		message: `A folder needs a nonempty id, not '${id}'`,
 		id,
 	}),
+	InvalidBrowserScope: ({ reason }: { reason: string }) => ({
+		message: `Invalid browser folder scope: ${reason}`,
+		reason,
+	}),
+	LegacyScopeUnassigned: ({ database }: { database: string }) => ({
+		message: `The legacy folder '${database}' must be assigned explicitly before opening a new scoped replacement`,
+		database,
+	}),
 	/** The desktop adapter was asked to open outside the desktop shell. */
 	NotTauri: () => ({
 		message:

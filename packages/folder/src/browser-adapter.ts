@@ -14,6 +14,7 @@
  * Importing this module opens nothing.
  */
 
+import { accountKey } from '@epicenter/principal/account-key';
 import { isTauri } from '@tauri-apps/api/core';
 import { Ok } from 'wellcrafted/result';
 import {
@@ -69,9 +70,57 @@ export const openFolder: OpenFolder = async ({
 	if (environment === undefined) return OpenFolderError.NoIndexedDb();
 
 	ensureBufferGlobal();
-	const database = `epicenter-folder:${id}`;
+	// Capture ownership before the first await. Nothing below rereads the caller's
+	// scope, so changing login or mutating options cannot retarget this lifetime.
+	const { scope } = browser;
+	const deploymentChannel = scope?.channel ?? 'release';
+	if (
+		scope !== undefined &&
+		scope?.channel !== 'release' &&
+		scope?.channel !== 'development'
+	)
+		return OpenFolderError.InvalidBrowserScope({ reason: 'unknown channel' });
+	let owner: string | null = null;
+	try {
+		if (scope?.account !== undefined) owner = await accountKey(scope.account);
+	} catch (cause) {
+		return OpenFolderError.InvalidBrowserScope({
+			reason:
+				cause instanceof Error ? cause.message : 'invalid account identity',
+		});
+	}
+	const scoped = deploymentChannel !== 'release' || owner !== null;
+	const address = JSON.stringify([
+		deploymentChannel,
+		owner === null ? 'local' : 'accounts',
+		owner,
+		id,
+	]);
+	const legacyDatabase = `epicenter-folder:${id}`;
+	const database = scoped
+		? `epicenter-folder-scoped:${address}`
+		: legacyDatabase;
+	const hintName = scoped
+		? `epicenter-folder-files-scoped:${address}`
+		: `epicenter-folder-files:${id}`;
+	const lockName = scoped
+		? `epicenter-folder-git-scoped:${address}`
+		: `epicenter-folder-git:${id}`;
 	let db: IDBDatabase;
 	try {
+		if (scoped) {
+			// Inspection creates no database and assigns no legacy data to a login.
+			// A runtime without enumeration refuses through Unavailable instead of
+			// guessing. This guard is not a migration or old-owner admission bridge.
+			const existing = await environment.indexedDB.databases();
+			if (
+				existing.some((entry) => entry.name === legacyDatabase) &&
+				!existing.some((entry) => entry.name === database)
+			)
+				return OpenFolderError.LegacyScopeUnassigned({
+					database: legacyDatabase,
+				});
+		}
 		db = await openFolderDatabase(database, environment);
 	} catch (cause) {
 		return OpenFolderError.Unavailable({ cause });
@@ -97,9 +146,7 @@ export const openFolder: OpenFolder = async ({
 		// Other tabs of this origin share the database. Each tells the others
 		// which paths its saves reached.
 		if (environment.BroadcastChannel !== undefined) {
-			channel = new environment.BroadcastChannel(
-				`epicenter-folder-files:${id}`,
-			);
+			channel = new environment.BroadcastChannel(hintName);
 			// A runtime that counts an open channel as pending work must not be
 			// kept alive by a folder nobody closed.
 			(channel as { unref?: () => void }).unref?.();
@@ -109,7 +156,7 @@ export const openFolder: OpenFolder = async ({
 		const backend = await createBrowserGitBackend({
 			db,
 			environment,
-			lockName: `epicenter-folder-git:${id}`,
+			lockName,
 			branch: remote?.branch ?? 'main',
 			remote,
 		});

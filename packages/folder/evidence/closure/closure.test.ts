@@ -36,7 +36,7 @@ describe('what the TypeScript program loads', () => {
 		['folder', FOLDER],
 		['definition', DEFINITION],
 	])(
-		'the %s program, tests included, loads nothing of App, other workspace packages, or Yjs',
+		'the %s program, tests included, loads only its declared workspace leaves and no App or Yjs',
 		async (name, directory) => {
 			const files = await program(directory);
 			expect(files.some((file) => file.startsWith(`${directory}/src/`))).toBe(
@@ -46,7 +46,9 @@ describe('what the TypeScript program loads', () => {
 				.filter((file) => file.startsWith(`${PACKAGES}/`))
 				.map((file) => relative(PACKAGES, file).split('/')[0]);
 			expect([...new Set(workspace)].sort()).toEqual(
-				name === 'folder' ? ['definition', 'folder'] : ['definition'],
+				name === 'folder'
+					? ['definition', 'folder', 'principal']
+					: ['definition'],
 			);
 			const forbidden = files.filter(
 				(file) =>

@@ -10,6 +10,7 @@
  * Git implementation, and no runtime-specific module.
  */
 import type { DataDefinition } from '@epicenter/definition';
+import type { AccountIdentity } from '@epicenter/principal';
 import type { Result } from 'wellcrafted/result';
 import type { IndexedDbEnvironment } from './browser-store.js';
 import type { OpenFolderError } from './errors.js';
@@ -117,6 +118,17 @@ export type { FolderTerminal, TerminalResult } from './terminal.js';
  * reports the policy in effect through `git.snapshot`.
  */
 export type BrowserFolderOptions = {
+	/**
+	 * Captured storage ownership, independent of login changes after opening.
+	 * Omitted: retain the established Local database, lock, and hint names.
+	 * Release Local also retains those names. Other scopes use separate names
+	 * and refuse an empty replacement when an unassigned legacy folder exists.
+	 * This option does not migrate data or change private application SQL.
+	 */
+	readonly scope?: {
+		channel: 'release' | 'development';
+		account?: AccountIdentity;
+	};
 	/**
 	 * Author and committer of the commits this browser records. Defaults to a
 	 * local identity, which is enough for history that stays in the browser. A

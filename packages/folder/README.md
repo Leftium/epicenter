@@ -43,7 +43,7 @@ nothing. On a server, opening returns a refusal.
 openFolder({
   definition,
   id,        // optional: which folder. Defaults to definition.id. Never a path.
-  browser,   // optional: { author, remote, commitOnEdit, indexedDb }
+  browser,   // optional: { scope, author, remote, commitOnEdit, indexedDb }
 }): Promise<Result<Folder, OpenFolderError>>
 ```
 
@@ -52,6 +52,31 @@ local author by default and commits each save automatically; a `remote` needs
 an explicit `author`. In the desktop app the shell owns the directory, the
 author, the remote, and the history policy. The policy in effect is on
 `folder.git.snapshot` either way.
+
+Browser storage ownership can be supplied explicitly:
+
+```ts
+openFolder({
+  definition,
+  browser: { scope: { channel: 'development' } },
+});
+// For an account: scope: { channel: 'release', account }
+// account is the captured { authorityId, principalId }, without credentials.
+```
+
+The browser derives database, Web Lock, and notification names from the same
+captured channel, scope, account key, and folder ID. Later login changes do not
+retarget an open handle. Omitted scope and explicit release Local keep the
+established names and reopen existing bytes and history. Development and
+account scopes use a separate namespace; they do not change private app SQL.
+
+If the scoped database is absent but an old unscoped folder exists, opening
+returns `LegacyScopeUnassigned` before creating a replacement. Existing scoped
+databases can reopen. The package does not infer which account owns legacy
+data, move it, or provide a migration UI. Opening a new scope requires
+IndexedDB database enumeration; unavailable enumeration returns `Unavailable`.
+Apps must choose their scope explicitly; existing callers are not automatically
+switched to development or account storage.
 
 A desktop page whose folder cannot be opened (no plugin, no permission, an
 unregistered ID, another protocol version, a folder another process holds)

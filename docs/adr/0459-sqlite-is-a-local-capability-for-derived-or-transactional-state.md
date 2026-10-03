@@ -83,12 +83,12 @@ channel and account addresses. Address changes require implementation and
 preserving migration before current storage paths change.
 Provider mirrors and retained transactional databases stay with the app/account
 runtime outside authored folders. Current native databases use AppData; browser
-databases use OPFS. Optional rebuildable caches derived from a folder may live
-under that folder's root `.epicenter/`, as proposed in
+databases use OPFS. Folder queries use transient in-memory projections under
 [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md).
-Browser targets preserve the same logical separation; physical query-cache
-placement remains deferred until persistence earns its place.
-A `.gitignore` entry does not establish the source boundary.
+No new `.epicenter/` cache subtree is reserved. Persistent caching and placement
+are deferred on both runtimes until a caller and end-to-end measurements justify
+them. Any future cache must remain outside authored capture and transfer; a
+`.gitignore` entry alone does not establish that boundary.
 
 A completed query export uses the default filename `query.sqlite3` at an
 explicitly selected destination under
@@ -149,9 +149,10 @@ Most applications use one editable table/KV model for local and synchronized
 data. SQLite remains available without making every application maintain a
 second authoritative representation of its records.
 
-An authored-folder copy includes its authored data and attachment bytes and
-omits optional `.epicenter/` caches. Mail's app/account databases require a
-separate backup. Erasing the pending-work database loses undelivered work.
+An authored-folder copy includes its selected authored data and attachment bytes.
+No directory is omitted merely because it is named `.epicenter`; legacy
+reconciliation manifests keep their existing contracts. Mail's app/account
+databases require a separate backup. Erasing the pending-work database loses undelivered work.
 Copying or restoring those obligations does not authorize execution; transfer
 or restore needs an explicit activation contract regardless of database location.
 

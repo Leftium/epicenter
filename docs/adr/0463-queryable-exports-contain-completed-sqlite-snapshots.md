@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-30
-- **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) separates optional folder caches from app/account working state.
+- **Relates:** [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md) defines transient folder query sessions separately from app/account working state.
 - **Unbuilt:** SQL snapshot generation, standalone export validation, and complete public folder publication. No live root database filename is reserved by the folder engine.
 
 ## Context
@@ -12,9 +12,9 @@ SQL tools need a database to query them. A completed database can describe one
 selected file snapshot without making SQLite the saved authority.
 
 The earlier root `index.sqlite3` proposal reserved a filename in every live
-folder. There is no generator or external reader relying on that path. The
-working query cache and a completed export differ in lifetime, not in a
-required canonical filename or separate projection format.
+folder. There is no generator or external reader relying on that path.
+A transient query session and a completed export differ in lifetime and
+publication. Neither requires a saved database inside the live folder.
 
 ## Decision
 
@@ -29,17 +29,18 @@ live source folder/                  chosen complete export/
   kv.json                              kv.json
   recordings/r123.md                    recordings/r123.md
   recordings/r123.opus                  recordings/r123.opus
-  .epicenter/query.sqlite3              query.sqlite3
-    optional working cache
+                                       query.sqlite3
 ```
 
 The export remains unchanged until explicitly regenerated. It is a read
 snapshot, not evidence that current source still matches it. Direct SQL writes
 do not edit Markdown or establish another saved authority. The destination may
 use another filename; no index-versus-query format distinction is introduced.
-Projection code can be shared with an internal query cache. Detailed schema
-and column names remain a separate decision; a working cache does not become
-a supported external interface merely because its bytes are accessible.
+Projection code can be shared with transient query sessions. Detailed schema
+and column names remain a separate decision. Exported tables need an explicit
+public contract rather than exposing the session engine by accident. An export
+written inside a live folder is an ordinary authored file; its name supplies no
+special source exclusion or cache lifecycle.
 
 **A completed export opens without required WAL or journal companions.**
 Generation selects one immutable captured file set, stages and validates the
@@ -73,15 +74,16 @@ selected media, and a database generated from the same snapshot. Referenced
 dependencies are included or reported unresolved; a complete-media promise
 requires their bytes.
 
-Application SQL, credentials, and private cache directories are not published
-as source. Generated SQLite files and companions are ignored by default under
-ADR-0494. An intentional saved database can have an explicit history exception;
-that choice does not turn it into an app-maintained live cache.
+Application SQL and credentials are not published as source. No new
+`.epicenter/` directory is created or excluded by this export contract. Managed
+SQLite ignore defaults remain unbuilt under ADR-0494; intentional saved
+databases follow ordinary history rules and can use an explicit ignore exception.
+That choice does not turn it into an app-maintained live cache.
 
 ## Consequences
 
-- One default filename and projection implementation serve query caches and
-  completed exports without reserving another file at every live folder root.
+- Completed exports have a default filename and may share projection code
+  with transient sessions. Live folders require no persistent query database.
 - Export is an explicit operation. External tools use its selected destination
   rather than assuming every folder has a continuously current SQL file.
 - A standalone database contains queryable values and locators, not attachment

@@ -1,152 +1,136 @@
-# 0494. File folders reserve .epicenter for rebuildable caches
+# 0494. File-folder queries use transient captured projections
 
 - **Status:** Proposed
 - **Date:** 2026-10-03
 - **Relates:** [ADR-0436](0436-stores-own-local-sqlite-namespaces.md) defines current store-owned SQL; [ADR-0459](0459-sqlite-is-a-local-capability-for-derived-or-transactional-state.md) separates authored files from application SQL; [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md) defines completed query exports.
-- **Unbuilt:** reserved-path enforcement, managed-folder ignore initialization, folder-derived query caches, SQL export, and file-first Mail resource composition. Current Personal SQL acquisition and AppData/OPFS paths remain implemented.
+- **Unbuilt:** folder query sessions, projection schema and capture contract, SQL exports, managed-folder ignore initialization, explicit legacy-checkout adoption, and file-first Mail resource composition. Persistent folder caches and their locations are deferred, not implementation tasks.
 
 ## Context
 
 A file-authoritative folder saves Markdown rows, `kv.json`, and attachments.
-A derived query database can accelerate reads of that folder. Local Mail also
-holds downloaded Gmail data and pending edits, but those databases are keyed
-by the captured Epicenter account, application, and Google subject. Selecting
-another saved-query folder must not select another mailbox or outbox.
+SQL can query an interpretation of those files without becoming their saved
+representation. No generic file-folder query caller or SQL export generator
+is implemented. The existing synthetic index benchmark measures a Yjs walk
+and Bun SQLite insertion, not file capture, Markdown parsing, browser SQL,
+or peak memory in a folder containing recordings.
 
-Mail currently borrows Personal's SQL namespace. Its durable `local` database
-holds connected accounts, pending edits, revision counters, and delivery
-reports. Each `mail-<sub>` database holds downloaded mail and checkpoints.
-Saved queries remain Yjs Personal rows. No file-folder query consumer or SQL
-export generator is implemented.
+The earlier `.epicenter/cache/` and `.epicenter/state/` proposal put unrelated
+lifetimes under an authored folder. A later `.epicenter/query.sqlite3` cache
+removed pending work from that tree but still selected a persistent location
+before any caller demonstrated a need. It required source exclusions,
+cache validation, publication, and legacy adoption rules for an unbuilt cache.
+The root `index.sqlite3` exclusion has since been removed from the folder engine.
 
-The proposed `.epicenter/cache/` and `.epicenter/state/` tree put unrelated
-lifetimes under one authored folder. It would make a folder copy carry
-executable pending work. A separate root `index.sqlite3` also required filename
-exclusions without an implemented reader or generator.
-
-Legacy Yjs working copies already use `.epicenter/manifest.json` as their
-reconciliation baseline. That existing contract is not a disposable cache.
+Legacy Yjs working copies use `.epicenter/manifest.json` as their reconciliation
+baseline. Those bytes have an existing owner and are not disposable query data.
 
 ## Decision
 
-**In file-authoritative folders, root `.epicenter/` is reserved for optional, rebuildable folder-derived caches.**
-The directory contains no authored preferences, credentials, provider mirrors,
-pending actions, or original unfinished recordings/downloads. A native query
-cache, when a real indexed-query consumer needs one, uses the flat path
-`.epicenter/query.sqlite3`. Do not eagerly create a database or add `cache/`,
-`state/`, `logs/`, or `tmp/` directories without consumers and separate reasons.
-Any temporary cache-generation bytes must also be reconstructable from source.
+**Folder queries start with transient in-memory projections. No new `.epicenter/` directory, reserved subtree, or live database filename is part of this design.**
 
-The first folder query implementation captures source and its selected definition
-and builds an in-memory projection. A single query releases it after execution;
-an explicit query session may run several queries against the same immutable
-capture before refresh or closure. Results describe that capture, not a promise
-that the live folder remains unchanged. Refresh creates a new capture and
-projection. Writes based on results retain the source's conditional-save checks.
-The transient connection is owned separately from app/account SQL lifetimes.
-Change hints may mark a session stale; they do not prove freshness. Persistent
-reuse requires a measured benefit over capture and projection, not merely a
-reserved filename.
+A query captures selected source and its definition interpretation, builds an
+in-memory SQLite projection, executes, and releases its resources. An explicit
+query session may execute several queries against the same immutable projection
+until refresh or closure. It amortizes capture, parsing, and insertion without
+adding durable cache ownership. It never claims that live files remain unchanged.
 
-The query cache belongs to one data folder and its definition interpretation,
-not to an application installation or account profile. Native persistence uses
-that folder's `.epicenter/query.sqlite3`. Under
-[ADR-0497](0497-browser-folders-use-indexeddb-and-private-sqlite-uses-opfs.md),
-browser queries use IndexedDB source and an in-memory projection. The physical
-location of any future browser snapshot is deferred until persistence is
-justified; neither a cache object store nor a separate database is selected.
-The native cache address does not promise a browser file or public read alias.
-An in-memory projection needs no file. Native colocation follows the selected folder
-without a separate cache-address registry, but the database is never required
-to recover its source. A copied cache is reusable only after validation.
+Refresh builds a replacement capture and projection. In-flight queries retain
+their original capture. A failed refresh reports failure and preserves the
+previous usable session; it does not relabel old results as fresh. Closing the
+session or its folder ends admission and releases its engine after admitted
+operations settle. Queries after closure refuse. Change hints may mark a
+session stale, but cannot prove freshness or trigger a promised continuous rebuild.
 
-If persistence earns its place, prefer a completed standalone snapshot over a
-live mutable cache. Build from captured bytes, then publish database bytes through
-the cache owner. Browser readers can load those bytes into memory without a
-folder-cache SAH pool; native readers must detach bytes or coordinate connection
-closure before replacement. Serialization, memory use, and recovery require
-verification before this strategy ships. Mail's private SQL pools are unaffected.
+The session owns its transient engine separately from app/account SQL. It does
+not borrow Mail's durable databases, acquire its execution claims, or require
+its OPFS pool. Read-only execution must restrict access to the projected tables
+and support cancellation and bounded results. The exact engine integration,
+public API, and projection schema require a concrete caller before implementation.
 
-Reuse validates source content, definition interpretation, and projection/build
-version. Schema equality alone is insufficient. Missing, stale, corrupt, or
-unwritable cache storage must not by itself prevent querying readable admitted
-source. Cache rebuild and publication never mutate authored files.
+**Capture reports what it read and what it could not read.**
 
-Queries describe the immutable bytes captured for that run. Folder admission
-orders the owner's operations; it does not freeze external editors or establish
-an atomic whole-folder observation. Unreadable or disappearing files must be
-reported. The public projection schema and malformed-row policy must be settled
-before implementation; silently dropping rows is not a complete query result.
+Read only the bytes needed to interpret selected rows and settings. Media
+listing does not require loading recording bytes into SQLite or memory. Do not
+reuse a whole-folder Git capture that loads every attachment merely to query
+text. Size or memory limits refuse with an explicit result rather than silently
+truncating the selected source.
 
-The source path boundary reserves a first segment equal to `.epicenter` ignoring
-ASCII case. This is a root-only reservation: `notes/.epicenter/` is not reserved
-by this record. It changes no spelling of authored paths. Source `files` reads,
-writes, enumeration, terminal access, history capture, change hints, and
-incoming adoption refuse or skip the reserved root subtree as appropriate.
-Enumeration skips it before descent, reading, hashing, linking, or copying.
-Ignoring extensions after capture is not this boundary.
+Projected source carries literal paths and hashes of the bytes actually read.
+Use the folder's interpretation rules rather than introducing a competing
+parser. Report unreadable or disappearing files, parse failures, and conformance
+issues. The malformed-row representation remains a projection-schema decision;
+silently dropping rows does not produce a complete result. Listed media metadata
+must not claim a content hash when its bytes were not read.
 
-The cache owner accesses the subtree through its own implementation boundary.
-It fences operations and closes affected connections before resetting a cache.
-Existing or incoming tracked `.epicenter/` paths are refused rather than silently
-dropped from a commit. Explicit conversion is required before adopting such a
-folder under the new contract.
+Capture orders admitted owner operations but does not freeze external desktop
+editors. Browser enumeration and later reads may also use separate transactions.
+Neither runtime promises an atomic whole-folder observation without a separately
+verified capture contract. Writes based on results retain conditional saves
+against their source baselines. Query failure never changes authored files or
+undoes a successful save.
 
-Browser caches are scoped to the selected browser origin and folder identity,
-outside IndexedDB's authored source boundary. No browser SQL cache is required
-until a query consumer needs one. A native or browser cache must validate the
-source it projects and its definition interpretation before
-reuse. Presence at the right path does not prove freshness. Refresh scheduling,
-query schema, and source-validation machinery remain unbuilt; no continuous
-watcher, whole-folder version API, or direct-cache-reader contract is promised.
-No implementation may write cache bytes until those bytes are excluded from
-source enumeration, capture, history, transfer, and authored change notifications.
-Native writers additionally require the reserved `.epicenter/` boundary.
-Any browser cache upgrade or publication failure must preserve source availability.
-A Git ignore entry alone does not satisfy this ordering.
+**Persistent caching is deferred, including its location and filename.**
 
-**Application/account working state remains outside authored folders.**
-Mail's mailbox mirrors and durable outbox keep the captured app/account runtime
-as their owner. Changing the saved-query folder does not move or duplicate them.
-Current native files stay in AppData and browser SQL stays in OPFS. No generic
-`folder.sqlite` capability or `.epicenter/state/` namespace is introduced.
-Ordinary preferences and saved queries move to file authority when their
-consumers migrate, independently of SQL's retained state.
+A concrete consumer and end-to-end measurements must establish the benefit over
+retaining a projection in memory. Measure enumeration, reads, parsing, SQL
+construction, repeated queries, and peak memory on native files and browser
+IndexedDB source. A synthetic Yjs or insertion-only benchmark cannot settle this.
 
-The file-first target separates these owners:
+A later decision must select cache ownership, placement, validation, publication,
+and recovery together. There is no current commitment to a folder-local file,
+AppData location, OPFS pool, IndexedDB object store, or separate cache database.
+Before any cache writes bytes, its owner must keep those bytes outside authored
+enumeration, capture, history, transfer, and change notifications. A Git ignore
+entry alone cannot enforce that separation. Cache loss, corruption, or failed
+publication must not prevent querying readable source.
+
+**Application/account working state stays outside authored folders.**
+
+Mail's durable `local` database holds connected accounts, pending edits,
+revision counters, and delivery reports. Its `mail-<sub>` databases hold
+provider mirrors and checkpoints. Their captured app/account runtime owns
+migration, reset, and delivery. Selecting another saved-query folder does not
+select another mailbox or outbox. Current native SQL stays in AppData and
+browser SQL stays in OPFS; these paths do not change through this decision.
+
+File-first composition must acquire the source folder and app/account SQL under
+one captured account. Replacing borrowed `personal.sqlite` acquisition remains
+unbuilt. Do not retain an empty Yjs store solely to acquire SQL or manufacture
+a source folder for SQL-only work. No generic `folder.sqlite` capability is added.
 
 ```text
 selected Mail source folder/
   kv.json
   savedQueries/query1.md
   .gitignore
-  .epicenter/
-    query.sqlite3                  only if an indexed-query consumer needs it
+
+query session/                       memory only; no saved directory
+  captured interpretation
+  transient SQLite projection
 
 captured app/account SQL namespace/  AppData on desktop, OPFS in browser
-  local.sqlite                      retained accounts and pending work
-  mail-<google-sub>.sqlite           downloaded mailbox and checkpoints
+  local.sqlite                       existing retained state and pending work
+  mail-<google-sub>.sqlite            existing mailbox and checkpoints
 
 chosen export destination/
-  query.sqlite3                     completed snapshot; optional owned media
+  query.sqlite3                      completed snapshot; optional owned media
 ```
 
-File-first product resource composition must acquire the source folder and
-app/account SQL lifetime under one captured account. The low-level SQL owner
-already supports that identity, but a replacement for borrowed
-`personal.sqlite` acquisition is unbuilt. Do not retain an empty Yjs store
-solely to acquire SQL, manufacture a source folder for SQL-only work, or weaken
-connection fencing. Public opener design remains separate from this location
-decision.
+**Completed exports default to `query.sqlite3` at an explicit destination.**
 
-**New application-managed SQLite files use `.sqlite3`, and managed folders ignore SQLite and its companions by default.**
-Managed folder creation writes the following `.gitignore` defaults as source.
-Ordinary opening does not rewrite an existing ignore file. Applying defaults
-to an existing folder is explicit and preserves user rules and exceptions.
-This initialization is unbuilt.
+An export may share projection code with query sessions, but has a separately
+chosen durable destination under ADR-0463. It is not continuously refreshed.
+Saving one inside a live folder makes it an ordinary authored file subject to
+normal history rules; its name does not activate a cache or another authority.
+
+**New application-managed SQLite files use `.sqlite3`; managed folders ignore SQLite and its companions by default.**
+
+Managed creation writes these proposed defaults as source. Ordinary opening
+never rewrites an existing `.gitignore`. Applying defaults to an existing folder
+is explicit and preserves user rules and exceptions. Initialization is unbuilt.
+No `.epicenter/` ignore entry is added by this decision.
 
 ```gitignore
-/.epicenter/
 *.sqlite
 *.sqlite3
 *.sqlite-wal
@@ -157,64 +141,51 @@ This initialization is unbuilt.
 *.sqlite3-journal
 ```
 
-`.sqlite` remains covered for existing files. `.db` is not the new convention
-or a blanket exclusion. An intentionally saved SQLite dataset outside
-`.epicenter/` may have an explicit ignore exception. Existing tracked SQLite
-files remain tracked until explicitly removed from inclusion. An ignore rule
-does not make retained SQL safe to delete, and an extension change does not
-migrate current paths or internal adapter databases.
+`.sqlite` covers existing files. `.db` is neither the new convention nor a blanket
+exclusion. Intentional SQLite datasets can use an explicit ignore exception.
+Tracked files remain tracked until explicitly removed from inclusion. Ignore
+rules affect Git inclusion, not source readability, backup selection, deletion
+safety, or execution of imported pending work. Renaming extensions is not migration.
 
-**Native working caches and completed exports use the default name `query.sqlite3`.**
-Export generates a standalone database at an explicit destination under
-[ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md). It
-requires no reserved file at the live folder root. The cache and export can
-share projection code; their names do not define different SQL schemas.
-Browser persistence adds no physical filename contract. Authored files remain
-the saved authority. Copying arbitrary live cache bytes is not an export operation.
+**Existing `.epicenter/` uses retain their contracts.**
 
-**The new reservation does not reinterpret legacy `.epicenter/manifest.json`.**
-Legacy checkout readers and writers keep their existing manifest semantics.
-A file-authoritative opener must identify a known legacy manifest and refuse
-silent adoption until explicit conversion preserves source and retires the
-legacy owner. It must not delete the manifest as cache or globally apply this
-record to old checkouts. Conversion and reserved-path enforcement are unbuilt.
+This decision creates no path exclusion or permission to delete a directory by
+name. Legacy checkout readers and writers keep their manifest semantics. Explicit
+adoption of a known legacy checkout must preserve its reconciliation state and
+retire the old writer before changing ownership. That adoption protocol remains
+unbuilt; leaving out a new cache reservation does not authorize two writers.
 
 ## Consequences
 
-Folder-derived caches follow their source without choosing a separate cache
-address for every selected native directory. A source copy works without the
-cache. A raw copy can include a stale cache, so validation is still necessary.
-Flat `.epicenter/` supplies one source boundary; it does not justify an index
-before a query consumer demonstrates the need.
+Folder queries need no persistent database, cache-address registry, cache
+migration, reserved-path enforcement, watcher, or background projector. Related
+queries can reuse a captured projection, and fresh sessions pay capture and
+projection costs. Large collections may later justify persistence; that benefit
+has not been established for actual file-folder queries.
 
-A Mail source-folder copy does not back up pending triage or downloaded offline
-mail. Those runtime bytes need a separate backup. Restore and execution-owner
-admission remain necessary in any location; AppData does not solve duplicate
-or stale delivery after a raw database copy. Provider reset recovers only what
-Gmail still retains. Atomic assertion, revision-checked retirement, and refusing
-account removal while work is owed remain Mail requirements.
+Authored folders require no new `.epicenter/` subtree. Their current files remain
+readable and portable. Explicit SQLite exports supply external SQL tools without
+promising a continuously current database in every folder.
 
-This removes the planned universal per-folder SQL namespace and cache/state
-taxonomy. It does not remove SQL lifecycle ownership. Current `.epicenter/`
-paths are ordinary source in the file-folder engine until enforcement ships.
-The folder engine no longer treats root `index.sqlite3` specially. An authored
-SQLite file follows ordinary Git rules; the future reserved-cache boundary and
-managed ignore initialization remain unbuilt.
+A Mail source-folder copy does not back up its offline mailbox or pending triage.
+Those databases need separate backup and safe activation after restore. Mirror
+reset cannot recover provider-deleted mail or pending actions. Atomic assertion,
+revision-checked retirement, and execution ownership remain Mail requirements.
 
 ## Considered alternatives
 
-- Self-contained `.epicenter/cache/` and `.epicenter/state/`: keeps more app
-  bytes together, but couples account/provider work to a selected source folder.
-  A fixed one-folder Mail product could choose it, accepting that raw copies
-  carry mailbox data and executable obligations. That is a product constraint,
-  not a general folder default.
-- All caches in runtime storage: simplest for current callers and valid for a
-  future implementation. Arbitrary source roots still need a cache-address and
-  validation policy; folder-local placement is an optional convenience.
-- `.local/`: names locality rather than the owner and duplicates Local scope
-  vocabulary. `.epicenter/` identifies who manages the optional cache.
-- `.git/epicenter/` for pending work: resetting history could destroy the only
-  copy of undelivered actions.
-- Root `index.sqlite3`: adds a second canonical filename and source exclusion
-  without a demonstrated discoverability requirement. Explicit query exports
-  retain sharing without a permanently reserved root file.
+- Reserve `.epicenter/query.sqlite3` now: preselects a cache owner and location
+  without a consumer or measurements. It adds exclusions and adoption work and
+  conflicts with legacy manifest semantics. A later measured cache may choose
+  folder-local placement under a new, explicit contract.
+- Persist an app-owned folder index with fingerprints: adds database naming,
+  scope alignment, schema changes, and erasure. Native size and modification
+  time cannot prove unchanged bytes; hashing still pays the source-read cost.
+  Defer it until avoiding parsing and insertion has a measured benefit.
+- Rebuild for every statement: avoids session ownership but repeats capture and
+  construction and gives related queries different source images. Allow an
+  explicitly owned in-memory session instead.
+- Put pending work under `.epicenter/state/` or private Git state: copies or
+  history resets can duplicate or destroy the only undelivered user intent.
+- Require a root `index.sqlite3`: adds a discovery promise and source exception
+  without a caller. Explicit exports cover intentional SQL sharing.

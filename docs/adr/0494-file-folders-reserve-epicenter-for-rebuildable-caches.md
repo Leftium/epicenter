@@ -50,15 +50,19 @@ reserved filename.
 
 The query cache belongs to one data folder and its definition interpretation,
 not to an application installation or account profile. Native persistence uses
-that folder's `.epicenter/query.sqlite3`; browser persistence uses the same
-address under ADR-0497. Cache placement does not require a particular SQLite VFS.
-An in-memory projection needs no file. Colocation follows the selected folder
+that folder's `.epicenter/query.sqlite3`. Under
+[ADR-0497](0497-browser-folders-use-indexeddb-and-private-sqlite-uses-opfs.md),
+browser queries use IndexedDB source and an in-memory projection. The physical
+location of any future browser snapshot is deferred until persistence is
+justified; neither a cache object store nor a separate database is selected.
+The native cache address does not promise a browser file or public read alias.
+An in-memory projection needs no file. Native colocation follows the selected folder
 without a separate cache-address registry, but the database is never required
 to recover its source. A copied cache is reusable only after validation.
 
 If persistence earns its place, prefer a completed standalone snapshot over a
-live mutable cache. Build from captured bytes, then publish database bytes at the
-same cache address. Browser readers can load those bytes into memory without a
+live mutable cache. Build from captured bytes, then publish database bytes through
+the cache owner. Browser readers can load those bytes into memory without a
 folder-cache SAH pool; native readers must detach bytes or coordinate connection
 closure before replacement. Serialization, memory use, and recovery require
 verification before this strategy ships. Mail's private SQL pools are unaffected.
@@ -89,15 +93,17 @@ dropped from a commit. Explicit conversion is required before adopting such a
 folder under the new contract.
 
 Browser caches are scoped to the selected browser origin and folder identity,
-outside the authored source boundary. No browser SQL cache is required until
-a query consumer needs one. A native or browser cache
-must validate the source it projects and its definition interpretation before
+outside IndexedDB's authored source boundary. No browser SQL cache is required
+until a query consumer needs one. A native or browser cache must validate the
+source it projects and its definition interpretation before
 reuse. Presence at the right path does not prove freshness. Refresh scheduling,
 query schema, and source-validation machinery remain unbuilt; no continuous
 watcher, whole-folder version API, or direct-cache-reader contract is promised.
-No implementation may write cache bytes until that implementation excludes
-`.epicenter/` from source capture, history, and transfer. A Git ignore entry alone
-does not satisfy this ordering.
+No implementation may write cache bytes until those bytes are excluded from
+source enumeration, capture, history, transfer, and authored change notifications.
+Native writers additionally require the reserved `.epicenter/` boundary.
+Any browser cache upgrade or publication failure must preserve source availability.
+A Git ignore entry alone does not satisfy this ordering.
 
 **Application/account working state remains outside authored folders.**
 Mail's mailbox mirrors and durable outbox keep the captured app/account runtime
@@ -158,13 +164,13 @@ files remain tracked until explicitly removed from inclusion. An ignore rule
 does not make retained SQL safe to delete, and an extension change does not
 migrate current paths or internal adapter databases.
 
-**Working caches and completed exports use the single default name `query.sqlite3`.**
+**Native working caches and completed exports use the default name `query.sqlite3`.**
 Export generates a standalone database at an explicit destination under
 [ADR-0463](0463-queryable-exports-contain-completed-sqlite-snapshots.md). It
 requires no reserved file at the live folder root. The cache and export can
 share projection code; their names do not define different SQL schemas.
-Authored files remain the saved authority. Copying arbitrary live cache bytes
-is not an export operation.
+Browser persistence adds no physical filename contract. Authored files remain
+the saved authority. Copying arbitrary live cache bytes is not an export operation.
 
 **The new reservation does not reinterpret legacy `.epicenter/manifest.json`.**
 Legacy checkout readers and writers keep their existing manifest semantics.

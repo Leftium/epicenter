@@ -2,13 +2,13 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-29
-- **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) proposes authoritative document files; [ADR-0456](0456-a-markdown-row-owns-at-most-one-same-stem-attachment.md) defines row-owned attachments; [ADR-0436](0436-stores-own-local-sqlite-namespaces.md) defines current SQL acquisition and account scoping.
+- **Relates:** [ADR-0450](0450-current-files-own-portable-document-data.md) proposes authoritative document files; [ADR-0436](0436-stores-own-local-sqlite-namespaces.md) defines current SQL acquisition and account scoping.
 - **Unbuilt:** file-backed tables and KV as the default application store, rebuildable indexes over those files, and consumer migration to this storage-selection rule.
 
 ## Context
 
 A data folder contains tables of Markdown rows,
-root `kv.json`, and row-owned attachment files. An application, editor, or agent
+root `kv.json`, and ordinary media files. An application, editor, or agent
 can work on the same saved data. Device-only preferences benefit from this
 interface even when nobody intends to synchronize them. A pending-work table
 can use it too; the application decides whether creating a row submits work.
@@ -32,8 +32,9 @@ borrowed `store.sqlite` access. The file-first application store remains unbuilt
 
 **Epicenter-authored application data uses data folders by default, whether local-only or synchronized.**
 
-Tables contain Markdown rows; `kv.json` contains settings. A row owns zero or one
-same-stem sibling attachment under ADR-0456. For example:
+Tables contain Markdown rows; `kv.json` contains settings. Media remains ordinary
+file content. An application may place related files beside a row, but matching
+stems do not establish ownership or authorize cascade deletion. For example:
 
 ```text
 so.epicenter.whispering/
@@ -58,7 +59,8 @@ Credentials remain outside data folders in the existing secrets capability.
 | Transactional state, such as pending Mail edits | The local database until the work is resolved | Retain committed state; it cannot be reconstructed from the mirror |
 
 Every derived database names its source and rebuild procedure. A large authored
-collection first gets a derived index while its files remain authoritative.
+collection can use an in-memory projection or a measured persistent cache while
+its files remain authoritative.
 Rebuilding a provider mirror requires provider access and does not recover mail
 the provider no longer retains.
 
@@ -72,18 +74,20 @@ transactions internally without becoming authoritative.
 **Private application databases stay device-local, and application-managed SQLite files do not participate in Epicenter data folder synchronization.**
 
 Account scoping selects local ownership; it does not synchronize the database.
-Neither database files nor their WAL/journal companions enter data folder sync.
+Private database files and their WAL/journal companions do not enter data folder sync.
 [ADR-0496](0496-native-app-runtime-storage-is-independent-of-the-shell.md)
 proposes one native app/account address shared by standalone and hosted shells,
-with cross-process admission. [ADR-0497](0497-browser-folders-use-opfs-with-recoverable-publication.md)
-proposes OPFS-backed browser folders with the same logical separation. Both
-require implementation and migration before current storage paths change.
+with cross-process admission. [ADR-0497](0497-browser-folders-use-indexeddb-and-private-sqlite-uses-opfs.md)
+retains IndexedDB authored folders and separate private OPFS SQL, with captured
+channel and account addresses. Address changes require implementation and
+preserving migration before current storage paths change.
 Provider mirrors and retained transactional databases stay with the app/account
 runtime outside authored folders. Current native databases use AppData; browser
 databases use OPFS. Optional rebuildable caches derived from a folder may live
 under that folder's root `.epicenter/`, as proposed in
 [ADR-0494](0494-file-folders-reserve-epicenter-for-rebuildable-caches.md).
-Browser targets preserve the same logical separation in browser-managed storage.
+Browser targets preserve the same logical separation; physical query-cache
+placement remains deferred until persistence earns its place.
 A `.gitignore` entry does not establish the source boundary.
 
 A completed query export uses the default filename `query.sqlite3` at an
@@ -118,12 +122,14 @@ global delivery order by using SQLite.
 
 ## Execution
 
-1. Implement the data folder table/KV engine with current files as authority. Prove
+1. Adopt the data folder table/KV engine with current files as authority. Prove
    that editing a device preference in `kv.json` while the app is closed is
-   observed on reopening. Preserve same-stem row/attachment ownership.
-2. Add derived indexes where querying requires them. Verify that deleting and
-   rebuilding an index preserves authored files and produces equivalent query
-   results. Index failure must not turn the index into the saved authority.
+   observed on reopening. Table operations affect only the selected Markdown
+   row; media operations use explicit file paths.
+2. Add captured in-memory query projections where consumers need SQL. Several
+   queries may share one immutable capture. Add persistent reuse only when
+   measurements justify it. Verify equivalent results after rebuilding, with
+   source files preserved and readable even when optional cache storage fails.
 3. Classify application SQL consumers by the table above. Keep Mail's existing
    mirror/outbox separation. Move ordinary authored records and settings into
    data folders as their consumers migrate; locality alone cannot exempt them.

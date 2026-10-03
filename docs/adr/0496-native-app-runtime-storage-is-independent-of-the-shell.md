@@ -35,7 +35,10 @@ root without installing or running the Epicenter host.
 
 On Linux, an unset local-data base defaults to `~/.local/share`. Default authored
 roots are exactly `~/Epicenter` for release and `~/Epicenter Dev` for development,
-including capitalization and the space. These names match ADR-0497's OPFS roots.
+including capitalization and the space. These names match
+[ADR-0497](0497-browser-folders-use-indexeddb-and-private-sqlite-uses-opfs.md)'s
+browser logical display and private SQL namespace conventions; browser authored
+folders remain in IndexedDB.
 
 These bases follow [Tauri's local-data resolver](https://docs.rs/tauri/latest/tauri/path/struct.PathResolver.html#method.local_data_dir).
 Use the persistent local-data directory, not the cache directory or the OS

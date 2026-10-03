@@ -1,7 +1,8 @@
 /**
  * Plain-language status lines for the header, its status details, and the
  * outcome toasts. Saved files, uncommitted changes, local commits, pushes,
- * pulls, and merges are separate facts; each line reports one of them, including
+ * pulls, merges, and an incoming update that has not finished are separate
+ * facts; each line reports one of them, including
  * unknown and out-of-date observations. Times are the absolute times an
  * observation or attempt happened, so they never go stale on screen.
  */
@@ -17,6 +18,7 @@ import type {
 	PushOutcome,
 } from '@epicenter/folder';
 import { Ok, type Result } from 'wellcrafted/result';
+import type { RecoveryAttempt } from './todos.svelte.js';
 
 export type Tone = 'neutral' | 'busy' | 'good' | 'warning' | 'error';
 export type StatusLine = {
@@ -30,6 +32,10 @@ export type StatusLine = {
 /** Guidance when local and remote each have commits the other lacks; the folder only fast-forwards. */
 export const DIVERGED =
 	'Local and remote history have diverged; local commits are kept. Resolve the histories before pushing.';
+
+/** Why commits, pulls, and merges wait while an incoming update is pending. */
+export const INCOMING_WAITS =
+	'An incoming update from the remote has not finished. Commits, pulls, and merges wait until you recover it; nothing was changed. You can still edit and save files, and fetch.';
 
 const short = (oid: string | undefined) => oid?.slice(0, 7) ?? 'none';
 
@@ -347,14 +353,27 @@ export function pullOutcomeLine(
 	result: Result<PullOutcome, PullError | GitError>,
 ): StatusLine {
 	if (result.error)
-		return result.error.name === 'Diverged'
-			? {
+		switch (result.error.name) {
+			case 'Diverged':
+				return {
 					label: 'Pull stopped',
 					short: 'Diverged',
 					detail: DIVERGED,
 					tone: 'error',
-				}
-			: { label: 'Pull stopped', detail: result.error.message, tone: 'error' };
+				};
+			case 'IncomingPending':
+				return {
+					label: 'Pull waits',
+					detail: INCOMING_WAITS,
+					tone: 'warning',
+				};
+			default:
+				return {
+					label: 'Pull stopped',
+					detail: result.error.message,
+					tone: 'error',
+				};
+		}
 	switch (result.data.status) {
 		case 'fastForwarded':
 			return {
@@ -438,6 +457,12 @@ export function mergeOutcomeLine(
 					detail: 'Commit your changes first, then merge again.',
 					tone: 'warning',
 				};
+			case 'IncomingPending':
+				return {
+					label: 'Merge waits',
+					detail: INCOMING_WAITS,
+					tone: 'warning',
+				};
 			default:
 				return {
 					label: 'Merge stopped',
@@ -464,6 +489,115 @@ export function mergeLine(git: GitSnapshot): StatusLine | undefined {
 	);
 }
 
+/**
+ * The incoming update that began and has not been recovered, as the folder
+ * last read it; undefined when there is none. It is reported, never resumed:
+ * only the person's Recover incoming update request does that.
+ */
+export function incomingLine(git: GitSnapshot): StatusLine | undefined {
+	const pending = git.pendingIncoming;
+	if (pending === undefined) return undefined;
+	switch (pending.state) {
+		case 'recorded':
+			return {
+				label: 'Incoming update not finished',
+				short: 'Update pending',
+				detail: `An update from the remote (${short(pending.expectedHead)} → ${short(pending.nextHead)} on ${pending.branch}) stopped partway, and some files may already hold its changes. Commits, pulls, and merges wait until you recover it. You can still edit and save files.`,
+				tone: 'error',
+			};
+		case 'unadmitted':
+			return {
+				label: 'Incoming update never started',
+				short: 'Update pending',
+				detail:
+					'An update from the remote was interrupted before it changed any file. Recovering clears its record. Commits, pulls, and merges wait until then.',
+				tone: 'error',
+			};
+		case 'unreadable':
+			return {
+				label: 'Incoming update record unreadable',
+				short: 'Update pending',
+				detail: `The record of an incoming update cannot be read: ${pending.reason}. Recovery reports what it finds and writes nothing it cannot verify. Commits, pulls, and merges wait until it is recovered.`,
+				tone: 'error',
+			};
+	}
+}
+
+/** What one Recover incoming update request did, for its toast and the pending report. */
+export function recoveryLine(attempt: RecoveryAttempt): StatusLine {
+	switch (attempt.kind) {
+		case 'busy':
+			return {
+				label: 'Recovery waits',
+				detail:
+					'Another change to the folder is in progress. Try again when it finishes; nothing was changed.',
+				tone: 'neutral',
+			};
+		case 'unsettled':
+			return {
+				label: 'Save or discard open edits first',
+				detail: `The update may write these files, and they have edits that are not saved:\n${attempt.paths.join('\n')}\nNothing was changed.`,
+				tone: 'warning',
+			};
+		case 'ran':
+			break;
+	}
+	const { result } = attempt;
+	if (result.error === null)
+		switch (result.data.status) {
+			case 'none':
+				return { label: 'No incoming update was pending', tone: 'neutral' };
+			case 'admissionCleared':
+				return {
+					label: 'Incoming update cleared',
+					detail:
+						'It never changed a file. Commits, pulls, and merges can continue.',
+					tone: 'good',
+				};
+			case 'cleared':
+				return {
+					label: 'Incoming update cleared',
+					detail:
+						'History already had it, so no file was written. Check the changes before committing.',
+					tone: 'good',
+				};
+			case 'completed':
+				return {
+					label: `Incoming update finished: ${result.data.changedPaths.length} ${result.data.changedPaths.length === 1 ? 'file' : 'files'}`,
+					detail: result.data.changedPaths.join('\n') || undefined,
+					tone: 'good',
+				};
+		}
+	const error = result.error;
+	switch (error.name) {
+		case 'RecoveryRefused':
+			return {
+				label: 'Incoming update not recovered',
+				short: 'Not recovered',
+				detail: `${error.reason}\nThese hold neither the version before the update nor after it:\n${error.paths.join('\n')}\nNothing was written, and the update is still pending. Change each to one of those versions, then recover again.`,
+				tone: 'error',
+			};
+		case 'Partial':
+			return {
+				label: 'Recovery stopped partway',
+				detail: `${error.message}\nThe update is still pending; recover again.`,
+				tone: 'error',
+			};
+		case 'Unconfirmed':
+			return {
+				label: 'Recovery not confirmed',
+				detail: `${error.message}\nIt may or may not have finished; the folder reports which. Recover again if it is still pending.`,
+				tone: 'warning',
+			};
+		default:
+			return {
+				label: 'Recovery stopped',
+				detail: `${error.message}\nThe update is still pending.`,
+				tone: 'error',
+			};
+	}
+}
+
 /** The toast for one Commit and push: the commit, then the push. */
 export function commitAndPushToast(
 	result: { commit: CommitOutcome; push: PushOutcome },
@@ -488,12 +622,15 @@ export function commitAndPushToast(
  */
 export function summaryLine(lines: {
 	files: StatusLine;
+	/** A pending incoming update; it outranks every other fact it ties with. */
+	incoming?: StatusLine;
 	uncommitted: StatusLine;
 	commit: StatusLine;
 	remote: StatusLine;
 }): StatusLine {
 	let chosen: StatusLine | undefined;
 	for (const line of [
+		lines.incoming,
 		lines.files,
 		lines.uncommitted,
 		lines.commit.tone === 'neutral' ? undefined : lines.commit,

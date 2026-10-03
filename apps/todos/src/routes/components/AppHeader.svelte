@@ -13,6 +13,8 @@
 		commitAndPushToast,
 		commitLine,
 		filesLine,
+		INCOMING_WAITS,
+		incomingLine,
 		mergeLine,
 		mergeOutcomeLine,
 		pullLine,
@@ -42,13 +44,15 @@
 	const files = $derived(
 		filesLine({ saving: todos.saving, problems: todos.saveProblems, unsaved: todos.unsaved }),
 	);
+	const incoming = $derived(incomingLine(todos.git));
 	const uncommitted = $derived(uncommittedLine(todos.git));
 	const commit = $derived(commitLine(todos.git));
 	const remote = $derived(pushLine(todos.git));
 	const pull = $derived(pullLine(todos.git));
 	const merge = $derived(mergeLine(todos.git));
-	const summary = $derived(summaryLine({ files, uncommitted, commit, remote }));
+	const summary = $derived(summaryLine({ files, incoming, uncommitted, commit, remote }));
 	const details = $derived<[string, string, StatusLine | undefined][]>([
+		['Incoming', 'status-incoming', incoming],
 		['Files', 'status-files', files],
 		['Changes', 'status-history', uncommitted],
 		['Last commit', 'status-last-commit', commit],
@@ -88,11 +92,18 @@
 	let working = $state<'commit' | 'pull' | 'fetch' | 'merge' | undefined>();
 	const busy = $derived(
 		working !== undefined ||
+			todos.recovering ||
 			todos.git.activity.commit.active ||
 			todos.git.activity.push.active ||
 			todos.git.activity.pull.active ||
 			todos.git.activity.merge.active,
 	);
+	/**
+	 * Commits, pulls, and merges wait while an incoming update is pending;
+	 * the folder refuses them anyway, so they are off until it is recovered.
+	 * Fetch and ordinary editing are not affected.
+	 */
+	const pending = $derived(todos.git.pendingIncoming !== undefined);
 
 	/** Outcome toasts use the status lines' wording, so the toast and the details agree. */
 	const notify: Record<StatusLine['tone'], typeof toast.info> = {
@@ -246,8 +257,8 @@
 			<Button
 				variant="outline"
 				size="sm"
-				disabled={busy}
-				tooltip="Combine the remote's commits with yours in a new commit. Nothing is pushed."
+				disabled={busy || pending}
+				tooltip={pending ? INCOMING_WAITS : "Combine the remote's commits with yours in a new commit. Nothing is pushed."}
 				data-testid="merge-incoming"
 				onclick={mergeRemote}
 			>
@@ -258,8 +269,13 @@
 		<Button
 			variant="outline"
 			size="sm"
-			disabled={busy || !hasRemote}
-			tooltip={hasRemote ? 'Get commits from the remote. Only a clean fast-forward is applied.' : NO_REMOTE}
+			disabled={busy || !hasRemote || pending}
+			tooltip={!hasRemote
+				? NO_REMOTE
+				: pending
+					? INCOMING_WAITS
+					: 'Get commits from the remote. Only a clean fast-forward is applied.'}
+			data-testid="pull"
 			onclick={pullRemote}
 		>
 			{#if working === 'pull'}<Spinner class="size-3.5" />{:else}<ArrowDownToLineIcon />{/if}
@@ -267,8 +283,13 @@
 		</Button>
 		<Button
 			size="sm"
-			disabled={busy}
-			tooltip={hasRemote ? undefined : 'Commit the saved files. There is no remote to push to.'}
+			disabled={busy || pending}
+			tooltip={pending
+				? INCOMING_WAITS
+				: hasRemote
+					? undefined
+					: 'Commit the saved files. There is no remote to push to.'}
+			data-testid="commit-and-push"
 			onclick={commitAndPush}
 		>
 			{#if working === 'commit'}<Spinner class="size-3.5" />{/if}

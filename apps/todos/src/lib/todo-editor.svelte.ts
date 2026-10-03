@@ -151,8 +151,12 @@ export function createTodoEditor(
 	/** Why the last change was refused; the next accepted change clears it. */
 	let refusal = $state<string | undefined>();
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	/** The save this editor started, until its outcome is applied. */
-	let saving: Promise<string | undefined> | undefined;
+	/**
+	 * The save this editor started, until its outcome is applied. Reactive:
+	 * it is cleared after the row editor's last state of the save, so a view
+	 * reading `isSaving` or `isIdle` must hear the clearing itself.
+	 */
+	let saving = $state.raw<Promise<string | undefined> | undefined>();
 	/** Pending while a rename owns the row's path; resolves when it settles. */
 	let moving: Promise<void> | undefined;
 
@@ -465,6 +469,30 @@ export function createTodoEditor(
 				}
 				await retired.dispose();
 				return Ok({ row: destination });
+			} finally {
+				moving = undefined;
+				settled.resolve();
+				if (state.isDirty) schedule();
+			}
+		},
+		/**
+		 * Hold saves while `work` runs, as when an incoming update is recovered
+		 * and may write this row. A save already running finishes first, and
+		 * none starts until `work` settles. Changes are accepted throughout.
+		 * Before the hold lifts, the row is read again, so a row `work` changed
+		 * is the latest read: a clean draft follows it, and input waits for the
+		 * person's review instead of saving over it.
+		 */
+		async hold<T>(work: () => Promise<T>): Promise<T> {
+			while (moving) await moving;
+			const settled = Promise.withResolvers<void>();
+			moving = settled.promise;
+			try {
+				clearTimeout(timer);
+				while (saving) await saving;
+				const done = await work();
+				await row.refresh();
+				return done;
 			} finally {
 				moving = undefined;
 				settled.resolve();

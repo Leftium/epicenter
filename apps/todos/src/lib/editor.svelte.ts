@@ -325,6 +325,27 @@ function createDraft(
 			}
 		},
 		/**
+		 * Hold saves while `work` runs, as when an incoming update is recovered
+		 * and may write this file. A save already running finishes first, and
+		 * none starts until `work` settles. Typing is accepted throughout and
+		 * saves afterward under the usual rules: still checked against the
+		 * baseline, so a file `work` changed comes back as a conflict.
+		 */
+		async hold<T>(work: () => Promise<T>): Promise<T> {
+			while (moving) await moving;
+			const finished = Promise.withResolvers<void>();
+			moving = finished.promise;
+			try {
+				clearTimeout(timer);
+				while (saving) await saving;
+				return await work();
+			} finally {
+				moving = undefined;
+				finished.resolve();
+				if (dirty() && saveState.kind === 'saved') schedule();
+			}
+		},
+		/**
 		 * Delete this draft's file. `run` removes the version the person
 		 * confirmed. A save already running finishes first, and none starts
 		 * until `run` answers, so no save of this draft lands during the delete.

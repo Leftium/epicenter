@@ -20,6 +20,9 @@
  *   without writing
  * - The read that predates the editor's own save receipt is not another
  *   writer's change: input typed during the save autosaves next
+ * - A Svelte view of the editor shows Saving while a save runs and stops
+ *   showing it once the save settles, including when the row editor's last
+ *   state came before the save's own reply
  * - A removed file is written again by the draft's save
  * - A save captures the draft: input during it stays unsaved and saves next
  * - A rename holds saves, carries input typed during the move to the
@@ -41,6 +44,7 @@ import { type TodoFields, todosDefinition } from './definition.js';
 import type { TodoEditor } from './todo-editor.svelte.js';
 
 const { createTodoEditor } = await import('./todo-editor.svelte.ts');
+const { showing } = await import('./view.test-support.svelte.ts');
 
 const ROW = '---\ntitle: Milk\ndone: false\n---\n';
 const PATH = 'todos/milk.md';
@@ -299,6 +303,66 @@ test('a draft whose file was removed elsewhere writes the row again when it save
 	expect(await editor.save()).toBeUndefined();
 	expect(await text()).toBe(editor.state.source);
 	expect(editor.state.document.body).toBe('mine\n');
+});
+
+// ============================================================================
+// What a view shows
+// ============================================================================
+
+/** The facts the save status shows, as a view of the editor reads them. */
+const status = (editor: TodoEditor) => ({
+	saving: editor.isSaving,
+	idle: editor.isIdle,
+});
+
+test('a view stops showing Saving once an explicit save or an autosave settles', async () => {
+	const { editor, reading } = await setup();
+	const view = showing(() => status(editor));
+	try {
+		expect(await view.current()).toEqual({ saving: false, idle: true });
+
+		editor.change({ body: 'explicit\n' });
+		expect(await view.current()).toEqual({ saving: false, idle: false });
+		expect(await editor.save()).toBeUndefined();
+		expect(await view.current()).toEqual({ saving: false, idle: true });
+
+		editor.change({ body: 'autosaved\n' });
+		await eventually(() => editor.isIdle);
+		expect((await reading()).body).toBe('autosaved\n');
+		expect(await view.current()).toEqual({ saving: false, idle: true });
+	} finally {
+		view.stop();
+	}
+});
+
+test('a view shows Saving while a delayed save runs, then the saved state when it settles', async () => {
+	const reply = Promise.withResolvers<void>();
+	const { editor, reading } = await setup((row) => ({
+		...row,
+		async save() {
+			const saved = row.save();
+			await reply.promise;
+			return saved;
+		},
+	}));
+	const view = showing(() => status(editor));
+	try {
+		editor.change({ body: 'mine\n' });
+		const saving = editor.save();
+		expect(await view.current()).toEqual({ saving: true, idle: false });
+		// The bytes land and the row editor publishes its receipt; the save's
+		// reply is still held, so it is still saving.
+		await Bun.sleep(20);
+		expect((await reading()).body).toBe('mine\n');
+		expect(await view.current()).toEqual({ saving: true, idle: false });
+
+		reply.resolve();
+		expect(await saving).toBeUndefined();
+		expect(await view.current()).toEqual({ saving: false, idle: true });
+		expect(view.shown.at(-1)).toEqual({ saving: false, idle: true });
+	} finally {
+		view.stop();
+	}
 });
 
 test('a save captures the draft: input during it stays unsaved and saves next', async () => {

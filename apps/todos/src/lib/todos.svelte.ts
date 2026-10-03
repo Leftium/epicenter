@@ -30,6 +30,7 @@ import type {
 	MoveError,
 	PullError,
 	PullOutcome,
+	RecoverOutcome,
 	TableEditError,
 	TableSnapshot,
 	TableWriteError,
@@ -106,6 +107,26 @@ export type Deletion =
 	| { readonly kind: 'todo'; readonly entry: TodoEntry }
 	| (FileCapture & { readonly kind: 'file' })
 	| { readonly kind: 'folder'; readonly path: string };
+
+/** What one explicit request to recover the pending incoming update did. */
+export type RecoveryAttempt =
+	/** Open editors hold input they could not save first; nothing ran. */
+	| { readonly kind: 'unsettled'; readonly paths: readonly string[] }
+	/** Another change to the folder was in progress; nothing ran. */
+	| { readonly kind: 'busy' }
+	| {
+			readonly kind: 'ran';
+			readonly result: Result<RecoverOutcome, PullError | GitError>;
+	  };
+
+/** Run `work` while every editor holds its saves. */
+function holdAll<T>(
+	held: readonly { hold<R>(work: () => Promise<R>): Promise<R> }[],
+	work: () => Promise<T>,
+): Promise<T> {
+	const [first, ...rest] = held;
+	return first === undefined ? work() : first.hold(() => holdAll(rest, work));
+}
 
 const UNSETTLED = 'Save or discard the open edits first.';
 const BUSY =
@@ -191,6 +212,22 @@ export function createTodos(folder: TodosFolder) {
 	 * listing that answers late touches nothing.
 	 */
 	let closing: Promise<void> | undefined;
+	/**
+	 * Set while an explicit recovery of the pending incoming update runs. It
+	 * may write any path, so no path operation starts and no file opens until
+	 * it settles; typing in open editors continues, held from saving.
+	 */
+	let recovering = $state.raw<Promise<void> | undefined>();
+	/**
+	 * Opens past the recovery check that are still reading, until each has
+	 * installed or dropped its editor. A recovery waits for these before it
+	 * settles and holds the editors.
+	 */
+	const admitting = new Set<Promise<void>>();
+	/** The last explicit recovery request this session, kept on screen while the update is pending. */
+	let lastRecovery = $state.raw<
+		(RecoveryAttempt & { readonly at: number }) | undefined
+	>();
 	const rowPaths = $derived(new Set(entries.map((entry) => entry.path)));
 	const selection = $derived.by((): Selection | undefined => {
 		const path = selectedPath;
@@ -258,8 +295,12 @@ export function createTodos(folder: TodosFolder) {
 		return [...retained.values()].flatMap((item) => editorOf(item) ?? []);
 	}
 
-	/** Claim paths for one operation; undefined when another operation holds any of them. */
+	/**
+	 * Claim paths for one operation; undefined when another operation holds
+	 * any of them, or a recovery of an incoming update may write any path.
+	 */
 	function reserve(...paths: string[]) {
+		if (recovering !== undefined) return undefined;
 		if (paths.some((path) => reserved.has(path))) return undefined;
 		const released = Promise.withResolvers<void>();
 		for (const path of paths) reserved.set(path, released.promise);
@@ -375,6 +416,26 @@ export function createTodos(folder: TodosFolder) {
 		if (closing !== undefined) return;
 		selectedPath = path;
 		for (const ancestor of ancestorsOf(path)) expanded.add(ancestor);
+		// A recovery may be writing this file; an editor opens on what it left.
+		while (recovering !== undefined) await recovering;
+		if (closing !== undefined || selectedPath !== path) return;
+		// Registered with no await since the check above, so a recovery that
+		// starts while this reads waits for its editor and then holds it too.
+		const admission = admit(path);
+		admitting.add(admission);
+		try {
+			await admission;
+		} finally {
+			admitting.delete(admission);
+		}
+	}
+
+	/**
+	 * Claim `path` and install what it opens as. Runs only inside `open`,
+	 * registered in `admitting`, so no editor is ever installed while a
+	 * recovery owns the folder's files without that recovery holding it.
+	 */
+	async function admit(path: string) {
 		const known = retained.get(path);
 		if (
 			editorOf(known) !== undefined ||
@@ -959,6 +1020,68 @@ export function createTodos(folder: TodosFolder) {
 			await refresh();
 			return merged;
 		},
+		/** Whether an explicit recovery of the pending incoming update is running. */
+		get recovering() {
+			return recovering !== undefined;
+		},
+		/** The last recovery request this session, with when it was made. */
+		get lastRecovery() {
+			return lastRecovery;
+		},
+		/**
+		 * Recover the incoming update in `git.pendingIncoming`, only because the
+		 * person asked. Opening the folder, status checks, and refreshes report
+		 * it and never resume it; nothing retries it.
+		 *
+		 * The update may write any file it changes, over what each open editor
+		 * shows, so editors come first. From the first call no path operation
+		 * starts and no file opens; a file still opening installs its editor
+		 * first, so it is settled and held with the rest. Each editor saves its
+		 * pending input under its
+		 * usual rules; if any still holds input it cannot save (a halt, a review,
+		 * a conflict, or fields that do not conform), nothing runs and their
+		 * paths are answered. Then every editor holds its saves while the folder
+		 * recovers, and each todo editor reads its row again before its hold
+		 * lifts. A row the update changed is then another writer's change: a
+		 * clean draft follows it, and input typed meanwhile waits for review. No
+		 * editor saves over the update, and none takes it for a save of its own.
+		 *
+		 * A refusal names the paths in neither state and writes nothing; the
+		 * update stays pending until the person makes each one hold one of its
+		 * states and asks again. Refused while another change is in progress.
+		 */
+		async recoverIncoming(): Promise<RecoveryAttempt> {
+			if (closing !== undefined)
+				return { kind: 'ran', result: GitError.Closed() };
+			if (recovering !== undefined || reserved.size > 0)
+				return { kind: 'busy' };
+			const finished = Promise.withResolvers<void>();
+			recovering = finished.promise;
+			let attempt: RecoveryAttempt;
+			try {
+				// No open starts from here on; those already reading install
+				// their editors first, so every editor is settled and held below.
+				while (admitting.size > 0) await Promise.all(admitting);
+				const unsettled: string[] = [];
+				for (const editor of editors())
+					if (!(await editor.settle())) unsettled.push(editor.path);
+				attempt =
+					unsettled.length > 0
+						? { kind: 'unsettled', paths: unsettled }
+						: {
+								kind: 'ran',
+								result: await holdAll(editors(), () =>
+									folder.git.recoverIncoming(),
+								),
+							};
+			} finally {
+				recovering = undefined;
+				finished.resolve();
+			}
+			lastRecovery = { ...attempt, at: Date.now() };
+			await refreshAll();
+			return attempt;
+		},
 		/**
 		 * Save what can still be saved, then release the folder. A draft that
 		 * cannot save (a halted save, a conflict, or fields that do not
@@ -985,7 +1108,8 @@ export function createTodos(folder: TodosFolder) {
 				if (item.kind === 'loading') retained.delete(path);
 			void (async () => {
 				// The fence stops new reservations, so these are all there will be.
-				await Promise.all(reserved.values());
+				// A recovery already running finishes and releases its holds first.
+				await Promise.all([...reserved.values(), recovering]);
 				for (const editor of editors()) {
 					await editor.settle();
 					await editor.dispose();

@@ -10,6 +10,7 @@
 	import { basename } from '$lib/files.js';
 	import type { Todos } from '$lib/todos.svelte.js';
 	import AppHeader from './AppHeader.svelte';
+	import IncomingBanner from './IncomingBanner.svelte';
 	import FileBrowser from './FileBrowser.svelte';
 	import FileView from './FileView.svelte';
 	import FolderTerminal from './FolderTerminal.svelte';
@@ -115,6 +116,7 @@
 		onToggleFiles={toggleFiles}
 		onToggleTerminal={() => void toggleTerminal()}
 	/>
+	<IncomingBanner {todos} />
 
 	{#if wide.current}
 		<Resizable.PaneGroup direction="vertical" class="min-h-0 flex-1">

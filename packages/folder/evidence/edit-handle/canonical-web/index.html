@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Canonical editor callers</title>
+		<link rel="stylesheet" href="./style.css">
+	</head>
+	<body>
+		<header>
+			<h1>Canonical editor callers</h1>
+			<p>
+				Experimental evidence, not a production API. One canonical editor for a
+				todo row, shared by a vanilla DOM view, a Solid view, and a Svelte 5
+				view. The editor's draft is the row's fields and body; a save writes the
+				whole row in canonical form.
+			</p>
+			<p class="quiet">
+				The folder is an in-memory test harness in this page, not a persistent
+				backend. Its files disappear on reload or reset. "Another program" and
+				the reply gates simulate what a real folder can meet.
+			</p>
+		</header>
+
+		<section>
+			<div id="owner" class="row"></div>
+			<p id="session" class="quiet"></p>
+			<div id="repair"></div>
+		</section>
+
+		<section class="columns three">
+			<article>
+				<h2>Vanilla DOM (<code>subscribe</code>)</h2>
+				<div id="vanilla" class="panel"></div>
+			</article>
+			<article>
+				<h2>Solid (<code>from</code>)</h2>
+				<div id="solid" class="panel"></div>
+			</article>
+			<article>
+				<h2>Svelte 5 (<code>createSubscriber</code>)</h2>
+				<div id="svelte" class="panel"></div>
+			</article>
+		</section>
+
+		<section class="columns two">
+			<article>
+				<h2>Editor state</h2>
+				<div id="status"></div>
+			</article>
+			<article>
+				<h2>Harness</h2>
+				<div id="harness" class="panel"></div>
+			</article>
+		</section>
+
+		<section>
+			<article>
+				<h2>Events</h2>
+				<ol id="log" class="log"></ol>
+			</article>
+		</section>
+
+		<script type="module" src="./main.tsx"></script>
+	</body>
+</html>

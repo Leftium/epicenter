@@ -1,7 +1,26 @@
 # Edit handle experiment
 
-Status: experimental evidence, wave 4. Nothing here is part of
+Status: experimental evidence. The current canonical editor is described in
+[canonical-editor-api.md](./canonical-editor-api.md), with three framework
+callers and browser evidence in [canonical-callers.md](./canonical-callers.md).
+Nothing here is part of
 `@epicenter/folder`, and production `Folder` code is unchanged.
+
+Run the current experiment from the repository root:
+
+```sh
+bun packages/folder/evidence/edit-handle/canonical-dev.ts
+```
+
+Open `http://localhost:5181/`. Its in-memory folder is disposable; the engine
+also has a real folder integration test. The proposed production entry is
+`folder.tables.todos.edit(stem)`. The implemented prototype uses
+`createCanonicalEditors(folder, definition).tables.todos.edit(stem)`.
+
+The rest of this README describes the preserved wave 4 comparison demo. Its
+conditional, source-preserving saves are historical evidence, not the current
+canonical editor recommendation. Wave 6 in [ITERATIONS.md](./ITERATIONS.md)
+records the changed contract and review decisions.
 
 Boundaries: one handle edits one file, its fields, body, and raw source
 together. It is not a transaction across files. Saves and the demo's other
@@ -21,7 +40,7 @@ publication moments while another program edits the file.
 ## Run it
 
 A separate canonical-frontmatter prototype now tests the proposed next
-design. It is not wired into this page. See wave 5 in [ITERATIONS.md](./ITERATIONS.md)
+design. It is now used by the canonical editor, separate from the wave 4 page. See wave 5 in [ITERATIONS.md](./ITERATIONS.md)
 for the candidate API, tradeoffs, and remaining engine work. Run its
 counterexamples from the repository root:
 

@@ -252,7 +252,159 @@ Verification after integration: all 56 experiment tests passed, including
 passed. No framework caller changed in this wave, and no new browser
 acceptance is claimed. Existing browser evidence belongs to wave 4.
 
-## Limits
+## Wave 6: canonical editor, retained lifetime, unconditional save
+
+This wave supersedes wave 5's proposed guarded save and raw editing mode. The
+accepted outcome is ordinary files edited by people and tools, with advisory
+notifications to open editors. `save()` replaces whatever occupies the fixed
+path when the write lands. The baseline compares content; it authorizes no write.
+
+The coordinator delegated the engine and the framework consumers to separate
+Claude Code clones, then verified and integrated the completed artifacts. A
+resumed engine assignment repaired callback ordering, and a further assignment
+implemented the content-adoption and typed-key improvements. Independent OpenAI
+and Claude reviews explored the destination before testing the concrete API.
+Later challenges used actual callers and executable counterexamples.
+
+### Current shape
+
+```text
+proposed production owner: folder.tables.todos.edit(stem)
+implemented evidence: createCanonicalEditors(folder, definition).tables.todos.edit(stem)
+    `-- Promise<Result<editor, OpenError>>
+        `-- editor
+            |-- get: immutable current state
+            |-- subscribe: attach view, return its unsubscribe
+            |-- change: local fields/body, invalid intermediate input allowed
+            |-- save: publish complete canonical document once
+            |-- refresh: reread fixed path
+            |-- adopt: take reviewed current content, never restore history
+            `-- dispose: stop watcher, finish admitted save, release callbacks
+```
+
+Watching starts before the opening read. It continues even with no subscribers.
+A form owns the retained editor and shares it among controls. Views mount and
+unmount independently. Methods close over state and do not depend on `this`.
+Opening examples destructure the Result's `data` and `error` before using it.
+
+The codec owns exact canonical representability. The editor owns validity at
+opening and saving, local draft preservation, one admitted write, and honest
+receipts. The app owns save timing and review UI. Storage owns publication and
+notifications. No framework defines when an editing interaction starts or ends.
+
+### Adversarial alternatives
+
+| Alternative | Deletion prize | Decision and concrete cost |
+| --- | --- | --- |
+| Start watching with the first subscriber; stop with the last; delete `dispose` | Removes explicit editor lifetime | Rejected. A retained editor with zero views misses external B and later shows or saves stale A. A permanent owner subscription or mandatory refresh restores the obligation. |
+| Freeze the local draft until manual refresh | Removes clean following rules | Rejected. Every untouched control requires another read or reload decision to display observed values. |
+| Mutable change recipes or functional document transforms | Removes the fields/body patch shape | Rejected for these callers. Mutable recipes introduce cloning and callback semantics; transforms make every control preserve unknown metadata with object spreading. |
+| No-op a clean save | Avoids unnecessary writes | Rejected under the accepted save contract. Explicit Save must canonicalize clean styled text and publish the complete draft. Autosave/quit decide whether to call it. |
+| Adopt any historical revision unconditionally | Deletes stale-content refusal | Rejected for current-file review. It restores content the file no longer holds and needs a separate meaning. Current-content adoption accepts formatting-only differences and trusts only the internal read. |
+| Remove opening cancellation and rely only on generation checks | Removes one option | Rejected. A generation check cleans up a late successful open; abort releases the watcher promptly during a pending read. Both cover different moments. |
+| Type raw local values as the schema row | Removes value narrowing in controls | Rejected. Intermediate invalid values are actual draft content. Accepted typed declared keys with broad canonical values instead. |
+| Hash submitted source before every write | Gives an unconfirmed attempt a hash | Deleted. Storage hashes confirmed captures; unknown content comparison already has exact canonical source. |
+
+One review still preferred no-op clean saves and historical restoration. Those
+choices conflict with the selected meaning of Save and Take current file; review
+agreement was not required. The current destination survived the consequential
+alternatives without claiming that no better API could ever exist.
+
+### Repairs established by regression tests
+
+Initial subscription and later notifications now share a nonrecursive delivery
+loop. Subscription calls are independent, even with the same callback. Reentrant
+changes may coalesce intermediate states; the final delivered snapshot is current.
+This is current-state observation, not a log of every transition.
+
+Admission precedes `saving` notification. Disposal from that notification waits
+for the admitted save. Settlement clears only its own admission before delivering
+its outcome, so a subsequent save begun in that callback stays admitted. Terminal
+delivery releases callbacks after the final save outcome. New terminal subscriptions
+receive one snapshot and stay unretained.
+
+A save captures B at admission. Later typing C stays dirty against B's receipt.
+A matching reread after an unknown reply establishes content equality and may
+make the draft clean, but never promotes unknown history to confirmed success.
+Reads begun before a receipt are invalidated and repeated. Missing, invalid,
+unsupported, and unreadable observations preserve local input.
+
+`adopt` matches fixed path and canonical content against the latest valid read.
+It follows that internal revision, never supplied fields or source. Formatting-only
+rewrites succeed; different content refuses. Save remains unconditional regardless
+of adoption or how recently a person reviewed the file.
+
+### Local cumulative review
+
+Files read for the final ownership and inlining pass:
+
+```text
+packages/folder/
+|-- src/{contract,capture,files,observer,paths,reading,table}.ts
+`-- evidence/edit-handle/
+    |-- README.md
+    |-- ITERATIONS.md
+    |-- canonical-codec.ts
+    |-- canonical-codec.test.ts
+    |-- canonical-editor.ts
+    |-- canonical-editor.test.ts
+    |-- canonical-editor.test-d.ts
+    |-- canonical-editor-api.md
+    |-- canonical-callers.md
+    |-- canonical-dev.ts
+    |-- canonical-build.ts
+    `-- canonical-web/
+        |-- main.tsx
+        |-- vanilla.ts
+        |-- SolidPanel.tsx
+        |-- SveltePanel.svelte
+        |-- status.ts
+        |-- memory-folder.ts
+        |-- harness.ts
+        |-- repair.ts
+        |-- todos.ts
+        |-- todo-editor.ts
+        |-- dom.ts
+        |-- index.html
+        `-- style.css
+```
+
+The editor owns one lifetime and one fixed path. The codec earns its parse boundary.
+The three views are real independent callers; their small draft-value helper owns
+DOM-specific narrowing, while shared error text and DOM creation avoid repetition.
+The status view owns review choices, not write authority. The harness owns simulated
+transport gates and external writers, not production watcher guarantees. The
+wrapper's duplicated definition is accepted only as experiment isolation; the
+production table already owns it and should expose `edit` directly.
+
+The worker clones used the committed definition contract. Integration adapted
+`DataDefinition` to the live `FolderDefinition` and removed obsolete definition
+IDs without editing the unrelated production migration. Existing wave 4 evidence
+remains runnable as a comparison rather than retaining compatibility in this API.
+
+Verification: all 83 experiment tests pass with 376 assertions, up from the
+task-start 56 tests. Folder typecheck passes, Svelte check reports zero errors
+and warnings, Biome passes, and the canonical Vite build passes. The intentional
+throwing-observer regression produces a logged error while the test passes.
+[Browser journeys](./canonical-callers.md#observed-browser-evidence) cover the
+final engine; [the screenshot](./canonical-journey.png) shows C still drafted
+in all three views after the receipt for B.
+
+### Remaining evidence limits
+
+The browser folder is in-memory. It uses real schema inspection and capture
+shapes but simulates hints, reply loss, and delayed reads. A Bun integration test
+proves real file replacement and explicit rereading, not native external watching.
+This wave does not establish Rust watcher delivery, IndexedDB cross-tab updates,
+or OPFS observation. Real collaboration remains a separate CRDT requirement.
+
+`change` still formats and reparses a complete document per input. Large-body
+performance needs measurements before choosing a cheaper path. `observation`
+briefly predates a receipt until the follow-up read lands; the UI must describe
+it as the latest read, not an atomic view of disk. Neither limit changes the
+selected ownership or save semantics.
+
+## Earlier guarded-demo limits
 
 The native folder's hash check is best effort against outside writers. The
 other writer uses `node:fs`; the harness explicitly supplies its change hint.

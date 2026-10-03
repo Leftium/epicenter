@@ -1,6 +1,6 @@
 /**
  * EXPERIMENT: the demo's names for a todo edit handle, shared by all three
- * framework callers. Types only, plus one message helper; no binding code.
+ * framework callers. Types only, plus one message helper.
  */
 import type { PatchRefusal } from '../../../src/markdown.js';
 import type { EditRefusal } from '../edit-handle.js';

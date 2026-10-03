@@ -84,6 +84,50 @@ no correctness blocker or further grounded API change for these callers.
 We stopped after the intended journeys passed, rather than claiming that no
 better design could exist.
 
+## Wave 4: Svelte runes caller
+
+The Svelte panel no longer reads the handle as a store through `$edit`. A
+`$derived.by` captures the current `edit` prop and returns a reader that
+calls a `createSubscriber` over that handle's `subscribe`, then returns its
+`get()`. A second `$derived` calls the reader. The outer value changes only
+when the prop is a different handle; the inner value changes with each
+notification. Capturing the handle keeps each subscription paired with the
+handle it reads. The explicit controls and refusal repaint are unchanged.
+
+Independent Codex and Claude reviews, plus a runtime probe of prop identity
+changes and unmount, accepted this shape. They rejected adding a shared
+helper, a module-level handle cache, `bind:` directives, or a mirrored state
+snapshot. Those alternatives were never
+implemented. This wave replaces the existing Svelte store consumer. The
+engine behavior, the other callers, and package dependencies stay the same.
+
+The worker and coordinator each ran 31 passing tests with 161 assertions,
+zero svelte-check errors or warnings, the Vite build, the folder typecheck,
+and a clean Biome check. Compilation caught a flaw in the reviewed sketch:
+a derived named `state` shadows the `$state` rune, so the implementation
+names it `current`.
+
+A post-implementation Codex pass compiled the actual component and found
+zero warnings and no store runtime calls. It retained the folder edit
+factory because it owns path validation, source-preserving patching, and
+conditional publication. Removing it would move those rules into callers.
+The prop-replacement probe used installed client internals; browser
+acceptance covers the actual mounted controls, not prop replacement.
+Computer use exercised `localhost:5248` against root `vnPao3` on commit
+`b0f79138bf` plus this migration. Structured and raw edits synchronized
+across all three views. Tagged title, done, and priority refusals restored
+the actual reading; body-only changes remained safely patchable. Malformed
+raw source disabled structured controls, and raw repair restored them.
+The independent second Svelte draft saved while the shared dirty draft
+remained incoming for review.
+
+With autosave B's reply held, newer C stayed drafted beyond 400 ms. All
+three views unmounted; releasing B published C exactly once in the visible
+event log. Remounting showed C everywhere. The harness was reset to clean
+root `gPE6Nl`, all views mounted, autosave off, and no gates held or armed.
+No new failure was observed. The simulated transport limits below still
+apply.
+
 ## Limits
 
 The native folder's hash check is best effort against outside writers. The

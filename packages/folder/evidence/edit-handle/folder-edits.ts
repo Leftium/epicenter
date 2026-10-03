@@ -1,5 +1,5 @@
 /**
- * EXPERIMENT: bind the edit handle to a folder's table rows and text files.
+ * EXPERIMENT: construct edit handles over a folder's table rows and text files.
  *
  *     const edits = createFolderEdits(folder);
  *     const edit = edits.tables.todos.edit(displayedSnapshot);

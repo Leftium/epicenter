@@ -3,8 +3,8 @@
  *
  * This is evidence for a proposed API, not part of `@epicenter/folder`. The
  * question under test is whether one small engine can serve a vanilla DOM
- * caller, Solid's `from`, and Svelte's `$store` alike, while keeping the
- * folder's publication facts honest under concurrent writers.
+ * caller, Solid's `from`, and Svelte's `createSubscriber` alike, while
+ * keeping the folder's publication facts honest under concurrent writers.
  *
  * A handle keeps three values apart (ADR-0465, ADR-0484):
  *
@@ -19,8 +19,10 @@
  * Save timing, debouncing, and autosave belong to the caller (ADR-0485). The
  * handle saves once per `save()` call and never retries.
  *
- * The document it edits is supplied: `folder-edits.ts` binds table rows and
- * text files of a folder. This module imports no Markdown or storage code.
+ * The document it edits is supplied: `folder-edits.ts` builds one for a
+ * folder's table row or text file, reading it through the folder, saving it
+ * with a conditional `replace`, and watching the folder's change hints for
+ * its path. This module imports no Markdown or storage code.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { FileCapture, TextCapture } from '../../src/capture.js';
@@ -436,7 +438,7 @@ export function createEditHandle<TSnapshot extends TextCapture, TReading>(
 		get: () => state,
 		/**
 		 * Call `listener` now with the current state, then with each change.
-		 * This is the contract Solid's `from` and Svelte's `$store` consume.
+		 * Solid's `from` and the Svelte panel's `createSubscriber` consume this.
 		 */
 		subscribe(listener: (state: State) => void): () => void {
 			listeners.add(listener);

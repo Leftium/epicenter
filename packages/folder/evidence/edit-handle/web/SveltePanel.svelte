@@ -1,12 +1,16 @@
 <!--
-	Svelte caller: the handle is a store, so `$edit` subscribes for this
-	component's lifetime and unsubscribes when it is destroyed. No other
-	binding code.
+	Svelte caller: `createSubscriber` subscribes to the handle while the
+	template reads `current`, and unsubscribes when no effect reads it,
+	including when this component is destroyed. `read` changes only when the
+	`edit` prop is a different handle; `current` changes with each
+	notification. Each subscription and its `get` use the same captured
+	handle.
 
-	A refused change emits no state, so `$edit` does not update; the handler
-	puts its control back to the handle's current value itself.
+	A refused change emits no state, so `current` does not update; the
+	handler puts its control back to the handle's current value itself.
 -->
 <script lang="ts">
+	import { createSubscriber } from 'svelte/reactivity';
 	import { PRIORITIES } from '../todos.js';
 	import {
 		describeRefusal,
@@ -17,7 +21,16 @@
 	let { edit }: { edit: TodoEdit } = $props();
 	let refusal = $state('');
 
-	const unparsed = $derived($edit.reading.parseError !== undefined);
+	const read = $derived.by(() => {
+		const handle = edit;
+		const track = createSubscriber((update) => handle.subscribe(update));
+		return () => {
+			track();
+			return handle.get();
+		};
+	});
+	const current = $derived(read());
+	const unparsed = $derived(current.reading.parseError !== undefined);
 
 	/** Report a change; on refusal, repaint the control from the handle. */
 	function report(result: ReturnType<TodoEdit['change']>, repaint: () => void) {
@@ -29,7 +42,7 @@
 <label>
 	<input
 		type="checkbox"
-		checked={$edit.reading.fields.done === true}
+		checked={current.reading.fields.done === true}
 		disabled={unparsed}
 		onchange={(event) => {
 			const control = event.currentTarget;
@@ -43,7 +56,7 @@
 <label>
 	Title
 	<input
-		value={$edit.reading.fields.title ?? ''}
+		value={current.reading.fields.title ?? ''}
 		disabled={unparsed}
 		oninput={(event) => {
 			const control = event.currentTarget;
@@ -56,7 +69,7 @@
 <label>
 	Priority
 	<select
-		value={$edit.reading.fields.priority ?? ''}
+		value={current.reading.fields.priority ?? ''}
 		disabled={unparsed}
 		onchange={(event) => {
 			const control = event.currentTarget;
@@ -77,7 +90,7 @@
 	Body
 	<textarea
 		rows="3"
-		value={$edit.reading.body ?? ''}
+		value={current.reading.body ?? ''}
 		disabled={unparsed}
 		oninput={(event) => {
 			const control = event.currentTarget;
@@ -92,15 +105,15 @@
 	<textarea
 		rows="8"
 		class="source"
-		value={$edit.source}
+		value={current.source}
 		oninput={(event) => edit.input(event.currentTarget.value)}
 	></textarea>
 </label>
 <ul class="diagnostics">
-	{#each $edit.reading.parseError?.diagnostics ?? [] as diagnostic, index (index)}
+	{#each current.reading.parseError?.diagnostics ?? [] as diagnostic, index (index)}
 		<li>Does not parse: {diagnostic.message}</li>
 	{/each}
-	{#each $edit.reading.issues as issue, index (index)}
+	{#each current.reading.issues as issue, index (index)}
 		<li>{issue.field}: {issue.message}</li>
 	{/each}
 </ul>

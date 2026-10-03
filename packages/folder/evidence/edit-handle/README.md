@@ -1,6 +1,6 @@
 # Edit handle experiment
 
-Status: experimental evidence, wave 3. Nothing here is part of
+Status: experimental evidence, wave 4. Nothing here is part of
 `@epicenter/folder`, and production `Folder` code is unchanged.
 
 Boundaries: one handle edits one file, its fields, body, and raw source
@@ -61,8 +61,10 @@ await edit.refresh();               // read the file now
 await edit.dispose();               // stop observing; an admitted save still settles
 ```
 
-Framework callers use only their native contracts: Solid's
-`from(edit, edit.get())` and Svelte's `$edit` store subscription.
+Framework callers use only their native primitives over `subscribe` and
+`get`: Solid's `from(edit, edit.get())`, and in Svelte a `$derived` that
+pairs `createSubscriber` over `handle.subscribe` with `handle.get()` for the
+current `edit` prop.
 
 A one-click control keeps no draft and needs no handle:
 
@@ -152,7 +154,8 @@ The 400 ms delay is the page's choice, passed in because it is app policy;
 the tests run the same driver with 20 ms and real timers.
 
 The driver returns only `start`, `stop`, and `resume`. Its pause-change callback
-updates the page's message. The edit handle remains the native readable store.
+updates the page's message. The edit handle's `subscribe` remains the only
+state subscription.
 
 ## Wave 3 changes
 
@@ -168,7 +171,7 @@ updates the page's message. The edit handle remains the native readable store.
 | The immediate checkbox reverted to the old value while saving; any hint rebuilt it enabled; a second click published while the first was held. | One-shot `save` with a caller-owned pending map: the wanted value stays shown and disabled through every rerender, and a second change on the path is not admitted, even one dispatched by script. |
 | A removed row came over the wire as `{ error: null }`; the facade threw on `undefined.source` and showed it as unreadable. | The server sends `data: null`; the facade decodes `null` as absent. `server.test.ts` covers it end to end. |
 | "Saved: the file now holds B" while C was already incoming. | "This save wrote version B", and "was observed on disk" while held. |
-| `keepDraft` or `takeObserved` with another path redirected the next write. | Refused as `otherPath`; construction binds the path. |
+| `keepDraft` or `takeObserved` with another path redirected the next write. | Refused as `otherPath`; construction fixes the path. |
 | A listener disposing at `saving` got `undefined`; a save started on B's receipt was cleared by B's continuation. | Admission is set before notification and released by identity before the outcome is delivered. |
 | A lone surrogate saved as U+FFFD but the draft stayed dirty, and own-text checks failed. | `input` drafts the well-formed text. |
 | Discard during a save made the old text dirty against the receipt. | Discard is refused while a save is admitted. (Wave 2 also refused it while unconfirmed; wave 3 removed that.) |
@@ -237,7 +240,7 @@ updates the page's message. The edit handle remains the native readable store.
 | File | Role |
 | --- | --- |
 | `edit-handle.ts` | The engine: one handle over a supplied document. No Markdown or storage imports. |
-| `folder-edits.ts` | `createFolderEdits`: binds table rows and text files, and the one-shot `save`. |
+| `folder-edits.ts` | `createFolderEdits`: constructs edit handles over table rows and text files, and the one-shot `save`. |
 | `gates.ts` | Manual publication gates, shared by the server and the tests. |
 | `server.ts`, `protocol.ts`, `todos.ts` | The Bun backend, its wire format, and the demo definition and seed. |
 | `dev.ts`, `vite-config.ts`, `build.ts` | Launcher, Vite configuration, and a compile check. |

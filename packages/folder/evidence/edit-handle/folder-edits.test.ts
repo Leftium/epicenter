@@ -1,7 +1,7 @@
 /**
  * Folder edits over a real directory folder (EXPERIMENT)
  *
- * Binds `createFolderEdits` to `@epicenter/folder/bun` over a fresh temporary
+ * Runs `createFolderEdits` on `@epicenter/folder/bun` over a fresh temporary
  * directory, with saves passing through the same manual gates the demo
  * server uses. The other writer is `node:fs`, outside the folder handle.
  * This is where the Bun folder's real ordering matters: its change hint runs

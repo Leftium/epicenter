@@ -498,7 +498,7 @@ test('dispose stops observing and refuses edits, but an admitted save still sett
 });
 
 // ============================================================================
-// Wave 2: path binding, reentrant listeners, uncertain saves
+// Wave 2: one path per handle, reentrant listeners, uncertain saves
 // ============================================================================
 
 test('a snapshot of another file neither opens a handle nor redirects its next save', async () => {

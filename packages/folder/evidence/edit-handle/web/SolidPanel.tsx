@@ -1,7 +1,6 @@
 /**
  * Solid caller: `from(edit, edit.get())` turns the shared handle into an
  * accessor, and the owner's cleanup unsubscribes when this view unmounts.
- * No other binding code.
  *
  * A refused change emits no state, so the accessor does not rerun; the
  * handler puts its control back to the handle's current value itself.
